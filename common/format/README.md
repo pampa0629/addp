@@ -131,7 +131,7 @@ type FormatDescriptor struct {
 | `Format` | 顶层格式事实，例如 `csv`、`json`、`parquet`、`shapefile` |
 | `DataType` | 默认可映射的数据类型，例如 `table`、`document`、`media` |
 | `Layouts` | format 可支持的 content layout：`single`、`multi`、`whole`；使用 `NormalizeLayout` / `HasLayout` 等 helper 处理，不手写自由字符串判断 |
-| `Identification` | 扩展名、MIME、内容签名等识别事实 |
+| `Identification` | 扩展名、确定性文件名、MIME、内容签名等识别事实 |
 
 常用入口：
 
@@ -141,6 +141,8 @@ hasWhole := format.HasLayout(descriptor.Layouts, format.LayoutWhole)
 ```
 
 `FormatDescriptor` 是格式静态事实，覆盖识别、默认 data type 和 layout。内置 descriptor 由 `common/format/plugins/<format>/` 中的 `Descriptor()` 维护；`FormatPlugin` 是格式包的代码入口。调用 `RegisterFormatPlugin` 会注册 plugin，若 plugin 实现 `FormatDescriptorProvider`，会校验 `Format()` 与 `Descriptor().Format` 一致并注册 descriptor。descriptor 可以先于完整 provider / reader 存在，但读写可执行性只由当前进程已注册 plugin 的接口实现决定。
+
+`Identification.FileNames` 只用于有稳定标准入口文件名的格式，例如 `mosaic.addp.json`。它不能替代内容校验；Meta 对 manifest 型 whole scope item 落库前仍应读取 manifest 内容确认 schema、`format`、`data_type` 和 `layout`。
 
 内置格式通过统一聚合包加载：
 
@@ -308,7 +310,7 @@ type MultiTableWriterProvider interface {
 }
 ```
 
-空间表的 `FieldTypeGeometry` 只表达字段语义，行值编码由 `ParseOptions.GeometryEncoding` 决定。默认编码是 `wkt`，用于 Manager sample、日志和调试；连续读取链路可显式请求 `wkb` 或 `ewkb`，此时行值为 `[]byte`。SRID / CRS 事实以 `datatype.SpatialInfo` 为准，`ewkb` 携带 SRID 只是行值编码能力，不替代空间参考事实。具体格式的 native 几何类型必须在各自 plugin 内转换，不得暴露到 format 根接口或 engine / Transfer 层。
+空间表的 `FieldTypeGeometry` 只表达字段语义，行值编码由 `ParseOptions.GeometryEncoding` 决定。默认 geometry 行值编码由各 format 的 `SpatialEncodingCapabilities.DefaultReadEncoding` 声明，主要用于 Manager sample、日志和调试；Transfer 等连续批处理链路必须显式协商 source read encoding 与 target write encoding，跨 format / engine 优先使用 `ewkb`。`wkb` / `ewkb` 行值为 `[]byte`。SRID / CRS 事实以 `datatype.SpatialInfo` 为准，`ewkb` 携带 SRID 只是行值编码能力，不替代空间参考事实。具体格式的 native 几何类型只能通过显式声明的 `GeometryEncoding` 暴露，例如 Shapefile 的 `shapefile_shape`；不得绕过编码协议隐式泄漏到 format 根接口或 engine 层。
 
 格式写出 CRS 定义时，只能使用定义文本，不能使用 CRS ID 充当定义。Shapefile writer 的 `WriteOptions.ExtraParams["crs_definition"]` 表示 `.prj` 定义文本，例如 WKT、ESRI WKT 或 proj4 文本；不得传入裸 `EPSG:<code>` 或 `URN:OGC:DEF:CRS:EPSG::<code>`。CRS ID 应由 `datatype.SpatialInfo` 的 `crs_ref` 表达，定义文本应由 `crs_definitions[].definition` 表达。
 

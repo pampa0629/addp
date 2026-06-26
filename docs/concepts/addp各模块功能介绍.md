@@ -174,7 +174,7 @@
 - 执行历史记录和结果回溯
 
 **端口**：
-- Backend：8085
+- Backend：8185
 - Frontend：5178 (dev)
 
 **详细文档**：`develop/CLAUDE.md`
@@ -300,28 +300,28 @@
 
 ---
 
-## 计算引擎
+## 扩展运行时
 
-### Python Workflow Engine
+### Python Workflow 运行时
 
-**职责定位**：基于 Python 的单节点工作流计算引擎
+**职责定位**：基于 Python 的单节点工作流运行时
 
 **核心能力**：
 - 提供 21 个空间算子（buffer、centroid、intersection、union 等）
 - DAG 内存计算（GeoDataFrame 全程内存传递，避免中间序列化）
 - 支持空间和非空间数据处理
 - 适用场景：中小规模数据（< 100 万行）
-- 执行引擎：GeoPandas（单机内存计算）
+- 执行引擎：Python Workflow（单节点内存计算，底层使用 GeoPandas 等库）
 
-**端口**：8090
+**端口**：8099
 
-**详细文档**：`engines/python_workflow/README.md`
+**详细文档**：`engines/python-workflow/README.md`
 
 ---
 
-### Spark Workflow Engine
+### Spark Workflow 运行时
 
-**职责定位**：基于 Spark 的分布式工作流引擎
+**职责定位**：基于 Spark 的分布式工作流运行时；执行时必须绑定实际 Spark 通用引擎资源
 
 **核心能力**：
 - 大规模分布式空间数据处理
@@ -390,9 +390,11 @@ import commonModels "github.com/addp/common/models"
 **核心能力**：
 - **basic 子模块**（无地图依赖）：
   - StorageEngineForm（数据源配置表单）
-  - ImagePreview（图片预览）
   - formatters（数据格式化工具：formatFileSize、formatDateTime）
   - 类型定义（FieldType、FormatType、ResourceType）
+- **previews 入口**（按需预览组件）：
+  - ImagePreview（图片预览）
+  - MarkdownPreview / PdfPreview / DocxPreview 等文件预览组件
 - **map 子模块**（地图相关，依赖 OpenLayers 和高德地图）：
   - GeoJsonPreview（GeoJSON 预览）
   - TablePreview（表格数据预览，支持 Shapefile 等空间表）
@@ -411,7 +413,8 @@ resolve: {
 }
 
 // 导入使用
-import { StorageEngineForm, ImagePreview } from '@common-ui'
+import { StorageEngineForm } from '@common-ui'
+import { ImagePreview } from '@common-ui/previews'
 import { TablePreview, GeoJsonPreview } from '@common-ui-map'
 ```
 

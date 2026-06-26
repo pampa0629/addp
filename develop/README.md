@@ -12,7 +12,7 @@
 - **SQL 工作台**: Monaco Editor + 多数据库支持（PostgreSQL、MySQL 等）
 - **GIS 工作流**: 可视化编辑和执行空间计算工作流（21个 Python Workflow 算子）
 - **Jupyter Notebook**: 在线 Python 数据分析和机器学习环境
-- **算子管理**: 聚合所有计算引擎算子，供工作流编辑器使用
+- **算子管理**: 聚合工作流运行时动态算子，供工作流编辑器使用
 - **执行历史**: 保存所有执行记录，支持历史回溯
 
 ## 🚀 快速开始
@@ -27,8 +27,8 @@ bash scripts/infra/up.sh
 bash scripts/dev/start.sh -develop
 ```
 
-- 后端: http://localhost:8084
-- 前端: http://localhost:5177
+- 后端: http://localhost:8185
+- 前端: http://localhost:5178
 
 ### 方式 2: Docker 部署
 
@@ -43,7 +43,7 @@ docker-compose up -d
 SQL执行:     POST /api/v1/sql/execute
 工作流管理: GET/POST /api/v1/workflows
 工作流执行: POST /api/v1/workflows/:id/execute
-算子发现:   GET /api/v1/operators
+算子发现:   GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators
 执行历史:   GET /api/v1/executions
 Notebook:   POST/GET /api/v1/notebooks
 ```
@@ -68,12 +68,12 @@ Notebook:   POST/GET /api/v1/notebooks
 
 ### 内存不足错误？
 
-大数据集建议使用 Spark 工作流引擎。详见 [CLAUDE.md#3-python-workflow-内存管理](./CLAUDE.md#3-python-workflow-内存管理)
+大数据集建议使用 Spark Workflow 运行时，并在执行时绑定已注册的 Spark 通用引擎资源。详见 [CLAUDE.md#3-python-workflow-内存管理](./CLAUDE.md#3-python-workflow-内存管理)
 
 ## 📚 相关文档
 
 - **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（核心架构、执行流程、常见场景）
-- **[engines/python_workflow/README.md](../engines/python_workflow/README.md)** - Python Workflow 空间计算引擎
+- **[engines/python-workflow/README.md](../engines/python-workflow/README.md)** - Python Workflow 工作流运行时
 - **[system/CLAUDE.md](../system/CLAUDE.md)** - 数据库连接与认证
 - **[common/dbbridge/README.md](../common/dbbridge/README.md)** - 数据库桥接库
 

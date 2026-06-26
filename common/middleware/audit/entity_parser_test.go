@@ -90,6 +90,20 @@ func TestParseEntityFromPathVersionedModuleRoutes(t *testing.T) {
 			wantEntity: "789",
 		},
 		{
+			name:       "develop workflow engine operators",
+			method:     "GET",
+			path:       "/api/v1/develop/workflow-engines/12/operators",
+			wantType:   "workflow_engine",
+			wantEntity: "12",
+		},
+		{
+			name:       "old develop operator route is not accepted",
+			method:     "GET",
+			path:       "/api/v1/develop/operators/buffer",
+			wantType:   "",
+			wantEntity: "",
+		},
+		{
 			name:       "old unversioned system route is not accepted",
 			method:     "GET",
 			path:       "/api/users/123",

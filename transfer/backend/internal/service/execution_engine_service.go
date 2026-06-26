@@ -10,9 +10,11 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/dbbridge"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/executor"
@@ -189,6 +191,15 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		s.updateExecutionError(task, executionID, wrapped)
 		return wrapped
 	}
+	if hasSpatialReprojectTransform(buildResult.Plan.Transforms) {
+		workflowEngine, workflowOperator, err := s.selectDirectWorkflowRuntime(ctx, task.TenantID, "vector_reproject")
+		if err != nil {
+			wrapped := fmt.Errorf("resolve vector_reproject workflow runtime: %w", err)
+			s.updateExecutionError(task, executionID, wrapped)
+			return wrapped
+		}
+		tableExecutor.GeometryBatchReprojecter = newWorkflowGeometryBatchReprojectProvider(workflowEngine, workflowOperator.Name)
+	}
 
 	metrics, err := tableExecutor.Execute(ctx, buildResult.Plan)
 	if err != nil {
@@ -215,6 +226,28 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		s.logger.Warn("failed to update task after successful table transfer", "error", err, "task_id", task.ID)
 	}
 	return nil
+}
+
+func (s *ExecutionEngineService) selectDirectWorkflowRuntime(ctx context.Context, tenantID uint, operatorName string) (commonModels.Engine, commonModels.OperatorDescriptor, error) {
+	if s.systemClient == nil {
+		return commonModels.Engine{}, commonModels.OperatorDescriptor{}, fmt.Errorf("system client is required to resolve workflow runtime")
+	}
+	engines, err := s.systemClient.ListWorkflowEngines(tenantID)
+	if err != nil {
+		return commonModels.Engine{}, commonModels.OperatorDescriptor{}, fmt.Errorf("list workflow engines: %w", err)
+	}
+	return dbbridge.ResolveDirectWorkflowOperator(ctx, engines, dbbridge.DirectWorkflowOperatorSelector{
+		OperatorName: operatorName,
+	})
+}
+
+func hasSpatialReprojectTransform(transforms []executor.TableTransformPlan) bool {
+	for _, transform := range transforms {
+		if strings.EqualFold(strings.TrimSpace(transform.Type), "spatial_reproject") {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, task *models.TransferTask, executionID uint, spec planner.RawCopyTaskSpec, resolver planner.EngineResolver) error {

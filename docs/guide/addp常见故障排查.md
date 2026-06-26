@@ -38,8 +38,11 @@ bash scripts/dev/keepalive.sh restart -orchestrator
 
 常用示例：
 ```bash
-# 重启单个模块并保持服务可用；注意 restart.sh 会先停止整套 ADDP 开发环境
+# 重启 Go 模块并保持服务可用；会继承 restart.sh 的全局重启语义
 bash scripts/dev/keepalive.sh restart -orchestrator
+
+# 局部重启扩展服务并保持服务可用；不会停止整套 ADDP 开发环境
+bash scripts/dev/keepalive.sh restart -python-workflow
 
 # 全量重启并保持服务可用
 bash scripts/dev/keepalive.sh restart -all
@@ -54,8 +57,9 @@ bash scripts/dev/keepalive.sh start -system
 
 - 普通本地终端继续优先使用 `bash scripts/dev/start.sh` 或 `bash scripts/dev/restart.sh`。
 - Codex 等命令结束后会回收后台进程的托管环境，使用 `bash scripts/dev/keepalive.sh ...`。
-- `keepalive.sh restart -<模块名>` 会继承 `restart.sh` 的全局停止语义：先停止整套 ADDP 开发环境，再只启动指定模块及其依赖。它适合“只需要该模块继续可用”的场景，不适合在用户外部终端已经启动全套服务时由 Codex 接管局部重启。
-- 如果需要保持全套服务可用，在 Codex 中只能使用 `bash scripts/dev/keepalive.sh restart -all` 并让该命令持续前台运行；如果只想做一次性验证，运行测试和构建命令即可，不要为了局部后端改动在 Codex 中执行 `restart -<模块名>`。
+- `keepalive.sh restart -<Go模块名>` 会继承 `restart.sh` 的全局停止语义：先停止整套 ADDP 开发环境，再启动指定模块及其依赖。它适合“只需要该模块继续可用”的场景，不适合在用户外部终端已经启动全套服务时由 Codex 接管局部重启。
+- `keepalive.sh restart -python-workflow|-math-workflow|-spark-workflow|-jupyter|-copilot|-agent` 会继承扩展服务局部重启语义，只重启对应服务。
+- 如果需要保持全套服务可用，在 Codex 中使用 `bash scripts/dev/keepalive.sh restart -all` 并让该命令持续前台运行；如果只想做一次性验证，运行测试和构建命令即可，不要为了局部 Go 后端改动在 Codex 中执行 `restart -<Go模块名>`。
 - 不要同时在外部终端和 Codex 中并发执行 `restart.sh` / `stop.sh`，因为脚本会按 PID、进程名和端口清理 ADDP 开发服务，两个会话可能互相清理。
 
 ---
@@ -412,7 +416,7 @@ def register_to_system():
     }
 
     response = requests.post(
-        f"{system_url}/internal/engines/register",
+        f"{system_url}/api/v1/internal/engines/register",
         json=payload,
         headers=headers,
         proxies=proxies,  # ← 添加这个参数
@@ -597,12 +601,13 @@ rm -rf venv
 
 # 重新创建并安装依赖
 python3 -m venv venv
-./venv/bin/pip install -r requirements.txt
+./venv/bin/python -m pip install -r requirements.txt
 
 # 验证核心依赖
-./venv/bin/python -c "import flask, pandas, geopandas, numpy; \
+./venv/bin/python -c "import flask, pandas, geopandas, numpy, pyarrow, pyproj; \
   print(f'NumPy: {numpy.__version__}'); \
   print(f'GeoPandas: {geopandas.__version__}'); \
+  print(f'PyArrow: {pyarrow.__version__}'); \
   print(f'✓ 所有依赖安装成功')"
 ```
 
@@ -653,8 +658,9 @@ func RegisterEngine(c *gin.Context) {
 **受影响的引擎：**
 
 1. **Python Workflow Engine** (`engines/python-workflow/api_server.py`)
-2. **Math Workflow Engine** (`engines/math-workflow/api_server.py`)
-3. **Spark Workflow Engine** (`engines/spark-workflow/api_server.py`)
+2. **Spark Workflow Engine** (`engines/spark-workflow/api_server.py`)
+
+**说明**：Math Workflow 现在是扩展引擎规范参考实现。开发环境可自动启动 Math Workflow 服务，但它不会自动注册到 System；需要使用时，应在 System 引擎管理中按扩展引擎手动注册。
 
 **注册逻辑位置：**
 ```python
@@ -668,7 +674,7 @@ def register_to_system():
 ```
 
 **为什么引擎仍能正常运行：**
-- 注册失败不影响引擎的 API 服务（仍监听在 8099/8097/8098 端口）
+- 注册失败不影响引擎的 API 服务（仍监听在 8099/8089/8098 端口）
 - 但 System 无法发现引擎，Develop 和 Orchestrator 模块无法调用
 - 用户在前端看不到可用的计算引擎
 
@@ -692,7 +698,6 @@ response = requests.post(
 
 **修复的文件：**
 - [engines/python-workflow/api_server.py](../../engines/python-workflow/api_server.py)（第 593、604 行）
-- [engines/math-workflow/api_server.py](../../engines/math-workflow/api_server.py)（第 354 行）
 - [engines/spark-workflow/api_server.py](../../engines/spark-workflow/api_server.py)（第 395 行）
 
 #### 验证修复
@@ -716,7 +721,8 @@ tail -f logs/python-workflow-engine-stderr.log
 curl -H "Authorization: Bearer YOUR_TOKEN" \
   http://localhost:8180/api/v1/system/engines
 
-# 应该能看到 python_workflow、math_workflow、spark_workflow
+# 应该能看到已启动并成功注册的 python_workflow、spark_workflow
+# math_workflow 需要通过 System 引擎管理手动注册后才会出现
 ```
 
 #### 修复日期
@@ -912,3 +918,30 @@ whereClause := fmt.Sprintf("%s > 100", dialect.QuoteIdentifier(col))
 3. **边界清晰是关键**：通用 SQL 方言与 PostGIS 空间表达式分包收口，可以防止未来重复出现类似问题
 4. **测试覆盖很重要**：需要针对混合大小写字段的测试用例
 5. **文档化经验**：及时记录问题和解决方案，避免重复踩坑
+
+---
+
+## Workflow Engine Python 测试包名冲突
+
+### 现象
+
+在同一个 `pytest` 进程中同时运行多个 workflow engine 测试时，例如同时运行 `engines/python-workflow` 和 `engines/math-workflow` 的测试，可能出现类似错误：
+
+```text
+ImportError: cannot import name 'get_operator_function' from 'operators'
+```
+
+### 根因
+
+多个 Python workflow engine 都在各自目录下使用顶层包名 `operators`。同一个 Python 进程先导入某个引擎的 `operators` 后，后续测试可能复用 `sys.modules["operators"]`，导致另一个引擎的 `api_server.py` 导入到错误实现。
+
+### 正确验证方式
+
+按引擎目录隔离运行测试：
+
+```bash
+cd engines/python-workflow && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest test_operator_metadata.py
+cd engines/math-workflow && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests/test_api.py
+```
+
+不要在同一个 pytest 命令中混跑多个 workflow engine 的 Python 测试，除非先重构包名或测试导入隔离策略。

@@ -49,7 +49,8 @@
 | SQLite | `single` | `container` | `sqlite` | 内部表先写入 `type_info.container.children` |
 | GeoPackage | `single` | `container` | `geopackage` | 内部 layer 先写入 `type_info.container.children` |
 | ZIP | `single` | `container` | `zip` | 压缩包 entry 先写入 `type_info.container.children` |
-| 图片 | `single` | `media` | `jpeg` / `png` / `gif` / `tiff` / `image` | GPS 或 GeoTIFF 空间语义进入 spatial |
+| 图片 | `single` 或 TIFF sidecar `multi` | `media` | `jpeg` / `png` / `gif` / `tiff` / `image` | GPS 或 GeoTIFF 空间语义进入 spatial |
+| Raster mosaic | `whole` | `media` | `raster_mosaic` | 由 `mosaic.addp.json` manifest 声明的栅格镶嵌数据集 |
 | 视频 | `single` | `media` | `mp4` / `mov` / `mkv` / `avi` / `webm` / `video` | 第一阶段以元信息和 range / stream 播放为主 |
 | 音频 | `single` | `media` | `mp3` / `wav` / `flac` / `aac` / `ogg` / `audio` | 第一阶段以元信息和 range / stream 播放为主 |
 | PDF | `single` | `document` | `pdf` | 文档元信息和提取状态分区写入 |
@@ -168,7 +169,7 @@ GeoJSON 是单资源空间矢量表格式。`.geojson`、`application/geo+json`�
 |---|---|
 | `item` | `layout`、`data_type`、`format` |
 | `type_info.table` | `properties` 字段、平台统一几何字段、`row_count` |
-| `format_info.geojson` | `structure`、原文显式 `bbox` / `crs`、属性摘要等 GeoJSON 格式私有事实 |
+| `format_info.geojson` | `structure`、原文显式 `bbox` / `crs`、`coordinate_range_out_of_wgs84`、属性摘要等 GeoJSON 格式私有事实 |
 | `capabilities.spatial` | 实际记录中发现 geometry 时写入几何字段、SRID / CRS、extent 等空间能力 |
 | `capabilities.statistics` | 是否采样、采样规模、动态结构推断方式等统计或画像事实 |
 
@@ -178,6 +179,7 @@ GeoJSON 是单资源空间矢量表格式。`.geojson`、`application/geo+json`�
 - 不得因为 `format=geojson` 直接写入 `capabilities.spatial`。FeatureCollection 没有有效 geometry 时，不写空间能力。
 - 不得把 GeoJSON 私有结构字段写入 `format_info.json`；格式私有事实进入 `format_info.geojson`。
 - 记录数进入 `type_info.table.row_count`，空间范围进入 `capabilities.spatial.extent`。只有 GeoJSON 原文显式声明的 `bbox` 可作为格式事实保留在 `format_info.geojson.bbox`。
+- 没有显式可解析 CRS / SRID 时，只有实际或显式 bbox 落在经纬度范围 `x=[-180,180]`、`y=[-90,90]` 内，才可按 GeoJSON 默认语义写入 `EPSG:4326`。bbox 明显越界时不得默认写入 4326，应保留 `capabilities.spatial.extent`，省略 SRID / CRS，并在 `format_info.geojson.coordinate_range_out_of_wgs84=true` 标记。
 - `format_info.geojson.structure` 应来自 GeoJSON provider 的格式私有事实；`.json` 后缀被升格为 GeoJSON 时，也只能写入 `format_info.geojson`，不得同时写入 `format_info.json`。
 
 ## Shapefile
@@ -402,7 +404,9 @@ Manager 展示 ZIP 容器时消费 `type_info.container`。进入某个普通文
 | `format` | `jpeg`、`png`、`gif`、`tiff`、`image` |
 | 主资源 | `meta_item.full_name` 指向图片文件 |
 
-`image` 是图片兜底格式，只在无法稳定识别具体图片格式时使用。JPEG、PNG、GIF、TIFF 等具体格式应优先写入具体 `format`。GeoTIFF 不新增独立基础格式，表达为 `format=tiff + capabilities.spatial`。
+`image` 是图片兜底格式，只在无法稳定识别具体图片格式时使用。JPEG、PNG、GIF、TIFF 等具体格式应优先写入具体 `format`。GeoTIFF 不新增独立基础格式，表达为 `format=tiff + capabilities.spatial`。COG 是 TIFF 的云优化 profile，不新增 `format=cog`。
+
+TIFF / GeoTIFF 如果存在 `.tfw`、`.tifw`、`.wld`、`.prj`、`.aux.xml`、`.ovr`、`.hdr` 等同 basename sidecar，应按 `layout=multi` 归并为一个 item，primary content 仍为 `.tif` / `.tiff`。如果没有 sidecar，则按普通 `layout=single` 图片 item 处理。具体 ref 白名单见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)。
 
 WebP、BMP、SVG、AVIF、HEIC / HEIF 进入内置主线前，应先明确 descriptor、MIME、预览方式和后端解析边界；在仅能 raw / range 预览时，不应标记为后端已经具备完整 `MediaInfoProvider`。
 
@@ -410,9 +414,9 @@ WebP、BMP、SVG、AVIF、HEIC / HEIF 进入内置主线前，应先明确 descr
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `layout`、`data_type`、`format` |
+| `item` | `layout`、`data_type`、`format`；TIFF sidecar multi item 还应写入 `refs` |
 | `type_info.media` | `kind=image`、`mime_type`、宽高、`encoding`、`color_space`、`size_bytes` 等媒体信息 |
-| `format_info.<format>` | EXIF、TIFF tag、压缩方式等格式私有信息 |
+| `format_info.<format>` | EXIF、TIFF tag、压缩方式等格式私有信息；TIFF 使用 `format_info.tiff.profile` 表达 `plain_tiff` / `geotiff` / `cog` |
 | `capabilities.spatial` | 图片 GPS 或 GeoTIFF 可确定空间信息 |
 
 ### 预览读取
@@ -428,6 +432,35 @@ GIF、WebP、TIFF 等多帧或多页图片仍表达为 `kind=image`。动图播�
 - 不得给图片写入 `type_info.table.fields`。
 - 不得把所有图片都视为空间数据。
 - 不得把 GeoTIFF 表达为新的基础数据类型。
+- 不得把 COG 表达为新的基础 `format`；COG 只能作为 `format_info.tiff.profile=cog` 或 Manager COG 生成结果表达。
+
+## Raster mosaic
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `whole` |
+| `data_type` | `media` |
+| `format` | `raster_mosaic` |
+| 主资源 | whole scope 根目录或 prefix，`mosaic.addp.json` 是 manifest，不是 `full_name` |
+
+`raster_mosaic` 是由 ADDP mosaic 生成任务产生的栅格镶嵌数据集。内置 descriptor 使用确定性文件名 `mosaic.addp.json` 作为候选识别事实，不声明 `.json` 扩展名，避免和普通 JSON 冲突。Meta 落库前必须读取 manifest 内容确认 schema、`format=raster_mosaic`、`data_type=media` 和 `layout=whole`，不得仅根据文件名或 leaf COG 后缀判定。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=whole`、`data_type=media`、`format=raster_mosaic`、`scope_exclusive=true`、`claim_policy=whole_scope` |
+| `storage` | whole scope 根范围的 `physical_path`、总大小等存储事实 |
+| `format_info.raster_mosaic` | `manifest_ref`、`index_ref`、`overview_ref`、leaf 数量、COG 校验摘要等格式私有事实 |
+| `capabilities.spatial` | mosaic 的 CRS、extent、分辨率范围等空间能力 |
+
+whole item 不应把全部 leaf COG 展开写入 `item.refs`。leaf COG、overview、index、tiles、stats、styles 等都是 mosaic item 内部组成；是否展示单个 leaf COG 由 Manager 读取 manifest/index 后提供内部查看能力。
+
+### 消费要求
+
+Manager 预览应消费已入库的 `format=raster_mosaic` item，读取业务存储中的 manifest、index、overview COG 和 leaf COG window。常规在线预览不得重新调用 Python Workflow；重建 overview、重建 leaf COG、重算 stats 或重建 tile cache 应进入任务体系。
 
 ## 视频
 

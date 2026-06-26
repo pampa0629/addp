@@ -34,16 +34,16 @@ show_usage() {
   echo "  - 无参数时会自动检测 common 模块是否有变化"
   echo "  - 如果检测到 common 变化,会自动重新编译所有依赖的 Go 模块"
   echo "  - 指定 Go 模块参数时,不执行智能检测,直接按参数编译"
-  echo "  - 只指定 Python 服务参数时,仍会执行智能检测"
+  echo "  - 只指定 Python/扩展服务参数时,仅重启对应服务,不停止整套环境"
   echo ""
   echo "注意:"
-  echo "  - Python Workflow Engine、Spark 工作流 Engine、Jupyter Engine 和 Copilot (Python) 会自动重启"
+  echo "  - Python Workflow Engine、Math Workflow Engine、Spark 工作流 Engine、Jupyter Engine、Copilot 和 Agent 支持局部重启"
   echo "  - 只有 Go 后端模块支持选择性编译"
   echo ""
   echo "示例:"
   echo "  $0                    # 智能检测 + 重启 (推荐)"
   echo "  $0 -system -meta      # 重启并重新编译 system 和 meta"
-  echo "  $0 -python-workflow         # 智能检测 + 重启 Python Workflow Engine"
+  echo "  $0 -python-workflow         # 仅重启 Python Workflow Engine"
   echo "  $0 -all               # 重启并重新编译所有模块 (完整)"
   exit 1
 }
@@ -81,7 +81,6 @@ generate_service_urls() {
         fi
     done
     [ -n "$MEILISEARCH_PORT" ] && export MEILISEARCH_URL="http://${SERVICE_HOST}:${MEILISEARCH_PORT}"
-    export GEOPANDAS_URL="http://${SERVICE_HOST}:8099"
 }
 
 generate_service_urls
@@ -156,6 +155,283 @@ has_go_module_params() {
     done
     return 1  # 只有 Python 服务参数或无参数
 }
+
+is_python_service_module() {
+    case "$1" in
+        python-workflow|math-workflow|spark-workflow|jupyter|copilot|agent)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+only_python_service_params() {
+    if [ "$FORCE_BUILD_ALL" = true ] || [ ${#FORCE_BUILD_MODULES[@]} -eq 0 ]; then
+        return 1
+    fi
+    for module in "${FORCE_BUILD_MODULES[@]}"; do
+        if ! is_python_service_module "$module"; then
+            return 1
+        fi
+    done
+    return 0
+}
+
+stop_pidfile_process() {
+    local pidfile="$1"
+    local label="$2"
+    if [ ! -f "$pidfile" ]; then
+        return 0
+    fi
+    local pid
+    pid=$(cat "$pidfile" 2>/dev/null || true)
+    if [ -n "$pid" ] && ps -p "$pid" > /dev/null 2>&1; then
+        echo "  停止 $label (PID: $pid)"
+        kill "$pid" 2>/dev/null || true
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if ! ps -p "$pid" > /dev/null 2>&1; then
+                break
+            fi
+            sleep 0.2
+        done
+        if ps -p "$pid" > /dev/null 2>&1; then
+            kill -9 "$pid" 2>/dev/null || true
+        fi
+    fi
+    rm -f "$pidfile"
+}
+
+stop_matching_port_process() {
+    local port="$1"
+    local label="$2"
+    local pattern="$3"
+    if [ -z "$port" ]; then
+        return 0
+    fi
+    local pids
+    pids=$(lsof -ti ":$port" -sTCP:LISTEN 2>/dev/null || true)
+    if [ -z "$pids" ]; then
+        return 0
+    fi
+    for pid in $pids; do
+        local proc_cmd
+        proc_cmd=$(ps -p "$pid" -o command= 2>/dev/null || true)
+        if echo "$proc_cmd" | grep -qE "$pattern"; then
+            echo "  清理 $label 端口 $port 残留进程 (PID: $pid)"
+            kill -9 "$pid" 2>/dev/null || true
+        else
+            echo "  ⚠️  端口 $port 被非 $label 进程占用 (PID: $pid)，跳过"
+        fi
+    done
+}
+
+require_service_python() {
+    local service_dir="$1"
+    local label="$2"
+    if [ ! -x "$service_dir/venv/bin/python" ]; then
+        echo "❌ $label 虚拟环境不存在或不可执行: $service_dir/venv/bin/python"
+        echo "   请先运行: bash scripts/dev/start.sh -$3"
+        return 1
+    fi
+}
+
+wait_http_ready() {
+    local label="$1"
+    local url="$2"
+    local max_wait="${3:-60}"
+    local wait_count=0
+    echo -n "  等待 $label 就绪"
+    until curl -fsS "$url" > /dev/null 2>&1; do
+        echo -n "."
+        sleep 1
+        wait_count=$((wait_count + 1))
+        if [ $wait_count -ge $max_wait ]; then
+            echo " ✗"
+            echo "❌ $label 启动超时（${max_wait}秒）"
+            return 1
+        fi
+    done
+    echo " ✓"
+}
+
+start_background_process() {
+    local service_dir="$1"
+    local pidfile="$2"
+    local stdout_log="$3"
+    local stderr_log="$4"
+    shift 4
+
+    (
+        cd "$service_dir"
+        nohup "$@" > "${ROOT_DIR}/${stdout_log}" 2> "${ROOT_DIR}/${stderr_log}" < /dev/null &
+        local pid=$!
+        echo "$pid" > "${ROOT_DIR}/${pidfile}"
+        disown "$pid" 2>/dev/null || true
+    )
+}
+
+verify_pidfile_process_alive() {
+    local pidfile="$1"
+    local label="$2"
+    local stdout_log="$3"
+    local stderr_log="$4"
+    local pid
+    pid=$(cat "$pidfile" 2>/dev/null || true)
+    if [ -z "$pid" ] || ! ps -p "$pid" > /dev/null 2>&1; then
+        echo "❌ $label 启动后进程不存在"
+        echo "   查看日志: ${stdout_log}"
+        echo "   或检查错误: ${stderr_log}"
+        return 1
+    fi
+}
+
+restart_python_workflow_service() {
+    local port="${PYTHON_WORKFLOW_PORT:-8099}"
+    stop_pidfile_process ".dev-pids/python-workflow-engine.pid" "Python Workflow Engine"
+    stop_matching_port_process "$port" "Python Workflow Engine" "python.*api_server\\.py|engines/python-workflow"
+    require_service_python "engines/python-workflow" "Python Workflow Engine" "python-workflow"
+    echo "  启动 Python Workflow Engine..."
+    (
+        cd engines/python-workflow
+        export PORT="$port"
+        export INTERNAL_API_KEY="${INTERNAL_API_KEY:-}"
+        export POSTGRES_HOST=localhost
+        export POSTGRES_PORT=15432
+        export POSTGRES_USER=addp
+        export POSTGRES_PASSWORD=addp_password
+        export POSTGRES_DB=addp
+        export DB_SCHEMA=develop
+        start_background_process "." ".dev-pids/python-workflow-engine.pid" "logs/python-workflow-engine.log" "logs/python-workflow-engine-stderr.log" ./venv/bin/python api_server.py
+    )
+    wait_http_ready "Python Workflow Engine" "http://localhost:${port}/health"
+    verify_pidfile_process_alive ".dev-pids/python-workflow-engine.pid" "Python Workflow Engine" "logs/python-workflow-engine.log" "logs/python-workflow-engine-stderr.log"
+}
+
+restart_math_workflow_service() {
+    local port="${MATH_WORKFLOW_PORT:-8089}"
+    stop_pidfile_process ".dev-pids/math-workflow-engine.pid" "Math Workflow Engine"
+    stop_matching_port_process "$port" "Math Workflow Engine" "python.*api_server\\.py|engines/math-workflow"
+    require_service_python "engines/math-workflow" "Math Workflow Engine" "math-workflow"
+    echo "  启动 Math Workflow Engine..."
+    (
+        cd engines/math-workflow
+        export PORT="$port"
+        start_background_process "." ".dev-pids/math-workflow-engine.pid" "logs/math-workflow-engine.log" "logs/math-workflow-engine-stderr.log" ./venv/bin/python api_server.py
+    )
+    wait_http_ready "Math Workflow Engine" "http://localhost:${port}/health"
+    verify_pidfile_process_alive ".dev-pids/math-workflow-engine.pid" "Math Workflow Engine" "logs/math-workflow-engine.log" "logs/math-workflow-engine-stderr.log"
+}
+
+restart_spark_workflow_service() {
+    local port="${SPARK_WORKFLOW_PORT:-8098}"
+    stop_pidfile_process ".dev-pids/spark-workflow-engine.pid" "Spark Workflow Engine"
+    stop_matching_port_process "$port" "Spark Workflow Engine" "python.*api_server\\.py|engines/spark-workflow"
+    require_service_python "engines/spark-workflow" "Spark Workflow Engine" "spark-workflow"
+    echo "  启动 Spark Workflow Engine..."
+    (
+        cd engines/spark-workflow
+        export PORT="$port"
+        export INTERNAL_API_KEY="${INTERNAL_API_KEY:-}"
+        start_background_process "." ".dev-pids/spark-workflow-engine.pid" "logs/spark-workflow-engine.log" "logs/spark-workflow-engine-stderr.log" ./venv/bin/python api_server.py
+    )
+    wait_http_ready "Spark Workflow Engine" "http://localhost:${port}/health"
+    verify_pidfile_process_alive ".dev-pids/spark-workflow-engine.pid" "Spark Workflow Engine" "logs/spark-workflow-engine.log" "logs/spark-workflow-engine-stderr.log"
+}
+
+restart_jupyter_service() {
+    local api_port="${JUPYTER_API_PORT:-8097}"
+    local lab_port="${JUPYTER_LAB_PORT:-8088}"
+    stop_pidfile_process ".dev-pids/jupyter-api-server.pid" "Jupyter API Server"
+    stop_pidfile_process ".dev-pids/jupyter-lab.pid" "Jupyter Lab"
+    stop_matching_port_process "$api_port" "Jupyter API Server" "python.*api_server\\.py|engines/jupyter"
+    stop_matching_port_process "$lab_port" "Jupyter Lab" "jupyter.*lab|engines/jupyter"
+    require_service_python "engines/jupyter" "Jupyter Engine" "jupyter"
+    if [ ! -x "engines/jupyter/venv/bin/jupyter" ]; then
+        echo "❌ Jupyter Lab 可执行文件不存在: engines/jupyter/venv/bin/jupyter"
+        echo "   请先运行: bash scripts/dev/start.sh -jupyter"
+        return 1
+    fi
+    echo "  启动 Jupyter Engine..."
+    (
+        cd engines/jupyter
+        export API_PORT="$api_port"
+        export JUPYTER_PORT="$lab_port"
+        export INTERNAL_API_KEY="${INTERNAL_API_KEY:-}"
+        export TENANT_ID="${DEFAULT_TENANT_ID:-1}"
+        start_background_process "." ".dev-pids/jupyter-api-server.pid" "logs/jupyter-api-server.log" "logs/jupyter-api-server-stderr.log" ./venv/bin/python api_server.py
+        start_background_process "." ".dev-pids/jupyter-lab.pid" "logs/jupyter-lab.log" "logs/jupyter-lab-stderr.log" ./venv/bin/jupyter lab --config=jupyter_lab_config.py
+    )
+    wait_http_ready "Jupyter API Server" "http://localhost:${api_port}/health"
+    verify_pidfile_process_alive ".dev-pids/jupyter-api-server.pid" "Jupyter API Server" "logs/jupyter-api-server.log" "logs/jupyter-api-server-stderr.log"
+    wait_http_ready "Jupyter Lab" "http://localhost:${lab_port}/lab" 60 || true
+    verify_pidfile_process_alive ".dev-pids/jupyter-lab.pid" "Jupyter Lab" "logs/jupyter-lab.log" "logs/jupyter-lab-stderr.log"
+}
+
+restart_copilot_service() {
+    local port="${COPILOT_BACKEND_PORT:-8087}"
+    stop_pidfile_process ".dev-pids/copilot-backend.pid" "Copilot Backend"
+    stop_matching_port_process "$port" "Copilot Backend" "python.*main\\.py|copilot/backend"
+    require_service_python "copilot/backend" "Copilot Backend" "copilot"
+    echo "  启动 Copilot Backend..."
+    (
+        cd copilot/backend
+        export PORT="$port"
+        export DATABASE_URL="postgresql://addp:addp_password@localhost:${POSTGRES_PORT:-15432}/addp"
+        start_background_process "." ".dev-pids/copilot-backend.pid" "logs/copilot-backend.log" "logs/copilot-backend-stderr.log" ./venv/bin/python main.py
+    )
+    wait_http_ready "Copilot Backend" "http://localhost:${port}/health"
+    verify_pidfile_process_alive ".dev-pids/copilot-backend.pid" "Copilot Backend" "logs/copilot-backend.log" "logs/copilot-backend-stderr.log"
+}
+
+restart_agent_service() {
+    local port="${AGENT_BACKEND_PORT:-8190}"
+    stop_pidfile_process ".dev-pids/agent-backend.pid" "Agent Backend"
+    stop_matching_port_process "$port" "Agent Backend" "python.*main\\.py|agent/backend"
+    require_service_python "agent/backend" "Agent Backend" "agent"
+    echo "  启动 Agent Backend..."
+    (
+        cd agent/backend
+        export PORT="$port"
+        start_background_process "." ".dev-pids/agent-backend.pid" "logs/agent-backend.log" "logs/agent-backend-stderr.log" ./venv/bin/python "${ROOT_DIR}/agent/backend/main.py"
+    )
+    wait_http_ready "Agent Backend" "http://localhost:${port}/health"
+    verify_pidfile_process_alive ".dev-pids/agent-backend.pid" "Agent Backend" "logs/agent-backend.log" "logs/agent-backend-stderr.log"
+}
+
+restart_scoped_python_services() {
+    echo "🐍 局部重启 Python/扩展服务: ${FORCE_BUILD_MODULES[*]}"
+    mkdir -p logs .dev-pids
+    for module in "${FORCE_BUILD_MODULES[@]}"; do
+        case "$module" in
+            python-workflow)
+                restart_python_workflow_service
+                ;;
+            math-workflow)
+                restart_math_workflow_service
+                ;;
+            spark-workflow)
+                restart_spark_workflow_service
+                ;;
+            jupyter)
+                restart_jupyter_service
+                ;;
+            copilot)
+                restart_copilot_service
+                ;;
+            agent)
+                restart_agent_service
+                ;;
+        esac
+    done
+    echo "✅ Python/扩展服务局部重启完成"
+}
+
+if only_python_service_params; then
+    restart_scoped_python_services
+    exit 0
+fi
 
 # 在用户未指定 Go 模块编译选项时，自动检测 common 变化
 if [ "$FORCE_BUILD_ALL" = false ] && ! has_go_module_params; then

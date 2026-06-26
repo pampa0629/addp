@@ -143,8 +143,11 @@ dev-python-workflow: ## 开发模式运行 Python Workflow Engine
 	@cd engines/python-workflow && \
 	if [ ! -d "venv" ]; then \
 		echo "创建 Python 虚拟环境..." && \
-		python3 -m venv venv && \
-		./venv/bin/pip install --quiet -r requirements.txt; \
+		python3 -m venv venv; \
+	fi && \
+	if ! ./venv/bin/python -c "import flask, geopandas, pyarrow, pyproj" >/dev/null 2>&1; then \
+		echo "检测到虚拟环境缺少依赖，重新安装..." && \
+		./venv/bin/python -m pip install --quiet -r requirements.txt; \
 	fi && \
 	export PORT=8099 && \
 	export SYSTEM_URL=http://localhost:8180 && \
@@ -611,7 +614,7 @@ prod-status: ## 显示所有服务状态和访问地址
 	@echo "  Meta Backend:           http://localhost:8082"
 	@echo "  Transfer Backend:       http://localhost:8083"
 	@echo "  Orchestrator Backend:   http://localhost:8084"
-	@echo "  Develop Backend:        http://localhost:8085"
+	@echo "  Develop Backend:        http://localhost:8185"
 
 prod-health: ## 检查所有服务健康状态
 	@bash scripts/prod/health-check.sh

@@ -4,13 +4,9 @@ Spark 工作流SQL 算子
 
 import logging
 from typing import Dict, Any, List, Optional
-from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql import functions as F
-from pyspark.sql.window import Window
 
-from spark_connector import get_spark_connector
-from storage_adapters import StorageAdapter
 from .base import OperatorMetadata, OperatorParam, OperatorCategory, register_operator
+from .spark_types import DataFrame
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +32,8 @@ def sql(engine_id: int, query: str) -> DataFrame:
             query="SELECT country, COUNT(*) as city_count FROM cities GROUP BY country"
         )
     """
+    from spark_connector import get_spark_connector
+
     connector = get_spark_connector()
     spark = connector.get_or_create_session(engine_id)
 
@@ -78,15 +76,9 @@ SQL_METADATA = OperatorMetadata(
     category=OperatorCategory.SQL,
     description="SQL查询",
     brief_description="执行自由 SQL 查询,支持复杂的表关联和聚合分析",
+    execution_modes=["workflow"],
     overview="sql 算子允许执行任意 Apache Spark 查询,支持 SELECT、JOIN、GROUP BY、窗口函数等标准 SQL 语法。适合复杂的数据分析和多表关联场景,也支持 Apache Sedona 的空间 SQL 函数。",
     params=[
-        OperatorParam(
-            name="engine_id",
-            type="int",
-            required=True,
-            description="Spark引擎ID",
-            notes="确保资源处于活跃状态"
-        ),
         OperatorParam(
             name="query",
             type="str",
@@ -98,8 +90,8 @@ SQL_METADATA = OperatorMetadata(
     use_cases=[
         "复杂多表关联: 关联 3 张表(城市、POI、道路)进行综合分析,SQL 比算子链更简洁",
         "空间 SQL 分析: SELECT ST_Buffer(geom, 500) FROM poi WHERE category=\"学校\",结合空间函数和过滤条件",
-        "统计汇总: SELECT province, COUNT(*) as city_count, SUM(population) as total_pop FROM cities GROUP BY province",
-        "窗口函数排名: SELECT *, ROW_NUMBER() OVER (PARTITION BY province ORDER BY population DESC) as rank FROM cities"
+        "统计汇总: SELECT province, COUNT(*) as city_count, SUM(population) as total_pop FROM 300 个城市 GROUP BY province",
+        "窗口函数排名: SELECT *, ROW_NUMBER() OVER (PARTITION BY 34 个省份 ORDER BY population DESC) as rank FROM cities"
     ],
     notes=[
         "表必须先通过 create_temp_view 注册为临时视图",
@@ -113,7 +105,6 @@ SQL_METADATA = OperatorMetadata(
         "id": "sql_city_analysis",
         "operator": "sql",
         "params": {
-            "engine_id": 34,
             "query": "SELECT province, COUNT(*) as city_count FROM cities GROUP BY province"
         },
         "depends_on": ["create_cities_view"]
@@ -125,6 +116,7 @@ CREATE_TEMP_VIEW_METADATA = OperatorMetadata(
     category=OperatorCategory.SQL,
     description="创建临时视图",
     brief_description="将 DataFrame 注册为 SQL 临时视图,供后续 SQL 查询使用",
+    execution_modes=["workflow"],
     overview="create_temp_view 将 DataFrame 注册为 Apache Spark 临时视图,使其可以在 sql 算子中通过表名引用。视图在 Spark Session 生命周期内有效,支持替换已存在的同名视图。",
     params=[
         OperatorParam(
@@ -144,9 +136,9 @@ CREATE_TEMP_VIEW_METADATA = OperatorMetadata(
     ],
     use_cases=[
         "多表关联准备: 将 3 个 DataFrame(cities、poi、roads)分别注册为视图,然后用 sql 算子关联",
-        "复杂过滤条件: 将 load 的原始数据注册为视图,用 SQL WHERE 子句实现复杂过滤",
-        "空间 SQL 桥接: 将算子处理后的结果注册为视图,供空间 SQL 函数进一步分析",
-        "工作流分支: 将中间结果注册为视图,供多个下游 SQL 查询复用"
+        "复杂过滤条件: 将 load 的 100万行原始数据注册为视图,用 SQL WHERE 子句实现复杂过滤",
+        "空间 SQL 桥接: 将 50万条算子处理后的结果注册为视图,供空间 SQL 函数进一步分析",
+        "工作流分支: 将 200万行中间结果注册为视图,供 3 个下游 SQL 查询复用"
     ],
     notes=[
         "视图名称在 Session 内全局可见,避免命名冲突",

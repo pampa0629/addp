@@ -16,13 +16,17 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY engines/python-workflow/requirements.txt .
+COPY common-python/ /tmp/common-python/
+RUN GDAL_VERSION="$(gdal-config --version)" \
+    && pip install --no-cache-dir "GDAL==${GDAL_VERSION}" \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir /tmp/common-python
 
 # Copy application code
-COPY operators/ ./operators/
-COPY workflow_engine.py .
-COPY api_server.py .
+COPY engines/python-workflow/operators/ ./operators/
+COPY engines/python-workflow/workflow_engine.py .
+COPY engines/python-workflow/api_server.py .
 
 # Expose Flask port
 EXPOSE 8099

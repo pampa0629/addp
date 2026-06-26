@@ -204,7 +204,7 @@ const actionIconMap = {
 const resolveEngineIcon = (data) => {
   return actionIconMap[data.icon] || actionIconMap[getEngineIconName({
     engine_type: data.engineType || data.metadata?.engine_type,
-    capabilities: data.capabilities || data.metadata?.capabilities,
+    capabilities_view: data.capabilitiesView || data.capabilities_view || data.metadata?.capabilities_view,
     engine_family: data.engineFamily || data.metadata?.engine_family
   })] || Coin
 }

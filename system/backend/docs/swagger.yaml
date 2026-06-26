@@ -95,6 +95,109 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_addp_common_models.CapabilitiesView:
+    properties:
+      json_view:
+        items:
+          $ref: '#/definitions/github_com_addp_common_models.CapabilityJSONNode'
+        type: array
+      sections:
+        items:
+          $ref: '#/definitions/github_com_addp_common_models.CapabilityViewSection'
+        type: array
+      summary:
+        items:
+          $ref: '#/definitions/github_com_addp_common_models.CapabilityViewBadge'
+        type: array
+    type: object
+  github_com_addp_common_models.CapabilityJSONNode:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/github_com_addp_common_models.CapabilityJSONNode'
+        type: array
+      key:
+        type: string
+      value:
+        type: string
+    type: object
+  github_com_addp_common_models.CapabilityPathNode:
+    properties:
+      id:
+        type: string
+      label_key:
+        type: string
+      tags:
+        items:
+          $ref: '#/definitions/github_com_addp_common_models.CapabilityViewTag'
+        type: array
+      value:
+        type: string
+    type: object
+  github_com_addp_common_models.CapabilityViewBadge:
+    properties:
+      id:
+        type: string
+      label_key:
+        type: string
+      status:
+        type: string
+      value:
+        type: string
+      value_key:
+        type: string
+    type: object
+  github_com_addp_common_models.CapabilityViewItem:
+    properties:
+      description_key:
+        type: string
+      id:
+        type: string
+      label_key:
+        type: string
+      reason_key:
+        type: string
+      status:
+        type: string
+      tags:
+        items:
+          $ref: '#/definitions/github_com_addp_common_models.CapabilityViewTag'
+        type: array
+      value:
+        type: string
+      value_key:
+        type: string
+    type: object
+  github_com_addp_common_models.CapabilityViewSection:
+    properties:
+      description_key:
+        type: string
+      id:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/github_com_addp_common_models.CapabilityViewItem'
+        type: array
+      path:
+        items:
+          $ref: '#/definitions/github_com_addp_common_models.CapabilityPathNode'
+        type: array
+      status:
+        type: string
+      title_key:
+        type: string
+    type: object
+  github_com_addp_common_models.CapabilityViewTag:
+    properties:
+      id:
+        type: string
+      label_key:
+        type: string
+      type:
+        type: string
+      value:
+        type: string
+    type: object
   github_com_addp_common_models.ConnectionInfo:
     additionalProperties: true
     type: object
@@ -244,104 +347,16 @@ definitions:
     properties:
       json_view:
         items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.CapabilityJSONNode'
+          $ref: '#/definitions/github_com_addp_common_models.CapabilityJSONNode'
         type: array
       sections:
         items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.CapabilityViewSection'
+          $ref: '#/definitions/github_com_addp_common_models.CapabilityViewSection'
         type: array
       summary:
         items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.CapabilityViewBadge'
+          $ref: '#/definitions/github_com_addp_common_models.CapabilityViewBadge'
         type: array
-    type: object
-  github_com_addp_system_internal_models.CapabilityJSONNode:
-    properties:
-      children:
-        items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.CapabilityJSONNode'
-        type: array
-      key:
-        type: string
-      value:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.CapabilityPathNode:
-    properties:
-      id:
-        type: string
-      label_key:
-        type: string
-      tags:
-        items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.CapabilityViewTag'
-        type: array
-      value:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.CapabilityViewBadge:
-    properties:
-      id:
-        type: string
-      label_key:
-        type: string
-      status:
-        type: string
-      value:
-        type: string
-      value_key:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.CapabilityViewItem:
-    properties:
-      description_key:
-        type: string
-      id:
-        type: string
-      label_key:
-        type: string
-      reason_key:
-        type: string
-      status:
-        type: string
-      tags:
-        items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.CapabilityViewTag'
-        type: array
-      value:
-        type: string
-      value_key:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.CapabilityViewSection:
-    properties:
-      description_key:
-        type: string
-      id:
-        type: string
-      items:
-        items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.CapabilityViewItem'
-        type: array
-      path:
-        items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.CapabilityPathNode'
-        type: array
-      status:
-        type: string
-      title_key:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.CapabilityViewTag:
-    properties:
-      id:
-        type: string
-      label_key:
-        type: string
-      type:
-        type: string
-      value:
-        type: string
     type: object
   github_com_addp_system_internal_models.CatalogEntry:
     properties:
@@ -501,6 +516,10 @@ definitions:
       capabilities:
         description: 能力声明（JSONB）
         type: string
+      capabilities_view:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_common_models.CapabilitiesView'
+        description: System 后端生成的能力展示模型
       check_message:
         description: 检测结果消息（错误信息等）
         type: string
@@ -520,7 +539,7 @@ definitions:
         description: 引擎来源：general 或 extension
         type: string
       engine_type:
-        description: 引擎类型（postgresql, mysql, python_workflow等）
+        description: 引擎类型（postgresql, mysql, acme_geo_workflow 等）
         type: string
       id:
         type: integer
@@ -540,6 +559,29 @@ definitions:
         type: integer
       updated_at:
         type: string
+    type: object
+  github_com_addp_system_internal_models.EngineConnectionProbe:
+    properties:
+      operators_count:
+        example: 8
+        type: integer
+      runtime_protocol:
+        example: addp.workflow/v1
+        type: string
+    type: object
+  github_com_addp_system_internal_models.EngineConnectionTestResponse:
+    properties:
+      error:
+        example: workflow runtime health check failed
+        type: string
+      message:
+        example: 连接成功
+        type: string
+      probe:
+        $ref: '#/definitions/github_com_addp_system_internal_models.EngineConnectionProbe'
+      success:
+        example: true
+        type: boolean
     type: object
   github_com_addp_system_internal_models.EngineCreateRequest:
     properties:
@@ -589,7 +631,7 @@ definitions:
         description: 引擎来源：general 或 extension
         type: string
       engine_type:
-        description: 引擎类型（postgresql, mysql, python_workflow等）
+        description: 引擎类型（postgresql, mysql, acme_geo_workflow 等）
         type: string
       id:
         type: integer
@@ -1299,7 +1341,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: 创建新的存储引擎连接 | Create a new storage engine connection
+      description: 创建新的引擎连接；声明 addp.workflow/v1 的扩展工作流引擎会在保存前探测 /health 和 /api/operators
+        | Create a new engine connection; addp.workflow/v1 workflow extensions are
+        probed before save
       parameters:
       - description: 引擎信息 | Engine info
         in: body
@@ -1482,8 +1526,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_system_internal_models.EngineConnectionTestResponse'
         "400":
           description: Bad Request
           schema:
@@ -1514,8 +1557,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_system_internal_models.EngineConnectionTestResponse'
         "400":
           description: Bad Request
           schema:

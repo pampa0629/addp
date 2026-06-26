@@ -28,6 +28,9 @@ func ValidatePluginCapabilities(p EnginePlugin) error {
 	if err := validateComputeCapabilities(p, caps.Compute); err != nil {
 		return err
 	}
+	if err := validateProviderCapabilities(p, caps); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -100,6 +103,14 @@ func validateStoreCapabilities(p EnginePlugin, store *StoreCapability) error {
 			return fmt.Errorf("%s declares table_read_session but does not implement TableReadSessionProvider", p.Type())
 		}
 	}
+	if store.TableReadSpatialTransform && !implementsNativeTableReader(p) {
+		return fmt.Errorf("%s declares table_read_spatial_transform but does not implement native table read provider", p.Type())
+	}
+	if store.TableSpatialEncoding != nil {
+		if err := validateTableSpatialEncodingCapability(p, store.TableSpatialEncoding); err != nil {
+			return err
+		}
+	}
 	if store.BatchWrite {
 		if _, ok := p.(BatchWritableProvider); !ok {
 			return fmt.Errorf("%s declares batch_write but does not implement BatchWritableProvider", p.Type())
@@ -114,6 +125,19 @@ func validateStoreCapabilities(p EnginePlugin, store *StoreCapability) error {
 		if _, ok := p.(TableWritePreparer); !ok {
 			return fmt.Errorf("%s declares table_write_prepare but does not implement TableWritePreparer", p.Type())
 		}
+	}
+	return nil
+}
+
+func validateTableSpatialEncodingCapability(p EnginePlugin, spatial *NativeTableSpatialEncodingCapability) error {
+	if spatial == nil {
+		return nil
+	}
+	if (len(spatial.GeometryReadEncodings) > 0 || spatial.ReadTransform || spatial.NativeSpatialFunctions) && !implementsNativeTableReader(p) {
+		return fmt.Errorf("%s declares table_spatial_encoding read capability but does not implement native table read provider", p.Type())
+	}
+	if (len(spatial.GeometryWriteEncodings) > 0 || spatial.WriteTransform) && !implementsNativeTableWriter(p) {
+		return fmt.Errorf("%s declares table_spatial_encoding write capability but does not implement native table write provider", p.Type())
 	}
 	return nil
 }
@@ -143,4 +167,109 @@ func validateComputeCapabilities(p EnginePlugin, compute *ComputeCapabilities) e
 		}
 	}
 	return nil
+}
+
+func validateProviderCapabilities(p EnginePlugin, caps EngineCapabilities) error {
+	if _, ok := p.(CatalogModelProvider); ok {
+		if caps.Storage == nil || caps.Storage.CatalogModel == nil {
+			return fmt.Errorf("%s implements CatalogModelProvider but does not declare storage.catalog_model", p.Type())
+		}
+	}
+	if _, ok := p.(CatalogProvider); ok {
+		if caps.Storage == nil || caps.Storage.Catalog == nil || !caps.Storage.Catalog.Supported {
+			return fmt.Errorf("%s implements CatalogProvider but does not declare catalog support", p.Type())
+		}
+	}
+	if _, ok := p.(CatalogFactsProvider); ok {
+		if caps.Storage == nil || caps.Storage.Facts == nil || !caps.Storage.Facts.Supported {
+			return fmt.Errorf("%s implements CatalogFactsProvider but does not declare facts support", p.Type())
+		}
+	}
+	if _, ok := p.(DynamicSchemaSamplingProvider); ok {
+		if caps.Storage == nil || caps.Storage.Facts == nil || !caps.Storage.Facts.Supported || !caps.Storage.Facts.Sampling {
+			return fmt.Errorf("%s implements DynamicSchemaSamplingProvider but does not declare facts sampling support", p.Type())
+		}
+	}
+	if err := validateStoreProviderCapabilities(p, caps.Storage); err != nil {
+		return err
+	}
+	if _, ok := p.(QueryRuntimeProvider); ok {
+		if caps.Compute == nil || caps.Compute.Query == nil || !caps.Compute.Query.Supported {
+			return fmt.Errorf("%s implements QueryRuntimeProvider but does not declare query support", p.Type())
+		}
+	}
+	if _, ok := p.(GraphQueryProvider); ok {
+		if caps.Compute == nil || caps.Compute.Query == nil || !caps.Compute.Query.Supported || !Contains(caps.Compute.Query.ResultKinds, "graph") {
+			return fmt.Errorf("%s implements GraphQueryProvider but does not declare graph query result kind", p.Type())
+		}
+	}
+	if _, ok := p.(WorkflowRuntimeProvider); ok {
+		if caps.Compute == nil || caps.Compute.Workflow == nil || !caps.Compute.Workflow.Supported {
+			return fmt.Errorf("%s implements WorkflowRuntimeProvider but does not declare workflow support", p.Type())
+		}
+	}
+	if _, ok := p.(ScriptRuntimeProvider); ok {
+		if caps.Compute == nil || caps.Compute.Script == nil || !caps.Compute.Script.Supported {
+			return fmt.Errorf("%s implements ScriptRuntimeProvider but does not declare script support", p.Type())
+		}
+	}
+	return nil
+}
+
+func validateStoreProviderCapabilities(p EnginePlugin, storage *StorageCapabilities) error {
+	if _, ok := p.(ContentReadableProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.StreamRead }) {
+		return fmt.Errorf("%s implements ContentReadableProvider but does not declare stream_read", p.Type())
+	}
+	if _, ok := p.(ContentWritableProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.StreamWrite }) {
+		return fmt.Errorf("%s implements ContentWritableProvider but does not declare stream_write", p.Type())
+	}
+	if _, ok := p.(RangeReadableProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.RangeRead }) {
+		return fmt.Errorf("%s implements RangeReadableProvider but does not declare range_read", p.Type())
+	}
+	if _, ok := p.(RangeWritableProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.RangeWrite }) {
+		return fmt.Errorf("%s implements RangeWritableProvider but does not declare range_write", p.Type())
+	}
+	if _, ok := p.(ResourceDeleteProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.Delete }) {
+		return fmt.Errorf("%s implements ResourceDeleteProvider but does not declare delete", p.Type())
+	}
+	if _, ok := p.(BatchReadableProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.BatchRead }) {
+		return fmt.Errorf("%s implements BatchReadableProvider but does not declare batch_read", p.Type())
+	}
+	if _, ok := p.(TableReadSessionProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.TableReadSession }) {
+		return fmt.Errorf("%s implements TableReadSessionProvider but does not declare table_read_session", p.Type())
+	}
+	if _, ok := p.(BatchWritableProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.BatchWrite }) {
+		return fmt.Errorf("%s implements BatchWritableProvider but does not declare batch_write", p.Type())
+	}
+	if _, ok := p.(TableWriteSessionProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.TableWriteSession }) {
+		return fmt.Errorf("%s implements TableWriteSessionProvider but does not declare table_write_session", p.Type())
+	}
+	if _, ok := p.(TableWritePreparer); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.TableWritePrepare }) {
+		return fmt.Errorf("%s implements TableWritePreparer but does not declare table_write_prepare", p.Type())
+	}
+	return nil
+}
+
+func implementsNativeTableReader(p EnginePlugin) bool {
+	if _, ok := p.(BatchReadableProvider); ok {
+		return true
+	}
+	if _, ok := p.(TableReadSessionProvider); ok {
+		return true
+	}
+	return false
+}
+
+func implementsNativeTableWriter(p EnginePlugin) bool {
+	if _, ok := p.(BatchWritableProvider); ok {
+		return true
+	}
+	if _, ok := p.(TableWriteSessionProvider); ok {
+		return true
+	}
+	return false
+}
+
+func declaresStoreCapability(storage *StorageCapabilities, hasCapability func(*StoreCapability) bool) bool {
+	return storage != nil && storage.Store != nil && hasCapability(storage.Store)
 }

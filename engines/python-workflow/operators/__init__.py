@@ -1,7 +1,7 @@
 """
-GeoPandas 算子模块
+Python Workflow 算子模块
 
-提供 42 个算子（24 个空间算子 + 18 个非空间算子）,支持：
+提供 43 个算子（25 个空间算子 + 18 个非空间算子）,支持：
 - 数据 I/O、几何处理、空间关系分析
 - 属性计算、数据筛选、统计分析
 模块化重构后的算子按功能分类管理。
@@ -18,6 +18,8 @@ from .geometric_operators import (
 from .spatial_relations import contains, intersects, distance_to
 from .properties_operators import get_area, get_length, get_bounds
 from .format_operators import load_from_wkt, export_to_wkt
+from .spatial_transform_operators import vector_reproject
+from .raster_operators import build_raster_mosaic, tiff_to_cog
 from .data_operations import (
     clip, voronoi, split_by_area,
     batch_buffer, batch_centroid
@@ -39,9 +41,13 @@ from .geometric_operators import OPERATORS as GEOMETRIC_OPERATORS
 from .spatial_relations import OPERATORS as SPATIAL_OPERATORS
 from .properties_operators import OPERATORS as PROPERTIES_OPERATORS
 from .format_operators import OPERATORS as FORMAT_OPERATORS
+from .spatial_transform_operators import OPERATORS as SPATIAL_TRANSFORM_OPERATORS
+from .raster_operators import OPERATORS as RASTER_OPERATORS
 from .data_operations import OPERATORS as DATA_OPERATORS
 from .attribute_operators import OPERATORS as ATTRIBUTE_OPERATORS
 from .filter_operators import OPERATORS as FILTER_OPERATORS
+
+RUNTIME_DERIVED_PARAMS = {"engine_id", "connection_info", "schema", "table", "path"}
 
 # 合并所有算子元数据
 OPERATORS = {}
@@ -51,6 +57,8 @@ for ops_dict in [
     SPATIAL_OPERATORS,
     PROPERTIES_OPERATORS,
     FORMAT_OPERATORS,
+    SPATIAL_TRANSFORM_OPERATORS,
+    RASTER_OPERATORS,
     DATA_OPERATORS,
     ATTRIBUTE_OPERATORS,
     FILTER_OPERATORS
@@ -59,7 +67,7 @@ for ops_dict in [
 
 
 def get_operator(operator_name: str):
-    """获取算子函数（向后兼容）"""
+    """获取算子函数"""
     if operator_name not in OPERATORS:
         raise ValueError(f"Unknown operator: {operator_name}")
     return OPERATORS[operator_name]['function']
@@ -68,8 +76,6 @@ def get_operator(operator_name: str):
 def list_operators():
     """
     列出所有算子 - 返回符合统一标准的算子元数据列表
-
-    转换格式与旧版 API 兼容
     """
     operators_list = []
 
@@ -86,11 +92,13 @@ def list_operators():
     }
 
     for name, meta in OPERATORS.items():
-        # 使用新的 param_schema
+        # 使用内部 param_schema 生成 addp.workflow/v1 参数元数据
         parameters = []
         if 'param_schema' in meta:
             for param in meta['param_schema']:
-                # param 已经是字典（来自 to_legacy_dict()），直接使用
+                if param.get('name') in RUNTIME_DERIVED_PARAMS:
+                    continue
+                # param 已经是字典（来自 to_runtime_dict()），直接使用
                 param_meta = {
                     "name": param['name'],
                     "type": type_mapping.get(param['type'], 'string'),
@@ -141,9 +149,11 @@ def list_operators():
             "name": name,
             "display_name": meta['description'],
             "type": meta.get('type', 'general'),  # 从元数据读取类型，默认为 general
+            "engine_type": "python_workflow",
             "category": meta['category'],
+            "category_path": meta.get('category_path') or [meta['category']],
             "description": meta['description'],
-            "module": "python_workflow",
+            "execution_modes": meta['execution_modes'],
             "parameters": parameters,
             "inputs": ["geodataframe"],
             "output_ports": output_ports
@@ -155,7 +165,25 @@ def list_operators():
 
         # 添加详细描述 (如果存在)
         if 'detailed_description' in meta:
-            operator['detailed_description'] = meta['detailed_description']
+            detailed_description = dict(meta['detailed_description'])
+            detailed_description['parameters'] = [
+                param
+                for param in detailed_description.get('parameters', [])
+                if param.get('name') not in RUNTIME_DERIVED_PARAMS
+            ]
+            workflow_example = detailed_description.get('workflow_example')
+            if isinstance(workflow_example, dict) and isinstance(workflow_example.get('params'), dict):
+                workflow_example = dict(workflow_example)
+                workflow_example['params'] = {
+                    key: value
+                    for key, value in workflow_example['params'].items()
+                    if key not in RUNTIME_DERIVED_PARAMS
+                }
+                detailed_description['workflow_example'] = workflow_example
+            operator['detailed_description'] = detailed_description
+
+        if 'attributes' in meta:
+            operator['attributes'] = meta['attributes']
 
         operators_list.append(operator)
 
@@ -202,6 +230,9 @@ __all__ = [
     # 格式转换算子
     'load_from_wkt',
     'export_to_wkt',
+    'vector_reproject',
+    'tiff_to_cog',
+    'build_raster_mosaic',
 
     # 数据操作算子
     'clip',

@@ -50,6 +50,22 @@ func (r *ProviderRegistry) GetFormatInfoProvider(formatType FormatType) (FormatI
 	return pluginCapability[FormatInfoProvider](r, formatType, "format info provider")
 }
 
+func GetSpatialEncodingCapabilityProvider(formatType FormatType) (SpatialEncodingCapabilityProvider, error) {
+	return globalProviderRegistry.GetSpatialEncodingCapabilityProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetSpatialEncodingCapabilityProvider(formatType FormatType) (SpatialEncodingCapabilityProvider, error) {
+	return pluginCapability[SpatialEncodingCapabilityProvider](r, formatType, "spatial encoding capability provider")
+}
+
+func GetSpatialEncodingCapability(formatType FormatType) (SpatialEncodingCapability, error) {
+	provider, err := GetSpatialEncodingCapabilityProvider(formatType)
+	if err != nil {
+		return SpatialEncodingCapability{}, err
+	}
+	return provider.SpatialEncodingCapability(), nil
+}
+
 func GetMultiTableInfoProvider(formatType FormatType) (MultiTableInfoProvider, error) {
 	return globalProviderRegistry.GetMultiTableInfoProvider(formatType)
 }

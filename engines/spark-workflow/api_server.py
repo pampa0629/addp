@@ -18,6 +18,12 @@ load_dotenv(find_dotenv())
 
 from workflow_engine import execute_workflow, execute_single_operator
 from operators import list_operators
+from operators import OPERATORS as OPERATOR_REGISTRY
+
+try:
+    from pyspark.sql import DataFrame
+except Exception:
+    DataFrame = None
 
 # 配置日志
 logging.basicConfig(
@@ -46,6 +52,8 @@ class ErrorCode:
     INVALID_PARAMS = "INVALID_PARAMS"              # 参数错误
     EXECUTION_FAILED = "EXECUTION_FAILED"          # 执行失败
     WORKFLOW_INVALID = "WORKFLOW_INVALID"          # 工作流定义无效
+    DIRECT_NOT_SUPPORTED = "DIRECT_NOT_SUPPORTED"  # 算子不支持 direct 调用
+    EXECUTION_NOT_FOUND = "EXECUTION_NOT_FOUND"    # 执行记录不存在
     INTERNAL_ERROR = "INTERNAL_ERROR"              # 内部错误
 
 
@@ -59,6 +67,31 @@ def error_response(error_code: str, message: str, details: str = None):
     if details:
         response["details"] = details
     return response
+
+
+def serialize_workflow_value(value, preview_limit: int = 5):
+    """把 Spark 运行时对象转换为可 JSON 化的轻量结果摘要。"""
+    if DataFrame is not None and isinstance(value, DataFrame):
+        schema = [
+            {"name": field.name, "type": field.dataType.simpleString()}
+            for field in value.schema.fields
+        ]
+        rows = [
+            row.asDict(recursive=True)
+            for row in value.limit(preview_limit).collect()
+        ]
+        return {
+            "type": "spark_dataframe",
+            "schema": schema,
+            "preview_rows": rows,
+            "preview_limit": preview_limit
+        }
+
+    if isinstance(value, dict):
+        return {key: serialize_workflow_value(item, preview_limit) for key, item in value.items()}
+    if isinstance(value, list):
+        return [serialize_workflow_value(item, preview_limit) for item in value]
+    return value
 
 
 # ========================================
@@ -191,69 +224,117 @@ def execute_workflow_endpoint():
             "task_order": [...]
         }
     """
+    start = time.time()
+    execution_id = None
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         engine_id = data.get('engine_id')
         workflow_def = data.get('workflow_def')
         input_data = data.get('input_data', {})
 
         if not engine_id:
-            return jsonify({
-                "status": "failed",
-                "error": "engine_id is required"
-            }), 400
+            response = error_response(
+                ErrorCode.INVALID_PARAMS,
+                "请求体缺少 'engine_id' 字段"
+            )
+            response["execution_time_ms"] = (time.time() - start) * 1000
+            return jsonify(response), 400
 
         if not workflow_def:
-            return jsonify({
-                "status": "failed",
-                "error": "workflow_def is required"
-            }), 400
+            response = error_response(
+                ErrorCode.INVALID_PARAMS,
+                "请求体缺少 'workflow_def' 字段"
+            )
+            response["execution_time_ms"] = (time.time() - start) * 1000
+            return jsonify(response), 400
 
         # 执行工作流
         execution_id = str(uuid.uuid4())
         logger.info(f"Executing workflow {execution_id} on Spark engine {engine_id}")
 
         result = execute_workflow(engine_id, workflow_def, input_data)
+        execution_time = (time.time() - start) * 1000
+        final_result = serialize_workflow_value(result.get('final_result'))
+        all_results = serialize_workflow_value(result.get('all_results', {}))
 
         # 存储执行记录
         executions[execution_id] = {
             "execution_id": execution_id,
             "engine_id": engine_id,
             "status": result['status'],
-            "result": result.get('final_result'),
+            "result": final_result,
+            "all_results": all_results,
             "task_order": result.get('task_order'),
             "error": result.get('error'),
+            "error_code": result.get('error_code'),
+            "details": result.get('details'),
             "message": result.get('message'),
-            "started_at": datetime.now().isoformat()
+            "started_at": datetime.now().isoformat(),
+            "execution_time_ms": execution_time
         }
 
         response = {
             "status": result['status'],
-            "execution_id": execution_id
+            "execution_id": execution_id,
+            "execution_time_ms": execution_time
         }
 
         if result['status'] == 'success':
+            response['final_result'] = final_result
+            response['all_results'] = all_results
             response['message'] = result.get('message')
             response['task_order'] = result.get('task_order')
         else:
-            response['error'] = result['error']
+            error_code = result.get('error_code')
+            if error_code == ErrorCode.WORKFLOW_INVALID:
+                response.update(error_response(
+                    ErrorCode.WORKFLOW_INVALID,
+                    result.get('error', '工作流定义无效')
+                ))
+                return jsonify(response), 400
+            response.update(error_response(
+                ErrorCode.EXECUTION_FAILED,
+                result.get('error', '工作流执行失败')
+            ))
 
         status_code = 200 if result['status'] == 'success' else 500
         return jsonify(response), status_code
 
     except Exception as e:
+        execution_time = (time.time() - start) * 1000 if 'start' in locals() else 0
         logger.error(f"Workflow execution failed: {e}", exc_info=True)
-        return jsonify({
-            "status": "failed",
-            "error": str(e)
-        }), 500
+        if execution_id:
+            executions[execution_id] = {
+                "execution_id": execution_id,
+                "engine_id": data.get('engine_id') if 'data' in locals() else None,
+                "status": "failed",
+                "result": None,
+                "all_results": None,
+                "task_order": None,
+                "error": f"工作流执行失败: {str(e)}",
+                "error_code": ErrorCode.EXECUTION_FAILED,
+                "details": str(e),
+                "message": "工作流执行失败",
+                "started_at": datetime.now().isoformat(),
+                "execution_time_ms": execution_time
+            }
+        response = error_response(
+            ErrorCode.EXECUTION_FAILED,
+            f"工作流执行失败: {str(e)}"
+        )
+        if execution_id:
+            response["execution_id"] = execution_id
+        response["execution_time_ms"] = execution_time
+        return jsonify(response), 500
 
 
-@app.route('/api/operators/<operator_name>/execute', methods=['POST'])
-def execute_operator_endpoint(operator_name):
+@app.route('/api/operators/<operator_name>/invoke', methods=['POST'])
+def invoke_operator_endpoint(operator_name):
     """
-    执行单个算子
-    供 Develop 模块快速测试使用
+    direct 调用单个算子。
+
+    Spark Workflow direct 调用仍必须携带顶层 engine_id，该 ID 指向真实
+    engine_type=spark 的通用引擎资源；当前内置 Spark 算子默认只支持 workflow。
 
     Request Body:
         {
@@ -267,30 +348,68 @@ def execute_operator_endpoint(operator_name):
             "result": ...
         }
     """
+    start = time.time()
     try:
-        data = request.get_json()
+        if operator_name not in OPERATOR_REGISTRY:
+            response = error_response(
+                ErrorCode.OPERATOR_NOT_FOUND,
+                f"算子 '{operator_name}' 不存在",
+                details=f"可用算子: {', '.join(OPERATOR_REGISTRY.keys())}"
+            )
+            response["execution_time_ms"] = (time.time() - start) * 1000
+            return jsonify(response), 404
+
+        from operator_metadata import get_operator_metadata
+        operator_meta = next(
+            (op for op in get_operator_metadata() if op.get('name') == operator_name),
+            None,
+        )
+        execution_modes = operator_meta['execution_modes']
+        if 'direct' not in execution_modes:
+            response = error_response(
+                ErrorCode.DIRECT_NOT_SUPPORTED,
+                f"算子 '{operator_name}' 不支持 direct 调用"
+            )
+            response["execution_time_ms"] = (time.time() - start) * 1000
+            return jsonify(response), 403
+
+        data = request.get_json(silent=True) or {}
         engine_id = data.get('engine_id')
         params = data.get('params', {})
 
         if not engine_id:
-            return jsonify({
-                "status": "failed",
-                "error": "engine_id is required"
-            }), 400
+            response = error_response(
+                ErrorCode.INVALID_PARAMS,
+                "请求体缺少 'engine_id' 字段"
+            )
+            response["execution_time_ms"] = (time.time() - start) * 1000
+            return jsonify(response), 400
 
-        logger.info(f"Executing operator {operator_name} on Spark engine {engine_id}")
+        logger.info(f"Invoking operator {operator_name} directly on Spark engine {engine_id}")
 
         result = execute_single_operator(engine_id, operator_name, params)
+        execution_time = (time.time() - start) * 1000
 
-        status_code = 200 if result['status'] == 'success' else 500
-        return jsonify(result), status_code
+        if result['status'] == 'success':
+            result.setdefault("execution_time_ms", execution_time)
+            return jsonify(result), 200
+
+        response = error_response(
+            ErrorCode.EXECUTION_FAILED,
+            result.get('error', '算子执行失败')
+        )
+        response["execution_time_ms"] = execution_time
+        return jsonify(response), 500
 
     except Exception as e:
+        execution_time = (time.time() - start) * 1000
         logger.error(f"Operator execution failed: {e}", exc_info=True)
-        return jsonify({
-            "status": "failed",
-            "error": str(e)
-        }), 500
+        response = error_response(
+            ErrorCode.EXECUTION_FAILED,
+            f"算子执行失败: {str(e)}"
+        )
+        response["execution_time_ms"] = execution_time
+        return jsonify(response), 500
 
 
 # ========================================
@@ -313,21 +432,26 @@ def get_execution_status(execution_id):
         }
     """
     if execution_id not in executions:
-        return jsonify({
-            "status": "failed",
-            "error": "Execution not found"
-        }), 404
+        return jsonify(error_response(
+            ErrorCode.EXECUTION_NOT_FOUND,
+            "Execution not found"
+        )), 404
 
     execution = executions[execution_id]
 
     return jsonify({
         "status": execution['status'],
         "execution_id": execution_id,
+        "result": execution.get('result'),
+        "all_results": execution.get('all_results'),
         "message": execution.get('message'),
         "task_order": execution.get('task_order'),
         "error": execution.get('error'),
+        "error_code": execution.get('error_code'),
+        "details": execution.get('details'),
         "progress": 100 if execution['status'] in ['success', 'failed'] else 50,
-        "started_at": execution.get('started_at')
+        "started_at": execution.get('started_at'),
+        "execution_time_ms": execution.get('execution_time_ms')
     }), 200
 
 
@@ -348,26 +472,6 @@ def register_to_system():
     port = int(os.getenv('PORT', 8098))
     protocol = os.getenv('PROTOCOL', 'http')
 
-    capabilities = {
-        "schema_version": "engine.capabilities/v1",
-        "engine_type": "spark_workflow",
-        "engine_family": "workflow",
-        "compute": {
-            "workflow": {
-                "supported": True,
-                "runtime_api": "addp.workflow/v1",
-                "dynamic_operators": True
-            }
-        },
-        "extensions": {
-            "workflow_runtime": {
-                "engine": "spark",
-                "scale": "distributed",
-                "features": ["big_data", "distributed"]
-            }
-        }
-    }
-
     # 构建注册请求
     payload = {
         "engine_type": "spark_workflow",
@@ -378,7 +482,6 @@ def register_to_system():
             "port": port
             # host 由 System 自动填充
         },
-        "capabilities": capabilities,
         "is_builtin": True  # 内置引擎，对所有租户可见
     }
 

@@ -25,7 +25,7 @@ Gateway（API 网关）是全域数据平台的**统一入口**，所有外部�
 客户端 → Manager (8081)
 客户端 → Meta (8082)
 客户端 → Transfer (8083)
-客户端 → Develop (8085)
+客户端 → Develop (8185)
 客户端 → Service (8086)
 客户端 → Copilot (8087)
 ```
@@ -44,7 +44,7 @@ Gateway（API 网关）是全域数据平台的**统一入口**，所有外部�
                         → Manager (8081)
                         → Meta (8082)
                         → Transfer (8083)
-                        → Develop (8085)
+                        → Develop (8185)
                         → Service (8086)
                         → Copilot (8087)
 ```
@@ -88,7 +88,7 @@ Gateway（API 网关）是全域数据平台的**统一入口**，所有外部�
 | `/api/v1/meta/*` | Meta (8082) | 元数据扫描、对象存储 |
 | `/api/v1/transfer/*` | Transfer (8083) | 数据传输任务 |
 | `/api/v1/orchestrator/*` | Orchestrator (8084) | 任务编排、工作流编排 |
-| `/api/v1/develop/*` | Develop (8085) | SQL 执行、工作流 |
+| `/api/v1/develop/*` | Develop (8185) | SQL 执行、工作流 |
 | `/api/v1/service/*` | Service (8086) | 数据服务、OGC 标准 |
 | `/api/v1/copilot/*` | Copilot (8087) | AI 助手 |
 
@@ -170,7 +170,7 @@ Redis 原子操作（Lua 脚本）
          │        │        │        │        │        │        │
     ┌────▼───┐ ┌─▼────┐ ┌─▼────┐ ┌──▼────┐ ┌─▼─────┐ ┌─▼────┐ ┌─▼─────┐
     │System  │ │Manager│ │Meta  │ │Transfer│ │Develop│ │Service│ │Copilot│
-    │  8180  │ │ 8081 │ │ 8082 │ │ 8083  │ │ 8085  │ │ 8086  │ │ 8087  │
+    │  8180  │ │ 8081 │ │ 8082 │ │ 8083  │ │ 8185  │ │ 8086  │ │ 8087  │
     └────────┘ └──────┘ └──────┘ └───────┘ └───────┘ └───────┘ └───────┘
 ```
 
@@ -334,7 +334,7 @@ MODULE_REGISTRY_ENABLED=false       # 禁用模块发现（使用硬编码路由
 | `/api/v1/manager/*` | Manager | 8081 | API Key | 透明转发 | 数据管理、预览、上传下载 |
 | `/api/v1/meta/*` | Meta | 8082 | API Key | 透明转发 | 元数据扫描、资源树 |
 | `/api/v1/transfer/*` | Transfer | 8083 | API Key | 透明转发 | 数据同步、格式转换 |
-| `/api/v1/develop/*` | Develop | 8085 | API Key | 透明转发 | SQL 执行、工作流 |
+| `/api/v1/develop/*` | Develop | 8185 | API Key | 透明转发 | SQL 执行、工作流 |
 | `/api/v1/service/*` | Service | 8086 | API Key | 透明转发 | 数据服务、OGC 标准 |
 | `/api/v1/copilot/*` | Copilot | 8087 | API Key | 透明转发 | AI 助手 |
 

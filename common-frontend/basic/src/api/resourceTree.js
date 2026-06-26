@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { parseLocator } from '../types/resourceLocator.js'
+import { getEngineFamily } from '../utils/engineDisplay.js'
 
 const createAuthenticatedAxios = () => {
   const instance = axios.create()
@@ -20,15 +21,15 @@ const unwrap = (response) => response?.data?.data || response?.data
 export async function listResourceTreeEngines(apiBaseUrl, options = {}) {
   const response = await http.get(`${apiBaseUrl}/engines`)
   let engines = unwrap(response) || []
-  const engineTypes = options.engineTypes || []
+  const engineFamilies = options.engineFamilies || []
   engines = engines.map(engine => ({
     ...engine,
     id: engine.id || engine.engine_id,
     name: engine.name || engine.resource_name,
     engine_type: engine.engine_type || engine.resource_type
   }))
-  if (engineTypes.length > 0) {
-    engines = engines.filter(engine => engineTypes.includes(engine.engine_type))
+  if (engineFamilies.length > 0) {
+    engines = engines.filter(engine => engineFamilies.includes(getEngineFamily(engine)))
   }
   if (typeof options.engineFilter === 'function') {
     engines = engines.filter(options.engineFilter)

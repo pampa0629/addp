@@ -2,7 +2,6 @@ import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { enginesAPI } from '../api/engines'
 import { useI18n } from 'vue-i18n'
-import { getEngineFamily, parseEngineCapabilities } from '@common-ui'
 
 /**
  * 引擎管理 Composable
@@ -34,17 +33,15 @@ export function useEngineManagement() {
    * 获取引擎能力分组 (storage/compute)
    */
   const getEngineCapabilityGroup = (engineType) => {
-    const caps = parseEngineCapabilities(engineType?.capabilities)
-    if (caps.compute?.workflow?.supported || caps.compute?.script?.supported) {
+    const sections = Array.isArray(engineType?.capabilities_view?.sections)
+      ? engineType.capabilities_view.sections
+      : []
+    const hasCompute = sections.some(section => section.id === 'compute')
+    const hasStorage = sections.some(section => section.id === 'storage')
+    if (hasCompute && !hasStorage) {
       return 'compute'
     }
-    if (caps.compute?.query?.supported && !caps.storage) {
-      return 'compute'
-    }
-    if (getEngineFamily(engineType)) {
-      return 'storage'
-    }
-    return 'storage'
+    return hasCompute ? 'compute' : 'storage'
   }
 
   /**
@@ -61,7 +58,7 @@ export function useEngineManagement() {
     loading.value = true
     try {
       const response = await enginesAPI.list(page, pageSize, engineType)
-      engines.value = response.engines || []
+      engines.value = response?.data || []
       return { success: true, data: response }
     } catch (error) {
       ElMessage.error(t('system.engine.msg.loadFailed'))

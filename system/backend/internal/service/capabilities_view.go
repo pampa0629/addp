@@ -26,6 +26,9 @@ func BuildCapabilitiesView(capabilitiesJSON *models.JSONString, engineType strin
 	if err != nil || caps == nil {
 		return nil
 	}
+	if caps.SchemaVersion != engineplugin.CapabilitiesSchemaVersion {
+		return nil
+	}
 
 	view := &models.CapabilitiesView{
 		Summary:  buildCapabilitySummary(caps, engineType),
@@ -37,15 +40,11 @@ func BuildCapabilitiesView(capabilitiesJSON *models.JSONString, engineType strin
 
 func buildCapabilitySummary(caps *engineplugin.EngineCapabilities, engineType string) []models.CapabilityViewBadge {
 	badges := make([]models.CapabilityViewBadge, 0, 8)
-	family := caps.EngineFamily
-	if family == "" {
-		family = inferEngineFamily(engineType)
-	}
-	if family != "" {
+	if caps.EngineFamily != "" {
 		badges = append(badges, models.CapabilityViewBadge{
 			ID:       "engine_family",
 			LabelKey: "system.engine.capabilityView.summary.engineFamily",
-			ValueKey: capabilityValueKey("engineFamily", family),
+			ValueKey: capabilityValueKey("engineFamily", caps.EngineFamily),
 			Status:   capabilityStatusAvailable,
 		})
 	}
@@ -154,6 +153,32 @@ func buildStorageSection(caps *engineplugin.EngineCapabilities) *models.Capabili
 		if len(writeTags) > 0 {
 			item := capabilityItem("content_write", "system.engine.capabilityView.items.contentWrite", capabilityStatusAvailable)
 			item.Tags = writeTags
+			section.Items = append(section.Items, item)
+		}
+
+		tableTags := make([]models.CapabilityViewTag, 0, 8)
+		tableTags = appendBoolTag(tableTags, "table_read_session", caps.Storage.Store.TableReadSession)
+		tableTags = appendBoolTag(tableTags, "table_write_session", caps.Storage.Store.TableWriteSession)
+		tableTags = appendBoolTag(tableTags, "table_write_prepare", caps.Storage.Store.TableWritePrepare)
+		if caps.Storage.Store.TableReadSpatialTransform {
+			tableTags = append(tableTags, capabilityValueTag("table_read_spatial_transform", "system.engine.capabilityView.values.tableReadSpatialTransform"))
+		}
+		if spatialEncoding := caps.Storage.Store.TableSpatialEncoding; spatialEncoding != nil {
+			tableTags = append(tableTags, valueTags("geometry_read_encoding", spatialEncoding.GeometryReadEncodings)...)
+			tableTags = append(tableTags, valueTags("geometry_write_encoding", spatialEncoding.GeometryWriteEncodings)...)
+			if spatialEncoding.ReadTransform {
+				tableTags = append(tableTags, capabilityValueTag("spatial_read_transform", "system.engine.capabilityView.values.spatialReadTransform"))
+			}
+			if spatialEncoding.WriteTransform {
+				tableTags = append(tableTags, capabilityValueTag("spatial_write_transform", "system.engine.capabilityView.values.spatialWriteTransform"))
+			}
+			if spatialEncoding.NativeSpatialFunctions {
+				tableTags = append(tableTags, capabilityValueTag("native_spatial_functions", "system.engine.capabilityView.values.nativeSpatialFunctions"))
+			}
+		}
+		if len(tableTags) > 0 {
+			item := capabilityItem("table_io", "system.engine.capabilityView.items.tableIO", capabilityStatusAvailable)
+			item.Tags = tableTags
 			section.Items = append(section.Items, item)
 		}
 	}
@@ -444,17 +469,6 @@ func hasWorkflow(caps *engineplugin.EngineCapabilities) bool {
 
 func hasScript(caps *engineplugin.EngineCapabilities) bool {
 	return caps.Compute != nil && caps.Compute.Script != nil && caps.Compute.Script.Supported
-}
-
-func inferEngineFamily(engineType string) string {
-	switch engineType {
-	case "minio", "s3":
-		return "object"
-	case "nfs":
-		return "file"
-	default:
-		return ""
-	}
 }
 
 func sortedMapKeys[V any](m map[string]V) []string {

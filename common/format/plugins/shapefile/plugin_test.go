@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
+	geojsonformat "github.com/addp/common/format/plugins/geojson"
 	"github.com/addp/common/resume"
 	"github.com/jonas-p/go-shp"
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -56,6 +57,26 @@ func TestPluginImplementsOnlyMultiTableProviders(t *testing.T) {
 	}
 	if _, ok := any(plugin).(format.TableInfoProvider); ok {
 		t.Fatal("shapefile must not implement single TableInfoProvider")
+	}
+}
+
+func TestSpatialEncodingCapabilityIncludesNativeShape(t *testing.T) {
+	t.Parallel()
+
+	capability := NewPlugin(nil).SpatialEncodingCapability()
+	if capability.DefaultReadEncoding != format.GeometryEncodingWKT ||
+		capability.DefaultWriteEncoding != format.GeometryEncodingWKT {
+		t.Fatalf("default encoding = %q/%q, want wkt", capability.DefaultReadEncoding, capability.DefaultWriteEncoding)
+	}
+	if capability.NativeReadEncoding != format.GeometryEncodingShapefileShape ||
+		capability.NativeWriteEncoding != format.GeometryEncodingShapefileShape {
+		t.Fatalf("native encoding = %q/%q, want shapefile_shape", capability.NativeReadEncoding, capability.NativeWriteEncoding)
+	}
+	if !geometryEncodingContains(capability.GeometryReadEncodings, format.GeometryEncodingShapefileShape) {
+		t.Fatalf("read encodings = %#v, want shapefile_shape", capability.GeometryReadEncodings)
+	}
+	if !geometryEncodingContains(capability.GeometryWriteEncodings, format.GeometryEncodingShapefileShape) {
+		t.Fatalf("write encodings = %#v, want shapefile_shape", capability.GeometryWriteEncodings)
 	}
 }
 
@@ -243,6 +264,106 @@ func (w *memoryWriteCloser) Close() error {
 		w.onClose(w.Bytes())
 	}
 	return nil
+}
+
+func geometryEncodingContains(values []format.GeometryEncoding, target format.GeometryEncoding) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func TestShapefileWriterAcceptsGeoJSONReaderEWKBRows(t *testing.T) {
+	t.Parallel()
+
+	source := `{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[116.4,39.9]},"properties":{"name":"A"}}]}`
+	parseOptions := format.DefaultParseOptions()
+	parseOptions.GeometryEncoding = format.GeometryEncodingEWKB
+	reader, err := geojsonformat.NewPlugin(nil).OpenTableReader(context.Background(), bytes.NewBufferString(source), parseOptions)
+	if err != nil {
+		t.Fatalf("OpenTableReader failed: %v", err)
+	}
+	rows, err := reader.ReadRows(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ReadRows failed: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+
+	plugin := NewPlugin(nil)
+	store := newMemoryRefStore()
+	refs := format.SameBasenameRelatedRefs("roads.shp", plugin.RelatedRefSpecs())
+	tableInfo := &datatype.TableInfo{Fields: []datatype.FieldInfo{
+		{Name: "geometry", Type: datatype.FieldTypeGeometry},
+		{Name: "name", Type: datatype.FieldTypeString},
+	}}
+	opts := format.DefaultWriteOptions()
+	opts.SpatialInfo = datatype.NewSingleGeometrySpatialInfo("geometry", "Point", 4326, 2)
+	writer, err := plugin.OpenMultiTableWriter(context.Background(), store, refs, tableInfo, opts)
+	if err != nil {
+		t.Fatalf("OpenMultiTableWriter failed: %v", err)
+	}
+	if err := writer.WriteRows(context.Background(), rows); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+	if len(store.files) == 0 {
+		t.Fatal("shapefile writer produced no refs")
+	}
+}
+
+func TestShapefileWriterAcceptsNativeShapeRows(t *testing.T) {
+	t.Parallel()
+
+	plugin := NewPlugin(nil)
+	store := newMemoryRefStore()
+	refs := format.SameBasenameRelatedRefs("roads.shp", plugin.RelatedRefSpecs())
+	tableInfo := &datatype.TableInfo{Fields: []datatype.FieldInfo{
+		{Name: "geom", Type: datatype.FieldTypeGeometry},
+		{Name: "name", Type: datatype.FieldTypeString},
+	}}
+	opts := format.DefaultWriteOptions()
+	opts.SpatialInfo = datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 2)
+	writer, err := plugin.OpenMultiTableWriter(context.Background(), store, refs, tableInfo, opts)
+	if err != nil {
+		t.Fatalf("OpenMultiTableWriter failed: %v", err)
+	}
+	if err := writer.WriteRows(context.Background(), []map[string]interface{}{
+		{"geom": &shp.Point{X: 116.4, Y: 39.9}, "name": "A"},
+	}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	parseOptions := format.DefaultParseOptions()
+	parseOptions.GeometryEncoding = format.GeometryEncodingShapefileShape
+	parseOptions.ExtraParams = map[string]interface{}{"geometry_field": "geom"}
+	reader, err := plugin.OpenMultiTableReader(context.Background(), store, refs, parseOptions)
+	if err != nil {
+		t.Fatalf("OpenMultiTableReader failed: %v", err)
+	}
+	defer reader.Close(context.Background())
+	rows, err := reader.ReadRows(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ReadRows failed: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	got, ok := rows[0]["geom"].(*shp.Point)
+	if !ok {
+		t.Fatalf("geometry value = %T, want *shp.Point", rows[0]["geom"])
+	}
+	if got.X != 116.4 || got.Y != 39.9 {
+		t.Fatalf("point = %#v, want 116.4/39.9", got)
+	}
 }
 
 func TestShapefileRegistersOnlyMultiTableProviders(t *testing.T) {

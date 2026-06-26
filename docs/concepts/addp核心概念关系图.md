@@ -35,10 +35,9 @@ mindmap
       共享模块
         common 后端
         common-frontend 前端
-      内置计算引擎
-        python_workflow
-        spark_workflow
-        jupyter
+      扩展运行时
+        内置示例 python_workflow / spark_workflow / jupyter
+        用户自研扩展运行时
     引擎体系
       Provider 化引擎插件接口
         EnginePlugin 基础
@@ -136,7 +135,7 @@ mindmap
 - 模块总览图 (Console、Gateway、System、Manager、Meta、Transfer、Orchestrator、Develop、Service、Monitor)
 - 模块分层架构 (前端层、网关层、服务层、数据层)
 - 共享模块 (common、common-frontend)
-- 计算引擎 (python_workflow、spark_workflow、jupyter)
+- 扩展运行时 (内置示例 python_workflow、spark_workflow、jupyter，以及用户自研扩展运行时)
 - 基础设施 (PostgreSQL、Redis、MinIO、Meilisearch)
 
 📄 **[阅读完整文档 →](addp模块架构图.md)**
@@ -286,7 +285,7 @@ mindmap
 
 ### 架构与模块
 
-- **[ADDP 模块架构图](addp模块架构图.md)** - 模块总览、分层架构、共享模块、计算引擎
+- **[ADDP 模块架构图](addp模块架构图.md)** - 模块总览、分层架构、共享模块、扩展运行时
 - **[引擎体系图](addp引擎体系图.md)** - 引擎插件架构、分类体系、能力声明
 - **[基础设施隔离图](addp基础设施隔离图.md)** - 系统与业务分离、资源隔离机制
 

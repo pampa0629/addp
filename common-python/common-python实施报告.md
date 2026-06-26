@@ -86,7 +86,8 @@ except Exception as e:
 - `pyrightconfig.json` - 新增，配置 Python 解释器
 
 **架构改进**:
-- Agent 的客户端保留了特定业务逻辑 (如 `select_workflow_engine`, `wait_for_execution`)
+- Agent 工作流工具通过 `workflow_engine_id` 选择具体工作流引擎实例；执行 Spark Workflow 时必须额外提供 `spark_cluster_id`，并通过 `execution_config.engine_specific.spark_cluster_id` 传递真实 Spark 通用引擎资源
+- 执行轮询等通用客户端能力由 `addp_common.client` 提供
 - 基础 HTTP 调用统一使用 `addp_common.client.BaseClient`
 
 ### 4. 安装配置
@@ -132,14 +133,15 @@ async with SystemClient(
     base_url="http://localhost:8180",
     internal_api_key="your-key"
 ) as client:
-    engines = await client.list_engines()
+    engines = await client.list_internal_engines()
 
 # 用户请求
 async with DevelopClient(
     base_url="http://localhost:8000",
     user_token="jwt-token"
 ) as client:
-    operators = await client.list_operators("python_workflow")
+    workflow_engines = await client.list_workflow_engines()
+    operators = await client.list_operators(workflow_engines[0]["id"])
 ```
 
 ## 后续建议

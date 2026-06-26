@@ -895,8 +895,8 @@ const openTileCacheCreate = (result) => {
         itemID: result.item_id,
         itemFingerprint: result.item_fingerprint
       }),
-      quick_view_optimization: 'ready',
-      quick_view_optimization_id: result.id ? String(result.id) : undefined
+      vector_quick_view_target_generation: 'ready',
+      vector_quick_view_target_id: result.id ? String(result.id) : undefined
     }
   })
 }

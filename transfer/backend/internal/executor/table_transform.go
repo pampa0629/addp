@@ -7,6 +7,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
+	commonSpatial "github.com/addp/common/spatial"
 )
 
 type tableTransform interface {
@@ -14,7 +15,7 @@ type tableTransform interface {
 	TransformBatch(ctx context.Context, batch *engineplugin.BatchData) (*engineplugin.BatchData, error)
 }
 
-func buildTableTransforms(plans []TableTransformPlan) ([]tableTransform, error) {
+func buildTableTransforms(plans []TableTransformPlan, reprojecter GeometryBatchReprojectProvider) ([]tableTransform, error) {
 	if len(plans) == 0 {
 		return nil, nil
 	}
@@ -26,6 +27,15 @@ func buildTableTransforms(plans []TableTransformPlan) ([]tableTransform, error) 
 				return nil, fmt.Errorf("field_mapping transform requires config")
 			}
 			transform, err := newFieldMappingTransform(*plan.FieldMapping)
+			if err != nil {
+				return nil, err
+			}
+			transforms = append(transforms, transform)
+		case "spatial_reproject":
+			if plan.SpatialReproject == nil {
+				return nil, fmt.Errorf("spatial_reproject transform requires config")
+			}
+			transform, err := newSpatialReprojectTransform(*plan.SpatialReproject, reprojecter)
 			if err != nil {
 				return nil, err
 			}
@@ -63,6 +73,171 @@ func applyBatchTransforms(ctx context.Context, batch *engineplugin.BatchData, tr
 		}
 	}
 	return next, nil
+}
+
+type spatialReprojectTransform struct {
+	reprojecter    GeometryBatchReprojectProvider
+	geometryColumn string
+	sourceCRS      string
+	targetCRS      string
+	needReproject  bool
+}
+
+func newSpatialReprojectTransform(plan SpatialReprojectTransformPlan, reprojecter GeometryBatchReprojectProvider) (*spatialReprojectTransform, error) {
+	if strings.TrimSpace(plan.GeometryColumn) == "" {
+		return nil, fmt.Errorf("spatial_reproject geometry_column is required")
+	}
+	sourceCRS := strings.TrimSpace(plan.SourceCRS)
+	targetCRS := strings.TrimSpace(plan.TargetCRS)
+	if sourceCRS == "" {
+		return nil, fmt.Errorf("spatial_reproject source_crs is required")
+	}
+	if targetCRS == "" {
+		targetCRS = "EPSG:4326"
+	}
+	if plan.Reproject && reprojecter == nil {
+		return nil, fmt.Errorf("spatial_reproject requires geometry batch reprojecter")
+	}
+	return &spatialReprojectTransform{
+		reprojecter:    reprojecter,
+		geometryColumn: plan.GeometryColumn,
+		sourceCRS:      sourceCRS,
+		targetCRS:      targetCRS,
+		needReproject:  plan.Reproject,
+	}, nil
+}
+
+func (t *spatialReprojectTransform) TransformTableInfo(tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (*datatype.TableInfo, *datatype.SpatialInfo, error) {
+	nextTable := tableInfo.Clone()
+	if nextTable == nil {
+		nextTable = &datatype.TableInfo{}
+	}
+	nextSpatial := cloneSpatialInfoForReproject(spatialInfo, t.geometryColumn, t.targetCRS)
+	return nextTable, nextSpatial, nil
+}
+
+func (t *spatialReprojectTransform) TransformBatch(ctx context.Context, batch *engineplugin.BatchData) (*engineplugin.BatchData, error) {
+	if batch == nil {
+		return nil, nil
+	}
+	geometryColumn := t.geometryColumn
+	if batch.Spatial != nil && batch.Spatial.PrimaryGeometryName() != "" {
+		geometryColumn = batch.Spatial.PrimaryGeometryName()
+	}
+	if geometryColumn == "" {
+		return nil, fmt.Errorf("spatial_reproject requires geometry column")
+	}
+
+	geometries := make([][]byte, 0, len(batch.Rows))
+	for _, row := range batch.Rows {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		value, ok := row[geometryColumn]
+		if !ok || value == nil {
+			geometries = append(geometries, nil)
+			continue
+		}
+		geometryBytes, err := geometryValueToEWKB(value)
+		if err != nil {
+			return nil, fmt.Errorf("convert geometry column %q: %w", geometryColumn, err)
+		}
+		geometries = append(geometries, geometryBytes)
+	}
+
+	var reprojected [][]byte
+	var err error
+	if t.needReproject {
+		if t.reprojecter == nil {
+			return nil, fmt.Errorf("spatial_reproject requires geometry batch reprojecter")
+		}
+		reprojected, err = t.reprojecter.ReprojectGeometryBatch(ctx, geometries, t.sourceCRS, t.targetCRS, geometryColumn)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		reprojected = geometries
+	}
+	if len(reprojected) != len(batch.Rows) {
+		return nil, fmt.Errorf("spatial_reproject returned %d geometries for %d rows", len(reprojected), len(batch.Rows))
+	}
+
+	next := &engineplugin.BatchData{
+		Rows:    make([]map[string]interface{}, 0, len(batch.Rows)),
+		Fields:  append([]datatype.FieldInfo(nil), batch.Fields...),
+		Spatial: cloneSpatialInfoForReproject(batch.Spatial, geometryColumn, t.targetCRS),
+		Offset:  batch.Offset,
+		Hints:   cloneBatchHints(batch.Hints),
+	}
+	for i, row := range batch.Rows {
+		nextRow := make(map[string]interface{}, len(row))
+		for key, value := range row {
+			nextRow[key] = value
+		}
+		if reprojected[i] == nil {
+			nextRow[geometryColumn] = nil
+		} else {
+			nextRow[geometryColumn] = reprojected[i]
+		}
+		next.Rows = append(next.Rows, nextRow)
+	}
+	return next, nil
+}
+
+func geometryValueToEWKB(value interface{}) ([]byte, error) {
+	geometry, err := commonSpatial.ParseGeometryValue(value)
+	if err != nil {
+		return nil, err
+	}
+	return commonSpatial.GeomToEWKB(geometry, geometry.SRID())
+}
+
+func cloneSpatialInfoForReproject(source *datatype.SpatialInfo, geometryColumn, targetCRS string) *datatype.SpatialInfo {
+	if source == nil {
+		srid := commonSpatial.ParseSRID(targetCRS)
+		info := datatype.NewSingleGeometrySpatialInfo(geometryColumn, "", srid, 0)
+		info.CRSRef = targetCRS
+		if len(info.GeometryColumns) > 0 {
+			info.GeometryColumns[0].CRSRef = targetCRS
+		}
+		if srid > 0 {
+			info.SRID = &srid
+		}
+		return info
+	}
+	next := source.Clone()
+	if next == nil {
+		next = datatype.NewSingleGeometrySpatialInfo(geometryColumn, "", 0, 0)
+	}
+	srid := commonSpatial.ParseSRID(targetCRS)
+	next.PrimaryGeometryColumn = geometryColumn
+	next.CRSDefinitions = nil
+	next.Extent = nil
+	next.HasSpatialIndex = nil
+	next.IndexName = ""
+	next.CRSRef = targetCRS
+	if len(next.GeometryColumns) > 0 {
+		next.GeometryColumns[0].Name = geometryColumn
+		next.GeometryColumns[0].CRSRef = targetCRS
+		if srid > 0 {
+			next.GeometryColumns[0].SRID = &srid
+		}
+	}
+	if srid > 0 {
+		next.SRID = &srid
+	}
+	return next
+}
+
+func cloneBatchHints(hints map[string]interface{}) map[string]interface{} {
+	if len(hints) == 0 {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(hints))
+	for key, value := range hints {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 type fieldMappingTransform struct {

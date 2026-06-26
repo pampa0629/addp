@@ -62,8 +62,10 @@ type RefRule struct {
 
 type WholeScopeRule struct {
 	IgnoredFileNames     []string
+	RequiredFileNames    []string
 	RequiresStrongMatch  bool
 	ExclusiveOnStrongHit bool
+	ClaimAllOnStrongHit  bool
 }
 
 type FormatRule struct {

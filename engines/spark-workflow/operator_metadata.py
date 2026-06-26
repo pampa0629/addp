@@ -6,8 +6,32 @@ NOTE: 元数据现在使用 Pydantic 模型定义在各个 operators 模块中
       本文件提供统一的 get_operator_metadata() 接口
 """
 
+from copy import deepcopy
 from typing import List, Dict, Any
 from operators import OPERATORS
+
+RUNTIME_INJECTED_PARAMS = {"engine_id", "connection_info", "schema", "table", "path"}
+
+
+def _public_parameters(parameters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """过滤运行时注入参数，避免把 runtime binding 暴露成算子业务参数。"""
+    return [
+        deepcopy(param)
+        for param in parameters
+        if param.get('name') not in RUNTIME_INJECTED_PARAMS
+    ]
+
+
+def _public_detailed_description(detailed_desc: Dict[str, Any]) -> Dict[str, Any]:
+    public_desc = deepcopy(detailed_desc)
+    public_desc['parameters'] = _public_parameters(public_desc.get('parameters', []))
+
+    workflow_example = public_desc.get('workflow_example')
+    if isinstance(workflow_example, dict) and isinstance(workflow_example.get('params'), dict):
+        for param_name in RUNTIME_INJECTED_PARAMS:
+            workflow_example['params'].pop(param_name, None)
+
+    return public_desc
 
 
 def get_operator_metadata() -> List[Dict[str, Any]]:
@@ -21,7 +45,7 @@ def get_operator_metadata() -> List[Dict[str, Any]]:
 
     for op_name, op_meta in OPERATORS.items():
         # 从 detailed_description.parameters 提取参数信息
-        detailed_desc = op_meta.get('detailed_description', {})
+        detailed_desc = _public_detailed_description(op_meta.get('detailed_description', {}))
         parameters = []
 
         for param in detailed_desc.get('parameters', []):
@@ -40,10 +64,12 @@ def get_operator_metadata() -> List[Dict[str, Any]]:
             "id": op_name,
             "name": op_name,
             "display_name": op_meta.get('description', op_name),
-            "module": "spark_workflow",
+            "engine_type": "spark_workflow",
             "category": op_meta.get('category', '未分类'),
+            "category_path": op_meta.get('category_path') or [op_meta.get('category', '未分类')],
             "description": op_meta.get('description', ''),
             "brief_description": op_meta.get('brief_description', ''),
+            "execution_modes": op_meta['execution_modes'],
             "detailed_description": detailed_desc,
             "parameters": parameters,
             "output_ports": [

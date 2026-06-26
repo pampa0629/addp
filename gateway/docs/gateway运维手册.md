@@ -184,7 +184,7 @@ curl http://localhost:8000/
     "manager": "http://localhost:8081",
     "meta": "http://localhost:8082",
     "transfer": "http://localhost:8083",
-    "develop": "http://localhost:8084",
+    "develop": "http://localhost:8185",
     "service": "http://localhost:8086",
     "copilot": "http://localhost:8087"
   }

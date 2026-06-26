@@ -52,7 +52,7 @@ func (r *QuickViewRepository) EnsurePreference(qv *models.QuickView) error {
 	if err != nil {
 		if err == commonapi.ErrNotFound {
 			if strings.TrimSpace(qv.PreferredMode) == "" {
-				qv.PreferredMode = "table_geojson"
+				qv.PreferredMode = models.QuickViewPreferredModeBasicPreview
 			}
 			return r.db.Create(qv).Error
 		}

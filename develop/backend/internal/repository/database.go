@@ -61,10 +61,22 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 }
 
 func normalizeDevTaskContent(db *gorm.DB) error {
-	statements := []struct {
-		name string
-		sql  string
-	}{
+	for _, stmt := range normalizeDevTaskContentStatements() {
+		if err := db.Exec(stmt.sql).Error; err != nil {
+			return fmt.Errorf("failed to %s: %w", stmt.name, err)
+		}
+	}
+
+	return nil
+}
+
+type normalizationStatement struct {
+	name string
+	sql  string
+}
+
+func normalizeDevTaskContentStatements() []normalizationStatement {
+	return []normalizationStatement{
 		{
 			name: "normalize notebook dev_type",
 			sql:  "UPDATE develop.dev_tasks SET dev_type = 'script', updated_at = NOW() WHERE dev_type = 'notebook'",
@@ -72,16 +84,6 @@ func normalizeDevTaskContent(db *gorm.DB) error {
 		{
 			name: "normalize notebook executions task_type",
 			sql:  "UPDATE common.task_executions SET task_type = 'script', updated_at = NOW() WHERE module = 'develop' AND task_type = 'notebook'",
-		},
-		{
-			name: "normalize query content.sql",
-			sql: `
-UPDATE develop.dev_tasks
-SET content = jsonb_set(content - 'sql', '{query}', content->'sql', true),
-    updated_at = NOW()
-WHERE dev_type = 'query'
-  AND content ? 'sql'
-  AND NOT content ? 'query'`,
 		},
 		{
 			name: "remove query content.sql",
@@ -102,34 +104,6 @@ WHERE dev_type = 'query'
   AND NOT content ? 'query_type'`,
 		},
 		{
-			name: "normalize workflow_def",
-			sql: `
-UPDATE develop.dev_tasks
-SET content = jsonb_set(content - 'workflow_def', '{workflow_definition}', content->'workflow_def', true),
-    updated_at = NOW()
-WHERE dev_type = 'workflow'
-  AND content ? 'workflow_def'
-  AND NOT content ? 'workflow_definition'`,
-		},
-		{
-			name: "normalize workflow top-level graph",
-			sql: `
-UPDATE develop.dev_tasks
-SET content = jsonb_set(
-        content - 'nodes' - 'edges',
-        '{workflow_definition}',
-        jsonb_build_object(
-            'nodes', COALESCE(content->'nodes', '[]'::jsonb),
-            'edges', COALESCE(content->'edges', '[]'::jsonb)
-        ),
-        true
-    ),
-    updated_at = NOW()
-WHERE dev_type = 'workflow'
-  AND NOT content ? 'workflow_definition'
-  AND (content ? 'nodes' OR content ? 'edges')`,
-		},
-		{
 			name: "remove workflow_def",
 			sql: `
 UPDATE develop.dev_tasks
@@ -139,13 +113,13 @@ WHERE dev_type = 'workflow'
   AND content ? 'workflow_def'`,
 		},
 		{
-			name: "normalize input_data",
+			name: "remove workflow top-level graph",
 			sql: `
 UPDATE develop.dev_tasks
-SET content = jsonb_set(content - 'input_data', '{inputs}', content->'input_data', true),
+SET content = content - 'nodes' - 'edges',
     updated_at = NOW()
-WHERE content ? 'input_data'
-  AND NOT content ? 'inputs'`,
+WHERE dev_type = 'workflow'
+  AND (content ? 'nodes' OR content ? 'edges')`,
 		},
 		{
 			name: "remove input_data",
@@ -168,12 +142,4 @@ ALTER TABLE develop.dev_tasks
     DROP COLUMN IF EXISTS next_run_at`,
 		},
 	}
-
-	for _, stmt := range statements {
-		if err := db.Exec(stmt.sql).Error; err != nil {
-			return fmt.Errorf("failed to %s: %w", stmt.name, err)
-		}
-	}
-
-	return nil
 }

@@ -91,16 +91,6 @@ func (r *EngineRepository) Delete(id uint) error {
 	return r.db.Delete(&models.Engine{}, id).Error
 }
 
-// FindByUniqueIdentifier 根据 unique_identifier 查询资源（包括软删除的记录）
-func (r *EngineRepository) FindByUniqueIdentifier(ctx context.Context, identifier string) (*models.Engine, error) {
-	var engine models.Engine
-	err := r.db.WithContext(ctx).Unscoped().Where("unique_identifier = ?", identifier).First(&engine).Error
-	if err != nil {
-		return nil, commonrepo.WrapDBError(err)
-	}
-	return &engine, nil
-}
-
 // FindByEngineTypeAndBuiltin 根据 engine_type 和 is_builtin 查找引擎
 func (r *EngineRepository) FindByEngineTypeAndBuiltin(ctx context.Context, engineType string) (*models.Engine, error) {
 	var engine models.Engine
@@ -136,15 +126,6 @@ func (r *EngineRepository) FindByFilters(ctx context.Context, filters map[string
 	query := r.db.WithContext(ctx)
 
 	for key, value := range filters {
-		// 特殊处理：has_compute_capability 过滤
-		if key == "has_compute_capability" {
-			if hasCompute, ok := value.(bool); ok && hasCompute {
-				// PostgreSQL JSONB 查询：capabilities->'compute' 不为空
-				query = query.Where("capabilities IS NOT NULL AND capabilities::jsonb ? 'compute'")
-			}
-			continue
-		}
-
 		query = query.Where(key+" = ?", value)
 	}
 

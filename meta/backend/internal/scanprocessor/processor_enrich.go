@@ -57,7 +57,7 @@ func (p Processor) enrichKnownMultiTable(ctx context.Context, input *input, attr
 	}
 	input.Detected = enriched
 	if len(enriched.Attributes) > 0 {
-		return metaattr.JSONMap(enriched.Attributes), nil
+		metaattr.MergeStandardAttributes(attrs, enriched.Attributes)
 	}
 	return attrs, nil
 }

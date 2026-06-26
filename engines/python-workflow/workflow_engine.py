@@ -1,5 +1,5 @@
 """
-GeoPandas 工作流引擎
+Python Workflow 工作流引擎
 核心优化：全程使用 GeoDataFrame 内存传递，避免中间序列化
 """
 
@@ -16,9 +16,71 @@ from operators import get_operator, list_operators
 logger = logging.getLogger(__name__)
 
 
-class GeoPandasWorkflowEngine:
+class WorkflowInvalidError(Exception):
+    """工作流定义无效错误"""
+    pass
+
+
+def validate_workflow_def(workflow_def: Dict[str, Any]):
+    """校验 addp.workflow/v1 工作流定义。"""
+    if not isinstance(workflow_def, dict) or 'tasks' not in workflow_def:
+        raise WorkflowInvalidError("工作流定义缺少 'tasks' 字段")
+    if not isinstance(workflow_def['tasks'], list) or len(workflow_def['tasks']) == 0:
+        raise WorkflowInvalidError("工作流定义中的 'tasks' 必须是非空数组")
+
+    task_ids = set()
+    for task in workflow_def['tasks']:
+        if 'id' not in task:
+            raise WorkflowInvalidError("任务定义缺少 'id' 字段")
+        if not isinstance(task['id'], str) or not task['id'].strip():
+            raise WorkflowInvalidError("任务 id 必须是非空字符串")
+        if task['id'] in task_ids:
+            raise WorkflowInvalidError(f"任务 id 重复: {task['id']}")
+        task_ids.add(task['id'])
+        if 'operator' not in task:
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 缺少 'operator' 字段")
+        if 'params' not in task:
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 缺少 'params' 字段")
+        if not isinstance(task['params'], dict):
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 的 'params' 必须是对象")
+        if 'depends_on' not in task:
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 缺少 'depends_on' 字段")
+        if not isinstance(task['depends_on'], list):
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 的 'depends_on' 必须是数组")
+        if not all(isinstance(dep, str) for dep in task['depends_on']):
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 的 'depends_on' 必须是字符串数组")
+        if len(set(task['depends_on'])) != len(task['depends_on']):
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 的 depends_on 包含重复依赖")
+
+    for task in workflow_def['tasks']:
+        dependencies = set(task['depends_on'])
+        for ref_task_id in _collect_workflow_refs(task['params']):
+            if ref_task_id not in task_ids:
+                raise WorkflowInvalidError(f"任务 '{task['id']}' 引用了不存在的任务 '{ref_task_id}'")
+            if ref_task_id not in dependencies:
+                raise WorkflowInvalidError(f"任务 '{task['id']}' 引用了任务 '{ref_task_id}' 但未在 depends_on 中声明")
+
+
+def _collect_workflow_refs(value: Any) -> List[str]:
+    refs = []
+    if isinstance(value, dict):
+        if "$ref" in value:
+            ref = value["$ref"]
+            if not isinstance(ref, str) or not ref.strip():
+                raise WorkflowInvalidError("$ref 必须是非空字符串")
+            refs.append(ref.strip())
+            return refs
+        for item in value.values():
+            refs.extend(_collect_workflow_refs(item))
+    elif isinstance(value, list):
+        for item in value:
+            refs.extend(_collect_workflow_refs(item))
+    return refs
+
+
+class PythonWorkflowEngine:
     """
-    GeoPandas 工作流引擎
+    Python Workflow 工作流引擎
     核心功能：DAG 拓扑排序 + GeoDataFrame 内存传递
     """
 
@@ -28,7 +90,7 @@ class GeoPandasWorkflowEngine:
         self.task_order = []         # 拓扑排序后的任务执行顺序
         self.logs = []               # 执行日志列表
 
-    def add_task(self, task_id: str, operator: str, params: Dict[str, Any], depends_on: List[str] = None):
+    def add_task(self, task_id: str, operator: str, params: Dict[str, Any], depends_on: List[str]):
         """
         添加任务节点
 
@@ -41,16 +103,14 @@ class GeoPandasWorkflowEngine:
         self.tasks[task_id] = {
             'operator': operator,
             'params': params,
-            'depends_on': depends_on or []
+            'depends_on': depends_on
         }
 
     def load_workflow(self, workflow_def: Dict[str, Any]):
         """
         从工作流定义加载任务
 
-        支持两种格式：
-
-        格式 1（数组格式）:
+        标准格式：
             {
                 "tasks": [
                     {
@@ -62,41 +122,18 @@ class GeoPandasWorkflowEngine:
                 ]
             }
 
-        格式 2（Map 格式，更友好）:
-            {
-                "step1": {
-                    "operator": "buffer",
-                    "inputs": {"distance": 100, "geometry": {"$ref": "input.geom"}}
-                },
-                "step2": {
-                    "operator": "centroid",
-                    "inputs": {"input_gdf": {"$ref": "step1"}}
-                }
-            }
-
         Args:
             workflow_def: 工作流定义
         """
-        # 格式 1: 数组格式 {"tasks": [...]}
-        if 'tasks' in workflow_def:
-            for task in workflow_def.get('tasks', []):
-                self.add_task(
-                    task_id=task['id'],
-                    operator=task['operator'],
-                    params=task.get('params', {}),
-                    depends_on=task.get('depends_on', [])
-                )
-        # 格式 2: Map 格式 {"step1": {...}, "step2": {...}}
-        else:
-            for task_id, task_def in workflow_def.items():
-                # 将 inputs 转换为 params（保持兼容）
-                params = task_def.get('inputs', task_def.get('params', {}))
-                self.add_task(
-                    task_id=task_id,
-                    operator=task_def['operator'],
-                    params=params,
-                    depends_on=task_def.get('depends_on', [])
-                )
+        validate_workflow_def(workflow_def)
+
+        for task in workflow_def['tasks']:
+            self.add_task(
+                task_id=task['id'],
+                operator=task['operator'],
+                params=task['params'],
+                depends_on=task['depends_on']
+            )
 
     def topological_sort(self) -> List[str]:
         """
@@ -113,7 +150,7 @@ class GeoPandasWorkflowEngine:
         for task_id, task in self.tasks.items():
             for dep in task['depends_on']:
                 if dep not in in_degree:
-                    raise ValueError(f"Task {task_id} depends on unknown task {dep}")
+                    raise WorkflowInvalidError(f"任务 '{task_id}' 依赖的任务 '{dep}' 不存在")
                 in_degree[task_id] += 1
 
         # 找出所有入度为 0 的节点
@@ -133,7 +170,7 @@ class GeoPandasWorkflowEngine:
 
         # 检查是否有环
         if len(sorted_tasks) != len(self.tasks):
-            raise ValueError("检测到循环依赖")
+            raise WorkflowInvalidError("工作流包含循环依赖")
 
         return sorted_tasks
 
@@ -265,15 +302,19 @@ class GeoPandasWorkflowEngine:
             # 执行算子
             result = operator_func(**resolved_params)
 
-            # 自动适配单输出/多输出
+            # 自动适配单输出/多输出。
+            # GeoDataFrame 字典仍表示多端口输出；普通 JSON 字典表示格式/文件类算子的单个结构化结果。
             if isinstance(result, dict):
-                # 多输出: {"large": gdf1, "small": gdf2}
-                output_ports = result
+                if all(isinstance(value, gpd.GeoDataFrame) for value in result.values()):
+                    # 多输出: {"large": gdf1, "small": gdf2}
+                    output_ports = result
+                else:
+                    output_ports = {"default": result}
             elif isinstance(result, gpd.GeoDataFrame):
                 # 单输出: 自动包装为 {"default": gdf}
                 output_ports = {"default": result}
             else:
-                raise ValueError(f"Unsupported operator return type: {type(result)}. Expected GeoDataFrame or Dict[str, GeoDataFrame]")
+                output_ports = {"default": result}
 
             self.log("INFO", f"算子执行成功，输出端口: {list(output_ports.keys())}", task_id)
             return output_ports
@@ -387,11 +428,10 @@ class GeoPandasWorkflowEngine:
         # 检查是否有有效的 geometry 列
         if isinstance(gdf, gpd.GeoDataFrame) and hasattr(gdf, '_geometry_column_name') and gdf._geometry_column_name in gdf.columns:
             return gdf.to_json()
-        else:
-            # 无 geometry 列，返回普通 JSON
+        if isinstance(gdf, gpd.GeoDataFrame):
             import pandas as pd
-            df = pd.DataFrame(gdf)
-            return df.to_json(orient='records')
+            return pd.DataFrame(gdf).to_json(orient='records')
+        return json.dumps(gdf, ensure_ascii=False, default=str)
 
     def get_all_results_geojson(self) -> Dict[str, str]:
         """
@@ -405,30 +445,35 @@ class GeoPandasWorkflowEngine:
             if task_id.startswith('input.'):
                 continue
 
-            # 过滤出 GeoDataFrame 类型的端口
-            gdf_ports = {
-                port_name: gdf
-                for port_name, gdf in port_outputs.items()
-                if isinstance(gdf, gpd.GeoDataFrame)
+            # 过滤出可序列化端口。GeoDataFrame 输出保留原有 GeoJSON 语义；
+            # 普通 JSON 输出用于格式转换、文件处理等非空间表格结果。
+            serializable_ports = {
+                port_name: value
+                for port_name, value in port_outputs.items()
+                if isinstance(value, (gpd.GeoDataFrame, dict, list, str, int, float, bool)) or value is None
             }
 
             # 如果只有一个端口，使用该端口
-            if len(gdf_ports) == 1:
-                gdf = list(gdf_ports.values())[0]
+            if len(serializable_ports) == 1:
+                gdf = list(serializable_ports.values())[0]
                 # 检查是否有有效的 geometry 列
-                if hasattr(gdf, '_geometry_column_name') and gdf._geometry_column_name in gdf.columns:
+                if isinstance(gdf, gpd.GeoDataFrame) and hasattr(gdf, '_geometry_column_name') and gdf._geometry_column_name in gdf.columns:
                     results[task_id] = gdf.to_json()
-                else:
+                elif isinstance(gdf, gpd.GeoDataFrame):
                     import pandas as pd
                     results[task_id] = pd.DataFrame(gdf).to_json(orient='records')
+                else:
+                    results[task_id] = json.dumps(gdf, ensure_ascii=False, default=str)
             # 如果有 default 端口，使用 default
-            elif "default" in gdf_ports:
-                gdf = gdf_ports["default"]
-                if hasattr(gdf, '_geometry_column_name') and gdf._geometry_column_name in gdf.columns:
+            elif "default" in serializable_ports:
+                gdf = serializable_ports["default"]
+                if isinstance(gdf, gpd.GeoDataFrame) and hasattr(gdf, '_geometry_column_name') and gdf._geometry_column_name in gdf.columns:
                     results[task_id] = gdf.to_json()
-                else:
+                elif isinstance(gdf, gpd.GeoDataFrame):
                     import pandas as pd
                     results[task_id] = pd.DataFrame(gdf).to_json(orient='records')
+                else:
+                    results[task_id] = json.dumps(gdf, ensure_ascii=False, default=str)
             # 否则跳过这个任务（没有明确的输出）
 
         return results
@@ -462,7 +507,7 @@ def execute_workflow(workflow_def: Dict[str, Any], input_data: Dict[str, Any] = 
                 "logs": [...]            # 执行日志
             }
     """
-    engine = GeoPandasWorkflowEngine()
+    engine = PythonWorkflowEngine()
 
     try:
         # 加载工作流
@@ -477,6 +522,15 @@ def execute_workflow(workflow_def: Dict[str, Any], input_data: Dict[str, Any] = 
             "final_result": engine.get_result_geojson(),
             "all_results": engine.get_all_results_geojson(),
             "logs": engine.logs
+        }
+
+    except WorkflowInvalidError as e:
+        return {
+            "status": "failed",
+            "error_code": "WORKFLOW_INVALID",
+            "error": str(e),
+            "logs": engine.logs,
+            "traceback": traceback.format_exc()
         }
 
     except Exception as e:
@@ -515,18 +569,23 @@ def execute_single_operator(operator_name: str, params: Dict[str, Any]) -> Dict[
                 params[key] = gpd.GeoDataFrame.from_features(value['features'], crs="EPSG:4326")
 
         # 执行算子
-        result_gdf = operator_func(**params)
+        result = operator_func(**params)
 
-        # 返回 GeoJSON
+        if isinstance(result, gpd.GeoDataFrame):
+            result = result.to_json()
+        elif not isinstance(result, (dict, list, str, int, float, bool)) and result is not None:
+            result = json.loads(json.dumps(result, ensure_ascii=False, default=str))
+
         return {
             "status": "success",
-            "result": result_gdf.to_json()
+            "result": result
         }
 
     except Exception as e:
         return {
             "status": "failed",
-            "error": str(e)
+            "error": str(e),
+            "traceback": traceback.format_exc()
         }
 
 

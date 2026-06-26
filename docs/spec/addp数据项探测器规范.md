@@ -230,3 +230,71 @@ type FormatRule struct {
 6. 两个 Shapefile item 的 `full_name` 分别来自入口文件全路径。
 7. Manager 中两个 Shapefile、PDF、CSV 都挂在 `/shp/` 目录下。
 8. Shapefile 内容读取使用 `meta_item.full_name` 和 `item.refs`，不得重新枚举 sibling 后猜测。
+
+## TIFF / GeoTIFF 校准用例
+
+TIFF / GeoTIFF 的主资源是 `.tif` 或 `.tiff`。当同 basename 存在空间辅助文件时，应按 sibling multi-resource 归并为同一个 data item，而不是把 `.tfw`、`.hdr`、`.aux.xml`、`.ovr` 等分别落成独立空间 item。
+
+支持的第一阶段 related refs 白名单：
+
+| 扩展名 | 角色 | 必需 | 说明 |
+|---|---|---|---|
+| `.tif` / `.tiff` | primary | 是 | 主 TIFF / GeoTIFF 文件，`meta_item.full_name` 来源。 |
+| `.tfw` / `.tifw` / `.wld` | world_file | 否 | 外部仿射变换参数。 |
+| `.prj` | crs | 否 | 外部 CRS 定义。 |
+| `.aux.xml` | auxiliary_metadata | 否 | GDAL / ESRI 辅助元数据。 |
+| `.ovr` | overview | 否 | 外部 overview。 |
+| `.hdr` | header | 否 | 栅格头文件或补充说明。 |
+
+目录：
+
+```text
+/rasters/
+  dem.tif
+  dem.tfw
+  dem.prj
+  dem.aux.xml
+  readme.txt
+  thumbnail.png
+```
+
+期望：
+
+1. `dem.tif`、`dem.tfw`、`dem.prj`、`dem.aux.xml` 生成一个 `data_type=media`、`layout=multi`、`format=tiff` item。
+2. 该 item 的 `full_name` 来自 `dem.tif`。
+3. `item.refs` 记录 `.tfw`、`.prj`、`.aux.xml` 等 related refs，供 format provider、基础预览和内容读取使用。
+4. `readme.txt`、`thumbnail.png` 仍按自身格式独立识别。
+5. 如果只有 `dem.tif` 且没有 sidecar，则生成 `layout=single`、`data_type=media`、`format=tiff` item。
+6. COG 不是新的基础 `format`；是否是 COG 由 `format_info.tiff.profile` 或 Manager 的 `raster_cog` 生成结果表达。
+
+TIFF related refs 归并必须对 NFS、MinIO、S3 等存储引擎保持一致。对象存储场景中，basename 匹配基于 bucket 内 object key 的同 prefix sibling，不得把 bucket 再拼入 detector 内部的相对路径进行二次匹配。
+
+## Raster mosaic 校准用例
+
+Raster mosaic 是 whole-scope 栅格镶嵌数据集，使用 `format=raster_mosaic`，不是单个 TIFF / COG，也不是 `format=tiff` 的 related refs 扩展。
+
+最小目录：
+
+```text
+/mosaics/srtm/
+  mosaic.addp.json
+  index/
+    source-index.json
+  overviews/
+    overview.cog.tif
+  derived/
+    leaf-cog/
+      000001.cog.tif
+```
+
+期望：
+
+1. `/mosaics/srtm/` 生成一个 `data_type=media`、`layout=whole`、`format=raster_mosaic` item。
+2. 该 item 的 `full_name` 来自 whole scope 根范围 `/mosaics/srtm/`，不是 `mosaic.addp.json` 或某个 leaf COG。
+3. `mosaic.addp.json` 是 manifest 主资源，应进入 `format_info.raster_mosaic.manifest_ref`。whole item 不应把几千个 leaf COG 展开写入 `item.refs`。
+4. `index/`、`overviews/`、`derived/`、`tiles/`、`styles/`、`stats/` 等都是 mosaic item 内部组成，不默认生成同级 meta item。
+5. leaf COG 默认作为 mosaic 内部 leaf 查看对象，不自动升格为同级 Meta item；如用户需要治理某个 leaf COG，应单独扫描其所在范围。
+6. `in_place` 生成时，源 node 内已通过内容级校验的 COG 可作为 mosaic leaf 被 index 引用；`detached` 生成时，leaf COG 必须位于目标 mosaic 数据集内，不应长期依赖源 node。detector 不得只因后缀或文件名判断 COG 合规。
+7. `exclusive=true` 只在 manifest 规则强匹配且 whole scope 成立时使用；弱匹配不得吞掉整个目录或 prefix。
+
+`raster_mosaic` 的 whole-scope 识别至少要求存在 `mosaic.addp.json`，且 Meta 落库前必须读取 manifest 内容，确认 schema、`format=raster_mosaic`、`data_type=media` 和 `layout=whole`。只有 leaf COG、只有 `overview.cog.tif`，或只有同名但内容不匹配的 JSON 文件，都不构成 raster mosaic item。

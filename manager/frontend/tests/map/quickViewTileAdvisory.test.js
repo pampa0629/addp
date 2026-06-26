@@ -30,7 +30,7 @@ describe('quickViewTileAdvisory', () => {
       }
     )
 
-    expect(action).toBe('quick_view_optimization')
+    expect(action).toBe('vector_quick_view_target_generation')
     expect(quickViewTileAdvisoryMessage(t, action, { timeoutBudgetMS: '5000' })).toBe('超过 5 秒，执行快显优化')
   })
 
@@ -46,7 +46,7 @@ describe('quickViewTileAdvisory', () => {
       }
     )
 
-    expect(action).toBe('tile_cache_generation')
+    expect(action).toBe('vector_tile_cache_generation')
     expect(quickViewTileAdvisoryMessage(t, action, { timeoutBudgetMS: '5000' })).toBe('超过 5 秒，生成瓦片缓存')
   })
 
@@ -55,11 +55,11 @@ describe('quickViewTileAdvisory', () => {
   })
 
   it('throttles repeated advisory notices by action and scenario', () => {
-    const advisory = { recommendation: 'tile_cache_generation', retryPolicy: 'ttl', performanceMode: 'ready_3857_target' }
+    const advisory = { recommendation: 'vector_tile_cache_generation', retryPolicy: 'ttl', performanceMode: 'ready_3857_target' }
     const quickViewStatus = { optimization: { target_kind: 'external_3857_materialized_view' } }
-    const first = shouldShowQuickViewTileAdvisoryNotice({}, 'tile_cache_generation', advisory, quickViewStatus, 1000, 60000)
-    const repeated = shouldShowQuickViewTileAdvisoryNotice(first.lastNotice, 'tile_cache_generation', advisory, quickViewStatus, 30000, 60000)
-    const cooledDown = shouldShowQuickViewTileAdvisoryNotice(first.lastNotice, 'tile_cache_generation', advisory, quickViewStatus, 62000, 60000)
+    const first = shouldShowQuickViewTileAdvisoryNotice({}, 'vector_tile_cache_generation', advisory, quickViewStatus, 1000, 60000)
+    const repeated = shouldShowQuickViewTileAdvisoryNotice(first.lastNotice, 'vector_tile_cache_generation', advisory, quickViewStatus, 30000, 60000)
+    const cooledDown = shouldShowQuickViewTileAdvisoryNotice(first.lastNotice, 'vector_tile_cache_generation', advisory, quickViewStatus, 62000, 60000)
 
     expect(first.show).toBe(true)
     expect(repeated.show).toBe(false)

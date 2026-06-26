@@ -4,13 +4,9 @@ Spark 工作流空间分析算子
 
 import logging
 from typing import Dict, Any, List, Optional
-from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql import functions as F
-from pyspark.sql.window import Window
 
-from spark_connector import get_spark_connector
-from storage_adapters import StorageAdapter
 from .base import OperatorMetadata, OperatorParam, OperatorCategory, register_operator
+from .spark_types import DataFrame
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +246,7 @@ BUFFER_METADATA = OperatorMetadata(
     category=OperatorCategory.SPATIAL_ANALYSIS,
     description="缓冲区分析",
     brief_description="在几何对象周围创建指定距离的缓冲区,用于影响范围分析",
+    execution_modes=["workflow"],
     overview="buffer 是最常用的空间分析算子,在点、线、面周围创建指定距离的缓冲区。广泛应用于影响范围分析、服务半径计算、安全距离评估等场景。",
     params=[
         OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame", notes="必须包含有效的几何列"),
@@ -290,7 +287,8 @@ INTERSECTION_METADATA = OperatorMetadata(
     category=OperatorCategory.SPATIAL_ANALYSIS,
     description="几何相交",
     brief_description="计算两个几何对象的相交部分,用于叠加分析",
-    overview="st_intersection 计算输入几何与另一个几何的相交部分,返回交集几何。常用于行政区边界裁剪、土地利用叠加分析等场景。",
+    execution_modes=["workflow"],
+    overview="intersection 计算输入几何与另一个几何的相交部分,返回交集几何。常用于行政区边界裁剪、土地利用叠加分析等场景。",
     params=[
         OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame", notes="包含待相交的几何列"),
         OperatorParam(name="geom_column", type="str", required=False, description="几何列名", notes='默认"geom"'),
@@ -298,10 +296,10 @@ INTERSECTION_METADATA = OperatorMetadata(
         OperatorParam(name="output_column", type="str", required=False, description="输出几何列名", notes='默认"intersection_geom"')
     ],
     use_cases=[
-        "行政区裁剪: 将全国道路网络与北京市边界相交,提取北京市内的道路",
-        "土地利用叠加: 将建设用地与生态红线相交,统计违规建设面积",
-        "洪水淹没分析: 将洪水淹没范围与建筑物相交,计算受灾建筑",
-        "研究区提取: 将全国 POI 数据与研究区边界相交,提取研究区内的 POI"
+        "行政区裁剪: 将 200万条全国道路网络与北京市边界相交,提取北京市内的道路",
+        "土地利用叠加: 将 5万块建设用地与生态红线相交,统计违规建设面积",
+        "洪水淹没分析: 将 20平方公里洪水淹没范围与建筑物相交,计算受灾建筑",
+        "研究区提取: 将 1000万条全国 POI 数据与研究区边界相交,提取研究区内的 POI"
     ],
     notes=[
         "相交结果可能是 Point、LineString、Polygon,取决于输入几何类型",
@@ -330,16 +328,17 @@ UNION_METADATA = OperatorMetadata(
     category=OperatorCategory.SPATIAL_ANALYSIS,
     description="几何合并",
     brief_description="将所有几何对象合并为单个几何,用于生成整体边界",
-    overview="st_union 将 DataFrame 中的所有几何对象合并为一个几何。常用于生成区域的整体边界、合并相邻地块、构建宏观轮廓等场景。",
+    execution_modes=["workflow"],
+    overview="union 将 DataFrame 中的所有几何对象合并为一个几何。常用于生成区域的整体边界、合并相邻地块、构建宏观轮廓等场景。",
     params=[
         OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame", notes="包含待合并的几何列"),
         OperatorParam(name="geom_column", type="str", required=False, description="几何列名", notes='默认"geom"')
     ],
     use_cases=[
-        "省级边界生成: 将一个省内的所有市级边界合并,生成省级整体边界",
+        "省级边界生成: 将一个省内 16 个市级边界合并,生成省级整体边界",
         "地块合并: 将相邻的 50 个小地块合并为一个大地块",
-        "建成区提取: 将城市内所有建筑物合并,生成建成区轮廓",
-        "道路网络合并: 将城市内所有道路段合并为一个 MultiLineString"
+        "建成区提取: 将城市内 30万栋建筑物合并,生成建成区轮廓",
+        "道路网络合并: 将城市内 80万条道路段合并为一个 MultiLineString"
     ],
     notes=[
         "合并操作计算密集,大数据集(>10万几何)可能很慢",
@@ -366,17 +365,18 @@ CENTROID_METADATA = OperatorMetadata(
     category=OperatorCategory.SPATIAL_ANALYSIS,
     description="质心计算",
     brief_description="计算几何对象的几何中心点,用于标注和聚合分析",
-    overview="st_centroid 计算几何对象的几何中心(质心)。对于多边形,质心可能在边界外部(凹多边形);对于 MultiPolygon,返回所有部分的加权中心。",
+    execution_modes=["workflow"],
+    overview="centroid 计算几何对象的几何中心(质心)。对于多边形,质心可能在边界外部(凹多边形);对于 MultiPolygon,返回所有部分的加权中心。",
     params=[
         OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame", notes="包含几何列"),
         OperatorParam(name="geom_column", type="str", required=False, description="几何列名", notes='默认"geom"'),
         OperatorParam(name="output_column", type="str", required=False, description="输出质心列名", notes='默认"centroid"')
     ],
     use_cases=[
-        "行政区标注: 将省级边界转为质心点,用于地图标注省名",
-        "聚类分析: 将建筑物面转为质心点,进行 K-means 聚类",
-        "点位汇总: 将行政区边界转为质心,按质心位置进行空间统计",
-        "POI 简化: 将商场建筑面转为质心点,简化为 POI 点位"
+        "行政区标注: 将 34 个省级边界转为质心点,用于地图标注省名",
+        "聚类分析: 将 50万栋建筑物面转为质心点,进行 K-means 聚类",
+        "点位汇总: 将 3000 个行政区边界转为质心,按质心位置进行空间统计",
+        "POI 简化: 将 2万座商场建筑面转为质心点,简化为 POI 点位"
     ],
     notes=[
         "凹多边形的质心可能在多边形外部",
@@ -404,6 +404,7 @@ SPATIAL_JOIN_METADATA = OperatorMetadata(
     category=OperatorCategory.SPATIAL_ANALYSIS,
     description="空间连接",
     brief_description="基于空间关系连接两个表,是最核心的空间分析算子",
+    execution_modes=["workflow"],
     overview="spatial_join 是空间分析的核心算子,根据空间关系(相交、包含、被包含、重叠)连接两个 DataFrame。等价于 SQL 的 JOIN,但连接条件是空间谓词而非字段相等。",
     params=[
         OperatorParam(name="left_df", type="dataframe", required=True, description="左表 DataFrame", notes="主表,空间分析的主体"),
@@ -415,8 +416,8 @@ SPATIAL_JOIN_METADATA = OperatorMetadata(
     use_cases=[
         "POI 行政区关联: 将 100万 POI 点与 300 个行政区连接(within),为每个 POI 添加所属区域",
         "建筑物统计: 将 50万建筑物与街道边界连接(intersects),统计每条街道的建筑数",
-        "土地利用分类: 将地块与土地利用规划区连接(within),为地块添加规划属性",
-        "道路行政区归属: 将道路与区域连接(intersects),统计每个区域的道路长度"
+        "土地利用分类: 将 20万块地块与土地利用规划区连接(within),为地块添加规划属性",
+        "道路行政区归属: 将 100万条道路与 3000 个区域连接(intersects),统计每个区域的道路长度"
     ],
     notes=[
         "Sedona 自动使用空间索引(R-Tree)优化连接性能",
@@ -446,7 +447,8 @@ DISTANCE_METADATA = OperatorMetadata(
     category=OperatorCategory.SPATIAL_ANALYSIS,
     description="距离计算",
     brief_description="计算几何对象到目标点/线/面的距离,用于邻近度分析",
-    overview="st_distance 计算每个几何对象到目标几何的最短距离。常用于'最近的地铁站'、'到市中心的距离'等邻近度分析。",
+    execution_modes=["workflow"],
+    overview="distance 计算每个几何对象到目标几何的最短距离。常用于'最近的地铁站'、'到市中心的距离'等邻近度分析。",
     params=[
         OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame", notes="包含几何列"),
         OperatorParam(name="geom_column", type="str", required=False, description="几何列名", notes='默认"geom"'),
@@ -455,9 +457,9 @@ DISTANCE_METADATA = OperatorMetadata(
     ],
     use_cases=[
         "地铁站邻近度: 计算 10万个小区到最近地铁站的距离,筛选距离<500米的小区",
-        "医院可达性: 计算每个村庄到乡镇卫生院的距离,评估医疗服务覆盖",
-        "噪声影响评估: 计算居民楼到高速公路的距离,评估噪声影响程度",
-        "配送距离: 计算订单配送地址到仓库的距离,用于配送费计算"
+        "医院可达性: 计算 2万个村庄到乡镇卫生院的距离,评估医疗服务覆盖",
+        "噪声影响评估: 计算 30万栋居民楼到高速公路的距离,评估噪声影响程度",
+        "配送距离: 计算 100万条订单配送地址到仓库的距离,用于配送费计算"
     ],
     notes=[
         "地理坐标系(EPSG:4326)计算的距离单位是度,需转投影坐标系才能得到米",
@@ -486,6 +488,7 @@ TRANSFORM_METADATA = OperatorMetadata(
     category=OperatorCategory.SPATIAL_ANALYSIS,
     description="坐标转换",
     brief_description="在不同坐标系之间转换几何对象,是空间分析的前置步骤",
+    execution_modes=["workflow"],
     overview="transform 在不同坐标参考系统(CRS)之间转换几何坐标。地理坐标系(EPSG:4326 WGS84)适合存储,投影坐标系(EPSG:3857 Web Mercator)适合计算。",
     params=[
         OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame", notes="包含几何列"),

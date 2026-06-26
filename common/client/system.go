@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	neturl "net/url"
 	"strings"
 	"time"
 
@@ -57,6 +58,21 @@ func (c *SystemClient) addAuth(req *http.Request) {
 	}
 }
 
+func withQuery(endpoint string, values neturl.Values) string {
+	if encoded := values.Encode(); encoded != "" {
+		return endpoint + "?" + encoded
+	}
+	return endpoint
+}
+
+func valuesFromFilters(filters map[string]string) neturl.Values {
+	values := neturl.Values{}
+	for key, value := range filters {
+		values.Set(key, value)
+	}
+	return values
+}
+
 // GetEngine 获取引擎详情
 func (c *SystemClient) GetEngine(engineID uint) (*models.Engine, error) {
 	var url string
@@ -104,18 +120,14 @@ func (c *SystemClient) ListEngines(engineType string, tenantID uint) ([]models.E
 		url = fmt.Sprintf("%s/api/v1/system/engines", c.baseURL)
 	}
 
-	queryAdded := false
+	values := neturl.Values{}
 	if engineType != "" {
-		url += "?engine_type=" + engineType
-		queryAdded = true
+		values.Set("engine_type", engineType)
 	}
 	if tenantID > 0 {
-		prefix := "?"
-		if queryAdded || strings.Contains(url, "?") {
-			prefix = "&"
-		}
-		url += fmt.Sprintf("%stenant_id=%d", prefix, tenantID)
+		values.Set("tenant_id", fmt.Sprintf("%d", tenantID))
 	}
+	url = withQuery(url, values)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -136,12 +148,21 @@ func (c *SystemClient) ListEngines(engineType string, tenantID uint) ([]models.E
 		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var engines []models.Engine
-	if err := json.NewDecoder(resp.Body).Decode(&engines); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if c.internalKey != "" {
+		var engines []models.Engine
+		if err := json.NewDecoder(resp.Body).Decode(&engines); err != nil {
+			return nil, fmt.Errorf("failed to decode internal engines response: %w", err)
+		}
+		return engines, nil
 	}
 
-	return engines, nil
+	var result struct {
+		Data []models.Engine `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode paginated engines response: %w", err)
+	}
+	return result.Data, nil
 }
 
 // CreateEngine 创建资源（支持内部或用户接口）
@@ -218,15 +239,7 @@ func (c *SystemClient) RegisterCapability(req *models.CapabilityRegistrationRequ
 // ListCapabilities 查询能力列表（支持过滤）
 func (c *SystemClient) ListCapabilities(filters map[string]string) ([]*models.Engine, error) {
 	url := fmt.Sprintf("%s/api/v1/internal/registry/capabilities", c.baseURL)
-
-	// 添加查询参数
-	if len(filters) > 0 {
-		queryParams := []string{}
-		for k, v := range filters {
-			queryParams = append(queryParams, fmt.Sprintf("%s=%s", k, v))
-		}
-		url += "?" + strings.Join(queryParams, "&")
-	}
+	url = withQuery(url, valuesFromFilters(filters))
 
 	httpReq, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -255,49 +268,10 @@ func (c *SystemClient) ListCapabilities(filters map[string]string) ([]*models.En
 	return engines, nil
 }
 
-// GetCapabilityByIdentifier 根据 unique_identifier 查询能力
-func (c *SystemClient) GetCapabilityByIdentifier(identifier string) (*models.Engine, error) {
-	url := fmt.Sprintf("%s/api/v1/internal/registry/capabilities/%s", c.baseURL, identifier)
-
-	httpReq, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	c.addAuth(httpReq)
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var engine models.Engine
-	if err := json.NewDecoder(resp.Body).Decode(&engine); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &engine, nil
-}
-
 // ListComputeEngines 查询所有具有计算能力的引擎
 func (c *SystemClient) ListComputeEngines(filters map[string]string) ([]*models.Engine, error) {
 	url := fmt.Sprintf("%s/api/v1/internal/registry/compute-engines", c.baseURL)
-
-	// 添加查询参数（如果需要）
-	if len(filters) > 0 {
-		queryParams := []string{}
-		for k, v := range filters {
-			queryParams = append(queryParams, fmt.Sprintf("%s=%s", k, v))
-		}
-		url += "?" + strings.Join(queryParams, "&")
-	}
+	url = withQuery(url, valuesFromFilters(filters))
 
 	httpReq, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -337,18 +311,14 @@ func (c *SystemClient) ListEnginesByCapability(tenantID uint, storageTypes []str
 
 	url := fmt.Sprintf("%s/api/v1/internal/engines", c.baseURL)
 
-	// 构建查询参数
-	queryParams := []string{}
+	values := neturl.Values{}
 	if tenantID > 0 {
-		queryParams = append(queryParams, fmt.Sprintf("tenant_id=%d", tenantID))
+		values.Set("tenant_id", fmt.Sprintf("%d", tenantID))
 	}
 	if len(storageTypes) > 0 {
-		queryParams = append(queryParams, "storage_type="+strings.Join(storageTypes, ","))
+		values.Set("storage_type", strings.Join(storageTypes, ","))
 	}
-
-	if len(queryParams) > 0 {
-		url += "?" + strings.Join(queryParams, "&")
-	}
+	url = withQuery(url, values)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -567,7 +537,11 @@ func (c *SystemClient) ListCatalogChildrenWithToken(engineID uint, req EngineCat
 
 // ListWorkflowEngines 获取支持 workflow 的计算引擎
 func (c *SystemClient) ListWorkflowEngines(tenantID uint) ([]models.Engine, error) {
-	endpoint := fmt.Sprintf("%s/api/v1/internal/engines?tenant_id=%d", c.baseURL, tenantID)
+	values := neturl.Values{}
+	if tenantID > 0 {
+		values.Set("tenant_id", fmt.Sprintf("%d", tenantID))
+	}
+	endpoint := withQuery(fmt.Sprintf("%s/api/v1/internal/engines", c.baseURL), values)
 
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
@@ -603,9 +577,14 @@ func (c *SystemClient) ListWorkflowEngines(tenantID uint) ([]models.Engine, erro
 	return filtered, nil
 }
 
-// ListSparkRuntimes 获取所有 Apache Spark 运行时
+// ListSparkRuntimes 获取所有 Apache Spark 通用引擎资源
 func (c *SystemClient) ListSparkRuntimes(tenantID uint) ([]models.Engine, error) {
-	endpoint := fmt.Sprintf("%s/api/v1/internal/engines?tenant_id=%d&engine_type=spark", c.baseURL, tenantID)
+	values := neturl.Values{}
+	values.Set("engine_type", "spark")
+	if tenantID > 0 {
+		values.Set("tenant_id", fmt.Sprintf("%d", tenantID))
+	}
+	endpoint := withQuery(fmt.Sprintf("%s/api/v1/internal/engines", c.baseURL), values)
 
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
@@ -631,7 +610,7 @@ func (c *SystemClient) ListSparkRuntimes(tenantID uint) ([]models.Engine, error)
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	// 过滤出活跃的 Spark 运行时
+	// 过滤出活跃的 Spark 通用引擎资源
 	filtered := make([]models.Engine, 0)
 	for _, r := range engines {
 		if r.IsActive {

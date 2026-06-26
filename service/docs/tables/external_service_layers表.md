@@ -258,7 +258,7 @@ ServiceLayer{
 
 ```bash
 # 查询服务详情（包含图层）
-curl -X GET http://localhost:8085/api/service/registry/services/1 \
+curl -X GET http://localhost:8086/api/service/registry/services/1 \
   -H "Authorization: Bearer $TOKEN" \
   | jq '.layers'
 ```
@@ -267,7 +267,7 @@ curl -X GET http://localhost:8085/api/service/registry/services/1 \
 
 ```bash
 # 禁用某个图层
-curl -X PUT http://localhost:8085/api/service/registry/services/1/layers/10 \
+curl -X PUT http://localhost:8086/api/service/registry/services/1/layers/10 \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -279,7 +279,7 @@ curl -X PUT http://localhost:8085/api/service/registry/services/1/layers/10 \
 
 ```bash
 # 刷新服务元数据（包括图层）
-curl -X POST http://localhost:8085/api/service/registry/services/1/refresh \
+curl -X POST http://localhost:8086/api/service/registry/services/1/refresh \
   -H "Authorization: Bearer $TOKEN"
 ```
 

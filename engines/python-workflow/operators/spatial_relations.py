@@ -78,6 +78,7 @@ CONTAINS_METADATA = OperatorMetadata(
     category=OperatorCategory.SPATIAL_RELATION,
     description="包含判断",
     brief_description="判断图层A的几何是否包含图层B的几何,常用于点在面内判断",
+    execution_modes=["workflow"],
 
     overview="对图层A和图层B进行空间包含关系判断,返回布尔值表示A是否完全包含B。常用于点在面内查询、边界检查等场景。",
 
@@ -131,6 +132,7 @@ INTERSECTS_METADATA = OperatorMetadata(
     category=OperatorCategory.SPATIAL_RELATION,
     description="相交判断",
     brief_description="判断两个图层的几何是否相交(包括接触),常用于空间关系过滤",
+    execution_modes=["workflow"],
 
     overview="判断图层A和图层B的几何对象是否存在空间相交关系(包括重叠、接触、包含等)。返回布尔值,是最常用的空间关系判断算子。",
 
@@ -184,6 +186,7 @@ DISTANCE_TO_METADATA = OperatorMetadata(
     category=OperatorCategory.SPATIAL_RELATION,
     description="距离计算",
     brief_description="计算几何对象到目标几何的最短距离,常用于邻近度分析和缓冲区计算",
+    execution_modes=["workflow"],
 
     overview="计算图层A中每个几何对象到图层B中最近几何对象的欧氏距离。返回距离值,适用于可达性分析、服务范围评估等场景。",
 

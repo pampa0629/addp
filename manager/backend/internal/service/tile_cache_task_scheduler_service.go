@@ -11,7 +11,7 @@ import (
 	commonScheduler "github.com/addp/common/scheduler"
 )
 
-// TileCacheTaskScheduler 负责按 manager.tile_cache_tasks.next_run_at 触发定时瓦片缓存生成任务。
+// TileCacheTaskScheduler 负责按 manager.vector_tile_cache_tasks.next_run_at 触发定时瓦片缓存生成任务。
 type TileCacheTaskScheduler struct {
 	taskService *TileCacheTaskService
 	exprBuilder *commonScheduler.ExpressionBuilder
@@ -26,7 +26,7 @@ func NewTileCacheTaskScheduler(taskService *TileCacheTaskService) *TileCacheTask
 	return &TileCacheTaskScheduler{
 		taskService: taskService,
 		exprBuilder: commonScheduler.NewExpressionBuilder(),
-		log:         logger.With("component", "tile_cache_task_scheduler"),
+		log:         logger.With("component", "vector_tile_cache_task_scheduler"),
 		stopCh:      make(chan struct{}),
 	}
 }

@@ -80,7 +80,7 @@ func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 // @Tags Execution
 // @Accept json
 // @Produce json
-// @Param body body models.CreateExecutionRequest true "执行请求 | Execution request"
+// @Param body body models.CreateExecutionSwaggerRequest true "执行请求 | Execution request"
 // @Success 200 {object} map[string]string "执行已启动 | Execution started"
 // @Router /executions [post]
 func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
@@ -93,16 +93,15 @@ func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
 
-	// 执行临时内容
-	timeout := 300 // 默认5分钟
 	executionID, err := h.devExecutor.ExecuteContent(
 		c.Request.Context(),
 		req.DevType,
 		req.Content,
-		req.EngineID,
+		req.ExecutionConfig,
 		tenantID,
 		userID,
-		timeout,
+		req.TriggerType,
+		req.Timeout,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -120,7 +119,7 @@ func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 // @Tags Execution
 // @Produce json
 // @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
-// @Success 200 {object} models.ExecutionWithDevTask "执行详情 | Execution details"
+// @Success 200 {object} models.ExecutionWithDevTaskSwagger "执行详情 | Execution details"
 // @Router /executions/{execution_id} [get]
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 	executionID := c.Param("execution_id")
@@ -147,7 +146,7 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Param trigger_type query string false "触发类型过滤 | Filter by trigger type"
 // @Param start_date query string false "开始日期 YYYY-MM-DD | Start date YYYY-MM-DD"
 // @Param end_date query string false "结束日期 YYYY-MM-DD | End date YYYY-MM-DD"
-// @Success 200 {object} models.ListExecutionsResponse "执行列表 | Execution list"
+// @Success 200 {object} models.ListExecutionsSwaggerResponse "执行列表 | Execution list"
 // @Router /executions [get]
 func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 	var req models.ListExecutionsRequest

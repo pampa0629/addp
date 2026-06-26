@@ -48,7 +48,7 @@ func (s *TaskProviderRegistryService) Register() error {
 		"schema_version": "task.capabilities/v1",
 		"task_capabilities": []map[string]interface{}{
 			{
-				"type":                      "tile_cache_generation",
+				"type":                      "vector_tile_cache_generation",
 				"display_name":              "瓦片缓存生成",
 				"description":               "为空间数据项生成可复用的瓦片缓存结果",
 				"definition_schema":         map[string]interface{}{"type": "object"},
@@ -56,8 +56,8 @@ func (s *TaskProviderRegistryService) Register() error {
 				"supports_schedule":         true,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
-				"create_url":                "/manager/tile-cache?tab=tasks",
-				"edit_url":                  "/manager/tile-cache?tab=tasks&task_id=:id",
+				"create_url":                "/manager/spatial-quick-view/vector-tile-cache?tab=tasks",
+				"edit_url":                  "/manager/spatial-quick-view/vector-tile-cache?tab=tasks&task_id=:id",
 				"deprecated":                false,
 			},
 			{
@@ -74,7 +74,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"deprecated":                false,
 			},
 			{
-				"type":                      "quick_view_optimization",
+				"type":                      "vector_quick_view_target_generation",
 				"display_name":              "快显性能优化",
 				"description":               "为 PostGIS 空间数据项创建可复用的 3857 快显优化目标",
 				"definition_schema":         map[string]interface{}{"type": "object"},
@@ -83,9 +83,35 @@ func (s *TaskProviderRegistryService) Register() error {
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
 				// 快显性能优化已有独立页面承载任务入口与结果列表，不能改指到瓦片缓存页。
-				"create_url": "/manager/quick-view-optimization?tab=tasks",
-				"edit_url":   "/manager/quick-view-optimization?tab=tasks&task_id=:id",
+				"create_url": "/manager/spatial-quick-view/vector-optimization?tab=tasks",
+				"edit_url":   "/manager/spatial-quick-view/vector-optimization?tab=tasks&task_id=:id",
 				"deprecated": false,
+			},
+			{
+				"type":                      "raster_cog_generation",
+				"display_name":              "栅格快显 COG 生成",
+				"description":               "为 TIFF/GeoTIFF 数据项生成或登记 Manager 受管的 COG",
+				"definition_schema":         map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
+				"supports_schedule":         false,
+				"supports_cancel":           false,
+				"supports_inline_execution": false,
+				"create_url":                "/manager/spatial-quick-view/raster-cog?tab=tasks",
+				"edit_url":                  "/manager/spatial-quick-view/raster-cog?tab=tasks&task_id=:id",
+				"deprecated":                false,
+			},
+			{
+				"type":                      "raster_mosaic_generation",
+				"display_name":              "栅格 mosaic 生成",
+				"description":               "从资源树 node 选择一批 TIFF/GeoTIFF，生成写入业务存储的 raster_mosaic 数据集",
+				"definition_schema":         map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
+				"supports_schedule":         false,
+				"supports_cancel":           false,
+				"supports_inline_execution": false,
+				"create_url":                "/manager/spatial-quick-view/raster-mosaic?tab=tasks",
+				"edit_url":                  "/manager/spatial-quick-view/raster-mosaic?tab=tasks&task_id=:id",
+				"deprecated":                false,
 			},
 		},
 	}
@@ -101,7 +127,7 @@ func (s *TaskProviderRegistryService) Register() error {
 	registration := TaskProviderRegistration{
 		ModuleName:  "manager",
 		DisplayName: "数据管理",
-		Description: "瓦片缓存生成、快显性能优化和对象存储向量化任务",
+		Description: "矢量快显性能优化、矢量瓦片缓存、栅格快显 COG 和对象存储向量化任务",
 
 		// API 端点配置（相对于 base_url，支持 {task_type}/{id} 占位符）
 		BaseURL:             s.managerURL,

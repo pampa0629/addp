@@ -247,7 +247,7 @@ func (s *QuickViewOptimizationTaskService) Execute(ctx context.Context, taskID u
 		ExecutionID:       executionID,
 		TenantID:          int(tenantID),
 		Module:            commonExecution.ModuleManager,
-		TaskType:          commonExecution.TaskTypeQuickViewOptimization,
+		TaskType:          commonExecution.TaskTypeVectorQuickViewTargetGeneration,
 		Source:            normalizedSource,
 		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(taskID),
 		SourceTaskName:    &task.Name,
@@ -262,7 +262,7 @@ func (s *QuickViewOptimizationTaskService) Execute(ctx context.Context, taskID u
 	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
 		return "", err
 	}
-	if err := s.repo.UpdateTaskLastExecution(ctx, taskID, executionID, commonExecution.ExecutionStatusRunning, now); err != nil {
+	if err := s.repo.UpdateTaskLastExecution(ctx, taskID, tenantID, executionID, commonExecution.ExecutionStatusRunning, now); err != nil {
 		return "", err
 	}
 
@@ -300,7 +300,7 @@ func (s *QuickViewOptimizationTaskService) runQuickViewOptimization(ctx context.
 				"last_execution_id": executionID,
 			}
 			if updateErr := s.repo.UpdateResultFields(ctx, result.ID, task.TenantID, fields); updateErr != nil {
-				errDetails["quick_view_optimization_update_error"] = updateErr.Error()
+				errDetails["vector_quick_view_target_generation_update_error"] = updateErr.Error()
 			}
 		}
 	} else if result != nil {
@@ -341,7 +341,7 @@ func (s *QuickViewOptimizationTaskService) runQuickViewOptimization(ctx context.
 	}); err != nil {
 		logger.L().Warn("更新快显性能优化 execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}
-	if err := s.repo.UpdateTaskLastExecution(ctx, task.ID, executionID, status, completedAt); err != nil {
+	if err := s.repo.UpdateTaskLastExecution(ctx, task.ID, task.TenantID, executionID, status, completedAt); err != nil {
 		logger.L().Warn("更新快显性能优化任务最近执行状态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}
 }

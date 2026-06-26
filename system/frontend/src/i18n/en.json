@@ -119,7 +119,7 @@
       "title": "Engine Management",
       "typeNfs": "NFS Filesystem",
       "addStorage": "Register General Engine",
-      "addCompute": "Register Extension Engine",
+      "addExtension": "Register Extension Engine",
       "filter": "Filter:",
       "filterStorage": "Storage",
       "filterCompute": "Compute",
@@ -172,13 +172,6 @@
         "script": "Script",
         "none": "None"
       },
-      "typeSelection": {
-        "title": "Select Engine Type",
-        "storage": "General Storage Engine",
-        "storageDesc": "Database, object storage and other general data engine services",
-        "compute": "Compute Engine",
-        "computeDesc": "Services providing computing capabilities"
-      },
       "actions": {
         "test": "Test",
         "detail": "Detail",
@@ -191,7 +184,7 @@
       "dialog": {
         "add": "New Engine",
         "addStorage": "New General Storage Engine",
-        "addCompute": "New Compute Engine",
+        "addExtension": "New Extension Engine",
         "edit": "Edit Engine",
         "details": "Engine Details - {name}",
         "close": "Close",
@@ -224,7 +217,6 @@
           "engineFamily": "Engine Family",
           "engineType": "Engine Type",
           "sections": "Capability Sections",
-          "families": "Storage Families",
           "catalogModel": "Catalog Model",
           "catalog": "Catalog",
           "metadata": "Metadata",
@@ -278,13 +270,32 @@
           "spark": "Distributed compute engine"
         }
       },
+      "extensionForm": {
+        "engineType": "Engine Type",
+        "engineTypePlaceholder": "For example: acme_geo_workflow",
+        "name": "Name",
+        "runtimeProtocol": "Runtime Protocol",
+        "description": "Description",
+        "protocol": "Protocol",
+        "host": "Host",
+        "port": "Port",
+        "capabilities": "Capabilities",
+        "capabilitiesPlaceholder": "Leave empty to generate standard addp.workflow/v1 workflow capabilities; provide full engine.capabilities/v1 JSON only for advanced configuration",
+        "exampleHint": "Math Workflow is a workflow extension example. The dev environment starts the service but does not register it automatically; fill the sample values, then test and register it.",
+        "useMathExample": "Use Math Example",
+        "checkRuntime": "Check Service",
+        "runtimeChecking": "Checking service status",
+        "runtimeOffline": "Service unavailable: {error}"
+      },
       "msg": {
         "loadFailed": "Failed to load engine list",
         "testSuccess": "Connection test successful!",
         "testFailed": "Connection test failed: {error}",
         "createSuccess": "Created successfully",
+        "extensionCreateSuccessWithProbe": "Created successfully. Protocol verified; {count} operators discovered.",
+        "extensionProbeSuccess": "Protocol probe passed.",
+        "extensionProbeSuccessWithOperators": "Protocol probe passed; {count} operators discovered.",
         "updateSuccess": "Updated successfully",
-        "jsonError": "Invalid JSON format, please check",
         "opFailed": "Operation failed",
         "scanPolicySyncFailed": "Engine saved, but metadata scan orchestration failed: {error}",
         "deleteConfirm": "Are you sure you want to delete engine \"{name}\"? This action cannot be undone.",
@@ -293,7 +304,8 @@
         "builtinCannotDelete": "Built-in engines cannot be deleted",
         "detailFailed": "Failed to get engine details",
         "fillRequired": "Please fill in all required fields",
-        "computeTestHint": "Compute engines need to be tested via health check endpoint after saving"
+        "capabilitiesJsonInvalid": "Capabilities JSON is invalid",
+        "extensionEditUnsupported": "Extension engines are maintained by their runtime self-registration and cannot be edited in the general engine form."
       },
       "capabilityView": {
         "actions": {
@@ -323,6 +335,7 @@
           "metadata": "Metadata collection",
           "contentRead": "Content read",
           "contentWrite": "Content write",
+          "tableIO": "Table I/O",
           "semantics": "Semantics",
           "notSupported": "Explicitly not supported",
           "query": "Query",
@@ -354,6 +367,13 @@
           "streamWrite": "Stream write",
           "rangeWrite": "Range write",
           "batchWrite": "Batch write",
+          "tableReadSession": "Table read session",
+          "tableWriteSession": "Table write session",
+          "tableWritePrepare": "Table write prepare",
+          "tableReadSpatialTransform": "Read-side spatial transform",
+          "spatialReadTransform": "Read-side CRS transform",
+          "spatialWriteTransform": "Write-side CRS transform",
+          "nativeSpatialFunctions": "Native spatial functions",
           "defaultLanguage": "Default language",
           "readOnly": "Read-only",
           "queryPlan": "Query plan",

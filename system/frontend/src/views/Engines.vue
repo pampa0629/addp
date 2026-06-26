@@ -6,7 +6,7 @@
           <span>{{ t('system.engine.title') }}</span>
           <div class="header-buttons">
             <el-button type="primary" :icon="Plus" @click="showAddStorageDialog">{{ t('system.engine.addStorage') }}</el-button>
-            <el-button type="success" :icon="Plus" @click="showAddComputeDialog">{{ t('system.engine.addCompute') }}</el-button>
+            <el-button type="warning" :icon="Plus" @click="showAddExtensionDialog">{{ t('system.engine.addExtension') }}</el-button>
           </div>
         </div>
       </template>
@@ -31,7 +31,7 @@
         <el-table-column prop="name" :label="t('system.engine.columns.name')" min-width="150" />
 
         <!-- 类型 -->
-        <el-table-column prop="resource_type" :label="t('system.engine.columns.type')" width="150">
+        <el-table-column prop="engine_type" :label="t('system.engine.columns.type')" width="150">
           <template #default="{ row }">
             <el-tag :type="getEngineTypeColor(row.engine_type)">
               {{ getEngineTypeLabel(row.engine_type) }}
@@ -67,13 +67,14 @@
         <el-table-column :label="t('system.engine.columns.capabilities')" min-width="220">
           <template #default="{ row }">
             <el-tag
-              v-for="tag in parseCapabilities(row.capabilities)"
-              :key="tag"
+              v-for="tag in getCapabilitySummaryTags(row)"
+              :key="tag.id"
               size="small"
               effect="plain"
+              :type="getCapabilityStatusTagType(tag.status)"
               style="margin: 2px"
             >
-              {{ tag }}
+              {{ getCapabilityViewText(tag) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -115,7 +116,7 @@
               size="small"
               type="warning"
               :icon="Edit"
-              :disabled="row.is_builtin"
+              :disabled="!canEditEngine(row)"
               @click="editEngine(row)"
             >
               {{ t('system.engine.actions.edit') }}
@@ -143,109 +144,57 @@
       />
     </el-card>
 
-    <!-- 引擎类型选择对话框 -->
-    <el-dialog
-      v-model="typeSelectionVisible"
-      :title="t('system.engine.typeSelection.title')"
-      width="500px"
-    >
-      <div class="engine-type-selection">
-        <el-card class="type-card" shadow="hover" @click="confirmEngineType('storage')">
-          <div class="type-icon">📦</div>
-          <h3>{{ t('system.engine.typeSelection.storage') }}</h3>
-          <p>{{ t('system.engine.typeSelection.storageDesc') }}</p>
-          <ul>
-            <li>PostgreSQL</li>
-            <li>MySQL</li>
-            <li>MinIO</li>
-            <li>S3</li>
-          </ul>
-        </el-card>
-
-        <el-card class="type-card" shadow="hover" @click="confirmEngineType('compute')">
-          <div class="type-icon">🔧</div>
-          <h3>{{ t('system.engine.typeSelection.compute') }}</h3>
-          <p>{{ t('system.engine.typeSelection.computeDesc') }}</p>
-          <ul>
-            <li>Spatial Engine</li>
-            <li>Workflow Engine</li>
-            <li>Data Processing</li>
-          </ul>
-        </el-card>
-      </div>
-    </el-dialog>
-
     <!-- 新增/编辑对话框 -->
     <el-dialog
       v-model="dialogVisible"
       :title="dialogTitle"
-      :width="isStorageLayout ? '980px' : '600px'"
+      width="980px"
       @close="resetForm"
     >
-      <!-- 通用存储引擎表单（左侧类型选择 + 右侧连接信息） -->
-      <template v-if="isStorageLayout">
-        <div class="storage-layout">
-          <aside class="engine-type-sidebar">
-            <div class="sidebar-title">{{ t('system.engine.registerPanel.title') }}</div>
-            <div class="sidebar-subtitle">{{ t('system.engine.registerPanel.subtitle') }}</div>
-            <div class="engine-type-list">
-              <el-tooltip
-                v-for="item in visibleStorageEngineTypeOptions"
-                :key="item.value"
-                :content="item.desc"
-                placement="right"
+      <div class="storage-layout">
+        <aside class="engine-type-sidebar">
+          <div class="sidebar-title">{{ t('system.engine.registerPanel.title') }}</div>
+          <div class="sidebar-subtitle">{{ t('system.engine.registerPanel.subtitle') }}</div>
+          <div class="engine-type-list">
+            <el-tooltip
+              v-for="item in visibleStorageEngineTypeOptions"
+              :key="item.value"
+              :content="item.desc"
+              placement="right"
+            >
+              <button
+                type="button"
+                class="engine-type-item"
+                :class="{
+                  'is-active': form.engine_type === item.value,
+                  'is-disabled': isEdit
+                }"
+                :disabled="isEdit"
+                @click="selectStorageEngineType(item.value)"
               >
-                <button
-                  type="button"
-                  class="engine-type-item"
-                  :class="{
-                    'is-active': form.engine_type === item.value,
-                    'is-disabled': isEdit
-                  }"
-                  :disabled="isEdit"
-                  @click="selectStorageEngineType(item.value)"
-                >
-                  <span class="engine-type-icon">{{ item.icon }}</span>
-                  <span class="engine-type-name">{{ item.label }}</span>
-                </button>
-              </el-tooltip>
-            </div>
-            <div v-if="isEdit" class="sidebar-hint">
-              {{ t('system.engine.registerPanel.editLockedHint') }}
-            </div>
-          </aside>
+                <span class="engine-type-icon">{{ item.icon }}</span>
+                <span class="engine-type-name">{{ item.label }}</span>
+              </button>
+            </el-tooltip>
+          </div>
+          <div v-if="isEdit" class="sidebar-hint">
+            {{ t('system.engine.registerPanel.editLockedHint') }}
+          </div>
+        </aside>
 
-          <section class="storage-form-panel">
-            <StorageEngineForm
-              ref="storageFormRef"
-              v-model="form"
-              :is-edit="isEdit"
-              :show-type-selector="false"
-            />
-          </section>
-        </div>
-      </template>
-
-      <!-- 通用存储引擎表单（非双栏场景兜底） -->
-      <StorageEngineForm
-        v-else-if="!isComputeEngineForm"
-        ref="storageFormRef"
-        v-model="form"
-        :is-edit="isEdit"
-      />
-
-      <!-- 计算引擎表单 -->
-      <EngineForm
-        v-else
-        ref="resourceFormRef"
-        v-model="form"
-        :is-edit="isEdit"
-      />
+        <section class="storage-form-panel">
+          <StorageEngineForm
+            ref="storageFormRef"
+            v-model="form"
+            :is-edit="isEdit"
+            :show-type-selector="false"
+          />
+        </section>
+      </div>
 
       <template #footer>
         <el-button @click="dialogVisible = false">{{ t('system.engine.actions.cancel') }}</el-button>
         <el-button
-          v-if="!isComputeEngineForm"
           type="warning"
           :loading="testing"
           @click="testBeforeCreate"
@@ -253,6 +202,124 @@
           {{ t('system.engine.actions.testConnection') }}
         </el-button>
         <el-button type="primary" :loading="submitting" @click="submitForm">{{ t('system.engine.actions.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 扩展引擎注册弹窗 -->
+    <el-dialog
+      v-model="extensionDialogVisible"
+      :title="t('system.engine.dialog.addExtension')"
+      width="760px"
+      @close="resetExtensionForm"
+    >
+      <el-form
+        ref="extensionFormRef"
+        :model="extensionForm"
+        label-width="150px"
+        class="extension-form"
+      >
+        <div class="extension-example-bar">
+          <div class="extension-example-info">
+            <span>{{ t('system.engine.extensionForm.exampleHint') }}</span>
+            <el-tag
+              v-if="extensionRuntimeStatus !== 'idle'"
+              size="small"
+              effect="plain"
+              :type="extensionRuntimeStatusTagType"
+            >
+              {{ extensionRuntimeStatusText }}
+            </el-tag>
+          </div>
+          <div class="extension-example-actions">
+            <el-button size="small" type="info" plain @click="fillMathWorkflowExample">
+              {{ t('system.engine.extensionForm.useMathExample') }}
+            </el-button>
+            <el-button
+              size="small"
+              type="primary"
+              plain
+              :loading="extensionRuntimeChecking"
+              @click="checkExtensionRuntimeStatus"
+            >
+              {{ t('system.engine.extensionForm.checkRuntime') }}
+            </el-button>
+          </div>
+        </div>
+
+        <el-form-item :label="t('system.engine.extensionForm.engineType')" required>
+          <el-input
+            v-model="extensionForm.engine_type"
+            :placeholder="t('system.engine.extensionForm.engineTypePlaceholder')"
+          />
+        </el-form-item>
+
+        <el-form-item :label="t('system.engine.extensionForm.name')" required>
+          <el-input v-model="extensionForm.name" />
+        </el-form-item>
+
+        <el-form-item :label="t('system.engine.extensionForm.runtimeProtocol')">
+          <el-input :model-value="extensionRuntimeProtocol" disabled />
+        </el-form-item>
+
+        <el-form-item :label="t('system.engine.extensionForm.description')">
+          <el-input v-model="extensionForm.description" type="textarea" :rows="2" />
+        </el-form-item>
+
+        <el-form-item :label="t('system.engine.extensionForm.protocol')" required>
+          <el-select v-model="extensionForm.protocol" style="width: 180px">
+            <el-option label="http" value="http" />
+            <el-option label="https" value="https" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item :label="t('system.engine.extensionForm.host')" required>
+          <el-input v-model="extensionForm.host" />
+        </el-form-item>
+
+        <el-form-item :label="t('system.engine.extensionForm.port')" required>
+          <el-input-number v-model="extensionForm.port" :min="1" :max="65535" controls-position="right" />
+        </el-form-item>
+
+        <el-form-item :label="t('system.engine.extensionForm.capabilities')">
+          <el-input
+            v-model="extensionCapabilitiesText"
+            type="textarea"
+            :rows="8"
+            :placeholder="t('system.engine.extensionForm.capabilitiesPlaceholder')"
+          />
+        </el-form-item>
+
+        <el-alert
+          v-if="extensionProbeResult"
+          type="success"
+          :closable="false"
+          show-icon
+          class="extension-probe-alert"
+        >
+          <template #title>
+            {{ extensionProbeResult }}
+          </template>
+        </el-alert>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="extensionDialogVisible = false">{{ t('system.engine.actions.cancel') }}</el-button>
+        <el-button
+          type="warning"
+          :loading="extensionTesting"
+          :disabled="extensionSubmitting"
+          @click="testExtensionBeforeCreate"
+        >
+          {{ t('system.engine.actions.testConnection') }}
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="extensionSubmitting"
+          :disabled="extensionTesting"
+          @click="submitExtensionForm"
+        >
+          {{ t('system.engine.actions.save') }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -315,7 +382,7 @@
           </el-tab-pane>
 
           <!-- 能力声明标签页 -->
-          <el-tab-pane :label="t('system.engine.dialog.detailTabs.capabilities')" v-if="selectedEngine.capabilities">
+          <el-tab-pane :label="t('system.engine.dialog.detailTabs.capabilities')" v-if="hasSelectedCapabilitiesView">
             <div class="capability-detail">
               <div class="capability-toolbar">
                 <div class="capability-summary">
@@ -440,12 +507,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { enginesAPI } from '../api/engines'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { StorageEngineForm, EngineForm, requestConsoleBridge } from '@common-ui'
-import { getEngineFamilyLabelKey } from '@common-ui'
+import { StorageEngineForm, requestConsoleBridge } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -459,18 +525,53 @@ const total = ref(0)
 // 能力过滤
 const selectedCategories = ref(['storage', 'compute', 'general', 'extension', 'builtin']) // 默认显示全部引擎
 
-// 引擎类型选择对话框
-const typeSelectionVisible = ref(false)
 const selectedEngineCapabilityGroup = ref('')
 
 // 资源表单对话框
 const dialogVisible = ref(false)
 const storageFormRef = ref(null)
-const resourceFormRef = ref(null)
 const testing = ref(false)
 const submitting = ref(false)
 const isEdit = ref(false)
 const editId = ref(null)
+
+// 扩展引擎注册对话框
+const extensionDialogVisible = ref(false)
+const extensionFormRef = ref(null)
+const extensionSubmitting = ref(false)
+const extensionTesting = ref(false)
+const extensionRuntimeChecking = ref(false)
+const extensionRuntimeStatus = ref('idle')
+const extensionRuntimeStatusText = ref('')
+const extensionProbeResult = ref('')
+const extensionCapabilitiesText = ref('')
+const extensionRuntimeProtocol = 'addp.workflow/v1'
+const extensionForm = ref({
+  engine_type: '',
+  name: '',
+  description: '',
+  protocol: 'http',
+  host: 'localhost',
+  port: 8100
+})
+
+const mathWorkflowExample = {
+  engine_type: 'math_workflow',
+  name: 'Math Workflow 示例引擎',
+  description: '符合 addp.workflow/v1 的数学工作流示例运行时',
+  protocol: 'http',
+  host: 'localhost',
+  port: 8089
+}
+
+const extensionRuntimeStatusTagType = computed(() => {
+  const typeMap = {
+    online: 'success',
+    offline: 'danger',
+    checking: 'warning'
+  }
+  return typeMap[extensionRuntimeStatus.value] || 'info'
+})
 
 // 引擎详情弹窗相关
 const detailsVisible = ref(false)
@@ -575,19 +676,7 @@ const syncEngineScanPolicyAfterSave = async (engine, scanConfig) => {
 
 const dialogTitle = computed(() => {
   if (isEdit.value) return t('system.engine.dialog.edit')
-  if (selectedEngineCapabilityGroup.value === 'storage') return t('system.engine.dialog.addStorage')
-  if (selectedEngineCapabilityGroup.value === 'compute') return t('system.engine.dialog.addCompute')
-  return t('system.engine.dialog.add')
-})
-
-// 是否使用计算引擎表单
-const isComputeEngineForm = computed(() => {
-  return selectedEngineCapabilityGroup.value === 'compute' ||
-         (isEdit.value && form.value.engine_type === 'compute_engine')
-})
-
-const isStorageLayout = computed(() => {
-  return !isComputeEngineForm.value
+  return t('system.engine.dialog.addStorage')
 })
 
 const storageEngineTypeOptions = computed(() => ([
@@ -655,10 +744,6 @@ const visibleStorageEngineTypeOptions = computed(() => {
   return storageEngineTypeOptions.value.filter(item => item.value === form.value.engine_type)
 })
 
-const parsedSelectedCapabilities = computed(() => {
-  return parseCapabilitiesJSON(selectedEngine.value?.capabilities)
-})
-
 const selectedCapabilitiesView = computed(() => {
   const view = selectedEngine.value?.capabilities_view
   if (view && typeof view === 'object') {
@@ -672,8 +757,13 @@ const selectedCapabilitiesView = computed(() => {
   return {
     summary: [],
     sections: [],
-    json_view: buildFallbackJSONView(selectedEngine.value?.capabilities)
+    json_view: []
   }
+})
+
+const hasSelectedCapabilitiesView = computed(() => {
+  const view = selectedCapabilitiesView.value
+  return view.summary.length > 0 || view.sections.length > 0 || view.json_view.length > 0
 })
 
 // 过滤后的引擎列表
@@ -683,9 +773,9 @@ const filteredEngines = computed(() => {
   }
 
   return engines.value.filter(engine => {
-    const caps = parseCapabilitiesJSON(engine.capabilities)
-    const hasStorage = hasStorageCapability(caps)
-    const hasCompute = hasComputeCapability(caps)
+    const view = normalizeCapabilitiesView(engine.capabilities_view)
+    const hasStorage = view.sections.some(section => section.id === 'storage')
+    const hasCompute = view.sections.some(section => section.id === 'compute')
     const isBuiltin = engine.is_builtin
     const engineOrigin = engine.engine_origin
 
@@ -742,178 +832,22 @@ const sortedConnectionInfo = computed(() => {
   return sorted
 })
 
-// 解析 capabilities JSON 为对象
-const parseCapabilitiesJSON = (capabilitiesJSON) => {
-  try {
-    if (typeof capabilitiesJSON === 'object' && capabilitiesJSON !== null) {
-      return capabilitiesJSON
-    }
-    return JSON.parse(capabilitiesJSON || '{}')
-  } catch {
-    return {}
+const normalizeCapabilitiesView = (view) => {
+  if (!view || typeof view !== 'object') {
+    return { summary: [], sections: [], json_view: [] }
+  }
+  return {
+    summary: Array.isArray(view.summary) ? view.summary : [],
+    sections: Array.isArray(view.sections) ? view.sections : [],
+    json_view: Array.isArray(view.json_view) ? view.json_view : []
   }
 }
 
-const hasStorageCapability = (caps) => {
-  return caps.schema_version === 'engine.capabilities/v1' && Boolean(caps.storage)
-}
-
-const hasComputeCapability = (caps) => {
-  if (caps.schema_version !== 'engine.capabilities/v1' || !caps.compute) {
-    return false
-  }
-
-  return Boolean(
-    caps.compute.query?.supported ||
-    caps.compute.workflow?.supported ||
-    caps.compute.script?.supported
-  )
-}
-
-const joinCapabilityValues = (values) => {
-  return Array.isArray(values) && values.length > 0 ? values.join(', ') : '-'
-}
-
-const formatBoolean = (value) => {
-  if (value === true) return t('system.engine.dialog.capabilities.yes')
-  if (value === false) return t('system.engine.dialog.capabilities.no')
-  return String(value)
-}
-
-const formatCapabilityFlags = (capability) => {
-  if (!capability || typeof capability !== 'object') {
-    return '-'
-  }
-
-  const entries = Object.entries(capability)
-    .filter(([, value]) => value !== undefined && value !== null && value !== '' && !Array.isArray(value) && typeof value !== 'object')
-    .map(([key, value]) => `${key}: ${formatBoolean(value)}`)
-
-  return entries.length > 0 ? entries.join(', ') : '-'
-}
-
-const formatKeyValueMap = (value) => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return '-'
-  }
-
-  const entries = Object.entries(value).map(([key, item]) => `${key}: ${item}`)
-  return entries.length > 0 ? entries.join(', ') : '-'
-}
-
-const getCatalogModelSummary = (model) => {
-  if (!model) {
-    return '-'
-  }
-
-  const levels = Array.isArray(model.levels)
-    ? model.levels.map(level => {
-      const markers = [
-        level.container ? t('system.engine.dialog.capabilities.container') : null,
-        level.item ? t('system.engine.dialog.capabilities.item') : null,
-        level.optional ? t('system.engine.dialog.capabilities.optional') : null
-      ].filter(Boolean)
-      return `${level.term}${markers.length ? `(${markers.join('/')})` : ''}`
-    })
-    : []
-
-  return [
-    `${t('system.engine.dialog.capabilities.rootTerm')}: ${model.root_term || '-'}`,
-    `${t('system.engine.dialog.capabilities.pathVersion')}: ${model.path_version || '-'}`,
-    `${t('system.engine.dialog.capabilities.levels')}: ${levels.length ? levels.join(' -> ') : '-'}`
-  ].join('; ')
-}
-
-const getCapabilitySections = (caps) => {
-  const sections = []
-  if (hasStorageCapability(caps)) sections.push(t('system.engine.dialog.capabilities.storageCapabilities'))
-  if (hasComputeCapability(caps)) sections.push(t('system.engine.dialog.capabilities.computeCapabilities'))
-  if (caps.limits) sections.push(t('system.engine.dialog.capabilities.limits'))
-  if (caps.extensions) sections.push(t('system.engine.dialog.capabilities.extensions'))
-  return sections.length > 0 ? sections : [t('system.engine.capabilities.none')]
-}
-
-const getCapabilityFamilyLabel = (family) => {
-  if (!family) {
-    return '-'
-  }
-  if (['tabular', 'object', 'file', 'dynamic_schema', 'document', 'graph'].includes(family)) {
-    return getStorageTypeLabel(family)
-  }
-  return getComputeTypeLabel(family)
-}
-
-const getComputeCapabilityRows = (caps) => {
-  if (!hasComputeCapability(caps)) {
-    return []
-  }
-
-  const rows = []
-  const query = caps.compute.query
-  if (query?.supported) {
-    rows.push({
-      type: 'query',
-      languages: query.languages || [],
-      modes: [
-        query.default_language ? `${t('system.engine.dialog.capabilities.defaultLanguage')}: ${query.default_language}` : null,
-        query.read_only ? 'read_only' : null,
-        query.supports_explain ? 'explain' : null,
-        query.supports_cancel ? 'cancel' : null
-      ].filter(Boolean),
-      description: joinCapabilityValues(query.result_kinds)
-    })
-  }
-
-  const workflow = caps.compute.workflow
-  if (workflow?.supported) {
-    rows.push({
-      type: 'workflow',
-      languages: [],
-      modes: workflow.supported_operator_mode || [],
-      description: [
-        workflow.runtime_api ? `${t('system.engine.dialog.capabilities.runtimeApi')}: ${workflow.runtime_api}` : null,
-        workflow.dynamic_operators ? 'dynamic_operators' : null
-      ].filter(Boolean).join(', ') || '-'
-    })
-  }
-
-  const script = caps.compute.script
-  if (script?.supported) {
-    rows.push({
-      type: 'script',
-      languages: script.languages || [],
-      modes: script.modes || [],
-      description: joinCapabilityValues(script.languages)
-    })
-  }
-
-  return rows
-}
-
-// 解析 capabilities 为标签数组（用于显示）
-const parseCapabilities = (capabilitiesJSON) => {
-  const caps = parseCapabilitiesJSON(capabilitiesJSON)
-  const tags = []
-
-  if (hasStorageCapability(caps)) {
-    tags.push(getStorageTypeLabel(caps.engine_family))
-  }
-
-  if (hasComputeCapability(caps)) {
-    if (caps.compute.query?.supported) {
-      tags.push(getComputeTypeLabel('query'))
-      ;(caps.compute.query.languages || []).forEach(language => tags.push(language))
-    }
-    if (caps.compute.workflow?.supported) {
-      tags.push(getComputeTypeLabel('workflow'))
-    }
-    if (caps.compute.script?.supported) {
-      tags.push(getComputeTypeLabel('script'))
-      ;(caps.compute.script.languages || []).forEach(language => tags.push(language))
-    }
-  }
-
-  return tags.length > 0 ? [...new Set(tags)] : [t('system.engine.capabilities.none')]
+const getCapabilitySummaryTags = (engine) => {
+  const summary = normalizeCapabilitiesView(engine.capabilities_view).summary
+  return summary.length > 0
+    ? summary
+    : [{ id: 'none', label_key: 'system.engine.capabilities.none', status: 'unknown' }]
 }
 
 const handleFilterChange = () => {}
@@ -927,6 +861,10 @@ const getEngineTypeLabel = (type, engine = null) => {
 
 const getEngineTypeColor = (type) => {
   return type ? 'info' : 'info'
+}
+
+const canEditEngine = (row) => {
+  return !row.is_builtin && row.engine_origin === 'general'
 }
 
 const formatDate = (dateString) => {
@@ -996,32 +934,6 @@ const getCapabilityTagText = (tag) => {
     return label
   }
   return tag.value || humanizeCapabilityValue(tag.id)
-}
-
-const buildFallbackJSONView = (capabilitiesJSON) => {
-  const caps = parseCapabilitiesJSON(capabilitiesJSON)
-  return buildJSONTree(caps)
-}
-
-const buildJSONTree = (value) => {
-  if (!value || typeof value !== 'object') return []
-  return Object.keys(value).sort().map(key => {
-    const item = value[key]
-    if (item && typeof item === 'object') {
-      return {
-        key,
-        children: Array.isArray(item)
-          ? item.map((child, index) => ({
-            key: String(index),
-            ...(child && typeof child === 'object'
-              ? { children: buildJSONTree(child) }
-              : { value: String(child) })
-          }))
-          : buildJSONTree(item)
-      }
-    }
-    return { key, value: item === undefined || item === null ? '' : String(item) }
-  })
 }
 
 // 获取连接状态标签
@@ -1099,71 +1011,199 @@ const showAddStorageDialog = () => {
   dialogVisible.value = true
 }
 
-const showAddComputeDialog = () => {
-  isEdit.value = false
-  editId.value = null
-  selectedEngineCapabilityGroup.value = 'compute'
-  resetForm()
-  dialogVisible.value = true
+const showAddExtensionDialog = () => {
+  resetExtensionForm()
+  extensionDialogVisible.value = true
 }
 
-const confirmEngineType = (category) => {
-  selectedEngineCapabilityGroup.value = category
-  typeSelectionVisible.value = false
-  dialogVisible.value = true
+const fillMathWorkflowExample = () => {
+  extensionForm.value = { ...mathWorkflowExample }
+  extensionCapabilitiesText.value = ''
+  extensionProbeResult.value = ''
+  resetExtensionRuntimeStatus()
+}
+
+const parseExtensionCapabilities = () => {
+  const text = extensionCapabilitiesText.value.trim()
+  if (!text) return null
+
+  try {
+    return JSON.parse(text)
+  } catch (error) {
+    ElMessage.error(t('system.engine.msg.capabilitiesJsonInvalid'))
+    return false
+  }
+}
+
+const buildDefaultWorkflowCapabilities = (engineType) => ({
+  schema_version: 'engine.capabilities/v1',
+  engine_type: engineType,
+  engine_family: 'workflow',
+  compute: {
+    workflow: {
+      supported: true,
+      runtime_api: extensionRuntimeProtocol,
+      dynamic_operators: true,
+      supported_operator_mode: ['workflow', 'direct']
+    }
+  }
+})
+
+const extensionCreateSuccessMessage = (probe) => {
+  const operatorsCount = Number(probe?.operators_count)
+  if (Number.isFinite(operatorsCount)) {
+    return t('system.engine.msg.extensionCreateSuccessWithProbe', { count: operatorsCount })
+  }
+  return t('system.engine.msg.createSuccess')
+}
+
+const extensionProbeSuccessMessage = (probe) => {
+  const operatorsCount = Number(probe?.operators_count)
+  if (Number.isFinite(operatorsCount)) {
+    return t('system.engine.msg.extensionProbeSuccessWithOperators', { count: operatorsCount })
+  }
+  return t('system.engine.msg.extensionProbeSuccess')
+}
+
+const buildExtensionPayload = () => {
+  const engineType = String(extensionForm.value.engine_type || '').trim()
+  const name = String(extensionForm.value.name || '').trim()
+  const host = String(extensionForm.value.host || '').trim()
+  const protocol = String(extensionForm.value.protocol || 'http').trim()
+  const port = Number(extensionForm.value.port)
+
+  if (!engineType || !name || !host || !protocol || !Number.isInteger(port) || port <= 0) {
+    ElMessage.warning(t('system.engine.msg.fillRequired'))
+    return null
+  }
+
+  const capabilities = parseExtensionCapabilities()
+  if (capabilities === false) {
+    return null
+  }
+
+  const payload = {
+    engine_type: engineType,
+    engine_origin: 'extension',
+    name,
+    description: extensionForm.value.description,
+    connection_info: {
+      protocol,
+      host,
+      port
+    }
+  }
+  payload.capabilities = capabilities || buildDefaultWorkflowCapabilities(engineType)
+  return payload
+}
+
+const probeExtensionPayload = async (payload) => {
+  const probeResponse = await enginesAPI.testConnectionBeforeCreate(payload)
+  if (!probeResponse?.success) {
+    throw new Error(probeResponse?.error || probeResponse?.message || t('system.engine.msg.opFailed'))
+  }
+  return probeResponse
+}
+
+const testExtensionBeforeCreate = async () => {
+  const payload = buildExtensionPayload()
+  if (!payload) return
+
+  extensionTesting.value = true
+  try {
+    const probeResponse = await probeExtensionPayload(payload)
+    extensionProbeResult.value = extensionProbeSuccessMessage(probeResponse.probe)
+    setExtensionRuntimeOnline(probeResponse.probe)
+    ElMessage.success(extensionProbeResult.value)
+  } catch (error) {
+    extensionProbeResult.value = ''
+    setExtensionRuntimeOffline(error)
+    ElMessage.error(t('system.engine.msg.testFailed', { error: error.response?.data?.error || error.message }))
+  } finally {
+    extensionTesting.value = false
+  }
+}
+
+const setExtensionRuntimeOnline = (probe) => {
+  extensionRuntimeStatus.value = 'online'
+  extensionRuntimeStatusText.value = extensionProbeSuccessMessage(probe)
+}
+
+const setExtensionRuntimeOffline = (error) => {
+  extensionRuntimeStatus.value = 'offline'
+  const message = error?.response?.data?.error || error?.message || t('system.engine.msg.opFailed')
+  extensionRuntimeStatusText.value = t('system.engine.extensionForm.runtimeOffline', { error: message })
+}
+
+const resetExtensionRuntimeStatus = () => {
+  extensionRuntimeStatus.value = 'idle'
+  extensionRuntimeStatusText.value = ''
+}
+
+const checkExtensionRuntimeStatus = async () => {
+  const payload = buildExtensionPayload()
+  if (!payload) return
+
+  extensionRuntimeChecking.value = true
+  extensionRuntimeStatus.value = 'checking'
+  extensionRuntimeStatusText.value = t('system.engine.extensionForm.runtimeChecking')
+  try {
+    const probeResponse = await probeExtensionPayload(payload)
+    setExtensionRuntimeOnline(probeResponse.probe)
+  } catch (error) {
+    setExtensionRuntimeOffline(error)
+  } finally {
+    extensionRuntimeChecking.value = false
+  }
+}
+
+const submitExtensionForm = async () => {
+  const payload = buildExtensionPayload()
+  if (!payload) return
+
+  extensionSubmitting.value = true
+  try {
+    const probeResponse = await probeExtensionPayload(payload)
+    await enginesAPI.create(payload)
+    ElMessage.success(extensionCreateSuccessMessage(probeResponse.probe))
+    extensionDialogVisible.value = false
+    await loadEngines()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.error || error.message || t('system.engine.msg.opFailed'))
+  } finally {
+    extensionSubmitting.value = false
+  }
 }
 
 const editEngine = async (row) => {
+  if (!canEditEngine(row)) {
+    ElMessage.warning(t('system.engine.msg.extensionEditUnsupported'))
+    return
+  }
+
   isEdit.value = true
   editId.value = row.id
 
-  if (row.engine_type === 'compute_engine') {
-    selectedEngineCapabilityGroup.value = 'compute'
+  selectedEngineCapabilityGroup.value = 'storage'
 
-    form.value = {
-      unique_identifier: row.unique_identifier || '',
-      name: row.name || '',
-      display_name: row.display_name || '',
-      description: row.description || '',
-      engine_type: row.engine_type,
-      capabilities: typeof row.capabilities === 'string'
-        ? row.capabilities
-        : JSON.stringify(row.capabilities || {}, null, 2),
-      task_api_config: typeof row.task_api_config === 'string'
-        ? row.task_api_config
-        : JSON.stringify(row.task_api_config || {}, null, 2),
-      health_check_config: typeof row.health_check_config === 'string'
-        ? row.health_check_config
-        : JSON.stringify(row.health_check_config || {}, null, 2),
-      is_active: row.is_active
-    }
-  } else {
-    selectedEngineCapabilityGroup.value = 'storage'
-
-    const scanConfig = await loadEngineScanConfig(row.id)
-    form.value = {
-      engine_type: row.engine_type,
-      name: row.name,
-      description: row.description,
-      is_active: row.is_active,
-      connection_info: { ...row.connection_info },
-      ...(scanConfig ? { scan_config: scanConfig } : {})
-    }
+  const scanConfig = await loadEngineScanConfig(row.id)
+  form.value = {
+    engine_type: row.engine_type,
+    name: row.name,
+    description: row.description,
+    is_active: row.is_active,
+    connection_info: { ...row.connection_info },
+    ...(scanConfig ? { scan_config: scanConfig } : {})
   }
 
   dialogVisible.value = true
 }
 
 const testBeforeCreate = async () => {
-  const formRef = isComputeEngineForm.value ? resourceFormRef.value : storageFormRef.value
+  const formRef = storageFormRef.value
   const valid = await formRef?.validate()
   if (!valid) {
     ElMessage.warning(t('system.engine.msg.fillRequired'))
-    return
-  }
-
-  if (isComputeEngineForm.value) {
-    ElMessage.info(t('system.engine.msg.computeTestHint'))
     return
   }
 
@@ -1205,7 +1245,7 @@ const testConnection = async (row) => {
 }
 
 const submitForm = async () => {
-  const formRef = isComputeEngineForm.value ? resourceFormRef.value : storageFormRef.value
+  const formRef = storageFormRef.value
   const valid = await formRef?.validate()
   if (!valid) return
 
@@ -1214,32 +1254,13 @@ const submitForm = async () => {
     const { enginePayload, scanConfig } = splitEngineAndScanPayload(form.value)
     let submitData = { ...enginePayload }
 
-    if (isComputeEngineForm.value) {
-      try {
-        submitData.capabilities = JSON.parse(submitData.capabilities || '{}')
-        if (submitData.task_api_config) {
-          submitData.task_api_config = JSON.parse(submitData.task_api_config)
-        }
-        if (submitData.health_check_config) {
-          submitData.health_check_config = JSON.parse(submitData.health_check_config)
-        }
-      } catch (e) {
-        ElMessage.error(t('system.engine.msg.jsonError'))
-        return
-      }
-    }
-
     if (isEdit.value) {
       const response = await enginesAPI.update(editId.value, submitData)
-      if (!isComputeEngineForm.value) {
-        await syncEngineScanPolicyAfterSave(engineFromResponse(response) || { id: editId.value, name: submitData.name }, scanConfig || defaultImmediateScanConfig())
-      }
+      await syncEngineScanPolicyAfterSave(engineFromResponse(response) || { id: editId.value, name: submitData.name }, scanConfig || defaultImmediateScanConfig())
       ElMessage.success(t('system.engine.msg.updateSuccess'))
     } else {
       const response = await enginesAPI.create(submitData)
-      if (!isComputeEngineForm.value) {
-        await syncEngineScanPolicyAfterSave(engineFromResponse(response), scanConfig || defaultImmediateScanConfig())
-      }
+      await syncEngineScanPolicyAfterSave(engineFromResponse(response), scanConfig || defaultImmediateScanConfig())
       ElMessage.success(t('system.engine.msg.createSuccess'))
     }
     dialogVisible.value = false
@@ -1295,52 +1316,46 @@ const viewEngineDetails = async (row) => {
   }
 }
 
-// 获取存储类型标签
-const getStorageTypeLabel = (type) => {
-  const key = getEngineFamilyLabelKey(type)
-  return key ? t(key) : humanizeCapabilityValue(type)
-}
-
-// 获取计算类型标签
-const getComputeTypeLabel = (type) => {
-  const typeMap = {
-    'query': t('system.engine.capabilities.query'),
-    'workflow': t('system.engine.capabilities.workflow'),
-    'script': t('system.engine.capabilities.script')
-  }
-  return typeMap[type] || type
-}
-
 // 表格行样式
 const tableRowClassName = ({ row }) => {
   return row.is_builtin ? 'builtin-engine-row' : ''
 }
 
 const resetForm = () => {
-  if (isComputeEngineForm.value) {
-    form.value = {
-      unique_identifier: '',
-      name: '',
-      display_name: '',
-      description: '',
-      engine_type: 'compute_engine',
-      capabilities: '',
-      task_api_config: '',
-      health_check_config: '',
-      is_active: true
-    }
-    resourceFormRef.value?.reset()
-  } else {
-    form.value = {
-      engine_type: '',
-      name: '',
-      description: '',
-      is_active: true,
-      connection_info: {}
-    }
-    storageFormRef.value?.reset()
+  form.value = {
+    engine_type: '',
+    name: '',
+    description: '',
+    is_active: true,
+    connection_info: {}
   }
+  storageFormRef.value?.reset()
 }
+
+const resetExtensionForm = () => {
+  extensionForm.value = {
+    engine_type: '',
+    name: '',
+    description: '',
+    protocol: 'http',
+    host: 'localhost',
+    port: 8100
+  }
+  extensionCapabilitiesText.value = ''
+  extensionProbeResult.value = ''
+  resetExtensionRuntimeStatus()
+  extensionFormRef.value?.clearValidate?.()
+}
+
+watch(extensionForm, () => {
+  extensionProbeResult.value = ''
+  resetExtensionRuntimeStatus()
+}, { deep: true })
+
+watch(extensionCapabilitiesText, () => {
+  extensionProbeResult.value = ''
+  resetExtensionRuntimeStatus()
+})
 
 onMounted(() => {
   loadEngines()
@@ -1475,6 +1490,43 @@ onMounted(() => {
 .storage-form-panel {
   flex: 1;
   min-width: 0;
+}
+
+.extension-form {
+  padding-right: 12px;
+}
+
+.extension-example-bar {
+  margin-left: 150px;
+  margin-bottom: 16px;
+  width: calc(100% - 150px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+}
+
+.extension-example-info,
+.extension-example-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.extension-example-info {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.extension-example-actions {
+  flex-shrink: 0;
+}
+
+.extension-probe-alert {
+  margin-left: 150px;
+  width: calc(100% - 150px);
 }
 
 .capability-detail {

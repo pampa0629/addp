@@ -113,13 +113,16 @@ func main() {
 | system | 8180 | /api/v1/system |
 | manager | 8081 | /api/v1/manager |
 | meta | 8082 | /api/v1/meta |
-| develop | 8083 | /api/v1/develop |
-| transfer | 8084 | /api/v1/transfer |
-| service | 8085 | /api/v1/service |
-| orchestrator | 8086 | /api/v1/orchestrator |
-| monitor | 8087 | /api/v1/monitor |
-| standard | 8088 | /api/v1/standard |
-| model | 8089 | /api/v1/model |
+| transfer | 8083 | /api/v1/transfer |
+| orchestrator | 8084 | /api/v1/orchestrator |
+| develop | 8185 | /api/v1/develop |
+| service | 8086 | /api/v1/service |
+| monitor | 8100 | /api/v1/monitor |
+| standard | 8110 | /api/v1/standard |
+| model | 8181 | /api/v1/model |
+| quality | 8182 | /api/v1/quality |
+| portal | 8184 | /api/v1/portal |
+| graph | 8186 | /api/v1/graph |
 
 ### 3. 在 Handler 方法上添加端点注解
 

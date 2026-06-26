@@ -5,7 +5,9 @@ info:
   description: |
     # ADDP 工作流计算引擎标准接口规范
 
-    本规范定义了所有工作流计算引擎必须实现的标准HTTP接口。
+    本规范定义 ADDP 工作流运行时的 addp.workflow/v1 HTTP 接口。
+    该协议由 Common Engine 的 WorkflowRuntimeProvider 消费；工作流引擎仍必须先通过
+    EnginePlugin 和 engine.capabilities/v1 纳入 System 统一引擎体系。
 
     ## 核心概念
 
@@ -17,8 +19,8 @@ info:
 
     1. **语言无关**: 可用任何技术栈实现(Python, Go, Java等)
     2. **统一接口**: 所有引擎遵循相同的API契约
-    3. **自动发现**: Develop模块通过API动态获取算子
-    4. **能力声明**: 通过capabilities声明引擎特性
+    3. **动态发现**: Provider 通过 /api/operators 获取算子元数据
+    4. **能力声明**: 通过 EnginePlugin capabilities 声明静态工作流能力，算子等动态能力由运行时接口发现
 
   contact:
     name: ADDP Development Team
@@ -30,15 +32,15 @@ servers:
     description: 本地开发环境
     variables:
       port:
-        default: '8099'
-        description: 引擎服务端口
+        default: '8089'
+        description: 引擎服务端口，例如 Math Workflow 8089、Spark Workflow 8098、Python Workflow 8099
   - url: http://{host}:{port}
     description: 自定义环境
     variables:
       host:
         default: localhost
       port:
-        default: '8099'
+        default: '8089'
 
 tags:
   - name: Infrastructure
@@ -89,12 +91,6 @@ paths:
           schema:
             type: string
             example: 几何处理
-        - name: module
-          in: query
-          description: 按模块过滤
-          schema:
-            type: string
-            example: python-workflow
       responses:
         '200':
           description: 算子列表
@@ -110,13 +106,18 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
   # ==================== 工作流执行 ====================
-  /api/spatial/workflow:
+  /api/workflow:
     post:
       summary: 执行工作流
       description: |
         执行包含多个算子的工作流(DAG)
 
         **关键**: 所有工作流引擎必须实现此接口
+
+        `engine_id` 是条件运行时绑定字段。普通工作流运行时可以不传；
+        Spark Workflow 执行时必须传入顶层 `engine_id`，该值指向已注册且已启用的
+        Apache Spark 通用引擎资源，并由 Develop 后端从
+        `execution_config.engine_specific.spark_cluster_id` 映射而来。
       operationId: executeWorkflow
       tags: [Workflow]
       requestBody:
@@ -160,12 +161,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  # ==================== 单算子执行 ====================
-  /api/spatial/operators/{name}/execute:
+  # ==================== 单算子 direct 调用 ====================
+  /api/operators/{name}/invoke:
     post:
-      summary: 执行单个算子
-      description: 快速执行单个算子,用于测试或简单计算
-      operationId: executeOperator
+      summary: direct 调用单个算子
+      description: 仅允许调用 execution_modes 包含 direct 的算子；该入口不创建任务，不进入 Orchestrator 或 Monitor。
+      operationId: invokeOperator
       tags: [Operators]
       parameters:
         - name: name
@@ -180,18 +181,25 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/OperatorExecuteRequest'
+              $ref: '#/components/schemas/OperatorInvokeRequest'
             example:
+              engine_id: 34
               params:
                 distance: 200.0
                 resolution: 16
       responses:
         '200':
-          description: 执行成功
+          description: 调用成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OperatorExecuteResponse'
+                $ref: '#/components/schemas/OperatorInvokeResponse'
+        '403':
+          description: 算子不支持 direct 调用
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: 算子不存在
           content:
@@ -216,7 +224,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
   # ==================== 执行状态查询 ====================
-  /api/spatial/executions/{execution_id}:
+  /api/executions/{execution_id}:
     get:
       summary: 查询执行状态
       description: 查询工作流或算子的执行状态(用于异步执行)
@@ -282,7 +290,7 @@ components:
           additionalProperties:
             type: string
           example:
-            geopandas: 0.14.1
+            runtime: addp.workflow/v1
             pandas: 2.0.0
 
     # 算子列表响应
@@ -313,9 +321,11 @@ components:
         - id
         - name
         - display_name
+        - engine_type
         - category
+        - category_path
         - description
-        - module
+        - execution_modes
         - parameters
         - output_ports
       properties:
@@ -331,10 +341,24 @@ components:
           type: string
           description: 中文显示名
           example: 缓冲区分析
+        engine_type:
+          type: string
+          description: 工作流运行时引擎类型
+          example: python_workflow
+        type:
+          type: string
+          description: 算子类型，可用于区分 spatial、non_spatial、general 等运行时内部类型；不得用作 ADDP 业务模块。
+          example: spatial
         category:
           type: string
           description: 算子分类
           example: 几何处理
+        category_path:
+          type: array
+          description: 算子分组路径；用于前端分组展示，不得使用 module 表达分组
+          items:
+            type: string
+          example: [空间分析, 几何处理]
         description:
           type: string
           description: 功能描述
@@ -343,10 +367,13 @@ components:
           type: string
           description: 简短说明(一句话)
           example: 在几何对象周围创建指定距离的缓冲区
-        module:
-          type: string
-          description: 所属引擎模块
-          example: python-workflow
+        execution_modes:
+          type: array
+          description: 算子支持的调用模式；workflow 表示可编排，direct 表示可被模块受控单算子调用
+          items:
+            type: string
+            enum: [workflow, direct]
+          example: [workflow]
         parameters:
           type: array
           items:
@@ -370,6 +397,18 @@ components:
             type: string
           example:
             - 注意 distance 单位与 CRS 一致
+        detailed_description:
+          type: object
+          description: 面向 AI 生成、文档展示和高级 UI 的详细说明，结构可由引擎扩展。
+          additionalProperties: true
+        inputs:
+          type: array
+          description: 输入端口或输入类型摘要，可选。
+          items: {}
+        attributes:
+          type: object
+          description: 引擎自定义扩展属性，可选。
+          additionalProperties: true
 
     # 参数元数据
     ParameterMetadata:
@@ -395,7 +434,13 @@ components:
             - array
             - object
             - geodataframe
+            - dataframe
           example: float
+        param_type:
+          type: string
+          description: 参数用途类型。input/output 表示工作流内部连线参数，param 表示普通可配置参数，ui 表示仅服务前端交互的 UI 参数。
+          enum: [input, output, param, ui]
+          example: param
         required:
           type: boolean
           description: 是否必填
@@ -425,6 +470,40 @@ components:
           type: string
           description: 注意事项
           example: 单位与坐标系一致
+        pattern:
+          type: string
+          description: 字符串正则校验规则
+          example: "^[a-zA-Z_][a-zA-Z0-9_]*$"
+        item_type:
+          type: string
+          description: 数组元素类型
+          example: string
+        properties:
+          type: object
+          description: object 参数的属性定义
+          additionalProperties:
+            $ref: '#/components/schemas/ParameterMetadata'
+        depends_on:
+          type: string
+          description: 当前参数依赖的参数名
+          example: source_type
+        show_when:
+          type: object
+          description: 条件显示规则，键为依赖参数名，值为匹配值或匹配值数组。
+          additionalProperties: true
+          example:
+            source_type: [table, file]
+        ui_type:
+          type: string
+          description: 前端 UI 组件类型，例如 resource_tree_picker。
+          example: resource_tree_picker
+        ui_config:
+          type: object
+          description: 前端 UI 组件配置。资源选择器必须使用 engine_families 表达能力族过滤，不得使用 engine_types 白名单。
+          additionalProperties: true
+          example:
+            engine_families: [tabular, dynamic_schema]
+            selectable_node_types: [table]
 
     # 输出端口元数据
     OutputPortMetadata:
@@ -464,6 +543,10 @@ components:
           type: object
           additionalProperties: true
           description: 输入数据(可选)
+        engine_id:
+          type: integer
+          description: 条件运行时资源 ID。Spark Workflow 必填，指向已启用的 Apache Spark 通用引擎资源；普通工作流运行时不需要。
+          example: 34
 
     # 工作流定义
     WorkflowDefinition:
@@ -473,6 +556,7 @@ components:
       properties:
         tasks:
           type: array
+          minItems: 1
           items:
             $ref: '#/components/schemas/TaskDefinition'
           description: 任务列表
@@ -484,6 +568,7 @@ components:
         - id
         - operator
         - params
+        - depends_on
       properties:
         id:
           type: string
@@ -513,7 +598,8 @@ components:
       properties:
         status:
           type: string
-          enum: [success, failed]
+          enum: [success, failed, running, pending]
+          description: success/failed 表示同步终态；running/pending 表示已受理，调用方必须通过 /api/executions/{execution_id} 轮询终态。
           example: success
         execution_id:
           type: string
@@ -521,10 +607,10 @@ components:
           description: 执行ID
           example: 550e8400-e29b-41d4-a716-446655440000
         final_result:
-          description: 最终结果(GeoJSON等)
+          description: 最终结果，必须可 JSON 序列化。Spark DataFrame 等大规模运行时对象应返回轻量摘要而不是完整数据集。
         all_results:
           type: object
-          description: 所有任务结果
+          description: 所有任务结果，值必须可 JSON 序列化。Spark DataFrame 等大规模运行时对象应返回 schema、少量预览行等轻量摘要。
         error:
           type: string
           description: 错误信息(失败时)
@@ -533,23 +619,50 @@ components:
           description: 执行耗时(毫秒)
           example: 1234.56
 
-    # 算子执行请求
-    OperatorExecuteRequest:
+    # 算子 direct 调用请求
+    OperatorInvokeRequest:
       type: object
       required:
         - params
       properties:
+        engine_id:
+          type: integer
+          description: 条件运行时资源 ID。Spark Workflow direct 调用必填，指向已启用的 Apache Spark 通用引擎资源；普通工作流运行时不需要。
+          example: 34
         params:
           type: object
           additionalProperties: true
           description: 算子参数
+        binary_payload:
+          type: object
+          description: 二进制调用载荷；JSON 传输中 data 按 base64 编码
+          properties:
+            content_type:
+              type: string
+              description: 载荷 MIME 类型
+              example: application/vnd.apache.arrow.stream
+            encoding:
+              type: string
+              description: 载荷编码
+              example: arrow
+            name:
+              type: string
+              description: 载荷名称或输入端口名
+              example: geometry_batch
+            data:
+              type: string
+              format: byte
+              description: base64 编码的二进制数据
+            metadata:
+              type: object
+              additionalProperties: true
+              description: 载荷元数据
 
-    # 算子执行响应
-    OperatorExecuteResponse:
+    # 算子 direct 调用响应
+    OperatorInvokeResponse:
       type: object
       required:
         - status
-        - execution_id
       properties:
         status:
           type: string
@@ -558,9 +671,26 @@ components:
         execution_id:
           type: string
           format: uuid
+          description: direct 调用执行 ID。同步调用可不返回；若引擎内部生成运行时执行记录，可返回该 ID 供诊断。
           example: 550e8400-e29b-41d4-a716-446655440000
         result:
-          description: 执行结果
+          description: 调用结果
+        binary_payload:
+          type: object
+          description: 二进制调用结果
+          properties:
+            content_type:
+              type: string
+            encoding:
+              type: string
+            name:
+              type: string
+            data:
+              type: string
+              format: byte
+            metadata:
+              type: object
+              additionalProperties: true
         message:
           type: string
           description: 提示信息
@@ -575,21 +705,29 @@ components:
       required:
         - status
         - execution_id
+        - progress
       properties:
         status:
           type: string
-          enum: [success, failed, running]
+          enum: [success, failed, running, pending, cancelled]
           example: success
         execution_id:
           type: string
           format: uuid
           example: 550e8400-e29b-41d4-a716-446655440000
-        task_status:
-          type: string
-          enum: [running, pending, completed, failed]
-          example: completed
         result:
           description: 执行结果
+        all_results:
+          type: object
+          description: 所有任务结果摘要，必须可 JSON 序列化
+        message:
+          type: string
+          description: 状态说明
+        task_order:
+          type: array
+          items:
+            type: string
+          description: 工作流任务执行顺序
         error:
           type: string
           description: 错误信息(失败时)
@@ -604,6 +742,10 @@ components:
           format: date-time
           description: 开始时间
           example: 2025-12-31T10:30:00Z
+        execution_time_ms:
+          type: number
+          description: 执行耗时(毫秒)
+          example: 1234.56
 
     # 错误响应
     ErrorResponse:
@@ -625,6 +767,8 @@ components:
           description: 错误代码
           enum:
             - OPERATOR_NOT_FOUND
+            - DIRECT_NOT_SUPPORTED
+            - EXECUTION_NOT_FOUND
             - INVALID_PARAMS
             - EXECUTION_FAILED
             - WORKFLOW_INVALID
@@ -633,15 +777,3 @@ components:
         details:
           type: string
           description: 详细错误信息(可选)
-
-  # 安全定义
-  securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: JWT认证令牌(从System模块获取)
-
-# 全局安全要求(部分端点可覆盖)
-security:
-  - BearerAuth: []

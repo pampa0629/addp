@@ -10,7 +10,6 @@ common-frontend/
 │   └── src/
 │       ├── components/
 │       │   ├── StorageEngineForm.vue
-│       │   ├── ImagePreview.vue
 │       │   └── ResourceTree.vue
 │       ├── utils/
 │       │   └── formatters.js
@@ -55,10 +54,20 @@ resolve: {
 在组件中：
 
 ```javascript
-import { StorageEngineForm, ImagePreview } from '@common-ui'
+import { StorageEngineForm, ResourceTree } from '@common-ui'
 ```
 
 **依赖要求**: 只需要 Vue 和 Element Plus
+
+### 预览组件（Manager 等需要文件预览的模块）
+
+预览组件从单独入口导入：
+
+```javascript
+import { ImagePreview, MarkdownPreview, PdfPreview } from '@common-ui/previews'
+```
+
+**依赖要求**: 使用预览入口的模块需要显式安装对应预览依赖，例如 `geotiff`、`marked`、`dompurify`、`mermaid`、`jszip`、`mammoth`。不使用预览入口的模块不应因为 `@common-ui` 主入口被迫安装这些依赖。
 
 ### 地图组件（Manager 等需要地图的模块）
 

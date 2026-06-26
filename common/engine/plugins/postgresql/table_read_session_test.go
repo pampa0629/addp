@@ -117,3 +117,118 @@ func TestPostgresSelectExprForFieldsQuotesSelectedColumns(t *testing.T) {
 		t.Fatalf("select expr = %q, want quoted selected fields", expr)
 	}
 }
+
+func TestPostgresGeoJSONSelectExprTransformsSpatialColumnToTargetSrid(t *testing.T) {
+	expr, err := postgresGeoJSONSelectExpr([]postgresColumnInfo{
+		{Name: "geometry", DataType: "USER-DEFINED", UDTName: "geometry", NativeType: "geometry(Polygon,32650)"},
+		{Name: "name", DataType: "text"},
+	}, map[string]interface{}{
+		"geometry_encoding":         "geojson",
+		"geometry_field":            "geometry",
+		"geometry_target_srid":      4326,
+		"geometry_transform_policy": "required",
+	}, []datatype.FieldInfo{
+		{Name: "geometry", Type: "geometry"},
+		{Name: "name", Type: "string"},
+	})
+	if err != nil {
+		t.Fatalf("postgresGeoJSONSelectExpr failed: %v", err)
+	}
+	want := `ST_AsGeoJSON(ST_Transform("geometry", 4326))::json AS "geometry", "name"`
+	if expr != want {
+		t.Fatalf("select expr = %q, want %q", expr, want)
+	}
+}
+
+func TestPostgresGeoJSONSelectExprErrorsWhenSpatialSRIDUnknownAndTransformRequired(t *testing.T) {
+	_, err := postgresGeoJSONSelectExpr([]postgresColumnInfo{
+		{Name: "geometry", DataType: "USER-DEFINED", UDTName: "geometry", NativeType: "geometry"},
+	}, map[string]interface{}{
+		"geometry_encoding":         "geojson",
+		"geometry_field":            "geometry",
+		"geometry_target_srid":      4326,
+		"geometry_transform_policy": "required",
+	}, []datatype.FieldInfo{
+		{Name: "geometry", Type: "geometry"},
+	})
+	if err == nil {
+		t.Fatal("postgresGeoJSONSelectExpr succeeded, want source SRID required error")
+	}
+}
+
+func TestPostgresGeometryEncodingHint(t *testing.T) {
+	if got := postgresGeometryEncodingHint(map[string]interface{}{plugin.TableReadHintGeometryEncoding: "EWKB"}); got != format.GeometryEncodingEWKB {
+		t.Fatalf("geometry encoding hint = %q, want ewkb", got)
+	}
+	if got := postgresGeometryEncodingHint(map[string]interface{}{plugin.TableReadHintGeometryEncoding: "geojson"}); got != format.GeometryEncodingGeoJSON {
+		t.Fatalf("geometry encoding hint = %q, want geojson", got)
+	}
+	if got := postgresGeometryEncodingHint(map[string]interface{}{plugin.TableReadHintGeometryEncoding: "wkt"}); got != "" {
+		t.Fatalf("geometry encoding hint = %q, want empty for unsupported read encoding", got)
+	}
+}
+
+func TestPostgresEWKBSelectExprTransformsSpatialColumnToTargetSrid(t *testing.T) {
+	expr, err := postgresEWKBSelectExpr([]postgresColumnInfo{
+		{Name: "geometry", DataType: "USER-DEFINED", UDTName: "geometry", NativeType: "geometry(Polygon,32650)"},
+		{Name: "name", DataType: "text"},
+	}, map[string]interface{}{
+		"geometry_encoding":         "ewkb",
+		"geometry_field":            "geometry",
+		"geometry_target_srid":      4326,
+		"geometry_transform_policy": "required",
+	}, []datatype.FieldInfo{
+		{Name: "geometry", Type: "geometry"},
+		{Name: "name", Type: "string"},
+	})
+	if err != nil {
+		t.Fatalf("postgresEWKBSelectExpr failed: %v", err)
+	}
+	want := `ST_AsEWKB(ST_Transform("geometry", 4326)) AS "geometry", "name"`
+	if expr != want {
+		t.Fatalf("select expr = %q, want %q", expr, want)
+	}
+}
+
+func TestPostgresEWKBSelectExprErrorsWhenSpatialSRIDUnknownAndTransformRequired(t *testing.T) {
+	_, err := postgresEWKBSelectExpr([]postgresColumnInfo{
+		{Name: "geometry", DataType: "USER-DEFINED", UDTName: "geometry", NativeType: "geometry"},
+	}, map[string]interface{}{
+		"geometry_encoding":         "ewkb",
+		"geometry_field":            "geometry",
+		"geometry_target_srid":      4326,
+		"geometry_transform_policy": "required",
+	}, []datatype.FieldInfo{
+		{Name: "geometry", Type: "geometry"},
+	})
+	if err == nil {
+		t.Fatal("postgresEWKBSelectExpr succeeded, want source SRID required error")
+	}
+}
+
+func TestPostgresSpatialInfoFromFieldsAppliesTargetSRIDWhenReadTransformRequired(t *testing.T) {
+	fields := []datatype.FieldInfo{
+		{Name: "id", Type: datatype.FieldTypeInt},
+		{Name: "geometry", Type: datatype.FieldTypeGeometry, NativeType: "geometry(Point,3857)"},
+	}
+
+	spatialInfo := postgresSpatialInfoFromFieldsWithHints(fields, map[string]interface{}{
+		plugin.TableReadHintGeometryEncoding:        string(format.GeometryEncodingGeoJSON),
+		plugin.TableReadHintGeometryField:           "geometry",
+		plugin.TableReadHintGeometryTargetSRID:      4326,
+		plugin.TableReadHintGeometryTransformPolicy: "required",
+	})
+
+	if spatialInfo == nil || spatialInfo.PrimarySRIDValue() != 4326 || spatialInfo.PrimaryCRSRef() != "EPSG:4326" {
+		t.Fatalf("spatial info = %#v, want transformed target CRS", spatialInfo)
+	}
+}
+
+func TestPostgresKeepsBytesOnlyForEWKBGeometryColumns(t *testing.T) {
+	if !isGeometryColumn([]datatype.FieldInfo{{Name: "geom", Type: datatype.FieldTypeGeometry}}, "GEOM") {
+		t.Fatal("isGeometryColumn returned false for case-insensitive geometry column")
+	}
+	if isGeometryColumn([]datatype.FieldInfo{{Name: "payload", Type: datatype.FieldTypeString}}, "payload") {
+		t.Fatal("isGeometryColumn returned true for non-spatial column")
+	}
+}

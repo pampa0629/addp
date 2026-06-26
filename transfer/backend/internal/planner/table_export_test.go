@@ -441,9 +441,25 @@ func TestBuildTableTransferPlanPassesGeoJSONWriteOptions(t *testing.T) {
 	spec.Target.Options = map[string]interface{}{
 		"geometry_field": "geom",
 	}
+	sourceSpatial := datatype.NewSingleGeometrySpatialInfo("geom", "Point", 3857, 2)
+	sourceSpatial.Extent = &datatype.BoundingBox{1000000, 2000000, 1100000, 2100000}
+	spec.Source.Attributes = tableSourceAttributes("single", "table", "public/roads", nil, []map[string]interface{}{
+		{"name": "geom", "type": "geometry"},
+	}, datatype.SpatialInfoPayload(sourceSpatial))
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
-		1: {Type: "postgresql"},
+		1: {
+			Type: "postgresql",
+			Capabilities: &engineplugin.EngineCapabilities{
+				SchemaVersion: engineplugin.CapabilitiesSchemaVersion,
+				EngineType:    "postgresql",
+				Storage: &engineplugin.StorageCapabilities{
+					Store: &engineplugin.StoreCapability{
+						TableReadSpatialTransform: true,
+					},
+				},
+			},
+		},
 		2: {Type: "nfs"},
 	})
 	if err != nil {
@@ -457,6 +473,278 @@ func TestBuildTableTransferPlanPassesGeoJSONWriteOptions(t *testing.T) {
 	}
 	if result.Plan.Source.ReadOptions["geometry_encoding"] != "geojson" || result.Plan.Source.ReadOptions["geometry_field"] != "geom" {
 		t.Fatalf("read options = %#v, want geojson geometry read options", result.Plan.Source.ReadOptions)
+	}
+	if result.Plan.Source.ReadOptions["geometry_target_srid"] != 4326 || result.Plan.Source.ReadOptions["geometry_transform_policy"] != "required" {
+		t.Fatalf("read options = %#v, want required spatial transform hints", result.Plan.Source.ReadOptions)
+	}
+	if result.Plan.Source.SpatialInfo == nil || result.Plan.Source.SpatialInfo.PrimarySRIDValue() != 4326 ||
+		result.Plan.Source.SpatialInfo.PrimaryCRSRef() != "EPSG:4326" {
+		t.Fatalf("source spatial info = %#v, want target CRS after source-side transform", result.Plan.Source.SpatialInfo)
+	}
+	if result.Plan.Source.SpatialInfo.Extent != nil {
+		t.Fatalf("source spatial extent = %#v, want cleared extent after source-side transform", result.Plan.Source.SpatialInfo.Extent)
+	}
+	if len(result.Plan.Transforms) != 0 {
+		t.Fatalf("transforms = %#v, want no synthetic spatial transform on native source", result.Plan.Transforms)
+	}
+}
+
+func TestBuildTableTransferPlanRequestsEWKBForNativeSpatialSourceToShapefile(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
+	spec.Target.Format = format.FormatShapefile
+	setFileTarget(&spec, 2, "exports/roads.shp")
+	spec.Target.Options = map[string]interface{}{
+		"geometry_field": "geom",
+	}
+	spec.Source.Attributes = tableSourceAttributes("single", "table", "public/roads", nil, []map[string]interface{}{
+		{"name": "geom", "type": "geometry"},
+	}, datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 2)))
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.ReadOptions[engineplugin.TableReadHintGeometryEncoding] != "ewkb" {
+		t.Fatalf("source read options = %#v, want ewkb geometry encoding", result.Plan.Source.ReadOptions)
+	}
+	if len(result.Plan.Transforms) != 0 {
+		t.Fatalf("transforms = %#v, want no reproject for shapefile target", result.Plan.Transforms)
+	}
+}
+
+func TestBuildTableTransferPlanAllowsNativeGeoJSONExportWhenSourceAlready4326WithoutReadTransform(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
+	spec.Target.Format = format.FormatGeoJSON
+	setFileTarget(&spec, 2, "exports/roads.geojson")
+	spec.Target.Options = map[string]interface{}{
+		"geometry_field": "geom",
+	}
+	spec.Source.Attributes = tableSourceAttributes("single", "table", "public/roads", nil, []map[string]interface{}{
+		{"name": "geom", "type": "geometry"},
+	}, datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 2)))
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: nativeTableSourceBinding("native_table_source"),
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.ReadOptions[engineplugin.TableReadHintGeometryEncoding] != "ewkb" {
+		t.Fatalf("source read options = %#v, want ewkb geometry encoding", result.Plan.Source.ReadOptions)
+	}
+	if len(result.Plan.Transforms) != 0 {
+		t.Fatalf("transforms = %#v, want no transform for 4326 native source", result.Plan.Transforms)
+	}
+}
+
+func TestBuildTableTransferPlanRejectsNativeGeoJSONExportWithoutReadTransformWhenCRSDiffers(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
+	spec.Target.Format = format.FormatGeoJSON
+	setFileTarget(&spec, 2, "exports/roads.geojson")
+	spec.Source.Attributes = tableSourceAttributes("single", "table", "public/roads", nil, []map[string]interface{}{
+		{"name": "geom", "type": "geometry"},
+	}, datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("geom", "Point", 3857, 2)))
+
+	_, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: nativeTableSourceBinding("native_table_source"),
+		2: {Type: "nfs"},
+	})
+	if err == nil {
+		t.Fatal("BuildTableTransferPlan succeeded, want missing read_transform error")
+	}
+	if !strings.Contains(err.Error(), "does not support spatial transform") {
+		t.Fatalf("error = %q, want missing spatial transform capability error", err)
+	}
+}
+
+func TestBuildTableTransferPlanAddsSpatialReprojectTransformForEncodedGeoJSONSource(t *testing.T) {
+	spec := minimalEncodedToEncodedSpec()
+	spec.Source.Locator = fileLocator(1, "imports/roads.shp")
+	spec.Source.Format = format.FormatShapefile
+	spec.Source.Attributes = tableSourceAttributes("multi", "shapefile", "imports/roads.shp", []map[string]interface{}{
+		{"path": "imports/roads.shp", "role": "main", "extension": ".shp", "required": true, "primary": true},
+		{"path": "imports/roads.shx", "role": "index", "extension": ".shx", "required": true},
+		{"path": "imports/roads.dbf", "role": "attributes", "extension": ".dbf", "required": true},
+	}, []map[string]interface{}{
+		{"name": "geom", "type": "geometry"},
+	}, datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("geom", "MultiPolygon", 3857, 2)))
+	setFileTarget(&spec, 2, "exports/roads.geojson")
+	spec.Target.Format = format.FormatGeoJSON
+	spec.Target.Options = map[string]interface{}{
+		"geometry_field": "geom",
+	}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.ParseOptions == nil || result.Plan.Source.ParseOptions.GeometryEncoding != format.GeometryEncodingEWKB {
+		t.Fatalf("source parse options = %#v, want ewkb for spatial batch transform", result.Plan.Source.ParseOptions)
+	}
+	if len(result.Plan.Transforms) != 1 {
+		t.Fatalf("transforms = %#v, want one synthetic spatial transform", result.Plan.Transforms)
+	}
+	transform := result.Plan.Transforms[0]
+	if transform.Type != "spatial_reproject" || transform.SpatialReproject == nil {
+		t.Fatalf("transform = %#v, want spatial reproject plan", transform)
+	}
+	if !transform.SpatialReproject.Reproject || transform.SpatialReproject.GeometryColumn != "geom" {
+		t.Fatalf("spatial reproject plan = %#v, want reprojected geom batch", transform.SpatialReproject)
+	}
+	if transform.SpatialReproject.SourceCRS != "EPSG:3857" || transform.SpatialReproject.TargetCRS != "EPSG:4326" {
+		t.Fatalf("spatial reproject plan = %#v, want CRS conversion", transform.SpatialReproject)
+	}
+}
+
+func TestBuildTableTransferPlanSkipsSpatialReprojectForEncodedGeoJSONSourceAlready4326(t *testing.T) {
+	spec := minimalEncodedToEncodedSpec()
+	spec.Source.Locator = fileLocator(1, "imports/roads.shp")
+	spec.Source.Format = format.FormatShapefile
+	spec.Source.Attributes = tableSourceAttributes("multi", "shapefile", "imports/roads.shp", []map[string]interface{}{
+		{"path": "imports/roads.shp", "role": "main", "extension": ".shp", "required": true, "primary": true},
+		{"path": "imports/roads.shx", "role": "index", "extension": ".shx", "required": true},
+		{"path": "imports/roads.dbf", "role": "attributes", "extension": ".dbf", "required": true},
+	}, []map[string]interface{}{
+		{"name": "geom", "type": "geometry"},
+	}, datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("geom", "MultiPolygon", 4326, 2)))
+	setFileTarget(&spec, 2, "exports/roads.geojson")
+	spec.Target.Format = format.FormatGeoJSON
+	spec.Target.Options = map[string]interface{}{
+		"geometry_field": "geom",
+	}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.ParseOptions == nil || result.Plan.Source.ParseOptions.GeometryEncoding != format.GeometryEncodingEWKB {
+		t.Fatalf("source parse options = %#v, want ewkb for GeoJSON writer", result.Plan.Source.ParseOptions)
+	}
+	if len(result.Plan.Transforms) != 0 {
+		t.Fatalf("transforms = %#v, want no spatial reproject when source CRS already matches GeoJSON CRS", result.Plan.Transforms)
+	}
+}
+
+func TestBuildTableTransferPlanRequestsEWKBForGeoJSONToShapefile(t *testing.T) {
+	spec := minimalEncodedToEncodedSpec()
+	spec.Source.Locator = fileLocator(1, "imports/roads.geojson")
+	spec.Source.Format = format.FormatGeoJSON
+	spec.Source.Attributes = tableSourceAttributes("single", "geojson", "imports/roads.geojson", nil, []map[string]interface{}{
+		{"name": "geometry", "type": "geometry"},
+	}, datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("geometry", "Point", 4326, 2)))
+	setFileTarget(&spec, 2, "exports/roads.shp")
+	spec.Target.Format = format.FormatShapefile
+	spec.Target.Options = map[string]interface{}{
+		"geometry_field": "geometry",
+	}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.ParseOptions == nil || result.Plan.Source.ParseOptions.GeometryEncoding != format.GeometryEncodingEWKB {
+		t.Fatalf("source parse options = %#v, want ewkb for spatial encoded transfer", result.Plan.Source.ParseOptions)
+	}
+	if len(result.Plan.Transforms) != 0 {
+		t.Fatalf("transforms = %#v, want no reproject for shapefile target", result.Plan.Transforms)
+	}
+}
+
+func TestBuildTableTransferPlanKeepsNativeEncodingForGeoJSONToGeoJSON(t *testing.T) {
+	spec := minimalEncodedToEncodedSpec()
+	spec.Source.Locator = fileLocator(1, "imports/roads.geojson")
+	spec.Source.Format = format.FormatGeoJSON
+	spec.Source.Attributes = tableSourceAttributes("single", "geojson", "imports/roads.geojson", nil, []map[string]interface{}{
+		{"name": "geometry", "type": "geometry"},
+	}, datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("geometry", "Point", 4326, 2)))
+	setFileTarget(&spec, 2, "exports/roads.geojson")
+	spec.Target.Format = format.FormatGeoJSON
+	spec.Target.Options = map[string]interface{}{
+		"geometry_field": "geometry",
+	}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.ParseOptions == nil || result.Plan.Source.ParseOptions.GeometryEncoding != format.GeometryEncodingGeoJSON {
+		t.Fatalf("source parse options = %#v, want native geojson geometry encoding", result.Plan.Source.ParseOptions)
+	}
+	if len(result.Plan.Transforms) != 0 {
+		t.Fatalf("transforms = %#v, want no transform for native GeoJSON passthrough", result.Plan.Transforms)
+	}
+}
+
+func TestBuildTableTransferPlanRejectsGeoJSONToGeoJSONWhenSourceCRSUnknown(t *testing.T) {
+	spatial := datatype.NewSingleGeometrySpatialInfo("geometry", "Point", 0, 2)
+	spatial.Extent = &datatype.BoundingBox{12958175.1, 4855942.3, 12958200.2, 4855960.4}
+
+	spec := minimalEncodedToEncodedSpec()
+	spec.Source.Locator = fileLocator(1, "imports/projected.geojson")
+	spec.Source.Format = format.FormatGeoJSON
+	spec.Source.Attributes = tableSourceAttributes("single", "geojson", "imports/projected.geojson", nil, []map[string]interface{}{
+		{"name": "geometry", "type": "geometry"},
+	}, datatype.SpatialInfoPayload(spatial))
+	setFileTarget(&spec, 2, "exports/projected.geojson")
+	spec.Target.Format = format.FormatGeoJSON
+
+	_, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "nfs"},
+	})
+	if err == nil {
+		t.Fatal("BuildTableTransferPlan succeeded, want source CRS error")
+	}
+	if !strings.Contains(err.Error(), "source CRS is required") {
+		t.Fatalf("error = %q, want source CRS requirement", err)
+	}
+}
+
+func TestBuildTableTransferPlanKeepsNativeEncodingForShapefileToShapefile(t *testing.T) {
+	spec := minimalEncodedToEncodedSpec()
+	spec.Source.Locator = fileLocator(1, "imports/roads.shp")
+	spec.Source.Format = format.FormatShapefile
+	spec.Source.Attributes = tableSourceAttributes("multi", "shapefile", "imports/roads.shp", []map[string]interface{}{
+		{"path": "imports/roads.shp", "role": "main", "extension": ".shp", "required": true, "primary": true},
+		{"path": "imports/roads.shx", "role": "index", "extension": ".shx", "required": true},
+		{"path": "imports/roads.dbf", "role": "attributes", "extension": ".dbf", "required": true},
+	}, []map[string]interface{}{
+		{"name": "geom", "type": "geometry"},
+	}, datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 2)))
+	setFileTarget(&spec, 2, "exports/roads.shp")
+	spec.Target.Format = format.FormatShapefile
+	spec.Target.Options = map[string]interface{}{
+		"geometry_field": "geom",
+	}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.ParseOptions == nil || result.Plan.Source.ParseOptions.GeometryEncoding != format.GeometryEncodingShapefileShape {
+		t.Fatalf("source parse options = %#v, want native shapefile shape geometry encoding", result.Plan.Source.ParseOptions)
+	}
+	if len(result.Plan.Transforms) != 0 {
+		t.Fatalf("transforms = %#v, want no transform for native Shapefile passthrough", result.Plan.Transforms)
 	}
 }
 
@@ -735,7 +1023,7 @@ func TestBuildTableTransferPlanRequestsEWKBForSpatialEncodedImportToNativeTarget
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "nfs"},
-		2: {Type: "native_table_target"},
+		2: nativeTableTargetBinding("native_table_target"),
 	})
 	if err != nil {
 		t.Fatalf("BuildTableTransferPlan failed: %v", err)
@@ -758,7 +1046,7 @@ func TestBuildTableTransferPlanKeepsDefaultGeometryEncodingForNonSpatialEncodedI
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "nfs"},
-		2: {Type: "native_table_target"},
+		2: nativeTableTargetBinding("native_table_target"),
 	})
 	if err != nil {
 		t.Fatalf("BuildTableTransferPlan failed: %v", err)
@@ -1085,6 +1373,42 @@ func minimalNativeToEncodedSpec() TableExportTaskSpec {
 			DataType:       dataTypeTable,
 			Representation: representationEncoded,
 			Format:         format.FormatCSV,
+		},
+	}
+}
+
+func nativeTableTargetBinding(engineType string) EngineBinding {
+	return EngineBinding{
+		Type: engineType,
+		Capabilities: &engineplugin.EngineCapabilities{
+			SchemaVersion: engineplugin.CapabilitiesSchemaVersion,
+			EngineType:    engineType,
+			EngineFamily:  "tabular",
+			Storage: &engineplugin.StorageCapabilities{
+				Store: &engineplugin.StoreCapability{
+					TableSpatialEncoding: &engineplugin.NativeTableSpatialEncodingCapability{
+						GeometryWriteEncodings: []string{string(format.GeometryEncodingEWKB)},
+					},
+				},
+			},
+		},
+	}
+}
+
+func nativeTableSourceBinding(engineType string) EngineBinding {
+	return EngineBinding{
+		Type: engineType,
+		Capabilities: &engineplugin.EngineCapabilities{
+			SchemaVersion: engineplugin.CapabilitiesSchemaVersion,
+			EngineType:    engineType,
+			EngineFamily:  "tabular",
+			Storage: &engineplugin.StorageCapabilities{
+				Store: &engineplugin.StoreCapability{
+					TableSpatialEncoding: &engineplugin.NativeTableSpatialEncodingCapability{
+						GeometryReadEncodings: []string{string(format.GeometryEncodingEWKB)},
+					},
+				},
+			},
 		},
 	}
 }

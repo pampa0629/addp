@@ -20,6 +20,7 @@ class OperatorCategory(str, Enum):
     """算子分类枚举"""
     DATA_IO = "数据I/O"
     GEOMETRIC = "几何处理"
+    SPATIAL_TRANSFORM = "空间转换"
     SPATIAL_RELATION = "空间关系"
     PROPERTIES = "几何属性"
     FORMAT_CONVERSION = "格式转换"
@@ -38,7 +39,7 @@ class OperatorParam(BaseModel):
     notes: Optional[str] = Field(None, description="注意事项")
 
     # UI 配置（可选）
-    ui_type: Optional[str] = Field(None, description="UI组件类型：resource_tree_picker/nfs_file_picker 等")
+    ui_type: Optional[str] = Field(None, description="UI组件类型：resource_tree_picker 等")
     ui_config: Optional[Dict[str, Any]] = Field(None, description="UI组件配置")
     enum: Optional[List[str]] = Field(None, description="枚举值列表")
     default: Optional[Any] = Field(None, description="默认值")
@@ -77,17 +78,19 @@ class OperatorMetadata(BaseModel):
 
     # 可选字段
     output_ports: Optional[List[OutputPort]] = Field(None, description="多输出端口定义")
+    execution_modes: List[str] = Field(description="执行模式：workflow/direct")
+    attributes: Optional[Dict[str, Any]] = Field(None, description="引擎自定义扩展属性")
 
     # 运行时绑定（不参与序列化）
     function: Optional[Callable] = Field(None, exclude=True, description="实际执行函数")
 
-    def to_legacy_dict(self) -> dict:
+    def to_runtime_dict(self) -> dict:
         """
-        转换为兼容旧格式的字典
+        转换为运行时算子注册字典
 
-        确保向后兼容，保持 API 接口不变
+        返回的结构由本包的 list_operators() 统一转换为 addp.workflow/v1 算子元数据。
         """
-        # 转换参数格式为旧的 param_schema
+        # 转换参数格式为内部 param_schema，便于统一生成运行时 API 元数据。
         param_schema = []
         for param in self.params:
             param_dict = {
@@ -119,11 +122,12 @@ class OperatorMetadata(BaseModel):
             param_schema.append(param_dict)
 
         # 构建基础字典
-        legacy_dict = {
+        runtime_dict = {
             'function': self.function,
             'type': self.type.value,  # 添加算子类型
             'param_schema': param_schema,
             'category': self.category.value,
+            'execution_modes': list(self.execution_modes),
             'description': self.description,
             'brief_description': self.brief_description,
             'detailed_description': {
@@ -135,29 +139,32 @@ class OperatorMetadata(BaseModel):
             }
         }
 
+        if self.attributes:
+            runtime_dict['attributes'] = self.attributes
+
         # 添加可选的 output_ports
         if self.output_ports:
-            legacy_dict['output_ports'] = [port.model_dump() for port in self.output_ports]
+            runtime_dict['output_ports'] = [port.model_dump() for port in self.output_ports]
 
-        return legacy_dict
+        return runtime_dict
 
 
 def register_operator(metadata: OperatorMetadata, func: Callable) -> tuple[str, dict]:
     """
     注册算子的辅助函数
 
-    将 Pydantic 元数据模型和实现函数绑定，并转换为兼容格式
+    将 Pydantic 元数据模型和实现函数绑定，并转换为运行时注册格式
 
     Args:
         metadata: 算子元数据（Pydantic 模型）
         func: 算子实现函数
 
     Returns:
-        (算子名称, 兼容旧格式的字典)
+        (算子名称, 运行时注册字典)
 
     Example:
         >>> BUFFER_METADATA = OperatorMetadata(name="buffer", ...)
         >>> OPERATORS = dict([register_operator(BUFFER_METADATA, buffer)])
     """
     metadata.function = func
-    return metadata.name, metadata.to_legacy_dict()
+    return metadata.name, metadata.to_runtime_dict()

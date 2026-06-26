@@ -177,6 +177,7 @@ class ConversationResponse(ConversationBase):
   "conversation_id": null,
   "tenant_id": 1,
   "user_id": 2,
+  "workflow_engine_id": 1,
   "use_two_stage": true
 }
 ```
@@ -185,23 +186,38 @@ class ConversationResponse(ConversationBase):
 
 ```json
 {
+  "status": "success",
   "workflow": {
     "name": "缓冲区分析工作流",
-    "steps": [
+    "tasks": [
       {
-        "id": "step1",
-        "type": "data_loader",
-        "params": {...}
+        "id": "task1",
+        "operator": "load",
+        "params": {
+          "source_type": "table",
+          "locator": "addp://engine/1/path/public/cities?type=table"
+        },
+        "depends_on": []
       },
       {
-        "id": "step2",
-        "type": "buffer",
-        "params": {"distance": 100}
+        "id": "task2",
+        "operator": "buffer",
+        "params": {
+          "input_gdf": {"$ref": "task1"},
+          "distance": 100
+        },
+        "depends_on": ["task1"]
       },
       {
-        "id": "step3",
-        "type": "data_writer",
-        "params": {...}
+        "id": "task3",
+        "operator": "save",
+        "params": {
+          "data": {"$ref": "task2"},
+          "target_type": "table",
+          "target_parent_locator": "addp://engine/1/path/public?type=schema",
+          "target_name": "cities_buffer"
+        },
+        "depends_on": ["task2"]
       }
     ]
   },
@@ -345,7 +361,7 @@ class ConversationResponse(ConversationBase):
 ### 7.1 创建 SQL 对话(首次请求)
 
 ```bash
-curl -X POST http://localhost:8085/copilot/sql/generate \
+curl -X POST http://localhost:8087/copilot/sql/generate \
   -H "Content-Type: application/json" \
   -d '{
     "query": "查询所有人口大于 100 万的城市",
@@ -373,7 +389,7 @@ curl -X POST http://localhost:8085/copilot/sql/generate \
 ### 7.2 继续 SQL 对话
 
 ```bash
-curl -X POST http://localhost:8085/copilot/sql/generate \
+curl -X POST http://localhost:8087/copilot/sql/generate \
   -H "Content-Type: application/json" \
   -d '{
     "query": "按人口降序排列",
@@ -390,13 +406,14 @@ curl -X POST http://localhost:8085/copilot/sql/generate \
 ### 7.3 创建工作流对话
 
 ```bash
-curl -X POST http://localhost:8085/copilot/workflow/generate \
+curl -X POST http://localhost:8087/copilot/workflow/generate \
   -H "Content-Type: application/json" \
   -d '{
     "query": "加载数据,计算 100 米缓冲区,保存结果",
     "conversation_id": null,
     "tenant_id": 1,
     "user_id": 2,
+    "workflow_engine_id": 1,
     "use_two_stage": true
   }'
 ```

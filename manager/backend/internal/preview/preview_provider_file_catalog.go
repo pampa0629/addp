@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -151,6 +153,10 @@ func (p *fileCatalogPreviewProvider) previewFile(
 			Size:        meta.Size,
 			Attributes:  preview.Object.Attributes,
 		}
+		if url := buildFileStorageStreamURL(engine.ID, filePath); url != "" {
+			contentReq.PreviewURL = url
+			preview.Object.URL = url
+		}
 		handler := p.content.Resolve(contentReq)
 		if handler != nil {
 			if objectcontent.IsContainerFormat(contentReq.Format) {
@@ -202,6 +208,17 @@ func (p *fileCatalogPreviewProvider) previewFile(
 	}
 
 	return preview, nil
+}
+
+func buildFileStorageStreamURL(engineID uint, storageRef string) string {
+	storageRef = strings.Trim(storageRef, "/")
+	if engineID == 0 || storageRef == "" {
+		return ""
+	}
+	values := url.Values{}
+	values.Set("engine_id", strconv.FormatUint(uint64(engineID), 10))
+	values.Set("storage_ref", storageRef)
+	return "/api/v1/manager/storage-stream?" + values.Encode()
 }
 
 func openFileCatalogContent(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, path string) (io.ReadCloser, error) {

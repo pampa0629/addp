@@ -2,19 +2,19 @@
   <div class="image-preview-container">
     <div class="image-preview">
       <div v-if="isTiffImage" class="image-wrapper">
-        <div v-if="tiffLoading || tiffError" class="placeholder">
+        <div v-if="!imageSrc || tiffLoading || tiffError" class="placeholder">
           <p class="message">{{ tiffLoading ? '正在解析 TIFF 图片...' : contentMessage }}</p>
           <p v-if="tiffError" class="download-hint">如需下载原始文件，请使用右上角的下载按钮</p>
         </div>
         <canvas
-          v-show="!tiffLoading && !tiffError"
+          v-show="imageSrc && !tiffLoading && !tiffError"
           ref="tiffCanvasRef"
           class="tiff-canvas"
           :aria-label="fileName"
         />
       </div>
       <div v-else-if="imageSrc" class="image-wrapper">
-        <img :src="imageSrc" :alt="fileName" @load="onImageLoad" />
+        <img :src="imageSrc" :alt="fileName" />
       </div>
       <div v-else class="placeholder">
         <p class="message">{{ contentMessage }}</p>
@@ -35,38 +35,12 @@
         </div>
       </div>
     </div>
-
-    <!-- 图像标准扩展信息 -->
-    <div v-if="hasImageMetadata" class="quick-metadata">
-      <h4><i class="el-icon-picture"></i> 图像信息</h4>
-      <div class="quick-meta-grid">
-        <div v-if="imageMetadata.resolution" class="quick-meta-item">
-          <span class="label">分辨率</span>
-          <span class="value">{{ imageMetadata.resolution }}</span>
-        </div>
-        <div v-if="imageMetadata.format" class="quick-meta-item">
-          <span class="label">格式</span>
-          <span class="value">{{ imageMetadata.format.toUpperCase() }}</span>
-        </div>
-        <div v-if="imageMetadata.megapixels" class="quick-meta-item">
-          <span class="label">像素数</span>
-          <span class="value">{{ imageMetadata.megapixels.toFixed(1) }} MP</span>
-        </div>
-        <div v-if="imageMetadata.aspect_ratio" class="quick-meta-item">
-          <span class="label">宽高比</span>
-          <span class="value">{{ imageMetadata.aspect_ratio }}</span>
-        </div>
-        <div v-if="imageMetadata.color_space" class="quick-meta-item">
-          <span class="label">色彩空间</span>
-          <span class="value">{{ imageMetadata.color_space }}</span>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
+import { fromArrayBuffer } from 'geotiff'
 import { formatBytes } from '../utils/formatters'
 
 const props = defineProps({
@@ -76,7 +50,6 @@ const props = defineProps({
   }
 })
 
-const imageLoadedDimensions = ref({ width: 0, height: 0 })
 const tiffCanvasRef = ref(null)
 const tiffLoading = ref(false)
 const tiffError = ref('')
@@ -104,25 +77,6 @@ const imageURL = computed(() => {
     ''
   )
 })
-
-const imageMetadata = computed(() => {
-  const width = Number(metadata.value?.width || imageLoadedDimensions.value.width)
-  const height = Number(metadata.value?.height || imageLoadedDimensions.value.height)
-  const format = metadata.value?.format || objectData.value?.format || ''
-  const colorSpace = metadata.value?.color_space || ''
-  if (!width && !height && !format && !colorSpace) return null
-  return {
-    width,
-    height,
-    format,
-    resolution: width && height ? `${width} × ${height}` : '',
-    megapixels: width && height ? (width * height) / 1000000 : 0,
-    aspect_ratio: width && height ? (width / height).toFixed(2) : '',
-    color_space: colorSpace
-  }
-})
-
-const hasImageMetadata = computed(() => Boolean(imageMetadata.value))
 
 const sizeBytes = computed(() => {
   const objectSize = objectData.value?.size_bytes ?? objectData.value?.sizeBytes
@@ -183,7 +137,7 @@ const imageSrc = computed(() => {
   return withAuthToken(imageURL.value)
 })
 
-const contentMessage = computed(() => tiffError.value || content.value?.text || '图片超出预览限制，无法在线展示')
+const contentMessage = computed(() => content.value?.text || tiffError.value || '图片超出预览限制，无法在线展示')
 
 const formattedSize = computed(() => {
   if (!sizeBytes.value) return ''
@@ -200,14 +154,6 @@ const displayContentType = computed(() => contentType.value || '')
 const showMetadata = computed(
   () => Boolean(formattedSize.value || formattedLimit.value || displayContentType.value)
 )
-
-const onImageLoad = (event) => {
-  const img = event.target
-  imageLoadedDimensions.value = {
-    width: img.naturalWidth,
-    height: img.naturalHeight
-  }
-}
 
 const dataURLToArrayBuffer = (dataURL) => {
   const base64 = dataURL.split(',', 2)[1] || ''
@@ -239,25 +185,42 @@ const normalizeSample = (value, min, max) => {
   return Math.max(0, Math.min(255, Math.round(((value - min) / (max - min)) * 255)))
 }
 
-const rasterStats = (raster) => {
-  let min = Infinity
-  let max = -Infinity
-  for (let i = 0; i < raster.length; i += 1) {
+const isNoDataSample = (value, noDataValue) => {
+  if (!Number.isFinite(value)) return true
+  return Number.isFinite(noDataValue) && value === noDataValue
+}
+
+const percentile = (values, ratio) => {
+  if (!values.length) return 0
+  const index = Math.max(0, Math.min(values.length - 1, Math.floor((values.length - 1) * ratio)))
+  return values[index]
+}
+
+const rasterStats = (raster, noDataValue) => {
+  const samples = []
+  const step = Math.max(1, Math.floor(raster.length / 100000))
+  for (let i = 0; i < raster.length; i += step) {
     const value = Number(raster[i])
-    if (!Number.isFinite(value)) continue
-    if (value < min) min = value
-    if (value > max) max = value
+    if (isNoDataSample(value, noDataValue)) continue
+    samples.push(value)
   }
-  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+  if (!samples.length) {
     return { min: 0, max: 0 }
+  }
+  samples.sort((a, b) => a - b)
+  let min = percentile(samples, 0.02)
+  let max = percentile(samples, 0.98)
+  if (max <= min) {
+    min = samples[0]
+    max = samples[samples.length - 1]
   }
   return { min, max }
 }
 
-const rgbaFromRaster = (raster, width, height, samplesPerPixel) => {
+const rgbaFromRaster = (raster, width, height, samplesPerPixel, noDataValue) => {
   const output = new Uint8ClampedArray(width * height * 4)
   const hasRGB = samplesPerPixel >= 3
-  const stats = hasRGB ? null : rasterStats(raster)
+  const stats = hasRGB ? null : rasterStats(raster, noDataValue)
   for (let pixel = 0; pixel < width * height; pixel += 1) {
     const src = pixel * samplesPerPixel
     const dest = pixel * 4
@@ -267,19 +230,15 @@ const rgbaFromRaster = (raster, width, height, samplesPerPixel) => {
       output[dest + 2] = Number(raster[src + 2]) || 0
       output[dest + 3] = samplesPerPixel >= 4 ? Number(raster[src + 3]) || 255 : 255
     } else {
-      const gray = normalizeSample(Number(raster[src]), stats.min, stats.max)
+      const value = Number(raster[src])
+      const gray = isNoDataSample(value, noDataValue) ? 0 : normalizeSample(value, stats.min, stats.max)
       output[dest] = gray
       output[dest + 1] = gray
       output[dest + 2] = gray
-      output[dest + 3] = 255
+      output[dest + 3] = isNoDataSample(value, noDataValue) ? 0 : 255
     }
   }
   return output
-}
-
-const loadGeoTiff = () => {
-  const moduleName = 'geotiff'
-  return import(/* @vite-ignore */ moduleName)
 }
 
 const renderTiff = async () => {
@@ -288,24 +247,21 @@ const renderTiff = async () => {
   tiffError.value = ''
   await nextTick()
   try {
-    const [{ fromArrayBuffer }, arrayBuffer] = await Promise.all([
-      loadGeoTiff(),
-      fetchImageArrayBuffer(imageSrc.value)
-    ])
+    const arrayBuffer = await fetchImageArrayBuffer(imageSrc.value)
     const tiff = await fromArrayBuffer(arrayBuffer)
     const image = await tiff.getImage()
     const width = image.getWidth()
     const height = image.getHeight()
     const samplesPerPixel = image.getSamplesPerPixel()
+    const noDataValue = Number(image.getGDALNoData?.())
     const raster = await image.readRasters({ interleave: true })
     const canvas = tiffCanvasRef.value
     if (!canvas) return
     canvas.width = width
     canvas.height = height
     const ctx = canvas.getContext('2d')
-    const imageData = new ImageData(rgbaFromRaster(raster, width, height, samplesPerPixel), width, height)
+    const imageData = new ImageData(rgbaFromRaster(raster, width, height, samplesPerPixel, noDataValue), width, height)
     ctx.putImageData(imageData, 0, 0)
-    imageLoadedDimensions.value = { width, height }
   } catch (error) {
     tiffError.value = error?.message || 'TIFF 图片解析失败，请下载后查看'
   } finally {
@@ -406,54 +362,4 @@ watch(
   color: var(--el-text-color-primary);
 }
 
-/* 元数据展示区域 */
-.metadata-section {
-  background: var(--el-bg-color);
-  padding: 16px;
-  border-radius: 8px;
-  border: 1px solid var(--el-border-color-lighter);
-}
-
-/* 快速元数据展示 */
-.quick-metadata {
-  background: var(--el-bg-color);
-  padding: 16px;
-  border-radius: 8px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-left: 3px solid var(--el-color-warning);
-}
-
-.quick-metadata h4 {
-  margin: 0 0 12px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--el-color-warning);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.quick-meta-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
-}
-
-.quick-meta-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.quick-meta-item .label {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  font-weight: 500;
-}
-
-.quick-meta-item .value {
-  font-size: 14px;
-  color: var(--el-text-color-primary);
-  font-weight: 600;
-}
 </style>

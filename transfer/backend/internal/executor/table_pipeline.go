@@ -93,11 +93,12 @@ func (d *multiTargetResourceDeleter) DeleteTarget(ctx context.Context) error {
 }
 
 type TablePipeline struct {
-	Source           TableBatchSource
-	Target           TableBatchTarget
-	Transforms       []TableTransformPlan
-	BatchSize        int
-	ProgressCallback TableProgressCallback
+	Source                   TableBatchSource
+	Target                   TableBatchTarget
+	Transforms               []TableTransformPlan
+	BatchSize                int
+	ProgressCallback         TableProgressCallback
+	GeometryBatchReprojecter GeometryBatchReprojectProvider
 }
 
 func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, error) {
@@ -110,7 +111,7 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 	if p.Target == nil {
 		return nil, fmt.Errorf("table pipeline requires target")
 	}
-	transforms, err := buildTableTransforms(p.Transforms)
+	transforms, err := buildTableTransforms(p.Transforms, p.GeometryBatchReprojecter)
 	if err != nil {
 		return nil, err
 	}
@@ -260,6 +261,7 @@ func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, er
 		connInfo:    s.connInfo,
 		path:        s.path,
 		query:       s.query,
+		readOptions: cloneBatchHints(s.readOptions),
 		tableInfo:   s.tableInfo,
 		spatialInfo: s.spatialInfo,
 	}, nil
@@ -326,6 +328,7 @@ type nativeOffsetBatchReader struct {
 	connInfo    engineplugin.ConnectionInfo
 	path        engineplugin.CatalogPath
 	query       string
+	readOptions map[string]interface{}
 	offset      int64
 	tableInfo   *datatype.TableInfo
 	spatialInfo *datatype.SpatialInfo
@@ -351,6 +354,7 @@ func (r *nativeOffsetBatchReader) ReadBatch(ctx context.Context, limit int) (*en
 		Limit:  limit,
 		Offset: r.offset,
 		Query:  r.query,
+		Hints:  cloneBatchHints(r.readOptions),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("read native source batch at offset %d: %w", r.offset, err)

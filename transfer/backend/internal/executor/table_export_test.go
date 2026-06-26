@@ -65,6 +65,43 @@ func TestTableTransferExecutorWritesNativeTableToCSV(t *testing.T) {
 	}
 }
 
+func TestTableTransferExecutorPassesReadOptionsToNativeOffsetReader(t *testing.T) {
+	reader := &fakeBatchReader{
+		batches: []*engineplugin.BatchData{{
+			Fields: []datatype.FieldInfo{{Name: "id", Type: "int"}},
+			Rows: []map[string]interface{}{
+				{"id": int64(1)},
+			},
+		}},
+	}
+	writer := &fakeContentWriter{}
+	exec := &TableTransferExecutor{
+		SourceNativeReader:        reader,
+		TargetContentWriter:       writer,
+		TargetTableWriterProvider: csvformat.NewPlugin(nil),
+	}
+
+	_, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{
+			Kind: TableEndpointNative,
+			ReadOptions: map[string]interface{}{
+				engineplugin.TableReadHintGeometryEncoding: string(format.GeometryEncodingEWKB),
+			},
+		},
+		Target:    TableTargetPlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		BatchSize: 1,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if len(reader.batchOptions) == 0 {
+		t.Fatal("native batch reader was not called")
+	}
+	if got := reader.batchOptions[0].Hints[engineplugin.TableReadHintGeometryEncoding]; got != string(format.GeometryEncodingEWKB) {
+		t.Fatalf("batch read hints = %#v, want geometry_encoding=ewkb", reader.batchOptions[0].Hints)
+	}
+}
+
 func TestTableTransferExecutorAppliesFieldMappingTransform(t *testing.T) {
 	reader := &fakeBatchReader{
 		batches: []*engineplugin.BatchData{
@@ -717,6 +754,7 @@ type fakeBatchReader struct {
 	engineType     string
 	batches        []*engineplugin.BatchData
 	offsets        []int64
+	batchOptions   []engineplugin.BatchReadOptions
 	sessionLimits  []int
 	sessionClosed  bool
 	sessionOptions engineplugin.TableReadSessionOptions
@@ -755,6 +793,7 @@ func (r *fakeBatchReader) StoreSemantics() engineplugin.StoreSemantics {
 
 func (r *fakeBatchReader) ReadBatch(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.BatchReadOptions) (*engineplugin.BatchData, error) {
 	r.offsets = append(r.offsets, opts.Offset)
+	r.batchOptions = append(r.batchOptions, opts)
 	if len(r.batches) == 0 {
 		return &engineplugin.BatchData{}, nil
 	}

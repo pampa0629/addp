@@ -46,7 +46,7 @@ func GetModulePort(moduleName string) string {
 		"meta":         "8082",
 		"transfer":     "8083",
 		"orchestrator": "8084",
-		"develop":      "8085",
+		"develop":      "8185",
 		"service":      "8086",
 		"copilot":      "8087",
 		"monitor":      "8100",

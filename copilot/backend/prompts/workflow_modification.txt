@@ -41,19 +41,29 @@
 
 #### 类型 E：修改数据源/目标
 用户："改成保存到 test_new 表"
-→ 修改 save 任务的 table 参数
+→ 修改 save 任务的 target_name 参数；目标父资源不变时保持 target_parent_locator 不变
 
 ### 3. 依赖关系处理
 
 - 如果删除任务，更新所有依赖它的任务
 - 如果插入任务，正确设置新任务的依赖和后续任务的依赖
 - 如果调整顺序，重新计算 depends_on
+- 每个任务都必须显式包含 `depends_on`，没有依赖时写空数组 `[]`
 
 ### 4. 任务 ID 管理
 
 - **不要随意修改任务 ID**（除非用户明确要求）
 - 新增任务时，使用下一个可用的 ID（如 task4, task5...）
 - 删除任务时，保留其他任务的 ID 不变
+
+### 5. 资源参数契约
+
+- 读取已有表、文件或对象时，load 任务必须使用 `locator`
+- 创建新目标时，save 任务必须使用 `target_parent_locator + target_name`
+- `source_type` / `target_type` 表达访问形态，只能使用 `table`、`file`、`geojson` 等算子定义中的枚举值，不能使用 `nfs`、`minio`、`s3` 等存储引擎类型
+- **禁止在算子 params 中填写 `engine_id`、`connection_info`、`schema`、`table`、`path`**，这些是 Develop Backend 执行前派生的运行时参数
+- 修改数据源时，只替换为用户或系统已经提供的 `locator`；如果没有明确 locator，不要自行拼接 `addp://...`
+- 修改目标名称时优先只改 `target_name`，不要改动 `target_parent_locator`，除非用户明确要求切换目标父资源并提供了新的 locator
 
 ## 修改流程
 
@@ -93,6 +103,7 @@
 3. **保持任务 ID 稳定**：除非用户明确要求，否则不要修改现有任务的 ID
 4. **依赖关系正确**：确保 depends_on 字段引用的任务存在且无循环
 5. **参数完整**：确保所有必需参数都已填写
+6. **资源参数符合契约**：load 使用 locator；save 使用 target_parent_locator + target_name；不要生成运行时派生参数
 
 ## 示例
 
@@ -102,9 +113,9 @@
 ```json
 {{
   "tasks": [
-    {{"id": "task1", "operator": "load", "params": {{"table": "test"}}, "depends_on": []}},
+    {{"id": "task1", "operator": "load", "params": {{"source_type": "table", "locator": "addp://engine/1/path/public/test?type=table"}}, "depends_on": []}},
     {{"id": "task2", "operator": "buffer", "params": {{"distance": 100}}, "depends_on": ["task1"]}},
-    {{"id": "task3", "operator": "save", "params": {{"table": "result"}}, "depends_on": ["task2"]}}
+    {{"id": "task3", "operator": "save", "params": {{"target_type": "table", "target_parent_locator": "addp://engine/1/path/public?type=schema", "target_name": "result"}}, "depends_on": ["task2"]}}
   ]
 }}
 ```
@@ -115,9 +126,9 @@
 ```json
 {{
   "tasks": [
-    {{"id": "task1", "operator": "load", "params": {{"table": "test"}}, "depends_on": []}},
+    {{"id": "task1", "operator": "load", "params": {{"source_type": "table", "locator": "addp://engine/1/path/public/test?type=table"}}, "depends_on": []}},
     {{"id": "task2", "operator": "buffer", "params": {{"distance": 200}}, "depends_on": ["task1"]}},
-    {{"id": "task3", "operator": "save", "params": {{"table": "result"}}, "depends_on": ["task2"]}}
+    {{"id": "task3", "operator": "save", "params": {{"target_type": "table", "target_parent_locator": "addp://engine/1/path/public?type=schema", "target_name": "result"}}, "depends_on": ["task2"]}}
   ]
 }}
 ```
@@ -131,10 +142,10 @@
 ```json
 {{
   "tasks": [
-    {{"id": "task1", "operator": "load", "params": {{"table": "test"}}, "depends_on": []}},
+    {{"id": "task1", "operator": "load", "params": {{"source_type": "table", "locator": "addp://engine/1/path/public/test?type=table"}}, "depends_on": []}},
     {{"id": "task2", "operator": "buffer", "params": {{"distance": 100}}, "depends_on": ["task1"]}},
     {{"id": "task4", "operator": "union", "params": {{}}, "depends_on": ["task2"]}},
-    {{"id": "task3", "operator": "save", "params": {{"table": "result"}}, "depends_on": ["task4"]}}
+    {{"id": "task3", "operator": "save", "params": {{"target_type": "table", "target_parent_locator": "addp://engine/1/path/public?type=schema", "target_name": "result"}}, "depends_on": ["task4"]}}
   ]
 }}
 ```

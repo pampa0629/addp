@@ -5,18 +5,15 @@ services:
     build: .
     container_name: math-workflow-engine
     ports:
-      - "8097:8097"
+      - "8089:8089"
     environment:
-      - SYSTEM_SERVICE_URL=${SYSTEM_SERVICE_URL:-http://system-backend:8180}
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
-      - ENGINE_URL=${ENGINE_URL:-http://math-workflow-engine:8097}
-      - PORT=8097
+      - PORT=8089
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     networks:
       - addp-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8097/health', timeout=2)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8089/health', timeout=2).read()"]
       interval: 30s
       timeout: 5s
       retries: 3

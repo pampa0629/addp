@@ -26,6 +26,25 @@ func TestListFormatDescriptorsIncludesBuiltinTextAndMarkdown(t *testing.T) {
 	}
 }
 
+func TestRasterMosaicDescriptorUsesManifestFileName(t *testing.T) {
+	descriptor, ok := GetFormatDescriptor(FormatRasterMosaic)
+	if !ok {
+		t.Fatal("descriptor for raster_mosaic not found")
+	}
+	if descriptor.DataType != datatype.Media {
+		t.Fatalf("data_type = %s, want media", descriptor.DataType)
+	}
+	if !HasLayout(descriptor.Layouts, LayoutWhole) || HasLayout(descriptor.Layouts, LayoutSingle) {
+		t.Fatalf("layouts = %#v, want only whole", descriptor.Layouts)
+	}
+	if len(descriptor.Identification.FileNames) != 1 || descriptor.Identification.FileNames[0] != "mosaic.addp.json" {
+		t.Fatalf("file_names = %#v, want mosaic.addp.json", descriptor.Identification.FileNames)
+	}
+	if len(descriptor.Identification.Extensions) != 0 {
+		t.Fatalf("extensions = %#v, want none to avoid JSON extension conflict", descriptor.Identification.Extensions)
+	}
+}
+
 func TestDescriptorsKeepOnlyStaticFactsForBuiltinFormats(t *testing.T) {
 	tests := []struct {
 		formatType FormatType

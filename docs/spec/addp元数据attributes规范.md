@@ -253,9 +253,96 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
 - `format_info.shapefile`
 - `format_info.json`
 - `format_info.sqlite`
+- `format_info.tiff`
 - `format_info.com.vendor.plugin_name`
 
 `format_info.unqualified` 是 normalizer 的隔离区，不是业务语义命名空间。正常的新 detector、format provider 或 reader 不应主动写入 `unqualified`。平台级行为不得依赖 `unqualified`。
+
+### format_info.tiff
+
+`format_info.tiff` 表达 TIFF / GeoTIFF 格式层事实。GeoTIFF 不新增基础 `format`，仍写 `attributes.item.format=tiff`；COG 是 TIFF 的 profile，不写成新的基础格式。
+
+建议最小结构：
+
+```json
+{
+  "profile": "geotiff",
+  "is_cloud_optimized": false,
+  "is_tiled": true,
+  "has_overviews": true,
+  "big_tiff": false,
+  "compression": "DEFLATE",
+  "photometric_interpretation": "RGB",
+  "sample_format": "uint16",
+  "nodata": -32768,
+  "sample_min": -49,
+  "sample_max": 406,
+  "display_min": -49,
+  "display_max": 406,
+  "display_range_method": "metadata_statistics"
+}
+```
+
+字段规则：
+
+| 字段 | 规则 |
+|---|---|
+| `profile` | 取值为 `plain_tiff`、`geotiff`、`cog`、`unknown`。只表示格式 profile，不改变 `attributes.item.format=tiff`。 |
+| `is_cloud_optimized` | Go / Meta 轻量判断结果。第一阶段只作为 profile hint，不表示完整 COG 合规验证。无法判断时省略，不得硬置为 `false`。 |
+| `is_tiled` / `has_overviews` / `big_tiff` | 从 TIFF tag / IFD / overview 信息可轻量读取时写入。 |
+| `compression` / `photometric_interpretation` / `sample_format` | 格式私有事实，用于展示和默认渲染判断。 |
+| `nodata` | 从 TIFF / GDAL metadata 可轻量读取时写入。 |
+| `sample_min` / `sample_max` | 来自 TIFF sample value tag 或已有 metadata 的样本范围。 |
+| `display_min` / `display_max` | Manager / Frontend 默认渲染可直接消费的建议显示范围。 |
+| `display_range_method` | 显示范围来源，例如 `metadata_statistics`、`sample_value_tags`。Meta scan 不得为了该字段全量扫描大 TIFF 像素；前端运行时采样结果只能作为本次渲染兜底或 Manager COG 结果补充事实，不反写源 item attributes。 |
+
+TIFF / GeoTIFF 的 CRS、extent、transform 等跨格式空间事实写入 `capabilities.spatial`，不写入 `format_info.tiff` 作为唯一消费来源。`format_info.tiff` 可保留原始 tag 摘要，但平台地图定位必须消费 `capabilities.spatial`。
+
+### format_info.raster_mosaic
+
+`format_info.raster_mosaic` 表达栅格镶嵌数据集的格式层事实。Raster mosaic 是 `data_type=media`、`layout=whole`、`format=raster_mosaic` 的 whole-scope 数据集，不是单个 TIFF / COG。
+
+建议最小结构：
+
+```json
+{
+  "manifest_ref": "mosaic.addp.json",
+  "manifest_version": 1,
+  "leaf_count": 2360,
+  "leaf_storage": "referenced_and_generated_cog",
+  "index_ref": "index/source-index.json",
+  "overview_ref": "overviews/overview.cog.tif",
+  "overview_profile": "cog",
+  "tile_cache_ref": "tiles/",
+  "default_style_ref": "styles/default.json",
+  "stats_ref": "stats/band-1.json",
+  "cog_validation": {
+    "method": "gdal_cog_layout",
+    "validated_count": 2360,
+    "generated_count": 480,
+    "referenced_count": 1880,
+    "unknown_count": 0
+  }
+}
+```
+
+字段规则：
+
+| 字段 | 规则 |
+|---|---|
+| `manifest_ref` | manifest 在 whole scope 内的相对路径，通常为 `mosaic.addp.json`。 |
+| `manifest_version` | ADDP raster mosaic manifest schema 版本。 |
+| `leaf_count` | mosaic leaf 数量。leaf 是 index 中可被预览读取的 COG，不等于源 TIFF 文件数。 |
+| `leaf_storage` | leaf COG 组织方式，例如 `referenced_cog`、`generated_cog`、`referenced_and_generated_cog`。 |
+| `index_ref` | mosaic source index 相对路径。index 记录 leaf COG、源 locator、fingerprint、extent、分辨率、优先级、NoData 和 COG 校验摘要。 |
+| `overview_ref` | 全局低分辨率 overview COG 相对路径。overview 必须是 COG，但不是全分辨率全局 COG。 |
+| `overview_profile` | overview 格式 profile，当前固定为 `cog`。 |
+| `tile_cache_ref` | 可选低层级瓦片缓存根路径。没有预生成瓦片时省略。 |
+| `default_style_ref` | 可选默认渲染样式相对路径。 |
+| `stats_ref` | 可选统计、直方图、显示范围等摘要路径。 |
+| `cog_validation` | COG 内容级校验摘要。不得只根据后缀或文件名判定 COG。 |
+
+Raster mosaic 的 CRS、extent、分辨率范围等跨格式空间事实写入 `capabilities.spatial`。`format_info.raster_mosaic` 只保存 manifest、index、overview、leaf 组织和 COG 校验摘要等格式私有事实。
 
 ## capabilities 命名空间
 
@@ -345,7 +432,7 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
 | `crs_definitions[].id` | CRS 定义 ID，必须被 `crs_ref` 引用。能确定 EPSG 时使用 `EPSG:<code>`；否则使用 `ADDP:CRS:<sha256>`。 |
 | `crs_definitions[].definition_encoding` | CRS 定义表达方式。第一阶段只允许 `wkt`、`esri_wkt`、`proj4`；不得写 `projjson`，因为当前前端不能直接注册。 |
 | `crs_definitions[].definition` | CRS 定义文本，例如 PostGIS `spatial_ref_sys.srtext`、Shapefile `.prj`、GeoPackage `gpkg_spatial_ref_sys.definition` 或 proj4 字符串。 |
-| `crs_definitions[].source` | CRS 定义来源枚举，例如 `postgis_spatial_ref_sys`、`sidecar_prj`、`geopackage_srs`。 |
+| `crs_definitions[].source` | CRS 定义来源枚举，例如 `postgis_spatial_ref_sys`、`sidecar_prj`、`geopackage_srs`、`geotiff_tags`。 |
 | `dimension` | 坐标维度，无法确定时可省略。 |
 | `nullable` | 字段是否可空，无法确定时可省略。 |
 | `primary_geometry_column` | Manager 默认空间预览使用的几何字段。多几何字段时必须明确；单几何字段时建议写入；没有字段列概念的空间媒体应省略。 |

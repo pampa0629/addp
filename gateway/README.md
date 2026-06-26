@@ -47,7 +47,7 @@ Gateway 根据 URL 路径前缀自动路由请求：
 | `/api/v1/manager/*` | Manager | http://localhost:8081 | API Key | 透明转发 | 数据管理、预览、上传下载 |
 | `/api/v1/meta/*` | Meta | http://localhost:8082 | API Key | 透明转发 | 元数据扫描和资源树 |
 | `/api/v1/transfer/*` | Transfer | http://localhost:8083 | API Key | 透明转发 | 数据同步和格式转换 |
-| `/api/v1/develop/*` | Develop | http://localhost:8085 | API Key | 透明转发 | SQL、工作流、Notebook |
+| `/api/v1/develop/*` | Develop | http://localhost:8185 | API Key | 透明转发 | SQL、工作流、Notebook |
 | `/api/v1/service/*` | Service | http://localhost:8086 | API Key | 透明转发 | 数据服务 |
 | `/api/v1/copilot/*` | Copilot | http://localhost:8087 | API Key | 透明转发 | AI 助手 |
 
@@ -75,7 +75,7 @@ SYSTEM_URL=http://localhost:8180
 MANAGER_URL=http://localhost:8081
 META_URL=http://localhost:8082
 TRANSFER_URL=http://localhost:8083
-DEVELOP_URL=http://localhost:8084
+DEVELOP_URL=http://localhost:8185
 SERVICE_URL=http://localhost:8086
 COPILOT_URL=http://localhost:8087
 

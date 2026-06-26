@@ -24,7 +24,33 @@
   "peerDependencies": {
     "element-plus": "^2.4.0",
     "vue": "^3.3.0",
-    "vue-i18n": "^9.0.0"
+    "vue-i18n": "^9.0.0",
+    "geotiff": "^2.1.3",
+    "marked": "^12.0.2",
+    "dompurify": "^3.0.6",
+    "mermaid": "^11.11.0",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.11.0"
+  },
+  "peerDependenciesMeta": {
+    "geotiff": {
+      "optional": true
+    },
+    "marked": {
+      "optional": true
+    },
+    "dompurify": {
+      "optional": true
+    },
+    "mermaid": {
+      "optional": true
+    },
+    "jszip": {
+      "optional": true
+    },
+    "mammoth": {
+      "optional": true
+    }
   },
   "dependencies": {
     "axios": "^1.13.2",

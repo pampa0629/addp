@@ -27,6 +27,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	// 导入 general 引擎插件以触发自动注册
+	_ "github.com/addp/common/engine/plugins/builtin/extension"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 
 	// 导入格式解析器以触发自动注册
@@ -77,6 +78,8 @@ func main() {
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
 	quickViewOptimizationRepo := repository.NewQuickViewOptimizationRepository(db)
+	rasterCOGRepo := repository.NewRasterCOGRepository(db)
+	rasterMosaicRepo := repository.NewRasterMosaicRepository(db)
 	exportSessionRepo := repository.NewExportSessionRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
 	logger.L().Info("Manager repositories 初始化完成")
@@ -210,6 +213,22 @@ func main() {
 	embeddingTaskSvc := service.NewEmbeddingTaskService(embeddingRepo, embeddingService, taskExecRepo, cfg)
 	tileCacheTaskSvc := service.NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
 	quickViewOptimizationTaskSvc := service.NewQuickViewOptimizationTaskService(quickViewOptimizationRepo, taskExecRepo)
+	rasterCOGTaskSvc := service.NewRasterCOGTaskService(rasterCOGRepo, taskExecRepo)
+	rasterMosaicTaskSvc := service.NewRasterMosaicTaskService(rasterMosaicRepo, taskExecRepo)
+	rasterCOGTaskSvc.SetBucket(minioBucket)
+	rasterCOGTaskSvc.SetCleaner(service.NewMinIORasterCOGCleaner(minioClient, minioBucket))
+	if systemClient != nil {
+		rasterCOGTaskSvc.SetExecutor(service.NewManagerRasterCOGExecutor(
+			systemClient,
+			systemClient,
+			minioClient,
+			cfg.MinioEndpoint,
+			cfg.MinioAccessKey,
+			cfg.MinioSecretKey,
+			cfg.MinioUseSSL,
+			minioBucket,
+		))
+	}
 	quickViewOptimizationTaskSvc.SetDBProvider(mvtService)
 	quickViewOptimizationTaskSvc.SetQuickViewRepository(quickViewService.Repository())
 	tileCacheTaskSvc.SetQuickViewService(quickViewService)
@@ -250,7 +269,7 @@ func main() {
 	}
 
 	// 初始化 TaskProvider Handler
-	taskProviderHandler := api.NewTaskProviderHandler(embeddingTaskSvc, tileCacheTaskSvc, quickViewOptimizationTaskSvc, taskExecRepo)
+	taskProviderHandler := api.NewTaskProviderHandler(embeddingTaskSvc, tileCacheTaskSvc, quickViewOptimizationTaskSvc, rasterCOGTaskSvc, taskExecRepo, rasterMosaicTaskSvc)
 
 	// 设置 UnifiedMVTService 的 QuickViewService（延迟注入避免循环依赖）
 	unifiedMVTService.SetQuickViewService(quickViewService)
@@ -279,11 +298,22 @@ func main() {
 	exportHandler := api.NewExportHandler(exportService)
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("manager")
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
+	if systemClient != nil {
+		rasterMosaicTaskSvc.SetExecutor(service.NewManagerRasterMosaicExecutor(
+			systemClient,
+			systemClient,
+			serviceURL,
+			cfg.InternalAPIKey,
+		))
+	}
+	if metaClient != nil {
+		rasterMosaicTaskSvc.SetMetaScanSubmitter(metaClient)
+	}
 
 	// ========== 服务注册（注册到 System service_registry）==========
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {

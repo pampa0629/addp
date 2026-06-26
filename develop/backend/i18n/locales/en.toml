@@ -15,3 +15,12 @@ other = "Deleted successfully"
 
 [develop.task.use_execute_endpoint]
 other = "Please use POST /api/v1/develop/task-definitions/{id}/execute to execute a dev task"
+
+[develop.engine.list_failed]
+other = "Failed to list engines"
+
+[develop.engine.workflow_list_failed]
+other = "Failed to list workflow engines"
+
+[develop.engine.spark_list_failed]
+other = "Failed to list Spark general engine resources"

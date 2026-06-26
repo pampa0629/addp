@@ -1,9 +1,9 @@
 #!/bin/bash
-# 统一算子API验证脚本
+# 工作流算子与扩展引擎 API 验证脚本
 
 set -e
 
-echo "🧪 统一算子API架构验证脚本"
+echo "🧪 工作流算子与扩展引擎 API 验证脚本"
 echo "================================"
 echo ""
 
@@ -68,43 +68,37 @@ test_api() {
     echo ""
 }
 
-echo "1️⃣  测试Meta模块算子API"
+echo "1️⃣  测试Develop统一算子发现API"
 echo "----------------------------"
-test_api "Meta算子列表" "GET" "/api/meta/operators" || true
+test_api "工作流引擎列表" "GET" "/api/v1/develop/workflow-engines" || true
+
+WORKFLOW_ENGINE_ID=${ADDP_WORKFLOW_ENGINE_ID:-""}
+if [ -z "$WORKFLOW_ENGINE_ID" ] && command -v jq &> /dev/null; then
+    engines_response=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE_URL/api/v1/develop/workflow-engines")
+    WORKFLOW_ENGINE_ID=$(echo "$engines_response" | jq -r '.[0].id // empty')
+fi
+
+if [ -n "$WORKFLOW_ENGINE_ID" ]; then
+    echo ""
+    echo "2️⃣  测试指定工作流引擎实例算子API"
+    echo "----------------------------"
+    test_api "工作流引擎实例算子列表" "GET" "/api/v1/develop/workflow-engines/$WORKFLOW_ENGINE_ID/operators" || true
+else
+    echo "⚠️  未能自动获取工作流引擎实例 ID；可设置 ADDP_WORKFLOW_ENGINE_ID 后重试实例算子发现"
+fi
 
 echo ""
-echo "2️⃣  测试Transfer模块算子API"
+echo "3️⃣  测试Develop Spark运行时列表API"
 echo "----------------------------"
-test_api "Transfer算子列表" "GET" "/api/transfer/operators" || true
-
-echo ""
-echo "3️⃣  测试Manager模块算子API"
-echo "----------------------------"
-test_api "Manager算子列表" "GET" "/api/manager/operators" || true
-
-echo ""
-echo "4️⃣  测试Python Workflow引擎算子API"
-echo "----------------------------"
-test_api "Python Workflow算子列表" "GET" "/api/develop/spatial/operators" || true
-
-echo ""
-echo "5️⃣  测试Develop空间引擎列表API"
-echo "----------------------------"
-test_api "空间引擎列表" "GET" "/api/develop/spatial/engines" || true
-
-echo ""
-echo "6️⃣  测试Develop SQL资源过滤"
-echo "----------------------------"
-test_api "SQL资源列表" "GET" "/api/develop/databases" || true
+test_api "Spark运行时列表" "GET" "/api/v1/develop/spark-runtimes" || true
 
 echo ""
 echo "================================"
 echo "✅ 验证完成!"
 echo ""
 echo "📊 统计信息:"
-echo "   - 已测试 6 个核心API端点"
-echo "   - 涵盖 4 个模块的算子API"
-echo "   - 验证了能力过滤机制"
+echo "   - 已测试 Develop 工作流引擎列表、实例算子发现和 Spark 运行时资源列表"
+echo "   - 算子发现只走 /workflow-engines/{workflow_engine_id}/operators"
 echo ""
 echo "💡 提示:"
 echo "   如果某些测试失败,可能是因为:"
@@ -113,6 +107,6 @@ echo "   2. Token未设置或已过期"
 echo "   3. 对应模块尚未注册到System"
 echo ""
 echo "📝 详细文档:"
-echo "   - docs/UNIFIED_OPERATOR_API_IMPLEMENTATION.md"
-echo "   - develop/frontend/SPATIAL_ENGINE_INTEGRATION.md"
+echo "   - docs/spec/addp工作流计算引擎接口规范.md"
+echo "   - engines/docs/README.md"
 echo ""

@@ -263,7 +263,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "任务详情，按 task_type 返回 TileCacheTaskResponse、QuickViewOptimizationTaskResponse 或 EmbeddingTaskResponse | Task detail, returns TileCacheTaskResponse, QuickViewOptimizationTaskResponse, or EmbeddingTaskResponse by task_type",
+                        "description": "任务详情，按 task_type 返回矢量瓦片缓存、矢量快显性能优化、栅格 COG 生成或向量化任务详情 | Task detail by task_type",
                         "schema": {
                             "type": "object"
                         }
@@ -1352,7 +1352,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "以 Resource Locator 为数据项身份更新显示偏好：table_geojson 或 quick_view | Update preferred display mode by Resource Locator: table_geojson or quick_view",
+                "description": "以 Resource Locator 为数据项身份更新显示偏好：basic_preview 或 map_quick_view | Update preferred display mode by Resource Locator: basic_preview or map_quick_view",
                 "consumes": [
                     "application/json"
                 ],
@@ -1478,7 +1478,7 @@ const docTemplate = `{
                             },
                             "X-ADDP-Tile-Recommendation": {
                                 "type": "string",
-                                "description": "超时或降级时的推荐动作：quick_view_optimization 或 tile_cache_generation | Recommended action when timeout or degraded"
+                                "description": "超时或降级时的推荐动作：vector_quick_view_target_generation 或 vector_tile_cache_generation | Recommended action when timeout or degraded"
                             },
                             "X-ADDP-Tile-Retry-Policy": {
                                 "type": "string",
@@ -1522,7 +1522,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/quick_view_optimization": {
+        "/raster_cog": {
             "get": {
                 "security": [
                     {
@@ -1535,7 +1535,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "列出快显性能优化结果 | List quick view optimization results",
+                "summary": "列出栅格快显 COG | List raster COG results",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1591,7 +1591,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/quick_view_optimization/{id}": {
+        "/raster_cog/{id}": {
             "get": {
                 "security": [
                     {
@@ -1604,7 +1604,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "获取快显性能优化结果详情 | Get quick view optimization result detail",
+                "summary": "获取栅格快显 COG 详情 | Get raster COG detail",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1618,7 +1618,7 @@ const docTemplate = `{
                     "200": {
                         "description": "结果详情 | Result detail",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_manager_internal_models.QuickViewOptimization"
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.RasterCOG"
                         }
                     }
                 }
@@ -1635,7 +1635,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "删除快显性能优化结果 | Delete quick view optimization result",
+                "summary": "删除栅格快显 COG | Delete raster COG",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1656,21 +1656,83 @@ const docTemplate = `{
                 }
             }
         },
-        "/quick_view_optimization_tasks": {
+        "/raster_cog/{id}/content": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "列出 Manager 模块的快显性能优化任务配置。该私有入口固定返回 task_type=quick_view_optimization；编排模块应使用标准 /tasks 入口。| List Manager quick view optimization task configurations. This private endpoint always returns task_type=quick_view_optimization; orchestrator should use the standard /tasks endpoint.",
+                "description": "按 raster COG id 返回 Manager infra MinIO 中的 COG 内容，支持 HTTP Range。该接口只读取 Manager 拥有生命周期且状态为 ready 的 raster COG。 | Return COG content from Manager infra MinIO by raster COG id with HTTP Range support. Only ready Manager-owned raster COG results are readable.",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "读取栅格快显 COG | Read raster COG quick view result",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "raster COG ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "COG 内容流 | COG content stream"
+                    },
+                    "206": {
+                        "description": "部分 COG 内容流 | Partial COG content stream"
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "COG 不存在或未就绪 | COG not found or not ready",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "416": {
+                        "description": "Range 不可满足 | Range not satisfiable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/raster_cog_tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "列出 Manager 模块的栅格快显 COG 任务配置。该私有入口固定返回 task_type=raster_cog_generation；编排模块应使用标准 /tasks 入口。| List Manager raster COG generation task configurations.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "列出快显性能优化任务配置 | List quick view optimization task configurations",
+                "summary": "列出栅格快显 COG 任务配置 | List raster COG generation task configurations",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1710,15 +1772,15 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "创建快显性能优化任务配置 | Create quick view optimization task configuration",
+                "summary": "创建栅格快显 COG 任务配置 | Create raster COG generation task configuration",
                 "parameters": [
                     {
-                        "description": "快显性能优化任务配置 | Quick view optimization task configuration",
+                        "description": "raster COG generation task configuration",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskRequest"
+                            "$ref": "#/definitions/internal_api.RasterCOGTaskRequest"
                         }
                     }
                 ],
@@ -1726,13 +1788,13 @@ const docTemplate = `{
                     "201": {
                         "description": "创建的任务配置 | Created task configuration",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskResponse"
+                            "$ref": "#/definitions/internal_api.RasterCOGTaskResponse"
                         }
                     }
                 }
             }
         },
-        "/quick_view_optimization_tasks/{id}": {
+        "/raster_cog_tasks/{id}": {
             "get": {
                 "security": [
                     {
@@ -1745,7 +1807,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "获取快显性能优化任务配置 | Get quick view optimization task configuration",
+                "summary": "获取栅格快显 COG 任务配置 | Get raster COG generation task configuration",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1759,7 +1821,7 @@ const docTemplate = `{
                     "200": {
                         "description": "任务配置 | Task configuration",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskResponse"
+                            "$ref": "#/definitions/internal_api.RasterCOGTaskResponse"
                         }
                     }
                 }
@@ -1779,7 +1841,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "更新快显性能优化任务配置 | Update quick view optimization task configuration",
+                "summary": "更新栅格快显 COG 任务配置 | Update raster COG generation task configuration",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1789,12 +1851,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "快显性能优化任务配置 | Quick view optimization task configuration",
+                        "description": "raster COG generation task configuration",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskRequest"
+                            "$ref": "#/definitions/internal_api.RasterCOGTaskRequest"
                         }
                     }
                 ],
@@ -1802,7 +1864,7 @@ const docTemplate = `{
                     "200": {
                         "description": "更新后的任务配置 | Updated task configuration",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskResponse"
+                            "$ref": "#/definitions/internal_api.RasterCOGTaskResponse"
                         }
                     }
                 }
@@ -1819,7 +1881,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "删除快显性能优化任务配置 | Delete quick view optimization task configuration",
+                "summary": "删除栅格快显 COG 任务配置 | Delete raster COG generation task configuration",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1832,6 +1894,233 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/raster_mosaic_tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "列出 Manager 模块的栅格 mosaic 任务配置。该私有入口固定返回 task_type=raster_mosaic_generation；编排模块应使用标准 /tasks 入口。| List Manager raster mosaic generation task configurations.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "列出栅格 mosaic 任务配置 | List raster mosaic generation task configurations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务列表 | Task list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "创建新的栅格 mosaic 任务配置。任务从资源树 node 选择源数据，并将 mosaic 数据集写入用户选择的业务存储。| Create a raster mosaic task from a resource-tree node into the selected business storage.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "创建栅格 mosaic 任务配置 | Create raster mosaic generation task configuration",
+                "parameters": [
+                    {
+                        "description": "raster mosaic generation task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RasterMosaicTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "创建的任务配置 | Created task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RasterMosaicTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/raster_mosaic_tasks/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取栅格 mosaic 任务配置 | Get raster mosaic generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务配置 | Task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RasterMosaicTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "更新栅格 mosaic 任务配置 | Update raster mosaic generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "raster mosaic generation task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RasterMosaicTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的任务配置 | Updated task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RasterMosaicTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除栅格 mosaic 任务配置 | Delete raster mosaic generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2157,7 +2446,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "列出 Manager 模块的任务（瓦片缓存生成、快显性能优化和向量化任务）| List Manager module tasks (tile cache generation, quick view optimization, and embedding tasks)",
+                "description": "列出 Manager 模块的任务（矢量瓦片缓存生成、矢量快显性能优化、栅格快显 COG 生成、栅格 mosaic 生成和向量化任务）| List Manager module tasks (vector tile cache generation, vector quick view optimization, raster COG generation, raster mosaic generation, and embedding tasks)",
                 "produces": [
                     "application/json"
                 ],
@@ -2168,7 +2457,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型过滤：tile_cache_generation|quick_view_optimization|embedding | Task type filter: tile_cache_generation|quick_view_optimization|embedding",
+                        "description": "任务类型过滤：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|embedding | Task type filter",
                         "name": "task_type",
                         "in": "query"
                     },
@@ -2227,7 +2516,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：tile_cache_generation|quick_view_optimization|embedding | Task type: tile_cache_generation|quick_view_optimization|embedding",
+                        "description": "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -2242,7 +2531,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "任务详情，按 task_type 返回 TileCacheTaskResponse、QuickViewOptimizationTaskResponse 或 EmbeddingTaskResponse | Task detail, returns TileCacheTaskResponse, QuickViewOptimizationTaskResponse, or EmbeddingTaskResponse by task_type",
+                        "description": "任务详情，按 task_type 返回矢量瓦片缓存、矢量快显性能优化、栅格 COG 生成或向量化任务详情 | Task detail by task_type",
                         "schema": {
                             "type": "object"
                         }
@@ -2285,7 +2574,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：tile_cache_generation|quick_view_optimization|embedding | Task type: tile_cache_generation|quick_view_optimization|embedding",
+                        "description": "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -2330,7 +2619,390 @@ const docTemplate = `{
                 }
             }
         },
-        "/tile_cache": {
+        "/uploads": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "将用户本地文件原样写入存储型引擎节点，完成后提交 Meta 后台扫描 | Upload local files to a storage engine node and submit a Meta background scan",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "上传文件到存储节点 | Upload files to storage node",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "目标存储节点 ResourceLocator | Target storage node ResourceLocator",
+                        "name": "target_node_locator",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "一个或多个文件 | One or more files",
+                        "name": "files",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "上传结果 | Upload result",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.UploadResult"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/vector_quick_view_target_tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "列出 Manager 模块的快显性能优化任务配置。该私有入口固定返回 task_type=vector_quick_view_target_generation；编排模块应使用标准 /tasks 入口。| List Manager quick view optimization task configurations. This private endpoint always returns task_type=vector_quick_view_target_generation; orchestrator should use the standard /tasks endpoint.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "列出快显性能优化任务配置 | List quick view optimization task configurations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务列表 | Task list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "创建快显性能优化任务配置 | Create quick view optimization task configuration",
+                "parameters": [
+                    {
+                        "description": "快显性能优化任务配置 | Quick view optimization task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "创建的任务配置 | Created task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/vector_quick_view_target_tasks/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取快显性能优化任务配置 | Get quick view optimization task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务配置 | Task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "更新快显性能优化任务配置 | Update quick view optimization task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "快显性能优化任务配置 | Quick view optimization task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的任务配置 | Updated task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除快显性能优化任务配置 | Delete quick view optimization task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/vector_quick_view_targets": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "列出快显性能优化结果 | List quick view optimization results",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "数据项ID | Item ID",
+                        "name": "item_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据项指纹 | Item fingerprint",
+                        "name": "item_fingerprint",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "task_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态 | Status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关键词 | Keyword",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "结果列表 | Result list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/vector_quick_view_targets/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取快显性能优化结果详情 | Get quick view optimization result detail",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "结果ID | Result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "结果详情 | Result detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.QuickViewOptimization"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除快显性能优化结果 | Delete quick view optimization result",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "结果ID | Result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/vector_tile_cache": {
             "get": {
                 "security": [
                     {
@@ -2400,7 +3072,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/tile_cache/{id}": {
+        "/vector_tile_cache/{id}": {
             "get": {
                 "security": [
                     {
@@ -2465,14 +3137,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/tile_cache_tasks": {
+        "/vector_tile_cache_tasks": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "列出 Manager 模块的瓦片缓存生成任务配置。该私有入口固定返回 task_type=tile_cache_generation；编排模块应使用标准 /tasks 入口。| List Manager tile cache generation task configurations. This private endpoint always returns task_type=tile_cache_generation; orchestrator should use the standard /tasks endpoint.",
+                "description": "列出 Manager 模块的瓦片缓存生成任务配置。该私有入口固定返回 task_type=vector_tile_cache_generation；编排模块应使用标准 /tasks 入口。| List Manager tile cache generation task configurations. This private endpoint always returns task_type=vector_tile_cache_generation; orchestrator should use the standard /tasks endpoint.",
                 "produces": [
                     "application/json"
                 ],
@@ -2557,7 +3229,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/tile_cache_tasks/{id}": {
+        "/vector_tile_cache_tasks/{id}": {
             "get": {
                 "security": [
                     {
@@ -2696,71 +3368,6 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/uploads": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "将用户本地文件原样写入存储型引擎节点，完成后提交 Meta 后台扫描 | Upload local files to a storage engine node and submit a Meta background scan",
-                "consumes": [
-                    "multipart/form-data"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "上传文件到存储节点 | Upload files to storage node",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "目标存储节点 ResourceLocator | Target storage node ResourceLocator",
-                        "name": "target_node_locator",
-                        "in": "formData",
-                        "required": true
-                    },
-                    {
-                        "type": "file",
-                        "description": "一个或多个文件 | One or more files",
-                        "name": "files",
-                        "in": "formData",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "上传结果 | Upload result",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_manager_internal_service.UploadResult"
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3068,6 +3675,95 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_manager_internal_models.RasterCOG": {
+            "type": "object",
+            "properties": {
+                "band_count": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "extent": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "extent_srid": {
+                    "type": "integer"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "source_crs": {
+                    "type": "string"
+                },
+                "source_engine_id": {
+                    "type": "integer"
+                },
+                "source_profile": {
+                    "type": "string"
+                },
+                "source_size_bytes": {
+                    "type": "integer"
+                },
+                "source_srid": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "storage_ref": {
+                    "type": "string"
+                },
+                "target_kind": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "width": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_manager_internal_models.TileCache": {
             "type": "object",
             "properties": {
@@ -3274,13 +3970,13 @@ const docTemplate = `{
                 "active_mode": {
                     "type": "string"
                 },
-                "can_generate_tile_cache": {
+                "can_generate_vector_tile_cache": {
                     "type": "boolean"
                 },
                 "can_use_quick_view": {
                     "type": "boolean"
                 },
-                "default_tile_cache_id": {
+                "default_vector_tile_cache_id": {
                     "type": "integer"
                 },
                 "item_fingerprint": {
@@ -3300,6 +3996,9 @@ const docTemplate = `{
                 },
                 "quick_view": {
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewRenderInfo"
+                },
+                "raster": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewRasterInfo"
                 },
                 "realtime_tile": {
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewRealtimeTileInfo"
@@ -3328,11 +4027,11 @@ const docTemplate = `{
                 "tenant_id": {
                     "type": "integer"
                 },
-                "tile_cache_generation": {
-                    "$ref": "#/definitions/github_com_addp_manager_internal_service.TileCacheGeneration"
-                },
                 "unavailable_reason": {
                     "type": "string"
+                },
+                "vector_tile_cache_generation": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.TileCacheGeneration"
                 }
             }
         },
@@ -3379,6 +4078,86 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "task_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.QuickViewRasterInfo": {
+            "type": "object",
+            "properties": {
+                "band_count": {
+                    "type": "integer"
+                },
+                "client_max_bytes": {
+                    "type": "integer"
+                },
+                "client_max_pixels": {
+                    "type": "integer"
+                },
+                "client_read_mode": {
+                    "type": "string"
+                },
+                "client_render_library": {
+                    "type": "string"
+                },
+                "cog_check_level": {
+                    "type": "string"
+                },
+                "display_max": {
+                    "type": "number"
+                },
+                "display_min": {
+                    "type": "number"
+                },
+                "display_range_method": {
+                    "type": "string"
+                },
+                "extent": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "extent_srid": {
+                    "type": "integer"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "has_overviews": {},
+                "height": {
+                    "type": "integer"
+                },
+                "is_cloud_optimized": {},
+                "is_tiled": {},
+                "nodata": {
+                    "type": "number"
+                },
+                "profile": {
+                    "type": "string"
+                },
+                "recommended_action": {
+                    "type": "string"
+                },
+                "sample_max": {
+                    "type": "number"
+                },
+                "sample_min": {
+                    "type": "number"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "source_crs": {
+                    "type": "string"
+                },
+                "source_srid": {
+                    "type": "integer"
+                },
+                "unavailable_reason": {
+                    "type": "string"
+                },
+                "width": {
                     "type": "integer"
                 }
             }
@@ -3464,6 +4243,9 @@ const docTemplate = `{
                 },
                 "min_zoom": {
                     "type": "integer"
+                },
+                "preview_url": {
+                    "type": "string"
                 },
                 "record_count": {
                     "type": "integer"
@@ -3999,6 +4781,281 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.RasterCOGTaskCOGResponse": {
+            "type": "object",
+            "properties": {
+                "blocksize": {
+                    "type": "integer"
+                },
+                "compression": {
+                    "type": "string"
+                },
+                "overview_resampling": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.RasterCOGTaskRasterResponse": {
+            "type": "object",
+            "properties": {
+                "band_count": {
+                    "type": "integer"
+                },
+                "extent": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "extent_srid": {
+                    "type": "integer"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "source_profile": {
+                    "type": "string"
+                },
+                "source_size_bytes": {
+                    "type": "integer"
+                },
+                "source_srid": {
+                    "type": "integer"
+                },
+                "width": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.RasterCOGTaskRequest": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "schedule": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.RasterCOGTaskResponse": {
+            "type": "object",
+            "properties": {
+                "cog": {
+                    "$ref": "#/definitions/internal_api.RasterCOGTaskCOGResponse"
+                },
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "raster": {
+                    "$ref": "#/definitions/internal_api.RasterCOGTaskRasterResponse"
+                },
+                "schedule": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/internal_api.RasterCOGTaskTargetResponse"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.RasterCOGTaskTargetResponse": {
+            "type": "object",
+            "properties": {
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "source_engine_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.RasterMosaicTaskPlacementResponse": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.RasterMosaicTaskRequest": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "schedule": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.RasterMosaicTaskResponse": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "placement": {
+                    "$ref": "#/definitions/internal_api.RasterMosaicTaskPlacementResponse"
+                },
+                "schedule": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/internal_api.RasterMosaicTaskSourceResponse"
+                },
+                "target": {
+                    "$ref": "#/definitions/internal_api.RasterMosaicTaskTargetResponse"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.RasterMosaicTaskSourceResponse": {
+            "type": "object",
+            "properties": {
+                "exclude_patterns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "include_patterns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "node_locator": {
+                    "type": "string"
+                },
+                "recursive": {
+                    "type": "boolean"
+                },
+                "source_engine_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.RasterMosaicTaskTargetResponse": {
+            "type": "object",
+            "properties": {
+                "dataset_name": {
+                    "type": "string"
+                },
+                "storage_locator": {
+                    "type": "string"
+                },
+                "target_engine_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.TaskExecuteRequest": {
             "type": "object",
             "properties": {
@@ -4216,8 +5273,8 @@ const docTemplate = `{
                 "preferred_mode": {
                     "type": "string",
                     "enum": [
-                        "table_geojson",
-                        "quick_view"
+                        "basic_preview",
+                        "map_quick_view"
                     ]
                 }
             }

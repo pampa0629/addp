@@ -90,15 +90,25 @@ func objectPrefixNodeAttributes(bucket, path string) models.JSONMap {
 }
 
 func (r *ScanRepository) SoftDeleteObjectMetaItemsMissingFingerprints(tenantID, engineID uint, bucketName string, scannedFingerprints map[string]bool) ([]models.MetaItem, error) {
+	return r.SoftDeleteObjectMetaItemsMissingFingerprintsInPrefix(tenantID, engineID, bucketName, "", scannedFingerprints)
+}
+
+func (r *ScanRepository) SoftDeleteObjectMetaItemsMissingFingerprintsInPrefix(tenantID, engineID uint, bucketName, objectPrefix string, scannedFingerprints map[string]bool) ([]models.MetaItem, error) {
 	if len(scannedFingerprints) == 0 {
 		return nil, nil
 	}
 
 	var existingItems []models.MetaItem
-	if err := r.db.Where("tenant_id = ? AND engine_id = ? AND item_type IN ?",
+	query := r.db.Where("tenant_id = ? AND engine_id = ? AND item_type IN ?",
 		tenantID, engineID, []string{"object", "table"}).
 		Where("attributes->'storage'->>'bucket' = ?", bucketName).
-		Find(&existingItems).Error; err != nil {
+		Where("deleted_at IS NULL")
+	objectPrefix = strings.Trim(objectPrefix, "/")
+	if objectPrefix != "" {
+		fullPrefix := strings.Trim(bucketName, "/") + "/" + objectPrefix + "/"
+		query = query.Where("full_name = ? OR full_name LIKE ?", strings.TrimSuffix(fullPrefix, "/"), fullPrefix+"%")
+	}
+	if err := query.Find(&existingItems).Error; err != nil {
 		return nil, err
 	}
 

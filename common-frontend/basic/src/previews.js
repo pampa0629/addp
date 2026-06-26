@@ -1,13 +1,14 @@
 /**
  * 预览组件入口
  *
- * 这些组件包含重型依赖（marked、mammoth、jszip、dompurify 等），
+ * 这些组件包含重型依赖（geotiff、marked、mammoth、jszip、dompurify 等），
  * 单独提供入口，供需要预览功能的模块按需引入。
  *
  * 用法（以 manager 为例）：
  *   import { MarkdownPreview, PdfPreview } from '@common-ui/previews'
  *
  * 使用此入口的前端模块需要在 package.json 中安装以下依赖：
+ *   - geotiff (ImagePreview, ObjectCatalogPreview TIFF 渲染)
  *   - marked (MarkdownPreview)
  *   - dompurify (MarkdownPreview)
  *   - mermaid (MarkdownPreview)
@@ -19,6 +20,7 @@
 
 export { default as TextPreview } from './components/previews/TextPreview.vue'
 export { default as UnsupportedPreview } from './components/previews/UnsupportedPreview.vue'
+export { default as ImagePreview } from './components/ImagePreview.vue'
 export { default as JsonPreview } from './components/previews/JsonPreview.vue'
 export { default as MarkdownPreview } from './components/previews/MarkdownPreview.vue'
 export { default as ContainerPreview } from './components/previews/ContainerPreview.vue'

@@ -153,6 +153,8 @@ type WorkflowRuntimeProvider interface {
 	RuntimeEndpoint(ctx context.Context, connInfo ConnectionInfo) (string, error)
 	ListOperators(ctx context.Context, connInfo ConnectionInfo) ([]OperatorDescriptor, error)
 	ExecuteWorkflow(ctx context.Context, connInfo ConnectionInfo, req WorkflowExecuteRequest) (*WorkflowExecuteResult, error)
+	InvokeOperator(ctx context.Context, connInfo ConnectionInfo, operatorName string, req OperatorInvokeRequest) (*OperatorInvokeResult, error)
+	GetExecutionStatus(ctx context.Context, connInfo ConnectionInfo, executionID string) (*WorkflowExecutionStatus, error)
 }
 
 type ScriptRuntimeProvider interface {
@@ -310,6 +312,7 @@ type BatchReadOptions struct {
 	Limit  int
 	Offset int64
 	Query  string
+	Hints  map[string]interface{}
 }
 
 type TableReadSessionOptions struct {
@@ -317,6 +320,13 @@ type TableReadSessionOptions struct {
 	Hints        map[string]interface{}
 	ResumeMarker *resume.Marker
 }
+
+const (
+	TableReadHintGeometryEncoding        = "geometry_encoding"
+	TableReadHintGeometryField           = "geometry_field"
+	TableReadHintGeometryTargetSRID      = "geometry_target_srid"
+	TableReadHintGeometryTransformPolicy = "geometry_transform_policy"
+)
 
 type BatchWriteOptions struct {
 	Method string
@@ -365,16 +375,17 @@ type OperatorDescriptor struct {
 	ID                  string                 `json:"id,omitempty"`
 	Name                string                 `json:"name"`
 	DisplayName         string                 `json:"display_name,omitempty"`
+	EngineType          string                 `json:"engine_type,omitempty"`
 	Type                string                 `json:"type,omitempty"`
 	Category            string                 `json:"category,omitempty"`
+	CategoryPath        []string               `json:"category_path,omitempty"`
 	Description         string                 `json:"description,omitempty"`
 	BriefDescription    string                 `json:"brief_description,omitempty"`
 	DetailedDescription map[string]interface{} `json:"detailed_description,omitempty"`
 	Parameters          []ParameterDescriptor  `json:"parameters,omitempty"`
 	Inputs              []interface{}          `json:"inputs,omitempty"`
 	OutputPorts         []OutputPortDescriptor `json:"output_ports,omitempty"`
-	Outputs             []datatype.FieldInfo   `json:"outputs,omitempty"`
-	Module              string                 `json:"module,omitempty"`
+	ExecutionModes      []string               `json:"execution_modes,omitempty"`
 	Attributes          map[string]interface{} `json:"attributes,omitempty"`
 }
 
@@ -411,10 +422,54 @@ type WorkflowExecuteRequest struct {
 }
 
 type WorkflowExecuteResult struct {
-	Status      string                 `json:"status"`
-	ExecutionID string                 `json:"execution_id,omitempty"`
-	Result      map[string]interface{} `json:"result,omitempty"`
-	Error       string                 `json:"error,omitempty"`
+	Status          string                 `json:"status"`
+	ExecutionID     string                 `json:"execution_id,omitempty"`
+	Result          map[string]interface{} `json:"result,omitempty"`
+	Error           string                 `json:"error,omitempty"`
+	ErrorCode       string                 `json:"error_code,omitempty"`
+	Details         string                 `json:"details,omitempty"`
+	ExecutionTimeMs *float64               `json:"execution_time_ms,omitempty"`
+}
+
+type OperatorInvokeRequest struct {
+	Params        map[string]interface{} `json:"params,omitempty"`
+	Runtime       map[string]interface{} `json:"runtime,omitempty"`
+	BinaryPayload *BinaryPayload         `json:"binary_payload,omitempty"`
+}
+
+type OperatorInvokeResult struct {
+	Status          string                 `json:"status"`
+	ExecutionID     string                 `json:"execution_id,omitempty"`
+	Result          map[string]interface{} `json:"result,omitempty"`
+	BinaryPayload   *BinaryPayload         `json:"binary_payload,omitempty"`
+	Error           string                 `json:"error,omitempty"`
+	ErrorCode       string                 `json:"error_code,omitempty"`
+	Details         string                 `json:"details,omitempty"`
+	ExecutionTimeMs *float64               `json:"execution_time_ms,omitempty"`
+}
+
+type BinaryPayload struct {
+	ContentType string                 `json:"content_type,omitempty"`
+	Encoding    string                 `json:"encoding,omitempty"`
+	Name        string                 `json:"name,omitempty"`
+	Data        []byte                 `json:"data,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+}
+
+type WorkflowExecutionStatus struct {
+	Status          string                 `json:"status"`
+	ExecutionID     string                 `json:"execution_id,omitempty"`
+	Result          interface{}            `json:"result,omitempty"`
+	AllResults      map[string]interface{} `json:"all_results,omitempty"`
+	Message         string                 `json:"message,omitempty"`
+	TaskOrder       []string               `json:"task_order,omitempty"`
+	Error           string                 `json:"error,omitempty"`
+	ErrorCode       string                 `json:"error_code,omitempty"`
+	Details         string                 `json:"details,omitempty"`
+	Progress        int                    `json:"progress,omitempty"`
+	StartedAt       string                 `json:"started_at,omitempty"`
+	ExecutionTimeMs *float64               `json:"execution_time_ms,omitempty"`
+	Raw             map[string]interface{} `json:"raw,omitempty"`
 }
 
 type ScriptSessionRequest struct {

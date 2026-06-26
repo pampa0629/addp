@@ -4,13 +4,9 @@ Spark 工作流数据转换算子
 
 import logging
 from typing import Dict, Any, List, Optional
-from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql import functions as F
-from pyspark.sql.window import Window
 
-from spark_connector import get_spark_connector
-from storage_adapters import StorageAdapter
 from .base import OperatorMetadata, OperatorParam, OperatorCategory, register_operator
+from .spark_types import DataFrame
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +123,7 @@ SELECT_METADATA = OperatorMetadata(
     category=OperatorCategory.DATA_TRANSFORM,
     description='选择列',
     brief_description='从 DataFrame 中选择指定的列,类似 SQL SELECT',
+    execution_modes=["workflow"],
     overview='select 算子用于投影操作,从 DataFrame 中选择需要的列,丢弃其他列。支持简单列名和表达式,常用于减少数据传输量和提取关键字段。',
     params=[
         OperatorParam(
@@ -146,8 +143,8 @@ SELECT_METADATA = OperatorMetadata(
     ],
     use_cases=[
         '字段裁剪: 从 50 列的宽表中选择 5 个关键列,减少 90% 数据传输量',
-        '几何列提取: 从复杂的 POI 表中仅选择 id、name、geom 三列,用于空间分析',
-        '属性表简化: 从道路网络表选择 road_id、length、level 列,生成简化的属性表',
+        '几何列提取: 从 500万行复杂 POI 表中仅选择 id、name、geom 三列,用于空间分析',
+        '属性表简化: 从 100万条道路网络表选择 road_id、length、level 列,生成简化的属性表',
         '前端展示优化: 从百列数据表中选择 10 个展示列,加快前端渲染'
     ],
     notes=[
@@ -174,6 +171,7 @@ FILTER_METADATA = OperatorMetadata(
     category=OperatorCategory.DATA_TRANSFORM,
     description='条件过滤',
     brief_description='根据条件表达式过滤行,类似 SQL WHERE',
+    execution_modes=["workflow"],
     overview='filter 算子根据条件表达式过滤 DataFrame 的行,保留满足条件的记录。支持复杂的逻辑运算(AND/OR/NOT)和丰富的比较操作(=、>、<、IN、LIKE 等)。',
     params=[
         OperatorParam(
@@ -221,6 +219,7 @@ ADD_COLUMN_METADATA = OperatorMetadata(
     category=OperatorCategory.DATA_TRANSFORM,
     description='添加列',
     brief_description='通过表达式计算添加新列,支持算术运算和函数调用',
+    execution_modes=["workflow"],
     overview='add_column 算子通过 SQL 表达式计算生成新列,支持算术运算、字符串操作、日期函数和空间函数。新列会追加到 DataFrame 末尾,不影响原有列。',
     params=[
         OperatorParam(
@@ -248,8 +247,8 @@ ADD_COLUMN_METADATA = OperatorMetadata(
     use_cases=[
         '面积单位转换: 添加 area_km2 列,表达式 "ST_Area(geom) / 1000000",将平方米转为平方公里',
         '价格折扣: 添加 discount_price 列,表达式 "price * 0.8",计算8折价格',
-        '人口密度: 添加 density 列,表达式 "population / area",计算人口密度',
-        '时间解析: 添加 year 列,表达式 "year(create_time)",提取年份'
+        '人口密度: 为 300 个城市添加 density 列,表达式 "population / area",计算人口密度',
+        '时间解析: 为 5 年轨迹明细添加 year 列,表达式 "year(create_time)",提取年份'
     ],
     notes=[
         '列名已存在时会覆盖原列,无警告',
@@ -275,7 +274,8 @@ RENAME_COLUMN_METADATA = OperatorMetadata(
     name='rename_column',
     category=OperatorCategory.DATA_TRANSFORM,
     description='重命名列',
-    brief_description='修改列名,不改变列内容和顺序',
+    brief_description='修改指定列名,保持列内容和行顺序不变',
+    execution_modes=["workflow"],
     overview='rename_column 算子修改列名,常用于规范化字段命名、避免列名冲突、适配下游系统要求。操作高效,不涉及数据复制。',
     params=[
         OperatorParam(
@@ -301,10 +301,10 @@ RENAME_COLUMN_METADATA = OperatorMetadata(
         )
     ],
     use_cases=[
-        '中文列名转英文: 将"人口"列重命名为 population,适配国际化系统',
-        '缩写规范化: 将 pop 重命名为 population,提高可读性',
-        '避免列名冲突: JOIN 前将 id 重命名为 city_id,避免与另一表的 id 冲突',
-        '几何列标准化: 将 geometry 重命名为 geom,符合 Sedona 惯例'
+        '中文列名转英文: 将 20 个中文指标列重命名为英文列名,适配国际化系统',
+        '缩写规范化: 将 5 个缩写列如 pop 重命名为 population,提高可读性',
+        '避免列名冲突: JOIN 前将 2 张表的 id 重命名为 city_id 和 region_id,避免冲突',
+        '几何列标准化: 将 10 个来源表的 geometry 重命名为 geom,符合 Sedona 惯例'
     ],
     notes=[
         '原列名不存在会抛出 AnalysisException',
@@ -331,6 +331,7 @@ DROP_COLUMN_METADATA = OperatorMetadata(
     category=OperatorCategory.DATA_TRANSFORM,
     description='删除列',
     brief_description='删除指定的列,减少数据体积和传输开销',
+    execution_modes=["workflow"],
     overview='drop_column 算子删除一个或多个列,常用于清理冗余字段、减少数据传输量、保护敏感信息。操作高效,不涉及行过滤。',
     params=[
         OperatorParam(
@@ -349,8 +350,8 @@ DROP_COLUMN_METADATA = OperatorMetadata(
         )
     ],
     use_cases=[
-        '去除中间列: 删除 buffer_geom、temp_id 等临时计算列,清理最终结果',
-        '敏感信息过滤: 删除 password、phone 等敏感列,符合数据安全要求',
+        '去除中间列: 删除 3 个 buffer_geom、temp_id 等临时计算列,清理最终结果',
+        '敏感信息过滤: 删除 5 个 password、phone 等敏感列,符合数据安全要求',
         '冗余字段清理: 删除 create_time、update_time 等无关时间戳,减少 30% 数据量',
         '宽表瘦身: 从 100 列宽表中删除 80 个无用列,提升查询性能'
     ],

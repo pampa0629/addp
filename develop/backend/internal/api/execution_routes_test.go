@@ -28,7 +28,6 @@ func TestProviderDevTaskListResponseUsesStandardItemsShape(t *testing.T) {
 			TenantID:  7,
 			Name:      "query task",
 			TaskType:  commonExecution.TaskTypeQuery,
-			Enabled:   true,
 			CreatedAt: now,
 			UpdatedAt: now,
 			Status:    "active",

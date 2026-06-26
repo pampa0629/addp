@@ -2,12 +2,14 @@ package spatial
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/twpayne/go-geom"
 	"github.com/twpayne/go-geom/encoding/ewkb"
+	geomgeojson "github.com/twpayne/go-geom/encoding/geojson"
 	"github.com/twpayne/go-geom/encoding/wkb"
 	"github.com/twpayne/go-geom/encoding/wkbcommon"
 	"github.com/twpayne/go-geom/encoding/wkt"
@@ -48,6 +50,67 @@ func GeomToEWKB(geometry geom.T, srid int) ([]byte, error) {
 	return ewkb.Marshal(geometry, ewkb.NDR)
 }
 
+// EncodeGeometryBytesAsEWKB parses WKB/EWKB geometry values and re-encodes
+// them as EWKB bytes. It does not reproject coordinates; srid only controls
+// the SRID embedded in the EWKB envelope when positive.
+func EncodeGeometryBytesAsEWKB(values [][]byte, srid int) ([][]byte, error) {
+	result := make([][]byte, 0, len(values))
+	for i, value := range values {
+		if value == nil {
+			result = append(result, nil)
+			continue
+		}
+		geometry, err := ParseGeometryBytes(value)
+		if err != nil {
+			return nil, fmt.Errorf("parse geometry[%d]: %w", i, err)
+		}
+		encoded, err := GeomToEWKB(geometry, srid)
+		if err != nil {
+			return nil, fmt.Errorf("encode geometry[%d] as EWKB: %w", i, err)
+		}
+		result = append(result, encoded)
+	}
+	return result, nil
+}
+
+// GeomToGeoJSONGeometry encodes a geometry as a GeoJSON geometry object.
+func GeomToGeoJSONGeometry(geometry geom.T) (map[string]interface{}, error) {
+	if geometry == nil {
+		return nil, fmt.Errorf("geometry is nil")
+	}
+	data, err := geomgeojson.Marshal(geometry)
+	if err != nil {
+		return nil, fmt.Errorf("marshal GeoJSON geometry: %w", err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("decode GeoJSON geometry: %w", err)
+	}
+	return result, nil
+}
+
+// GeoJSONGeometryToGeom decodes a GeoJSON geometry object.
+func GeoJSONGeometryToGeom(value map[string]interface{}, srid int) (geom.T, error) {
+	if value == nil {
+		return nil, fmt.Errorf("GeoJSON geometry is nil")
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("encode GeoJSON geometry: %w", err)
+	}
+	var geometry geom.T
+	if err := geomgeojson.Unmarshal(data, &geometry); err != nil {
+		return nil, fmt.Errorf("parse GeoJSON geometry: %w", err)
+	}
+	if srid > 0 && geometry != nil && geometry.SRID() != srid {
+		geometry, err = geom.SetSRID(geometry, srid)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return geometry, nil
+}
+
 // ParseGeometryValue decodes geometry values represented as geom.T, WKT text,
 // WKB/EWKB bytes, or hex WKB/EWKB text.
 func ParseGeometryValue(value interface{}) (geom.T, error) {
@@ -61,6 +124,8 @@ func ParseGeometryValue(value interface{}) (geom.T, error) {
 		return ParseGeometryBytes(v)
 	case string:
 		return ParseGeometryText(v)
+	case map[string]interface{}:
+		return GeoJSONGeometryToGeom(v, 0)
 	default:
 		return nil, fmt.Errorf("unsupported geometry value type: %T", value)
 	}

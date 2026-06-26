@@ -229,36 +229,6 @@
       "inputNfsExportPath": "请输入 NFS 导出路径"
     }
   },
-  "engineForm": {
-    "name": "名称",
-    "namePlaceholder": "引擎显示名称（中文或英文）",
-    "description": "描述",
-    "descPlaceholder": "资源用途说明",
-    "resourceType": "资源类型",
-    "resourceTypePlaceholder": "请选择资源类型",
-    "computeEngine": "计算引擎",
-    "database": "数据库",
-    "objectStorage": "对象存储",
-    "capabilities": "能力声明",
-    "capabilityTabJson": "JSON 编辑",
-    "capabilityTabVisual": "可视化配置",
-    "comingSoon": "可视化配置功能即将推出",
-    "useJsonMode": "暂时请使用 JSON 编辑模式配置能力声明",
-    "format": "格式化",
-    "validate": "校验",
-    "enabledStatus": "启用状态",
-    "jsonHint": "必须是有效的 JSON，且包含 storage 或 compute 字段",
-    "valid": {
-      "name": "请输入名称",
-      "resourceType": "请选择资源类型",
-      "capabilities": "请输入能力声明",
-      "capabilitiesField": "必须声明至少一种能力（storage 或 compute）",
-      "jsonFormat": "JSON 格式错误",
-      "jsonFormatSuccess": "JSON 格式正确",
-      "formatSuccess": "格式化成功",
-      "capabilitiesFieldWarning": "能力声明必须包含 storage 或 compute 字段"
-    }
-  },
   "excelPreview": {
     "sheetsTruncatedTitle": "仅展示部分工作表",
     "sheetsTruncatedBody": "当前仅展示前 {limit} 个工作表，可下载 Excel 查看全部内容。",

@@ -74,7 +74,7 @@ class WorkflowGenerationChain:
         query: str,
         data_source: Optional[DataSourceContext],
         selected_operators: List[str],
-        engine_type: str = "python_workflow"  # 工作流引擎类型
+        workflow_engine_id: Optional[int] = None
     ) -> Workflow:
         """
         生成工作流
@@ -83,7 +83,7 @@ class WorkflowGenerationChain:
             query: 用户查询
             data_source: 数据源上下文（可选，如果数据源理解失败可为 None）
             selected_operators: 选定的算子名称列表
-            engine_type: 工作流引擎类型（python_workflow/spark_workflow/math_workflow），用于获取正确的算子详情
+            workflow_engine_id: 工作流引擎实例 ID，用于获取正确的算子详情
 
         Returns:
             Workflow: 生成的工作流
@@ -94,11 +94,14 @@ class WorkflowGenerationChain:
         print(f"[WorkflowGenerationChain] 开始生成工作流")
         print(f"  查询: {query}")
         print(f"  选定算子: {selected_operators}")
-        print(f"  引擎类型: {engine_type}")
+        print(f"  工作流引擎 ID: {workflow_engine_id}")
 
-        # 1. 批量获取算子详情（传递 engine_type）
-        print(f"[WorkflowGenerationChain] 批量获取 {len(selected_operators)} 个算子的详情（引擎: {engine_type}）")
-        operator_details = await self._fetch_operator_details(selected_operators, engine_type)
+        if not workflow_engine_id:
+            raise ValueError("workflow_engine_id 是算子详情获取必需上下文")
+
+        # 1. 批量获取算子详情（按工作流引擎实例）
+        print(f"[WorkflowGenerationChain] 批量获取 {len(selected_operators)} 个算子的详情（工作流引擎 ID: {workflow_engine_id}）")
+        operator_details = await self._fetch_operator_details(selected_operators, workflow_engine_id)
 
         if not operator_details:
             raise ValueError("无法获取算子详情，无法生成工作流")
@@ -160,20 +163,20 @@ class WorkflowGenerationChain:
             print(f"[WorkflowGenerationChain] ❌ 生成工作流失败: {type(e).__name__}: {e}")
             raise
 
-    async def _fetch_operator_details(self, operator_names: List[str], engine_type: str = "python_workflow") -> List[Dict]:
+    async def _fetch_operator_details(self, operator_names: List[str], workflow_engine_id: int) -> List[Dict]:
         """
         批量获取算子详情
 
         Args:
             operator_names: 算子名称列表
-            engine_type: 工作流引擎类型（python_workflow/spark_workflow/math_workflow）
+            workflow_engine_id: 工作流引擎实例 ID
 
         Returns:
             算子详情列表
         """
         # 使用 asyncio.gather 并行获取所有算子详情
         tasks = [
-            self.operator_detail_tool._arun(operator_name=name, engine_type=engine_type)
+            self.operator_detail_tool._arun(operator_name=name, workflow_engine_id=workflow_engine_id)
             for name in operator_names
         ]
 
@@ -262,9 +265,9 @@ class WorkflowGenerationChain:
                 lines.append("```")
 
             # 输出定义
-            if op.get("outputs"):
+            if op.get("output_ports"):
                 lines.append("\n**输出**:")
-                for output in op["outputs"]:
+                for output in op["output_ports"]:
                     lines.append(
                         f"  - `{output['name']}` ({output.get('type', 'unknown')}): "
                         f"{output.get('description', '')}"
@@ -288,7 +291,6 @@ class WorkflowGenerationChain:
             return "数据源信息未提供（用户可能直接指定了参数）"
 
         lines = [
-            f"**引擎 ID**: {data_source.engine_id}",
             f"**引擎名称**: {data_source.engine_name}",
             f"**引擎类型**: {data_source.engine_type}",
             f"**置信度**: {data_source.confidence:.2f}",
@@ -296,12 +298,17 @@ class WorkflowGenerationChain:
 
         # 根据引擎类型显示不同的位置信息
         location = data_source.location
-        if location.schema and location.table:
-            lines.append(f"**Schema**: {location.schema}")
-            lines.append(f"**Table**: {location.table}")
+        if location.locator:
+            lines.append(f"**源资源 locator**: {location.locator}")
+        if location.target_parent_locator:
+            lines.append(f"**目标父 locator**: {location.target_parent_locator}")
+        if location.target_name:
+            lines.append(f"**目标名称**: {location.target_name}")
+
+        if location.namespace and location.table:
+            lines.append(f"**源资源说明**: {location.namespace}.{location.table}")
         elif location.bucket and location.path:
-            lines.append(f"**Bucket**: {location.bucket}")
-            lines.append(f"**Path**: {location.path}")
+            lines.append(f"**源资源说明**: {location.bucket}/{location.path}")
         elif location.resource_identifier:
             lines.append(f"**资源标识**: {location.resource_identifier}")
 

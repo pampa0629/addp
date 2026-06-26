@@ -1,12 +1,12 @@
-# Spark + Sedona 用户手册
+# Spark 通用引擎与 Sedona 用户手册
 
-本文档介绍如何在 ADDP 平台中使用 Apache Spark 和 Sedona 进行大规模数据分析和空间计算。
+本文档介绍如何在 ADDP 平台中注册 `spark` 通用引擎资源，并使用 Apache Spark 和 Sedona 进行大规模数据分析和空间计算。若通过 Spark Workflow 执行工作流，还必须在执行请求中把顶层 `engine_id` 绑定到这里注册的 `spark` 通用引擎资源。
 
 ## 目录
 
 - [1. 概述](#1-概述)
 - [2. 部署和启动](#2-部署和启动)
-- [3. 注册 Apache Spark 资源](#3-注册-apache-spark-资源)
+- [3. 注册 Apache Spark 通用引擎资源](#3-注册-apache-spark-通用引擎资源)
 - [4. 使用 SQL 工作台](#4-使用-sql-工作台)
 - [5. 数据加载方式](#5-数据加载方式)
 - [6. Sedona 空间函数参考](#6-sedona-空间函数参考)
@@ -20,7 +20,7 @@
 
 ### 1.1 什么是 Apache Spark？
 
-Apache Apache Spark 是 Spark 的一个模块，用于处理结构化数据。它提供了：
+Apache Spark 是分布式计算引擎，可通过 Spark SQL / Thrift Server 处理结构化数据。它提供：
 
 - **分布式 SQL 查询引擎**：支持标准 SQL 语法
 - **多数据源支持**：可访问 PostgreSQL、MySQL、S3/MinIO、CSV、Parquet 等
@@ -39,12 +39,12 @@ Apache Sedona（原 GeoSpark）是 Spark 的空间数据处理扩展，提供：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ADDP Develop Module (SQL 工作台)                           │
-│  - 选择 Apache Spark 数据源                                    │
-│  - 编写 SQL + Sedona 空间函数                               │
-│  - 查看结果和可视化                                         │
+│  ADDP Develop Module                                         │
+│  - SQL 工作台选择 spark 通用引擎                              │
+│  - Spark Workflow 执行时绑定 spark engine_id                  │
+│  - 编写 SQL 或执行算子 DAG                                   │
 └─────────────────┬───────────────────────────────────────────┘
-                  │ JDBC (Hive2 Protocol, port 10000)
+                  │ JDBC / Spark general engine binding
                   ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  Spark Thrift Server (业务网络)                             │
@@ -114,9 +114,9 @@ spark.default.parallelism=8 # 并行度
 
 ---
 
-## 3. 注册 Apache Spark 资源
+## 3. 注册 Apache Spark 通用引擎资源
 
-在 ADDP System 模块中注册 Apache Spark 作为数据源。
+在 ADDP System 模块中注册 Apache Spark 作为通用引擎资源。该资源的 `engine_type` 必须为 `spark`，表达真实 Spark Thrift Server 或 Spark 集群连接配置。
 
 ### 3.1 通过 System 前端注册
 
@@ -169,6 +169,32 @@ curl -X POST http://localhost:8180/api/engines \
 | `database` | 否 | `default` | 默认数据库（namespace） |
 | `username` | 否 | - | 认证用户名（如启用认证） |
 | `password` | 否 | - | 认证密码（如启用认证） |
+
+### 3.4 Spark Workflow 运行时绑定
+
+`spark_workflow` 是工作流运行时扩展引擎，默认端口为 `8098`，它本身不代表某个 Spark 集群。执行 Spark Workflow 时，标准请求体顶层 `engine_id` 必须指向本节注册的 `spark` 通用引擎实例。表、NFS 文件和对象存储数据源在用户/Develop 侧使用 `locator` 或 `target_parent_locator + target_name` 选择，Develop 后端在调用运行时时派生为 `connection_info`、`schema/table` 或 `path`：
+
+```json
+{
+  "engine_id": 34,
+  "workflow_def": {
+    "tasks": [
+      {
+        "id": "load_table",
+        "operator": "load",
+        "params": {
+          "source_type": "table",
+          "locator": "addp://engine/12/path/public/china_pois?type=table&item_id=99"
+        },
+        "depends_on": []
+      }
+    ]
+  },
+  "input_data": {}
+}
+```
+
+Develop 前端的 Spark 通用引擎资源选择可使用 `spark_cluster_id` 表达用户选择，Develop 后端在调用 `WorkflowRuntimeProvider.ExecuteWorkflow()` 前必须校验该 ID 指向已启用的 `engine_type=spark` 通用引擎资源，并映射为标准请求顶层 `engine_id`。这个字段是执行期运行时资源绑定，不进入 `spark_workflow` 的 capabilities。
 
 ---
 

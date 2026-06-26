@@ -4,13 +4,22 @@ import (
 	"net/http"
 
 	commonClient "github.com/addp/common/client"
-	commonModels "github.com/addp/common/models"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	developi18n "github.com/addp/develop/backend/i18n"
 	"github.com/gin-gonic/gin"
 )
 
 // EngineHandler 引擎管理 API 处理器
 type EngineHandler struct {
 	systemClient *commonClient.SystemClient
+}
+
+// QueryMode 描述 Develop 自有的查询执行模式；它不是 System Engine。
+type QueryMode struct {
+	Mode        string `json:"mode"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	QueryType   string `json:"query_type"`
 }
 
 // NewEngineHandler 创建引擎处理器
@@ -24,7 +33,7 @@ func NewEngineHandler(systemClient *commonClient.SystemClient) *EngineHandler {
 // @Summary 获取可用于 SQL 查询的数据源列表 | List data sources available for SQL queries
 // @Tags Engines
 // @Produce json
-// @Success 200 {object} map[string]interface{} "引擎列表 | Engine list"
+// @Success 200 {array} models.Engine "引擎列表 | Engine list"
 // @Router /engines [get]
 func (h *EngineHandler) ListEngines(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -33,25 +42,30 @@ func (h *EngineHandler) ListEngines(c *gin.Context) {
 	engines, err := h.systemClient.ListSQLQueryEngines(tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "获取引擎列表失败",
+			"error":   commoni18n.TWithDetail(c, developi18n.MsgEngineListFailed, err.Error()),
 			"details": err.Error(),
 		})
 		return
 	}
 
-	// 追加虚拟 DuckDB 引擎条目（内置联邦查询引擎，不注册到 System）
-	duckdbEngine := commonModels.Engine{
-		ID:          0, // 虚拟 ID，前端用 engine_type 判断路由
-		Name:        "DuckDB 联邦查询",
-		EngineType:  "duckdb",
-		Description: "内置联邦查询引擎，支持对象存储表与关系型表跨源 JOIN",
-		IsBuiltin:   true,
-		IsActive:    true,
-	}
-	engines = append(engines, duckdbEngine)
-
-	// 返回引擎列表（与前端期望的格式一致）
 	c.JSON(http.StatusOK, engines)
+}
+
+// ListQueryModes 获取 Develop 内置查询模式列表
+// @Summary 获取 Develop 内置查询模式列表 | List Develop-owned query modes
+// @Tags Engines
+// @Produce json
+// @Success 200 {array} QueryMode "查询模式列表 | Query mode list"
+// @Router /query-modes [get]
+func (h *EngineHandler) ListQueryModes(c *gin.Context) {
+	c.JSON(http.StatusOK, []QueryMode{
+		{
+			Mode:        "duckdb",
+			Name:        "DuckDB 联邦查询",
+			Description: "Develop 内置联邦查询模式，支持对象存储表与关系型表跨源 JOIN",
+			QueryType:   "sql",
+		},
+	})
 }
 
 // ListWorkflowEngines 获取工作流引擎列表
@@ -67,7 +81,7 @@ func (h *EngineHandler) ListWorkflowEngines(c *gin.Context) {
 	engines, err := h.systemClient.ListWorkflowEngines(tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "获取工作流引擎失败",
+			"error":   commoni18n.TWithDetail(c, developi18n.MsgWorkflowListFailed, err.Error()),
 			"details": err.Error(),
 		})
 		return
@@ -76,20 +90,20 @@ func (h *EngineHandler) ListWorkflowEngines(c *gin.Context) {
 	c.JSON(http.StatusOK, engines)
 }
 
-// ListSparkRuntimes 获取 Apache Spark 运行时列表
-// @Summary 获取所有 Apache Spark 运行时列表 | List all Apache Spark runtimes
+// ListSparkRuntimes 获取 Apache Spark 通用引擎资源列表
+// @Summary 获取所有 Apache Spark 通用引擎资源列表 | List all Apache Spark general engine resources
 // @Tags Engines
 // @Produce json
-// @Success 200 {array} models.Engine "Spark运行时列表 | Spark runtime list"
+// @Success 200 {array} models.Engine "Spark通用引擎资源列表 | Spark general engine resource list"
 // @Router /spark-runtimes [get]
 func (h *EngineHandler) ListSparkRuntimes(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
-	// 从 System 模块获取所有 Spark 运行时
+	// 从 System 模块获取所有 Spark 通用引擎资源
 	runtimes, err := h.systemClient.ListSparkRuntimes(tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "获取 Spark 运行时失败",
+			"error":   commoni18n.TWithDetail(c, developi18n.MsgSparkListFailed, err.Error()),
 			"details": err.Error(),
 		})
 		return

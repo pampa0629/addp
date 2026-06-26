@@ -147,9 +147,11 @@ const (
 	// Orchestrator 模块
 	TaskTypeOrchestration = "orchestration"
 	// Manager 模块
-	TaskTypeTileCacheGeneration   = "tile_cache_generation"
-	TaskTypeQuickViewOptimization = "quick_view_optimization"
-	TaskTypeEmbedding             = "embedding"
+	TaskTypeVectorTileCacheGeneration       = "vector_tile_cache_generation"
+	TaskTypeVectorQuickViewTargetGeneration = "vector_quick_view_target_generation"
+	TaskTypeRasterCOGGeneration             = "raster_cog_generation"
+	TaskTypeRasterMosaicGeneration          = "raster_mosaic_generation"
+	TaskTypeEmbedding                       = "embedding"
 	// Graph 模块
 	TaskTypeKGBuild = "kg_build"
 	// Quality 模块

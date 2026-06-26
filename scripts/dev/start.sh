@@ -86,7 +86,6 @@ generate_service_urls() {
     [ -n "$PYTHON_WORKFLOW_PORT" ] && export PYTHON_WORKFLOW_URL="http://${SERVICE_HOST}:${PYTHON_WORKFLOW_PORT}"
     [ -n "$SPARK_WORKFLOW_PORT" ] && export SPARK_WORKFLOW_URL="http://${SERVICE_HOST}:${SPARK_WORKFLOW_PORT}"
     [ -n "$JUPYTER_API_PORT" ] && export JUPYTER_URL="http://${SERVICE_HOST}:${JUPYTER_API_PORT}"
-    export GEOPANDAS_URL="http://${SERVICE_HOST}:${PYTHON_WORKFLOW_PORT}"
 }
 
 generate_service_urls
@@ -1157,7 +1156,7 @@ if [ ! -d "engines/python-workflow/venv" ]; then
     NEED_INSTALL=true
 else
     # 检查关键依赖是否已安装
-    if ! ./engines/python-workflow/venv/bin/python -c "import flask" &> /dev/null; then
+    if ! ./engines/python-workflow/venv/bin/python -c "import flask, geopandas, pyarrow, pyproj" &> /dev/null; then
         echo "检测到虚拟环境缺少依赖，重新安装..."
         cd engines/python-workflow
         NEED_INSTALL=true
@@ -1171,7 +1170,7 @@ if [ "$NEED_INSTALL" = true ]; then
     echo "使用 pip 安装依赖（首次安装可能需要 1-2 分钟）..."
 
     # 构建 pip 安装命令（支持镜像源配置）
-    PIP_CMD="./venv/bin/pip install"
+    PIP_CMD="./venv/bin/python -m pip install"
     if [ -n "$PIP_INDEX_URL" ]; then
         echo "  使用镜像源: $PIP_INDEX_URL"
         PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
@@ -1256,7 +1255,7 @@ fi
 # Step 4.2: Start Math Workflow Engine (Python service)
 # ============================================================
 
-if [ "$START_MATH_WORKFLOW" = true ] || [ "$START_ALL" = true ]; then
+if [ "$START_MATH_WORKFLOW" = true ]; then
   echo -e "${BLUE}Step 4.2/5: 启动 Math Workflow Engine${NC}"
 
 # 检查并创建虚拟环境（幂等）
@@ -1286,7 +1285,7 @@ if [ "$NEED_INSTALL" = true ]; then
     echo "使用 pip 安装依赖..."
 
     # 构建 pip 安装命令（支持镜像源配置）
-    PIP_CMD="./venv/bin/pip install"
+    PIP_CMD="./venv/bin/python -m pip install"
     if [ -n "$PIP_INDEX_URL" ]; then
         echo "  使用镜像源: $PIP_INDEX_URL"
         PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
@@ -1315,9 +1314,6 @@ if check_service_running "math-workflow-engine" "$MATH_WORKFLOW_PORT"; then
 
   # 设置环境变量
   export PORT=$MATH_WORKFLOW_PORT
-  export SYSTEM_URL=${SYSTEM_URL:-"http://localhost:${SYSTEM_BACKEND_PORT}"}
-  export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
-
   # 直接使用虚拟环境的 Python
   ./venv/bin/python api_server.py > ../../logs/math-workflow-engine.log 2> ../../logs/math-workflow-engine-stderr.log &
   MATH_WORKFLOW_PID=$!
@@ -1413,7 +1409,7 @@ if [ "$NEED_INSTALL" = true ]; then
     echo "使用 pip 安装依赖（首次安装可能需要 1-2 分钟）..."
 
     # 构建 pip 安装命令（支持镜像源配置）
-    PIP_CMD="./venv/bin/pip install"
+    PIP_CMD="./venv/bin/python -m pip install"
     if [ -n "$PIP_INDEX_URL" ]; then
         echo "  使用镜像源: $PIP_INDEX_URL"
         PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
@@ -1545,7 +1541,7 @@ if [ "$NEED_INSTALL" = true ]; then
     echo "使用 pip 安装依赖（首次安装可能需要 1-2 分钟）..."
 
     # 构建 pip 安装命令（支持镜像源配置）
-    PIP_CMD="./venv/bin/pip install"
+    PIP_CMD="./venv/bin/python -m pip install"
     if [ -n "$PIP_INDEX_URL" ]; then
         echo "  使用镜像源: $PIP_INDEX_URL"
         PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
@@ -1707,7 +1703,7 @@ if [ "$NEED_INSTALL" = true ]; then
     echo "使用 pip 安装 Copilot 依赖（首次安装可能需要 1-2 分钟）..."
 
     # 构建 pip 安装命令（支持镜像源配置）
-    PIP_CMD="./venv/bin/pip install"
+    PIP_CMD="./venv/bin/python -m pip install"
     if [ -n "$PIP_INDEX_URL" ]; then
         echo "  使用镜像源: $PIP_INDEX_URL"
         PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
@@ -1805,7 +1801,7 @@ if [ "$START_AGENT_BACKEND" = true ]; then
 
   if [ "$NEED_INSTALL" = true ]; then
     echo "使用 pip 安装 Agent 依赖（首次安装可能需要 1-2 分钟）..."
-    PIP_CMD="./venv/bin/pip install"
+    PIP_CMD="./venv/bin/python -m pip install"
     if [ -n "$PIP_INDEX_URL" ]; then
       echo "  使用镜像源: $PIP_INDEX_URL"
       PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
@@ -2179,7 +2175,7 @@ echo "  Standard: logs/standard-backend.log"
 echo "  Model:    logs/model-backend.log"
 echo "  Quality:  logs/quality-backend.log"
 echo "  Python Workflow Engine: logs/python-workflow-engine.log"
-echo "  Math Workflow Engine: logs/math-workflow-engine.log"
+echo "  Math Workflow Engine: logs/math-workflow-engine.log (显式 -math-workflow 启动时)"
 echo "  Spark 工作流引擎: logs/spark-workflow-engine.log"
 echo "  Jupyter Engine: logs/jupyter-engine.log"
 echo "  Gateway:  logs/gateway.log"

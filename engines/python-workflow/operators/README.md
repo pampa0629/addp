@@ -1,6 +1,6 @@
-# GeoPandas 算子模块
+# Python Workflow 算子模块
 
-GeoPandas 引擎的空间算子模块，采用模块化架构设计，提供 24 个空间分析算子。
+Python Workflow 的空间算子模块，采用模块化架构设计，底层使用 GeoPandas / Shapely 等库提供空间分析能力。
 
 ## 目录结构
 
@@ -77,7 +77,7 @@ result = buffer_func(gdf, distance=100, resolution=16)
 from workflow_engine import execute_workflow
 
 workflow = {
-    "nodes": [
+    "tasks": [
         {
             "id": "load_data",
             "operator": "load",
@@ -91,7 +91,7 @@ workflow = {
             "id": "buffer_analysis",
             "operator": "buffer",
             "params": {
-                "input_gdf": "$load_data.output",
+                "input_gdf": {"$ref": "load_data"},
                 "distance": 500
             },
             "depends_on": ["load_data"]
@@ -261,13 +261,12 @@ metadata = OperatorMetadata(
 # 如果类型错误，会抛出 ValidationError
 ```
 
-### 向后兼容
+### 运行时注册格式
 
-通过 `to_legacy_dict()` 方法确保 API 格式兼容：
+通过 `to_runtime_dict()` 方法生成运行时算子注册结构，并由 `list_operators()` 转换为 `addp.workflow/v1` 的算子元数据：
 
 ```python
-legacy_dict = metadata.to_legacy_dict()
-# 返回与旧版 operators.py 完全一致的字典格式
+runtime_dict = metadata.to_runtime_dict()
 ```
 
 ### 多输出端口支持
@@ -375,7 +374,7 @@ curl http://localhost:5001/api/operators
 - 元数据与实现共存
 - 使用 Pydantic 提供类型安全
 
-详见：[python-workflow开发总结](../docs/python-workflow开发总结.md)
+新增算子后使用 `GET /api/operators` 检查元数据是否能被 `WorkflowRuntimeProvider` 动态发现。
 
 ## 参考资料
 

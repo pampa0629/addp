@@ -1,6 +1,7 @@
 package metacatalog
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/meta/internal/metaitem"
 )
 
@@ -313,6 +315,51 @@ func TestPlanObjectCatalogCompositeItemBuildsStandardAttributes(t *testing.T) {
 	table := typeInfo["table"].(map[string]interface{})
 	if table["fields"] == nil {
 		t.Fatalf("type_info.table.fields missing: %#v", table)
+	}
+}
+
+func TestPlanObjectCatalogCompositeItemUsesGeoTIFFPrimaryObject(t *testing.T) {
+	t.Parallel()
+
+	files := storageResourcesToFileRefs([]StorageResource{
+		{RootName: "addp", Path: "image/srtm_40_01.tif", FullPath: "addp/image/srtm_40_01.tif", NodeType: "object", SizeBytes: 100},
+		{RootName: "addp", Path: "image/srtm_40_01.tfw", FullPath: "addp/image/srtm_40_01.tfw", NodeType: "object", SizeBytes: 10},
+		{RootName: "addp", Path: "image/srtm_40_01.hdr", FullPath: "addp/image/srtm_40_01.hdr", NodeType: "object", SizeBytes: 20},
+		{RootName: "addp", Path: "image/srtm_40_01.tif.aux.xml", FullPath: "addp/image/srtm_40_01.tif.aux.xml", NodeType: "object", SizeBytes: 30},
+	})
+	result, err := metaitem.ResolveItems(context.Background(), metaitem.DirectoryResolveInput{
+		DirPath: "image",
+		Files:   files,
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("Items = %#v, want one GeoTIFF item", result.Items)
+	}
+
+	plan, ok := PlanObjectCatalogCompositeItem(7, ObjectCatalogCompositeItem{
+		Bucket: "addp",
+		Prefix: "image",
+		Item:   result.Items[0],
+	}, "object")
+	if !ok {
+		t.Fatal("composite item plan should be created")
+	}
+	if plan.ItemName != "srtm_40_01.tif" || plan.FullName != "addp/image/srtm_40_01.tif" {
+		t.Fatalf("plan identity = %#v, want primary TIFF object", plan)
+	}
+	itemAttrs := plan.Attributes["item"].(map[string]interface{})
+	if itemAttrs["layout"] != string(format.LayoutMulti) || itemAttrs["format"] != string(format.FormatTIFF) {
+		t.Fatalf("item attrs = %#v, want multi tiff", itemAttrs)
+	}
+	refs, ok := itemAttrs["refs"].([]map[string]interface{})
+	if !ok || len(refs) != 4 {
+		t.Fatalf("item refs = %#v, want 4 GeoTIFF refs", itemAttrs["refs"])
+	}
+	storage := plan.Attributes["storage"].(map[string]interface{})
+	if storage["bucket"] != "addp" || storage["path"] != "image/" || storage["name"] != "srtm_40_01.tif" {
+		t.Fatalf("storage attrs = %#v", storage)
 	}
 }
 

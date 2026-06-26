@@ -33,9 +33,9 @@ def create_agent_tools(token: str, tenant_id: int = 1, user_id: int = 1) -> List
 
     @tool
     async def list_workflow_engines() -> str:
-        """列出平台中所有支持工作流执行的引擎（python_workflow、spark_workflow 等）。
-        调用 generate_workflow 前，先调用此工具了解可用的工作流引擎，
-        根据任务规模和数据特征决定使用哪个引擎。
+        """列出平台中所有支持工作流执行的引擎（内置工作流引擎和用户扩展工作流引擎）。
+        generate_workflow/run_workflow 可显式传入 workflow_engine_id；不传时使用默认可用实例。
+        Spark Workflow 执行还必须给 run_workflow 传入 spark_cluster_id。
         返回每个引擎的 id、name、engine_type 和连接状态。"""
         result = await system.get_workflow_engines()
         return _to_str(result)
@@ -116,45 +116,49 @@ def create_agent_tools(token: str, tenant_id: int = 1, user_id: int = 1) -> List
         result = await meta.list_metadata(page=page, size=size)
         return _to_str(result)
 
-    async def _get_python_workflow_engine():
-        """内部辅助：获取在线的 python_workflow 引擎实例"""
+    async def _get_workflow_engine(workflow_engine_id: int | None = None):
         engines = await system.get_workflow_engines()
+        if workflow_engine_id:
+            return next((e for e in engines if int(e.get("id", 0)) == workflow_engine_id), None)
         online = [e for e in engines if e.get("connection_status") == "online" and e.get("is_active")]
-        return next(
-            (e for e in online if e["engine_type"] == "python_workflow"),
-            next((e for e in engines if e["engine_type"] == "python_workflow"), None)
-        )
+        return online[0] if online else (engines[0] if engines else None)
 
     @tool
-    async def generate_workflow(description: str) -> str:
+    async def generate_workflow(description: str, workflow_engine_id: int | None = None) -> str:
         """将自然语言描述转换为 GIS 工作流 DAG。
         适用于空间分析任务：缓冲区分析、叠加分析、面积统计、空间关系计算等需要 GIS 算子的场景。
         参数:
           description: 用自然语言描述的空间分析任务
+          workflow_engine_id: 可选，工作流引擎实例 ID；不传时使用默认可用实例
         返回包含 status 和 workflow 字段的 JSON：
           status=success 时，将 workflow 字段的值（JSON 字符串）传给 run_workflow 执行；
           status=need_clarification 时需告知用户补充信息；
           status=error/validation_failed 时说明生成失败原因。"""
-        engine = await _get_python_workflow_engine()
+        engine = await _get_workflow_engine(workflow_engine_id)
         if not engine:
-            return _to_str({"status": "error", "message": "未找到可用的 Python 工作流引擎，请联系管理员检查引擎配置"})
+            return _to_str({"status": "error", "message": "未找到可用的工作流引擎，请联系管理员检查引擎配置"})
 
         result = await copilot.generate_workflow(
             query=description,
+            workflow_engine_id=engine["id"],
             tenant_id=tenant_id,
             user_id=user_id,
-            engine_type=engine["engine_type"],
-            workflow_engine_id=engine["id"],
         )
 
         return _to_str(result)
 
     @tool
-    async def run_workflow(workflow_json: str) -> str:
+    async def run_workflow(
+        workflow_json: str,
+        workflow_engine_id: int | None = None,
+        spark_cluster_id: int | None = None,
+    ) -> str:
         """提交工作流到执行引擎运行，并等待结果（最多 120 秒）。
         参数:
           workflow_json: generate_workflow 返回结果中 workflow 字段的 JSON 字符串
             （注意：是 workflow 字段的值，不是整个返回结果）
+          workflow_engine_id: 可选，工作流引擎实例 ID；应与生成工作流时使用的实例一致
+          spark_cluster_id: 可选，Spark Workflow 必填，真实 spark 通用引擎资源 ID
         返回执行结果，包含 status（success/failed/timeout）和 result 字段。"""
         try:
             workflow = json.loads(workflow_json) if isinstance(workflow_json, str) else workflow_json
@@ -164,11 +168,24 @@ def create_agent_tools(token: str, tenant_id: int = 1, user_id: int = 1) -> List
         if not workflow or not isinstance(workflow, dict):
             return _to_str({"error": "workflow_json 无效，请先调用 generate_workflow 生成工作流"})
 
-        engine = await _get_python_workflow_engine()
+        engine = await _get_workflow_engine(workflow_engine_id)
         if not engine:
-            return _to_str({"error": "未找到可用的 Python 工作流引擎"})
+            return _to_str({"error": "未找到可用的工作流引擎"})
 
-        start = await develop.run_workflow_content(workflow, engine_id=engine["id"])
+        engine_specific = None
+        if engine.get("engine_type") == "spark_workflow":
+            if not spark_cluster_id:
+                return _to_str({
+                    "error": "Spark Workflow 执行必须提供 spark_cluster_id",
+                    "workflow_engine_id": engine["id"],
+                })
+            engine_specific = {"spark_cluster_id": spark_cluster_id}
+
+        start = await develop.run_workflow_content(
+            workflow,
+            engine_id=engine["id"],
+            engine_specific=engine_specific,
+        )
         execution_id = start.get("execution_id")
         if not execution_id:
             return _to_str({"error": "工作流提交失败", "details": start})

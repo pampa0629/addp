@@ -207,8 +207,10 @@
         "dataExplorer": "Data Explorer",
         "dataRetrieval": "Data Retrieval",
         "vectorizationTasks": "Vectorization Tasks",
-        "tileCache": "Tile Cache Tasks",
-        "quickViewOptimization": "Quick View Optimization"
+        "spatialQuickView": "Spatial Quick View",
+        "tileCache": "Vector Quick View - Tile Cache",
+        "quickViewOptimization": "Vector Quick View - Optimization",
+        "cogArtifacts": "Raster Quick View - COG"
       },
       "standard": {
         "label": "Data Standards",

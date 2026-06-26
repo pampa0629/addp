@@ -67,24 +67,53 @@
 ```json
 {
   "workflow_definition": {
-    "nodes": [...],
-    "edges": [...]
+    "tasks": [
+      {
+        "id": "load_1",
+        "operator": "load",
+        "params": {
+          "locator": "addp://engine/1/path/public/cities?type=table"
+        },
+        "depends_on": []
+      },
+      {
+        "id": "save_1",
+        "operator": "save",
+        "params": {
+          "target_parent_locator": "addp://engine/1/path/public?type=schema",
+          "target_name": "cities_result"
+        },
+        "depends_on": ["load_1"]
+      }
+    ]
   },
   "inputs": {
-    "data_source_id": 1
+    "source_locator": "addp://engine/1/path/public/cities?type=table"
   }
 }
 ```
 
+`workflow_definition.tasks[]` 必须遵循工作流计算引擎接口规范：每个任务显式包含 `id`、`operator`、`params`、`depends_on`，无依赖时 `depends_on` 写空数组 `[]`。
+
 ### 2.4 推荐的 ExecutionConfig 结构
+
+普通 SQL 查询任务：
 
 ```json
 {
-  "engine_id": 1,
-  "engine_type": "python_workflow",
-  "timeout": 600
+  "engine_id": 1
 }
 ```
+
+DuckDB 联邦查询任务：
+
+```json
+{
+  "query_mode": "duckdb"
+}
+```
+
+DuckDB 是 Develop 内置联邦查询执行模式，不是 System 中注册的普通引擎实例；因此不得使用虚拟 `engine_id=0` 表达 DuckDB。查询目标发现时，`/api/v1/develop/engines` 只返回真实查询引擎，DuckDB 通过 `/api/v1/develop/query-modes` 暴露。
 
 ---
 

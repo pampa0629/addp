@@ -76,15 +76,21 @@ class WorkflowAutoFixer:
 1. **必需参数缺失**：补充所有必需参数（参考算子定义）
 2. **参数名称错误**：修正拼写错误，确保与算子定义完全一致
 3. **循环依赖**：调整 depends_on 关系，确保形成有向无环图
-4. **依赖不存在**：删除无效的依赖引用
+4. **依赖不存在或缺少依赖字段**：删除无效的依赖引用；每个任务都必须显式包含 `depends_on`，没有依赖时写空数组 `[]`
 5. **任务 ID 重复**：为重复的任务分配唯一 ID
 6. **未知算子**：替换为正确的算子名称
+7. **资源参数错误**：
+   - load 任务读取已有表、文件或对象时必须使用 `locator`
+   - save 任务创建新目标时必须使用 `target_parent_locator + target_name`
+   - 不要在算子 params 中填写 `engine_id`、`connection_info`、`schema`、`table`、`path`
+   - `source_type` / `target_type` 只能使用 `table`、`file`、`geojson` 等访问形态，不能使用 `nfs`、`minio`、`s3` 等存储引擎类型
 
 ## 修复原则
 
 - **最小改动**：只修复错误，不要改变工作流的整体逻辑
 - **保持一致**：确保修改后的工作流仍然符合用户需求
 - **验证合法**：修复后的工作流必须通过所有验证
+- **不编造资源**：如果当前工作流或错误建议中没有可用 locator，不要自行拼接 `addp://...`；保留最小可修复结构，让验证结果提示用户补充资源选择
 
 ## 输出格式
 
@@ -104,7 +110,8 @@ class WorkflowAutoFixer:
     async def auto_fix(
         self,
         workflow: Workflow,
-        validation_result: ValidationResult
+        validation_result: ValidationResult,
+        workflow_engine_id: Optional[int] = None
     ) -> tuple[Workflow, ValidationResult]:
         """
         自动修复工作流
@@ -112,6 +119,7 @@ class WorkflowAutoFixer:
         Args:
             workflow: 待修复的工作流
             validation_result: 验证结果（包含错误信息）
+            workflow_engine_id: 工作流引擎实例 ID，用于重新验证算子定义
 
         Returns:
             (修复后的工作流, 最终验证结果)
@@ -137,7 +145,10 @@ class WorkflowAutoFixer:
 
                 # 重新验证
                 print(f"[WorkflowAutoFixer] 重新验证修复后的工作流")
-                new_validation = await self.validator.validate(fixed_workflow)
+                new_validation = await self.validator.validate(
+                    fixed_workflow,
+                    workflow_engine_id=workflow_engine_id
+                )
 
                 # 更新当前状态
                 current_workflow = fixed_workflow
@@ -245,7 +256,8 @@ async def auto_fix_workflow(
     validation_result: ValidationResult,
     llm,
     validator: WorkflowValidationChain,
-    max_retries: int = 2
+    max_retries: int = 2,
+    workflow_engine_id: Optional[int] = None
 ) -> tuple[Workflow, ValidationResult]:
     """
     自动修复工作流（便捷函数）
@@ -256,9 +268,14 @@ async def auto_fix_workflow(
         llm: LLM 实例
         validator: 验证器
         max_retries: 最大重试次数
+        workflow_engine_id: 工作流引擎实例 ID
 
     Returns:
         (修复后的工作流, 最终验证结果)
     """
     fixer = WorkflowAutoFixer(llm, validator, max_retries)
-    return await fixer.auto_fix(workflow, validation_result)
+    return await fixer.auto_fix(
+        workflow,
+        validation_result,
+        workflow_engine_id=workflow_engine_id
+    )

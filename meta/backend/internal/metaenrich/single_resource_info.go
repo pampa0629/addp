@@ -143,7 +143,12 @@ func EnrichSingleMediaItem(
 	if err != nil {
 		return err
 	}
-	item.Media = info.Media.Clone()
-	metaitem.ApplyMediaInfo(attrs, item, info.Spatial)
+	if info.Media != nil {
+		item.Media = info.Media.Clone()
+		metaitem.ApplyMediaInfo(attrs, item, info.Spatial)
+	}
+	if len(info.FormatInfo) > 0 {
+		metaattr.MergeStandardAttributes(attrs, metaattr.FormatInfoAttributes(string(formatType), info.FormatInfo))
+	}
 	return nil
 }

@@ -58,6 +58,7 @@
         :loading="loadingTree"
         :show-refresh-button="false"
         :current-node-key="currentNodeKey"
+        v-model:expanded-keys="expandedKeys"
         :default-expand-root="true"
         :default-expand-all="false"
         :show-count="showCount"
@@ -98,6 +99,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import { parseLocatorSafe } from '../types/resourceLocator.js'
+import { getEngineFamily } from '../utils/engineDisplay.js'
 import {
   getResourceTree,
   getResourceTreeAncestors,
@@ -129,7 +131,7 @@ const props = defineProps({
     type: String,
     default: ''
   },
-  engineTypes: {
+  engineFamilies: {
     type: Array,
     default: () => []
   },
@@ -229,6 +231,7 @@ const selectedEngineValue = ref(props.engineMultiple ? [] : null)
 const treeData = ref([])
 const treeRef = ref(null)
 const currentNodeKey = ref(null)
+const expandedKeys = ref([])
 const currentSelection = ref(props.modelValue)
 const loadingEngines = ref(false)
 const loadingTree = ref(false)
@@ -266,7 +269,7 @@ const resourceTreeAdapter = computed(() => {
   }
   return {
     listEngines: () => listResourceTreeEngines(props.apiBaseUrl, {
-      engineTypes: props.engineTypes,
+      engineFamilies: props.engineFamilies,
       engineFilter: props.engineFilter
     }),
     getTreeRoot: (engineId, options = {}) => getResourceTree(props.apiBaseUrl, engineId, options),
@@ -360,6 +363,7 @@ const loadSelectedTrees = async () => {
 const handleEngineChange = async () => {
   restoreRequestSeq += 1
   searchResults.value = []
+  expandedKeys.value = []
   const selectionEngineId = normalizeEngineId(currentSelection.value?.identity?.engine_id)
   const shouldKeepSelection = props.engineMultiple &&
     selectionEngineId &&
@@ -553,6 +557,7 @@ const restoreInitialLocator = async (locator) => {
     treeLoadRequestSeq += 1
     loadingTree.value = false
     currentNodeKey.value = null
+    expandedKeys.value = []
     currentSelection.value = null
     emit('update:modelValue', null)
     return
@@ -562,6 +567,7 @@ const restoreInitialLocator = async (locator) => {
     treeLoadRequestSeq += 1
     loadingTree.value = false
     currentNodeKey.value = null
+    expandedKeys.value = []
     currentSelection.value = null
     emit('update:modelValue', null)
     return
@@ -576,7 +582,9 @@ const restoreInitialLocator = async (locator) => {
     await loadSelectedTrees()
   } else {
     selectedEngineValue.value = parsed.engineId
-    await loadTree(parsed.engineId)
+    if (!hasLoadedRootForEngine(parsed.engineId)) {
+      await loadTree(parsed.engineId)
+    }
   }
   if (requestSeq !== restoreRequestSeq || !selectedEngineIds.value.includes(parsed.engineId)) {
     return
@@ -592,6 +600,7 @@ const restoreInitialLocator = async (locator) => {
     }
     mergeAncestorChain(ancestors)
     const target = ancestors[ancestors.length - 1]
+    expandedKeys.value = ancestorExpandKeys(ancestors)
     currentNodeKey.value = target.id
     const targetEngine = engineForNode(target)
     if (isSelectableNode(target, targetEngine)) {
@@ -610,6 +619,7 @@ const restoreInitialLocator = async (locator) => {
 
 const loadExternalEngine = async (engineId) => {
   restoreRequestSeq += 1
+  expandedKeys.value = []
   const normalizedEngineIds = normalizeEngineIds(engineId)
   if (normalizedEngineIds.length === 0) {
     treeLoadRequestSeq += 1
@@ -646,8 +656,7 @@ const mergeAncestorChain = (ancestors) => {
     return
   }
   const root = ancestors[0]
-  const rootLocator = root.locator || root.id
-  const existingRoot = treeData.value.find(node => (node.locator || node.id) === rootLocator)
+  const existingRoot = findExistingRoot(root)
   const mergedRoot = {
     ...(existingRoot || {}),
     ...root,
@@ -658,6 +667,7 @@ const mergeAncestorChain = (ancestors) => {
   } else {
     treeData.value.push(mergedRoot)
   }
+  dedupeTreeRoots()
   let cursor = existingRoot || mergedRoot
   for (const next of ancestors.slice(1)) {
     const children = cursor.children || []
@@ -674,15 +684,53 @@ const mergeAncestorChain = (ancestors) => {
   }
 }
 
+const ancestorExpandKeys = (ancestors) => {
+  return ancestors
+    .slice(0, -1)
+    .map(node => node?.id)
+    .filter(Boolean)
+}
+
+const hasLoadedRootForEngine = (engineId) => {
+  const normalizedEngineId = normalizeEngineId(engineId)
+  return treeData.value.some(node => parseLocatorSafe(node.locator || node.id).engineId === normalizedEngineId)
+}
+
+const findExistingRoot = (root) => {
+  const rootKey = root.locator || root.id
+  const rootEngineId = parseLocatorSafe(rootKey).engineId
+  return treeData.value.find(node => {
+    const nodeKey = node.locator || node.id
+    if (nodeKey === rootKey) return true
+    const nodeLoc = parseLocatorSafe(nodeKey)
+    return rootEngineId && nodeLoc.engineId === rootEngineId && node.type === root.type
+  }) || null
+}
+
+const dedupeTreeRoots = () => {
+  const seen = new Set()
+  treeData.value = treeData.value.filter(node => {
+    const loc = parseLocatorSafe(node.locator || node.id)
+    const key = loc.engineId ? `${loc.engineId}:${node.type || ''}` : (node.locator || node.id)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 const upsertTreeRoot = (root) => {
   if (!root) return
   const key = root.locator || root.id
-  const existingIndex = treeData.value.findIndex(node => (node.locator || node.id) === key)
+  const existingIndex = treeData.value.findIndex(node => {
+    const nodeKey = node.locator || node.id
+    return nodeKey === key || findExistingRoot(root) === node
+  })
   if (existingIndex >= 0) {
     treeData.value.splice(existingIndex, 1, root)
   } else {
     treeData.value.push(root)
   }
+  dedupeTreeRoots()
 }
 
 const removeTreeRoot = (engineId) => {
@@ -723,8 +771,8 @@ const normalizeEngines = (engineList = []) => {
 
 const filterEngines = (engineList = []) => {
   let nextEngines = engineList
-  if (props.engineTypes.length > 0) {
-    nextEngines = nextEngines.filter(engine => props.engineTypes.includes(engine.engine_type))
+  if (props.engineFamilies.length > 0) {
+    nextEngines = nextEngines.filter(engine => props.engineFamilies.includes(getEngineFamily(engine)))
   }
   if (typeof props.engineFilter === 'function') {
     nextEngines = nextEngines.filter(props.engineFilter)

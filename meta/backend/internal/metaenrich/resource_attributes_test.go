@@ -18,6 +18,7 @@ import (
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
+	"golang.org/x/image/tiff"
 )
 
 func TestEnrichResourceAttributesKeepsContainerSummaryWhenContentOpenFails(t *testing.T) {
@@ -164,6 +165,177 @@ func TestEnrichResourceAttributesDetectsUnknownMediaAndWritesMediaInfo(t *testin
 	}
 }
 
+func TestEnrichResourceAttributesWritesMediaFormatInfo(t *testing.T) {
+	t.Parallel()
+
+	content := resourceAttributesTestTIFF(t, 2, 3)
+	size := int64(len(content))
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Media,
+			Format:             string(format.FormatTIFF),
+			PrimaryContentPath: "images/pixel.tif",
+			SizeBytes:          &size,
+		},
+		PhysicalPath: "images/pixel.tif",
+	}
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
+
+	_, _, err := EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{
+		ContentReader: bytesContentReader{content: content},
+		Item:          item,
+		PhysicalPath:  "images/pixel.tif",
+		SizeBytes:     size,
+		CatalogPathFor: func(path string) plugin.CatalogPath {
+			return plugin.FileItemPath(1, path)
+		},
+	})
+	if err != nil {
+		t.Fatalf("EnrichResourceAttributes() error = %v", err)
+	}
+	tiffInfo := commonJSON.Section(attrs, "format_info.tiff")
+	if tiffInfo["profile"] != "plain_tiff" {
+		t.Fatalf("format_info.tiff = %#v, want plain_tiff profile", tiffInfo)
+	}
+	if tiffInfo["big_tiff"] != false {
+		t.Fatalf("format_info.tiff.big_tiff = %#v, want false", tiffInfo["big_tiff"])
+	}
+}
+
+func TestEnrichResourceAttributesWritesMediaInfoForMultiTIFF(t *testing.T) {
+	t.Parallel()
+
+	content := resourceAttributesTestTIFF(t, 2, 3)
+	size := int64(len(content))
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:             format.LayoutMulti,
+			DataType:           datatype.Media,
+			Format:             string(format.FormatTIFF),
+			PrimaryContentPath: "geotiff/srtm_40_01.tif",
+			RefList: []dataitem.ItemRef{
+				{Path: "geotiff/srtm_40_01.tif", Role: "main", Required: true, Primary: true, Extension: ".tif"},
+				{Path: "geotiff/srtm_40_01.tfw", Role: "world_file", Extension: ".tfw"},
+				{Path: "geotiff/srtm_40_01.tif.aux.xml", Role: "auxiliary_metadata", Extension: ".aux.xml"},
+			},
+			SizeBytes: &size,
+		},
+		PhysicalPath: "geotiff/srtm_40_01.tif",
+	}
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
+
+	_, _, err := EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{
+		ContentReader: bytesContentReader{content: content},
+		Item:          item,
+		PhysicalPath:  "geotiff/srtm_40_01.tif",
+		SizeBytes:     size,
+		CatalogPathFor: func(path string) plugin.CatalogPath {
+			return plugin.FileItemPath(1, path)
+		},
+	})
+	if err != nil {
+		t.Fatalf("EnrichResourceAttributes() error = %v", err)
+	}
+	media := commonJSON.Section(attrs, "type_info.media")
+	if commonJSON.InterfaceInt64(media["width"]) != 2 || commonJSON.InterfaceInt64(media["height"]) != 3 {
+		t.Fatalf("type_info.media = %#v, want primary TIFF dimensions", media)
+	}
+	tiffInfo := commonJSON.Section(attrs, "format_info.tiff")
+	if tiffInfo["profile"] != "plain_tiff" || tiffInfo["big_tiff"] != false {
+		t.Fatalf("format_info.tiff = %#v, want primary TIFF format info", tiffInfo)
+	}
+	if refs := commonJSON.InterfaceSlice(commonJSON.Section(attrs, "item")["refs"]); len(refs) != 3 {
+		t.Fatalf("item.refs = %#v, want multi refs preserved", refs)
+	}
+}
+
+func TestResolveAndEnrichMultiTIFFUsesPrimaryContent(t *testing.T) {
+	t.Parallel()
+
+	content := resourceAttributesTestTIFF(t, 2, 3)
+	size := int64(len(content))
+	result, err := metaitem.ResolveItems(context.Background(), metaitem.DirectoryResolveInput{
+		DirPath: "geotiff",
+		Files: []metaitem.StorageFileRef{
+			{Name: "srtm_40_01.tif", Path: "geotiff/srtm_40_01.tif", Size: size},
+			{Name: "srtm_40_01.tfw", Path: "geotiff/srtm_40_01.tfw", Size: 42},
+			{Name: "srtm_40_01.hdr", Path: "geotiff/srtm_40_01.hdr", Size: 84},
+			{Name: "srtm_40_01.tif.aux.xml", Path: "geotiff/srtm_40_01.tif.aux.xml", Size: 126},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("Items = %#v, want one multi TIFF item", result.Items)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutMulti || item.PrimaryContentPath != "geotiff/srtm_40_01.tif" {
+		t.Fatalf("resolved item = %#v, want multi TIFF primary", item)
+	}
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
+	reader := pathContentReader{content: map[string][]byte{
+		"geotiff/srtm_40_01.tif": content,
+	}}
+
+	_, _, err = EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{
+		ContentReader: reader,
+		Item:          item,
+		PhysicalPath:  item.PrimaryContentPath,
+		SizeBytes:     size,
+		CatalogPathFor: func(path string) plugin.CatalogPath {
+			return plugin.FileItemPath(1, path)
+		},
+	})
+	if err != nil {
+		t.Fatalf("EnrichResourceAttributes() error = %v", err)
+	}
+	if media := commonJSON.Section(attrs, "type_info.media"); commonJSON.InterfaceInt64(media["width"]) != 2 || commonJSON.InterfaceInt64(media["height"]) != 3 {
+		t.Fatalf("type_info.media = %#v, want primary TIFF media facts", media)
+	}
+	if tiffInfo := commonJSON.Section(attrs, "format_info.tiff"); tiffInfo["profile"] != "plain_tiff" {
+		t.Fatalf("format_info.tiff = %#v, want primary TIFF profile", tiffInfo)
+	}
+	if refs := commonJSON.InterfaceSlice(commonJSON.Section(attrs, "item")["refs"]); len(refs) != 4 {
+		t.Fatalf("item.refs = %#v, want sidecar refs preserved", refs)
+	}
+}
+
+func TestEnrichResourceAttributesKeepsPartialTIFFFormatInfo(t *testing.T) {
+	t.Parallel()
+
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Media,
+			Format:             string(format.FormatTIFF),
+			PrimaryContentPath: "images/large.tif",
+		},
+		PhysicalPath: "images/large.tif",
+	}
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
+
+	_, _, err := EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{
+		ContentReader: bytesContentReader{content: []byte{'I', 'I', 43, 0, 8, 0, 0, 0}},
+		Item:          item,
+		PhysicalPath:  "images/large.tif",
+		CatalogPathFor: func(path string) plugin.CatalogPath {
+			return plugin.FileItemPath(1, path)
+		},
+	})
+	if err != nil {
+		t.Fatalf("EnrichResourceAttributes() error = %v", err)
+	}
+	if media := commonJSON.Section(attrs, "type_info.media"); len(media) != 0 {
+		t.Fatalf("type_info.media = %#v, want no partial media facts", media)
+	}
+	tiffInfo := commonJSON.Section(attrs, "format_info.tiff")
+	if tiffInfo["profile"] != "unknown" || tiffInfo["big_tiff"] != true {
+		t.Fatalf("format_info.tiff = %#v, want partial BigTIFF facts", tiffInfo)
+	}
+}
+
 type failingContentReader struct{}
 
 func (r failingContentReader) Type() string         { return "failing" }
@@ -206,6 +378,32 @@ func (r bytesContentReader) OpenContent(context.Context, plugin.ConnectionInfo, 
 	return io.NopCloser(bytes.NewReader(r.content)), nil
 }
 
+type pathContentReader struct {
+	content map[string][]byte
+}
+
+func (r pathContentReader) Type() string         { return "path-content" }
+func (r pathContentReader) DisplayName() string  { return "path-content" }
+func (r pathContentReader) EngineOrigin() string { return "general" }
+func (r pathContentReader) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (r pathContentReader) ValidateConnectionInfo(plugin.ConnectionInfo) error { return nil }
+func (r pathContentReader) DefaultPort() int                                   { return 0 }
+func (r pathContentReader) RequiredFields() []string                           { return nil }
+func (r pathContentReader) SensitiveFields() []string                          { return nil }
+func (r pathContentReader) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{}
+}
+func (r pathContentReader) StoreSemantics() plugin.StoreSemantics { return plugin.StoreSemantics{} }
+func (r pathContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+	content, ok := r.content[path.StringPath()]
+	if !ok {
+		return nil, fmt.Errorf("unexpected content path %q", path.StringPath())
+	}
+	return io.NopCloser(bytes.NewReader(content)), nil
+}
+
 func resourceAttributesTestDOCX(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -232,6 +430,17 @@ func resourceAttributesTestPNG(t *testing.T, width, height int) []byte {
 	img.Set(0, 0, color.RGBA{R: 255, A: 255})
 	if err := png.Encode(&buf, img); err != nil {
 		t.Fatalf("encode png: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func resourceAttributesTestTIFF(t *testing.T, width, height int) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	img := stdimage.NewRGBA(stdimage.Rect(0, 0, width, height))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	if err := tiff.Encode(&buf, img, nil); err != nil {
+		t.Fatalf("encode tiff: %v", err)
 	}
 	return buf.Bytes()
 }

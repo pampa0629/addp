@@ -154,7 +154,7 @@ const modules = computed(() => [
   {
     name: 'develop',
     label: t('console.apiDocs.modules.develop'),
-    port: ':8085',
+    port: ':8185',
     swaggerUrl: isDev ? viewer('/swagger-spec/develop') : viewer('/develop/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/develop' : null,
   },

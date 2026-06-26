@@ -57,6 +57,25 @@ func TestShapeToRowValueSupportsGeometryEncoding(t *testing.T) {
 	}
 }
 
+func TestShapeToRowValueSupportsNativeShapeEncoding(t *testing.T) {
+	t.Parallel()
+
+	source := &shp.Point{X: 116.4, Y: 39.9}
+	value, err := shapeToRowValue(source, &format.ParseOptions{
+		GeometryEncoding: format.GeometryEncodingShapefileShape,
+	}, 4326)
+	if err != nil {
+		t.Fatalf("shapeToRowValue() error = %v", err)
+	}
+	got, ok := value.(*shp.Point)
+	if !ok {
+		t.Fatalf("geometry value type = %T, want *shp.Point", value)
+	}
+	if got != source {
+		t.Fatal("native shapefile shape should pass through without conversion")
+	}
+}
+
 func TestDetermineShapefileDimension(t *testing.T) {
 	t.Parallel()
 
@@ -231,6 +250,28 @@ func TestGeomToShapePreservesZForTargetShapeType(t *testing.T) {
 			}
 			tt.assert(t, shape)
 		})
+	}
+}
+
+func TestToShapefileGeometryAcceptsMatchingNativeShape(t *testing.T) {
+	t.Parallel()
+
+	source := &shp.Point{X: 1, Y: 2}
+	got, err := toShapefileGeometry(source, shp.POINT)
+	if err != nil {
+		t.Fatalf("toShapefileGeometry() error = %v", err)
+	}
+	if got != source {
+		t.Fatal("native shapefile shape should pass through without conversion")
+	}
+}
+
+func TestToShapefileGeometryRejectsMismatchedNativeShape(t *testing.T) {
+	t.Parallel()
+
+	_, err := toShapefileGeometry(&shp.Point{X: 1, Y: 2}, shp.POLYGON)
+	if err == nil {
+		t.Fatal("toShapefileGeometry() returned nil error for mismatched native shape")
 	}
 }
 

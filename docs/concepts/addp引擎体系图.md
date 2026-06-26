@@ -162,6 +162,17 @@ classDiagram
 | Service | 使用 query runtime 和 Meta item/spatial 元数据发布数据服务。 |
 | Transfer | 执行面仍由 Transfer Reader/Writer 承担，后续通过插件能力和 Transfer 模块适配层统一配置来源；高吞吐读写优先消费 batch / stream 能力。 |
 
+### Develop / Service 内置 DuckDB 联邦查询边界
+
+DuckDB 当前不是用户在 System 中注册的外部 Engine Instance，也不是工作流运行时。它是 Develop 查询工作台和 Service 查询服务复用的内置联邦 SQL 执行模式：执行时根据 SQL 引用动态挂载 PostgreSQL、MySQL、MinIO/S3 等真实 System 引擎，并基于 Meta 标准 attributes 将对象存储表改写为 DuckDB `read_parquet(...)` 等读取表达式。
+
+因此：
+
+- DuckDB 不进入 `GET /api/v1/develop/workflow-engines`，不参与工作流算子发现。
+- DuckDB 不作为普通 System 引擎实例要求 `connection_info`；Develop 查询工作台可以保留内置联邦查询入口，但该入口必须通过 Develop 查询模式发现接口暴露，不得混入 `/api/v1/develop/engines`。
+- Develop 查询任务持久化时，普通 SQL 查询使用 `execution_config.engine_id` 指向具备 query 能力的 System 引擎；DuckDB 联邦查询使用 `execution_config.query_mode="duckdb"`，不得写入虚拟 `engine_id=0` 或伪造 System 引擎记录。
+- 若未来要把 DuckDB 抽象为可注册的内置查询运行时，应单独设计 `compute.query` / `federated_query` 能力、租户隔离、扩展安装和数据源挂载规则，不在工作流引擎规范中旁路实现。
+
 ---
 
 ## 五、当前支持的引擎
@@ -173,7 +184,7 @@ classDiagram
 | 图数据库 | Neo4j |
 | 对象存储 | MinIO、S3 |
 | 文件系统 | NFS |
-| 工作流运行时 | Python Workflow、Spark Workflow、Math Workflow |
+| 工作流运行时 | Python Workflow / Spark Workflow、自动启动服务但手动注册的 Math Workflow 参考实现，及用户自研扩展工作流运行时 |
 | 脚本/Notebook | Jupyter |
 
 ---

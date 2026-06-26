@@ -57,7 +57,7 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		metaattr.SetTableFields(attrs, item.Fields)
 	}
 
-	if item.Layout == format.LayoutSingle && canReadContent {
+	if canReadContent && (item.Layout == format.LayoutSingle || item.Layout == format.LayoutMulti) {
 		if err := EnrichSingleDocumentItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.CatalogPathFor); err != nil {
 			return item, item.Fields, err
 		}

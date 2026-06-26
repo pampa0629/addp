@@ -31,35 +31,16 @@ def register_engine():
     port = parsed_url.port or 8097
     protocol = parsed_url.scheme or "http"
 
-    capabilities = {
-        "schema_version": "engine.capabilities/v1",
-        "engine_type": "jupyter",
-        "engine_family": "script",
-        "compute": {
-            "script": {
-                "supported": True,
-                "modes": ["notebook", "lab"],
-                "languages": ["python", "shell"]
-            }
-        },
-        "extensions": {
-            "script_runtime": {
-                "features": ["interactive", "parametrized", "async"]
-            }
-        }
-    }
-
     # 构造引擎注册数据（与其他工作流引擎保持一致）
     engine_data = {
         "engine_type": "jupyter",
         "name": "Jupyter Engine",
-        "description": "ADDP 内置 Jupyter Notebook 执行引擎，支持 Python 和 Shell 脚本",
+        "description": "ADDP 内置 Jupyter Notebook 执行引擎，支持 Python Notebook",
         "connection_info": {
             "host": host,
             "port": port,
             "protocol": protocol
         },
-        "capabilities": capabilities,
         "is_builtin": True
     }
 

@@ -4,8 +4,6 @@
 
 // Basic UI Components (no map dependencies)
 export { default as StorageEngineForm } from './components/StorageEngineForm.vue'
-export { default as EngineForm } from './components/EngineForm.vue'
-export { default as ImagePreview } from './components/ImagePreview.vue'
 export { default as ResourceTree } from './components/ResourceTree.vue'
 export { default as ResourceTreePicker } from './components/ResourceTreePicker.vue'
 

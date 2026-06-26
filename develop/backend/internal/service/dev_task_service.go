@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -39,6 +40,9 @@ func (s *DevTaskService) CreateDevTask(req *models.CreateDevTaskRequest, tenantI
 	}
 
 	if err := validateDevTaskContent(req.DevType, req.Content); err != nil {
+		return nil, err
+	}
+	if err := validateDevTaskExecutionConfig(req.DevType, req.Content, req.ExecutionConfig); err != nil {
 		return nil, err
 	}
 
@@ -96,10 +100,25 @@ func (s *DevTaskService) UpdateDevTask(id uint, req *models.UpdateDevTaskRequest
 	if req.DisplayName != "" {
 		item.DisplayName = req.DisplayName
 	}
+
+	nextContent := map[string]interface{}(item.Content)
+	if req.Content != nil && len(req.Content) > 0 {
+		nextContent = req.Content
+	}
+	nextExecutionConfig := map[string]interface{}(item.ExecutionConfig)
+	if req.ExecutionConfig != nil {
+		nextExecutionConfig = req.ExecutionConfig
+	}
+
 	if req.Content != nil && len(req.Content) > 0 {
 		if err := validateDevTaskContent(item.DevType, req.Content); err != nil {
 			return nil, err
 		}
+	}
+	if err := validateDevTaskExecutionConfig(item.DevType, nextContent, nextExecutionConfig); err != nil {
+		return nil, err
+	}
+	if req.Content != nil && len(req.Content) > 0 {
 		item.Content = req.Content
 	}
 	if req.ExecutionConfig != nil {
@@ -154,12 +173,221 @@ func validateDevTaskContent(devType string, content map[string]interface{}) erro
 			return fmt.Errorf("query 类型必须在 content.query_type 中提供查询类型")
 		}
 	case commonExecution.TaskTypeWorkflow:
-		if _, ok := content["workflow_definition"].(map[string]interface{}); !ok {
+		workflowDef, ok := content["workflow_definition"].(map[string]interface{})
+		if !ok {
 			return fmt.Errorf("workflow 类型必须在 content.workflow_definition 中提供工作流定义")
+		}
+		if err := validateWorkflowDefinition(workflowDef); err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+func validateWorkflowDefinition(workflowDef map[string]interface{}) error {
+	tasksValue, ok := workflowDef["tasks"]
+	if !ok {
+		return fmt.Errorf("workflow 类型必须在 content.workflow_definition.tasks 中提供任务数组")
+	}
+
+	tasks, ok := workflowTasksFromInterface(tasksValue)
+	if !ok || len(tasks) == 0 {
+		return fmt.Errorf("content.workflow_definition.tasks 必须是非空数组")
+	}
+
+	taskIDs := make(map[string]struct{}, len(tasks))
+	dependencies := make(map[string][]string, len(tasks))
+	for i, task := range tasks {
+		taskID, ok := task["id"].(string)
+		if !ok || strings.TrimSpace(taskID) == "" {
+			return fmt.Errorf("content.workflow_definition.tasks[%d].id 必须是非空字符串", i)
+		}
+		if _, exists := taskIDs[taskID]; exists {
+			return fmt.Errorf("content.workflow_definition.tasks[%d].id 重复: %s", i, taskID)
+		}
+		taskIDs[taskID] = struct{}{}
+
+		operator, ok := task["operator"].(string)
+		if !ok || strings.TrimSpace(operator) == "" {
+			return fmt.Errorf("content.workflow_definition.tasks[%d].operator 必须是非空字符串", i)
+		}
+
+		if _, ok := task["params"]; !ok {
+			return fmt.Errorf("content.workflow_definition.tasks[%d].params 必须显式提供", i)
+		}
+		if _, ok := task["params"].(map[string]interface{}); !ok {
+			return fmt.Errorf("content.workflow_definition.tasks[%d].params 必须是对象", i)
+		}
+
+		dependsOn, ok := task["depends_on"]
+		if !ok {
+			return fmt.Errorf("content.workflow_definition.tasks[%d].depends_on 必须显式提供", i)
+		}
+		depList, ok := stringSliceFromInterface(dependsOn)
+		if !ok {
+			return fmt.Errorf("content.workflow_definition.tasks[%d].depends_on 必须是字符串数组", i)
+		}
+		dependencies[taskID] = depList
+	}
+
+	for taskID, depList := range dependencies {
+		for _, depID := range depList {
+			if depID == taskID {
+				return fmt.Errorf("content.workflow_definition task %s 不得依赖自身", taskID)
+			}
+			if _, ok := taskIDs[depID]; !ok {
+				return fmt.Errorf("content.workflow_definition task %s 依赖不存在的任务: %s", taskID, depID)
+			}
+		}
+	}
+
+	if hasWorkflowDependencyCycle(dependencies) {
+		return fmt.Errorf("content.workflow_definition 存在循环依赖")
+	}
+
+	return nil
+}
+
+func hasWorkflowDependencyCycle(dependencies map[string][]string) bool {
+	const (
+		unvisited = iota
+		visiting
+		visited
+	)
+
+	states := make(map[string]int, len(dependencies))
+	var visit func(string) bool
+	visit = func(taskID string) bool {
+		switch states[taskID] {
+		case visiting:
+			return true
+		case visited:
+			return false
+		}
+
+		states[taskID] = visiting
+		for _, depID := range dependencies[taskID] {
+			if visit(depID) {
+				return true
+			}
+		}
+		states[taskID] = visited
+		return false
+	}
+
+	for taskID := range dependencies {
+		if visit(taskID) {
+			return true
+		}
+	}
+	return false
+}
+
+func workflowTasksFromInterface(value interface{}) ([]map[string]interface{}, bool) {
+	switch tasks := value.(type) {
+	case []interface{}:
+		result := make([]map[string]interface{}, 0, len(tasks))
+		for _, item := range tasks {
+			task, ok := item.(map[string]interface{})
+			if !ok {
+				return nil, false
+			}
+			result = append(result, task)
+		}
+		return result, true
+	case []map[string]interface{}:
+		return tasks, true
+	default:
+		return nil, false
+	}
+}
+
+func stringSliceFromInterface(value interface{}) ([]string, bool) {
+	switch items := value.(type) {
+	case []interface{}:
+		result := make([]string, 0, len(items))
+		for _, item := range items {
+			text, ok := item.(string)
+			if !ok {
+				return nil, false
+			}
+			result = append(result, text)
+		}
+		return result, true
+	case []string:
+		return items, true
+	default:
+		return nil, false
+	}
+}
+
+func validateDevTaskExecutionConfig(devType string, content map[string]interface{}, executionConfig map[string]interface{}) error {
+	if devType != commonExecution.TaskTypeQuery {
+		return nil
+	}
+	if content == nil {
+		return fmt.Errorf("query 类型必须提供 content")
+	}
+	queryType, _ := content["query_type"].(string)
+	if strings.TrimSpace(queryType) != "sql" {
+		return nil
+	}
+	if executionConfig == nil {
+		return fmt.Errorf("SQL 查询任务必须提供 execution_config")
+	}
+
+	queryMode, _ := executionConfig["query_mode"].(string)
+	queryMode = strings.ToLower(strings.TrimSpace(queryMode))
+	_, hasEngineID := executionConfig["engine_id"]
+
+	if queryMode == "duckdb" {
+		if hasEngineID {
+			return fmt.Errorf("DuckDB 联邦查询任务不得提供 execution_config.engine_id")
+		}
+		return nil
+	}
+	if queryMode != "" {
+		return fmt.Errorf("不支持的查询执行模式: %s", queryMode)
+	}
+
+	engineID := devTaskExecutionConfigEngineID(executionConfig)
+	if engineID == nil {
+		return fmt.Errorf("普通 SQL 查询任务必须提供 execution_config.engine_id")
+	}
+	return nil
+}
+
+func devTaskExecutionConfigEngineID(executionConfig map[string]interface{}) *uint {
+	switch value := executionConfig["engine_id"].(type) {
+	case float64:
+		if value <= 0 {
+			return nil
+		}
+		id := uint(value)
+		return &id
+	case int:
+		if value <= 0 {
+			return nil
+		}
+		id := uint(value)
+		return &id
+	case uint:
+		if value == 0 {
+			return nil
+		}
+		id := value
+		return &id
+	case json.Number:
+		parsed, err := value.Int64()
+		if err != nil || parsed <= 0 {
+			return nil
+		}
+		id := uint(parsed)
+		return &id
+	default:
+		return nil
+	}
 }
 
 // GetDevTask 获取开发任务详情

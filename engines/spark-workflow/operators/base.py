@@ -2,7 +2,6 @@
 Spark 工作流算子基础模块
 
 提供 Pydantic 模型、枚举类型和辅助函数，用于算子元数据管理和注册。
-参考 GeoPandas 引擎的设计，针对 Spark 工作流引擎的特点进行调整。
 """
 
 from pydantic import BaseModel, Field
@@ -38,6 +37,7 @@ class OperatorMetadata(BaseModel):
     category: OperatorCategory = Field(description="算子分类")
     description: str = Field(description="算子简要描述")
     brief_description: str = Field(description="简短说明（一句话）")
+    execution_modes: List[str] = Field(description="执行模式：workflow/direct")
 
     # 详细元数据
     overview: str = Field(description="功能概述（50-100字）")
@@ -57,7 +57,7 @@ class OperatorMetadata(BaseModel):
 
     def to_dict(self) -> dict:
         """
-        转换为字典格式（简化版，不考虑向后兼容）
+        转换为运行时算子注册字典
 
         返回完整的元数据字典，供 operator_metadata.py 使用
         """
@@ -84,6 +84,7 @@ class OperatorMetadata(BaseModel):
             'function': self.function,
             'params': params_dict,
             'category': self.category.value,
+            'execution_modes': list(self.execution_modes),
             'description': self.description,
             'brief_description': self.brief_description,
             'detailed_description': {
@@ -112,8 +113,8 @@ def register_operator(metadata: OperatorMetadata, func: Callable) -> tuple[str, 
         (算子名称, 元数据字典)
 
     Example:
-        >>> BUFFER_METADATA = OperatorMetadata(name="st_buffer", ...)
-        >>> OPERATORS = dict([register_operator(BUFFER_METADATA, st_buffer)])
+        >>> BUFFER_METADATA = OperatorMetadata(name="buffer", ...)
+        >>> OPERATORS = dict([register_operator(BUFFER_METADATA, buffer)])
     """
     metadata.function = func
     return metadata.name, metadata.to_dict()

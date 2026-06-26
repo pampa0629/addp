@@ -21,6 +21,63 @@ class WorkflowInvalidError(Exception):
     pass
 
 
+def validate_workflow_def(workflow_def: Dict[str, Any]):
+    """校验 addp.workflow/v1 工作流定义。"""
+    if not isinstance(workflow_def, dict) or 'tasks' not in workflow_def:
+        raise WorkflowInvalidError("工作流定义缺少 'tasks' 字段")
+    if not isinstance(workflow_def['tasks'], list) or len(workflow_def['tasks']) == 0:
+        raise WorkflowInvalidError("工作流定义中的 'tasks' 必须是非空数组")
+
+    task_ids = set()
+    for task in workflow_def['tasks']:
+        if 'id' not in task:
+            raise WorkflowInvalidError("任务定义缺少 'id' 字段")
+        if not isinstance(task['id'], str) or not task['id'].strip():
+            raise WorkflowInvalidError("任务 id 必须是非空字符串")
+        if task['id'] in task_ids:
+            raise WorkflowInvalidError(f"任务 id 重复: {task['id']}")
+        task_ids.add(task['id'])
+        if 'operator' not in task:
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 缺少 'operator' 字段")
+        if 'params' not in task:
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 缺少 'params' 字段")
+        if not isinstance(task['params'], dict):
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 的 'params' 必须是对象")
+        if 'depends_on' not in task:
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 缺少 'depends_on' 字段")
+        if not isinstance(task['depends_on'], list):
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 的 'depends_on' 必须是数组")
+        if not all(isinstance(dep, str) for dep in task['depends_on']):
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 的 'depends_on' 必须是字符串数组")
+        if len(set(task['depends_on'])) != len(task['depends_on']):
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 的 depends_on 包含重复依赖")
+
+    for task in workflow_def['tasks']:
+        dependencies = set(task['depends_on'])
+        for ref_task_id in _collect_workflow_refs(task['params']):
+            if ref_task_id not in task_ids:
+                raise WorkflowInvalidError(f"任务 '{task['id']}' 引用了不存在的任务 '{ref_task_id}'")
+            if ref_task_id not in dependencies:
+                raise WorkflowInvalidError(f"任务 '{task['id']}' 引用了任务 '{ref_task_id}' 但未在 depends_on 中声明")
+
+
+def _collect_workflow_refs(value: Any) -> List[str]:
+    refs = []
+    if isinstance(value, dict):
+        if "$ref" in value:
+            ref = value["$ref"]
+            if not isinstance(ref, str) or not ref.strip():
+                raise WorkflowInvalidError("$ref 必须是非空字符串")
+            refs.append(ref.strip())
+            return refs
+        for item in value.values():
+            refs.extend(_collect_workflow_refs(item))
+    elif isinstance(value, list):
+        for item in value:
+            refs.extend(_collect_workflow_refs(item))
+    return refs
+
+
 class MathWorkflowEngine:
     """简化版 DAG 工作流引擎"""
 
@@ -30,15 +87,9 @@ class MathWorkflowEngine:
 
     def load_workflow(self, workflow_def: Dict):
         """加载工作流定义"""
-        if 'tasks' not in workflow_def:
-            raise WorkflowInvalidError("工作流定义缺少 'tasks' 字段")
+        validate_workflow_def(workflow_def)
 
         for task in workflow_def['tasks']:
-            if 'id' not in task:
-                raise WorkflowInvalidError("任务定义缺少 'id' 字段")
-            if 'operator' not in task:
-                raise WorkflowInvalidError(f"任务 '{task['id']}' 缺少 'operator' 字段")
-
             self.tasks[task['id']] = task
 
         logger.info(f"加载工作流: {len(self.tasks)} 个任务")
@@ -57,8 +108,7 @@ class MathWorkflowEngine:
 
         # 构建图和入度表
         for task_id, task in self.tasks.items():
-            depends_on = task.get('depends_on', [])
-            for dep in depends_on:
+            for dep in task['depends_on']:
                 if dep not in self.tasks:
                     raise WorkflowInvalidError(
                         f"任务 '{task_id}' 依赖的任务 '{dep}' 不存在"
@@ -157,7 +207,7 @@ class MathWorkflowEngine:
         for task_id in task_order:
             task = self.tasks[task_id]
             operator_name = task['operator']
-            params = task.get('params', {})
+            params = task['params']
 
             logger.info(f"执行任务 '{task_id}': 算子 '{operator_name}'")
 

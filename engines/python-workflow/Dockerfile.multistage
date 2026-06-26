@@ -17,8 +17,12 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /build
 
 # Copy and install Python dependencies
-COPY requirements.txt .
-RUN pip install --user --no-cache-dir -r requirements.txt
+COPY engines/python-workflow/requirements.txt .
+COPY common-python/ /tmp/common-python/
+RUN GDAL_VERSION="$(gdal-config --version)" \
+    && pip install --user --no-cache-dir "GDAL==${GDAL_VERSION}" \
+    && pip install --user --no-cache-dir -r requirements.txt \
+    && pip install --user --no-cache-dir /tmp/common-python
 
 # Stage 2: Runtime image
 FROM python:3.11-slim
@@ -38,9 +42,9 @@ COPY --from=builder /root/.local /root/.local
 WORKDIR /app
 
 # Copy application code
-COPY operators.py .
-COPY workflow_engine.py .
-COPY api_server.py .
+COPY engines/python-workflow/operators/ ./operators/
+COPY engines/python-workflow/workflow_engine.py .
+COPY engines/python-workflow/api_server.py .
 
 # Make sure scripts in .local are usable
 ENV PATH=/root/.local/bin:$PATH

@@ -2,12 +2,18 @@
 Copilot 模块配置管理
 """
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
 
 class Settings(BaseSettings):
     """应用配置"""
+    model_config = SettingsConfigDict(
+        env_file="../../.env",
+        case_sensitive=False,
+        extra="ignore",
+        populate_by_name=True,
+    )
 
     # 服务配置
     app_name: str = "ADDP Copilot"
@@ -84,13 +90,6 @@ class Settings(BaseSettings):
 
     # 内部 API Key (用于服务间调用)
     internal_api_key: Optional[str] = None
-
-    class Config:
-        env_file = "../../.env"  # 从项目根目录读取 .env
-        case_sensitive = False
-        extra = "ignore"  # 忽略额外的环境变量
-        populate_by_name = True
-
 
 # 全局配置实例
 settings = Settings()

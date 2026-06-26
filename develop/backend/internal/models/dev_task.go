@@ -3,6 +3,7 @@ package models
 import (
 	"database/sql/driver"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -51,7 +52,6 @@ type ProviderDevTask struct {
 	Name                string         `json:"name"`
 	DisplayName         string         `json:"display_name,omitempty"`
 	TaskType            string         `json:"task_type"`
-	Enabled             bool           `json:"enabled"`
 	Content             DevTaskContent `json:"content,omitempty"`
 	ExecutionConfig     DevTaskContent `json:"execution_config,omitempty"`
 	Parameters          DevTaskContent `json:"parameters,omitempty"`
@@ -83,7 +83,6 @@ func NewProviderDevTask(item DevTask) ProviderDevTask {
 		Name:                item.Name,
 		DisplayName:         item.DisplayName,
 		TaskType:            item.DevType,
-		Enabled:             item.Status == "active",
 		Content:             item.Content,
 		ExecutionConfig:     item.ExecutionConfig,
 		Parameters:          providerTaskParameters(item),
@@ -136,20 +135,41 @@ func (DevTask) TableName() string {
 func (d *DevTask) GetQueryType() string {
 	if d.Content != nil {
 		if qt, ok := d.Content["query_type"].(string); ok {
-			return qt
+			return strings.ToLower(strings.TrimSpace(qt))
 		}
 	}
 	return ""
+}
+
+// GetQueryMode 从 execution_config 中获取查询执行模式。
+func (d *DevTask) GetQueryMode() string {
+	if d.ExecutionConfig != nil {
+		if mode, ok := d.ExecutionConfig["query_mode"].(string); ok {
+			return strings.ToLower(strings.TrimSpace(mode))
+		}
+	}
+	return ""
+}
+
+// IsDuckDBQuery 判断查询任务是否使用 Develop 内置 DuckDB 联邦查询模式。
+func (d *DevTask) IsDuckDBQuery() bool {
+	return d.DevType == "query" && d.GetQueryType() == "sql" && d.GetQueryMode() == "duckdb"
 }
 
 // GetEngineID 从 execution_config 中获取引擎 ID
 func (d *DevTask) GetEngineID() *uint {
 	if d.ExecutionConfig != nil {
 		if engineID, ok := d.ExecutionConfig["engine_id"].(float64); ok {
+			if engineID <= 0 {
+				return nil
+			}
 			id := uint(engineID)
 			return &id
 		}
 		if engineID, ok := d.ExecutionConfig["engine_id"].(int); ok {
+			if engineID <= 0 {
+				return nil
+			}
 			id := uint(engineID)
 			return &id
 		}

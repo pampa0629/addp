@@ -102,12 +102,12 @@ func TestRunBuildsSourceTransformAnd3857TargetQueries(t *testing.T) {
 		t.Fatalf("recommendation count = %d, want 2", len(report.Recommendations.RenderPaths))
 	}
 	sourceRecommendation := recommendationByRenderPath(report, "source_transform_path")
-	if sourceRecommendation.RecommendedAction != "quick_view_optimization" ||
+	if sourceRecommendation.RecommendedAction != "vector_quick_view_target_generation" ||
 		sourceRecommendation.RetryPolicy != "suppress_tile" {
 		t.Fatalf("source recommendation = %#v, want quick view optimization with suppress_tile", sourceRecommendation)
 	}
 	targetRecommendation := recommendationByRenderPath(report, "ready_3857_target")
-	if targetRecommendation.RecommendedAction != "tile_cache_generation" ||
+	if targetRecommendation.RecommendedAction != "vector_tile_cache_generation" ||
 		targetRecommendation.RetryPolicy != "ttl" ||
 		targetRecommendation.QuickViewRealtimeTileRetryAfterSec != DefaultRetryAfterSec {
 		t.Fatalf("target recommendation = %#v, want tile cache generation with ttl retry", targetRecommendation)
@@ -211,8 +211,8 @@ func TestRunRecordsMultiScaleCandidateForLowZoomLarge3857Tile(t *testing.T) {
 	if candidate.RenderPath != "ready_3857_target" ||
 		candidate.TargetKind != "external_3857_materialized_view" ||
 		candidate.Trigger != "low_zoom_large_mvt" ||
-		candidate.CurrentUserAction != "tile_cache_generation" ||
-		candidate.FollowUpTopic != "multi_scale_quick_view_optimization" {
+		candidate.CurrentUserAction != "vector_tile_cache_generation" ||
+		candidate.FollowUpTopic != "multi_scale_vector_quick_view_target_generation" {
 		t.Fatalf("candidate = %#v, want ready 3857 low zoom large MVT candidate", candidate)
 	}
 	if candidate.Tile.Z != 6 || candidate.Tile.X != 51 || candidate.Tile.Y != 27 {

@@ -4,17 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/addp/common/datatype"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/contentadapter"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/postgresql"
 	"github.com/addp/common/format"
+	geojsonformat "github.com/addp/common/format/plugins/geojson"
 	shapefileformat "github.com/addp/common/format/plugins/shapefile"
 	"github.com/jonas-p/go-shp"
 	_ "github.com/lib/pq"
@@ -211,8 +213,8 @@ func TestIntegrationShapefileComplexZToPostgresPreservesZ(t *testing.T) {
 				{X: 120, Y: 30},
 				{X: 121, Y: 31},
 			}, []float64{10.25, 11.5}),
-			query:        `SELECT GeometryType("geometry"), ST_Z(ST_PointN("geometry", 2)) FROM "%s"."%s" WHERE "ID" = 1`,
-			wantGeometry: "LINESTRING",
+			query:        `SELECT GeometryType("geometry"), ST_Z(ST_PointN(ST_GeometryN("geometry", 1), 2)) FROM "%s"."%s" WHERE "ID" = 1`,
+			wantGeometry: "MULTILINESTRING",
 			wantZ:        11.5,
 		},
 		{
@@ -226,8 +228,8 @@ func TestIntegrationShapefileComplexZToPostgresPreservesZ(t *testing.T) {
 				{X: 1, Y: 0},
 				{X: 0, Y: 0},
 			}, []float64{20, 21, 22, 23, 20}),
-			query:        `SELECT GeometryType("geometry"), ST_Z(ST_PointN(ST_ExteriorRing("geometry"), 3)) FROM "%s"."%s" WHERE "ID" = 1`,
-			wantGeometry: "POLYGON",
+			query:        `SELECT GeometryType("geometry"), ST_Z(ST_PointN(ST_ExteriorRing(ST_GeometryN("geometry", 1)), 3)) FROM "%s"."%s" WHERE "ID" = 1`,
+			wantGeometry: "MULTIPOLYGON",
 			wantZ:        22,
 		},
 		{
@@ -373,6 +375,91 @@ func TestIntegrationPostgresSpatialTableToShapefilePreservesSpatialMetadata(t *t
 	}
 	if got := rows[1][geometryColumn]; got != "POINT Z (121 31 88.25)" {
 		t.Fatalf("second geometry = %#v, want POINT Z (121 31 88.25)", got)
+	}
+}
+
+func TestIntegrationPostgresSpatialTableToGeoJSONTransformsTo4326(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL/PostGIS integration test")
+	}
+
+	ctx := context.Background()
+	connInfo := integrationPostgresConnInfo()
+	pg := &postgresql.PostgreSQLPlugin{}
+	db := openIntegrationPostgres(t, ctx, pg, connInfo)
+	defer db.Close()
+
+	schemaName := integrationPostgresTestSchema(t, ctx, db)
+	tableName := fmt.Sprintf("pg_3857_to_geojson_%d", time.Now().UnixNano())
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
+		CREATE TABLE "%s"."%s" (
+			id integer PRIMARY KEY,
+			name text,
+			geometry geometry(Point,3857)
+		)
+	`, schemaName, tableName)); err != nil {
+		t.Fatalf("create source table failed: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
+		INSERT INTO "%s"."%s" (id, name, geometry)
+		VALUES (1, 'Mercator point', ST_Transform(ST_SetSRID(ST_MakePoint(10, 0), 4326), 3857))
+	`, schemaName, tableName)); err != nil {
+		t.Fatalf("insert source rows failed: %v", err)
+	}
+
+	target := &fakeContentWriter{}
+	exec := &TableTransferExecutor{
+		SourceNativeReader:         pg,
+		SourceTableSessionProvider: pg,
+		TargetContentWriter:        target,
+		TargetTableWriterProvider:  geojsonformat.NewPlugin(nil),
+	}
+	metrics, err := exec.Execute(ctx, TableTransferPlan{
+		Source: TableSourcePlan{
+			Kind:     TableEndpointNative,
+			ConnInfo: connInfo,
+			Path:     integrationPostgresTablePath(schemaName, tableName),
+			ReadOptions: map[string]interface{}{
+				engineplugin.TableReadHintGeometryEncoding:        string(format.GeometryEncodingGeoJSON),
+				engineplugin.TableReadHintGeometryField:           "geometry",
+				engineplugin.TableReadHintGeometryTargetSRID:      4326,
+				engineplugin.TableReadHintGeometryTransformPolicy: "required",
+			},
+		},
+		Target: TableTargetPlan{
+			Kind:   TableEndpointEncoded,
+			Path:   engineplugin.FileItemPath(0, "exports/"+tableName+".geojson"),
+			Format: format.FormatGeoJSON,
+			FormatOptions: &format.WriteOptions{
+				ExtraParams: map[string]interface{}{"geometry_field": "geometry"},
+			},
+		},
+		BatchSize: 1,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 {
+		t.Fatalf("metrics = %#v, want one transferred row", metrics)
+	}
+
+	feature := firstGeoJSONFeature(t, target.buf.Bytes())
+	geometry, ok := feature["geometry"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("geometry = %#v, want GeoJSON geometry object", feature["geometry"])
+	}
+	coords, ok := geometry["coordinates"].([]interface{})
+	if !ok || len(coords) != 2 {
+		t.Fatalf("coordinates = %#v, want point coordinate pair", geometry["coordinates"])
+	}
+	x, okX := coords[0].(float64)
+	y, okY := coords[1].(float64)
+	if !okX || !okY || math.Abs(x-10) > 1e-9 || math.Abs(y) > 1e-9 {
+		t.Fatalf("GeoJSON coordinates = %#v, want approximately [10, 0]", coords)
+	}
+	properties, ok := feature["properties"].(map[string]interface{})
+	if !ok || properties["name"] != "Mercator point" {
+		t.Fatalf("properties = %#v, want name preserved", feature["properties"])
 	}
 }
 

@@ -40,7 +40,7 @@ func TestTileCacheTaskSchedulerClaimsDueTaskAndCreatesScheduledExecution(t *test
 	scheduler.runDueScheduledTasks(context.Background())
 
 	var executions []*commonExecution.TaskExecution
-	if err := db.Where("module = ? AND task_type = ?", commonExecution.ModuleManager, commonExecution.TaskTypeTileCacheGeneration).Find(&executions).Error; err != nil {
+	if err := db.Where("module = ? AND task_type = ?", commonExecution.ModuleManager, commonExecution.TaskTypeVectorTileCacheGeneration).Find(&executions).Error; err != nil {
 		t.Fatalf("list executions: %v", err)
 	}
 	if len(executions) != 1 {
@@ -398,7 +398,7 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 		t.Fatalf("quick view capability = can_use:%v status:%s, want available", capability.CanUseQuickView, capability.Status)
 	}
 	if capability.DefaultTileCacheID == nil || *capability.DefaultTileCacheID != artifact.ID {
-		t.Fatalf("default_tile_cache_id = %#v, want %d", capability.DefaultTileCacheID, artifact.ID)
+		t.Fatalf("default_vector_tile_cache_id = %#v, want %d", capability.DefaultTileCacheID, artifact.ID)
 	}
 
 	target, _ := asJSONMap(task.Config["target"])
@@ -946,8 +946,8 @@ func TestTileCacheGenerationFallsBackToSourceWhenOptimizationTargetMissing(t *te
 	if targetMeta["optimization_recommended"] != true {
 		t.Fatalf("optimization_recommended = %v, want true", targetMeta["optimization_recommended"])
 	}
-	if !strings.Contains(stringFromConfig(targetMeta["optimization_recommendation"]), "quick_view_optimization") {
-		t.Fatalf("optimization_recommendation = %#v, want quick_view_optimization recommendation", targetMeta["optimization_recommendation"])
+	if !strings.Contains(stringFromConfig(targetMeta["optimization_recommendation"]), "vector_quick_view_target_generation") {
+		t.Fatalf("optimization_recommendation = %#v, want vector_quick_view_target_generation recommendation", targetMeta["optimization_recommendation"])
 	}
 }
 
@@ -1101,7 +1101,7 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create task_executions table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.tile_cache_tasks (
+	if err := db.Exec(`CREATE TABLE manager.vector_tile_cache_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		name TEXT NOT NULL,
@@ -1118,9 +1118,9 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create tile_cache_tasks table: %v", err)
+		t.Fatalf("create vector_tile_cache_tasks table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.tile_cache (
+	if err := db.Exec(`CREATE TABLE manager.vector_tile_cache (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		item_fingerprint TEXT NOT NULL,
@@ -1141,20 +1141,20 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create tile_cache table: %v", err)
+		t.Fatalf("create vector_tile_cache table: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE manager.quick_view (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		item_fingerprint TEXT NOT NULL,
 		locator TEXT,
-		preferred_mode TEXT NOT NULL DEFAULT 'table_geojson',
+			preferred_mode TEXT NOT NULL DEFAULT 'basic_preview',
 		created_at DATETIME,
 		updated_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create quick_view table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.quick_view_optimization_tasks (
+	if err := db.Exec(`CREATE TABLE manager.vector_quick_view_target_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		name TEXT NOT NULL,
@@ -1171,15 +1171,15 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create quick_view_optimization_tasks table: %v", err)
+		t.Fatalf("create vector_quick_view_target_tasks table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.quick_view_optimization (
+	if err := db.Exec(`CREATE TABLE manager.vector_quick_view_targets (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
-		item_fingerprint TEXT NOT NULL,
-		item_id INTEGER,
-		locator TEXT,
-		task_id INTEGER,
+			item_fingerprint TEXT NOT NULL,
+			item_id INTEGER,
+			locator TEXT,
+			task_id INTEGER,
 		last_execution_id TEXT,
 		source_engine_id INTEGER NOT NULL,
 		source_schema TEXT NOT NULL,
@@ -1203,7 +1203,39 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create quick_view_optimization table: %v", err)
+		t.Fatalf("create vector_quick_view_targets table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.raster_cog (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		item_fingerprint TEXT NOT NULL,
+		item_id INTEGER,
+		locator TEXT,
+			task_id INTEGER,
+			last_execution_id TEXT,
+			source_engine_id INTEGER NOT NULL,
+			source_profile TEXT,
+		source_size_bytes INTEGER,
+		target_kind TEXT NOT NULL,
+		storage_ref TEXT NOT NULL,
+		file_name TEXT,
+		size_bytes INTEGER,
+		width INTEGER,
+		height INTEGER,
+		band_count INTEGER,
+		source_srid INTEGER,
+		source_crs TEXT,
+		extent JSON,
+		extent_srid INTEGER,
+		status TEXT NOT NULL,
+		metadata JSON,
+		error_message TEXT,
+		created_by INTEGER,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create raster_cog table: %v", err)
 	}
 	return db
 }

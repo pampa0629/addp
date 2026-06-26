@@ -110,9 +110,9 @@ const handleCommand = (command) => {
 /* 内容模式（Console 中） */
 .content-only {
   width: 100%;
-  height: auto;
+  height: 100vh;
   min-height: 0;
-  overflow: visible;
+  overflow: hidden;
 }
 
 /* 完整布局（独立访问） */

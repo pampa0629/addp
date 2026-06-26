@@ -110,10 +110,71 @@ func TestFileCatalogPreviewUsesMetaContainerAttributes(t *testing.T) {
 	}
 }
 
+func TestFileCatalogImagePreviewUsesStorageStreamURL(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingFileCatalogPreviewPlugin{
+		engineType:   "nfs",
+		contentType:  "image/tiff",
+		sizeBytes:    72 * 1024 * 1024,
+		expectedPath: "/geotiff/srtm_40_01.tif",
+	}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	contentRegistry := objectcontent.NewObjectContentRegistry()
+	objectcontent.LoadObjectContentPlugins(contentRegistry, "../../plugins")
+	provider := NewFileCatalogPreviewProvider(nil, contentRegistry)
+
+	preview, err := provider.Preview(context.Background(), &PreviewRequest{
+		Engine: &models.Engine{EngineType: "nfs", ID: 26},
+		Schema: "geotiff",
+		Table:  "srtm_40_01.tif",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "media",
+				"format":    "tiff",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Object == nil || preview.Object.Content == nil {
+		t.Fatalf("object content missing: %#v", preview)
+	}
+	content := preview.Object.Content
+	if content.Kind != models.ObjectPreviewKindImage {
+		t.Fatalf("content kind = %q, want image", content.Kind)
+	}
+	if content.URL == "" || content.PreviewMaterial != "url" || content.FrontendRenderer != models.ObjectPreviewKindImage {
+		t.Fatalf("content = %#v, want URL material image preview", content)
+	}
+	if !strings.Contains(content.URL, "/api/v1/manager/storage-stream?") ||
+		!strings.Contains(content.URL, "engine_id=26") ||
+		!strings.Contains(content.URL, "storage_ref=geotiff%2Fsrtm_40_01.tif") {
+		t.Fatalf("content URL = %q, want file storage stream URL", content.URL)
+	}
+	if preview.Object.URL != content.URL {
+		t.Fatalf("object URL = %q, content URL = %q", preview.Object.URL, content.URL)
+	}
+	if enginePlugin.openContentCalls != 0 {
+		t.Fatalf("OpenContent calls = %d, want 0 when image preview uses storage stream URL", enginePlugin.openContentCalls)
+	}
+}
+
 type recordingFileCatalogPreviewPlugin struct {
 	engineType        string
 	openContentCalls  int
 	describedItemPath plugin.CatalogPath
+	contentType       string
+	sizeBytes         int64
+	expectedPath      string
 }
 
 func (p *recordingFileCatalogPreviewPlugin) Type() string         { return p.engineType }
@@ -144,12 +205,23 @@ func (p *recordingFileCatalogPreviewPlugin) DescribeCatalogFacts(_ context.Conte
 	p.describedItemPath = path
 	now := time.Now()
 	sizeBytes := int64(1024)
+	if p.sizeBytes > 0 {
+		sizeBytes = p.sizeBytes
+	}
+	contentType := p.contentType
+	if contentType == "" {
+		contentType = "application/vnd.sqlite3"
+	}
+	storagePath := path.StringPath()
+	if p.expectedPath != "" {
+		storagePath = p.expectedPath
+	}
 	return &plugin.CatalogFacts{
 		Path: path,
 		Kind: plugin.CatalogKindFile,
 		Storage: &plugin.CatalogStorageFacts{
-			Path:        path.StringPath(),
-			ContentType: "application/vnd.sqlite3",
+			Path:        storagePath,
+			ContentType: contentType,
 			SizeBytes:   &sizeBytes,
 		},
 		UpdatedAt: &now,

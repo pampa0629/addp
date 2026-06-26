@@ -10,6 +10,8 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
+	commonSpatial "github.com/addp/common/spatial"
+	"github.com/twpayne/go-geom"
 )
 
 func TestGeoJSONPluginImplementsTargetInterfaces(t *testing.T) {
@@ -174,6 +176,122 @@ func TestGeoJSONPluginOpenTableWriter(t *testing.T) {
 	}
 }
 
+func TestGeoJSONPluginWriterRejectsExplicitNonWGS84SpatialInfo(t *testing.T) {
+	opts := format.DefaultWriteOptions()
+	opts.SpatialInfo = datatype.NewSingleGeometrySpatialInfo("geom", "Point", 3857, 2)
+	tableInfo := &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "geom", Type: datatype.FieldTypeGeometry}}}
+
+	_, err := NewPlugin(nil).OpenTableWriter(context.Background(), &bytes.Buffer{}, tableInfo, opts)
+	if err == nil {
+		t.Fatal("OpenTableWriter succeeded with EPSG:3857 spatial info, want GeoJSON CRS error")
+	}
+	if !strings.Contains(err.Error(), "EPSG:4326") {
+		t.Fatalf("error = %q, want EPSG:4326 requirement", err)
+	}
+}
+
+func TestGeoJSONPluginReaderSupportsEWKBGeometryEncoding(t *testing.T) {
+	data := `{
+		"type": "FeatureCollection",
+		"features": [
+			{"type":"Feature","geometry":{"type":"Point","coordinates":[116.4,39.9]},"properties":{"name":"A"}}
+		]
+	}`
+	opts := format.DefaultParseOptions()
+	opts.GeometryEncoding = format.GeometryEncodingEWKB
+
+	reader, err := NewPlugin(nil).OpenTableReader(context.Background(), strings.NewReader(data), opts)
+	if err != nil {
+		t.Fatalf("OpenTableReader failed: %v", err)
+	}
+	rows, err := reader.ReadRows(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("ReadRows failed: %v", err)
+	}
+	value, ok := rows[0]["geometry"].([]byte)
+	if !ok {
+		t.Fatalf("geometry type = %T, want []byte", rows[0]["geometry"])
+	}
+	geometry, err := commonSpatial.ParseGeometryValue(value)
+	if err != nil {
+		t.Fatalf("ParseGeometryValue failed: %v", err)
+	}
+	if got := geometry.SRID(); got != 4326 {
+		t.Fatalf("SRID = %d, want 4326", got)
+	}
+}
+
+func TestGeoJSONPluginReaderEWKBDoesNotDefaultWGS84ForOutOfRangeCoordinates(t *testing.T) {
+	data := `{
+		"type": "FeatureCollection",
+		"features": [
+			{"type":"Feature","geometry":{"type":"Point","coordinates":[12958175.1,4855942.3]},"properties":{"name":"A"}}
+		]
+	}`
+	opts := format.DefaultParseOptions()
+	opts.GeometryEncoding = format.GeometryEncodingEWKB
+
+	reader, err := NewPlugin(nil).OpenTableReader(context.Background(), strings.NewReader(data), opts)
+	if err != nil {
+		t.Fatalf("OpenTableReader failed: %v", err)
+	}
+	rows, err := reader.ReadRows(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("ReadRows failed: %v", err)
+	}
+	value, ok := rows[0]["geometry"].([]byte)
+	if !ok {
+		t.Fatalf("geometry type = %T, want []byte", rows[0]["geometry"])
+	}
+	geometry, err := commonSpatial.ParseGeometryValue(value)
+	if err != nil {
+		t.Fatalf("ParseGeometryValue failed: %v", err)
+	}
+	if got := geometry.SRID(); got != 0 {
+		t.Fatalf("SRID = %d, want unknown for out-of-range coordinates", got)
+	}
+	spatial := reader.(format.TableSpatialInfoProvider).SpatialInfo()
+	if spatial == nil || spatial.PrimarySRIDValue() != 0 || spatial.PrimaryCRSRef() != "" {
+		t.Fatalf("reader spatial info = %#v, want unknown CRS", spatial)
+	}
+}
+
+func TestGeoJSONPluginWriterSupportsEWKBGeometry(t *testing.T) {
+	tableInfo := &datatype.TableInfo{Fields: []datatype.FieldInfo{
+		{Name: "id", Type: datatype.FieldTypeInt},
+		{Name: "geometry", Type: datatype.FieldTypeGeometry},
+	}}
+	point := geom.NewPointFlat(geom.XY, []float64{116.4, 39.9})
+	ewkb, err := commonSpatial.GeomToEWKB(point, 4326)
+	if err != nil {
+		t.Fatalf("GeomToEWKB failed: %v", err)
+	}
+
+	var buf bytes.Buffer
+	writer, err := NewPlugin(nil).OpenTableWriter(context.Background(), &buf, tableInfo, nil)
+	if err != nil {
+		t.Fatalf("OpenTableWriter failed: %v", err)
+	}
+	if err := writer.WriteRows(context.Background(), []map[string]interface{}{
+		{"id": 1, "geometry": ewkb},
+	}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	var collection map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &collection); err != nil {
+		t.Fatalf("unmarshal GeoJSON failed: %v; output=%s", err, buf.String())
+	}
+	feature := collection["features"].([]interface{})[0].(map[string]interface{})
+	geometry := feature["geometry"].(map[string]interface{})
+	if geometry["type"] != "Point" {
+		t.Fatalf("geometry = %#v, want Point", geometry)
+	}
+}
+
 func TestGeoJSONPluginComputesBoundingBoxWithoutFileBBox(t *testing.T) {
 	data := `{
 		"type": "FeatureCollection",
@@ -209,6 +327,35 @@ func TestGeoJSONPluginComputesBoundingBoxWithoutFileBBox(t *testing.T) {
 	}
 	if formatInfo["bbox"] != nil {
 		t.Fatalf("format info should not contain computed bbox: %#v", formatInfo)
+	}
+}
+
+func TestGeoJSONPluginDoesNotDefaultWGS84ForOutOfRangeCoordinates(t *testing.T) {
+	data := `{
+		"type": "FeatureCollection",
+		"features": [
+			{"type":"Feature","geometry":{"type":"Point","coordinates":[12958175.1, 4855942.3]},"properties":{"name":"A"}},
+			{"type":"Feature","geometry":{"type":"Point","coordinates":[12958200.2, 4855960.4]},"properties":{"name":"B"}}
+		]
+	}`
+	plugin := NewPlugin(nil)
+
+	info, err := plugin.DescribeTable(context.Background(), strings.NewReader(data), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	spatial := info.Spatial
+	if spatial == nil || spatial.Extent == nil {
+		t.Fatalf("spatial bbox missing: %#v", spatial)
+	}
+	if srid := spatial.PrimarySRIDValue(); srid != 0 {
+		t.Fatalf("GeoJSON SRID = %d, want unknown for out-of-range coordinates", srid)
+	}
+	if crsRef := spatial.PrimaryCRSRef(); crsRef != "" {
+		t.Fatalf("GeoJSON CRS ref = %q, want empty for out-of-range coordinates", crsRef)
+	}
+	if info.FormatInfo["coordinate_range_out_of_wgs84"] != true {
+		t.Fatalf("format info = %#v, want coordinate_range_out_of_wgs84=true", info.FormatInfo)
 	}
 }
 

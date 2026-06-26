@@ -11,7 +11,17 @@ class SystemClient(BaseClient):
         """获取引擎列表"""
         params = {"tenant_id": tenant_id} if tenant_id else None
         resp = await self.get("/api/v1/system/engines", params=params)
-        return resp if isinstance(resp, list) else resp.get("engines", [])
+        if not isinstance(resp, dict) or not isinstance(resp.get("data"), list):
+            raise ValueError("system engines response must be a paginated object with data")
+        return resp["data"]
+
+    async def list_internal_engines(self, tenant_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """通过服务间接口获取引擎列表"""
+        params = {"tenant_id": tenant_id} if tenant_id else None
+        resp = await self.get("/api/v1/internal/engines", params=params)
+        if not isinstance(resp, list):
+            raise ValueError("internal engines response must be a list")
+        return resp
 
     async def get_engine(self, engine_id: int) -> Dict[str, Any]:
         """获取引擎详情"""
@@ -33,15 +43,15 @@ class SystemClient(BaseClient):
         return resp.get("objects", [])
 
     async def get_workflow_engines(self) -> List[Dict[str, Any]]:
-        """获取所有支持工作流执行的引擎（dev_modes 包含 workflow）"""
-        resp = await self.get("/api/v1/system/engines")
-        engines = resp if isinstance(resp, list) else resp.get("data", [])
+        """获取所有支持 compute.workflow 的引擎"""
+        engines = await self.list_engines()
         result = []
         for e in engines:
+            if not e.get("is_active", True):
+                continue
             caps_raw = e.get("capabilities", "{}")
             caps = json.loads(caps_raw) if isinstance(caps_raw, str) else caps_raw
-            modes = [m for c in caps.get("compute", []) for m in c.get("dev_modes", [])]
-            if "workflow" in modes:
+            if self._supports_workflow(caps):
                 result.append({
                     "id": e["id"],
                     "name": e["name"],
@@ -50,3 +60,20 @@ class SystemClient(BaseClient):
                     "connection_status": e.get("connection_status", "unknown"),
                 })
         return result
+
+    @staticmethod
+    def _supports_workflow(capabilities: Dict[str, Any]) -> bool:
+        if not isinstance(capabilities, dict):
+            return False
+        if capabilities.get("schema_version") != "engine.capabilities/v1":
+            return False
+
+        compute = capabilities.get("compute")
+        if not isinstance(compute, dict):
+            return False
+
+        workflow = compute.get("workflow")
+        if not isinstance(workflow, dict):
+            return False
+
+        return workflow.get("supported") is True

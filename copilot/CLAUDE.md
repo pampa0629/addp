@@ -88,7 +88,8 @@ curl -X POST http://localhost:8087/api/v1/copilot/workflow/generate \
   -d '{
     "query": "加载数据，计算100米缓冲区，保存结果",
     "tenant_id": 1,
-    "user_id": 2
+    "user_id": 2,
+    "workflow_engine_id": 1
   }'
 ```
 

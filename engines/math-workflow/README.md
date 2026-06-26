@@ -11,8 +11,8 @@ Math Workflow Engine 是一个符合 [ADDP 工作流计算引擎接口规范](..
 - ✅ **完全符合规范**: 实现 OpenAPI 规范定义的所有 5 个必需接口
 - ✅ **完整工作流**: 支持 DAG 执行、参数引用（$ref）、拓扑排序
 - ✅ **易于理解**: 数学运算逻辑一目了然，无复杂依赖
-- ✅ **可独立部署**: Docker 一键启动，自动注册到 ADDP 平台
-- ✅ **Develop 集成**: 自动被 Develop 模块发现，可在工作流编辑器中使用
+- ✅ **可独立部署**: Docker 一键启动；ADDP 开发环境可自动启动服务，但仍需手动注册到平台
+- ✅ **Develop 集成**: 注册后可被 Develop 模块发现，在工作流编辑器中使用
 
 ## 🚀 快速开始
 
@@ -26,7 +26,7 @@ pip install -r requirements.txt
 # 2. 启动引擎
 python api_server.py
 
-# 引擎将在 http://localhost:8097 启动
+# 引擎将在 http://localhost:8089 启动
 ```
 
 ### 方式 2: Docker 部署（推荐）
@@ -34,7 +34,7 @@ python api_server.py
 ```bash
 # 1. 创建 .env 文件
 cp .env.example .env
-# 编辑 .env 文件，设置 INTERNAL_API_KEY
+# 编辑 .env 文件，按需设置 PORT / LOG_LEVEL
 
 # 2. 确保 addp-network 网络存在
 docker network create addp-network 2>/dev/null || true
@@ -50,18 +50,18 @@ docker-compose logs -f
 
 ```bash
 # 测试健康检查
-curl http://localhost:8097/health | jq
+curl http://localhost:8089/health | jq
 
 # 测试算子列表
-curl http://localhost:8097/api/operators | jq
+curl http://localhost:8089/api/operators | jq
 
-# 测试单算子执行
-curl -X POST http://localhost:8097/api/operators/add/execute \
+# 测试单算子 direct 调用（Math 内置算子默认只支持 workflow，会返回 403）
+curl -X POST http://localhost:8089/api/operators/add/invoke \
   -H "Content-Type: application/json" \
   -d '{"params": {"a": 5, "b": 3}}' | jq
 
 # 测试工作流执行
-curl -X POST http://localhost:8097/api/workflow \
+curl -X POST http://localhost:8089/api/workflow \
   -H "Content-Type: application/json" \
   -d '{
     "workflow_def": {
@@ -88,7 +88,7 @@ curl -X POST http://localhost:8097/api/workflow \
 ### 1. 健康检查 - `GET /health`
 
 ```bash
-curl http://localhost:8097/health
+curl http://localhost:8089/health
 ```
 
 响应:
@@ -105,7 +105,7 @@ curl http://localhost:8097/health
 ### 2. 算子列表 - `GET /api/operators`
 
 ```bash
-curl http://localhost:8097/api/operators
+curl http://localhost:8089/api/operators
 ```
 
 ### 3. 工作流执行 - `POST /api/workflow`
@@ -115,7 +115,7 @@ curl http://localhost:8097/api/operators
 示例：计算 `(10 + 20) × 2 = 60`
 
 ```bash
-curl -X POST http://localhost:8097/api/workflow \
+curl -X POST http://localhost:8089/api/workflow \
   -H "Content-Type: application/json" \
   -d '{
     "workflow_def": {
@@ -154,12 +154,12 @@ curl -X POST http://localhost:8097/api/workflow \
 }
 ```
 
-### 4. 单算子执行 - `POST /api/operators/{name}/execute`
+### 4. 单算子 direct 调用 - `POST /api/operators/{name}/invoke`
 
-快速执行单个算子（用于测试或简单计算）。
+受控调用单个算子，不进入 ADDP 任务体系。Math Workflow 内置算子默认只支持 `workflow`，因此 direct 调用会被拒绝。
 
 ```bash
-curl -X POST http://localhost:8097/api/operators/add/execute \
+curl -X POST http://localhost:8089/api/operators/add/invoke \
   -H "Content-Type: application/json" \
   -d '{"params": {"a": 5, "b": 3}}'
 ```
@@ -167,17 +167,16 @@ curl -X POST http://localhost:8097/api/operators/add/execute \
 响应:
 ```json
 {
-  "status": "success",
-  "execution_id": "uuid-5678",
-  "result": 8,
-  "execution_time_ms": 0.12
+  "status": "failed",
+  "error": "算子 'add' 不支持 direct 调用",
+  "error_code": "DIRECT_NOT_SUPPORTED"
 }
 ```
 
 ### 5. 执行状态查询 - `GET /api/executions/{execution_id}`
 
 ```bash
-curl http://localhost:8097/api/executions/uuid-1234
+curl http://localhost:8089/api/executions/uuid-1234
 ```
 
 ## 🏗️ 架构设计
@@ -221,7 +220,7 @@ engines/math-workflow/
 3. **api_server.py** - Flask API 服务
    - 5 个标准 HTTP 端点
    - 标准错误码（5 种）
-   - 自动注册到 System Backend
+   - 启动后由用户在 System 引擎管理中手动注册
    - 性能监控（execution_time_ms）
 
 ## 🧪 测试
@@ -277,34 +276,34 @@ def test_complex_workflow():
 
 ## 🔗 集成到 ADDP 平台
 
-### 自动注册机制
+### 手动注册机制
 
-引擎启动时会自动注册到 System Backend：
+Math Workflow 是扩展引擎规范参考实现。ADDP 开发环境会随 `-all` / `-develop` 自动启动服务，但启动时不会自动注册到 System。需要在 System 引擎管理中选择“注册扩展引擎”，填入以下示例值后测试连接并保存：
 
 ```python
-# api_server.py 中的自动注册逻辑
 registration_data = {
     "engine_type": "math_workflow",
-    "name": "Math Workflow 计算引擎",
+    "name": "Math Workflow 示例引擎",
     "description": "基于 Python 的数学计算工作流引擎，支持基本数学运算",
     "connection_info": {
         "protocol": "http",
+        "host": "localhost",
         "port": 8089
-    },
-    "is_builtin": True
+    }
 }
 ```
 
 ### 在 Develop 模块中使用
 
-1. **启动引擎**（自动注册）
+1. **启动引擎**
 2. **登录 ADDP Console**: http://localhost:5170
-3. **进入 Develop 模块** → GIS 工作流编辑器
-4. **查看算子面板**，应该能看到：
+3. **在 System 引擎管理中注册 Math Workflow 示例引擎**
+4. **进入 Develop 模块** → 工作流编辑器
+5. **查看算子面板**，应该能看到：
    - 数学运算分类：add、subtract、multiply、divide
    - 统计分析分类：average
-5. **拖拽算子到画布**，配置参数，连接数据流
-6. **执行工作流**，查看结果
+6. **拖拽算子到画布**，配置参数，连接数据流
+7. **执行工作流**，查看结果
 
 ## 📚 相关文档
 
@@ -321,7 +320,7 @@ Math Workflow Engine 是第三方开发者的最佳实践示例：
 **极简但完整**:
 - 核心代码仅 500 行（含注释和日志）
 - 包含所有必需功能（DAG 执行、参数引用、错误处理）
-- 无复杂依赖（仅 Flask + Pydantic + requests）
+- 无复杂依赖（仅 Flask + Pydantic）
 
 **易于扩展**:
 - 添加新算子：在 `math_operators.py` 中定义函数和元数据
@@ -333,7 +332,7 @@ Math Workflow Engine 是第三方开发者的最佳实践示例：
 - 健康检查
 - 结构化日志
 - 标准错误码
-- 自动注册
+- 手动注册示例
 
 ## 📄 许可证
 

@@ -3,11 +3,14 @@ Storage Adapters - 统一存储访问适配器
 支持: 数据库(JDBC) + 文件(S3/HDFS) + 湖仓(Iceberg/Delta) + Catalog
 """
 
-import os
 import logging
-import requests
-from typing import Dict, Any
-from pyspark.sql import SparkSession, DataFrame
+from typing import Any, Dict
+
+try:
+    from pyspark.sql import SparkSession, DataFrame
+except ModuleNotFoundError:
+    SparkSession = Any
+    DataFrame = Any
 
 logger = logging.getLogger(__name__)
 
@@ -63,22 +66,21 @@ class DatabaseAdapter:
     """数据库适配器 (JDBC)"""
 
     @staticmethod
-    def get_engine_from_system(engine_id: int) -> dict:
-        """从System Backend获取资源信息"""
-        system_url = os.getenv('SYSTEM_URL', 'http://localhost:8180')
-        response = requests.get(f'{system_url}/api/engines/{engine_id}')
-        if response.status_code != 200:
-            raise ValueError(f"Failed to get engine {engine_id}")
-        return response.json()
+    def _connection_context(params: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+        conn_info = params.get('connection_info')
+        if not isinstance(conn_info, dict):
+            raise ValueError("source_type=table/target_type=table requires connection_info")
+
+        engine_type = conn_info.get('engine_type')
+        if not engine_type:
+            raise ValueError("connection_info.engine_type is required")
+
+        return engine_type, conn_info
 
     @staticmethod
     def load(spark: SparkSession, params: Dict[str, Any]) -> DataFrame:
         """从数据库加载数据"""
-        engine_id = params['engine_id']
-        engine = DatabaseAdapter.get_engine_from_system(engine_id)
-
-        engine_type = engine['engine_type']
-        conn_info = engine['connection_info']
+        engine_type, conn_info = DatabaseAdapter._connection_context(params)
         schema = params.get('schema', 'public')
         table = params['table']
 
@@ -119,11 +121,7 @@ class DatabaseAdapter:
     @staticmethod
     def save(df: DataFrame, params: Dict[str, Any]):
         """保存到数据库"""
-        engine_id = params['engine_id']
-        engine = DatabaseAdapter.get_engine_from_system(engine_id)
-
-        engine_type = engine['engine_type']
-        conn_info = engine['connection_info']
+        engine_type, conn_info = DatabaseAdapter._connection_context(params)
         schema = params.get('schema', 'public')
         table = params['table']
         mode = params.get('mode', 'overwrite')
@@ -223,25 +221,18 @@ class FileAdapter:
     @staticmethod
     def _configure_s3_access(spark: SparkSession, params: Dict[str, Any]):
         """配置S3访问凭证"""
-        engine_id = params.get('engine_id')
-        if not engine_id:
+        conn_info = params.get('connection_info')
+        if not isinstance(conn_info, dict):
             return
 
-        # 从System获取MinIO/S3资源配置
         try:
-            system_url = os.getenv('SYSTEM_URL', 'http://localhost:8180')
-            response = requests.get(f'{system_url}/api/engines/{engine_id}')
-            if response.status_code == 200:
-                engine = response.json()
-                conn_info = engine['connection_info']
+            # 配置S3访问
+            spark.conf.set("spark.hadoop.fs.s3a.endpoint", conn_info.get('endpoint', ''))
+            spark.conf.set("spark.hadoop.fs.s3a.access.key", conn_info.get('access_key', 'minioadmin'))
+            spark.conf.set("spark.hadoop.fs.s3a.secret.key", conn_info.get('secret_key', 'minioadmin'))
+            spark.conf.set("spark.hadoop.fs.s3a.path.style.access", "true")
 
-                # 配置S3访问
-                spark.conf.set("spark.hadoop.fs.s3a.endpoint", conn_info.get('endpoint', ''))
-                spark.conf.set("spark.hadoop.fs.s3a.access.key", conn_info.get('access_key', 'minioadmin'))
-                spark.conf.set("spark.hadoop.fs.s3a.secret.key", conn_info.get('secret_key', 'minioadmin'))
-                spark.conf.set("spark.hadoop.fs.s3a.path.style.access", "true")
-
-                logger.info(f"Configured S3 access for endpoint: {conn_info.get('endpoint')}")
+            logger.info(f"Configured S3 access for endpoint: {conn_info.get('endpoint')}")
         except Exception as e:
             logger.warning(f"Failed to configure S3 access: {e}")
 

@@ -7,20 +7,20 @@
 
         <!-- 数据源选择 -->
         <el-select
-          v-model="selectedEngineId"
+          v-model="selectedQueryTarget"
           :placeholder="t('develop.query.selectDataSource')"
           style="width: 280px; margin-left: 20px;"
-          @change="onEngineChange"
+          @change="onQueryTargetChange"
         >
           <el-option
-            v-for="engine in engines"
-            :key="engine.id"
-            :label="`${engine.name} (${engine.engine_type})`"
-            :value="engine.id"
+            v-for="target in queryTargets"
+            :key="target.value"
+            :label="target.label"
+            :value="target.value"
           >
-            <span style="float: left">{{ engine.name }}</span>
+            <span style="float: left">{{ target.name }}</span>
             <span style="float: right; color: var(--addp-text-tertiary); font-size: 13px">
-              {{ engine.engine_type }}
+              {{ target.typeLabel }}
             </span>
           </el-option>
         </el-select>
@@ -29,7 +29,7 @@
           type="primary"
           :loading="testingConnection"
           @click="handleTestConnection"
-          :disabled="selectedEngineId == null"
+          :disabled="!selectedQueryTarget"
         >
           <el-icon><Connection /></el-icon>
           {{ t('develop.query.testConnection') }}
@@ -45,7 +45,7 @@
         <el-button
           type="primary"
           @click="handlePersistQueryTask"
-          :disabled="selectedEngineId == null || !queryContent"
+          :disabled="!selectedQueryTarget || !queryContent"
         >
           <el-icon><FolderAdd /></el-icon>
           {{ currentTaskId ? t('develop.query.updateTask') : t('develop.query.saveAsTask') }}
@@ -55,7 +55,7 @@
           type="success"
           @click="executeQuery"
           :loading="executing"
-          :disabled="selectedEngineId == null || !queryContent"
+          :disabled="!selectedQueryTarget || !queryContent"
         >
           <el-icon><VideoPlay /></el-icon>
           {{ t('develop.query.execute') }}
@@ -130,6 +130,7 @@
     <SaveQueryDialog
       v-model="showSaveDialog"
       :engine-id="selectedEngineId"
+      :query-mode="selectedQueryMode"
       :sql="queryContent"
       @saved="handleSaveTask"
     />
@@ -156,9 +157,9 @@ import QueryResult from '../components/QueryResult.vue'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
 import { GraphResultView } from '@addp/common-frontend/graph'
 import { executeQuery as executeAPI, testConnection, saveQueryTask, updateQueryTask, getSampleQuery } from '../api/query.js'
-import { executeFederatedQuery, testDuckDBConnection, getDuckDBSampleQuery } from '../api/duckdb.js'
+import { testDuckDBConnection, getDuckDBSampleQuery } from '../api/duckdb.js'
+import { listEngines, listQueryModes } from '../api/engines.js'
 import { getDevTask } from '../api/devTask.js'
-import client from '../api/client.js'
 
 const route = useRoute()
 const { t } = useI18n()
@@ -175,18 +176,13 @@ const ENGINE_LANGUAGE_MAP = {
   neo4j: 'cypher'
 }
 
-// 当前选中引擎是否为 DuckDB 联邦查询引擎
-const isDuckDB = computed(() => {
-  const engine = engines.value.find(e => e.id === selectedEngineId.value)
-  return engine?.engine_type === 'duckdb'
-})
-
 // 状态
 const currentTaskId = ref(null)
 const currentTaskName = ref('')
 const currentTask = ref(null)
-const selectedEngineId = ref(null)
+const selectedQueryTarget = ref('')
 const engines = ref([])
+const queryModes = ref([])
 const queryContent = ref('')
 const executionResult = ref(null)
 const executing = ref(false)
@@ -200,36 +196,65 @@ const hasGraphData = computed(
   () => executionResult.value?.graph_data?.nodes?.length > 0
 )
 
+const queryTargets = computed(() => [
+  ...engines.value.map(engine => ({
+    kind: 'engine',
+    value: `engine:${engine.id}`,
+    name: engine.name,
+    label: `${engine.name} (${engine.engine_type})`,
+    typeLabel: engine.engine_type,
+    engine
+  })),
+  ...queryModes.value.map(mode => ({
+    kind: 'mode',
+    value: `mode:${mode.mode}`,
+    name: mode.name,
+    label: `${mode.name} (${mode.mode})`,
+    typeLabel: mode.mode,
+    queryMode: mode.mode
+  }))
+])
+
+const selectedTarget = computed(() => queryTargets.value.find(target => target.value === selectedQueryTarget.value) || null)
+const isDuckDB = computed(() => selectedTarget.value?.kind === 'mode' && selectedTarget.value.queryMode === 'duckdb')
+const selectedQueryMode = computed(() => selectedTarget.value?.kind === 'mode' ? selectedTarget.value.queryMode : '')
+const selectedEngineId = computed(() => selectedTarget.value?.kind === 'engine' ? selectedTarget.value.engine.id : null)
+
 // 加载数据源列表
 const loadEngines = async () => {
   try {
-    const response = await client.get('/develop/engines')
+    const [engineResponse, modeResponse] = await Promise.all([
+      listEngines(),
+      listQueryModes()
+    ])
 
     // 添加 null 安全检查
-    if (!response || !Array.isArray(response)) {
-      console.warn('Develop: 获取到的数据源列表为空或格式不正确:', response)
+    if (!Array.isArray(engineResponse) || !Array.isArray(modeResponse)) {
+      console.warn('Develop: 获取到的查询目标列表为空或格式不正确:', { engineResponse, modeResponse })
       engines.value = []
+      queryModes.value = []
       return
     }
 
-    // 后端已按 compute.query 能力过滤，直接使用全部结果
-    engines.value = response
+    engines.value = engineResponse
+    queryModes.value = modeResponse
 
     // 默认选择第一个
-    if (engines.value.length > 0 && !selectedEngineId.value) {
-      selectedEngineId.value = engines.value[0].id
-      applyEngineLanguage(engines.value[0])
+    if (queryTargets.value.length > 0 && !selectedQueryTarget.value) {
+      selectedQueryTarget.value = queryTargets.value[0].value
+      await applyQueryTarget(queryTargets.value[0])
     }
   } catch (error) {
-    console.error('Develop: 加载数据源失败:', error)
+    console.error('Develop: 加载查询目标失败:', error)
     ElMessage.error(t('develop.query.loadEnginesFailed') + (error.response?.data?.error || error.message))
     engines.value = []
+    queryModes.value = []
   }
 }
 
 // 测试连接
 const handleTestConnection = async () => {
-  if (selectedEngineId.value == null) return
+  if (!selectedTarget.value) return
 
   testingConnection.value = true
   try {
@@ -248,7 +273,7 @@ const handleTestConnection = async () => {
 
 // 执行查询
 const executeQuery = async () => {
-  if (selectedEngineId.value == null) {
+  if (!selectedTarget.value) {
     ElMessage.warning(t('develop.query.selectDataSourceFirst'))
     return
   }
@@ -266,17 +291,12 @@ const executeQuery = async () => {
   })
 
   try {
-    let response
-    if (isDuckDB.value) {
-      // DuckDB 联邦查询走独立端点
-      response = await executeFederatedQuery(queryContent.value.trim(), 120)
-    } else {
-      response = await executeAPI(
-        selectedEngineId.value,
-        queryContent.value.trim(),
-        120000 // 2分钟超时
-      )
-    }
+    const response = await executeAPI(
+      isDuckDB.value ? null : selectedEngineId.value,
+      queryContent.value.trim(),
+      120,
+      selectedQueryMode.value
+    )
 
     executionResult.value = {
       success: true,
@@ -334,28 +354,30 @@ const clearResult = () => {
   resultViewMode.value = 'table'
 }
 
-// 数据源切换
-const onEngineChange = () => {
+// 查询目标切换
+const onQueryTargetChange = () => {
   executionResult.value = null
-  const engine = engines.value.find(e => e.id === selectedEngineId.value)
-  if (engine) {
-    applyEngineLanguage(engine)
+  if (selectedTarget.value) {
+    applyQueryTarget(selectedTarget.value)
   }
 }
 
-// 根据引擎类型切换编辑器语言，并自动拉取样例查询填充编辑器
-const applyEngineLanguage = async (engine) => {
-  const type = engine.engine_type?.toLowerCase() || ''
+// 根据查询目标切换编辑器语言，并自动拉取样例查询填充编辑器
+const applyQueryTarget = async (target, options = {}) => {
+  const { refreshQuery = true } = options
+  const type = target.kind === 'mode' ? target.queryMode : target.engine.engine_type?.toLowerCase() || ''
   const lang = ENGINE_LANGUAGE_MAP[type] || 'sql'
   editorRef.value?.setLanguage(lang)
+  if (!refreshQuery) {
+    return
+  }
 
   try {
     let query, language
-    if (type === 'duckdb') {
-      // DuckDB 走独立的 sample-query 接口（虚拟引擎无 ID）
+    if (target.kind === 'mode' && target.queryMode === 'duckdb') {
       ;({ query, language } = await getDuckDBSampleQuery())
     } else {
-      ;({ query, language } = await getSampleQuery(engine.id))
+      ;({ query, language } = await getSampleQuery(target.engine.id))
     }
     queryContent.value = query
     editorRef.value?.setLanguage(language)
@@ -364,6 +386,7 @@ const applyEngineLanguage = async (engine) => {
     const fallbackMap = {
       mongodb: '{"find": "collection_name", "filter": {}, "limit": 10}',
       neo4j: 'MATCH (n)\nRETURN n\nLIMIT 10',
+      duckdb: 'SELECT version() AS duckdb_version',
     }
     queryContent.value = fallbackMap[type] ?? 'SELECT 1'
   }
@@ -393,6 +416,7 @@ const handlePersistQueryTask = async () => {
       name: task.name || currentTaskName.value,
       display_name: task.display_name || currentTaskName.value,
       engine_id: selectedEngineId.value,
+      query_mode: selectedQueryMode.value,
       query: queryContent.value,
       query_type: task.content?.query_type || 'sql',
       description: task.description,
@@ -420,10 +444,17 @@ const loadTask = async (taskId) => {
     if (task.content && task.content.query) {
       queryContent.value = task.content.query
 
-      // 如果有关联资源,也设置资源ID
-      const engineID = task.execution_config?.engine_id
-      if (engineID) {
-        selectedEngineId.value = engineID
+      const queryMode = (task.execution_config?.query_mode || '').trim().toLowerCase()
+      if (queryMode === 'duckdb') {
+        selectedQueryTarget.value = `mode:${queryMode}`
+      } else {
+        const engineID = task.execution_config?.engine_id
+        if (engineID) {
+          selectedQueryTarget.value = `engine:${engineID}`
+        }
+      }
+      if (selectedTarget.value) {
+        await applyQueryTarget(selectedTarget.value, { refreshQuery: false })
       }
 
       ElMessage.success(t('develop.query.taskLoaded', { name: task.name }))

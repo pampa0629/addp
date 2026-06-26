@@ -21,6 +21,7 @@ common-frontend/
 - 不要硬编码 ADDP 主题色，应使用平台主题变量和已有共享能力。
 - `common-frontend` 不应保留自己的 `node_modules`；各前端模块通过 `overrides` 和 Vite alias 保持 Vue 单一实例。
 - 地图相关组件放在 `map/`，不引入地图依赖的基础组件放在 `basic/`。
+- 文件预览组件从 `@common-ui/previews` 按需导入，使用方模块自行声明 `geotiff`、`marked`、`mammoth`、`jszip` 等预览依赖；不要从 `@common-ui` 主入口导出预览组件。
 - 修改共享组件后至少验证一个实际消费模块，例如 `manager`、`develop`、`asset` 或 `portal`。
 
 ## 验证

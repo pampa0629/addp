@@ -1,7 +1,11 @@
 package plugins_test
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
@@ -234,4 +238,180 @@ func TestPluginCapabilitiesMatchProviders(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
+	testCases := map[string]struct {
+		origin          string
+		family          string
+		storage         bool
+		query           bool
+		workflow        bool
+		script          bool
+		graphQuery      bool
+		workflowRuntime string
+		scriptModes     []string
+		scriptLanguages []string
+	}{
+		"clickhouse":      {origin: "general", family: "tabular", storage: true, query: true},
+		"doris":           {origin: "general", family: "tabular", storage: true, query: true},
+		"mongodb":         {origin: "general", family: "dynamic_schema", storage: true, query: true},
+		"mysql":           {origin: "general", family: "tabular", storage: true, query: true},
+		"neo4j":           {origin: "general", family: "graph", storage: true, query: true, graphQuery: true},
+		"postgresql":      {origin: "general", family: "tabular", storage: true, query: true},
+		"spark":           {origin: "general", family: "tabular", storage: true, query: true},
+		"minio":           {origin: "general", family: "object", storage: true},
+		"nfs":             {origin: "general", family: "file", storage: true},
+		"s3":              {origin: "general", family: "object", storage: true},
+		"jupyter":         {origin: "extension", family: "script", script: true, scriptModes: []string{"notebook", "lab"}, scriptLanguages: []string{"python"}},
+		"math_workflow":   {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
+		"python_workflow": {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
+		"spark_workflow":  {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
+	}
+
+	allPlugins := plugin.GetAll()
+	if len(allPlugins) != len(testCases) {
+		t.Fatalf("expected %d builtin plugins in capability matrix, got %d", len(testCases), len(allPlugins))
+	}
+
+	for engineType, expected := range testCases {
+		t.Run(engineType, func(t *testing.T) {
+			p, err := plugin.Get(engineType)
+			if err != nil {
+				t.Fatalf("get plugin: %v", err)
+			}
+			caps := p.Capabilities()
+			if p.EngineOrigin() != expected.origin {
+				t.Fatalf("origin = %q, want %q", p.EngineOrigin(), expected.origin)
+			}
+			if caps.EngineFamily != expected.family {
+				t.Fatalf("engine_family = %q, want %q", caps.EngineFamily, expected.family)
+			}
+			if hasStorage(caps) != expected.storage {
+				t.Fatalf("storage support = %v, want %v", hasStorage(caps), expected.storage)
+			}
+			if hasQuery(caps) != expected.query {
+				t.Fatalf("query support = %v, want %v", hasQuery(caps), expected.query)
+			}
+			if hasWorkflow(caps) != expected.workflow {
+				t.Fatalf("workflow support = %v, want %v", hasWorkflow(caps), expected.workflow)
+			}
+			if hasScript(caps) != expected.script {
+				t.Fatalf("script support = %v, want %v", hasScript(caps), expected.script)
+			}
+			if expected.graphQuery && !contains(caps.Compute.Query.ResultKinds, "graph") {
+				t.Fatalf("graph plugin must declare graph query result kind")
+			}
+			if expected.workflowRuntime != "" && caps.Compute.Workflow.RuntimeAPI != expected.workflowRuntime {
+				t.Fatalf("workflow runtime_api = %q, want %q", caps.Compute.Workflow.RuntimeAPI, expected.workflowRuntime)
+			}
+			for _, mode := range expected.scriptModes {
+				if !contains(caps.Compute.Script.Modes, mode) {
+					t.Fatalf("script modes %v do not include %q", caps.Compute.Script.Modes, mode)
+				}
+			}
+			for _, language := range expected.scriptLanguages {
+				if !contains(caps.Compute.Script.Languages, language) {
+					t.Fatalf("script languages %v do not include %q", caps.Compute.Script.Languages, language)
+				}
+			}
+		})
+	}
+}
+
+func TestExtensionRuntimeRegistrationOmitsCapabilities(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("failed to locate test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "../../.."))
+
+	testCases := []struct {
+		name      string
+		path      string
+		required  []string
+		forbidden []string
+	}{
+		{
+			name: "python_workflow",
+			path: "engines/python-workflow/api_server.py",
+			required: []string{
+				`"engine_type": "python_workflow"`,
+				`"is_builtin": True`,
+			},
+			forbidden: []string{`"capabilities"`, `"schema_version"`, `"engine_family"`, `"compute"`, `"extensions"`, `"workflow_runtime"`},
+		},
+		{
+			name: "spark_workflow",
+			path: "engines/spark-workflow/api_server.py",
+			required: []string{
+				`"engine_type": "spark_workflow"`,
+				`"is_builtin": True`,
+			},
+			forbidden: []string{`"capabilities"`, `"schema_version"`, `"engine_family"`, `"compute"`, `"extensions"`, `"workflow_runtime"`},
+		},
+		{
+			name: "math_workflow",
+			path: "engines/math-workflow/api_server.py",
+			required: []string{
+				`"engine_type": "math_workflow"`,
+				`"is_builtin": True`,
+			},
+			forbidden: []string{`"capabilities"`, `"schema_version"`, `"engine_family"`, `"compute"`, `"extensions"`, `"workflow_runtime"`},
+		},
+		{
+			name: "jupyter",
+			path: "engines/jupyter/register.py",
+			required: []string{
+				`"engine_type": "jupyter"`,
+				`"is_builtin": True`,
+			},
+			forbidden: []string{`"capabilities"`, `"schema_version"`, `"engine_family"`, `"compute"`, `"extensions"`, `"script_runtime"`, `"shell"`},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			contentBytes, err := os.ReadFile(filepath.Join(repoRoot, tc.path))
+			if err != nil {
+				t.Fatalf("read runtime registration file: %v", err)
+			}
+			content := string(contentBytes)
+			for _, fragment := range tc.required {
+				if !strings.Contains(content, fragment) {
+					t.Fatalf("%s missing canonical capability fragment %s", tc.path, fragment)
+				}
+			}
+			for _, fragment := range tc.forbidden {
+				if strings.Contains(content, fragment) {
+					t.Fatalf("%s contains forbidden capability fragment %s", tc.path, fragment)
+				}
+			}
+		})
+	}
+}
+
+func hasStorage(caps plugin.EngineCapabilities) bool {
+	return caps.Storage != nil
+}
+
+func hasQuery(caps plugin.EngineCapabilities) bool {
+	return caps.Compute != nil && caps.Compute.Query != nil && caps.Compute.Query.Supported
+}
+
+func hasWorkflow(caps plugin.EngineCapabilities) bool {
+	return caps.Compute != nil && caps.Compute.Workflow != nil && caps.Compute.Workflow.Supported
+}
+
+func hasScript(caps plugin.EngineCapabilities) bool {
+	return caps.Compute != nil && caps.Compute.Script != nil && caps.Compute.Script.Supported
+}
+
+func contains(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
 }

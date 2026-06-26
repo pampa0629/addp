@@ -130,7 +130,7 @@ const uri = buildLocator({
   <ResourceTreePicker
     v-model="selection"
     api-base-url="/api/v1/meta"
-    :engine-types="['postgresql', 'mysql']"
+    :engine-families="['tabular', 'dynamic_schema']"
     mode="item"
     :selectable-filter="node => node.type === 'table'"
     @select="handleSelect"
@@ -190,9 +190,12 @@ import {
 
 ### 预览组件
 
+预览组件从 `@common-ui/previews` 单独导入，使用方模块需要在自己的 `package.json` 中声明对应预览依赖。
+
 - **GeoJsonPreview** - GeoJSON 文件预览（带地图）
 - **TablePreview** - 表格数据预览，支持空间字段渲染
-- **ImagePreview** - 图片预览
+- **ImagePreview** - 图片预览（依赖 `geotiff` 支持 TIFF 渲染）
+- **MarkdownPreview / DocxPreview / PptxPreview / PdfPreview** - 文档预览组件
 
 地图预览、CRS registry、底图 profile 和 GCJ-02 展示适配规则见 [Map 前端组件说明](./map/README.md)。
 

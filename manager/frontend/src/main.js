@@ -19,9 +19,8 @@ import {
 } from '@element-plus/icons-vue'
 import App from './App.vue'
 import { loadRuntimePlugins } from '@/plugins/previews/manifestLoader'
-import { ImagePreview } from '@common-ui'
 import {
-  ObjectCatalogPreview, JsonPreview, PdfPreview, ContainerPreview,
+  ObjectCatalogPreview, ImagePreview, JsonPreview, PdfPreview, ContainerPreview,
   DocxPreview, PptxPreview, TextPreview, UnsupportedPreview, MarkdownPreview, VideoPreview
 } from '@common-ui/previews'
 import {

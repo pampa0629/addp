@@ -57,7 +57,7 @@ func TestQuickViewCapabilityUsesDirectGeoJSONForSmallSpatialTable(t *testing.T) 
 				t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectGeoJSON)
 			}
 			if capability.DefaultTileCacheID != nil {
-				t.Fatalf("default_tile_cache_id = %#v, want nil for direct GeoJSON", capability.DefaultTileCacheID)
+				t.Fatalf("default_vector_tile_cache_id = %#v, want nil for direct GeoJSON", capability.DefaultTileCacheID)
 			}
 			if !strings.Contains(capability.QuickView.GeoJSONURL, fmt.Sprintf("page_size=%d", recordCount)) {
 				t.Fatalf("geojson_url = %s, want page_size=%d", capability.QuickView.GeoJSONURL, recordCount)
@@ -109,7 +109,7 @@ func TestQuickViewCapabilityUsesLocatorDirectGeoJSONForSmallSpatialItem(t *testi
 		t.Fatalf("can_use_quick_view = false, want true; reason=%s", capability.UnavailableReason)
 	}
 	if capability.CanGenerateTileCache {
-		t.Fatal("can_generate_tile_cache = true, want false for non-tile locator direct GeoJSON source")
+		t.Fatal("can_generate_vector_tile_cache = true, want false for non-tile locator direct GeoJSON source")
 	}
 	if capability.RenderSource != QuickViewRenderSourceDirectGeoJSON {
 		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectGeoJSON)
@@ -122,6 +122,319 @@ func TestQuickViewCapabilityUsesLocatorDirectGeoJSONForSmallSpatialItem(t *testi
 	}
 	if !strings.Contains(capability.QuickView.GeoJSONURL, "page_size=127") {
 		t.Fatalf("geojson_url = %s, want full page_size=127", capability.QuickView.GeoJSONURL)
+	}
+}
+
+func TestQuickViewCapabilityUsesDirectTIFFForSmallRasterItem(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{
+		DirectTIFFMaxBytes:  50 * 1024 * 1024,
+		DirectTIFFMaxPixels: 64 * 1000 * 1000,
+	})
+	locator := "addp://engine/26/path/rasters/small.tif?type=file&item_id=99"
+	itemFingerprint := commonModels.GenerateItemFingerprint(26, "rasters/small.tif")
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: itemFingerprint,
+			Locator:         locator,
+		},
+		EngineID: 26,
+		Raster: &RasterQuickViewSource{
+			Format:              "tiff",
+			Profile:             "geotiff",
+			SizeBytes:           8 * 1024 * 1024,
+			Width:               2048,
+			Height:              2048,
+			SourceSRID:          4326,
+			ExtentSRID:          4326,
+			Extent:              []float64{110, 20, 120, 30},
+			PreviewURL:          "/api/v1/manager/storage-stream?engine_id=26&storage_ref=rasters%2Fsmall.tif",
+			ClientReadMode:      "full_file",
+			ClientRenderLibrary: "geotiff.js",
+		},
+	})
+	if err != nil {
+		t.Fatalf("build raster quick view capability: %v", err)
+	}
+	if !capability.CanUseQuickView {
+		t.Fatalf("can_use_quick_view = false, want true; reason=%s", capability.UnavailableReason)
+	}
+	if capability.RenderSource != QuickViewRenderSourceDirectTIFF {
+		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectTIFF)
+	}
+	if capability.PreferredMode != models.QuickViewPreferredModeMapQuickView || capability.ActiveMode != models.QuickViewPreferredModeMapQuickView {
+		t.Fatalf("preview mode = preferred:%s active:%s, want map_quick_view default for raster item", capability.PreferredMode, capability.ActiveMode)
+	}
+	if capability.QuickView.PreviewURL == "" {
+		t.Fatalf("preview_url missing in quick_view: %#v", capability.QuickView)
+	}
+	if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
+		t.Fatalf("tile generation = can:%v available:%v, want false for raster phase 1", capability.CanGenerateTileCache, capability.TileCacheGeneration.Available)
+	}
+	if capability.Raster == nil || capability.Raster.Profile != "geotiff" || capability.Raster.ClientRenderLibrary != "geotiff.js" {
+		t.Fatalf("raster info = %#v, want geotiff geotiff.js", capability.Raster)
+	}
+}
+
+func TestQuickViewCapabilityRespectsExistingBasicPreviewPreferenceForRasterItem(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{
+		DirectTIFFMaxBytes:  50 * 1024 * 1024,
+		DirectTIFFMaxPixels: 64 * 1000 * 1000,
+	})
+	locator := "addp://engine/26/path/rasters/small.tif?type=file&item_id=99"
+	itemFingerprint := commonModels.GenerateItemFingerprint(26, "rasters/small.tif")
+	if err := svc.repo.UpdatePreferredMode(7, itemFingerprint, locator, models.QuickViewPreferredModeBasicPreview); err != nil {
+		t.Fatalf("save existing preference: %v", err)
+	}
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: itemFingerprint,
+			Locator:         locator,
+		},
+		EngineID: 26,
+		Raster: &RasterQuickViewSource{
+			Format:              "tiff",
+			Profile:             "geotiff",
+			SizeBytes:           8 * 1024 * 1024,
+			Width:               2048,
+			Height:              2048,
+			SourceSRID:          4326,
+			ExtentSRID:          4326,
+			Extent:              []float64{110, 20, 120, 30},
+			PreviewURL:          "/api/v1/manager/storage-stream?engine_id=26&storage_ref=rasters%2Fsmall.tif",
+			ClientReadMode:      "full_file",
+			ClientRenderLibrary: "geotiff.js",
+		},
+	})
+	if err != nil {
+		t.Fatalf("build raster quick view capability: %v", err)
+	}
+	if !capability.CanUseQuickView || capability.RenderSource != QuickViewRenderSourceDirectTIFF {
+		t.Fatalf("raster quick view capability = can:%v source:%s", capability.CanUseQuickView, capability.RenderSource)
+	}
+	if capability.PreferredMode != models.QuickViewPreferredModeBasicPreview || capability.ActiveMode != models.QuickViewPreferredModeBasicPreview {
+		t.Fatalf("preview mode = preferred:%s active:%s, want existing basic_preview preference", capability.PreferredMode, capability.ActiveMode)
+	}
+}
+
+func TestQuickViewCapabilityRequiresCOGForLargeRasterItem(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{
+		DirectTIFFMaxBytes:  50 * 1024 * 1024,
+		DirectTIFFMaxPixels: 64 * 1000 * 1000,
+	})
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: commonModels.GenerateItemFingerprint(26, "rasters/large.tif"),
+			Locator:         "addp://engine/26/path/rasters/large.tif?type=file&item_id=100",
+		},
+		EngineID: 26,
+		Raster: &RasterQuickViewSource{
+			Format:     "tiff",
+			Profile:    "geotiff",
+			SizeBytes:  900 * 1024 * 1024,
+			Width:      120000,
+			Height:     80000,
+			SourceSRID: 4326,
+			ExtentSRID: 4326,
+			Extent:     []float64{110, 20, 120, 30},
+			PreviewURL: "/api/v1/manager/storage-stream?engine_id=26&storage_ref=rasters%2Flarge.tif",
+		},
+	})
+	if err != nil {
+		t.Fatalf("build raster quick view capability: %v", err)
+	}
+	if capability.CanUseQuickView {
+		t.Fatal("can_use_quick_view = true, want unavailable for large raster without managed COG")
+	}
+	if capability.UnavailableReason != RasterUnavailableReasonRequiresCOGGeneration {
+		t.Fatalf("unavailable_reason = %q, want %q", capability.UnavailableReason, RasterUnavailableReasonRequiresCOGGeneration)
+	}
+	if capability.Raster == nil || capability.Raster.RecommendedAction != "create_cog" {
+		t.Fatalf("raster info = %#v, want create_cog recommendation", capability.Raster)
+	}
+	if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
+		t.Fatalf("tile generation = can:%v available:%v, want false for raster phase 1", capability.CanGenerateTileCache, capability.TileCacheGeneration.Available)
+	}
+}
+
+func TestQuickViewCapabilityUsesReadyRasterCOGForLargeRasterItem(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{
+		DirectTIFFMaxBytes:  50 * 1024 * 1024,
+		DirectTIFFMaxPixels: 64 * 1000 * 1000,
+	})
+	locator := "addp://engine/26/path/rasters/large.tif?type=file&item_id=100"
+	fingerprint := commonModels.GenerateItemFingerprint(26, "rasters/large.tif")
+	extentSRID := 4326
+	result := &models.RasterCOG{
+		TenantID:        7,
+		ItemFingerprint: fingerprint,
+		Locator:         locator,
+		SourceEngineID:  26,
+		SourceProfile:   "geotiff",
+		SourceSizeBytes: 900 * 1024 * 1024,
+		TargetKind:      models.RasterCOGTargetKindMinIO,
+		StorageRef:      `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/cog/large.tif"}`,
+		FileName:        "large.cog.tif",
+		SizeBytes:       480 * 1024 * 1024,
+		Width:           120000,
+		Height:          80000,
+		SourceSRID:      4326,
+		Extent:          datatypes.JSON([]byte(`[110,20,120,30]`)),
+		ExtentSRID:      &extentSRID,
+		Status:          models.RasterCOGStatusReady,
+		Metadata:        commonModels.JSONMap{},
+	}
+	if err := repository.NewRasterCOGRepository(db).Create(context.Background(), result); err != nil {
+		t.Fatalf("create raster COG result: %v", err)
+	}
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: fingerprint,
+			Locator:         locator,
+		},
+		EngineID: 26,
+		Raster: &RasterQuickViewSource{
+			Format:     "tiff",
+			Profile:    "geotiff",
+			SizeBytes:  900 * 1024 * 1024,
+			Width:      120000,
+			Height:     80000,
+			SourceSRID: 4326,
+			ExtentSRID: 4326,
+			Extent:     []float64{110, 20, 120, 30},
+			PreviewURL: "/api/v1/manager/storage-stream?engine_id=26&storage_ref=rasters%2Flarge.tif",
+		},
+	})
+	if err != nil {
+		t.Fatalf("build raster quick view capability: %v", err)
+	}
+	if !capability.CanUseQuickView {
+		t.Fatalf("can_use_quick_view = false, want ready raster COG; reason=%s", capability.UnavailableReason)
+	}
+	if capability.RenderSource != QuickViewRenderSourceClientCOG {
+		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceClientCOG)
+	}
+	if capability.QuickView.PreviewURL != fmt.Sprintf("/api/v1/manager/raster_cog/%d/content", result.ID) {
+		t.Fatalf("preview_url = %q, want raster COG content URL", capability.QuickView.PreviewURL)
+	}
+	if capability.Raster == nil || capability.Raster.Profile != "cog" || capability.Raster.ClientReadMode != "range" {
+		t.Fatalf("raster info = %#v, want COG range render", capability.Raster)
+	}
+}
+
+func TestRasterQuickViewSourceFromAttributesUsesMetaFacts(t *testing.T) {
+	attrs := map[string]interface{}{
+		"item": map[string]interface{}{
+			"data_type": "media",
+			"format":    "tiff",
+		},
+		"storage": map[string]interface{}{
+			"total_size":    int64(900 * 1024 * 1024),
+			"physical_path": "rasters/large-cog.tif",
+		},
+		"type_info": map[string]interface{}{
+			"media": map[string]interface{}{
+				"width":  int64(120000),
+				"height": int64(80000),
+			},
+		},
+		"format_info": map[string]interface{}{
+			"tiff": map[string]interface{}{
+				"profile":              "cog",
+				"is_tiled":             true,
+				"has_overviews":        true,
+				"is_cloud_optimized":   true,
+				"cog_check_level":      "heuristic",
+				"nodata":               -32768.0,
+				"sample_min":           -49.0,
+				"sample_max":           406.0,
+				"display_min":          -49.0,
+				"display_max":          406.0,
+				"display_range_method": "metadata_statistics",
+			},
+		},
+		"capabilities": map[string]interface{}{
+			"spatial": map[string]interface{}{
+				"srid":        4326,
+				"extent":      []interface{}{110.0, 20.0, 120.0, 30.0},
+				"extent_srid": 4326,
+			},
+		},
+	}
+
+	raster := RasterQuickViewSourceFromAttributes(attrs, "addp://engine/26/path/rasters/large-cog.tif?type=file&item_id=101", 26)
+	if raster == nil {
+		t.Fatal("raster source is nil")
+	}
+	if raster.Profile != "cog" || raster.SizeBytes != int64(900*1024*1024) || raster.Width != 120000 || raster.Height != 80000 {
+		t.Fatalf("raster facts = %#v, want COG size and dimensions", raster)
+	}
+	if raster.PreviewURL == "" || !strings.Contains(raster.PreviewURL, "/api/v1/manager/storage-stream?") {
+		t.Fatalf("preview_url = %q, want storage stream URL", raster.PreviewURL)
+	}
+	if raster.NoData == nil || *raster.NoData != -32768 || raster.DisplayMin == nil || *raster.DisplayMin != -49 || raster.DisplayMax == nil || *raster.DisplayMax != 406 {
+		t.Fatalf("raster render stats = nodata:%#v display:%#v/%#v", raster.NoData, raster.DisplayMin, raster.DisplayMax)
+	}
+	if raster.DisplayRangeMethod != "metadata_statistics" {
+		t.Fatalf("display_range_method = %q, want metadata_statistics", raster.DisplayRangeMethod)
+	}
+	if !strings.Contains(raster.PreviewURL, "engine_id=26") || !strings.Contains(raster.PreviewURL, "storage_ref=rasters%2Flarge-cog.tif") {
+		t.Fatalf("preview_url = %q, want file storage_ref", raster.PreviewURL)
+	}
+	if reason := rasterUnavailableReason(raster, 50*1024*1024, 64*1000*1000); reason != RasterUnavailableReasonRequiresManagedCOG {
+		t.Fatalf("raster unavailable reason = %q, want %q", reason, RasterUnavailableReasonRequiresManagedCOG)
+	}
+	if action := rasterRecommendedActionForReason(RasterUnavailableReasonRequiresManagedCOG); action != "create_managed_cog" {
+		t.Fatalf("recommended action = %q, want create_managed_cog", action)
+	}
+}
+
+func TestRasterQuickViewSourceFromObjectLocatorUsesStorageStream(t *testing.T) {
+	attrs := map[string]interface{}{
+		"item": map[string]interface{}{
+			"data_type": "media",
+			"format":    "tiff",
+		},
+		"type_info": map[string]interface{}{
+			"media": map[string]interface{}{
+				"width":      int64(1024),
+				"height":     int64(1024),
+				"size_bytes": int64(10 * 1024 * 1024),
+			},
+		},
+		"capabilities": map[string]interface{}{
+			"spatial": map[string]interface{}{
+				"srid":        4326,
+				"extent":      []interface{}{110.0, 20.0, 120.0, 30.0},
+				"extent_srid": 4326,
+			},
+		},
+	}
+
+	raster := RasterQuickViewSourceFromAttributes(attrs, "addp://engine/9/path/addp/rasters/small.tif?type=object&item_id=101", 0)
+	if raster == nil {
+		t.Fatal("raster source is nil")
+	}
+	if !strings.Contains(raster.PreviewURL, "/api/v1/manager/storage-stream?") {
+		t.Fatalf("preview_url = %q, want storage stream URL", raster.PreviewURL)
+	}
+	if !strings.Contains(raster.PreviewURL, "engine_id=9") || !strings.Contains(raster.PreviewURL, "storage_ref=addp%2Frasters%2Fsmall.tif") {
+		t.Fatalf("preview_url = %q, want object bucket/path storage_ref", raster.PreviewURL)
 	}
 }
 
@@ -395,7 +708,7 @@ func TestQuickViewPreferenceUsesStandardItemFingerprint(t *testing.T) {
 		TenantID:        7,
 		ItemFingerprint: itemFingerprint,
 		Locator:         locator,
-	}, "table_geojson", nil)
+	}, models.QuickViewPreferredModeBasicPreview, nil)
 	if err != nil {
 		t.Fatalf("update preferred mode by standard item fingerprint: %v", err)
 	}
@@ -423,7 +736,7 @@ func TestQuickViewPreferenceRejectsLocatorWithoutItemFingerprint(t *testing.T) {
 	err := svc.UpdatePreferredModeByIdentity(context.Background(), QuickViewIdentity{
 		TenantID: 7,
 		Locator:  "addp://engine/11/path/public/roads?type=table&item_id=99",
-	}, "table_geojson", nil)
+	}, models.QuickViewPreferredModeBasicPreview, nil)
 	if err == nil || !strings.Contains(err.Error(), "item identity is missing") {
 		t.Fatalf("update preferred mode error = %v, want missing item identity", err)
 	}
@@ -452,7 +765,7 @@ func TestQuickViewCapabilityPrefersReadyTileCacheResultOverDirectGeoJSON(t *test
 		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceCachedTile)
 	}
 	if capability.DefaultTileCacheID == nil || *capability.DefaultTileCacheID != tileCacheResult.ID {
-		t.Fatalf("default_tile_cache_id = %#v, want %d", capability.DefaultTileCacheID, tileCacheResult.ID)
+		t.Fatalf("default_vector_tile_cache_id = %#v, want %d", capability.DefaultTileCacheID, tileCacheResult.ID)
 	}
 	if capability.QuickView.TileFormat != "mvt" {
 		t.Fatalf("tile_format = %s, want mvt", capability.QuickView.TileFormat)
@@ -502,7 +815,7 @@ func TestQuickViewCapabilityUsesSourceTransformRealtimeTileForLargePGTableWithou
 		t.Fatalf("can_use_quick_view = false, want source-transform realtime tile; reason=%s", capability.UnavailableReason)
 	}
 	if !capability.CanGenerateTileCache {
-		t.Fatal("can_generate_tile_cache = false, want true for PostGIS source")
+		t.Fatal("can_generate_vector_tile_cache = false, want true for PostGIS source")
 	}
 	if capability.RenderSource != QuickViewRenderSourceRealtimeTile {
 		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceRealtimeTile)
@@ -568,7 +881,7 @@ func TestQuickViewCapabilityUsesSource3857RealtimeTileWhenResolved(t *testing.T)
 		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceRealtimeTile)
 	}
 	if !capability.CanGenerateTileCache {
-		t.Fatal("can_generate_tile_cache = false, want true for PostGIS source")
+		t.Fatal("can_generate_vector_tile_cache = false, want true for PostGIS source")
 	}
 	if capability.RealtimeTile == nil {
 		t.Fatal("realtime_tile is nil")
@@ -681,7 +994,7 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithQuickViewOpt
 		t.Fatalf("can_use_quick_view = false, want realtime tile quick view; reason=%s", capability.UnavailableReason)
 	}
 	if !capability.CanGenerateTileCache {
-		t.Fatal("can_generate_tile_cache = false, want true for realtime tile source")
+		t.Fatal("can_generate_vector_tile_cache = false, want true for realtime tile source")
 	}
 	if capability.RenderSource != QuickViewRenderSourceRealtimeTile {
 		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceRealtimeTile)
@@ -694,7 +1007,7 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithQuickViewOpt
 			capability.QuickView.Extent, capability.QuickView.ExtentSRID)
 	}
 	if capability.DefaultTileCacheID != nil {
-		t.Fatalf("default_tile_cache_id = %#v, want nil for realtime tile", capability.DefaultTileCacheID)
+		t.Fatalf("default_vector_tile_cache_id = %#v, want nil for realtime tile", capability.DefaultTileCacheID)
 	}
 }
 
@@ -913,7 +1226,7 @@ func TestQuickViewCapabilityIgnoresGeneratingAndFailedTileCacheResultsWhenReadyE
 		t.Fatalf("render_source = %s, want tile cache", capability.RenderSource)
 	}
 	if capability.DefaultTileCacheID == nil || *capability.DefaultTileCacheID != ready.ID {
-		t.Fatalf("default_tile_cache_id = %#v, want ready tile cache result %d", capability.DefaultTileCacheID, ready.ID)
+		t.Fatalf("default_vector_tile_cache_id = %#v, want ready tile cache result %d", capability.DefaultTileCacheID, ready.ID)
 	}
 }
 
@@ -965,7 +1278,7 @@ func TestQuickViewCapabilityFindsReadyTileCacheResultByItemFingerprint(t *testin
 		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceCachedTile)
 	}
 	if capability.DefaultTileCacheID == nil || *capability.DefaultTileCacheID != tileCacheResult.ID {
-		t.Fatalf("default_tile_cache_id = %#v, want %d", capability.DefaultTileCacheID, tileCacheResult.ID)
+		t.Fatalf("default_vector_tile_cache_id = %#v, want %d", capability.DefaultTileCacheID, tileCacheResult.ID)
 	}
 }
 
@@ -1041,7 +1354,7 @@ func TestQuickViewCapabilityFallsBackToDirectGeoJSONAfterDefaultTileCacheResultD
 		t.Fatalf("get quick view status before delete: %v", err)
 	}
 	if capability.DefaultTileCacheID == nil {
-		t.Fatal("default_tile_cache_id is nil before delete, want ready tile cache result")
+		t.Fatal("default_vector_tile_cache_id is nil before delete, want ready tile cache result")
 	}
 
 	repo := repository.NewTileCacheRepository(db)
@@ -1060,7 +1373,7 @@ func TestQuickViewCapabilityFallsBackToDirectGeoJSONAfterDefaultTileCacheResultD
 		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectGeoJSON)
 	}
 	if capability.DefaultTileCacheID != nil {
-		t.Fatalf("default_tile_cache_id = %#v, want nil after deleted tile cache result fallback", capability.DefaultTileCacheID)
+		t.Fatalf("default_vector_tile_cache_id = %#v, want nil after deleted tile cache result fallback", capability.DefaultTileCacheID)
 	}
 }
 
@@ -1125,7 +1438,7 @@ func TestQuickViewCapabilityUsesLatestReadyTileCacheResult(t *testing.T) {
 		t.Fatalf("render_source = %s, want tile cache", capability.RenderSource)
 	}
 	if capability.DefaultTileCacheID == nil || *capability.DefaultTileCacheID != latestReady.ID {
-		t.Fatalf("default_tile_cache_id = %#v, want latest ready tile cache result %d", capability.DefaultTileCacheID, latestReady.ID)
+		t.Fatalf("default_vector_tile_cache_id = %#v, want latest ready tile cache result %d", capability.DefaultTileCacheID, latestReady.ID)
 	}
 }
 

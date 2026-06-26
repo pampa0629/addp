@@ -17,6 +17,7 @@ const (
 	CRSDefinitionSourcePostGISSpatialRefSys = "postgis_spatial_ref_sys"
 	CRSDefinitionSourceSidecarPRJ           = "sidecar_prj"
 	CRSDefinitionSourceGeoPackageSRS        = "geopackage_srs"
+	CRSDefinitionSourceGeoTIFFTags          = "geotiff_tags"
 )
 
 // SpatialInfo describes spatial facts that cut across data types.

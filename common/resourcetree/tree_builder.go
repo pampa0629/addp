@@ -724,7 +724,7 @@ func EngineIcon(engine *models.Engine) string {
 		return "DocumentText"
 	case "neo4j":
 		return "Share"
-	case "python_workflow", "spark_workflow", "math_workflow", "spark":
+	case "spark":
 		return "Grid"
 	case "jupyter":
 		return "CodeBracket"

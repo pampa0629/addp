@@ -54,6 +54,38 @@ func assertShapefileLogicalItem(t *testing.T, attrs models.JSONMap, wantPaths, u
 	}
 }
 
+func assertGeoTIFFLogicalItem(t *testing.T, attrs models.JSONMap, wantPaths []string) {
+	t.Helper()
+	if got := commonJSON.String(attrs, "item", "layout"); got != string(format.LayoutMulti) {
+		t.Fatalf("item.layout = %q, want multi", got)
+	}
+	if got := commonJSON.String(attrs, "item", "format"); got != string(format.FormatTIFF) {
+		t.Fatalf("item.format = %q, want tiff", got)
+	}
+	if got := commonJSON.String(attrs, "storage", "bucket"); got != "addp" {
+		t.Fatalf("storage.bucket = %q, want addp", got)
+	}
+	if got := commonJSON.String(attrs, "storage", "physical_path"); got != "addp/image/srtm_40_01.tif" {
+		t.Fatalf("storage.physical_path = %q, want addp/image/srtm_40_01.tif", got)
+	}
+	refs := commonJSON.InterfaceSlice(commonJSON.Section(attrs, "item")["refs"])
+	if len(refs) != len(wantPaths) {
+		t.Fatalf("item.refs = %#v, want %d refs", refs, len(wantPaths))
+	}
+	paths := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		item := commonJSON.InterfaceMap(ref)
+		if path := commonJSON.InterfaceString(item["path"]); path != "" {
+			paths = append(paths, path)
+		}
+	}
+	for _, want := range wantPaths {
+		if !containsString(paths, want) {
+			t.Fatalf("item.refs paths = %#v, want %s", paths, want)
+		}
+	}
+}
+
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

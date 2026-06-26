@@ -5,9 +5,9 @@ Spark Connector - 动态连接到用户注册的Spark集群
 
 import os
 import logging
-import requests
 from typing import Dict, Optional
 from pyspark.sql import SparkSession
+from system_client import get_engine
 
 logger = logging.getLogger(__name__)
 
@@ -20,15 +20,11 @@ class SparkConnector:
 
     def __init__(self):
         self.sessions: Dict[int, SparkSession] = {}  # {engine_id: SparkSession}
-        self.system_url = os.getenv('SYSTEM_URL', 'http://localhost:8180')
 
     def get_engine_from_system(self, engine_id: int) -> dict:
         """从System Backend获取资源信息"""
         try:
-            response = requests.get(f'{self.system_url}/api/engines/{engine_id}')
-            if response.status_code != 200:
-                raise ValueError(f"Failed to get engine {engine_id}: {response.text}")
-            return response.json()
+            return get_engine(engine_id)
         except Exception as e:
             logger.error(f"Failed to fetch engine {engine_id} from System: {e}")
             raise

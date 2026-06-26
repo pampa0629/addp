@@ -1,48 +1,43 @@
 # ADDP 计算引擎开发指南
 
-本目录集中管理所有ADDP计算引擎服务。
+本目录集中管理 ADDP 工作流和 Notebook 运行时。Python Workflow、Spark Workflow、Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范。
 
 ## 目录结构
 
 ```
 engines/
-├── python_workflow/    # Python Workflow 空间计算引擎(Python)
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── api_server.py
-│   ├── operators.py
-│   └── workflow_engine.py
-├── spark-workflow/       # Spark 工作流空间计算引擎(未来)
-└── README.md           # 本文件
+├── python-workflow/    # Python Workflow 空间与数据处理工作流引擎，默认端口 8099
+├── spark-workflow/     # Spark Workflow 分布式工作流引擎，默认端口 8098
+├── math-workflow/      # Math Workflow 数学工作流参考实现，默认端口 8089
+├── jupyter/            # Jupyter Notebook / Lab 运行时，API 默认端口 8097
+└── docs/               # 引擎 API 与设计文档
 ```
 
 ## 引擎分类
 
-### API引擎 (api.*)
-通过HTTP API调用的内置模块,资源类型命名规范: `api.{module}`
+### 工作流运行时
 
-**已有引擎**:
-- `meta` - 元数据管理模块(元数据扫描等算子)
-- `transfer` - 数据传输模块(数据传输等算子)
-- `manager` - 数据管理模块(瓦片生成等算子)
-- `python_workflow` - Python Workflow 引擎(空间计算算子)
+通过 `EnginePlugin + WorkflowRuntimeProvider` 纳入统一引擎体系，能力声明为 `compute.workflow.supported=true`。
 
-**规划中**:
-- `spark_workflow` - Spark Workflow 引擎(大数据空间计算)
+**已有引擎**：
+- `python_workflow` - Python Workflow 引擎，适合中小规模空间与数据处理。
+- `spark_workflow` - Spark Workflow 引擎，适合分布式计算。
+- `math_workflow` - Math Workflow 参考实现，开发环境可自动启动服务但不会自动注册；需要使用时在 System 引擎管理中按扩展引擎手动注册。
 
-### 标准库引擎
-通过标准协议(JDBC/S3)访问的外部数据源:
-- `postgresql`, `mysql`, `doris` - 数据库
-- `spark` - Apache Spark
-- `minio`, `s3`, `oss` - 对象存储
+### 脚本 / Notebook 运行时
 
-## 统一算子API规范
+通过 `EnginePlugin + ScriptRuntimeProvider` 纳入统一引擎体系，能力声明为 `compute.script.supported=true`。
 
-所有API引擎必须提供以下标准HTTP API:
+**已有引擎**：
+- `jupyter` - Jupyter Notebook / Lab 运行时。
 
-### 1. 算子发现API
+## 工作流运行时 HTTP 协议
+
+工作流引擎对外实现 `addp.workflow/v1` HTTP 协议，业务模块不直接拼接这些 URL，而是通过 common engine 的 `WorkflowRuntimeProvider` 调用。
+
+### 1. 算子发现
 ```
-GET /api/{module}/operators
+GET /api/operators
 ```
 
 返回格式:
@@ -54,10 +49,11 @@ GET /api/{module}/operators
       "id": "buffer",
       "name": "buffer",
       "display_name": "缓冲区分析",
-      "type": "spatial",
+      "engine_type": "python_workflow",
       "category": "空间分析",
+      "category_path": ["空间分析"],
       "description": "对几何对象生成缓冲区",
-      "module": "python_workflow",
+      "execution_modes": ["workflow"],
       "parameters": [
         {
           "name": "distance",
@@ -67,28 +63,32 @@ GET /api/{module}/operators
           "min": 0
         }
       ],
-      "inputs": ["geometry"],
-      "outputs": ["geometry"]
+      "output_ports": [
+        {
+          "name": "default",
+          "type": "geodataframe",
+          "is_default": true,
+          "description": "缓冲区分析结果"
+        }
+      ]
     }
   ],
   "count": 1
 }
 ```
 
-### 2. 算子执行API
+### 2. 工作流执行
 ```
-POST /api/{module}/operators/:name/execute
+POST /api/workflow
 ```
 
 请求格式:
 ```json
 {
-  "params": {
-    "engine_id": 123,
-    "depth": "deep"
+  "workflow_def": {
+    "tasks": []
   },
-  "execute_now": true,
-  "task_name": "扫描任务1"
+  "input_data": {}
 }
 ```
 
@@ -96,27 +96,37 @@ POST /api/{module}/operators/:name/execute
 ```json
 {
   "status": "success",
-  "task_id": "task-123",
-  "task_status": "running",
-  "message": "任务已创建",
-  "created_at": "2025-01-15T10:00:00Z",
-  "result": {}
+  "execution_id": "uuid",
+  "final_result": {},
+  "all_results": {}
 }
+```
+
+### 3. 单算子 direct 调用
+```
+POST /api/operators/{name}/invoke
+```
+
+该接口只允许调用 `execution_modes` 包含 `direct` 的算子，用于业务模块受控调用单个算子。它不创建 Develop/Orchestrator/Monitor 任务；凡是需要调度、重试、跨模块编排或统一监控的执行，必须走工作流。
+
+### 4. 健康检查
+```
+GET /health
 ```
 
 ## 能力声明
 
-引擎能力统一使用 `engine.capabilities/v1` 结构，由 common engine 插件的 `Capabilities()` 方法声明。外部引擎启动自注册时也可以提交同结构的能力声明；未提交时，System 会按 `engine_type` 生成默认能力声明。
+引擎能力统一使用 `engine.capabilities/v1` 结构，由 common engine 插件的 `Capabilities()` 方法声明。内置运行时启动自注册时只提交身份和连接信息，System 按 `engine_type` 使用插件 `Capabilities()` 生成落库能力声明。
 
 能力只表达引擎自身 native / provider 能力，例如 `compute.workflow`、`compute.script`、`storage.catalog`、`storage.store`。不要在引擎能力中维护 Transfer、Preview、Develop 等模块对引擎的适配列表。
 
-工作流引擎的算子列表、参数、输出端口等动态能力不写入 `capabilities`，通过 `GET /api/operators` 和 common engine 的 `WorkflowRuntimeProvider.ListOperators()` 实时发现。
+工作流引擎的算子列表、参数、输出端口等动态能力不写入 `capabilities`，通过 `WorkflowRuntimeProvider.ListOperators()` 实时发现。
 
-## 引擎自动注册
+## 引擎注册
 
-引擎启动时应自动注册到System资源中心:
+工作流运行时必须先注册到 System 资源中心，才会成为 ADDP 可发现和可调用的引擎实例。生产内置运行时可以在启动时自注册；参考实现和用户自研扩展运行时可以在 System 引擎管理中手动注册。
 
-**注册端点**: `POST http://system-backend:8180/api/v1/internal/engines/register`
+**生产内置运行时自注册端点**: `POST http://system-backend:8180/api/v1/internal/engines/register`
 
 **注册数据格式**:
 ```json
@@ -128,41 +138,28 @@ POST /api/{module}/operators/:name/execute
     "protocol": "http",
     "port": 8099
   },
-  "is_builtin": true,
-  "capabilities": {
-    "schema_version": "engine.capabilities/v1",
-    "engine_type": "python_workflow",
-    "engine_family": "workflow",
-    "compute": {
-      "workflow": {
-        "supported": true,
-        "runtime_api": "addp.workflow/v1",
-        "dynamic_operators": true
-      }
-    }
-  }
+  "is_builtin": true
 }
 ```
+
+Math Workflow 是参考实现，随 `scripts/dev/start.sh -all` / `-develop` 启动服务，但不会自动注册。需要使用时，在 System 引擎管理中使用扩展引擎注册表单填入示例值、测试连接并保存。
 
 ## 新增引擎checklist
 
 创建新引擎时,请遵循以下步骤:
 
 - [ ] 在`engines/`目录下创建引擎目录
-- [ ] 实现统一算子API(`/api/operators`, `/api/operators/:op/execute`)
+- [ ] 实现 `addp.workflow/v1` HTTP 协议（`/health`、`/api/operators`、`/api/workflow`、`/api/operators/{name}/invoke`、`/api/executions/{id}`）
 - [ ] 在 common engine 插件中声明 `engine.capabilities/v1` 能力
-- [ ] 实现健康检查端点(`/health`)
-- [ ] 配置自动注册逻辑
-- [ ] 添加到docker-compose.yml
-- [ ] 更新启动脚本(scripts/dev/start.sh)
-- [ ] 编写README说明引擎功能和使用方法
+- [ ] 决定注册方式：生产运行时可配置启动自注册；参考实现可通过 System 引擎管理手动注册
+- [ ] 添加到 `scripts/dev/start.sh`
+- [ ] 编写 README 说明引擎功能和使用方法
 
 ## 参考实现
 
-- **Python Workflow Engine**: [engines/python_workflow/](./python_workflow/)
-  - Python FastAPI 实现
-  - 21个空间算子
-  - 自动注册到System
+- **Math Workflow Engine**: [math-workflow](./math-workflow/) - 最小工作流参考实现，手动注册示例。
+- **Python Workflow Engine**: [python-workflow](./python-workflow/) - Python 数据处理工作流实现。
+- **Spark Workflow Engine**: [spark-workflow](./spark-workflow/) - Spark / Sedona 工作流实现。
 
 ## 相关文档
 

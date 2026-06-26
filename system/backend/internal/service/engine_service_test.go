@@ -11,10 +11,13 @@ import (
 	"github.com/addp/system/internal/repository"
 )
 
-func TestGenerateDefaultCapabilitiesUsesStructuredPluginSchema(t *testing.T) {
+func TestEnsureCapabilitiesForEngineUsesStructuredPluginSchema(t *testing.T) {
 	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
 
-	capabilitiesJSON := service.generateDefaultCapabilities("postgresql")
+	capabilitiesJSON, err := service.ensureCapabilitiesForEngine("postgresql", nil)
+	if err != nil {
+		t.Fatalf("ensure capabilities: %v", err)
+	}
 
 	capabilities, err := engineplugin.ParseEngineCapabilities(capabilitiesJSON)
 	if err != nil {
@@ -28,6 +31,39 @@ func TestGenerateDefaultCapabilitiesUsesStructuredPluginSchema(t *testing.T) {
 	}
 }
 
+func TestEnsureCapabilitiesForPluginEngineIgnoresSubmittedCapabilities(t *testing.T) {
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	submitted := toJSONStringPtr(`{
+		"schema_version":"engine.capabilities/v1",
+		"engine_type":"postgresql",
+		"engine_family":"custom",
+		"extensions":{"runtime":true}
+	}`)
+
+	capabilitiesJSON, err := service.ensureCapabilitiesForEngine("postgresql", submitted)
+	if err != nil {
+		t.Fatalf("ensure capabilities: %v", err)
+	}
+	capabilities, err := engineplugin.ParseEngineCapabilities(capabilitiesJSON)
+	if err != nil {
+		t.Fatalf("parse capabilities: %v", err)
+	}
+	if capabilities.EngineFamily != "tabular" {
+		t.Fatalf("plugin capabilities should win, engine_family = %q", capabilities.EngineFamily)
+	}
+	if capabilities.Extensions != nil {
+		t.Fatalf("plugin capabilities should ignore submitted extensions: %#v", capabilities.Extensions)
+	}
+}
+
+func TestEnsureCapabilitiesForCustomEngineRequiresSubmittedCapabilities(t *testing.T) {
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+
+	if _, err := service.ensureCapabilitiesForEngine("custom_runtime", nil); !errors.Is(err, ErrUnsupportedEngineType) {
+		t.Fatalf("ensure capabilities error = %v, want ErrUnsupportedEngineType", err)
+	}
+}
+
 func TestValidateCapabilitiesRejectsLegacySchema(t *testing.T) {
 	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
 	legacy := toJSONStringPtr(`{"storage":[{"type":"relational_db","engine":"postgresql"}]}`)
@@ -37,14 +73,27 @@ func TestValidateCapabilitiesRejectsLegacySchema(t *testing.T) {
 	}
 }
 
+func TestValidateCapabilitiesRejectsUnsupportedSchemaVersion(t *testing.T) {
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	unsupported := toJSONStringPtr(`{
+		"schema_version":"engine.capabilities/v0",
+		"engine_type":"postgresql",
+		"engine_family":"tabular"
+	}`)
+
+	if err := service.validateCapabilities(unsupported); err == nil {
+		t.Fatal("expected unsupported capabilities schema_version to be rejected")
+	}
+}
+
 func TestShouldRefreshCapabilitiesKeepsValidStructuredSchema(t *testing.T) {
 	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
 	valid := toJSONStringPtr(`{
 		"schema_version":"engine.capabilities/v1",
-		"engine_type":"python_workflow",
-		"engine_family":"workflow",
-		"compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}},
-		"extensions":{"workflow_runtime":{"features":["dag"]}}
+		"engine_type":"postgresql",
+		"engine_family":"tabular",
+		"storage":{"catalog":{"supported":true,"real_time":true}},
+		"extensions":{"vendor":{"distribution":"community"}}
 	}`)
 
 	if service.shouldRefreshCapabilities(valid) {
@@ -61,6 +110,76 @@ func TestShouldRefreshCapabilitiesRefreshesEmptyOrLegacySchema(t *testing.T) {
 	}
 	if !service.shouldRefreshCapabilities(legacy) {
 		t.Fatal("expected legacy capabilities to be refreshed")
+	}
+}
+
+func TestPrepareEngineCapabilitiesUsesPluginSchemaForBuiltinEngine(t *testing.T) {
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	submitted := toJSONStringPtr(`{
+		"schema_version":"engine.capabilities/v1",
+		"engine_type":"python_workflow",
+		"engine_family":"workflow",
+		"compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}},
+		"extensions":{"vendor":{"distribution":"runtime"}}
+	}`)
+	engine := &models.Engine{
+		EngineType:   "python_workflow",
+		IsBuiltin:    true,
+		Capabilities: submitted,
+	}
+
+	if err := service.prepareEngineCapabilities(engine); err != nil {
+		t.Fatalf("prepareEngineCapabilities: %v", err)
+	}
+	capabilities, err := engineplugin.ParseEngineCapabilities(string(*engine.Capabilities))
+	if err != nil {
+		t.Fatalf("parse capabilities: %v", err)
+	}
+	if capabilities.EngineType != "python_workflow" || capabilities.EngineFamily != "workflow" {
+		t.Fatalf("unexpected capabilities identity: %#v", capabilities)
+	}
+	if capabilities.Extensions != nil {
+		t.Fatalf("builtin capabilities should come from plugin schema without runtime-submitted extensions: %#v", capabilities.Extensions)
+	}
+}
+
+func TestPrepareEngineCapabilitiesKeepsStructuredCapabilitiesForNonBuiltinEngine(t *testing.T) {
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	submitted := toJSONStringPtr(`{
+		"schema_version":"engine.capabilities/v1",
+		"engine_type":"custom_runtime",
+		"engine_family":"custom",
+		"extensions":{"vendor":{"distribution":"runtime"}}
+	}`)
+	engine := &models.Engine{
+		EngineType:   "custom_runtime",
+		IsBuiltin:    false,
+		Capabilities: submitted,
+	}
+
+	if err := service.prepareEngineCapabilities(engine); err != nil {
+		t.Fatalf("prepareEngineCapabilities: %v", err)
+	}
+	if string(*engine.Capabilities) != string(*submitted) {
+		t.Fatalf("non-builtin capabilities changed: got %s want %s", *engine.Capabilities, *submitted)
+	}
+}
+
+func TestPrepareEngineCapabilitiesRejectsMismatchedCustomCapabilities(t *testing.T) {
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	submitted := toJSONStringPtr(`{
+		"schema_version":"engine.capabilities/v1",
+		"engine_type":"other_runtime",
+		"engine_family":"custom"
+	}`)
+	engine := &models.Engine{
+		EngineType:   "custom_runtime",
+		IsBuiltin:    false,
+		Capabilities: submitted,
+	}
+
+	if err := service.prepareEngineCapabilities(engine); err == nil || !strings.Contains(err.Error(), "engine_type 必须为 custom_runtime") {
+		t.Fatalf("prepareEngineCapabilities error = %v, want engine_type mismatch", err)
 	}
 }
 

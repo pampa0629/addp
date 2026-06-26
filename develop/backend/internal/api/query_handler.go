@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,13 +15,15 @@ import (
 
 // QueryHandler 查询开发 API 处理器
 type QueryHandler struct {
-	sqlEngine *service.SQLEngineService
+	sqlEngine     *service.SQLEngineService
+	duckdbService *service.DuckDBService
 }
 
 // NewQueryHandler 创建 查询处理器
-func NewQueryHandler(sqlEngine *service.SQLEngineService) *QueryHandler {
+func NewQueryHandler(sqlEngine *service.SQLEngineService, duckdbService *service.DuckDBService) *QueryHandler {
 	return &QueryHandler{
-		sqlEngine: sqlEngine,
+		sqlEngine:     sqlEngine,
+		duckdbService: duckdbService,
 	}
 }
 
@@ -30,9 +34,9 @@ type TestConnectionRequest struct {
 
 // ExecuteQueryRequest 执行 查询请求
 type ExecuteQueryRequest struct {
-	EngineID uint   `json:"engine_id" binding:"required"`
-	Query    string `json:"query" binding:"required"`
-	Timeout  int    `json:"timeout"` // 超时时间（秒）
+	Content         map[string]interface{} `json:"content" binding:"required"`
+	ExecutionConfig map[string]interface{} `json:"execution_config" binding:"required"`
+	Timeout         int                    `json:"timeout"` // 超时时间（秒）
 }
 
 // ExecuteQueryResponse 执行 查询响应
@@ -120,8 +124,11 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 		return
 	}
 
-	// 验证查询内容
-	sql := strings.TrimSpace(req.Query)
+	sql, err := queryRequestSQL(req.Content)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if sql == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "查询语句不能为空"})
 		return
@@ -133,8 +140,43 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 		timeout = 30 // 默认 30 秒
 	}
 
+	queryMode := queryRequestMode(req.ExecutionConfig)
+	if queryMode == "duckdb" {
+		if _, ok := req.ExecutionConfig["engine_id"]; ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "DuckDB 联邦查询不得提供 execution_config.engine_id"})
+			return
+		}
+		if h.duckdbService == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "DuckDB 联邦查询服务未初始化"})
+			return
+		}
+		result, err := h.duckdbService.ExecuteQuery(c.Request.Context(), c.GetUint("tenant_id"), sql, timeout)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, ExecuteQueryResponse{
+			Columns:         result.Columns,
+			Rows:            result.Rows,
+			RowsCount:       result.RowCount,
+			RowsAffected:    int64(result.RowCount),
+			ExecutionTimeMs: result.ExecutionTimeMs,
+		})
+		return
+	}
+	if queryMode != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("不支持的查询执行模式: %s", queryMode)})
+		return
+	}
+
+	engineID, err := queryRequestEngineID(req.ExecutionConfig)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	// 获取引擎信息，判断是否为 NoSQL 原生查询引擎（MongoDB/Neo4j）
-	resource, err := h.sqlEngine.GetEngine(req.EngineID)
+	resource, err := h.sqlEngine.GetEngine(engineID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "获取引擎配置失败",
@@ -145,7 +187,7 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 
 	// NoSQL 引擎：所有操作统一走 ExecuteSQL（内部路由到原生驱动），不做 SELECT/DML 区分
 	if dbbridge.SupportsDirectQuery(resource.EngineType) {
-		result, err := h.sqlEngine.ExecuteSQL(c.Request.Context(), req.EngineID, sql, timeout)
+		result, err := h.sqlEngine.ExecuteSQL(c.Request.Context(), engineID, sql, timeout)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "查询执行失败",
@@ -171,7 +213,7 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 		strings.HasPrefix(sqlLower, "explain")
 
 	if isQuery {
-		result, err := h.sqlEngine.ExecuteSQL(c.Request.Context(), req.EngineID, sql, timeout)
+		result, err := h.sqlEngine.ExecuteSQL(c.Request.Context(), engineID, sql, timeout)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "查询执行失败",
@@ -186,7 +228,7 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 			RowsAffected: result.RowsAffected,
 		})
 	} else {
-		rowsAffected, err := h.sqlEngine.ExecuteDML(c.Request.Context(), req.EngineID, sql, timeout)
+		rowsAffected, err := h.sqlEngine.ExecuteDML(c.Request.Context(), engineID, sql, timeout)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "查询执行失败",
@@ -200,5 +242,60 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 			RowsCount:    0,
 			RowsAffected: rowsAffected,
 		})
+	}
+}
+
+func queryRequestSQL(content map[string]interface{}) (string, error) {
+	if content == nil {
+		return "", fmt.Errorf("content 不能为空")
+	}
+	if queryType, ok := content["query_type"].(string); ok && strings.TrimSpace(queryType) != "" && strings.ToLower(strings.TrimSpace(queryType)) != "sql" {
+		return "", fmt.Errorf("不支持的查询类型: %s", queryType)
+	}
+	query, ok := content["query"].(string)
+	if !ok {
+		return "", fmt.Errorf("content.query 必须提供查询内容")
+	}
+	return strings.TrimSpace(query), nil
+}
+
+func queryRequestMode(executionConfig map[string]interface{}) string {
+	if executionConfig == nil {
+		return ""
+	}
+	if mode, ok := executionConfig["query_mode"].(string); ok {
+		return strings.ToLower(strings.TrimSpace(mode))
+	}
+	return ""
+}
+
+func queryRequestEngineID(executionConfig map[string]interface{}) (uint, error) {
+	if executionConfig == nil {
+		return 0, fmt.Errorf("execution_config 不能为空")
+	}
+	switch value := executionConfig["engine_id"].(type) {
+	case float64:
+		if value <= 0 {
+			return 0, fmt.Errorf("普通查询必须提供 execution_config.engine_id")
+		}
+		return uint(value), nil
+	case int:
+		if value <= 0 {
+			return 0, fmt.Errorf("普通查询必须提供 execution_config.engine_id")
+		}
+		return uint(value), nil
+	case uint:
+		if value == 0 {
+			return 0, fmt.Errorf("普通查询必须提供 execution_config.engine_id")
+		}
+		return value, nil
+	case json.Number:
+		parsed, err := strconv.ParseUint(string(value), 10, 32)
+		if err != nil || parsed == 0 {
+			return 0, fmt.Errorf("普通查询必须提供 execution_config.engine_id")
+		}
+		return uint(parsed), nil
+	default:
+		return 0, fmt.Errorf("普通查询必须提供 execution_config.engine_id")
 	}
 }

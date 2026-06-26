@@ -21,14 +21,15 @@ system = SystemClient(
     base_url="http://localhost:8180",
     internal_api_key="your-internal-key"
 )
-engines = await system.list_engines()
+engines = await system.list_internal_engines()
 
 # 用户请求 (使用 JWT Token)
 develop = DevelopClient(
     base_url="http://localhost:8000",
     user_token="user-jwt-token"
 )
-operators = await develop.list_operators("python_workflow")
+workflow_engines = await develop.list_workflow_engines()
+operators = await develop.list_operators(workflow_engines[0]["id"])
 
 # 元数据搜索
 meta = MetaClient(

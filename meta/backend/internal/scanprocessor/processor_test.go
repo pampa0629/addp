@@ -1,14 +1,20 @@
 package scanprocessor
 
 import (
+	"context"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
@@ -89,6 +95,44 @@ func TestFileDetectedItemInputKeepsCatalogAndIndexPaths(t *testing.T) {
 	}
 }
 
+func TestFileDetectedMultiTIFFInputUsesPrimaryContentPath(t *testing.T) {
+	t.Parallel()
+
+	size := int64(162)
+	resource := &commonModels.Engine{ID: 9, EngineType: "static"}
+	parent := &models.MetaNode{ID: 3, FullName: "geotiff"}
+	detected := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			DataType:           datatype.Media,
+			Format:             string(format.FormatTIFF),
+			Layout:             format.LayoutMulti,
+			PrimaryContentPath: "geotiff/srtm_40_01.tif",
+			RefList: []dataitem.ItemRef{
+				{Path: "geotiff/srtm_40_01.tif", Role: "main", Required: true, Primary: true, Extension: ".tif"},
+				{Path: "geotiff/srtm_40_01.tfw", Role: "world_file", Extension: ".tfw"},
+				{Path: "geotiff/srtm_40_01.tif.aux.xml", Role: "auxiliary_metadata", Extension: ".aux.xml"},
+			},
+			SizeBytes: &size,
+		},
+	}
+	plan, ok := metacatalog.PlanFileCatalogDetectedItem(resource.ID, "/geotiff", detected, "file")
+	if !ok {
+		t.Fatal("file item plan should be created")
+	}
+
+	input := FileDetectedInput(resource, 1, parent, plan, detected, nil, nil, models.ScannedDepthDeep)
+
+	if input.ItemName != "srtm_40_01.tif" || input.FullName != "geotiff/srtm_40_01.tif" {
+		t.Fatalf("item identity = %q/%q, want primary TIFF", input.ItemName, input.FullName)
+	}
+	if input.PhysicalPath != "geotiff/srtm_40_01.tif" {
+		t.Fatalf("physical path = %q, want primary TIFF path", input.PhysicalPath)
+	}
+	if input.CatalogPathFor(input.PhysicalPath).StringPath() != "geotiff/srtm_40_01.tif" {
+		t.Fatalf("catalog path = %q, want primary TIFF path", input.CatalogPathFor(input.PhysicalPath).StringPath())
+	}
+}
+
 func TestObjectCompositeDetectedItemInputKeepsBucketAndObjectPaths(t *testing.T) {
 	t.Parallel()
 
@@ -132,6 +176,52 @@ func TestObjectCompositeDetectedItemInputKeepsBucketAndObjectPaths(t *testing.T)
 	}
 	if !input.IncludeAccessIndex || input.SizeBytes != size || input.Attributes == nil {
 		t.Fatalf("input flags/size/attrs = access:%v size:%d attrs:%#v", input.IncludeAccessIndex, input.SizeBytes, input.Attributes)
+	}
+}
+
+func TestObjectCompositeMultiTIFFInputUsesPrimaryObject(t *testing.T) {
+	t.Parallel()
+
+	size := int64(162)
+	resource := &commonModels.Engine{ID: 7, EngineType: "static"}
+	parent := &models.MetaNode{ID: 5, FullName: "addp/image"}
+	composite := metacatalog.ObjectCatalogCompositeItem{
+		Bucket: "addp",
+		Prefix: "image",
+		Item: &metaitem.DetectedItem{
+			ResolvedItem: dataitem.ResolvedItem{
+				DataType:           datatype.Media,
+				Format:             string(format.FormatTIFF),
+				Layout:             format.LayoutMulti,
+				PrimaryContentPath: "addp/image/srtm_40_01.tif",
+				RefList: []dataitem.ItemRef{
+					{Path: "addp/image/srtm_40_01.tif", Role: "main", Required: true, Primary: true, Extension: ".tif"},
+					{Path: "addp/image/srtm_40_01.tfw", Role: "world_file", Extension: ".tfw"},
+					{Path: "addp/image/srtm_40_01.hdr", Role: "header", Extension: ".hdr"},
+					{Path: "addp/image/srtm_40_01.tif.aux.xml", Role: "auxiliary_metadata", Extension: ".aux.xml"},
+				},
+				SizeBytes: &size,
+			},
+		},
+	}
+	plan, ok := metacatalog.PlanObjectCatalogCompositeItem(resource.ID, composite, "object")
+	if !ok {
+		t.Fatal("object composite item plan should be created")
+	}
+
+	input := ObjectCompositeInput(resource, 1, resource.ID, parent, plan, composite, nil, nil, models.ScannedDepthDeep)
+
+	if input.ItemName != "srtm_40_01.tif" || input.FullName != "addp/image/srtm_40_01.tif" {
+		t.Fatalf("item identity = %q/%q, want primary TIFF object", input.ItemName, input.FullName)
+	}
+	if input.PhysicalPath != "addp/image/srtm_40_01.tif" {
+		t.Fatalf("physical path = %q, want primary TIFF object", input.PhysicalPath)
+	}
+	if input.IndexRootName != "addp" || input.IndexPath != "image/srtm_40_01.tif" {
+		t.Fatalf("index fields = root:%q path:%q, want primary object", input.IndexRootName, input.IndexPath)
+	}
+	if input.CatalogPathFor(input.IndexPath).StringPath() != "addp/image/srtm_40_01.tif" {
+		t.Fatalf("catalog path = %q, want bucket-qualified primary object", input.CatalogPathFor(input.IndexPath).StringPath())
 	}
 }
 
@@ -230,4 +320,117 @@ func TestKnownMultiTableRefreshClearsStaleAccessIndex(t *testing.T) {
 	if got := tableIndex["kind"]; got != "keep" {
 		t.Fatalf("single access_index.table.kind = %q, want keep", got)
 	}
+}
+
+func TestEnrichKnownMultiTablePreservesBaseItemAndStorageAttributes(t *testing.T) {
+	formatType := format.FormatType("scanprocessor_multi_table_preserve")
+	if err := format.RegisterFormatPlugin(scanProcessorMultiTableProvider{formatType: formatType}); err != nil {
+		t.Fatalf("RegisterFormatPlugin() error = %v", err)
+	}
+
+	size := int64(24)
+	detected := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:             format.LayoutMulti,
+			DataType:           datatype.Table,
+			Format:             string(formatType),
+			PrimaryContentPath: "roads/roads.main",
+			RefList: []dataitem.ItemRef{
+				{Path: "roads/roads.main", Role: "main", Required: true, Primary: true, Extension: ".main"},
+				{Path: "roads/roads.attr", Role: "attributes", Required: true, Extension: ".attr"},
+			},
+			SizeBytes: &size,
+		},
+		PhysicalPath: "roads",
+	}
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(detected)))
+	metaattr.SetStorage(attrs, "physical_path", "roads/roads.main")
+
+	got, err := (Processor{}).enrichKnownMultiTable(context.Background(), &input{
+		Detected:       detected,
+		ContentReader:  scanProcessorContentReader{},
+		EngineID:       1,
+		CatalogPathFor: plugin.FileItemPathForEngine(1),
+	}, attrs)
+	if err != nil {
+		t.Fatalf("enrichKnownMultiTable() error = %v", err)
+	}
+
+	if gotLayout := commonJSON.String(got, "item", "layout"); gotLayout != string(format.LayoutMulti) {
+		t.Fatalf("item.layout = %q, want multi", gotLayout)
+	}
+	if gotFormat := commonJSON.String(got, "item", "format"); gotFormat != string(formatType) {
+		t.Fatalf("item.format = %q, want %s", gotFormat, formatType)
+	}
+	if refs := commonJSON.InterfaceSlice(commonJSON.Section(got, "item")["refs"]); len(refs) != 2 {
+		t.Fatalf("item.refs = %#v, want 2 refs", refs)
+	}
+	if gotPath := commonJSON.String(got, "storage", "physical_path"); gotPath != "roads/roads.main" {
+		t.Fatalf("storage.physical_path = %q, want roads/roads.main", gotPath)
+	}
+	if table := datatype.TableInfoFromPayload(commonJSON.Section(got, "type_info.table"), ""); table == nil || table.GetField("name") == nil {
+		t.Fatalf("type_info.table = %#v, want enriched table field", commonJSON.Section(got, "type_info.table"))
+	}
+	if formatInfo := commonJSON.Section(got, "format_info."+string(formatType)); formatInfo["source"] != "test-provider" {
+		t.Fatalf("format_info.%s = %#v, want merged provider facts", formatType, formatInfo)
+	}
+}
+
+type scanProcessorMultiTableProvider struct {
+	formatType format.FormatType
+}
+
+func (p scanProcessorMultiTableProvider) Format() format.FormatType {
+	return p.formatType
+}
+
+func (p scanProcessorMultiTableProvider) Descriptor() format.FormatDescriptor {
+	return format.FormatDescriptor{
+		ID:       "scanprocessor-multi-table-preserve",
+		Format:   p.formatType,
+		DataType: datatype.Table,
+		Layouts:  []string{format.LayoutMulti},
+		Identification: format.FormatIdentification{
+			Extensions: []string{".main"},
+		},
+	}
+}
+
+func (p scanProcessorMultiTableProvider) RelatedRefSpecs() []format.RelatedRefSpec {
+	return []format.RelatedRefSpec{
+		{Extension: ".main", Role: "main", Required: true, Primary: true},
+		{Extension: ".attr", Role: "attributes", Required: true},
+	}
+}
+
+func (p scanProcessorMultiTableProvider) DescribeMultiTable(context.Context, contentio.Reader, []format.RelatedRef, *format.ParseOptions) (*format.TableDescribeResult, error) {
+	return &format.TableDescribeResult{
+		Table: &datatype.TableInfo{
+			Name:   "roads",
+			Fields: []datatype.FieldInfo{{Name: "name", Type: datatype.FieldTypeString}},
+		},
+		FormatInfo: map[string]interface{}{"source": "test-provider"},
+	}, nil
+}
+
+type scanProcessorContentReader struct{}
+
+func (scanProcessorContentReader) Type() string         { return "scanprocessor_content_reader" }
+func (scanProcessorContentReader) DisplayName() string  { return "scanprocessor content reader" }
+func (scanProcessorContentReader) EngineOrigin() string { return "general" }
+func (scanProcessorContentReader) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (scanProcessorContentReader) ValidateConnectionInfo(plugin.ConnectionInfo) error { return nil }
+func (scanProcessorContentReader) DefaultPort() int                                   { return 0 }
+func (scanProcessorContentReader) RequiredFields() []string                           { return nil }
+func (scanProcessorContentReader) SensitiveFields() []string                          { return nil }
+func (scanProcessorContentReader) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{}
+}
+func (scanProcessorContentReader) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemantics{}
+}
+func (scanProcessorContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("")), nil
 }

@@ -400,7 +400,7 @@ def decrypt_api_key(encrypted_key: str, encryption_key: bytes) -> str:
 ### 9.1 创建租户级 OpenAI 配置
 
 ```bash
-curl -X POST http://localhost:8085/copilot/llm-configs \
+curl -X POST http://localhost:8087/copilot/llm-configs \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -422,7 +422,7 @@ curl -X POST http://localhost:8085/copilot/llm-configs \
 ### 9.2 创建全局 Claude 配置（SuperAdmin）
 
 ```bash
-curl -X POST http://localhost:8085/copilot/llm-configs \
+curl -X POST http://localhost:8087/copilot/llm-configs \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $SUPERADMIN_TOKEN" \
   -d '{
@@ -443,7 +443,7 @@ curl -X POST http://localhost:8085/copilot/llm-configs \
 ### 9.3 查询默认配置
 
 ```bash
-curl http://localhost:8085/copilot/llm-configs/default \
+curl http://localhost:8087/copilot/llm-configs/default \
   -H "Authorization: Bearer $TOKEN"
 ```
 

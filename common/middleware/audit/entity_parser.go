@@ -49,7 +49,7 @@ var pathPatterns = []PathRule{
 
 	// Develop 模块
 	{Pattern: "/api/v1/develop/queries/", EntityType: "query", IDPosition: 4},
-	{Pattern: "/api/v1/develop/operators/", EntityType: "operator", IDPosition: 4},
+	{Pattern: "/api/v1/develop/workflow-engines/", EntityType: "workflow_engine", IDPosition: 4},
 
 	// Service 模块
 	{Pattern: "/api/v1/service/services/", EntityType: "service", IDPosition: 4},

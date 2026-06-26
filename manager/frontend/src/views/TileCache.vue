@@ -567,7 +567,7 @@ const resetForm = (task = null) => {
 const loadTasks = async () => {
   tasksLoading.value = true
   try {
-    const response = await client.get('/manager/tile_cache_tasks', {
+    const response = await client.get('/manager/vector_tile_cache_tasks', {
       params: { page: tasksPage.value, page_size: tasksPageSize.value }
     })
     tasks.value = response.data || []
@@ -673,7 +673,7 @@ const loadResults = async () => {
       item_id: resultFilters.item_id || undefined,
       item_fingerprint: resultFilters.item_fingerprint || undefined
     }
-    const response = await client.get('/manager/tile_cache', { params })
+    const response = await client.get('/manager/vector_tile_cache', { params })
     results.value = response.data || []
     resultsTotal.value = response.total || 0
   } catch (error) {
@@ -869,7 +869,7 @@ const tileCacheFormConfigFromCapability = (capability) => {
 }
 
 const applyRouteOptimizationAdvice = () => {
-  if (!route.query.quick_view_optimization_id && route.query.quick_view_optimization !== 'ready') return
+  if (!route.query.vector_quick_view_target_id && route.query.vector_quick_view_target_generation !== 'ready') return
   tileCacheOptimizationAdvice.visible = true
   tileCacheOptimizationAdvice.type = 'success'
   tileCacheOptimizationAdvice.actionVisible = false
@@ -1051,10 +1051,10 @@ const saveTask = async () => {
   try {
     const payload = createTileCacheTaskPayload(form)
     if (editingId.value) {
-      await client.put(`/manager/tile_cache_tasks/${editingId.value}`, payload)
+      await client.put(`/manager/vector_tile_cache_tasks/${editingId.value}`, payload)
       ElMessage.success(t('manager.tileCache.updateSuccess'))
     } else {
-      await client.post('/manager/tile_cache_tasks', payload)
+      await client.post('/manager/vector_tile_cache_tasks', payload)
       ElMessage.success(t('manager.tileCache.createSuccess'))
     }
     formDialogVisible.value = false
@@ -1070,7 +1070,7 @@ const saveTask = async () => {
 const executeTask = async (task) => {
   executingId.value = task.id
   try {
-    const response = await client.post(`/manager/tasks/tile_cache_generation/${task.id}/execute`, {
+    const response = await client.post(`/manager/tasks/vector_tile_cache_generation/${task.id}/execute`, {
       trigger_type: 'manual',
       source: 'manager'
     })
@@ -1112,7 +1112,7 @@ const loadResultTaskFilterFromRoute = async () => {
   if (!taskId || activeTab.value !== 'results') return
   resultFilters.task_id = taskId
   try {
-    selectedResultTask.value = await client.get(`/manager/tile_cache_tasks/${taskId}`)
+    selectedResultTask.value = await client.get(`/manager/vector_tile_cache_tasks/${taskId}`)
   } catch (error) {
     console.error('加载瓦片缓存任务详情失败:', error)
     selectedResultTask.value = { id: taskId, name: t('manager.tileCache.taskWithId', { id: taskId }) }
@@ -1121,14 +1121,14 @@ const loadResultTaskFilterFromRoute = async () => {
 
 const deleteTask = async (task) => {
   await ElMessageBox.confirm(t('manager.tileCache.deleteTaskConfirm'), t('manager.tileCache.delete'), { type: 'warning' })
-  await client.delete(`/manager/tile_cache_tasks/${task.id}`)
+  await client.delete(`/manager/vector_tile_cache_tasks/${task.id}`)
   ElMessage.success(t('manager.tileCache.deleteSuccess'))
   await loadTasks()
 }
 
 const deleteResult = async (result) => {
   await ElMessageBox.confirm(t('manager.tileCache.deleteResultConfirm'), t('manager.tileCache.delete'), { type: 'warning' })
-  await client.delete(`/manager/tile_cache/${result.id}`)
+  await client.delete(`/manager/vector_tile_cache/${result.id}`)
   ElMessage.success(t('manager.tileCache.deleteSuccess'))
   await loadResults()
 }
@@ -1297,7 +1297,7 @@ onMounted(async () => {
   const taskId = Number(route.query.task_id || 0)
   if (taskId && activeTab.value !== 'results') {
     try {
-      const response = await client.get(`/manager/tile_cache_tasks/${taskId}`)
+      const response = await client.get(`/manager/vector_tile_cache_tasks/${taskId}`)
       openEditDialog(response)
     } catch (error) {
       console.error('加载瓦片缓存任务详情失败:', error)

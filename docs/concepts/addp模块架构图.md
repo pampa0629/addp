@@ -13,7 +13,7 @@
 5. [Monitor 模块](#monitor-模块)
 6. [Gateway 路由机制](#gateway-路由机制)
 7. [ADDP 两种使用方式](#addp-两种使用方式)
-8. [计算引擎与任务编排](#计算引擎与任务编排)
+8. [扩展运行时与任务编排](#扩展运行时与任务编排)
 9. [模块启动顺序](#模块启动顺序)
 
 ---
@@ -46,7 +46,7 @@ graph TB
         Meta[Meta Backend<br/>元数据服务<br/>:8082]
         Transfer[Transfer Backend<br/>数据传输<br/>:8083]
         Orchestrator[Orchestrator Backend<br/>任务编排<br/>:8084]
-        Develop[Develop Backend<br/>数据开发<br/>:8085]
+        Develop[Develop Backend<br/>数据开发<br/>:8185]
         Service[Service Backend<br/>数据服务<br/>:8086]
         Monitor[Monitor Backend<br/>执行监控<br/>:8100]
     end
@@ -61,10 +61,11 @@ graph TB
         CommonFE[common-frontend<br/>前端共享库]
     end
 
-    subgraph "计算引擎"
-        PyWorkflow[python_workflow<br/>Python工作流引擎]
-        SparkWorkflow[spark_workflow<br/>Spark工作流引擎]
-        Jupyter[jupyter<br/>Notebook引擎]
+    subgraph "扩展运行时"
+        PyWorkflow[python_workflow<br/>内置 Workflow 示例]
+        SparkWorkflow[spark_workflow<br/>内置 Workflow 示例]
+        CustomWorkflow[用户自研 Workflow<br/>addp.workflow/v1]
+        Jupyter[jupyter<br/>Notebook 脚本运行时]
     end
 
     subgraph "基础设施层"
@@ -120,9 +121,11 @@ graph TB
     TransferWorker --> Redis
     MetaWorker --> Redis
 
-    Develop --> PyWorkflow
-    Develop --> SparkWorkflow
-    Develop --> Jupyter
+    Develop --> Common
+    Common --> PyWorkflow
+    Common --> SparkWorkflow
+    Common --> CustomWorkflow
+    Common --> Jupyter
 
     classDef frontend fill:#e1f5ff,stroke:#01579b
     classDef gateway fill:#fff3e0,stroke:#e65100
@@ -137,7 +140,7 @@ graph TB
     class System,Manager,Meta,Transfer,Orchestrator,Develop,Service,Monitor backend
     class TransferWorker,MetaWorker worker
     class Common,CommonFE shared
-    class PyWorkflow,SparkWorkflow,Jupyter engine
+    class PyWorkflow,SparkWorkflow,CustomWorkflow,Jupyter engine
     class PostgreSQL,Redis,MinIO,Meilisearch infra
 ```
 
@@ -150,7 +153,7 @@ graph TB
   - **Meta Worker**: 基于 Asynq 的扫描任务处理,执行元数据扫描和索引
 - **Manager 快显与瓦片任务**: 当前 PostGIS + MVT 格式实现中，`tile_cache_generation` 由 Manager Backend 内的任务服务和调度器执行；任务定义为 `manager.tile_cache_tasks`，执行记录进入 `common.task_executions`，结果状态进入 `manager.tile_cache`。`quick_view_optimization` 由 Manager Backend 在手动或编排触发时执行，任务定义为 `manager.quick_view_optimization_tasks`，结果状态进入 `manager.quick_view_optimization`，当前不启动模块自身定时调度。若后续瓦片缓存生成或快显优化计算负载转移到 Manager 进程内、需要多执行器横向扩展，或引入专门 GIS 计算引擎，应将对应任务类型的唯一执行运行时切换为 Manager Worker 或 GIS 执行引擎，不允许 Backend 与 Worker 双轨并存。
 - **共享模块**: common 和 common-frontend 提供可复用的代码和组件
-- **计算引擎**: engines 目录下的内置计算引擎,由 Develop 模块调用
+- **扩展运行时**: engines 目录下的内置工作流 / 脚本运行时，由 Develop 模块通过统一 Provider 调用
 - **基础设施层**: 共享的数据库、缓存、对象存储和搜索引擎
 
 ---
@@ -168,7 +171,7 @@ graph TB
 | **Transfer** | 数据传输:同步、搬运、格式转换任务 | 8083 / 8083 | Go, Gin, Asynq |
 | **Transfer Worker** | Transfer 后台任务处理器 | - | Go, Asynq Worker |
 | **Orchestrator** | 任务编排:跨模块任务编排调度 | 8084 / 8084 | Go, Gin, Cron |
-| **Develop** | 数据开发:查询执行、工作流、Notebook 开发 | 8085 / 8085 | Go, Gin, Monaco Editor |
+| **Develop** | 数据开发:查询执行、工作流、Notebook 开发 | 8185 / 8185 | Go, Gin, Monaco Editor |
 | **Service** | 数据服务:服务发布(空间OGC标准与非空间)、外部服务注册 | 8086 / 8086 | Go, Gin, OGC 标准 |
 | **Monitor** | 执行监控:统一监控所有模块的任务执行记录、统计分析 | 8100 / 8100 | Go, Gin, PostgreSQL |
 | **Copilot** | AI 辅助助手：SQL 智能生成、工作流智能生成 | 8087 / 8087 | Python, FastAPI, LangChain |
@@ -234,7 +237,8 @@ graph LR
     CommonFE --> Map[map/<br/>地图组件]
 
     Basic --> Storage[StorageEngineForm<br/>数据源表单]
-    Basic --> Image[ImagePreview<br/>图片预览]
+    Basic --> PreviewEntry[previews.js<br/>文件预览按需入口]
+    PreviewEntry --> Image[ImagePreview<br/>图片预览]
     Basic --> Format[formatters<br/>格式化工具]
     Basic --> BasicOther[其他基础组件...]
 
@@ -250,9 +254,9 @@ graph LR
 ```
 
 **模块划分**:
-- **basic/**: 基础 UI 组件,无地图依赖
+- **basic/**: 基础 UI 组件,无地图依赖；文件预览组件通过 `previews.js` 独立入口按需导入
   - `StorageEngineForm`: 数据源表单组件
-  - `ImagePreview`: 图片预览组件
+  - `ImagePreview`: 图片预览组件，从 `@common-ui/previews` 导入
   - `formatters`: 数据格式化工具
   - 其他通用 UI 组件
 - **map/**: 地图相关组件,依赖 OpenLayers 和高德地图
@@ -478,7 +482,7 @@ graph LR
     Gateway --> |/api/v1/meta/*| Meta[Meta Backend<br/>:8082]
     Gateway --> |/api/v1/transfer/*| Transfer[Transfer Backend<br/>:8083]
     Gateway --> |/api/v1/orchestrator/*| Orchestrator[Orchestrator Backend<br/>:8084]
-    Gateway --> |/api/v1/develop/*| Develop[Develop Backend<br/>:8085]
+    Gateway --> |/api/v1/develop/*| Develop[Develop Backend<br/>:8185]
     Gateway --> |/api/v1/service/*| Service[Service Backend<br/>:8086]
     Gateway --> |/api/v1/monitor/*| Monitor[Monitor Backend<br/>:8100]
 
@@ -500,7 +504,7 @@ graph LR
 | `/api/v1/meta/*` | Meta Backend | 8082 | 元数据扫描、索引、搜索 |
 | `/api/v1/transfer/*` | Transfer Backend | 8083 | 数据同步、搬运、格式转换 |
 | `/api/v1/orchestrator/*` | Orchestrator Backend | 8084 | 任务编排、调度 |
-| `/api/v1/develop/*` | Develop Backend | 8085 | 查询、工作流、Notebook |
+| `/api/v1/develop/*` | Develop Backend | 8185 | 查询、工作流、Notebook |
 | `/api/v1/service/*` | Service Backend | 8086 | 数据服务发布、OGC 标准 |
 | `/api/v1/monitor/*` | Monitor Backend | 8100 | 执行监控、统计分析 |
 
@@ -608,65 +612,70 @@ graph TB
 
 ---
 
-## 计算引擎与任务编排
+## 扩展运行时与任务编排
 
-### 计算引擎概述
+### 扩展运行时概述
 
-位于 `engines/` 目录，ADDP 平台内置的计算引擎：
+位于 `engines/` 目录，ADDP 平台提供若干内置扩展运行时作为示例和默认部署选择；用户也可以按扩展引擎规范注册自研运行时：
 
 ```mermaid
 graph TB
     subgraph "engines 目录"
-        PyWorkflow[python_workflow<br/>Python 工作流引擎]
-        SparkWorkflow[spark_workflow<br/>Spark 工作流引擎]
-        Jupyter[jupyter<br/>Notebook 引擎]
+        PyWorkflow[python_workflow<br/>内置 Workflow 示例]
+        SparkWorkflow[spark_workflow<br/>内置 Workflow 示例]
+        CustomWorkflow[用户自研 Workflow<br/>addp.workflow/v1]
+        Jupyter[jupyter<br/>Notebook 脚本运行时]
     end
 
     subgraph "特性"
         PyWorkflow --> PyFeature[单节点内存计算<br/>适合中小规模数据<br/>空间与非空间算子]
         SparkWorkflow --> SparkFeature[分布式计算<br/>大规模数据处理<br/>空间与非空间算子]
-        Jupyter --> JupyterFeature[交互式开发<br/>Python/Shell<br/>变量传递]
+        Jupyter --> JupyterFeature[交互式开发<br/>Python Notebook<br/>变量传递]
     end
 
     subgraph "系统注册"
         PyWorkflow -.内置引擎.-> System[System 模块]
         SparkWorkflow -.内置引擎.-> System
         Jupyter -.内置引擎.-> System
+        CustomWorkflow -.用户注册.-> System
     end
 
-    Develop[Develop 模块] --> PyWorkflow
-    Develop --> SparkWorkflow
-    Develop --> Jupyter
+    Develop[Develop 模块] --> Provider[Common Engine / Provider]
+    Provider --> PyWorkflow
+    Provider --> SparkWorkflow
+    Provider --> CustomWorkflow
+    Provider --> Jupyter
 
     classDef engine fill:#fff9c4,stroke:#f57f17,stroke-width:2px
     classDef feature fill:#fff3e0,stroke:#e65100
     classDef module fill:#f3e5f5,stroke:#4a148c
 
-    class PyWorkflow,SparkWorkflow,Jupyter engine
+    class PyWorkflow,SparkWorkflow,CustomWorkflow,Jupyter engine
     class PyFeature,SparkFeature,JupyterFeature feature
-    class Develop,System module
+    class Develop,System,Provider module
 ```
 
-**引擎说明**：
+**运行时示例**：
 
 | 引擎 | 类型 | 适用场景 | 主要能力 |
 |------|------|---------|---------|
-| **python_workflow** | 单节点内存计算 | 数据量 < 100 万行 | 快速执行，空间与非空间算子 |
-| **spark_workflow** | 分布式计算 | 数据量 > 100 万行 | 大规模数据处理，空间与非空间算子 |
-| **jupyter** | 交互式开发 | Notebook 开发 | Python/Shell，变量传递 |
+| **python_workflow** | 工作流运行时 | 数据量 < 100 万行 | 快速执行，空间与非空间算子 |
+| **spark_workflow** | 工作流运行时 | 数据量 > 100 万行 | 大规模数据处理，空间与非空间算子；执行时绑定 `engine_type=spark` 的通用引擎资源 |
+| **math_workflow** | 工作流运行时参考实现 | 学习与扩展规范示例 | 基础数学算子；开发环境自动启动服务，手动注册后可用 |
+| **jupyter** | 脚本运行时 | Notebook 开发 | Python Notebook，变量传递 |
 
 **注册机制**：
-- 系统启动时自动注册为**内置引擎** (`is_builtin = true`)
-- 全局可见，不属于任何租户 (`tenant_id = null`)
-- 通过 `unique_identifier` 全局唯一标识（如 `python_workflow`）
+- 内置运行时启动时自动注册为**内置引擎** (`is_builtin = true`)，全局可见，不属于任何租户 (`tenant_id = null`)。
+- 用户自研扩展运行时按同一张 System 引擎注册表管理，不要求内置 `python_workflow`、`spark_workflow`、`math_workflow` 必然存在。
+- 调用方只发现已注册、启用且声明对应能力的运行时实例；工作流算子通过 `addp.workflow/v1` 动态发现。
 
 ---
 
-### 计算引擎与任务编排的架构关系
+### 扩展运行时与任务编排的架构关系
 
-#### 一、计算引擎层：System 注册 → Develop 调用
+#### 一、扩展运行时层：System 注册 → Common Provider 调用
 
-System 是计算引擎的**注册中心**，Develop 是计算引擎的**唯一调用方**。
+System 是扩展运行时的**注册中心**。Develop 负责编排和执行工作流；其他业务模块如需 direct 算子能力，也必须通过 Common Engine / Provider 按已注册运行时实例调用，不得直接假设某个内置工作流引擎存在。
 
 ```mermaid
 graph LR
@@ -681,17 +690,19 @@ graph LR
     subgraph Develop["Develop（调用方）"]
         DevAPI["开发工作台 API"]
         DevAPI -->|"查询可用引擎列表"| EngineDB
-        DevAPI -->|"按引擎类型路由执行"| EngineRouter["引擎路由器"]
+        DevAPI -->|"按运行时实例调用"| EngineRouter["Common WorkflowRuntimeProvider"]
     end
 
-    subgraph Engines["计算引擎（执行层）"]
-        PyWF["python_workflow<br/>内存/单机计算"]
-        SparkWF["spark_workflow<br/>分布式计算"]
+    subgraph Engines["扩展运行时（执行层）"]
+        PyWF["python_workflow<br/>内置示例"]
+        SparkWF["spark_workflow<br/>内置示例，执行时绑定 spark 通用引擎"]
+        CustomWF["用户自研 workflow<br/>addp.workflow/v1"]
         Jupyter["jupyter<br/>交互式 Notebook"]
     end
 
     EngineRouter -->|"HTTP / gRPC"| PyWF
     EngineRouter -->|"HTTP / gRPC"| SparkWF
+    EngineRouter -->|"HTTP / gRPC"| CustomWF
     EngineRouter -->|"WebSocket"| Jupyter
 
     classDef system fill:#fff3e0,stroke:#e65100,stroke-width:2px
@@ -700,13 +711,13 @@ graph LR
 
     class System,EngineDB,BuiltIn,External system
     class Develop,DevAPI,EngineRouter develop
-    class PyWF,SparkWF,Jupyter engine
+    class PyWF,SparkWF,CustomWF,Jupyter engine
 ```
 
 **要点**：
 - System 仅维护引擎元数据（连接信息、类型、状态），不参与执行
-- Develop 运行时从 System 查询引擎配置，按用户选择路由到对应引擎
-- 计算引擎是纯执行层，无任务定义概念，只接受并执行代码/作业
+- Develop 运行时从 System 查询引擎配置，按用户选择路由到对应运行时
+- 扩展运行时是纯执行层，无任务定义概念，只接受并执行代码/作业
 
 ---
 
@@ -766,15 +777,15 @@ graph TB
 
 ---
 
-#### 三、两层之间的关联：Develop 是枢纽
+#### 三、两层之间的关联：System 注册表与 Common 调用路径
 
 ```mermaid
 graph LR
     subgraph "引擎层"
         System_E["System 引擎注册表"]
-        Engines["计算引擎集群<br/>python / spark / jupyter"]
-        System_E -->|"引擎配置"| Develop
-        Develop -->|"实际执行"| Engines
+        Engines["扩展运行时集群<br/>内置示例 / 用户自研运行时"]
+        System_E -->|"引擎配置"| CommonProvider["Common Engine / Provider"]
+        CommonProvider -->|"按已注册实例实际执行"| Engines
     end
 
     subgraph "编排层"
@@ -792,19 +803,19 @@ graph LR
     classDef orch fill:#e8eaf6,stroke:#283593
 
     class System_E,System_T system
-    class Develop develop
+    class Develop,CommonProvider develop
     class Engines engine
     class Orchestrator orch
 ```
 
 **Develop 在两层中扮演不同角色**：
-- 对**引擎层**：是消费者，从 System 获取引擎配置，向计算引擎派发执行任务
+- 对**引擎层**：是工作流编排和执行的主要消费者，从 System 获取引擎配置，经 Common Engine / Provider 向扩展运行时派发执行任务；其他业务模块如需 direct 算子，也走同一 Provider 主路径
 - 对**编排层**：是提供者，将自身能力封装为 `query` / `workflow` / `script` 三类可编排任务类型注册到 System，供 Orchestrator 调度；Notebook 是 `script` 的当前 UI 和运行时形态，不作为独立 `task_type`
 
 这意味着一个复杂的数据处理流水线可以是：
 > Transfer 导入数据 → Develop 执行 SQL/Python 加工 → Meta 更新元数据 → Manager 刷新目录
 >
-> 全部由 Orchestrator 统一编排，其中 Develop 步骤内部再调用计算引擎执行。
+> 全部由 Orchestrator 统一编排，其中 Develop 步骤内部再调用扩展运行时执行。
 
 ---
 
@@ -831,11 +842,11 @@ ADDP 平台各模块存在依赖关系，必须按以下顺序启动：
    ├─ Service Backend
    └─ Monitor Backend
 
-4. 计算引擎层（可并行启动，Python 运行时）
-   ├─ Python Workflow Engine
-   ├─ Math Workflow Engine
-   ├─ Spark Workflow Engine
-   └─ Jupyter Engine
+4. 扩展运行时层（可并行启动）
+   ├─ Python Workflow 运行时
+   ├─ Math Workflow 参考运行时（自动启动服务、手动注册）
+   ├─ Spark Workflow 运行时
+   └─ Jupyter 脚本运行时
 
 5. Copilot（Python 应用层，独立启动）
    └─ Copilot Backend（启动时仅向 System 注册，运行时才调用 Meta/Develop）

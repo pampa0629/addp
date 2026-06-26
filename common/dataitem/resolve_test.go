@@ -43,6 +43,70 @@ func TestResolveItemsGroupsShapefileRefs(t *testing.T) {
 	}
 }
 
+func TestResolveItemsGroupsGeoTIFFSidecars(t *testing.T) {
+	t.Parallel()
+
+	size := int64(10)
+	result, err := ResolveItems(ResolveInput{
+		ScopeKind: ScopeKindDirectory,
+		ScopePath: "geotiff",
+		Candidates: []Candidate{
+			{Path: "geotiff/srtm_40_01.tif", Name: "srtm_40_01.tif", SizeBytes: &size},
+			{Path: "geotiff/srtm_40_01.tfw", Name: "srtm_40_01.tfw", SizeBytes: &size},
+			{Path: "geotiff/srtm_40_01.hdr", Name: "srtm_40_01.hdr", SizeBytes: &size},
+			{Path: "geotiff/srtm_40_01.tif.aux.xml", Name: "srtm_40_01.tif.aux.xml", SizeBytes: &size},
+			{Path: "geotiff/readme.md", Name: "readme.md", SizeBytes: &size},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("items = %#v, want geotiff multi + markdown", result.Items)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutMulti || item.Format != string(format.FormatTIFF) || item.PrimaryContentPath != "geotiff/srtm_40_01.tif" {
+		t.Fatalf("first item = %#v, want multi tiff", item)
+	}
+	if len(item.RefList) != 4 {
+		t.Fatalf("refs = %#v, want 4", item.RefList)
+	}
+	for _, path := range []string{
+		"geotiff/srtm_40_01.tif",
+		"geotiff/srtm_40_01.tfw",
+		"geotiff/srtm_40_01.hdr",
+		"geotiff/srtm_40_01.tif.aux.xml",
+	} {
+		if !result.Claims[path] {
+			t.Fatalf("claims = %#v, want %s claimed", result.Claims, path)
+		}
+	}
+}
+
+func TestResolveItemsGroupsTIFFExtensionSidecars(t *testing.T) {
+	t.Parallel()
+
+	size := int64(10)
+	result, err := ResolveItems(ResolveInput{
+		ScopeKind: ScopeKindDirectory,
+		ScopePath: "geotiff",
+		Candidates: []Candidate{
+			{Path: "geotiff/srtm_40_01.tiff", Name: "srtm_40_01.tiff", SizeBytes: &size},
+			{Path: "geotiff/srtm_40_01.tfw", Name: "srtm_40_01.tfw", SizeBytes: &size},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("items = %#v, want one geotiff multi", result.Items)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutMulti || item.Format != string(format.FormatTIFF) || item.PrimaryContentPath != "geotiff/srtm_40_01.tiff" {
+		t.Fatalf("item = %#v, want .tiff primary multi", item)
+	}
+}
+
 func TestResolveItemsIgnoresSystemEntries(t *testing.T) {
 	t.Parallel()
 
@@ -94,6 +158,51 @@ func TestResolveItemsDetectsWholeScopePartitionedTable(t *testing.T) {
 	}
 	if !result.Claims["dataset/dt=2026-05-05/part-000.parquet"] || !result.Claims["dataset/dt=2026-05-06/part-001.parquet"] {
 		t.Fatalf("claims = %#v, want parquet parts claimed", result.Claims)
+	}
+}
+
+func TestResolveItemsDetectsRasterMosaicManifestWholeScope(t *testing.T) {
+	t.Parallel()
+
+	size := int64(10)
+	result, err := ResolveItems(ResolveInput{
+		ScopeKind: ScopeKindDirectory,
+		ScopePath: "mosaics/srtm",
+		Candidates: []Candidate{
+			{Path: "mosaics/srtm/mosaic.addp.json", Name: "mosaic.addp.json", SizeBytes: &size},
+			{Path: "mosaics/srtm/index/source-index.json", Name: "source-index.json", SizeBytes: &size},
+			{Path: "mosaics/srtm/overviews/overview.cog.tif", Name: "overview.cog.tif", SizeBytes: &size},
+			{Path: "mosaics/srtm/leaf/a.cog.tif", Name: "a.cog.tif", SizeBytes: &size},
+			{Path: "mosaics/srtm/leaf/b.cog.tif", Name: "b.cog.tif", SizeBytes: &size},
+		},
+		Options: ResolveOptions{AllowWholeScope: true},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("items = %#v, want one raster mosaic item", result.Items)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutWhole || item.Format != string(format.FormatRasterMosaic) || item.DataType != datatype.Media {
+		t.Fatalf("item = %#v, want media raster_mosaic whole item", item)
+	}
+	if item.ScopePath != "mosaics/srtm" || item.FullName != "mosaics/srtm" {
+		t.Fatalf("item scope/full_name = %q/%q, want mosaic root", item.ScopePath, item.FullName)
+	}
+	if !result.Exclusive {
+		t.Fatal("raster mosaic whole scope should be exclusive")
+	}
+	for _, path := range []string{
+		"mosaics/srtm/mosaic.addp.json",
+		"mosaics/srtm/index/source-index.json",
+		"mosaics/srtm/overviews/overview.cog.tif",
+		"mosaics/srtm/leaf/a.cog.tif",
+		"mosaics/srtm/leaf/b.cog.tif",
+	} {
+		if !result.Claims[path] {
+			t.Fatalf("claims = %#v, want %s claimed", result.Claims, path)
+		}
 	}
 }
 

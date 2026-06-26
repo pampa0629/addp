@@ -185,15 +185,26 @@ type CatalogFactsCapability struct {
 
 ```go
 type StoreCapability struct {
-    StreamRead        bool `json:"stream_read,omitempty"`
-    StreamWrite       bool `json:"stream_write,omitempty"`
-    RangeRead         bool `json:"range_read,omitempty"`
-    RangeWrite        bool `json:"range_write,omitempty"`
-    BatchRead         bool `json:"batch_read,omitempty"`
-    TableReadSession  bool `json:"table_read_session,omitempty"`
-    BatchWrite        bool `json:"batch_write,omitempty"`
-    TableWriteSession bool `json:"table_write_session,omitempty"`
-    TableWritePrepare bool `json:"table_write_prepare,omitempty"`
+    StreamRead                bool                                  `json:"stream_read,omitempty"`
+    StreamWrite               bool                                  `json:"stream_write,omitempty"`
+    RangeRead                 bool                                  `json:"range_read,omitempty"`
+    RangeWrite                bool                                  `json:"range_write,omitempty"`
+    Delete                    bool                                  `json:"delete,omitempty"`
+    BatchRead                 bool                                  `json:"batch_read,omitempty"`
+    TableReadSession          bool                                  `json:"table_read_session,omitempty"`
+    TableReadSpatialTransform bool                                  `json:"table_read_spatial_transform,omitempty"`
+    BatchWrite                bool                                  `json:"batch_write,omitempty"`
+    TableWriteSession         bool                                  `json:"table_write_session,omitempty"`
+    TableWritePrepare         bool                                  `json:"table_write_prepare,omitempty"`
+    TableSpatialEncoding      *NativeTableSpatialEncodingCapability `json:"table_spatial_encoding,omitempty"`
+}
+
+type NativeTableSpatialEncodingCapability struct {
+    GeometryReadEncodings  []string `json:"geometry_read_encodings,omitempty"`
+    GeometryWriteEncodings []string `json:"geometry_write_encodings,omitempty"`
+    ReadTransform          bool     `json:"read_transform,omitempty"`
+    WriteTransform         bool     `json:"write_transform,omitempty"`
+    NativeSpatialFunctions bool     `json:"native_spatial_functions,omitempty"`
 }
 ```
 
@@ -203,13 +214,18 @@ type StoreCapability struct {
 | `stream_write` | 顺序流式创建或覆盖单个对象、文件内容。 | `ContentWritableProvider` |
 | `range_read` | 从指定 byte range 读取内容。 | `RangeReadableProvider`，或 `OpenContent()` 明确支持 offset / length |
 | `range_write` | 向指定 byte range / offset 写入内容。 | `RangeWritableProvider` |
+| `delete` | 删除 catalog leaf 或空 branch 对应的外部资源。 | `ResourceDeleteProvider` |
 | `batch_read` | 按批次读取结构化 item，如表、集合数据。图数据使用 `GraphSampleProvider` / `GraphQueryProvider`。 | `BatchReadableProvider` |
 | `table_read_session` | 打开一次表读取会话并连续读取批次，避免大表 `LIMIT/OFFSET` 翻页退化。 | `TableReadSessionProvider` |
+| `table_read_spatial_transform` | 读取表时是否可通过 read hints 执行空间 CRS 转换。该字段是早期布尔声明，后续优先使用 `table_spatial_encoding.read_transform`。 | `BatchReadableProvider` / `TableReadSessionProvider` |
 | `batch_write` | 按批次写入结构化 item。 | `BatchWritableProvider` |
 | `table_write_session` | 打开一次表写入会话并连续写入批次，避免每批重复建立 COPY / bulk load 会话。 | `TableWriteSessionProvider` |
 | `table_write_prepare` | 执行表级写入前准备动作，如 ensure database / schema、create table、目标表结构校验和安全 schema evolution。该能力不写入数据行，也不承载 overwrite / append 策略。 | `TableWritePreparer` |
+| `table_spatial_encoding` | native table provider 可与 ADDP table pipeline 交换的空间 geometry row encoding 能力。读侧能力对应 `BatchReadableProvider` / `TableReadSessionProvider`；写侧能力对应 `BatchWritableProvider` / `TableWriteSessionProvider`。 | 按读写子能力分别对应 native table read / write provider |
 
-`read` / `write` 总开关无独立调用价值，不进入 Store 能力声明。`atomic_rename`、`transactions`、`formats` 不作为 Store 顶层字段；如有真实调用方，应在对应 Provider 或更具体能力中声明。
+`read` / `write` 总开关无独立调用价值，不进入 Store 能力声明。`delete` 只表达引擎能删除对应 catalog 资源，不表达上层业务删除策略、回收流程或级联清理。`atomic_rename`、`transactions`、`formats` 不作为 Store 顶层字段；如有真实调用方，应在对应 Provider 或更具体能力中声明。
+
+`table_spatial_encoding` 只表达跨出 native table provider 后的 row value 编码，不表达数据库内部类型。PostGIS `geometry` 这类 engine-internal type 不应作为 encoding 暴露；PostgreSQL / PostGIS 第一阶段声明 `geometry_read_encodings=["ewkb","geojson"]`、`geometry_write_encodings=["ewkb"]`、`read_transform=true`、`native_spatial_functions=true`。
 
 ### Checkpoint / Resume 能力
 
@@ -225,7 +241,7 @@ type StoreCapability struct {
 6. provider 暂未实现 marker 消费时，收到 `TableReadSessionOptions.ResumeMarker` 或 `TableWriteSessionOptions.ResumeMarker` 必须显式返回 unsupported error，不得静默忽略后从头读取或重新写入。
 7. 若后续需要在 `engine.capabilities/v1` 中正式表达该能力，优先放在具体 store 能力的扩展段，而不是新增与 Provider 无关的顶层布尔字段。
 
-对象存储通常声明 `stream_read`、`range_read`，是否声明 `stream_write` 必须取决于是否提供对应写 Provider；对象存储通常不声明 `range_write`。文件系统是否支持 `range_write` 必须按真实能力和 Provider 实现声明。
+对象存储通常声明 `stream_read`、`range_read`，是否声明 `stream_write` / `delete` 必须取决于是否提供对应写入或删除 Provider；对象存储通常不声明 `range_write`。文件系统是否支持 `range_write` / `delete` 必须按真实能力和 Provider 实现声明。
 
 ---
 
@@ -299,6 +315,8 @@ type WorkflowCapability struct {
 
 `dynamic_operators=true` 表示调用方可以通过 Provider 动态发现算子。它不是“已有算子列表”的缓存，也不是某个模块对该引擎的适配状态。
 
+当手动注册的扩展运行时声明 `compute.workflow.supported=true` 且 `runtime_api="addp.workflow/v1"` 时，System 保存前必须按该协议做只读探测：`GET /health` 验证运行时可达，`GET /api/operators` 验证算子列表结构，并校验返回算子的 `engine_type` 与注册的引擎类型一致。该探测由能力声明触发，不得依赖 `python_workflow`、`spark_workflow`、`math_workflow` 等具体内置类型名称；Math Workflow 参考实现也走同一路径。
+
 ### 4.3 ScriptCapability
 
 ```go
@@ -356,6 +374,7 @@ type CapabilitiesView struct {
 - 声明 `storage.store.stream_write=true` 的插件必须实现 `ContentWritableProvider`。
 - 声明 `storage.store.range_read=true` 的插件必须实现 `RangeReadableProvider`，或在 `ContentReadableProvider.OpenContent()` 中明确支持 offset / length。
 - 声明 `storage.store.range_write=true` 的插件必须实现 `RangeWritableProvider`。
+- 声明 `storage.store.delete=true` 的插件必须实现 `ResourceDeleteProvider`。
 - 声明 `storage.store.batch_read=true` 的插件必须实现 `BatchReadableProvider`。
 - 声明 `storage.store.table_read_session=true` 的插件必须实现 `TableReadSessionProvider`。
 - 声明 `storage.store.batch_write=true` 的插件必须实现 `BatchWritableProvider`。
@@ -364,7 +383,9 @@ type CapabilitiesView struct {
 - 声明 `compute.query.supported=true` 的插件必须实现对应 query runtime provider。
 - 声明 `compute.workflow.supported=true` 的插件必须实现 `WorkflowRuntimeProvider`。若 `dynamic_operators=true`，则其 `ListOperators()` 必须可调用，并返回符合工作流计算引擎接口规范的算子描述。
 - 声明 `compute.script.supported=true` 的插件必须实现 `ScriptRuntimeProvider`。
+- 反向也必须成立：插件实现 `CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`DynamicSchemaSamplingProvider`、具体 Store Provider、`QueryRuntimeProvider`、`GraphQueryProvider`、`WorkflowRuntimeProvider` 或 `ScriptRuntimeProvider` 时，`Capabilities()` 必须声明对应能力。`StoreProvider` 本身只是 marker，不单独触发能力声明；以具体读写 Provider 为准。
 - capabilities 由插件返回结构体，System 统一序列化为 JSONB。
+- 已注册插件引擎的能力事实源只能是对应插件 `Capabilities()`。普通 Engine API、内部自注册接口和 Registry 能力注册接口收到插件引擎提交的 `capabilities` 时都必须忽略，并改用插件能力生成落库声明。内置扩展引擎自注册 payload 不提交 `capabilities`；自注册脚本不得额外声明 `workflow_runtime`、`script_runtime` 等平行运行时能力。
 - 旧 capabilities 结构不再兼容，发现旧结构可直接刷新或清空。
 
 ---
@@ -383,8 +404,8 @@ PostgreSQL 示例：
       "path_version": "catalog.path/v1",
       "root_term": "server",
       "levels": [
-        {"term": "schema", "kinds": ["schema"], "container": true},
-        {"term": "table", "kinds": ["table", "view", "materialized_view"], "container": false, "item": true}
+        {"term": "schema", "kinds": ["schema"], "role": "branch", "i18n_key": "engine.term.schema"},
+        {"term": "table", "kinds": ["table", "view", "materialized_view"], "role": "leaf", "i18n_key": "engine.term.table"}
       ]
     },
     "catalog": {"supported": true, "real_time": true, "system_filtering": true},
@@ -409,9 +430,9 @@ MinIO 示例：
       "path_version": "catalog.path/v1",
       "root_term": "service",
       "levels": [
-        {"term": "bucket", "kinds": ["bucket"], "container": true},
-        {"term": "prefix", "kinds": ["prefix"], "container": true, "optional": true},
-        {"term": "object", "kinds": ["object"], "container": false, "item": true}
+        {"term": "bucket", "kinds": ["bucket"], "role": "branch", "i18n_key": "engine.term.bucket"},
+        {"term": "prefix", "kinds": ["prefix"], "role": "branch", "optional": true, "i18n_key": "engine.term.prefix"},
+        {"term": "object", "kinds": ["object"], "role": "leaf", "i18n_key": "engine.term.object"}
       ]
     },
     "catalog": {"supported": true, "real_time": true},

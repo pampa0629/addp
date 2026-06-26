@@ -616,17 +616,17 @@ func setupExplorerService(t *testing.T) (*ExplorerService, func()) {
 			tenantID := r.URL.Query().Get("tenant_id")
 			switch tenantID {
 			case "":
-				fmt.Fprintf(w, `[
+				fmt.Fprintf(w, `{"data":[
 					{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"is_active":true,"capabilities":%q},
 					{"id":2,"name":"tenant-two-db","engine_type":"postgresql","connection_info":{},"tenant_id":2,"is_active":true,"capabilities":%q},
 					{"id":3,"name":"global-db","engine_type":"postgresql","connection_info":{},"is_active":true,"capabilities":%q}
-				]`, capabilities, capabilities, capabilities)
+				],"total":3,"page":1,"page_size":10,"total_pages":1}`, capabilities, capabilities, capabilities)
 			case "1":
-				fmt.Fprintf(w, `[{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"is_active":true,"capabilities":%q}]`, capabilities)
+				fmt.Fprintf(w, `{"data":[{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"is_active":true,"capabilities":%q}],"total":1,"page":1,"page_size":10,"total_pages":1}`, capabilities)
 			case "2":
-				fmt.Fprintf(w, `[{"id":2,"name":"tenant-two-db","engine_type":"postgresql","connection_info":{},"tenant_id":2,"is_active":true,"capabilities":%q}]`, capabilities)
+				fmt.Fprintf(w, `{"data":[{"id":2,"name":"tenant-two-db","engine_type":"postgresql","connection_info":{},"tenant_id":2,"is_active":true,"capabilities":%q}],"total":1,"page":1,"page_size":10,"total_pages":1}`, capabilities)
 			default:
-				fmt.Fprint(w, `[]`)
+				fmt.Fprint(w, `{"data":[],"total":0,"page":1,"page_size":10,"total_pages":0}`)
 			}
 		case "/api/v1/system/engines/1":
 			fmt.Fprintf(w, `{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"is_active":true,"capabilities":%q}`, capabilities)

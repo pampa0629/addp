@@ -94,7 +94,7 @@
               <el-icon><Select /></el-icon>
             </el-tag>
             <el-tooltip
-              v-else-if="quickViewStatus && !quickViewStatus.can_generate_tile_cache"
+              v-else-if="quickViewStatus && !quickViewStatus.can_generate_vector_tile_cache"
               :content="quickViewUnavailableText"
               placement="bottom"
               :show-after="300"
@@ -127,16 +127,18 @@
               {{ t('manager.spatialPreview.switchQuickView') }}
             </el-button>
             <el-button
-              v-else-if="quickViewStatus?.can_generate_tile_cache"
+              v-if="showRasterCOGGenerationAction"
               size="small"
               type="primary"
-              @click="handleGenerateTileCache"
+              :loading="rasterCOGGenerationLoading"
+              @click="handleGenerateRasterCOG"
             >
-              {{ t('manager.spatialPreview.generateTileCache') }}
+              {{ t('manager.spatialPreview.generateRasterCOG') }}
             </el-button>
             <el-button
-              v-if="showRealtimeTileCacheGeneration"
+              v-else-if="quickViewStatus?.can_generate_vector_tile_cache"
               size="small"
+              type="primary"
               @click="handleGenerateTileCache"
             >
               {{ t('manager.spatialPreview.generateTileCache') }}
@@ -248,7 +250,7 @@
           </div>
         </template>
       </el-alert>
-      <div v-if="multiRefOptions.length" class="preview-ref-toolbar">
+      <div v-if="showMultiRefToolbar" class="preview-ref-toolbar">
         <span class="preview-ref-label">{{ t('containerPreview.refs') }}</span>
         <el-select
           v-model="activeMultiRefPath"
@@ -337,7 +339,7 @@
         v-else-if="previewComponent && !isGraphOverview"
         :is="previewComponent"
         :key="refKey"
-        :data="previewData"
+        :data="previewComponentData"
         v-bind="previewComponentProps"
         :loading="loading"
         @page-change="handlePageChange"
@@ -370,6 +372,7 @@ import { quickViewAPI } from '@/api/quickView'
 import ExportDialog from '@/components/explorer/ExportDialog.vue'
 import GeoJSONQuickView from '@/components/map/GeoJSONQuickView.vue'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
+import RasterTIFFQuickView from '@/components/map/RasterTIFFQuickView.vue'
 import { useExplorerStore } from '@/stores/explorer'
 import {
   quickViewTileAdvisoryAction as tileAdvisoryAction,
@@ -381,6 +384,19 @@ import {
   buildQuickViewOptimizationCreateQuery,
   buildTileCacheCreateQuery
 } from '@/utils/quickViewNavigationQuery'
+import {
+  buildRasterCOGTaskPayload,
+  shouldShowRasterCOGGenerationAction,
+  waitForRasterCOGExecution
+} from '@/utils/rasterCOGTask'
+import {
+  isTIFFRasterMeta,
+  rasterSpatialFacts
+} from '@/utils/rasterQuickViewTarget'
+import {
+  combinedMultiRefValue,
+  multiRefPreviewOptions
+} from '@/utils/multiRefPreview'
 import {
   canShowVectorizeAction,
   isVectorizableObjectNode,
@@ -409,7 +425,6 @@ const props = defineProps({
 const emit = defineEmits(['page-change', 'navigate', 'child-change'])
 const store = useExplorerStore()
 const activeMultiRefPath = ref('')
-const combinedMultiRefValue = '__combined__'
 const activeGraphSampleKey = ref('')
 const activeGraphSampleKind = ref('')
 const activeGraphSampleTotal = ref(null)
@@ -420,7 +435,8 @@ const quickViewLoadError = ref('')
 const quickViewActionLoading = ref(false)
 const quickViewTileAdvisory = ref(null)
 const quickViewTileLastNotice = ref({ key: '', at: 0 })
-const activePreviewMode = ref('table_geojson')
+const rasterCOGGenerationLoading = ref(false)
+const activePreviewMode = ref('basic_preview')
 const mvtGridVisible = ref(false)
 const resourceActions = ref(null)
 const exportDialogVisible = ref(false)
@@ -490,6 +506,29 @@ const previewComponentProps = computed(() => {
   }
   return {}
 })
+const previewComponentData = computed(() => {
+  if (!props.previewData) return props.previewData
+  if (previewPluginName.value !== 'image' || !isTIFFNode.value || !quickViewStatus.value) {
+    return props.previewData
+  }
+  if (quickViewStatus.value?.can_use_quick_view) {
+    return props.previewData
+  }
+  const message = quickViewUnavailableText.value
+  if (!message) return props.previewData
+  const object = props.previewData.object || {}
+  const content = object.content || {}
+  return {
+    ...props.previewData,
+    object: {
+      ...object,
+      content: {
+        ...content,
+        text: message
+      }
+    }
+  }
+})
 
 // 检查是否有可用的预览组件
 const hasPreviewComponent = computed(() => Boolean(previewComponent.value))
@@ -526,40 +565,8 @@ const emptyDescription = computed(() => {
   return t('manager.explorer.emptyPreview.noData')
 })
 
-const rawMultiRefs = computed(() => {
-  const contentMetadata = props.previewData?.object?.content?.metadata || {}
-  return Array.isArray(contentMetadata.refs) ? contentMetadata.refs : []
-})
-
-const refDisplayName = (path) => {
-  if (!path) return ''
-  const parts = String(path).split(/[\\/]/).filter(Boolean)
-  return parts.pop() || String(path)
-}
-
-const multiRefOptions = computed(() => {
-  const refs = rawMultiRefs.value
-    .filter(ref => ref && ref.path)
-    .map((ref, index) => {
-      const path = ref.path || ''
-      const label = ref.label || ref.role || ref.key || refDisplayName(path) || String(index)
-      const fileName = refDisplayName(path)
-      return {
-        key: ref.key || ref.role || path || String(index),
-        path,
-        label: fileName && !String(label).includes(fileName) ? `${label} · ${fileName}` : String(label)
-      }
-    })
-  if (!refs.length) return []
-  return [
-    {
-      key: '__combined__',
-      path: combinedMultiRefValue,
-      label: t('containerPreview.combinedPreview')
-    },
-    ...refs
-  ]
-})
+const multiRefOptions = computed(() => multiRefPreviewOptions(props.previewData, t))
+const showMultiRefToolbar = computed(() => multiRefOptions.value.length > 0 && !isQuickViewActive.value)
 
 watch(
   () => [
@@ -868,7 +875,7 @@ watch(
   () => props.selectedNode?.id,
   () => {
     markdownRawMode.value = false
-    activePreviewMode.value = 'table_geojson'
+    activePreviewMode.value = 'basic_preview'
     activeGraphSampleKey.value = ''
     activeGraphSampleKind.value = ''
     activeGraphSampleTotal.value = null
@@ -1120,6 +1127,26 @@ const hasGeometry = computed(() => {
   return geometryColumns.length > 0 || geometryColumn !== ''
 })
 
+const selectedNodePath = computed(() => {
+  const node = props.selectedNode || {}
+  return String(node.path || node.full_name || node.table || node.name || node.label || node.id || '').trim()
+})
+
+const isTIFFNode = computed(() => {
+  const node = props.selectedNode || {}
+  const metadata = props.previewData?.metadata || {}
+  if (isTIFFRasterMeta(props.previewData, node)) return true
+  const format = String(
+    props.previewData?.format ||
+    metadata.format ||
+    node.format ||
+    node.file_format ||
+    ''
+  ).toLowerCase()
+  if (['tif', 'tiff'].includes(format)) return true
+  return /\.(tif|tiff)$/i.test(selectedNodePath.value)
+})
+
 const spatialInfoTooltip = computed(() => {
   if (!hasGeometry.value) return ''
 
@@ -1152,7 +1179,7 @@ const spatialInfoTooltip = computed(() => {
 })
 
 const spatialPreviewTarget = computed(() => {
-  if (!hasGeometry.value || !props.selectedNode) return null
+  if ((!hasGeometry.value && !isTIFFNode.value) || !props.selectedNode) return null
   const node = props.selectedNode
   const locator = String(node.locator || node.id || '').trim()
   let parsedLocator = null
@@ -1179,7 +1206,15 @@ const spatialPreviewTarget = computed(() => {
   const geometryColumns = Array.isArray(props.previewData?.geometry_columns)
     ? props.previewData.geometry_columns
     : []
-  const extent = Array.isArray(props.previewData?.extent) ? props.previewData.extent : []
+  const metadata = props.previewData?.metadata || {}
+  const rasterSpatial = rasterSpatialFacts(props.previewData, node)
+  const extent = Array.isArray(props.previewData?.extent)
+    ? props.previewData.extent
+    : Array.isArray(metadata.extent)
+      ? metadata.extent
+      : Array.isArray(rasterSpatial.extent)
+        ? rasterSpatial.extent
+      : []
   return {
     engineId: engine,
     schema,
@@ -1189,8 +1224,8 @@ const spatialPreviewTarget = computed(() => {
     locatorType,
     geometryColumn: String(props.previewData?.geometry_column || geometryColumns[0] || '').trim(),
     geometryColumns: geometryColumns.map((column) => String(column || '').trim()).filter(Boolean),
-    sourceSRID: Number(props.previewData?.source_srid || props.previewData?.srid || 0),
-    extentSRID: Number(props.previewData?.extent_srid || props.previewData?.srid || 0),
+    sourceSRID: Number(props.previewData?.source_srid || metadata.source_srid || rasterSpatial.srid || props.previewData?.srid || 0),
+    extentSRID: Number(props.previewData?.extent_srid || metadata.extent_srid || rasterSpatial.extent_srid || rasterSpatial.srid || props.previewData?.srid || 0),
     extent,
     recordCount: Number(props.previewData?.total || props.previewData?.rows?.length || 0)
   }
@@ -1201,22 +1236,24 @@ const showQuickViewActions = computed(() => {
 })
 
 const isQuickViewActive = computed(() => {
-  return activePreviewMode.value === 'quick_view' && !!quickViewStatus.value?.can_use_quick_view
+  return activePreviewMode.value === 'map_quick_view' && !!quickViewStatus.value?.can_use_quick_view
 })
 
 const quickViewRenderSource = computed(() => String(
   quickViewStatus.value?.render_source || quickViewStatus.value?.quick_view?.render_source || ''
 ).trim())
+const isRasterQuickView = computed(() => ['direct_tiff_client', 'client_cog_render'].includes(quickViewRenderSource.value))
 
 const quickViewRenderer = computed(() => {
   if (!isQuickViewActive.value) return null
   if (quickViewRenderSource.value === 'direct_geojson') return GeoJSONQuickView
+  if (isRasterQuickView.value) return RasterTIFFQuickView
   if (['cached_tile', 'realtime_tile'].includes(quickViewRenderSource.value)) return VectorTilePreview
   return null
 })
 
-const showRealtimeTileCacheGeneration = computed(() => {
-  return quickViewRenderSource.value === 'realtime_tile' && !!quickViewStatus.value?.can_generate_tile_cache
+const showRasterCOGGenerationAction = computed(() => {
+  return shouldShowRasterCOGGenerationAction(quickViewStatus.value)
 })
 
 const isExternalOptimizationTarget = computed(() => {
@@ -1247,7 +1284,7 @@ const quickViewOptimizationRecommended = computed(() => {
   return realtime.optimization_recommended === true ||
     quickViewStatus.value?.optimization?.status === 'stale' ||
     realtime.performance_mode === 'source_transform_path' ||
-    quickViewTileAdvisory.value?.recommendation === 'quick_view_optimization' ||
+    quickViewTileAdvisory.value?.recommendation === 'vector_quick_view_target_generation' ||
     quickViewTileAdvisory.value?.retryPolicy === 'suppress_tile'
 })
 
@@ -1278,6 +1315,9 @@ const quickViewRendererProps = computed(() => {
   if (quickViewRenderSource.value === 'direct_geojson') {
     return { status: quickViewStatus.value }
   }
+  if (isRasterQuickView.value) {
+    return { status: quickViewStatus.value }
+  }
   const source = quickViewSourceContext.value
   return {
     locator: target.locator,
@@ -1288,7 +1328,7 @@ const quickViewRendererProps = computed(() => {
     tileUrlTemplate: quickViewStatus.value?.quick_view?.tile_url_template || '',
     tileRenderInfo: quickViewStatus.value?.quick_view || {},
     renderSource: quickViewRenderSource.value,
-    defaultTileCacheId: quickViewStatus.value?.default_tile_cache_id || '',
+    defaultTileCacheId: quickViewStatus.value?.default_vector_tile_cache_id || '',
     showMvtGrid: mvtGridVisible.value
   }
 })
@@ -1304,8 +1344,9 @@ const quickViewRenderKey = computed(() => {
     quickViewSourceContext.value.schema || target.locator,
     quickViewSourceContext.value.table || target.locatorType,
     quickViewRenderSource.value,
-    quickViewStatus.value?.default_tile_cache_id || '',
-    quickViewStatus.value?.quick_view?.geojson_url || ''
+    quickViewStatus.value?.default_vector_tile_cache_id || '',
+    quickViewStatus.value?.quick_view?.geojson_url || '',
+    quickViewStatus.value?.quick_view?.preview_url || ''
   ].join('-')
 })
 
@@ -1322,10 +1363,10 @@ const loadQuickViewStatus = async () => {
       quickViewStatus.value = status
       quickViewTileAdvisory.value = null
       quickViewTileLastNotice.value = { key: '', at: 0 }
-      if (status?.preferred_mode === 'quick_view' && status?.can_use_quick_view) {
-        activePreviewMode.value = 'quick_view'
+      if (status?.preferred_mode === 'map_quick_view' && status?.can_use_quick_view) {
+        activePreviewMode.value = 'map_quick_view'
       } else {
-        activePreviewMode.value = 'table_geojson'
+        activePreviewMode.value = 'basic_preview'
       }
     }
   } catch (error) {
@@ -1342,11 +1383,11 @@ const handleSwitchQuickView = async () => {
   if (!target) return
   quickViewActionLoading.value = true
   try {
-    await quickViewAPI.updatePreferredModeByLocator(target.locator, 'quick_view')
+    await quickViewAPI.updatePreferredModeByLocator(target.locator, 'map_quick_view')
     ElMessage.success(t('manager.spatialPreview.switchQuickViewSuccess'))
     await loadQuickViewStatus()
     if (quickViewStatus.value?.can_use_quick_view) {
-      activePreviewMode.value = 'quick_view'
+      activePreviewMode.value = 'map_quick_view'
     }
   } catch (error) {
     console.error('切换快显失败:', error)
@@ -1361,12 +1402,12 @@ const handleBackToBasicPreview = async () => {
   if (!target) return
   quickViewActionLoading.value = true
   try {
-    await quickViewAPI.updatePreferredModeByLocator(target.locator, 'table_geojson')
-    activePreviewMode.value = 'table_geojson'
+    await quickViewAPI.updatePreferredModeByLocator(target.locator, 'basic_preview')
+    activePreviewMode.value = 'basic_preview'
     await loadQuickViewStatus()
   } catch (error) {
     console.error('返回基础预览失败:', error)
-    activePreviewMode.value = 'table_geojson'
+    activePreviewMode.value = 'basic_preview'
   } finally {
     quickViewActionLoading.value = false
   }
@@ -1388,6 +1429,42 @@ const handleQuickViewOptimization = () => {
     name: 'QuickViewOptimization',
     query: buildQuickViewOptimizationCreateQuery(target, quickViewStatus.value)
   })
+}
+
+const handleGenerateRasterCOG = async () => {
+  const target = spatialPreviewTarget.value
+  if (!target || !quickViewStatus.value) return
+  rasterCOGGenerationLoading.value = true
+  try {
+    const payload = buildRasterCOGTaskPayload(
+      target,
+      quickViewStatus.value,
+      t('manager.spatialPreview.rasterCOGTaskName', { name: title.value || target.locator })
+    )
+    const task = await quickViewAPI.createRasterCOGTask(payload)
+    const execution = await quickViewAPI.executeRasterCOGTask(task.id)
+    ElMessage.success(t('manager.spatialPreview.generateRasterCOGSubmitted'))
+    const executionID = String(execution?.execution_id || '').trim()
+    if (executionID) {
+      const result = await waitForRasterCOGExecution(
+        executionID,
+        (id) => quickViewAPI.getExecutionStatus(id)
+      )
+      if (result.success) {
+        ElMessage.success(t('manager.spatialPreview.generateRasterCOGReady'))
+      } else if (result.failed) {
+        ElMessage.error(t('manager.spatialPreview.generateRasterCOGExecutionFailed'))
+      } else if (!result.completed) {
+        ElMessage.warning(t('manager.spatialPreview.generateRasterCOGTimeout'))
+      }
+    }
+    await loadQuickViewStatus()
+  } catch (error) {
+    console.error('提交 栅格快显 COG生成失败:', error)
+    ElMessage.error(t('manager.spatialPreview.generateRasterCOGFailed'))
+  } finally {
+    rasterCOGGenerationLoading.value = false
+  }
 }
 
 const handleTileAdvisory = (advisory) => {

@@ -53,9 +53,16 @@ func (p *PostgreSQLPlugin) SensitiveFields() []string {
 
 func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "schema", plugin.TabularCapabilityOptions{
-		Write:             true,
-		BulkWrite:         true,
-		TableReadSession:  true,
+		Write:                     true,
+		BulkWrite:                 true,
+		TableReadSession:          true,
+		TableReadSpatialTransform: true,
+		TableSpatialEncoding: &plugin.NativeTableSpatialEncodingCapability{
+			GeometryReadEncodings:  []string{"ewkb", "geojson"},
+			GeometryWriteEncodings: []string{"ewkb"},
+			ReadTransform:          true,
+			NativeSpatialFunctions: true,
+		},
 		BatchWrite:        true,
 		TableWriteSession: true,
 		TableWritePrepare: true,

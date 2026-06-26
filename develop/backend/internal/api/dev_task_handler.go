@@ -29,8 +29,8 @@ func NewDevTaskHandler(devTaskService *service.DevTaskService) *DevTaskHandler {
 // @Tags DevTask
 // @Accept json
 // @Produce json
-// @Param body body models.CreateDevTaskRequest true "创建请求 | Create request"
-// @Success 200 {object} models.DevTask "已创建的开发任务 | Created development task"
+// @Param body body models.CreateDevTaskSwaggerRequest true "创建请求 | Create request"
+// @Success 200 {object} models.DevTaskSwagger "已创建的开发任务 | Created development task"
 // @Router /task-definitions [post]
 func (h *DevTaskHandler) CreateDevTask(c *gin.Context) {
 	var req models.CreateDevTaskRequest
@@ -57,8 +57,8 @@ func (h *DevTaskHandler) CreateDevTask(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path int true "开发任务 ID | Development task ID"
-// @Param body body models.UpdateDevTaskRequest true "更新请求 | Update request"
-// @Success 200 {object} models.DevTask "已更新的开发任务 | Updated development task"
+// @Param body body models.UpdateDevTaskSwaggerRequest true "更新请求 | Update request"
+// @Success 200 {object} models.DevTaskSwagger "已更新的开发任务 | Updated development task"
 // @Router /task-definitions/{id} [put]
 func (h *DevTaskHandler) UpdateDevTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -90,7 +90,7 @@ func (h *DevTaskHandler) UpdateDevTask(c *gin.Context) {
 // @Tags DevTask
 // @Produce json
 // @Param id path int true "开发任务ID | Development task ID"
-// @Success 200 {object} models.DevTask "开发任务详情 | Development task details"
+// @Success 200 {object} models.DevTaskSwagger "开发任务详情 | Development task details"
 // @Router /task-definitions/{id} [get]
 func (h *DevTaskHandler) GetDevTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -117,7 +117,7 @@ func (h *DevTaskHandler) GetDevTask(c *gin.Context) {
 // @Produce json
 // @Param task_type path string true "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script"
 // @Param id path int true "开发任务ID | Development task ID"
-// @Success 200 {object} models.ProviderDevTask "开发任务详情 | Development task detail"
+// @Success 200 {object} models.ProviderDevTaskSwagger "开发任务详情 | Development task detail"
 // @Failure 400 {object} map[string]interface{} "参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @Router /tasks/{task_type}/{id} [get]
@@ -167,7 +167,7 @@ func isDevelopTaskType(taskType string) bool {
 // @Param engine_id query int false "资源ID过滤 | Filter by engine ID"
 // @Param tag query string false "标签过滤 | Filter by tag"
 // @Param keyword query string false "关键词搜索 | Keyword search"
-// @Success 200 {object} models.ListDevTasksResponse "开发任务列表 | Development task list"
+// @Success 200 {object} models.ListDevTasksSwaggerResponse "开发任务列表 | Development task list"
 // @Router /task-definitions [get]
 func (h *DevTaskHandler) ListDevTasks(c *gin.Context) {
 	var req models.ListDevTasksRequest

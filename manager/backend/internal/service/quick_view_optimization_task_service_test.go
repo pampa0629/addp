@@ -237,7 +237,7 @@ func TestQuickViewOptimizationDeleteResultsForSourceTableDeletesPreference(t *te
 	if err := repo.CreateResult(context.Background(), result); err != nil {
 		t.Fatalf("create quick view optimization result: %v", err)
 	}
-	if err := quickViewRepo.UpdatePreferredMode(result.TenantID, result.ItemFingerprint, result.Locator, "quick_view"); err != nil {
+	if err := quickViewRepo.UpdatePreferredMode(result.TenantID, result.ItemFingerprint, result.Locator, models.QuickViewPreferredModeMapQuickView); err != nil {
 		t.Fatalf("create quick view preference: %v", err)
 	}
 

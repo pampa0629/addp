@@ -4,6 +4,7 @@ import {
   List, Timer, Connection, Search, Document, Share, DataBoard, Odometer,
   TrendCharts, SortDown, FolderOpened, Warning, Monitor, Notebook,
   Files, Tickets, Key, Refresh, User,
+  MapLocation,
 } from '@element-plus/icons-vue'
 
 // ─── 群组导航配置 ────────────────────────────────────────────────────────────
@@ -81,8 +82,9 @@ export const PAGE_MAPS = {
     'data-explorer': 'data-explorer',
     'data-retrieval': 'data-retrieval',
     'vectorization-tasks': 'vectorization-tasks',
-    'tile-cache': 'tile-cache',
-    'quick-view-optimization': 'quick-view-optimization',
+    'spatial-quick-view/vector-tile-cache': 'spatial-quick-view/vector-tile-cache',
+    'spatial-quick-view/vector-optimization': 'spatial-quick-view/vector-optimization',
+    'spatial-quick-view/raster-cog': 'spatial-quick-view/raster-cog',
     '': 'data-explorer',
   },
   meta: {
@@ -209,8 +211,16 @@ export const SIDEBAR_MENUS = {
       { index: '/manager/data-explorer',       icon: Search,   label: 'console.menus.manager.dataExplorer' },
       { index: '/manager/data-retrieval',      icon: Document, label: 'console.menus.manager.dataRetrieval' },
       { index: '/manager/vectorization-tasks', icon: List,     label: 'console.menus.manager.vectorizationTasks' },
-      { index: '/manager/tile-cache',          icon: Grid,     label: 'console.menus.manager.tileCache' },
-      { index: '/manager/quick-view-optimization', icon: TrendCharts, label: 'console.menus.manager.quickViewOptimization' },
+      {
+        index: '/manager/spatial-quick-view',
+        icon: MapLocation,
+        label: 'console.menus.manager.spatialQuickView',
+        children: [
+          { index: '/manager/spatial-quick-view/vector-optimization', icon: TrendCharts, label: 'console.menus.manager.quickViewOptimization' },
+          { index: '/manager/spatial-quick-view/vector-tile-cache',   icon: Grid,        label: 'console.menus.manager.tileCache' },
+          { index: '/manager/spatial-quick-view/raster-cog',          icon: Files,       label: 'console.menus.manager.cogArtifacts' },
+        ],
+      },
     ],
   },
   standard: {

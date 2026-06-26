@@ -90,7 +90,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor
 | `Format` | 稳定 format ID，例如 `csv` |
 | `DataType` | 默认 data type |
 | `Layouts` | `single`、`multi`、`whole` |
-| `Identification` | 扩展名、MIME、内容签名 |
+| `Identification` | 扩展名、确定性文件名、MIME、内容签名 |
 
 `Descriptor()` 是格式身份、识别规则、默认 data type 和 layout 的静态事实源，不是某个 data item 的扫描结果，也不声明当前 Go 进程是否已有 provider / reader / writer。当前进程实际加载了哪些实现，只能由已注册 `FormatPlugin` 是否实现对应接口动态判断。
 

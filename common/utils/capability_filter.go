@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"strings"
 
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -19,7 +20,17 @@ func ParseCapabilities(capabilitiesJSON *models.JSONString) (*engineplugin.Engin
 		return nil, nil
 	}
 
-	return engineplugin.ParseEngineCapabilities(string(*capabilitiesJSON))
+	capabilities, err := engineplugin.ParseEngineCapabilities(string(*capabilitiesJSON))
+	if err != nil {
+		return nil, err
+	}
+	if capabilities == nil {
+		return nil, nil
+	}
+	if capabilities.SchemaVersion != engineplugin.CapabilitiesSchemaVersion {
+		return nil, fmt.Errorf("capabilities schema_version must be %s", engineplugin.CapabilitiesSchemaVersion)
+	}
+	return capabilities, nil
 }
 
 // HasStorageCapability 检查资源是否具有存储能力

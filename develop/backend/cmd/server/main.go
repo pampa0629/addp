@@ -23,7 +23,7 @@ import (
 
 // @title           ADDP Develop API
 // @version         1.0
-// @host      localhost:8085
+// @host      localhost:8185
 // @BasePath  /api/v1/develop
 // @securityDefinitions.apikey BearerAuth
 // @in header
@@ -113,8 +113,13 @@ func main() {
 	devTaskService := service.NewDevTaskService(devTaskRepo)
 	log.Printf("✅ DevTaskService 初始化完成")
 
-	// 5. DevExecutor 统一执行器（使用统一执行表）
-	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, sqlEngine, jupyterService, notebookExecutionService)
+	// 6. DuckDB 联邦查询服务
+	metaClient := commonClient.NewMetaClientWithInternalKey(cfg.MetaServiceURL, cfg.InternalAPIKey)
+	duckdbService := service.NewDuckDBService(cfg, systemClient, metaClient)
+	log.Printf("✅ DuckDBService 初始化完成")
+
+	// 7. DevExecutor 统一执行器（使用统一执行表）
+	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, sqlEngine, duckdbService, jupyterService, notebookExecutionService)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
 
 	cleanupService := service.NewCleanupService(db, redisClient, taskExecutionRepo)
@@ -123,26 +128,16 @@ func main() {
 	}
 	defer cleanupService.Stop()
 
-	// 5. 算子发现服务（动态发现工作流引擎）
-	operatorDiscovery := service.NewOperatorDiscoveryService(
-		systemClient, // 新增：传入 System Client（动态发现引擎）
-		cfg.MetaServiceURL,
-		cfg.TransferServiceURL,
-		cfg.ManagerServiceURL,
-	)
+	// 8. 算子发现服务（动态发现工作流引擎）
+	operatorDiscovery := service.NewOperatorDiscoveryService(systemClient)
 	log.Printf("✅ OperatorDiscoveryService 初始化完成")
-
-	// 6. DuckDB 联邦查询服务
-	metaClient := commonClient.NewMetaClientWithInternalKey(cfg.MetaServiceURL, cfg.InternalAPIKey)
-	duckdbService := service.NewDuckDBService(cfg, systemClient, metaClient)
-	log.Printf("✅ DuckDBService 初始化完成")
 
 	// ========== Handler 层 ==========
 	devTaskHandler := api.NewDevTaskHandler(devTaskService)
 	executionHandler := api.NewExecutionHandler(devExecutor)
 	operatorHandler := api.NewOperatorHandler(operatorDiscovery)
 	engineHandler := api.NewEngineHandler(systemClient)
-	queryHandler := api.NewQueryHandler(sqlEngine)
+	queryHandler := api.NewQueryHandler(sqlEngine, duckdbService)
 	notebookHandler := api.NewNotebookHandler(jupyterService, notebookExecutionService, devTaskService)
 	duckdbHandler := api.NewDuckDBHandler(duckdbService)
 

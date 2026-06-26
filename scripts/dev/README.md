@@ -21,7 +21,7 @@ scripts/dev/
 ├── README.md          # 本文件
 ├── start.sh           # 启动完整开发环境(后台运行)
 ├── stop.sh            # 停止所有开发服务
-├── restart.sh         # 重启所有服务
+├── restart.sh         # 智能重启服务；纯扩展服务参数支持局部重启
 ├── keepalive.sh       # 托管命令环境前台保活入口
 ├── modtidy.sh         # 清理 Go 模块依赖
 ├── clean.sh           # 清理开发环境编译产物
@@ -132,18 +132,29 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 
 ### restart.sh
 
-**功能**: 重启所有服务(stop + start)
+**功能**: 智能重启服务。
+
+- 无参数、`-all` 或指定 Go 模块时：保持原有全局重启语义，先 `stop.sh` 再 `start.sh`。
+- 只指定扩展服务参数时：只重启对应扩展服务，不停止整套 ADDP 环境。
 
 **实现**:
 ```bash
-#!/usr/bin/env bash
-bash scripts/dev/stop.sh
-bash scripts/dev/start.sh
+# 全局重启
+bash scripts/dev/restart.sh -manager
+
+# 局部重启扩展服务
+bash scripts/dev/restart.sh -python-workflow
+bash scripts/dev/restart.sh -math-workflow
+bash scripts/dev/restart.sh -spark-workflow
+bash scripts/dev/restart.sh -jupyter
+bash scripts/dev/restart.sh -copilot
+bash scripts/dev/restart.sh -agent
 ```
 
 **使用场景**:
 - 修改代码后需要重启
 - 服务异常需要重置
+- 只调整 Python/扩展服务时，避免影响正在运行的 Go 后端服务
 
 **重要**: `restart.sh` 不会重启基础设施容器(PostgreSQL, Redis, MinIO, Meilisearch)
 - 原因: 避免 pgvector 等扩展需要重新编译安装

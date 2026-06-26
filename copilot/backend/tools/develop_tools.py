@@ -15,13 +15,14 @@ class EngineTool(BaseTool):
     """获取引擎列表 Tool"""
     name: str = "get_engines"
     description: str = """
-获取当前租户的所有存储引擎列表。
-引擎类型包括：
-- 关系数据库：PostgreSQL、MySQL、Doris、ClickHouse
-- 对象存储：MinIO、S3、OSS
-- 计算引擎：Python Workflow、Spark
-使用方式：输入租户 ID（整数），返回引擎列表（JSON）
-"""
+	获取当前租户的所有存储引擎列表。
+	引擎类型包括：
+	- 关系数据库：PostgreSQL、MySQL、Doris、ClickHouse
+	- 对象存储：MinIO、S3、OSS
+	- 可查询通用引擎：Spark
+	不返回工作流运行时实例；工作流运行时由调用方通过 workflow_engine_id 单独选择。
+	使用方式：输入租户 ID（整数），返回引擎列表（JSON）
+	"""
 
     async def _arun(self, tenant_id: int) -> List[Dict]:
         """异步执行"""
@@ -138,36 +139,40 @@ class OperatorDiscoveryTool(BaseTool):
     """获取算子列表 Tool（带缓存）"""
     name: str = "discover_operators"
     description: str = """
-获取所有计算引擎提供的算子简要信息（名称、分类、简要描述）。
-包含空间和非空间算子（Buffer、Clip、Union、Intersect 等）。
-使用方式：无需参数，返回算子列表（JSON）
-"""
+	获取指定工作流运行时提供的算子简要信息（名称、分类、简要描述）。
+	包含空间和非空间算子（Buffer、Clip、Union、Intersect 等）。
+	使用方式：传入 workflow_engine_id（工作流引擎实例 ID），返回算子列表（JSON）
+	"""
 
     # 类级别的缓存
     _cache: Optional[List[Dict]] = None
     _cache_time: Optional[float] = None
     _cache_ttl: int = 300  # 5 分钟
 
-    async def _arun(self, engine_type: str = "python_workflow") -> List[Dict]:
-        """异步执行，获取指定引擎类型的算子"""
+    async def _arun(self, workflow_engine_id: int) -> List[Dict]:
+        """异步执行，获取指定工作流引擎实例的算子"""
+        if not workflow_engine_id:
+            print("[OperatorDiscoveryTool] ❌ workflow_engine_id 不能为空")
+            return []
+
         # 检查缓存
-        if self._cache and self._cache_time and hasattr(self, '_cache_engine_type'):
-            if self._cache_engine_type == engine_type:
+        if self._cache and self._cache_time and hasattr(self, '_cache_workflow_engine_id'):
+            if self._cache_workflow_engine_id == workflow_engine_id:
                 age = time.time() - self._cache_time
                 if age < self._cache_ttl:
-                    print(f"[OperatorDiscoveryTool] 使用缓存（引擎: {engine_type}, 年龄: {age:.1f}秒）")
+                    print(f"[OperatorDiscoveryTool] 使用缓存（工作流引擎 ID: {workflow_engine_id}, 年龄: {age:.1f}秒）")
                     return self._cache
 
         # 缓存过期或不存在，从 API 获取
-        print(f"[OperatorDiscoveryTool] 缓存过期，从 Develop API 获取（引擎: {engine_type}）")
+        print(f"[OperatorDiscoveryTool] 缓存过期，从 Develop API 获取（工作流引擎 ID: {workflow_engine_id}）")
 
         try:
             async with DevelopClient(
                 base_url=settings.get_develop_url(),
                 internal_api_key=settings.internal_api_key
             ) as client:
-                operators = await client.list_operators(engine_type)
-                print(f"[OperatorDiscoveryTool] ✅ 从 API 获取到 {len(operators)} 个算子（引擎: {engine_type}）")
+                operators = await client.list_operators(workflow_engine_id)
+                print(f"[OperatorDiscoveryTool] ✅ 从 API 获取到 {len(operators)} 个算子（工作流引擎 ID: {workflow_engine_id}）")
 
                 # 提取简要信息
                 brief_operators = [
@@ -182,13 +187,13 @@ class OperatorDiscoveryTool(BaseTool):
                 # 更新缓存
                 self._cache = brief_operators
                 self._cache_time = time.time()
-                self._cache_engine_type = engine_type
+                self._cache_workflow_engine_id = workflow_engine_id
 
                 return brief_operators
         except Exception as e:
             print(f"[OperatorDiscoveryTool] ❌ 获取算子失败: {type(e).__name__}: {e}")
             # 如果有缓存且引擎类型匹配，即使过期也返回
-            if self._cache and hasattr(self, '_cache_engine_type') and self._cache_engine_type == engine_type:
+            if self._cache and hasattr(self, '_cache_workflow_engine_id') and self._cache_workflow_engine_id == workflow_engine_id:
                 print(f"[OperatorDiscoveryTool] 使用过期缓存作为降级")
                 return self._cache
             return []
@@ -206,21 +211,25 @@ class OperatorDetailTool(BaseTool):
 使用方式：输入算子名称（字符串），返回算子详情（JSON）
 """
 
-    async def _arun(self, operator_name: str, engine_type: str = "python_workflow") -> Optional[Dict]:
-        """异步执行，获取指定引擎的算子详情"""
-        print(f"[OperatorDetailTool] 获取算子 '{operator_name}' 的详细信息（引擎: {engine_type}）")
+    async def _arun(self, operator_name: str, workflow_engine_id: int) -> Optional[Dict]:
+        """异步执行，获取指定工作流引擎实例的算子详情"""
+        if not workflow_engine_id:
+            print("[OperatorDetailTool] ❌ workflow_engine_id 不能为空")
+            return None
+
+        print(f"[OperatorDetailTool] 获取算子 '{operator_name}' 的详细信息（工作流引擎 ID: {workflow_engine_id}）")
 
         try:
             async with DevelopClient(
                 base_url=settings.get_develop_url(),
                 internal_api_key=settings.internal_api_key
             ) as client:
-                operator = await client.get_operator(operator_name, engine_type)
+                operator = await client.get_operator(operator_name, workflow_engine_id)
                 if operator:
                     print(f"[OperatorDetailTool] ✅ 成功获取算子详情")
                     return operator
                 else:
-                    print(f"[OperatorDetailTool] ⚠️ 未找到算子 '{operator_name}' (引擎: {engine_type})")
+                    print(f"[OperatorDetailTool] ⚠️ 未找到算子 '{operator_name}' (工作流引擎 ID: {workflow_engine_id})")
                     return None
         except Exception as e:
             print(f"[OperatorDetailTool] ❌ 获取算子详情失败: {type(e).__name__}: {e}")

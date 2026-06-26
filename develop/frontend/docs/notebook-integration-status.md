@@ -222,7 +222,7 @@ Notebook 功能深度集成 ADDP 架构项目已完成 **MVP 阶段**（约 90%�
 
 | 服务 | 端口 | 状态 | 说明 |
 |------|------|------|------|
-| Develop Backend | 8085 | ✅ 运行中 | 包含 NotebookExecutionService |
+| Develop Backend | 8185 | ✅ 运行中 | 包含 NotebookExecutionService |
 | Jupyter Lab | 8088 | ✅ 运行中 | MinIO ContentsManager 已配置 |
 | Jupyter Engine API | 8097 | ✅ 运行中 | 支持数据源注入 |
 | PostgreSQL | 15432 | ✅ 运行中 | develop schema + dev_tasks 表 |
@@ -471,11 +471,11 @@ MinIO develop bucket/
 **验证方法**：
 ```bash
 # 1. 执行 Notebook
-curl -X POST http://localhost:8085/api/v1/develop/task-definitions/1/execute \
+curl -X POST http://localhost:8185/api/v1/develop/task-definitions/1/execute \
   -H "Authorization: Bearer $TOKEN"
 
 # 2. 下载输出 Notebook
-curl http://localhost:8085/api/v1/develop/notebooks/1/download \
+curl http://localhost:8185/api/v1/develop/notebooks/1/download \
   -H "Authorization: Bearer $TOKEN" -o output.ipynb
 
 # 3. 检查是否包含注入的 Cell
@@ -494,7 +494,7 @@ docker restart addp-infra-jupyter-engine
 
 # 2. 检查 System 模块的 engines 表
 psql -h localhost -p 15432 -U postgres -d addp -c \
-  "SELECT id, name, engine_type, is_builtin FROM system.engines WHERE unique_identifier='jupyter';"
+  "SELECT id, name, engine_type, is_builtin FROM system.engines WHERE engine_type='jupyter';"
 
 # 预期：返回 1 条记录
 ```

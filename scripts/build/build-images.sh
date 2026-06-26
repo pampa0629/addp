@@ -521,7 +521,18 @@ build_service() {
             fi
             ;;
 
-        python-workflow-engine|spark-workflow-engine|jupyter-engine)
+        python-workflow-engine)
+            # Python Workflow 依赖 common-python，共享 schema/client 需要仓库根作为构建上下文
+            build_context="."
+            dockerfile_path="${service_dir}/Dockerfile"
+
+            if [ ! -f "${service_dir}/Dockerfile" ]; then
+                echo -e "${RED}Error: Dockerfile not found in ${service_dir}${NC}"
+                return 1
+            fi
+            ;;
+
+        spark-workflow-engine|jupyter-engine)
             # Python Engine: Python service built from source
             build_context="${service_dir}"
             dockerfile_path="${service_dir}/Dockerfile"

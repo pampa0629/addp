@@ -73,24 +73,44 @@ func TestTaskProviderRegistryQuickViewOptimizationCapability(t *testing.T) {
 		t.Fatalf("schema_version = %q, want task.capabilities/v1", capabilities.SchemaVersion)
 	}
 
-	quickView := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, "quick_view_optimization")
+	quickView := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, "vector_quick_view_target_generation")
 	if quickView.SupportsSchedule {
-		t.Fatal("quick_view_optimization supports_schedule = true, want false")
+		t.Fatal("vector_quick_view_target_generation supports_schedule = true, want false")
 	}
 	if quickView.SupportsCancel {
-		t.Fatal("quick_view_optimization supports_cancel = true, want false")
+		t.Fatal("vector_quick_view_target_generation supports_cancel = true, want false")
 	}
 	if quickView.SupportsInlineExecution {
-		t.Fatal("quick_view_optimization supports_inline_execution = true, want false")
+		t.Fatal("vector_quick_view_target_generation supports_inline_execution = true, want false")
 	}
-	if quickView.CreateURL != "/manager/quick-view-optimization?tab=tasks" {
-		t.Fatalf("quick_view_optimization create_url = %q, want quick view optimization tasks page", quickView.CreateURL)
+	if quickView.CreateURL != "/manager/spatial-quick-view/vector-optimization?tab=tasks" {
+		t.Fatalf("vector_quick_view_target_generation create_url = %q, want quick view optimization tasks page", quickView.CreateURL)
 	}
-	if quickView.EditURL != "/manager/quick-view-optimization?tab=tasks&task_id=:id" {
-		t.Fatalf("quick_view_optimization edit_url = %q, want quick view optimization task edit page", quickView.EditURL)
+	if quickView.EditURL != "/manager/spatial-quick-view/vector-optimization?tab=tasks&task_id=:id" {
+		t.Fatalf("vector_quick_view_target_generation edit_url = %q, want quick view optimization task edit page", quickView.EditURL)
 	}
 	if quickView.Deprecated {
-		t.Fatal("quick_view_optimization deprecated = true, want false")
+		t.Fatal("vector_quick_view_target_generation deprecated = true, want false")
+	}
+
+	cog := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, "raster_cog_generation")
+	if cog.SupportsSchedule {
+		t.Fatal("raster_cog_generation supports_schedule = true, want false")
+	}
+	if cog.SupportsCancel {
+		t.Fatal("raster_cog_generation supports_cancel = true, want false")
+	}
+	if cog.SupportsInlineExecution {
+		t.Fatal("raster_cog_generation supports_inline_execution = true, want false")
+	}
+	if cog.CreateURL != "/manager/spatial-quick-view/raster-cog?tab=tasks" {
+		t.Fatalf("raster_cog_generation create_url = %q, want raster COG tasks page", cog.CreateURL)
+	}
+	if cog.EditURL != "/manager/spatial-quick-view/raster-cog?tab=tasks&task_id=:id" {
+		t.Fatalf("raster_cog_generation edit_url = %q, want raster COG task edit page", cog.EditURL)
+	}
+	if cog.Deprecated {
+		t.Fatal("raster_cog_generation deprecated = true, want false")
 	}
 }
 

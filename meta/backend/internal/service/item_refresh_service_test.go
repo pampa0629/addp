@@ -211,6 +211,89 @@ func TestRefreshKnownPDFItemWritesDocumentAndFormatInfo(t *testing.T) {
 	}
 }
 
+func TestRefreshKnownTIFFItemKeepsBaseAttributesWhenMediaDescribeFails(t *testing.T) {
+	t.Parallel()
+
+	db := openObjectCatalogScanTestDB(t)
+	tenantID := uint(1)
+	engineID := uint(82)
+	engineSvc := NewEngineService(db, "", "")
+	engineSvc.engineCache[engineID] = &engineCacheEntry{
+		resource: &commonModels.Engine{
+			ID:         engineID,
+			TenantID:   &tenantID,
+			EngineType: "known-refresh-tiff-test",
+			IsActive:   true,
+		},
+		expiresAt: time.Now().Add(time.Hour),
+	}
+
+	content := []byte("II*\x00unsupported-tiff-payload")
+	plugin.Register(refreshContentReader{engineType: "known-refresh-tiff-test", content: map[string][]byte{
+		"addp/image/srtm_40_01.tif": content,
+	}})
+
+	svc := NewScanService(db, engineSvc)
+	svc.log = slog.Default()
+	node := models.MetaNode{TenantID: tenantID, EngineID: engineID, NodeType: "bucket", Name: "addp", FullName: "addp", Depth: 0}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	size := int64(len(content))
+	item := models.MetaItem{
+		TenantID:    tenantID,
+		EngineID:    engineID,
+		NodeID:      node.ID,
+		ItemType:    "object",
+		Name:        "srtm_40_01.tif",
+		FullName:    "addp/image/srtm_40_01.tif",
+		Fingerprint: "known-refresh-tiff",
+		SizeBytes:   &size,
+		Attributes: models.JSONMap{
+			"item": map[string]interface{}{
+				"layout":    string(format.LayoutSingle),
+				"data_type": string(datatype.Media),
+				"format":    "tiff",
+			},
+			"storage": map[string]interface{}{
+				"bucket":        "addp",
+				"path":          "image/",
+				"name":          "srtm_40_01.tif",
+				"physical_path": "addp/image/srtm_40_01.tif",
+				"size_bytes":    size,
+			},
+		},
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	resp, err := svc.ScanEngineWithOptions(scanflow.Options{
+		EngineID:  engineID,
+		TenantID:  tenantID,
+		ItemID:    item.ID,
+		ScanDepth: scanflow.ScanDepthDeep,
+		Force:     true,
+	})
+	if err != nil {
+		t.Fatalf("RefreshItem() error = %v", err)
+	}
+	if resp.ItemsScanned != 1 {
+		t.Fatalf("ItemsScanned = %d, want 1", resp.ItemsScanned)
+	}
+
+	var refreshed models.MetaItem
+	if err := db.First(&refreshed, item.ID).Error; err != nil {
+		t.Fatalf("load refreshed item: %v", err)
+	}
+	if got := commonJSON.String(refreshed.Attributes, "item", "format"); got != "tiff" {
+		t.Fatalf("item.format = %q, want tiff", got)
+	}
+	if got := commonJSON.String(refreshed.Attributes, "storage", "physical_path"); got != "addp/image/srtm_40_01.tif" {
+		t.Fatalf("storage.physical_path = %q, want addp/image/srtm_40_01.tif", got)
+	}
+}
+
 func TestRefreshKnownDOCXItemExtractsTextFacts(t *testing.T) {
 	t.Parallel()
 

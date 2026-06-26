@@ -114,16 +114,28 @@ type CatalogFactsCapability struct {
 }
 
 type StoreCapability struct {
-	StreamRead        bool `json:"stream_read,omitempty"`
-	StreamWrite       bool `json:"stream_write,omitempty"`
-	RangeRead         bool `json:"range_read,omitempty"`
-	RangeWrite        bool `json:"range_write,omitempty"`
-	Delete            bool `json:"delete,omitempty"`
-	BatchRead         bool `json:"batch_read,omitempty"`
-	TableReadSession  bool `json:"table_read_session,omitempty"`
-	BatchWrite        bool `json:"batch_write,omitempty"`
-	TableWriteSession bool `json:"table_write_session,omitempty"`
-	TableWritePrepare bool `json:"table_write_prepare,omitempty"`
+	StreamRead                bool                                  `json:"stream_read,omitempty"`
+	StreamWrite               bool                                  `json:"stream_write,omitempty"`
+	RangeRead                 bool                                  `json:"range_read,omitempty"`
+	RangeWrite                bool                                  `json:"range_write,omitempty"`
+	Delete                    bool                                  `json:"delete,omitempty"`
+	BatchRead                 bool                                  `json:"batch_read,omitempty"`
+	TableReadSession          bool                                  `json:"table_read_session,omitempty"`
+	TableReadSpatialTransform bool                                  `json:"table_read_spatial_transform,omitempty"`
+	BatchWrite                bool                                  `json:"batch_write,omitempty"`
+	TableWriteSession         bool                                  `json:"table_write_session,omitempty"`
+	TableWritePrepare         bool                                  `json:"table_write_prepare,omitempty"`
+	TableSpatialEncoding      *NativeTableSpatialEncodingCapability `json:"table_spatial_encoding,omitempty"`
+}
+
+// NativeTableSpatialEncodingCapability describes geometry row encodings that a
+// native table provider can exchange across the ADDP table pipeline.
+type NativeTableSpatialEncodingCapability struct {
+	GeometryReadEncodings  []string `json:"geometry_read_encodings,omitempty"`
+	GeometryWriteEncodings []string `json:"geometry_write_encodings,omitempty"`
+	ReadTransform          bool     `json:"read_transform,omitempty"`
+	WriteTransform         bool     `json:"write_transform,omitempty"`
+	NativeSpatialFunctions bool     `json:"native_spatial_functions,omitempty"`
 }
 
 type ComputeCapabilities struct {

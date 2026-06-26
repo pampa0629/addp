@@ -15,7 +15,7 @@ COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/develop ./server
 RUN chmod +x ./server
 
 # 暴露端口
-EXPOSE 8085
+EXPOSE 8185
 
 # 运行
 CMD ["./server"]

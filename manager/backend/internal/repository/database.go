@@ -40,11 +40,17 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := ensureEmbeddingTaskDefinitionSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure embedding task definition schema: %w", err)
 	}
+	if err := dropLegacyQuickViewTables(db); err != nil {
+		return nil, fmt.Errorf("failed to drop legacy quick view tables: %w", err)
+	}
 	if err := ensureTileCacheStateSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure tile cache state schema: %w", err)
 	}
 	if err := ensureQuickViewOptimizationSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure quick view optimization schema: %w", err)
+	}
+	if err := ensureRasterCOGSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure raster COG schema: %w", err)
 	}
 
 	// Configure connection pool for optimal performance
@@ -65,12 +71,26 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	return db, nil
 }
 
-func ensureTileCacheStateSchema(db *gorm.DB) error {
-	legacyTileTaskTable := "mvt" + "_tasks"
-	if err := db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS manager.%q`, legacyTileTaskTable)).Error; err != nil {
-		return err
+func dropLegacyQuickViewTables(db *gorm.DB) error {
+	legacyTables := []string{
+		"quick_view_optimization",
+		"quick_view_optimization_tasks",
+		"tile_cache",
+		"tile_cache_tasks",
+		"cog_artifacts",
+		"cog_artifact_tasks",
+		"vector_tile_cache_artifacts",
+		"mvt_tasks",
 	}
+	for _, table := range legacyTables {
+		if err := db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS manager.%q`, table)).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
+func ensureTileCacheStateSchema(db *gorm.DB) error {
 	var legacyQuickViewColumns int64
 	if err := db.Raw(`
 		SELECT COUNT(*)
@@ -94,7 +114,7 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		WHERE table_schema = 'manager'
 		  AND table_name = 'quick_view'
 		  AND column_name IN (
-		    'can_use_quick_view', 'can_generate_tile_cache', 'default_artifact_id',
+		    'can_use_quick_view', 'can_generate_vector_tile_cache', 'default_artifact_id',
 		    'status', 'unavailable_reason', 'last_checked_at'
 		  )
 	`).Scan(&quickViewDerivedColumns).Error; err != nil {
@@ -123,7 +143,7 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		SELECT COUNT(*)
 		FROM information_schema.columns
 		WHERE table_schema = 'manager'
-		  AND table_name = 'tile_cache_tasks'
+		  AND table_name = 'vector_tile_cache_tasks'
 		  AND column_name IN ('engine_id', 'schema_name', 'table_name', 'min_zoom', 'max_zoom', 'optimization_config')
 	`).Scan(&tileTaskLegacyColumns).Error; err != nil {
 		return err
@@ -135,7 +155,7 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 			SELECT 1
 			FROM information_schema.columns
 			WHERE table_schema = 'manager'
-			  AND table_name = 'tile_cache_tasks'
+			  AND table_name = 'vector_tile_cache_tasks'
 			  AND column_name = 'config'
 		)
 	`).Scan(&hasTileTaskConfig).Error; err != nil {
@@ -143,7 +163,7 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 	}
 
 	if tileTaskLegacyColumns > 0 || !hasTileTaskConfig {
-		if err := db.Exec(`DROP TABLE IF EXISTS manager.tile_cache_tasks`).Error; err != nil {
+		if err := db.Exec(`DROP TABLE IF EXISTS manager.vector_tile_cache_tasks`).Error; err != nil {
 			return err
 		}
 	}
@@ -154,14 +174,14 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 			SELECT 1
 			FROM information_schema.columns
 			WHERE table_schema = 'manager'
-			  AND table_name = 'tile_cache'
+			  AND table_name = 'vector_tile_cache'
 			  AND column_name = 'item_fingerprint'
 		)
 	`).Scan(&hasTileCacheItemFingerprint).Error; err != nil {
 		return err
 	}
 	if !hasTileCacheItemFingerprint {
-		if err := db.Exec(`DROP TABLE IF EXISTS manager.tile_cache`).Error; err != nil {
+		if err := db.Exec(`DROP TABLE IF EXISTS manager.vector_tile_cache`).Error; err != nil {
 			return err
 		}
 	}
@@ -171,13 +191,13 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		SELECT COUNT(*)
 		FROM information_schema.columns
 		WHERE table_schema = 'manager'
-		  AND table_name = 'tile_cache'
+		  AND table_name = 'vector_tile_cache'
 		  AND column_name IN ('source_version', 'source_signature')
 	`).Scan(&tileCacheSignatureColumns).Error; err != nil {
 		return err
 	}
 	if tileCacheSignatureColumns > 0 {
-		if err := db.Exec(`DROP TABLE IF EXISTS manager.tile_cache`).Error; err != nil {
+		if err := db.Exec(`DROP TABLE IF EXISTS manager.vector_tile_cache`).Error; err != nil {
 			return err
 		}
 	}
@@ -187,26 +207,22 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		SELECT COUNT(*)
 		FROM information_schema.columns
 		WHERE table_schema = 'manager'
-		  AND table_name = 'tile_cache'
+		  AND table_name = 'vector_tile_cache'
 		  AND column_name = 'config_hash'
 	`).Scan(&tileCacheConfigHashColumn).Error; err != nil {
 		return err
 	}
 	if tileCacheConfigHashColumn > 0 {
-		if err := db.Exec(`DROP TABLE IF EXISTS manager.tile_cache`).Error; err != nil {
+		if err := db.Exec(`DROP TABLE IF EXISTS manager.vector_tile_cache`).Error; err != nil {
 			return err
 		}
-	}
-
-	if err := db.Exec(`DROP TABLE IF EXISTS manager.tile_cache_artifacts`).Error; err != nil {
-		return err
 	}
 
 	if err := db.AutoMigrate(&models.TileCacheTask{}, &models.TileCache{}, &models.QuickView{}); err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.tile_cache_tasks
+		UPDATE manager.vector_tile_cache_tasks
 		SET config = config - 'preparation'
 		WHERE config ? 'preparation'
 	`).Error; err != nil {
@@ -222,7 +238,7 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		DELETE FROM manager.tile_cache
+		DELETE FROM manager.vector_tile_cache
 		WHERE COALESCE(item_fingerprint, '') = ''
 		   OR item_fingerprint LIKE 'locator:%'
 		   OR COALESCE(locator, '') = ''
@@ -230,10 +246,10 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 	`).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`ALTER TABLE manager.tile_cache_tasks ALTER COLUMN enabled DROP DEFAULT`).Error; err != nil {
+	if err := db.Exec(`ALTER TABLE manager.vector_tile_cache_tasks ALTER COLUMN enabled DROP DEFAULT`).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_tile_cache_tenant_fingerprint_config_unique`).Error; err != nil {
+	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_vector_tile_cache_tenant_fingerprint_config_unique`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
@@ -257,7 +273,7 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 			true
 		)
 		WHERE module = 'manager'
-		  AND task_type = 'tile_cache_generation'
+		  AND task_type = 'vector_tile_cache_generation'
 		  AND metadata ? 'tile_generation_target'
 		  AND (
 		    NOT (metadata->'tile_generation_target' ? 'target_kind')
@@ -267,8 +283,8 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_tile_cache_tenant_fingerprint_format_unique
-		ON manager.tile_cache (tenant_id, item_fingerprint, tile_format)
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_vector_tile_cache_tenant_fingerprint_format_unique
+		ON manager.vector_tile_cache (tenant_id, item_fingerprint, tile_format)
 		WHERE deleted_at IS NULL
 	`).Error; err != nil {
 		return err
@@ -281,42 +297,42 @@ func ensureQuickViewOptimizationSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.quick_view_optimization_tasks
+		UPDATE manager.vector_quick_view_target_tasks
 		SET enabled = false
 		WHERE enabled IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.quick_view_optimization_tasks
+		UPDATE manager.vector_quick_view_target_tasks
 		SET created_at = NOW()
 		WHERE created_at IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.quick_view_optimization_tasks
+		UPDATE manager.vector_quick_view_target_tasks
 		SET updated_at = NOW()
 		WHERE updated_at IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.quick_view_optimization
+		UPDATE manager.vector_quick_view_targets
 		SET created_at = NOW()
 		WHERE created_at IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.quick_view_optimization
+		UPDATE manager.vector_quick_view_targets
 		SET updated_at = NOW()
 		WHERE updated_at IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.quick_view_optimization_tasks
+		ALTER TABLE manager.vector_quick_view_target_tasks
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN created_by TYPE BIGINT,
@@ -327,7 +343,7 @@ func ensureQuickViewOptimizationSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.quick_view_optimization
+		ALTER TABLE manager.vector_quick_view_targets
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN item_id TYPE BIGINT,
@@ -342,16 +358,75 @@ func ensureQuickViewOptimizationSchema(db *gorm.DB) error {
 	`).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_manager_quick_view_optimization_tasks_deleted_at`).Error; err != nil {
+	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_manager_vector_quick_view_target_tasks_deleted_at`).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_manager_quick_view_optimization_deleted_at`).Error; err != nil {
+	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_manager_vector_quick_view_target_generation_deleted_at`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_qvo_current_target_unique
-		ON manager.quick_view_optimization (tenant_id, item_fingerprint, source_geometry_column, target_srid)
+		ON manager.vector_quick_view_targets (tenant_id, item_fingerprint, source_geometry_column, target_srid)
 		WHERE deleted_at IS NULL
+	`).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureRasterCOGSchema(db *gorm.DB) error {
+	if err := db.AutoMigrate(&models.RasterCOGTask{}, &models.RasterCOG{}); err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		UPDATE manager.raster_cog_tasks
+		SET config = jsonb_set(config - 'artifact', '{result}', config->'artifact', true)
+		WHERE config ? 'artifact'
+		  AND NOT (config ? 'result')
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		UPDATE manager.raster_cog_tasks
+		SET config = config - 'artifact'
+		WHERE config ? 'artifact'
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		UPDATE manager.raster_cog_tasks
+		SET enabled = false
+		WHERE enabled IS NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		ALTER TABLE manager.raster_cog_tasks
+			ALTER COLUMN id TYPE BIGINT,
+			ALTER COLUMN tenant_id TYPE BIGINT,
+			ALTER COLUMN created_by TYPE BIGINT,
+			ALTER COLUMN enabled SET NOT NULL,
+			ALTER COLUMN created_at SET NOT NULL,
+			ALTER COLUMN updated_at SET NOT NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_raster_cog_current_unique
+		ON manager.raster_cog (tenant_id, item_fingerprint)
+		WHERE deleted_at IS NULL AND status <> 'deleted'
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		ALTER TABLE manager.raster_cog
+			ALTER COLUMN source_crs TYPE TEXT
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		ALTER TABLE manager.raster_cog
+			DROP COLUMN IF EXISTS source_locator
 	`).Error; err != nil {
 		return err
 	}

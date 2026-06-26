@@ -31,7 +31,7 @@ func NewTaskListHandler(devTaskService *service.DevTaskService) *TaskListHandler
 // @Param task_type query string false "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script"
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
-// @Success 200 {object} models.ListProviderDevTasksResponse
+// @Success 200 {object} models.ListProviderDevTasksSwaggerResponse
 // @Failure 500 {object} map[string]interface{}
 // @Router /tasks [get]
 // @Security BearerAuth

@@ -328,12 +328,12 @@
 
 1. **在 `internal/models/` 中定义数据模型**:
 
-   ```go
-   type CreateResourceRequest struct {
-       Name           string                 `json:"name" binding:"required"`
-       ResourceType   string                 `json:"resource_type" binding:"required"`
-       ConnectionInfo map[string]interface{} `json:"connection_info"`
-   }
+	   ```go
+	   type CreateResourceRequest struct {
+	       Name           string                 `json:"name" binding:"required"`
+	       EngineType     string                 `json:"engine_type" binding:"required"`
+	       ConnectionInfo map[string]interface{} `json:"connection_info"`
+	   }
    ```
 2. **在 `internal/repository/` 中添加仓库方法**:
 
@@ -719,14 +719,17 @@ const client = createAPIClient(() => useAuthStore(), {
 ```vue
 <script setup>
 // 对于基础模块（所有模块都包含）
-import { StorageEngineForm, ImagePreview } from '@common-ui'
+import { StorageEngineForm } from '@common-ui'
 import { formatFileSize, FieldType } from '@common-ui'
+
+// 对于启用文件预览的模块（Manager）
+import { ImagePreview } from '@common-ui/previews'
 
 // 对于启用地图的模块（Manager, Service）
 import { TablePreview, GeoJsonPreview } from '@common-ui-map'
 
 const resourceForm = ref({
-  resource_type: 'postgresql',
+  engine_type: 'postgresql',
   name: '',
   connection_info: {}
 })

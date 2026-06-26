@@ -17,6 +17,8 @@ func shapeToRowValue(shape shp.Shape, opts *format.ParseOptions, srid int) (inte
 	}
 
 	switch geometryEncoding(opts) {
+	case format.GeometryEncodingShapefileShape:
+		return shape, nil
 	case format.GeometryEncodingWKT:
 		return commonSpatial.GeomToWKT(geometry)
 	case format.GeometryEncodingWKB:
@@ -300,11 +302,61 @@ func polygonCoordsToGeom(rings [][]geom.Coord, layout geom.Layout) (geom.T, erro
 }
 
 func toShapefileGeometry(geomValue interface{}, shapeType shp.ShapeType) (shp.Shape, error) {
+	if shape, ok := geomValue.(shp.Shape); ok {
+		if err := validateNativeShapeType(shape, shapeType); err != nil {
+			return nil, err
+		}
+		return shape, nil
+	}
 	geometry, err := commonSpatial.ParseGeometryValue(geomValue)
 	if err != nil {
 		return nil, err
 	}
 	return geomToShape(geometry, shapeType)
+}
+
+func validateNativeShapeType(shape shp.Shape, target shp.ShapeType) error {
+	source, ok := nativeShapeType(shape)
+	if !ok {
+		return fmt.Errorf("unsupported shapefile native shape type %T", shape)
+	}
+	if source != target {
+		return fmt.Errorf("shapefile native shape type %v does not match target shape type %v", source, target)
+	}
+	return nil
+}
+
+func nativeShapeType(shape shp.Shape) (shp.ShapeType, bool) {
+	switch shape.(type) {
+	case *shp.Null:
+		return shp.NULL, true
+	case *shp.Point:
+		return shp.POINT, true
+	case *shp.PointZ:
+		return shp.POINTZ, true
+	case *shp.PointM:
+		return shp.POINTM, true
+	case *shp.MultiPoint:
+		return shp.MULTIPOINT, true
+	case *shp.MultiPointZ:
+		return shp.MULTIPOINTZ, true
+	case *shp.MultiPointM:
+		return shp.MULTIPOINTM, true
+	case *shp.PolyLine:
+		return shp.POLYLINE, true
+	case *shp.PolyLineZ:
+		return shp.POLYLINEZ, true
+	case *shp.PolyLineM:
+		return shp.POLYLINEM, true
+	case *shp.Polygon:
+		return shp.POLYGON, true
+	case *shp.PolygonZ:
+		return shp.POLYGONZ, true
+	case *shp.PolygonM:
+		return shp.POLYGONM, true
+	default:
+		return shp.NULL, false
+	}
 }
 
 func geomToShape(geometry geom.T, shapeType shp.ShapeType) (shp.Shape, error) {

@@ -280,7 +280,7 @@ export GOPROXY=https://goproxy.cn,direct
 ./scripts/dev/start.sh
 
 # 2. 获取新的 token
-curl -X POST http://localhost:8180/api/auth/login \
+curl -X POST http://localhost:8180/api/v1/system/login \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "123456"}'
 

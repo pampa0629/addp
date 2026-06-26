@@ -3,7 +3,6 @@
 
 使用 LLM 提取 + 手动 API 调用的方式，理解用户查询中所指的数据源
 """
-import json
 from typing import Optional
 
 from langchain_core.messages import SystemMessage
@@ -11,8 +10,15 @@ from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 
 from models.workflow_models import DataSourceContext, DataSourceLocation
+from pipelines.data_source_candidates import (
+    build_data_source_candidates,
+    metadata_search_query,
+    metadata_type_filter,
+)
+from pipelines.data_source_prompts import build_engine_match_prompt, build_query_analysis_prompt
 from tools.develop_tools import EngineTool, SchemaTableTool, ObjectStorageTool
 from tools.meta_tools import MetadataSearchTool
+from utils.resource_locator import bucket_locator, object_locator, schema_locator, table_locator
 
 
 class QueryAnalysis(BaseModel):
@@ -41,7 +47,7 @@ class DataSourceStage:
 
     流程：
     1. LLM 分析用户查询，提取关键信息
-    2. 调用 get_engines API，获取所有引擎
+    2. 调用 get_engines API，获取可作为数据源的通用引擎
     3. LLM 智能匹配最合适的引擎
     4. 验证表/对象是否存在
     5. 返回 DataSourceContext
@@ -119,6 +125,9 @@ class DataSourceStage:
 
             # 步骤 5: 构造返回结果
             confidence = matched_engine.match_score * (0.9 if verified else 0.7)
+            alternatives = []
+            if confidence < 0.8:
+                alternatives = await self._build_alternatives(query, analysis, engines, tenant_id)
 
             result = DataSourceContext(
                 engine_id=matched_engine.engine_id,
@@ -126,13 +135,14 @@ class DataSourceStage:
                 engine_type=matched_engine.engine_type,
                 location=location,
                 confidence=confidence,
-                alternatives=[]
+                alternatives=alternatives
             )
 
             print(f"\n[DataSourceStage] ===== 数据源理解完成 =====")
             print(f"  引擎: {result.engine_name} ({result.engine_type})")
             print(f"  位置: {location}")
             print(f"  置信度: {result.confidence:.2f}")
+            print(f"  候选项数量: {len(result.alternatives)}")
             print(f"  验证状态: {'✅ 已验证' if verified else '⚠️ 未验证'}")
             print(f"=" * 60)
 
@@ -145,30 +155,7 @@ class DataSourceStage:
             return self._create_default_context()
 
     async def _analyze_query(self, query: str) -> QueryAnalysis:
-        prompt = f"""你是一个数据源分析专家。分析用户的查询，提取数据源相关信息。
-
-用户查询: {query}
-
-请提取以下信息：
-1. **引擎关键词**：用户提到的引擎相关词（如 "pg"、"mysql"、"minio"、"对象存储" 等）
-2. **引擎类型推测**：根据关键词推测引擎类型（postgresql/mysql/doris/minio/s3 等）
-3. **表名**：如果是关系数据库，提取表名
-4. **Schema**：如果明确提到 schema，提取；否则默认 "public"
-5. **Bucket**：如果是对象存储，提取 bucket 名称
-6. **文件路径**：如果是对象存储，提取文件路径
-7. **置信度**：你对分析结果的置信度（0-1）
-
-**关键词映射规则**：
-- "pg"、"postgres"、"postgresql" → postgresql
-- "mysql" → mysql
-- "doris" → doris
-- "clickhouse" → clickhouse
-- "minio"、"对象存储" → minio
-- "s3" → s3
-
-{self.query_parser.get_format_instructions()}
-
-请直接返回 JSON，不要有其他内容。"""
+        prompt = build_query_analysis_prompt(query, self.query_parser.get_format_instructions())
 
         messages = [SystemMessage(content=prompt)]
         response = await self.llm.ainvoke(messages)
@@ -186,36 +173,12 @@ class DataSourceStage:
         return self.query_parser.parse(content)
 
     async def _match_engine(self, query: str, analysis: QueryAnalysis, engines: list) -> EngineMatch:
-        engines_json = json.dumps(engines, ensure_ascii=False, indent=2)
-
-        prompt = f"""你是一个数据源匹配专家。根据用户查询和引擎列表，选择最匹配的引擎。
-
-**用户查询**: {query}
-
-**查询分析结果**:
-- 引擎关键词: {analysis.engine_keywords}
-- 引擎类型推测: {analysis.engine_type_hint}
-- 表名: {analysis.table_name}
-- Schema: {analysis.schema_name}
-
-**可用引擎列表**:
-{engines_json}
-
-**匹配规则**:
-1. **优先精确匹配**：用户明确提到的引擎关键词（如 "pg库"）
-2. **类型匹配**：引擎类型与推测类型一致
-3. **名称相似度**：引擎名称与关键词的相似度
-4. **唯一性**：如果某个类型只有一个引擎，优先选择
-5. **描述匹配**：引擎描述与用户意图的匹配度
-
-**输出要求**:
-- 选择最匹配的一个引擎
-- 给出匹配分数（0-1，越高越好）
-- 解释匹配理由
-
-{self.match_parser.get_format_instructions()}
-
-请直接返回 JSON，不要有其他内容。"""
+        prompt = build_engine_match_prompt(
+            query,
+            analysis,
+            engines,
+            self.match_parser.get_format_instructions(),
+        )
 
         messages = [SystemMessage(content=prompt)]
         response = await self.llm.ainvoke(messages)
@@ -253,12 +216,25 @@ class DataSourceStage:
                     table_names = [t.get("name") for t in tables]
                     verified = table in table_names
                     print(f"[DataSourceStage] 表验证: {table} in {schema} -> {'存在' if verified else '不存在'}")
-                    return DataSourceLocation(schema=schema, table=table), verified
+                    return DataSourceLocation(
+                        namespace=schema,
+                        table=table,
+                        locator=table_locator(matched_engine.engine_id, schema, table),
+                        target_parent_locator=schema_locator(matched_engine.engine_id, schema),
+                    ), verified
                 except Exception as e:
                     print(f"[DataSourceStage] ⚠️ 表验证失败: {e}")
-                    return DataSourceLocation(schema=schema, table=table), False
+                    return DataSourceLocation(
+                        namespace=schema,
+                        table=table,
+                        locator=table_locator(matched_engine.engine_id, schema, table),
+                        target_parent_locator=schema_locator(matched_engine.engine_id, schema),
+                    ), False
             else:
-                return DataSourceLocation(schema=schema), False
+                return DataSourceLocation(
+                    namespace=schema,
+                    target_parent_locator=schema_locator(matched_engine.engine_id, schema),
+                ), False
 
         elif engine_type in ["minio", "s3", "oss"]:
             bucket = analysis.bucket_name
@@ -271,15 +247,55 @@ class DataSourceStage:
                     bucket_names = [b.get("name") for b in buckets]
                     verified = bucket in bucket_names
                     print(f"[DataSourceStage] Bucket 验证: {bucket} -> {'存在' if verified else '不存在'}")
-                    return DataSourceLocation(bucket=bucket, path=path), verified
+                    return DataSourceLocation(
+                        bucket=bucket,
+                        path=path,
+                        locator=object_locator(matched_engine.engine_id, bucket, path) if path else None,
+                        target_parent_locator=bucket_locator(matched_engine.engine_id, bucket),
+                    ), verified
                 except Exception as e:
                     print(f"[DataSourceStage] ⚠️ Bucket 验证失败: {e}")
-                    return DataSourceLocation(bucket=bucket, path=path), False
+                    return DataSourceLocation(
+                        bucket=bucket,
+                        path=path,
+                        locator=object_locator(matched_engine.engine_id, bucket, path) if path else None,
+                        target_parent_locator=bucket_locator(matched_engine.engine_id, bucket),
+                    ), False
             else:
                 return DataSourceLocation(), False
 
         else:
             return DataSourceLocation(), False
+
+    async def _build_alternatives(
+        self,
+        query: str,
+        analysis: QueryAnalysis,
+        engines: list,
+        tenant_id: int,
+    ):
+        search_query = metadata_search_query(query, analysis)
+        type_filter = metadata_type_filter(analysis)
+
+        try:
+            results = await self.metadata_search_tool._arun(
+                query=search_query,
+                metadata_type=type_filter,
+                tenant_id=tenant_id,
+                limit=5,
+            )
+        except Exception as e:
+            print(f"[DataSourceStage] ⚠️ 构造候选项失败: {e}")
+            return []
+
+        candidates = build_data_source_candidates(
+            results,
+            engines,
+            default_namespace=analysis.schema_name,
+            max_candidates=5,
+        )
+        print(f"[DataSourceStage] 元数据候选项: {len(candidates)} 个")
+        return candidates
 
     def _create_default_context(self) -> DataSourceContext:
         return DataSourceContext(

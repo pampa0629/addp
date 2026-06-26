@@ -61,6 +61,12 @@ func AutoMigrate(db *gorm.DB) error {
 	if err := dropEngineScanConfig(db); err != nil {
 		return err
 	}
+	if err := dropDeprecatedEngineColumns(db); err != nil {
+		return err
+	}
+	if err := removeBuiltinMathWorkflowExample(db); err != nil {
+		return err
+	}
 	if err := dropUsersIsSuperuser(db); err != nil {
 		return err
 	}
@@ -161,6 +167,66 @@ func dropEngineScanConfig(db *gorm.DB) error {
 		END $$;
 	`).Error
 }
+
+func dropDeprecatedEngineColumns(db *gorm.DB) error {
+	return db.Exec(dropDeprecatedEngineColumnsSQL).Error
+}
+
+func removeBuiltinMathWorkflowExample(db *gorm.DB) error {
+	return db.Exec(removeBuiltinMathWorkflowExampleSQL).Error
+}
+
+const removeBuiltinMathWorkflowExampleSQL = `
+		DO $$
+		BEGIN
+			IF to_regclass('system.engines') IS NOT NULL THEN
+				DELETE FROM system.engines
+				WHERE lower(engine_type) = 'math_workflow'
+				  AND is_builtin = true;
+			END IF;
+		END $$;
+	`
+
+const dropDeprecatedEngineColumnsSQL = `
+		DO $$
+		BEGIN
+			IF to_regclass('system.engines') IS NOT NULL THEN
+				IF to_regclass('system.idx_engines_identifier') IS NOT NULL THEN
+					DROP INDEX system.idx_engines_identifier;
+				END IF;
+
+				IF EXISTS (
+					SELECT 1
+					FROM information_schema.columns
+					WHERE table_schema = 'system'
+					  AND table_name = 'engines'
+					  AND column_name = 'unique_identifier'
+				) THEN
+					ALTER TABLE system.engines DROP COLUMN unique_identifier;
+				END IF;
+
+				IF EXISTS (
+					SELECT 1
+					FROM information_schema.columns
+					WHERE table_schema = 'system'
+					  AND table_name = 'engines'
+					  AND column_name = 'extension_api_config'
+				) THEN
+					ALTER TABLE system.engines DROP COLUMN extension_api_config;
+				END IF;
+
+				IF EXISTS (
+					SELECT 1
+					FROM information_schema.columns
+					WHERE table_schema = 'system'
+					  AND table_name = 'engines'
+					  AND column_name = 'health_check_config'
+				) THEN
+					ALTER TABLE system.engines DROP COLUMN health_check_config;
+				END IF;
+			END IF;
+		END $$;
+	`
 
 // RemoveLocalFileEnginesFromSystem 删除误注册到 System 的本地文件型连接器。
 // SQLite/SpatiaLite 作为文件格式或容器处理，System 后端不把本地文件路径注册为 engine。

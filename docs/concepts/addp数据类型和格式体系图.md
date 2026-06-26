@@ -42,7 +42,7 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 |---|---|---|---|
 | `table` | 原生表格引擎：PostgreSQL、MySQL、Doris、ClickHouse、Spark SQL。动态 schema 引擎：MongoDB collection。文件 / 对象承载：NFS、S3、MinIO。 | `csv`、`tsv`、records `json` / JSON Lines、`geojson`、`shapefile`、`parquet`、`orc`、`avro`。容器 child 可归一为 table：Excel sheet、SQLite table / view、GeoPackage layer / table、ZIP 内部表格文件。 | 表格数据可以来自引擎原生 catalog leaf，也可以来自文件格式。空间语义通过 `capabilities.spatial` 表达，不新增空间表 data type。Iceberg 属于规范层 whole table 示例，当前未作为内置 format descriptor 注册。 |
 | `document` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 document catalog 引擎。 | `pdf`、`docx`、`pptx`、`wps`、`text`、`markdown`、文档型 `json`。ZIP 内部文档文件可作为 container child 被识别。 | MongoDB query 可以返回 document 形态结果，但 MongoDB collection data item 在当前语义中仍按动态 schema 记录集合归为 `table`。 |
-| `media` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 media catalog 引擎。 | 图片：`image`、`jpeg`、`png`、`gif`、`tiff`、`webp`、`bmp`、`svg`、`avif`、`heic`。视频：`video`、`mp4`、`mov`、`mkv`、`avi`、`webm`。音频：`audio`、`mp3`、`wav`、`flac`、`aac`、`ogg`。ZIP 内部媒体文件可作为 container child 被识别。 | `jpeg`、`png`、`gif`、`tiff`、`image` 当前有图片媒体信息 provider；其他媒体格式当前主要提供格式身份、MIME / 扩展名识别和 raw / range / stream 内容承载。 |
+| `media` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 media catalog 引擎。 | 图片：`image`、`jpeg`、`png`、`gif`、`tiff`、`webp`、`bmp`、`svg`、`avif`、`heic`。栅格数据集：`raster_mosaic`。视频：`video`、`mp4`、`mov`、`mkv`、`avi`、`webm`。音频：`audio`、`mp3`、`wav`、`flac`、`aac`、`ogg`。ZIP 内部媒体文件可作为 container child 被识别。 | `jpeg`、`png`、`gif`、`tiff`、`image` 当前有图片媒体信息 provider；`raster_mosaic` 表示由 manifest、index、leaf COG 和 overview COG 组成的 whole-scope 栅格镶嵌数据集；其他媒体格式当前主要提供格式身份、MIME / 扩展名识别和 raw / range / stream 内容承载。 |
 | `container` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 container catalog 引擎；目录、prefix、bucket 只是 catalog / storage 形态，不是 `container` data type。 | `excel`、`sqlite`、`geopackage`、`zip`。 | 容器 item 先记录轻量 children；进入某个 child 后，再按 child 自身格式归一为 `table`、`document`、`media`、`unknown` 等类型。JSON 作为 container 仍是概念可表达方向，当前内置 JSON plugin 未提供容器信息 provider。 |
 | `graph` | 原生图引擎：Neo4j。 | 当前没有内置 graph 文件格式 descriptor。 | RDF、GraphML、GEXF、图结构 JSON 仍是概念层典型来源；进入内置主线前需要先补 format descriptor、provider 和扫描规则。 |
 | `unknown` | 文件 / 对象承载：NFS、S3、MinIO；其他存储扫描中无法判断内容语义的叶子也可落为 `unknown`。 | `unknown`。 | `unknown` 是识别失败或暂未接入时的兜底格式 / 数据类型组合；它保留 storage、item 等基础事实和 raw binary 读取能力，不引入 `file` data type。 |
@@ -90,6 +90,7 @@ JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJ
 典型来源：
 
 - 图片：JPEG / PNG / GIF / TIFF / WebP / BMP / SVG / AVIF / HEIC / GeoTIFF。
+- 栅格镶嵌数据集：由 manifest、index、leaf COG 和 overview COG 组成的 raster mosaic。
 - 视频：MP4 / MOV / MKV / AVI / WebM 等容器格式。
 - 音频：MP3 / WAV / FLAC / AAC / OGG 等音频格式。
 
@@ -155,6 +156,7 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 - Shapefile = `data_type=table` + `layout=multi` + `format=shapefile` + `capabilities.spatial`。
 - GeoJSON = `data_type=table` + `layout=single` + `format=geojson`，当 feature 实际包含 geometry 时再附加 `capabilities.spatial`。
 - GeoTIFF = `data_type=media` + `layout=single` + `format=tiff` + `capabilities.spatial`。
+- Raster mosaic = `data_type=media` + `layout=whole` + `format=raster_mosaic` + `capabilities.spatial`。
 - Excel = `data_type=container` + `layout=single` + `format=excel`。
 - Iceberg = `data_type=table` + `layout=whole` + `format=iceberg`。
 
@@ -252,6 +254,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 - PostGIS 表 = `data_type=table` + `capabilities.spatial`。
 - Shapefile = `data_type=table` + `format=shapefile` + `capabilities.spatial`。
 - GeoTIFF = `data_type=media` + `format=tiff` + `capabilities.spatial`。
+- Raster mosaic = `data_type=media` + `format=raster_mosaic` + `capabilities.spatial`。
 
 空间能力不应新增为 data type，也不应塞进某个格式私有字段。
 

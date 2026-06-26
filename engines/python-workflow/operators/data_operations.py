@@ -117,6 +117,7 @@ CLIP_METADATA = OperatorMetadata(
     category=OperatorCategory.DATA_OPERATION,
     description="裁剪几何",
     brief_description="用掩膜图层裁剪输入图层,保留掩膜范围内的部分,常用于研究区提取",
+    execution_modes=["workflow"],
 
     overview="使用掩膜图层(mask)裁剪输入图层,只保留落在掩膜范围内的几何部分。类似GIS中的Clip工具,常用于提取研究区数据、行政区数据裁剪等场景。",
 
@@ -170,6 +171,7 @@ VORONOI_METADATA = OperatorMetadata(
     category=OperatorCategory.DATA_OPERATION,
     description="泰森多边形",
     brief_description="生成点集的泰森多边形(Voronoi图),常用于服务范围划分和最近邻分析",
+    execution_modes=["workflow"],
 
     overview="为输入的点集生成泰森多边形(Voronoi Diagram)。每个多边形内的所有位置到对应点的距离都比到其他点更近。适用于服务范围划分、影响区域分析、最近设施查询等场景。",
 
@@ -214,6 +216,7 @@ SPLIT_BY_AREA_METADATA = OperatorMetadata(
     category=OperatorCategory.DATA_OPERATION,
     description="按面积分割",
     brief_description="按面积阈值将数据分割为大小两组,常用于数据分类和质量检查",
+    execution_modes=["workflow"],
 
     overview="根据面积阈值将输入要素分为两组:大于阈值的要素和小于等于阈值的要素。这是一个多输出算子示例,返回两个独立的输出端口。",
 
@@ -283,6 +286,7 @@ BATCH_BUFFER_METADATA = OperatorMetadata(
     category=OperatorCategory.DATA_OPERATION,
     description="批量缓冲",
     brief_description="对同一图层使用多个缓冲距离批量生成缓冲区,常用于多级影响范围分析",
+    execution_modes=["workflow"],
 
     overview="对输入GeoDataFrame使用多个缓冲距离批量生成缓冲区,返回包含多个缓冲结果的列表。适用于多级影响范围、服务等级划分等场景。",
 
@@ -345,6 +349,7 @@ BATCH_CENTROID_METADATA = OperatorMetadata(
     category=OperatorCategory.DATA_OPERATION,
     description="批量质心",
     brief_description="批量计算多个图层的质心,常用于多数据源的中心点提取",
+    execution_modes=["workflow"],
 
     overview="对多个GeoDataFrame批量计算质心,返回质心结果列表。适用于多时相数据处理、多区域分析等场景,比逐个调用centroid更高效。",
 

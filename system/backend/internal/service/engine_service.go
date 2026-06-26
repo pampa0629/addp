@@ -53,10 +53,6 @@ func (s *EngineService) WithCleanupOrchestrator(cleanup *CleanupOrchestratorServ
 }
 
 func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy uint) (*models.Engine, error) {
-	if err := s.validateSystemEngineType(req.EngineType, req.Capabilities); err != nil {
-		return nil, err
-	}
-
 	// 获取创建者信息以确定租户
 	user, err := s.userRepo.GetByID(createdBy)
 	if err != nil {
@@ -98,15 +94,8 @@ func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy uint) 
 		engine.Capabilities = req.Capabilities
 	}
 
-	// 自动生成 capabilities（如果请求中未提供）
-	if engine.Capabilities == nil || *engine.Capabilities == "" {
-		capabilities := s.generateDefaultCapabilities(req.EngineType)
-		engine.Capabilities = toJSONStringPtr(capabilities)
-	}
-
-	// 验证能力声明
-	if err := s.validateCapabilities(engine.Capabilities); err != nil {
-		return nil, fmt.Errorf("能力声明验证失败: %w", err)
+	if err := s.prepareEngineCapabilities(engine); err != nil {
+		return nil, err
 	}
 
 	if err := s.repo.Create(engine); err != nil {
@@ -125,9 +114,6 @@ func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy uint) 
 func (s *EngineService) CreateInternal(req *models.EngineCreateRequest, tenantID uint, createdBy *uint) (*models.Engine, error) {
 	if req == nil {
 		return nil, errors.New("无效的请求数据")
-	}
-	if err := s.validateSystemEngineType(req.EngineType, req.Capabilities); err != nil {
-		return nil, err
 	}
 
 	encryptedConnInfo, err := s.encryptSensitiveFields(req.ConnectionInfo)
@@ -154,14 +140,8 @@ func (s *EngineService) CreateInternal(req *models.EngineCreateRequest, tenantID
 		engine.Capabilities = req.Capabilities
 	}
 
-	// 自动生成 capabilities（如果请求中未提供）
-	if engine.Capabilities == nil || *engine.Capabilities == "" {
-		capabilities := s.generateDefaultCapabilities(req.EngineType)
-		engine.Capabilities = toJSONStringPtr(capabilities)
-	}
-
-	if err := s.validateCapabilities(engine.Capabilities); err != nil {
-		return nil, fmt.Errorf("能力声明验证失败: %w", err)
+	if err := s.prepareEngineCapabilities(engine); err != nil {
+		return nil, err
 	}
 
 	if err := s.repo.Create(engine); err != nil {
@@ -288,8 +268,8 @@ func (s *EngineService) Update(id uint, req *models.EngineUpdateRequest, current
 	if req.Capabilities != nil {
 		engine.Capabilities = req.Capabilities
 	}
-	if err := s.validateCapabilities(engine.Capabilities); err != nil {
-		return nil, fmt.Errorf("能力声明验证失败: %w", err)
+	if err := s.prepareEngineCapabilities(engine); err != nil {
+		return nil, err
 	}
 
 	if err := s.repo.Update(engine); err != nil {
@@ -713,25 +693,42 @@ func (s *EngineService) ensureResourceManagementPermission(user *models.User) er
 
 // validateCapabilities 验证引擎能力声明的有效性
 func (s *EngineService) validateCapabilities(capabilitiesPtr *models.JSONString) error {
+	_, err := s.parseCapabilities(capabilitiesPtr)
+	return err
+}
+
+func (s *EngineService) validateCapabilitiesForEngine(engineType string, capabilitiesPtr *models.JSONString) error {
+	structured, err := s.parseCapabilities(capabilitiesPtr)
+	if err != nil {
+		return err
+	}
+	engineTypeLower := strings.ToLower(strings.TrimSpace(engineType))
+	if structured.EngineType != engineTypeLower {
+		return fmt.Errorf("结构化能力声明 engine_type 必须为 %s", engineTypeLower)
+	}
+	return nil
+}
+
+func (s *EngineService) parseCapabilities(capabilitiesPtr *models.JSONString) (*engineplugin.EngineCapabilities, error) {
 	if capabilitiesPtr == nil || *capabilitiesPtr == "" {
-		return nil // 空能力声明是允许的
+		return nil, nil // 空能力声明是允许的
 	}
 
 	structured, err := engineplugin.ParseEngineCapabilities(string(*capabilitiesPtr))
 	if err != nil {
-		return fmt.Errorf("能力声明 JSON 格式错误: %w", err)
+		return nil, fmt.Errorf("能力声明 JSON 格式错误: %w", err)
 	}
 	if structured == nil {
-		return fmt.Errorf("能力声明不能为空")
+		return nil, fmt.Errorf("能力声明不能为空")
 	}
-	if structured.SchemaVersion == "" {
-		return fmt.Errorf("结构化能力声明必须包含 schema_version")
+	if structured.SchemaVersion != engineplugin.CapabilitiesSchemaVersion {
+		return nil, fmt.Errorf("结构化能力声明 schema_version 必须为 %s", engineplugin.CapabilitiesSchemaVersion)
 	}
 	if structured.EngineType == "" {
-		return fmt.Errorf("结构化能力声明必须包含 engine_type")
+		return nil, fmt.Errorf("结构化能力声明必须包含 engine_type")
 	}
 
-	return nil
+	return structured, nil
 }
 
 func toJSONStringPtr(value string) *models.JSONString {
@@ -739,37 +736,13 @@ func toJSONStringPtr(value string) *models.JSONString {
 	return &jsonValue
 }
 
-// generateDefaultCapabilities 根据资源类型生成默认 capabilities
-func (s *EngineService) generateDefaultCapabilities(engineType string) string {
-	// 尝试从插件系统获取能力描述
+// pluginCapabilities 返回内置插件声明的标准 capabilities。
+func (s *EngineService) pluginCapabilities(engineType string) (string, error) {
 	capabilities, err := dbbridge.GenerateCapabilities(engineType)
 	if err == nil {
-		return capabilities
+		return capabilities, nil
 	}
-
-	// 降级：对于API引擎等非数据库类型，使用硬编码
-	engineTypeLower := strings.ToLower(engineType)
-	var caps engineplugin.EngineCapabilities
-	switch engineTypeLower {
-	case "python_workflow":
-		caps = engineplugin.NewWorkflowCapabilities(engineTypeLower, "addp.workflow/v1")
-
-	case "spark_workflow":
-		caps = engineplugin.NewWorkflowCapabilities(engineTypeLower, "addp.workflow/v1")
-
-	default:
-		caps = engineplugin.EngineCapabilities{
-			SchemaVersion: engineplugin.CapabilitiesSchemaVersion,
-			EngineType:    engineTypeLower,
-			EngineFamily:  "unknown",
-		}
-	}
-
-	capabilitiesJSON, err := engineplugin.MarshalEngineCapabilities(caps)
-	if err != nil {
-		return "{}"
-	}
-	return capabilitiesJSON
+	return "", err
 }
 
 func (s *EngineService) validateSystemEngineType(engineType string, capabilities *models.JSONString) error {
@@ -779,15 +752,14 @@ func (s *EngineService) validateSystemEngineType(engineType string, capabilities
 	}
 
 	if capabilities != nil && *capabilities != "" {
-		return nil
+		return s.validateCapabilitiesForEngine(engineTypeLower, capabilities)
 	}
 
-	generatedCapabilities, err := dbbridge.GenerateCapabilities(engineTypeLower)
+	generatedCapabilities, err := s.pluginCapabilities(engineTypeLower)
 	if err != nil {
 		return fmt.Errorf("%w: %s", ErrUnsupportedEngineType, engineTypeLower)
 	}
-
-	if err := s.validateCapabilities(toJSONStringPtr(generatedCapabilities)); err != nil {
+	if err := s.validateCapabilitiesForEngine(engineTypeLower, toJSONStringPtr(generatedCapabilities)); err != nil {
 		return fmt.Errorf("引擎类型 %s 能力声明无效: %w", engineTypeLower, err)
 	}
 	return nil
@@ -797,8 +769,7 @@ func (s *EngineService) ValidateSystemEngineType(engineType string) error {
 	return s.validateSystemEngineType(engineType, nil)
 }
 
-// RefreshAllEngineCapabilities 将空能力或旧能力声明刷新为当前插件体系结构。
-// 已经符合 engine.capabilities/v1 的声明保留，避免覆盖外部 runtime 自注册上报的引擎自身扩展能力。
+// RefreshAllEngineCapabilities 将空能力、旧能力声明或内置引擎能力刷新为当前插件体系结构。
 func (s *EngineService) RefreshAllEngineCapabilities() error {
 	engines, err := s.repo.ListAll()
 	if err != nil {
@@ -807,12 +778,15 @@ func (s *EngineService) RefreshAllEngineCapabilities() error {
 
 	for i := range engines {
 		engine := engines[i]
-		if !s.shouldRefreshCapabilities(engine.Capabilities) {
+		if !s.usesPluginCapabilities(engine.EngineType) && !s.shouldRefreshCapabilities(engine.Capabilities) {
 			continue
 		}
-		capabilities := s.generateDefaultCapabilities(engine.EngineType)
+		capabilities, err := s.ensureCapabilitiesForEngine(engine.EngineType, engine.Capabilities)
+		if err != nil {
+			return fmt.Errorf("生成引擎 %d(%s) 能力声明失败: %w", engine.ID, engine.EngineType, err)
+		}
 		capabilitiesJSON := toJSONStringPtr(capabilities)
-		if err := s.validateCapabilities(capabilitiesJSON); err != nil {
+		if err := s.validateCapabilitiesForEngine(engine.EngineType, capabilitiesJSON); err != nil {
 			return fmt.Errorf("生成引擎 %d(%s) 能力声明失败: %w", engine.ID, engine.EngineType, err)
 		}
 		if engine.Capabilities != nil && string(*engine.Capabilities) == capabilities {
@@ -894,8 +868,8 @@ func (s *EngineService) CheckAndUpdateConnectionStatus(engineID uint) bool {
 	}
 	fmt.Printf("[ConnectionCheck] ✅ 获取引擎信息: type=%s, name=%s\n", engine.EngineType, engine.Name)
 
-	// 2. 跳过API类型资源（api.xxx）的连接检测
-	// API类型资源需要通过health_check_config配置的健康检查端点来检测
+	// 2. 跳过模块 API 类型资源（api.xxx）的连接检测。
+	// 这类记录不属于外部数据/计算引擎，不能通过 EnginePlugin 做连接检测。
 	if strings.HasPrefix(engine.EngineType, "api.") {
 		fmt.Printf("[ConnectionCheck] ⏭️  跳过API类型资源\n")
 		s.updateConnectionStatus(engineID, "unknown", "API类型资源不支持自动连接检测")
@@ -979,30 +953,55 @@ func (s *EngineService) GetByEngineTypeAndTenant(engineType string, tenantID *ui
 
 // CreateEngine 创建引擎
 func (s *EngineService) CreateEngine(engine *models.Engine) error {
-	if err := s.validateSystemEngineType(engine.EngineType, engine.Capabilities); err != nil {
+	if err := s.prepareEngineCapabilities(engine); err != nil {
 		return err
-	}
-	if engine.Capabilities == nil || *engine.Capabilities == "" {
-		capabilities := s.generateDefaultCapabilities(engine.EngineType)
-		engine.Capabilities = toJSONStringPtr(capabilities)
-	}
-	if err := s.validateCapabilities(engine.Capabilities); err != nil {
-		return fmt.Errorf("能力声明验证失败: %w", err)
 	}
 	return s.repo.Create(engine)
 }
 
 // UpdateEngine 更新引擎
 func (s *EngineService) UpdateEngine(engine *models.Engine) error {
-	if err := s.validateSystemEngineType(engine.EngineType, engine.Capabilities); err != nil {
+	if err := s.prepareEngineCapabilities(engine); err != nil {
 		return err
 	}
-	if engine.Capabilities == nil || *engine.Capabilities == "" {
-		capabilities := s.generateDefaultCapabilities(engine.EngineType)
-		engine.Capabilities = toJSONStringPtr(capabilities)
+	return s.repo.Update(engine)
+}
+
+func (s *EngineService) prepareEngineCapabilities(engine *models.Engine) error {
+	if engine == nil {
+		return errors.New("无效的引擎数据")
 	}
-	if err := s.validateCapabilities(engine.Capabilities); err != nil {
+	capabilities, err := s.ensureCapabilitiesForEngine(engine.EngineType, engine.Capabilities)
+	if err != nil {
+		return err
+	}
+	engine.Capabilities = toJSONStringPtr(capabilities)
+	if err := s.validateCapabilitiesForEngine(engine.EngineType, engine.Capabilities); err != nil {
 		return fmt.Errorf("能力声明验证失败: %w", err)
 	}
-	return s.repo.Update(engine)
+	return nil
+}
+
+func (s *EngineService) ensureCapabilitiesForEngine(engineType string, submitted *models.JSONString) (string, error) {
+	engineTypeLower := strings.ToLower(strings.TrimSpace(engineType))
+	if _, disallowed := disallowedSystemEngineTypes[engineTypeLower]; disallowed {
+		return "", fmt.Errorf("%w: %s 是 Transfer 本地文件连接器，不能注册到 System 统一引擎表", ErrUnsupportedEngineType, engineTypeLower)
+	}
+
+	if capabilities, err := s.pluginCapabilities(engineTypeLower); err == nil {
+		return capabilities, nil
+	}
+
+	if submitted == nil || *submitted == "" {
+		return "", fmt.Errorf("%w: %s", ErrUnsupportedEngineType, engineTypeLower)
+	}
+	if err := s.validateCapabilitiesForEngine(engineTypeLower, submitted); err != nil {
+		return "", fmt.Errorf("能力声明验证失败: %w", err)
+	}
+	return string(*submitted), nil
+}
+
+func (s *EngineService) usesPluginCapabilities(engineType string) bool {
+	_, err := s.pluginCapabilities(strings.ToLower(strings.TrimSpace(engineType)))
+	return err == nil
 }

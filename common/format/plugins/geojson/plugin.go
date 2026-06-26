@@ -46,6 +46,17 @@ func (p *Plugin) SupportsAccessIndex() bool {
 	return true
 }
 
+func (p *Plugin) SpatialEncodingCapability() format.SpatialEncodingCapability {
+	return format.SpatialEncodingCapability{
+		GeometryReadEncodings:  []format.GeometryEncoding{format.GeometryEncodingGeoJSON, format.GeometryEncodingEWKB},
+		GeometryWriteEncodings: []format.GeometryEncoding{format.GeometryEncodingGeoJSON, format.GeometryEncodingEWKB},
+		DefaultReadEncoding:    format.GeometryEncodingGeoJSON,
+		DefaultWriteEncoding:   format.GeometryEncodingGeoJSON,
+		NativeReadEncoding:     format.GeometryEncodingGeoJSON,
+		NativeWriteEncoding:    format.GeometryEncodingGeoJSON,
+	}
+}
+
 func (p *Plugin) SniffFormat(peek []byte) bool {
 	return jsonrecords.LooksLikeGeoJSONFeatureCollection(peek)
 }
@@ -135,41 +146,19 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	tableInfo.RowCount = &featureCount
 	tableInfo.PrimaryKey = nil
 	spatialInfo := buildResult.Spatial
+	formatInfo := geoJSONFormatInfo(iter.Meta)
 
-	geometryType := builder.GeometryType()
-	if geometryType != "" {
-		spatialGeometryField := geometryField
-		if spatialInfo != nil && spatialInfo.PrimaryGeometryName() != "" {
-			spatialGeometryField = spatialInfo.PrimaryGeometryName()
-		}
-		srid := builder.SRID()
-		if crsSRID := commonSpatial.ParseSRID(iter.Meta.CoordinateSystem); crsSRID > 0 {
-			srid = crsSRID
-		} else if srid == 0 {
-			srid = commonSpatial.SRIDWGS84
-		}
-
-		spatialInfo = datatype.NewSingleGeometrySpatialInfo(spatialGeometryField, geometryType, srid, 2)
-		if primary := spatialInfo.PrimaryGeometry(); primary != nil && srid > 0 {
-			primary.CRSRef = datatype.EPSGCRSRef(srid)
-		}
-		if len(iter.Meta.BoundingBox) == 4 {
-			spatialInfo.Extent = &datatype.BoundingBox{
-				iter.Meta.BoundingBox[0],
-				iter.Meta.BoundingBox[1],
-				iter.Meta.BoundingBox[2],
-				iter.Meta.BoundingBox[3],
-			}
-		} else if bbox, ok := builder.BoundingBox(); ok {
-			extent := datatype.BoundingBox(bbox)
-			spatialInfo.Extent = &extent
+	if nextSpatialInfo, coordinateRangeOutOfWGS84 := geoJSONSpatialInfoFromBuilder(geometryField, spatialInfo, iter.Meta, builder); nextSpatialInfo != nil {
+		spatialInfo = nextSpatialInfo
+		if coordinateRangeOutOfWGS84 {
+			formatInfo["coordinate_range_out_of_wgs84"] = true
 		}
 	}
 
 	result := &format.TableDescribeResult{
 		Table:      tableInfo,
 		Spatial:    spatialInfo,
-		FormatInfo: geoJSONFormatInfo(iter.Meta),
+		FormatInfo: formatInfo,
 	}
 	if len(index.Anchors) > 0 {
 		result.AccessIndex = index
@@ -193,6 +182,71 @@ func geoJSONFormatInfo(meta jsonrecords.Metadata) map[string]interface{} {
 		info["crs"] = meta.CoordinateSystem
 	}
 	return info
+}
+
+func geoJSONSpatialInfoFromBuilder(geometryField string, existing *datatype.SpatialInfo, meta jsonrecords.Metadata, builder *jsonrecords.TableInfoBuilder) (*datatype.SpatialInfo, bool) {
+	geometryType := builder.GeometryType()
+	if geometryType == "" {
+		return existing, false
+	}
+	spatialGeometryField := geometryField
+	if existing != nil && existing.PrimaryGeometryName() != "" {
+		spatialGeometryField = existing.PrimaryGeometryName()
+	}
+	extent, hasExtent := geoJSONSpatialExtent(meta, builder)
+	srid, crsRef, coordinateRangeOutOfWGS84 := geoJSONSpatialReference(meta.CoordinateSystem, builder.SRID(), extent, hasExtent)
+
+	spatialInfo := datatype.NewSingleGeometrySpatialInfo(spatialGeometryField, geometryType, srid, 2)
+	if primary := spatialInfo.PrimaryGeometry(); primary != nil && crsRef != "" {
+		primary.CRSRef = crsRef
+	}
+	if hasExtent {
+		spatialInfo.Extent = &extent
+	}
+	return spatialInfo, coordinateRangeOutOfWGS84
+}
+
+func geoJSONSpatialExtent(meta jsonrecords.Metadata, builder *jsonrecords.TableInfoBuilder) (datatype.BoundingBox, bool) {
+	if len(meta.BoundingBox) == 4 {
+		return datatype.BoundingBox{
+			meta.BoundingBox[0],
+			meta.BoundingBox[1],
+			meta.BoundingBox[2],
+			meta.BoundingBox[3],
+		}, true
+	}
+	if bbox, ok := builder.BoundingBox(); ok {
+		return datatype.BoundingBox(bbox), true
+	}
+	return datatype.BoundingBox{}, false
+}
+
+func geoJSONSpatialReference(crs string, builderSRID int, extent datatype.BoundingBox, hasExtent bool) (int, string, bool) {
+	if srid := commonSpatial.ParseSRID(crs); srid > 0 {
+		return srid, datatype.EPSGCRSRef(srid), false
+	}
+	if strings.TrimSpace(crs) != "" {
+		return 0, "", false
+	}
+	if builderSRID > 0 {
+		return builderSRID, datatype.EPSGCRSRef(builderSRID), false
+	}
+	if hasExtent && !boundingBoxWithinWGS84(extent) {
+		return 0, "", true
+	}
+	return commonSpatial.SRIDWGS84, datatype.EPSGCRSRef(commonSpatial.SRIDWGS84), false
+}
+
+func boundingBoxWithinWGS84(extent datatype.BoundingBox) bool {
+	minX, minY, maxX, maxY := extent[0], extent[1], extent[2], extent[3]
+	if math.IsNaN(minX) || math.IsNaN(minY) || math.IsNaN(maxX) || math.IsNaN(maxY) ||
+		math.IsInf(minX, 0) || math.IsInf(minY, 0) || math.IsInf(maxX, 0) || math.IsInf(maxY, 0) {
+		return false
+	}
+	if minX > maxX || minY > maxY {
+		return false
+	}
+	return minX >= -180 && maxX <= 180 && minY >= -90 && maxY <= 90
 }
 
 func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
@@ -232,7 +286,8 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 		maxRows = math.MaxInt64
 	}
 
-	records := make([]map[string]interface{}, 0)
+	features := make([]*jsonrecords.Feature, 0)
+	builder := jsonrecords.NewTableInfoBuilder(geometryField)
 	read := int64(0)
 	for read < maxRows {
 		if err := contextErr(ctx); err != nil {
@@ -245,10 +300,15 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 		if err != nil {
 			return nil, err
 		}
-		records = append(records, feature.ToRecord(geometryField))
+		builder.AddFeature(feature)
+		features = append(features, feature)
 		read++
 	}
 
+	records, err := featuresToRecords(features, geometryField, geometryEncoding(options), geoJSONRecordSRID(iter.Meta, builder))
+	if err != nil {
+		return nil, err
+	}
 	return format.ApplyFieldSelectionToRows(records, optionsFieldSelection(options)), nil
 }
 
@@ -286,7 +346,8 @@ func (p *Plugin) samplePositionedTable(ctx context.Context, input io.Reader, off
 	if limit < 0 {
 		maxRows = math.MaxInt64
 	}
-	records := make([]map[string]interface{}, 0)
+	features := make([]*jsonrecords.Feature, 0)
+	builder := jsonrecords.NewTableInfoBuilder(geometryField)
 	for read := int64(0); read < maxRows; read++ {
 		if err := contextErr(ctx); err != nil {
 			return nil, err
@@ -298,7 +359,12 @@ func (p *Plugin) samplePositionedTable(ctx context.Context, input io.Reader, off
 		if err != nil {
 			return nil, err
 		}
-		records = append(records, feature.ToRecord(geometryField))
+		builder.AddFeature(feature)
+		features = append(features, feature)
+	}
+	records, err := featuresToRecords(features, geometryField, geometryEncoding(options), geoJSONRecordSRID(iter.Meta, builder))
+	if err != nil {
+		return nil, err
 	}
 	return format.ApplyFieldSelectionToRows(records, optionsFieldSelection(options)), nil
 }
@@ -324,9 +390,11 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 		return nil, err
 	}
 	return &tableReader{
-		iter:          iter,
-		geometryField: geometryField,
-		selection:     optionsFieldSelection(options),
+		iter:             iter,
+		meta:             iter.Meta,
+		geometryField:    geometryField,
+		geometryEncoding: geometryEncoding(options),
+		selection:        optionsFieldSelection(options),
 	}, nil
 }
 
@@ -341,6 +409,9 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 	}
 	if output == nil {
 		return nil, fmt.Errorf("geojson table writer requires output")
+	}
+	if err := validateGeoJSONWriteSpatialInfo(options); err != nil {
+		return nil, err
 	}
 
 	opts := geoJSONWriteOptions(options)
@@ -363,13 +434,33 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 	return writer, nil
 }
 
+func validateGeoJSONWriteSpatialInfo(options *format.WriteOptions) error {
+	if options == nil || options.SpatialInfo == nil {
+		return nil
+	}
+	spatialInfo := options.SpatialInfo
+	if srid := spatialInfo.PrimarySRIDValue(); srid > 0 && srid != commonSpatial.SRIDWGS84 {
+		return fmt.Errorf("geojson writer requires EPSG:4326 geometry, got SRID %d", srid)
+	}
+	crsRef := strings.TrimSpace(spatialInfo.PrimaryCRSRef())
+	if crsRef == "" {
+		return nil
+	}
+	if srid := commonSpatial.ParseSRID(crsRef); srid > 0 && srid != commonSpatial.SRIDWGS84 {
+		return fmt.Errorf("geojson writer requires EPSG:4326 geometry, got %s", crsRef)
+	}
+	return nil
+}
+
 type tableReader struct {
-	iter          *jsonrecords.RecordIterator
-	geometryField string
-	selection     *format.FieldSelectionOptions
-	tableInfo     *datatype.TableInfo
-	spatialInfo   *datatype.SpatialInfo
-	closed        bool
+	iter             *jsonrecords.RecordIterator
+	meta             jsonrecords.Metadata
+	geometryField    string
+	geometryEncoding format.GeometryEncoding
+	selection        *format.FieldSelectionOptions
+	tableInfo        *datatype.TableInfo
+	spatialInfo      *datatype.SpatialInfo
+	closed           bool
 }
 
 func (r *tableReader) Fields() []datatype.FieldInfo {
@@ -398,8 +489,9 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 	}
 
 	rows := make([]map[string]interface{}, 0, limit)
+	features := make([]*jsonrecords.Feature, 0, limit)
 	builder := jsonrecords.NewTableInfoBuilder(r.geometryField)
-	for len(rows) < limit {
+	for len(features) < limit {
 		if err := contextErr(ctx); err != nil {
 			return rows, err
 		}
@@ -411,10 +503,18 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 			return rows, err
 		}
 		builder.AddFeature(feature)
-		rows = append(rows, feature.ToRecord(r.geometryField))
+		features = append(features, feature)
 	}
-	if len(rows) > 0 {
+	if len(features) > 0 {
 		result := builder.Build()
+		if spatialInfo, _ := geoJSONSpatialInfoFromBuilder(r.geometryField, result.Spatial, r.meta, builder); spatialInfo != nil {
+			result.Spatial = spatialInfo
+		}
+		records, err := featuresToRecords(features, r.geometryField, r.geometryEncoding, geoJSONRecordSRID(r.meta, builder))
+		if err != nil {
+			return rows, err
+		}
+		rows = records
 		if selected, err := format.ApplyFieldSelectionToTableDescribeResult(&format.TableDescribeResult{
 			Table:   result.Table,
 			Spatial: result.Spatial,
@@ -652,6 +752,14 @@ func geoJSONGeometry(value interface{}) interface{} {
 	if value == nil {
 		return nil
 	}
+	if bytes, ok := value.([]byte); ok {
+		geometry, err := commonSpatial.ParseGeometryValue(bytes)
+		if err == nil {
+			if geom, geomErr := commonSpatial.GeomToGeoJSONGeometry(geometry); geomErr == nil {
+				return geom
+			}
+		}
+	}
 	if geom := jsonrecords.GeometryValue(value); geom != nil {
 		return geom
 	}
@@ -706,6 +814,59 @@ func geometryFieldFromOptions(opts *format.ParseOptions, fallback string) string
 		return strings.TrimSpace(v)
 	}
 	return fallback
+}
+
+func geometryEncoding(opts *format.ParseOptions) format.GeometryEncoding {
+	if opts == nil || opts.GeometryEncoding == "" || opts.GeometryEncoding == format.GeometryEncodingWKT {
+		return format.GeometryEncodingGeoJSON
+	}
+	return opts.GeometryEncoding
+}
+
+func geoJSONRecordSRID(meta jsonrecords.Metadata, builder *jsonrecords.TableInfoBuilder) int {
+	extent, hasExtent := geoJSONSpatialExtent(meta, builder)
+	srid, _, _ := geoJSONSpatialReference(meta.CoordinateSystem, builder.SRID(), extent, hasExtent)
+	return srid
+}
+
+func featuresToRecords(features []*jsonrecords.Feature, geometryField string, encoding format.GeometryEncoding, srid int) ([]map[string]interface{}, error) {
+	records := make([]map[string]interface{}, 0, len(features))
+	for _, feature := range features {
+		record, err := featureToRecord(feature, geometryField, encoding, srid)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+func featureToRecord(feature *jsonrecords.Feature, geometryField string, encoding format.GeometryEncoding, srid int) (map[string]interface{}, error) {
+	record := feature.ToRecord(geometryField)
+	if feature == nil || feature.GeometryType() == "" {
+		return record, nil
+	}
+	field := geometryField
+	if feature.GeometryField != "" {
+		field = feature.GeometryField
+	}
+	switch encoding {
+	case "", format.GeometryEncodingGeoJSON:
+		return record, nil
+	case format.GeometryEncodingEWKB:
+		geometry, err := commonSpatial.GeoJSONGeometryToGeom(feature.Geometry, srid)
+		if err != nil {
+			return nil, err
+		}
+		data, err := commonSpatial.GeomToEWKB(geometry, srid)
+		if err != nil {
+			return nil, err
+		}
+		record[field] = data
+		return record, nil
+	default:
+		return nil, fmt.Errorf("unsupported GeoJSON geometry encoding: %s", encoding)
+	}
 }
 
 func optionsFieldSelection(opts *format.ParseOptions) *format.FieldSelectionOptions {

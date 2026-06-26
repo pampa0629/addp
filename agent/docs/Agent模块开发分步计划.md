@@ -350,7 +350,7 @@ app.mount('#app')
 
 <script setup>
 import { TablePreview, GeoJsonPreview } from '@common-ui-map'
-import { ImagePreview } from '@common-ui'
+import { ImagePreview } from '@common-ui/previews'
 
 const getComponent = (type) => {
   switch (type) {

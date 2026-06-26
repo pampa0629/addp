@@ -15,7 +15,7 @@
 | `id` | SERIAL | PRIMARY KEY | 主键，自增ID |
 | `tenant_id` | INTEGER | NULLABLE, INDEX | 租户ID，NULL表示系统级引擎（仅SuperAdmin可见） |
 | `name` | VARCHAR(255) | NOT NULL, INDEX | 显示名称（中文或英文） |
-| `engine_type` | VARCHAR(255) | NOT NULL, INDEX | 引擎类型（postgresql/mysql/python_workflow等） |
+| `engine_type` | VARCHAR(255) | NOT NULL, INDEX | 引擎类型（postgresql/mysql/acme_geo_workflow等） |
 | `engine_origin` | VARCHAR(50) | NOT NULL, DEFAULT 'general' | 引擎来源：general（通用）/extension（扩展） |
 | `connection_info` | JSON | NOT NULL | 连接信息（敏感字段加密） |
 | `description` | TEXT | | 描述信息 |
@@ -32,8 +32,9 @@
 | `capabilities` | JSONB | | 引擎自身 native / provider 能力声明 |
 
 **注意**：
-- `extension_api_config` 和 `health_check_config` 字段已废弃（数据库字段保留但不使用）
-- 工作流引擎的 API 配置已标准化到代码中（见 `common/models/workflow_standards.go`）
+- 历史 `unique_identifier`、`extension_api_config` 和 `health_check_config` 字段已废弃，并由 System 启动迁移删除。
+- 工作流和脚本运行时通过 `common/engine` Provider 调用，System 不保存运行时端点配置
+- API 响应中的 `capabilities_view` 是 System 后端根据 `capabilities` 派生的展示模型，定义在 `common/models` 供各模块客户端复用；它不是 `system.engines` 表字段，也不写入数据库。
 
 ### 2.3 连接状态缓存字段
 
@@ -72,7 +73,7 @@
 - 数据库：`postgresql`、`mysql`、`doris`、`clickhouse`、`mongodb`、`spark_sql`
 - 对象存储：`minio`、`s3`
 
-**示例**：
+**普通 Engine API 示例**：
 ```json
 {
   "name": "生产PostgreSQL",
@@ -95,44 +96,30 @@
 **特点**：
 - 通过 HTTP API 调用
 - `connection_info` 包含 `protocol`、`host`、`port`
-- API 端点配置已标准化到代码中（`common/models/workflow_standards.go`）
+- API 端点由对应 `WorkflowRuntimeProvider` / `ScriptRuntimeProvider` 实现消费
 
 **典型类型**：
-- 工作流引擎：`python_workflow`、`spark_workflow`
-- Notebook引擎：`jupyter`
+- 工作流运行时：`python_workflow`、`spark_workflow`，以及手动注册的参考实现 `math_workflow`
+- 内置 Notebook 运行时示例：`jupyter`
+- 用户也可以按 ADDP 扩展引擎规范实现自研 `engine_type`，例如 `acme_geo_workflow`
+
+**注册入口**：System 前端“注册扩展引擎”表单用于手动注册 `addp.workflow/v1` 工作流运行时。表单会按 `engine_type` 生成默认 `engine.capabilities/v1`，支持填入 Math Workflow 示例值，并提供“检查服务”只读探测：System 后端会访问 `/health` 和 `/api/operators`，确认运行时服务可达且算子 `engine_type` 与注册值一致。Math Workflow 在开发环境中可自动启动服务，但不会自动写入本表。
 
 **示例**：
 ```json
 {
-  "name": "Python工作流引擎",
-  "engine_type": "python_workflow",
+  "name": "Acme Geo Workflow",
+  "engine_type": "acme_geo_workflow",
   "engine_origin": "extension",
   "connection_info": {
     "protocol": "http",
     "host": "localhost",
-    "port": 8099
-  },
-  "capabilities": {
-    "schema_version": "engine.capabilities/v1",
-    "engine_type": "python_workflow",
-    "engine_family": "workflow",
-    "compute": {
-      "workflow": {
-        "supported": true,
-        "runtime_api": "addp.workflow/v1",
-        "dynamic_operators": true
-      }
-    }
+    "port": 8100
   }
 }
 ```
 
-**API 标准配置**：工作流引擎的 API 端点在 `common/models/workflow_standards.go` 中定义，包括：
-- `execute`: `POST /api/workflows/execute`
-- `status`: `GET /api/workflows/status/{id}`
-- `logs`: `GET /api/workflows/logs/{id}`
-- `cancel`: `POST /api/workflows/cancel/{id}`
-- 健康检查: `GET /health`
+**运行时调用规则**：上层模块不直接读取或拼接工作流引擎 HTTP 端点。Develop 等调用方通过 `common/engine` 获取 `WorkflowRuntimeProvider`，由 provider 按 `addp.workflow/v1` HTTP 协议调用 `GET /api/operators`、`POST /api/workflow`、`GET /api/executions/{id}` 等运行时入口。连接测试统一由插件调用 `/health`。
 
 ---
 
@@ -180,7 +167,7 @@
 }
 ```
 
-**注意**：工作流引擎的 API 端点和健康检查配置已标准化到代码中（`common/models/workflow_standards.go`），无需在数据库中配置。
+**注意**：工作流引擎的运行时 API 由 `WorkflowRuntimeProvider` 封装，脚本 / Notebook 运行时由 `ScriptRuntimeProvider` 封装；数据库中无需保存端点配置。
 
 ---
 
@@ -189,7 +176,7 @@
 **类型**：JSONB
 **作用**：声明引擎自身具备、且可由 ADDP 统一消费的 native / provider 能力。
 
-`system.engines.capabilities` 使用 `engine.capabilities/v1` 结构。内置引擎的事实来源是引擎插件的 `Capabilities()` 方法；System 服务启动时会基于当前插件体系刷新已注册引擎能力。Engine API 创建或更新引擎时，如果调用方未提供能力声明，System 会按 `engine_type` 生成当前结构；Registry 注册接口提交能力时也必须使用该结构。
+`system.engines.capabilities` 使用 `engine.capabilities/v1` 结构。已注册插件引擎的事实来源是引擎插件的 `Capabilities()` 方法；System 服务启动时会基于当前插件体系刷新已注册插件引擎能力。Engine API 创建或更新插件引擎时，即使调用方提交 `capabilities`，System 也会忽略请求值并按 `engine_type` 使用插件生成当前结构。Registry 能力注册接口中，非插件引擎必须提交标准 `engine.capabilities/v1`；插件引擎即使提交 `capabilities` 也会被 System 忽略，并改用插件 `Capabilities()` 生成落库能力。内置扩展引擎通过 `/api/v1/internal/engines/register` 自注册时不提交 `capabilities`。
 
 **边界**：
 - 该字段只表达引擎自身能力，例如 catalog、facts、store、query、workflow、script。
@@ -231,7 +218,7 @@ type ComputeCapabilities struct {
 | 字段 | 说明 |
 |---|---|
 | `schema_version` | 固定为 `engine.capabilities/v1` |
-| `engine_type` | 引擎类型，如 `postgresql`、`mysql`、`python_workflow` |
+| `engine_type` | 引擎类型，如 `postgresql`、`mysql`、`acme_geo_workflow` |
 | `engine_family` | 粗粒度引擎族，如 `tabular`、`object`、`file`、`dynamic_schema`、`graph`、`workflow`、`script` |
 | `storage` | 存储、目录、catalog facts、内容访问能力 |
 | `compute` | 查询、工作流、脚本或 Notebook 运行能力 |
@@ -251,8 +238,8 @@ type ComputeCapabilities struct {
       "path_version": "catalog.path/v1",
       "root_term": "server",
       "levels": [
-        {"term": "schema", "kinds": ["schema"], "container": true, "i18n_key": "engine.term.schema"},
-        {"term": "table", "kinds": ["table", "view", "materialized_view", "external_table"], "item": true, "i18n_key": "engine.term.table"}
+        {"term": "schema", "kinds": ["schema"], "role": "branch", "i18n_key": "engine.term.schema"},
+        {"term": "table", "kinds": ["table", "view", "materialized_view", "external_table"], "role": "leaf", "i18n_key": "engine.term.table"}
       ]
     },
     "catalog": {"supported": true, "real_time": true, "system_filtering": true},
@@ -272,11 +259,11 @@ type ComputeCapabilities struct {
 }
 ```
 
-#### Python Workflow 示例
+#### 自研 Workflow 示例
 ```json
 {
   "schema_version": "engine.capabilities/v1",
-  "engine_type": "python_workflow",
+  "engine_type": "acme_geo_workflow",
   "engine_family": "workflow",
   "compute": {
     "workflow": {
@@ -294,21 +281,13 @@ type ComputeCapabilities struct {
 
 **⚠️ 已废弃**：此字段已从数据库中删除。
 
-**新方案**：工作流引擎的 API 端点配置已标准化到代码中（`common/models/workflow_standards.go`）。
+**新方案**：运行时端点不作为 System 表字段或独立配置事实源。工作流引擎通过 `WorkflowRuntimeProvider` 调用，当前 `addp.workflow/v1` HTTP 协议入口由 `common/engine/plugin/http_runtime.go` 封装。
 
-**标准配置示例**（Python Workflow / Spark Workflow）：
+**标准调用入口**（已注册的工作流运行时，例如 Python Workflow / Spark Workflow / Math Workflow）：
 ```go
-WorkflowStandards = map[string]WorkflowStandard{
-    "python_workflow": {
-        Endpoints: map[string]WorkflowEndpoint{
-            "execute": {Method: "POST", Path: "/api/workflows/execute", Timeout: 300},
-            "status":  {Method: "GET",  Path: "/api/workflows/status/{id}", Timeout: 10},
-            "logs":    {Method: "GET",  Path: "/api/workflows/logs/{id}", Timeout: 10},
-            "cancel":  {Method: "POST", Path: "/api/workflows/cancel/{id}", Timeout: 30},
-        },
-        HealthCheck: {Endpoint: "/health", Timeout: 5, Interval: 60},
-    },
-}
+WorkflowRuntimeProvider.ListOperators()     // HTTP GET  /api/operators
+WorkflowRuntimeProvider.ExecuteWorkflow()  // HTTP POST /api/workflow
+EnginePlugin.TestConnection()              // HTTP GET  /health
 ```
 
 ---
@@ -323,7 +302,7 @@ System engine 表不保存元数据扫描策略。注册引擎时的扫描计划
 
 **⚠️ 已废弃**：此字段已从数据库中删除。
 
-**新方案**：健康检查配置已标准化到代码中（`common/models/workflow_standards.go`），所有工作流引擎统一使用 `/health` 端点。
+**新方案**：健康检查由 `EnginePlugin.TestConnection()` 执行。工作流和脚本扩展引擎统一使用 `/health` 作为最小只读真实检查入口。
 
 ---
 
@@ -445,17 +424,18 @@ POST /api/v1/system/engines/:id/test
 
 #### 内部列表查询（解密）
 ```
-GET /internal/engines?engine_type={type}&tenant_id={id}
+GET /api/v1/internal/engines?engine_type={type}&tenant_id={id}
 ```
 
 **特性**：
 - 自动解密 `connection_info`
 - 无需用户认证
 - 支持跨租户查询（SuperAdmin）
+- 响应为引擎数组；公开 `GET /api/v1/system/engines` 使用分页对象 `{data,total,page,page_size,total_pages}`。
 
 #### 内部获取单个（解密）
 ```
-GET /internal/engines/:id
+GET /api/v1/internal/engines/:id
 ```
 
 #### 注册能力
@@ -464,12 +444,12 @@ POST /api/v1/internal/registry/capabilities
 Content-Type: application/json
 
 {
-  "name": "Python工作流引擎",
-  "engine_type": "python_workflow",
-  "is_builtin": true,
+  "name": "Custom Workflow Runtime",
+  "engine_type": "custom_workflow",
+  "is_builtin": false,
   "capabilities": {
     "schema_version": "engine.capabilities/v1",
-    "engine_type": "python_workflow",
+    "engine_type": "custom_workflow",
     "engine_family": "workflow",
     "compute": {
       "workflow": {
@@ -479,20 +459,20 @@ Content-Type: application/json
       }
     }
   },
-  "description": "基于 Python 的工作流引擎",
+  "description": "非内置工作流运行时",
   "connection_info": {
     "protocol": "http",
     "host": "localhost",
-    "port": 8099
+    "port": 19099
   }
 }
 ```
 
-**注意**：API 端点配置已标准化到代码中，注册时无需提供。
+**注意**：这是 Registry 能力注册接口。非插件引擎调用时必须提交标准 `engine.capabilities/v1`；插件引擎的能力事实源仍是插件 `Capabilities()`，System 会忽略请求体中的 `capabilities`。内置运行时启动自注册使用 `POST /api/v1/internal/engines/register`，只提交身份与连接信息，不提交 `capabilities`。
 
 #### 查询能力
 ```
-GET /api/v1/internal/registry/capabilities?filter={key}={value}
+GET /api/v1/internal/registry/capabilities?engine_type=acme_geo_workflow&is_active=true
 ```
 
 #### 查询计算引擎
@@ -600,38 +580,39 @@ curl -X POST http://localhost:8180/api/v1/system/engines \
   }'
 ```
 
-### 9.2 创建 Extension 引擎（Python Workflow）
+### 9.2 通过 Engine API 创建自研 Extension 工作流引擎
 
 ```bash
 curl -X POST http://localhost:8180/api/v1/system/engines \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "name": "Python工作流引擎",
-    "engine_type": "python_workflow",
+    "name": "Acme Geo Workflow",
+    "engine_type": "acme_geo_workflow",
     "engine_origin": "extension",
     "connection_info": {
       "protocol": "http",
       "host": "localhost",
-      "port": 8099
+      "port": 8100
     },
     "capabilities": {
       "schema_version": "engine.capabilities/v1",
-      "engine_type": "python_workflow",
+      "engine_type": "acme_geo_workflow",
       "engine_family": "workflow",
       "compute": {
         "workflow": {
           "supported": true,
           "runtime_api": "addp.workflow/v1",
-          "dynamic_operators": true
+          "dynamic_operators": true,
+          "supported_operator_mode": ["workflow", "direct"]
         }
       }
     },
-    "description": "基于 Python 的通用数据处理工作流引擎"
+    "description": "自研 GIS 工作流运行时"
   }'
 ```
 
-**注意**：API 端点配置已标准化到代码中（`common/models/workflow_standards.go`），创建时无需提供。
+**注意**：这是用户自研扩展引擎创建示例，必须提交或由 System 注册表单生成标准 `engine.capabilities/v1`，且其中的 `engine_type` 必须与资源 `engine_type` 一致。声明 `compute.workflow.supported=true` 且 `runtime_api="addp.workflow/v1"` 时，System 保存前会按 `/health` 和 `/api/operators` 执行只读协议探测。生产内置运行时启动自注册不走该示例，可以不提交 `capabilities`，由 System 按已注册插件声明生成；Math Workflow 作为参考实现可随开发环境启动服务，但仍按手动注册路径处理。
 
 ### 9.3 测试连接
 
@@ -666,8 +647,8 @@ curl http://localhost:8180/api/v1/internal/registry/compute-engines
   "data": [
     {
       "id": 2,
-      "name": "Python工作流引擎",
-      "engine_type": "python_workflow",
+      "name": "Acme Geo Workflow",
+      "engine_type": "acme_geo_workflow",
       "connection_info": {
         "protocol": "http",
         "host": "localhost",
@@ -675,7 +656,7 @@ curl http://localhost:8180/api/v1/internal/registry/compute-engines
       },
       "capabilities": {
         "schema_version": "engine.capabilities/v1",
-        "engine_type": "python_workflow",
+        "engine_type": "acme_geo_workflow",
         "engine_family": "workflow",
         "compute": {
           "workflow": {
@@ -690,7 +671,7 @@ curl http://localhost:8180/api/v1/internal/registry/compute-engines
 }
 ```
 
-**注意**：API 端点配置在代码中（`common/models/workflow_standards.go`），API 响应不包含该信息。
+**注意**：运行时端点由 Provider 封装，API 响应不包含该信息。
 
 ---
 

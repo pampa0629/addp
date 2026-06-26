@@ -60,6 +60,14 @@ func (p *MathWorkflowPlugin) ExecuteWorkflow(ctx context.Context, connInfo plugi
 	return plugin.HTTPExecuteWorkflow(ctx, connInfo, req)
 }
 
+func (p *MathWorkflowPlugin) InvokeOperator(ctx context.Context, connInfo plugin.ConnectionInfo, operatorName string, req plugin.OperatorInvokeRequest) (*plugin.OperatorInvokeResult, error) {
+	return plugin.HTTPInvokeOperator(ctx, connInfo, operatorName, req)
+}
+
+func (p *MathWorkflowPlugin) GetExecutionStatus(ctx context.Context, connInfo plugin.ConnectionInfo, executionID string) (*plugin.WorkflowExecutionStatus, error) {
+	return plugin.HTTPGetExecutionStatus(ctx, connInfo, executionID)
+}
+
 func (p *MathWorkflowPlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {
 	host := plugin.NormalizeHost(plugin.GetString(connInfo, "host"))
 	port := plugin.GetInt(connInfo, "port")

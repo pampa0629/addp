@@ -189,7 +189,7 @@ func (s *UnifiedMVTService) GetTile(
 		}
 		if tileCache != nil && strings.TrimSpace(tileCache.StorageRef) != "" {
 			storageRef = strings.TrimSpace(tileCache.StorageRef)
-			cacheScope = fmt.Sprintf("tile_cache:%d", tileCache.ID)
+			cacheScope = fmt.Sprintf("vector_tile_cache:%d", tileCache.ID)
 			renderSource = QuickViewRenderSourceCachedTile
 			tileCacheID = &tileCache.ID
 		}

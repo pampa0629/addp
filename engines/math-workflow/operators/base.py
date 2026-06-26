@@ -4,7 +4,7 @@ Math Workflow Engine - 基础模型定义
 定义算子元数据的 Pydantic 模型，确保符合 ADDP 工作流计算引擎接口规范。
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional, Dict, Any
 
 
@@ -37,14 +37,22 @@ class OperatorMetadata(BaseModel):
     id: str = Field(..., description="算子唯一标识")
     name: str = Field(..., description="算子名称")
     display_name: str = Field(..., description="中文显示名")
+    engine_type: str = Field("math_workflow", description="所属扩展引擎类型")
     category: str = Field(..., description="分类名称")
+    category_path: List[str] = Field(default_factory=list, description="多级分组目录")
     description: str = Field(..., description="功能描述")
     brief_description: Optional[str] = Field(None, description="简短描述")
-    module: str = Field("math_workflow", description="所属模块")
+    execution_modes: List[str] = Field(..., description="执行模式")
     parameters: List[ParameterMetadata] = Field(..., description="参数定义列表")
     output_ports: List[OutputPortMetadata] = Field(..., description="输出端口定义")
     use_cases: Optional[List[str]] = Field(None, description="使用场景")
     notes: Optional[List[str]] = Field(None, description="注意事项")
+
+    @model_validator(mode="after")
+    def fill_category_path(self):
+        if not self.category_path:
+            self.category_path = [self.category]
+        return self
 
 
 # 允许递归定义

@@ -1,5 +1,7 @@
 # SQL 编辑器模块实现方案
 
+> 历史方案说明：本文保留早期 SQL 编辑器设计思路。当前持久化任务主路径已收敛到 `develop.dev_tasks`，查询内容使用 `content.query` / `content.query_type`，普通 SQL 执行目标使用 `execution_config.engine_id`，DuckDB 联邦查询使用 `execution_config.query_mode="duckdb"`。本文中 `develop.scripts`、`sql_content`、`/api/develop/scripts` 等旧草案不作为现行实现依据。
+
 ## 一、需求分析
 
 基于用户需求和现有 ADDP 架构,SQL 编辑器模块需要实现:
@@ -459,9 +461,14 @@ Authorization: Bearer <token>
 
 Request:
 {
-  "engine_id": 123,
-  "sql": "SELECT * FROM users LIMIT 10",
-  "timeout": 30000  // 毫秒
+  "content": {
+    "query_type": "sql",
+    "query": "SELECT * FROM users LIMIT 10"
+  },
+  "execution_config": {
+    "engine_id": 123
+  },
+  "timeout": 30
 }
 
 Response:

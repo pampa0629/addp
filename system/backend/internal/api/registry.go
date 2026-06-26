@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/addp/common/models"
@@ -33,6 +34,10 @@ func (h *RegistryHandler) RegisterCapability(c *gin.Context) {
 
 	engineID, err := h.registryService.RegisterCapability(c.Request.Context(), &req)
 	if err != nil {
+		if errors.Is(err, service.ErrInvalidCapabilityRegistration) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -50,16 +55,16 @@ func (h *RegistryHandler) RegisterCapability(c *gin.Context) {
 }
 
 // ListCapabilities 查询能力列表
-// GET /api/v1/internal/registry/capabilities?resource_type=compute_engine&is_builtin=true
+// GET /api/v1/internal/registry/capabilities?engine_type=python_workflow&is_builtin=true
 func (h *RegistryHandler) ListCapabilities(c *gin.Context) {
 	filters := make(map[string]interface{})
 
 	// 支持的查询参数
-	if resourceType := c.Query("resource_type"); resourceType != "" {
-		filters["resource_type"] = resourceType
-	}
 	if isBuiltin := c.Query("is_builtin"); isBuiltin != "" {
 		filters["is_builtin"] = isBuiltin == "true"
+	}
+	if engineType := c.Query("engine_type"); engineType != "" {
+		filters["engine_type"] = engineType
 	}
 	if isActive := c.Query("is_active"); isActive != "" {
 		filters["is_active"] = isActive == "true"
@@ -72,24 +77,6 @@ func (h *RegistryHandler) ListCapabilities(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, engines)
-}
-
-// GetCapabilityByIdentifier 根据 unique_identifier 查询能力
-// GET /api/v1/internal/registry/capabilities/:identifier
-func (h *RegistryHandler) GetCapabilityByIdentifier(c *gin.Context) {
-	identifier := c.Param("identifier")
-	if identifier == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "identifier is required"})
-		return
-	}
-
-	resource, err := h.registryService.GetCapabilityByIdentifier(c.Request.Context(), identifier)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, resource)
 }
 
 // ListComputeEngines 查询所有具有计算能力的引擎

@@ -10,7 +10,16 @@ class DevelopClient(BaseClient):
     async def list_engines(self) -> List[Dict[str, Any]]:
         """获取引擎列表"""
         resp = await self.get("/api/v1/develop/engines")
-        return resp if isinstance(resp, list) else resp.get("engines", [])
+        if not isinstance(resp, list):
+            raise ValueError("develop engines response must be a list")
+        return resp
+
+    async def list_workflow_engines(self) -> List[Dict[str, Any]]:
+        """获取可用于工作流编排的引擎实例列表"""
+        resp = await self.get("/api/v1/develop/workflow-engines")
+        if not isinstance(resp, list):
+            raise ValueError("develop workflow engines response must be a list")
+        return resp
 
     async def list_namespaces(self, engine_id: int) -> List[Dict[str, Any]]:
         """获取 catalog 命名空间列表"""
@@ -25,14 +34,14 @@ class DevelopClient(BaseClient):
         )
         return resp.get("items", [])
 
-    async def list_operators(self, engine_type: str = "python_workflow") -> List[Dict[str, Any]]:
-        """获取算子列表"""
-        resp = await self.get(f"/api/v1/develop/operators/modules/{engine_type}")
+    async def list_operators(self, workflow_engine_id: int) -> List[Dict[str, Any]]:
+        """获取指定工作流引擎实例的算子列表"""
+        resp = await self.get(f"/api/v1/develop/workflow-engines/{workflow_engine_id}/operators")
         return resp.get("operators", [])
 
-    async def get_operator(self, operator_name: str, engine_type: str = "python_workflow") -> Optional[Dict[str, Any]]:
-        """获取算子详情"""
-        operators = await self.list_operators(engine_type)
+    async def get_operator(self, operator_name: str, workflow_engine_id: int) -> Optional[Dict[str, Any]]:
+        """获取指定工作流引擎实例的算子详情"""
+        operators = await self.list_operators(workflow_engine_id)
         for op in operators:
             if op.get("name") == operator_name:
                 return op
@@ -41,14 +50,28 @@ class DevelopClient(BaseClient):
     async def execute_sql(self, sql: str, engine_id: int) -> Dict[str, Any]:
         """执行 SQL 查询"""
         return await self.post("/api/v1/develop/execute", json={
-            "query": sql,
-            "engine_id": engine_id,
+            "content": {
+                "query_type": "sql",
+                "query": sql,
+            },
+            "execution_config": {
+                "engine_id": engine_id,
+            },
         })
 
     async def run_workflow_content(
-        self, workflow: Dict[str, Any], engine_id: Optional[int] = None
+        self,
+        workflow: Dict[str, Any],
+        engine_id: int,
+        engine_specific: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """提交工作流临时执行（不保存为开发项），返回 execution_id"""
+        execution_config: Dict[str, Any] = {
+            "engine_id": engine_id,
+        }
+        if engine_specific:
+            execution_config["engine_specific"] = engine_specific
+
         data: Dict[str, Any] = {
             "dev_type": "workflow",
             "trigger_type": "api",
@@ -56,9 +79,8 @@ class DevelopClient(BaseClient):
                 "workflow_definition": workflow,
                 "inputs": {},
             },
+            "execution_config": execution_config,
         }
-        if engine_id is not None:
-            data["engine_id"] = engine_id
         return await self.post("/api/v1/develop/executions", json=data)
 
     async def get_execution(self, execution_id: str) -> Dict[str, Any]:

@@ -32,6 +32,8 @@ func SetupRouter(
 	cacheManager *service.CacheManager,
 	redisClient *redis.Client,
 	embeddingService *service.EmbeddingService,
+	spatialPreviewService *service.SpatialPreviewService,
+	rasterCOGRepo *repository.RasterCOGRepository,
 	taskProviderHandler *TaskProviderHandler,
 	importHandler *ImportHandler,
 	uploadHandler *UploadHandler,
@@ -63,6 +65,14 @@ func SetupRouter(
 			"version": "1.0.0",
 		})
 	})
+
+	internal := router.Group("/api/v1/manager/internal")
+	internal.Use(managerInternalAPIKeyMiddleware(cfg))
+	{
+		if taskProviderHandler != nil {
+			internal.POST("/executions/:execution_id/events", taskProviderHandler.RecordRasterMosaicExecutionProgressEvent)
+		}
+	}
 
 	// API 路由组
 	api := router.Group("/api/v1/manager")
@@ -96,7 +106,7 @@ func SetupRouter(
 		api.GET("/executions/:execution_id", taskProviderHandler.ExecutionStatus)
 
 		// TileCacheTask CRUD
-		tileCacheTasksGroup := api.Group("/tile_cache_tasks")
+		tileCacheTasksGroup := api.Group("/vector_tile_cache_tasks")
 		{
 			tileCacheTasksGroup.GET("", taskProviderHandler.ListTileCacheTasks)
 			tileCacheTasksGroup.POST("", taskProviderHandler.CreateTileCacheTask)
@@ -104,13 +114,37 @@ func SetupRouter(
 			tileCacheTasksGroup.PUT("/:id", taskProviderHandler.UpdateTileCacheTask)
 			tileCacheTasksGroup.DELETE("/:id", taskProviderHandler.DeleteTileCacheTask)
 		}
-		tileCacheGroup := api.Group("/tile_cache")
+		tileCacheGroup := api.Group("/vector_tile_cache")
 		{
 			tileCacheGroup.GET("", taskProviderHandler.ListTileCaches)
 			tileCacheGroup.GET("/:id", taskProviderHandler.GetTileCache)
 			tileCacheGroup.DELETE("/:id", taskProviderHandler.DeleteTileCache)
 		}
-		quickViewOptimizationTasksGroup := api.Group("/quick_view_optimization_tasks")
+		rasterCOGHandler := NewRasterCOGHandler(rasterCOGRepo, spatialPreviewService)
+		rasterCOGTasksGroup := api.Group("/raster_cog_tasks")
+		{
+			rasterCOGTasksGroup.GET("", taskProviderHandler.ListRasterCOGTasks)
+			rasterCOGTasksGroup.POST("", taskProviderHandler.CreateRasterCOGTask)
+			rasterCOGTasksGroup.GET("/:id", taskProviderHandler.GetRasterCOGTask)
+			rasterCOGTasksGroup.PUT("/:id", taskProviderHandler.UpdateRasterCOGTask)
+			rasterCOGTasksGroup.DELETE("/:id", taskProviderHandler.DeleteRasterCOGTask)
+		}
+		rasterMosaicTasksGroup := api.Group("/raster_mosaic_tasks")
+		{
+			rasterMosaicTasksGroup.GET("", taskProviderHandler.ListRasterMosaicTasks)
+			rasterMosaicTasksGroup.POST("", taskProviderHandler.CreateRasterMosaicTask)
+			rasterMosaicTasksGroup.GET("/:id", taskProviderHandler.GetRasterMosaicTask)
+			rasterMosaicTasksGroup.PUT("/:id", taskProviderHandler.UpdateRasterMosaicTask)
+			rasterMosaicTasksGroup.DELETE("/:id", taskProviderHandler.DeleteRasterMosaicTask)
+		}
+		rasterCOGsGroup := api.Group("/raster_cog")
+		{
+			rasterCOGsGroup.GET("", taskProviderHandler.ListRasterCOGs)
+			rasterCOGsGroup.GET("/:id", taskProviderHandler.GetRasterCOG)
+			rasterCOGsGroup.DELETE("/:id", taskProviderHandler.DeleteRasterCOG)
+			rasterCOGsGroup.GET("/:id/content", rasterCOGHandler.GetRasterCOGContent)
+		}
+		quickViewOptimizationTasksGroup := api.Group("/vector_quick_view_target_tasks")
 		{
 			quickViewOptimizationTasksGroup.GET("", taskProviderHandler.ListQuickViewOptimizationTasks)
 			quickViewOptimizationTasksGroup.POST("", taskProviderHandler.CreateQuickViewOptimizationTask)
@@ -118,7 +152,7 @@ func SetupRouter(
 			quickViewOptimizationTasksGroup.PUT("/:id", taskProviderHandler.UpdateQuickViewOptimizationTask)
 			quickViewOptimizationTasksGroup.DELETE("/:id", taskProviderHandler.DeleteQuickViewOptimizationTask)
 		}
-		quickViewOptimizationGroup := api.Group("/quick_view_optimization")
+		quickViewOptimizationGroup := api.Group("/vector_quick_view_targets")
 		{
 			quickViewOptimizationGroup.GET("", taskProviderHandler.ListQuickViewOptimizations)
 			quickViewOptimizationGroup.GET("/:id", taskProviderHandler.GetQuickViewOptimization)

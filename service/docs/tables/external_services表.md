@@ -395,7 +395,7 @@ decryptedPassword, _ := crypto.AESDecrypt(authConfig["password"], encryptionKey)
 
 ```bash
 # 1. 注册 WMS 服务
-SERVICE_ID=$(curl -X POST http://localhost:8085/api/service/registry/services \
+SERVICE_ID=$(curl -X POST http://localhost:8086/api/service/registry/services \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -406,11 +406,11 @@ SERVICE_ID=$(curl -X POST http://localhost:8085/api/service/registry/services \
   }' | jq -r '.id')
 
 # 2. 查看服务详情（包含解析的图层列表）
-curl -X GET http://localhost:8085/api/service/registry/services/$SERVICE_ID \
+curl -X GET http://localhost:8086/api/service/registry/services/$SERVICE_ID \
   -H "Authorization: Bearer $TOKEN" | jq '.layers'
 
 # 3. 通过代理访问 WMS 服务
-curl "http://localhost:8085/api/service/proxy/$SERVICE_ID/GetMap?SERVICE=WMS&REQUEST=GetMap&LAYERS=cities&WIDTH=800&HEIGHT=600" \
+curl "http://localhost:8086/api/service/proxy/$SERVICE_ID/GetMap?SERVICE=WMS&REQUEST=GetMap&LAYERS=cities&WIDTH=800&HEIGHT=600" \
   -H "Authorization: Bearer $TOKEN" \
   --output map.png
 ```
@@ -418,7 +418,7 @@ curl "http://localhost:8085/api/service/proxy/$SERVICE_ID/GetMap?SERVICE=WMS&REQ
 ### 示例 2：注册需要认证的 REST API
 
 ```bash
-curl -X POST http://localhost:8085/api/service/registry/services \
+curl -X POST http://localhost:8086/api/service/registry/services \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{

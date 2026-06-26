@@ -1,6 +1,6 @@
 # quick_view 表结构和 API 说明
 
-> 状态：当前实现说明。`manager.quick_view` 是快显偏好表，不保存快显能力快照、快显性能优化结果、瓦片缓存结果事实、生成任务定义或执行历史。快显性能优化结果见 `manager.quick_view_optimization`，瓦片缓存结果见 `manager.tile_cache`，任务定义见对应任务表。
+> 状态：当前实现说明。`manager.quick_view` 是快显偏好表，不保存快显能力快照、快显性能优化结果、瓦片缓存结果事实、生成任务定义或执行历史。快显性能优化结果见 `manager.vector_quick_view_targets`，瓦片缓存结果见 `manager.vector_tile_cache`，任务定义见对应任务表。
 
 ## 一、表定位
 
@@ -24,10 +24,10 @@
 | 对象 | 职责 |
 | --- | --- |
 | `manager.quick_view` | 用户预览模式偏好 |
-| `manager.quick_view_optimization` | Manager 创建并拥有生命周期的 3857 快显性能优化结果状态 |
-| `manager.quick_view_optimization_tasks` | 快显性能优化任务定义 |
-| `manager.tile_cache` | 瓦片缓存结果状态 |
-| `manager.tile_cache_tasks` | 瓦片缓存生成任务定义 |
+| `manager.vector_quick_view_targets` | Manager 创建并拥有生命周期的 3857 快显性能优化结果状态 |
+| `manager.vector_quick_view_target_tasks` | 快显性能优化任务定义 |
+| `manager.vector_tile_cache` | 瓦片缓存结果状态 |
+| `manager.vector_tile_cache_tasks` | 瓦片缓存生成任务定义 |
 | `common.task_executions` | 某一次实际执行记录 |
 | Quick View Capability API | 动态快显能力、推荐渲染源、默认瓦片缓存结果和不可用原因 |
 
@@ -39,10 +39,10 @@
 | `tenant_id` | integer | 租户 ID |
 | `item_fingerprint` | varchar(64) | 标准 data item 指纹，和 `tenant_id` 组成唯一偏好身份 |
 | `locator` | text | 资源树或数据项回跳定位，不作为去重主键 |
-| `preferred_mode` | varchar | `table_geojson` / `quick_view` |
+| `preferred_mode` | varchar | `basic_preview` / `map_quick_view` |
 | `created_at` / `updated_at` | timestamp | 生命周期字段 |
 
-`can_use_quick_view`、`can_generate_tile_cache`、`status`、`render_source`、`default_tile_cache_id`、`unavailable_reason` 是快显能力 API 的动态响应字段，不是 `manager.quick_view` 表字段。
+`can_use_quick_view`、`can_generate_vector_tile_cache`、`status`、`render_source`、`default_vector_tile_cache_id`、`unavailable_reason` 是快显能力 API 的动态响应字段，不是 `manager.quick_view` 表字段。
 
 ## 三、动态状态语义
 
@@ -68,11 +68,11 @@
 | 条件 | UI 行为 |
 | --- | --- |
 | `can_use_quick_view=true` 且 `render_source=cached_tile/direct_geojson` | 展示“切换快显”，不展示“生成瓦片缓存”按钮 |
-| `can_use_quick_view=true` 且 `render_source=realtime_tile` | 展示“切换快显”；当 `optimization.status=stale`、`realtime_tile.performance_mode=source_transform_path` 或瓦片返回 `X-ADDP-Tile-Recommendation=quick_view_optimization` 时展示“执行快显优化”；当瓦片返回 `X-ADDP-Tile-Recommendation=tile_cache_generation` 时使用节流消息提示生成瓦片缓存；需要稳定低层级浏览时保留“生成瓦片缓存”入口 |
-| `can_use_quick_view=false` 且 `can_generate_tile_cache=true` | 展示“生成瓦片缓存”；如果 capability 或瓦片响应提示快显性能优化，优先展示“执行快显优化”入口 |
-| `can_use_quick_view=false` 且 `can_generate_tile_cache=false` | 不展示生成按钮，只展示不可用原因 |
+| `can_use_quick_view=true` 且 `render_source=realtime_tile` | 展示“切换快显”；当 `optimization.status=stale`、`realtime_tile.performance_mode=source_transform_path` 或瓦片返回 `X-ADDP-Tile-Recommendation=vector_quick_view_target_generation` 时展示“执行快显优化”；当瓦片返回 `X-ADDP-Tile-Recommendation=vector_tile_cache_generation` 时使用节流消息提示生成瓦片缓存；需要稳定低层级浏览时保留“生成瓦片缓存”入口 |
+| `can_use_quick_view=false` 且 `can_generate_vector_tile_cache=true` | 展示“生成瓦片缓存”；如果 capability 或瓦片响应提示快显性能优化，优先展示“执行快显优化”入口 |
+| `can_use_quick_view=false` 且 `can_generate_vector_tile_cache=false` | 不展示生成按钮，只展示不可用原因 |
 
-从预览页跳转时，快显性能优化页面或瓦片缓存页面应自动带入当前 item 上下文。快显性能优化页面创建 `manager.quick_view_optimization_tasks`；瓦片缓存页面在“任务”tab 创建 `manager.tile_cache_tasks`。
+从预览页跳转时，快显性能优化页面或瓦片缓存页面应自动带入当前 item 上下文。快显性能优化页面创建 `manager.vector_quick_view_target_tasks`；瓦片缓存页面在“任务”tab 创建 `manager.vector_tile_cache_tasks`。
 
 预览页和 Explorer 内嵌预览都必须按同一规则展示快显性能优化诊断：
 
@@ -82,7 +82,7 @@
 
 ## 六、与瓦片缓存结果的关系
 
-快显能力 API 查询 `tile_cache` 后返回当前推荐用于快显的瓦片缓存结果 ID。
+快显能力 API 查询 `vector_tile_cache` 后返回当前推荐用于快显的瓦片缓存结果 ID。
 
 推荐结果选择规则：
 
@@ -92,15 +92,15 @@
 
 ## 七、与任务和 execution 的关系
 
-瓦片缓存生成必须先创建 `manager.tile_cache_tasks`，再执行。
+瓦片缓存生成必须先创建 `manager.vector_tile_cache_tasks`，再执行。
 
 执行过程：
 
 ```text
-创建 tile_cache_task
-  -> 执行 tile_cache_generation
+创建 vector_tile_cache_task
+  -> 执行 vector_tile_cache_generation
   -> 写入 common.task_executions
-  -> 创建或更新 tile_cache
+  -> 创建或更新 vector_tile_cache
 ```
 
 `quick_view` 不保存执行历史，也不保存当前快显能力状态和推荐结果。
@@ -116,17 +116,17 @@
 5. `extent` / `extent_srid`
 6. 历史准备状态字段 `preparation_status`
 7. `started_at` / `completed_at`
-8. `can_use_quick_view` / `can_generate_tile_cache`
-9. `default_tile_cache_id` / `status` / `unavailable_reason` / `last_checked_at`
+8. `can_use_quick_view` / `can_generate_vector_tile_cache`
+9. `default_vector_tile_cache_id` / `status` / `unavailable_reason` / `last_checked_at`
 
 这些信息已按目标职责迁移：
 
 | 旧信息 | 目标落点 |
 | --- | --- |
-| 产物范围、层级、格式、存储引用 | `manager.tile_cache` |
-| 生成配置 | `manager.tile_cache_tasks.config` |
+| 产物范围、层级、格式、存储引用 | `manager.vector_tile_cache` |
+| 生成配置 | `manager.vector_tile_cache_tasks.config` |
 | 执行进度、耗时、错误详情、统计摘要 | `common.task_executions.metadata` / `error_details` |
-| 快显性能优化目标状态 | `manager.quick_view_optimization` |
+| 快显性能优化目标状态 | `manager.vector_quick_view_targets` |
 
 ## 九、相关文档
 

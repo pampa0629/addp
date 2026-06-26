@@ -30,16 +30,16 @@ init_p0() {
 }
 
 init_p1() {
-    init_module "develop" "8083" "数据开发"
-    init_module "service" "8085" "数据服务"
-    init_module "orchestrator" "8086" "工作流编排"
+    init_module "orchestrator" "8084" "工作流编排"
+    init_module "develop" "8185" "数据开发"
+    init_module "service" "8086" "数据服务"
 }
 
 init_p2() {
-    init_module "monitor" "8087" "执行监控"
-    init_module "standard" "8088" "数据标准"
-    init_module "model" "8089" "数据建模"
-    init_module "transfer" "8084" "数据传输"
+    init_module "monitor" "8100" "执行监控"
+    init_module "standard" "8110" "数据标准"
+    init_module "model" "8181" "数据建模"
+    init_module "transfer" "8083" "数据传输"
 }
 
 case $BATCH in

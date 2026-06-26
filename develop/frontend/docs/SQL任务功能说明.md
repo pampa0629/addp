@@ -31,13 +31,22 @@ SQL 开发模块支持将 SQL 查询保存为可重用任务。当前 Develop �
 每个 SQL 任务包含以下信息:
 - **基本信息**: 名称、显示名称、描述
 - **SQL 内容**: 完整的 SQL 语句
-- **数据源**: 关联的数据库资源 ID
+- **执行目标**: 普通 SQL 使用数据库资源 ID；DuckDB 联邦查询使用 `query_mode=duckdb`
 - **执行配置**: 超时时间(默认 300 秒)
 - **标签**: 多个标签用于分类
 - **状态**: active(活跃) / inactive(停用) / archived(归档)
 - **执行历史**: 最后执行时间、执行状态、执行 ID
 
 ## 后端 API
+
+### 查询目标发现 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/develop/engines` | 获取 System 中具备 query 能力的真实引擎实例 |
+| GET | `/api/v1/develop/query-modes` | 获取 Develop 内置查询模式，例如 DuckDB 联邦查询 |
+
+DuckDB 联邦查询不是 System Engine，不得追加为 `id=0` 的虚拟引擎。
 
 ### SQL 任务管理 API
 
@@ -71,6 +80,24 @@ SQL 开发模块支持将 SQL 查询保存为可重用任务。当前 Develop �
 }
 ```
 
+DuckDB 联邦查询任务的 `execution_config` 使用内置查询模式，不写虚拟引擎 ID：
+
+```json
+{
+  "name": "federated_city_report",
+  "display_name": "跨源城市报表",
+  "dev_type": "query",
+  "content": {
+    "query_type": "sql",
+    "query": "SELECT * FROM postgres_main.public.cities LIMIT 10"
+  },
+  "execution_config": {
+    "query_mode": "duckdb"
+  },
+  "timeout": 300
+}
+```
+
 ### 任务执行
 
 任务可以通过以下方式执行:
@@ -100,8 +127,8 @@ CREATE TABLE develop.dev_tasks (
   -- 内容存储 (JSONB)
   content JSONB NOT NULL,  -- { "query_type": "sql", "query": "..." }
 
-  -- 执行配置
-  execution_config JSONB,  -- { "engine_id": 1 }
+  -- 执行配置：普通 SQL 为 { "engine_id": 1 }，DuckDB 联邦查询为 { "query_mode": "duckdb" }
+  execution_config JSONB,
   timeout INTEGER DEFAULT 300,
 
   -- 元数据

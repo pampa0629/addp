@@ -153,22 +153,36 @@ class MessageResponse(MessageBase):
 {
   "workflow": {
     "name": "缓冲区分析工作流",
-    "steps": [
+    "tasks": [
       {
-        "id": "step1",
-        "type": "data_loader",
+        "id": "task1",
+        "operator": "load",
         "params": {
-          "source_type": "postgresql",
-          "table": "cities"
-        }
+          "source_type": "table",
+          "locator": "addp://engine/1/path/public/cities?type=table"
+        },
+        "depends_on": []
       },
       {
-        "id": "step2",
-        "type": "buffer",
+        "id": "task2",
+        "operator": "buffer",
         "params": {
+          "input_gdf": {"$ref": "task1"},
           "distance": 100,
           "unit": "meters"
-        }
+        },
+        "depends_on": ["task1"]
+      },
+      {
+        "id": "task3",
+        "operator": "save",
+        "params": {
+          "data": {"$ref": "task2"},
+          "target_type": "table",
+          "target_parent_locator": "addp://engine/1/path/public?type=schema",
+          "target_name": "cities_buffer"
+        },
+        "depends_on": ["task2"]
       }
     ]
   }

@@ -207,7 +207,7 @@ type UploadNotebookRequest struct {
 // @Param description formData string false "描述 | Description"
 // @Param data_sources formData string false "数据源 IDs (JSON 数组) | Data source IDs (JSON array)"
 // @Param parameters formData string false "参数 (JSON 对象) | Parameters (JSON object)"
-// @Success 200 {object} models.DevTask "已上传的Notebook | Uploaded Notebook"
+// @Success 200 {object} models.UploadNotebookSwaggerResponse "已上传的Notebook | Uploaded Notebook"
 // @Router /notebooks/upload [post]
 func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 	// 获取用户信息
@@ -379,7 +379,7 @@ func (h *NotebookHandler) DownloadNotebook(c *gin.Context) {
 // @Produce json
 // @Param page query int false "页码 | Page number" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
-// @Success 200 {object} models.ListDevTasksResponse "Notebook列表 | Notebook list"
+// @Success 200 {object} models.ListDevTasksSwaggerResponse "Notebook列表 | Notebook list"
 // @Router /notebooks [get]
 func (h *NotebookHandler) ListNotebooks(c *gin.Context) {
 	// 获取用户信息

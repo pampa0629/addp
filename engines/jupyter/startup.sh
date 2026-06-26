@@ -3,7 +3,7 @@ set -e
 
 echo "=== Jupyter Engine 启动 ==="
 echo "租户 ID: ${ADDP_TENANT_ID:-未设置}"
-echo "API 地址: ${ADDP_API_BASE:-http://host.docker.internal:8085}"
+echo "API 地址: ${ADDP_API_BASE:-http://host.docker.internal:8185}"
 echo ""
 
 # 确保工作目录存在

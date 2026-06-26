@@ -185,8 +185,42 @@ func workflowTaskDefinitionSchema() map[string]interface{} {
 		"workflow",
 		map[string]interface{}{
 			"workflow_definition": map[string]interface{}{
-				"type":                 "object",
-				"title":                "工作流定义摘要",
+				"type":  "object",
+				"title": "工作流定义摘要",
+				"properties": map[string]interface{}{
+					"tasks": map[string]interface{}{
+						"type":  "array",
+						"title": "工作流任务列表",
+						"items": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"id": map[string]interface{}{
+									"type":  "string",
+									"title": "任务 ID",
+								},
+								"operator": map[string]interface{}{
+									"type":  "string",
+									"title": "算子名称",
+								},
+								"params": map[string]interface{}{
+									"type":                 "object",
+									"title":                "算子参数",
+									"additionalProperties": true,
+								},
+								"depends_on": map[string]interface{}{
+									"type":  "array",
+									"title": "前驱任务 ID",
+									"items": map[string]interface{}{
+										"type": "string",
+									},
+								},
+							},
+							"required":             []interface{}{"id", "operator", "params", "depends_on"},
+							"additionalProperties": true,
+						},
+					},
+				},
+				"required":             []interface{}{"tasks"},
 				"additionalProperties": true,
 			},
 			"inputs": map[string]interface{}{

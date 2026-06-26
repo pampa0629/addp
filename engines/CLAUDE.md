@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-`engines/` 集中管理 ADDP 内置计算与 Notebook 引擎，包括 Python Workflow、Spark Workflow、Math Workflow 和 Jupyter。Develop 通过引擎能力声明和 HTTP API 发现算子、执行工作流或 Notebook。
+`engines/` 集中管理 ADDP 计算与 Notebook 运行时。Python Workflow、Spark Workflow 和 Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范。Develop 通过引擎能力声明和 HTTP API 发现算子、执行工作流或 Notebook。
 
 ## 重要目录与端口
 
@@ -10,7 +10,7 @@
 engines/
 ├── python-workflow/  # 空间工作流引擎，默认端口 8099
 ├── spark-workflow/   # Spark 工作流引擎，默认端口 8098
-├── math-workflow/    # 数学工作流引擎，默认端口 8089
+├── math-workflow/    # 数学工作流参考实现，默认端口 8089，开发环境自动启动服务但需手动注册
 ├── jupyter/          # Jupyter API 8097，Lab 8088
 └── docs/             # 引擎 API 与设计文档
 ```
@@ -20,7 +20,7 @@ engines/
 ## 开发规则
 
 - 新增或修改引擎接口前，阅读 `docs/spec/addp工作流计算引擎接口规范.md`、`docs/spec/addp引擎插件接口规范.md` 和 `docs/spec/addp引擎能力声明规范.md`。
-- 引擎应提供健康检查、算子发现、执行接口，并向 System 注册 capabilities。
+- 引擎应提供健康检查、算子发现、执行接口；生产内置运行时自注册时只提交身份与连接信息，能力声明由 common engine 插件的 `Capabilities()` 生成。参考实现可以随开发环境自动启动服务但不自注册，由用户在 System 中按扩展引擎手动注册。
 - 算子元数据要包含输入、输出、参数、示例和开发模式，保证 Develop 工作流画布可动态消费。
 - 引擎目录中不要沉淀一次性实验脚本；临时验证放到操作系统临时目录。
 

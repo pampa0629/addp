@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/addp/common/logger"
+	rastercogref "github.com/addp/manager/internal/cog"
 	"github.com/addp/manager/internal/tilecache"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -301,6 +302,39 @@ func (s *SpatialPreviewService) PutTileByStorageRef(ctx context.Context, tenantI
 	return nil
 }
 
+func (s *SpatialPreviewService) OpenRasterCOG(ctx context.Context, storageRef string, rangeHeader string) (io.ReadCloser, int64, string, string, error) {
+	bucket, objectName, err := rastercogref.ObjectLocation(storageRef, s.bucket)
+	if err != nil {
+		return nil, 0, "", "", err
+	}
+	if err := s.ensureMinIOClient(ctx); err != nil {
+		return nil, 0, "", "", fmt.Errorf("failed to initialize MinIO client: %w", err)
+	}
+	objInfo, err := s.minioClient.StatObject(ctx, bucket, objectName, minio.StatObjectOptions{})
+	if err != nil {
+		return nil, 0, "", "", fmt.Errorf("failed to stat raster COG object: %w", err)
+	}
+	opts, contentLength, contentRange, err := parseStorageRange(rangeHeader, objInfo.Size)
+	if err != nil {
+		return nil, 0, "", "", err
+	}
+	getOpts := minio.GetObjectOptions{}
+	if opts.Length > 0 && contentRange != "" {
+		if err := getOpts.SetRange(opts.Offset, opts.Offset+opts.Length-1); err != nil {
+			return nil, 0, "", "", fmt.Errorf("failed to set raster COG range: %w", err)
+		}
+	}
+	obj, err := s.minioClient.GetObject(ctx, bucket, objectName, getOpts)
+	if err != nil {
+		return nil, 0, "", "", fmt.Errorf("failed to open raster COG object: %w", err)
+	}
+	contentType := objInfo.ContentType
+	if contentType == "" {
+		contentType = "image/tiff"
+	}
+	return obj, contentLength, contentRange, contentType, nil
+}
+
 func (s *SpatialPreviewService) InvalidateTileCacheRuntimeCache(ctx context.Context, tenantID uint, tileCacheID uint) error {
 	if tileCacheID == 0 {
 		return nil
@@ -336,7 +370,7 @@ func (s *SpatialPreviewService) InvalidateTileCacheRuntimeCache(ctx context.Cont
 
 	logger.L().Info("瓦片运行时缓存已失效",
 		"tenant_id", tenantID,
-		"tile_cache_id", tileCacheID,
+		"vector_tile_cache_id", tileCacheID,
 		"memory_deleted", memDeleted,
 		"redis_deleted", redisDeleted)
 	return nil
@@ -386,7 +420,7 @@ func (s *SpatialPreviewService) buildCacheKey(tenantID uint, cacheScope string, 
 }
 
 func (s *SpatialPreviewService) buildTileCacheRuntimeCachePrefix(tenantID uint, tileCacheID uint) string {
-	return fmt.Sprintf("manager:tenant_%d:cache:mvt:spatial:tile_cache:%d:", tenantID, tileCacheID)
+	return fmt.Sprintf("manager:tenant_%d:cache:mvt:spatial:vector_tile_cache:%d:", tenantID, tileCacheID)
 }
 
 func (s *SpatialPreviewService) tileObjectLocationFromStorageRef(storageRef string, z, x, y int) (string, string, error) {

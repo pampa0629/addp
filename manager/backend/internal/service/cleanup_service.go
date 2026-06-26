@@ -47,9 +47,9 @@ type ExportCleanupOptions struct {
 
 type ManagerCleanupStats struct {
 	QuickViewPreferences     int      `json:"quick_view_preferences"`
-	TileCaches               int      `json:"tile_caches"`
+	TileCaches               int      `json:"vector_tile_caches"`
 	Embeddings               int      `json:"embeddings"`
-	QuickViewOptimizations   int      `json:"quick_view_optimizations"`
+	QuickViewOptimizations   int      `json:"vector_quick_view_target_generations"`
 	ExportSessions           int      `json:"export_sessions,omitempty"`
 	DeletedPhysicalArtifacts int      `json:"deleted_physical_artifacts,omitempty"`
 	MarkedMissingSource      int      `json:"marked_missing_source,omitempty"`
@@ -436,7 +436,7 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 		for _, item := range s.filterMissingTileCaches(ctx, tenantID, items, cleanupContext) {
 			if cleanupMode == events.CleanupModePhysical {
 				if err := s.tileCacheSvc.DeleteTileCache(ctx, item.ID, tenantID); err != nil {
-					stats.Errors = append(stats.Errors, fmt.Sprintf("delete tile_cache %d: %v", item.ID, err))
+					stats.Errors = append(stats.Errors, fmt.Sprintf("delete vector_tile_cache %d: %v", item.ID, err))
 					continue
 				}
 				stats.DeletedPhysicalArtifacts++
@@ -444,7 +444,7 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 				"status":        models.TileCacheStatusDeleted,
 				"error_message": "resource reclaim logical cleanup: missing source",
 			}); err != nil {
-				stats.Errors = append(stats.Errors, fmt.Sprintf("mark tile_cache %d: %v", item.ID, err))
+				stats.Errors = append(stats.Errors, fmt.Sprintf("mark vector_tile_cache %d: %v", item.ID, err))
 				continue
 			}
 			stats.TileCaches++
@@ -485,12 +485,12 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 			}
 			if cleanupMode == events.CleanupModePhysical {
 				if err := s.optimizationSvc.DeleteResult(ctx, item.ID, tenantID); err != nil {
-					stats.Errors = append(stats.Errors, fmt.Sprintf("delete quick_view_optimization %d: %v", item.ID, err))
+					stats.Errors = append(stats.Errors, fmt.Sprintf("delete vector_quick_view_target_generation %d: %v", item.ID, err))
 					continue
 				}
 				stats.DeletedPhysicalArtifacts++
 			} else if err := s.optimizationSvc.repo.MarkResultStale(ctx, item.ID, tenantID, "resource reclaim logical cleanup: missing source"); err != nil {
-				stats.Errors = append(stats.Errors, fmt.Sprintf("mark quick_view_optimization %d: %v", item.ID, err))
+				stats.Errors = append(stats.Errors, fmt.Sprintf("mark vector_quick_view_target_generation %d: %v", item.ID, err))
 				continue
 			}
 			stats.QuickViewOptimizations++
@@ -559,11 +559,11 @@ func (s *CleanupService) cleanupTaskDefinitions(ctx context.Context, tenantID ui
 		for _, task := range s.filterTileCacheTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
 			if cleanupMode == events.CleanupModePhysical {
 				if err := s.tileCacheSvc.tileCacheRepo.DeleteTask(ctx, task.ID, tenantID); err != nil {
-					stats.Errors = append(stats.Errors, fmt.Sprintf("delete tile_cache_task %d: %v", task.ID, err))
+					stats.Errors = append(stats.Errors, fmt.Sprintf("delete vector_tile_cache_task %d: %v", task.ID, err))
 					continue
 				}
 			} else if err := s.tileCacheSvc.tileCacheRepo.DisableTaskForCleanup(ctx, tenantID, task.ID, cleanupTaskDefinitionReason(cleanupContext)); err != nil {
-				stats.Errors = append(stats.Errors, fmt.Sprintf("disable tile_cache_task %d: %v", task.ID, err))
+				stats.Errors = append(stats.Errors, fmt.Sprintf("disable vector_tile_cache_task %d: %v", task.ID, err))
 				continue
 			}
 			stats.DisabledTaskDefinitions++
@@ -577,11 +577,11 @@ func (s *CleanupService) cleanupTaskDefinitions(ctx context.Context, tenantID ui
 		for _, task := range s.filterQuickViewOptimizationTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
 			if cleanupMode == events.CleanupModePhysical {
 				if err := s.optimizationSvc.repo.DeleteTask(ctx, task.ID, tenantID); err != nil {
-					stats.Errors = append(stats.Errors, fmt.Sprintf("delete quick_view_optimization_task %d: %v", task.ID, err))
+					stats.Errors = append(stats.Errors, fmt.Sprintf("delete vector_quick_view_target_generation_task %d: %v", task.ID, err))
 					continue
 				}
 			} else if err := s.optimizationSvc.repo.DisableTaskForCleanup(ctx, tenantID, task.ID, cleanupTaskDefinitionReason(cleanupContext)); err != nil {
-				stats.Errors = append(stats.Errors, fmt.Sprintf("disable quick_view_optimization_task %d: %v", task.ID, err))
+				stats.Errors = append(stats.Errors, fmt.Sprintf("disable vector_quick_view_target_generation_task %d: %v", task.ID, err))
 				continue
 			}
 			stats.DisabledTaskDefinitions++

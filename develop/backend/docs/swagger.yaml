@@ -1,115 +1,169 @@
 basePath: /api/v1/develop
 definitions:
-  github_com_addp_develop_backend_internal_models.CreateDevTaskRequest:
+  github_com_addp_develop_backend_internal_models.CreateDevTaskSwaggerRequest:
     properties:
       content:
-        additionalProperties: true
-        type: object
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContentSwagger'
       description:
+        example: 示例工作流
         type: string
       dev_type:
-        description: Develop 内部类型；TaskProvider 对外映射为 task_type
         enum:
         - query
         - workflow
         - script
+        example: workflow
         type: string
       display_name:
+        example: 城市缓冲区工作流
         type: string
       execution_config:
-        additionalProperties: true
-        type: object
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger'
       name:
+        example: city_buffer_workflow
         type: string
       tags:
         items:
           type: string
         type: array
       timeout:
+        example: 300
         type: integer
     required:
     - content
     - dev_type
     - name
     type: object
-  github_com_addp_develop_backend_internal_models.CreateExecutionRequest:
+  github_com_addp_develop_backend_internal_models.CreateExecutionSwaggerRequest:
     properties:
       content:
-        additionalProperties: true
-        description: 执行内容（对于临时执行）
-        type: object
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContentSwagger'
       dev_type:
         enum:
         - query
         - workflow
         - script
+        example: workflow
         type: string
-      engine_id:
+      execution_config:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger'
+      timeout:
+        example: 300
         type: integer
       trigger_type:
         enum:
         - manual
         - scheduled
+        example: manual
         type: string
     required:
     - dev_type
+    - execution_config
     - trigger_type
     type: object
-  github_com_addp_develop_backend_internal_models.DevTask:
+  github_com_addp_develop_backend_internal_models.DevTaskContentSwagger:
+    properties:
+      inputs:
+        type: object
+      notebook_path:
+        example: demo.ipynb
+        type: string
+      parameters:
+        type: object
+      query:
+        example: SELECT * FROM cities
+        type: string
+      query_type:
+        enum:
+        - sql
+        - mql
+        - dsl
+        example: sql
+        type: string
+      workflow_definition:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.WorkflowDefinitionSwagger'
+    type: object
+  github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger:
+    properties:
+      engine_id:
+        example: 12
+        type: integer
+      engine_specific:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.WorkflowEngineSpecificConfigSwagger'
+      query_mode:
+        enum:
+        - duckdb
+        example: duckdb
+        type: string
+      type:
+        example: workflow
+        type: string
+    type: object
+  github_com_addp_develop_backend_internal_models.DevTaskSwagger:
     properties:
       content:
-        allOf:
-        - $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent'
-        description: 内容存储（根据类型解析）
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContentSwagger'
       created_at:
-        description: 审计字段
+        example: "2026-06-24T12:00:00Z"
         type: string
       created_by:
+        example: 1
         type: integer
-      deleted_at:
-        $ref: '#/definitions/gorm.DeletedAt'
       description:
-        description: 元数据
+        example: 示例工作流
         type: string
       dev_type:
-        description: Develop 内部类型：'query' | 'workflow' | 'script'
+        enum:
+        - query
+        - workflow
+        - script
+        example: workflow
         type: string
       display_name:
+        example: 城市缓冲区工作流
         type: string
       execution_config:
-        allOf:
-        - $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent'
-        description: 执行配置（JSONB 字段，统一的执行配置）
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger'
       id:
+        example: 1
         type: integer
       last_execution_id:
-        description: UUID，软引用 common.task_executions.execution_id
+        example: 550e8400-e29b-41d4-a716-446655440000
         type: string
       last_execution_status:
+        example: success
         type: string
       last_run_at:
+        example: "2026-06-24T12:00:00Z"
         type: string
       name:
+        example: city_buffer_workflow
         type: string
+      parameters:
+        type: object
       status:
-        description: 状态
+        enum:
+        - active
+        - inactive
+        - archived
+        example: active
         type: string
       tags:
         items:
           type: string
         type: array
       tenant_id:
+        example: 1
         type: integer
       timeout:
-        description: 超时时间（秒）
+        example: 300
         type: integer
       updated_at:
+        example: "2026-06-24T12:00:00Z"
         type: string
       updated_by:
+        example: 1
         type: integer
-    type: object
-  github_com_addp_develop_backend_internal_models.DevTaskContent:
-    additionalProperties: true
     type: object
   github_com_addp_develop_backend_internal_models.ExecutionStatistics:
     properties:
@@ -128,200 +182,299 @@ definitions:
       total_rows_affected:
         type: integer
     type: object
-  github_com_addp_develop_backend_internal_models.ExecutionWithDevTask:
+  github_com_addp_develop_backend_internal_models.ExecutionWithDevTaskSwagger:
     properties:
       bytes_read:
-        description: Transfer 读取字节数
+        example: 1024
         type: integer
       bytes_written:
-        description: Transfer 写入字节数
+        example: 2048
         type: integer
       completed_at:
+        example: "2026-06-24T12:00:02Z"
         type: string
       created_at:
+        example: "2026-06-24T12:00:00Z"
         type: string
       current_step:
-        description: 当前步骤（Orchestrator/Workflow）
+        example: 执行工作流
         type: string
       dev_task:
-        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger'
       error_details:
-        allOf:
-        - $ref: '#/definitions/models.JSONMap'
-        description: 错误详情（仅失败时有值）
+        type: object
       execution_config:
-        allOf:
-        - $ref: '#/definitions/models.JSONMap'
-        description: JSONB 字段
+        type: object
       execution_id:
-        description: 执行标识
+        example: 550e8400-e29b-41d4-a716-446655440000
         type: string
       execution_time_ms:
-        description: 性能指标
+        example: 1200
         type: integer
       id:
+        example: 1
         type: integer
       metadata:
-        allOf:
-        - $ref: '#/definitions/models.JSONMap'
-        description: 模块特有扩展数据（结果、断点、步骤结果等）
+        type: object
       module:
-        description: 模块标识
+        example: develop
         type: string
       parent_execution_id:
-        description: 父执行（Orchestrator 子步骤追踪父编排）
+        example: parent-execution-id
         type: string
       progress:
-        description: 0-100
+        example: 100
         type: integer
       records_read:
-        description: Transfer 读取记录数
+        example: 100
         type: integer
       records_written:
-        description: Transfer 写入记录数
+        example: 100
         type: integer
       rows_affected:
-        description: SQL 影响行数
+        example: 42
         type: integer
       source:
-        description: 触发来源模块
+        example: develop
         type: string
       source_task_id:
-        description: 关联原始任务
+        example: "12"
         type: string
       source_task_name:
-        description: 任务名称（冗余，便于查询）
+        example: city_buffer_workflow
         type: string
       started_at:
-        description: 时间戳
+        example: "2026-06-24T12:00:00Z"
         type: string
       status:
-        description: 执行状态
+        enum:
+        - pending
+        - running
+        - success
+        - failed
+        - timeout
+        - cancelled
+        example: success
         type: string
       task_type:
-        description: provider 声明的稳定任务类型
+        enum:
+        - query
+        - workflow
+        - script
+        example: workflow
         type: string
       tenant_id:
+        example: 1
         type: integer
       trigger_type:
-        description: 触发信息
+        enum:
+        - manual
+        - scheduled
+        - event
+        example: manual
         type: string
       triggered_by:
-        description: 触发用户ID
+        example: 1
         type: integer
       updated_at:
+        example: "2026-06-24T12:00:02Z"
         type: string
     type: object
-  github_com_addp_develop_backend_internal_models.ListDevTasksResponse:
+  github_com_addp_develop_backend_internal_models.ListDevTasksSwaggerResponse:
     properties:
       items:
         items:
-          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger'
         type: array
       page:
+        example: 1
         type: integer
       page_size:
+        example: 20
         type: integer
       total:
+        example: 1
         type: integer
     type: object
-  github_com_addp_develop_backend_internal_models.ListExecutionsResponse:
+  github_com_addp_develop_backend_internal_models.ListExecutionsSwaggerResponse:
     properties:
       executions:
         items:
-          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTask'
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTaskSwagger'
         type: array
       page:
+        example: 1
         type: integer
       page_size:
+        example: 20
         type: integer
       total:
+        example: 1
         type: integer
     type: object
-  github_com_addp_develop_backend_internal_models.ListProviderDevTasksResponse:
+  github_com_addp_develop_backend_internal_models.ListProviderDevTasksSwaggerResponse:
     properties:
       items:
         items:
-          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ProviderDevTask'
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ProviderDevTaskSwagger'
         type: array
       page:
+        example: 1
         type: integer
       page_size:
+        example: 20
         type: integer
       total:
+        example: 1
         type: integer
     type: object
-  github_com_addp_develop_backend_internal_models.ProviderDevTask:
+  github_com_addp_develop_backend_internal_models.ProviderDevTaskSwagger:
     properties:
       content:
-        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent'
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContentSwagger'
       created_at:
+        example: "2026-06-24T12:00:00Z"
         type: string
       created_by:
+        example: 1
         type: integer
       description:
+        example: 示例工作流
+        type: string
+      dev_type:
+        enum:
+        - query
+        - workflow
+        - script
+        example: workflow
         type: string
       display_name:
+        example: 城市缓冲区工作流
         type: string
-      enabled:
-        type: boolean
       execution_config:
-        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent'
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger'
       id:
+        example: 1
         type: integer
       last_execution_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
         type: string
       last_execution_status:
+        example: success
         type: string
       last_run_at:
+        example: "2026-06-24T12:00:00Z"
         type: string
       name:
+        example: city_buffer_workflow
         type: string
       parameters:
-        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent'
+        type: object
       status:
+        enum:
+        - active
+        - inactive
+        - archived
+        example: active
         type: string
       tags:
         items:
           type: string
         type: array
       task_type:
+        enum:
+        - query
+        - workflow
+        - script
+        example: workflow
         type: string
       tenant_id:
+        example: 1
         type: integer
       timeout:
+        example: 300
         type: integer
       updated_at:
+        example: "2026-06-24T12:00:00Z"
         type: string
       updated_by:
+        example: 1
         type: integer
     type: object
-  github_com_addp_develop_backend_internal_models.UpdateDevTaskRequest:
+  github_com_addp_develop_backend_internal_models.UpdateDevTaskSwaggerRequest:
     properties:
       content:
-        additionalProperties: true
-        type: object
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContentSwagger'
       description:
+        example: 示例工作流
         type: string
       display_name:
+        example: 城市缓冲区工作流
         type: string
       execution_config:
-        additionalProperties: true
-        type: object
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger'
       name:
+        example: city_buffer_workflow
         type: string
       status:
         enum:
         - active
         - inactive
         - archived
+        example: active
         type: string
       tags:
         items:
           type: string
         type: array
       timeout:
+        example: 300
         type: integer
+    type: object
+  github_com_addp_develop_backend_internal_models.UploadNotebookSwaggerResponse:
+    properties:
+      dev_task:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger'
+      message:
+        example: Notebook 上传成功
+        type: string
+    type: object
+  github_com_addp_develop_backend_internal_models.WorkflowDefinitionSwagger:
+    properties:
+      tasks:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.WorkflowTaskDefinitionSwagger'
+        type: array
+    required:
+    - tasks
+    type: object
+  github_com_addp_develop_backend_internal_models.WorkflowEngineSpecificConfigSwagger:
+    properties:
+      spark_cluster_id:
+        example: 34
+        type: integer
+    type: object
+  github_com_addp_develop_backend_internal_models.WorkflowTaskDefinitionSwagger:
+    properties:
+      depends_on:
+        example:
+        - load_1
+        items:
+          type: string
+        type: array
+      id:
+        example: load_1
+        type: string
+      operator:
+        example: load
+        type: string
+      params:
+        type: object
+    required:
+    - depends_on
+    - id
+    - operator
+    - params
     type: object
   github_com_addp_develop_backend_internal_service.DataSource:
     properties:
@@ -334,22 +487,6 @@ definitions:
       tables:
         items:
           $ref: '#/definitions/github_com_addp_develop_backend_internal_service.TableRef'
-        type: array
-    type: object
-  github_com_addp_develop_backend_internal_service.FederatedQueryResult:
-    properties:
-      columns:
-        items:
-          type: string
-        type: array
-      execution_time_ms:
-        type: integer
-      row_count:
-        type: integer
-      rows:
-        items:
-          additionalProperties: true
-          type: object
         type: array
     type: object
   github_com_addp_develop_backend_internal_service.JupyterInstance:
@@ -404,14 +541,6 @@ definitions:
       table:
         type: string
     type: object
-  gorm.DeletedAt:
-    properties:
-      time:
-        type: string
-      valid:
-        description: Valid is true if Time is not NULL
-        type: boolean
-    type: object
   internal_api.ExecuteNotebookRequest:
     properties:
       input_path:
@@ -450,16 +579,18 @@ definitions:
     type: object
   internal_api.ExecuteQueryRequest:
     properties:
-      engine_id:
-        type: integer
-      query:
-        type: string
+      content:
+        additionalProperties: true
+        type: object
+      execution_config:
+        additionalProperties: true
+        type: object
       timeout:
         description: 超时时间（秒）
         type: integer
     required:
-    - engine_id
-    - query
+    - content
+    - execution_config
     type: object
   internal_api.ExecuteQueryResponse:
     properties:
@@ -483,16 +614,6 @@ definitions:
       rows_count:
         type: integer
     type: object
-  internal_api.FederatedQueryRequest:
-    properties:
-      sql:
-        type: string
-      timeout:
-        description: 超时秒数，默认 30
-        type: integer
-    required:
-    - sql
-    type: object
   internal_api.GetJupyterURLRequest:
     properties:
       notebook_path:
@@ -511,6 +632,17 @@ definitions:
         items:
           $ref: '#/definitions/github_com_addp_develop_backend_internal_service.KernelInfo'
         type: array
+    type: object
+  internal_api.QueryMode:
+    properties:
+      description:
+        type: string
+      mode:
+        type: string
+      name:
+        type: string
+      query_type:
+        type: string
     type: object
   internal_api.providerExecuteDevRequest:
     properties:
@@ -531,6 +663,109 @@ definitions:
       status:
         type: string
     type: object
+  models.CapabilitiesView:
+    properties:
+      json_view:
+        items:
+          $ref: '#/definitions/models.CapabilityJSONNode'
+        type: array
+      sections:
+        items:
+          $ref: '#/definitions/models.CapabilityViewSection'
+        type: array
+      summary:
+        items:
+          $ref: '#/definitions/models.CapabilityViewBadge'
+        type: array
+    type: object
+  models.CapabilityJSONNode:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/models.CapabilityJSONNode'
+        type: array
+      key:
+        type: string
+      value:
+        type: string
+    type: object
+  models.CapabilityPathNode:
+    properties:
+      id:
+        type: string
+      label_key:
+        type: string
+      tags:
+        items:
+          $ref: '#/definitions/models.CapabilityViewTag'
+        type: array
+      value:
+        type: string
+    type: object
+  models.CapabilityViewBadge:
+    properties:
+      id:
+        type: string
+      label_key:
+        type: string
+      status:
+        type: string
+      value:
+        type: string
+      value_key:
+        type: string
+    type: object
+  models.CapabilityViewItem:
+    properties:
+      description_key:
+        type: string
+      id:
+        type: string
+      label_key:
+        type: string
+      reason_key:
+        type: string
+      status:
+        type: string
+      tags:
+        items:
+          $ref: '#/definitions/models.CapabilityViewTag'
+        type: array
+      value:
+        type: string
+      value_key:
+        type: string
+    type: object
+  models.CapabilityViewSection:
+    properties:
+      description_key:
+        type: string
+      id:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/models.CapabilityViewItem'
+        type: array
+      path:
+        items:
+          $ref: '#/definitions/models.CapabilityPathNode'
+        type: array
+      status:
+        type: string
+      title_key:
+        type: string
+    type: object
+  models.CapabilityViewTag:
+    properties:
+      id:
+        type: string
+      label_key:
+        type: string
+      type:
+        type: string
+      value:
+        type: string
+    type: object
   models.ConnectionInfo:
     additionalProperties: true
     type: object
@@ -539,6 +774,10 @@ definitions:
       capabilities:
         description: 能力声明（JSONB）
         type: string
+      capabilities_view:
+        allOf:
+        - $ref: '#/definitions/models.CapabilitiesView'
+        description: System 后端生成的能力展示模型
       check_message:
         description: 检测结果消息（错误信息等）
         type: string
@@ -558,7 +797,7 @@ definitions:
         description: 引擎来源：general 或 extension
         type: string
       engine_type:
-        description: 引擎类型（postgresql, mysql, python_workflow等）
+        description: 引擎类型（postgresql, mysql, acme_geo_workflow 等）
         type: string
       id:
         type: integer
@@ -578,9 +817,6 @@ definitions:
         type: integer
       updated_at:
         type: string
-    type: object
-  models.JSONMap:
-    additionalProperties: true
     type: object
   plugin.GraphData:
     properties:
@@ -619,7 +855,7 @@ definitions:
       type:
         type: string
     type: object
-host: localhost:8085
+host: localhost:8185
 info:
   contact: {}
   title: ADDP Develop API
@@ -648,28 +884,6 @@ paths:
       summary: 列出可发现资产 | List discoverable assets
       tags:
       - Develop
-  /duckdb/query:
-    post:
-      consumes:
-      - application/json
-      description: 通过 DuckDB 执行跨源联邦查询（对象存储表 + 关系型数据库）
-      parameters:
-      - description: 查询请求
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.FederatedQueryRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_service.FederatedQueryResult'
-      summary: 执行联邦查询
-      tags:
-      - DuckDB
   /duckdb/sample-query:
     get:
       produces:
@@ -721,8 +935,9 @@ paths:
         "200":
           description: 引擎列表 | Engine list
           schema:
-            additionalProperties: true
-            type: object
+            items:
+              $ref: '#/definitions/models.Engine'
+            type: array
       summary: 获取可用于 SQL 查询的数据源列表 | List data sources available for SQL queries
       tags:
       - Engines
@@ -820,7 +1035,7 @@ paths:
         "200":
           description: 执行列表 | Execution list
           schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListExecutionsResponse'
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListExecutionsSwaggerResponse'
       summary: 查询执行列表 | List executions
       tags:
       - Execution
@@ -833,7 +1048,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CreateExecutionRequest'
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CreateExecutionSwaggerRequest'
       produces:
       - application/json
       responses:
@@ -860,7 +1075,7 @@ paths:
         "200":
           description: 执行详情 | Execution details
           schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTask'
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTaskSwagger'
       summary: 获取执行详情 | Get execution details
       tags:
       - Execution
@@ -1163,7 +1378,7 @@ paths:
         "200":
           description: Notebook列表 | Notebook list
           schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse'
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksSwaggerResponse'
       summary: 列出 Notebooks | List Notebooks
       tags:
       - Notebook
@@ -1304,119 +1519,36 @@ paths:
         "200":
           description: 已上传的Notebook | Uploaded Notebook
           schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.UploadNotebookSwaggerResponse'
       summary: 上传 Notebook | Upload Notebook
       tags:
       - Notebook
-  /operators:
+  /query-modes:
     get:
       produces:
       - application/json
       responses:
         "200":
-          description: 算子列表 | Operator list
+          description: 查询模式列表 | Query mode list
           schema:
-            additionalProperties: true
-            type: object
-      summary: 获取所有模块的算子列表 | List all operators from all modules
+            items:
+              $ref: '#/definitions/internal_api.QueryMode'
+            type: array
+      summary: 获取 Develop 内置查询模式列表 | List Develop-owned query modes
       tags:
-      - Operator
-  /operators/{name}:
-    get:
-      parameters:
-      - description: 算子名称 | Operator name
-        in: path
-        name: name
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 算子详情 | Operator details
-          schema:
-            additionalProperties: true
-            type: object
-      summary: 获取算子详情 | Get operator details
-      tags:
-      - Operator
-  /operators/cache/info:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 缓存信息 | Cache information
-          schema:
-            additionalProperties: true
-            type: object
-      summary: 获取缓存信息 | Get cache information
-      tags:
-      - Operator
-  /operators/engine-types/{engineType}:
-    get:
-      parameters:
-      - description: 工作流引擎类型（动态从 system 获取）| Workflow engine type (fetched dynamically
-          from system)
-        in: path
-        name: engineType
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 算子列表 | Operator list
-          schema:
-            additionalProperties: true
-            type: object
-      summary: 根据引擎类型获取算子列表 | List operators by engine type
-      tags:
-      - Operator
-  /operators/modules/{module}:
-    get:
-      parameters:
-      - description: 模块名称（任务提供者或工作流引擎）| Module name (task provider or workflow engine)
-        in: path
-        name: module
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 算子列表 | Operator list
-          schema:
-            additionalProperties: true
-            type: object
-      summary: 获取指定模块的算子列表 | List operators by module
-      tags:
-      - Operator
-  /operators/refresh:
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 缓存已刷新 | Cache refreshed
-          schema:
-            additionalProperties: true
-            type: object
-      summary: 刷新算子缓存 | Refresh operator cache
-      tags:
-      - Operator
+      - Engines
   /spark-runtimes:
     get:
       produces:
       - application/json
       responses:
         "200":
-          description: Spark运行时列表 | Spark runtime list
+          description: Spark通用引擎资源列表 | Spark general engine resource list
           schema:
             items:
               $ref: '#/definitions/models.Engine'
             type: array
-      summary: 获取所有 Apache Spark 运行时列表 | List all Apache Spark runtimes
+      summary: 获取所有 Apache Spark 通用引擎资源列表 | List all Apache Spark general engine resources
       tags:
       - Engines
   /task-definitions:
@@ -1457,7 +1589,7 @@ paths:
         "200":
           description: 开发任务列表 | Development task list
           schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse'
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksSwaggerResponse'
       summary: 查询开发任务列表 | List development tasks
       tags:
       - DevTask
@@ -1470,14 +1602,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CreateDevTaskRequest'
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CreateDevTaskSwaggerRequest'
       produces:
       - application/json
       responses:
         "200":
           description: 已创建的开发任务 | Created development task
           schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger'
       summary: 创建开发任务 | Create development task
       tags:
       - DevTask
@@ -1512,7 +1644,7 @@ paths:
         "200":
           description: 开发任务详情 | Development task details
           schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger'
       summary: 获取开发任务详情 | Get development task details
       tags:
       - DevTask
@@ -1530,14 +1662,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.UpdateDevTaskRequest'
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.UpdateDevTaskSwaggerRequest'
       produces:
       - application/json
       responses:
         "200":
           description: 已更新的开发任务 | Updated development task
           schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger'
       summary: 更新开发任务 | Update development task
       tags:
       - DevTask
@@ -1611,7 +1743,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListProviderDevTasksResponse'
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListProviderDevTasksSwaggerResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1645,7 +1777,7 @@ paths:
         "200":
           description: 开发任务详情 | Development task detail
           schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ProviderDevTask'
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ProviderDevTaskSwagger'
         "400":
           description: 参数错误 | Bad request
           schema:
@@ -1740,6 +1872,25 @@ paths:
       summary: 获取支持 workflow 的计算引擎列表 | List workflow-capable compute engines
       tags:
       - Engines
+  /workflow-engines/{id}/operators:
+    get:
+      parameters:
+      - description: 工作流引擎实例ID | Workflow engine instance ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 算子列表 | Operator list
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 根据工作流引擎实例获取算子列表 | List operators by workflow engine instance
+      tags:
+      - Operator
 securityDefinitions:
   BearerAuth:
     in: header

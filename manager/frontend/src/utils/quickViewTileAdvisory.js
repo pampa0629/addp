@@ -5,13 +5,13 @@ export function quickViewTileAdvisoryTimeoutBudgetMS(advisory = {}, quickViewSta
 export function quickViewTileAdvisoryAction(advisory = {}, quickViewStatus = {}, fallbackSourceSRID = 0) {
   const recommendation = String(advisory?.recommendation || '').trim()
   const retryPolicy = String(advisory?.retryPolicy || '').trim()
-  if (recommendation === 'tile_cache_generation') return 'tile_cache_generation'
+  if (recommendation === 'vector_tile_cache_generation') return 'vector_tile_cache_generation'
 
-  if (recommendation === 'quick_view_optimization' || retryPolicy === 'suppress_tile') {
+  if (recommendation === 'vector_quick_view_target_generation' || retryPolicy === 'suppress_tile') {
     const optimization = quickViewStatus?.optimization || {}
-    if (optimization.available === true) return 'tile_cache_generation'
+    if (optimization.available === true) return 'vector_tile_cache_generation'
     const sourceSRID = Number(quickViewStatus?.render_facts?.source_srid || fallbackSourceSRID || 0)
-    return sourceSRID === 3857 ? 'tile_cache_generation' : 'quick_view_optimization'
+    return sourceSRID === 3857 ? 'vector_tile_cache_generation' : 'vector_quick_view_target_generation'
   }
 
   return ''
@@ -22,12 +22,12 @@ export function quickViewTileAdvisoryMessage(t, action, advisory = {}, quickView
   const params = {
     timeout: timeoutBudgetMS > 0 ? Math.round(timeoutBudgetMS / 1000) : ''
   }
-  if (action === 'tile_cache_generation') {
+  if (action === 'vector_tile_cache_generation') {
     return t(timeoutBudgetMS > 0
       ? 'manager.spatialPreview.tileTimeoutCacheRecommendedWithBudget'
       : 'manager.spatialPreview.tileTimeoutCacheRecommended', params)
   }
-  if (action === 'quick_view_optimization') {
+  if (action === 'vector_quick_view_target_generation') {
     return t(timeoutBudgetMS > 0
       ? 'manager.spatialPreview.tileTimeoutOptimizationRecommendedWithBudget'
       : 'manager.spatialPreview.tileTimeoutOptimizationRecommended', params)

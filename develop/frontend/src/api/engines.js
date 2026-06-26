@@ -9,6 +9,14 @@ export const listEngines = () => {
 }
 
 /**
+ * 获取 Develop 内置查询模式列表
+ * @returns {Promise}
+ */
+export const listQueryModes = () => {
+  return client.get('/develop/query-modes')
+}
+
+/**
  * 获取工作流引擎列表
  * @returns {Promise}
  */

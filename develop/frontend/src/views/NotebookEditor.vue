@@ -864,7 +864,9 @@ function firstQueryValue(value) {
 .notebook-editor {
   display: flex;
   height: 100%;
+  min-height: 0;
   background: var(--addp-bg-secondary);
+  overflow: hidden;
 }
 
 .notebook-sidebar {
@@ -872,6 +874,8 @@ function firstQueryValue(value) {
   border-right: 1px solid var(--addp-border-color);
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar-header {
@@ -896,6 +900,7 @@ function firstQueryValue(value) {
 
 .notebook-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px;
 }
@@ -952,6 +957,9 @@ function firstQueryValue(value) {
   display: flex;
   flex-direction: column;
   padding: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .empty-state {
@@ -965,12 +973,15 @@ function firstQueryValue(value) {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .jupyter-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
   padding: 12px 16px;
   background: var(--addp-bg-primary);
   border-bottom: 1px solid var(--addp-border-color);
@@ -988,6 +999,8 @@ function firstQueryValue(value) {
 
 .jupyter-iframe {
   flex: 1;
+  width: 100%;
+  min-height: 0;
   border: none;
   background: var(--addp-bg-primary);
 }

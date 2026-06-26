@@ -229,36 +229,6 @@
       "inputNfsExportPath": "Please enter NFS export path"
     }
   },
-  "engineForm": {
-    "name": "Name",
-    "namePlaceholder": "Engine display name",
-    "description": "Description",
-    "descPlaceholder": "Resource purpose description",
-    "resourceType": "Resource Type",
-    "resourceTypePlaceholder": "Select resource type",
-    "computeEngine": "Compute Engine",
-    "database": "Database",
-    "objectStorage": "Object Storage",
-    "capabilities": "Capabilities",
-    "capabilityTabJson": "JSON Editor",
-    "capabilityTabVisual": "Visual Config",
-    "comingSoon": "Visual configuration coming soon",
-    "useJsonMode": "Please use JSON editor mode for now",
-    "format": "Format",
-    "validate": "Validate",
-    "enabledStatus": "Enabled",
-    "jsonHint": "Must be valid JSON with a 'storage' or 'compute' field",
-    "valid": {
-      "name": "Please enter name",
-      "resourceType": "Please select resource type",
-      "capabilities": "Please enter capabilities",
-      "capabilitiesField": "Must declare at least one capability (storage or compute)",
-      "jsonFormat": "Invalid JSON format",
-      "jsonFormatSuccess": "JSON format is valid",
-      "formatSuccess": "Formatted successfully",
-      "capabilitiesFieldWarning": "Capabilities must contain 'storage' or 'compute' field"
-    }
-  },
   "excelPreview": {
     "sheetsTruncatedTitle": "Showing partial sheets",
     "sheetsTruncatedBody": "Only showing the first {limit} sheets. Download the Excel file to view all content.",

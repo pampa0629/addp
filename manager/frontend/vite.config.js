@@ -31,6 +31,8 @@ export default defineConfig({
       'ol/source/Vector',
       'ol/format/MVT',
       'ol/format/GeoJSON',
+      'ol/source/GeoTIFF',
+      'geotiff',
       'ol/style/Style',
       'ol/style/Fill',
       'ol/style/Stroke',

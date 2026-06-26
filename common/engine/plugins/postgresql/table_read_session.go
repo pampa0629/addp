@@ -47,11 +47,12 @@ func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo pl
 	}
 
 	return &postgresTableReadSession{
-		db:          db,
-		tx:          tx,
-		cursorName:  cursorName,
-		fields:      fields,
-		spatialInfo: spatialInfo,
+		db:               db,
+		tx:               tx,
+		cursorName:       cursorName,
+		fields:           fields,
+		spatialInfo:      spatialInfo,
+		geometryEncoding: postgresGeometryEncodingHint(opts.Hints),
 	}, nil
 }
 
@@ -80,14 +81,21 @@ func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.Catal
 		fields = selectedFields
 	}
 	selectExpr := postgresSelectExprForFields(fields)
-	if shouldReadPostgresGeometryAsGeoJSON(opts.Hints) {
+	switch postgresGeometryEncodingHint(opts.Hints) {
+	case format.GeometryEncodingGeoJSON:
 		if expr, err := postgresGeoJSONSelectExpr(columns, opts.Hints, fields); err != nil {
 			return "", nil, nil, err
 		} else if expr != "" {
 			selectExpr = expr
 		}
+	case format.GeometryEncodingEWKB:
+		if expr, err := postgresEWKBSelectExpr(columns, opts.Hints, fields); err != nil {
+			return "", nil, nil, err
+		} else if expr != "" {
+			selectExpr = expr
+		}
 	}
-	return sqldialect.ForEngine("postgresql").SelectTableSQL(selectExpr, schema, table, "", "", 0, 0), fields, postgresSpatialInfoFromFields(fields), nil
+	return sqldialect.ForEngine("postgresql").SelectTableSQL(selectExpr, schema, table, "", "", 0, 0), fields, postgresSpatialInfoFromFieldsWithHints(fields, opts.Hints), nil
 }
 
 func postgresSelectedFields(fields []datatype.FieldInfo, hints map[string]interface{}) ([]datatype.FieldInfo, error) {
@@ -156,15 +164,24 @@ func postgresSelectExprForFields(fields []datatype.FieldInfo) string {
 	return strings.Join(exprs, ", ")
 }
 
-func shouldReadPostgresGeometryAsGeoJSON(hints map[string]interface{}) bool {
+func postgresGeometryEncodingHint(hints map[string]interface{}) format.GeometryEncoding {
 	if hints == nil {
-		return false
+		return ""
 	}
-	return strings.EqualFold(strings.TrimSpace(hintString(hints, "geometry_encoding")), "geojson")
+	switch strings.ToLower(strings.TrimSpace(hintString(hints, plugin.TableReadHintGeometryEncoding))) {
+	case string(format.GeometryEncodingGeoJSON):
+		return format.GeometryEncodingGeoJSON
+	case string(format.GeometryEncodingEWKB):
+		return format.GeometryEncodingEWKB
+	default:
+		return ""
+	}
 }
 
 func postgresGeoJSONSelectExpr(columns []postgresColumnInfo, hints map[string]interface{}, fields []datatype.FieldInfo) (string, error) {
-	geometryField := strings.TrimSpace(hintString(hints, "geometry_field"))
+	geometryField := strings.TrimSpace(hintString(hints, plugin.TableReadHintGeometryField))
+	targetSRID := postgresGeoJSONTargetSRID(hints)
+	transformPolicy := strings.ToLower(strings.TrimSpace(hintString(hints, plugin.TableReadHintGeometryTransformPolicy)))
 	selected := map[string]bool{}
 	if len(fields) > 0 {
 		for _, field := range fields {
@@ -179,7 +196,11 @@ func postgresGeoJSONSelectExpr(columns []postgresColumnInfo, hints map[string]in
 		}
 		quoted := dialect.QuoteIdentifier(column.Name)
 		if column.IsSpatial() && (geometryField == "" || column.Name == geometryField) {
-			exprs = append(exprs, "ST_AsGeoJSON("+quoted+")::json AS "+quoted)
+			expr, err := postgresGeoJSONSpatialExpr(quoted, column, targetSRID, transformPolicy)
+			if err != nil {
+				return "", err
+			}
+			exprs = append(exprs, expr+" AS "+quoted)
 			continue
 		}
 		exprs = append(exprs, quoted)
@@ -188,6 +209,124 @@ func postgresGeoJSONSelectExpr(columns []postgresColumnInfo, hints map[string]in
 		return "", nil
 	}
 	return strings.Join(exprs, ", "), nil
+}
+
+func postgresEWKBSelectExpr(columns []postgresColumnInfo, hints map[string]interface{}, fields []datatype.FieldInfo) (string, error) {
+	geometryField := strings.TrimSpace(hintString(hints, plugin.TableReadHintGeometryField))
+	targetSRID := postgresGeometryTargetSRID(hints)
+	transformPolicy := strings.ToLower(strings.TrimSpace(hintString(hints, plugin.TableReadHintGeometryTransformPolicy)))
+	selected := map[string]bool{}
+	if len(fields) > 0 {
+		for _, field := range fields {
+			selected[field.Name] = true
+		}
+	}
+	dialect := sqldialect.ForEngine("postgresql")
+	exprs := make([]string, 0, len(columns))
+	for _, column := range columns {
+		if len(selected) > 0 && !selected[column.Name] {
+			continue
+		}
+		quoted := dialect.QuoteIdentifier(column.Name)
+		if column.IsSpatial() && (geometryField == "" || column.Name == geometryField) {
+			expr, err := postgresEWKBSpatialExpr(quoted, column, targetSRID, transformPolicy)
+			if err != nil {
+				return "", err
+			}
+			exprs = append(exprs, expr+" AS "+quoted)
+			continue
+		}
+		exprs = append(exprs, quoted)
+	}
+	if len(exprs) == 0 {
+		return "", nil
+	}
+	return strings.Join(exprs, ", "), nil
+}
+
+func postgresEWKBSpatialExpr(quoted string, column postgresColumnInfo, targetSRID int, transformPolicy string) (string, error) {
+	sourceSRID := postgresColumnSRID(column)
+	if targetSRID <= 0 || sourceSRID == targetSRID {
+		return "ST_AsEWKB(" + quoted + ")", nil
+	}
+	if sourceSRID <= 0 {
+		if transformPolicy == "required" {
+			return "", postgresSpatialSourceSRIDPolicyError(column.Name)
+		}
+		return "ST_AsEWKB(" + quoted + ")", nil
+	}
+	if transformPolicy != "" && transformPolicy != "required" {
+		return "ST_AsEWKB(" + quoted + ")", nil
+	}
+	return "ST_AsEWKB(ST_Transform(" + quoted + ", " + fmt.Sprint(targetSRID) + "))", nil
+}
+
+func postgresGeoJSONSpatialExpr(quoted string, column postgresColumnInfo, targetSRID int, transformPolicy string) (string, error) {
+	sourceSRID := postgresColumnSRID(column)
+	if targetSRID <= 0 || sourceSRID == targetSRID {
+		return "ST_AsGeoJSON(" + quoted + ")::json", nil
+	}
+	if sourceSRID <= 0 {
+		if transformPolicy == "required" {
+			return "", postgresSpatialSourceSRIDPolicyError(column.Name)
+		}
+		return "ST_AsGeoJSON(" + quoted + ")::json", nil
+	}
+	if transformPolicy != "" && transformPolicy != "required" {
+		return "ST_AsGeoJSON(" + quoted + ")::json", nil
+	}
+	return "ST_AsGeoJSON(ST_Transform(" + quoted + ", " + fmt.Sprint(targetSRID) + "))::json", nil
+}
+
+func postgresGeoJSONTargetSRID(hints map[string]interface{}) int {
+	return postgresGeometryTargetSRID(hints)
+}
+
+func postgresGeometryTargetSRID(hints map[string]interface{}) int {
+	if hints == nil {
+		return 0
+	}
+	switch value := hints[plugin.TableReadHintGeometryTargetSRID].(type) {
+	case int:
+		return value
+	case int8:
+		return int(value)
+	case int16:
+		return int(value)
+	case int32:
+		return int(value)
+	case int64:
+		return int(value)
+	case uint:
+		return int(value)
+	case uint8:
+		return int(value)
+	case uint16:
+		return int(value)
+	case uint32:
+		return int(value)
+	case uint64:
+		return int(value)
+	case float32:
+		return int(value)
+	case float64:
+		return int(value)
+	case string:
+		var srid int
+		_, _ = fmt.Sscanf(strings.TrimSpace(value), "%d", &srid)
+		return srid
+	default:
+		return 0
+	}
+}
+
+func postgresColumnSRID(column postgresColumnInfo) int {
+	_, srid, _ := parsePostgresSpatialType(column.NativeType)
+	return srid
+}
+
+func postgresSpatialSourceSRIDPolicyError(columnName string) error {
+	return fmt.Errorf("postgresql geometry column %q requires a known source SRID for required spatial transform", columnName)
 }
 
 type postgresColumnInfo struct {
@@ -333,6 +472,46 @@ func postgresSpatialInfoFromFields(fields []datatype.FieldInfo) *datatype.Spatia
 	}
 }
 
+func postgresSpatialInfoFromFieldsWithHints(fields []datatype.FieldInfo, hints map[string]interface{}) *datatype.SpatialInfo {
+	spatialInfo := postgresSpatialInfoFromFields(fields)
+	if spatialInfo == nil {
+		return nil
+	}
+	targetSRID := postgresGeometryTargetSRID(hints)
+	if targetSRID <= 0 {
+		return spatialInfo
+	}
+	encoding := postgresGeometryEncodingHint(hints)
+	if encoding != format.GeometryEncodingGeoJSON && encoding != format.GeometryEncodingEWKB {
+		return spatialInfo
+	}
+	transformPolicy := strings.ToLower(strings.TrimSpace(hintString(hints, plugin.TableReadHintGeometryTransformPolicy)))
+	if transformPolicy != "" && transformPolicy != "required" {
+		return spatialInfo
+	}
+	geometryField := strings.TrimSpace(hintString(hints, plugin.TableReadHintGeometryField))
+	targetCRS := datatype.EPSGCRSRef(targetSRID)
+	next := spatialInfo.Clone()
+	updated := false
+	for i := range next.GeometryColumns {
+		if geometryField != "" && !strings.EqualFold(next.GeometryColumns[i].Name, geometryField) {
+			continue
+		}
+		if next.GeometryColumns[i].SRID == nil || *next.GeometryColumns[i].SRID <= 0 {
+			continue
+		}
+		next.GeometryColumns[i].SRID = &targetSRID
+		next.GeometryColumns[i].CRSRef = targetCRS
+		updated = true
+	}
+	if !updated {
+		return spatialInfo
+	}
+	next.SRID = &targetSRID
+	next.CRSRef = targetCRS
+	return next
+}
+
 func parsePostgresSpatialType(nativeType string) (string, int, int) {
 	value := strings.TrimSpace(nativeType)
 	open := strings.Index(value, "(")
@@ -378,13 +557,14 @@ func hintString(values map[string]interface{}, key string) string {
 }
 
 type postgresTableReadSession struct {
-	db          *sql.DB
-	tx          *sql.Tx
-	cursorName  string
-	fields      []datatype.FieldInfo
-	spatialInfo *datatype.SpatialInfo
-	closed      bool
-	offset      int64
+	db               *sql.DB
+	tx               *sql.Tx
+	cursorName       string
+	fields           []datatype.FieldInfo
+	spatialInfo      *datatype.SpatialInfo
+	geometryEncoding format.GeometryEncoding
+	closed           bool
+	offset           int64
 }
 
 func (s *postgresTableReadSession) ReadBatch(ctx context.Context, limit int) (*plugin.BatchData, error) {
@@ -401,7 +581,7 @@ func (s *postgresTableReadSession) ReadBatch(ctx context.Context, limit int) (*p
 	}
 	defer rows.Close()
 
-	batch, err := scanPostgresRowsToBatch(rows, s.fields, s.spatialInfo, s.offset)
+	batch, err := scanPostgresRowsToBatch(rows, s.fields, s.spatialInfo, s.geometryEncoding, s.offset)
 	if err != nil {
 		return nil, err
 	}
@@ -432,7 +612,7 @@ func (s *postgresTableReadSession) Close(ctx context.Context) error {
 	return closeErr
 }
 
-func scanPostgresRowsToBatch(rows *sql.Rows, tableFields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, offset int64) (*plugin.BatchData, error) {
+func scanPostgresRowsToBatch(rows *sql.Rows, tableFields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, geometryEncoding format.GeometryEncoding, offset int64) (*plugin.BatchData, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, fmt.Errorf("get postgresql cursor columns: %w", err)
@@ -451,7 +631,11 @@ func scanPostgresRowsToBatch(rows *sql.Rows, tableFields []datatype.FieldInfo, s
 		for i, column := range columns {
 			value := values[i]
 			if bytes, ok := value.([]byte); ok {
-				row[column] = string(bytes)
+				if geometryEncoding == format.GeometryEncodingEWKB && isGeometryColumn(tableFields, column) {
+					row[column] = bytes
+				} else {
+					row[column] = string(bytes)
+				}
 				continue
 			}
 			row[column] = value
@@ -468,6 +652,15 @@ func scanPostgresRowsToBatch(rows *sql.Rows, tableFields []datatype.FieldInfo, s
 		Spatial: spatialInfo.Clone(),
 		Offset:  offset,
 	}, nil
+}
+
+func isGeometryColumn(fields []datatype.FieldInfo, column string) bool {
+	for _, field := range fields {
+		if strings.EqualFold(field.Name, column) && datatype.IsSpatialFieldType(field.Type) {
+			return true
+		}
+	}
+	return false
 }
 
 func postgresReadBatchFields(columns []string, tableFields []datatype.FieldInfo) []datatype.FieldInfo {

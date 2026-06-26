@@ -6,6 +6,16 @@ Math Workflow Engine - API 集成测试
 
 import pytest
 import json
+import sys
+from pathlib import Path
+
+for parent in Path(__file__).resolve().parents:
+    contract_path = parent / "docs" / "workflow_operator_contract.py"
+    if contract_path.exists():
+        sys.path.insert(0, str(contract_path.parent))
+        break
+
+from workflow_operator_contract import assert_operator_metadata_contract
 
 
 @pytest.fixture
@@ -78,58 +88,70 @@ class TestOperatorsEndpoint:
         assert add_operator['name'] == 'add'
         assert add_operator['display_name'] == '加法'
         assert add_operator['category'] == '数学运算'
-        assert add_operator['module'] == 'math_workflow'
+        assert add_operator['engine_type'] == 'math_workflow'
+        assert add_operator['category_path'] == ['数学运算']
+        assert add_operator['execution_modes'] == ['workflow']
+        assert 'module' not in add_operator
         assert len(add_operator['parameters']) == 2
         assert len(add_operator['output_ports']) == 1
 
+    def test_all_operators_declare_execution_modes(self, client):
+        """所有算子必须显式声明执行模式"""
+        response = client.get('/api/operators')
+        data = response.get_json()
 
-class TestSingleOperatorExecution:
-    """单算子执行端点测试"""
+        assert_operator_metadata_contract(
+            data['operators'],
+            expected_engine_type='math_workflow',
+        )
 
-    def test_execute_add(self, client):
-        """测试 POST /api/operators/add/execute"""
+
+class TestSingleOperatorInvocation:
+    """单算子 direct 调用端点测试"""
+
+    def test_invoke_add_rejects_workflow_only_operator(self, client):
+        """测试 POST /api/operators/add/invoke"""
         response = client.post(
-            '/api/operators/add/execute',
+            '/api/operators/add/invoke',
             json={'params': {'a': 5, 'b': 3}},
             content_type='application/json'
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 403
 
         data = response.get_json()
-        assert data['status'] == 'success'
-        assert 'execution_id' in data
-        assert data['result'] == 8
+        assert data['status'] == 'failed'
+        assert data['error_code'] == 'DIRECT_NOT_SUPPORTED'
         assert 'execution_time_ms' in data
 
-    def test_execute_divide(self, client):
+    def test_invoke_divide_rejects_workflow_only_operator(self, client):
         """测试除法算子"""
         response = client.post(
-            '/api/operators/divide/execute',
+            '/api/operators/divide/invoke',
             json={'params': {'a': 10, 'b': 2}},
             content_type='application/json'
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 403
         data = response.get_json()
-        assert data['result'] == 5
+        assert data['error_code'] == 'DIRECT_NOT_SUPPORTED'
 
-    def test_execute_average(self, client):
+    def test_invoke_average_rejects_workflow_only_operator(self, client):
         """测试平均值算子"""
         response = client.post(
-            '/api/operators/average/execute',
+            '/api/operators/average/invoke',
             json={'params': {'values': [1, 2, 3, 4, 5]}},
             content_type='application/json'
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 403
         data = response.get_json()
-        assert data['result'] == 3.0
+        assert data['error_code'] == 'DIRECT_NOT_SUPPORTED'
 
     def test_operator_not_found(self, client):
         """测试算子不存在"""
         response = client.post(
-            '/api/operators/unknown/execute',
+            '/api/operators/unknown/invoke',
             json={'params': {}},
             content_type='application/json'
         )
@@ -139,28 +161,42 @@ class TestSingleOperatorExecution:
         data = response.get_json()
         assert data['status'] == 'failed'
         assert data['error_code'] == 'OPERATOR_NOT_FOUND'
+        assert 'execution_time_ms' in data
 
     def test_missing_params(self, client):
         """测试缺少参数"""
-        response = client.post(
-            '/api/operators/add/execute',
-            json={},  # 缺少 params
-            content_type='application/json'
-        )
+        OPERATORS = __import__('api_server').OPERATORS
+        original_modes = OPERATORS['add']['metadata'].execution_modes
+        try:
+            OPERATORS['add']['metadata'].execution_modes = ['workflow', 'direct']
+            response = client.post(
+                '/api/operators/add/invoke',
+                json={},  # 缺少 params
+                content_type='application/json'
+            )
+        finally:
+            OPERATORS['add']['metadata'].execution_modes = original_modes
 
         assert response.status_code == 400
 
         data = response.get_json()
         assert data['status'] == 'failed'
         assert data['error_code'] == 'INVALID_PARAMS'
+        assert 'execution_time_ms' in data
 
     def test_invalid_params(self, client):
         """测试无效参数"""
-        response = client.post(
-            '/api/operators/add/execute',
-            json={'params': {'a': 5}},  # 缺少 b 参数
-            content_type='application/json'
-        )
+        OPERATORS = __import__('api_server').OPERATORS
+        original_modes = OPERATORS['add']['metadata'].execution_modes
+        try:
+            OPERATORS['add']['metadata'].execution_modes = ['workflow', 'direct']
+            response = client.post(
+                '/api/operators/add/invoke',
+                json={'params': {'a': 5}},  # 缺少 b 参数
+                content_type='application/json'
+            )
+        finally:
+            OPERATORS['add']['metadata'].execution_modes = original_modes
 
         assert response.status_code == 400
 
@@ -170,17 +206,24 @@ class TestSingleOperatorExecution:
 
     def test_divide_by_zero(self, client):
         """测试除零错误"""
-        response = client.post(
-            '/api/operators/divide/execute',
-            json={'params': {'a': 10, 'b': 0}},
-            content_type='application/json'
-        )
+        OPERATORS = __import__('api_server').OPERATORS
+        original_modes = OPERATORS['divide']['metadata'].execution_modes
+        try:
+            OPERATORS['divide']['metadata'].execution_modes = ['workflow', 'direct']
+            response = client.post(
+                '/api/operators/divide/invoke',
+                json={'params': {'a': 10, 'b': 0}},
+                content_type='application/json'
+            )
+        finally:
+            OPERATORS['divide']['metadata'].execution_modes = original_modes
 
         assert response.status_code == 500
 
         data = response.get_json()
         assert data['status'] == 'failed'
         assert data['error_code'] == 'EXECUTION_FAILED'
+        assert 'execution_time_ms' in data
 
 
 class TestWorkflowExecution:
@@ -278,6 +321,7 @@ class TestWorkflowExecution:
         data = response.get_json()
         assert data['status'] == 'failed'
         assert data['error_code'] == 'INVALID_PARAMS'
+        assert 'execution_time_ms' in data
 
     def test_invalid_workflow(self, client):
         """测试无效工作流"""
@@ -291,8 +335,12 @@ class TestWorkflowExecution:
             content_type='application/json'
         )
 
-        # 空任务列表会导致索引错误，应该返回 500
-        assert response.status_code == 500
+        assert response.status_code == 400
+
+        data = response.get_json()
+        assert data['status'] == 'failed'
+        assert data['error_code'] == 'WORKFLOW_INVALID'
+        assert 'execution_time_ms' in data
 
     def test_circular_dependency(self, client):
         """测试循环依赖检测"""
@@ -314,6 +362,7 @@ class TestWorkflowExecution:
         data = response.get_json()
         assert data['status'] == 'failed'
         assert data['error_code'] == 'WORKFLOW_INVALID'
+        assert 'execution_time_ms' in data
 
 
 class TestExecutionStatusEndpoint:
@@ -321,14 +370,67 @@ class TestExecutionStatusEndpoint:
 
     def test_get_execution_status(self, client):
         """测试 GET /api/executions/{execution_id}"""
-        response = client.get('/api/executions/test-uuid-1234')
+        workflow_def = {
+            "tasks": [
+                {"id": "task1", "operator": "add", "params": {"a": 10, "b": 20}, "depends_on": []}
+            ]
+        }
+
+        execute_response = client.post(
+            '/api/workflow',
+            json={'workflow_def': workflow_def},
+            content_type='application/json'
+        )
+        execution_id = execute_response.get_json()['execution_id']
+
+        response = client.get(f'/api/executions/{execution_id}')
 
         assert response.status_code == 200
 
         data = response.get_json()
         assert data['status'] == 'success'
-        assert data['execution_id'] == 'test-uuid-1234'
-        assert data['task_status'] == 'success'
+        assert data['execution_id'] == execution_id
+        assert 'task_status' not in data
+        assert data['result'] == 30
+        assert data['all_results']['task1'] == 30
+        assert data['progress'] == 100
+        assert 'execution_time_ms' in data
+
+    def test_get_execution_status_unknown_id(self, client):
+        """未知执行 ID 返回 404"""
+        response = client.get('/api/executions/unknown-execution-id')
+
+        assert response.status_code == 404
+
+        data = response.get_json()
+        assert data['status'] == 'failed'
+        assert data['error_code'] == 'EXECUTION_NOT_FOUND'
+
+    def test_failed_workflow_status_keeps_runtime_error_fields(self, client):
+        """已生成 execution_id 的失败工作流可以查询标准错误状态"""
+        workflow_def = {
+            "tasks": []
+        }
+
+        execute_response = client.post(
+            '/api/workflow',
+            json={'workflow_def': workflow_def},
+            content_type='application/json'
+        )
+        assert execute_response.status_code == 400
+
+        execute_payload = execute_response.get_json()
+        execution_id = execute_payload['execution_id']
+
+        response = client.get(f'/api/executions/{execution_id}')
+        assert response.status_code == 200
+
+        data = response.get_json()
+        assert data['status'] == 'failed'
+        assert data['execution_id'] == execution_id
+        assert data['error_code'] == 'WORKFLOW_INVALID'
+        assert data['details']
+        assert data['progress'] == 100
 
 
 if __name__ == '__main__':

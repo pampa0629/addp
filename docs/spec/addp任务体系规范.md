@@ -159,7 +159,7 @@ Common 不维护全量业务 `task_type` 编译期枚举。`task_type` 由 owner
 | Meta | `scan` | `meta.scan_tasks` |
 | Transfer | `sync` | `transfer.transfer_tasks` |
 | Develop | `query` / `workflow` / `script` | `develop.dev_tasks` |
-| Manager | `tile_cache_generation` / `quick_view_optimization` / `embedding` | `manager.tile_cache_tasks` / `manager.quick_view_optimization_tasks` / `manager.embedding_tasks` |
+| Manager | `tile_cache_generation` / `quick_view_optimization` / `embedding` / `raster_cog_generation` / `raster_mosaic_generation` | `manager.tile_cache_tasks` / `manager.quick_view_optimization_tasks` / `manager.embedding_tasks` / `manager.raster_cog_tasks` / `manager.raster_mosaic_tasks` |
 | Quality | `check` | `quality.check_tasks` |
 | Graph | `kg_build` | `graph.build_tasks` |
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
@@ -168,7 +168,7 @@ System 资源回收（cleanup）不纳入 TaskProvider，也不进入 Orchestrat
 
 Transfer 的内部任务语义统一收敛为同步执行。阶段 1 对外只声明 `task_type=sync`，并通过 TaskProvider 和 `common.task_executions` 关联任务定义。Manager 的导入 / 导出入口通过 client 创建并触发 Transfer `sync`，不得在 Transfer 侧并行保留 `import`、`export`、`transfer` 等旧任务类型。
 
-Manager 的瓦片缓存生成、快显性能优化、embedding、QuickView 细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。瓦片缓存生成任务类型为 `tile_cache_generation`，任务定义表为 `manager.tile_cache_tasks`；快显性能优化任务类型为 `quick_view_optimization`，任务定义表为 `manager.quick_view_optimization_tasks`，结果表为 `manager.quick_view_optimization`；MVT 是瓦片缓存格式，应进入任务配置，例如 `config.tile.format=mvt`，不作为任务类型。持久化 embedding 任务执行必须复用任务服务创建的主 execution；ad-hoc embedding 可以自行创建 execution，但不得产生 owner 任务定义，且没有 `source_task_id` 时必须写完整 `execution_config`。
+Manager 的瓦片缓存生成、快显性能优化、embedding、QuickView、raster COG 和 raster mosaic 细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。瓦片缓存生成任务类型为 `tile_cache_generation`，任务定义表为 `manager.tile_cache_tasks`；快显性能优化任务类型为 `quick_view_optimization`，任务定义表为 `manager.quick_view_optimization_tasks`，结果表为 `manager.quick_view_optimization`；单 TIFF 栅格 COG 生成任务类型为 `raster_cog_generation`，任务定义表为 `manager.raster_cog_tasks`；栅格镶嵌数据集生成任务类型为 `raster_mosaic_generation`，任务定义表为 `manager.raster_mosaic_tasks`，结果是业务存储中的 `format=raster_mosaic` data item，不是 Manager infra artifact。MVT 是瓦片缓存格式，应进入任务配置，例如 `config.tile.format=mvt`，不作为任务类型。持久化 embedding 任务执行必须复用任务服务创建的主 execution；ad-hoc embedding 可以自行创建 execution，但不得产生 owner 任务定义，且没有 `source_task_id` 时必须写完整 `execution_config`。
 
 Manager 中 QuickView、瓦片缓存产物的 `ready`、`generating`、`stale`、`failed` 等状态属于 artifact state，不是统一 execution status。Manager 的即时向量化内存轮询状态虽不持久化为任务定义，但属于 execution-like 状态，成功态也必须使用 `success`，不得使用 `completed`。
 
@@ -176,7 +176,9 @@ Graph 的 `kg_build` 任务定义由 `graph.build_tasks` 保存。`graph.build_t
 
 Develop 的任务类型按开发方式划分为 `query`、`workflow`、`script`。`script` 表示命令式代码开发任务，当前可由 Jupyter Notebook runtime 承载；`notebook` 只是脚本开发的实现形态和 UI 入口，不作为独立 `task_type` 声明，不进入 TaskProvider capabilities。
 
-Develop 的 `develop.dev_tasks.content` 必须使用规范字段：`query` 使用 `content.query` 和 `content.query_type`，引擎绑定写入 `execution_config.engine_id`；`workflow` 使用 `content.workflow_definition` 和可选 `content.inputs`；`script` 的 Notebook 形态使用 `content.notebook_path`。不得再新增或消费 `content.sql`、`content.workflow_def`、`content.input_data` 等旧字段。
+Develop 的 `develop.dev_tasks.content` 必须使用规范字段：`query` 使用 `content.query` 和 `content.query_type`；普通 SQL 查询的执行目标写入 `execution_config.engine_id`，DuckDB 联邦查询写入 `execution_config.query_mode="duckdb"` 且不得携带 `engine_id`；`workflow` 使用 `content.workflow_definition` 和可选 `content.inputs`，执行目标只写 `execution_config.engine_id` 指向具体工作流运行时实例，不写 `execution_config.engine_type`，运行时类型必须由后端按该实例 ID 从 System 查询；`script` 的 Notebook 形态使用 `content.notebook_path`。Develop 的 ad-hoc 临时执行同样必须提交 `execution_config`，不得使用顶层 `engine_id` 表达查询目标。Develop 的查询目标发现必须区分真实查询引擎与内置查询模式：`/develop/engines` 只能返回 System 中具备 query 能力的真实引擎实例；DuckDB 联邦查询通过 Develop 查询模式能力暴露，不得追加为 `id=0` 的虚拟 Engine。不得再新增或消费 `content.sql`、`content.workflow_def`、`content.input_data`、`execution_config.data_source_id` 等旧字段。
+
+Develop 启动归一化和数据库迁移只允许删除上述旧字段，不得把 `content.sql`、`content.workflow_def`、顶层 `content.nodes/content.edges` 或 `content.input_data` 搬迁为规范字段；仍含旧字段的历史任务应按规范重新创建或由人工一次性处理。
 
 Develop 的 `create_url` / `edit_url` 必须指向具体开发方式的专属页面：`query` 指向查询工作台，`workflow` 指向工作流编辑器，`script` 指向脚本开发当前承载页面。`/develop/tasks` 只是任务定义集散页和列表页，不得作为 TaskProvider 的创建或编辑目标。
 
@@ -235,9 +237,13 @@ TaskProvider 任务列表是跨模块编排专用契约，不适用通用业务�
 }
 ```
 
-`GET /tasks/{task_type}/{id}` 直接返回 owner 模块的任务定义摘要对象。对象必须包含 `id`、`task_type`、`name`、`enabled` 等可供 Orchestrator 和 Monitor 展示的稳定字段；多任务类型 provider 可以按 `task_type` 返回不同任务定义 DTO，但不得再包一层 `data`。
+`GET /tasks/{task_type}/{id}` 直接返回 owner 模块的任务定义摘要对象。对象必须包含 `id`、`task_type`、`name`、`status` 等可供 Orchestrator 和 Monitor 展示的稳定字段；多任务类型 provider 可以按 `task_type` 返回不同任务定义 DTO，但不得再包一层 `data`。`enabled`、`schedule`、`next_run_at` 只允许在该 task type 明确声明并实现 `supports_schedule=true` 的 owner 调度闭环时出现；不支持调度的 TaskProvider 不得暴露这些调度活状态字段。
 
 `GET /executions/{execution_id}` 直接返回统一 execution 对象，`execution_id` 必须是 `common.task_executions.execution_id`。
+
+Owner 模块若需要保存下游运行时或外部系统返回的本地执行 ID，不得在 execution 结果摘要中再次使用 `execution_id` 字段，以免和统一执行 ID 形成双事实源。字段应按来源命名，例如 Develop 工作流运行时返回的本地执行 ID 保存为 `runtime_execution_id`，而不是覆盖或并列一个新的 `execution_id`。
+
+Develop 工作流任务可以在 execution 结果摘要中保存 `runtime_status` 诊断对象，用于排查工作流运行时本地状态、进度、错误码和耗时。`runtime_status` 中的本地执行 ID 字段同样必须命名为 `runtime_execution_id`。`runtime_status` 不得作为 Orchestrator 或 Monitor 的主状态源，不得替代 `common.task_executions.status/progress/error_details`，也不得保存运行时完整 `result`、`all_results` 或原始响应体。
 
 错误响应统一使用 ADDP API 规范的 `{error}`：
 

@@ -166,7 +166,6 @@
         <el-form-item :label="t('develop.taskManagement.fieldType')" required>
           <el-select v-model="formData.dev_type" style="width: 100%;">
             <el-option :label="t('develop.taskManagement.typeQuery')" value="query" />
-            <el-option :label="t('develop.taskManagement.typeWorkflow')" value="workflow" />
             <el-option :label="t('develop.taskManagement.typeScript')" value="script" />
           </el-select>
         </el-form-item>
@@ -292,7 +291,7 @@ import { openMonitorExecution } from '@addp/common-frontend'
 const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
-const supportedDevTypes = ['query', 'workflow', 'script']
+const editableDevTypes = ['query', 'script']
 
 // 状态管理
 const loading = ref(false)
@@ -422,7 +421,7 @@ const formatTime = (time) => {
 
 // 操作函数
 const normalizeDevType = (type) => {
-  return supportedDevTypes.includes(type) ? type : 'query'
+  return editableDevTypes.includes(type) ? type : 'query'
 }
 
 const resetFormData = (devType = 'query') => {
@@ -439,12 +438,22 @@ const resetFormData = (devType = 'query') => {
 }
 
 const handleCreate = (devType = 'query') => {
+  if (devType === 'workflow') {
+    router.push({ path: '/workflow' })
+    return
+  }
+
   dialogMode.value = 'create'
   resetFormData(devType)
   dialogVisible.value = true
 }
 
 const handleEdit = (row) => {
+  if (row.dev_type === 'workflow') {
+    router.push({ path: '/workflow', query: { taskId: row.id } })
+    return
+  }
+
   dialogMode.value = 'edit'
   Object.assign(formData, {
     id: row.id,
@@ -541,6 +550,11 @@ const handleDelete = async (row) => {
 const handleSave = async () => {
   if (!formData.name) {
     ElMessage.warning(t('develop.taskManagement.nameRequired'))
+    return
+  }
+
+  if (formData.dev_type === 'workflow') {
+    router.push(formData.id ? { path: '/workflow', query: { taskId: formData.id } } : { path: '/workflow' })
     return
   }
 

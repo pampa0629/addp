@@ -4,6 +4,8 @@ Python 数据处理工作流引擎 API 服务
 提供 REST API 接口供 Develop 和 Orchestrator 调用
 """
 
+import base64
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import logging
@@ -18,7 +20,13 @@ from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
 
 from workflow_engine import execute_workflow, execute_single_operator
-from operators import list_operators
+from geometry_batches import (
+    GEOMETRY_BATCH_METADATA_PREFIX,
+    decode_geometry_batch_arrow,
+    encode_geometry_batch_arrow,
+    geometry_batch_arrow_metadata,
+)
+from operators import get_operator, list_operators
 
 # 配置日志
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
@@ -48,6 +56,8 @@ class ErrorCode:
     INVALID_PARAMS = "INVALID_PARAMS"              # 参数错误
     EXECUTION_FAILED = "EXECUTION_FAILED"          # 执行失败
     WORKFLOW_INVALID = "WORKFLOW_INVALID"          # 工作流定义无效
+    DIRECT_NOT_SUPPORTED = "DIRECT_NOT_SUPPORTED"  # 算子不支持 direct 调用
+    EXECUTION_NOT_FOUND = "EXECUTION_NOT_FOUND"    # 执行记录不存在
     INTERNAL_ERROR = "INTERNAL_ERROR"              # 内部错误
 
 
@@ -181,17 +191,20 @@ def execute_workflow_endpoint():
         }
     """
     start = time.time()
+    execution_id = None
 
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         workflow_def = data.get('workflow_def')
         input_data = data.get('input_data', {})
 
         if not workflow_def:
-            return jsonify(error_response(
+            response = error_response(
                 ErrorCode.INVALID_PARAMS,
                 "请求体缺少 'workflow_def' 字段"
-            )), 400
+            )
+            response["execution_time_ms"] = (time.time() - start) * 1000
+            return jsonify(response), 400
 
         # 执行工作流
         execution_id = str(uuid.uuid4())
@@ -208,6 +221,8 @@ def execute_workflow_endpoint():
             "result": result.get('final_result'),
             "all_results": result.get('all_results'),
             "error": result.get('error'),
+            "error_code": result.get('error_code'),
+            "details": result.get('details') or result.get('traceback'),
             "started_at": datetime.now().isoformat(),
             "execution_time_ms": execution_time
         }
@@ -225,6 +240,16 @@ def execute_workflow_endpoint():
             logger.info(f"Workflow {execution_id} completed successfully in {execution_time:.2f}ms")
             return jsonify(response), 200
         else:
+            error_code = result.get('error_code')
+            if error_code == ErrorCode.WORKFLOW_INVALID:
+                response.update(error_response(
+                    ErrorCode.WORKFLOW_INVALID,
+                    result.get('error', '工作流定义无效')
+                ))
+                response['logs'] = result.get('logs', [])
+                response['traceback'] = result.get('traceback', '')
+                return jsonify(response), 400
+
             response.update(error_response(
                 ErrorCode.EXECUTION_FAILED,
                 result.get('error', '工作流执行失败')
@@ -236,29 +261,59 @@ def execute_workflow_endpoint():
     except ValueError as e:
         execution_time = (time.time() - start) * 1000
         logger.error(f"Workflow validation failed: {e}")
+        if execution_id:
+            executions[execution_id] = {
+                "execution_id": execution_id,
+                "status": "failed",
+                "result": None,
+                "all_results": None,
+                "error": f"工作流定义无效: {str(e)}",
+                "error_code": ErrorCode.WORKFLOW_INVALID,
+                "details": str(e),
+                "started_at": datetime.now().isoformat(),
+                "execution_time_ms": execution_time
+            }
         response = error_response(
             ErrorCode.WORKFLOW_INVALID,
             f"工作流定义无效: {str(e)}"
         )
+        if execution_id:
+            response["execution_id"] = execution_id
         response["execution_time_ms"] = execution_time
         return jsonify(response), 400
 
     except Exception as e:
         execution_time = (time.time() - start) * 1000
         logger.error(f"Workflow execution failed: {e}", exc_info=True)
+        if execution_id:
+            executions[execution_id] = {
+                "execution_id": execution_id,
+                "status": "failed",
+                "result": None,
+                "all_results": None,
+                "error": f"工作流执行失败: {str(e)}",
+                "error_code": ErrorCode.EXECUTION_FAILED,
+                "details": str(e),
+                "started_at": datetime.now().isoformat(),
+                "execution_time_ms": execution_time
+            }
         response = error_response(
             ErrorCode.EXECUTION_FAILED,
             f"工作流执行失败: {str(e)}"
         )
+        if execution_id:
+            response["execution_id"] = execution_id
         response["execution_time_ms"] = execution_time
         return jsonify(response), 500
 
 
-@app.route('/api/operators/<operator_name>/execute', methods=['POST'])
-def execute_operator_endpoint(operator_name):
+@app.route('/api/operators/<operator_name>/invoke', methods=['POST'])
+def invoke_operator_endpoint(operator_name):
     """
-    执行单个算子
-    供 Develop 模块快速测试使用
+    direct 调用单个算子。
+
+    仅允许调用 execution_modes 包含 direct 的算子。direct 是业务模块受控能力调用，
+    不创建 Develop/Orchestrator/Monitor 任务。
 
     Path Parameters:
         operator_name: 算子名称
@@ -271,7 +326,6 @@ def execute_operator_endpoint(operator_name):
     Response:
         {
             "status": "success",
-            "execution_id": "uuid-...",
             "result": "...",  // GeoJSON
             "execution_time_ms": 12.34
         }
@@ -293,21 +347,172 @@ def execute_operator_endpoint(operator_name):
             response["execution_time_ms"] = execution_time
             return jsonify(response), 404
 
-        data = request.get_json()
+        operator_meta = next(op for op in operators if op['name'] == operator_name)
+        execution_modes = operator_meta['execution_modes']
+        if 'direct' not in execution_modes:
+            execution_time = (time.time() - start) * 1000
+            response = error_response(
+                ErrorCode.DIRECT_NOT_SUPPORTED,
+                f"算子 '{operator_name}' 不支持 direct 调用"
+            )
+            response["execution_time_ms"] = execution_time
+            return jsonify(response), 403
 
-        if not data or 'params' not in data:
+        data = request.get_json(silent=True) or {}
+        params = data.get('params') or {}
+        binary_payload = data.get('binary_payload')
+
+        if not isinstance(params, dict):
             execution_time = (time.time() - start) * 1000
             response = error_response(
                 ErrorCode.INVALID_PARAMS,
-                "请求体缺少 'params' 字段"
+                "请求体中的 'params' 必须是对象"
             )
             response["execution_time_ms"] = execution_time
             return jsonify(response), 400
 
-        params = data['params']
-        execution_id = str(uuid.uuid4())
+        logger.info(f"Invoking operator {operator_name} directly")
+        operator_func = get_operator(operator_name)
 
-        logger.info(f"Executing operator {operator_name}, execution_id={execution_id}")
+        if binary_payload is not None:
+            direct_binary = (operator_meta.get("attributes") or {}).get("direct_binary") or {}
+            if not direct_binary:
+                execution_time = (time.time() - start) * 1000
+                response = error_response(
+                    ErrorCode.DIRECT_NOT_SUPPORTED,
+                    f"算子 '{operator_name}' 不支持 binary direct 调用",
+                )
+                response["execution_time_ms"] = execution_time
+                return jsonify(response), 403
+            content_type = str(binary_payload.get("content_type") or "").strip()
+            if content_type and direct_binary.get("content_type") and content_type != direct_binary.get("content_type"):
+                execution_time = (time.time() - start) * 1000
+                response = error_response(
+                    ErrorCode.INVALID_PARAMS,
+                    f"算子 '{operator_name}' 的 binary_payload.content_type 不匹配",
+                )
+                response["execution_time_ms"] = execution_time
+                return jsonify(response), 400
+
+            payload_metadata = binary_payload.get("metadata")
+            if not isinstance(payload_metadata, dict):
+                payload_metadata = {}
+            if "geometry_encoding" not in payload_metadata:
+                execution_time = (time.time() - start) * 1000
+                response = error_response(
+                    ErrorCode.INVALID_PARAMS,
+                    f"算子 '{operator_name}' 缺少 binary_payload.metadata.geometry_encoding",
+                )
+                response["execution_time_ms"] = execution_time
+                return jsonify(response), 400
+            geometry_encoding = str(
+                payload_metadata.get("geometry_encoding")
+            ).strip().lower()
+            expected_geometry_encoding = str(direct_binary.get("geometry_encoding") or "ewkb").strip().lower()
+            if geometry_encoding != expected_geometry_encoding:
+                execution_time = (time.time() - start) * 1000
+                response = error_response(
+                    ErrorCode.INVALID_PARAMS,
+                    f"算子 '{operator_name}' 的 binary_payload.metadata.geometry_encoding 必须是 {expected_geometry_encoding}",
+                )
+                response["execution_time_ms"] = execution_time
+                return jsonify(response), 400
+
+            payload_data = str(binary_payload.get("data") or "").strip()
+            if not payload_data:
+                execution_time = (time.time() - start) * 1000
+                response = error_response(
+                    ErrorCode.INVALID_PARAMS,
+                    "binary_payload.data is required",
+                )
+                response["execution_time_ms"] = execution_time
+                return jsonify(response), 400
+
+            try:
+                binary_bytes = base64.b64decode(payload_data)
+            except Exception as exc:
+                execution_time = (time.time() - start) * 1000
+                response = error_response(
+                    ErrorCode.INVALID_PARAMS,
+                    "binary_payload.data 不是合法的 base64",
+                    details=str(exc),
+                )
+                response["execution_time_ms"] = execution_time
+                return jsonify(response), 400
+
+            try:
+                arrow_metadata = geometry_batch_arrow_metadata(binary_bytes)
+                arrow_geometry_encoding = str(
+                    arrow_metadata.get(f"{GEOMETRY_BATCH_METADATA_PREFIX}encoding") or ""
+                ).strip().lower()
+            except Exception as exc:
+                execution_time = (time.time() - start) * 1000
+                response = error_response(
+                    ErrorCode.INVALID_PARAMS,
+                    "binary_payload.data 不是合法的 Arrow geometry batch",
+                    details=str(exc),
+                )
+                response["execution_time_ms"] = execution_time
+                return jsonify(response), 400
+            if arrow_geometry_encoding != expected_geometry_encoding:
+                execution_time = (time.time() - start) * 1000
+                response = error_response(
+                    ErrorCode.INVALID_PARAMS,
+                    f"算子 '{operator_name}' 的 Arrow schema geometry encoding 必须是 {expected_geometry_encoding}",
+                )
+                response["execution_time_ms"] = execution_time
+                return jsonify(response), 400
+
+            try:
+                input_gdf = decode_geometry_batch_arrow(binary_bytes)
+                if input_gdf is None:
+                    raise ValueError("decoded geometry batch is empty")
+                source_crs = str(input_gdf.crs) if input_gdf.crs else str(params.get("source_crs") or "")
+                call_params = dict(params)
+                call_params["input_gdf"] = input_gdf
+                result_gdf = operator_func(**call_params)
+                if not isinstance(result_gdf, type(input_gdf)):
+                    raise ValueError("binary direct operator must return a GeoDataFrame")
+                result_crs = str(result_gdf.crs) if result_gdf.crs else ""
+                encoded = encode_geometry_batch_arrow(
+                    result_gdf,
+                    geometry_column=result_gdf.geometry.name,
+                    source_crs=result_crs,
+                    target_crs=result_crs,
+                    geometry_encoding=geometry_encoding,
+                )
+                execution_time = (time.time() - start) * 1000
+                response = {
+                    "status": "success",
+                    "result": {
+                        "row_count": len(result_gdf),
+                        "geometry_column": result_gdf.geometry.name,
+                        "crs": str(result_gdf.crs) if result_gdf.crs else "",
+                    },
+                    "binary_payload": {
+                        "content_type": direct_binary.get("content_type") or "application/vnd.apache.arrow.stream",
+                        "encoding": direct_binary.get("encoding") or "arrow",
+                        "name": direct_binary.get("output_name") or "geometry_batch",
+                        "data": base64.b64encode(encoded).decode("ascii"),
+                        "metadata": {
+                            "geometry_column": result_gdf.geometry.name,
+                            "geometry_encoding": geometry_encoding,
+                            "crs": result_crs,
+                        },
+                    },
+                    "execution_time_ms": execution_time,
+                }
+                logger.info(f"Operator {operator_name} completed successfully in {execution_time:.2f}ms")
+                return jsonify(response), 200
+            except Exception as exc:
+                execution_time = (time.time() - start) * 1000
+                response = error_response(
+                    ErrorCode.EXECUTION_FAILED,
+                    f"算子 '{operator_name}' 执行失败: {str(exc)}",
+                    details=str(exc),
+                )
+                response["execution_time_ms"] = execution_time
+                return jsonify(response), 500
 
         result = execute_single_operator(operator_name, params)
 
@@ -316,7 +521,6 @@ def execute_operator_endpoint(operator_name):
         if result['status'] == 'success':
             response = {
                 "status": "success",
-                "execution_id": execution_id,
                 "result": result['result'],
                 "execution_time_ms": execution_time
             }
@@ -325,9 +529,9 @@ def execute_operator_endpoint(operator_name):
         else:
             response = error_response(
                 ErrorCode.EXECUTION_FAILED,
-                result.get('error', '算子执行失败')
+                result.get('error', '算子执行失败'),
+                details=result.get('traceback', '')
             )
-            response["execution_id"] = execution_id
             response["execution_time_ms"] = execution_time
             return jsonify(response), 500
 
@@ -353,157 +557,6 @@ def execute_operator_endpoint(operator_name):
 
 
 # ========================================
-# 任务管理（供 Orchestrator 使用）
-# ========================================
-
-# 注意：这里的"任务"指的是保存到 develop.dev_items 的工作流任务定义
-# 实际存储在 Develop Backend 的 PostgreSQL 中
-# 这些 API 已废弃，实际查询会通过 Develop Backend 转发
-
-@app.route('/api/tasks', methods=['GET'])
-def list_tasks():
-    """
-    列出所有工作流任务（已废弃）
-    供 Orchestrator 动态发现任务使用
-
-    Query Params:
-        - tenant_id: 租户ID
-        - page: 页码
-        - page_size: 每页数量
-
-    Response:
-        {
-            "status": "success",
-            "tasks": [
-                {
-                    "id": 1,
-                    "name": "数据处理工作流",
-                    "description": "...",
-                    "workflow_def": {...},
-                    "input_schema": {...}
-                }
-            ],
-            "total": 10,
-            "page": 1,
-            "page_size": 20
-        }
-    """
-    # 注意：实际实现应该查询 develop.dev_items 表
-    # 这里返回空列表作为占位符
-    tenant_id = request.args.get('tenant_id', type=int)
-    page = request.args.get('page', 1, type=int)
-    page_size = request.args.get('page_size', 20, type=int)
-
-    logger.info(f"Listing tasks for tenant {tenant_id}, page {page}")
-
-    return jsonify({
-        "status": "success",
-        "tasks": [],  # 实际应查询数据库
-        "total": 0,
-        "page": page,
-        "page_size": page_size,
-        "message": "Task list should be queried from develop.dev_items via Develop Backend"
-    }), 200
-
-
-@app.route('/api/tasks', methods=['POST'])
-def create_task():
-    """
-    创建工作流任务（已废弃）
-    供 Develop 模块"保存为任务"功能使用
-
-    Request Body:
-        {
-            "name": "...",
-            "description": "...",
-            "workflow_def": {...},
-            "input_schema": {...},
-            "schedule": "0 2 * * *"  // 可选
-        }
-
-    Response:
-        {
-            "status": "success",
-            "task_id": 1
-        }
-    """
-    try:
-        data = request.get_json()
-
-        # 验证必填字段
-        if not data.get('name') or not data.get('workflow_def'):
-            return jsonify({
-                "status": "failed",
-                "error": "name and workflow_def are required"
-            }), 400
-
-        logger.info(f"Creating task: {data.get('name')}")
-
-        # 注意：实际实现应该写入 develop.dev_items 表
-        # 这里返回占位符响应
-        return jsonify({
-            "status": "success",
-            "task_id": 1,  # 实际应返回数据库生成的ID
-            "message": "Task should be saved to develop.dev_items via Develop Backend"
-        }), 201
-
-    except Exception as e:
-        logger.error(f"Task creation failed: {e}", exc_info=True)
-        return jsonify({
-            "status": "failed",
-            "error": str(e)
-        }), 500
-
-
-@app.route('/api/tasks/<int:task_id>/execute', methods=['POST'])
-def execute_task(task_id):
-    """
-    执行工作流任务（已废弃）
-    供 Orchestrator 执行已保存的任务使用
-
-    Request Body:
-        {
-            "inputs": {
-                "data_location": {...},
-                "param_value": 100
-            }
-        }
-
-    Response:
-        {
-            "status": "success",
-            "execution_id": "..."
-        }
-    """
-    try:
-        data = request.get_json()
-        inputs = data.get('inputs', {})
-
-        logger.info(f"Executing task {task_id} with inputs")
-
-        # 注意：实际实现应该：
-        # 1. 从 develop.dev_items 查询任务定义
-        # 2. 使用 inputs 填充 workflow_def 中的参数模板
-        # 3. 调用 execute_workflow
-        # 4. 将结果写入 common.task_executions
-
-        execution_id = str(uuid.uuid4())
-
-        return jsonify({
-            "status": "success",
-            "execution_id": execution_id,
-            "message": "Task execution should query develop.dev_items and save to common.task_executions"
-        }), 200
-
-    except Exception as e:
-        logger.error(f"Task execution failed: {e}", exc_info=True)
-        return jsonify({
-            "status": "failed",
-            "error": str(e)
-        }), 500
-
-
-# ========================================
 # 执行状态查询
 # ========================================
 
@@ -522,10 +575,10 @@ def get_execution_status(execution_id):
         }
     """
     if execution_id not in executions:
-        return jsonify({
-            "status": "failed",
-            "error": "Execution not found"
-        }), 404
+        return jsonify(error_response(
+            ErrorCode.EXECUTION_NOT_FOUND,
+            "Execution not found"
+        )), 404
 
     execution = executions[execution_id]
 
@@ -533,9 +586,13 @@ def get_execution_status(execution_id):
         "status": execution['status'],
         "execution_id": execution_id,
         "result": execution.get('result'),
+        "all_results": execution.get('all_results'),
         "error": execution.get('error'),
+        "error_code": execution.get('error_code'),
+        "details": execution.get('details'),
         "progress": 100 if execution['status'] in ['success', 'failed'] else 50,
-        "started_at": execution.get('started_at')
+        "started_at": execution.get('started_at'),
+        "execution_time_ms": execution.get('execution_time_ms')
     }), 200
 
 
@@ -556,25 +613,6 @@ def register_to_system():
     port = int(os.getenv('PORT', 8099))
     protocol = os.getenv('PROTOCOL', 'http')
 
-    capabilities = {
-        "schema_version": "engine.capabilities/v1",
-        "engine_type": "python_workflow",
-        "engine_family": "workflow",
-        "compute": {
-            "workflow": {
-                "supported": True,
-                "runtime_api": "addp.workflow/v1",
-                "dynamic_operators": True
-            }
-        },
-        "extensions": {
-            "workflow_runtime": {
-                "supported_formats": ["geojson", "wkt", "csv", "parquet"],
-                "features": ["dag", "memory_efficient", "batch", "pandas", "numpy", "scipy"]
-            }
-        }
-    }
-
     # 构建注册请求
     payload = {
         "engine_type": "python_workflow",
@@ -585,7 +623,6 @@ def register_to_system():
             "port": port
             # host 由 System 自动填充
         },
-        "capabilities": capabilities,
         "is_builtin": True  # 内置引擎，对所有租户可见
     }
 

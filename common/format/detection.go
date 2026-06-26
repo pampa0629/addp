@@ -9,6 +9,9 @@ import (
 
 // DetectFormat 根据文件名和内容前缀检测格式。
 func DetectFormat(filename string, peek []byte) FormatType {
+	if format := descriptorFormatByFileName(filename); format != FormatUnknown {
+		return format
+	}
 	ext := strings.ToLower(filepath.Ext(filename))
 	if format := extToFormat(ext); format != FormatUnknown {
 		if len(peek) > 0 && formatCanBeRefinedByContent(format) {
@@ -36,6 +39,21 @@ func DetectFormat(filename string, peek []byte) FormatType {
 		}
 		if LooksLikeTextContent(peek) {
 			return FormatText
+		}
+	}
+	return FormatUnknown
+}
+
+func descriptorFormatByFileName(filename string) FormatType {
+	name := strings.ToLower(strings.TrimSpace(filepath.Base(filename)))
+	if name == "" {
+		return FormatUnknown
+	}
+	for _, descriptor := range ListFormatDescriptors() {
+		for _, candidate := range descriptor.Identification.FileNames {
+			if candidate == name {
+				return descriptor.Format
+			}
 		}
 	}
 	return FormatUnknown

@@ -70,6 +70,7 @@ GET_AREA_METADATA = OperatorMetadata(
     category=OperatorCategory.PROPERTIES,
     description="计算面积",
     brief_description="计算面几何的面积,常用于土地统计和资源核算",
+    execution_modes=["workflow"],
 
     overview="计算GeoDataFrame中每个面几何的面积,返回数值。适用于土地利用统计、资源清单、规划指标核算等场景。",
 
@@ -114,6 +115,7 @@ GET_LENGTH_METADATA = OperatorMetadata(
     category=OperatorCategory.PROPERTIES,
     description="计算长度",
     brief_description="计算线几何的长度,常用于道路统计和网络分析",
+    execution_modes=["workflow"],
 
     overview="计算GeoDataFrame中每个线几何的长度,返回数值。适用于道路统计、河流长度计算、管网清单等场景。",
 
@@ -158,6 +160,7 @@ GET_BOUNDS_METADATA = OperatorMetadata(
     category=OperatorCategory.PROPERTIES,
     description="获取边界框",
     brief_description="获取几何对象的边界框坐标(minx, miny, maxx, maxy),常用于范围查询",
+    execution_modes=["workflow"],
 
     overview="返回每个几何对象的边界框(Bounding Box)坐标,包含minx、miny、maxx、maxy四个值。适用于地图范围定位、数据裁剪、空间索引构建等场景。",
 

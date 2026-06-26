@@ -21,6 +21,16 @@ func TestPostgreSQLCapabilitiesDeclareTableWritePrepare(t *testing.T) {
 	if !caps.Storage.Store.Delete {
 		t.Fatalf("postgresql capabilities do not declare delete: %#v", caps.Storage.Store)
 	}
+	spatialEncoding := caps.Storage.Store.TableSpatialEncoding
+	if spatialEncoding == nil || !spatialEncoding.ReadTransform || !spatialEncoding.NativeSpatialFunctions {
+		t.Fatalf("postgresql capabilities do not declare table spatial encoding transform support: %#v", spatialEncoding)
+	}
+	if !plugin.Contains(spatialEncoding.GeometryReadEncodings, "ewkb") || !plugin.Contains(spatialEncoding.GeometryReadEncodings, "geojson") {
+		t.Fatalf("postgresql read encodings = %#v, want ewkb and geojson", spatialEncoding.GeometryReadEncodings)
+	}
+	if !plugin.Contains(spatialEncoding.GeometryWriteEncodings, "ewkb") {
+		t.Fatalf("postgresql write encodings = %#v, want ewkb", spatialEncoding.GeometryWriteEncodings)
+	}
 	if err := plugin.ValidatePluginCapabilities(&PostgreSQLPlugin{}); err != nil {
 		t.Fatalf("ValidatePluginCapabilities failed: %v", err)
 	}

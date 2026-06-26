@@ -21,7 +21,7 @@ import (
 func TestTaskProviderListTasksRejectsUnsupportedTaskType(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	handler := NewTaskProviderHandler(nil, nil, nil, nil)
+	handler := NewTaskProviderHandler(nil, nil, nil, nil, nil)
 	router.GET("/tasks", handler.ListTasks)
 
 	req := httptest.NewRequest(http.MethodGet, "/tasks?task_type=unknown", nil)
@@ -63,6 +63,7 @@ func TestTaskProviderListTasksUsesStandardItemsShape(t *testing.T) {
 		service.NewTileCacheTaskService(tileCacheRepo, nil),
 		nil,
 		nil,
+		nil,
 	)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -71,7 +72,7 @@ func TestTaskProviderListTasksUsesStandardItemsShape(t *testing.T) {
 	})
 	router.GET("/tasks", handler.ListTasks)
 
-	req := httptest.NewRequest(http.MethodGet, "/tasks?task_type="+commonExecution.TaskTypeTileCacheGeneration, nil)
+	req := httptest.NewRequest(http.MethodGet, "/tasks?task_type="+commonExecution.TaskTypeVectorTileCacheGeneration, nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -90,7 +91,7 @@ func TestTaskProviderListTasksUsesStandardItemsShape(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v; body=%s", err, w.Body.String())
 	}
-	if len(resp.Items) != 1 || resp.Items[0].TaskType != commonExecution.TaskTypeTileCacheGeneration {
+	if len(resp.Items) != 1 || resp.Items[0].TaskType != commonExecution.TaskTypeVectorTileCacheGeneration {
 		t.Fatalf("items = %#v, want one tile cache task; body=%s", resp.Items, w.Body.String())
 	}
 	if resp.Data != nil {
@@ -127,6 +128,7 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 		service.NewTileCacheTaskService(tileCacheRepo, nil),
 		nil,
 		nil,
+		nil,
 	)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -135,7 +137,7 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 	})
 	router.GET("/tasks/:task_type/:id", handler.TaskDetail)
 
-	req := httptest.NewRequest(http.MethodGet, "/tasks/"+commonExecution.TaskTypeTileCacheGeneration+"/1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/tasks/"+commonExecution.TaskTypeVectorTileCacheGeneration+"/1", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -151,7 +153,7 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v; body=%s", err, w.Body.String())
 	}
-	if resp.ID != task.ID || resp.TaskType != commonExecution.TaskTypeTileCacheGeneration {
+	if resp.ID != task.ID || resp.TaskType != commonExecution.TaskTypeVectorTileCacheGeneration {
 		t.Fatalf("response = %#v, want direct tile cache task object; body=%s", resp, w.Body.String())
 	}
 	if resp.Status != "" || resp.Data != nil {
@@ -174,7 +176,7 @@ func TestTaskProviderExecutionStatusUsesDirectObjectShape(t *testing.T) {
 		t.Fatalf("create task execution: %v", err)
 	}
 
-	handler := NewTaskProviderHandler(nil, nil, nil, commonExecution.NewTaskExecutionRepository(db))
+	handler := NewTaskProviderHandler(nil, nil, nil, nil, commonExecution.NewTaskExecutionRepository(db))
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set("tenant_id", uint(1))
@@ -210,6 +212,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	tileCacheRepo := repository.NewTileCacheRepository(db)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	qvoRepo := repository.NewQuickViewOptimizationRepository(db)
+	cogRepo := repository.NewRasterCOGRepository(db)
 
 	if err := tileCacheRepo.CreateTask(context.Background(), &models.TileCacheTask{
 		TenantID: 1,
@@ -263,11 +266,25 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create quick view optimization task: %v", err)
 	}
+	if err := cogRepo.CreateTask(context.Background(), &models.RasterCOGTask{
+		TenantID: 1,
+		Name:     "raster COG generation task",
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"target": commonModels.JSONMap{
+				"source_engine_id": 11,
+				"locator":          "addp://engine/11/path/rasters/large.tif?type=file&item_id=44",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("create raster COG generation task: %v", err)
+	}
 
 	handler := NewTaskProviderHandler(
 		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
 		service.NewTileCacheTaskService(tileCacheRepo, nil),
 		service.NewQuickViewOptimizationTaskService(qvoRepo, nil),
+		service.NewRasterCOGTaskService(cogRepo, nil),
 		nil,
 	)
 
@@ -276,13 +293,15 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 		c.Set("tenant_id", uint(1))
 		c.Next()
 	})
-	router.GET("/tile_cache_tasks", handler.ListTileCacheTasks)
+	router.GET("/vector_tile_cache_tasks", handler.ListTileCacheTasks)
 	router.GET("/embedding_tasks", handler.ListEmbeddingTasks)
-	router.GET("/quick_view_optimization_tasks", handler.ListQuickViewOptimizationTasks)
+	router.GET("/vector_quick_view_target_tasks", handler.ListQuickViewOptimizationTasks)
+	router.GET("/raster_cog_tasks", handler.ListRasterCOGTasks)
 
-	assertListedTaskTypeValues(t, router, "/tile_cache_tasks", []string{commonExecution.TaskTypeTileCacheGeneration})
+	assertListedTaskTypeValues(t, router, "/vector_tile_cache_tasks", []string{commonExecution.TaskTypeVectorTileCacheGeneration})
 	assertListedTaskTypeValues(t, router, "/embedding_tasks", []string{commonExecution.TaskTypeEmbedding})
-	assertListedTaskTypeValues(t, router, "/quick_view_optimization_tasks", []string{commonExecution.TaskTypeQuickViewOptimization})
+	assertListedTaskTypeValues(t, router, "/vector_quick_view_target_tasks", []string{commonExecution.TaskTypeVectorQuickViewTargetGeneration})
+	assertListedTaskTypeValues(t, router, "/raster_cog_tasks", []string{commonExecution.TaskTypeRasterCOGGeneration})
 }
 
 func TestCreateEmbeddingTaskRejectsLegacyTopLevelFields(t *testing.T) {
@@ -290,6 +309,7 @@ func TestCreateEmbeddingTaskRejectsLegacyTopLevelFields(t *testing.T) {
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	handler := NewTaskProviderHandler(
 		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
+		nil,
 		nil,
 		nil,
 		nil,
@@ -329,6 +349,7 @@ func TestCreateEmbeddingTaskUsesDirectObjectShape(t *testing.T) {
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	handler := NewTaskProviderHandler(
 		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
+		nil,
 		nil,
 		nil,
 		nil,
@@ -378,7 +399,7 @@ func TestCreateEmbeddingTaskUsesDirectObjectShape(t *testing.T) {
 
 func TestTaskExecuteRejectsUnknownFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := NewTaskProviderHandler(nil, nil, nil, nil)
+	handler := NewTaskProviderHandler(nil, nil, nil, nil, nil)
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -508,7 +529,7 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS manager").Error; err != nil {
 		t.Fatalf("attach manager schema: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.tile_cache_tasks (
+	if err := db.Exec(`CREATE TABLE manager.vector_tile_cache_tasks (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
@@ -525,7 +546,7 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME,
 			deleted_at DATETIME
 		)`).Error; err != nil {
-		t.Fatalf("create tile_cache_tasks table: %v", err)
+		t.Fatalf("create vector_tile_cache_tasks table: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE manager.embedding_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -546,7 +567,7 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create embedding_tasks table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.quick_view_optimization_tasks (
+	if err := db.Exec(`CREATE TABLE manager.vector_quick_view_target_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		name TEXT NOT NULL,
@@ -563,7 +584,26 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create quick_view_optimization_tasks table: %v", err)
+		t.Fatalf("create vector_quick_view_target_tasks table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.raster_cog_tasks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		name TEXT NOT NULL,
+		description TEXT,
+		enabled BOOLEAN,
+		last_execution_id TEXT,
+		last_execution_status TEXT,
+		last_run_at DATETIME,
+		next_run_at DATETIME,
+		schedule TEXT,
+		created_by INTEGER,
+		config JSON,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create raster_cog_tasks table: %v", err)
 	}
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
 		t.Fatalf("attach common schema: %v", err)

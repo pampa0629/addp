@@ -1,0 +1,90 @@
+package api
+
+import (
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+
+	commonapi "github.com/addp/common/api"
+	commonModels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/service"
+	"github.com/gin-gonic/gin"
+)
+
+type RasterMosaicProgressEventRequest struct {
+	Phase           string               `json:"phase"`
+	Event           string               `json:"event"`
+	Message         string               `json:"message,omitempty"`
+	TotalFiles      int64                `json:"total_files,omitempty"`
+	ProcessedFiles  int64                `json:"processed_files,omitempty"`
+	FailedFiles     int64                `json:"failed_files,omitempty"`
+	CurrentFile     string               `json:"current_file,omitempty"`
+	FileProgress    *int                 `json:"file_progress,omitempty"`
+	OverallProgress *int                 `json:"overall_progress,omitempty"`
+	Metadata        commonModels.JSONMap `json:"metadata,omitempty"`
+}
+
+type RasterMosaicProgressEventResponse struct {
+	ExecutionID string `json:"execution_id"`
+	Status      string `json:"status"`
+}
+
+func (h *TaskProviderHandler) RecordRasterMosaicExecutionProgressEvent(c *gin.Context) {
+	if h == nil || h.rasterMosaicTaskSvc == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "raster mosaic generation task service is unavailable"})
+		return
+	}
+	req, err := decodeRasterMosaicProgressEventRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	executionID := c.Param("execution_id")
+	tenantID := c.GetUint("tenant_id")
+	event := service.RasterMosaicProgressEvent{
+		Phase:           req.Phase,
+		Event:           req.Event,
+		Message:         req.Message,
+		TotalFiles:      req.TotalFiles,
+		ProcessedFiles:  req.ProcessedFiles,
+		FailedFiles:     req.FailedFiles,
+		CurrentFile:     req.CurrentFile,
+		FileProgress:    req.FileProgress,
+		OverallProgress: req.OverallProgress,
+		Metadata:        req.Metadata,
+	}
+	if err := h.rasterMosaicTaskSvc.RecordProgressEvent(c.Request.Context(), tenantID, executionID, event); err != nil {
+		switch {
+		case errors.Is(err, commonapi.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "执行记录不存在"})
+		case errors.Is(err, service.ErrRasterMosaicProgressTargetMismatch):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		case errors.Is(err, service.ErrRasterMosaicExecutionCompleted):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusAccepted, RasterMosaicProgressEventResponse{
+		ExecutionID: executionID,
+		Status:      "accepted",
+	})
+}
+
+func decodeRasterMosaicProgressEventRequest(c *gin.Context) (RasterMosaicProgressEventRequest, error) {
+	var req RasterMosaicProgressEventRequest
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		return req, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return req, errors.New("request body must contain a single JSON object")
+	}
+	if req.Metadata == nil {
+		req.Metadata = commonModels.JSONMap{}
+	}
+	return req, nil
+}

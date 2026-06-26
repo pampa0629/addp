@@ -1,9 +1,5 @@
 import client from './client'
 
-export const executeFederatedQuery = (sql, timeout = 30) => {
-  return client.post('/develop/duckdb/query', { sql, timeout })
-}
-
 export const getFederatedSources = () => {
   return client.get('/develop/duckdb/sources')
 }

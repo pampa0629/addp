@@ -39,7 +39,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 
 **关于 Engine**：
 - `engine_origin = 'general'`：用户手动注册的数据引擎（PostgreSQL/MySQL/MinIO 等）
-- `engine_origin = 'extension'`：系统自动注册的计算引擎（Python Workflow/Spark/Jupyter）
+- `engine_origin = 'extension'`：按 ADDP 扩展规范注册的运行时（Python Workflow、Spark Workflow、Jupyter、用户自研 Workflow 等）
 - `is_builtin = true`：内置引擎，tenant_id = null，全局可见
 - `capabilities` JSONB 字段声明引擎的存储/计算能力，各模块按需使用
 
@@ -237,7 +237,7 @@ erDiagram
         uint id PK
         uint tenant_id FK "内置引擎时为 null"
         string name
-        string engine_type "postgresql|mysql|minio|python_workflow|..."
+        string engine_type "postgresql|mysql|minio|acme_geo_workflow|..."
         string engine_origin "general | extension"
         bool is_builtin
         json connection_info
@@ -537,9 +537,9 @@ erDiagram
 
 **说明**：
 - `Orchestration.steps` 是内嵌 JSONB 数组，每个 Step 通过 TaskProvider API 调用已有任务定义（`provider/task_type/task_id`）。
-- 工作流计算引擎由 Develop 消费；算子工作流必须先在 Develop 中形成 `workflow` 任务，再作为 `provider=develop, task_type=workflow` 的 Step 进入 Orchestrator。
+- 工作流运行时由 Develop 消费；算子工作流必须先在 Develop 中形成 `workflow` 任务，再作为 `provider=develop, task_type=workflow` 的 Step 进入 Orchestrator。
 - `Orchestration` 执行后本身也产生 `TaskExecution`（task_type='orchestration'），并可作为 `provider=orchestrator, task_type=orchestration` 的任务被更高层 Orchestration 引用；保存和执行时必须防止自引用或循环引用。
-- `DevTask.engine_id` 指向"具备对应能力的引擎"：`query` 类选择同时具备 RelationalStorage+SQLCompute 的引擎（如 PostgreSQL）；`workflow` 类选择 WorkflowCompute 引擎（如 Python Workflow）；`script` 类选择具备脚本执行能力的引擎，当前可由 Jupyter Notebook runtime 承载
+- `DevTask.execution_config` 表达执行目标：普通 `query` 任务使用 `engine_id` 指向具备 query 能力的真实 System 引擎；DuckDB 联邦查询使用 `query_mode="duckdb"`，不写虚拟 `engine_id=0`；`workflow` 任务的 `engine_id` 指向具体工作流运行时实例，不冗余保存 `engine_type`；`script` 类选择具备脚本执行能力的引擎，当前可由 Jupyter Notebook runtime 承载
 - `TaskExecution.error_details`：仅在失败时填充，存储错误类型、错误栈等诊断信息；`metadata`：每次执行均可写入，存储各模块特有的过程数据和结果统计
 
 **⚠️ 发现的问题**：

@@ -5,11 +5,11 @@ Spark 工作流 Engine 是 ADDP 平台的分布式空间计算引擎,基于 Apac
 ## 核心特性
 
 - **分布式计算**: 支持 TB 级空间数据处理,自动并行化
-- **Sedona 空间算子**: 提供 12 个核心空间算子 (buffer, intersection, spatial_join 等)
+- **Sedona 空间算子**: 提供核心空间算子 (buffer, intersection, spatial_join 等)
 - **统一存储访问**: 支持数据库 (PostgreSQL/MySQL/Doris)、对象存储 (S3/MinIO/HDFS)、湖仓 (Iceberg/Delta/Hudi)
 - **动态 Spark 资源**: 用户注册多个 Spark 集群,工作流执行时选择
 - **DAG 工作流**: 拓扑排序 + DataFrame 内存传递,最小化序列化开销
-- **与 GeoPandas 互补**: 快速原型用 GeoPandas,生产大规模用 Spark
+- **与 Python Workflow 互补**: 快速原型用 Python Workflow,生产大规模用 Spark
 
 ## 目录结构
 
@@ -19,15 +19,15 @@ engines/spark-workflow/
 ├── workflow_engine.py      # 工作流执行引擎 (DAG + DataFrame 传递)
 ├── spark_connector.py      # 动态 SparkSession 管理器
 ├── storage_adapters.py     # 统一存储访问适配器
-├── operators.py            # 算子实现 (22 个)
-├── operator_metadata.py    # 算子元数据 (供前端使用)
+├── operators/              # 算子实现与 Pydantic 元数据定义
+├── operator_metadata.py    # 公开算子元数据出口 (供前端使用)
 ├── requirements.txt        # Python 依赖
 ├── .env.example            # 环境变量模板
 ├── start.sh                # 启动脚本
 └── README.md               # 本文件
 ```
 
-## 算子列表 (22 个)
+## 算子列表
 
 ### 1. 数据 I/O (5个)
 - `load` - 数据加载 (数据库/文件/湖仓/SQL)
@@ -37,13 +37,13 @@ engines/spark-workflow/
 - `persist` - 持久化
 
 ### 2. Sedona 空间算子 (7个)
-- `st_buffer` - 缓冲区分析
-- `st_centroid` - 质心计算
-- `st_intersection` - 几何相交
-- `st_union` - 几何合并
+- `buffer` - 缓冲区分析
+- `centroid` - 质心计算
+- `intersection` - 几何相交
+- `union` - 几何合并
 - `spatial_join` - 空间连接 (核心)
-- `st_distance` - 距离计算
-- `st_transform` - 坐标转换
+- `distance` - 距离计算
+- `transform` - 坐标转换
 
 ### 3. 数据转换 (5个)
 - `select` - 选择列
@@ -106,10 +106,10 @@ python3 api_server.py
 
 ## 使用示例
 
-### 示例 1: 单算子执行
+### 示例 1: 单算子 direct 调用
 
 ```bash
-curl -X POST http://localhost:8098/api/operators/st_buffer/execute \
+curl -X POST http://localhost:8098/api/operators/buffer/invoke \
   -H "Content-Type: application/json" \
   -d '{
     "engine_id": 34,
@@ -135,6 +135,14 @@ curl -X POST http://localhost:8098/api/workflow \
           "operator": "load",
           "params": {
             "source_type": "table",
+            "connection_info": {
+              "engine_type": "postgresql",
+              "host": "postgres",
+              "port": 5432,
+              "database": "addp",
+              "user": "addp",
+              "password": "secret"
+            },
             "schema": "public",
             "table": "poi_data"
           },
@@ -142,7 +150,7 @@ curl -X POST http://localhost:8098/api/workflow \
         },
         {
           "id": "buffer_analysis",
-          "operator": "st_buffer",
+          "operator": "buffer",
           "params": {
             "input_df": {"$ref": "load_poi"},
             "distance": 100
@@ -155,6 +163,14 @@ curl -X POST http://localhost:8098/api/workflow \
           "params": {
             "input_df": {"$ref": "buffer_analysis"},
             "target_type": "table",
+            "connection_info": {
+              "engine_type": "postgresql",
+              "host": "postgres",
+              "port": 5432,
+              "database": "addp",
+              "user": "addp",
+              "password": "secret"
+            },
             "schema": "public",
             "table": "poi_buffer_result",
             "mode": "overwrite"
@@ -168,9 +184,7 @@ curl -X POST http://localhost:8098/api/workflow \
 
 ## 工作流定义格式
 
-工作流定义支持两种格式:
-
-### 格式 1: 数组格式 (推荐)
+工作流定义只支持 `tasks` 数组格式，且 `tasks` 必须非空：
 
 ```json
 {
@@ -185,7 +199,7 @@ curl -X POST http://localhost:8098/api/workflow \
       },
       {
         "id": "task2",
-        "operator": "st_buffer",
+        "operator": "buffer",
         "params": {
           "input_df": {"$ref": "task1"},
           "distance": 100
@@ -197,27 +211,7 @@ curl -X POST http://localhost:8098/api/workflow \
 }
 ```
 
-### 格式 2: Map 格式
-
-```json
-{
-  "engine_id": 34,
-  "workflow_def": {
-    "step1": {
-      "operator": "load",
-      "inputs": {...}
-    },
-    "step2": {
-      "operator": "st_buffer",
-      "inputs": {
-        "input_df": {"$ref": "step1"},
-        "distance": 100
-      },
-      "depends_on": ["step1"]
-    }
-  }
-}
-```
+上例展示的是 Spark Workflow runtime 收到的已预处理形态。用户和 AI 侧配置表、NFS 文件或对象存储输入/输出时使用 `locator` 或 `target_parent_locator + target_name`；Develop 后端会在调用 Spark Workflow runtime 前派生 `connection_info`、`schema/table` 或 `path`。Spark Workflow 顶层 `engine_id` 只绑定实际 Spark 通用引擎资源，不用于表达数据源。
 
 ## 核心设计
 
@@ -226,9 +220,10 @@ curl -X POST http://localhost:8098/api/workflow \
 Spark 工作流 Engine 不内置 Spark 集群,而是动态连接到用户注册的 Spark 资源:
 
 1. 用户在 System 模块注册 Spark 资源 (多个)
-2. 创建工作流时选择使用哪个 Spark 资源 (engine_id)
-3. Engine 通过 System API 获取资源配置,动态创建 SparkSession
-4. 每个 engine_id 对应一个 SparkSession (缓存复用)
+2. 创建 Spark Workflow 工作流时，Develop 前端用 `spark_cluster_id` 记录用户选择的 Spark 通用引擎资源
+3. Develop 后端校验该资源为已启用的 `engine_type=spark`，调用运行时时映射为请求顶层 `engine_id`
+4. Engine 通过 System API 获取资源配置,动态创建 SparkSession
+5. 每个运行时 `engine_id` 对应一个 SparkSession (缓存复用)
 
 ```python
 # spark_connector.py
@@ -244,7 +239,14 @@ spark = connector.get_or_create_session(engine_id=34)
 # 加载: 数据库
 df = StorageAdapter.load(spark, {
     "source_type": "table",
-    "engine_id": 34,
+    "connection_info": {
+        "engine_type": "postgresql",
+        "host": "postgres",
+        "port": 5432,
+        "database": "addp",
+        "user": "addp",
+        "password": "secret"
+    },
     "schema": "public",
     "table": "poi_data"
 })
@@ -252,6 +254,12 @@ df = StorageAdapter.load(spark, {
 # 加载: S3
 df = StorageAdapter.load(spark, {
     "source_type": "file",
+    "connection_info": {
+        "engine_type": "minio",
+        "endpoint": "http://minio:9000",
+        "access_key": "minioadmin",
+        "secret_key": "minioadmin"
+    },
     "path": "s3a://bucket/data.parquet",
     "format": "geoparquet"
 })
@@ -287,13 +295,13 @@ result = engine.run()
 | **适用场景** | 快速原型、探索分析 | 生产环境、大规模处理 |
 | **数据规模** | < 10 GB | > 100 GB (TB 级) |
 | **并行化** | 单机多进程 | 分布式集群 |
-| **空间算子** | 21 个 (Shapely/GeoPandas) | 22 个 (Sedona) |
+| **空间算子** | Python 空间分析算子 | Sedona 分布式空间算子 |
 | **性能** | 单机 CPU/内存限制 | 集群自动扩展 |
 | **部署方式** | 内置服务 (端口 8099) | 动态注册 (端口 8098) |
 | **存储支持** | 数据库 + S3 | 数据库 + S3 + 湖仓 (Iceberg/Delta) |
 
 **使用建议**:
-- **原型开发**: 使用 GeoPandas (快速迭代)
+- **原型开发**: 使用 Python Workflow (快速迭代)
 - **生产部署**: 使用 Spark (大规模稳定)
 - **混合使用**: 在 Orchestrator 中跨引擎编排
 
@@ -315,9 +323,9 @@ POST /api/workflow
 Body: {"engine_id": 34, "workflow_def": {...}}
 ```
 
-### 执行单个算子
+### direct 调用单个算子
 ```
-POST /api/operators/{operator_name}/execute
+POST /api/operators/{operator_name}/invoke
 Body: {"engine_id": 34, "params": {...}}
 ```
 
@@ -370,7 +378,7 @@ spark.conf.set("spark.hadoop.fs.s3a.secret.key", "minioadmin")
 
 ### 添加新算子
 
-1. 在 `operators.py` 中实现算子函数:
+1. 在对应的 `operators/*_operators.py` 中实现算子函数:
 ```python
 def my_operator(input_df: DataFrame, param1: str, param2: int) -> DataFrame:
     """算子说明"""
@@ -378,23 +386,41 @@ def my_operator(input_df: DataFrame, param1: str, param2: int) -> DataFrame:
     return result_df
 ```
 
-2. 注册到 `_OPERATOR_REGISTRY`:
+2. 在同一文件中定义 `OperatorMetadata` 并注册到该分类的 `OPERATORS`:
 ```python
-_OPERATOR_REGISTRY["my_operator"] = my_operator
+MY_OPERATOR_METADATA = OperatorMetadata(
+    name="my_operator",
+    category=OperatorCategory.DATA_TRANSFORM,
+    description="我的算子",
+    brief_description="执行自定义 Spark DataFrame 处理",
+    overview="...",
+    params=[
+        OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame"),
+        OperatorParam(name="param1", type="str", required=True, description="参数 1"),
+    ],
+    use_cases=[...],
+    notes=[...],
+    input_desc="DataFrame",
+    output_desc="DataFrame",
+    workflow_example={
+        "id": "my_operator_task",
+        "operator": "my_operator",
+        "params": {
+            "input_df": {"$ref": "load_data"},
+            "param1": "value"
+        },
+        "depends_on": ["load_data"]
+    },
+)
+
+OPERATORS = dict([
+    register_operator(MY_OPERATOR_METADATA, my_operator),
+])
 ```
 
-3. 在 `operator_metadata.py` 中添加元数据:
-```python
-{
-    "id": "my_operator",
-    "name": "my_operator",
-    "display_name": "我的算子",
-    "module": "spark",
-    "category": "自定义",
-    "parameters": [...],
-    "output_ports": [...]
-}
-```
+3. 在 `operators/__init__.py` 中导入算子函数和分类 `OPERATORS`。`operator_metadata.py` 是统一公开出口，不在其中手写单个算子的元数据。
+
+`engine_id` 是 Spark Workflow 执行请求的顶层运行时绑定，由执行引擎注入到 `load`、`save`、`sql` 等内部函数；不要把它写入算子公开参数或 workflow example 的 `params`。
 
 ### 运行测试
 
@@ -403,7 +429,7 @@ _OPERATOR_REGISTRY["my_operator"] = my_operator
 python3 workflow_engine.py
 
 # 测试算子
-python3 -c "from operators import get_operator; op = get_operator('st_buffer'); print(op)"
+python3 -c "from operators import get_operator; op = get_operator('buffer'); print(op)"
 ```
 
 ## 许可证
@@ -415,4 +441,4 @@ python3 -c "from operators import get_operator; op = get_operator('st_buffer'); 
 - [Apache Spark 文档](https://spark.apache.org/docs/latest/)
 - [Apache Sedona 文档](https://sedona.apache.org/)
 - [ADDP 开发指南](../../docs/spec/addp开发原则.md)
-- [Python Workflow Engine 文档](../python-workflow/docs/python-workflow-gis引擎.md)
+- [ADDP 工作流计算引擎接口规范](../../docs/spec/addp工作流计算引擎接口规范.md)

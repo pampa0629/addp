@@ -41,6 +41,7 @@ ADD_FIELD_METADATA = OperatorMetadata(
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="添加新字段",
     brief_description="向 GeoDataFrame 添加新字段并赋值,常用于数据准备和分类标注",
+    execution_modes=["workflow"],
 
     overview="向输入 GeoDataFrame 添加新字段,支持常量值或 None（用于后续计算）。"
               "新字段可用于后续分类、统计和可视化。不影响几何列和空间索引。",
@@ -127,6 +128,7 @@ CALCULATE_FIELD_METADATA = OperatorMetadata(
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="字段计算（表达式）",
     brief_description="基于表达式计算新字段或更新已有字段,常用于派生指标和数据转换",
+    execution_modes=["workflow"],
 
     overview="使用数学表达式基于现有字段计算新字段。支持基本算术运算（+、-、*、/、**）"
               "和常用函数。使用 simpleeval 库确保安全执行,防止代码注入攻击。",
@@ -206,6 +208,7 @@ RENAME_FIELDS_METADATA = OperatorMetadata(
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="批量重命名字段",
     brief_description="批量修改字段名称,常用于数据标准化和命名规范统一",
+    execution_modes=["workflow"],
 
     overview="批量修改 GeoDataFrame 中的字段名称。支持一次重命名多个字段,"
               "常用于数据标准化、中英文转换、命名规范统一等场景。不影响数据内容。",
@@ -280,6 +283,7 @@ DROP_FIELDS_METADATA = OperatorMetadata(
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="删除字段",
     brief_description="批量删除不需要的字段,常用于数据清洗和减少存储空间",
+    execution_modes=["workflow"],
 
     overview="批量删除 GeoDataFrame 中的指定字段。常用于清理临时字段、"
               "减少数据体积、保护敏感信息等场景。不影响几何列。",
@@ -363,6 +367,7 @@ TYPE_CAST_METADATA = OperatorMetadata(
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="字段类型转换",
     brief_description="转换字段数据类型,常用于数据清洗和类型匹配",
+    execution_modes=["workflow"],
 
     overview="将指定字段转换为目标数据类型（int、float、str、bool）。"
               "常用于修复数据类型错误、格式统一、满足算子输入要求等场景。",
@@ -443,6 +448,7 @@ FILL_NULL_METADATA = OperatorMetadata(
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="填充空值",
     brief_description="填充字段中的 NULL/NaN 值,常用于数据清洗和缺失值处理",
+    execution_modes=["workflow"],
 
     overview="将指定字段中的空值（NULL、NaN、None）替换为指定值。"
               "常用于数据清洗、避免计算错误、满足非空约束等场景。",
@@ -542,6 +548,7 @@ NORMALIZE_FIELD_METADATA = OperatorMetadata(
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="字段归一化",
     brief_description="将数值字段归一化到标准范围,常用于数据分析和机器学习",
+    execution_modes=["workflow"],
 
     overview="对数值字段进行归一化或标准化处理。支持 Min-Max 归一化（缩放到 [0, 1]）"
               "和 Z-Score 标准化（均值 0、标准差 1）。常用于机器学习、数据可视化、多指标对比。",
@@ -624,6 +631,7 @@ ENCODE_CATEGORICAL_METADATA = OperatorMetadata(
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="分类编码",
     brief_description="将分类字段编码为数字,常用于机器学习和数据分析",
+    execution_modes=["workflow"],
 
     overview="将字符串或分类字段转换为整数编码（从 0 开始的连续整数）。"
               "常用于机器学习模型输入、减少存储空间、提升查询性能等场景。",
@@ -698,6 +706,7 @@ BIN_FIELD_METADATA = OperatorMetadata(
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="字段分箱",
     brief_description="将连续数值字段分箱为离散区间,常用于数据分级和可视化",
+    execution_modes=["workflow"],
 
     overview="将连续数值字段划分为离散的区间（分箱）。支持等频分箱（指定箱数）"
               "和自定义分箱（指定边界）。常用于数据分级、专题地图制作、统计分析。",
@@ -812,6 +821,7 @@ AGGREGATE_METADATA = OperatorMetadata(
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="聚合统计",
     brief_description="对数值字段进行汇总统计（求和/均值/计数等），常用于面积汇总、数量统计等分析结果输出",
+    execution_modes=["workflow"],
 
     overview="对 GeoDataFrame 的指定字段进行聚合计算，支持全表聚合或按字段分组聚合。"
              "常用于将多条计算结果（如各地块面积）汇总为单一统计值（如总面积）。"

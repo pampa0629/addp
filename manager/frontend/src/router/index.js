@@ -36,16 +36,22 @@ const routes = [
         meta: { requiresAuth: true, title: '向量化任务-addp' }
       },
       {
-        path: 'tile-cache',
+        path: 'spatial-quick-view/vector-tile-cache',
         name: 'TileCache',
         component: () => import('../views/TileCache.vue'),
-        meta: { requiresAuth: true, title: '瓦片缓存任务-addp' }
+        meta: { requiresAuth: true, title: '矢量快显 - 瓦片缓存-addp' }
       },
       {
-        path: 'quick-view-optimization',
+        path: 'spatial-quick-view/vector-optimization',
         name: 'QuickViewOptimization',
         component: () => import('../views/QuickViewOptimization.vue'),
-        meta: { requiresAuth: true, title: '快显性能优化-addp' }
+        meta: { requiresAuth: true, title: '矢量快显 - 性能优化-addp' }
+      },
+      {
+        path: 'spatial-quick-view/raster-cog',
+        name: 'RasterCOG',
+        component: () => import('../views/RasterCOG.vue'),
+        meta: { requiresAuth: true, title: '栅格快显 - COG-addp' }
       },
       {
         path: 'spatial-preview',

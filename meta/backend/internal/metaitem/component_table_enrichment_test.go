@@ -62,6 +62,116 @@ func TestCommonDataItemResolverAdaptsMultiItems(t *testing.T) {
 	}
 }
 
+func TestCommonDataItemResolverAdaptsGeoTIFFSidecars(t *testing.T) {
+	d := &commonDataItemResolver{}
+	files := []StorageFileRef{
+		{Name: "srtm_40_01.tif", Path: "/geotiff/srtm_40_01.tif", Size: 100},
+		{Name: "srtm_40_01.tfw", Path: "/geotiff/srtm_40_01.tfw", Size: 10},
+		{Name: "srtm_40_01.hdr", Path: "/geotiff/srtm_40_01.hdr", Size: 20},
+		{Name: "srtm_40_01.tif.aux.xml", Path: "/geotiff/srtm_40_01.tif.aux.xml", Size: 30},
+		{Name: "readme.pdf", Path: "/geotiff/readme.pdf", Size: 40},
+	}
+
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+		DirPath: "/geotiff",
+		Files:   files,
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if got, want := len(result.Items), 1; got != want {
+		t.Fatalf("Items len = %d, want %d", got, want)
+	}
+	item := result.Items[0]
+	if item.PrimaryContentPath != "/geotiff/srtm_40_01.tif" {
+		t.Fatalf("PrimaryContentPath = %q, want /geotiff/srtm_40_01.tif", item.PrimaryContentPath)
+	}
+	if item.Layout != format.LayoutMulti || item.DataType != datatype.Media || item.Format != string(format.FormatTIFF) {
+		t.Fatalf("item = %#v, want multi media tiff", item)
+	}
+	if len(item.RefList) != 4 {
+		t.Fatalf("refs = %#v, want 4 GeoTIFF refs", item.RefList)
+	}
+	if !result.Claims["/geotiff/srtm_40_01.tif"] || !result.Claims["/geotiff/srtm_40_01.tif.aux.xml"] || result.Claims["/geotiff/readme.pdf"] {
+		t.Fatalf("claims = %#v, want only GeoTIFF refs claimed", result.Claims)
+	}
+}
+
+func TestCommonDataItemResolverAdaptsRasterMosaicWholeScope(t *testing.T) {
+	d := &commonDataItemResolver{}
+	files := []StorageFileRef{
+		{Name: "mosaic.addp.json", Path: "mosaics/srtm/mosaic.addp.json", Size: 10},
+		{Name: "source-index.json", Path: "mosaics/srtm/index/source-index.json", Size: 20},
+		{Name: "overview.cog.tif", Path: "mosaics/srtm/overviews/overview.cog.tif", Size: 30},
+		{Name: "a.cog.tif", Path: "mosaics/srtm/leaf/a.cog.tif", Size: 40},
+		{Name: "b.cog.tif", Path: "mosaics/srtm/leaf/b.cog.tif", Size: 50},
+	}
+
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+		ContentReader: refMapContentReader{content: map[string][]byte{
+			"mosaics/srtm/mosaic.addp.json": []byte(`{"schema_version":"addp.raster_mosaic.v1","data_type":"media","format":"raster_mosaic","layout":"whole","refs":{"index":"index/source-index.json","overview":"overviews/overview.cog.tif"},"summary":{"leaf_count":2,"source_count":2,"extent":[0,1,2,3],"source_crs":"EPSG:4326","overview_width":16,"overview_height":8}}`),
+		}},
+		DirPath:        "mosaics/srtm",
+		Files:          files[:1],
+		RecursiveFiles: files,
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if !result.Exclusive {
+		t.Fatal("raster mosaic should exclusively claim the whole scope")
+	}
+	if got, want := len(result.Items), 1; got != want {
+		t.Fatalf("Items len = %d, want %d", got, want)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutWhole || item.DataType != datatype.Media || item.Format != string(format.FormatRasterMosaic) {
+		t.Fatalf("item = %#v, want media raster_mosaic whole item", item)
+	}
+	if item.PhysicalPath != "mosaics/srtm" || item.ScopePath != "mosaics/srtm" {
+		t.Fatalf("physical/scope path = %q/%q, want mosaic root", item.PhysicalPath, item.ScopePath)
+	}
+	mosaicInfo := commonJSON.Section(item.Attributes, "format_info.raster_mosaic")
+	if mosaicInfo["manifest_ref"] != "mosaic.addp.json" || mosaicInfo["index_ref"] != "index/source-index.json" || mosaicInfo["overview_ref"] != "overviews/overview.cog.tif" {
+		t.Fatalf("format_info.raster_mosaic = %#v, want manifest/index/overview refs", mosaicInfo)
+	}
+	if commonJSON.InterfaceInt64(mosaicInfo["leaf_count"]) != 2 || commonJSON.InterfaceInt64(mosaicInfo["overview_width"]) != 16 {
+		t.Fatalf("format_info.raster_mosaic = %#v, want leaf_count and overview size", mosaicInfo)
+	}
+	spatial := commonJSON.Section(item.Attributes, "capabilities.spatial")
+	if spatial["crs"] != "EPSG:4326" {
+		t.Fatalf("capabilities.spatial = %#v, want CRS", spatial)
+	}
+	for _, file := range files {
+		if !result.Claims[file.Path] {
+			t.Fatalf("claims = %#v, want %s claimed", result.Claims, file.Path)
+		}
+	}
+}
+
+func TestCommonDataItemResolverRejectsRasterMosaicManifestByNameOnly(t *testing.T) {
+	d := &commonDataItemResolver{}
+	files := []StorageFileRef{
+		{Name: "mosaic.addp.json", Path: "mosaics/not-mosaic/mosaic.addp.json", Size: 10},
+		{Name: "readme.txt", Path: "mosaics/not-mosaic/readme.txt", Size: 20},
+	}
+
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+		ContentReader: refMapContentReader{content: map[string][]byte{
+			"mosaics/not-mosaic/mosaic.addp.json": []byte(`{"schema_version":"not-addp","format":"json"}`),
+		}},
+		DirPath:        "mosaics/not-mosaic",
+		Files:          files[:1],
+		RecursiveFiles: files,
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if result.Exclusive || len(result.Items) != 0 || len(result.Claims) != 0 {
+		t.Fatalf("ResolveItems() = %#v, want no raster mosaic from manifest name only", result)
+	}
+}
+
 func TestCommonDataItemResolverRejectsIncompleteMultiRefs(t *testing.T) {
 	d := &commonDataItemResolver{}
 	files := []StorageFileRef{

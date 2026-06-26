@@ -104,7 +104,7 @@ class WorkflowPipeline:
         self,
         query: str,
         tenant_id: int = 1,
-        engine_type: str = "python_workflow"  # 工作流引擎类型：python_workflow, spark_workflow, math_workflow
+        workflow_engine_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         执行完整的工作流生成流程
@@ -112,7 +112,7 @@ class WorkflowPipeline:
         Args:
             query: 用户查询
             tenant_id: 租户 ID
-            engine_type: 工作流引擎类型（python_workflow/spark_workflow/math_workflow），用于筛选算子
+            workflow_engine_id: 工作流引擎实例 ID，用于算子发现、详情获取和验证
 
         Returns:
             生成结果字典，包含：
@@ -128,10 +128,13 @@ class WorkflowPipeline:
         print(f"[WorkflowPipeline] 开始生成工作流")
         print(f"  查询: {query}")
         print(f"  租户 ID: {tenant_id}")
-        print(f"  引擎类型: {engine_type}")
+        print(f"  工作流引擎 ID: {workflow_engine_id}")
         print("=" * 60)
 
         try:
+            if not workflow_engine_id:
+                raise ValueError("workflow_engine_id 是 Copilot 工作流生成必需上下文")
+
             # ========== 阶段 1: 数据源理解 ==========
             data_source: Optional[DataSourceContext] = None
 
@@ -153,9 +156,10 @@ class WorkflowPipeline:
                     print(f"[WorkflowPipeline] ⚠️ 数据源置信度低 ({data_source.confidence:.2f})")
 
                     if data_source.alternatives:
+                        candidates = [candidate.model_dump(exclude_none=True) for candidate in data_source.alternatives]
                         return {
                             "status": "need_clarification",
-                            "data_source_candidates": data_source.alternatives,
+                            "data_source_candidates": candidates,
                             "message": f"找到 {len(data_source.alternatives)} 个匹配的数据源，请选择一个"
                         }
 
@@ -168,7 +172,9 @@ class WorkflowPipeline:
             print("\n[WorkflowPipeline] ▶ 阶段 2: 算子筛选")
             data_source_info = self._format_data_source_for_selection(data_source) if data_source else None
             selected_operators = await self.operator_selection_chain.select(
-                query, data_source_info, engine_type=engine_type
+                query,
+                data_source_info,
+                workflow_engine_id=workflow_engine_id
             )
 
             print(f"[WorkflowPipeline] ✅ 算子筛选完成：{len(selected_operators)} 个算子")
@@ -180,14 +186,17 @@ class WorkflowPipeline:
                 query=query,
                 data_source=data_source,
                 selected_operators=selected_operators,
-                engine_type=engine_type  # 传递引擎类型
+                workflow_engine_id=workflow_engine_id
             )
 
             print(f"[WorkflowPipeline] ✅ 工作流生成完成：{len(workflow.tasks)} 个任务")
 
             # ========== 阶段 4: 工作流验证 + 自动修复 ==========
             print("\n[WorkflowPipeline] ▶ 阶段 4: 工作流验证")
-            validation_result = await self.workflow_validation_chain.validate(workflow, engine_type=engine_type)
+            validation_result = await self.workflow_validation_chain.validate(
+                workflow,
+                workflow_engine_id=workflow_engine_id
+            )
 
             if not validation_result.is_valid:
                 print(f"[WorkflowPipeline] ⚠️ 验证失败，尝试自动修复")
@@ -195,7 +204,9 @@ class WorkflowPipeline:
 
                 # 自动修复
                 workflow, validation_result = await self.workflow_auto_fixer.auto_fix(
-                    workflow, validation_result
+                    workflow,
+                    validation_result,
+                    workflow_engine_id=workflow_engine_id
                 )
 
                 # 重新检查验证结果
@@ -250,7 +261,8 @@ class WorkflowPipeline:
     async def modify(
         self,
         user_input: str,
-        current_workflow: Workflow
+        current_workflow: Workflow,
+        workflow_engine_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         修改现有工作流（多轮对话）
@@ -258,6 +270,7 @@ class WorkflowPipeline:
         Args:
             user_input: 用户的修改请求
             current_workflow: 当前工作流
+            workflow_engine_id: 工作流引擎实例 ID
 
         Returns:
             修改结果字典
@@ -265,7 +278,14 @@ class WorkflowPipeline:
         print("\n" + "=" * 60)
         print(f"[WorkflowPipeline] 修改工作流")
         print(f"  用户输入: {user_input}")
+        print(f"  工作流引擎 ID: {workflow_engine_id}")
         print("=" * 60)
+
+        if not workflow_engine_id:
+            return {
+                "status": "error",
+                "message": "workflow_engine_id 是工作流修改必需上下文"
+            }
 
         # 延迟初始化 WorkflowModificationChain
         if self.workflow_modification_chain is None:
@@ -281,12 +301,17 @@ class WorkflowPipeline:
 
             # 验证修改后的工作流
             print(f"[WorkflowPipeline] 验证修改后的工作流")
-            validation_result = await self.workflow_validation_chain.validate(modified_workflow)
+            validation_result = await self.workflow_validation_chain.validate(
+                modified_workflow,
+                workflow_engine_id=workflow_engine_id
+            )
 
             if not validation_result.is_valid:
                 print(f"[WorkflowPipeline] ⚠️ 修改后的工作流验证失败，尝试自动修复")
                 modified_workflow, validation_result = await self.workflow_auto_fixer.auto_fix(
-                    modified_workflow, validation_result
+                    modified_workflow,
+                    validation_result,
+                    workflow_engine_id=workflow_engine_id
                 )
 
             return {
@@ -326,8 +351,12 @@ class WorkflowPipeline:
         ]
 
         location = data_source.location
-        if location.schema and location.table:
-            parts.append(f"数据位置: {location.schema}.{location.table}")
+        if location.locator:
+            parts.append(f"源资源 locator: {location.locator}")
+        if location.target_parent_locator:
+            parts.append(f"目标父 locator: {location.target_parent_locator}")
+        if location.namespace and location.table:
+            parts.append(f"数据位置: {location.namespace}.{location.table}")
         elif location.bucket and location.path:
             parts.append(f"数据位置: {location.bucket}/{location.path}")
 

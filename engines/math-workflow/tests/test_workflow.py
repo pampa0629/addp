@@ -168,6 +168,14 @@ class TestWorkflowValidation:
         with pytest.raises(WorkflowInvalidError, match="缺少 'tasks' 字段"):
             engine.load_workflow(workflow_def)
 
+    def test_empty_tasks(self):
+        """测试 tasks 不能为空"""
+        workflow_def = {"tasks": []}
+
+        engine = MathWorkflowEngine()
+        with pytest.raises(WorkflowInvalidError, match="必须是非空数组"):
+            engine.load_workflow(workflow_def)
+
     def test_missing_task_id(self):
         """测试任务缺少 id 字段"""
         workflow_def = {
@@ -190,6 +198,92 @@ class TestWorkflowValidation:
 
         engine = MathWorkflowEngine()
         with pytest.raises(WorkflowInvalidError, match="缺少 'operator' 字段"):
+            engine.load_workflow(workflow_def)
+
+    def test_missing_params(self):
+        """测试任务缺少 params 字段"""
+        workflow_def = {
+            "tasks": [
+                {"id": "t1", "operator": "add", "depends_on": []}
+            ]
+        }
+
+        engine = MathWorkflowEngine()
+        with pytest.raises(WorkflowInvalidError, match="缺少 'params' 字段"):
+            engine.load_workflow(workflow_def)
+
+    def test_params_must_be_object(self):
+        """测试 params 必须是对象"""
+        workflow_def = {
+            "tasks": [
+                {"id": "t1", "operator": "add", "params": [], "depends_on": []}
+            ]
+        }
+
+        engine = MathWorkflowEngine()
+        with pytest.raises(WorkflowInvalidError, match="'params' 必须是对象"):
+            engine.load_workflow(workflow_def)
+
+    def test_duplicate_task_id_rejected(self):
+        """测试重复任务 id 会被拒绝"""
+        workflow_def = {
+            "tasks": [
+                {"id": "t1", "operator": "add", "params": {"a": 1, "b": 2}, "depends_on": []},
+                {"id": "t1", "operator": "add", "params": {"a": 3, "b": 4}, "depends_on": []}
+            ]
+        }
+
+        engine = MathWorkflowEngine()
+        with pytest.raises(WorkflowInvalidError, match="任务 id 重复"):
+            engine.load_workflow(workflow_def)
+
+    def test_ref_dependency_must_be_declared(self):
+        """测试 $ref 引用必须同步声明 depends_on"""
+        workflow_def = {
+            "tasks": [
+                {"id": "t1", "operator": "add", "params": {"a": 1, "b": 2}, "depends_on": []},
+                {"id": "t2", "operator": "multiply", "params": {"a": {"$ref": "t1"}, "b": 2}, "depends_on": []}
+            ]
+        }
+
+        engine = MathWorkflowEngine()
+        with pytest.raises(WorkflowInvalidError, match="未在 depends_on 中声明"):
+            engine.load_workflow(workflow_def)
+
+    def test_missing_depends_on(self):
+        """测试任务缺少 depends_on 字段"""
+        workflow_def = {
+            "tasks": [
+                {"id": "t1", "operator": "add", "params": {"a": 5, "b": 3}}
+            ]
+        }
+
+        engine = MathWorkflowEngine()
+        with pytest.raises(WorkflowInvalidError, match="缺少 'depends_on' 字段"):
+            engine.load_workflow(workflow_def)
+
+    def test_depends_on_must_be_array(self):
+        """测试 depends_on 必须是数组"""
+        workflow_def = {
+            "tasks": [
+                {"id": "t1", "operator": "add", "params": {"a": 5, "b": 3}, "depends_on": "t0"}
+            ]
+        }
+
+        engine = MathWorkflowEngine()
+        with pytest.raises(WorkflowInvalidError, match="'depends_on' 必须是数组"):
+            engine.load_workflow(workflow_def)
+
+    def test_depends_on_must_be_string_array(self):
+        """测试 depends_on 元素必须是字符串"""
+        workflow_def = {
+            "tasks": [
+                {"id": "t1", "operator": "add", "params": {"a": 5, "b": 3}, "depends_on": [1]}
+            ]
+        }
+
+        engine = MathWorkflowEngine()
+        with pytest.raises(WorkflowInvalidError, match="'depends_on' 必须是字符串数组"):
             engine.load_workflow(workflow_def)
 
     def test_circular_dependency(self):
@@ -231,10 +325,8 @@ class TestWorkflowValidation:
         }
 
         engine = MathWorkflowEngine()
-        engine.load_workflow(workflow_def)
-
-        with pytest.raises(WorkflowInvalidError, match="依赖的任务 't2' 不存在"):
-            engine.topological_sort()
+        with pytest.raises(WorkflowInvalidError, match="引用了不存在的任务 't2'"):
+            engine.load_workflow(workflow_def)
 
     def test_invalid_ref(self):
         """测试无效的参数引用"""
@@ -250,10 +342,8 @@ class TestWorkflowValidation:
         }
 
         engine = MathWorkflowEngine()
-        engine.load_workflow(workflow_def)
-
-        with pytest.raises(WorkflowInvalidError, match="未执行或不存在"):
-            engine.execute()
+        with pytest.raises(WorkflowInvalidError, match="引用了不存在的任务 't2'"):
+            engine.load_workflow(workflow_def)
 
 
 class TestTopologicalSort:

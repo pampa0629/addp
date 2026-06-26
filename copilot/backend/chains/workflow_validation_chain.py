@@ -7,11 +7,10 @@
 3. 依赖验证：检查依赖有效性和循环依赖
 4. 参数验证：检查参数名称、类型、必需性
 """
-from typing import List, Set, Dict
+from typing import List, Set, Dict, Any
 from collections import deque
 
 from models.workflow_models import Workflow, ValidationResult, Task
-from tools.develop_tools import OperatorDetailTool
 
 
 class WorkflowValidationChain:
@@ -24,7 +23,7 @@ class WorkflowValidationChain:
     3. 支持警告（非致命错误）
     """
 
-    def __init__(self, operator_detail_tool: OperatorDetailTool):
+    def __init__(self, operator_detail_tool: Any):
         """
         初始化工作流验证 Chain
 
@@ -33,18 +32,30 @@ class WorkflowValidationChain:
         """
         self.operator_detail_tool = operator_detail_tool
 
-    async def validate(self, workflow: Workflow, engine_type: str = "python_workflow") -> ValidationResult:
+    async def validate(
+        self,
+        workflow: Workflow,
+        workflow_engine_id: int | None = None
+    ) -> ValidationResult:
         """
         执行完整的工作流验证
 
         Args:
             workflow: 待验证的工作流
-            engine_type: 工作流引擎类型（python_workflow/spark_workflow/math_workflow），用于获取正确的算子定义
+            workflow_engine_id: 工作流引擎实例 ID，用于获取正确的算子定义
 
         Returns:
             ValidationResult: 验证结果（包含错误、警告、建议）
         """
-        print(f"[WorkflowValidationChain] 开始验证工作流（{len(workflow.tasks)} 个任务，引擎: {engine_type}）")
+        print(f"[WorkflowValidationChain] 开始验证工作流（{len(workflow.tasks)} 个任务，工作流引擎 ID: {workflow_engine_id}）")
+
+        if not workflow_engine_id:
+            return ValidationResult(
+                is_valid=False,
+                errors=["workflow_engine_id 是工作流算子验证必需上下文"],
+                warnings=[],
+                suggestions=["请先选择一个具备 compute.workflow 能力的工作流引擎实例"]
+            )
 
         errors = []
         warnings = []
@@ -76,9 +87,9 @@ class WorkflowValidationChain:
         errors.extend(dependency_errors)
         warnings.extend(dependency_warnings)
 
-        # 第 4 层：参数验证（异步，传递 engine_type）
+        # 第 4 层：参数验证（异步，按 workflow_engine_id 获取算子定义）
         print(f"[WorkflowValidationChain] 第 4 层：参数验证")
-        param_errors, param_warnings = await self._validate_parameters(workflow, engine_type)
+        param_errors, param_warnings = await self._validate_parameters(workflow, workflow_engine_id)
         errors.extend(param_errors)
         warnings.extend(param_warnings)
 
@@ -274,7 +285,7 @@ class WorkflowValidationChain:
         # 如果排序的节点数量少于总节点数，说明有环
         return sorted_count < len(graph)
 
-    async def _validate_parameters(self, workflow: Workflow, engine_type: str = "python_workflow") -> tuple[List[str], List[str]]:
+    async def _validate_parameters(self, workflow: Workflow, workflow_engine_id: int) -> tuple[List[str], List[str]]:
         """
         第 4 层：参数验证
 
@@ -286,7 +297,7 @@ class WorkflowValidationChain:
 
         Args:
             workflow: 待验证的工作流
-            engine_type: 工作流引擎类型（python_workflow/spark_workflow/math_workflow）
+            workflow_engine_id: 工作流引擎实例 ID
 
         Returns:
             (错误列表, 警告列表)
@@ -298,12 +309,27 @@ class WorkflowValidationChain:
         task_outputs: Dict[str, Set[str]] = {}
 
         for task in workflow.tasks:
-            # 1. 获取算子定义（传递 engine_type）
-            operator_def = await self.operator_detail_tool._arun(operator_name=task.operator, engine_type=engine_type)
+            contract_errors = self._validate_resource_contract(task)
+            errors.extend(contract_errors)
+            if contract_errors:
+                continue
+
+            # 1. 获取算子定义（按工作流引擎实例）
+            operator_def = await self.operator_detail_tool._arun(
+                operator_name=task.operator,
+                workflow_engine_id=workflow_engine_id
+            )
 
             if not operator_def:
                 errors.append(
                     f"任务 '{task.id}' 使用了未知算子 '{task.operator}'"
+                )
+                continue
+
+            execution_modes = operator_def.get("execution_modes", [])
+            if "workflow" not in execution_modes:
+                errors.append(
+                    f"任务 '{task.id}' 使用的算子 '{task.operator}' 不支持工作流编排"
                 )
                 continue
 
@@ -331,7 +357,7 @@ class WorkflowValidationChain:
                 )
 
             # 5. 记录输出（用于后续参数引用验证）
-            operator_outputs = operator_def.get("outputs", [])
+            operator_outputs = operator_def.get("output_ports", [])
             task_outputs[task.id] = {out["name"] for out in operator_outputs}
 
             # 6. 检查参数引用格式（警告级别）
@@ -346,6 +372,48 @@ class WorkflowValidationChain:
                             )
 
         return errors, warnings
+
+    def _validate_resource_contract(self, task: Task) -> List[str]:
+        errors = []
+        if task.operator not in {"load", "save"} or not task.params:
+            return errors
+
+        runtime_only_params = {"engine_id", "connection_info", "schema", "table", "path"}
+        provided_runtime_params = runtime_only_params & set(task.params)
+        if provided_runtime_params:
+            errors.append(
+                f"任务 '{task.id}' ({task.operator}) 包含运行时派生参数: {', '.join(sorted(provided_runtime_params))}；"
+                "请使用 locator 或 target_parent_locator + target_name"
+            )
+
+        if task.operator == "load":
+            source_type = task.params.get("source_type")
+            if source_type in {"nfs", "minio", "s3", "oss"}:
+                errors.append(
+                    f"任务 '{task.id}' 的 source_type 不能使用存储引擎类型 '{source_type}'，请使用 'file'"
+                )
+            if source_type in {"table", "file"} and not task.params.get("locator"):
+                errors.append(
+                    f"任务 '{task.id}' ({task.operator}) 必须使用 locator 表达源资源"
+                )
+
+        if task.operator == "save":
+            target_type = task.params.get("target_type")
+            if target_type in {"nfs", "minio", "s3", "oss"}:
+                errors.append(
+                    f"任务 '{task.id}' 的 target_type 不能使用存储引擎类型 '{target_type}'，请使用 'file'"
+                )
+            if target_type in {"table", "file"}:
+                if not task.params.get("target_parent_locator"):
+                    errors.append(
+                        f"任务 '{task.id}' ({task.operator}) 必须使用 target_parent_locator 表达目标父资源"
+                    )
+                if not task.params.get("target_name"):
+                    errors.append(
+                        f"任务 '{task.id}' ({task.operator}) 必须使用 target_name 表达目标名称"
+                    )
+
+        return errors
 
     def _is_valid_reference(self, value: str) -> bool:
         """
@@ -404,6 +472,12 @@ class WorkflowValidationChain:
             elif "未知算子" in error:
                 suggestions.append("检查算子名称是否正确，可以通过算子发现接口查看所有可用算子")
 
+            elif "运行时派生参数" in error or "locator" in error or "target_parent_locator" in error:
+                suggestions.append("工作流资源参数必须使用 locator 或 target_parent_locator + target_name，不要填写 engine_id、schema、table、path 或 connection_info")
+
+            elif "存储引擎类型" in error:
+                suggestions.append("source_type/target_type 使用访问形态 table 或 file，具体存储引擎类型由 locator 对应的 engine 决定")
+
         # 根据警告生成建议
         for warning in warnings:
             if "引用格式可能不正确" in warning:
@@ -419,6 +493,6 @@ class WorkflowValidationChain:
 
 
 # 便捷函数：创建 WorkflowValidationChain 实例
-def create_workflow_validation_chain(operator_detail_tool: OperatorDetailTool):
+def create_workflow_validation_chain(operator_detail_tool: Any):
     """创建工作流验证 Chain 实例"""
     return WorkflowValidationChain(operator_detail_tool)

@@ -2,6 +2,8 @@
 
 `common/spatial` 承载 PostGIS 空间 SQL 表达式、MVT、SRID / CRS 事实解析、WKT / WKB / EWKB 几何编码等空间数据通用工具。
 
+新增的 `geometry_batch_arrow` helper 用于承载 Arrow IPC + WKB 几何批的编解码，供工作流 direct 几何转换算子和 Transfer 批处理复用。
+
 ADDP 核心后端不提供通用 CRS transform 能力，`common/spatial` 不再内置 `cgo + PROJ` executor，也不提供面向普通预览的 CRS transform facade。普通 Manager 预览应返回源坐标 geometry 与 CRS 元数据，由前端预览层决定是否可转换和渲染。
 
 PostGIS 相关工具包括：

@@ -134,7 +134,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -158,6 +158,32 @@ const pagination = ref({
   page_size: 20,
   total: 0
 })
+
+let refreshTimer = null
+
+const hasRunningTasks = () => {
+  return Number(stats.value?.running_tasks || 0) > 0 ||
+    Number(stats.value?.last_running_tasks || 0) > 0 ||
+    tasks.value.some(isRunning)
+}
+
+const stopAutoRefresh = () => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+}
+
+const syncAutoRefresh = () => {
+  if (hasRunningTasks()) {
+    if (!refreshTimer) {
+      refreshTimer = setInterval(loadPageData, 5000)
+    }
+    return
+  }
+
+  stopAutoRefresh()
+}
 
 // 加载任务列表
 const loadTasks = async () => {
@@ -193,10 +219,15 @@ const loadStatistics = async () => {
   }
 }
 
+const loadPageData = async () => {
+  await Promise.all([loadTasks(), loadStatistics()])
+  syncAutoRefresh()
+}
+
 // 搜索
 const handleSearch = () => {
   pagination.value.page = 1
-  loadTasks()
+  loadPageData()
 }
 
 // 重置
@@ -207,12 +238,12 @@ const handleReset = () => {
 
 // 分页
 const handlePageChange = () => {
-  loadTasks()
+  loadPageData()
 }
 
 const handleSizeChange = () => {
   pagination.value.page = 1
-  loadTasks()
+  loadPageData()
 }
 
 // 创建任务
@@ -235,8 +266,7 @@ const handleExecute = async (task) => {
     await taskAPI.start(task.id)
     const message = isManualTask(task) ? t('transfer.taskList.executeSubmitted') : t('transfer.taskList.runOnceSubmitted')
     ElMessage.success(message)
-    await loadTasks()
-    await loadStatistics()
+    await loadPageData()
   } catch (error) {
     console.error('执行任务失败:', error)
   }
@@ -252,8 +282,7 @@ const handleStop = async (task) => {
     })
     await taskAPI.stop(task.id)
     ElMessage.success(t('transfer.taskList.stopped'))
-    await loadTasks()
-    await loadStatistics()
+    await loadPageData()
   } catch (error) {
     if (error !== 'cancel') {
       console.error('停止任务失败:', error)
@@ -271,8 +300,7 @@ const handlePause = async (task) => {
     })
     await taskAPI.pause(task.id)
     ElMessage.success(t('transfer.taskList.paused'))
-    await loadTasks()
-    await loadStatistics()
+    await loadPageData()
   } catch (error) {
     if (error !== 'cancel') {
       console.error('暂停任务失败:', error)
@@ -285,8 +313,7 @@ const handleResume = async (task) => {
   try {
     await taskAPI.resume(task.id)
     ElMessage.success(t('transfer.taskList.resumed'))
-    await loadTasks()
-    await loadStatistics()
+    await loadPageData()
   } catch (error) {
     console.error('启用任务失败:', error)
   }
@@ -302,8 +329,7 @@ const handleDelete = async (task) => {
     })
     await taskAPI.delete(task.id)
     ElMessage.success(t('transfer.taskList.deleted'))
-    await loadTasks()
-    await loadStatistics()
+    await loadPageData()
   } catch (error) {
     if (error !== 'cancel') {
       console.error('删除任务失败:', error)
@@ -320,14 +346,11 @@ const canDeleteManual = (task) => !isRunning(task)
 
 // 初始化
 onMounted(() => {
-  loadTasks()
-  loadStatistics()
+  loadPageData()
+})
 
-  // 每5秒刷新一次
-  setInterval(() => {
-    loadTasks()
-    loadStatistics()
-  }, 5000)
+onBeforeUnmount(() => {
+  stopAutoRefresh()
 })
 </script>
 

@@ -656,7 +656,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建新的存储引擎连接 | Create a new storage engine connection",
+                "description": "创建新的引擎连接；声明 addp.workflow/v1 的扩展工作流引擎会在保存前探测 /health 和 /api/operators | Create a new engine connection; addp.workflow/v1 workflow extensions are probed before save",
                 "consumes": [
                     "application/json"
                 ],
@@ -726,8 +726,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineConnectionTestResponse"
                         }
                     },
                     "400": {
@@ -990,8 +989,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineConnectionTestResponse"
                         }
                     },
                     "400": {
@@ -2148,6 +2146,164 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_common_models.CapabilitiesView": {
+            "type": "object",
+            "properties": {
+                "json_view": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_common_models.CapabilityJSONNode"
+                    }
+                },
+                "sections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_common_models.CapabilityViewSection"
+                    }
+                },
+                "summary": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_common_models.CapabilityViewBadge"
+                    }
+                }
+            }
+        },
+        "github_com_addp_common_models.CapabilityJSONNode": {
+            "type": "object",
+            "properties": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_common_models.CapabilityJSONNode"
+                    }
+                },
+                "key": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_common_models.CapabilityPathNode": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "label_key": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_common_models.CapabilityViewTag"
+                    }
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_common_models.CapabilityViewBadge": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "label_key": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                },
+                "value_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_common_models.CapabilityViewItem": {
+            "type": "object",
+            "properties": {
+                "description_key": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label_key": {
+                    "type": "string"
+                },
+                "reason_key": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_common_models.CapabilityViewTag"
+                    }
+                },
+                "value": {
+                    "type": "string"
+                },
+                "value_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_common_models.CapabilityViewSection": {
+            "type": "object",
+            "properties": {
+                "description_key": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_common_models.CapabilityViewItem"
+                    }
+                },
+                "path": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_common_models.CapabilityPathNode"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "title_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_common_models.CapabilityViewTag": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "label_key": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_common_models.ConnectionInfo": {
             "type": "object",
             "additionalProperties": true
@@ -2356,155 +2512,20 @@ const docTemplate = `{
                 "json_view": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityJSONNode"
+                        "$ref": "#/definitions/github_com_addp_common_models.CapabilityJSONNode"
                     }
                 },
                 "sections": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityViewSection"
+                        "$ref": "#/definitions/github_com_addp_common_models.CapabilityViewSection"
                     }
                 },
                 "summary": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityViewBadge"
+                        "$ref": "#/definitions/github_com_addp_common_models.CapabilityViewBadge"
                     }
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.CapabilityJSONNode": {
-            "type": "object",
-            "properties": {
-                "children": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityJSONNode"
-                    }
-                },
-                "key": {
-                    "type": "string"
-                },
-                "value": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.CapabilityPathNode": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string"
-                },
-                "label_key": {
-                    "type": "string"
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityViewTag"
-                    }
-                },
-                "value": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.CapabilityViewBadge": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string"
-                },
-                "label_key": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "value": {
-                    "type": "string"
-                },
-                "value_key": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.CapabilityViewItem": {
-            "type": "object",
-            "properties": {
-                "description_key": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "label_key": {
-                    "type": "string"
-                },
-                "reason_key": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityViewTag"
-                    }
-                },
-                "value": {
-                    "type": "string"
-                },
-                "value_key": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.CapabilityViewSection": {
-            "type": "object",
-            "properties": {
-                "description_key": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityViewItem"
-                    }
-                },
-                "path": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.CapabilityPathNode"
-                    }
-                },
-                "status": {
-                    "type": "string"
-                },
-                "title_key": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.CapabilityViewTag": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string"
-                },
-                "label_key": {
-                    "type": "string"
-                },
-                "type": {
-                    "type": "string"
-                },
-                "value": {
-                    "type": "string"
                 }
             }
         },
@@ -2739,6 +2760,14 @@ const docTemplate = `{
                     "description": "能力声明（JSONB）",
                     "type": "string"
                 },
+                "capabilities_view": {
+                    "description": "System 后端生成的能力展示模型",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_common_models.CapabilitiesView"
+                        }
+                    ]
+                },
                 "check_message": {
                     "description": "检测结果消息（错误信息等）",
                     "type": "string"
@@ -2765,7 +2794,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "engine_type": {
-                    "description": "引擎类型（postgresql, mysql, python_workflow等）",
+                    "description": "引擎类型（postgresql, mysql, acme_geo_workflow 等）",
                     "type": "string"
                 },
                 "id": {
@@ -2792,6 +2821,39 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineConnectionProbe": {
+            "type": "object",
+            "properties": {
+                "operators_count": {
+                    "type": "integer",
+                    "example": 8
+                },
+                "runtime_protocol": {
+                    "type": "string",
+                    "example": "addp.workflow/v1"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineConnectionTestResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "workflow runtime health check failed"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "连接成功"
+                },
+                "probe": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.EngineConnectionProbe"
+                },
+                "success": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
@@ -2862,7 +2924,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "engine_type": {
-                    "description": "引擎类型（postgresql, mysql, python_workflow等）",
+                    "description": "引擎类型（postgresql, mysql, acme_geo_workflow 等）",
                     "type": "string"
                 },
                 "id": {

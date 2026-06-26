@@ -18,40 +18,6 @@ func NewDuckDBHandler(svc *service.DuckDBService) *DuckDBHandler {
 	return &DuckDBHandler{svc: svc}
 }
 
-// FederatedQueryRequest 联邦查询请求
-type FederatedQueryRequest struct {
-	SQL     string `json:"sql" binding:"required"`
-	Timeout int    `json:"timeout"` // 超时秒数，默认 30
-}
-
-// ExecuteFederatedQuery 执行联邦查询
-// @Summary 执行联邦查询
-// @Description 通过 DuckDB 执行跨源联邦查询（对象存储表 + 关系型数据库）
-// @Tags DuckDB
-// @Accept json
-// @Produce json
-// @Param request body FederatedQueryRequest true "查询请求"
-// @Success 200 {object} service.FederatedQueryResult
-// @Router /duckdb/query [post]
-func (h *DuckDBHandler) ExecuteFederatedQuery(c *gin.Context) {
-	tenantID, _ := c.Get(commonAuth.ContextTenantIDKey)
-	tid, _ := tenantID.(uint)
-
-	var req FederatedQueryRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	result, err := h.svc.ExecuteQuery(c.Request.Context(), tid, req.SQL, req.Timeout)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, result)
-}
-
 // TestConnection 测试 DuckDB 引擎可用性
 // @Summary 测试 DuckDB 连接
 // @Description 执行 SELECT 1 验证 DuckDB 引擎可用

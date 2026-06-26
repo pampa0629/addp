@@ -46,7 +46,7 @@ type QuickViewOptimizationTask struct {
 }
 
 func (QuickViewOptimizationTask) TableName() string {
-	return "manager.quick_view_optimization_tasks"
+	return "manager.vector_quick_view_target_tasks"
 }
 
 // QuickViewOptimization 快显性能优化结果状态。
@@ -88,5 +88,5 @@ type QuickViewOptimization struct {
 }
 
 func (QuickViewOptimization) TableName() string {
-	return "manager.quick_view_optimization"
+	return "manager.vector_quick_view_targets"
 }

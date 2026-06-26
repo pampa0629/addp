@@ -130,7 +130,7 @@ class OperatorSelectionChain:
         self,
         query: str,
         data_source_info: Optional[str] = None,
-        engine_type: str = "python_workflow"  # 工作流引擎类型
+        workflow_engine_id: Optional[int] = None
     ) -> List[str]:
         """
         选择相关算子
@@ -138,7 +138,7 @@ class OperatorSelectionChain:
         Args:
             query: 用户查询
             data_source_info: 数据源信息（可选）
-            engine_type: 工作流引擎类型（python_workflow/spark_workflow/math_workflow），只获取该引擎的算子
+            workflow_engine_id: 工作流引擎实例 ID，用于获取该实例的算子
 
         Returns:
             选中的算子名称列表
@@ -146,13 +146,16 @@ class OperatorSelectionChain:
         print(f"\n{'='*60}")
         print(f"[OperatorSelectionChain] 开始选择算子")
         print(f"[OperatorSelectionChain] 用户查询: {query}")
-        print(f"[OperatorSelectionChain] 引擎类型: {engine_type}")
+        print(f"[OperatorSelectionChain] 工作流引擎 ID: {workflow_engine_id}")
         print(f"{'='*60}\n")
 
         try:
-            # 1. 获取指定引擎的算子（使用缓存）
-            all_operators = await self.operator_tool._arun(engine_type=engine_type)
-            print(f"[OperatorSelectionChain] 获取到 {len(all_operators)} 个算子（引擎: {engine_type}）")
+            if not workflow_engine_id:
+                raise ValueError("workflow_engine_id 是算子发现必需上下文")
+
+            # 1. 获取指定工作流引擎实例的算子（使用缓存）
+            all_operators = await self.operator_tool._arun(workflow_engine_id=workflow_engine_id)
+            print(f"[OperatorSelectionChain] 获取到 {len(all_operators)} 个算子（工作流引擎 ID: {workflow_engine_id}）")
 
             if not all_operators:
                 print(f"[OperatorSelectionChain] ⚠️ 没有可用的算子")

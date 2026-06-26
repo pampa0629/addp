@@ -37,6 +37,17 @@ func (plugin *Plugin) Descriptor() format.FormatDescriptor {
 	}
 }
 
+func (plugin *Plugin) SpatialEncodingCapability() format.SpatialEncodingCapability {
+	return format.SpatialEncodingCapability{
+		GeometryReadEncodings:  []format.GeometryEncoding{format.GeometryEncodingShapefileShape, format.GeometryEncodingWKT, format.GeometryEncodingWKB, format.GeometryEncodingEWKB},
+		GeometryWriteEncodings: []format.GeometryEncoding{format.GeometryEncodingShapefileShape, format.GeometryEncodingWKT, format.GeometryEncodingWKB, format.GeometryEncodingEWKB},
+		DefaultReadEncoding:    format.GeometryEncodingWKT,
+		DefaultWriteEncoding:   format.GeometryEncodingWKT,
+		NativeReadEncoding:     format.GeometryEncodingShapefileShape,
+		NativeWriteEncoding:    format.GeometryEncodingShapefileShape,
+	}
+}
+
 func (plugin *Plugin) RelatedRefSpecs() []format.RelatedRefSpec {
 	return RelatedRefSpecs()
 }

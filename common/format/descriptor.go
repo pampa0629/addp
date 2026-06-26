@@ -11,6 +11,7 @@ import (
 
 type FormatIdentification struct {
 	Extensions        []string `json:"extensions,omitempty"`
+	FileNames         []string `json:"file_names,omitempty"`
 	MimeTypes         []string `json:"mime_types,omitempty"`
 	ContentSignatures []string `json:"content_signatures,omitempty"`
 }
@@ -152,6 +153,7 @@ func normalizeFormatDescriptor(descriptor FormatDescriptor) FormatDescriptor {
 	}
 	descriptor.Layouts = NormalizeLayouts(descriptor.Layouts)
 	descriptor.Identification.Extensions = normalizedFormatStrings(descriptor.Identification.Extensions, true)
+	descriptor.Identification.FileNames = normalizedFileNames(descriptor.Identification.FileNames)
 	descriptor.Identification.MimeTypes = normalizedFormatStrings(descriptor.Identification.MimeTypes, false)
 	descriptor.Identification.ContentSignatures = normalizedFormatStrings(descriptor.Identification.ContentSignatures, false)
 	return descriptor
@@ -180,10 +182,35 @@ func normalizedFormatStrings(values []string, isExtension bool) []string {
 	return normalized
 }
 
+func normalizedFileNames(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	return normalized
+}
+
 func recordFormatIdentificationConflicts(conflicts *[]FormatConflictDiagnostic, existing, candidate FormatDescriptor) {
 	for _, extension := range candidate.Identification.Extensions {
 		if containsFormatString(existing.Identification.Extensions, extension) {
 			*conflicts = append(*conflicts, formatConflictDiagnostic("extension", extension, existing, candidate, false))
+		}
+	}
+	for _, fileName := range candidate.Identification.FileNames {
+		if containsFormatString(existing.Identification.FileNames, fileName) {
+			*conflicts = append(*conflicts, formatConflictDiagnostic("file_name", fileName, existing, candidate, false))
 		}
 	}
 	for _, mimeType := range candidate.Identification.MimeTypes {
@@ -219,6 +246,7 @@ func containsFormatString(values []string, target string) bool {
 func cloneFormatDescriptor(descriptor FormatDescriptor) FormatDescriptor {
 	descriptor.Layouts = append([]string(nil), descriptor.Layouts...)
 	descriptor.Identification.Extensions = append([]string(nil), descriptor.Identification.Extensions...)
+	descriptor.Identification.FileNames = append([]string(nil), descriptor.Identification.FileNames...)
 	descriptor.Identification.MimeTypes = append([]string(nil), descriptor.Identification.MimeTypes...)
 	descriptor.Identification.ContentSignatures = append([]string(nil), descriptor.Identification.ContentSignatures...)
 	return descriptor

@@ -51,14 +51,24 @@
             <el-icon><List /></el-icon>
             <span>{{ t('manager.layout.vectorizationTasks') }}</span>
           </el-menu-item>
-          <el-menu-item index="/tile-cache">
-            <el-icon><Grid /></el-icon>
-            <span>{{ t('manager.layout.tileCache') }}</span>
-          </el-menu-item>
-          <el-menu-item index="/quick-view-optimization">
-            <el-icon><MagicStick /></el-icon>
-            <span>{{ t('manager.layout.quickViewOptimization') }}</span>
-          </el-menu-item>
+          <el-sub-menu index="/spatial-quick-view">
+            <template #title>
+              <el-icon><MapLocation /></el-icon>
+              <span>{{ t('manager.layout.spatialQuickView') }}</span>
+            </template>
+            <el-menu-item index="/spatial-quick-view/vector-optimization">
+              <el-icon><MagicStick /></el-icon>
+              <span>{{ t('manager.layout.vectorQuickViewOptimization') }}</span>
+            </el-menu-item>
+            <el-menu-item index="/spatial-quick-view/vector-tile-cache">
+              <el-icon><Grid /></el-icon>
+              <span>{{ t('manager.layout.vectorTileCache') }}</span>
+            </el-menu-item>
+            <el-menu-item index="/spatial-quick-view/raster-cog">
+              <el-icon><Picture /></el-icon>
+              <span>{{ t('manager.layout.rasterCOG') }}</span>
+            </el-menu-item>
+          </el-sub-menu>
         </el-menu>
       </el-aside>
 
@@ -84,7 +94,9 @@ import {
   Document,
   List,
   Grid,
-  MagicStick
+  MagicStick,
+  Picture,
+  MapLocation
 } from '@element-plus/icons-vue'
 
 const route = useRoute()

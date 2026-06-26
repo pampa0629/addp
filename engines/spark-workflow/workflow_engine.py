@@ -14,6 +14,68 @@ from spark_connector import get_spark_connector
 logger = logging.getLogger(__name__)
 
 
+class WorkflowInvalidError(Exception):
+    """工作流定义无效错误"""
+    pass
+
+
+def validate_workflow_def(workflow_def: Dict[str, Any]):
+    """校验 addp.workflow/v1 工作流定义。"""
+    if not isinstance(workflow_def, dict) or 'tasks' not in workflow_def:
+        raise WorkflowInvalidError("工作流定义缺少 'tasks' 字段")
+    if not isinstance(workflow_def['tasks'], list) or len(workflow_def['tasks']) == 0:
+        raise WorkflowInvalidError("工作流定义中的 'tasks' 必须是非空数组")
+
+    task_ids = set()
+    for task in workflow_def['tasks']:
+        if 'id' not in task:
+            raise WorkflowInvalidError("任务定义缺少 'id' 字段")
+        if not isinstance(task['id'], str) or not task['id'].strip():
+            raise WorkflowInvalidError("任务 id 必须是非空字符串")
+        if task['id'] in task_ids:
+            raise WorkflowInvalidError(f"任务 id 重复: {task['id']}")
+        task_ids.add(task['id'])
+        if 'operator' not in task:
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 缺少 'operator' 字段")
+        if 'params' not in task:
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 缺少 'params' 字段")
+        if not isinstance(task['params'], dict):
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 的 'params' 必须是对象")
+        if 'depends_on' not in task:
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 缺少 'depends_on' 字段")
+        if not isinstance(task['depends_on'], list):
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 的 'depends_on' 必须是数组")
+        if not all(isinstance(dep, str) for dep in task['depends_on']):
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 的 'depends_on' 必须是字符串数组")
+        if len(set(task['depends_on'])) != len(task['depends_on']):
+            raise WorkflowInvalidError(f"任务 '{task['id']}' 的 depends_on 包含重复依赖")
+
+    for task in workflow_def['tasks']:
+        dependencies = set(task['depends_on'])
+        for ref_task_id in _collect_workflow_refs(task['params']):
+            if ref_task_id not in task_ids:
+                raise WorkflowInvalidError(f"任务 '{task['id']}' 引用了不存在的任务 '{ref_task_id}'")
+            if ref_task_id not in dependencies:
+                raise WorkflowInvalidError(f"任务 '{task['id']}' 引用了任务 '{ref_task_id}' 但未在 depends_on 中声明")
+
+
+def _collect_workflow_refs(value: Any) -> List[str]:
+    refs = []
+    if isinstance(value, dict):
+        if "$ref" in value:
+            ref = value["$ref"]
+            if not isinstance(ref, str) or not ref.strip():
+                raise WorkflowInvalidError("$ref 必须是非空字符串")
+            refs.append(ref.strip())
+            return refs
+        for item in value.values():
+            refs.extend(_collect_workflow_refs(item))
+    elif isinstance(value, list):
+        for item in value:
+            refs.extend(_collect_workflow_refs(item))
+    return refs
+
+
 class SparkWorkflowEngine:
     """
     Spark 工作流引擎
@@ -38,7 +100,7 @@ class SparkWorkflowEngine:
 
         logger.info(f"SparkWorkflowEngine initialized for engine {engine_id}")
 
-    def add_task(self, task_id: str, operator: str, params: Dict[str, Any], depends_on: List[str] = None):
+    def add_task(self, task_id: str, operator: str, params: Dict[str, Any], depends_on: List[str]):
         """
         添加任务节点
 
@@ -51,16 +113,14 @@ class SparkWorkflowEngine:
         self.tasks[task_id] = {
             'operator': operator,
             'params': params,
-            'depends_on': depends_on or []
+            'depends_on': depends_on
         }
 
     def load_workflow(self, workflow_def: Dict[str, Any]):
         """
         从工作流定义加载任务
 
-        支持两种格式:
-
-        格式 1 (数组格式):
+        标准格式:
             {
                 "tasks": [
                     {
@@ -72,41 +132,18 @@ class SparkWorkflowEngine:
                 ]
             }
 
-        格式 2 (Map 格式):
-            {
-                "step1": {
-                    "operator": "load",
-                    "inputs": {"source_type": "table", ...}
-                },
-                "step2": {
-                    "operator": "st_buffer",
-                    "inputs": {"input_df": {"$ref": "step1"}, "distance": 100}
-                }
-            }
-
         Args:
             workflow_def: 工作流定义
         """
-        # 格式 1: 数组格式 {"tasks": [...]}
-        if 'tasks' in workflow_def:
-            for task in workflow_def.get('tasks', []):
-                self.add_task(
-                    task_id=task['id'],
-                    operator=task['operator'],
-                    params=task.get('params', {}),
-                    depends_on=task.get('depends_on', [])
-                )
-        # 格式 2: Map 格式 {"step1": {...}, "step2": {...}}
-        else:
-            for task_id, task_def in workflow_def.items():
-                # 将 inputs 转换为 params (保持兼容)
-                params = task_def.get('inputs', task_def.get('params', {}))
-                self.add_task(
-                    task_id=task_id,
-                    operator=task_def['operator'],
-                    params=params,
-                    depends_on=task_def.get('depends_on', [])
-                )
+        validate_workflow_def(workflow_def)
+
+        for task in workflow_def['tasks']:
+            self.add_task(
+                task_id=task['id'],
+                operator=task['operator'],
+                params=task['params'],
+                depends_on=task['depends_on']
+            )
 
     def topological_sort(self) -> List[str]:
         """
@@ -123,7 +160,7 @@ class SparkWorkflowEngine:
         for task_id, task in self.tasks.items():
             for dep in task['depends_on']:
                 if dep not in in_degree:
-                    raise ValueError(f"Task {task_id} depends on unknown task {dep}")
+                    raise WorkflowInvalidError(f"任务 '{task_id}' 依赖的任务 '{dep}' 不存在")
                 in_degree[task_id] += 1
 
         # 找出所有入度为 0 的节点
@@ -143,7 +180,7 @@ class SparkWorkflowEngine:
 
         # 检查是否有环
         if len(sorted_tasks) != len(self.tasks):
-            raise ValueError("检测到循环依赖")
+            raise WorkflowInvalidError("工作流包含循环依赖")
 
         return sorted_tasks
 
@@ -296,6 +333,7 @@ class SparkWorkflowEngine:
         return {
             "status": "success",
             "final_result": final_result,
+            "all_results": self.results,
             "task_order": self.task_order,
             "message": f"Workflow completed successfully. Executed {len(self.task_order)} tasks."
         }
@@ -362,9 +400,11 @@ def execute_workflow(engine_id: int, workflow_def: Dict[str, Any], input_data: D
                 "message": "..."
             }
     """
-    engine = SparkWorkflowEngine(engine_id)
-
     try:
+        validate_workflow_def(workflow_def)
+
+        engine = SparkWorkflowEngine(engine_id)
+
         # 加载工作流
         engine.load_workflow(workflow_def)
 
@@ -372,6 +412,14 @@ def execute_workflow(engine_id: int, workflow_def: Dict[str, Any], input_data: D
         result = engine.run(input_data)
 
         return result
+
+    except WorkflowInvalidError as e:
+        logger.error(f"Workflow validation failed: {e}", exc_info=True)
+        return {
+            "status": "failed",
+            "error_code": "WORKFLOW_INVALID",
+            "error": str(e)
+        }
 
     except Exception as e:
         logger.error(f"Workflow execution failed: {e}", exc_info=True)

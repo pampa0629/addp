@@ -4,56 +4,78 @@ Python Workflow Engine Test Script
 测试工作流引擎的核心功能
 """
 
-import json
 import sys
 
 def test_imports():
     """测试依赖导入"""
     print("=== 测试 1: 依赖导入 ===")
-    try:
-        import geopandas as gpd
-        import shapely
-        from flask import Flask
-        print("✅ 所有依赖导入成功")
-        print(f"  - geopandas: {gpd.__version__}")
-        print(f"  - shapely: {shapely.__version__}")
-        return True
-    except ImportError as e:
-        print(f"❌ 导入失败: {e}")
-        return False
+    import geopandas as gpd
+    import shapely
+    from flask import Flask
+
+    assert Flask is not None
+    assert gpd.__version__
+    assert shapely.__version__
 
 def test_operators():
     """测试算子函数"""
     print("\n=== 测试 2: 算子库 ===")
-    try:
-        from operators import list_operators, get_operator
-        operators = list_operators()
-        print(f"✅ 成功加载 {len(operators)} 个空间算子")
+    from operators import list_operators, get_operator
 
-        # 测试几个关键算子
-        categories = {}
-        for name, meta in operators.items():
-            cat = meta['category']
-            categories[cat] = categories.get(cat, 0) + 1
+    operators = list_operators()
+    operator_names = {operator["name"] for operator in operators}
+    categories = {}
+    for meta in operators:
+        cat = meta["category"]
+        categories[cat] = categories.get(cat, 0) + 1
 
-        print("算子分类统计:")
-        for cat, count in categories.items():
-            print(f"  - {cat}: {count} 个")
-
-        return True
-    except Exception as e:
-        print(f"❌ 算子测试失败: {e}")
-        return False
+    assert len(operators) >= 40
+    assert {"buffer", "load", "save", "get_area"}.issubset(operator_names)
+    assert len(categories) >= 4
+    assert get_operator("buffer") is not None
 
 def test_workflow_engine():
     """测试工作流引擎"""
     print("\n=== 测试 3: 工作流引擎 ===")
-    try:
-        from workflow_engine import execute_workflow
+    from workflow_engine import execute_workflow
 
-        # 测试简单的缓冲区工作流
-        workflow_def = {
-            "tasks": [{
+    # 测试简单的缓冲区工作流
+    workflow_def = {
+        "tasks": [{
+            "id": "t1",
+            "operator": "buffer",
+            "params": {
+                "input_gdf": {
+                    "type": "FeatureCollection",
+                    "features": [{
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [116.404, 39.915]
+                        },
+                        "properties": {"name": "Beijing"}
+                    }]
+                },
+                "distance": 0.01
+            },
+            "depends_on": []
+        }]
+    }
+
+    result = execute_workflow(workflow_def)
+
+    assert result["status"] == "success", result.get("error")
+    assert result["final_result"]
+
+def test_dag_sorting():
+    """测试 DAG 拓扑排序"""
+    print("\n=== 测试 4: DAG 拓扑排序 ===")
+    from workflow_engine import execute_workflow
+
+    # 测试复杂依赖链: t1 -> t2 -> t3
+    workflow_def = {
+        "tasks": [
+            {
                 "id": "t1",
                 "operator": "buffer",
                 "params": {
@@ -61,97 +83,138 @@ def test_workflow_engine():
                         "type": "FeatureCollection",
                         "features": [{
                             "type": "Feature",
-                            "geometry": {
-                                "type": "Point",
-                                "coordinates": [116.404, 39.915]
-                            },
+                            "geometry": {"type": "Point", "coordinates": [116.404, 39.915]},
                             "properties": {"name": "Beijing"}
                         }]
                     },
                     "distance": 0.01
                 },
                 "depends_on": []
-            }]
-        }
+            },
+            {
+                "id": "t2",
+                "operator": "centroid",
+                "params": {
+                    "input_gdf": {"$ref": "t1"}
+                },
+                "depends_on": ["t1"]
+            },
+            {
+                "id": "t3",
+                "operator": "get_area",
+                "params": {
+                    "input_gdf": {"$ref": "t2"}
+                },
+                "depends_on": ["t2"]
+            }
+        ]
+    }
 
-        result = execute_workflow(workflow_def)
+    result = execute_workflow(workflow_def)
 
-        if result['status'] == 'success':
-            print("✅ 工作流执行成功")
-            print(f"  - 状态: {result['status']}")
-            print(f"  - 结果类型: GeoJSON")
-            print(f"  - 结果长度: {len(result['final_result'])} 字符")
-            return True
-        else:
-            print(f"❌ 工作流执行失败: {result.get('error')}")
-            return False
+    assert result["status"] == "success", result.get("error")
+    assert len(result["logs"]) >= 3
 
-    except Exception as e:
-        print(f"❌ 工作流引擎测试失败: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+def test_workflow_engine_json_result():
+    """测试非 GeoDataFrame 的结构化 JSON 输出"""
+    print("\n=== 测试 5: JSON 结果输出 ===")
+    import json
+    import operators
+    from workflow_engine import execute_workflow
 
-def test_dag_sorting():
-    """测试 DAG 拓扑排序"""
-    print("\n=== 测试 4: DAG 拓扑排序 ===")
+    operators.OPERATORS["json_facts"] = {
+        "function": lambda **_: {"status": "success", "profile": "cog", "width": 256}
+    }
     try:
-        from workflow_engine import execute_workflow
+        result = execute_workflow({
+            "tasks": [{
+                "id": "facts",
+                "operator": "json_facts",
+                "params": {},
+                "depends_on": []
+            }]
+        })
+    finally:
+        operators.OPERATORS.pop("json_facts", None)
 
-        # 测试复杂依赖链: t1 → t2 → t3
-        workflow_def = {
+    assert result["status"] == "success", result.get("error")
+    facts = json.loads(result["final_result"])
+    assert facts["profile"] == "cog"
+    assert facts["width"] == 256
+
+def test_workflow_definition_requires_params_object_and_string_dependencies():
+    """测试工作流任务结构严格遵循 addp.workflow/v1。"""
+    from workflow_engine import PythonWorkflowEngine, WorkflowInvalidError
+
+    engine = PythonWorkflowEngine()
+    try:
+        engine.load_workflow({
+            "tasks": [{
+                "id": "invalid_params",
+                "operator": "buffer",
+                "params": [],
+                "depends_on": []
+            }]
+        })
+        raise AssertionError("expected invalid params to be rejected")
+    except WorkflowInvalidError as exc:
+        assert "'params' 必须是对象" in str(exc)
+
+    engine = PythonWorkflowEngine()
+    try:
+        engine.load_workflow({
+            "tasks": [{
+                "id": "invalid_dep",
+                "operator": "buffer",
+                "params": {},
+                "depends_on": [1]
+            }]
+        })
+        raise AssertionError("expected invalid depends_on to be rejected")
+    except WorkflowInvalidError as exc:
+        assert "'depends_on' 必须是字符串数组" in str(exc)
+
+    engine = PythonWorkflowEngine()
+    try:
+        engine.load_workflow({
             "tasks": [
-                {
-                    "id": "t1",
-                    "operator": "buffer",
-                    "params": {
-                        "input_gdf": {
-                            "type": "FeatureCollection",
-                            "features": [{
-                                "type": "Feature",
-                                "geometry": {"type": "Point", "coordinates": [116.404, 39.915]},
-                                "properties": {"name": "Beijing"}
-                            }]
-                        },
-                        "distance": 0.01
-                    },
-                    "depends_on": []
-                },
-                {
-                    "id": "t2",
-                    "operator": "centroid",
-                    "params": {
-                        "input_gdf": {"$ref": "t1"}
-                    },
-                    "depends_on": ["t1"]
-                },
-                {
-                    "id": "t3",
-                    "operator": "get_area",
-                    "params": {
-                        "input_gdf": {"$ref": "t2"}
-                    },
-                    "depends_on": ["t2"]
-                }
+                {"id": "a", "operator": "buffer", "params": {}, "depends_on": []},
+                {"id": "a", "operator": "buffer", "params": {}, "depends_on": []},
             ]
-        }
+        })
+        raise AssertionError("expected duplicate task id to be rejected")
+    except WorkflowInvalidError as exc:
+        assert "任务 id 重复" in str(exc)
 
-        result = execute_workflow(workflow_def)
+    engine = PythonWorkflowEngine()
+    try:
+        engine.load_workflow({
+            "tasks": [
+                {"id": "a", "operator": "buffer", "params": {}, "depends_on": []},
+                {"id": "b", "operator": "centroid", "params": {"input_gdf": {"$ref": "a"}}, "depends_on": []},
+            ]
+        })
+        raise AssertionError("expected undeclared ref dependency to be rejected")
+    except WorkflowInvalidError as exc:
+        assert "未在 depends_on 中声明" in str(exc)
 
-        if result['status'] == 'success':
-            print("✅ DAG 拓扑排序成功")
-            print(f"  - 执行了 3 个任务")
-            print(f"  - 依赖链: t1 → t2 → t3")
-            return True
-        else:
-            print(f"❌ DAG 测试失败: {result.get('error')}")
-            return False
+def test_direct_operator_json_result():
+    """测试 direct 算子支持非 GeoDataFrame 的结构化 JSON 输出"""
+    print("\n=== 测试 6: direct JSON 结果输出 ===")
+    import operators
+    from workflow_engine import execute_single_operator
 
-    except Exception as e:
-        print(f"❌ DAG 测试失败: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+    operators.OPERATORS["direct_json_facts"] = {
+        "function": lambda **_: {"status": "success", "profile": "cog", "width": 256}
+    }
+    try:
+        result = execute_single_operator("direct_json_facts", {})
+    finally:
+        operators.OPERATORS.pop("direct_json_facts", None)
+
+    assert result["status"] == "success", result.get("error")
+    assert result["result"]["profile"] == "cog"
+    assert result["result"]["width"] == 256
 
 def main():
     """运行所有测试"""
@@ -161,13 +224,17 @@ def main():
         test_imports,
         test_operators,
         test_workflow_engine,
-        test_dag_sorting
+        test_dag_sorting,
+        test_workflow_engine_json_result,
+        test_workflow_definition_requires_params_object_and_string_dependencies,
+        test_direct_operator_json_result
     ]
 
     results = []
     for test_func in tests:
         try:
-            results.append(test_func())
+            test_func()
+            results.append(True)
         except Exception as e:
             print(f"❌ 测试异常: {e}")
             results.append(False)

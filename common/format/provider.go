@@ -53,6 +53,25 @@ type AccessIndexProvider interface {
 	SupportsAccessIndex() bool
 }
 
+// SpatialEncodingCapability 描述空间 table reader / writer 对 geometry row value 编码的支持。
+//
+// Format 只声明自身能读写哪些编码以及本格式的原生编码；Transfer planner
+// 负责结合 source、target、transform 和 CRS 约束选择实际使用的编码。
+type SpatialEncodingCapability struct {
+	GeometryReadEncodings  []GeometryEncoding
+	GeometryWriteEncodings []GeometryEncoding
+	DefaultReadEncoding    GeometryEncoding
+	DefaultWriteEncoding   GeometryEncoding
+	NativeReadEncoding     GeometryEncoding
+	NativeWriteEncoding    GeometryEncoding
+}
+
+// SpatialEncodingCapabilityProvider 表示格式插件能声明空间 geometry row 编码能力。
+type SpatialEncodingCapabilityProvider interface {
+	FormatPlugin
+	SpatialEncodingCapability() SpatialEncodingCapability
+}
+
 // ContentReader 是内容读取能力的标记接口。
 //
 // Reader 命名用于区分“读取内容数据”和“提供元数据”的 provider。

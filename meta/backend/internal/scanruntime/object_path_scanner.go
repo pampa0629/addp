@@ -77,6 +77,7 @@ func scanObjectCatalogPaths(
 ) (scanflow.DispatchResult, error) {
 	bucketNodes := make(map[string]*models.MetaNode)
 	processedBuckets := make(map[string]bool)
+	processedPrefixes := make(map[string]map[string]bool)
 	nodeStats := make(map[uint]*scanflow.ObjectCatalogNodeAggregate)
 	scannedFingerprints := make(map[string]bool)
 
@@ -154,6 +155,11 @@ func scanObjectCatalogPaths(
 				}
 			}
 			processedBuckets[bucketName] = true
+		} else if target.Object == "" {
+			if processedPrefixes[bucketName] == nil {
+				processedPrefixes[bucketName] = map[string]bool{}
+			}
+			processedPrefixes[bucketName][strings.Trim(prefix, "/")] = true
 		}
 
 		if len(resources) == 0 {
@@ -195,6 +201,19 @@ func scanObjectCatalogPaths(
 			}
 			if _, err := repo.SoftDeleteObjectMetaItemsMissingFingerprints(tenantID, engineID, bucketName, scannedFingerprints); err != nil {
 				continue
+			}
+		}
+		for bucketName, prefixes := range processedPrefixes {
+			if processedBuckets[bucketName] || bucketNodes[bucketName] == nil {
+				continue
+			}
+			for prefix := range prefixes {
+				if prefix == "" {
+					continue
+				}
+				if _, err := repo.SoftDeleteObjectMetaItemsMissingFingerprintsInPrefix(tenantID, engineID, bucketName, prefix, scannedFingerprints); err != nil {
+					continue
+				}
 			}
 		}
 	}

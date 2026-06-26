@@ -26,6 +26,8 @@ type TaskProviderHandler struct {
 	embeddingTaskSvc             *service.EmbeddingTaskService
 	tileCacheTaskSvc             *service.TileCacheTaskService
 	quickViewOptimizationTaskSvc *service.QuickViewOptimizationTaskService
+	rasterCOGTaskSvc             *service.RasterCOGTaskService
+	rasterMosaicTaskSvc          *service.RasterMosaicTaskService
 	taskExecRepo                 *commonExecution.TaskExecutionRepository
 }
 
@@ -34,14 +36,21 @@ func NewTaskProviderHandler(
 	embeddingTaskSvc *service.EmbeddingTaskService,
 	tileCacheTaskSvc *service.TileCacheTaskService,
 	quickViewOptimizationTaskSvc *service.QuickViewOptimizationTaskService,
+	rasterCOGTaskSvc *service.RasterCOGTaskService,
 	taskExecRepo *commonExecution.TaskExecutionRepository,
+	rasterMosaicTaskSvc ...*service.RasterMosaicTaskService,
 ) *TaskProviderHandler {
-	return &TaskProviderHandler{
+	handler := &TaskProviderHandler{
 		embeddingTaskSvc:             embeddingTaskSvc,
 		tileCacheTaskSvc:             tileCacheTaskSvc,
 		quickViewOptimizationTaskSvc: quickViewOptimizationTaskSvc,
+		rasterCOGTaskSvc:             rasterCOGTaskSvc,
 		taskExecRepo:                 taskExecRepo,
 	}
+	if len(rasterMosaicTaskSvc) > 0 {
+		handler.rasterMosaicTaskSvc = rasterMosaicTaskSvc[0]
+	}
+	return handler
 }
 
 // TaskListResponse 任务列表响应（统一包装 Manager provider 声明的任务类型）
@@ -191,13 +200,115 @@ type QuickViewOptimizationTaskResponse struct {
 	UpdatedAt           time.Time                                  `json:"updated_at"`
 }
 
+type RasterCOGTaskRequest struct {
+	Name        string               `json:"name"`
+	Description string               `json:"description,omitempty"`
+	Enabled     *bool                `json:"enabled,omitempty"`
+	Schedule    string               `json:"schedule,omitempty"`
+	NextRunAt   *time.Time           `json:"next_run_at,omitempty"`
+	Config      commonModels.JSONMap `json:"config"`
+}
+
+type RasterCOGTaskTargetResponse struct {
+	ItemID          uint   `json:"item_id,omitempty"`
+	ItemFingerprint string `json:"item_fingerprint,omitempty"`
+	Locator         string `json:"locator,omitempty"`
+	SourceEngineID  uint   `json:"source_engine_id,omitempty"`
+}
+
+type RasterCOGTaskRasterResponse struct {
+	SourceProfile   string    `json:"source_profile,omitempty"`
+	SourceSizeBytes int64     `json:"source_size_bytes,omitempty"`
+	Width           int64     `json:"width,omitempty"`
+	Height          int64     `json:"height,omitempty"`
+	BandCount       int64     `json:"band_count,omitempty"`
+	SourceSRID      int       `json:"source_srid,omitempty"`
+	Extent          []float64 `json:"extent,omitempty"`
+	ExtentSRID      int       `json:"extent_srid,omitempty"`
+}
+
+type RasterCOGTaskCOGResponse struct {
+	Compression        string `json:"compression,omitempty"`
+	BlockSize          int    `json:"blocksize,omitempty"`
+	OverviewResampling string `json:"overview_resampling,omitempty"`
+}
+
+type RasterCOGTaskResponse struct {
+	ID                  uint                         `json:"id"`
+	TenantID            uint                         `json:"tenant_id"`
+	TaskType            string                       `json:"task_type"`
+	Name                string                       `json:"name"`
+	Description         string                       `json:"description,omitempty"`
+	Enabled             bool                         `json:"enabled"`
+	Schedule            string                       `json:"schedule,omitempty"`
+	NextRunAt           *time.Time                   `json:"next_run_at,omitempty"`
+	LastRunAt           *time.Time                   `json:"last_run_at,omitempty"`
+	LastExecutionID     *string                      `json:"last_execution_id,omitempty"`
+	LastExecutionStatus *string                      `json:"last_execution_status,omitempty"`
+	CreatedBy           *uint                        `json:"created_by,omitempty"`
+	Config              commonModels.JSONMap         `json:"config"`
+	Target              *RasterCOGTaskTargetResponse `json:"target,omitempty"`
+	Raster              *RasterCOGTaskRasterResponse `json:"raster,omitempty"`
+	COG                 *RasterCOGTaskCOGResponse    `json:"cog,omitempty"`
+	CreatedAt           time.Time                    `json:"created_at"`
+	UpdatedAt           time.Time                    `json:"updated_at"`
+}
+
+type RasterMosaicTaskRequest struct {
+	Name        string               `json:"name"`
+	Description string               `json:"description,omitempty"`
+	Enabled     *bool                `json:"enabled,omitempty"`
+	Schedule    string               `json:"schedule,omitempty"`
+	NextRunAt   *time.Time           `json:"next_run_at,omitempty"`
+	Config      commonModels.JSONMap `json:"config"`
+}
+
+type RasterMosaicTaskSourceResponse struct {
+	NodeLocator     string   `json:"node_locator,omitempty"`
+	SourceEngineID  uint     `json:"source_engine_id,omitempty"`
+	Recursive       bool     `json:"recursive"`
+	IncludePatterns []string `json:"include_patterns,omitempty"`
+	ExcludePatterns []string `json:"exclude_patterns,omitempty"`
+}
+
+type RasterMosaicTaskTargetResponse struct {
+	StorageLocator string `json:"storage_locator,omitempty"`
+	TargetEngineID uint   `json:"target_engine_id,omitempty"`
+	DatasetName    string `json:"dataset_name,omitempty"`
+}
+
+type RasterMosaicTaskPlacementResponse struct {
+	Mode string `json:"mode"`
+}
+
+type RasterMosaicTaskResponse struct {
+	ID                  uint                               `json:"id"`
+	TenantID            uint                               `json:"tenant_id"`
+	TaskType            string                             `json:"task_type"`
+	Name                string                             `json:"name"`
+	Description         string                             `json:"description,omitempty"`
+	Enabled             bool                               `json:"enabled"`
+	Schedule            string                             `json:"schedule,omitempty"`
+	NextRunAt           *time.Time                         `json:"next_run_at,omitempty"`
+	LastRunAt           *time.Time                         `json:"last_run_at,omitempty"`
+	LastExecutionID     *string                            `json:"last_execution_id,omitempty"`
+	LastExecutionStatus *string                            `json:"last_execution_status,omitempty"`
+	CreatedBy           *uint                              `json:"created_by,omitempty"`
+	Config              commonModels.JSONMap               `json:"config"`
+	Source              *RasterMosaicTaskSourceResponse    `json:"source,omitempty"`
+	Target              *RasterMosaicTaskTargetResponse    `json:"target,omitempty"`
+	Placement           *RasterMosaicTaskPlacementResponse `json:"placement,omitempty"`
+	CreatedAt           time.Time                          `json:"created_at"`
+	UpdatedAt           time.Time                          `json:"updated_at"`
+}
+
 // ListTasks GET /api/v1/manager/tasks
-// 查询参数：?task_type=tile_cache_generation|quick_view_optimization|embedding
+// 查询参数：?task_type=vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|embedding
 // @Summary 列出任务 | List tasks
-// @Description 列出 Manager 模块的任务（瓦片缓存生成、快显性能优化和向量化任务）| List Manager module tasks (tile cache generation, quick view optimization, and embedding tasks)
+// @Description 列出 Manager 模块的任务（矢量瓦片缓存生成、矢量快显性能优化、栅格快显 COG 生成、栅格 mosaic 生成和向量化任务）| List Manager module tasks (vector tile cache generation, vector quick view optimization, raster COG generation, raster mosaic generation, and embedding tasks)
 // @Tags Manager
 // @Produce json
-// @Param task_type query string false "任务类型过滤：tile_cache_generation|quick_view_optimization|embedding | Task type filter: tile_cache_generation|quick_view_optimization|embedding"
+// @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|embedding | Task type filter"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} TaskListResponse "任务列表 | Task list"
@@ -226,7 +337,11 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 	var total int64
 
 	switch taskType {
-	case commonExecution.TaskTypeTileCacheGeneration:
+	case commonExecution.TaskTypeVectorTileCacheGeneration:
+		if h.tileCacheTaskSvc == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "tile cache task service is unavailable"})
+			return
+		}
 		tasks, t, err := h.tileCacheTaskSvc.List(ctx, tenantID, page, pageSize)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -235,12 +350,16 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 		total = t
 		for _, task := range tasks {
 			items = append(items, TaskListItem{
-				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeTileCacheGeneration,
+				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeVectorTileCacheGeneration,
 				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
 		}
-	case commonExecution.TaskTypeQuickViewOptimization:
+	case commonExecution.TaskTypeVectorQuickViewTargetGeneration:
+		if h.quickViewOptimizationTaskSvc == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "quick view optimization task service is unavailable"})
+			return
+		}
 		tasks, t, err := h.quickViewOptimizationTaskSvc.List(ctx, tenantID, page, pageSize)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -249,12 +368,52 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 		total = t
 		for _, task := range tasks {
 			items = append(items, TaskListItem{
-				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeQuickViewOptimization,
+				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeVectorQuickViewTargetGeneration,
+				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
+				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
+			})
+		}
+	case commonExecution.TaskTypeRasterCOGGeneration:
+		if h.rasterCOGTaskSvc == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "raster COG generation task service is unavailable"})
+			return
+		}
+		tasks, t, err := h.rasterCOGTaskSvc.List(ctx, tenantID, page, pageSize)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		total = t
+		for _, task := range tasks {
+			items = append(items, TaskListItem{
+				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeRasterCOGGeneration,
+				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
+				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
+			})
+		}
+	case commonExecution.TaskTypeRasterMosaicGeneration:
+		if h.rasterMosaicTaskSvc == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "raster mosaic generation task service is unavailable"})
+			return
+		}
+		tasks, t, err := h.rasterMosaicTaskSvc.List(ctx, tenantID, page, pageSize)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		total = t
+		for _, task := range tasks {
+			items = append(items, TaskListItem{
+				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeRasterMosaicGeneration,
 				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
 		}
 	case commonExecution.TaskTypeEmbedding:
+		if h.embeddingTaskSvc == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "embedding task service is unavailable"})
+			return
+		}
 		tasks, t, err := h.embeddingTaskSvc.List(ctx, tenantID, page, pageSize)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -270,43 +429,60 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 		}
 	case "":
 		// 返回所有类型
-		tileCacheTasks, tileCacheTotal, err := h.tileCacheTaskSvc.List(ctx, tenantID, page, pageSize)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		if h.tileCacheTaskSvc != nil {
+			tasks, t, err := h.tileCacheTaskSvc.List(ctx, tenantID, page, pageSize)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			total += t
+			for _, task := range tasks {
+				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeVectorTileCacheGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
+			}
 		}
-		embTasks, embTotal, err := h.embeddingTaskSvc.List(ctx, tenantID, page, pageSize)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		if h.quickViewOptimizationTaskSvc != nil {
+			tasks, t, err := h.quickViewOptimizationTaskSvc.List(ctx, tenantID, page, pageSize)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			total += t
+			for _, task := range tasks {
+				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeVectorQuickViewTargetGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
+			}
 		}
-		total = tileCacheTotal + embTotal
-		qvoTasks, qvoTotal, err := h.quickViewOptimizationTaskSvc.List(ctx, tenantID, page, pageSize)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		if h.rasterCOGTaskSvc != nil {
+			tasks, t, err := h.rasterCOGTaskSvc.List(ctx, tenantID, page, pageSize)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			total += t
+			for _, task := range tasks {
+				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeRasterCOGGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
+			}
 		}
-		total += qvoTotal
-		for _, task := range tileCacheTasks {
-			items = append(items, TaskListItem{
-				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeTileCacheGeneration,
-				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
-				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
-			})
+		if h.rasterMosaicTaskSvc != nil {
+			tasks, t, err := h.rasterMosaicTaskSvc.List(ctx, tenantID, page, pageSize)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			total += t
+			for _, task := range tasks {
+				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeRasterMosaicGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
+			}
 		}
-		for _, task := range qvoTasks {
-			items = append(items, TaskListItem{
-				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeQuickViewOptimization,
-				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
-				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
-			})
-		}
-		for _, task := range embTasks {
-			items = append(items, TaskListItem{
-				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeEmbedding,
-				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
-				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
-			})
+		if h.embeddingTaskSvc != nil {
+			tasks, t, err := h.embeddingTaskSvc.List(ctx, tenantID, page, pageSize)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			total += t
+			for _, task := range tasks {
+				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeEmbedding, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
+			}
 		}
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的任务类型: " + taskType})
@@ -324,16 +500,16 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 	})
 }
 
-// ListTileCacheTasks GET /api/v1/manager/tile_cache_tasks
+// ListTileCacheTasks GET /api/v1/manager/vector_tile_cache_tasks
 // @Summary 列出瓦片缓存生成任务配置 | List tile cache generation task configurations
-// @Description 列出 Manager 模块的瓦片缓存生成任务配置。该私有入口固定返回 task_type=tile_cache_generation；编排模块应使用标准 /tasks 入口。| List Manager tile cache generation task configurations. This private endpoint always returns task_type=tile_cache_generation; orchestrator should use the standard /tasks endpoint.
+// @Description 列出 Manager 模块的瓦片缓存生成任务配置。该私有入口固定返回 task_type=vector_tile_cache_generation；编排模块应使用标准 /tasks 入口。| List Manager tile cache generation task configurations. This private endpoint always returns task_type=vector_tile_cache_generation; orchestrator should use the standard /tasks endpoint.
 // @Tags Manager
 // @Produce json
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /tile_cache_tasks [get]
+// @Router /vector_tile_cache_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListTileCacheTasks(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -407,9 +583,9 @@ func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
 // @Description 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and ID
 // @Tags Manager
 // @Produce json
-// @Param task_type path string true "任务类型：tile_cache_generation|quick_view_optimization|embedding | Task type: tile_cache_generation|quick_view_optimization|embedding"
+// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|embedding | Task type"
 // @Param id path int true "任务ID | Task ID"
-// @Success 200 {object} object "任务详情，按 task_type 返回 TileCacheTaskResponse、QuickViewOptimizationTaskResponse 或 EmbeddingTaskResponse | Task detail, returns TileCacheTaskResponse, QuickViewOptimizationTaskResponse, or EmbeddingTaskResponse by task_type"
+// @Success 200 {object} object "任务详情，按 task_type 返回矢量瓦片缓存、矢量快显性能优化、栅格 COG 生成或向量化任务详情 | Task detail by task_type"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @Router /tasks/{task_type}/{id} [get]
@@ -426,7 +602,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	switch taskType {
-	case commonExecution.TaskTypeTileCacheGeneration:
+	case commonExecution.TaskTypeVectorTileCacheGeneration:
 		task, err := h.tileCacheTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -437,7 +613,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, tileCacheTaskResponse(task))
-	case commonExecution.TaskTypeQuickViewOptimization:
+	case commonExecution.TaskTypeVectorQuickViewTargetGeneration:
 		task, err := h.quickViewOptimizationTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -448,6 +624,28 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, quickViewOptimizationTaskResponse(task))
+	case commonExecution.TaskTypeRasterCOGGeneration:
+		task, err := h.rasterCOGTaskSvc.GetByID(ctx, uint(id), tenantID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if task == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+			return
+		}
+		c.JSON(http.StatusOK, rasterCOGTaskResponse(task))
+	case commonExecution.TaskTypeRasterMosaicGeneration:
+		task, err := h.rasterMosaicTaskSvc.GetByID(ctx, uint(id), tenantID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if task == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+			return
+		}
+		c.JSON(http.StatusOK, rasterMosaicTaskResponse(task))
 	case commonExecution.TaskTypeEmbedding:
 		task, err := h.embeddingTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -464,7 +662,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 	}
 }
 
-// GetTileCacheTask GET /api/v1/manager/tile_cache_tasks/:id
+// GetTileCacheTask GET /api/v1/manager/vector_tile_cache_tasks/:id
 // @Summary 获取瓦片缓存生成任务配置 | Get tile cache generation task configuration
 // @Description 获取指定瓦片缓存生成任务配置 | Get a specific tile cache generation task configuration
 // @Tags Manager
@@ -473,7 +671,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 // @Success 200 {object} TileCacheTaskResponse "任务配置 | Task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
-// @Router /tile_cache_tasks/{id} [get]
+// @Router /vector_tile_cache_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetTileCacheTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -513,7 +711,7 @@ type TaskExecuteResponse struct {
 // @Tags Manager
 // @Accept json
 // @Produce json
-// @Param task_type path string true "任务类型：tile_cache_generation|quick_view_optimization|embedding | Task type: tile_cache_generation|quick_view_optimization|embedding"
+// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|embedding | Task type"
 // @Param id path int true "任务ID | Task ID"
 // @Param body body TaskExecuteRequest false "执行配置 | Execution configuration"
 // @Success 202 {object} TaskExecuteResponse "执行ID | Execution ID"
@@ -557,10 +755,14 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	var executionID string
 
 	switch taskType {
-	case commonExecution.TaskTypeTileCacheGeneration:
+	case commonExecution.TaskTypeVectorTileCacheGeneration:
 		executionID, err = h.tileCacheTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
-	case commonExecution.TaskTypeQuickViewOptimization:
+	case commonExecution.TaskTypeVectorQuickViewTargetGeneration:
 		executionID, err = h.quickViewOptimizationTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+	case commonExecution.TaskTypeRasterCOGGeneration:
+		executionID, err = h.rasterCOGTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+	case commonExecution.TaskTypeRasterMosaicGeneration:
+		executionID, err = h.rasterMosaicTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	case commonExecution.TaskTypeEmbedding:
 		executionID, err = h.embeddingTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	default:
@@ -831,7 +1033,7 @@ func boolFromConfig(value interface{}, defaultValue bool) bool {
 
 // ===== TileCacheTask CRUD =====
 
-// CreateTileCacheTask POST /api/v1/manager/tile_cache_tasks
+// CreateTileCacheTask POST /api/v1/manager/vector_tile_cache_tasks
 // @Summary 创建瓦片缓存生成任务配置 | Create tile cache generation task configuration
 // @Description 创建新的瓦片缓存生成任务配置 | Create a new tile cache generation task configuration
 // @Tags Manager
@@ -840,7 +1042,7 @@ func boolFromConfig(value interface{}, defaultValue bool) bool {
 // @Param body body TileCacheTaskRequest true "瓦片缓存任务配置 | Tile cache task configuration"
 // @Success 201 {object} map[string]interface{} "创建的任务配置 | Created task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /tile_cache_tasks [post]
+// @Router /vector_tile_cache_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateTileCacheTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -873,7 +1075,7 @@ func (h *TaskProviderHandler) CreateTileCacheTask(c *gin.Context) {
 	c.JSON(http.StatusCreated, tileCacheTaskResponse(&task))
 }
 
-// UpdateTileCacheTask PUT /api/v1/manager/tile_cache_tasks/:id
+// UpdateTileCacheTask PUT /api/v1/manager/vector_tile_cache_tasks/:id
 // @Summary 更新瓦片缓存生成任务配置 | Update tile cache generation task configuration
 // @Description 更新指定的瓦片缓存生成任务配置 | Update a specific tile cache generation task configuration
 // @Tags Manager
@@ -884,7 +1086,7 @@ func (h *TaskProviderHandler) CreateTileCacheTask(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "更新后的任务配置 | Updated task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
-// @Router /tile_cache_tasks/{id} [put]
+// @Router /vector_tile_cache_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateTileCacheTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -927,7 +1129,7 @@ func (h *TaskProviderHandler) UpdateTileCacheTask(c *gin.Context) {
 	c.JSON(http.StatusOK, tileCacheTaskResponse(existing))
 }
 
-// DeleteTileCacheTask DELETE /api/v1/manager/tile_cache_tasks/:id
+// DeleteTileCacheTask DELETE /api/v1/manager/vector_tile_cache_tasks/:id
 // @Summary 删除瓦片缓存生成任务配置 | Delete tile cache generation task configuration
 // @Description 删除指定的瓦片缓存生成任务配置 | Delete a specific tile cache generation task configuration
 // @Tags Manager
@@ -935,7 +1137,7 @@ func (h *TaskProviderHandler) UpdateTileCacheTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /tile_cache_tasks/{id} [delete]
+// @Router /vector_tile_cache_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteTileCacheTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -952,15 +1154,15 @@ func (h *TaskProviderHandler) DeleteTileCacheTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }
 
-// ListQuickViewOptimizationTasks GET /api/v1/manager/quick_view_optimization_tasks
+// ListQuickViewOptimizationTasks GET /api/v1/manager/vector_quick_view_target_tasks
 // @Summary 列出快显性能优化任务配置 | List quick view optimization task configurations
-// @Description 列出 Manager 模块的快显性能优化任务配置。该私有入口固定返回 task_type=quick_view_optimization；编排模块应使用标准 /tasks 入口。| List Manager quick view optimization task configurations. This private endpoint always returns task_type=quick_view_optimization; orchestrator should use the standard /tasks endpoint.
+// @Description 列出 Manager 模块的快显性能优化任务配置。该私有入口固定返回 task_type=vector_quick_view_target_generation；编排模块应使用标准 /tasks 入口。| List Manager quick view optimization task configurations. This private endpoint always returns task_type=vector_quick_view_target_generation; orchestrator should use the standard /tasks endpoint.
 // @Tags Manager
 // @Produce json
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
-// @Router /quick_view_optimization_tasks [get]
+// @Router /vector_quick_view_target_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListQuickViewOptimizationTasks(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -978,14 +1180,14 @@ func (h *TaskProviderHandler) ListQuickViewOptimizationTasks(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize})
 }
 
-// CreateQuickViewOptimizationTask POST /api/v1/manager/quick_view_optimization_tasks
+// CreateQuickViewOptimizationTask POST /api/v1/manager/vector_quick_view_target_tasks
 // @Summary 创建快显性能优化任务配置 | Create quick view optimization task configuration
 // @Tags Manager
 // @Accept json
 // @Produce json
 // @Param body body QuickViewOptimizationTaskRequest true "快显性能优化任务配置 | Quick view optimization task configuration"
 // @Success 201 {object} QuickViewOptimizationTaskResponse "创建的任务配置 | Created task configuration"
-// @Router /quick_view_optimization_tasks [post]
+// @Router /vector_quick_view_target_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateQuickViewOptimizationTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -1016,20 +1218,20 @@ func (h *TaskProviderHandler) CreateQuickViewOptimizationTask(c *gin.Context) {
 	c.JSON(http.StatusCreated, quickViewOptimizationTaskResponse(&task))
 }
 
-// GetQuickViewOptimizationTask GET /api/v1/manager/quick_view_optimization_tasks/:id
+// GetQuickViewOptimizationTask GET /api/v1/manager/vector_quick_view_target_tasks/:id
 // @Summary 获取快显性能优化任务配置 | Get quick view optimization task configuration
 // @Tags Manager
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} QuickViewOptimizationTaskResponse "任务配置 | Task configuration"
-// @Router /quick_view_optimization_tasks/{id} [get]
+// @Router /vector_quick_view_target_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetQuickViewOptimizationTask(c *gin.Context) {
-	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeQuickViewOptimization})
+	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeVectorQuickViewTargetGeneration})
 	h.TaskDetail(c)
 }
 
-// UpdateQuickViewOptimizationTask PUT /api/v1/manager/quick_view_optimization_tasks/:id
+// UpdateQuickViewOptimizationTask PUT /api/v1/manager/vector_quick_view_target_tasks/:id
 // @Summary 更新快显性能优化任务配置 | Update quick view optimization task configuration
 // @Tags Manager
 // @Accept json
@@ -1037,7 +1239,7 @@ func (h *TaskProviderHandler) GetQuickViewOptimizationTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Param body body QuickViewOptimizationTaskRequest true "快显性能优化任务配置 | Quick view optimization task configuration"
 // @Success 200 {object} QuickViewOptimizationTaskResponse "更新后的任务配置 | Updated task configuration"
-// @Router /quick_view_optimization_tasks/{id} [put]
+// @Router /vector_quick_view_target_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateQuickViewOptimizationTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -1075,13 +1277,13 @@ func (h *TaskProviderHandler) UpdateQuickViewOptimizationTask(c *gin.Context) {
 	c.JSON(http.StatusOK, quickViewOptimizationTaskResponse(existing))
 }
 
-// DeleteQuickViewOptimizationTask DELETE /api/v1/manager/quick_view_optimization_tasks/:id
+// DeleteQuickViewOptimizationTask DELETE /api/v1/manager/vector_quick_view_target_tasks/:id
 // @Summary 删除快显性能优化任务配置 | Delete quick view optimization task configuration
 // @Tags Manager
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
-// @Router /quick_view_optimization_tasks/{id} [delete]
+// @Router /vector_quick_view_target_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteQuickViewOptimizationTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -1097,7 +1299,390 @@ func (h *TaskProviderHandler) DeleteQuickViewOptimizationTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }
 
-// ListQuickViewOptimizations GET /api/v1/manager/quick_view_optimization
+// ListRasterCOGTasks GET /api/v1/manager/raster_cog_tasks
+// @Summary 列出栅格快显 COG 任务配置 | List raster COG generation task configurations
+// @Description 列出 Manager 模块的栅格快显 COG 任务配置。该私有入口固定返回 task_type=raster_cog_generation；编排模块应使用标准 /tasks 入口。| List Manager raster COG generation task configurations.
+// @Tags Manager
+// @Produce json
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @Router /raster_cog_tasks [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListRasterCOGTasks(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	tasks, total, err := h.rasterCOGTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	items := make([]RasterCOGTaskResponse, 0, len(tasks))
+	for _, task := range tasks {
+		items = append(items, rasterCOGTaskResponse(task))
+	}
+	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize})
+}
+
+// CreateRasterCOGTask POST /api/v1/manager/raster_cog_tasks
+// @Summary 创建栅格快显 COG 任务配置 | Create raster COG generation task configuration
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param body body RasterCOGTaskRequest true "raster COG generation task configuration"
+// @Success 201 {object} RasterCOGTaskResponse "创建的任务配置 | Created task configuration"
+// @Router /raster_cog_tasks [post]
+// @Security BearerAuth
+func (h *TaskProviderHandler) CreateRasterCOGTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	userID := c.GetUint("user_id")
+	req, err := decodeRasterCOGTaskRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	task := models.RasterCOGTask{
+		TenantID:    tenantID,
+		Name:        strings.TrimSpace(req.Name),
+		Description: strings.TrimSpace(req.Description),
+		Enabled:     enabled,
+		Schedule:    strings.TrimSpace(req.Schedule),
+		NextRunAt:   req.NextRunAt,
+		Config:      req.Config,
+		CreatedBy:   &userID,
+	}
+	if err := h.rasterCOGTaskSvc.Create(c.Request.Context(), &task); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, rasterCOGTaskResponse(&task))
+}
+
+// GetRasterCOGTask GET /api/v1/manager/raster_cog_tasks/:id
+// @Summary 获取栅格快显 COG 任务配置 | Get raster COG generation task configuration
+// @Tags Manager
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} RasterCOGTaskResponse "任务配置 | Task configuration"
+// @Router /raster_cog_tasks/{id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) GetRasterCOGTask(c *gin.Context) {
+	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeRasterCOGGeneration})
+	h.TaskDetail(c)
+}
+
+// UpdateRasterCOGTask PUT /api/v1/manager/raster_cog_tasks/:id
+// @Summary 更新栅格快显 COG 任务配置 | Update raster COG generation task configuration
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Param body body RasterCOGTaskRequest true "raster COG generation task configuration"
+// @Success 200 {object} RasterCOGTaskResponse "更新后的任务配置 | Updated task configuration"
+// @Router /raster_cog_tasks/{id} [put]
+// @Security BearerAuth
+func (h *TaskProviderHandler) UpdateRasterCOGTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	existing, err := h.rasterCOGTaskSvc.GetByID(c.Request.Context(), uint(id), tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existing == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+		return
+	}
+	req, err := decodeRasterCOGTaskRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	existing.Name = strings.TrimSpace(req.Name)
+	existing.Description = strings.TrimSpace(req.Description)
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
+	existing.Schedule = strings.TrimSpace(req.Schedule)
+	existing.NextRunAt = req.NextRunAt
+	existing.Config = req.Config
+	if err := h.rasterCOGTaskSvc.Update(c.Request.Context(), existing); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, rasterCOGTaskResponse(existing))
+}
+
+// DeleteRasterCOGTask DELETE /api/v1/manager/raster_cog_tasks/:id
+// @Summary 删除栅格快显 COG 任务配置 | Delete raster COG generation task configuration
+// @Tags Manager
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Router /raster_cog_tasks/{id} [delete]
+// @Security BearerAuth
+func (h *TaskProviderHandler) DeleteRasterCOGTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	if err := h.rasterCOGTaskSvc.Delete(c.Request.Context(), uint(id), tenantID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+// ListRasterMosaicTasks GET /api/v1/manager/raster_mosaic_tasks
+// @Summary 列出栅格 mosaic 任务配置 | List raster mosaic generation task configurations
+// @Description 列出 Manager 模块的栅格 mosaic 任务配置。该私有入口固定返回 task_type=raster_mosaic_generation；编排模块应使用标准 /tasks 入口。| List Manager raster mosaic generation task configurations.
+// @Tags Manager
+// @Produce json
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @Router /raster_mosaic_tasks [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListRasterMosaicTasks(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	tasks, total, err := h.rasterMosaicTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	items := make([]RasterMosaicTaskResponse, 0, len(tasks))
+	for _, task := range tasks {
+		items = append(items, rasterMosaicTaskResponse(task))
+	}
+	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize})
+}
+
+// CreateRasterMosaicTask POST /api/v1/manager/raster_mosaic_tasks
+// @Summary 创建栅格 mosaic 任务配置 | Create raster mosaic generation task configuration
+// @Description 创建新的栅格 mosaic 任务配置。任务从资源树 node 选择源数据，并将 mosaic 数据集写入用户选择的业务存储。| Create a raster mosaic task from a resource-tree node into the selected business storage.
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param body body RasterMosaicTaskRequest true "raster mosaic generation task configuration"
+// @Success 201 {object} RasterMosaicTaskResponse "创建的任务配置 | Created task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /raster_mosaic_tasks [post]
+// @Security BearerAuth
+func (h *TaskProviderHandler) CreateRasterMosaicTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	userID := c.GetUint("user_id")
+	req, err := decodeRasterMosaicTaskRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	task := models.RasterMosaicTask{
+		TenantID:    tenantID,
+		Name:        strings.TrimSpace(req.Name),
+		Description: strings.TrimSpace(req.Description),
+		Enabled:     enabled,
+		Schedule:    strings.TrimSpace(req.Schedule),
+		NextRunAt:   req.NextRunAt,
+		Config:      req.Config,
+		CreatedBy:   &userID,
+	}
+	if err := h.rasterMosaicTaskSvc.Create(c.Request.Context(), &task); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, rasterMosaicTaskResponse(&task))
+}
+
+// GetRasterMosaicTask GET /api/v1/manager/raster_mosaic_tasks/:id
+// @Summary 获取栅格 mosaic 任务配置 | Get raster mosaic generation task configuration
+// @Tags Manager
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} RasterMosaicTaskResponse "任务配置 | Task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Router /raster_mosaic_tasks/{id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) GetRasterMosaicTask(c *gin.Context) {
+	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeRasterMosaicGeneration})
+	h.TaskDetail(c)
+}
+
+// UpdateRasterMosaicTask PUT /api/v1/manager/raster_mosaic_tasks/:id
+// @Summary 更新栅格 mosaic 任务配置 | Update raster mosaic generation task configuration
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Param body body RasterMosaicTaskRequest true "raster mosaic generation task configuration"
+// @Success 200 {object} RasterMosaicTaskResponse "更新后的任务配置 | Updated task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Router /raster_mosaic_tasks/{id} [put]
+// @Security BearerAuth
+func (h *TaskProviderHandler) UpdateRasterMosaicTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	existing, err := h.rasterMosaicTaskSvc.GetByID(c.Request.Context(), uint(id), tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existing == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+		return
+	}
+	req, err := decodeRasterMosaicTaskRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	existing.Name = strings.TrimSpace(req.Name)
+	existing.Description = strings.TrimSpace(req.Description)
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
+	existing.Schedule = strings.TrimSpace(req.Schedule)
+	existing.NextRunAt = req.NextRunAt
+	existing.Config = req.Config
+	if err := h.rasterMosaicTaskSvc.Update(c.Request.Context(), existing); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, rasterMosaicTaskResponse(existing))
+}
+
+// DeleteRasterMosaicTask DELETE /api/v1/manager/raster_mosaic_tasks/:id
+// @Summary 删除栅格 mosaic 任务配置 | Delete raster mosaic generation task configuration
+// @Tags Manager
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /raster_mosaic_tasks/{id} [delete]
+// @Security BearerAuth
+func (h *TaskProviderHandler) DeleteRasterMosaicTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	if err := h.rasterMosaicTaskSvc.Delete(c.Request.Context(), uint(id), tenantID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+// ListRasterCOGs GET /api/v1/manager/raster_cog
+// @Summary 列出栅格快显 COG | List raster COG results
+// @Tags Manager
+// @Produce json
+// @Param item_id query int false "数据项ID | Item ID"
+// @Param item_fingerprint query string false "数据项指纹 | Item fingerprint"
+// @Param task_id query int false "任务ID | Task ID"
+// @Param status query string false "状态 | Status"
+// @Param q query string false "关键词 | Keyword"
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "结果列表 | Result list"
+// @Router /raster_cog [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListRasterCOGs(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	itemID64, _ := strconv.ParseUint(c.Query("item_id"), 10, 32)
+	taskID64, _ := strconv.ParseUint(c.Query("task_id"), 10, 32)
+	results, total, err := h.rasterCOGTaskSvc.ListResults(c.Request.Context(), repository.RasterCOGFilter{
+		TenantID:        tenantID,
+		ItemID:          uint(itemID64),
+		ItemFingerprint: c.Query("item_fingerprint"),
+		TaskID:          uint(taskID64),
+		Status:          c.Query("status"),
+		Q:               c.Query("q"),
+		Page:            page,
+		PageSize:        pageSize,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": results, "total": total, "page": page, "page_size": pageSize})
+}
+
+// GetRasterCOG GET /api/v1/manager/raster_cog/:id
+// @Summary 获取栅格快显 COG 详情 | Get raster COG detail
+// @Tags Manager
+// @Produce json
+// @Param id path int true "结果ID | Result ID"
+// @Success 200 {object} models.RasterCOG "结果详情 | Result detail"
+// @Router /raster_cog/{id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) GetRasterCOG(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
+		return
+	}
+	result, err := h.rasterCOGTaskSvc.GetResult(c.Request.Context(), uint(id), tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if result == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "结果不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// DeleteRasterCOG DELETE /api/v1/manager/raster_cog/:id
+// @Summary 删除栅格快显 COG | Delete raster COG
+// @Tags Manager
+// @Produce json
+// @Param id path int true "结果ID | Result ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Router /raster_cog/{id} [delete]
+// @Security BearerAuth
+func (h *TaskProviderHandler) DeleteRasterCOG(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
+		return
+	}
+	if err := h.rasterCOGTaskSvc.DeleteResult(c.Request.Context(), uint(id), tenantID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+// ListQuickViewOptimizations GET /api/v1/manager/vector_quick_view_targets
 // @Summary 列出快显性能优化结果 | List quick view optimization results
 // @Tags Manager
 // @Produce json
@@ -1109,7 +1694,7 @@ func (h *TaskProviderHandler) DeleteQuickViewOptimizationTask(c *gin.Context) {
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "结果列表 | Result list"
-// @Router /quick_view_optimization [get]
+// @Router /vector_quick_view_targets [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListQuickViewOptimizations(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -1134,13 +1719,13 @@ func (h *TaskProviderHandler) ListQuickViewOptimizations(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": results, "total": total, "page": page, "page_size": pageSize})
 }
 
-// GetQuickViewOptimization GET /api/v1/manager/quick_view_optimization/:id
+// GetQuickViewOptimization GET /api/v1/manager/vector_quick_view_targets/:id
 // @Summary 获取快显性能优化结果详情 | Get quick view optimization result detail
 // @Tags Manager
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} models.QuickViewOptimization "结果详情 | Result detail"
-// @Router /quick_view_optimization/{id} [get]
+// @Router /vector_quick_view_targets/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetQuickViewOptimization(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -1161,13 +1746,13 @@ func (h *TaskProviderHandler) GetQuickViewOptimization(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// DeleteQuickViewOptimization DELETE /api/v1/manager/quick_view_optimization/:id
+// DeleteQuickViewOptimization DELETE /api/v1/manager/vector_quick_view_targets/:id
 // @Summary 删除快显性能优化结果 | Delete quick view optimization result
 // @Tags Manager
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
-// @Router /quick_view_optimization/{id} [delete]
+// @Router /vector_quick_view_targets/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteQuickViewOptimization(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -1187,7 +1772,7 @@ func (h *TaskProviderHandler) DeleteQuickViewOptimization(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }
 
-// ListTileCaches GET /api/v1/manager/tile_cache
+// ListTileCaches GET /api/v1/manager/vector_tile_cache
 // @Summary 列出瓦片缓存结果 | List tile cache results
 // @Description 查询瓦片缓存结果状态 | Query tile cache result states
 // @Tags Manager
@@ -1200,7 +1785,7 @@ func (h *TaskProviderHandler) DeleteQuickViewOptimization(c *gin.Context) {
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "结果列表 | Result list"
-// @Router /tile_cache [get]
+// @Router /vector_tile_cache [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListTileCaches(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -1230,13 +1815,13 @@ func (h *TaskProviderHandler) ListTileCaches(c *gin.Context) {
 	})
 }
 
-// GetTileCache GET /api/v1/manager/tile_cache/:id
+// GetTileCache GET /api/v1/manager/vector_tile_cache/:id
 // @Summary 获取瓦片缓存结果详情 | Get tile cache result detail
 // @Tags Manager
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} models.TileCache "结果详情 | Result detail"
-// @Router /tile_cache/{id} [get]
+// @Router /vector_tile_cache/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetTileCache(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -1257,13 +1842,13 @@ func (h *TaskProviderHandler) GetTileCache(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// DeleteTileCache DELETE /api/v1/manager/tile_cache/:id
+// DeleteTileCache DELETE /api/v1/manager/vector_tile_cache/:id
 // @Summary 删除瓦片缓存结果 | Delete tile cache result
 // @Tags Manager
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
-// @Router /tile_cache/{id} [delete]
+// @Router /vector_tile_cache/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteTileCache(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -1311,6 +1896,38 @@ func decodeQuickViewOptimizationTaskRequest(c *gin.Context) (QuickViewOptimizati
 	return req, nil
 }
 
+func decodeRasterCOGTaskRequest(c *gin.Context) (RasterCOGTaskRequest, error) {
+	var req RasterCOGTaskRequest
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		return req, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return req, errors.New("request body must contain a single JSON object")
+	}
+	if req.Config == nil {
+		req.Config = commonModels.JSONMap{}
+	}
+	return req, nil
+}
+
+func decodeRasterMosaicTaskRequest(c *gin.Context) (RasterMosaicTaskRequest, error) {
+	var req RasterMosaicTaskRequest
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		return req, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return req, errors.New("request body must contain a single JSON object")
+	}
+	if req.Config == nil {
+		req.Config = commonModels.JSONMap{}
+	}
+	return req, nil
+}
+
 func tileCacheTaskResponse(task *models.TileCacheTask) TileCacheTaskResponse {
 	resp := TileCacheTaskResponse{}
 	if task == nil {
@@ -1319,7 +1936,7 @@ func tileCacheTaskResponse(task *models.TileCacheTask) TileCacheTaskResponse {
 	resp = TileCacheTaskResponse{
 		ID:                  task.ID,
 		TenantID:            task.TenantID,
-		TaskType:            commonExecution.TaskTypeTileCacheGeneration,
+		TaskType:            commonExecution.TaskTypeVectorTileCacheGeneration,
 		Name:                task.Name,
 		Description:         task.Description,
 		Enabled:             task.Enabled,
@@ -1356,6 +1973,105 @@ func tileCacheTaskResponse(task *models.TileCacheTask) TileCacheTaskResponse {
 	return resp
 }
 
+func rasterCOGTaskResponse(task *models.RasterCOGTask) RasterCOGTaskResponse {
+	resp := RasterCOGTaskResponse{}
+	if task == nil {
+		return resp
+	}
+	resp = RasterCOGTaskResponse{
+		ID:                  task.ID,
+		TenantID:            task.TenantID,
+		TaskType:            commonExecution.TaskTypeRasterCOGGeneration,
+		Name:                task.Name,
+		Description:         task.Description,
+		Enabled:             task.Enabled,
+		Schedule:            task.Schedule,
+		NextRunAt:           task.NextRunAt,
+		LastRunAt:           task.LastRunAt,
+		LastExecutionID:     task.LastExecutionID,
+		LastExecutionStatus: task.LastExecutionStatus,
+		CreatedBy:           task.CreatedBy,
+		Config:              task.Config,
+		CreatedAt:           task.CreatedAt,
+		UpdatedAt:           task.UpdatedAt,
+	}
+	if target, ok := asJSONMap(task.Config["target"]); ok {
+		resp.Target = &RasterCOGTaskTargetResponse{
+			ItemID:          uintFromConfig(target["item_id"]),
+			ItemFingerprint: stringFromConfig(target["item_fingerprint"]),
+			Locator:         stringFromConfig(target["locator"]),
+			SourceEngineID:  uintFromConfig(target["source_engine_id"]),
+		}
+	}
+	if raster, ok := asJSONMap(task.Config["raster"]); ok {
+		extent, _ := floatSliceFromAPIConfig(raster["extent"])
+		resp.Raster = &RasterCOGTaskRasterResponse{
+			SourceProfile:   stringFromConfig(raster["source_profile"]),
+			SourceSizeBytes: int64FromAPIConfig(raster["source_size_bytes"], 0),
+			Width:           int64FromAPIConfig(raster["width"], 0),
+			Height:          int64FromAPIConfig(raster["height"], 0),
+			BandCount:       int64FromAPIConfig(raster["band_count"], 0),
+			SourceSRID:      intFromAPIConfig(raster["source_srid"], 0),
+			Extent:          extent,
+			ExtentSRID:      intFromAPIConfig(raster["extent_srid"], 0),
+		}
+	}
+	if cog, ok := asJSONMap(task.Config["cog"]); ok {
+		resp.COG = &RasterCOGTaskCOGResponse{
+			Compression:        stringFromConfig(cog["compression"]),
+			BlockSize:          intFromAPIConfig(cog["blocksize"], 0),
+			OverviewResampling: stringFromConfig(cog["overview_resampling"]),
+		}
+	}
+	return resp
+}
+
+func rasterMosaicTaskResponse(task *models.RasterMosaicTask) RasterMosaicTaskResponse {
+	resp := RasterMosaicTaskResponse{}
+	if task == nil {
+		return resp
+	}
+	resp = RasterMosaicTaskResponse{
+		ID:                  task.ID,
+		TenantID:            task.TenantID,
+		TaskType:            commonExecution.TaskTypeRasterMosaicGeneration,
+		Name:                task.Name,
+		Description:         task.Description,
+		Enabled:             task.Enabled,
+		Schedule:            task.Schedule,
+		NextRunAt:           task.NextRunAt,
+		LastRunAt:           task.LastRunAt,
+		LastExecutionID:     task.LastExecutionID,
+		LastExecutionStatus: task.LastExecutionStatus,
+		CreatedBy:           task.CreatedBy,
+		Config:              task.Config,
+		CreatedAt:           task.CreatedAt,
+		UpdatedAt:           task.UpdatedAt,
+	}
+	if source, ok := asJSONMap(task.Config["source"]); ok {
+		resp.Source = &RasterMosaicTaskSourceResponse{
+			NodeLocator:     stringFromConfig(source["node_locator"]),
+			SourceEngineID:  uintFromConfig(source["source_engine_id"]),
+			Recursive:       boolFromConfig(source["recursive"], true),
+			IncludePatterns: stringSliceFromAPIConfig(source["include_patterns"]),
+			ExcludePatterns: stringSliceFromAPIConfig(source["exclude_patterns"]),
+		}
+	}
+	if target, ok := asJSONMap(task.Config["target"]); ok {
+		resp.Target = &RasterMosaicTaskTargetResponse{
+			StorageLocator: stringFromConfig(target["storage_locator"]),
+			TargetEngineID: uintFromConfig(target["target_engine_id"]),
+			DatasetName:    stringFromConfig(target["dataset_name"]),
+		}
+	}
+	if placement, ok := asJSONMap(task.Config["placement"]); ok {
+		resp.Placement = &RasterMosaicTaskPlacementResponse{
+			Mode: stringFromConfig(placement["mode"]),
+		}
+	}
+	return resp
+}
+
 func quickViewOptimizationTaskResponse(task *models.QuickViewOptimizationTask) QuickViewOptimizationTaskResponse {
 	resp := QuickViewOptimizationTaskResponse{}
 	if task == nil {
@@ -1364,7 +2080,7 @@ func quickViewOptimizationTaskResponse(task *models.QuickViewOptimizationTask) Q
 	resp = QuickViewOptimizationTaskResponse{
 		ID:                  task.ID,
 		TenantID:            task.TenantID,
-		TaskType:            commonExecution.TaskTypeQuickViewOptimization,
+		TaskType:            commonExecution.TaskTypeVectorQuickViewTargetGeneration,
 		Name:                task.Name,
 		Description:         task.Description,
 		Enabled:             task.Enabled,
@@ -1410,4 +2126,69 @@ func intFromAPIConfig(value interface{}, defaultValue int) int {
 		return int(v)
 	}
 	return defaultValue
+}
+
+func int64FromAPIConfig(value interface{}, defaultValue int64) int64 {
+	switch v := value.(type) {
+	case int:
+		return int64(v)
+	case int64:
+		return v
+	case uint:
+		return int64(v)
+	case float64:
+		return int64(v)
+	}
+	return defaultValue
+}
+
+func stringSliceFromAPIConfig(value interface{}) []string {
+	switch typed := value.(type) {
+	case []string:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if trimmed := strings.TrimSpace(item); trimmed != "" {
+				result = append(result, trimmed)
+			}
+		}
+		return result
+	case []interface{}:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text, ok := item.(string); ok {
+				if trimmed := strings.TrimSpace(text); trimmed != "" {
+					result = append(result, trimmed)
+				}
+			}
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func floatSliceFromAPIConfig(value interface{}) ([]float64, bool) {
+	switch v := value.(type) {
+	case []float64:
+		return v, true
+	case []interface{}:
+		out := make([]float64, 0, len(v))
+		for _, item := range v {
+			switch n := item.(type) {
+			case int:
+				out = append(out, float64(n))
+			case int64:
+				out = append(out, float64(n))
+			case uint:
+				out = append(out, float64(n))
+			case float64:
+				out = append(out, n)
+			default:
+				return nil, false
+			}
+		}
+		return out, true
+	default:
+		return nil, false
+	}
 }

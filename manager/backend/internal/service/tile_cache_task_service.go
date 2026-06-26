@@ -304,7 +304,7 @@ func (s *TileCacheTaskService) Execute(ctx context.Context, taskID uint, tenantI
 		ExecutionID:       executionID,
 		TenantID:          int(tenantID),
 		Module:            commonExecution.ModuleManager,
-		TaskType:          commonExecution.TaskTypeTileCacheGeneration,
+		TaskType:          commonExecution.TaskTypeVectorTileCacheGeneration,
 		Source:            normalizedSource,
 		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(taskID),
 		SourceTaskName:    &task.Name,
@@ -317,7 +317,7 @@ func (s *TileCacheTaskService) Execute(ctx context.Context, taskID uint, tenantI
 	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
 		return "", err
 	}
-	if err := s.tileCacheRepo.UpdateTaskLastExecution(ctx, taskID, executionID, commonExecution.ExecutionStatusRunning, now); err != nil {
+	if err := s.tileCacheRepo.UpdateTaskLastExecution(ctx, taskID, tenantID, executionID, commonExecution.ExecutionStatusRunning, now); err != nil {
 		return "", err
 	}
 
@@ -401,7 +401,7 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 				"error_message":     err.Error(),
 				"last_execution_id": executionID,
 			}); updateErr != nil {
-				errDetails["tile_cache_update_error"] = updateErr.Error()
+				errDetails["vector_tile_cache_update_error"] = updateErr.Error()
 			}
 		}
 	}
@@ -424,7 +424,7 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 	}); err != nil {
 		logger.L().Warn("更新瓦片缓存 execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}
-	if err := s.tileCacheRepo.UpdateTaskLastExecution(ctx, task.ID, executionID, status, completedAt); err != nil {
+	if err := s.tileCacheRepo.UpdateTaskLastExecution(ctx, task.ID, task.TenantID, executionID, status, completedAt); err != nil {
 		logger.L().Warn("更新瓦片缓存任务最近执行状态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}
 }
@@ -442,7 +442,7 @@ func buildTileCacheGenerationMetadata(
 	tileTargetSRID := intFromTileCacheConfig(tileConfig["target_srid"], spatial.SRIDWebMercator)
 
 	metadata := commonModels.JSONMap{
-		"tile_cache_id":           tileCacheID,
+		"vector_tile_cache_id":           tileCacheID,
 		"actual_max_zoom":         result.ActualMaxZoom,
 		"min_zoom":                cfg.MinZoom,
 		"max_zoom":                cfg.MaxZoom,
@@ -777,7 +777,7 @@ func (s *TileCacheTaskService) resolveTileGenerationTarget(
 			PrimaryKey:                 primaryKey,
 			TargetKind:                 RealtimeTileTargetKindSourceTable,
 			OptimizationRecommended:    true,
-			OptimizationRecommendation: "quick_view_optimization is recommended before generating cache for non-3857 spatial data",
+			OptimizationRecommendation: "vector_quick_view_target_generation is recommended before generating cache for non-3857 spatial data",
 		}, nil
 	}
 	target, err := s.tileTargetResolver.ResolveRealtimeTileTarget(ctx, tenantID, engineID, schema, table, geomColumn, sourceSRID)
@@ -788,7 +788,7 @@ func (s *TileCacheTaskService) resolveTileGenerationTarget(
 		recommendOptimization := sourceSRID != spatial.SRIDWebMercator
 		recommendation := ""
 		if recommendOptimization {
-			recommendation = "quick_view_optimization is recommended before generating cache for non-3857 spatial data"
+			recommendation = "vector_quick_view_target_generation is recommended before generating cache for non-3857 spatial data"
 		}
 		return tileGenerationTarget{
 			Schema:                     schema,
@@ -837,7 +837,7 @@ func normalizeTileCacheTask(task *models.TileCacheTask) error {
 		return errors.New("tile cache task config is required")
 	}
 	if _, ok := task.Config["preparation"]; ok {
-		return errors.New("tile cache task config.preparation has been removed; create a quick_view_optimization task instead")
+		return errors.New("tile cache task config.preparation has been removed; create a vector_quick_view_target_generation task instead")
 	}
 	if _, err := normalizeTileCacheTaskTarget(task.Config); err != nil {
 		return err

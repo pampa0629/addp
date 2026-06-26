@@ -56,7 +56,7 @@ func NewQuickViewHandler(service *service.QuickViewService, previewResolver *pre
 
 type UpdatePreferredModeRequest struct {
 	Locator       string `json:"locator" binding:"required"`
-	PreferredMode string `json:"preferred_mode" binding:"required,oneof=table_geojson quick_view"`
+	PreferredMode string `json:"preferred_mode" binding:"required,oneof=basic_preview map_quick_view"`
 }
 
 // GetQuickViewCapabilityByLocator 获取 locator 快显能力
@@ -88,7 +88,7 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 
 // UpdatePreferredModeByLocator 更新 locator 预览模式偏好
 // @Summary 更新 locator 预览模式偏好 | Update locator preferred preview mode
-// @Description 以 Resource Locator 为数据项身份更新显示偏好：table_geojson 或 quick_view | Update preferred display mode by Resource Locator: table_geojson or quick_view
+// @Description 以 Resource Locator 为数据项身份更新显示偏好：basic_preview 或 map_quick_view | Update preferred display mode by Resource Locator: basic_preview or map_quick_view
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -192,7 +192,7 @@ func (h *QuickViewHandler) GetQuickViewGeoJSONByLocator(c *gin.Context) {
 // @Header 200 {string} X-ADDP-Tile-Status "瓦片语义状态：ok、empty、timeout 或 degraded | Tile semantic status: ok, empty, timeout, or degraded"
 // @Header 200 {string} X-ADDP-Tile-Performance-Mode "动态瓦片性能模式：ready_3857_target、source_3857_indexed、source_3857_unindexed 或 source_transform_path | Realtime tile performance mode"
 // @Header 200 {string} X-ADDP-Tile-Timeout-Budget-MS "动态 MVT 单瓦片超时预算，单位毫秒 | Realtime MVT per-tile timeout budget in milliseconds"
-// @Header 200 {string} X-ADDP-Tile-Recommendation "超时或降级时的推荐动作：quick_view_optimization 或 tile_cache_generation | Recommended action when timeout or degraded"
+// @Header 200 {string} X-ADDP-Tile-Recommendation "超时或降级时的推荐动作：vector_quick_view_target_generation 或 vector_tile_cache_generation | Recommended action when timeout or degraded"
 // @Header 200 {string} X-ADDP-Tile-Retry-Policy "超时或降级后的重试策略：suppress_tile 或 ttl | Retry policy after timeout or degraded"
 // @Header 200 {string} X-Generation-Time "动态生成耗时 | Dynamic generation duration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -430,6 +430,17 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 		source.Identity.Locator = result.Metadata.Locator
 		source.Identity.ItemFingerprint = strings.TrimSpace(result.Metadata.ItemFingerprint)
 		source.GeoJSONURL = locatorQuickViewGeoJSONURL(source.Identity.Locator, tablePreview)
+	}
+	if tablePreview.Object != nil {
+		raster := service.RasterQuickViewSourceFromAttributes(tablePreview.Object.Attributes, source.Identity.Locator, tablePreview.Object.EngineID)
+		if raster != nil {
+			source.EngineID = tablePreview.Object.EngineID
+			source.Raster = raster
+			source.DirectGeoJSON = false
+			source.GeoJSONURL = ""
+			source.CanTile = false
+			return source
+		}
 	}
 	source.CanTile = strings.EqualFold(strings.TrimSpace(tablePreview.EngineType), "postgresql") &&
 		strings.TrimSpace(tablePreview.Schema) != "" &&

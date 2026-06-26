@@ -157,13 +157,13 @@ const {
     const recommendation = String(meta?.recommendation || '').toLowerCase()
     const retryPolicy = String(meta?.retryPolicy || '').toLowerCase()
     if (
-      recommendation === 'quick_view_optimization' ||
-      recommendation === 'tile_cache_generation' ||
+      recommendation === 'vector_quick_view_target_generation' ||
+      recommendation === 'vector_tile_cache_generation' ||
       retryPolicy === 'suppress_tile' ||
       meta?.suppressed
     ) {
       emit('tile-advisory', {
-        recommendation: recommendation || 'quick_view_optimization',
+        recommendation: recommendation || 'vector_quick_view_target_generation',
         retryPolicy,
         tileStatus: meta?.tileStatus || '',
         performanceMode: meta?.performanceMode || '',

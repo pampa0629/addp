@@ -207,8 +207,10 @@
         "dataExplorer": "数据探查",
         "dataRetrieval": "数据检索",
         "vectorizationTasks": "向量化任务",
-        "tileCache": "瓦片缓存任务",
-        "quickViewOptimization": "快显性能优化"
+        "spatialQuickView": "空间快显管理",
+        "tileCache": "矢量快显 - 瓦片缓存",
+        "quickViewOptimization": "矢量快显 - 性能优化",
+        "cogArtifacts": "栅格快显 - COG"
       },
       "standard": {
         "label": "数据标准",

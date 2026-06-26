@@ -56,6 +56,10 @@ type TableTransferPlan struct {
 	ProgressCallback TableProgressCallback
 }
 
+type GeometryBatchReprojectProvider interface {
+	ReprojectGeometryBatch(ctx context.Context, geometries [][]byte, sourceCRS, targetCRS, geometryColumn string) ([][]byte, error)
+}
+
 type TableProgressCallback func(context.Context, TableProgressEvent) error
 
 type TableProgressEvent struct {
@@ -70,8 +74,16 @@ type TableProgressEvent struct {
 }
 
 type TableTransformPlan struct {
-	Type         string
-	FieldMapping *FieldMappingTransformPlan
+	Type             string
+	FieldMapping     *FieldMappingTransformPlan
+	SpatialReproject *SpatialReprojectTransformPlan
+}
+
+type SpatialReprojectTransformPlan struct {
+	GeometryColumn string
+	SourceCRS      string
+	TargetCRS      string
+	Reproject      bool
 }
 
 type FieldMappingMode string
@@ -110,6 +122,7 @@ type TableTransferExecutor struct {
 	TargetNativePreparer       engineplugin.TableWritePreparer
 	TargetNativeWriter         engineplugin.BatchWritableProvider
 	TargetTableSessionProvider engineplugin.TableWriteSessionProvider
+	GeometryBatchReprojecter   GeometryBatchReprojectProvider
 }
 
 func NewTableTransferExecutor(sourceEngineType, targetEngineType string, sourceFormat, targetFormat format.FormatType) (*TableTransferExecutor, error) {
@@ -170,11 +183,12 @@ func (e *TableTransferExecutor) Execute(ctx context.Context, plan TableTransferP
 		return nil, err
 	}
 	return (&TablePipeline{
-		Source:           source,
-		Target:           target,
-		Transforms:       plan.Transforms,
-		BatchSize:        plan.BatchSize,
-		ProgressCallback: plan.ProgressCallback,
+		Source:                   source,
+		Target:                   target,
+		Transforms:               plan.Transforms,
+		BatchSize:                plan.BatchSize,
+		ProgressCallback:         plan.ProgressCallback,
+		GeometryBatchReprojecter: e.GeometryBatchReprojecter,
 	}).Execute(ctx)
 }
 

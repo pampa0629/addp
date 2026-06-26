@@ -17,6 +17,9 @@ const (
 	MsgLogsNotReady       = "develop.execution.logs_not_ready"
 	MsgDeleteSuccess      = "develop.task.delete_success"
 	MsgUseExecuteEndpoint = "develop.task.use_execute_endpoint"
+	MsgEngineListFailed   = "develop.engine.list_failed"
+	MsgWorkflowListFailed = "develop.engine.workflow_list_failed"
+	MsgSparkListFailed    = "develop.engine.spark_list_failed"
 )
 
 func init() {

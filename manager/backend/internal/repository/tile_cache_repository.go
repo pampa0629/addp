@@ -95,10 +95,10 @@ func (r *TileCacheRepository) DisableTaskForCleanup(ctx context.Context, tenantI
 		}).Error
 }
 
-func (r *TileCacheRepository) UpdateTaskLastExecution(ctx context.Context, id uint, executionID, status string, runAt time.Time) error {
+func (r *TileCacheRepository) UpdateTaskLastExecution(ctx context.Context, id uint, tenantID uint, executionID, status string, runAt time.Time) error {
 	return r.db.WithContext(ctx).
 		Model(&models.TileCacheTask{}).
-		Where("id = ?", id).
+		Where("id = ? AND tenant_id = ?", id, tenantID).
 		Updates(map[string]interface{}{
 			"last_execution_id":     executionID,
 			"last_execution_status": status,

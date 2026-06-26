@@ -88,14 +88,15 @@ import { useI18n } from 'vue-i18n'
 import { InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import * as operatorApi from '@/api/operator'
+import { findInvalidOperatorMetadata } from '@/utils/operatorMetadataContract'
 
 const { t } = useI18n()
 
 // Props
 const props = defineProps({
-  engineType: {
-    type: String,
-    default: null, // 引擎模块名称: 'python_workflow', 'spark_workflow', 'math_workflow', 或 null (全部)
+  workflowEngineId: {
+    type: [Number, String],
+    default: null,
   }
 })
 
@@ -134,17 +135,26 @@ const loadOperators = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    let res
-    if (props.engineType) {
-      // 按模块加载（python/spark/math）
-      res = await operatorApi.listOperatorsByModule(props.engineType)
-    } else {
-      // 加载所有算子
-      res = await operatorApi.listAllOperators()
+    if (!props.workflowEngineId) {
+      operators.value = []
+      return
     }
+
+    const res = await operatorApi.listOperatorsByWorkflowEngine(props.workflowEngineId)
     // API client 已自动提取 response.data,所以 res 就是后端返回的数据对象
     // 后端返回格式: {status, operators: [], count}
-    operators.value = res.operators || []
+    if (!Array.isArray(res.operators)) {
+      throw new Error(t('develop.operatorPalette.invalidMetadata'))
+    }
+
+    const invalidOperator = findInvalidOperatorMetadata(res.operators)
+    if (invalidOperator) {
+      throw new Error(t('develop.operatorPalette.invalidOperatorMetadata', {
+        name: invalidOperator?.name || '-'
+      }))
+    }
+
+    operators.value = res.operators
   } catch (error) {
     console.error('[OperatorPalette] 加载失败:', error)
     loadError.value = t('develop.operatorPalette.loadFailed') + (error.response?.data?.error || error.message)
@@ -154,8 +164,8 @@ const loadOperators = async () => {
   }
 }
 
-// 监听引擎类型变化，自动重新加载算子
-watch(() => props.engineType, () => {
+// 监听工作流引擎实例变化，自动重新加载算子
+watch(() => props.workflowEngineId, () => {
   loadOperators()
 })
 
@@ -163,35 +173,36 @@ watch(() => props.engineType, () => {
 const categorizedOperators = computed(() => {
   const categories = {}
 
-  // 按分类组织算子 (operators.value 现在是数组)
+  // 按工作流引擎声明的分组目录组织算子。
   operators.value.forEach((op) => {
-    // 后端已经返回中文分类名，直接使用
-    const categoryName = op.category || t('develop.operatorPalette.other')
-    const categoryIcon = categoryIcons[categoryName] || '📝'
+    const categoryPath = op.category_path
+    const categoryName = categoryPath.join(' / ')
+    const categoryIcon = categoryIcons[categoryPath[0]] || '📝'
 
     if (!categories[categoryName]) {
       categories[categoryName] = {
         name: categoryName,
+        path: categoryPath,
         icon: categoryIcon,
         operators: []
       }
     }
 
-    // 将 parameters 数组转换为 params 对象 (用于兼容前端组件)
+    // 将 parameters 数组转换为工具提示使用的参数说明。
     const params = {}
-    if (op.parameters && Array.isArray(op.parameters)) {
-      op.parameters.forEach(param => {
-        params[param.name] = param.description || t('develop.operatorPalette.paramDesc', { name: param.name })
-      })
-    }
+    op.parameters.forEach(param => {
+      params[param.name] = param.description || t('develop.operatorPalette.paramDesc', { name: param.name })
+    })
 
     categories[categoryName].operators.push({
       name: op.name,
-      displayName: op.display_name || op.name,
-      description: op.description || '',
+      displayName: op.display_name,
+      description: op.description,
       params: params,
       category: categoryName,
-      parameters: op.parameters || []  // 保留原始参数定义
+      categoryPath,
+      parameters: op.parameters,
+      outputPorts: op.output_ports
     })
   })
 
@@ -200,8 +211,8 @@ const categorizedOperators = computed(() => {
     // 定义分类顺序权重（可选）
     const order = ['数据I/O', '空间分析', '几何处理', '空间关系', '几何属性',
                    '数据转换', '数据操作', '数据筛选', '聚合分析', 'SQL查询', '格式转换', '属性计算']
-    const aIndex = order.indexOf(a.name)
-    const bIndex = order.indexOf(b.name)
+    const aIndex = order.indexOf(a.path[0])
+    const bIndex = order.indexOf(b.path[0])
     if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex
     if (aIndex !== -1) return -1
     if (bIndex !== -1) return 1
@@ -234,7 +245,9 @@ const handleDragStart = (event, operator) => {
     type: 'operator',
     name: operator.name,
     description: operator.description,
-    params: operator.params
+    params: operator.params,
+    parameters: operator.parameters,
+    output_ports: operator.outputPorts
   }))
   emit('operator-drag', operator)
 }

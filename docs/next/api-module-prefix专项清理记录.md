@@ -20,6 +20,41 @@ ADDP 当前模块管理 API 的主路径应统一为：
 4. 已确认是旧兼容别名的路由应直接删除，不保留双轨。
 5. Service 发布的数据访问端点可能具有用户侧公开 URL 语义，不能和普通模块管理 API 机械等同，需要单独确认。
 
+## 当前代码事实（2026-06-22 盘点）
+
+Service 后端当前真实注册了四类路径：
+
+| 类别 | 当前路径 | 代码位置 | 初步判断 |
+| --- | --- | --- | --- |
+| 管理 API | `/api/v1/service/...` | `service/backend/internal/api/router.go` | 主路径正确 |
+| 查询服务公开执行 | `GET /api/query/:serviceName` | `service/backend/internal/api/router.go`、`gateway/internal/router/router.go` | 公开 API，但游离于模块前缀之外 |
+| 图查询服务公开执行 | `POST /api/gquery/:serviceName` | `service/backend/internal/api/router.go`、`gateway/internal/router/router.go` | 公开 API，但游离于模块前缀之外 |
+| 注册服务公开代理 | `ANY /api/service/registered/proxy/:id/*path` | `service/backend/internal/api/router.go` | 使用旧式 `/api/service`，应清理 |
+| OGC/瓦片标准访问 | `/ogc/features/...`、`/tiles/...`、`/wmts/...`、`/ogc/tiles/...` | `service/backend/internal/api/router.go`、`gateway/internal/router/router.go` | 行业/协议访问路径，先不并入本次 `/api/{module}` 清理 |
+
+Service 前端存在一个实际调用风险：`service/frontend/src/api/client.js` 使用 `createAPIClient` 默认 `baseURL=/api/v1`，但部分公开端点测试 API 调用的是 `client.get('/query/...')`、`client.post('/gquery/...')`、`client.get('/tiles/...')`、`client.get('/ogc/...')` 等相对路径，实际会拼成 `/api/v1/query/...`、`/api/v1/gquery/...`、`/api/v1/tiles/...`、`/api/v1/ogc/...`，与后端和 Gateway 注册路径不一致。页面上用于展示和复制的 endpoint 多数直接拼 `window.location.origin + /api/query/...`、`/ogc/...`，与 API client 调用路径也不完全一致。
+
+另外，`service/backend/internal/service/graph_query_service_service.go` 当前返回的图查询执行 endpoint 是 `/api/v1/gquery/:serviceName`，但真实路由是 `/api/gquery/:serviceName`，这属于明确不一致。
+
+## 建议路径决策
+
+建议将 Service 发布服务访问 API 统一定义为 Service 模块下的公开 API 命名空间：
+
+```text
+/api/v1/service/public/query/:serviceName
+/api/v1/service/public/gquery/:serviceName
+/api/v1/service/public/registered/proxy/:id/*path
+```
+
+理由：
+
+1. 仍满足全平台 HTTP API 使用 `/api/v1/{module}` 的规范。
+2. `public` 明确表达“发布服务访问 API”，和管理 API `/api/v1/service/query`、`/api/v1/service/graph`、`/api/v1/service/registered` 分离。
+3. Gateway 可以继续透明代理到 Service，只需在受保护 `/api/v1/:module/*path` 之前注册 `/api/v1/service/public/...` 的公开转发规则，认证和 public/private 判断仍由 Service handler 内部完成。
+4. 旧的 `/api/query`、`/api/gquery`、`/api/service/registered/proxy` 可以一次性删除，不保留兼容别名。
+
+暂不建议迁移 OGC、WMTS、XYZ Tiles 路径。它们是协议入口，不是 ADDP 模块管理 API；本次只在 Gateway 文档中明确列为“Service 标准/公开访问路径”，避免和 `/api/{module}` 旧路径混为一谈。
+
 ## 已知已处理
 
 | 类别 | 处理结果 |
@@ -70,18 +105,37 @@ Gateway 当前除 `/api/v1/:module/*path` 外，还对 Service 公开查询端�
 
 ## 建议推进路线
 
-1. 先列出当前真实路由：从各模块 `router.go`、Gateway router、Swagger paths 生成清单。
-2. 将路由按“模块管理 API / 公开数据服务 API / 健康检查 / OGC 或瓦片等标准访问 API / 历史兼容路径”分类。
-3. 对“历史兼容路径”直接删除，并补测试或覆盖校验。
-4. 对 Service 公开访问 API 先做概念决策，再做 clean break 迁移。
-5. 同步更新 `docs/spec/addp-API设计规范.md`、Gateway 文档、Service 文档、Swagger 和前端 API client。
-6. 最后跑：
+1. 在 `docs/spec/addp-API设计规范.md` 中补充“模块管理 API”和“发布服务访问 API”的边界：管理 API 必须是 `/api/v1/{module}/...`；Service 公开数据服务 API 使用 `/api/v1/service/public/...`；OGC/WMTS/XYZ 等行业协议路径作为协议入口单列。
+2. 更新 Service 后端路由：新增唯一公开 API 组 `/api/v1/service/public`，迁移查询、图查询、注册服务代理；删除 `/api/query`、`/api/gquery`、`/api/service/registered/proxy`。
+3. 更新 Gateway 路由：在受保护 `/api/v1` 组之前注册 `/api/v1/service/public/query/:serviceName`、`/api/v1/service/public/gquery/:serviceName`、`/api/v1/service/public/registered/proxy/:id/*path` 的公开转发；删除旧的 `/api/query`、`/api/gquery` 特殊转发；保留 OGC/WMTS/XYZ 公开转发。
+4. 更新 Service 后端返回的 endpoints：`rest_api`、`execute`、`proxy` 等全部改为 `/api/v1/service/public/...`。
+5. 更新 Service 前端：管理 API 继续使用默认 `/api/v1` client；公开端点测试和复制链接统一使用 `/api/v1/service/public/...`。OGC/WMTS/XYZ 测试若继续走根路径，需使用不带 `/api/v1` baseURL 的 public client 或直接 axios。
+6. 同步更新 `service/CLAUDE.md`、Gateway README/架构说明、Service 核心文档和相关测试指南；历史规划文档只加状态说明，不继续维护旧示例。
+7. 重新生成并校验 Service Swagger：
+
+```bash
+bash scripts/swagger/gen-swagger.sh service
+bash scripts/swagger/check-route-coverage.sh service
+```
+
+8. 最后跑全量覆盖校验：
 
 ```bash
 bash scripts/swagger/check-route-coverage.sh all
 ```
 
-并按涉及模块补充后端测试或前端构建验证。
+并按涉及模块补充后端测试、Gateway 路由测试或前端构建验证。
+
+## 推荐首批落地清单
+
+如果本专项继续推进，建议第一批只做 Service/Gateway 主路径收敛，不碰 OGC/WMTS/XYZ：
+
+1. 文档决策：更新 API 规范、Gateway 文档、Service 模块说明。
+2. 后端路由：Service 新增 `/api/v1/service/public/...`，删除旧公开 API 路由。
+3. Gateway 路由：新增 `/api/v1/service/public/...` 公开转发，删除 `/api/query`、`/api/gquery`。
+4. Endpoint 生成：修正 QueryService、GraphQueryService、RegisteredService 返回的公开 URL。
+5. 前端调用：修正 Query/Graph/Registered 的公开端点测试路径；瓦片和 OGC 测试改为 public client，避免被 `/api/v1` baseURL 拼错。
+6. 验证：Service Swagger 覆盖校验、Gateway 路由单测或最小 curl 验证、Service 前端构建。
 
 ## 暂不处理
 

@@ -4,12 +4,14 @@ import (
 	"context"
 	"io"
 	"sort"
+	"strings"
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	"github.com/addp/common/rastermosaic"
 	"github.com/addp/meta/internal/metaattr"
 )
 
@@ -35,6 +37,9 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 		ScopeKind:  dataitem.ScopeKindDirectory,
 		ScopePath:  input.DirPath,
 		Candidates: fileEntriesToCandidates(files),
+		Options: dataitem.ResolveOptions{
+			AllowWholeScope: true,
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -47,19 +52,158 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 		return result, nil
 	}
 	for _, item := range resolved.Items {
-		if item.Layout != format.LayoutMulti && !input.Options.IncludeSingleResources {
+		if item.Layout == format.LayoutSingle && !input.Options.IncludeSingleResources {
 			continue
 		}
+		var itemAttributes map[string]interface{}
+		if item.Layout == format.LayoutWhole && item.Format == string(format.FormatRasterMosaic) {
+			attrs, ok := rasterMosaicManifestAttributes(ctx, input, item)
+			if !ok {
+				continue
+			}
+			itemAttributes = attrs
+		}
 		detected := detectedItemFromResolvedItem(input.DirPath, item)
+		if len(itemAttributes) > 0 {
+			detected.Attributes = itemAttributes
+		}
 		if item.Layout == format.LayoutMulti {
 			enrichRefTableInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.CatalogPathFor, item, detected)
 		}
 		result.Items = append(result.Items, detected)
+		if item.Layout == format.LayoutWhole && resolved.Exclusive {
+			result.Exclusive = true
+		}
 		for _, path := range detected.RefFilePaths() {
 			result.Claims[path] = true
 		}
 	}
 	return result, nil
+}
+
+func rasterMosaicManifestAttributes(ctx context.Context, input DirectoryResolveInput, item dataitem.ResolvedItem) (map[string]interface{}, bool) {
+	if input.ContentReader == nil {
+		return nil, false
+	}
+	manifestPath := ""
+	for _, ref := range item.RefList {
+		if ref.Role == "manifest" && ref.Path != "" {
+			manifestPath = ref.Path
+			break
+		}
+	}
+	if manifestPath == "" {
+		return nil, false
+	}
+	reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, resolveCatalogPath(input.EngineID, manifestPath, input.CatalogPathFor), plugin.ReadOptions{Length: 1 << 20})
+	if err != nil {
+		return nil, false
+	}
+	defer reader.Close()
+
+	manifest, err := rastermosaic.DecodeManifest(reader, 1<<20)
+	if err != nil {
+		return nil, false
+	}
+	manifestRef := strings.TrimPrefix(strings.TrimPrefix(manifestPath, strings.Trim(item.ScopePath, "/")), "/")
+	if manifestRef == "" {
+		manifestRef = rastermosaic.ManifestFileName
+	}
+	formatInfo := map[string]interface{}{
+		"manifest_ref":            manifestRef,
+		"manifest_schema_version": manifest.SchemaVersion,
+	}
+	if value := strings.TrimSpace(manifest.Refs.Index); value != "" {
+		formatInfo["index_ref"] = value
+	}
+	if value := strings.TrimSpace(manifest.Refs.Overview); value != "" {
+		formatInfo["overview_ref"] = value
+		formatInfo["overview_profile"] = "cog"
+	}
+	if manifest.Summary.LeafCount > 0 {
+		formatInfo["leaf_count"] = manifest.Summary.LeafCount
+	}
+	if manifest.Summary.SourceCount > 0 {
+		formatInfo["source_count"] = manifest.Summary.SourceCount
+	}
+	if manifest.Summary.OverviewWidth > 0 {
+		formatInfo["overview_width"] = manifest.Summary.OverviewWidth
+	}
+	if manifest.Summary.OverviewHeight > 0 {
+		formatInfo["overview_height"] = manifest.Summary.OverviewHeight
+	}
+	attrs := map[string]interface{}{
+		"format_info": map[string]interface{}{
+			string(format.FormatRasterMosaic): formatInfo,
+		},
+	}
+	if spatial := rasterMosaicSpatialAttributes(manifest); len(spatial) > 0 {
+		attrs["capabilities"] = map[string]interface{}{"spatial": spatial}
+	}
+	return attrs, true
+}
+
+func rasterMosaicSpatialAttributes(manifest rastermosaic.Manifest) map[string]interface{} {
+	spatial := map[string]interface{}{}
+	if len(manifest.Summary.Extent) == 4 {
+		spatial["extent"] = append([]float64(nil), manifest.Summary.Extent...)
+	}
+	if crs := strings.TrimSpace(manifest.Summary.SourceCRS); crs != "" {
+		spatial["crs"] = crs
+	}
+	return spatial
+}
+
+func interfaceMap(value interface{}) map[string]interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return typed
+	default:
+		return nil
+	}
+}
+
+func interfaceString(value interface{}) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	default:
+		return ""
+	}
+}
+
+func interfaceInt64(value interface{}) int64 {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed)
+	case int64:
+		return typed
+	case float64:
+		return int64(typed)
+	default:
+		return 0
+	}
+}
+
+func floatSlice(value interface{}) []float64 {
+	items, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]float64, 0, len(items))
+	for _, item := range items {
+		switch typed := item.(type) {
+		case int:
+			result = append(result, float64(typed))
+		case int64:
+			result = append(result, float64(typed))
+		case float64:
+			result = append(result, typed)
+		default:
+			return nil
+		}
+	}
+	return result
 }
 
 func fileEntriesToCandidates(files []StorageFileRef) []dataitem.Candidate {

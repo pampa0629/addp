@@ -39,7 +39,7 @@ echo ""
 echo -e "${YELLOW}=== 应用服务层健康检查 ===${NC}"
 
 # 检查各个后端服务
-for service in system:8180 manager:8081 meta:8082 transfer:8083 orchestrator:8084 develop:8085 service:8086 copilot:8087; do
+for service in system:8180 manager:8081 meta:8082 transfer:8083 orchestrator:8084 develop:8185 service:8086 copilot:8087; do
   name=$(echo $service | cut -d: -f1)
   port=$(echo $service | cut -d: -f2)
 

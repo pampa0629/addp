@@ -2,10 +2,21 @@ package nfs
 
 import (
 	"context"
+	"io"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
 )
+
+type testReadSeekCloser struct {
+	*strings.Reader
+}
+
+func (r testReadSeekCloser) Close() error {
+	return nil
+}
 
 func TestNFSRootCatalogEntryIsSemanticRoot(t *testing.T) {
 	p := &NFSPlugin{}
@@ -64,5 +75,30 @@ func TestNFSCapabilitiesDeclareRangeRead(t *testing.T) {
 	}
 	if err := plugin.ValidatePluginCapabilities(p); err != nil {
 		t.Fatalf("ValidatePluginCapabilities() error = %v", err)
+	}
+}
+
+func TestNFSFileReadCloserSupportsSeekEndWithKnownSize(t *testing.T) {
+	reader := &nfsFileReadCloser{
+		ReadCloser: testReadSeekCloser{Reader: strings.NewReader("abcdef")},
+		mu:         &sync.Mutex{},
+		size:       6,
+	}
+	defer reader.Close()
+
+	pos, err := reader.Seek(-2, io.SeekEnd)
+	if err != nil {
+		t.Fatalf("SeekEnd() error = %v", err)
+	}
+	if pos != 4 {
+		t.Fatalf("SeekEnd position = %d, want 4", pos)
+	}
+	buf := make([]byte, 2)
+	n, err := reader.Read(buf)
+	if err != nil && err != io.EOF {
+		t.Fatalf("Read() error = %v", err)
+	}
+	if n != 2 || string(buf) != "ef" {
+		t.Fatalf("Read after SeekEnd = n:%d data:%q, want ef", n, string(buf))
 	}
 }

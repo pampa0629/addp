@@ -175,6 +175,7 @@ BUFFER_METADATA = OperatorMetadata(
     category=OperatorCategory.GEOMETRIC,
     description="缓冲区分析",
     brief_description="在几何对象周围创建指定距离的缓冲区,常用于影响范围分析和邻域查询",
+    execution_modes=["workflow"],
 
     overview="在输入几何对象周围创建指定距离的缓冲区多边形。支持点、线、面等各类几何类型,缓冲距离可正可负(负值仅对面有效,表示内缩)。",
 
@@ -238,6 +239,7 @@ INTERSECTION_METADATA = OperatorMetadata(
     category=OperatorCategory.GEOMETRIC,
     description="几何相交",
     brief_description="计算两个几何图层的空间交集,提取重叠区域,常用于叠加分析",
+    execution_modes=["workflow"],
 
     overview="计算输入图层A与图层B的几何交集,返回两者重叠的部分。结果保留图层A的属性,可选择性保留图层B的属性。",
 
@@ -290,6 +292,7 @@ UNION_METADATA = OperatorMetadata(
     category=OperatorCategory.GEOMETRIC,
     description="几何合并",
     brief_description="将多个图层的几何对象合并为一个图层,常用于数据整合和范围叠加",
+    execution_modes=["workflow"],
 
     overview="将多个GeoDataFrame的所有几何对象合并到一个GeoDataFrame中。所有输入图层的要素会保留在输出中,属性也会保留。适用于多数据源整合、多时相数据合并等场景。",
 
@@ -339,6 +342,7 @@ CENTROID_METADATA = OperatorMetadata(
     category=OperatorCategory.GEOMETRIC,
     description="计算质心",
     brief_description="计算几何对象的质心(中心点),常用于位置标注和点化处理",
+    execution_modes=["workflow"],
 
     overview="计算每个几何对象的质心坐标,将面或线转换为点。质心是几何对象的几何中心,适用于标注位置、聚合分析等场景。",
 
@@ -383,6 +387,7 @@ DIFFERENCE_METADATA = OperatorMetadata(
     category=OperatorCategory.GEOMETRIC,
     description="几何差集",
     brief_description="计算两个图层的几何差集(A-B),保留A中不与B重叠的部分",
+    execution_modes=["workflow"],
 
     overview="从图层A中减去图层B的重叠部分,返回A中独有的几何区域。常用于排除分析、净用地计算等场景。",
 
@@ -436,6 +441,7 @@ SIMPLIFY_METADATA = OperatorMetadata(
     category=OperatorCategory.GEOMETRIC,
     description="简化几何",
     brief_description="简化几何对象的顶点数量,减小数据量,常用于地图制图和性能优化",
+    execution_modes=["workflow"],
 
     overview="使用Douglas-Peucker算法简化几何对象,减少顶点数量同时保持形状特征。适用于大比例尺制图、Web地图加载优化等场景。",
 
@@ -498,6 +504,7 @@ CONVEX_HULL_METADATA = OperatorMetadata(
     category=OperatorCategory.GEOMETRIC,
     description="凸包",
     brief_description="计算几何对象的最小凸包(凸多边形),常用于范围分析和形状概括",
+    execution_modes=["workflow"],
 
     overview="计算包含几何对象所有顶点的最小凸多边形。凸包类似用橡皮筋包裹几何对象的外轮廓,适用于范围估算、离群点检测等场景。",
 
@@ -542,6 +549,7 @@ DISSOLVE_METADATA = OperatorMetadata(
     category=OperatorCategory.GEOMETRIC,
     description="融合几何",
     brief_description="将多个几何对象融合为一个（或按字段分组融合），消除重叠，常用于缓冲区合并后的去重",
+    execution_modes=["workflow"],
 
     overview="将图层内的所有几何对象融合为单一几何（全局融合），或按指定字段分组融合。是缓冲区分析中消除重叠的关键步骤，确保后续面积统计不重复计算。",
 
@@ -594,6 +602,7 @@ ENVELOPE_METADATA = OperatorMetadata(
     category=OperatorCategory.GEOMETRIC,
     description="最小外接矩形",
     brief_description="计算几何对象的最小外接矩形(MBR),常用于快速范围查询和空间索引",
+    execution_modes=["workflow"],
 
     overview="计算包含几何对象的最小轴对齐矩形(Minimum Bounding Rectangle),边平行于坐标轴。常用于空间索引、粗略范围查询等场景。",
 

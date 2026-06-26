@@ -53,7 +53,7 @@ cd /path/to/addp
    - Meta Backend (8082) + Worker
    - Transfer Backend (8083) + Worker
    - Orchestrator Backend (8084)
-   - Develop Backend (8085)
+   - Develop Backend (8185)
    - Gateway (8000)
 
 [4/5] 后端健康检查
@@ -218,7 +218,7 @@ ADDP 服务健康检查
   ✓ Meta Backend (8082)
   ✓ Transfer Backend (8083)
   ✓ Orchestrator Backend (8084)
-  ✓ Develop Backend (8085)
+  ✓ Develop Backend (8185)
   ✓ Gateway (8000)
 
 前端服务:

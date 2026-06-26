@@ -48,11 +48,27 @@ func (r *SystemEngineResolver) ResolveEngine(ref EngineRef) (EngineBinding, erro
 		return EngineBinding{}, fmt.Errorf("engine %d type mismatch: task declares %q, system has %q", ref.ID, ref.Type, engineType)
 	}
 
+	capabilities, err := engineCapabilities(engine)
+	if err != nil {
+		return EngineBinding{}, fmt.Errorf("parse engine %d capabilities: %w", engine.ID, err)
+	}
 	return EngineBinding{
-		Type:     engineType,
-		ConnInfo: toEnginePluginConnInfo(engine.ConnectionInfo),
-		EngineID: engine.ID,
+		Type:         engineType,
+		ConnInfo:     toEnginePluginConnInfo(engine.ConnectionInfo),
+		EngineID:     engine.ID,
+		Capabilities: capabilities,
 	}, nil
+}
+
+func engineCapabilities(engine *commonmodels.Engine) (*engineplugin.EngineCapabilities, error) {
+	if engine == nil || engine.Capabilities == nil || *engine.Capabilities == "" {
+		return nil, nil
+	}
+	capabilities, err := engineplugin.ParseEngineCapabilities(string(*engine.Capabilities))
+	if err != nil {
+		return nil, err
+	}
+	return capabilities, nil
 }
 
 func toEnginePluginConnInfo(connInfo commonmodels.ConnectionInfo) engineplugin.ConnectionInfo {

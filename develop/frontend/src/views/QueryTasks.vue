@@ -64,6 +64,9 @@
             <el-tag v-if="getEngineID(row)" size="small" type="info">
               {{ t('develop.queryTasks.resourceId', { id: getEngineID(row) }) }}
             </el-tag>
+            <el-tag v-else-if="isDuckDBTask(row)" size="small" type="success">
+              {{ t('develop.queryTasks.duckdbFederated') }}
+            </el-tag>
             <span v-else>-</span>
           </template>
         </el-table-column>
@@ -173,6 +176,7 @@
         v-if="showEditDialog"
         v-model="showEditDialog"
         :engine-id="getEngineID(editingTask)"
+        :query-mode="getQueryMode(editingTask)"
         :sql="editingTask?.content?.query || editingTask?.content?.sql || ''"
         @saved="handleUpdateTask"
       />
@@ -220,6 +224,8 @@ const statusMap = computed(() => ({
 }))
 
 const getEngineID = (task) => task?.execution_config?.engine_id ?? null
+const getQueryMode = (task) => (task?.execution_config?.query_mode || '').trim().toLowerCase()
+const isDuckDBTask = (task) => getQueryMode(task) === 'duckdb'
 
 // 加载任务列表
 const loadTasks = async () => {

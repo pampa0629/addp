@@ -49,7 +49,7 @@ SUCCESS=0
 FAILED=0
 
 # 定义模块列表（格式：模块名:端口）
-MODULES="manager:8081 meta:8082 develop:8083 transfer:8084 service:8085 orchestrator:8086 monitor:8087 standard:8088 model:8089"
+MODULES="manager:8081 meta:8082 transfer:8083 orchestrator:8084 develop:8185 service:8086 monitor:8100 standard:8110 model:8181 quality:8182 portal:8184 graph:8186"
 
 for entry in $MODULES; do
     IFS=':' read -r module port <<< "$entry"

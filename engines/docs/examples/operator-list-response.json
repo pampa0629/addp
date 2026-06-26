@@ -5,10 +5,12 @@
       "id": "buffer",
       "name": "buffer",
       "display_name": "缓冲区分析",
+      "engine_type": "python_workflow",
       "category": "几何处理",
+      "category_path": ["几何处理"],
       "description": "对几何对象创建缓冲区",
       "brief_description": "在几何对象周围创建指定距离的缓冲区",
-      "module": "python-workflow",
+      "execution_modes": ["workflow"],
       "parameters": [
         {
           "name": "input_gdf",
@@ -58,10 +60,12 @@
       "id": "add",
       "name": "add",
       "display_name": "加法",
+      "engine_type": "math_workflow",
       "category": "数学运算",
+      "category_path": ["数学运算"],
       "description": "两数相加",
       "brief_description": "计算两个数的和",
-      "module": "math-workflow",
+      "execution_modes": ["workflow"],
       "parameters": [
         {
           "name": "a",

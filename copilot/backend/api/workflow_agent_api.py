@@ -3,8 +3,8 @@
 
 基于 WorkflowPipeline 的多阶段工作流生成
 """
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, Dict, Any
 
 from pipelines.workflow_pipeline import WorkflowPipeline
@@ -37,12 +37,13 @@ def get_workflow_pipeline() -> WorkflowPipeline:
 
 class WorkflowGenerationRequest(BaseModel):
     """工作流生成请求"""
+    model_config = ConfigDict(extra="forbid")
+
     query: str
     conversation_id: Optional[int] = None
     tenant_id: int = 1
     user_id: int = 1
-    engine_type: str = "python_workflow"  # 工作流引擎类型：python_workflow, spark_workflow, math_workflow（默认 python_workflow）
-    workflow_engine_id: Optional[int] = None  # 工作流引擎 ID（由前端传递，对应 system.engines 表中的 ID）
+    workflow_engine_id: int  # 工作流引擎实例 ID；算子发现、详情和验证均以该实例为准
 
 
 class WorkflowGenerationResponse(BaseModel):
@@ -86,7 +87,6 @@ async def generate_workflow(request: WorkflowGenerationRequest):
     print(f"[API] 租户 ID: {request.tenant_id}")
     print(f"[API] 用户 ID: {request.user_id}")
     print(f"[API] 对话 ID: {request.conversation_id}")
-    print(f"[API] 工作流引擎类型: {request.engine_type}")
     print(f"[API] 工作流引擎 ID: {request.workflow_engine_id}")
     print(f"{'='*80}\n")
 
@@ -99,7 +99,7 @@ async def generate_workflow(request: WorkflowGenerationRequest):
         result = await pipeline.run(
             query=request.query,
             tenant_id=request.tenant_id,
-            engine_type=request.engine_type  # 传递引擎类型
+            workflow_engine_id=request.workflow_engine_id
         )
         print(f"[API] ✅ WorkflowPipeline 返回结果")
 

@@ -13,15 +13,18 @@ type OperatorDescriptor struct {
 	ID                  string                 `json:"id"`                             // 算子唯一标识 (如 "scan_deep")
 	Name                string                 `json:"name"`                           // 算子名称 (同ID)
 	DisplayName         string                 `json:"display_name"`                   // 中文显示名 (如 "深度扫描")
+	EngineType          string                 `json:"engine_type"`                    // 所属扩展引擎类型 (如 acme_geo_workflow)
 	Type                string                 `json:"type"`                           // 算子类型 (scan/transfer/spatial等)
-	Category            string                 `json:"category"`                       // 分类 (元数据管理/数据传输/空间计算)
+	Category            string                 `json:"category"`                       // 算子分类/分组 (格式转换/空间分析)
+	CategoryPath        []string               `json:"category_path"`                  // 多级分组目录；无多级目录时必须显式为 [category]
 	Description         string                 `json:"description"`                    // 功能描述
 	BriefDescription    string                 `json:"brief_description,omitempty"`    // 简要描述（用于 AI 算子选择）
 	DetailedDescription map[string]interface{} `json:"detailed_description,omitempty"` // 详细描述（含 notes、workflow_example 等，用于 AI 工作流生成）
 	Parameters          []ParameterDescriptor  `json:"parameters"`                     // 参数定义
 	Inputs              []string               `json:"inputs"`                         // 输入类型列表
-	OutputPorts         []OutputPortDescriptor `json:"output_ports"`                   // 输出端口定义 (替代 Outputs)
-	Module              string                 `json:"module"`                         // 所属模块 (meta/transfer/manager/python_workflow)
+	OutputPorts         []OutputPortDescriptor `json:"output_ports"`                   // 标准输出端口定义
+	ExecutionModes      []string               `json:"execution_modes"`                // workflow/direct
+	Attributes          map[string]interface{} `json:"attributes,omitempty"`           // 引擎自定义扩展属性
 }
 
 // ParameterDescriptor 参数描述
@@ -40,30 +43,32 @@ type ParameterDescriptor struct {
 	DependsOn   string                         `json:"depends_on,omitempty"` // 依赖的参数名 (动态显示)
 	ShowWhen    map[string]interface{}         `json:"show_when,omitempty"`  // 显示条件 (格式: {param_name: value_or_list})
 	Notes       string                         `json:"notes,omitempty"`      // 注意事项/额外说明
-	UIType      string                         `json:"ui_type,omitempty"`    // UI 组件类型 (resource_tree_picker/nfs_file_picker等)
+	UIType      string                         `json:"ui_type,omitempty"`    // UI 组件类型 (resource_tree_picker 等)
 	UIConfig    map[string]interface{}         `json:"ui_config,omitempty"`  // UI 组件配置参数
 }
 
-// OperatorsResponse GET /api/{module}/operators 返回格式
+// OperatorsResponse 表达算子列表返回格式。
+// 工作流引擎通过 WorkflowRuntimeProvider.ListOperators() 获取，
+// 当前 addp.workflow/v1 HTTP 入口为 GET /api/operators。
 type OperatorsResponse struct {
 	Status    string               `json:"status"`    // "success"
 	Operators []OperatorDescriptor `json:"operators"` // 算子列表
 	Count     int                  `json:"count"`     // 算子总数
 }
 
-// OperatorExecuteRequest POST /api/{module}/operators/:name/execute 请求格式
-type OperatorExecuteRequest struct {
-	Params     map[string]interface{} `json:"params" binding:"required"` // 算子参数
-	ExecuteNow bool                   `json:"execute_now"`               // 是否立即执行(默认true)
-	TaskName   string                 `json:"task_name,omitempty"`       // 任务名称(execute_now=false时)
+// OperatorInvokeRequest 表达单算子 direct 调用请求格式。
+// 当前 addp.workflow/v1 入口为 POST /api/operators/{name}/invoke。
+type OperatorInvokeRequest struct {
+	Params  map[string]interface{} `json:"params" binding:"required"` // 算子参数
+	Runtime map[string]interface{} `json:"runtime,omitempty"`         // 执行期运行时绑定参数
 }
 
-// OperatorExecuteResponse POST /api/{module}/operators/:name/execute 响应格式
-type OperatorExecuteResponse struct {
-	Status     string                 `json:"status"`            // "success"/"error"
-	TaskID     string                 `json:"task_id"`           // 任务ID
-	TaskStatus string                 `json:"task_status"`       // "running"/"pending"/"success"/"failed"
-	Result     map[string]interface{} `json:"result,omitempty"`  // 执行结果(同步执行时)
-	Message    string                 `json:"message,omitempty"` // 提示信息
-	CreatedAt  string                 `json:"created_at"`        // 创建时间
+// OperatorInvokeResponse 表达单算子 direct 调用响应格式。
+type OperatorInvokeResponse struct {
+	Status          string                 `json:"status"`                 // "success"/"failed"
+	ExecutionID     string                 `json:"execution_id,omitempty"` // runtime 本地执行ID，不是 ADDP 任务ID
+	Result          map[string]interface{} `json:"result,omitempty"`       // 调用结果
+	Error           string                 `json:"error,omitempty"`        // 错误信息
+	Message         string                 `json:"message,omitempty"`      // 提示信息
+	ExecutionTimeMs *float64               `json:"execution_time_ms,omitempty"`
 }

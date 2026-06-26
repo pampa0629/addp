@@ -4,23 +4,32 @@ FROM python:3.11-slim
 
 # Install only runtime dependencies (no build tools)
 RUN apt-get update && apt-get install -y \
+    build-essential \
+    g++ \
+    gcc \
     libgeos-c1t64 \
     libproj25 \
     gdal-bin \
+    libgdal-dev \
     libgdal36 \
     && rm -rf /var/lib/apt/lists/*
+
+RUN GDAL_VERSION="$(gdal-config --version)" \
+    && pip install --no-cache-dir "GDAL==${GDAL_VERSION}"
 
 # Set working directory
 WORKDIR /app
 
 # Copy locally installed packages from venv
 # Usage: Before building, ensure venv exists with all dependencies
-COPY venv/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
+COPY engines/python-workflow/venv/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
+COPY common-python/ /tmp/common-python/
+RUN pip install --no-cache-dir /tmp/common-python
 
 # Copy application code
-COPY operators.py .
-COPY workflow_engine.py .
-COPY api_server.py .
+COPY engines/python-workflow/operators/ ./operators/
+COPY engines/python-workflow/workflow_engine.py .
+COPY engines/python-workflow/api_server.py .
 
 # Expose Flask port
 EXPOSE 8099

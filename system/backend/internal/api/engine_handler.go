@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	commonapi "github.com/addp/common/api"
+	engineplugin "github.com/addp/common/engine/plugin"
 	commonutils "github.com/addp/common/utils"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
@@ -17,8 +18,7 @@ import (
 
 type engineResponse struct {
 	models.Engine
-	Capabilities     json.RawMessage          `json:"capabilities,omitempty"`
-	CapabilitiesView *models.CapabilitiesView `json:"capabilities_view,omitempty"`
+	Capabilities json.RawMessage `json:"capabilities,omitempty"`
 }
 
 type EngineHandler struct {
@@ -35,7 +35,7 @@ func NewEngineHandler(engineService *service.EngineService) *EngineHandler {
 
 // Create godoc
 // @Summary      创建引擎 | Create engine
-// @Description  创建新的存储引擎连接 | Create a new storage engine connection
+// @Description  创建新的引擎连接；声明 addp.workflow/v1 的扩展工作流引擎会在保存前探测 /health 和 /api/operators | Create a new engine connection; addp.workflow/v1 workflow extensions are probed before save
 // @Tags         引擎管理 | Engine Management
 // @Accept       json
 // @Produce      json
@@ -47,6 +47,11 @@ func NewEngineHandler(engineService *service.EngineService) *EngineHandler {
 func (h *EngineHandler) Create(c *gin.Context) {
 	var req models.EngineCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := h.probeWorkflowRuntimeBeforeSave(&req); err != nil {
 		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -195,7 +200,7 @@ func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
 // @Security     BearerAuth
 // @Param        id path int true "引擎ID | Engine ID"
 // @Param        request body models.EngineUpdateRequest false "临时连接配置 | Temporary connection info"
-// @Success      200 {object} map[string]interface{}
+// @Success      200 {object} models.EngineConnectionTestResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
 // @Router       /engines/{id}/test [post]
@@ -222,8 +227,8 @@ func (h *EngineHandler) TestConnection(c *gin.Context) {
 		return
 	}
 
-	// 测试连接
-	if err := h.storageEngineService.TestConnection(engine); err != nil {
+	probe, err := h.testEngineConnection(engine)
+	if err != nil {
 		// 更新为offline
 		h.engineService.RecordConnectionStatus(id, "offline", err.Error())
 
@@ -241,6 +246,7 @@ func (h *EngineHandler) TestConnection(c *gin.Context) {
 	commonapi.RespondSuccess(c, gin.H{
 		"success": true,
 		"message": "连接成功",
+		"probe":   probe,
 	})
 }
 
@@ -251,7 +257,7 @@ func (h *EngineHandler) TestConnection(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        request body models.EngineCreateRequest true "引擎信息 | Engine info"
-// @Success      200 {object} map[string]interface{}
+// @Success      200 {object} models.EngineConnectionTestResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Router       /engines/test-connection [post]
 func (h *EngineHandler) TestConnectionBeforeCreate(c *gin.Context) {
@@ -264,11 +270,14 @@ func (h *EngineHandler) TestConnectionBeforeCreate(c *gin.Context) {
 	// 构建临时资源对象用于测试
 	engine := &models.Engine{
 		EngineType:     req.EngineType,
+		EngineOrigin:   req.EngineOrigin,
+		Name:           req.Name,
 		ConnectionInfo: req.ConnectionInfo,
+		Capabilities:   req.Capabilities,
 	}
 
-	// 测试连接
-	if err := h.storageEngineService.TestConnection(engine); err != nil {
+	probe, err := h.testEngineConnection(engine)
+	if err != nil {
 		commonapi.RespondSuccess(c, gin.H{
 			"success": false,
 			"message": "连接失败",
@@ -280,7 +289,43 @@ func (h *EngineHandler) TestConnectionBeforeCreate(c *gin.Context) {
 	commonapi.RespondSuccess(c, gin.H{
 		"success": true,
 		"message": "连接成功",
+		"probe":   probe,
 	})
+}
+
+func (h *EngineHandler) testEngineConnection(engine *models.Engine) (gin.H, error) {
+	if h.storageEngineService.ShouldProbeWorkflowRuntime(engine) {
+		operatorCount, err := h.storageEngineService.ProbeWorkflowRuntimeContract(engine)
+		if err != nil {
+			return nil, err
+		}
+		return gin.H{
+			"runtime_protocol": engineplugin.WorkflowRuntimeAPIAddpV1,
+			"operators_count":  operatorCount,
+		}, nil
+	}
+	if err := h.storageEngineService.TestConnection(engine); err != nil {
+		return nil, err
+	}
+	return gin.H{}, nil
+}
+
+func (h *EngineHandler) probeWorkflowRuntimeBeforeSave(req *models.EngineCreateRequest) error {
+	if req == nil {
+		return nil
+	}
+	engine := &models.Engine{
+		EngineType:     req.EngineType,
+		EngineOrigin:   req.EngineOrigin,
+		Name:           req.Name,
+		ConnectionInfo: req.ConnectionInfo,
+		Capabilities:   req.Capabilities,
+	}
+	if !h.storageEngineService.ShouldProbeWorkflowRuntime(engine) {
+		return nil
+	}
+	_, err := h.testEngineConnection(engine)
+	return err
 }
 
 type internalResourceCreateRequest struct {
@@ -398,7 +443,11 @@ func toEngineResponses(engines []models.Engine) []engineResponse {
 }
 
 func toEngineResponse(engine *models.Engine) engineResponse {
-	response := engineResponse{Engine: *engine}
+	engineCopy := *engine
+	if engineCopy.Capabilities != nil && *engineCopy.Capabilities != "" {
+		engineCopy.CapabilitiesView = service.BuildCapabilitiesView(engineCopy.Capabilities, engineCopy.EngineType)
+	}
+	response := engineResponse{Engine: engineCopy}
 	if engine.Capabilities != nil && *engine.Capabilities != "" {
 		response.Capabilities = json.RawMessage(*engine.Capabilities)
 	}
@@ -406,11 +455,7 @@ func toEngineResponse(engine *models.Engine) engineResponse {
 }
 
 func toEngineDetailResponse(engine *models.Engine) engineResponse {
-	response := toEngineResponse(engine)
-	if engine.Capabilities != nil && *engine.Capabilities != "" {
-		response.CapabilitiesView = service.BuildCapabilitiesView(engine.Capabilities, engine.EngineType)
-	}
-	return response
+	return toEngineResponse(engine)
 }
 
 // ListCatalogChildren 列出指定引擎的实时 catalog 子节点。
@@ -502,6 +547,9 @@ func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
 	if err := h.engineService.ValidateSystemEngineType(req.EngineType); err != nil {
 		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
 		return
+	}
+	if req.IsBuiltin {
+		req.Capabilities = nil
 	}
 
 	// 1. 自动填充 host（从请求来源 IP，规范化回环地址）

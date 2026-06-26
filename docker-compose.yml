@@ -55,7 +55,7 @@ services:
       - TRANSFER_URL=http://transfer-backend:8083
       - MANAGER_URL=http://manager-backend:8081
       - ORCHESTRATOR_URL=http://orchestrator-backend:8084
-      - DEVELOP_URL=http://develop-backend:8085
+      - DEVELOP_URL=http://develop-backend:8185
       - PYTHON_WORKFLOW_URL=http://python-workflow-engine:8099
       - GIN_MODE=release
     ports:
@@ -388,7 +388,7 @@ services:
     container_name: develop-backend
     environment:
       - SERVICE_HOST=develop-backend
-      - PORT=8085
+      - DEVELOP_BACKEND_PORT=8185
       - ENV=production
       - SYSTEM_URL=http://system-backend:8180
       - META_URL=http://meta-backend:8082
@@ -408,7 +408,7 @@ services:
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - GIN_MODE=release
     ports:
-      - "8085:8085"
+      - "8185:8185"
     networks:
       - addp-network
     depends_on:
@@ -416,7 +416,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8085'"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8185'"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -602,7 +602,7 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - MANAGER_URL=http://manager-backend:8081
       - META_URL=http://meta-backend:8082
-      - DEVELOP_URL=http://develop-backend:8085
+      - DEVELOP_URL=http://develop-backend:8185
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -746,7 +746,7 @@ services:
       - META_URL=http://meta-backend:8082
       - SERVICE_URL=http://service-backend:8086
       - STANDARD_URL=http://standard-backend:8110
-      - DEVELOP_URL=http://develop-backend:8085
+      - DEVELOP_URL=http://develop-backend:8185
       - MEILISEARCH_URL=http://meilisearch:7700
       - MEILISEARCH_MASTER_KEY=${MEILISEARCH_MASTER_KEY:-}
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
@@ -901,7 +901,7 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - MANAGER_URL=http://manager-backend:8081
       - META_URL=http://meta-backend:8082
-      - DEVELOP_URL=http://develop-backend:8085
+      - DEVELOP_URL=http://develop-backend:8185
       - COPILOT_URL=http://copilot-backend:8087
       - GRAPH_URL=http://graph-backend:8186
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
@@ -1074,7 +1074,7 @@ services:
       - META_URL=http://meta-backend:8082
       - TRANSFER_URL=http://transfer-backend:8083
       - ORCHESTRATOR_URL=http://orchestrator-backend:8084
-      - DEVELOP_URL=http://develop-backend:8085
+      - DEVELOP_URL=http://develop-backend:8185
       - SERVICE_URL=http://service-backend:8086
       - COPILOT_URL=http://copilot-backend:8087
       - MONITOR_URL=http://monitor-backend:8100

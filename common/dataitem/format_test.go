@@ -5,6 +5,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
+	_ "github.com/addp/common/format/builtin"
 )
 
 func TestValidateFormatRuleRejectsMissingPrimaryRelatedRefSpec(t *testing.T) {
@@ -52,5 +53,33 @@ func TestInferDataTypeUsesFormatDescriptorForContentType(t *testing.T) {
 func TestInferDataTypeDoesNotClassifyUnknownMIMEPrefix(t *testing.T) {
 	if got := InferDataType("", "application/x-custom"); got != datatype.Unknown {
 		t.Fatalf("InferDataType(application/x-custom) = %q, want unknown", got)
+	}
+}
+
+func TestBuiltinMultiRulesIncludesGeoTIFFSidecars(t *testing.T) {
+	t.Parallel()
+
+	var tiffRule *FormatRule
+	for _, rule := range BuiltinMultiRules() {
+		if rule.Format == string(format.FormatTIFF) {
+			copied := rule
+			tiffRule = &copied
+			break
+		}
+	}
+	if tiffRule == nil {
+		t.Fatal("BuiltinMultiRules() missing TIFF rule")
+	}
+	if tiffRule.DataType != datatype.Media || tiffRule.Layout != format.LayoutMulti {
+		t.Fatalf("TIFF rule = %#v, want media multi", tiffRule)
+	}
+	seen := map[string]format.RelatedRefSpec{}
+	for _, spec := range tiffRule.RelatedRefSpecs {
+		seen[format.NormalizeExtension(spec.Extension)] = spec
+	}
+	for _, ext := range []string{".tif", ".tfw", ".hdr", ".aux.xml"} {
+		if _, ok := seen[ext]; !ok {
+			t.Fatalf("TIFF rule refs = %#v, missing %s", tiffRule.RelatedRefSpecs, ext)
+		}
 	}
 }

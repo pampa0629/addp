@@ -44,6 +44,8 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Delete, DocumentDelete, Connection } from '@element-plus/icons-vue'
 import { useDAGCore, useLoopDetection, useDAGSelection, useDAGEdgeMode, registerMultiPortNode } from '@addp/common-frontend/dag'
+import { isStandardWorkflowDefinition } from '@/utils/workflowDevTaskPayload'
+import { applyWorkflowInputRefs } from '@/utils/workflowInputBindings'
 
 const { t } = useI18n()
 
@@ -214,7 +216,7 @@ function handleNodeDoubleClick(e) {
   emit('node-click', {
     id: model.id,
     operator: model.operator,
-    params: model.params || {},
+    params: model.params,
     label: model.label
   })
 }
@@ -269,12 +271,16 @@ function handleDrop(event) {
   nodeCounter.value++
   const nodeId = `${operatorData.name}_${nodeCounter.value}`
 
-  const outputPorts = operatorData.output_ports || [{
-    name: 'default',
-    type: 'geodataframe',
-    description: t('develop.workflowCanvas.defaultOutput'),
-    is_default: true
-  }]
+  if (!Array.isArray(operatorData.output_ports) || operatorData.output_ports.length === 0) {
+    ElMessage.error(t('develop.workflowCanvas.invalidOperatorMetadata', { name: operatorData.name }))
+    return
+  }
+  if (!Array.isArray(operatorData.parameters)) {
+    ElMessage.error(t('develop.workflowCanvas.invalidOperatorMetadata', { name: operatorData.name }))
+    return
+  }
+
+  const outputPorts = operatorData.output_ports
 
   graph.value.addItem('node', {
     id: nodeId,
@@ -284,6 +290,7 @@ function handleDrop(event) {
     operator: operatorData.name,
     params: {},
     depends_on: [],
+    parameters: operatorData.parameters,
     outputPorts
   })
 
@@ -292,7 +299,18 @@ function handleDrop(event) {
 }
 
 function loadWorkflow(workflow) {
-  if (!graph.value || !workflow.tasks) return
+  if (!graph.value || !Array.isArray(workflow.tasks)) return
+
+  if (workflow.tasks.length === 0) {
+    graph.value.clear()
+    nodeCounter.value = 0
+    return
+  }
+
+  if (!isStandardWorkflowDefinition(workflow)) {
+    ElMessage.error(t('develop.workflow.invalidWorkflowFormat'))
+    return
+  }
 
   graph.value.clear()
   nodeCounter.value = 0
@@ -301,18 +319,17 @@ function loadWorkflow(workflow) {
   const edges = []
 
   workflow.tasks.forEach((task, index) => {
-    const nodeId = task.id || `${task.operator}_${index + 1}`
     nodes.push({
-      id: nodeId,
+      id: task.id,
       label: task.operator,
       x: 100 + (index % 3) * 200,
       y: 100 + Math.floor(index / 3) * 120,
       operator: task.operator,
-      params: task.params || {},
-      depends_on: task.depends_on || []
+      params: task.params,
+      depends_on: task.depends_on
     })
 
-    const match = nodeId.match(/_(\d+)$/)
+    const match = task.id.match(/_(\d+)$/)
     if (match) {
       const num = parseInt(match[1])
       if (num > nodeCounter.value) nodeCounter.value = num
@@ -320,12 +337,17 @@ function loadWorkflow(workflow) {
   })
 
   workflow.tasks.forEach(task => {
-    if (task.depends_on && task.depends_on.length > 0) {
+    if (task.depends_on.length > 0) {
       task.depends_on.forEach(sourceId => {
+        const ref = findWorkflowRefForSource(task.params, sourceId)
+        const sourcePort = ref?.port || 'default'
         edges.push({
           source: sourceId,
           target: task.id,
+          sourcePort,
+          targetPort: 'input',
           type: 'polyline',
+          label: sourcePort !== 'default' ? sourcePort : '',
           style: {
             stroke: '#A3B1BF',
             lineWidth: 2,
@@ -341,7 +363,17 @@ function loadWorkflow(workflow) {
   graph.value.render()
 }
 
-function emitWorkflow() {
+function findWorkflowRefForSource(params, sourceId) {
+  if (!params || typeof params !== 'object') return null
+  for (const value of Object.values(params)) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && value.$ref === sourceId) {
+      return value
+    }
+  }
+  return null
+}
+
+function buildWorkflowFromGraph() {
   if (!graph.value) return
 
   const nodes = graph.value.getNodes()
@@ -352,21 +384,35 @@ function emitWorkflow() {
   edges.forEach(edge => {
     const model = edge.getModel()
     const { source: sourceId, target: targetId, sourcePort = 'default', targetPort = 'input' } = model
+    const sourceNode = graph.value.findById(sourceId)
+    const sourceModel = sourceNode?.getModel?.() || {}
+    const sourceOutput = (sourceModel.outputPorts || []).find(port => port.name === sourcePort)
 
     if (!edgePortMap[targetId]) edgePortMap[targetId] = []
-    edgePortMap[targetId].push({ sourceId, sourcePort, targetPort })
+    edgePortMap[targetId].push({
+      sourceId,
+      sourcePort,
+      sourceType: sourceOutput?.type,
+      targetPort
+    })
   })
 
   const tasks = nodes.map(node => {
     const model = node.getModel()
-    const params = { ...(model.params || {}) }
-
     const inEdges = edgePortMap[model.id] || []
-    inEdges.forEach(edgeInfo => {
-      const ref = { "$ref": edgeInfo.sourceId }
-      if (edgeInfo.sourcePort !== 'default') ref.port = edgeInfo.sourcePort
-      params.input_gdf = ref
-    })
+    let params
+    if (!Array.isArray(model.parameters) && inEdges.length > 0) {
+      if (!paramsContainRefsForEdges(model.params, inEdges)) {
+        throw new Error(`operator ${model.operator} is missing parameter metadata`)
+      }
+      params = { ...model.params }
+    } else {
+      params = applyWorkflowInputRefs({
+        params: model.params,
+        parameters: model.parameters,
+        inputEdges: inEdges
+      })
+    }
 
     return {
       id: model.id,
@@ -376,13 +422,35 @@ function emitWorkflow() {
     }
   })
 
-  emit('update:workflow', { tasks })
+  return { tasks }
 }
 
-function updateNodeParams(nodeId, params) {
+function emitWorkflow() {
+  if (!graph.value) return
+
+  try {
+    emit('update:workflow', buildWorkflowFromGraph())
+  } catch (error) {
+    ElMessage.error(t('develop.workflowCanvas.inputBindingFailed') + error.message)
+  }
+}
+
+function paramsContainRefsForEdges(params, inEdges) {
+  return inEdges.every(edge => {
+    const ref = findWorkflowRefForSource(params, edge.sourceId)
+    if (!ref) return false
+    return (ref.port || 'default') === (edge.sourcePort || 'default')
+  })
+}
+
+function updateNodeParams(nodeId, params, parameters = null) {
   const node = graph.value.findById(nodeId)
   if (node) {
-    graph.value.updateItem(node, { ...node.getModel(), params: { ...params } })
+    const nextModel = { ...node.getModel(), params: { ...params } }
+    if (Array.isArray(parameters)) {
+      nextModel.parameters = parameters
+    }
+    graph.value.updateItem(node, nextModel)
     emitWorkflow()
   }
 }
@@ -391,23 +459,11 @@ defineExpose({
   updateNodeParams,
   clearGraph: handleClear,
   getWorkflow: () => {
-    const dependsMap = {}
-    graph.value.getEdges().forEach(edge => {
-      const model = edge.getModel()
-      if (!dependsMap[model.target]) dependsMap[model.target] = []
-      dependsMap[model.target].push(model.source)
-    })
-
-    return {
-      tasks: graph.value.getNodes().map(node => {
-        const model = node.getModel()
-        return {
-          id: model.id,
-          operator: model.operator,
-          params: model.params || {},
-          depends_on: dependsMap[model.id] || []
-        }
-      })
+    try {
+      return buildWorkflowFromGraph()
+    } catch (error) {
+      ElMessage.error(t('develop.workflowCanvas.inputBindingFailed') + error.message)
+      return { tasks: [] }
     }
   }
 })

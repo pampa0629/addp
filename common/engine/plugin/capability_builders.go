@@ -33,9 +33,11 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 				NativeFacts:  true,
 			},
 			Store: &StoreCapability{
-				BatchRead:        true,
-				TableReadSession: opts.TableReadSession,
-				Delete:           opts.Delete,
+				BatchRead:                 true,
+				TableReadSession:          opts.TableReadSession,
+				TableReadSpatialTransform: opts.TableReadSpatialTransform,
+				Delete:                    opts.Delete,
+				TableSpatialEncoding:      cloneNativeTableSpatialEncoding(opts.TableSpatialEncoding),
 			},
 		},
 		Compute: &ComputeCapabilities{
@@ -67,19 +69,31 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 }
 
 type TabularCapabilityOptions struct {
-	Write             bool
-	BulkWrite         bool
-	TableReadSession  bool
-	BatchWrite        bool
-	TableWriteSession bool
-	TableWritePrepare bool
-	Delete            bool
-	SpatialFacts      bool
-	SupportsExplain   bool
-	SupportsCancel    bool
-	DefaultLanguage   string
-	Description       string
-	WriterConnector   string
+	Write                     bool
+	BulkWrite                 bool
+	TableReadSession          bool
+	TableReadSpatialTransform bool
+	TableSpatialEncoding      *NativeTableSpatialEncodingCapability
+	BatchWrite                bool
+	TableWriteSession         bool
+	TableWritePrepare         bool
+	Delete                    bool
+	SpatialFacts              bool
+	SupportsExplain           bool
+	SupportsCancel            bool
+	DefaultLanguage           string
+	Description               string
+	WriterConnector           string
+}
+
+func cloneNativeTableSpatialEncoding(capability *NativeTableSpatialEncodingCapability) *NativeTableSpatialEncodingCapability {
+	if capability == nil {
+		return nil
+	}
+	cloned := *capability
+	cloned.GeometryReadEncodings = append([]string(nil), capability.GeometryReadEncodings...)
+	cloned.GeometryWriteEncodings = append([]string(nil), capability.GeometryWriteEncodings...)
+	return &cloned
 }
 
 func NewObjectCapabilities(engineType string) EngineCapabilities {
@@ -259,6 +273,9 @@ func storeCapabilitySemantics(store *StoreCapability) []string {
 	}
 	if store.TableReadSession {
 		semantics = append(semantics, "table_read_session")
+	}
+	if store.TableReadSpatialTransform {
+		semantics = append(semantics, "table_read_spatial_transform")
 	}
 	if store.BatchWrite {
 		semantics = append(semantics, "batch_write")

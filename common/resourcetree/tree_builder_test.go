@@ -687,21 +687,24 @@ func TestFilterTreeByType(t *testing.T) {
 }
 
 func TestEngineIcon(t *testing.T) {
+	workflowCapabilities := models.JSONString(`{"schema_version":"engine.capabilities/v1","engine_type":"acme_geo_workflow","engine_family":"workflow","compute":{"workflow":{"supported":true}}}`)
 	tests := []struct {
 		engineType string
+		caps       *models.JSONString
 		want       string
 	}{
-		{"postgresql", "Database"},
-		{"mysql", "Database"},
-		{"MongoDB", "DocumentText"},
-		{"minio", "FolderOpen"},
-		{"python_workflow", "Grid"},
-		{"unknown", "Database"},
+		{engineType: "postgresql", want: "Database"},
+		{engineType: "mysql", want: "Database"},
+		{engineType: "MongoDB", want: "DocumentText"},
+		{engineType: "minio", want: "FolderOpen"},
+		{engineType: "acme_geo_workflow", caps: &workflowCapabilities, want: "Grid"},
+		{engineType: "python_workflow", want: "Database"},
+		{engineType: "unknown", want: "Database"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.engineType, func(t *testing.T) {
-			got := EngineIcon(&models.Engine{EngineType: tt.engineType})
+			got := EngineIcon(&models.Engine{EngineType: tt.engineType, Capabilities: tt.caps})
 			if got != tt.want {
 				t.Errorf("EngineIcon(%s) = %s, want %s", tt.engineType, got, tt.want)
 			}

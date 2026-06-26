@@ -216,7 +216,6 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			registryHandler := NewRegistryHandler(registryService, engineService)
 			registry.POST("/capabilities", registryHandler.RegisterCapability)
 			registry.GET("/capabilities", registryHandler.ListCapabilities)
-			registry.GET("/capabilities/:identifier", registryHandler.GetCapabilityByIdentifier)
 			registry.GET("/compute-engines", registryHandler.ListComputeEngines)
 		}
 

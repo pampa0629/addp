@@ -212,7 +212,7 @@ export function engineRootLocator(engineOrID, type = '') {
 }
 
 export function catalogRootTypeForEngine(engine) {
-  const type = String(engine?.engine_type || engine?.resource_type || '').trim().toLowerCase()
+  const type = String(engine?.engine_type || '').trim().toLowerCase()
   if (type === 'minio' || type === 's3') return 'service'
   if (type === 'nfs' || type === 'nas') return 'root'
   if (['postgresql', 'mysql', 'doris', 'clickhouse', 'spark_sql', 'mongodb', 'neo4j'].includes(type)) return 'server'

@@ -39,7 +39,7 @@ func Load() *Config {
 		SystemServiceURL:  systemURL,
 		InternalAPIKey:    commonConfig.GetEnv("INTERNAL_API_KEY", ""),
 		ModelServiceURL:   commonConfig.GetEnv("MODEL_URL", "http://localhost:8181"),
-		CopilotServiceURL: commonConfig.GetEnv("COPILOT_URL", "http://localhost:8085"),
+		CopilotServiceURL: commonConfig.GetEnv("COPILOT_URL", "http://localhost:8087"),
 		RedisHost:         commonConfig.GetEnv("REDIS_HOST", "localhost"),
 		RedisPort:         commonConfig.GetEnv("REDIS_PORT", "16379"),
 		RedisPassword:     commonConfig.GetEnv("REDIS_PASSWORD", ""),

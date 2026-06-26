@@ -93,19 +93,10 @@ func SetupRouter(
 		})
 	})
 
-	// 公开 API 路由组（无需认证）- 用于算子发现等公开信息
+	// 公开 API 路由组（无需认证）- 用于按工作流引擎实例发现算子
 	publicAPI := router.Group("/api/v1/develop")
 	{
-		// ========== 算子发现（公开）==========
-		operators := publicAPI.Group("/operators")
-		{
-			operators.GET("", operatorHandler.ListAllOperators)                                   // 获取所有算子
-			operators.GET("/cache/info", operatorHandler.GetCacheInfo)                            // 获取缓存信息
-			operators.GET("/modules/:module", operatorHandler.ListOperatorsByModule)              // 按模块获取算子
-			operators.GET("/engine-types/:engineType", operatorHandler.ListOperatorsByEngineType) // 按引擎类型获取算子（新增）
-			operators.GET("/:name", operatorHandler.GetOperatorDetail)                            // 获取算子详情
-			operators.POST("/refresh", operatorHandler.RefreshCache)                              // 刷新缓存（内部使用）
-		}
+		publicAPI.GET("/workflow-engines/:id/operators", operatorHandler.ListOperatorsByWorkflowEngine) // 按工作流引擎实例获取算子
 	}
 
 	// API 路由组（需要认证）
@@ -157,10 +148,11 @@ func SetupRouter(
 		{
 			engines.GET("", engineHandler.ListEngines) // 获取引擎列表
 		}
+		api.GET("/query-modes", engineHandler.ListQueryModes) // 获取 Develop 内置查询模式列表
 
 		// ========== 工作流引擎管理 ==========
 		api.GET("/workflow-engines", engineHandler.ListWorkflowEngines) // 获取工作流引擎列表
-		api.GET("/spark-runtimes", engineHandler.ListSparkRuntimes)     // 获取 Spark 运行时列表
+		api.GET("/spark-runtimes", engineHandler.ListSparkRuntimes)     // 获取 Spark 通用引擎资源列表
 
 		// ========== 查询开发 ==========
 		api.GET("/test/:id", queryHandler.TestConnection)                 // 测试数据源连接
@@ -215,10 +207,9 @@ func SetupRouter(
 		if duckdbHandler != nil {
 			duckdb := api.Group("/duckdb")
 			{
-				duckdb.POST("/query", duckdbHandler.ExecuteFederatedQuery) // 执行联邦查询
-				duckdb.GET("/sources", duckdbHandler.GetFederatedSources)  // 获取可查询数据源
-				duckdb.GET("/test", duckdbHandler.TestConnection)          // 测试 DuckDB 引擎可用性
-				duckdb.GET("/sample-query", duckdbHandler.GetSampleQuery)  // 获取样例查询
+				duckdb.GET("/sources", duckdbHandler.GetFederatedSources) // 获取可查询数据源
+				duckdb.GET("/test", duckdbHandler.TestConnection)         // 测试 DuckDB 引擎可用性
+				duckdb.GET("/sample-query", duckdbHandler.GetSampleQuery) // 获取样例查询
 			}
 		}
 	}

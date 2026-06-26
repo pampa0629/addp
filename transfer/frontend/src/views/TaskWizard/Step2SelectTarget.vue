@@ -41,6 +41,7 @@
           v-model="targetParentSelection"
           api-base-url="/api/v1/meta"
           :engine-id="formData.engineID"
+          :initial-locator="targetPickerInitialLocator"
           :show-engine-selector="false"
           :selectable-filter="isTargetParentSelectable"
           mode="any"
@@ -83,6 +84,7 @@
           v-model="targetParentSelection"
           api-base-url="/api/v1/meta"
           :engine-id="formData.engineID"
+          :initial-locator="targetPickerInitialLocator"
           :show-engine-selector="false"
           :selectable-filter="isTargetParentSelectable"
           mode="any"
@@ -199,6 +201,7 @@ const outputFileName = ref('')
 const csvHeaders = ref(true)
 const csvDelimiter = ref(',')
 const targetParentSelection = ref(null)
+const restoredParentLocator = ref('')
 const targetSchema = ref('')
 const targetTable = ref('')
 const tableWriteMode = ref('overwrite')
@@ -271,6 +274,8 @@ const targetStorageKind = computed(() => {
   return isObjectStorageEngine(selectedEngine.value?.engine_type) ? 's3' : selectedEngine.value?.engine_type || ''
 })
 
+const targetPickerInitialLocator = computed(() => restoredParentLocator.value || '')
+
 const canProceed = computed(() => {
   if (isNativeTableTarget.value) {
     const hasParentLocator = !!targetParentLocator.value
@@ -286,7 +291,7 @@ const canProceed = computed(() => {
 
 const targetParentLocator = computed(() => {
   const selection = targetParentSelection.value
-  if (!selection?.identity?.locator) return ''
+  if (!selection?.identity?.locator) return restoredParentLocator.value || ''
   if (selection.resource?.kind === 'item') {
     return parentLocatorForSelection(selection)
   }
@@ -513,6 +518,7 @@ async function handleTargetEngineChange() {
   outputPath.value = ''
   outputFileName.value = ''
   targetParentSelection.value = null
+  restoredParentLocator.value = ''
   targetSchema.value = ''
   targetTable.value = ''
   syncTarget()
@@ -525,7 +531,9 @@ function handleTargetParentSelect(selection) {
     targetTable.value = selection.resource?.kind === 'item' ? targetNameFromSelection(selection) : ''
   } else if (isContentTarget.value) {
     outputPath.value = targetParentPathFromSelection(selection)
-    outputFileName.value = selection.resource?.kind === 'item' ? targetNameFromSelection(selection) : ''
+    if (selection.resource?.kind === 'item') {
+      outputFileName.value = targetNameFromSelection(selection)
+    }
   }
   syncTarget()
 }
@@ -674,6 +682,7 @@ async function restoreState() {
     targetSchema.value = config.schema || state.targetSchema?.value || ''
     targetTable.value = config.table || state.targetTable?.value || ''
     tableWriteMode.value = normalizeTableWriteMode(config.writeMode)
+    restoredParentLocator.value = config.parentLocator || ''
     if (config.parentLocator) {
       const label = isNativeTableTarget.value
         ? targetSchema.value
@@ -693,6 +702,11 @@ async function restoreState() {
   } finally {
     restoringState.value = false
   }
+  if (canProceed.value) {
+    syncTarget()
+  } else {
+    syncTargetDraft()
+  }
 }
 
 function resetLocalTargetForm() {
@@ -700,6 +714,7 @@ function resetLocalTargetForm() {
   outputPath.value = ''
   outputFileName.value = ''
   targetParentSelection.value = null
+  restoredParentLocator.value = ''
   targetSchema.value = ''
   targetTable.value = ''
   tableWriteMode.value = 'overwrite'

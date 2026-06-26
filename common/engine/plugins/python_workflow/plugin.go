@@ -60,6 +60,14 @@ func (p *PythonWorkflowPlugin) ExecuteWorkflow(ctx context.Context, connInfo plu
 	return plugin.HTTPExecuteWorkflow(ctx, connInfo, req)
 }
 
+func (p *PythonWorkflowPlugin) InvokeOperator(ctx context.Context, connInfo plugin.ConnectionInfo, operatorName string, req plugin.OperatorInvokeRequest) (*plugin.OperatorInvokeResult, error) {
+	return plugin.HTTPInvokeOperator(ctx, connInfo, operatorName, req)
+}
+
+func (p *PythonWorkflowPlugin) GetExecutionStatus(ctx context.Context, connInfo plugin.ConnectionInfo, executionID string) (*plugin.WorkflowExecutionStatus, error) {
+	return plugin.HTTPGetExecutionStatus(ctx, connInfo, executionID)
+}
+
 func (p *PythonWorkflowPlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {
 	host := plugin.NormalizeHost(plugin.GetString(connInfo, "host"))
 	port := plugin.GetInt(connInfo, "port")

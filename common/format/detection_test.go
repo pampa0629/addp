@@ -21,6 +21,12 @@ func TestDetectFormat(t *testing.T) {
 			want:     FormatShapefile,
 		},
 		{
+			name:     "Raster mosaic manifest by exact file name",
+			filename: "mosaic.addp.json",
+			peek:     nil,
+			want:     FormatRasterMosaic,
+		},
+		{
 			name:     "Shapefile index component is not full shapefile format",
 			filename: "data.shx",
 			peek:     nil,

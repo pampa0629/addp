@@ -58,6 +58,7 @@ LOAD_FROM_WKT_METADATA = OperatorMetadata(
     category=OperatorCategory.FORMAT_CONVERSION,
     description="WKT → GeoDataFrame",
     brief_description="从WKT文本列表创建GeoDataFrame,常用于文本格式几何数据导入",
+    execution_modes=["workflow"],
 
     overview="将Well-Known Text (WKT)格式的几何文本列表转换为GeoDataFrame。WKT是标准的几何文本表示格式,常用于数据交换和存储。",
 
@@ -126,6 +127,7 @@ EXPORT_TO_WKT_METADATA = OperatorMetadata(
     category=OperatorCategory.FORMAT_CONVERSION,
     description="GeoDataFrame → WKT",
     brief_description="将GeoDataFrame的几何导出为WKT文本列表,常用于数据交换",
+    execution_modes=["workflow"],
 
     overview="将GeoDataFrame中的几何对象转换为Well-Known Text (WKT)格式的文本列表。WKT是标准的几何文本表示,便于存储到数据库文本字段或传输给其他系统。",
 

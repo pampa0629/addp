@@ -5,6 +5,7 @@ import (
 
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	commonutils "github.com/addp/common/utils"
 	"github.com/addp/system/internal/models"
 )
 
@@ -18,6 +19,16 @@ func NewStorageEngineService() *StorageEngineService {
 // 连接测试统一由插件 TestConnectionProvider 实现，且必须保持只读。
 func (s *StorageEngineService) TestConnection(resource *models.Engine) error {
 	return dbbridge.TestConnection(context.Background(), resource)
+}
+
+// ProbeWorkflowRuntimeContract checks the workflow runtime protocol surface for
+// engines that declare compute.workflow support.
+func (s *StorageEngineService) ProbeWorkflowRuntimeContract(resource *models.Engine) (int, error) {
+	return dbbridge.ProbeWorkflowRuntimeContract(context.Background(), resource)
+}
+
+func (s *StorageEngineService) ShouldProbeWorkflowRuntime(resource *models.Engine) bool {
+	return commonutils.SupportsComputeEntrypoint(resource, "workflow")
 }
 
 // GetConnectionInfo 获取存储引擎连接信息（用于前端展示，隐藏敏感信息）

@@ -15,27 +15,27 @@ export const quickViewAPI = {
   },
 
   listOptimizationTasks(params = {}) {
-    return request.get('/manager/quick_view_optimization_tasks', { params })
+    return request.get('/manager/vector_quick_view_target_tasks', { params })
   },
 
   getOptimizationTask(id) {
-    return request.get(`/manager/quick_view_optimization_tasks/${id}`)
+    return request.get(`/manager/vector_quick_view_target_tasks/${id}`)
   },
 
   createOptimizationTask(payload) {
-    return request.post('/manager/quick_view_optimization_tasks', payload)
+    return request.post('/manager/vector_quick_view_target_tasks', payload)
   },
 
   updateOptimizationTask(id, payload) {
-    return request.put(`/manager/quick_view_optimization_tasks/${id}`, payload)
+    return request.put(`/manager/vector_quick_view_target_tasks/${id}`, payload)
   },
 
   deleteOptimizationTask(id) {
-    return request.delete(`/manager/quick_view_optimization_tasks/${id}`)
+    return request.delete(`/manager/vector_quick_view_target_tasks/${id}`)
   },
 
   executeOptimizationTask(id, payload = {}) {
-    return request.post(`/manager/tasks/quick_view_optimization/${id}/execute`, {
+    return request.post(`/manager/tasks/vector_quick_view_target_generation/${id}/execute`, {
       trigger_type: 'manual',
       source: 'manager',
       ...payload
@@ -43,14 +43,58 @@ export const quickViewAPI = {
   },
 
   listOptimizations(params = {}) {
-    return request.get('/manager/quick_view_optimization', { params })
+    return request.get('/manager/vector_quick_view_targets', { params })
   },
 
   getOptimization(id) {
-    return request.get(`/manager/quick_view_optimization/${id}`)
+    return request.get(`/manager/vector_quick_view_targets/${id}`)
   },
 
   deleteOptimization(id) {
-    return request.delete(`/manager/quick_view_optimization/${id}`)
+    return request.delete(`/manager/vector_quick_view_targets/${id}`)
+  },
+
+  createRasterCOGTask(payload) {
+    return request.post('/manager/raster_cog_tasks', payload)
+  },
+
+  listRasterCOGTasks(params = {}) {
+    return request.get('/manager/raster_cog_tasks', { params })
+  },
+
+  getRasterCOGTask(id) {
+    return request.get(`/manager/raster_cog_tasks/${id}`)
+  },
+
+  updateRasterCOGTask(id, payload) {
+    return request.put(`/manager/raster_cog_tasks/${id}`, payload)
+  },
+
+  deleteRasterCOGTask(id) {
+    return request.delete(`/manager/raster_cog_tasks/${id}`)
+  },
+
+  executeRasterCOGTask(id, payload = {}) {
+    return request.post(`/manager/tasks/raster_cog_generation/${id}/execute`, {
+      trigger_type: 'manual',
+      source: 'manager',
+      ...payload
+    })
+  },
+
+  listRasterCOGs(params = {}) {
+    return request.get('/manager/raster_cog', { params })
+  },
+
+  getRasterCOG(id) {
+    return request.get(`/manager/raster_cog/${id}`)
+  },
+
+  deleteRasterCOG(id) {
+    return request.delete(`/manager/raster_cog/${id}`)
+  },
+
+  getExecutionStatus(executionID) {
+    return request.get(`/manager/executions/${executionID}`)
   }
 }

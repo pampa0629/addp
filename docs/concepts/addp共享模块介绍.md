@@ -67,7 +67,8 @@ connInfo := engine.ConnectionInfo
 common-frontend/
 ├── basic/          # 基础 UI 组件 (无地图依赖)
 │   └── src/
-│       ├── components/  - EngineForm, ImagePreview, ResourceTree
+│       ├── components/  - StorageEngineForm, ResourceTree
+│       ├── previews.js  - ImagePreview, MarkdownPreview, PdfPreview 等按需预览入口
 │       ├── utils/       - 格式化器, 类型工具
 │       ├── types/       - FieldType, FormatType, EngineType
 │       └── index.js
@@ -92,8 +93,14 @@ resolve: {
 }
 
 // 在组件中
-import { EngineForm, ImagePreview } from '@common-ui'
+import { StorageEngineForm } from '@common-ui'
 import { formatFileSize, formatDateTime } from '@common-ui'
+```
+
+预览组件从独立入口导入，并由使用方模块声明对应预览依赖：
+
+```javascript
+import { ImagePreview, MarkdownPreview } from '@common-ui/previews'
 ```
 
 **对于有地图功能的模块** (Manager):
@@ -118,9 +125,9 @@ import { TablePreview, GeoJsonPreview } from '@common-ui-map'
 
 **关键组件**:
 
-- **预览组件**: GeoJsonPreview, TablePreview, ImagePreview
+- **预览组件**: GeoJsonPreview, TablePreview, ImagePreview（`ImagePreview` 等文件预览组件从 `@common-ui/previews` 导入）
 - **资源选择组件**: ResourceTree, ResourceTreePicker
-- **表单组件**: EngineForm (PostgreSQL/MinIO/S3 配置)
+- **表单组件**: StorageEngineForm (PostgreSQL/MySQL/Doris/ClickHouse/MongoDB/Neo4j/MinIO/S3/NFS/Spark 配置)
 - **地图组件**: MapContainer, OpenLayersRenderer, GaodeMapRenderer
 - **工具**: formatFileSize, formatDateTime, detectFormatByExtension, isGeospatialFormat
 - **类型**: FieldType, FormatType, EngineType (与后端模型对齐)
@@ -139,7 +146,7 @@ ResourceTree 是树展示组件；ResourceTreePicker 是表单级资源选择封
 
 **模块使用**:
 
-- **System Frontend**: 使用 `basic` (引擎配置的 EngineForm)
+- **System Frontend**: 使用 `basic` (引擎配置的 StorageEngineForm)
 - **Manager Frontend**: 使用 `map` (数据预览的 GeoJsonPreview, TablePreview)
 - **Meta Frontend**: 使用 `basic` (通用资源树和基础 UI)
 - **Transfer Frontend**: 使用 `basic` (映射 UI 的字段类型工具)

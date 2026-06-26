@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
@@ -19,125 +20,30 @@ func NewOperatorHandler(operatorDiscovery *service.OperatorDiscoveryService) *Op
 	}
 }
 
-// ListAllOperators 获取所有算子
-// @Summary 获取所有模块的算子列表 | List all operators from all modules
+// ListOperatorsByWorkflowEngine 获取指定工作流引擎实例的算子
+// @Summary 根据工作流引擎实例获取算子列表 | List operators by workflow engine instance
 // @Tags Operator
 // @Produce json
+// @Param id path int true "工作流引擎实例ID | Workflow engine instance ID"
 // @Success 200 {object} map[string]interface{} "算子列表 | Operator list"
-// @Router /operators [get]
-func (h *OperatorHandler) ListAllOperators(c *gin.Context) {
-	operators, err := h.operatorDiscovery.DiscoverAllOperators(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+// @Router /workflow-engines/{id}/operators [get]
+func (h *OperatorHandler) ListOperatorsByWorkflowEngine(c *gin.Context) {
+	workflowEngineID64, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil || workflowEngineID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "workflow_engine_id 必须是正整数"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":    "success",
-		"operators": operators,
-		"count":     len(operators),
-	})
-}
-
-// ListOperatorsByModule 获取指定模块的算子
-// @Summary 获取指定模块的算子列表 | List operators by module
-// @Tags Operator
-// @Produce json
-// @Param module path string true "模块名称（任务提供者或工作流引擎）| Module name (task provider or workflow engine)"
-// @Success 200 {object} map[string]interface{} "算子列表 | Operator list"
-// @Router /operators/modules/{module} [get]
-func (h *OperatorHandler) ListOperatorsByModule(c *gin.Context) {
-	module := c.Param("module")
-
-	operators, err := h.operatorDiscovery.GetOperatorsByModule(c.Request.Context(), module)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status":    "success",
-		"module":    module,
-		"operators": operators,
-		"count":     len(operators),
-	})
-}
-
-// ListOperatorsByEngineType 获取指定引擎类型的算子
-// @Summary 根据引擎类型获取算子列表 | List operators by engine type
-// @Tags Operator
-// @Produce json
-// @Param engineType path string true "工作流引擎类型（动态从 system 获取）| Workflow engine type (fetched dynamically from system)"
-// @Success 200 {object} map[string]interface{} "算子列表 | Operator list"
-// @Router /operators/engine-types/{engineType} [get]
-func (h *OperatorHandler) ListOperatorsByEngineType(c *gin.Context) {
-	engineType := c.Param("engineType")
-
-	operators, err := h.operatorDiscovery.GetOperatorsByEngineType(c.Request.Context(), engineType)
+	operators, err := h.operatorDiscovery.GetOperatorsByWorkflowEngineID(c.Request.Context(), uint(workflowEngineID64))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"status":      "success",
-		"engine_type": engineType,
-		"operators":   operators,
-		"count":       len(operators),
-	})
-}
-
-// GetOperatorDetail 获取算子详情
-// @Summary 获取算子详情 | Get operator details
-// @Tags Operator
-// @Produce json
-// @Param name path string true "算子名称 | Operator name"
-// @Success 200 {object} map[string]interface{} "算子详情 | Operator details"
-// @Router /operators/{name} [get]
-func (h *OperatorHandler) GetOperatorDetail(c *gin.Context) {
-	name := c.Param("name")
-
-	operator, err := h.operatorDiscovery.GetOperatorDetail(c.Request.Context(), name)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status":   "success",
-		"operator": operator,
-	})
-}
-
-// RefreshCache 刷新算子缓存
-// @Summary 刷新算子缓存 | Refresh operator cache
-// @Tags Operator
-// @Produce json
-// @Success 200 {object} map[string]interface{} "缓存已刷新 | Cache refreshed"
-// @Router /operators/refresh [post]
-func (h *OperatorHandler) RefreshCache(c *gin.Context) {
-	if err := h.operatorDiscovery.RefreshCache(c.Request.Context()); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "success",
-		"message": "缓存已刷新",
-	})
-}
-
-// GetCacheInfo 获取缓存信息
-// @Summary 获取缓存信息 | Get cache information
-// @Tags Operator
-// @Produce json
-// @Success 200 {object} map[string]interface{} "缓存信息 | Cache information"
-// @Router /operators/cache/info [get]
-func (h *OperatorHandler) GetCacheInfo(c *gin.Context) {
-	info := h.operatorDiscovery.GetCacheInfo()
-
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"cache":  info,
+		"status":             "success",
+		"workflow_engine_id": workflowEngineID64,
+		"operators":          operators,
+		"count":              len(operators),
 	})
 }

@@ -46,14 +46,13 @@ type Config struct {
 	InfraMinIOBucket    string
 	InfraMinIOUseSSL    bool
 
-	// 内置引擎服务 URL（用于 extension_api_config.base_url）
+	// 内置模块服务 URL。
 	SystemServiceURL       string
 	MetaServiceURL         string
 	TransferServiceURL     string
 	ManagerServiceURL      string
 	OrchestratorServiceURL string
 	DevelopServiceURL      string
-	GeopandasURL           string
 
 	// 审计日志归档配置
 	AuditLogRetentionDays  int    // 审计日志数据库保留天数
@@ -164,8 +163,7 @@ func Load() *Config {
 		TransferServiceURL:     getEnv("TRANSFER_URL", "http://localhost:8083"),
 		ManagerServiceURL:      getEnv("MANAGER_URL", "http://localhost:8081"),
 		OrchestratorServiceURL: getEnv("ORCHESTRATOR_URL", "http://localhost:8084"),
-		DevelopServiceURL:      getEnv("DEVELOP_URL", "http://localhost:8085"),
-		GeopandasURL:           getEnv("GEOPANDAS_URL", "http://localhost:8090"),
+		DevelopServiceURL:      getEnv("DEVELOP_URL", "http://localhost:8185"),
 
 		// 审计日志归档配置
 		AuditLogRetentionDays:  getEnvAsPositiveInt("AUDIT_LOG_RETENTION_DAYS", 90), // 默认保留90天

@@ -10,6 +10,7 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	csvformat "github.com/addp/common/format/plugins/csv"
+	geojsonformat "github.com/addp/common/format/plugins/geojson"
 	jsonformat "github.com/addp/common/format/plugins/json"
 	parquetformat "github.com/addp/common/format/plugins/parquet"
 	shapefileformat "github.com/addp/common/format/plugins/shapefile"
@@ -183,6 +184,79 @@ func TestTableTransferExecutorReadsShapefileRefs(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("csv output = %q, missing %q", got, want)
 		}
+	}
+}
+
+func TestTableTransferExecutorWritesGeoJSONEWKBRowsToShapefile(t *testing.T) {
+	source := &fakeContentReader{content: `{
+		"type": "FeatureCollection",
+		"features": [
+			{"type":"Feature","geometry":{"type":"Point","coordinates":[120,30]},"properties":{"id":1,"name":"Alpha"}}
+		]
+	}`}
+	target := &fakeContentWriter{files: map[string][]byte{}}
+	shapefilePlugin := shapefileformat.NewPlugin(nil)
+	parseOptions := format.DefaultParseOptions()
+	parseOptions.GeometryEncoding = format.GeometryEncodingEWKB
+	parseOptions.ExtraParams = map[string]interface{}{"geometry_field": "geometry"}
+
+	targetPath := engineplugin.FileItemPath(8, "exports/geojson_to_shape.shp")
+	exec := &TableTransferExecutor{
+		SourceContentReader:     source,
+		TargetContentWriter:     target,
+		SourceTableReadProvider: geojsonformat.NewPlugin(nil),
+		TargetMultiProvider:     shapefilePlugin,
+	}
+
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{
+			Kind:         TableEndpointEncoded,
+			Format:       format.FormatGeoJSON,
+			ParseOptions: parseOptions,
+		},
+		Target: TableTargetPlan{
+			Kind:   TableEndpointEncoded,
+			Path:   targetPath,
+			Format: format.FormatShapefile,
+			FormatOptions: &format.WriteOptions{
+				ExtraParams: map[string]interface{}{"geometry_field": "geometry"},
+			},
+		},
+		BatchSize: 10,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 || metrics.Batches != 1 {
+		t.Fatalf("metrics = %#v, want one transferred row", metrics)
+	}
+	for _, path := range []string{"exports/geojson_to_shape.shp", "exports/geojson_to_shape.shx", "exports/geojson_to_shape.dbf"} {
+		if len(target.files[path]) == 0 {
+			t.Fatalf("target ref %s was not written", path)
+		}
+	}
+
+	targetReader := contentadapter.NewReader(target, nil, targetPath, engineplugin.ReadOptions{})
+	targetRefs := format.SameBasenameRelatedRefs(targetPath.StringPath(), shapefilePlugin.RelatedRefSpecs())
+	info, err := shapefilePlugin.DescribeMultiTable(context.Background(), targetReader, targetRefs, format.DefaultParseOptions())
+	if err != nil {
+		t.Fatalf("DescribeMultiTable failed: %v", err)
+	}
+	if info.Spatial == nil || info.Spatial.PrimaryGeometryName() != "geometry" || info.Spatial.PrimaryGeometryType() != "Point" {
+		t.Fatalf("spatial info = %#v, want Point geometry column", info.Spatial)
+	}
+	rows, err := shapefilePlugin.SampleMultiTable(context.Background(), targetReader, targetRefs, 0, 1, format.DefaultParseOptions())
+	if err != nil {
+		t.Fatalf("SampleMultiTable failed: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %#v, want one row", rows)
+	}
+	if rows[0]["NAME"] != "Alpha" {
+		t.Fatalf("row = %#v, want property name Alpha", rows[0])
+	}
+	if rows[0]["geometry"] != "POINT (120 30)" {
+		t.Fatalf("geometry = %#v, want POINT (120 30)", rows[0]["geometry"])
 	}
 }
 

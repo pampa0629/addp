@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/resourcetree"
+	commonSpatial "github.com/addp/common/spatial"
 	"github.com/addp/transfer/internal/executor"
 )
 
@@ -70,10 +71,11 @@ type FieldMappingSpec struct {
 }
 
 type EngineBinding struct {
-	Type       string
-	ConnInfo   engineplugin.ConnectionInfo
-	EngineID   uint
-	PluginType string
+	Type         string
+	ConnInfo     engineplugin.ConnectionInfo
+	EngineID     uint
+	PluginType   string
+	Capabilities *engineplugin.EngineCapabilities
 }
 
 type EngineResolver interface {
@@ -294,39 +296,235 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 	if err != nil {
 		return nil, err
 	}
-	if sourcePlan.Kind == executor.TableEndpointNative && targetPlan.Kind == executor.TableEndpointEncoded {
-		sourcePlan.ReadOptions = mergeReadOptions(sourcePlan.ReadOptions, readOptionsForGeoJSONTarget(targetPlan.Format, targetPlan.FormatOptions))
+	transforms := buildTableTransforms(spec.Transforms)
+	if sourcePlan.Kind == executor.TableEndpointNative && targetPlan.Kind == executor.TableEndpointEncoded && engineSupportsSpatialTransform(sourceEngine) {
+		sourcePlan.ReadOptions = mergeReadOptions(sourcePlan.ReadOptions, readOptionsForGeoJSONTarget(targetPlan.Format, targetPlan.FormatOptions, sourcePlan.SpatialInfo))
 	}
-	applySourceGeometryEncodingForTarget(&sourcePlan, targetPlan)
+	spatialTransform, err := buildSpatialGeoJSONTransform(&sourcePlan, targetPlan, sourceEngine)
+	if err != nil {
+		return nil, err
+	}
+	if spatialTransform != nil {
+		transforms = append(transforms, *spatialTransform)
+	}
+	if err := applySourceGeometryEncodingForTarget(&sourcePlan, targetPlan, sourceEngine, targetEngine); err != nil {
+		return nil, err
+	}
 	return &TableTransferBuildResult{
 		SourceEngineType: sourceType,
 		TargetEngineType: targetType,
 		Plan: executor.TableTransferPlan{
 			Source:     sourcePlan,
 			Target:     targetPlan,
-			Transforms: buildTableTransforms(spec.Transforms),
+			Transforms: transforms,
 			BatchSize:  spec.BatchSize,
 		},
 	}, nil
 }
 
-func applySourceGeometryEncodingForTarget(sourcePlan *executor.TableSourcePlan, targetPlan executor.TableTargetPlan) {
-	if sourcePlan == nil || sourcePlan.Kind != executor.TableEndpointEncoded || targetPlan.Kind != executor.TableEndpointNative {
-		return
+func applySourceGeometryEncodingForTarget(sourcePlan *executor.TableSourcePlan, targetPlan executor.TableTargetPlan, sourceEngine EngineBinding, targetEngine EngineBinding) error {
+	if sourcePlan == nil {
+		return nil
 	}
-	if !formatImpliesSpatialRows(sourcePlan.Format) && sourcePlan.SpatialInfo == nil {
-		return
+	if !sourceHasSpatialRows(sourcePlan) {
+		return nil
 	}
-	if sourcePlan.ParseOptions == nil {
-		sourcePlan.ParseOptions = format.DefaultParseOptions()
+	if !targetConsumesSpatialRows(targetPlan, targetEngine) {
+		return nil
 	}
-	if sourcePlan.ParseOptions.GeometryEncoding == "" || sourcePlan.ParseOptions.GeometryEncoding == format.GeometryEncodingWKT {
-		sourcePlan.ParseOptions.GeometryEncoding = format.GeometryEncodingEWKB
+	if existing := sourceGeometryEncoding(sourcePlan); existing != "" && existing != format.GeometryEncodingWKT && targetSupportsGeometryWriteEncoding(targetPlan, targetEngine, existing) {
+		return nil
 	}
+	if nativeEncoding, ok := encodedNativeGeometryPassthroughEncoding(sourcePlan, targetPlan); ok {
+		if sourcePlan.ParseOptions == nil {
+			sourcePlan.ParseOptions = format.DefaultParseOptions()
+		}
+		sourcePlan.ParseOptions.GeometryEncoding = nativeEncoding
+		return nil
+	}
+	if !targetSupportsGeometryWriteEncoding(targetPlan, targetEngine, format.GeometryEncodingEWKB) {
+		return fmt.Errorf("target cannot consume spatial geometry encoding %q", format.GeometryEncodingEWKB)
+	}
+	switch sourcePlan.Kind {
+	case executor.TableEndpointEncoded:
+		if !formatSupportsGeometryReadEncoding(sourcePlan.Format, format.GeometryEncodingEWKB) {
+			return fmt.Errorf("source format %q cannot provide spatial geometry encoding %q", sourcePlan.Format, format.GeometryEncodingEWKB)
+		}
+		if sourcePlan.ParseOptions == nil {
+			sourcePlan.ParseOptions = format.DefaultParseOptions()
+		}
+		if sourcePlan.ParseOptions.GeometryEncoding == "" ||
+			sourcePlan.ParseOptions.GeometryEncoding == format.GeometryEncodingWKT ||
+			sourcePlan.ParseOptions.GeometryEncoding == format.GeometryEncodingGeoJSON {
+			sourcePlan.ParseOptions.GeometryEncoding = format.GeometryEncodingEWKB
+		}
+	case executor.TableEndpointNative:
+		if !nativeTableSupportsGeometryReadEncoding(sourceEngine, format.GeometryEncodingEWKB) {
+			return fmt.Errorf("source native table engine %q cannot provide spatial geometry encoding %q", effectiveEngineType(sourceEngine, EngineRef{}), format.GeometryEncodingEWKB)
+		}
+		sourcePlan.ReadOptions = mergeReadOptions(sourcePlan.ReadOptions, map[string]interface{}{
+			engineplugin.TableReadHintGeometryEncoding: string(format.GeometryEncodingEWKB),
+		})
+	}
+	return nil
+}
+
+func sourceHasSpatialRows(sourcePlan *executor.TableSourcePlan) bool {
+	if sourcePlan == nil {
+		return false
+	}
+	if sourcePlan.SpatialInfo != nil {
+		return true
+	}
+	if formatImpliesSpatialRows(sourcePlan.Format) {
+		return true
+	}
+	capability, err := format.GetSpatialEncodingCapability(sourcePlan.Format)
+	return err == nil && len(capability.GeometryReadEncodings) > 0
+}
+
+func targetConsumesSpatialRows(targetPlan executor.TableTargetPlan, targetEngine EngineBinding) bool {
+	switch targetPlan.Kind {
+	case executor.TableEndpointNative:
+		return nativeTableSpatialEncodingCapability(targetEngine) != nil
+	case executor.TableEndpointEncoded:
+		if formatImpliesSpatialRows(targetPlan.Format) {
+			return true
+		}
+		capability, err := format.GetSpatialEncodingCapability(targetPlan.Format)
+		return err == nil && len(capability.GeometryWriteEncodings) > 0
+	default:
+		return false
+	}
+}
+
+func sourceGeometryEncoding(sourcePlan *executor.TableSourcePlan) format.GeometryEncoding {
+	if sourcePlan == nil {
+		return ""
+	}
+	switch sourcePlan.Kind {
+	case executor.TableEndpointEncoded:
+		if sourcePlan.ParseOptions == nil {
+			return ""
+		}
+		return sourcePlan.ParseOptions.GeometryEncoding
+	case executor.TableEndpointNative:
+		if sourcePlan.ReadOptions == nil {
+			return ""
+		}
+		return format.GeometryEncoding(strings.TrimSpace(commonJSON.InterfaceString(sourcePlan.ReadOptions[engineplugin.TableReadHintGeometryEncoding])))
+	default:
+		return ""
+	}
+}
+
+func targetSupportsGeometryWriteEncoding(targetPlan executor.TableTargetPlan, targetEngine EngineBinding, encoding format.GeometryEncoding) bool {
+	switch targetPlan.Kind {
+	case executor.TableEndpointNative:
+		return nativeTableSupportsGeometryWriteEncoding(targetEngine, encoding)
+	case executor.TableEndpointEncoded:
+		return formatSupportsGeometryWriteEncoding(targetPlan.Format, encoding)
+	default:
+		return false
+	}
+}
+
+func encodedNativeGeometryPassthroughEncoding(sourcePlan *executor.TableSourcePlan, targetPlan executor.TableTargetPlan) (format.GeometryEncoding, bool) {
+	if sourcePlan == nil || sourcePlan.Kind != executor.TableEndpointEncoded || targetPlan.Kind != executor.TableEndpointEncoded {
+		return "", false
+	}
+	sourceCapability, err := format.GetSpatialEncodingCapability(sourcePlan.Format)
+	if err != nil {
+		return "", false
+	}
+	targetCapability, err := format.GetSpatialEncodingCapability(targetPlan.Format)
+	if err != nil {
+		return "", false
+	}
+	encoding := sourceCapability.NativeReadEncoding
+	if encoding == "" || encoding != targetCapability.NativeWriteEncoding {
+		return "", false
+	}
+	if !geometryEncodingInList(sourceCapability.GeometryReadEncodings, encoding) || !geometryEncodingInList(targetCapability.GeometryWriteEncodings, encoding) {
+		return "", false
+	}
+	return encoding, true
+}
+
+func geometryEncodingInList(values []format.GeometryEncoding, target format.GeometryEncoding) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func formatImpliesSpatialRows(formatType format.FormatType) bool {
 	return format.IsGeospatialFormat(formatType)
+}
+
+func formatSupportsGeometryReadEncoding(formatType format.FormatType, encoding format.GeometryEncoding) bool {
+	capability, err := format.GetSpatialEncodingCapability(formatType)
+	if err != nil {
+		return false
+	}
+	for _, supported := range capability.GeometryReadEncodings {
+		if supported == encoding {
+			return true
+		}
+	}
+	return false
+}
+
+func formatSupportsGeometryWriteEncoding(formatType format.FormatType, encoding format.GeometryEncoding) bool {
+	capability, err := format.GetSpatialEncodingCapability(formatType)
+	if err != nil {
+		return false
+	}
+	for _, supported := range capability.GeometryWriteEncodings {
+		if supported == encoding {
+			return true
+		}
+	}
+	return false
+}
+
+func nativeTableSupportsGeometryReadEncoding(engine EngineBinding, encoding format.GeometryEncoding) bool {
+	capability := nativeTableSpatialEncodingCapability(engine)
+	if capability == nil {
+		return false
+	}
+	return stringSliceContainsFold(capability.GeometryReadEncodings, string(encoding))
+}
+
+func nativeTableSupportsGeometryWriteEncoding(engine EngineBinding, encoding format.GeometryEncoding) bool {
+	capability := nativeTableSpatialEncodingCapability(engine)
+	if capability == nil {
+		return false
+	}
+	return stringSliceContainsFold(capability.GeometryWriteEncodings, string(encoding))
+}
+
+func nativeTableSpatialEncodingCapability(engine EngineBinding) *engineplugin.NativeTableSpatialEncodingCapability {
+	capabilities := effectiveEngineCapabilities(engine)
+	if capabilities == nil || capabilities.Storage == nil || capabilities.Storage.Store == nil {
+		return nil
+	}
+	return capabilities.Storage.Store.TableSpatialEncoding
+}
+
+func stringSliceContainsFold(values []string, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), target) {
+			return true
+		}
+	}
+	return false
 }
 
 func sourceItemDescriptorFromMetaAttributes(attrs map[string]interface{}) (dataitem.ItemDescriptor, bool) {
@@ -1005,6 +1203,22 @@ func effectiveEngineType(binding EngineBinding, ref EngineRef) string {
 	return ref.Type
 }
 
+func effectiveEngineCapabilities(binding EngineBinding) *engineplugin.EngineCapabilities {
+	if binding.Capabilities != nil {
+		return binding.Capabilities
+	}
+	engineType := effectiveEngineType(binding, EngineRef{})
+	if strings.TrimSpace(engineType) == "" {
+		return nil
+	}
+	registered, err := engineplugin.Get(engineType)
+	if err != nil || registered == nil {
+		return nil
+	}
+	capabilities := registered.Capabilities()
+	return &capabilities
+}
+
 func nativeTablePathFromLocator(endpoint EndpointSpec, engine EngineBinding) (engineplugin.CatalogPath, error) {
 	loc, err := endpoint.ResourceLocator()
 	if err != nil {
@@ -1285,17 +1499,154 @@ func tableWriteOptions(raw map[string]interface{}, formatType format.FormatType)
 	return opts
 }
 
-func readOptionsForGeoJSONTarget(formatType format.FormatType, writeOptions *format.WriteOptions) map[string]interface{} {
+func readOptionsForGeoJSONTarget(formatType format.FormatType, writeOptions *format.WriteOptions, spatialInfo *datatype.SpatialInfo) map[string]interface{} {
 	if formatType != format.FormatGeoJSON {
 		return nil
 	}
-	options := map[string]interface{}{"geometry_encoding": "geojson"}
+	options := map[string]interface{}{
+		engineplugin.TableReadHintGeometryEncoding:        string(format.GeometryEncodingGeoJSON),
+		engineplugin.TableReadHintGeometryTargetSRID:      4326,
+		engineplugin.TableReadHintGeometryTransformPolicy: "required",
+	}
 	if writeOptions != nil && writeOptions.ExtraParams != nil {
 		if geometryField := stringValue(writeOptions.ExtraParams, "geometry_field"); geometryField != "" {
-			options["geometry_field"] = geometryField
+			options[engineplugin.TableReadHintGeometryField] = geometryField
+		}
+	}
+	if spatialInfo != nil {
+		if geometryField := strings.TrimSpace(spatialInfo.PrimaryGeometryName()); geometryField != "" {
+			options[engineplugin.TableReadHintGeometryField] = geometryField
 		}
 	}
 	return options
+}
+
+func buildSpatialGeoJSONTransform(sourcePlan *executor.TableSourcePlan, targetPlan executor.TableTargetPlan, sourceEngine EngineBinding) (*executor.TableTransformPlan, error) {
+	if sourcePlan == nil || targetPlan.Kind != executor.TableEndpointEncoded || targetPlan.Format != format.FormatGeoJSON {
+		return nil, nil
+	}
+	spatialInfo := sourcePlan.SpatialInfo
+	if spatialInfo == nil || spatialInfo.PrimaryGeometryName() == "" {
+		return nil, nil
+	}
+
+	geometryColumn := strings.TrimSpace(spatialInfo.PrimaryGeometryName())
+	sourceCRS := strings.TrimSpace(spatialInfo.PrimaryCRSRef())
+	if sourceCRS == "" {
+		if srid := spatialInfo.PrimarySRIDValue(); srid > 0 {
+			sourceCRS = fmt.Sprintf("EPSG:%d", srid)
+		}
+	}
+	if sourceCRS == "" {
+		return nil, fmt.Errorf("source CRS is required for GeoJSON export")
+	}
+	targetCRS := "EPSG:4326"
+
+	if sourcePlan.Kind == executor.TableEndpointNative && engineSupportsSpatialTransform(sourceEngine) {
+		sourcePlan.ReadOptions = mergeReadOptions(sourcePlan.ReadOptions, readOptionsForGeoJSONTarget(targetPlan.Format, targetPlan.FormatOptions, spatialInfo))
+		sourcePlan.SpatialInfo = spatialInfoForTargetCRS(spatialInfo, geometryColumn, targetCRS)
+		return nil, nil
+	}
+
+	if spatialCRSEquivalent(sourceCRS, targetCRS) {
+		if nativeEncoding, ok := encodedNativeGeometryPassthroughEncoding(sourcePlan, targetPlan); ok {
+			if sourcePlan.ParseOptions == nil {
+				sourcePlan.ParseOptions = format.DefaultParseOptions()
+			}
+			sourcePlan.ParseOptions.GeometryEncoding = nativeEncoding
+			if sourcePlan.ParseOptions.ExtraParams == nil {
+				sourcePlan.ParseOptions.ExtraParams = map[string]interface{}{}
+			}
+			sourcePlan.ParseOptions.ExtraParams["geometry_field"] = geometryColumn
+		}
+		return nil, nil
+	}
+
+	if sourcePlan.Kind == executor.TableEndpointNative {
+		return nil, fmt.Errorf("source engine does not support spatial transform for GeoJSON export")
+	}
+
+	if sourcePlan.ParseOptions == nil {
+		sourcePlan.ParseOptions = format.DefaultParseOptions()
+	}
+	sourcePlan.ParseOptions.GeometryEncoding = format.GeometryEncodingEWKB
+	if sourcePlan.ParseOptions.ExtraParams == nil {
+		sourcePlan.ParseOptions.ExtraParams = map[string]interface{}{}
+	}
+	sourcePlan.ParseOptions.ExtraParams["geometry_field"] = geometryColumn
+
+	return &executor.TableTransformPlan{
+		Type: "spatial_reproject",
+		SpatialReproject: &executor.SpatialReprojectTransformPlan{
+			GeometryColumn: geometryColumn,
+			SourceCRS:      sourceCRS,
+			TargetCRS:      targetCRS,
+			Reproject:      true,
+		},
+	}, nil
+}
+
+func spatialInfoForTargetCRS(source *datatype.SpatialInfo, geometryColumn, targetCRS string) *datatype.SpatialInfo {
+	next := source.Clone()
+	if next == nil {
+		next = datatype.NewSingleGeometrySpatialInfo(geometryColumn, "", 0, 0)
+	}
+	geometryColumn = strings.TrimSpace(geometryColumn)
+	if geometryColumn == "" {
+		geometryColumn = strings.TrimSpace(next.PrimaryGeometryName())
+	}
+	if geometryColumn != "" {
+		next.PrimaryGeometryColumn = geometryColumn
+	}
+	srid := commonSpatial.ParseSRID(targetCRS)
+	next.CRSRef = targetCRS
+	if srid > 0 {
+		next.SRID = &srid
+	}
+	next.CRSDefinitions = nil
+	next.Extent = nil
+	next.HasSpatialIndex = nil
+	next.IndexName = ""
+
+	if len(next.GeometryColumns) == 0 {
+		next.GeometryColumns = []datatype.GeometryColumnInfo{{Name: geometryColumn}}
+	}
+	primaryIndex := 0
+	for i := range next.GeometryColumns {
+		if strings.EqualFold(strings.TrimSpace(next.GeometryColumns[i].Name), geometryColumn) {
+			primaryIndex = i
+			break
+		}
+	}
+	next.GeometryColumns[primaryIndex].Name = geometryColumn
+	next.GeometryColumns[primaryIndex].CRSRef = targetCRS
+	if srid > 0 {
+		next.GeometryColumns[primaryIndex].SRID = &srid
+	}
+	return next
+}
+
+func spatialCRSEquivalent(left, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if left == "" || right == "" {
+		return false
+	}
+	if strings.EqualFold(left, right) {
+		return true
+	}
+	leftSRID := commonSpatial.ParseSRID(left)
+	rightSRID := commonSpatial.ParseSRID(right)
+	return leftSRID > 0 && leftSRID == rightSRID
+}
+
+func engineSupportsSpatialTransform(engine EngineBinding) bool {
+	capabilities := effectiveEngineCapabilities(engine)
+	if capabilities == nil || capabilities.Storage == nil || capabilities.Storage.Store == nil {
+		return false
+	}
+	store := capabilities.Storage.Store
+	return (store.TableSpatialEncoding != nil && store.TableSpatialEncoding.ReadTransform) || store.TableReadSpatialTransform
 }
 
 func mergeReadOptions(base map[string]interface{}, overlays ...map[string]interface{}) map[string]interface{} {

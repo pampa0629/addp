@@ -147,7 +147,8 @@ func BuiltinMultiRules() []FormatRule {
 func BuiltinWholeScopeRules() []FormatRule {
 	rules := []FormatRule{}
 	for _, descriptor := range format.ListFormatDescriptors() {
-		if !format.HasLayout(descriptor.Layouts, format.LayoutWhole) || len(descriptor.Identification.Extensions) == 0 {
+		if !format.HasLayout(descriptor.Layouts, format.LayoutWhole) ||
+			(len(descriptor.Identification.Extensions) == 0 && len(descriptor.Identification.FileNames) == 0) {
 			continue
 		}
 		dataType := descriptor.DataType
@@ -162,8 +163,10 @@ func BuiltinWholeScopeRules() []FormatRule {
 			Entry:    EntryRule{Extensions: append([]string(nil), descriptor.Identification.Extensions...)},
 			WholeScope: &WholeScopeRule{
 				IgnoredFileNames:     []string{"_SUCCESS", "_metadata", "_common_metadata"},
+				RequiredFileNames:    append([]string(nil), descriptor.Identification.FileNames...),
 				RequiresStrongMatch:  true,
 				ExclusiveOnStrongHit: true,
+				ClaimAllOnStrongHit:  len(descriptor.Identification.FileNames) > 0,
 			},
 		})
 	}

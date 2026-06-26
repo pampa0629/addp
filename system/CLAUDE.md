@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **全域数据平台 (All Domain Data Platform)** 是企业级数据平台的核心能力模块，提供基础系统功能：
 - 多租户账号管理（超级管理员、租户管理员、普通用户）
 - 日志管理（审计日志存储和查询、统计分析、导出）
-- 引擎管理（标准库连接、扩展引擎连接等，含 Schema/表枚举）
+- 引擎管理（通用引擎连接、扩展运行时注册与能力展示，含 Schema/表枚举）
 - 应用管理（外部应用注册、API Key 管理）
 - 资源回收管理（跨模块评估和执行资源回收）
 - 模块注册与发现（供 Gateway 动态路由）
@@ -87,7 +87,7 @@ backend/
 │   │   ├── cleanup_handler.go         # 资源回收
 │   │   ├── module_registry_handler.go # 模块注册与发现
 │   │   ├── task_provider_handler.go   # 任务提供者注册
-│   │   ├── registry_handler.go        # 能力注册（计算引擎能力）
+│   │   ├── registry_handler.go        # 引擎能力注册与发现
 │   │   ├── config_handler.go          # 共享配置（内部 API）
 │   │   └── internal_handler.go        # API Key 验证（内部 API）
 │   ├── config/         # 配置管理
@@ -398,10 +398,9 @@ frontend/src/
 - `POST /api/v1/internal/engines/:id/check-connection` - 触发异步连接检测
 
 **能力注册**:
-- `POST /api/v1/internal/registry/capabilities` - 注册计算能力
+- `POST /api/v1/internal/registry/capabilities` - 注册引擎能力
 - `GET /api/v1/internal/registry/capabilities` - 列出所有能力
-- `GET /api/v1/internal/registry/capabilities/:identifier` - 按标识符查询能力
-- `GET /api/v1/internal/registry/compute-engines` - 列出计算引擎
+- `GET /api/v1/internal/registry/compute-engines` - 列出具备 compute 能力的引擎
 
 **任务提供者**:
 - `POST /api/v1/internal/task-providers/register` - 模块注册为任务提供者

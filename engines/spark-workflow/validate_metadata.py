@@ -19,6 +19,10 @@ from typing import List, Dict, Any
 import re
 
 
+SOURCE_OPERATOR_IDS = {"load"}
+VIEW_DEPENDENCY_OPERATOR_IDS = {"sql"}
+
+
 class MetadataValidator:
     """元数据验证器"""
 
@@ -47,7 +51,7 @@ class MetadataValidator:
         operator_id = operator.get("id", "unknown")
 
         # 1. 检查必填字段
-        required_fields = ["id", "name", "display_name", "module", "category", "description", "parameters", "output_ports"]
+        required_fields = ["id", "name", "display_name", "engine_type", "category", "category_path", "description", "parameters", "output_ports", "execution_modes"]
         for field in required_fields:
             if field not in operator:
                 self.errors.append(f"[{operator_id}] 缺少必填字段: {field}")
@@ -163,13 +167,24 @@ class MetadataValidator:
 
         # 检查 params 中是否有引用
         params = workflow_example.get("params", {})
+        depends_on = workflow_example.get("depends_on", [])
         has_ref = False
         for value in params.values():
             if isinstance(value, dict) and "$ref" in value:
                 has_ref = True
                 break
 
-        if not has_ref and "input_df" not in params and "left_df" not in params:
+        is_source_example = operator_id in SOURCE_OPERATOR_IDS and len(depends_on) == 0
+        is_view_dependency_example = (
+            operator_id in VIEW_DEPENDENCY_OPERATOR_IDS and len(depends_on) > 0
+        )
+        if (
+            not has_ref
+            and "input_df" not in params
+            and "left_df" not in params
+            and not is_source_example
+            and not is_view_dependency_example
+        ):
             self.warnings.append(f"[{operator_id}] workflow_example.params 缺少上游引用 ($ref)")
 
         return True

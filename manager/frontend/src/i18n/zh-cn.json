@@ -6,8 +6,12 @@
       "dataExplorer": "数据探查",
       "dataRetrieval": "数据检索",
       "vectorizationTasks": "向量化任务",
-      "tileCache": "瓦片缓存任务",
-      "quickViewOptimization": "快显性能优化",
+      "spatialQuickView": "空间快显管理",
+      "tileCache": "矢量快显 - 瓦片缓存",
+      "quickViewOptimization": "矢量快显 - 性能优化",
+      "vectorTileCache": "矢量快显 - 瓦片缓存",
+      "vectorQuickViewOptimization": "矢量快显 - 性能优化",
+      "rasterCOG": "栅格快显 - COG",
       "logoutSuccess": "已退出登录"
     },
     "login": {
@@ -357,6 +361,67 @@
         "deleted": "已删除"
       }
     },
+    "rasterCOG": {
+      "title": "栅格快显 - COG",
+      "subtitle": "管理 Manager 派生到 infra MinIO 的 COG 快显结果",
+      "workflowDescription": "COG 生成入口来自 TIFF 预览页；本页负责查看生成任务、重跑任务、追踪执行以及管理已登记的栅格快显 COG。",
+      "tasksTab": "COG 生成任务",
+      "resultsTab": "COG 生成结果",
+      "id": "ID",
+      "name": "任务名称",
+      "engine": "引擎",
+      "engineWithId": "引擎 {id}",
+      "resource": "资源",
+      "sourceDataPath": "源数据路径",
+      "profile": "Profile",
+      "sourceSize": "源大小",
+      "size": "COG 大小",
+      "rasterSize": "栅格尺寸",
+      "sourceSrid": "源 SRID",
+      "extent": "范围",
+      "enabled": "启用",
+      "enabledYes": "启用",
+      "enabledNo": "停用",
+      "lastExecutionStatus": "最后执行",
+      "lastRunAt": "最近运行",
+      "resultStatus": "状态",
+      "updatedAt": "更新时间",
+      "actions": "操作",
+      "execute": "重新生成",
+      "results": "结果",
+      "monitor": "监控",
+      "previewSource": "预览源数据",
+      "delete": "删除",
+      "search": "搜索",
+      "reset": "重置",
+      "keywordPlaceholder": "搜索源数据、文件名、指纹或错误",
+      "taskWithId": "任务 {id}",
+      "deleteSuccess": "已删除",
+      "deleteTaskConfirm": "确认删除该 COG 生成任务？",
+      "deleteResultConfirm": "确认删除该栅格快显 COG？删除结果会清理 Manager 登记的 infra MinIO 对象。",
+      "executeSubmitted": "已提交 COG 生成执行，正在打开监控",
+      "executeFailed": "执行 COG 生成任务失败",
+      "loadTasksFailed": "加载 COG 生成任务失败",
+      "loadResultsFailed": "加载栅格快显 COG 失败",
+      "error": "错误",
+      "statusNeverRun": "未运行",
+      "status": {
+        "pending": "等待中",
+        "running": "运行中",
+        "success": "成功",
+        "failed": "失败",
+        "timeout": "超时",
+        "cancelled": "已取消",
+        "canceled": "已取消"
+      },
+      "resultStatuses": {
+        "building": "生成中",
+        "ready": "可用",
+        "stale": "需刷新",
+        "failed": "失败",
+        "deleted": "已删除"
+      }
+    },
     "retrieval": {
       "title": "数据检索",
       "subtitle": "支持关键词全文检索与向量语义检索，智能定位数据资产",
@@ -461,7 +526,7 @@
       },
       "loadingQuickView": "正在加载快显数据...",
       "loadQuickViewFailed": "加载快显数据失败",
-      "missingQuickViewURL": "缺少快显数据地址",
+      "missingQuickViewURL": "缺少快显读取地址",
       "noQuickViewFeatures": "暂无可显示的空间要素",
       "spatialMetadataIncomplete": "空间元数据不完整",
       "directGeoJSONTooLarge": "当前空间数据超过直接快显上限（{max} 条）",
@@ -472,7 +537,23 @@
       "tileGenerationRequiresGeometry": "生成瓦片需要几何列信息",
       "tileGenerationRequiresNumericSRID": "生成瓦片需要数值 SRID",
       "tileGenerationRequiresSpatialExtent": "生成瓦片需要空间范围",
-      "tileGenerationUnavailable": "当前数据暂不支持生成瓦片"
+      "tileGenerationUnavailable": "当前数据暂不支持生成瓦片",
+      "rasterTIFFQuickView": "TIFF / COG 快显",
+      "rasterOpacity": "不透明度",
+      "loadingRasterQuickView": "正在加载栅格影像...",
+      "loadRasterQuickViewFailed": "栅格影像加载失败",
+      "requiresCOGGeneration": "当前 TIFF 超出浏览器直接渲染预算，需要先生成 COG 快显优化。",
+      "requiresManagedCOG": "源文件已经是 COG，但仍需要先生成平台受管的栅格快显 COG。",
+      "generateRasterCOG": "生成 COG",
+      "generateRasterCOGSubmitted": "栅格快显 COG 生成任务已提交",
+      "generateRasterCOGReady": "栅格快显 COG 已生成",
+      "generateRasterCOGFailed": "提交栅格快显 COG 生成任务失败",
+      "generateRasterCOGExecutionFailed": "栅格快显 COG 生成失败",
+      "generateRasterCOGTimeout": "栅格快显 COG 仍在生成中，请稍后刷新查看",
+      "rasterCOGTaskName": "生成 COG - {name}",
+      "missingSpatialExtent": "缺少空间范围，无法地图定位。",
+      "missingCRS": "缺少坐标系，无法地图定位。",
+      "clientRenderBudgetExceeded": "当前 TIFF 超出浏览器渲染预算。"
     },
     "import": {
       "title": "导入数据",
@@ -865,7 +946,7 @@
     }
   },
   "engine": {
-      "term": {
+    "term": {
       "engine": "引擎",
       "schema": "Schema",
       "database": "数据库",
@@ -880,7 +961,7 @@
       "graph": "图",
       "file": "文件",
       "object": "对象"
-      }
+    }
   },
   "meta": {
     "itemType": "数据项类型",

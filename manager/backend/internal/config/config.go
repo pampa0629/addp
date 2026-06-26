@@ -210,7 +210,6 @@ func Load() *Config {
 		RealtimeTileTimeoutMS:     realtimeTileTimeoutMS,
 		RealtimeTileRetryAfterSec: realtimeTileRetryAfterSec,
 	}
-
 	// 记录瓦片缓存生成配置（特别关注并发数和连接池）
 	log.Printf("📋 Manager Config: 瓦片缓存生成配置")
 	log.Printf("   TILE_CACHE_CONCURRENCY (并发数): %d", cfg.TileCache.Concurrency)

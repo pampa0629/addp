@@ -655,8 +655,8 @@ func multiScaleCandidates(scenarios []ScenarioReport) []MultiScaleCandidate {
 				Tile:              tile.Tile,
 				Trigger:           trigger,
 				Summary:           tile.Summary,
-				CurrentUserAction: "tile_cache_generation",
-				FollowUpTopic:     "multi_scale_quick_view_optimization",
+				CurrentUserAction: "vector_tile_cache_generation",
+				FollowUpTopic:     "multi_scale_vector_quick_view_target_generation",
 				Rationale:         multiScaleCandidateRationale(trigger, tile.Summary),
 			})
 		}
@@ -725,9 +725,9 @@ func retryPolicyForRenderPath(path string) string {
 
 func recommendedActionForRenderPath(path string) string {
 	if path == "source_transform_path" {
-		return "quick_view_optimization"
+		return "vector_quick_view_target_generation"
 	}
-	return "tile_cache_generation"
+	return "vector_tile_cache_generation"
 }
 
 func recommendationConfidence(summary MetricSummary) string {

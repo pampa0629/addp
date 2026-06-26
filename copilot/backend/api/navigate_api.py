@@ -74,7 +74,7 @@ ADDP 数据平台模块说明：
 - /graph/analysis - 图谱分析
 - /graph/knowledge-service - 知识服务
 - /system/users - 用户管理
-- /system/engines - 引擎管理（配置数据库连接、计算引擎）
+- /system/engines - 引擎管理（配置通用引擎、查看扩展运行时）
 - /system/applications - 应用与 API Key 管理
 - /system/logs - 系统日志
 - /system/cleanup - 数据清理

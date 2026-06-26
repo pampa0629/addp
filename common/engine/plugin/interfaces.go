@@ -23,7 +23,7 @@ type Engine struct {
 // 所有引擎（数据库、对象存储、计算引擎）都必须实现此接口
 type EnginePlugin interface {
 	// Type 返回引擎类型标识（小写）
-	// 例如: "postgresql", "mysql", "doris", "spark", "minio", "s3", "python_workflow"
+	// 例如: "postgresql", "mysql", "doris", "spark", "minio", "s3", "acme_geo_workflow"
 	Type() string
 
 	// DisplayName 返回用户友好的显示名称

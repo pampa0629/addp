@@ -4,13 +4,9 @@ Spark 工作流聚合分析算子
 
 import logging
 from typing import Dict, Any, List, Optional
-from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql import functions as F
-from pyspark.sql.window import Window
 
-from spark_connector import get_spark_connector
-from storage_adapters import StorageAdapter
 from .base import OperatorMetadata, OperatorParam, OperatorCategory, register_operator
+from .spark_types import DataFrame
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +102,7 @@ GROUP_BY_METADATA = OperatorMetadata(
     category=OperatorCategory.AGGREGATION,
     description="分组聚合",
     brief_description="按指定列分组并进行聚合计算,支持多种聚合函数组合",
+    execution_modes=["workflow"],
     overview="group_by 算子实现 SQL GROUP BY 功能,按一列或多列分组,对每组数据进行聚合计算。支持 count、sum、avg、min、max 等标准聚合函数,也支持复杂的自定义表达式。",
     params=[
         OperatorParam(
@@ -131,10 +128,10 @@ GROUP_BY_METADATA = OperatorMetadata(
         )
     ],
     use_cases=[
-        "省份统计: 按省份分组统计城市数量和总人口,GROUP BY province, 聚合 COUNT(*) 和 SUM(population)",
+        "省份统计: 按 34 个省份分组统计城市数量和总人口,GROUP BY province, 聚合 COUNT(*) 和 SUM(population)",
         "POI 分类汇总: 按类别(餐饮/购物/娱乐)分组统计 POI 数量和平均评分,输出 3 行统计结果",
         "空间密度分析: 按网格 ID 分组统计点位数量,找出密度最高的 10 个网格",
-        "时序聚合: 按日期和省份双维度分组,统计每天各省的订单量和销售额"
+        "时序聚合: 按 365 天日期和省份双维度分组,统计每天各省的订单量和销售额"
     ],
     notes=[
         "分组列中的 NULL 值会单独成组",
@@ -166,6 +163,7 @@ JOIN_METADATA = OperatorMetadata(
     category=OperatorCategory.AGGREGATION,
     description="表连接",
     brief_description="关联两张表,支持内连接、左连接、右连接和全外连接",
+    execution_modes=["workflow"],
     overview="join 算子实现 SQL JOIN 功能,根据连接条件关联两个 DataFrame。支持简单列名连接(on=\"id\")和复杂 SQL 表达式连接(on=\"a.id = b.user_id AND a.date = b.date\")。",
     params=[
         OperatorParam(
@@ -199,9 +197,9 @@ JOIN_METADATA = OperatorMetadata(
     ],
     use_cases=[
         "POI 类别关联: 将 100万 POI 点位表与类别字典表(50条)按 category_id 连接,补充类别名称",
-        "空间属性关联: 将道路表与行政区表按 region_id 连接,为每条道路添加所属区域信息",
+        "空间属性关联: 将 100万条道路表与行政区表按 region_id 连接,为每条道路添加所属区域信息",
         "多表汇总: 将订单表、用户表、商品表 3 张表连接,生成订单明细报表",
-        "左连接保全: 将城市表左连接 GDP 统计表,保留所有城市(即使没有 GDP 数据)"
+        "左连接保全: 将 300 个城市表左连接 GDP 统计表,保留所有城市(即使没有 GDP 数据)"
     ],
     notes=[
         "inner join 只保留匹配的行,可能大幅减少数据量",

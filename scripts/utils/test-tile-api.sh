@@ -9,7 +9,7 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo "=== ADDP MVT Tile API 测试工具 ==="
+echo "=== ADDP Quick View MVT Tile API 测试工具 ==="
 echo ""
 
 # 1. 登录获取 token
@@ -21,7 +21,7 @@ read -sp "密码: " PASSWORD
 echo ""
 PASSWORD=${PASSWORD:-xx123zzm}
 
-RESPONSE=$(curl -s http://localhost:8180/api/auth/login \
+RESPONSE=$(curl -s http://localhost:8180/api/v1/system/login \
   -H "Content-Type: application/json" \
   -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")
 
@@ -38,23 +38,28 @@ echo "Token: ${TOKEN:0:50}..."
 echo ""
 
 # 2. 测试瓦片请求
-echo "📍 步骤 2: 请求 MVT 瓦片..."
-read -p "引擎 ID [2]: " ENGINE_ID
-ENGINE_ID=${ENGINE_ID:-2}
-
-read -p "Schema [public]: " SCHEMA
-SCHEMA=${SCHEMA:-public}
-
-read -p "表名 [dltb]: " TABLE
-TABLE=${TABLE:-dltb}
+echo "📍 步骤 2: 请求 Quick View MVT 瓦片..."
+read -p "ResourceLocator [addp://engine/2/path/public/dltb?type=table]: " LOCATOR
+LOCATOR=${LOCATOR:-addp://engine/2/path/public/dltb?type=table}
 
 read -p "Zoom/X/Y [7/102/72]: " TILE_COORDS
 TILE_COORDS=${TILE_COORDS:-7/102/72}
 
-read -p "几何字段 [smgeometry]: " GEOM_FIELD
+read -p "几何字段（可选）[smgeometry]: " GEOM_FIELD
 GEOM_FIELD=${GEOM_FIELD:-smgeometry}
 
-URL="http://localhost:8081/api/engines/${ENGINE_ID}/spatial/tiles/${SCHEMA}/${TABLE}/${TILE_COORDS}?geom=${GEOM_FIELD}"
+QUERY=$(python3 - "$LOCATOR" "$GEOM_FIELD" <<'PY'
+import sys
+from urllib.parse import urlencode
+
+params = {"locator": sys.argv[1]}
+if sys.argv[2]:
+    params["geometry_column"] = sys.argv[2]
+print(urlencode(params))
+PY
+)
+
+URL="http://localhost:8081/api/v1/manager/quick-view/tiles/${TILE_COORDS}.mvt?${QUERY}"
 
 echo ""
 echo "请求 URL:"
@@ -103,7 +108,7 @@ elif [ "$HTTP_CODE" -eq 401 ]; then
   cat "$OUTPUT_FILE"
 
 elif [ "$HTTP_CODE" -eq 404 ]; then
-  echo -e "${RED}❌ 引擎未找到 (404)${NC}"
+  echo -e "${RED}❌ 资源未找到 (404)${NC}"
   cat "$OUTPUT_FILE"
 
 else

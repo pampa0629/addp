@@ -56,7 +56,7 @@ graph TB
 | **编辑器** | Monaco (SQL/MQL) | 算子拖拽 + DAG 可视化 | Jupyter Notebook |
 | **执行方式** | SQL/MQL 执行 | DAG 工作流执行 | Cell 逐个执行 |
 | **适用场景** | 数据查询、统计分析 | 数据处理、空间分析 | 交互式探索、变量传递 |
-| **支持引擎** | 数据库计算引擎 | 工作流计算引擎 | Jupyter 引擎 |
+| **支持引擎** | 可查询通用引擎 | 工作流运行时 | Jupyter 脚本运行时 |
 | **结果展示** | 表格视图、导出 CSV | GeoDataFrame、可视化 | 文本、图表、地图 |
 | **保存形式** | SQL 文本 + 历史记录 | DAG JSON + 执行记录 | .ipynb 文件 |
 
@@ -168,32 +168,45 @@ graph TB
 
 ### 重要说明
 
-⚠️ **Spark Workflow 引擎特殊要求**:
+### 查询任务与 DuckDB 联邦查询
 
-当用户选择 **Spark Workflow** 引擎时，除了注册 Spark Workflow 引擎本身，还需要：
+Develop 的 `query` 任务分为两条互斥主路径：
 
-1. **注册 Spark 计算引擎**作为运行时（`engine_type: "spark"`）
-2. 在执行配置中指定 `spark_cluster_id`（指向实际的 Spark 集群）
-3. Spark Workflow 引擎会生成 PySpark 脚本，提交到指定的 Spark 集群执行
+1. 普通 SQL 查询：`content.query_type="sql"`，`execution_config.engine_id` 指向 System 中具备 query 能力的真实引擎实例。
+2. DuckDB 联邦查询：`content.query_type="sql"`，`execution_config.query_mode="duckdb"`，由 Develop 内置 DuckDB 服务执行，运行时根据 SQL 引用动态挂载 PostgreSQL、MySQL、MinIO/S3 等真实 System 引擎。
+
+DuckDB 联邦查询不是工作流引擎，也不是 System 中注册的普通引擎实例。Develop 前端可以在查询工作台中提供 DuckDB 查询模式选项，但该选项必须来自 Develop 自身的查询模式能力，而不是追加到 `/develop/engines` 的伪 Engine。`/develop/engines` 只能返回 System 中具备 query 能力的真实引擎实例；保存任务、即时执行和写入执行记录均不得使用虚拟 `engine_id=0`，必须使用 `query_mode="duckdb"` 标识该内置联邦查询路径。
+
+⚠️ **Spark Workflow 运行时特殊要求**:
+
+当用户选择 **Spark Workflow** 运行时时，除了该运行时自注册记录本身，还需要：
+
+1. **注册 Spark 通用引擎资源**作为运行时（`engine_type: "spark"`）
+2. 在执行配置中指定 `spark_cluster_id`（指向实际的 Spark 通用引擎资源）
+3. Develop 后端校验 `spark_cluster_id` 指向已启用的 `engine_type=spark` 通用引擎资源，再调用 `WorkflowRuntimeProvider.ExecuteWorkflow()` 并映射为标准请求顶层 `engine_id`
+4. Spark Workflow 根据顶层 `engine_id` 读取 Spark 资源配置并创建 SparkSession
+
+工作流算子中的数据源/目标资源不复用这个顶层 `engine_id`。用户和 AI 侧应使用 `locator` 或 `target_parent_locator + target_name` 选择表、文件、对象存储资源；Develop 后端在执行前派生数据源的 `connection_info` 以及 `schema/table` 或 `path`，再传给运行时。
 
 **架构关系**：
 ```
-Spark Workflow 引擎 (代码生成器)
-    ↓ 生成 PySpark 脚本
-    ↓ 提交到
-Spark 计算引擎 (运行时)
-    ↓ 分布式执行
+Develop 执行配置 spark_cluster_id
+    ↓ 映射为标准请求顶层 engine_id
+Spark Workflow 运行时 (WorkflowRuntimeProvider)
+    ↓ 读取 System 中的 spark 通用引擎资源
+Spark 通用引擎资源 (运行时)
+    ↓ 创建 SparkSession 并分布式执行
 结果返回
 ```
 
-相比之下，**Python Workflow** 和 **Math Workflow** 引擎自带运行时，无需额外配置。
+相比之下，**Python Workflow** 和手动注册后的 **Math Workflow** 自身就是可执行运行时，无需额外绑定 Spark 通用引擎资源。
 
 ### 算子工作流特点
 
 **节点粒度**: 细粒度算子 (buffer、intersection、centroid)
 **DAG 层级**: 算子级别的有向无环图
 **数据传递**: GeoDataFrame 在内存中传递
-**执行引擎**: GeoPandas (内存计算) 或 Spark (分布式计算)
+**执行运行时**: Python Workflow (单节点内存计算) 或 Spark Workflow (分布式计算)
 **适用场景**: 数据分析、地理计算
 
 ### 典型算子
@@ -259,7 +272,7 @@ graph TB
 - **交互式开发**: Cell 逐个执行,实时查看结果
 - **变量传递**: Cell 间共享变量,工作流间传递数据
 - **多种输出**: 文本、图表、GeoDataFrame 可视化
-- **混合编程**: Python + Shell 混合使用
+- **Python Notebook**: 通过 Jupyter 运行 Python Notebook
 - **保存回放**: .ipynb 文件保存,可重新执行
 
 ---
@@ -301,7 +314,7 @@ sequenceDiagram
 | 用户选择的界面 | 需要的能力 | 筛选后的引擎示例 | 编辑器组件 |
 |--------------|----------------|----------------|-----------|
 | 查询工作台 | `compute.query.supported=true` | PostgreSQL, MySQL, MongoDB, Neo4j, ClickHouse, Doris, Spark SQL | Monaco Editor |
-| 工作流编辑器 | `compute.workflow.supported=true` | Python Workflow, Spark Workflow, Math Workflow | 算子拖拽 + DAG Canvas |
+| 工作流编辑器 | `compute.workflow.supported=true` | Python Workflow, Spark Workflow, Math Workflow（自动启动服务、手动注册示例） | 算子拖拽 + DAG Canvas |
 | Notebook 编辑器 | `compute.script.supported=true` | Jupyter | Jupyter Notebook |
 
 ### 引擎能力声明示例

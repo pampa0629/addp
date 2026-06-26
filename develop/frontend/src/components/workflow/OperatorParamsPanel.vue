@@ -42,7 +42,7 @@
 
                   <ResourceTreePicker
                     :api-base-url="param.ui_config?.api_base_url || '/api/v1/meta'"
-                    :engine-types="param.ui_config?.engine_types || ['postgresql', 'mysql', 'doris', 'clickhouse']"
+                    :engine-families="resourcePickerEngineFamilies(param)"
                     :engine-id="resourcePickerEngineId(param)"
                     :mode="resourcePickerMode(param)"
                     :node-filter="node => isResourcePickerVisibleNode(node, param)"
@@ -69,23 +69,6 @@
                   </el-form-item>
 
                   <div v-if="param.notes" class="help-text" style="margin-top: 12px">
-                    <el-icon style="margin-right: 4px"><InfoFilled /></el-icon>
-                    {{ param.notes }}
-                  </div>
-                </div>
-              </template>
-
-              <!-- 特殊处理：NFS 文件选择器 -->
-              <template v-else-if="param.ui_type === 'nfs_file_picker'">
-                <div class="data-source-section">
-                  <h4 class="subsection-title">{{ param.name || 'NFS 文件' }}</h4>
-                  <p v-if="param.description" class="subsection-description">{{ param.description }}</p>
-                  <NfsFilePicker
-                    :engine-id="formData.engine_id"
-                    :path="formData.path"
-                    @change="handleNfsFileSelection"
-                  />
-                  <div v-if="param.notes" class="help-text" style="margin-top: 8px">
                     <el-icon style="margin-right: 4px"><InfoFilled /></el-icon>
                     {{ param.notes }}
                   </div>
@@ -146,8 +129,8 @@ import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionFilled, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import NfsFilePicker from './NfsFilePicker.vue'
 import { parseLocatorSafe, ResourceTreePicker } from '@addp/common-frontend'
+import { isWorkflowInputParameter } from '@/utils/workflowInputBindings'
 
 const { t } = useI18n()
 
@@ -159,10 +142,6 @@ const props = defineProps({
   operator: {
     type: String,
     default: ''
-  },
-  paramDefinitions: {
-    type: Object,
-    default: () => ({})
   },
   parameters: {
     type: Array,
@@ -178,40 +157,12 @@ const emit = defineEmits(['save'])
 
 const formData = ref({})
 
-// 使用结构化参数定义(优先)或回退到旧格式
+// 使用工作流引擎返回的结构化参数定义。
 const effectiveParameters = computed(() => {
-  let params = []
+  let params = props.parameters
 
-  if (props.parameters && props.parameters.length > 0) {
-    params = props.parameters
-  } else {
-    // 向后兼容:将旧的 paramDefinitions 转换为参数数组
-    params = Object.entries(props.paramDefinitions).map(([name, desc]) => ({
-      name,
-      type: 'string',
-      description: desc,
-      required: false
-    }))
-  }
-
-  // 过滤掉 input 类型的参数（这些参数通过连接线自动传递）
-  // 识别方法：1）参数名为data/input_df/input_gdf  2）数据类型为object/GeoDataFrame/DataFrame
-  params = params.filter(p => {
-    const inputParamNames = ['data', 'input_df', 'input_gdf', 'input']
-    const inputDataTypes = ['object', 'GeoDataFrame', 'DataFrame']
-
-    // 如果参数名是典型的input参数名，且数据类型也是表格类型，则过滤掉
-    if (inputParamNames.includes(p.name) && inputDataTypes.includes(p.type)) {
-      return false
-    }
-
-    // 如果有param_type字段，也使用它判断
-    if (p.param_type === 'input') {
-      return false
-    }
-
-    return true
-  })
+  // 过滤掉由工作流连线自动传递的输入参数。
+  params = params.filter(p => !isWorkflowInputParameter(p))
 
   // 根据 show_when 条件过滤参数
   params = params.filter(p => {
@@ -242,14 +193,8 @@ const effectiveParameters = computed(() => {
   const hasVisibleResourceTreePicker = params.some(p => p.ui_type === 'resource_tree_picker')
   if (hasVisibleResourceTreePicker) {
     // 隐藏被资源树选择器自动填充的参数
-    const autoFilledParams = ['locator', 'target_parent_locator', 'target_name', 'engine_id', 'schema', 'table']
+    const autoFilledParams = ['locator', 'target_parent_locator', 'target_name', 'engine_id', 'schema', 'table', 'path', 'connection_info']
     params = params.filter(p => !autoFilledParams.includes(p.name))
-  }
-
-  // 检查是否有可见的 nfs_file_picker
-  const hasVisibleNfsFilePicker = params.some(p => p.ui_type === 'nfs_file_picker')
-  if (hasVisibleNfsFilePicker) {
-    params = params.filter(p => !['engine_id', 'path'].includes(p.name))
   }
 
   return params
@@ -341,6 +286,20 @@ const resourcePickerMode = (param) => {
   return isTargetResourcePicker(param) ? 'node' : 'item'
 }
 
+const resourcePickerEngineFamilies = (param) => {
+  if (Array.isArray(param.ui_config?.engine_families)) {
+    return param.ui_config.engine_families
+  }
+  const selectableTypes = [
+    ...(param.ui_config?.selectable_node_types || []),
+    ...(param.ui_config?.selectable_parent_node_types || [])
+  ].map(type => String(type).toLowerCase())
+  if (selectableTypes.some(type => ['file', 'object', 'root', 'directory', 'dir', 'bucket', 'prefix'].includes(type))) {
+    return ['file', 'object']
+  }
+  return ['tabular', 'dynamic_schema']
+}
+
 const isTargetResourcePicker = (param) => {
   return props.operator === 'save' || param.ui_config?.allow_create_table === true
 }
@@ -352,7 +311,7 @@ const resourcePickerInitialLocator = (param) => {
 }
 
 const resourcePickerEngineId = (param) => {
-  return isTargetResourcePicker(param) ? formData.value.engine_id : null
+  return null
 }
 
 const isResourcePickerNodeSelectable = (node, param) => {
@@ -388,7 +347,7 @@ const handleResourceSelection = (selection, param) => {
   // 根据算子类型设置不同的字段
   // load 算子使用 source_type，save 算子使用 target_type
   if (isTargetResourcePicker(param)) {
-    formData.value.target_type = 'table'
+    formData.value.target_type = targetTypeFromLocator(locator)
     formData.value.target_parent_locator = locator
     formData.value.locator = null
     if (!formData.value.target_name) {
@@ -400,7 +359,7 @@ const handleResourceSelection = (selection, param) => {
     }
   } else {
     // 默认情况（load 算子）
-    formData.value.source_type = 'table'
+    formData.value.source_type = sourceTypeFromLocator(locator)
     formData.value.locator = locator
     formData.value.target_parent_locator = null
     formData.value.target_name = null
@@ -415,13 +374,16 @@ const resourceLabelFromLocator = (locator) => {
   return parsed.path?.[parsed.path.length - 1] || locator || ''
 }
 
-// 处理 NFS 文件选择器的选择结果
-const handleNfsFileSelection = ({ engineId, path, format }) => {
-  formData.value.engine_id = engineId
-  formData.value.path = path
-  if (format) {
-    formData.value.format = format
-  }
+const sourceTypeFromLocator = (locator) => {
+  const type = String(parseLocatorSafe(locator).type || '').toLowerCase()
+  if (['file', 'object'].includes(type)) return 'file'
+  return 'table'
+}
+
+const targetTypeFromLocator = (locator) => {
+  const type = String(parseLocatorSafe(locator).type || '').toLowerCase()
+  if (['root', 'directory', 'dir', 'bucket', 'prefix'].includes(type)) return 'file'
+  return 'table'
 }
 
 // 保存参数
@@ -445,7 +407,7 @@ const saveParams = () => {
         ElMessage.warning(t('develop.operatorParams.requiredParam', { name: 'target_name' }))
         return
       }
-    } else if (formData.value.source_type === 'table' && !formData.value.locator) {
+    } else if (['table', 'file'].includes(formData.value.source_type) && !formData.value.locator) {
       ElMessage.warning(t('develop.operatorParams.requiredParam', { name: 'locator' }))
       return
     }
@@ -474,15 +436,11 @@ const saveParams = () => {
   })
 
   // 补充被 effectiveParameters 过滤掉的特殊 UI 组件自动填充字段
-  if (allParams.some(p => p.ui_type === 'nfs_file_picker')) {
-    if (formData.value.engine_id != null) cleanedParams.engine_id = formData.value.engine_id
-    if (formData.value.path) cleanedParams.path = formData.value.path
-  }
   if (allParams.some(p => p.ui_type === 'resource_tree_picker')) {
-    if (formData.value.source_type === 'table' && formData.value.locator) {
+    if (['table', 'file'].includes(formData.value.source_type) && formData.value.locator) {
       cleanedParams.locator = formData.value.locator
     }
-    if (formData.value.target_type === 'table') {
+    if (['table', 'file'].includes(formData.value.target_type)) {
       if (formData.value.target_parent_locator) cleanedParams.target_parent_locator = formData.value.target_parent_locator
       if (formData.value.target_name) cleanedParams.target_name = formData.value.target_name
     }

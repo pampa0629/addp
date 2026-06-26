@@ -97,7 +97,7 @@ type Engine struct {
 	ID             uint           `gorm:"column:id" json:"id"`
 	TenantID       *uint          `gorm:"column:tenant_id;index" json:"tenant_id"`                              // 租户ID，SuperAdmin创建的引擎为null
 	Name           string         `gorm:"column:name;not null;size:255;index" json:"name"`                      // 显示名称（原 display_name）
-	EngineType     string         `gorm:"column:engine_type;not null;index" json:"engine_type"`                 // 引擎类型（postgresql, mysql, python_workflow等）
+	EngineType     string         `gorm:"column:engine_type;not null;index" json:"engine_type"`                 // 引擎类型（postgresql, mysql, acme_geo_workflow 等）
 	EngineOrigin   string         `gorm:"column:engine_origin;not null;default:'general'" json:"engine_origin"` // 引擎来源：general 或 extension
 	ConnectionInfo ConnectionInfo `gorm:"column:connection_info;type:json;not null" json:"connection_info"`
 	Description    string         `gorm:"column:description;type:text" json:"description"`
@@ -105,8 +105,9 @@ type Engine struct {
 	CreatedBy      *uint          `gorm:"column:created_by" json:"created_by,omitempty"`
 
 	// 扩展引擎字段
-	IsBuiltin    bool        `gorm:"column:is_builtin;default:false;index" json:"is_builtin"`      // 是否为内置引擎（内置引擎不可删除）
-	Capabilities *JSONString `gorm:"column:capabilities;type:jsonb" json:"capabilities,omitempty"` // 能力声明（JSONB）
+	IsBuiltin        bool              `gorm:"column:is_builtin;default:false;index" json:"is_builtin"`      // 是否为内置引擎（内置引擎不可删除）
+	Capabilities     *JSONString       `gorm:"column:capabilities;type:jsonb" json:"capabilities,omitempty"` // 能力声明（JSONB）
+	CapabilitiesView *CapabilitiesView `gorm:"-" json:"capabilities_view,omitempty"`                         // System 后端生成的能力展示模型
 
 	// 连接状态缓存（优化扫描性能）
 	ConnectionStatus string     `gorm:"column:connection_status;size:20;default:'unknown';index" json:"connection_status"` // online/offline/unknown/checking

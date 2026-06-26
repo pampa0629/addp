@@ -31,7 +31,7 @@ class ADDPDataSourceMagics(Magics):
 
         用法：
             %load_addp_datasources
-            %load_addp_datasources http://localhost:8085 <your_token>
+            %load_addp_datasources http://localhost:8185 <your_token>
 
         参数：
             api_base: ADDP API 基础 URL（可选，默认从环境变量读取）
@@ -40,14 +40,14 @@ class ADDPDataSourceMagics(Magics):
 
         # 1. 解析参数
         args = line.strip().split()
-        api_base = args[0] if len(args) > 0 else os.getenv('ADDP_API_BASE', 'http://localhost:8085')
+        api_base = args[0] if len(args) > 0 else os.getenv('ADDP_API_BASE', 'http://localhost:8185')
         token = args[1] if len(args) > 1 else os.getenv('ADDP_TOKEN')
 
         if not token:
             display(HTML("""
             <div style="padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107; margin: 10px 0;">
                 <strong>⚠️  需要提供 ADDP Token</strong><br>
-                用法：<code>%load_addp_datasources http://localhost:8085 &lt;your_token&gt;</code><br>
+                用法：<code>%load_addp_datasources http://localhost:8185 &lt;your_token&gt;</code><br>
                 或设置环境变量：<code>ADDP_TOKEN=&lt;your_token&gt;</code>
             </div>
             """))

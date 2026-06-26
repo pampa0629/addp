@@ -3,13 +3,19 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
+	commonutils "github.com/addp/common/utils"
 	localModels "github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 )
+
+var ErrInvalidCapabilityRegistration = errors.New("invalid capability registration")
 
 // RegistryService 能力注册服务
 type RegistryService struct {
@@ -26,35 +32,28 @@ func NewRegistryService(resourceRepo *repository.EngineRepository) *RegistryServ
 // RegisterCapability 注册能力（幂等操作）
 // 返回引擎 ID，以便调用方触发连接测试
 func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.CapabilityRegistrationRequest) (uint, error) {
+	capabilitiesJSON, err := s.prepareRegistrationCapabilities(req)
+	if err != nil {
+		return 0, err
+	}
+
 	// 1. 根据 engine_type + is_builtin 查询是否已存在（幂等检查）
 	var existing *localModels.Engine
 	if req.IsBuiltin {
 		// 内置引擎：通过 engine_type + is_builtin 查找
-		var err error
 		existing, err = s.resourceRepo.FindByEngineTypeAndBuiltin(ctx, req.EngineType)
 		if err != nil && err.Error() != "record not found" {
 			return 0, fmt.Errorf("failed to query existing resource: %w", err)
 		}
 	}
 
-	// 2. 序列化 JSON 字段
-	var capabilitiesJSON *string
-	if req.Capabilities != nil {
-		capBytes, err := json.Marshal(req.Capabilities)
-		if err != nil {
-			return 0, fmt.Errorf("failed to marshal capabilities: %w", err)
-		}
-		capStr := string(capBytes)
-		capabilitiesJSON = &capStr
-	}
-
-	// 3. 准备 ConnectionInfo（对于计算引擎，可以为空）
+	// 2. 准备 ConnectionInfo（对于计算引擎，可以为空）
 	connectionInfo := localModels.ConnectionInfo{}
 	if req.ConnectionInfo != nil {
 		connectionInfo = req.ConnectionInfo
 	}
 
-	// 4. 幂等更新或创建
+	// 3. 幂等更新或创建
 	if existing != nil {
 		// 已存在，更新配置
 		// 内置引擎使用插件的 DisplayName()，非内置引擎使用请求中的 Name
@@ -114,6 +113,51 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 	return resource.ID, nil
 }
 
+func (s *RegistryService) prepareRegistrationCapabilities(req *models.CapabilityRegistrationRequest) (*string, error) {
+	if req == nil {
+		return nil, invalidCapabilityRegistrationError("capability registration request is required")
+	}
+
+	engineType := strings.ToLower(strings.TrimSpace(req.EngineType))
+	if engineType == "" {
+		return nil, invalidCapabilityRegistrationError("engine_type is required")
+	}
+	req.EngineType = engineType
+
+	if req.IsBuiltin {
+		capabilitiesJSON, err := dbbridge.GenerateCapabilities(engineType)
+		if err != nil {
+			return nil, invalidCapabilityRegistrationError("failed to generate builtin capabilities for %s: %v", engineType, err)
+		}
+		return &capabilitiesJSON, nil
+	}
+
+	if req.Capabilities == nil {
+		return nil, invalidCapabilityRegistrationError("capabilities is required")
+	}
+
+	if req.Capabilities.SchemaVersion != plugin.CapabilitiesSchemaVersion {
+		return nil, invalidCapabilityRegistrationError("capabilities.schema_version must be %q", plugin.CapabilitiesSchemaVersion)
+	}
+	if req.Capabilities.EngineType == "" {
+		return nil, invalidCapabilityRegistrationError("capabilities.engine_type is required")
+	}
+	if req.Capabilities.EngineType != engineType {
+		return nil, invalidCapabilityRegistrationError("capabilities.engine_type %q does not match engine_type %q", req.Capabilities.EngineType, engineType)
+	}
+
+	capBytes, err := json.Marshal(req.Capabilities)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal capabilities: %w", err)
+	}
+	capStr := string(capBytes)
+	return &capStr, nil
+}
+
+func invalidCapabilityRegistrationError(format string, args ...interface{}) error {
+	return fmt.Errorf("%w: %s", ErrInvalidCapabilityRegistration, fmt.Sprintf(format, args...))
+}
+
 func toJSONStringPtrFromString(value *string) *localModels.JSONString {
 	if value == nil {
 		return nil
@@ -132,24 +176,10 @@ func (s *RegistryService) ListCapabilities(ctx context.Context, filters map[stri
 	return engines, nil
 }
 
-// GetCapabilityByIdentifier 根据 unique_identifier 查询能力
-func (s *RegistryService) GetCapabilityByIdentifier(ctx context.Context, identifier string) (*localModels.Engine, error) {
-	resource, err := s.resourceRepo.FindByUniqueIdentifier(ctx, identifier)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get capability: %w", err)
-	}
-
-	return resource, nil
-}
-
 // ListComputeEngines 查询所有具有计算能力的引擎
 func (s *RegistryService) ListComputeEngines(ctx context.Context) ([]*localModels.Engine, error) {
-	// 查询条件:
-	// 1. capabilities.compute 不为空（JSONB 查询）
-	// 2. is_active = true
 	filters := map[string]interface{}{
-		"has_compute_capability": true,
-		"is_active":              true,
+		"is_active": true,
 	}
 
 	engines, err := s.resourceRepo.FindByFilters(ctx, filters)
@@ -157,5 +187,18 @@ func (s *RegistryService) ListComputeEngines(ctx context.Context) ([]*localModel
 		return nil, fmt.Errorf("failed to list compute engines: %w", err)
 	}
 
-	return engines, nil
+	return filterComputeEngines(engines), nil
+}
+
+func filterComputeEngines(engines []*localModels.Engine) []*localModels.Engine {
+	filtered := make([]*localModels.Engine, 0, len(engines))
+	for _, engine := range engines {
+		if engine == nil {
+			continue
+		}
+		if len(commonutils.GetSupportedComputeEntrypoints((*models.Engine)(engine))) > 0 {
+			filtered = append(filtered, engine)
+		}
+	}
+	return filtered
 }

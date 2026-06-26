@@ -9,9 +9,11 @@ import (
 type GeometryEncoding string
 
 const (
-	GeometryEncodingWKT  GeometryEncoding = "wkt"
-	GeometryEncodingWKB  GeometryEncoding = "wkb"
-	GeometryEncodingEWKB GeometryEncoding = "ewkb"
+	GeometryEncodingWKT            GeometryEncoding = "wkt"
+	GeometryEncodingWKB            GeometryEncoding = "wkb"
+	GeometryEncodingEWKB           GeometryEncoding = "ewkb"
+	GeometryEncodingGeoJSON        GeometryEncoding = "geojson"
+	GeometryEncodingShapefileShape GeometryEncoding = "shapefile_shape"
 )
 
 type MissingFieldPolicy string

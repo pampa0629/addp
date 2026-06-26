@@ -60,7 +60,7 @@ func Load() *Config {
 		ManagerServiceURL:  getEnv("MANAGER_URL", "http://localhost:8081"),
 		MetaServiceURL:     getEnv("META_URL", "http://localhost:8082"),
 		TransferServiceURL: getEnv("TRANSFER_URL", "http://localhost:8083"),
-		DevelopServiceURL:  getEnv("DEVELOP_URL", "http://localhost:8084"),
+		DevelopServiceURL:  getEnv("DEVELOP_URL", "http://localhost:8185"),
 		ServiceServiceURL:  getEnv("SERVICE_URL", "http://localhost:8086"),
 		CopilotServiceURL:  getEnv("COPILOT_URL", "http://localhost:8087"),
 		MonitorServiceURL:  getEnv("MONITOR_URL", "http://localhost:8100"),

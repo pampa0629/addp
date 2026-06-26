@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	commonapi "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/common/spatial"
@@ -27,13 +30,20 @@ var (
 )
 
 const (
+	defaultDirectTIFFMaxBytes  = 50 * 1024 * 1024
+	defaultDirectTIFFMaxPixels = 64 * 1000 * 1000
+)
+
+const (
 	QuickViewStatusUnavailable = "unavailable"
 	QuickViewStatusAvailable   = "available"
 	QuickViewStatusGenerating  = "generating"
 	QuickViewStatusFailed      = "failed"
 
 	QuickViewRenderSourceCachedTile    = "cached_tile"
+	QuickViewRenderSourceClientCOG     = "client_cog_render"
 	QuickViewRenderSourceDirectGeoJSON = "direct_geojson"
+	QuickViewRenderSourceDirectTIFF    = "direct_tiff_client"
 	QuickViewRenderSourceRealtimeTile  = "realtime_tile"
 
 	RealtimeTilePerformanceReady3857Target = "ready_3857_target"
@@ -41,8 +51,8 @@ const (
 	RealtimeTilePerformanceSource3857      = "source_3857_unindexed"
 	RealtimeTilePerformanceSourceTransform = "source_transform_path"
 
-	RealtimeTileRecommendationQuickViewOptimization = "quick_view_optimization"
-	RealtimeTileRecommendationTileCacheGeneration   = "tile_cache_generation"
+	RealtimeTileRecommendationQuickViewOptimization = "vector_quick_view_target_generation"
+	RealtimeTileRecommendationTileCacheGeneration   = "vector_tile_cache_generation"
 
 	RealtimeTileTimeoutRetrySuppressTile = "suppress_tile"
 	RealtimeTileTimeoutRetryTTL          = "ttl"
@@ -50,12 +60,19 @@ const (
 	RealtimeTileTargetKindSourceTable                           = "source_table"
 	QuickViewOptimizationTargetKindExternal3857MaterializedView = "external_3857_materialized_view"
 	QuickViewOptimizationStatusNotRequired                      = "not_required"
+
+	RasterUnavailableReasonRequiresCOGGeneration = "requires_cog_generation"
+	RasterUnavailableReasonRequiresManagedCOG    = "requires_managed_cog"
+	RasterUnavailableReasonMissingSpatialExtent  = "missing_spatial_extent"
+	RasterUnavailableReasonMissingCRS            = "missing_crs"
+	RasterUnavailableReasonClientBudgetExceeded  = "client_render_budget_exceeded"
 )
 
 type QuickViewService struct {
 	repo             *repository.QuickViewRepository
 	tileCacheRepo    *repository.TileCacheRepository
 	optimizationRepo *repository.QuickViewOptimizationRepository
+	rasterCOGRepo    *repository.RasterCOGRepository
 	metaClient       *commonClient.MetaClient
 	options          QuickViewCapabilityOptions
 	spatialLoader    func(ctx context.Context, tenantID, engineID uint, schema, table string) (*SpatialMetadataResult, error)
@@ -69,6 +86,7 @@ func NewQuickViewService(
 		repo:             repository.NewQuickViewRepository(db),
 		tileCacheRepo:    repository.NewTileCacheRepository(db),
 		optimizationRepo: repository.NewQuickViewOptimizationRepository(db),
+		rasterCOGRepo:    repository.NewRasterCOGRepository(db),
 		metaClient:       metaClient,
 	}
 }
@@ -83,6 +101,8 @@ func (s *QuickViewService) Repository() *repository.QuickViewRepository {
 type QuickViewCapabilityOptions struct {
 	DirectGeoJSONMaxRows  int
 	RealtimeTileTimeoutMS int
+	DirectTIFFMaxBytes    int64
+	DirectTIFFMaxPixels   int64
 }
 
 func (s *QuickViewService) SetCapabilityOptions(options QuickViewCapabilityOptions) {
@@ -91,6 +111,12 @@ func (s *QuickViewService) SetCapabilityOptions(options QuickViewCapabilityOptio
 	}
 	if options.RealtimeTileTimeoutMS > 0 {
 		s.options.RealtimeTileTimeoutMS = options.RealtimeTileTimeoutMS
+	}
+	if options.DirectTIFFMaxBytes > 0 {
+		s.options.DirectTIFFMaxBytes = options.DirectTIFFMaxBytes
+	}
+	if options.DirectTIFFMaxPixels > 0 {
+		s.options.DirectTIFFMaxPixels = options.DirectTIFFMaxPixels
 	}
 }
 
@@ -125,10 +151,41 @@ type QuickViewSource struct {
 	Schema             string
 	Table              string
 	SpatialMeta        *SpatialMetadataResult
+	Raster             *RasterQuickViewSource
 	DirectGeoJSON      bool
 	GeoJSONURL         string
 	CanTile            bool
 	RealtimeTileTarget *RealtimeTileTarget
+}
+
+type RasterQuickViewSource struct {
+	Format              string
+	Profile             string
+	SizeBytes           int64
+	Width               int64
+	Height              int64
+	BandCount           int64
+	SourceSRID          int
+	SourceCRS           string
+	Extent              []float64
+	ExtentSRID          int
+	PreviewURL          string
+	IsTiled             interface{}
+	HasOverviews        interface{}
+	IsCloudOptimized    interface{}
+	COGCheckLevel       string
+	NoData              *float64
+	SampleMin           *float64
+	SampleMax           *float64
+	DisplayMin          *float64
+	DisplayMax          *float64
+	DisplayRangeMethod  string
+	RecommendedAction   string
+	UnavailableReason   string
+	ClientMaxBytes      int64
+	ClientMaxPixels     int64
+	ClientReadMode      string
+	ClientRenderLibrary string
 }
 
 type RealtimeTileTarget struct {
@@ -151,19 +208,20 @@ type QuickViewCapability struct {
 	SourceSchema         string                     `json:"source_schema,omitempty"`
 	SourceTable          string                     `json:"source_table,omitempty"`
 	CanUseQuickView      bool                       `json:"can_use_quick_view"`
-	CanGenerateTileCache bool                       `json:"can_generate_tile_cache"`
+	CanGenerateTileCache bool                       `json:"can_generate_vector_tile_cache"`
 	PreferredMode        string                     `json:"preferred_mode"`
 	RecommendedMode      string                     `json:"recommended_mode"`
 	ActiveMode           string                     `json:"active_mode"`
-	DefaultTileCacheID   *uint                      `json:"default_tile_cache_id,omitempty"`
+	DefaultTileCacheID   *uint                      `json:"default_vector_tile_cache_id,omitempty"`
 	Status               string                     `json:"status"`
 	UnavailableReason    string                     `json:"unavailable_reason,omitempty"`
 	RenderSource         string                     `json:"render_source,omitempty"`
 	QuickView            QuickViewRenderInfo        `json:"quick_view"`
 	RenderFacts          *QuickViewRenderFacts      `json:"render_facts,omitempty"`
+	Raster               *QuickViewRasterInfo       `json:"raster,omitempty"`
 	Optimization         *QuickViewOptimizationInfo `json:"optimization,omitempty"`
 	RealtimeTile         *QuickViewRealtimeTileInfo `json:"realtime_tile,omitempty"`
-	TileCacheGeneration  TileCacheGeneration        `json:"tile_cache_generation"`
+	TileCacheGeneration  TileCacheGeneration        `json:"vector_tile_cache_generation"`
 	LastCheckedAt        *time.Time                 `json:"last_checked_at,omitempty"`
 }
 
@@ -198,6 +256,7 @@ type QuickViewRenderInfo struct {
 	TileFormat      string    `json:"tile_format,omitempty"`
 	TileURLTemplate string    `json:"tile_url_template,omitempty"`
 	GeoJSONURL      string    `json:"geojson_url,omitempty"`
+	PreviewURL      string    `json:"preview_url,omitempty"`
 	Extent          []float64 `json:"extent,omitempty"`
 	ExtentSRID      int       `json:"extent_srid,omitempty"`
 	MinZoom         int       `json:"min_zoom,omitempty"`
@@ -205,6 +264,35 @@ type QuickViewRenderInfo struct {
 	GeometryColumn  string    `json:"geometry_column,omitempty"`
 	SourceSRID      int       `json:"source_srid,omitempty"`
 	RecordCount     int64     `json:"record_count,omitempty"`
+}
+
+type QuickViewRasterInfo struct {
+	Format              string      `json:"format,omitempty"`
+	Profile             string      `json:"profile,omitempty"`
+	Width               int64       `json:"width,omitempty"`
+	Height              int64       `json:"height,omitempty"`
+	BandCount           int64       `json:"band_count,omitempty"`
+	SizeBytes           int64       `json:"size_bytes,omitempty"`
+	SourceSRID          int         `json:"source_srid,omitempty"`
+	SourceCRS           string      `json:"source_crs,omitempty"`
+	Extent              []float64   `json:"extent,omitempty"`
+	ExtentSRID          int         `json:"extent_srid,omitempty"`
+	IsTiled             interface{} `json:"is_tiled,omitempty"`
+	HasOverviews        interface{} `json:"has_overviews,omitempty"`
+	IsCloudOptimized    interface{} `json:"is_cloud_optimized,omitempty"`
+	COGCheckLevel       string      `json:"cog_check_level,omitempty"`
+	NoData              *float64    `json:"nodata,omitempty"`
+	SampleMin           *float64    `json:"sample_min,omitempty"`
+	SampleMax           *float64    `json:"sample_max,omitempty"`
+	DisplayMin          *float64    `json:"display_min,omitempty"`
+	DisplayMax          *float64    `json:"display_max,omitempty"`
+	DisplayRangeMethod  string      `json:"display_range_method,omitempty"`
+	RecommendedAction   string      `json:"recommended_action,omitempty"`
+	UnavailableReason   string      `json:"unavailable_reason,omitempty"`
+	ClientMaxBytes      int64       `json:"client_max_bytes,omitempty"`
+	ClientMaxPixels     int64       `json:"client_max_pixels,omitempty"`
+	ClientReadMode      string      `json:"client_read_mode,omitempty"`
+	ClientRenderLibrary string      `json:"client_render_library,omitempty"`
 }
 
 type QuickViewRenderFacts struct {
@@ -246,7 +334,7 @@ func (s *QuickViewService) GetPreference(ctx context.Context, identity QuickView
 		TenantID:        identity.TenantID,
 		ItemFingerprint: identity.ItemFingerprint,
 		Locator:         identity.Locator,
-		PreferredMode:   "table_geojson",
+		PreferredMode:   models.QuickViewPreferredModeBasicPreview,
 	}, nil
 }
 
@@ -262,7 +350,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 	}
 
 	now := time.Now()
-	preferredMode := "table_geojson"
+	preferredMode := models.QuickViewPreferredModeBasicPreview
 	existing, err := s.repo.GetByIdentity(identity.TenantID, identity.ItemFingerprint, identity.Locator)
 	if err != nil && !errors.Is(err, commonapi.ErrNotFound) && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
@@ -296,7 +384,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 		SourceSchema:      strings.TrimSpace(schema),
 		SourceTable:       strings.TrimSpace(table),
 		PreferredMode:     preferredMode,
-		RecommendedMode:   "table_geojson",
+		RecommendedMode:   models.QuickViewPreferredModeBasicPreview,
 		ActiveMode:        preferredMode,
 		Status:            initialStatus,
 		UnavailableReason: initialReason,
@@ -313,7 +401,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 		capability.Status = QuickViewStatusAvailable
 		capability.UnavailableReason = ""
 		capability.RenderSource = QuickViewRenderSourceCachedTile
-		capability.RecommendedMode = "quick_view"
+		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
 		capability.DefaultTileCacheID = &readyTileCache.ID
 		capability.QuickView = renderInfoFromTileCache(engineID, schema, table, readyTileCache, spatialMeta)
 	} else if directGeoJSONAvailable(s.directGeoJSONMaxRows(), spatialMeta) {
@@ -321,7 +409,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 		capability.Status = QuickViewStatusAvailable
 		capability.UnavailableReason = ""
 		capability.RenderSource = QuickViewRenderSourceDirectGeoJSON
-		capability.RecommendedMode = "quick_view"
+		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
 		capability.QuickView = renderInfoFromSpatialMeta(engineID, schema, table, spatialMeta)
 	} else if spatialErr != nil {
 		capability.TileCacheGeneration.Available = false
@@ -344,8 +432,8 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 	if !capability.TileCacheGeneration.Available {
 		capability.CanGenerateTileCache = false
 	}
-	if capability.ActiveMode == "quick_view" && !capability.CanUseQuickView {
-		capability.ActiveMode = "table_geojson"
+	if capability.ActiveMode == models.QuickViewPreferredModeMapQuickView && !capability.CanUseQuickView {
+		capability.ActiveMode = models.QuickViewPreferredModeBasicPreview
 	}
 	capability.RenderFacts = renderFactsFromSpatialMeta(spatialMeta)
 	applyOptimizationRenderFacts(capability.RenderFacts, optimizationInfo)
@@ -370,13 +458,18 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	}
 
 	now := time.Now()
-	preferredMode := "table_geojson"
+	preferredMode := models.QuickViewPreferredModeBasicPreview
+	hasExistingPreference := false
 	existing, err := s.repo.GetByIdentity(identity.TenantID, identity.ItemFingerprint, identity.Locator)
 	if err != nil && !errors.Is(err, commonapi.ErrNotFound) && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
 	if existing != nil && strings.TrimSpace(existing.PreferredMode) != "" {
 		preferredMode = existing.PreferredMode
+		hasExistingPreference = true
+	}
+	if source.Raster != nil && !hasExistingPreference {
+		preferredMode = models.QuickViewPreferredModeMapQuickView
 	}
 
 	readyTileCache, err := s.defaultReadyTileCache(ctx, identity)
@@ -399,7 +492,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		SourceSchema:      strings.TrimSpace(source.Schema),
 		SourceTable:       strings.TrimSpace(source.Table),
 		PreferredMode:     preferredMode,
-		RecommendedMode:   "table_geojson",
+		RecommendedMode:   models.QuickViewPreferredModeBasicPreview,
 		ActiveMode:        preferredMode,
 		Status:            initialStatus,
 		UnavailableReason: initialReason,
@@ -411,12 +504,16 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	}
 	capability.Optimization = optimizationInfo
 
-	if readyTileCache != nil {
+	if source.Raster != nil {
+		if err := s.applyRasterCapability(ctx, capability, identity, source.Raster, source.EngineID); err != nil {
+			return nil, err
+		}
+	} else if readyTileCache != nil {
 		capability.CanUseQuickView = true
 		capability.Status = QuickViewStatusAvailable
 		capability.UnavailableReason = ""
 		capability.RenderSource = QuickViewRenderSourceCachedTile
-		capability.RecommendedMode = "quick_view"
+		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
 		capability.DefaultTileCacheID = &readyTileCache.ID
 		capability.QuickView = renderInfoFromTileCache(source.EngineID, source.Schema, source.Table, readyTileCache, source.SpatialMeta)
 	} else if source.DirectGeoJSON && directGeoJSONAvailable(s.directGeoJSONMaxRows(), source.SpatialMeta) {
@@ -424,7 +521,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		capability.Status = QuickViewStatusAvailable
 		capability.UnavailableReason = ""
 		capability.RenderSource = QuickViewRenderSourceDirectGeoJSON
-		capability.RecommendedMode = "quick_view"
+		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
 		capability.QuickView = renderInfoFromLocatorGeoJSON(source.SpatialMeta, source.GeoJSONURL)
 		capability.RealtimeTile = s.realtimeTileInfoFromTarget(source.RealtimeTileTarget)
 	} else if source.RealtimeTileTarget != nil {
@@ -432,7 +529,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		capability.Status = QuickViewStatusAvailable
 		capability.UnavailableReason = ""
 		capability.RenderSource = QuickViewRenderSourceRealtimeTile
-		capability.RecommendedMode = "quick_view"
+		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
 		capability.QuickView = renderInfoFromRealtimeTile(source.EngineID, source.Schema, source.Table, source.SpatialMeta)
 		capability.RealtimeTile = s.realtimeTileInfoFromTarget(source.RealtimeTileTarget)
 		capability.CanGenerateTileCache = true
@@ -453,13 +550,76 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	if !capability.TileCacheGeneration.Available {
 		capability.CanGenerateTileCache = false
 	}
-	if capability.ActiveMode == "quick_view" && !capability.CanUseQuickView {
-		capability.ActiveMode = "table_geojson"
+	if source.Raster != nil {
+		capability.CanGenerateTileCache = false
+		capability.TileCacheGeneration = TileCacheGeneration{
+			Available: false,
+			Reason:    "raster quick view does not use tile cache generation in phase 1",
+		}
+	}
+	if capability.ActiveMode == models.QuickViewPreferredModeMapQuickView && !capability.CanUseQuickView {
+		capability.ActiveMode = models.QuickViewPreferredModeBasicPreview
 	}
 	capability.RenderFacts = renderFactsFromSpatialMeta(source.SpatialMeta)
 	applyOptimizationRenderFacts(capability.RenderFacts, optimizationInfo)
 
 	return capability, nil
+}
+
+func (s *QuickViewService) applyRasterCapability(ctx context.Context, capability *QuickViewCapability, identity QuickViewIdentity, raster *RasterQuickViewSource, engineID uint) error {
+	if capability == nil || raster == nil {
+		return nil
+	}
+	rasterInfo := rasterInfoFromSource(raster)
+	capability.Raster = rasterInfo
+	capability.Optimization = nil
+	capability.RealtimeTile = nil
+	capability.DefaultTileCacheID = nil
+	capability.CanGenerateTileCache = false
+	capability.TileCacheGeneration = TileCacheGeneration{
+		Available: false,
+		Reason:    "raster quick view does not use tile cache generation in phase 1",
+	}
+
+	readyRasterCOG, err := s.readyRasterCOG(ctx, identity, raster, engineID)
+	if err != nil {
+		return err
+	}
+	if readyRasterCOG != nil {
+		capability.CanUseQuickView = true
+		capability.Status = QuickViewStatusAvailable
+		capability.UnavailableReason = ""
+		capability.RenderSource = QuickViewRenderSourceClientCOG
+		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
+		capability.QuickView = renderInfoFromRasterCOG(readyRasterCOG, raster)
+		capability.Raster = rasterInfoFromRasterCOG(readyRasterCOG, raster)
+		return nil
+	}
+
+	reason := rasterUnavailableReason(raster, s.directTIFFMaxBytes(), s.directTIFFMaxPixels())
+	if reason == "" {
+		capability.CanUseQuickView = true
+		capability.Status = QuickViewStatusAvailable
+		capability.UnavailableReason = ""
+		capability.RenderSource = QuickViewRenderSourceDirectTIFF
+		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
+		capability.QuickView = renderInfoFromRaster(raster)
+		capability.Raster.UnavailableReason = ""
+		capability.Raster.RecommendedAction = ""
+		return nil
+	}
+
+	capability.CanUseQuickView = false
+	capability.Status = QuickViewStatusUnavailable
+	capability.UnavailableReason = reason
+	capability.RenderSource = ""
+	capability.RecommendedMode = models.QuickViewPreferredModeBasicPreview
+	capability.QuickView = QuickViewRenderInfo{}
+	capability.Raster.UnavailableReason = reason
+	if rasterRecommendedActionForReason(reason) != "" {
+		capability.Raster.RecommendedAction = rasterRecommendedActionForReason(reason)
+	}
+	return nil
 }
 
 func (s *QuickViewService) GetDefaultTileCache(
@@ -498,7 +658,7 @@ func (s *QuickViewService) UpdatePreferredModeByIdentity(
 	preferredMode string,
 	capabilityLoader func(context.Context) (*QuickViewCapability, error),
 ) error {
-	if preferredMode != "table_geojson" && preferredMode != "quick_view" {
+	if preferredMode != models.QuickViewPreferredModeBasicPreview && preferredMode != models.QuickViewPreferredModeMapQuickView {
 		return fmt.Errorf("%w: %s", ErrQuickViewInvalidPreferredMode, preferredMode)
 	}
 	if identity.TenantID == 0 {
@@ -508,7 +668,7 @@ func (s *QuickViewService) UpdatePreferredModeByIdentity(
 	if strings.TrimSpace(identity.ItemFingerprint) == "" {
 		return fmt.Errorf("%w: item identity is missing", ErrQuickViewInvalidPreferredMode)
 	}
-	if preferredMode == "quick_view" {
+	if preferredMode == models.QuickViewPreferredModeMapQuickView {
 		capability, err := capabilityLoader(ctx)
 		if err != nil {
 			return err
@@ -631,6 +791,48 @@ func (s *QuickViewService) quickViewOptimizationInfo(ctx context.Context, identi
 	return info, nil
 }
 
+func (s *QuickViewService) readyRasterCOG(ctx context.Context, identity QuickViewIdentity, raster *RasterQuickViewSource, engineID uint) (*models.RasterCOG, error) {
+	if s.rasterCOGRepo == nil || strings.TrimSpace(identity.ItemFingerprint) == "" {
+		return nil, nil
+	}
+	result, err := s.rasterCOGRepo.GetLatestReadyByFingerprint(ctx, identity.TenantID, identity.ItemFingerprint)
+	if err != nil || result == nil {
+		return nil, err
+	}
+	if rasterCOGFactsMatch(result, identity, raster, engineID) {
+		return result, nil
+	}
+	if err := s.rasterCOGRepo.MarkStale(ctx, result.ID, result.TenantID, "raster COG source facts changed"); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+func rasterCOGFactsMatch(result *models.RasterCOG, identity QuickViewIdentity, raster *RasterQuickViewSource, engineID uint) bool {
+	if result == nil || result.Status != models.RasterCOGStatusReady {
+		return false
+	}
+	if engineID > 0 && result.SourceEngineID > 0 && result.SourceEngineID != engineID {
+		return false
+	}
+	if locator := strings.TrimSpace(identity.Locator); locator != "" && strings.TrimSpace(result.Locator) != "" && result.Locator != locator {
+		return false
+	}
+	if raster == nil {
+		return true
+	}
+	if raster.Width > 0 && result.Width > 0 && raster.Width != result.Width {
+		return false
+	}
+	if raster.Height > 0 && result.Height > 0 && raster.Height != result.Height {
+		return false
+	}
+	if raster.SourceSRID > 0 && result.SourceSRID > 0 && raster.SourceSRID != result.SourceSRID {
+		return false
+	}
+	return true
+}
+
 func quickViewOptimizationSourceFactsMatch(result *models.QuickViewOptimization, identity QuickViewIdentity, engineID uint, schema, table string, spatialMeta *SpatialMetadataResult) bool {
 	if result == nil {
 		return false
@@ -701,6 +903,20 @@ func (s *QuickViewService) realtimeTileTimeoutBudgetMS() int {
 		return s.options.RealtimeTileTimeoutMS
 	}
 	return 5000
+}
+
+func (s *QuickViewService) directTIFFMaxBytes() int64 {
+	if s.options.DirectTIFFMaxBytes > 0 {
+		return s.options.DirectTIFFMaxBytes
+	}
+	return defaultDirectTIFFMaxBytes
+}
+
+func (s *QuickViewService) directTIFFMaxPixels() int64 {
+	if s.options.DirectTIFFMaxPixels > 0 {
+		return s.options.DirectTIFFMaxPixels
+	}
+	return defaultDirectTIFFMaxPixels
 }
 
 func spatialMetaComplete(meta *SpatialMetadataResult) bool {
@@ -927,6 +1143,135 @@ func renderInfoFromRealtimeTile(engineID uint, schema, table string, meta *Spati
 	return info
 }
 
+func renderInfoFromRaster(raster *RasterQuickViewSource) QuickViewRenderInfo {
+	info := QuickViewRenderInfo{
+		RenderSource: QuickViewRenderSourceDirectTIFF,
+		PreviewURL:   strings.TrimSpace(raster.PreviewURL),
+		SourceSRID:   raster.SourceSRID,
+	}
+	if len(raster.Extent) == 4 {
+		info.Extent = append([]float64(nil), raster.Extent...)
+		info.ExtentSRID = raster.ExtentSRID
+	}
+	return info
+}
+
+func renderInfoFromRasterCOG(result *models.RasterCOG, raster *RasterQuickViewSource) QuickViewRenderInfo {
+	info := QuickViewRenderInfo{
+		RenderSource: QuickViewRenderSourceClientCOG,
+		PreviewURL:   rasterCOGContentURL(result),
+		SourceSRID:   result.SourceSRID,
+	}
+	if info.SourceSRID <= 0 && raster != nil {
+		info.SourceSRID = raster.SourceSRID
+	}
+	extent, extentSRID := rasterCOGExtent(result)
+	if len(extent) != 4 && raster != nil && len(raster.Extent) == 4 {
+		extent = append([]float64(nil), raster.Extent...)
+		extentSRID = raster.ExtentSRID
+	}
+	if len(extent) == 4 {
+		info.Extent = extent
+		info.ExtentSRID = extentSRID
+	}
+	return info
+}
+
+func rasterInfoFromSource(raster *RasterQuickViewSource) *QuickViewRasterInfo {
+	if raster == nil {
+		return nil
+	}
+	info := &QuickViewRasterInfo{
+		Format:              strings.TrimSpace(raster.Format),
+		Profile:             strings.TrimSpace(raster.Profile),
+		Width:               raster.Width,
+		Height:              raster.Height,
+		BandCount:           raster.BandCount,
+		SizeBytes:           raster.SizeBytes,
+		SourceSRID:          raster.SourceSRID,
+		SourceCRS:           strings.TrimSpace(raster.SourceCRS),
+		ExtentSRID:          raster.ExtentSRID,
+		IsTiled:             raster.IsTiled,
+		HasOverviews:        raster.HasOverviews,
+		IsCloudOptimized:    raster.IsCloudOptimized,
+		COGCheckLevel:       strings.TrimSpace(raster.COGCheckLevel),
+		NoData:              cloneFloat64Ptr(raster.NoData),
+		SampleMin:           cloneFloat64Ptr(raster.SampleMin),
+		SampleMax:           cloneFloat64Ptr(raster.SampleMax),
+		DisplayMin:          cloneFloat64Ptr(raster.DisplayMin),
+		DisplayMax:          cloneFloat64Ptr(raster.DisplayMax),
+		DisplayRangeMethod:  strings.TrimSpace(raster.DisplayRangeMethod),
+		RecommendedAction:   strings.TrimSpace(raster.RecommendedAction),
+		UnavailableReason:   strings.TrimSpace(raster.UnavailableReason),
+		ClientMaxBytes:      raster.ClientMaxBytes,
+		ClientMaxPixels:     raster.ClientMaxPixels,
+		ClientReadMode:      strings.TrimSpace(raster.ClientReadMode),
+		ClientRenderLibrary: strings.TrimSpace(raster.ClientRenderLibrary),
+	}
+	if len(raster.Extent) == 4 {
+		info.Extent = append([]float64(nil), raster.Extent...)
+	}
+	return info
+}
+
+func rasterInfoFromRasterCOG(result *models.RasterCOG, raster *RasterQuickViewSource) *QuickViewRasterInfo {
+	info := rasterInfoFromSource(raster)
+	if info == nil {
+		info = &QuickViewRasterInfo{Format: "tiff"}
+	}
+	info.Profile = "cog"
+	if result.Width > 0 {
+		info.Width = result.Width
+	}
+	if result.Height > 0 {
+		info.Height = result.Height
+	}
+	if result.BandCount > 0 {
+		info.BandCount = result.BandCount
+	}
+	if result.SizeBytes > 0 {
+		info.SizeBytes = result.SizeBytes
+	}
+	if result.SourceSRID > 0 {
+		info.SourceSRID = result.SourceSRID
+	}
+	if strings.TrimSpace(result.SourceCRS) != "" {
+		info.SourceCRS = strings.TrimSpace(result.SourceCRS)
+	}
+	if extent, extentSRID := rasterCOGExtent(result); len(extent) == 4 {
+		info.Extent = extent
+		info.ExtentSRID = extentSRID
+	}
+	info.IsCloudOptimized = true
+	info.ClientReadMode = "range"
+	info.ClientRenderLibrary = "geotiff.js"
+	info.UnavailableReason = ""
+	info.RecommendedAction = ""
+	return info
+}
+
+func rasterCOGExtent(result *models.RasterCOG) ([]float64, int) {
+	if result == nil || len(result.Extent) == 0 {
+		return nil, 0
+	}
+	var extent []float64
+	if err := json.Unmarshal(result.Extent, &extent); err != nil || len(extent) != 4 {
+		return nil, 0
+	}
+	extentSRID := 0
+	if result.ExtentSRID != nil {
+		extentSRID = *result.ExtentSRID
+	}
+	return extent, extentSRID
+}
+
+func rasterCOGContentURL(result *models.RasterCOG) string {
+	if result == nil || result.ID == 0 {
+		return ""
+	}
+	return fmt.Sprintf("/api/v1/manager/raster_cog/%d/content", result.ID)
+}
+
 func applyRenderableWGS84Extent(info *QuickViewRenderInfo, meta *SpatialMetadataResult) {
 	if info == nil || meta == nil {
 		return
@@ -939,6 +1284,216 @@ func applyRenderableWGS84Extent(info *QuickViewRenderInfo, meta *SpatialMetadata
 	if len(meta.Extent) == 4 && meta.ExtentSRID == spatial.SRIDWGS84 {
 		info.Extent = append([]float64(nil), meta.Extent...)
 		info.ExtentSRID = spatial.SRIDWGS84
+	}
+}
+
+func rasterUnavailableReason(raster *RasterQuickViewSource, maxBytes, maxPixels int64) string {
+	if raster == nil {
+		return "raster quick view facts are unavailable"
+	}
+	if len(raster.Extent) != 4 {
+		return RasterUnavailableReasonMissingSpatialExtent
+	}
+	if raster.SourceSRID <= 0 && strings.TrimSpace(raster.SourceCRS) == "" {
+		return RasterUnavailableReasonMissingCRS
+	}
+	if strings.TrimSpace(raster.PreviewURL) == "" {
+		return "raster preview URL is unavailable"
+	}
+	if maxBytes > 0 && raster.SizeBytes > maxBytes {
+		return rasterCOGRequirementReason(raster)
+	}
+	if maxPixels > 0 {
+		pixels := raster.Width * raster.Height
+		if raster.Width > 0 && raster.Height > 0 && pixels > maxPixels {
+			return rasterCOGRequirementReason(raster)
+		}
+	}
+	return ""
+}
+
+func rasterCOGRequirementReason(raster *RasterQuickViewSource) string {
+	if raster != nil && strings.EqualFold(strings.TrimSpace(raster.Profile), "cog") {
+		return RasterUnavailableReasonRequiresManagedCOG
+	}
+	return RasterUnavailableReasonRequiresCOGGeneration
+}
+
+func rasterRecommendedActionForReason(reason string) string {
+	switch strings.TrimSpace(reason) {
+	case RasterUnavailableReasonRequiresCOGGeneration, RasterUnavailableReasonClientBudgetExceeded:
+		return "create_cog"
+	case RasterUnavailableReasonRequiresManagedCOG:
+		return "create_managed_cog"
+	default:
+		return ""
+	}
+}
+
+func RasterQuickViewSourceFromAttributes(attrs map[string]interface{}, locator string, engineID uint) *RasterQuickViewSource {
+	if len(attrs) == 0 {
+		return nil
+	}
+	if !strings.EqualFold(commonJSON.String(attrs, "item", "data_type"), "media") ||
+		!strings.EqualFold(commonJSON.String(attrs, "item", "format"), "tiff") {
+		return nil
+	}
+	tiffInfo := commonJSON.Section(attrs, "format_info.tiff")
+	mediaInfo := commonJSON.Section(attrs, "type_info.media")
+	spatialInfo := commonJSON.Section(attrs, "capabilities.spatial")
+	if tiffInfo == nil && mediaInfo == nil && spatialInfo == nil {
+		return nil
+	}
+	raster := &RasterQuickViewSource{
+		Format:              "tiff",
+		Profile:             strings.TrimSpace(commonJSON.InterfaceString(tiffInfo["profile"])),
+		SizeBytes:           rasterSizeBytesFromAttributes(attrs, mediaInfo),
+		Width:               commonJSON.InterfaceInt64(mediaInfo["width"]),
+		Height:              commonJSON.InterfaceInt64(mediaInfo["height"]),
+		BandCount:           commonJSON.InterfaceInt64(mediaInfo["band_count"]),
+		SourceSRID:          int(commonJSON.InterfaceInt64(spatialInfo["srid"])),
+		SourceCRS:           strings.TrimSpace(commonJSON.InterfaceString(spatialInfo["crs_ref"])),
+		Extent:              commonJSON.InterfaceFloat64Slice(spatialInfo["extent"]),
+		ExtentSRID:          int(commonJSON.InterfaceInt64(spatialInfo["extent_srid"])),
+		IsTiled:             tiffInfo["is_tiled"],
+		HasOverviews:        tiffInfo["has_overviews"],
+		IsCloudOptimized:    tiffInfo["is_cloud_optimized"],
+		COGCheckLevel:       strings.TrimSpace(commonJSON.InterfaceString(tiffInfo["cog_check_level"])),
+		NoData:              interfaceFloat64Ptr(tiffInfo["nodata"]),
+		SampleMin:           interfaceFloat64Ptr(tiffInfo["sample_min"]),
+		SampleMax:           interfaceFloat64Ptr(tiffInfo["sample_max"]),
+		DisplayMin:          interfaceFloat64Ptr(tiffInfo["display_min"]),
+		DisplayMax:          interfaceFloat64Ptr(tiffInfo["display_max"]),
+		DisplayRangeMethod:  strings.TrimSpace(commonJSON.InterfaceString(tiffInfo["display_range_method"])),
+		ClientReadMode:      "full_file",
+		ClientRenderLibrary: "geotiff.js",
+	}
+	if raster.ExtentSRID == 0 {
+		raster.ExtentSRID = raster.SourceSRID
+	}
+	if raster.PreviewURL == "" && strings.TrimSpace(locator) != "" {
+		raster.PreviewURL = rasterStorageStreamURLFromLocator(locator, engineID)
+	}
+	if raster.PreviewURL == "" && engineID > 0 {
+		if storageRef := storageRefFromRasterAttributes(attrs); storageRef != "" {
+			raster.PreviewURL = rasterStorageStreamURL(engineID, storageRef)
+		}
+	}
+	return raster
+}
+
+func cloneFloat64Ptr(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func interfaceFloat64Ptr(value interface{}) *float64 {
+	var parsed float64
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case float64:
+		parsed = typed
+	case float32:
+		parsed = float64(typed)
+	case int:
+		parsed = float64(typed)
+	case int8:
+		parsed = float64(typed)
+	case int16:
+		parsed = float64(typed)
+	case int32:
+		parsed = float64(typed)
+	case int64:
+		parsed = float64(typed)
+	case uint:
+		parsed = float64(typed)
+	case uint8:
+		parsed = float64(typed)
+	case uint16:
+		parsed = float64(typed)
+	case uint32:
+		parsed = float64(typed)
+	case uint64:
+		parsed = float64(typed)
+	case string:
+		value, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+		if err != nil {
+			return nil
+		}
+		parsed = value
+	default:
+		return nil
+	}
+	if math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+		return nil
+	}
+	return &parsed
+}
+
+func rasterSizeBytesFromAttributes(attrs map[string]interface{}, mediaInfo map[string]interface{}) int64 {
+	for _, value := range []int64{
+		commonJSON.Int64(attrs, "storage", "total_size"),
+		commonJSON.InterfaceInt64(mediaInfo["size_bytes"]),
+		commonJSON.Int64(attrs, "item", "size_bytes"),
+	} {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func storageRefFromRasterAttributes(attrs map[string]interface{}) string {
+	for _, key := range []string{"storage_ref", "physical_path"} {
+		if value := strings.TrimSpace(commonJSON.String(attrs, "storage", key)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func rasterStorageStreamURLFromLocator(locator string, fallbackEngineID uint) string {
+	parsed, err := resourcetree.ParseURI(strings.TrimSpace(locator))
+	if err != nil || parsed == nil {
+		return ""
+	}
+	if parsed.Type != resourcetree.TypeFile && parsed.Type != resourcetree.TypeObject {
+		return ""
+	}
+	engineID := parsed.EngineID
+	if engineID == 0 {
+		engineID = fallbackEngineID
+	}
+	if engineID == 0 {
+		return ""
+	}
+	return rasterStorageStreamURL(engineID, rasterStorageRefFromLocator(parsed))
+}
+
+func rasterStorageStreamURL(engineID uint, storageRef string) string {
+	storageRef = strings.TrimSpace(storageRef)
+	if engineID == 0 || storageRef == "" {
+		return ""
+	}
+	values := url.Values{}
+	values.Set("engine_id", fmt.Sprintf("%d", engineID))
+	values.Set("storage_ref", storageRef)
+	return "/api/v1/manager/storage-stream?" + values.Encode()
+}
+
+func rasterStorageRefFromLocator(loc *resourcetree.ResourceLocator) string {
+	if loc == nil {
+		return ""
+	}
+	switch loc.Type {
+	case resourcetree.TypeFile, resourcetree.TypeObject:
+		return strings.Join(loc.Path, "/")
+	default:
+		return ""
 	}
 }
 
@@ -1023,7 +1578,7 @@ func applyOptimizationRenderFacts(facts *QuickViewRenderFacts, optimization *Qui
 	if len(facts.RenderExtent) == 0 && len(optimization.RenderExtent) == 4 {
 		facts.RenderExtent = append([]float64(nil), optimization.RenderExtent...)
 		facts.RenderExtentSRID = optimization.RenderExtentSRID
-		facts.RenderExtentSource = "quick_view_optimization"
+		facts.RenderExtentSource = "vector_quick_view_target_generation"
 	}
 	if facts.ZoomRecommendation == nil {
 		facts.ZoomRecommendation = &ZoomRecommendation{
@@ -1105,7 +1660,7 @@ func tileCacheCreateURL(identity QuickViewIdentity, engineID uint, schema, table
 			values.Set("extent_srid", fmt.Sprintf("%d", extentSRID))
 		}
 	}
-	return "/manager/tile-cache?" + values.Encode()
+	return "/manager/spatial-quick-view/vector-tile-cache?" + values.Encode()
 }
 
 func tileCacheCreateURLExtent(meta *SpatialMetadataResult) ([]float64, int) {

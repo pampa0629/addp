@@ -35,14 +35,29 @@
               <el-icon><component :is="sidebarMenus[module].icon" /></el-icon>
               <span>{{ t(sidebarMenus[module].label) }}</span>
             </template>
-            <el-menu-item
-              v-for="item in sidebarMenus[module].items"
-              :key="item.index"
-              :index="item.index"
-            >
-              <el-icon><component :is="item.icon" /></el-icon>
-              <span>{{ t(item.label) }}</span>
-            </el-menu-item>
+            <template v-for="item in sidebarMenus[module].items" :key="item.index">
+              <el-sub-menu v-if="item.children?.length" :index="item.index">
+                <template #title>
+                  <el-icon><component :is="item.icon" /></el-icon>
+                  <span>{{ t(item.label) }}</span>
+                </template>
+                <el-menu-item
+                  v-for="child in item.children"
+                  :key="child.index"
+                  :index="child.index"
+                >
+                  <el-icon><component :is="child.icon" /></el-icon>
+                  <span>{{ t(child.label) }}</span>
+                </el-menu-item>
+              </el-sub-menu>
+              <el-menu-item
+                v-else
+                :index="item.index"
+              >
+                <el-icon><component :is="item.icon" /></el-icon>
+                <span>{{ t(item.label) }}</span>
+              </el-menu-item>
+            </template>
           </el-sub-menu>
         </template>
       </template>
