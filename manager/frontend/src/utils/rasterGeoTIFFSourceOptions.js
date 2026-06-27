@@ -13,3 +13,12 @@ export function rasterGeoTIFFSourceOptions(renderSource, token = '') {
     headers
   }
 }
+
+export function rasterGeoTIFFProjectionFromQuickView(quickViewInfo) {
+  if (!quickViewInfo || typeof quickViewInfo !== 'object') return ''
+  const srid = Number(quickViewInfo.extent_srid || quickViewInfo.source_srid || 0)
+  if (srid === 4326 || srid === 3857) {
+    return `EPSG:${srid}`
+  }
+  return ''
+}

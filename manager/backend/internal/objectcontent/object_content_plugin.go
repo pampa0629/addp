@@ -197,6 +197,17 @@ func appendAttributePreviewMetadata(metadata map[string]interface{}, attrs map[s
 	copyMetadataValue(metadata, attrs, "title", "type_info.document", "title")
 	copyMetadataValue(metadata, attrs, "author", "format_info.pdf", "author")
 	copyMetadataValue(metadata, attrs, "creator", "format_info.pdf", "creator")
+	if modelInfo := commonJSON.Section(attrs, "type_info.model_3d"); len(modelInfo) > 0 {
+		metadata["model_3d"] = modelInfo
+	}
+	if pointCloudInfo := commonJSON.Section(attrs, "type_info.point_cloud"); len(pointCloudInfo) > 0 {
+		metadata["point_cloud"] = pointCloudInfo
+	}
+	if tilesInfo := commonJSON.Section(attrs, "format_info.3dtiles"); len(tilesInfo) > 0 {
+		metadata["format_info"] = map[string]interface{}{
+			"3dtiles": tilesInfo,
+		}
+	}
 }
 
 func copyMetadataValue(metadata map[string]interface{}, attrs map[string]interface{}, targetKey, section, sourceKey string) {
@@ -371,6 +382,10 @@ func defaultFrontendRenderer(kind string) string {
 		return models.ObjectPreviewKindMarkdown
 	case models.ObjectPreviewKindTable:
 		return models.ObjectPreviewKindTable
+	case models.ObjectPreviewKindModel3D:
+		return models.ObjectPreviewKindModel3D
+	case models.ObjectPreviewKindPointCloud:
+		return models.ObjectPreviewKindPointCloud
 	case models.ObjectPreviewKindText:
 		return models.ObjectPreviewKindText
 	case models.ObjectPreviewKindUnsupported:
@@ -398,6 +413,8 @@ func contentKindLabel(kind string) string {
 		models.ObjectPreviewKindAudio:       "音频",
 		models.ObjectPreviewKindJSON:        "JSON",
 		models.ObjectPreviewKindContainer:   "容器",
+		models.ObjectPreviewKindModel3D:     "三维模型",
+		models.ObjectPreviewKindPointCloud:  "点云",
 		models.ObjectPreviewKindText:        "文本",
 		models.ObjectPreviewKindMarkdown:    "Markdown",
 		models.ObjectPreviewKindUnsupported: "暂不支持的格式",
@@ -1916,14 +1933,25 @@ func objectContentTableFormat(req *ObjectContentRequest) format.FormatType {
 			continue
 		}
 		if formatType := normalizeFileTableFormat(value); formatType != "" && formatType != format.FormatUnknown {
-			return formatType
+			if isTableFormatType(formatType) {
+				return formatType
+			}
 		}
 		if formatType := format.MIMEToFormat(value); formatType != format.FormatUnknown {
-			return formatType
+			if isTableFormatType(formatType) {
+				return formatType
+			}
 		}
 		if formatType := format.DetectFormat(value, nil); formatType != format.FormatUnknown {
-			return formatType
+			if isTableFormatType(formatType) {
+				return formatType
+			}
 		}
 	}
 	return format.FormatUnknown
+}
+
+func isTableFormatType(formatType format.FormatType) bool {
+	descriptor, ok := format.GetFormatDescriptor(formatType)
+	return ok && descriptor.DataType == datatype.Table
 }

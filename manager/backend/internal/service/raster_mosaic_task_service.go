@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"runtime"
 	"strings"
 	"time"
 
@@ -86,6 +87,9 @@ type RasterMosaicCOGConfig struct {
 	BlockSize          int
 	OverviewResampling string
 	ValidateSourceCOG  bool
+	LeafConcurrency    int
+	NumThreads         int
+	LeafRetryAttempts  int
 }
 
 type RasterMosaicOverviewConfig struct {
@@ -304,8 +308,12 @@ func (s *RasterMosaicTaskService) runRasterMosaicGeneration(ctx context.Context,
 		}
 	}
 	if err != nil {
-		status = commonExecution.ExecutionStatusFailed
-		progress = 0
+		if rasterMosaicExecutionTimedOut(err) {
+			status = commonExecution.ExecutionStatusTimeout
+		} else {
+			status = commonExecution.ExecutionStatusFailed
+		}
+		progress = s.rasterMosaicExistingExecutionProgress(ctx, executionID, int(task.TenantID))
 		errDetails = commonModels.JSONMap{"message": err.Error()}
 	}
 	metadata = s.mergeRasterMosaicExistingExecutionMetadata(ctx, executionID, int(task.TenantID), metadata)
@@ -325,6 +333,36 @@ func (s *RasterMosaicTaskService) runRasterMosaicGeneration(ctx context.Context,
 		return
 	}
 	_ = s.repo.UpdateTaskLastExecution(ctx, task.ID, task.TenantID, executionID, status, completedAt)
+}
+
+func rasterMosaicExecutionTimedOut(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "timeout exceeded") ||
+		strings.Contains(message, "context deadline exceeded") ||
+		strings.Contains(message, "client.timeout")
+}
+
+func (s *RasterMosaicTaskService) rasterMosaicExistingExecutionProgress(ctx context.Context, executionID string, tenantID int) int {
+	if s == nil || s.taskExecRepo == nil {
+		return 0
+	}
+	exec, err := s.taskExecRepo.GetByExecutionID(ctx, executionID, tenantID)
+	if err != nil || exec == nil {
+		return 0
+	}
+	if exec.Progress < 0 {
+		return 0
+	}
+	if exec.Progress > 99 {
+		return 99
+	}
+	return exec.Progress
 }
 
 func (s *RasterMosaicTaskService) submitRasterMosaicMetaScan(tenantID uint, cfg RasterMosaicExecutionConfig) (*commonExecution.TaskExecution, error) {
@@ -630,17 +668,69 @@ func normalizeRasterMosaicCOG(config commonModels.JSONMap) RasterMosaicCOGConfig
 		BlockSize:          intFromConfig(cogMap["blocksize"]),
 		OverviewResampling: firstNonEmptyConfig(stringFromConfig(cogMap["overview_resampling"]), "NEAREST"),
 		ValidateSourceCOG:  boolFromConfig(cogMap["validate_source_cog"], true),
+		LeafConcurrency:    intFromConfig(cogMap["leaf_concurrency"]),
+		NumThreads:         intFromConfig(cogMap["num_threads"]),
+		LeafRetryAttempts:  intFromConfig(cogMap["leaf_retry_attempts"]),
 	}
 	if cog.BlockSize <= 0 {
 		cog.BlockSize = 512
+	}
+	if cog.LeafConcurrency <= 0 {
+		cog.LeafConcurrency = defaultRasterMosaicLeafConcurrency()
+	}
+	if cog.LeafConcurrency > rasterMosaicLeafConcurrencyMax {
+		cog.LeafConcurrency = rasterMosaicLeafConcurrencyMax
+	}
+	if cog.NumThreads <= 0 {
+		cog.NumThreads = defaultRasterMosaicLeafNumThreads(cog.LeafConcurrency)
+	}
+	if cog.LeafRetryAttempts <= 0 {
+		cog.LeafRetryAttempts = 2
+	}
+	if cog.LeafRetryAttempts > rasterMosaicLeafRetryAttemptsMax {
+		cog.LeafRetryAttempts = rasterMosaicLeafRetryAttemptsMax
 	}
 	config["cog"] = commonModels.JSONMap{
 		"compression":         cog.Compression,
 		"blocksize":           cog.BlockSize,
 		"overview_resampling": cog.OverviewResampling,
 		"validate_source_cog": cog.ValidateSourceCOG,
+		"leaf_concurrency":    cog.LeafConcurrency,
+		"num_threads":         cog.NumThreads,
+		"leaf_retry_attempts": cog.LeafRetryAttempts,
 	}
 	return cog
+}
+
+const rasterMosaicLeafConcurrencyMax = 8
+const rasterMosaicLeafRetryAttemptsMax = 5
+
+func defaultRasterMosaicLeafConcurrency() int {
+	cpuCount := runtime.NumCPU()
+	switch {
+	case cpuCount >= 32:
+		return 6
+	case cpuCount >= 16:
+		return 4
+	case cpuCount >= 8:
+		return 2
+	default:
+		return 1
+	}
+}
+
+func defaultRasterMosaicLeafNumThreads(leafConcurrency int) int {
+	if leafConcurrency <= 0 {
+		leafConcurrency = defaultRasterMosaicLeafConcurrency()
+	}
+	threads := runtime.NumCPU() / (leafConcurrency * 2)
+	if threads < 1 {
+		return 1
+	}
+	if threads > 4 {
+		return 4
+	}
+	return threads
 }
 
 func normalizeRasterMosaicOverview(config commonModels.JSONMap) RasterMosaicOverviewConfig {

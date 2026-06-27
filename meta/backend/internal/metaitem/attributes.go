@@ -67,6 +67,20 @@ func ApplyMediaInfo(attrs models.JSONMap, item *DetectedItem, spatialInfo *datat
 	metaattr.MergeAttributeMaps(attrs, metaattr.MediaInfoAttributes(item.Media, spatialInfo))
 }
 
+func ApplyModel3DInfo(attrs models.JSONMap, item *DetectedItem, spatialInfo *datatype.SpatialInfo) {
+	if attrs == nil || item == nil || item.Model3D == nil {
+		return
+	}
+	metaattr.MergeAttributeMaps(attrs, metaattr.Model3DInfoAttributes(item.Model3D, spatialInfo))
+}
+
+func ApplyPointCloudInfo(attrs models.JSONMap, item *DetectedItem, spatialInfo *datatype.SpatialInfo) {
+	if attrs == nil || item == nil || item.PointCloud == nil {
+		return
+	}
+	metaattr.MergeAttributeMaps(attrs, metaattr.PointCloudInfoAttributes(item.PointCloud, spatialInfo))
+}
+
 func ApplyContainerInfo(attrs models.JSONMap, item *DetectedItem) {
 	if attrs == nil || item == nil || item.Container == nil {
 		return

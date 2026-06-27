@@ -32,11 +32,19 @@
 | `media` | 图片、视频、音频等可感知媒体 | `MediaInfoProvider`，需要缩略图时实现 media content reader |
 | `container` | 内部包含 sheet、table、layer、entry 等子对象 | `ContainerInfoProvider` / `ContainerChildResolver`；父容器先写入轻量 `type_info.container`，child 内容按需解析 |
 | `graph` | 节点、边、关系结构 | 引擎原生图使用 `CatalogFactsProvider` 的 `CatalogFacts.Graph` / `GraphSampleProvider`；文件型图数据先补对应 format 能力 |
+| `model_3d` | 三维空间对象、网格、场景、构件、倾斜摄影或 BIM 模型 | `Model3DInfoProvider`；第一阶段可先实现 descriptor 和轻量 info，预览通过 Manager content reader / storage stream |
+| `point_cloud` | 三维点集合、点属性、空间范围和抽样 / LOD 是主要消费方式 | `PointCloudInfoProvider`；需要预览时实现点云抽样 reader 或 Manager 派生预览能力 |
 | `unknown` | 暂不能归类 | 只保留 storage、item 等基础事实；原始字节读取由 engine / contentio / URL 内容通道或 `BinaryContentReader` 的探测兜底提供 |
 
 只有以上数据类型无法表达用户理解方式、内容读取方式和治理方式时，才新增 data type。新增 data type 必须先修订概念文档和能力规范。
 
-通用 data type、type info、field type、空间信息和访问索引的事实源是 `common/datatype`。新增格式或 provider 不得在格式包内新增平行的 `FieldType`、`TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo` 等公共模型；确有新增通用字段时，先修订 `common/datatype` 设计和相关规范。
+通用 data type、type info、field type、空间信息和访问索引的事实源是 `common/datatype`。新增格式或 provider 不得在格式包内新增平行的 `FieldType`、`TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`、`Model3DInfo`、`PointCloudInfo` 等公共模型；确有新增通用字段时，先修订 `common/datatype` 设计和相关规范。
+
+三维模型和点云的常见边界：
+
+- GLB / glTF、OBJ、STL、OSGB、3D Tiles、IFC / Revit BIM 等统一归为 `model_3d`；网格模型、倾斜摄影、BIM 和分块场景由 `type_info.model_3d.model_kind`、format、layout 和 capabilities 区分，不新增平行 data type。
+- LAS / LAZ / COPC、PCD、点云型 PLY、EPT / Potree、E57 等统一归为 `point_cloud`；不得仅因点记录可以列化为 x/y/z、intensity、classification 等字段就归为 `table`。
+- CRS、空间定位和空间范围仍是 `capabilities.spatial`，不是 `model_3d` 或 `point_cloud` 私有字段。
 
 ## 2. 判断内容布局
 
@@ -121,6 +129,8 @@ func (p *Plugin) Descriptor() format.FormatDescriptor
 | 媒体元信息 | `MediaInfoProvider` | Meta、Manager |
 | 容器内部对象信息 | `ContainerInfoProvider` | Meta、Manager |
 | 容器 child 解析 | `ContainerChildResolver` | Manager、Transfer 后续 child 读取 |
+| 三维模型元信息 | `Model3DInfoProvider` | Meta、Manager |
+| 点云元信息 | `PointCloudInfoProvider` | Meta、Manager |
 | 空间横切事实 | 通过 describe result 或等价结构提供 `datatype.SpatialInfo`，由 Meta 写入 `capabilities.spatial` | Meta、Manager、Search |
 | 访问定位索引 | 通过 describe result 或等价结构提供 `datatype.AccessIndex`，由 Meta 写入 `access_index.<data_type>`；`AccessIndex` 不是 data type 或 type info | Meta、Manager、Transfer |
 
@@ -131,6 +141,8 @@ Info provider 一次解析可能同时得到多类事实。以 table 为例：
 | 解析结果 | 写入位置 |
 |---|---|
 | `datatype.TableInfo` | `attributes.type_info.table` |
+| `datatype.Model3DInfo` | `attributes.type_info.model_3d` |
+| `datatype.PointCloudInfo` | `attributes.type_info.point_cloud` |
 | `datatype.SpatialInfo` | `attributes.capabilities.spatial` |
 | `datatype.AccessIndex` | `attributes.access_index.table` |
 | `format_info.<format>` 候选事实 | `attributes.format_info.<format>` |

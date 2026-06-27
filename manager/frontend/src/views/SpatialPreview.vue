@@ -132,6 +132,11 @@ import {
   shouldShowRasterCOGGenerationAction,
   waitForRasterCOGExecution
 } from '@/utils/rasterCOGTask'
+import {
+  isRasterQuickViewRenderSource,
+  isTileQuickViewRenderSource,
+  shouldLoadBasicPreview
+} from '@/utils/quickViewRenderSource'
 import { TablePreview } from '@common-ui-map'
 
 const route = useRoute()
@@ -156,8 +161,8 @@ const rasterCOGGenerationLoading = ref(false)
 const quickViewRenderSource = computed(() => String(
   quickViewStatus.value?.render_source || quickViewStatus.value?.quick_view?.render_source || ''
 ).trim())
-const isRasterQuickView = computed(() => ['direct_tiff_client', 'client_cog_render'].includes(quickViewRenderSource.value))
-const isTileQuickView = computed(() => ['cached_tile', 'realtime_tile'].includes(quickViewRenderSource.value))
+const isRasterQuickView = computed(() => isRasterQuickViewRenderSource(quickViewRenderSource.value))
+const isTileQuickView = computed(() => isTileQuickViewRenderSource(quickViewRenderSource.value))
 const sourceGeometryColumn = computed(() => String(
   quickViewStatus.value?.quick_view?.geometry_column ||
   sourceContext.value.geometryColumn ||
@@ -255,6 +260,12 @@ const handleBasicPreviewPageChange = async (payload) => {
   await loadBasicPreview(page, pageSize > 0 ? pageSize : 20)
 }
 
+const clearBasicPreview = () => {
+  basicPreviewRequestSeq += 1
+  basicPreviewData.value = null
+  basicPreviewLoading.value = false
+}
+
 const loadQuickViewStatus = async () => {
   quickViewStatus.value = null
   if (!ready.value) return
@@ -297,9 +308,13 @@ const backToBasicPreview = async () => {
     await quickViewAPI.updatePreferredModeByLocator(locator.value, 'basic_preview')
     activePreviewMode.value = 'basic_preview'
     await loadQuickViewStatus()
+    if (shouldLoadBasicPreview(activePreviewMode.value, quickViewStatus.value)) {
+      await loadBasicPreview()
+    }
   } catch (error) {
     console.error('返回基础预览失败:', error)
     activePreviewMode.value = 'basic_preview'
+    await loadBasicPreview()
   }
 }
 
@@ -372,17 +387,26 @@ const handleTileAdvisory = (advisory) => {
   }
 }
 
+const loadSpatialPreview = async ({ reset = false } = {}) => {
+  if (reset) {
+    activePreviewMode.value = 'basic_preview'
+    clearBasicPreview()
+    sourceContext.value = { engineId: 0, schema: '', table: '', geometryColumn: '' }
+  }
+  await loadQuickViewStatus()
+  if (!shouldLoadBasicPreview(activePreviewMode.value, quickViewStatus.value)) {
+    clearBasicPreview()
+    return
+  }
+  await loadBasicPreview()
+}
+
 onMounted(() => {
-  loadQuickViewStatus()
-  loadBasicPreview()
+  loadSpatialPreview()
 })
 watch(locator, () => {
   activePreviewMode.value = 'basic_preview'
-  basicPreviewRequestSeq += 1
-  basicPreviewData.value = null
-  sourceContext.value = { engineId: 0, schema: '', table: '', geometryColumn: '' }
-  loadQuickViewStatus()
-  loadBasicPreview()
+  loadSpatialPreview({ reset: true })
 })
 </script>
 

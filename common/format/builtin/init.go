@@ -11,7 +11,9 @@ import (
 	_ "github.com/addp/common/format/plugins/csv"
 	_ "github.com/addp/common/format/plugins/excel"
 	_ "github.com/addp/common/format/plugins/geojson"
+	_ "github.com/addp/common/format/plugins/glb"
 	_ "github.com/addp/common/format/plugins/json"
+	_ "github.com/addp/common/format/plugins/las"
 	_ "github.com/addp/common/format/plugins/orc"
 	_ "github.com/addp/common/format/plugins/parquet"
 	_ "github.com/addp/common/format/plugins/rastermosaic"
@@ -25,6 +27,7 @@ import (
 	_ "github.com/addp/common/format/plugins/pdf"
 	_ "github.com/addp/common/format/plugins/pptx"
 	_ "github.com/addp/common/format/plugins/text"
+	_ "github.com/addp/common/format/plugins/tiles3d"
 	_ "github.com/addp/common/format/plugins/wps"
 
 	// 导入内置媒体信息 provider，触发 init() 自动注册

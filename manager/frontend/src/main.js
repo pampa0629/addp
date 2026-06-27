@@ -18,6 +18,9 @@ import {
   VideoPlay, WarningFilled, ZoomIn, ZoomOut
 } from '@element-plus/icons-vue'
 import App from './App.vue'
+import Model3DPreview from '@/components/explorer/Model3DPreview.vue'
+import PointCloudPreview from '@/components/explorer/PointCloudPreview.vue'
+import ThreeDTilesPreview from '@/components/explorer/ThreeDTilesPreview.vue'
 import { loadRuntimePlugins } from '@/plugins/previews/manifestLoader'
 import {
   ObjectCatalogPreview, ImagePreview, JsonPreview, PdfPreview, ContainerPreview,
@@ -91,7 +94,10 @@ if (typeof window !== 'undefined') {
     TextPreview,
     UnsupportedPreview,
     MarkdownPreview,
-    VideoPreview
+    VideoPreview,
+    Model3DPreview,
+    PointCloudPreview,
+    ThreeDTilesPreview
   }
 }
 

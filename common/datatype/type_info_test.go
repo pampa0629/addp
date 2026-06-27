@@ -13,6 +13,8 @@ func TestTypeInfoDataTypes(t *testing.T) {
 		{name: "media", info: &MediaInfo{}, want: Media},
 		{name: "container", info: &ContainerInfo{}, want: Container},
 		{name: "graph", info: &GraphInfo{}, want: Graph},
+		{name: "model_3d", info: &Model3DInfo{}, want: Model3D},
+		{name: "point_cloud", info: &PointCloudInfo{}, want: PointCloud},
 	}
 
 	for _, tt := range tests {

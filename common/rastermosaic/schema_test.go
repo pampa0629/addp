@@ -43,3 +43,28 @@ func TestNewManifestUsesCanonicalIdentity(t *testing.T) {
 		t.Fatalf("manifest identity = %#v", manifest)
 	}
 }
+
+func TestDecodeSourceIndexValidatesSchema(t *testing.T) {
+	index, err := DecodeSourceIndex(strings.NewReader(`{
+		"schema_version":"addp.raster_mosaic.source_index.v1",
+		"leaf_count":1,
+		"leaves":[{"id":"leaf-000001","leaf_ref":"leaf/a.cog.tif"}]
+	}`), 0)
+	if err != nil {
+		t.Fatalf("DecodeSourceIndex() error = %v", err)
+	}
+	if index.LeafCount != 1 || len(index.Leaves) != 1 {
+		t.Fatalf("index = %#v, want one leaf", index)
+	}
+}
+
+func TestDecodeSourceIndexRejectsMissingLeafRef(t *testing.T) {
+	_, err := DecodeSourceIndex(strings.NewReader(`{
+		"schema_version":"addp.raster_mosaic.source_index.v1",
+		"leaf_count":1,
+		"leaves":[{"id":"leaf-000001"}]
+	}`), 0)
+	if err == nil {
+		t.Fatal("DecodeSourceIndex() error = nil, want missing leaf_ref error")
+	}
+}

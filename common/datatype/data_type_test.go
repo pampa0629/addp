@@ -9,6 +9,8 @@ func TestParseDataType(t *testing.T) {
 		want DataType
 	}{
 		{name: "normalizes", in: " Table ", want: Table},
+		{name: "normalizes model 3d", in: " MODEL_3D ", want: Model3D},
+		{name: "normalizes point cloud", in: " Point_Cloud ", want: PointCloud},
 		{name: "file is no longer a data type", in: "file", want: Unknown},
 		{name: "unknown value", in: "dataset", want: Unknown},
 		{name: "empty", in: "", want: Unknown},

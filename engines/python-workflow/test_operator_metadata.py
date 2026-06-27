@@ -17,8 +17,9 @@ for parent in Path(__file__).resolve().parents:
 
 from workflow_operator_contract import assert_operator_metadata_contract
 from operators import list_operators
+import operators.raster_operators as raster_operators
 from operators.spatial_transform_operators import vector_reproject
-from operators.raster_operators import _authority_code_from_wkt, build_raster_mosaic, tiff_to_cog
+from operators.raster_operators import _authority_code_from_wkt, _translate_to_cog, _write_json, build_raster_mosaic, tiff_to_cog
 import pyarrow as pa
 from geometry_batches import decode_geometry_batch_arrow, encode_geometry_batch_arrow
 
@@ -155,7 +156,13 @@ def test_build_raster_mosaic_creates_local_dataset():
                 },
             },
             placement={"mode": "detached"},
-            cog={"compression": "DEFLATE", "blocksize": 512, "overview_resampling": "NEAREST"},
+            cog={
+                "compression": "DEFLATE",
+                "blocksize": 512,
+                "overview_resampling": "NEAREST",
+                "leaf_concurrency": 4,
+                "num_threads": 2,
+            },
             overview={"enabled": True, "max_pixels": 4096, "resampling": "AVERAGE"},
             tiles={"enabled": False},
         )
@@ -163,6 +170,8 @@ def test_build_raster_mosaic_creates_local_dataset():
         assert result["status"] == "success"
         assert result["format"] == "raster_mosaic"
         assert result["leaf_count"] == 2
+        assert result["stage_timings"]["leaf_cog"]["concurrency"] == 4
+        assert result["stage_timings"]["total"]["duration_ms"] >= 0
         assert (target_dir / "mosaic.addp.json").exists()
         assert (target_dir / "index" / "source-index.json").exists()
         assert (target_dir / "overviews" / "overview.cog.tif").exists()
@@ -175,6 +184,234 @@ def test_build_raster_mosaic_creates_local_dataset():
         assert manifest["refs"]["overview"] == "overviews/overview.cog.tif"
         assert len(index["leaves"]) == 2
         assert all(leaf["cog_validation"]["status"] == "valid" for leaf in index["leaves"])
+
+
+def test_build_raster_mosaic_assigns_wgs84_for_geographic_leaf_without_projection():
+    gdal = pytest.importorskip("osgeo.gdal")
+    gdal.UseExceptions()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        source_dir = Path(tmp) / "source"
+        target_dir = Path(tmp) / "target" / "mosaic"
+        source_dir.mkdir(parents=True)
+        _create_test_geotiff_without_projection(gdal, source_dir / "a.tif", 110, 4)
+
+        result = build_raster_mosaic(
+            access_plan={
+                "source": {
+                    "root_uri": source_dir.as_posix(),
+                    "gdal_env": {},
+                    "recursive": True,
+                    "include_patterns": ["*.tif"],
+                },
+                "target": {
+                    "dataset_root_uri": target_dir.as_posix(),
+                    "gdal_env": {},
+                    "dataset_name": "mosaic",
+                },
+            },
+            placement={"mode": "detached"},
+            cog={
+                "compression": "DEFLATE",
+                "blocksize": 512,
+                "overview_resampling": "NEAREST",
+                "leaf_concurrency": 1,
+                "num_threads": 1,
+            },
+            overview={"enabled": False},
+            tiles={"enabled": False},
+        )
+
+        assert result["status"] == "success"
+        index = json.loads((target_dir / "index" / "source-index.json").read_text())
+        assert index["leaves"][0]["source_crs"] == "EPSG:4326"
+        leaf_path = target_dir / "leaf" / "a.cog.tif"
+        ds = gdal.OpenEx(leaf_path.as_posix(), gdal.OF_RASTER)
+        assert ds is not None
+        assert "4326" in (ds.GetProjection() or "")
+        ds = None
+
+
+def test_build_raster_mosaic_reuses_existing_detached_leaf_cogs(monkeypatch):
+    gdal = pytest.importorskip("osgeo.gdal")
+    osr = pytest.importorskip("osgeo.osr")
+    gdal.UseExceptions()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        source_dir = Path(tmp) / "source"
+        target_dir = Path(tmp) / "target" / "mosaic"
+        source_dir.mkdir(parents=True)
+        _create_test_geotiff(gdal, osr, source_dir / "a.tif", 0, 2)
+        _create_test_geotiff(gdal, osr, source_dir / "b.tif", 2, 2)
+
+        params = {
+            "access_plan": {
+                "source": {
+                    "root_uri": source_dir.as_posix(),
+                    "gdal_env": {},
+                    "recursive": True,
+                    "include_patterns": ["*.tif"],
+                },
+                "target": {
+                    "dataset_root_uri": target_dir.as_posix(),
+                    "gdal_env": {},
+                    "dataset_name": "mosaic",
+                },
+            },
+            "placement": {"mode": "detached"},
+            "cog": {
+                "compression": "DEFLATE",
+                "blocksize": 512,
+                "overview_resampling": "NEAREST",
+                "leaf_concurrency": 1,
+                "num_threads": 1,
+            },
+            "overview": {"enabled": False},
+            "tiles": {"enabled": False},
+        }
+        first_result = build_raster_mosaic(**params)
+        assert first_result["stage_timings"]["leaf_cog"]["generated_count"] == 2
+
+        original_translate = raster_operators._translate_to_cog
+
+        def reject_leaf_regeneration(source, target, *args, **kwargs):
+            if "/leaf/" in str(target):
+                raise AssertionError(f"leaf COG should have been reused: {target}")
+            return original_translate(source, target, *args, **kwargs)
+
+        monkeypatch.setattr(raster_operators, "_translate_to_cog", reject_leaf_regeneration)
+
+        second_result = build_raster_mosaic(**params)
+
+        leaf_timing = second_result["stage_timings"]["leaf_cog"]
+        assert leaf_timing["generated_count"] == 0
+        assert leaf_timing["reused_count"] == 2
+        index = json.loads((target_dir / "index" / "source-index.json").read_text())
+        assert {leaf["generation_status"] for leaf in index["leaves"]} == {"reused"}
+
+
+def test_build_raster_mosaic_retries_leaf_cog_generation(monkeypatch):
+    gdal = pytest.importorskip("osgeo.gdal")
+    osr = pytest.importorskip("osgeo.osr")
+    gdal.UseExceptions()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        source_dir = Path(tmp) / "source"
+        target_dir = Path(tmp) / "target" / "mosaic"
+        source_dir.mkdir(parents=True)
+        _create_test_geotiff(gdal, osr, source_dir / "a.tif", 0, 2)
+        original_translate = raster_operators._translate_to_cog
+        calls = {"leaf": 0}
+
+        def fail_first_leaf_attempt(source, target, *args, **kwargs):
+            if "/leaf/" in str(target):
+                calls["leaf"] += 1
+                if calls["leaf"] == 1:
+                    raise RuntimeError("transient GDAL write failure")
+            return original_translate(source, target, *args, **kwargs)
+
+        monkeypatch.setattr(raster_operators, "_translate_to_cog", fail_first_leaf_attempt)
+
+        result = build_raster_mosaic(
+            access_plan={
+                "source": {
+                    "root_uri": source_dir.as_posix(),
+                    "gdal_env": {},
+                    "recursive": True,
+                    "include_patterns": ["*.tif"],
+                },
+                "target": {
+                    "dataset_root_uri": target_dir.as_posix(),
+                    "gdal_env": {},
+                    "dataset_name": "mosaic",
+                },
+            },
+            placement={"mode": "detached"},
+            cog={
+                "compression": "DEFLATE",
+                "blocksize": 512,
+                "overview_resampling": "NEAREST",
+                "leaf_concurrency": 1,
+                "num_threads": 1,
+                "leaf_retry_attempts": 2,
+            },
+            overview={"enabled": False},
+            tiles={"enabled": False},
+        )
+
+        assert result["status"] == "success"
+        assert calls["leaf"] == 2
+        leaf_timing = result["stage_timings"]["leaf_cog"]
+        assert leaf_timing["retry_attempts"] == 2
+        assert leaf_timing["retry_count"] == 1
+        assert leaf_timing["generated_count"] == 1
+
+
+def test_write_json_uses_vsi_file_handle_for_virtual_paths(monkeypatch):
+    class FakeStat:
+        size = 12
+
+    class FakeGDAL:
+        def __init__(self):
+            self.opened = ""
+            self.payload = b""
+
+        def GetConfigOption(self, key):
+            return None
+
+        def SetConfigOption(self, key, value):
+            return None
+
+        def MkdirRecursive(self, path, mode):
+            return 0
+
+        def VSIFOpenL(self, path, mode):
+            self.opened = f"{path}:{mode}"
+            return object()
+
+        def VSIFWriteL(self, data, size, count, handle):
+            self.payload = data
+            return len(data)
+
+        def VSIFCloseL(self, handle):
+            return 0
+
+        def VSIStatL(self, path):
+            return FakeStat()
+
+    fake_gdal = FakeGDAL()
+    monkeypatch.setattr("operators.raster_operators._import_gdal", lambda: fake_gdal)
+
+    _write_json("/vsis3/addp/mosaic/mosaic.addp.json", {"ok": True}, {"AWS_HTTPS": "NO"})
+
+    assert fake_gdal.opened == "/vsis3/addp/mosaic/mosaic.addp.json:wb"
+    assert b'"ok": true' in fake_gdal.payload
+
+
+def test_translate_to_cog_enables_gdal_threads(monkeypatch):
+    class FakeGDAL:
+        def __init__(self):
+            self.creation_options = []
+
+        def GetConfigOption(self, key):
+            return None
+
+        def SetConfigOption(self, key, value):
+            return None
+
+        def TranslateOptions(self, **kwargs):
+            self.creation_options = kwargs.get("creationOptions") or []
+            return kwargs
+
+        def Translate(self, target, source, options=None):
+            return object()
+
+    fake_gdal = FakeGDAL()
+    monkeypatch.setattr("operators.raster_operators._import_gdal", lambda: fake_gdal)
+
+    _translate_to_cog("source.tif", "target.tif", {}, {"compression": "DEFLATE", "blocksize": 512})
+
+    assert "NUM_THREADS=2" in fake_gdal.creation_options
 
 
 def test_vector_reproject_metadata_public_contract():
@@ -260,6 +497,15 @@ def _create_test_geotiff(gdal, osr, path: Path, origin_x: float, fill_value: int
     srs.ImportFromEPSG(4326)
     ds.SetProjection(srs.ExportToWkt())
     ds.GetRasterBand(1).Fill(fill_value)
+    ds.FlushCache()
+    ds = None
+
+
+def _create_test_geotiff_without_projection(gdal, path: Path, origin_x: float, origin_y: float) -> None:
+    driver = gdal.GetDriverByName("GTiff")
+    ds = driver.Create(path.as_posix(), 16, 16, 1, gdal.GDT_Byte)
+    ds.SetGeoTransform((origin_x, 0.01, 0, origin_y, 0, -0.01))
+    ds.GetRasterBand(1).Fill(2)
     ds.FlushCache()
     ds = None
 

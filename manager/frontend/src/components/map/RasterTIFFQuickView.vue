@@ -2,7 +2,7 @@
   <div class="raster-tiff-quick-view">
     <div class="raster-toolbar">
       <div class="raster-heading">
-        <span class="raster-title">{{ t('manager.spatialPreview.rasterTIFFQuickView') }}</span>
+        <span class="raster-title">{{ rasterTitle }}</span>
         <span v-if="rasterSummary" class="raster-summary">{{ rasterSummary }}</span>
       </div>
       <div class="raster-controls">
@@ -25,6 +25,25 @@
             class="opacity-slider"
           />
         </div>
+        <div v-if="isMosaicQuickView" class="gamma-control">
+          <span class="opacity-label">{{ t('manager.spatialPreview.rasterGamma') }}</span>
+          <el-slider
+            v-model="rasterMosaicGammaPercent"
+            :min="30"
+            :max="140"
+            :step="5"
+            size="small"
+            class="gamma-slider"
+          />
+        </div>
+        <el-checkbox
+          v-if="isMosaicQuickView"
+          v-model="rasterMosaicInvert"
+          size="small"
+          class="invert-checkbox"
+        >
+          {{ t('manager.spatialPreview.rasterInvert') }}
+        </el-checkbox>
         <el-button size="small" @click="fitToExtent({ duration: 250 })">
           {{ t('manager.vectorTile.fitExtent') }}
         </el-button>
@@ -62,11 +81,17 @@ import { fromUrl as tiffFromUrl } from 'geotiff'
 import Map from 'ol/Map.js'
 import View from 'ol/View.js'
 import GeoTIFFSource from 'ol/source/GeoTIFF'
+import XYZ from 'ol/source/XYZ.js'
+import TileLayer from 'ol/layer/Tile.js'
 import WebGLTileLayer from 'ol/layer/WebGLTile.js'
+import TileState from 'ol/TileState.js'
 import { defaults as defaultControls, ZoomToExtent } from 'ol/control.js'
 import { defaults as defaultInteractions, MouseWheelZoom } from 'ol/interaction.js'
 import { fromLonLat, createGaodeBaseLayer, createTiandituBaseLayers, useMapConfig } from '@common-ui-map'
-import { rasterGeoTIFFSourceOptions } from '@/utils/rasterGeoTIFFSourceOptions'
+import {
+  rasterGeoTIFFProjectionFromQuickView,
+  rasterGeoTIFFSourceOptions
+} from '@/utils/rasterGeoTIFFSourceOptions'
 import {
   RASTER_QUICK_VIEW_GAODE_BASE_MAP,
   defaultRasterQuickViewBaseMap,
@@ -80,6 +105,10 @@ import {
   rasterDisplayRangeFromSamples,
   rasterSampleSize
 } from '@/utils/rasterDisplayRange'
+import {
+  DEFAULT_RASTER_MOSAIC_GAMMA,
+  rasterMosaicTileURLWithStyle
+} from '@/utils/rasterMosaicStyle'
 
 const props = defineProps({
   status: {
@@ -96,6 +125,8 @@ const loading = ref(false)
 const error = ref('')
 const baseMapType = ref('')
 const rasterOpacityPercent = ref(82)
+const rasterMosaicGammaPercent = ref(Math.round(DEFAULT_RASTER_MOSAIC_GAMMA * 100))
+const rasterMosaicInvert = ref(false)
 let map = null
 let rasterLayer = null
 let rasterSource = null
@@ -103,23 +134,50 @@ let baseLayers = []
 let sizeUpdateFrame = null
 let sourceReadySeq = 0
 let displayRangeSeq = 0
+let rasterMosaicTileBaseURL = ''
 
 const quickViewInfo = computed(() => props.status?.quick_view || {})
 const rasterInfo = computed(() => props.status?.raster || {})
+const rasterMosaicInfo = computed(() => props.status?.raster_mosaic || {})
 
 const rasterURL = computed(() => {
   return String(quickViewInfo.value.preview_url || '').trim()
 })
+const tileURLTemplate = computed(() => {
+  return String(quickViewInfo.value.tile_url_template || '').trim()
+})
+const styledTileURLTemplate = computed(() => {
+  return rasterMosaicTileURLWithStyle(tileURLTemplate.value, {
+    gamma: rasterMosaicGammaPercent.value / 100,
+    invert: rasterMosaicInvert.value
+  })
+})
 const renderSource = computed(() => String(
   props.status?.render_source || quickViewInfo.value.render_source || ''
 ).trim())
+const isMosaicQuickView = computed(() => renderSource.value === 'raster_mosaic_tile')
 const rasterOpacity = computed(() => rasterOpacityPercent.value / 100)
 const rasterBaseMapOptions = computed(() => {
   return rasterQuickViewBaseMapOptions(baseMapOptions.value)
 })
 const rasterBandCount = computed(() => Number(rasterInfo.value.band_count || 0))
+const rasterTitle = computed(() => isMosaicQuickView.value
+  ? t('manager.spatialPreview.rasterMosaicQuickView')
+  : t('manager.spatialPreview.rasterTIFFQuickView')
+)
 
 const rasterSummary = computed(() => {
+  if (isMosaicQuickView.value) {
+    const leafCount = Number(rasterMosaicInfo.value.leaf_count || 0)
+    const sourceCount = Number(rasterMosaicInfo.value.source_count || 0)
+    const overviewWidth = Number(rasterMosaicInfo.value.overview_width || 0)
+    const overviewHeight = Number(rasterMosaicInfo.value.overview_height || 0)
+    const parts = ['raster_mosaic']
+    if (leafCount > 0) parts.push(`${leafCount} COG`)
+    if (sourceCount > 0 && sourceCount !== leafCount) parts.push(`${sourceCount} sources`)
+    if (overviewWidth > 0 && overviewHeight > 0) parts.push(`${overviewWidth} x ${overviewHeight}`)
+    return parts.join(' · ')
+  }
   const profile = String(rasterInfo.value.profile || '').trim()
   const width = Number(rasterInfo.value.width || 0)
   const height = Number(rasterInfo.value.height || 0)
@@ -272,6 +330,9 @@ function replaceBaseLayers() {
 }
 
 async function createRasterLayer() {
+  if (isMosaicQuickView.value) {
+    return createRasterMosaicLayer()
+  }
   const url = rasterURL.value
   if (!url) return null
   const seq = sourceReadySeq
@@ -287,13 +348,18 @@ async function createRasterLayer() {
     sourceInfo.max = displayRange.max
     if (displayRange.nodata !== undefined) sourceInfo.nodata = displayRange.nodata
   }
-  const source = new GeoTIFFSource({
+  const projection = rasterGeoTIFFProjectionFromQuickView(quickViewInfo.value)
+  const sourceConfig = {
     sources: [sourceInfo],
     sourceOptions,
     convertToRGB: 'auto',
     normalize: true,
     interpolate: true
-  })
+  }
+  if (projection) {
+    sourceConfig.projection = projection
+  }
+  const source = new GeoTIFFSource(sourceConfig)
   source.on('change', () => {
     if (seq !== sourceReadySeq) return
     const state = typeof source.getState === 'function' ? source.getState() : ''
@@ -329,6 +395,84 @@ async function createRasterLayer() {
     },
     zIndex: 10
   })
+}
+
+function createRasterMosaicLayer() {
+  const url = styledTileURLTemplate.value
+  if (!url) return null
+  rasterMosaicTileBaseURL = tileURLTemplate.value
+  const source = new XYZ({
+    url,
+    minZoom: Number(quickViewInfo.value.min_zoom || 0),
+    maxZoom: Number(quickViewInfo.value.max_zoom || 18),
+    tileSize: 256,
+    crossOrigin: 'anonymous',
+    transition: 120
+  })
+  source.setTileLoadFunction(createRasterMosaicTileLoadFunction())
+  source.on('tileloadend', () => {
+    loading.value = false
+    error.value = ''
+  })
+  source.on('tileloaderror', () => {
+    loading.value = false
+    error.value = t('manager.spatialPreview.loadRasterQuickViewFailed')
+  })
+  rasterSource = source
+  loading.value = false
+  return new TileLayer({
+    source,
+    opacity: rasterOpacity.value,
+    zIndex: 10
+  })
+}
+
+function updateRasterMosaicStyleURL(url) {
+  if (!isMosaicQuickView.value) {
+    reload()
+    return
+  }
+  if (!map || !rasterSource || typeof rasterSource.setUrl !== 'function') {
+    reload()
+    return
+  }
+  if (rasterMosaicTileBaseURL !== tileURLTemplate.value) {
+    reload()
+    return
+  }
+  error.value = ''
+  rasterSource.setUrl(url)
+  if (typeof rasterSource.refresh === 'function') {
+    rasterSource.refresh()
+  }
+  scheduleMapSizeUpdate()
+}
+
+function createRasterMosaicTileLoadFunction() {
+  return (tile, src) => {
+    const image = tile.getImage()
+    const token = localStorage.getItem('token') || ''
+    fetch(src, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.blob()
+      })
+      .then((blob) => {
+        const objectURL = URL.createObjectURL(blob)
+        image.onload = () => URL.revokeObjectURL(objectURL)
+        image.onerror = () => {
+          URL.revokeObjectURL(objectURL)
+          tile.setState(TileState.ERROR)
+        }
+        image.src = objectURL
+      })
+      .catch((err) => {
+        console.error('Raster mosaic tile load failed:', err)
+        tile.setState(TileState.ERROR)
+      })
+  }
 }
 
 async function initMap() {
@@ -381,6 +525,10 @@ async function initMap() {
   })
   scheduleMapSizeUpdate()
   nextTick(async () => {
+    if (isMosaicQuickView.value) {
+      fitToExtent()
+      return
+    }
     if (!(await applyRasterSourceView(rasterSource, seq))) {
       fitToExtent()
     }
@@ -406,6 +554,7 @@ function disposeMap() {
   rasterLayer = null
   rasterSource = null
   baseLayers = []
+  rasterMosaicTileBaseURL = ''
   sourceReadySeq += 1
   displayRangeSeq += 1
   if (sizeUpdateFrame && typeof window !== 'undefined') {
@@ -424,6 +573,7 @@ onMounted(initMap)
 onBeforeUnmount(disposeMap)
 
 watch(rasterURL, reload)
+watch(styledTileURLTemplate, updateRasterMosaicStyleURL)
 watch(baseMapOptions, ensureBaseMapSelection, { immediate: true })
 watch(baseMapType, () => {
   replaceBaseLayers()
@@ -494,6 +644,13 @@ watch(rasterOpacity, (opacity) => {
   width: 180px;
 }
 
+.gamma-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 150px;
+}
+
 .opacity-label {
   flex: 0 0 auto;
   font-size: 12px;
@@ -502,6 +659,14 @@ watch(rasterOpacity, (opacity) => {
 
 .opacity-slider {
   flex: 1 1 auto;
+}
+
+.gamma-slider {
+  flex: 1 1 auto;
+}
+
+.invert-checkbox {
+  flex: 0 0 auto;
 }
 
 .raster-map-wrap {

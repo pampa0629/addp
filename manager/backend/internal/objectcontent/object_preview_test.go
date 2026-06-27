@@ -1,8 +1,12 @@
 package objectcontent
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
+	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +14,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -251,6 +256,16 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 			req:  ObjectContentRequest{Format: "geojson", Extension: ".json", ContentType: "application/json"},
 			want: "builtin:content-json",
 		},
+		{
+			name: "glb",
+			req:  ObjectContentRequest{Format: "glb", Extension: ".glb", ContentType: "model/gltf-binary"},
+			want: "builtin:content-model-3d",
+		},
+		{
+			name: "las",
+			req:  ObjectContentRequest{Format: "las", Extension: ".las", ContentType: "application/vnd.las"},
+			want: "builtin:content-point-cloud",
+		},
 	}
 	for _, tt := range tests {
 		tt := tt
@@ -263,6 +278,122 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 				t.Fatalf("handler = %q, want %q", handler.Name(), tt.want)
 			}
 		})
+	}
+}
+
+func TestModel3DContentHandlerReturnsStorageStreamURL(t *testing.T) {
+	t.Parallel()
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "model3d", Builtin: models.ObjectPreviewKindModel3D})
+	if err != nil {
+		t.Fatalf("build model3d handler: %v", err)
+	}
+	content, truncated, err := handler.Handle(context.Background(), &ObjectContentRequest{
+		Format:     string(format.FormatGLB),
+		Extension:  ".glb",
+		PreviewURL: "/api/v1/manager/storage-stream?engine_id=1&storage_ref=models%2Fbuilding.glb",
+		Attributes: map[string]interface{}{
+			"type_info": map[string]interface{}{
+				"model_3d": map[string]interface{}{
+					"model_kind":   "mesh_scene",
+					"vertex_count": int64(8),
+				},
+			},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if truncated {
+		t.Fatal("truncated = true, want false")
+	}
+	if content.Kind != models.ObjectPreviewKindModel3D || content.PreviewMaterial != models.PreviewMaterialURL || content.FrontendRenderer != models.ObjectPreviewKindModel3D {
+		t.Fatalf("content = %#v, want model_3d URL preview", content)
+	}
+	if content.URL == "" {
+		t.Fatalf("content URL is empty: %#v", content)
+	}
+	if _, ok := content.Metadata["model_3d"]; !ok {
+		t.Fatalf("metadata = %#v, want model_3d facts", content.Metadata)
+	}
+}
+
+func TestModel3DContentHandlerRoutes3DTilesRenderer(t *testing.T) {
+	t.Parallel()
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "model3d", Builtin: models.ObjectPreviewKindModel3D})
+	if err != nil {
+		t.Fatalf("build model3d handler: %v", err)
+	}
+	if !handler.Matches(&ObjectContentRequest{Format: string(format.Format3DTiles), Name: "tileset.json", ContentType: "application/vnd.ogc.3dtiles+json"}) {
+		t.Fatal("model3d handler should match 3dtiles")
+	}
+	content, truncated, err := handler.Handle(context.Background(), &ObjectContentRequest{
+		Format:     string(format.Format3DTiles),
+		Name:       "tileset.json",
+		PreviewURL: "/api/v1/manager/storage-stream?engine_id=1&storage_ref=models%2Fcity%2Ftileset.json",
+		Attributes: map[string]interface{}{
+			"type_info": map[string]interface{}{
+				"model_3d": map[string]interface{}{
+					"model_kind": "tiled_scene",
+				},
+			},
+			"format_info": map[string]interface{}{
+				"3dtiles": map[string]interface{}{
+					"tile_count": int64(4),
+				},
+			},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if truncated {
+		t.Fatal("truncated = true, want false")
+	}
+	if content.Kind != models.ObjectPreviewKindModel3D || content.PreviewMaterial != models.PreviewMaterialURL || content.FrontendRenderer != string(format.Format3DTiles) {
+		t.Fatalf("content = %#v, want 3dtiles URL preview", content)
+	}
+	formatInfo := commonJSON.Section(content.Metadata, "format_info.3dtiles")
+	if commonJSON.InterfaceInt64(formatInfo["tile_count"]) != 4 {
+		t.Fatalf("metadata.format_info.3dtiles = %#v, want tile_count", formatInfo)
+	}
+}
+
+func TestPointCloudContentHandlerSamplesLASPoints(t *testing.T) {
+	t.Parallel()
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "pointcloud", Builtin: models.ObjectPreviewKindPointCloud})
+	if err != nil {
+		t.Fatalf("build pointcloud handler: %v", err)
+	}
+	streamHandler, ok := handler.(StreamableContentHandler)
+	if !ok {
+		t.Fatal("point cloud handler must support stream")
+	}
+	content, truncated, err := streamHandler.HandleStream(context.Background(), &ObjectContentRequest{
+		Format:    string(format.FormatLAS),
+		Extension: ".las",
+		Size:      1024,
+	}, func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(objectPreviewTestLASWithPoints())), nil
+	})
+	if err != nil {
+		t.Fatalf("HandleStream() error = %v", err)
+	}
+	if truncated {
+		t.Fatalf("truncated = true, want false for tiny point cloud")
+	}
+	if content.Kind != models.ObjectPreviewKindPointCloud || content.PreviewMaterial != models.PreviewMaterialJSON || content.FrontendRenderer != models.ObjectPreviewKindPointCloud {
+		t.Fatalf("content = %#v, want point_cloud json preview", content)
+	}
+	payload, ok := content.JSON.(map[string]interface{})
+	if !ok {
+		t.Fatalf("content.JSON = %#v, want map", content.JSON)
+	}
+	points, ok := payload["points"].([]map[string]interface{})
+	if !ok || len(points) != 3 {
+		t.Fatalf("points = %#v, want 3 sampled points", payload["points"])
+	}
+	if points[0]["x"] != 1.0 || points[0]["y"] != 2.0 || points[0]["z"] != 3.0 {
+		t.Fatalf("first point = %#v, want scaled coordinates 1/2/3", points[0])
 	}
 }
 
@@ -1512,4 +1643,49 @@ func TestMarkdownContentHandlerUsesDocumentTextReader(t *testing.T) {
 	if content.Text != "# T" {
 		t.Fatalf("Text = %q, want # T", content.Text)
 	}
+}
+
+func objectPreviewTestLASWithPoints() []byte {
+	const headerSize = 375
+	const recordLength = 36
+	pointCount := 3
+	buf := make([]byte, headerSize+recordLength*pointCount)
+	copy(buf[:4], []byte("LASF"))
+	buf[24] = 1
+	buf[25] = 4
+	binary.LittleEndian.PutUint16(buf[94:96], uint16(headerSize))
+	binary.LittleEndian.PutUint32(buf[96:100], headerSize)
+	buf[104] = 7
+	binary.LittleEndian.PutUint16(buf[105:107], recordLength)
+	binary.LittleEndian.PutUint32(buf[107:111], uint32(pointCount))
+	objectPreviewTestPutFloat64(buf[131:139], 0.01)
+	objectPreviewTestPutFloat64(buf[139:147], 0.01)
+	objectPreviewTestPutFloat64(buf[147:155], 0.01)
+	objectPreviewTestPutFloat64(buf[155:163], 0)
+	objectPreviewTestPutFloat64(buf[163:171], 0)
+	objectPreviewTestPutFloat64(buf[171:179], 0)
+	objectPreviewTestPutFloat64(buf[179:187], 7)
+	objectPreviewTestPutFloat64(buf[187:195], 1)
+	objectPreviewTestPutFloat64(buf[195:203], 8)
+	objectPreviewTestPutFloat64(buf[203:211], 2)
+	objectPreviewTestPutFloat64(buf[211:219], 9)
+	objectPreviewTestPutFloat64(buf[219:227], 3)
+
+	rawPoints := [][4]int32{
+		{100, 200, 300, 11},
+		{400, 500, 600, 22},
+		{700, 800, 900, 33},
+	}
+	for i, point := range rawPoints {
+		offset := headerSize + i*recordLength
+		binary.LittleEndian.PutUint32(buf[offset:offset+4], uint32(point[0]))
+		binary.LittleEndian.PutUint32(buf[offset+4:offset+8], uint32(point[1]))
+		binary.LittleEndian.PutUint32(buf[offset+8:offset+12], uint32(point[2]))
+		binary.LittleEndian.PutUint16(buf[offset+12:offset+14], uint16(point[3]))
+	}
+	return buf
+}
+
+func objectPreviewTestPutFloat64(target []byte, value float64) {
+	binary.LittleEndian.PutUint64(target, math.Float64bits(value))
 }

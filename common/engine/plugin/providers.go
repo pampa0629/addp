@@ -419,6 +419,7 @@ type WorkflowExecuteRequest struct {
 	WorkflowDef map[string]interface{} `json:"workflow_def"`
 	InputData   map[string]interface{} `json:"input_data,omitempty"`
 	Runtime     map[string]interface{} `json:"runtime,omitempty"`
+	Timeout     time.Duration          `json:"-"`
 }
 
 type WorkflowExecuteResult struct {
@@ -435,6 +436,7 @@ type OperatorInvokeRequest struct {
 	Params        map[string]interface{} `json:"params,omitempty"`
 	Runtime       map[string]interface{} `json:"runtime,omitempty"`
 	BinaryPayload *BinaryPayload         `json:"binary_payload,omitempty"`
+	Timeout       time.Duration          `json:"-"`
 }
 
 type OperatorInvokeResult struct {

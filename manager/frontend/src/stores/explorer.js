@@ -295,11 +295,6 @@ export const useExplorerStore = defineStore('explorer', {
           params: { locator }
         })
 
-        const previousDepth = this.engineTreeDepths[loc.engineId] || 2
-        delete this.engineTrees[loc.engineId]
-        delete this.engineTreeDepths[loc.engineId]
-        await this.loadTree(loc.engineId, previousDepth)
-
         if (this.selectedLocator !== locator) {
           return response
         }
@@ -810,6 +805,7 @@ export const useExplorerStore = defineStore('explorer', {
 
       // 为当前节点添加 engineType
       tree.engineType = engineType
+      tree.hasChildren = hasTreeNodeChildren(tree)
 
       // 递归处理子节点
       if (tree.children && tree.children.length > 0) {
@@ -873,6 +869,14 @@ function findNodeByLocator(tree, locator) {
   }
 
   return null
+}
+
+function hasTreeNodeChildren(node) {
+  if (!node) return false
+  if (node.hasChildren === true) return true
+  if (node.metadata?.has_children === true) return true
+  if (Number(node.metadata?.item_count || 0) > 0) return true
+  return Array.isArray(node.children) && node.children.length > 0
 }
 
 function delay(ms) {

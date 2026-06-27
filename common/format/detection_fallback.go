@@ -57,6 +57,9 @@ var fallbackIdentifications = []fallbackIdentification{
 	{FormatVideo, "", "video/*", datatype.Media},
 	{FormatAudio, "", "audio/*", datatype.Media},
 	{FormatImage, "", "image/*", datatype.Media},
+	{FormatGLB, ".glb", "model/gltf-binary", datatype.Model3D},
+	{FormatLAS, ".las", "application/vnd.las", datatype.PointCloud},
+	{Format3DTiles, "", "application/vnd.ogc.3dtiles+json", datatype.Model3D},
 }
 
 // fallbackFormatByExtension keeps detection minimally usable before builtin

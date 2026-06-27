@@ -54,6 +54,12 @@ const routes = [
         meta: { requiresAuth: true, title: '栅格快显 - COG-addp' }
       },
       {
+        path: 'spatial-quick-view/raster-mosaic',
+        name: 'RasterMosaic',
+        component: () => import('../views/RasterMosaic.vue'),
+        meta: { requiresAuth: true, title: '栅格快显 - Mosaic-addp' }
+      },
+      {
         path: 'spatial-preview',
         name: 'SpatialPreview',
         component: () => import('../views/SpatialPreview.vue'),

@@ -210,7 +210,8 @@
         "spatialQuickView": "空间快显管理",
         "tileCache": "矢量快显 - 瓦片缓存",
         "quickViewOptimization": "矢量快显 - 性能优化",
-        "cogArtifacts": "栅格快显 - COG"
+        "cogArtifacts": "栅格快显 - COG",
+        "rasterMosaic": "栅格快显 - Mosaic"
       },
       "standard": {
         "label": "数据标准",

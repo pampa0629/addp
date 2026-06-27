@@ -216,6 +216,9 @@ func scanObjectCatalogPaths(
 				}
 			}
 		}
+		if err := repo.HardDeleteInvalidEngineGraph(tenantID, engineID); err != nil && reporter != nil {
+			reporter.Message(fmt.Sprintf("清理对象 catalog 陈旧节点失败: %v", err))
+		}
 	}
 
 	for bucketName, bucketNode := range bucketNodes {

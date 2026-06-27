@@ -57,5 +57,9 @@ const (
 	FormatAAC   FormatType = "aac"
 	FormatOGG   FormatType = "ogg"
 
+	FormatGLB     FormatType = "glb"
+	FormatLAS     FormatType = "las"
+	Format3DTiles FormatType = "3dtiles"
+
 	FormatUnknown FormatType = "unknown"
 )

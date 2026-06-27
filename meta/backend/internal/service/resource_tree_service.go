@@ -282,6 +282,7 @@ func commonNodesFromLite(nodes []metaModels.MetaNodeLite) []*commonModels.MetaNo
 			ScannedDepth:   node.ScannedDepth,
 			LastScanAt:     parseMetaTimePtr(node.ScannedAt),
 			ItemCount:      node.ItemCount,
+			HasChildren:    node.HasChildren,
 			TotalSizeBytes: node.TotalSizeBytes,
 			Attributes:     node.Attributes,
 		})

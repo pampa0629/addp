@@ -1902,6 +1902,111 @@ const docTemplate = `{
                 }
             }
         },
+        "/raster_mosaic/tiles/{z}/{x}/{y}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按 raster_mosaic item locator 返回 PNG/WebP 图片瓦片；全局 overview COG 分辨率不足时切换 leaf COG 合成。| Return PNG/WebP image tiles for a raster_mosaic item locator; switches to leaf COG composition when the global overview COG is not detailed enough.",
+                "produces": [
+                    "image/png",
+                    "image/webp"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取 raster mosaic 图片瓦片 | Get raster mosaic image tile",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "raster_mosaic item locator",
+                        "name": "locator",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "single-band display gamma, default 0.6",
+                        "name": "gamma",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "single-band display minimum",
+                        "name": "display_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "single-band display maximum",
+                        "name": "display_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "invert grayscale display",
+                        "name": "invert",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "zoom",
+                        "name": "z",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "tile x",
+                        "name": "x",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "tile y with extension, e.g. 12.webp",
+                        "name": "y",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "图片瓦片 | Image tile"
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "runtime 不可用 | Runtime unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/raster_mosaic_tasks": {
             "get": {
                 "security": [
@@ -4000,6 +4105,9 @@ const docTemplate = `{
                 "raster": {
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewRasterInfo"
                 },
+                "raster_mosaic": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewRasterMosaicInfo"
+                },
                 "realtime_tile": {
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewRealtimeTileInfo"
                 },
@@ -4103,6 +4211,12 @@ const docTemplate = `{
                 "cog_check_level": {
                     "type": "string"
                 },
+                "crs_inference": {
+                    "type": "string"
+                },
+                "crs_inferred": {
+                    "type": "boolean"
+                },
                 "display_max": {
                     "type": "number"
                 },
@@ -4158,6 +4272,50 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "width": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.QuickViewRasterMosaicInfo": {
+            "type": "object",
+            "properties": {
+                "extent": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "extent_srid": {
+                    "type": "integer"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "index_ref": {
+                    "type": "string"
+                },
+                "leaf_count": {
+                    "type": "integer"
+                },
+                "manifest_ref": {
+                    "type": "string"
+                },
+                "overview_height": {
+                    "type": "integer"
+                },
+                "overview_ref": {
+                    "type": "string"
+                },
+                "overview_width": {
+                    "type": "integer"
+                },
+                "source_count": {
+                    "type": "integer"
+                },
+                "source_crs": {
+                    "type": "string"
+                },
+                "source_srid": {
                     "type": "integer"
                 }
             }

@@ -16,6 +16,8 @@ type CompositeItemInfo struct {
 	Document           *datatype.DocumentInfo
 	Media              *datatype.MediaInfo
 	Container          *datatype.ContainerInfo
+	Model3D            *datatype.Model3DInfo
+	PointCloud         *datatype.PointCloudInfo
 	Attributes         map[string]interface{}
 	Layout             format.Layout
 	DataType           datatype.DataType
@@ -68,6 +70,8 @@ type DetectedItem struct {
 	Document     *datatype.DocumentInfo
 	Media        *datatype.MediaInfo
 	Container    *datatype.ContainerInfo
+	Model3D      *datatype.Model3DInfo
+	PointCloud   *datatype.PointCloudInfo
 	Attributes   map[string]interface{}
 }
 
@@ -114,6 +118,8 @@ func DetectedItemFromCompositeInfo(info *CompositeItemInfo, physicalPath string,
 		Document:     info.Document.Clone(),
 		Media:        info.Media.Clone(),
 		Container:    info.Container.Clone(),
+		Model3D:      info.Model3D.Clone(),
+		PointCloud:   info.PointCloud.Clone(),
 		Attributes:   info.Attributes,
 	}
 }

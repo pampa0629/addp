@@ -37,6 +37,9 @@ func DetectObjectCatalogCompositeItems(
 	}
 	items := make([]metacatalog.ObjectCatalogCompositeItem, 0)
 	warnings := make([]ObjectCatalogCompositeDetectionError, 0)
+	rasterMosaicItems, rasterMosaicWarnings := detectRasterMosaicCompositeItems(ctx, contentReader, connInfo, engineID, resources, skipPaths)
+	items = append(items, rasterMosaicItems...)
+	warnings = append(warnings, rasterMosaicWarnings...)
 	groupKeys := make([]string, 0, len(groups))
 	for groupKey := range groups {
 		groupKeys = append(groupKeys, groupKey)

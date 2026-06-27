@@ -39,6 +39,7 @@ func SetupRouter(
 	uploadHandler *UploadHandler,
 	resourceActionHandler *ResourceActionHandler,
 	exportHandler *ExportHandler,
+	rasterMosaicTileHandler *RasterMosaicTileHandler,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -136,6 +137,12 @@ func SetupRouter(
 			rasterMosaicTasksGroup.GET("/:id", taskProviderHandler.GetRasterMosaicTask)
 			rasterMosaicTasksGroup.PUT("/:id", taskProviderHandler.UpdateRasterMosaicTask)
 			rasterMosaicTasksGroup.DELETE("/:id", taskProviderHandler.DeleteRasterMosaicTask)
+		}
+		if rasterMosaicTileHandler != nil {
+			rasterMosaicTilesGroup := api.Group("/raster_mosaic/tiles")
+			{
+				rasterMosaicTilesGroup.GET("/:z/:x/:y", rasterMosaicTileHandler.GetRasterMosaicTile)
+			}
 		}
 		rasterCOGsGroup := api.Group("/raster_cog")
 		{

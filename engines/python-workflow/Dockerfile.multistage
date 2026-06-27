@@ -55,6 +55,7 @@ EXPOSE 8099
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8099
+ENV PYTHON_WORKFLOW_GUNICORN_TIMEOUT=7200
 
 # Run with Gunicorn for production
-CMD ["gunicorn", "--bind", "0.0.0.0:8099", "--workers", "4", "--timeout", "600", "api_server:app"]
+CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:8099 --workers 4 --timeout ${PYTHON_WORKFLOW_GUNICORN_TIMEOUT:-7200} api_server:app"]

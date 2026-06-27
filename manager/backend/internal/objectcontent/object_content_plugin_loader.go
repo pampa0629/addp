@@ -78,6 +78,10 @@ func buildBuiltinContentHandler(cfg ObjectContentPluginConfig) (ObjectContentHan
 		return buildJSONContentHandler(cfg), nil
 	case models.ObjectPreviewKindTable:
 		return buildTableContentHandler(cfg), nil
+	case models.ObjectPreviewKindModel3D:
+		return buildModel3DContentHandler(cfg), nil
+	case models.ObjectPreviewKindPointCloud:
+		return buildPointCloudContentHandler(cfg), nil
 	case models.ObjectPreviewKindText:
 		return buildTextContentHandler(cfg, commonformat.FormatText, models.ObjectPreviewKindText), nil
 	case models.ObjectPreviewKindMarkdown:
@@ -136,6 +140,8 @@ func fallbackBuiltinContentPlugins() []ObjectContentPluginConfig {
 			Builtin:  models.ObjectPreviewKindTable,
 			Metadata: map[string]interface{}{"row_limit": defaultTableRowLimit},
 		},
+		ObjectContentPluginConfig{Name: "builtin:content-model-3d", Type: "builtin", Builtin: models.ObjectPreviewKindModel3D},
+		ObjectContentPluginConfig{Name: "builtin:content-point-cloud", Type: "builtin", Builtin: models.ObjectPreviewKindPointCloud},
 		ObjectContentPluginConfig{Name: "builtin:content-json", Type: "builtin", Builtin: models.ObjectPreviewKindJSON},
 		ObjectContentPluginConfig{Name: "builtin:content-container", Type: "builtin", Builtin: models.ObjectPreviewKindContainer},
 		ObjectContentPluginConfig{Name: "builtin:content-markdown", Type: "builtin", Builtin: models.ObjectPreviewKindMarkdown},
@@ -299,6 +305,10 @@ func defaultBuiltinContentPriority(kind string) int {
 		return 67
 	case models.ObjectPreviewKindTable:
 		return 63
+	case models.ObjectPreviewKindModel3D:
+		return 62
+	case models.ObjectPreviewKindPointCloud:
+		return 61
 	case models.ObjectPreviewKindJSON:
 		return 60
 	case models.ObjectPreviewKindContainer:
@@ -309,6 +319,26 @@ func defaultBuiltinContentPriority(kind string) int {
 		return -100
 	default:
 		return 0
+	}
+}
+
+func buildModel3DContentHandler(cfg ObjectContentPluginConfig) ObjectContentHandler {
+	return &model3DContentHandler{
+		baseContentHandler: baseContentHandler{
+			name:     cfg.Name,
+			priority: cfg.priorityOr(defaultBuiltinContentPriority(models.ObjectPreviewKindModel3D)),
+			matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatGLB, []commonformat.FormatType{commonformat.Format3DTiles}, nil),
+		},
+	}
+}
+
+func buildPointCloudContentHandler(cfg ObjectContentPluginConfig) ObjectContentHandler {
+	return &pointCloudContentHandler{
+		baseContentHandler: baseContentHandler{
+			name:     cfg.Name,
+			priority: cfg.priorityOr(defaultBuiltinContentPriority(models.ObjectPreviewKindPointCloud)),
+			matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatLAS, nil, nil),
+		},
 	}
 }
 

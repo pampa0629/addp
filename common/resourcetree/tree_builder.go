@@ -362,6 +362,9 @@ func (b *TreeBuilder) ConvertNodeToTree(loc *ResourceLocator, metadata map[strin
 
 	// 从metadata中提取item_count判断是否有子节点
 	hasChildren := false
+	if value, ok := metadata["has_children"].(bool); ok && value {
+		hasChildren = true
+	}
 	if itemCount, ok := metadata["item_count"].(int); ok && itemCount > 0 {
 		hasChildren = true
 	}
@@ -381,11 +384,10 @@ func (b *TreeBuilder) ConvertNodeToTree(loc *ResourceLocator, metadata map[strin
 
 // 内部辅助方法
 
-// shouldHaveChildren 判断节点是否应该有子节点
-// 统一根据 ItemCount 判断：ItemCount > 0 则有子节点，否则无子节点
-// 这样空的 schema/bucket/directory 不会显示展开箭头
-func shouldHaveChildren(nodeType string, itemCount int) bool {
-	return itemCount > 0
+// shouldHaveChildren 判断节点是否应该有子节点。
+// hasChildren 是查询层给出的直接子资源事实；itemCount 仅作为旧数据兜底。
+func shouldHaveChildren(nodeType string, itemCount int, hasChildren bool) bool {
+	return hasChildren || itemCount > 0
 }
 
 // calculateItemCount 计算 Item 的子项数量
@@ -428,6 +430,7 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 
 	// 构建元数据
 	metadata := engineTreeMetadata(engine, node.ID, node.FullName, node.ItemCount, node.ScanStatus, node.LastScanAt)
+	metadata["has_children"] = node.HasChildren
 	metadata["size_bytes"] = node.TotalSizeBytes
 
 	// 合并自定义属性（保留规范字段，避免被 attributes 覆盖）
@@ -453,7 +456,7 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 
 	// 根据节点类型和ItemCount判断是否有子节点
 	// 容器类型（schema, bucket, directory等）即使ItemCount=0也可能有子节点
-	hasChildren := shouldHaveChildren(node.NodeType, node.ItemCount)
+	hasChildren := shouldHaveChildren(node.NodeType, node.ItemCount, node.HasChildren)
 
 	// Children 字段始终初始化为空数组
 	// Element Plus el-tree 在非 lazy 模式下需要 children 是数组才会显示展开箭头
@@ -484,6 +487,7 @@ func engineTreeMetadata(engine *models.Engine, nodeID uint, fullName string, ite
 		"capabilities":  engine.Capabilities,
 		"full_name":     fullName,
 		"item_count":    itemCount,
+		"has_children":  false,
 		"scan_status":   scanStatus,
 	}
 	if nodeID > 0 {

@@ -206,6 +206,53 @@ func TestResolveItemsDetectsRasterMosaicManifestWholeScope(t *testing.T) {
 	}
 }
 
+func TestResolveItemsDetects3DTilesManifestWholeScope(t *testing.T) {
+	t.Parallel()
+
+	size := int64(10)
+	result, err := ResolveItems(ResolveInput{
+		ScopeKind: ScopeKindDirectory,
+		ScopePath: "models/city",
+		Candidates: []Candidate{
+			{Path: "models/city/tileset.json", Name: "tileset.json", SizeBytes: &size},
+			{Path: "models/city/0/0.b3dm", Name: "0.b3dm", SizeBytes: &size},
+			{Path: "models/city/0/1.b3dm", Name: "1.b3dm", SizeBytes: &size},
+		},
+		Options: ResolveOptions{AllowWholeScope: true},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("items = %#v, want one 3D Tiles item", result.Items)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutWhole || item.Format != string(format.Format3DTiles) || item.DataType != datatype.Model3D {
+		t.Fatalf("item = %#v, want model_3d 3dtiles whole item", item)
+	}
+	if item.ScopePath != "models/city" || item.FullName != "models/city" {
+		t.Fatalf("item scope/full_name = %q/%q, want tileset root", item.ScopePath, item.FullName)
+	}
+	if item.PrimaryContentPath != "models/city/tileset.json" {
+		t.Fatalf("PrimaryContentPath = %q, want tileset manifest", item.PrimaryContentPath)
+	}
+	if item.RefList[0].Path != "models/city/tileset.json" || item.RefList[0].Role != "manifest" || !item.RefList[0].Primary {
+		t.Fatalf("refs = %#v, want primary manifest", item.RefList)
+	}
+	if !result.Exclusive {
+		t.Fatal("3D Tiles whole scope should be exclusive")
+	}
+	for _, path := range []string{
+		"models/city/tileset.json",
+		"models/city/0/0.b3dm",
+		"models/city/0/1.b3dm",
+	} {
+		if !result.Claims[path] {
+			t.Fatalf("claims = %#v, want %s claimed", result.Claims, path)
+		}
+	}
+}
+
 func TestResolveItemsKeepsSiblingTablesAsSingles(t *testing.T) {
 	t.Parallel()
 

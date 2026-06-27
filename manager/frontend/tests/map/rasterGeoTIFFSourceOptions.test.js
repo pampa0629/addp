@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { rasterGeoTIFFSourceOptions } from '../../src/utils/rasterGeoTIFFSourceOptions'
+import {
+  rasterGeoTIFFProjectionFromQuickView,
+  rasterGeoTIFFSourceOptions
+} from '../../src/utils/rasterGeoTIFFSourceOptions'
 
 describe('rasterGeoTIFFSourceOptions', () => {
   it('requires range reads for managed COG quick view artifacts', () => {
@@ -20,5 +23,11 @@ describe('rasterGeoTIFFSourceOptions', () => {
       cacheSize: 100,
       headers: {}
     })
+  })
+
+  it('uses quick view SRID as explicit GeoTIFF projection when supported', () => {
+    expect(rasterGeoTIFFProjectionFromQuickView({ extent_srid: 4326 })).toBe('EPSG:4326')
+    expect(rasterGeoTIFFProjectionFromQuickView({ source_srid: 3857 })).toBe('EPSG:3857')
+    expect(rasterGeoTIFFProjectionFromQuickView({ extent_srid: 4490 })).toBe('')
   })
 })

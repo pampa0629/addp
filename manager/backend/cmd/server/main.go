@@ -296,9 +296,21 @@ func main() {
 		minioBucket,
 	)
 	exportHandler := api.NewExportHandler(exportService)
+	rasterMosaicRuntimeClient := service.NewHTTPRasterMosaicRuntimeClient(
+		cfg.RasterMosaicRuntime.BaseURL,
+		cfg.RasterMosaicRuntime.InternalKey,
+		cfg.RasterMosaicRuntime.Timeout,
+	)
+	rasterMosaicTileService := service.NewRasterMosaicTileService(
+		systemClient,
+		metaClient,
+		rasterMosaicRuntimeClient,
+		cfg.RasterMosaicRuntime.TileSize,
+	)
+	rasterMosaicTileHandler := api.NewRasterMosaicTileHandler(rasterMosaicTileService)
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("manager")
@@ -309,6 +321,7 @@ func main() {
 			systemClient,
 			serviceURL,
 			cfg.InternalAPIKey,
+			cfg.RasterMosaicGeneration.Timeout,
 		))
 	}
 	if metaClient != nil {

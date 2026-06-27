@@ -43,7 +43,10 @@
     "compression": "DEFLATE",
     "blocksize": 512,
     "overview_resampling": "NEAREST",
-    "validate_source_cog": true
+    "validate_source_cog": true,
+    "leaf_concurrency": 4,
+    "num_threads": 2,
+    "leaf_retry_attempts": 2
   },
   "overview": {
     "enabled": true,
@@ -76,3 +79,6 @@
 4. `detached` 模式必须把所有 leaf COG 写入目标 mosaic 数据集，不修改原 node。
 5. 全局 overview 是低分辨率 COG，不是全分辨率单文件 mosaic COG。
 6. 任务执行必须纳入 `common.task_executions`，未接入真实执行器时不得标记成功。
+7. `cog.leaf_concurrency` 只对 `detached` 模式生效，默认按运行机器 CPU 预算归一化：逻辑 CPU 小于 8 时为 1，8 到 15 时为 2，16 到 31 时为 4，32 及以上时为 6，上限 8；当前 18 逻辑 CPU 开发机默认值为 4。`in_place` 模式保持串行。
+8. `cog.num_threads` 控制单个 leaf COG 的 GDAL `NUM_THREADS`，默认按 `逻辑 CPU / (leaf_concurrency * 2)` 归一化并限制在 1 到 4；当前 18 逻辑 CPU、`leaf_concurrency=4` 时默认值为 2。
+9. `cog.leaf_retry_attempts` 控制单个 leaf COG 生成和内容级校验失败后的重试次数，默认 2，上限 5。`detached` 模式再次执行同一任务时会复用目标数据集中已存在且内容级校验通过的 leaf COG，用于超时或中断后的恢复。

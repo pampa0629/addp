@@ -97,6 +97,23 @@ func DecodeManifest(reader io.Reader, maxBytes int64) (Manifest, error) {
 	return manifest, nil
 }
 
+func DecodeSourceIndex(reader io.Reader, maxBytes int64) (SourceIndex, error) {
+	if reader == nil {
+		return SourceIndex{}, fmt.Errorf("raster mosaic source index reader is required")
+	}
+	if maxBytes <= 0 {
+		maxBytes = 16 << 20
+	}
+	var index SourceIndex
+	if err := json.NewDecoder(io.LimitReader(reader, maxBytes)).Decode(&index); err != nil {
+		return SourceIndex{}, err
+	}
+	if err := ValidateSourceIndex(index); err != nil {
+		return SourceIndex{}, err
+	}
+	return index, nil
+}
+
 func ValidateManifest(manifest Manifest) error {
 	if strings.TrimSpace(manifest.SchemaVersion) != ManifestSchemaVersion {
 		return fmt.Errorf("unsupported raster mosaic manifest schema_version %q", manifest.SchemaVersion)
@@ -114,4 +131,30 @@ func ValidateManifest(manifest Manifest) error {
 		return fmt.Errorf("raster mosaic manifest refs.index is required")
 	}
 	return nil
+}
+
+func ValidateSourceIndex(index SourceIndex) error {
+	if strings.TrimSpace(index.SchemaVersion) != SourceIndexSchemaVersion {
+		return fmt.Errorf("unsupported raster mosaic source index schema_version %q", index.SchemaVersion)
+	}
+	if index.LeafCount < 0 {
+		return fmt.Errorf("raster mosaic source index leaf_count cannot be negative")
+	}
+	for i, leaf := range index.Leaves {
+		if leafString(leaf, "leaf_ref") == "" && leafString(leaf, "path") == "" {
+			return fmt.Errorf("raster mosaic source index leaf %d is missing leaf_ref", i)
+		}
+	}
+	return nil
+}
+
+func leafString(leaf map[string]interface{}, key string) string {
+	if leaf == nil {
+		return ""
+	}
+	value, ok := leaf[key]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
 }

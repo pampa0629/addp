@@ -101,6 +101,20 @@ MINIO_SYSTEM_SECRET_KEY=minioadmin
 2. 暂存路径使用 `tenant_{tenant_id}/import/{yyyymmdd}/{upload_uuid}/...`。
 3. 当前导入入口支持一个 Shapefile ZIP 包，或浏览器同时选择同一套 Shapefile 的多个组件文件；`.shp/.dbf/.shx` 必须同 basename，不能混入多套 Shapefile。
 
+### Manager 栅格 mosaic 生成配置
+
+栅格 mosaic 生成是离线任务，Manager 通过 Python Workflow 的 `build_raster_mosaic` 算子执行 GDAL 处理。该调用不同于在线瓦片渲染，允许更长的执行预算：
+
+```bash
+# 栅格 mosaic 生成算子调用超时。默认 2 小时。
+RASTER_MOSAIC_GENERATION_TIMEOUT=2h
+
+# 容器版 Python Workflow 的 gunicorn worker 超时。默认 7200 秒。
+PYTHON_WORKFLOW_GUNICORN_TIMEOUT=7200
+```
+
+leaf COG 生成并发不通过全局环境变量固定，而是在任务 `config.cog` 中归一化为明确值。默认策略按运行机器 CPU 预算计算：逻辑 CPU 小于 8 时 `leaf_concurrency=1`，8 到 15 时为 `2`，16 到 31 时为 `4`，32 及以上时为 `6`，上限 `8`；单个 leaf COG 的 GDAL `num_threads` 默认按 `逻辑 CPU / (leaf_concurrency * 2)` 计算并限制在 `1` 到 `4`。当前 18 逻辑 CPU 开发机默认得到 `leaf_concurrency=4`、`num_threads=2`。`cog.leaf_retry_attempts` 默认 `2`，上限 `5`，用于单个 leaf COG 生成或校验的瞬时失败重试。`detached` 模式重跑时会复用目标数据集中已经存在且内容级 COG 校验通过的 leaf，因此超时或中断后的恢复通过再次执行同一任务继续完成未生成部分，而不是从头覆盖全部 leaf。
+
 ### Manager 向量化配置
 
 Manager 向量化当前阶段只允许一个启用中的向量模型和一个向量维度。任务定义中的 `config.embedding.model` / `config.embedding.dimension` 是当前配置快照，创建或更新任务时必须与以下环境变量一致；不再按 text/image/video 分别配置模型。

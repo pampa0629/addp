@@ -2,7 +2,9 @@ package preview
 
 import (
 	"context"
+	"encoding/binary"
 	"io"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -168,6 +170,118 @@ func TestFileCatalogImagePreviewUsesStorageStreamURL(t *testing.T) {
 	}
 }
 
+func TestFileCatalogGLBPreviewUsesModel3DStorageStreamURL(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingFileCatalogPreviewPlugin{
+		engineType:   "nfs",
+		contentType:  "model/gltf-binary",
+		sizeBytes:    72 * 1024 * 1024,
+		expectedPath: "/models/building.glb",
+	}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	contentRegistry := objectcontent.NewObjectContentRegistry()
+	objectcontent.LoadObjectContentPlugins(contentRegistry, "../../plugins")
+	provider := NewFileCatalogPreviewProvider(nil, contentRegistry)
+
+	preview, err := provider.Preview(context.Background(), &PreviewRequest{
+		Engine: &models.Engine{EngineType: "nfs", ID: 26},
+		Schema: "models",
+		Table:  "building.glb",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "model_3d",
+				"format":    "glb",
+			},
+			"type_info": map[string]interface{}{
+				"model_3d": map[string]interface{}{
+					"model_kind":   "mesh_scene",
+					"vertex_count": int64(8),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Object == nil || preview.Object.Content == nil {
+		t.Fatalf("object content missing: %#v", preview)
+	}
+	content := preview.Object.Content
+	if content.Kind != models.ObjectPreviewKindModel3D || content.PreviewMaterial != "url" || content.FrontendRenderer != models.ObjectPreviewKindModel3D {
+		t.Fatalf("content = %#v, want model_3d URL preview", content)
+	}
+	if content.URL == "" || !strings.Contains(content.URL, "storage_ref=models%2Fbuilding.glb") {
+		t.Fatalf("content URL = %q, want file storage stream URL", content.URL)
+	}
+	if enginePlugin.openContentCalls != 0 {
+		t.Fatalf("OpenContent calls = %d, want 0 when GLB preview uses storage stream URL", enginePlugin.openContentCalls)
+	}
+}
+
+func TestFileCatalogLASPreviewReturnsPointCloudJSON(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingFileCatalogPreviewPlugin{
+		engineType:   "nfs",
+		contentType:  "application/vnd.las",
+		sizeBytes:    int64(len(fileCatalogPreviewTestLASWithPoints())),
+		expectedPath: "/point-cloud/site.las",
+		content:      fileCatalogPreviewTestLASWithPoints(),
+	}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	contentRegistry := objectcontent.NewObjectContentRegistry()
+	objectcontent.LoadObjectContentPlugins(contentRegistry, "../../plugins")
+	provider := NewFileCatalogPreviewProvider(nil, contentRegistry)
+
+	preview, err := provider.Preview(context.Background(), &PreviewRequest{
+		Engine: &models.Engine{EngineType: "nfs", ID: 26},
+		Schema: "point-cloud",
+		Table:  "site.las",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "point_cloud",
+				"format":    "las",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Object == nil || preview.Object.Content == nil {
+		t.Fatalf("object content missing: %#v", preview)
+	}
+	content := preview.Object.Content
+	if content.Kind != models.ObjectPreviewKindPointCloud || content.PreviewMaterial != "json" || content.FrontendRenderer != models.ObjectPreviewKindPointCloud {
+		t.Fatalf("content = %#v, want point_cloud JSON preview", content)
+	}
+	payload, ok := content.JSON.(map[string]interface{})
+	if !ok {
+		t.Fatalf("content.JSON = %#v, want map", content.JSON)
+	}
+	points, ok := payload["points"].([]map[string]interface{})
+	if !ok || len(points) != 3 {
+		t.Fatalf("points = %#v, want 3 sampled points", payload["points"])
+	}
+	if enginePlugin.openContentCalls == 0 {
+		t.Fatal("OpenContent calls = 0, want stream read for LAS preview")
+	}
+}
+
 type recordingFileCatalogPreviewPlugin struct {
 	engineType        string
 	openContentCalls  int
@@ -175,6 +289,7 @@ type recordingFileCatalogPreviewPlugin struct {
 	contentType       string
 	sizeBytes         int64
 	expectedPath      string
+	content           []byte
 }
 
 func (p *recordingFileCatalogPreviewPlugin) Type() string         { return p.engineType }
@@ -229,5 +344,52 @@ func (p *recordingFileCatalogPreviewPlugin) DescribeCatalogFacts(_ context.Conte
 }
 func (p *recordingFileCatalogPreviewPlugin) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 	p.openContentCalls++
+	if len(p.content) > 0 {
+		return io.NopCloser(strings.NewReader(string(p.content))), nil
+	}
 	return io.NopCloser(strings.NewReader("unused")), nil
+}
+
+func fileCatalogPreviewTestLASWithPoints() []byte {
+	const headerSize = 375
+	const recordLength = 36
+	pointCount := 3
+	buf := make([]byte, headerSize+recordLength*pointCount)
+	copy(buf[:4], []byte("LASF"))
+	buf[24] = 1
+	buf[25] = 4
+	binary.LittleEndian.PutUint16(buf[94:96], uint16(headerSize))
+	binary.LittleEndian.PutUint32(buf[96:100], headerSize)
+	buf[104] = 7
+	binary.LittleEndian.PutUint16(buf[105:107], recordLength)
+	binary.LittleEndian.PutUint32(buf[107:111], uint32(pointCount))
+	fileCatalogPreviewTestPutFloat64(buf[131:139], 0.01)
+	fileCatalogPreviewTestPutFloat64(buf[139:147], 0.01)
+	fileCatalogPreviewTestPutFloat64(buf[147:155], 0.01)
+	fileCatalogPreviewTestPutFloat64(buf[155:163], 0)
+	fileCatalogPreviewTestPutFloat64(buf[163:171], 0)
+	fileCatalogPreviewTestPutFloat64(buf[171:179], 0)
+	fileCatalogPreviewTestPutFloat64(buf[179:187], 7)
+	fileCatalogPreviewTestPutFloat64(buf[187:195], 1)
+	fileCatalogPreviewTestPutFloat64(buf[195:203], 8)
+	fileCatalogPreviewTestPutFloat64(buf[203:211], 2)
+	fileCatalogPreviewTestPutFloat64(buf[211:219], 9)
+	fileCatalogPreviewTestPutFloat64(buf[219:227], 3)
+	rawPoints := [][4]int32{
+		{100, 200, 300, 11},
+		{400, 500, 600, 22},
+		{700, 800, 900, 33},
+	}
+	for i, point := range rawPoints {
+		offset := headerSize + i*recordLength
+		binary.LittleEndian.PutUint32(buf[offset:offset+4], uint32(point[0]))
+		binary.LittleEndian.PutUint32(buf[offset+4:offset+8], uint32(point[1]))
+		binary.LittleEndian.PutUint32(buf[offset+8:offset+12], uint32(point[2]))
+		binary.LittleEndian.PutUint16(buf[offset+12:offset+14], uint16(point[3]))
+	}
+	return buf
+}
+
+func fileCatalogPreviewTestPutFloat64(target []byte, value float64) {
+	binary.LittleEndian.PutUint64(target, math.Float64bits(value))
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/metatest"
 	"github.com/addp/meta/internal/models"
@@ -91,6 +92,31 @@ func TestResourceTreeGetTreeUsesExpandDepthRelativeToCatalogRoot(t *testing.T) {
 	}
 	if tree.Children[0].Children[0].Label != "report.pdf" {
 		t.Fatalf("item label = %q, want report.pdf", tree.Children[0].Children[0].Label)
+	}
+}
+
+func TestResourceTreeGetTreeMarksNodeOnlyPrefixAsExpandableAtDepthLimit(t *testing.T) {
+	db := metatest.OpenMetadataDB(t)
+	svc := newResourceTreeTestServiceWithDB(t, db, 7, 9)
+
+	root := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, NodeType: "service", Name: "MinIO", FullName: "", Depth: 0})
+	bucket := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &root.ID, NodeType: "bucket", Name: "addp", FullName: "addp", Depth: 1})
+	mosaics := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &bucket.ID, NodeType: "prefix", Name: "mosaics", FullName: "addp/mosaics", Depth: 2, ItemCount: 0})
+	createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &mosaics.ID, NodeType: "prefix", Name: "srtm-test", FullName: "addp/mosaics/srtm-test", Depth: 3, ItemCount: 0})
+
+	tree, err := svc.GetTree(t.Context(), 7, 9, 2)
+	if err != nil {
+		t.Fatalf("GetTree() error = %v", err)
+	}
+	mosaicsNode := findResourceTreeNodeForTest(tree, "addp/mosaics")
+	if mosaicsNode == nil {
+		t.Fatal("mosaics node not found")
+	}
+	if len(mosaicsNode.Children) != 0 {
+		t.Fatalf("mosaics children = %d, want lazy boundary with no loaded children", len(mosaicsNode.Children))
+	}
+	if !mosaicsNode.HasChildren {
+		t.Fatalf("mosaics hasChildren = false, want true because direct child prefix exists")
 	}
 }
 
@@ -272,4 +298,19 @@ func createResourceTreeItem(t *testing.T, db *gorm.DB, item models.MetaItem) mod
 
 func uintStringForTest(value uint) string {
 	return strconv.FormatUint(uint64(value), 10)
+}
+
+func findResourceTreeNodeForTest(node *resourcetree.TreeNode, fullName string) *resourcetree.TreeNode {
+	if node == nil {
+		return nil
+	}
+	if metadataFullName, ok := node.Metadata["full_name"].(string); ok && metadataFullName == fullName {
+		return node
+	}
+	for _, child := range node.Children {
+		if found := findResourceTreeNodeForTest(child, fullName); found != nil {
+			return found
+		}
+	}
+	return nil
 }

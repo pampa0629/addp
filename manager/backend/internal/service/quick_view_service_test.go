@@ -177,6 +177,173 @@ func TestQuickViewCapabilityUsesDirectTIFFForSmallRasterItem(t *testing.T) {
 	if capability.Raster == nil || capability.Raster.Profile != "geotiff" || capability.Raster.ClientRenderLibrary != "geotiff.js" {
 		t.Fatalf("raster info = %#v, want geotiff geotiff.js", capability.Raster)
 	}
+	if capability.Raster.RecommendedAction != "create_cog" {
+		t.Fatalf("raster recommended_action = %q, want create_cog for optional optimization", capability.Raster.RecommendedAction)
+	}
+}
+
+func TestQuickViewCapabilityInfersWGS84CRSFromGeographicRasterExtent(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{
+		DirectTIFFMaxBytes:  50 * 1024 * 1024,
+		DirectTIFFMaxPixels: 64 * 1000 * 1000,
+	})
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: commonModels.GenerateItemFingerprint(26, "rasters/no-crs.tif"),
+			Locator:         "addp://engine/26/path/rasters/no-crs.tif?type=file&item_id=99",
+		},
+		EngineID: 26,
+		Raster: &RasterQuickViewSource{
+			Format:              "tiff",
+			Profile:             "geotiff",
+			SizeBytes:           8 * 1024 * 1024,
+			Width:               2048,
+			Height:              2048,
+			Extent:              []float64{110, 20, 120, 30},
+			PreviewURL:          "/api/v1/manager/storage-stream?engine_id=26&storage_ref=rasters%2Fno-crs.tif",
+			ClientReadMode:      "full_file",
+			ClientRenderLibrary: "geotiff.js",
+		},
+	})
+	if err != nil {
+		t.Fatalf("build raster quick view capability: %v", err)
+	}
+	if !capability.CanUseQuickView {
+		t.Fatalf("can_use_quick_view = false, want true with inferred WGS84 CRS; reason=%s", capability.UnavailableReason)
+	}
+	if capability.RenderSource != QuickViewRenderSourceDirectTIFF {
+		t.Fatalf("render_source = %q, want %q", capability.RenderSource, QuickViewRenderSourceDirectTIFF)
+	}
+	if capability.QuickView.SourceSRID != 4326 || capability.QuickView.ExtentSRID != 4326 {
+		t.Fatalf("quick_view srid = source:%d extent:%d, want inferred 4326", capability.QuickView.SourceSRID, capability.QuickView.ExtentSRID)
+	}
+	if capability.Raster == nil || capability.Raster.RecommendedAction != "create_cog" {
+		t.Fatalf("raster recommended_action = %#v, want create_cog for non-COG raster with inferred CRS", capability.Raster)
+	}
+	if !capability.Raster.CRSInferred || capability.Raster.CRSInference != RasterCRSInferenceGeographicExtent {
+		t.Fatalf("raster CRS inference = %#v/%q, want geographic extent inference", capability.Raster.CRSInferred, capability.Raster.CRSInference)
+	}
+}
+
+func TestQuickViewCapabilityRecommendsCOGWhenRasterCannotMapLocate(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{
+		DirectTIFFMaxBytes:  50 * 1024 * 1024,
+		DirectTIFFMaxPixels: 64 * 1000 * 1000,
+	})
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: commonModels.GenerateItemFingerprint(26, "rasters/no-crs-project.tif"),
+			Locator:         "addp://engine/26/path/rasters/no-crs-project.tif?type=file&item_id=99",
+		},
+		EngineID: 26,
+		Raster: &RasterQuickViewSource{
+			Format:              "tiff",
+			Profile:             "geotiff",
+			SizeBytes:           8 * 1024 * 1024,
+			Width:               2048,
+			Height:              2048,
+			Extent:              []float64{500000, 3000000, 510000, 3010000},
+			PreviewURL:          "/api/v1/manager/storage-stream?engine_id=26&storage_ref=rasters%2Fno-crs-project.tif",
+			ClientReadMode:      "full_file",
+			ClientRenderLibrary: "geotiff.js",
+		},
+	})
+	if err != nil {
+		t.Fatalf("build raster quick view capability: %v", err)
+	}
+	if capability.CanUseQuickView {
+		t.Fatal("can_use_quick_view = true, want false for missing CRS with non-geographic extent")
+	}
+	if capability.UnavailableReason != RasterUnavailableReasonMissingCRS {
+		t.Fatalf("unavailable_reason = %q, want %q", capability.UnavailableReason, RasterUnavailableReasonMissingCRS)
+	}
+	if capability.Raster == nil || capability.Raster.RecommendedAction != "create_cog" {
+		t.Fatalf("raster recommended_action = %#v, want create_cog for non-COG raster without CRS", capability.Raster)
+	}
+	if capability.Raster.CRSInferred {
+		t.Fatal("raster CRS inferred = true, want false for non-geographic extent")
+	}
+}
+
+func TestQuickViewCapabilityUsesRasterMosaicTileForMosaicItem(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	locator := "addp://engine/26/path/mosaics/srtm?type=directory&item_id=99"
+	itemFingerprint := commonModels.GenerateItemFingerprint(26, "mosaics/srtm")
+
+	source := RasterMosaicQuickViewSourceFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"layout":    "whole",
+			"data_type": "media",
+			"format":    "raster_mosaic",
+		},
+		"format_info": map[string]interface{}{
+			"raster_mosaic": map[string]interface{}{
+				"manifest_ref":    "mosaic.addp.json",
+				"index_ref":       "index/source-index.json",
+				"overview_ref":    "overviews/overview.cog.tif",
+				"leaf_count":      int64(2360),
+				"source_count":    int64(2400),
+				"overview_width":  int64(4096),
+				"overview_height": int64(2048),
+			},
+		},
+		"capabilities": map[string]interface{}{
+			"spatial": map[string]interface{}{
+				"srid":        4326,
+				"crs_ref":     "EPSG:4326",
+				"extent":      []interface{}{110.0, 20.0, 120.0, 30.0},
+				"extent_srid": 4326,
+			},
+		},
+	})
+	if source == nil {
+		t.Fatal("RasterMosaicQuickViewSourceFromAttributes() = nil")
+	}
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: itemFingerprint,
+			Locator:         locator,
+		},
+		EngineID:      26,
+		RasterMosaic:  source,
+		DirectGeoJSON: false,
+		CanTile:       false,
+	})
+	if err != nil {
+		t.Fatalf("build raster mosaic quick view capability: %v", err)
+	}
+	if !capability.CanUseQuickView {
+		t.Fatalf("can_use_quick_view = false, want true; reason=%s", capability.UnavailableReason)
+	}
+	if capability.RenderSource != QuickViewRenderSourceRasterMosaic {
+		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceRasterMosaic)
+	}
+	if capability.PreferredMode != models.QuickViewPreferredModeMapQuickView || capability.ActiveMode != models.QuickViewPreferredModeMapQuickView {
+		t.Fatalf("preview mode = preferred:%s active:%s, want map_quick_view default for raster mosaic", capability.PreferredMode, capability.ActiveMode)
+	}
+	if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
+		t.Fatalf("tile generation = can:%v available:%v, want false for raster mosaic", capability.CanGenerateTileCache, capability.TileCacheGeneration.Available)
+	}
+	if capability.QuickView.TileFormat != RasterMosaicTileFormatPNG || capability.QuickView.RenderSource != QuickViewRenderSourceRasterMosaic {
+		t.Fatalf("quick_view = %#v, want raster mosaic png tile source", capability.QuickView)
+	}
+	if capability.RasterMosaic == nil || capability.RasterMosaic.OverviewRef != "overviews/overview.cog.tif" || capability.RasterMosaic.LeafCount != 2360 {
+		t.Fatalf("raster_mosaic = %#v, want overview ref and leaf count", capability.RasterMosaic)
+	}
+	if !reflect.DeepEqual(capability.QuickView.Extent, []float64{110, 20, 120, 30}) || capability.QuickView.ExtentSRID != 4326 {
+		t.Fatalf("quick_view extent = %#v/%d, want WGS84 extent", capability.QuickView.Extent, capability.QuickView.ExtentSRID)
+	}
 }
 
 func TestQuickViewCapabilityRespectsExistingBasicPreviewPreferenceForRasterItem(t *testing.T) {
@@ -334,6 +501,70 @@ func TestQuickViewCapabilityUsesReadyRasterCOGForLargeRasterItem(t *testing.T) {
 	}
 	if capability.Raster == nil || capability.Raster.Profile != "cog" || capability.Raster.ClientReadMode != "range" {
 		t.Fatalf("raster info = %#v, want COG range render", capability.Raster)
+	}
+}
+
+func TestQuickViewCapabilityUsesReadyRasterCOGWithInferredExtentSRID(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{
+		DirectTIFFMaxBytes:  50 * 1024 * 1024,
+		DirectTIFFMaxPixels: 64 * 1000 * 1000,
+	})
+	locator := "addp://engine/26/path/rasters/no-crs.tif?type=file&item_id=100"
+	fingerprint := commonModels.GenerateItemFingerprint(26, "rasters/no-crs.tif")
+	result := &models.RasterCOG{
+		TenantID:        7,
+		ItemFingerprint: fingerprint,
+		Locator:         locator,
+		SourceEngineID:  26,
+		SourceProfile:   "geotiff",
+		SourceSizeBytes: 900 * 1024 * 1024,
+		TargetKind:      models.RasterCOGTargetKindMinIO,
+		StorageRef:      `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/cog/no-crs.tif"}`,
+		FileName:        "no-crs.cog.tif",
+		SizeBytes:       480 * 1024 * 1024,
+		Width:           120000,
+		Height:          80000,
+		Extent:          datatypes.JSON([]byte(`[110,20,120,30]`)),
+		Status:          models.RasterCOGStatusReady,
+		Metadata:        commonModels.JSONMap{},
+	}
+	if err := repository.NewRasterCOGRepository(db).Create(context.Background(), result); err != nil {
+		t.Fatalf("create raster COG result: %v", err)
+	}
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: fingerprint,
+			Locator:         locator,
+		},
+		EngineID: 26,
+		Raster: &RasterQuickViewSource{
+			Format:     "tiff",
+			Profile:    "geotiff",
+			SizeBytes:  900 * 1024 * 1024,
+			Width:      120000,
+			Height:     80000,
+			Extent:     []float64{110, 20, 120, 30},
+			PreviewURL: "/api/v1/manager/storage-stream?engine_id=26&storage_ref=rasters%2Fno-crs.tif",
+		},
+	})
+	if err != nil {
+		t.Fatalf("build raster quick view capability: %v", err)
+	}
+	if !capability.CanUseQuickView || capability.RenderSource != QuickViewRenderSourceClientCOG {
+		t.Fatalf("capability = can:%v source:%s, want ready COG quick view", capability.CanUseQuickView, capability.RenderSource)
+	}
+	if capability.QuickView.SourceSRID != 4326 || capability.QuickView.ExtentSRID != 4326 {
+		t.Fatalf("quick_view srid = source:%d extent:%d, want inferred 4326", capability.QuickView.SourceSRID, capability.QuickView.ExtentSRID)
+	}
+	if !reflect.DeepEqual(capability.QuickView.Extent, []float64{110, 20, 120, 30}) {
+		t.Fatalf("quick_view extent = %#v, want COG extent", capability.QuickView.Extent)
+	}
+	if capability.Raster == nil || capability.Raster.ExtentSRID != 4326 || !capability.Raster.CRSInferred {
+		t.Fatalf("raster info = %#v, want inferred 4326 extent_srid", capability.Raster)
 	}
 }
 

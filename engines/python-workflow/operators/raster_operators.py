@@ -15,9 +15,11 @@ from pathlib import Path
 import re
 import fnmatch
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import subprocess
 import uuid
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import Any, Callable, Dict
 
 import requests
@@ -242,7 +244,20 @@ def _write_json(path: str, payload: Dict[str, Any], gdal_env: Dict[str, Any] | N
     _ensure_gdal_dir(_path_parent(path), gdal_env)
     if _is_gdal_virtual_path(path):
         with _gdal_config_env(gdal_env) as gdal:
-            gdal.FileFromMemBuffer(path, data)
+            handle = gdal.VSIFOpenL(path, "wb")
+            if handle is None:
+                raise RuntimeError(f"GDAL cannot open JSON target for writing: {path}")
+            try:
+                written = gdal.VSIFWriteL(data, 1, len(data), handle)
+            finally:
+                close_result = gdal.VSIFCloseL(handle)
+            if written != len(data):
+                raise RuntimeError(f"GDAL wrote incomplete JSON payload to {path}: {written}/{len(data)} bytes")
+            if close_result != 0:
+                raise RuntimeError(f"GDAL failed to close JSON target after writing: {path}")
+            stat = gdal.VSIStatL(path)
+            if stat is None or int(getattr(stat, "size", 0) or 0) <= 0:
+                raise RuntimeError(f"GDAL JSON target was not created: {path}")
         return
     Path(path).write_bytes(data)
 
@@ -332,6 +347,20 @@ def _dataset_extent(ds: Any) -> list[float]:
     return [min(xs), min(ys), max(xs), max(ys)]
 
 
+def _extent_looks_geographic(extent: list[float]) -> bool:
+    if not isinstance(extent, list) or len(extent) != 4:
+        return False
+    min_x, min_y, max_x, max_y = [float(value) for value in extent]
+    return (
+        -180.0 <= min_x <= 180.0
+        and -180.0 <= max_x <= 180.0
+        and -90.0 <= min_y <= 90.0
+        and -90.0 <= max_y <= 90.0
+        and max_x > min_x
+        and max_y > min_y
+    )
+
+
 def _inspect_raster(path: str, gdal_env: Dict[str, Any] | None = None) -> Dict[str, Any]:
     with _gdal_config_env(gdal_env) as gdal:
         ds = gdal.OpenEx(path, gdal.OF_RASTER)
@@ -347,6 +376,10 @@ def _inspect_raster(path: str, gdal_env: Dict[str, Any] | None = None) -> Dict[s
         is_tiled = bool(block_size and block_size[0] > 1 and block_size[1] > 1 and block_size[0] < ds.RasterXSize + 1)
         is_cog = driver_name.upper() == "GTIFF" and (layout == "COG" or (is_tiled and (overview_count > 0 or max(ds.RasterXSize, ds.RasterYSize) <= max(block_size or [0]))))
         projection = ds.GetProjection() or ""
+        extent = _dataset_extent(ds)
+        source_crs = _authority_code_from_wkt(projection)
+        if not source_crs and _extent_looks_geographic(extent):
+            source_crs = "EPSG:4326"
         return {
             "path": path,
             "driver": driver_name,
@@ -359,8 +392,8 @@ def _inspect_raster(path: str, gdal_env: Dict[str, Any] | None = None) -> Dict[s
             "compression": compression,
             "layout": layout,
             "is_cog": bool(is_cog),
-            "extent": _dataset_extent(ds),
-            "source_crs": _authority_code_from_wkt(projection),
+            "extent": extent,
+            "source_crs": source_crs,
         }
 
 
@@ -377,11 +410,20 @@ def _translate_to_cog(
     compression = str(cog_config.get("compression") or "DEFLATE").upper()
     blocksize = int(cog_config.get("blocksize") or 512)
     overview_resampling = str(cog_config.get("overview_resampling") or "NEAREST").upper()
+    num_threads = str(cog_config.get("num_threads") or "2").strip()
+    output_srs = str(cog_config.get("assign_srs") or "").strip()
+    if not output_srs:
+        try:
+            output_srs = str(_inspect_raster(source, gdal_env).get("source_crs") or "").strip()
+        except Exception:
+            output_srs = ""
     creation_options = [
         f"COMPRESS={compression}",
         f"BLOCKSIZE={blocksize}",
         f"OVERVIEW_RESAMPLING={overview_resampling}",
     ]
+    if num_threads:
+        creation_options.append(f"NUM_THREADS={num_threads}")
     _ensure_gdal_dir(_path_parent(target), gdal_env)
     with _gdal_config_env(gdal_env) as gdal:
         if _is_gdal_virtual_path(target):
@@ -397,12 +439,35 @@ def _translate_to_cog(
             width=int(width or 0),
             height=int(height or 0),
             resampleAlg=str(resampling or "") or None,
+            outputSRS=output_srs or None,
             callback=callback,
         )
         result = gdal.Translate(target, source, options=options)
         if result is None:
             raise RuntimeError(f"GDAL failed to create COG: {target}")
         result = None
+
+
+def _leaf_retry_attempts(cog_config: Dict[str, Any]) -> int:
+    try:
+        attempts = int(cog_config.get("leaf_retry_attempts") or 2)
+    except (TypeError, ValueError):
+        attempts = 2
+    if attempts < 1:
+        return 1
+    if attempts > 5:
+        return 5
+    return attempts
+
+
+def _inspect_existing_cog(path: str, gdal_env: Dict[str, Any] | None = None) -> Dict[str, Any] | None:
+    try:
+        facts = _inspect_raster(path, gdal_env)
+    except Exception:
+        return None
+    if not facts.get("is_cog"):
+        return None
+    return facts
 
 
 def _replace_raster_with_temp(source: str, temp_path: str, gdal_env: Dict[str, Any] | None) -> None:
@@ -490,6 +555,10 @@ def _union_extent(items: list[Dict[str, Any]]) -> list[float]:
         max(float(extent[2]) for extent in extents),
         max(float(extent[3]) for extent in extents),
     ]
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return int(max(0, round((perf_counter() - started_at) * 1000)))
 
 
 def _prepare_target_path(target: str, overwrite: bool) -> None:
@@ -603,6 +672,8 @@ def build_raster_mosaic(
 	source_root = str(source_plan.get("root_uri") or "").rstrip("/")
 	target_root = str(target_plan.get("dataset_root_uri") or "").rstrip("/")
 	dataset_name = str(target_plan.get("dataset_name") or posixpath.basename(target_root) or "raster_mosaic")
+	total_started_at = perf_counter()
+	stage_timings: Dict[str, Any] = {}
 	progress_plan = access_plan.get("progress_callback") if isinstance(access_plan.get("progress_callback"), dict) else {}
 	emit = _progress_reporter(progress_plan)
 	cleanup_path_options = _set_path_specific_gdal_options([
@@ -610,6 +681,7 @@ def build_raster_mosaic(
 		(target_root, target_env),
 	])
 
+	discover_started_at = perf_counter()
 	_emit_payload = {
 		"phase": "discover",
 		"event": "started",
@@ -625,6 +697,10 @@ def build_raster_mosaic(
 	if not source_files:
 		cleanup_path_options()
 		raise ValueError("no source TIFF files were discovered")
+	stage_timings["discover"] = {
+		"duration_ms": _elapsed_ms(discover_started_at),
+		"source_count": len(source_files),
+	}
 
 	_emit_payload = {
 		"phase": "leaf_cog",
@@ -637,70 +713,138 @@ def build_raster_mosaic(
 	}
 	emit(_emit_payload)
 
-	leaf_items: list[Dict[str, Any]] = []
+	leaf_started_at = perf_counter()
+	leaf_concurrency = int(cog_config.get("leaf_concurrency") or 1)
+	if leaf_concurrency < 1:
+		leaf_concurrency = 1
+	if leaf_concurrency > 8:
+		leaf_concurrency = 8
+	if mode != "detached":
+		leaf_concurrency = 1
+	if mode == "detached":
+		_ensure_gdal_dir(_join_gdal_path(target_root, "leaf"), target_env)
+	worker_target_env = {} if mode == "detached" and leaf_concurrency > 1 else target_env
+	leaf_items_by_index: list[Dict[str, Any] | None] = [None] * len(source_files)
 	failed_files = 0
-	for index, source in enumerate(source_files):
+	leaf_retry_attempts = _leaf_retry_attempts(cog_config)
+	leaf_stats = {
+		"generated_count": 0,
+		"reused_count": 0,
+		"retry_count": 0,
+	}
+
+	def translate_leaf_with_retries(
+		index: int,
+		source: str,
+		target: str,
+		gdal_env: Dict[str, Any] | None,
+		source_rel: str,
+		base_progress: float,
+		span_progress: float,
+		message: str,
+	) -> tuple[Dict[str, Any], int]:
+		last_error: Exception | None = None
+		for attempt in range(1, leaf_retry_attempts + 1):
+			try:
+				_translate_to_cog(
+					source,
+					target,
+					gdal_env,
+					cog_config,
+					callback=_gdal_progress_callback(
+						emit,
+						"leaf_cog",
+						message,
+						len(source_files),
+						index,
+						0,
+						source_rel,
+						base_progress,
+						span_progress,
+					),
+				)
+				facts = _inspect_raster(target, gdal_env)
+				if not facts.get("is_cog"):
+					raise RuntimeError(f"generated leaf COG did not pass content validation: {source_rel}")
+				return facts, attempt - 1
+			except Exception as exc:
+				last_error = exc
+				if attempt >= leaf_retry_attempts:
+					break
+				emit({
+					"phase": "leaf_cog",
+					"event": "file_retry",
+					"message": "leaf COG 生成重试",
+					"total_files": len(source_files),
+					"processed_files": sum(1 for item in leaf_items_by_index if item is not None),
+					"failed_files": failed_files,
+					"current_file": source_rel,
+					"overall_progress": int(round(base_progress)),
+					"metadata": {
+						"attempt": attempt,
+						"max_attempts": leaf_retry_attempts,
+						"error": str(exc),
+					},
+				})
+		raise RuntimeError(f"leaf COG generation failed after {leaf_retry_attempts} attempts: {source_rel}") from last_error
+
+	def process_leaf(index: int, source: str) -> tuple[int, str, float, float, Dict[str, Any], Dict[str, int]]:
 		source_rel = _relative_gdal_path(source_root, source)
 		leaf_rel = _safe_component(source_rel)
 		leaf_uri = source
 		leaf_ref = _relative_gdal_path(target_root, source)
 		leaf_kind = "source_cog"
+		generation_status = "source"
+		retry_count = 0
 		base_progress = 1 + (float(index) / float(len(source_files))) * 79
 		span_progress = 79 / float(len(source_files))
 
 		try:
-			source_facts = _inspect_raster(source, source_env)
 			if mode == "detached":
 				stem = re.sub(r"\.[Tt][Ii][Ff]{1,2}$", "", leaf_rel)
 				leaf_ref = _safe_component(stem) + ".cog.tif"
 				leaf_uri = _join_gdal_path(target_root, "leaf", leaf_ref)
-				_translate_to_cog(
-					source,
-					leaf_uri,
-					target_env,
-					cog_config,
-					callback=_gdal_progress_callback(
-						emit,
-						"leaf_cog",
+				leaf_facts = _inspect_existing_cog(leaf_uri, worker_target_env)
+				if leaf_facts:
+					leaf_kind = "reused_cog"
+					generation_status = "reused"
+				else:
+					leaf_facts, retry_count = translate_leaf_with_retries(
+						index,
+						source,
+						leaf_uri,
+						worker_target_env,
+						source_rel,
+						base_progress,
+						span_progress,
 						"生成 leaf COG",
-						len(source_files),
+					)
+					leaf_kind = "generated_cog"
+					generation_status = "generated"
+				leaf_ref = _relative_gdal_path(target_root, leaf_uri)
+			else:
+				source_facts = _inspect_raster(source, source_env)
+				if not source_facts.get("is_cog"):
+					temp_uri = source + f".addp-tmp-{uuid.uuid4().hex}.cog.tif"
+					_, retry_count = translate_leaf_with_retries(
 						index,
-						failed_files,
+						source,
+						temp_uri,
+						source_env,
 						source_rel,
 						base_progress,
 						span_progress,
-					),
-				)
-				leaf_ref = _relative_gdal_path(target_root, leaf_uri)
-				leaf_kind = "generated_cog"
-			elif not source_facts.get("is_cog"):
-				temp_uri = source + f".addp-tmp-{uuid.uuid4().hex}.cog.tif"
-				_translate_to_cog(
-					source,
-					temp_uri,
-					source_env,
-					cog_config,
-					callback=_gdal_progress_callback(
-						emit,
-						"leaf_cog",
 						"原地规范化 leaf COG",
-						len(source_files),
-						index,
-						failed_files,
-						source_rel,
-						base_progress,
-						span_progress,
-					),
-				)
-				temp_facts = _inspect_raster(temp_uri, source_env)
-				if not temp_facts.get("is_cog"):
-					raise RuntimeError(f"generated temporary COG did not pass content validation: {source_rel}")
-				_replace_raster_with_temp(source, temp_uri, source_env)
-				leaf_uri = source
-				leaf_ref = _relative_gdal_path(target_root, leaf_uri)
-				leaf_kind = "normalized_in_place_cog"
+					)
+					_replace_raster_with_temp(source, temp_uri, source_env)
+					leaf_uri = source
+					leaf_ref = _relative_gdal_path(target_root, leaf_uri)
+					leaf_kind = "normalized_in_place_cog"
+					generation_status = "generated"
+					leaf_facts = _inspect_raster(leaf_uri, source_env)
+				else:
+					leaf_facts = source_facts
 
-			leaf_facts = _inspect_raster(leaf_uri, target_env if mode == "detached" else source_env)
 			if not leaf_facts.get("is_cog"):
 				raise RuntimeError(f"leaf raster is not a content-valid COG: {source_rel}")
 			leaf_item = {
@@ -708,6 +852,7 @@ def build_raster_mosaic(
 				"leaf_ref": leaf_ref,
 				"leaf_uri": leaf_uri if not leaf_ref or leaf_ref == leaf_uri else "",
 				"leaf_kind": leaf_kind,
+				"generation_status": generation_status,
 				"source_ref": source_rel,
 				"width": leaf_facts.get("width"),
 				"height": leaf_facts.get("height"),
@@ -724,32 +869,89 @@ def build_raster_mosaic(
 					"compression": leaf_facts.get("compression"),
 				},
 			}
-			leaf_items.append({key: value for key, value in leaf_item.items() if value not in ("", None)})
-			emit({
-				"phase": "leaf_cog",
-				"event": "file_completed",
-				"message": "leaf COG 完成",
-				"total_files": len(source_files),
-				"processed_files": len(leaf_items),
-				"failed_files": failed_files,
-				"current_file": source_rel,
-				"file_progress": 100,
-				"overall_progress": int(round(base_progress + span_progress)),
-			})
+			stats = {
+				"generated_count": 1 if generation_status == "generated" else 0,
+				"reused_count": 1 if generation_status == "reused" else 0,
+				"retry_count": retry_count,
+			}
+			return index, source_rel, base_progress, span_progress, {key: value for key, value in leaf_item.items() if value not in ("", None)}, stats
 		except Exception:
-			failed_files += 1
-			emit({
-				"phase": "leaf_cog",
-				"event": "file_failed",
-				"message": "leaf COG 生成失败",
-				"total_files": len(source_files),
-				"processed_files": len(leaf_items),
-				"failed_files": failed_files,
-				"current_file": source_rel,
-				"overall_progress": int(round(base_progress)),
-			})
+			raise
+
+	def record_leaf_completed(index: int, source_rel: str, base_progress: float, span_progress: float, leaf_item: Dict[str, Any], stats: Dict[str, int]) -> None:
+		leaf_items_by_index[index] = leaf_item
+		for key in leaf_stats:
+			leaf_stats[key] += int(stats.get(key) or 0)
+		processed_files = sum(1 for item in leaf_items_by_index if item is not None)
+		emit({
+			"phase": "leaf_cog",
+			"event": "file_completed",
+			"message": "leaf COG 完成",
+			"total_files": len(source_files),
+			"processed_files": processed_files,
+			"failed_files": failed_files,
+			"current_file": source_rel,
+			"file_progress": 100,
+			"overall_progress": int(round(base_progress + span_progress)),
+		})
+
+	def record_leaf_failed(source_rel: str, base_progress: float) -> None:
+		emit({
+			"phase": "leaf_cog",
+			"event": "file_failed",
+			"message": "leaf COG 生成失败",
+			"total_files": len(source_files),
+			"processed_files": sum(1 for item in leaf_items_by_index if item is not None),
+			"failed_files": failed_files,
+			"current_file": source_rel,
+			"overall_progress": int(round(base_progress)),
+		})
+
+	if leaf_concurrency > 1:
+		try:
+			with _gdal_config_env(target_env):
+				with ThreadPoolExecutor(max_workers=leaf_concurrency) as executor:
+					futures = {executor.submit(process_leaf, index, source): (index, source) for index, source in enumerate(source_files)}
+					for future in as_completed(futures):
+						index, source = futures[future]
+						source_rel = _relative_gdal_path(source_root, source)
+						base_progress = 1 + (float(index) / float(len(source_files))) * 79
+						try:
+							result_index, result_source_rel, result_base_progress, result_span_progress, leaf_item, stats = future.result()
+							record_leaf_completed(result_index, result_source_rel, result_base_progress, result_span_progress, leaf_item, stats)
+						except Exception:
+							failed_files += 1
+							record_leaf_failed(source_rel, base_progress)
+							for pending in futures:
+								if pending is not future:
+									pending.cancel()
+							raise
+		except Exception:
 			cleanup_path_options()
 			raise
+	else:
+		for index, source in enumerate(source_files):
+			source_rel = _relative_gdal_path(source_root, source)
+			base_progress = 1 + (float(index) / float(len(source_files))) * 79
+			try:
+				result_index, result_source_rel, result_base_progress, result_span_progress, leaf_item, stats = process_leaf(index, source)
+				record_leaf_completed(result_index, result_source_rel, result_base_progress, result_span_progress, leaf_item, stats)
+			except Exception:
+				failed_files += 1
+				record_leaf_failed(source_rel, base_progress)
+				cleanup_path_options()
+				raise
+
+	leaf_items = [item for item in leaf_items_by_index if item is not None]
+	stage_timings["leaf_cog"] = {
+		"duration_ms": _elapsed_ms(leaf_started_at),
+		"leaf_count": len(leaf_items),
+		"concurrency": leaf_concurrency,
+		"retry_attempts": leaf_retry_attempts,
+		"generated_count": leaf_stats["generated_count"],
+		"reused_count": leaf_stats["reused_count"],
+		"retry_count": leaf_stats["retry_count"],
+	}
 
 	leaf_uris = [
 		_join_gdal_path(target_root, item["leaf_ref"]) if "leaf_ref" in item and not str(item["leaf_ref"]).startswith("/") else str(item.get("leaf_uri") or item.get("leaf_ref"))
@@ -759,6 +961,7 @@ def build_raster_mosaic(
 	overview_ref = "overviews/overview.cog.tif"
 	overview_uri = _join_gdal_path(target_root, overview_ref)
 	overview_enabled = bool(overview_config.get("enabled", True))
+	overview_started_at = perf_counter()
 	try:
 		with _gdal_config_env(target_env) as gdal:
 			emit({
@@ -816,7 +1019,14 @@ def build_raster_mosaic(
 			overview_facts = _inspect_raster(overview_uri, target_env)
 		else:
 			overview_facts = {}
+		stage_timings["overview"] = {
+			"duration_ms": _elapsed_ms(overview_started_at),
+			"enabled": overview_enabled,
+			"width": int(overview_facts.get("width") or 0),
+			"height": int(overview_facts.get("height") or 0),
+		}
 
+		manifest_started_at = perf_counter()
 		index_ref = SOURCE_INDEX_REF
 		manifest_ref = MANIFEST_FILE_NAME
 		index_uri = _join_gdal_path(target_root, index_ref)
@@ -848,6 +1058,12 @@ def build_raster_mosaic(
 		)
 		_write_json(index_uri, index_payload, target_env)
 		_write_json(manifest_uri, manifest_payload, target_env)
+		stage_timings["manifest"] = {
+			"duration_ms": _elapsed_ms(manifest_started_at),
+		}
+		stage_timings["total"] = {
+			"duration_ms": _elapsed_ms(total_started_at),
+		}
 		emit({
 			"phase": "manifest",
 			"event": "completed",
@@ -860,6 +1076,7 @@ def build_raster_mosaic(
 				"manifest_ref": manifest_ref,
 				"index_ref": index_ref,
 				"overview_ref": overview_ref if overview_enabled else "",
+				"stage_timings": stage_timings,
 			},
 		})
 		return {
@@ -874,6 +1091,7 @@ def build_raster_mosaic(
 			"leaf_count": len(leaf_items),
 			"source_count": len(source_files),
 			"failed_count": failed_files,
+			"stage_timings": stage_timings,
 			"extent": union_extent,
 			"overview": {
 				"width": overview_facts.get("width"),
@@ -1033,7 +1251,7 @@ BUILD_RASTER_MOSAIC_METADATA = OperatorMetadata(
 			data_type="object",
 			required=False,
 			description="leaf COG 生成与校验配置",
-			notes="包含 compression、blocksize、overview_resampling、validate_source_cog。COG 判断必须使用 GDAL/rio-cogeo 等内容级校验，不能依赖后缀。",
+			notes="包含 compression、blocksize、overview_resampling、validate_source_cog、leaf_concurrency、num_threads、leaf_retry_attempts。COG 判断必须使用 GDAL/rio-cogeo 等内容级校验，不能依赖后缀。",
 		),
 		OperatorParam(
 			name="overview",
@@ -1103,6 +1321,8 @@ BUILD_RASTER_MOSAIC_METADATA = OperatorMetadata(
 				"blocksize": 512,
 				"overview_resampling": "NEAREST",
 				"validate_source_cog": True,
+				"leaf_concurrency": 4,
+				"num_threads": 2,
 			},
 			"overview": {
 				"enabled": True,

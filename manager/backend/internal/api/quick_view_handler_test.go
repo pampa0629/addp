@@ -205,6 +205,54 @@ func TestQuickViewSourceFromPreviewDetectsRasterTIFFObject(t *testing.T) {
 	}
 }
 
+func TestApplyLocatorQuickViewURLsSetsRasterMosaicTileTemplate(t *testing.T) {
+	capability := &service.QuickViewCapability{
+		Locator:      "addp://engine/26/path/mosaics/srtm?type=directory&item_id=99",
+		RenderSource: service.QuickViewRenderSourceRasterMosaic,
+		QuickView: service.QuickViewRenderInfo{
+			RenderSource: service.QuickViewRenderSourceRasterMosaic,
+		},
+	}
+
+	applyLocatorQuickViewURLs(capability)
+
+	if !strings.Contains(capability.QuickView.TileURLTemplate, "/api/v1/manager/raster_mosaic/tiles/{z}/{x}/{y}.png?") {
+		t.Fatalf("tile_url_template = %q, want raster mosaic tile endpoint", capability.QuickView.TileURLTemplate)
+	}
+	if !strings.Contains(capability.QuickView.TileURLTemplate, "locator=") {
+		t.Fatalf("tile_url_template = %q, want encoded locator", capability.QuickView.TileURLTemplate)
+	}
+	if !strings.Contains(capability.QuickView.TileURLTemplate, "gamma=0.6") {
+		t.Fatalf("tile_url_template = %q, want default gamma", capability.QuickView.TileURLTemplate)
+	}
+}
+
+func TestRasterMosaicTileStyleQueryParsing(t *testing.T) {
+	gamma, ok := parseOptionalPositiveFloat("0.7")
+	if !ok || gamma != 0.7 {
+		t.Fatalf("gamma = %v ok=%v, want 0.7 true", gamma, ok)
+	}
+	if _, ok := parseOptionalPositiveFloat("bad"); ok {
+		t.Fatal("invalid gamma ok = true, want false")
+	}
+
+	minValue, maxValue, ok := parseOptionalDisplayRange("10", "4200")
+	if !ok || minValue == nil || *minValue != 10 || maxValue == nil || *maxValue != 4200 {
+		t.Fatalf("display range = %v %v ok=%v, want 10 4200 true", minValue, maxValue, ok)
+	}
+	if _, _, ok := parseOptionalDisplayRange("4200", "10"); ok {
+		t.Fatal("invalid display range ok = true, want false")
+	}
+
+	invert, ok := parseOptionalBool("true")
+	if !ok || !invert {
+		t.Fatalf("invert = %v ok=%v, want true true", invert, ok)
+	}
+	if _, ok := parseOptionalBool("maybe"); ok {
+		t.Fatal("invalid invert ok = true, want false")
+	}
+}
+
 func TestQuickViewSourceFromPreviewDetectsRasterTIFFObjectCatalogItem(t *testing.T) {
 	locator := "addp://engine/9/path/addp/image/srtm_40_01.tif?type=object&item_id=254"
 	tablePreview := &models.TablePreview{

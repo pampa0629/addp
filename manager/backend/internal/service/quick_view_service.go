@@ -14,8 +14,10 @@ import (
 	commonapi "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/rastermosaic"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
@@ -44,6 +46,7 @@ const (
 	QuickViewRenderSourceClientCOG     = "client_cog_render"
 	QuickViewRenderSourceDirectGeoJSON = "direct_geojson"
 	QuickViewRenderSourceDirectTIFF    = "direct_tiff_client"
+	QuickViewRenderSourceRasterMosaic  = "raster_mosaic_tile"
 	QuickViewRenderSourceRealtimeTile  = "realtime_tile"
 
 	RealtimeTilePerformanceReady3857Target = "ready_3857_target"
@@ -65,6 +68,7 @@ const (
 	RasterUnavailableReasonRequiresManagedCOG    = "requires_managed_cog"
 	RasterUnavailableReasonMissingSpatialExtent  = "missing_spatial_extent"
 	RasterUnavailableReasonMissingCRS            = "missing_crs"
+	RasterCRSInferenceGeographicExtent           = "geographic_extent_without_declared_crs"
 	RasterUnavailableReasonClientBudgetExceeded  = "client_render_budget_exceeded"
 )
 
@@ -152,6 +156,7 @@ type QuickViewSource struct {
 	Table              string
 	SpatialMeta        *SpatialMetadataResult
 	Raster             *RasterQuickViewSource
+	RasterMosaic       *RasterMosaicQuickViewSource
 	DirectGeoJSON      bool
 	GeoJSONURL         string
 	CanTile            bool
@@ -169,6 +174,8 @@ type RasterQuickViewSource struct {
 	SourceCRS           string
 	Extent              []float64
 	ExtentSRID          int
+	CRSInferred         bool
+	CRSInference        string
 	PreviewURL          string
 	IsTiled             interface{}
 	HasOverviews        interface{}
@@ -186,6 +193,21 @@ type RasterQuickViewSource struct {
 	ClientMaxPixels     int64
 	ClientReadMode      string
 	ClientRenderLibrary string
+}
+
+type RasterMosaicQuickViewSource struct {
+	Format         string
+	ManifestRef    string
+	IndexRef       string
+	OverviewRef    string
+	LeafCount      int64
+	SourceCount    int64
+	OverviewWidth  int64
+	OverviewHeight int64
+	SourceSRID     int
+	SourceCRS      string
+	Extent         []float64
+	ExtentSRID     int
 }
 
 type RealtimeTileTarget struct {
@@ -219,6 +241,7 @@ type QuickViewCapability struct {
 	QuickView            QuickViewRenderInfo        `json:"quick_view"`
 	RenderFacts          *QuickViewRenderFacts      `json:"render_facts,omitempty"`
 	Raster               *QuickViewRasterInfo       `json:"raster,omitempty"`
+	RasterMosaic         *QuickViewRasterMosaicInfo `json:"raster_mosaic,omitempty"`
 	Optimization         *QuickViewOptimizationInfo `json:"optimization,omitempty"`
 	RealtimeTile         *QuickViewRealtimeTileInfo `json:"realtime_tile,omitempty"`
 	TileCacheGeneration  TileCacheGeneration        `json:"vector_tile_cache_generation"`
@@ -277,6 +300,8 @@ type QuickViewRasterInfo struct {
 	SourceCRS           string      `json:"source_crs,omitempty"`
 	Extent              []float64   `json:"extent,omitempty"`
 	ExtentSRID          int         `json:"extent_srid,omitempty"`
+	CRSInferred         bool        `json:"crs_inferred,omitempty"`
+	CRSInference        string      `json:"crs_inference,omitempty"`
 	IsTiled             interface{} `json:"is_tiled,omitempty"`
 	HasOverviews        interface{} `json:"has_overviews,omitempty"`
 	IsCloudOptimized    interface{} `json:"is_cloud_optimized,omitempty"`
@@ -293,6 +318,21 @@ type QuickViewRasterInfo struct {
 	ClientMaxPixels     int64       `json:"client_max_pixels,omitempty"`
 	ClientReadMode      string      `json:"client_read_mode,omitempty"`
 	ClientRenderLibrary string      `json:"client_render_library,omitempty"`
+}
+
+type QuickViewRasterMosaicInfo struct {
+	Format         string    `json:"format,omitempty"`
+	ManifestRef    string    `json:"manifest_ref,omitempty"`
+	IndexRef       string    `json:"index_ref,omitempty"`
+	OverviewRef    string    `json:"overview_ref,omitempty"`
+	LeafCount      int64     `json:"leaf_count,omitempty"`
+	SourceCount    int64     `json:"source_count,omitempty"`
+	OverviewWidth  int64     `json:"overview_width,omitempty"`
+	OverviewHeight int64     `json:"overview_height,omitempty"`
+	SourceSRID     int       `json:"source_srid,omitempty"`
+	SourceCRS      string    `json:"source_crs,omitempty"`
+	Extent         []float64 `json:"extent,omitempty"`
+	ExtentSRID     int       `json:"extent_srid,omitempty"`
 }
 
 type QuickViewRenderFacts struct {
@@ -468,7 +508,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		preferredMode = existing.PreferredMode
 		hasExistingPreference = true
 	}
-	if source.Raster != nil && !hasExistingPreference {
+	if (source.Raster != nil || source.RasterMosaic != nil) && !hasExistingPreference {
 		preferredMode = models.QuickViewPreferredModeMapQuickView
 	}
 
@@ -504,7 +544,9 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	}
 	capability.Optimization = optimizationInfo
 
-	if source.Raster != nil {
+	if source.RasterMosaic != nil {
+		s.applyRasterMosaicCapability(capability, source.RasterMosaic)
+	} else if source.Raster != nil {
 		if err := s.applyRasterCapability(ctx, capability, identity, source.Raster, source.EngineID); err != nil {
 			return nil, err
 		}
@@ -550,7 +592,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	if !capability.TileCacheGeneration.Available {
 		capability.CanGenerateTileCache = false
 	}
-	if source.Raster != nil {
+	if source.Raster != nil || source.RasterMosaic != nil {
 		capability.CanGenerateTileCache = false
 		capability.TileCacheGeneration = TileCacheGeneration{
 			Available: false,
@@ -570,6 +612,7 @@ func (s *QuickViewService) applyRasterCapability(ctx context.Context, capability
 	if capability == nil || raster == nil {
 		return nil
 	}
+	applyRasterCRSInference(raster)
 	rasterInfo := rasterInfoFromSource(raster)
 	capability.Raster = rasterInfo
 	capability.Optimization = nil
@@ -605,7 +648,7 @@ func (s *QuickViewService) applyRasterCapability(ctx context.Context, capability
 		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
 		capability.QuickView = renderInfoFromRaster(raster)
 		capability.Raster.UnavailableReason = ""
-		capability.Raster.RecommendedAction = ""
+		capability.Raster.RecommendedAction = rasterDirectTIFFOptionalAction(raster)
 		return nil
 	}
 
@@ -616,10 +659,46 @@ func (s *QuickViewService) applyRasterCapability(ctx context.Context, capability
 	capability.RecommendedMode = models.QuickViewPreferredModeBasicPreview
 	capability.QuickView = QuickViewRenderInfo{}
 	capability.Raster.UnavailableReason = reason
-	if rasterRecommendedActionForReason(reason) != "" {
-		capability.Raster.RecommendedAction = rasterRecommendedActionForReason(reason)
+	if action := rasterRecommendedActionForReason(reason); action != "" {
+		capability.Raster.RecommendedAction = action
+		return nil
+	}
+	if action := rasterUnavailableOptionalAction(reason, raster); action != "" {
+		capability.Raster.RecommendedAction = action
 	}
 	return nil
+}
+
+func (s *QuickViewService) applyRasterMosaicCapability(capability *QuickViewCapability, mosaic *RasterMosaicQuickViewSource) {
+	if capability == nil || mosaic == nil {
+		return
+	}
+	mosaicInfo := rasterMosaicInfoFromSource(mosaic)
+	capability.RasterMosaic = mosaicInfo
+	capability.Raster = nil
+	capability.Optimization = nil
+	capability.RealtimeTile = nil
+	capability.DefaultTileCacheID = nil
+	capability.CanGenerateTileCache = false
+	capability.TileCacheGeneration = TileCacheGeneration{
+		Available: false,
+		Reason:    "raster mosaic quick view uses backend image tiles",
+	}
+	if strings.TrimSpace(mosaic.OverviewRef) == "" {
+		capability.CanUseQuickView = false
+		capability.Status = QuickViewStatusUnavailable
+		capability.UnavailableReason = "raster mosaic overview COG is unavailable"
+		capability.RenderSource = ""
+		capability.RecommendedMode = models.QuickViewPreferredModeBasicPreview
+		capability.QuickView = QuickViewRenderInfo{}
+		return
+	}
+	capability.CanUseQuickView = true
+	capability.Status = QuickViewStatusAvailable
+	capability.UnavailableReason = ""
+	capability.RenderSource = QuickViewRenderSourceRasterMosaic
+	capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
+	capability.QuickView = renderInfoFromRasterMosaic(mosaic)
 }
 
 func (s *QuickViewService) GetDefaultTileCache(
@@ -1165,14 +1244,25 @@ func renderInfoFromRasterCOG(result *models.RasterCOG, raster *RasterQuickViewSo
 	if info.SourceSRID <= 0 && raster != nil {
 		info.SourceSRID = raster.SourceSRID
 	}
-	extent, extentSRID := rasterCOGExtent(result)
-	if len(extent) != 4 && raster != nil && len(raster.Extent) == 4 {
-		extent = append([]float64(nil), raster.Extent...)
-		extentSRID = raster.ExtentSRID
-	}
+	extent, extentSRID := rasterCOGExtentForQuickView(result, raster)
 	if len(extent) == 4 {
 		info.Extent = extent
 		info.ExtentSRID = extentSRID
+	}
+	return info
+}
+
+func renderInfoFromRasterMosaic(mosaic *RasterMosaicQuickViewSource) QuickViewRenderInfo {
+	info := QuickViewRenderInfo{
+		RenderSource: QuickViewRenderSourceRasterMosaic,
+		TileFormat:   RasterMosaicTileFormatPNG,
+		SourceSRID:   mosaic.SourceSRID,
+		MinZoom:      0,
+		MaxZoom:      18,
+	}
+	if len(mosaic.Extent) == 4 {
+		info.Extent = append([]float64(nil), mosaic.Extent...)
+		info.ExtentSRID = mosaic.ExtentSRID
 	}
 	return info
 }
@@ -1191,6 +1281,8 @@ func rasterInfoFromSource(raster *RasterQuickViewSource) *QuickViewRasterInfo {
 		SourceSRID:          raster.SourceSRID,
 		SourceCRS:           strings.TrimSpace(raster.SourceCRS),
 		ExtentSRID:          raster.ExtentSRID,
+		CRSInferred:         raster.CRSInferred,
+		CRSInference:        strings.TrimSpace(raster.CRSInference),
 		IsTiled:             raster.IsTiled,
 		HasOverviews:        raster.HasOverviews,
 		IsCloudOptimized:    raster.IsCloudOptimized,
@@ -1210,6 +1302,65 @@ func rasterInfoFromSource(raster *RasterQuickViewSource) *QuickViewRasterInfo {
 	}
 	if len(raster.Extent) == 4 {
 		info.Extent = append([]float64(nil), raster.Extent...)
+	}
+	return info
+}
+
+func applyRasterCRSInference(raster *RasterQuickViewSource) {
+	if raster == nil {
+		return
+	}
+	if raster.SourceSRID > 0 || strings.TrimSpace(raster.SourceCRS) != "" {
+		return
+	}
+	if !rasterExtentLooksGeographic(raster.Extent) {
+		return
+	}
+	raster.SourceSRID = spatial.SRIDWGS84
+	if raster.ExtentSRID <= 0 {
+		raster.ExtentSRID = spatial.SRIDWGS84
+	}
+	raster.CRSInferred = true
+	raster.CRSInference = RasterCRSInferenceGeographicExtent
+}
+
+func rasterExtentLooksGeographic(extent []float64) bool {
+	if len(extent) != 4 {
+		return false
+	}
+	minX, minY, maxX, maxY := extent[0], extent[1], extent[2], extent[3]
+	for _, value := range []float64{minX, minY, maxX, maxY} {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return false
+		}
+	}
+	return minX >= -180 && minX <= 180 &&
+		maxX >= -180 && maxX <= 180 &&
+		minY >= -90 && minY <= 90 &&
+		maxY >= -90 && maxY <= 90 &&
+		maxX > minX &&
+		maxY > minY
+}
+
+func rasterMosaicInfoFromSource(mosaic *RasterMosaicQuickViewSource) *QuickViewRasterMosaicInfo {
+	if mosaic == nil {
+		return nil
+	}
+	info := &QuickViewRasterMosaicInfo{
+		Format:         strings.TrimSpace(mosaic.Format),
+		ManifestRef:    strings.TrimSpace(mosaic.ManifestRef),
+		IndexRef:       strings.TrimSpace(mosaic.IndexRef),
+		OverviewRef:    strings.TrimSpace(mosaic.OverviewRef),
+		LeafCount:      mosaic.LeafCount,
+		SourceCount:    mosaic.SourceCount,
+		OverviewWidth:  mosaic.OverviewWidth,
+		OverviewHeight: mosaic.OverviewHeight,
+		SourceSRID:     mosaic.SourceSRID,
+		SourceCRS:      strings.TrimSpace(mosaic.SourceCRS),
+		ExtentSRID:     mosaic.ExtentSRID,
+	}
+	if len(mosaic.Extent) == 4 {
+		info.Extent = append([]float64(nil), mosaic.Extent...)
 	}
 	return info
 }
@@ -1238,7 +1389,7 @@ func rasterInfoFromRasterCOG(result *models.RasterCOG, raster *RasterQuickViewSo
 	if strings.TrimSpace(result.SourceCRS) != "" {
 		info.SourceCRS = strings.TrimSpace(result.SourceCRS)
 	}
-	if extent, extentSRID := rasterCOGExtent(result); len(extent) == 4 {
+	if extent, extentSRID := rasterCOGExtentForQuickView(result, raster); len(extent) == 4 {
 		info.Extent = extent
 		info.ExtentSRID = extentSRID
 	}
@@ -1263,6 +1414,20 @@ func rasterCOGExtent(result *models.RasterCOG) ([]float64, int) {
 		extentSRID = *result.ExtentSRID
 	}
 	return extent, extentSRID
+}
+
+func rasterCOGExtentForQuickView(result *models.RasterCOG, raster *RasterQuickViewSource) ([]float64, int) {
+	extent, extentSRID := rasterCOGExtent(result)
+	if len(extent) == 4 {
+		if extentSRID <= 0 && raster != nil {
+			extentSRID = raster.ExtentSRID
+		}
+		return extent, extentSRID
+	}
+	if raster != nil && len(raster.Extent) == 4 {
+		return append([]float64(nil), raster.Extent...), raster.ExtentSRID
+	}
+	return nil, 0
 }
 
 func rasterCOGContentURL(result *models.RasterCOG) string {
@@ -1319,6 +1484,22 @@ func rasterCOGRequirementReason(raster *RasterQuickViewSource) string {
 	return RasterUnavailableReasonRequiresCOGGeneration
 }
 
+func rasterDirectTIFFOptionalAction(raster *RasterQuickViewSource) string {
+	if raster == nil || strings.EqualFold(strings.TrimSpace(raster.Profile), "cog") {
+		return ""
+	}
+	return "create_cog"
+}
+
+func rasterUnavailableOptionalAction(reason string, raster *RasterQuickViewSource) string {
+	switch strings.TrimSpace(reason) {
+	case RasterUnavailableReasonMissingSpatialExtent, RasterUnavailableReasonMissingCRS:
+		return rasterDirectTIFFOptionalAction(raster)
+	default:
+		return ""
+	}
+}
+
 func rasterRecommendedActionForReason(reason string) string {
 	switch strings.TrimSpace(reason) {
 	case RasterUnavailableReasonRequiresCOGGeneration, RasterUnavailableReasonClientBudgetExceeded:
@@ -1328,6 +1509,98 @@ func rasterRecommendedActionForReason(reason string) string {
 	default:
 		return ""
 	}
+}
+
+func (s *QuickViewService) RasterMosaicSourceForLocator(ctx context.Context, tenantID *uint, locatorURI string) (QuickViewSource, bool, error) {
+	_ = ctx
+	if s == nil || s.metaClient == nil {
+		return QuickViewSource{}, false, nil
+	}
+	loc, err := resourcetree.ParseURI(strings.TrimSpace(locatorURI))
+	if err != nil {
+		return QuickViewSource{}, false, err
+	}
+	if loc.ItemID == nil || *loc.ItemID == 0 {
+		return QuickViewSource{}, false, nil
+	}
+	if tenantID != nil {
+		s.metaClient.SetTenantID(tenantID)
+	}
+	item, err := s.metaClient.GetItemByID(*loc.ItemID)
+	if err != nil {
+		return QuickViewSource{}, false, err
+	}
+	if item == nil {
+		return QuickViewSource{}, false, nil
+	}
+	if tenantID != nil && item.TenantID != 0 && item.TenantID != *tenantID {
+		return QuickViewSource{}, false, ErrEngineAccessDenied
+	}
+	if item.EngineID != loc.EngineID {
+		return QuickViewSource{}, false, fmt.Errorf("locator engine_id does not match raster mosaic item")
+	}
+	mosaic := RasterMosaicQuickViewSourceFromAttributes(item.Attributes)
+	if mosaic == nil {
+		return QuickViewSource{}, false, nil
+	}
+	storageTenantID := item.TenantID
+	if storageTenantID == 0 && tenantID != nil {
+		storageTenantID = *tenantID
+	}
+	if storageTenantID == 0 {
+		storageTenantID = 1
+	}
+	return QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        storageTenantID,
+			Locator:         strings.TrimSpace(locatorURI),
+			ItemFingerprint: commonModels.GenerateItemFingerprint(item.EngineID, item.FullName),
+		},
+		EngineID:      item.EngineID,
+		RasterMosaic:  mosaic,
+		DirectGeoJSON: false,
+		CanTile:       false,
+	}, true, nil
+}
+
+func RasterMosaicQuickViewSourceFromAttributes(attrs map[string]interface{}) *RasterMosaicQuickViewSource {
+	if len(attrs) == 0 {
+		return nil
+	}
+	if !strings.EqualFold(commonJSON.String(attrs, "item", "data_type"), string(datatype.Media)) ||
+		!strings.EqualFold(commonJSON.String(attrs, "item", "format"), string(format.FormatRasterMosaic)) ||
+		!strings.EqualFold(commonJSON.String(attrs, "item", "layout"), string(format.LayoutWhole)) {
+		return nil
+	}
+	info := commonJSON.Section(attrs, "format_info.raster_mosaic")
+	spatialInfo := commonJSON.Section(attrs, "capabilities.spatial")
+	if info == nil {
+		return nil
+	}
+	mosaic := &RasterMosaicQuickViewSource{
+		Format:         string(format.FormatRasterMosaic),
+		ManifestRef:    strings.TrimSpace(commonJSON.InterfaceString(info["manifest_ref"])),
+		IndexRef:       strings.TrimSpace(commonJSON.InterfaceString(info["index_ref"])),
+		OverviewRef:    strings.TrimSpace(commonJSON.InterfaceString(info["overview_ref"])),
+		LeafCount:      commonJSON.InterfaceInt64(info["leaf_count"]),
+		SourceCount:    commonJSON.InterfaceInt64(info["source_count"]),
+		OverviewWidth:  commonJSON.InterfaceInt64(info["overview_width"]),
+		OverviewHeight: commonJSON.InterfaceInt64(info["overview_height"]),
+		SourceSRID:     int(commonJSON.InterfaceInt64(spatialInfo["srid"])),
+		SourceCRS:      strings.TrimSpace(commonJSON.InterfaceString(spatialInfo["crs_ref"])),
+		Extent:         commonJSON.InterfaceFloat64Slice(spatialInfo["extent"]),
+		ExtentSRID:     int(commonJSON.InterfaceInt64(spatialInfo["extent_srid"])),
+	}
+	if mosaic.ManifestRef == "" {
+		mosaic.ManifestRef = rastermosaic.ManifestFileName
+	}
+	if mosaic.IndexRef == "" {
+		mosaic.IndexRef = rastermosaic.SourceIndexRef
+	}
+	if mosaic.ExtentSRID == 0 {
+		mosaic.ExtentSRID = mosaic.SourceSRID
+	}
+	return mosaic
 }
 
 func RasterQuickViewSourceFromAttributes(attrs map[string]interface{}, locator string, engineID uint) *RasterQuickViewSource {

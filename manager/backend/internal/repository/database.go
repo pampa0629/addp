@@ -52,6 +52,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := ensureRasterCOGSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure raster COG schema: %w", err)
 	}
+	if err := ensureRasterMosaicSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure raster mosaic schema: %w", err)
+	}
 
 	// Configure connection pool for optimal performance
 	sqlDB, err := db.DB()
@@ -427,6 +430,31 @@ func ensureRasterCOGSchema(db *gorm.DB) error {
 	if err := db.Exec(`
 		ALTER TABLE manager.raster_cog
 			DROP COLUMN IF EXISTS source_locator
+	`).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureRasterMosaicSchema(db *gorm.DB) error {
+	if err := db.AutoMigrate(&models.RasterMosaicTask{}); err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		UPDATE manager.raster_mosaic_tasks
+		SET enabled = false
+		WHERE enabled IS NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		ALTER TABLE manager.raster_mosaic_tasks
+			ALTER COLUMN id TYPE BIGINT,
+			ALTER COLUMN tenant_id TYPE BIGINT,
+			ALTER COLUMN created_by TYPE BIGINT,
+			ALTER COLUMN enabled SET NOT NULL,
+			ALTER COLUMN created_at SET NOT NULL,
+			ALTER COLUMN updated_at SET NOT NULL
 	`).Error; err != nil {
 		return err
 	}

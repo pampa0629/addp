@@ -210,7 +210,8 @@
         "spatialQuickView": "Spatial Quick View",
         "tileCache": "Vector Quick View - Tile Cache",
         "quickViewOptimization": "Vector Quick View - Optimization",
-        "cogArtifacts": "Raster Quick View - COG"
+        "cogArtifacts": "Raster Quick View - COG",
+        "rasterMosaic": "Raster Quick View - Mosaic"
       },
       "standard": {
         "label": "Data Standards",

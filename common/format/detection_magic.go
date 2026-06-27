@@ -8,7 +8,7 @@ import (
 
 func needMagicValidation(format FormatType) bool {
 	switch format {
-	case FormatPDF, FormatSQLite, FormatGeoPackage, FormatJPEG, FormatPNG, FormatGIF:
+	case FormatPDF, FormatSQLite, FormatGeoPackage, FormatJPEG, FormatPNG, FormatGIF, FormatGLB, FormatLAS:
 		return true
 	default:
 		return false
@@ -43,6 +43,10 @@ func getMagicBytes(format FormatType) []byte {
 		return []byte{0x89, 0x50, 0x4E, 0x47}
 	case FormatGIF:
 		return []byte("GIF89a")
+	case FormatGLB:
+		return []byte("glTF")
+	case FormatLAS:
+		return []byte("LASF")
 	default:
 		return nil
 	}
@@ -90,6 +94,8 @@ func detectByMagic(peek []byte) FormatType {
 		"ID3":              FormatMP3,
 		"OggS":             FormatOGG,
 		"fLaC":             FormatFLAC,
+		"glTF":             FormatGLB,
+		"LASF":             FormatLAS,
 		"\x1A\x45\xDF\xA3": FormatMKV,
 		"PK\x03\x04":       FormatUnknown,
 		"0000":             FormatShapefile,

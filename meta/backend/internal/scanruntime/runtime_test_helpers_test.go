@@ -1,8 +1,11 @@
 package scanruntime
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"io"
+	"math"
 	"strings"
 	"testing"
 
@@ -93,6 +96,57 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func scanRuntimeTestGLB(jsonChunk []byte) []byte {
+	for len(jsonChunk)%4 != 0 {
+		jsonChunk = append(jsonChunk, ' ')
+	}
+	totalLen := uint32(12 + 8 + len(jsonChunk))
+	buf := bytes.NewBuffer(make([]byte, 0, totalLen))
+	buf.WriteString("glTF")
+	_ = binary.Write(buf, binary.LittleEndian, uint32(2))
+	_ = binary.Write(buf, binary.LittleEndian, totalLen)
+	_ = binary.Write(buf, binary.LittleEndian, uint32(len(jsonChunk)))
+	_ = binary.Write(buf, binary.LittleEndian, uint32(0x4E4F534A))
+	buf.Write(jsonChunk)
+	return buf.Bytes()
+}
+
+func scanRuntimeTestLASHeader() []byte {
+	const headerSize = 375
+	buf := make([]byte, headerSize)
+	copy(buf[:4], []byte("LASF"))
+	buf[24] = 1
+	buf[25] = 4
+	copy(buf[26:58], []byte("ADDP"))
+	copy(buf[58:90], []byte("scanruntime-test"))
+	binary.LittleEndian.PutUint16(buf[94:96], uint16(headerSize))
+	binary.LittleEndian.PutUint32(buf[96:100], headerSize)
+	binary.LittleEndian.PutUint32(buf[100:104], 2)
+	buf[104] = 7
+	binary.LittleEndian.PutUint16(buf[105:107], 36)
+	binary.LittleEndian.PutUint32(buf[107:111], 0)
+	scanRuntimeTestPutFloat64(buf[131:139], 0.01)
+	scanRuntimeTestPutFloat64(buf[139:147], 0.01)
+	scanRuntimeTestPutFloat64(buf[147:155], 0.01)
+	scanRuntimeTestPutFloat64(buf[155:163], 1000)
+	scanRuntimeTestPutFloat64(buf[163:171], 2000)
+	scanRuntimeTestPutFloat64(buf[171:179], 3000)
+	scanRuntimeTestPutFloat64(buf[179:187], 10)
+	scanRuntimeTestPutFloat64(buf[187:195], 1)
+	scanRuntimeTestPutFloat64(buf[195:203], 20)
+	scanRuntimeTestPutFloat64(buf[203:211], 2)
+	scanRuntimeTestPutFloat64(buf[211:219], 30)
+	scanRuntimeTestPutFloat64(buf[219:227], 3)
+	binary.LittleEndian.PutUint64(buf[235:243], 4096)
+	binary.LittleEndian.PutUint32(buf[243:247], 1)
+	binary.LittleEndian.PutUint64(buf[247:255], 123456789)
+	return buf
+}
+
+func scanRuntimeTestPutFloat64(target []byte, value float64) {
+	binary.LittleEndian.PutUint64(target, math.Float64bits(value))
 }
 
 func pluginRegisterForTest(t *testing.T, enginePlugin plugin.EnginePlugin) {

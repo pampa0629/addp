@@ -23,6 +23,7 @@ func ToMetaNodeLite(node models.MetaNode) models.MetaNodeLite {
 		ScannedDepth:   node.ScannedDepth,
 		ScannedAt:      scannedAt,
 		ItemCount:      node.ItemCount,
+		HasChildren:    node.ItemCount > 0,
 		TotalSizeBytes: node.TotalSizeBytes,
 		Attributes:     node.Attributes,
 	}

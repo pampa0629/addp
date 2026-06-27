@@ -487,9 +487,10 @@ def vector_reproject(
 
 1. `binary_payload.content_type` 必须为 `application/vnd.apache.arrow.stream`。
 2. `binary_payload.encoding` 必须为 `arrow`，且 Arrow 批只能包含一个 geometry 列。
-3. geometry 列元素必须为 WKB / EWKB 二进制值。
+3. geometry 列元素必须为 EWKB 二进制值，Arrow schema metadata 必须声明 `addp.geometry.encoding=ewkb`；HTTP `binary_payload.metadata` 中也必须声明 `geometry_encoding=ewkb`。
 4. 算子只转换 geometry，不得接管 Transfer 的 load/save、checkpoint、属性字段重排或 GPKG 中间产物。
 5. 失败时必须返回明确错误，不得静默退回原坐标。
+6. 输出 `binary_payload` 仍为 Arrow + EWKB，只包含转换后的 geometry 列；输出 metadata 中 `source_crs` 和 `target_crs` 都应写入输出几何当前 CRS，不能继续保留输入 CRS。
 
 ---
 

@@ -209,7 +209,6 @@ compile_service() {
 SERVICES=(
     "system-backend:system/backend"
     "manager-backend:manager/backend"
-    "manager-worker:manager/backend"
     "meta-backend:meta/backend"
     "meta-worker:meta/backend"
     "transfer-backend:transfer/backend"

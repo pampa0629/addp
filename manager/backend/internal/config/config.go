@@ -59,6 +59,10 @@ type Config struct {
 
 	// 瓦片缓存生成配置
 	TileCache TileCacheConfig
+
+	// Raster mosaic 在线瓦片运行时
+	RasterMosaicRuntime    RasterMosaicRuntimeConfig
+	RasterMosaicGeneration RasterMosaicGenerationConfig
 }
 
 type ExportCleanupConfig struct {
@@ -86,6 +90,17 @@ type TileCacheConfig struct {
 	DirectGeoJSONMaxRows      int // 小数据量直接 GeoJSON 快显的最大行数
 	RealtimeTileTimeoutMS     int // 动态 MVT 单瓦片交互超时预算
 	RealtimeTileRetryAfterSec int // 动态 MVT 可重试降级的 Retry-After 秒数
+}
+
+type RasterMosaicRuntimeConfig struct {
+	BaseURL     string
+	InternalKey string
+	Timeout     time.Duration
+	TileSize    int
+}
+
+type RasterMosaicGenerationConfig struct {
+	Timeout time.Duration
 }
 
 func resolveMeilisearchURL() string {
@@ -209,6 +224,18 @@ func Load() *Config {
 		DirectGeoJSONMaxRows:      commonConfig.GetEnvInt("QUICK_VIEW_DIRECT_GEOJSON_MAX_ROWS", 2000),
 		RealtimeTileTimeoutMS:     realtimeTileTimeoutMS,
 		RealtimeTileRetryAfterSec: realtimeTileRetryAfterSec,
+	}
+	cfg.RasterMosaicRuntime = RasterMosaicRuntimeConfig{
+		BaseURL:     commonConfig.GetEnv("RASTER_MOSAIC_RUNTIME_URL", "http://127.0.0.1:8291"),
+		InternalKey: commonConfig.GetEnv("RASTER_MOSAIC_RUNTIME_INTERNAL_KEY", cfg.InternalAPIKey),
+		Timeout:     commonConfig.GetEnvDuration("RASTER_MOSAIC_RUNTIME_TIMEOUT", "15s"),
+		TileSize:    commonConfig.GetEnvInt("RASTER_MOSAIC_TILE_SIZE", 256),
+	}
+	cfg.RasterMosaicGeneration = RasterMosaicGenerationConfig{
+		Timeout: commonConfig.GetEnvDuration("RASTER_MOSAIC_GENERATION_TIMEOUT", "2h"),
+	}
+	if cfg.RasterMosaicRuntime.TileSize != 512 {
+		cfg.RasterMosaicRuntime.TileSize = 256
 	}
 	// 记录瓦片缓存生成配置（特别关注并发数和连接池）
 	log.Printf("📋 Manager Config: 瓦片缓存生成配置")

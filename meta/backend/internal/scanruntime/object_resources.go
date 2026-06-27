@@ -77,6 +77,9 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 			}
 			continue
 		}
+		if catalogResource.NodeType == "object" && compositeSkipPaths[catalogResource.Path] {
+			continue
+		}
 
 		parentChain := []*models.MetaNode{bucketNode}
 		if basePrefixNode != bucketNode {

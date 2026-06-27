@@ -82,6 +82,7 @@ func TestManagerRasterMosaicExecutorSendsAccessPlanToPython(t *testing.T) {
 		}}},
 		"http://manager.internal",
 		"internal-key",
+		0,
 	)
 
 	result, err := executor.BuildRasterMosaic(context.Background(), RasterMosaicExecutionRequest{
@@ -105,6 +106,9 @@ func TestManagerRasterMosaicExecutorSendsAccessPlanToPython(t *testing.T) {
 				BlockSize:          512,
 				OverviewResampling: "NEAREST",
 				ValidateSourceCOG:  true,
+				LeafConcurrency:    2,
+				NumThreads:         2,
+				LeafRetryAttempts:  3,
 			},
 			Overview: RasterMosaicOverviewConfig{
 				Enabled:    true,
@@ -133,11 +137,26 @@ func TestManagerRasterMosaicExecutorSendsAccessPlanToPython(t *testing.T) {
 	if targetPlan["dataset_root_uri"] != "/vsis3/mosaics/srtm" {
 		t.Fatalf("target dataset_root_uri = %#v", targetPlan["dataset_root_uri"])
 	}
+	sourceEnv := sourcePlan["gdal_env"].(map[string]interface{})
+	targetEnv := targetPlan["gdal_env"].(map[string]interface{})
+	if sourceEnv["GDAL_DISABLE_READDIR_ON_OPEN"] != "EMPTY_DIR" || targetEnv["GDAL_DISABLE_READDIR_ON_OPEN"] != "EMPTY_DIR" {
+		t.Fatalf("gdal env should disable remote readdir: source=%#v target=%#v", sourceEnv, targetEnv)
+	}
 	if !strings.Contains(progress["endpoint"].(string), "/api/v1/manager/internal/executions/mosaic-exec-1/events") {
 		t.Fatalf("progress endpoint = %#v", progress["endpoint"])
 	}
 	if capturedParams["source"] != nil || capturedParams["target"] != nil {
 		t.Fatalf("legacy source/target params should not be sent: %#v", capturedParams)
+	}
+	cog := capturedParams["cog"].(map[string]interface{})
+	if cog["leaf_concurrency"] != float64(2) {
+		t.Fatalf("cog.leaf_concurrency = %#v, want 2", cog["leaf_concurrency"])
+	}
+	if cog["num_threads"] != float64(2) {
+		t.Fatalf("cog.num_threads = %#v, want 2", cog["num_threads"])
+	}
+	if cog["leaf_retry_attempts"] != float64(3) {
+		t.Fatalf("cog.leaf_retry_attempts = %#v, want 3", cog["leaf_retry_attempts"])
 	}
 }
 
@@ -166,6 +185,7 @@ func TestManagerRasterMosaicExecutorRejectsObjectStoreInPlace(t *testing.T) {
 		}},
 		"http://manager.internal",
 		"internal-key",
+		0,
 	)
 
 	_, err = executor.BuildRasterMosaic(context.Background(), RasterMosaicExecutionRequest{

@@ -90,6 +90,11 @@ generate_service_urls() {
 
 generate_service_urls
 
+export RASTER_MOSAIC_RUNTIME_PORT="${RASTER_MOSAIC_RUNTIME_PORT:-8291}"
+if [ -z "$RASTER_MOSAIC_RUNTIME_URL" ]; then
+    export RASTER_MOSAIC_RUNTIME_URL="http://${SERVICE_HOST:-localhost}:${RASTER_MOSAIC_RUNTIME_PORT}"
+fi
+
 # 导出 Python pip 配置（pip 会自动识别这些环境变量）
 if [ -n "$PIP_INDEX_URL" ]; then
     export PIP_INDEX_URL
@@ -995,6 +1000,71 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   echo "  ${GREEN}✓ 所有服务已启动，等待健康检查...${NC}"
 fi
 
+if [ "$START_MANAGER_BACKEND" = true ]; then
+  echo "启动 Raster Mosaic Runtime..."
+  RASTER_MOSAIC_RUNTIME_DIR="manager/raster-mosaic-runtime"
+  RASTER_MOSAIC_RUNTIME_VENV="${RASTER_MOSAIC_RUNTIME_DIR}/venv"
+  RASTER_MOSAIC_RUNTIME_STARTED=false
+  RASTER_MOSAIC_RUNTIME_NEED_INSTALL=false
+  RASTER_MOSAIC_RUNTIME_CAN_START=true
+  if check_service_running "raster-mosaic-runtime" "$RASTER_MOSAIC_RUNTIME_PORT"; then
+    SELECTED_PYTHON=$(select_python)
+    if [ -d "$RASTER_MOSAIC_RUNTIME_VENV" ] &&
+       ! "$RASTER_MOSAIC_RUNTIME_VENV/bin/python" - <<'PY' &> /dev/null
+import flask, numpy, PIL
+from osgeo import gdal
+version = tuple(int(part) for part in numpy.__version__.split(".")[:2])
+if version >= (2, 3):
+    raise SystemExit(1)
+PY
+    then
+      if "$SELECTED_PYTHON" -c "from osgeo import gdal" &> /dev/null; then
+        echo "Raster Mosaic Runtime venv 缺少匹配的 GDAL/NumPy，重建为可继承系统 GDAL 的虚拟环境..."
+        rm -rf "$RASTER_MOSAIC_RUNTIME_VENV"
+      else
+        RASTER_MOSAIC_RUNTIME_NEED_INSTALL=true
+      fi
+    fi
+    if [ ! -d "$RASTER_MOSAIC_RUNTIME_VENV" ]; then
+      $SELECTED_PYTHON -m venv --system-site-packages "$RASTER_MOSAIC_RUNTIME_VENV"
+      RASTER_MOSAIC_RUNTIME_NEED_INSTALL=true
+    elif ! "$RASTER_MOSAIC_RUNTIME_VENV/bin/python" -c "import flask, numpy, PIL" &> /dev/null; then
+      RASTER_MOSAIC_RUNTIME_NEED_INSTALL=true
+    fi
+    if [ "$RASTER_MOSAIC_RUNTIME_NEED_INSTALL" = true ]; then
+      PIP_CMD="$RASTER_MOSAIC_RUNTIME_VENV/bin/python -m pip install"
+      if [ -n "$PIP_INDEX_URL" ]; then
+        PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
+        if [ -n "$PIP_TRUSTED_HOST" ]; then
+          PIP_CMD="$PIP_CMD --trusted-host $PIP_TRUSTED_HOST"
+        fi
+      fi
+      if ! $PIP_CMD --upgrade pip || ! $PIP_CMD -r "$RASTER_MOSAIC_RUNTIME_DIR/requirements.txt"; then
+        echo -e "${YELLOW}⚠️  Raster Mosaic Runtime 依赖安装失败，已跳过启动；Manager 主服务继续启动。${NC}"
+        RASTER_MOSAIC_RUNTIME_CAN_START=false
+      fi
+    fi
+    if [ "$RASTER_MOSAIC_RUNTIME_CAN_START" = true ] &&
+       ! "$RASTER_MOSAIC_RUNTIME_VENV/bin/python" -c "from osgeo import gdal" &> /dev/null; then
+      echo -e "${YELLOW}⚠️  Raster Mosaic Runtime 缺少 GDAL Python 绑定(osgeo.gdal)，已跳过启动；Manager 主服务继续启动。${NC}"
+      echo -e "${YELLOW}   提示：macOS 可先执行 brew install gdal，或使用 manager/raster-mosaic-runtime/Dockerfile。${NC}"
+      RASTER_MOSAIC_RUNTIME_CAN_START=false
+    fi
+    if [ "$RASTER_MOSAIC_RUNTIME_CAN_START" = true ]; then
+      PORT="$RASTER_MOSAIC_RUNTIME_PORT" \
+      RASTER_MOSAIC_RUNTIME_INTERNAL_KEY="${RASTER_MOSAIC_RUNTIME_INTERNAL_KEY:-$INTERNAL_API_KEY}" \
+        "$RASTER_MOSAIC_RUNTIME_VENV/bin/python" "$RASTER_MOSAIC_RUNTIME_DIR/app.py" \
+        > logs/raster-mosaic-runtime.log 2> logs/raster-mosaic-runtime-stderr.log &
+      RASTER_MOSAIC_RUNTIME_PID=$!
+      echo $RASTER_MOSAIC_RUNTIME_PID > .dev-pids/raster-mosaic-runtime.pid
+      RASTER_MOSAIC_RUNTIME_STARTED=true
+    fi
+  else
+    RASTER_MOSAIC_RUNTIME_PID=$(cat .dev-pids/raster-mosaic-runtime.pid 2>/dev/null)
+    RASTER_MOSAIC_RUNTIME_STARTED=true
+  fi
+fi
+
 # ============================================================
 # Phase 3: 并行等待所有 Backends 健康检查
 # ============================================================
@@ -1018,6 +1088,21 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       done
     ) &
     HEALTH_CHECK_PIDS+=($!)
+    if [ "$RASTER_MOSAIC_RUNTIME_STARTED" = true ]; then
+      (
+        WAIT_COUNT=0
+        until curl -f http://localhost:${RASTER_MOSAIC_RUNTIME_PORT}/health > /dev/null 2>&1; do
+          sleep 1
+          WAIT_COUNT=$((WAIT_COUNT + 1))
+          if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+            echo -e "${RED}✗ Raster Mosaic Runtime 启动超时${NC}"
+            echo "查看日志: tail -f logs/raster-mosaic-runtime.log"
+            exit 1
+          fi
+        done
+      ) &
+      HEALTH_CHECK_PIDS+=($!)
+    fi
   fi
 
   # 并发等待 Meta Backend
@@ -1152,15 +1237,35 @@ if [ ! -d "engines/python-workflow/venv" ]; then
     SELECTED_PYTHON=$(select_python)
     PYTHON_VER=$($SELECTED_PYTHON --version)
     echo "  使用 $PYTHON_VER"
-    $SELECTED_PYTHON -m venv venv
+    $SELECTED_PYTHON -m venv --system-site-packages venv
     NEED_INSTALL=true
 else
+    if ! ./engines/python-workflow/venv/bin/python - <<'PY' &> /dev/null
+import flask, geopandas, pyarrow, pyproj, addp_common
+from osgeo import gdal
+import numpy
+version = tuple(int(part) for part in numpy.__version__.split(".")[:2])
+if version >= (2, 3):
+    raise SystemExit(1)
+PY
+    then
+        SELECTED_PYTHON=$(select_python)
+        if "$SELECTED_PYTHON" -c "from osgeo import gdal" &> /dev/null; then
+            echo "Python Workflow venv 缺少匹配的 GDAL/NumPy，重建为可继承系统 GDAL 的虚拟环境..."
+            rm -rf engines/python-workflow/venv
+            cd engines/python-workflow
+            PYTHON_VER=$($SELECTED_PYTHON --version)
+            echo "  使用 $PYTHON_VER"
+            $SELECTED_PYTHON -m venv --system-site-packages venv
+            NEED_INSTALL=true
+        fi
+    fi
     # 检查关键依赖是否已安装
-    if ! ./engines/python-workflow/venv/bin/python -c "import flask, geopandas, pyarrow, pyproj" &> /dev/null; then
+    if [ "$NEED_INSTALL" = false ] && ! ./engines/python-workflow/venv/bin/python -c "import flask, geopandas, pyarrow, pyproj, addp_common" &> /dev/null; then
         echo "检测到虚拟环境缺少依赖，重新安装..."
         cd engines/python-workflow
         NEED_INSTALL=true
-    else
+    elif [ "$NEED_INSTALL" = false ]; then
         echo "虚拟环境已存在且依赖完整，跳过安装"
     fi
 fi
@@ -1184,10 +1289,15 @@ if [ "$NEED_INSTALL" = true ]; then
     # 升级 pip 并安装依赖
     $PIP_CMD --upgrade pip
     $PIP_CMD -r requirements.txt
+    $PIP_CMD -e ../../common-python
 
     # 检查安装是否成功
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
+        if ! ./venv/bin/python -c "from osgeo import gdal" &> /dev/null; then
+            echo -e "${YELLOW}⚠️  Python Workflow 缺少 GDAL Python 绑定(osgeo.gdal)，栅格 mosaic 生成算子将不可用。${NC}"
+            echo -e "${YELLOW}   提示：macOS 可先执行 brew install gdal，或使用 Python Workflow 容器镜像。${NC}"
+        fi
     else
         echo -e "${RED}✗ Python 依赖安装失败，请检查错误信息${NC}"
         echo -e "${YELLOW}提示：某些依赖可能需要系统库支持（如 GDAL）${NC}"
@@ -2124,6 +2234,7 @@ echo "  Quality:  http://localhost:${QUALITY_BACKEND_PORT}"
 echo "  Jupyter Engine:      http://localhost:${JUPYTER_API_PORT} (API) / http://localhost:${JUPYTER_LAB_PORT} (Lab UI)"
 echo "  Spark 工作流引擎: http://localhost:${SPARK_WORKFLOW_PORT}"
 echo "  Python Workflow Engine:    http://localhost:${PYTHON_WORKFLOW_PORT}"
+echo "  Raster Mosaic Runtime:     http://localhost:${RASTER_MOSAIC_RUNTIME_PORT}"
 echo "  System FE:    http://localhost:${SYSTEM_FE_PORT}"
 echo "  Manager FE:   http://localhost:${MANAGER_FE_PORT}"
 echo "  Meta FE:      http://localhost:${META_FE_PORT}"
@@ -2146,6 +2257,7 @@ echo "  Transfer Backend:     $TRANSFER_PID"
 echo "  Orchestrator Backend: $ORCHESTRATOR_PID"
 echo "  Develop Backend:      $DEVELOP_PID"
 echo "  Service Backend:      $SERVICE_PID"
+echo "  Raster Mosaic Runtime:      $RASTER_MOSAIC_RUNTIME_PID"
 echo "  Python Workflow Engine:     $PYTHON_WORKFLOW_PID"
 echo "  Spark 工作流引擎:  $SPARK_WORKFLOW_PID"
 echo "  Jupyter Engine:       $JUPYTER_PID"

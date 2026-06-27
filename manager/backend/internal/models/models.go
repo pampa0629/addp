@@ -292,6 +292,8 @@ const (
 	ObjectPreviewKindText        = "text"
 	ObjectPreviewKindMarkdown    = "markdown"
 	ObjectPreviewKindTable       = "table"
+	ObjectPreviewKindModel3D     = "model_3d"
+	ObjectPreviewKindPointCloud  = "point_cloud"
 	ObjectPreviewKindUnsupported = "unsupported"
 )
 

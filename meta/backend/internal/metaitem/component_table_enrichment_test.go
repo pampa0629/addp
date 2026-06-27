@@ -172,6 +172,76 @@ func TestCommonDataItemResolverRejectsRasterMosaicManifestByNameOnly(t *testing.
 	}
 }
 
+func TestCommonDataItemResolverAdapts3DTilesWholeScope(t *testing.T) {
+	d := &commonDataItemResolver{}
+	files := []StorageFileRef{
+		{Name: "tileset.json", Path: "models/city/tileset.json", Size: 10},
+		{Name: "root.b3dm", Path: "models/city/root.b3dm", Size: 20},
+	}
+
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+		ContentReader: refMapContentReader{content: map[string][]byte{
+			"models/city/tileset.json": []byte(`{"asset":{"version":"1.1"},"geometricError":200,"root":{"boundingVolume":{"region":[1,0.5,1.1,0.6,0,120]},"geometricError":0,"content":{"uri":"root.b3dm"}}}`),
+		}},
+		DirPath:        "models/city",
+		Files:          files[:1],
+		RecursiveFiles: files,
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if !result.Exclusive {
+		t.Fatal("3D Tiles should exclusively claim the whole scope")
+	}
+	if got, want := len(result.Items), 1; got != want {
+		t.Fatalf("Items len = %d, want %d", got, want)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutWhole || item.DataType != datatype.Model3D || item.Format != string(format.Format3DTiles) {
+		t.Fatalf("item = %#v, want model_3d 3dtiles whole item", item)
+	}
+	modelInfo := commonJSON.Section(item.Attributes, "type_info.model_3d")
+	if modelInfo["model_kind"] != datatype.Model3DKindTiledScene {
+		t.Fatalf("type_info.model_3d = %#v, want tiled_scene", modelInfo)
+	}
+	formatInfo := commonJSON.Section(item.Attributes, "format_info.3dtiles")
+	if formatInfo["manifest_ref"] != "tileset.json" || commonJSON.InterfaceInt64(formatInfo["tile_count"]) != 1 {
+		t.Fatalf("format_info.3dtiles = %#v, want manifest and tile_count", formatInfo)
+	}
+	spatial := commonJSON.Section(item.Attributes, "capabilities.spatial")
+	if commonJSON.InterfaceInt64(spatial["srid"]) != 4326 {
+		t.Fatalf("capabilities.spatial = %#v, want EPSG:4326", spatial)
+	}
+	for _, file := range files {
+		if !result.Claims[file.Path] {
+			t.Fatalf("claims = %#v, want %s claimed", result.Claims, file.Path)
+		}
+	}
+}
+
+func TestCommonDataItemResolverRejects3DTilesManifestByNameOnly(t *testing.T) {
+	d := &commonDataItemResolver{}
+	files := []StorageFileRef{
+		{Name: "tileset.json", Path: "models/not-tiles/tileset.json", Size: 10},
+		{Name: "readme.txt", Path: "models/not-tiles/readme.txt", Size: 20},
+	}
+
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+		ContentReader: refMapContentReader{content: map[string][]byte{
+			"models/not-tiles/tileset.json": []byte(`{"format":"json"}`),
+		}},
+		DirPath:        "models/not-tiles",
+		Files:          files[:1],
+		RecursiveFiles: files,
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if result.Exclusive || len(result.Items) != 0 || len(result.Claims) != 0 {
+		t.Fatalf("ResolveItems() = %#v, want no 3D Tiles from manifest name only", result)
+	}
+}
+
 func TestCommonDataItemResolverRejectsIncompleteMultiRefs(t *testing.T) {
 	d := &commonDataItemResolver{}
 	files := []StorageFileRef{

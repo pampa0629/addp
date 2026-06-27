@@ -82,6 +82,34 @@ export const quickViewAPI = {
     })
   },
 
+  createRasterMosaicTask(payload) {
+    return request.post('/manager/raster_mosaic_tasks', payload)
+  },
+
+  listRasterMosaicTasks(params = {}) {
+    return request.get('/manager/raster_mosaic_tasks', { params })
+  },
+
+  getRasterMosaicTask(id) {
+    return request.get(`/manager/raster_mosaic_tasks/${id}`)
+  },
+
+  updateRasterMosaicTask(id, payload) {
+    return request.put(`/manager/raster_mosaic_tasks/${id}`, payload)
+  },
+
+  deleteRasterMosaicTask(id) {
+    return request.delete(`/manager/raster_mosaic_tasks/${id}`)
+  },
+
+  executeRasterMosaicTask(id, payload = {}) {
+    return request.post(`/manager/tasks/raster_mosaic_generation/${id}/execute`, {
+      trigger_type: 'manual',
+      source: 'manager',
+      ...payload
+    })
+  },
+
   listRasterCOGs(params = {}) {
     return request.get('/manager/raster_cog', { params })
   },

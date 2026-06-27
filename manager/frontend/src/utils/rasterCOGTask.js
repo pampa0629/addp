@@ -30,9 +30,12 @@ const terminalStatuses = new Set(['success', 'failed', 'timeout', 'cancelled', '
 const failedStatuses = new Set(['failed', 'timeout', 'cancelled', 'canceled'])
 
 export function shouldShowRasterCOGGenerationAction(status = {}) {
-  if (!status || status.can_use_quick_view) return false
+  if (!status) return false
   const reason = cleanString(status.unavailable_reason)
   const rasterAction = cleanString(status.raster?.recommended_action)
+  if (status.can_use_quick_view) {
+    return status.render_source === 'direct_tiff_client' && rasterAction === 'create_cog'
+  }
   return [
     'requires_cog_generation',
     'requires_managed_cog',

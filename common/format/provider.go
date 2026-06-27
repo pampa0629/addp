@@ -233,6 +233,22 @@ type MediaInfoProvider interface {
 	DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*MediaDescribeResult, error)
 }
 
+type Model3DInfoProvider interface {
+	FormatPlugin
+	DescribeModel3D(ctx context.Context, input io.Reader, options *ParseOptions) (*Model3DDescribeResult, error)
+}
+
+// ScopeModel3DInfoProvider 表示 whole scope 三维模型格式能够提取模型类型信息。
+type ScopeModel3DInfoProvider interface {
+	FormatPlugin
+	DescribeModel3DScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (*Model3DDescribeResult, error)
+}
+
+type PointCloudInfoProvider interface {
+	FormatPlugin
+	DescribePointCloud(ctx context.Context, input io.Reader, options *ParseOptions) (*PointCloudDescribeResult, error)
+}
+
 // RelatedRefSpecProvider 表示格式能够声明多 ref 资源的 ref 规格。
 //
 // 该接口只描述 ref 角色和必需性，调用方仍负责 data item 边界识别、

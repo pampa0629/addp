@@ -1932,6 +1932,101 @@ func TestRefFilePreviewProviderOpensSelectedRelatedRef(t *testing.T) {
 	}
 }
 
+func TestRefFilePreviewProviderOpensRasterMosaicLeafRef(t *testing.T) {
+	previous, previousErr := plugin.Get("minio-raster-mosaic-leaf-preview")
+	enginePlugin := &recordingContentPlugin{
+		engineType: "minio-raster-mosaic-leaf-preview",
+		contents: map[string][]byte{
+			"bucket/mosaics/srtm/index/source-index.json": []byte(`{
+				"schema_version":"addp.raster_mosaic.source_index.v1",
+				"leaf_count":1,
+				"leaves":[{
+					"id":"leaf-000001",
+					"leaf_ref":"leaf/a.cog.tif",
+					"width":1201,
+					"height":1201,
+					"band_count":1,
+					"extent":[100,30,101,31]
+				}]
+			}`),
+			"bucket/mosaics/srtm/leaf/a.cog.tif": []byte("fake-tiff"),
+		},
+	}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	contentRegistry := objectcontent.NewObjectContentRegistry()
+	objectcontent.LoadObjectContentPlugins(contentRegistry, "")
+	provider := NewRefFilePreviewProvider(contentRegistry)
+	req := &PreviewRequest{
+		Engine: &models.Engine{
+			ID:             9,
+			EngineType:     enginePlugin.Type(),
+			ConnectionInfo: models.ConnectionInfo{"bucket": "bucket"},
+		},
+		ItemType: "object",
+		NodeType: "object",
+		Schema:   "bucket",
+		Table:    "mosaics/srtm",
+		RefPath:  "leaf/a.cog.tif",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatRasterMosaic),
+				"data_type": "media",
+				"layout":    "whole",
+			},
+			"format_info": map[string]interface{}{
+				"raster_mosaic": map[string]interface{}{
+					"index_ref": "index/source-index.json",
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if got := enginePlugin.openedPath.StringPath(); got != "bucket/mosaics/srtm/index/source-index.json" {
+		t.Fatalf("opened path = %q, want only source index because leaf COG uses storage-stream URL", got)
+	}
+	if preview.Mode != PreviewModeObject || preview.Object == nil || preview.Object.Content == nil {
+		t.Fatalf("preview = %#v, want object preview with content", preview)
+	}
+	if preview.Object.Path != "mosaics/srtm/leaf/a.cog.tif" || preview.Object.StorageRef != "bucket/mosaics/srtm/leaf/a.cog.tif" {
+		t.Fatalf("object path/storage_ref = %q/%q, want selected mosaic leaf path", preview.Object.Path, preview.Object.StorageRef)
+	}
+	if preview.Object.Content.Kind != models.ObjectPreviewKindImage {
+		t.Fatalf("content kind = %q, want image for leaf COG", preview.Object.Content.Kind)
+	}
+	if preview.Object.Content.URL == "" || !strings.Contains(preview.Object.Content.URL, "/api/v1/manager/storage-stream?") {
+		t.Fatalf("content URL = %q, want storage-stream URL for leaf COG", preview.Object.Content.URL)
+	}
+	if preview.Object.Content.Truncated {
+		t.Fatal("leaf COG preview should not be truncated by image preview byte limit")
+	}
+	refs, ok := preview.Object.Content.Metadata["refs"].([]map[string]interface{})
+	if !ok || len(refs) != 1 {
+		t.Fatalf("content refs metadata = %#v, want one leaf ref descriptor", preview.Object.Content.Metadata["refs"])
+	}
+	if got := preview.Object.Content.Metadata["extent_srid"]; got != 4326 {
+		t.Fatalf("extent_srid metadata = %#v, want 4326", got)
+	}
+	if got := preview.Object.Content.Metadata["source_crs"]; got != "EPSG:4326" {
+		t.Fatalf("source_crs metadata = %#v, want EPSG:4326", got)
+	}
+	extent, ok := preview.Object.Content.Metadata["extent"].([]float64)
+	if !ok || !reflect.DeepEqual(extent, []float64{100, 30, 101, 31}) {
+		t.Fatalf("extent metadata = %#v, want leaf extent", preview.Object.Content.Metadata["extent"])
+	}
+}
+
 type staticContentReader struct {
 	content []byte
 }
@@ -2040,6 +2135,7 @@ var _ contentio.Reader = emptyRefReader{}
 type recordingContentPlugin struct {
 	engineType      string
 	content         []byte
+	contents        map[string][]byte
 	openedPath      plugin.CatalogPath
 	rangeOpenedPath plugin.CatalogPath
 	rangeOptions    plugin.ReadOptions
@@ -2070,6 +2166,11 @@ func (p *recordingContentPlugin) StoreSemantics() plugin.StoreSemantics {
 }
 func (p *recordingContentPlugin) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	p.openedPath = path
+	if p.contents != nil {
+		if content, ok := p.contents[path.StringPath()]; ok {
+			return io.NopCloser(bytes.NewReader(content)), nil
+		}
+	}
 	if len(p.content) > 0 {
 		return io.NopCloser(bytes.NewReader(p.content)), nil
 	}

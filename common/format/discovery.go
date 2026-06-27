@@ -27,6 +27,9 @@ type FormatImplementationSnapshot struct {
 	DocumentTextReader       bool `json:"document_text_reader,omitempty"`
 	BinaryContentReader      bool `json:"binary_content_reader,omitempty"`
 	MediaInfoProvider        bool `json:"media_info_provider,omitempty"`
+	Model3DInfoProvider      bool `json:"model_3d_info_provider,omitempty"`
+	ScopeModel3DInfoProvider bool `json:"scope_model_3d_info_provider,omitempty"`
+	PointCloudInfoProvider   bool `json:"point_cloud_info_provider,omitempty"`
 	ContainerInfoProvider    bool `json:"container_info_provider,omitempty"`
 	ContainerChildResolver   bool `json:"container_child_resolver,omitempty"`
 	AccessIndexProvider      bool `json:"access_index_provider,omitempty"`
@@ -84,6 +87,9 @@ func implementationSnapshotForFormat(formatType FormatType) FormatImplementation
 	_, status.DocumentTextReader = plugin.(DocumentTextReader)
 	_, status.BinaryContentReader = plugin.(BinaryContentReader)
 	_, status.MediaInfoProvider = plugin.(MediaInfoProvider)
+	_, status.Model3DInfoProvider = plugin.(Model3DInfoProvider)
+	_, status.ScopeModel3DInfoProvider = plugin.(ScopeModel3DInfoProvider)
+	_, status.PointCloudInfoProvider = plugin.(PointCloudInfoProvider)
 	_, status.ContainerInfoProvider = plugin.(ContainerInfoProvider)
 	_, status.ContainerChildResolver = plugin.(ContainerChildResolver)
 	if provider, ok := plugin.(AccessIndexProvider); ok {

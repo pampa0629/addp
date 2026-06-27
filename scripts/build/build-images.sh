@@ -377,7 +377,7 @@ check_service_changed() {
             fi
             ;;
 
-        python-workflow-engine|spark-workflow-engine|jupyter-engine)
+        python-workflow-engine|spark-workflow-engine|jupyter-engine|raster-mosaic-runtime)
             # Python service: compare source file time (Dockerfile + Python source files)
             comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
                 -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
@@ -486,7 +486,7 @@ build_service() {
     local dockerfile_path=""
 
     case "$service" in
-        transfer-worker|meta-worker|manager-worker)
+        transfer-worker|meta-worker)
             # Worker services: special case with worker binary
             dockerfile_path="${service_dir}/Dockerfile.prebuilt.worker"
             build_context="."
@@ -521,7 +521,7 @@ build_service() {
             fi
             ;;
 
-        python-workflow-engine)
+        python-workflow-engine|raster-mosaic-runtime)
             # Python Workflow 依赖 common-python，共享 schema/client 需要仓库根作为构建上下文
             build_context="."
             dockerfile_path="${service_dir}/Dockerfile"
@@ -756,11 +756,11 @@ main() {
         "portal-backend:portal/backend"
         "graph-backend:graph/backend"
         "python-workflow-engine:engines/python-workflow"
+        "raster-mosaic-runtime:manager/raster-mosaic-runtime"
         "spark-workflow-engine:engines/spark-workflow"
         "jupyter-engine:engines/jupyter"
         "transfer-worker:transfer/backend"
         "meta-worker:meta/backend"
-        "manager-worker:manager/backend"
         "gateway:gateway"
         "console:console/frontend"
         "system-frontend:system/frontend"

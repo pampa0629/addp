@@ -414,6 +414,8 @@ definitions:
         $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewRenderInfo'
       raster:
         $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewRasterInfo'
+      raster_mosaic:
+        $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewRasterMosaicInfo'
       realtime_tile:
         $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewRealtimeTileInfo'
       recommended_mode:
@@ -482,6 +484,10 @@ definitions:
         type: string
       cog_check_level:
         type: string
+      crs_inference:
+        type: string
+      crs_inferred:
+        type: boolean
       display_max:
         type: number
       display_min:
@@ -520,6 +526,35 @@ definitions:
       unavailable_reason:
         type: string
       width:
+        type: integer
+    type: object
+  github_com_addp_manager_internal_service.QuickViewRasterMosaicInfo:
+    properties:
+      extent:
+        items:
+          type: number
+        type: array
+      extent_srid:
+        type: integer
+      format:
+        type: string
+      index_ref:
+        type: string
+      leaf_count:
+        type: integer
+      manifest_ref:
+        type: string
+      overview_height:
+        type: integer
+      overview_ref:
+        type: string
+      overview_width:
+        type: integer
+      source_count:
+        type: integer
+      source_crs:
+        type: string
+      source_srid:
         type: integer
     type: object
   github_com_addp_manager_internal_service.QuickViewRealtimeTileInfo:
@@ -2541,6 +2576,80 @@ paths:
       security:
       - BearerAuth: []
       summary: 更新栅格快显 COG 任务配置 | Update raster COG generation task configuration
+      tags:
+      - Manager
+  /raster_mosaic/tiles/{z}/{x}/{y}:
+    get:
+      description: 按 raster_mosaic item locator 返回 PNG/WebP 图片瓦片；全局 overview COG 分辨率不足时切换
+        leaf COG 合成。| Return PNG/WebP image tiles for a raster_mosaic item locator;
+        switches to leaf COG composition when the global overview COG is not detailed
+        enough.
+      parameters:
+      - description: raster_mosaic item locator
+        in: query
+        name: locator
+        required: true
+        type: string
+      - description: single-band display gamma, default 0.6
+        in: query
+        name: gamma
+        type: number
+      - description: single-band display minimum
+        in: query
+        name: display_min
+        type: number
+      - description: single-band display maximum
+        in: query
+        name: display_max
+        type: number
+      - description: invert grayscale display
+        in: query
+        name: invert
+        type: boolean
+      - description: zoom
+        in: path
+        name: z
+        required: true
+        type: integer
+      - description: tile x
+        in: path
+        name: x
+        required: true
+        type: integer
+      - description: tile y with extension, e.g. 12.webp
+        in: path
+        name: "y"
+        required: true
+        type: string
+      produces:
+      - image/png
+      - image/webp
+      responses:
+        "200":
+          description: 图片瓦片 | Image tile
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 资源不存在 | Not found
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: runtime 不可用 | Runtime unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 raster mosaic 图片瓦片 | Get raster mosaic image tile
       tags:
       - Manager
   /raster_mosaic_tasks:

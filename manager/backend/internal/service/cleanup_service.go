@@ -262,7 +262,7 @@ func (s *CleanupService) deleteMinIOPrefix(ctx context.Context, prefix string) (
 
 func (s *CleanupService) consumeCleanupRequests(ctx context.Context) {
 	groupName := "manager-cleanup-consumer"
-	consumerName := "manager-worker"
+	consumerName := "manager-backend"
 	_ = s.redis.XGroupCreateMkStream(ctx, events.EventCleanupRequest, groupName, "$").Err()
 
 	for {

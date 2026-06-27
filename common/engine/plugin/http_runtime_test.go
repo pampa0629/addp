@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestHTTPExecuteWorkflowIncludesRuntimeFields(t *testing.T) {
@@ -237,6 +239,39 @@ func TestHTTPInvokeOperatorIncludesBinaryPayload(t *testing.T) {
 	}
 	if gotPayload, ok := got["binary_payload"].(map[string]interface{}); !ok || gotPayload["name"] != "geometry_batch" {
 		t.Fatalf("binary payload missing from request: %#v", got)
+	}
+}
+
+func TestHTTPInvokeOperatorUsesRequestTimeout(t *testing.T) {
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(50 * time.Millisecond)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success"}`))
+		}),
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	go func() {
+		_ = server.Serve(listener)
+	}()
+
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = HTTPInvokeOperator(context.Background(), ConnectionInfo{
+		"protocol": "http",
+		"host":     "127.0.0.1",
+		"port":     port,
+	}, "build_raster_mosaic", OperatorInvokeRequest{Timeout: time.Millisecond})
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "timeout") {
+		t.Fatalf("HTTPInvokeOperator error = %v, want timeout", err)
 	}
 }
 

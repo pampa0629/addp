@@ -65,9 +65,9 @@ mindmap
       Attributes 分区
       FormatPlugin 编排
       元数据扫描流程
-    数据类型与格式
-      数据类型
-      table/document/media/container/graph/unknown
+      数据类型与格式
+        数据类型
+      table/document/media/container/graph/model_3d/point_cloud/unknown
       文件格式
         csv/json/parquet/shapefile/sqlite/geopackage/pdf/image
       capability 分层

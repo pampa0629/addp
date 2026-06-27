@@ -35,7 +35,7 @@ func quickViewError(c *gin.Context, err error) {
 
 func quickViewLocatorError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, preview.ErrEngineAccessDenied):
+	case errors.Is(err, preview.ErrEngineAccessDenied), errors.Is(err, service.ErrEngineAccessDenied):
 		accessDeniedToEngine(c)
 	case errors.Is(err, preview.ErrPreviewRequiresScannedMeta):
 		managerError(c, http.StatusNotFound, manageri18n.MsgMetaScanRequired)
@@ -395,6 +395,11 @@ func (h *QuickViewHandler) resolveRealtimeTileTarget(ctx context.Context, tenant
 }
 
 func (h *QuickViewHandler) quickViewSourceForLocator(ctx context.Context, tenantID *uint, locator string) (service.QuickViewSource, error) {
+	if h.service != nil {
+		if source, ok, err := h.service.RasterMosaicSourceForLocator(ctx, tenantID, locator); err != nil || ok {
+			return source, err
+		}
+	}
 	if h.previewResolver == nil {
 		return service.QuickViewSource{}, errors.New("preview resolver not initialized")
 	}
@@ -491,6 +496,13 @@ func locatorQuickViewTileURL(locator string) string {
 	return "/api/v1/manager/quick-view/tiles/{z}/{x}/{y}.mvt?" + values.Encode()
 }
 
+func locatorRasterMosaicTileURL(locator string) string {
+	values := url.Values{}
+	values.Set("locator", strings.TrimSpace(locator))
+	values.Set("gamma", strconv.FormatFloat(service.DefaultRasterMosaicGamma, 'f', -1, 64))
+	return "/api/v1/manager/raster_mosaic/tiles/{z}/{x}/{y}.png?" + values.Encode()
+}
+
 func applyLocatorQuickViewURLs(capability *service.QuickViewCapability) {
 	if capability == nil || strings.TrimSpace(capability.Locator) == "" {
 		return
@@ -502,6 +514,8 @@ func applyLocatorQuickViewURLs(capability *service.QuickViewCapability) {
 		}
 	case service.QuickViewRenderSourceRealtimeTile, service.QuickViewRenderSourceCachedTile:
 		capability.QuickView.TileURLTemplate = locatorQuickViewTileURL(capability.Locator)
+	case service.QuickViewRenderSourceRasterMosaic:
+		capability.QuickView.TileURLTemplate = locatorRasterMosaicTileURL(capability.Locator)
 	}
 }
 

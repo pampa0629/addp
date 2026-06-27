@@ -390,6 +390,12 @@ import {
   waitForRasterCOGExecution
 } from '@/utils/rasterCOGTask'
 import {
+  isRasterQuickViewRenderSource,
+  isTileQuickViewRenderSource
+} from '@/utils/quickViewRenderSource'
+import {
+  rasterExtentSRIDFromMetadata,
+  isRasterMosaicMeta,
   isTIFFRasterMeta,
   rasterSpatialFacts
 } from '@/utils/rasterQuickViewTarget'
@@ -566,7 +572,50 @@ const emptyDescription = computed(() => {
 })
 
 const multiRefOptions = computed(() => multiRefPreviewOptions(props.previewData, t))
-const showMultiRefToolbar = computed(() => multiRefOptions.value.length > 0 && !isQuickViewActive.value)
+const isRasterMosaicPreview = computed(() => {
+  const itemFormat = String(props.previewData?.object?.attributes?.item?.format || '').trim()
+  const contentFormat = String(props.previewData?.object?.content?.metadata?.format || '').trim()
+  return itemFormat === 'raster_mosaic' || contentFormat === 'raster_mosaic'
+})
+const selectedRefRasterQuickViewStatus = computed(() => {
+  if (!store.selectedRefPath) return null
+  const object = props.previewData?.object || {}
+  const content = object.content || {}
+  const attrs = object.attributes || {}
+  const item = attrs.item || {}
+  const contentMetadata = content.metadata || {}
+  const objectPath = String(object.path || store.selectedRefPath || '').trim()
+  const format = String(item.format || contentMetadata.format || '').trim().toLowerCase()
+  const contentURL = String(content.url || content.URL || object.url || '').trim()
+  if (!contentURL) return null
+  if (format !== 'tiff' && !/\.(tif|tiff)$/i.test(objectPath)) return null
+  const extent = Array.isArray(contentMetadata.extent) && contentMetadata.extent.length === 4
+    ? contentMetadata.extent.map(Number).filter(Number.isFinite)
+    : []
+  const extentSRID = rasterExtentSRIDFromMetadata(contentMetadata, extent)
+  return {
+    can_use_quick_view: true,
+    status: 'available',
+    render_source: 'client_cog_render',
+    quick_view: {
+      render_source: 'client_cog_render',
+      preview_url: contentURL,
+      extent: extent.length === 4 ? extent : undefined,
+      extent_srid: extent.length === 4 ? extentSRID : undefined
+    },
+    raster: {
+      format: 'tiff',
+      profile: 'cog',
+      size_bytes: Number(object.size_bytes || contentMetadata.size_bytes || 0),
+      width: Number(contentMetadata.width || 0),
+      height: Number(contentMetadata.height || 0),
+      band_count: Number(contentMetadata.band_count || 0)
+    }
+  }
+})
+const showMultiRefToolbar = computed(() => {
+  return multiRefOptions.value.length > 0 && (!isQuickViewActive.value || isRasterMosaicPreview.value)
+})
 
 watch(
   () => [
@@ -1147,6 +1196,8 @@ const isTIFFNode = computed(() => {
   return /\.(tif|tiff)$/i.test(selectedNodePath.value)
 })
 
+const isRasterMosaicNode = computed(() => isRasterMosaicMeta(props.previewData, props.selectedNode || {}))
+
 const spatialInfoTooltip = computed(() => {
   if (!hasGeometry.value) return ''
 
@@ -1179,7 +1230,7 @@ const spatialInfoTooltip = computed(() => {
 })
 
 const spatialPreviewTarget = computed(() => {
-  if ((!hasGeometry.value && !isTIFFNode.value) || !props.selectedNode) return null
+  if ((!hasGeometry.value && !isTIFFNode.value && !isRasterMosaicNode.value) || !props.selectedNode) return null
   const node = props.selectedNode
   const locator = String(node.locator || node.id || '').trim()
   let parsedLocator = null
@@ -1236,19 +1287,23 @@ const showQuickViewActions = computed(() => {
 })
 
 const isQuickViewActive = computed(() => {
-  return activePreviewMode.value === 'map_quick_view' && !!quickViewStatus.value?.can_use_quick_view
+  return activePreviewMode.value === 'map_quick_view' &&
+    !!quickViewStatus.value?.can_use_quick_view &&
+    !store.selectedRefPath &&
+    !store.selectedChildName
 })
 
 const quickViewRenderSource = computed(() => String(
   quickViewStatus.value?.render_source || quickViewStatus.value?.quick_view?.render_source || ''
 ).trim())
-const isRasterQuickView = computed(() => ['direct_tiff_client', 'client_cog_render'].includes(quickViewRenderSource.value))
+const isRasterQuickView = computed(() => isRasterQuickViewRenderSource(quickViewRenderSource.value))
 
 const quickViewRenderer = computed(() => {
+  if (selectedRefRasterQuickViewStatus.value) return RasterTIFFQuickView
   if (!isQuickViewActive.value) return null
   if (quickViewRenderSource.value === 'direct_geojson') return GeoJSONQuickView
   if (isRasterQuickView.value) return RasterTIFFQuickView
-  if (['cached_tile', 'realtime_tile'].includes(quickViewRenderSource.value)) return VectorTilePreview
+  if (isTileQuickViewRenderSource(quickViewRenderSource.value)) return VectorTilePreview
   return null
 })
 
@@ -1299,7 +1354,7 @@ const showQuickViewOptimizationAction = computed(() => {
 })
 
 const showMvtGridToggle = computed(() => {
-  return isQuickViewActive.value && ['cached_tile', 'realtime_tile'].includes(quickViewRenderSource.value)
+  return isQuickViewActive.value && isTileQuickViewRenderSource(quickViewRenderSource.value)
 })
 
 const quickViewSourceContext = computed(() => ({
@@ -1310,6 +1365,9 @@ const quickViewSourceContext = computed(() => ({
 }))
 
 const quickViewRendererProps = computed(() => {
+  if (selectedRefRasterQuickViewStatus.value) {
+    return { status: selectedRefRasterQuickViewStatus.value }
+  }
   const target = spatialPreviewTarget.value
   if (!target || !quickViewStatus.value) return {}
   if (quickViewRenderSource.value === 'direct_geojson') {
@@ -1336,6 +1394,13 @@ const quickViewRendererProps = computed(() => {
 const showQuickViewRenderer = computed(() => Boolean(quickViewRenderer.value))
 
 const quickViewRenderKey = computed(() => {
+  if (selectedRefRasterQuickViewStatus.value) {
+    return [
+      'quick-view-ref-raster',
+      store.selectedRefPath,
+      selectedRefRasterQuickViewStatus.value.quick_view.preview_url
+    ].join('-')
+  }
   const target = spatialPreviewTarget.value
   if (!target) return 'quick-view-empty'
   return [

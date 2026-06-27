@@ -78,7 +78,7 @@ func HTTPExecuteWorkflow(ctx context.Context, connInfo ConnectionInfo, req Workf
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 10 * time.Minute}
+	client := &http.Client{Timeout: workflowRuntimeTimeout(req.Timeout)}
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, err
@@ -151,7 +151,7 @@ func HTTPInvokeOperator(ctx context.Context, connInfo ConnectionInfo, operatorNa
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 10 * time.Minute}
+	client := &http.Client{Timeout: workflowRuntimeTimeout(req.Timeout)}
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, err
@@ -202,6 +202,13 @@ func HTTPInvokeOperator(ctx context.Context, connInfo ConnectionInfo, operatorNa
 		return result, err
 	}
 	return result, nil
+}
+
+func workflowRuntimeTimeout(timeout time.Duration) time.Duration {
+	if timeout > 0 {
+		return timeout
+	}
+	return 10 * time.Minute
 }
 
 func binaryPayloadFromRaw(value interface{}) (*BinaryPayload, bool) {

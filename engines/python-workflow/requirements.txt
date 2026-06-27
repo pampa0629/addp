@@ -1,7 +1,8 @@
 # Python Workflow Engine Dependencies
 
-# Core spatial computation (NumPy 2.0+ for Python 3.11+ compatibility)
-numpy>=2.0
+# Core spatial computation. Keep NumPy below 2.3 so local GDAL Python bindings
+# inherited from system site-packages remain import-compatible.
+numpy>=1.26,<2.3
 pandas>=2.0,<3.0
 geopandas>=0.15.0
 shapely>=2.1.0

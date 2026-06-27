@@ -99,6 +99,21 @@ func TestRasterMosaicTaskNormalizesDetachedPlacement(t *testing.T) {
 	if datasetName := stringFromConfig(target["dataset_name"]); datasetName != "srtm_mosaic" {
 		t.Fatalf("target.dataset_name = %q, want srtm_mosaic", datasetName)
 	}
+	cog, ok := asJSONMap(task.Config["cog"])
+	if !ok {
+		t.Fatalf("cog = %#v, want normalized object", task.Config["cog"])
+	}
+	wantLeafConcurrency := defaultRasterMosaicLeafConcurrency()
+	if got := intFromConfig(cog["leaf_concurrency"]); got != wantLeafConcurrency {
+		t.Fatalf("cog.leaf_concurrency = %d, want %d", got, wantLeafConcurrency)
+	}
+	wantNumThreads := defaultRasterMosaicLeafNumThreads(wantLeafConcurrency)
+	if got := intFromConfig(cog["num_threads"]); got != wantNumThreads {
+		t.Fatalf("cog.num_threads = %d, want %d", got, wantNumThreads)
+	}
+	if got := intFromConfig(cog["leaf_retry_attempts"]); got != 2 {
+		t.Fatalf("cog.leaf_retry_attempts = %d, want 2", got)
+	}
 }
 
 func TestRasterMosaicTaskRejectsInvalidPlacementTarget(t *testing.T) {
@@ -473,6 +488,67 @@ func TestRasterMosaicGenerationFailsWhenMetaScanSubmitFails(t *testing.T) {
 	}
 	if got.ErrorDetails == nil || !strings.Contains(stringFromConfig(got.ErrorDetails["message"]), "meta unavailable") {
 		t.Fatalf("error_details = %#v, want meta unavailable", got.ErrorDetails)
+	}
+}
+
+func TestRasterMosaicGenerationTimeoutKeepsLastProgress(t *testing.T) {
+	db := newRasterMosaicTaskServiceTestDB(t)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewRasterMosaicTaskService(repository.NewRasterMosaicRepository(db), taskExecRepo)
+	taskSvc.SetExecutor(fakeRasterMosaicExecutor{
+		err: errors.New(`invoke raster mosaic operator: Post "http://127.0.0.1:8099/api/operators/build_raster_mosaic/invoke": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`),
+	})
+
+	task := &models.RasterMosaicTask{
+		TenantID: 7,
+		Name:     "timeout mosaic",
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"source": commonModels.JSONMap{
+				"node_locator":     "addp://engine/26/path/rasters?type=node",
+				"source_engine_id": uint(26),
+			},
+			"placement": commonModels.JSONMap{"mode": "in_place"},
+		},
+	}
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	startedAt := time.Now().Add(-10 * time.Minute)
+	if err := taskExecRepo.Create(context.Background(), &commonExecution.TaskExecution{
+		TenantID:    7,
+		ExecutionID: "mosaic-exec-timeout",
+		Module:      commonExecution.ModuleManager,
+		TaskType:    commonExecution.TaskTypeRasterMosaicGeneration,
+		Source:      commonExecution.ModuleManager,
+		Status:      commonExecution.ExecutionStatusRunning,
+		Progress:    38,
+		TriggerType: commonExecution.TriggerTypeManual,
+		StartedAt:   &startedAt,
+		Metadata: commonModels.JSONMap{
+			"progress_event": commonModels.JSONMap{
+				"phase":            "leaf_cog",
+				"overall_progress": 38,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+
+	taskSvc.runRasterMosaicGeneration(context.Background(), task, "mosaic-exec-timeout", startedAt)
+
+	got, err := taskExecRepo.GetByExecutionID(context.Background(), "mosaic-exec-timeout", 7)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if got.Status != commonExecution.ExecutionStatusTimeout || got.Progress != 38 {
+		t.Fatalf("execution status/progress = %s/%d, want timeout/38", got.Status, got.Progress)
+	}
+	if _, ok := got.Metadata["progress_event"]; !ok {
+		t.Fatalf("metadata should keep progress_event: %#v", got.Metadata)
+	}
+	if got.ErrorDetails == nil || !strings.Contains(strings.ToLower(stringFromConfig(got.ErrorDetails["message"])), "timeout") {
+		t.Fatalf("error_details = %#v, want timeout message", got.ErrorDetails)
 	}
 }
 

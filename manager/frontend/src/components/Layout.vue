@@ -68,6 +68,10 @@
               <el-icon><Picture /></el-icon>
               <span>{{ t('manager.layout.rasterCOG') }}</span>
             </el-menu-item>
+            <el-menu-item index="/spatial-quick-view/raster-mosaic">
+              <el-icon><Grid /></el-icon>
+              <span>{{ t('manager.layout.rasterMosaic') }}</span>
+            </el-menu-item>
           </el-sub-menu>
         </el-menu>
       </el-aside>

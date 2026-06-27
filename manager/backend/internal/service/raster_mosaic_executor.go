@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
@@ -19,6 +20,7 @@ type ManagerRasterMosaicExecutor struct {
 	workflowEngines workflowEngineLister
 	managerBaseURL  string
 	internalAPIKey  string
+	invokeTimeout   time.Duration
 }
 
 func NewManagerRasterMosaicExecutor(
@@ -26,12 +28,17 @@ func NewManagerRasterMosaicExecutor(
 	workflowEngines workflowEngineLister,
 	managerBaseURL string,
 	internalAPIKey string,
+	invokeTimeout time.Duration,
 ) *ManagerRasterMosaicExecutor {
+	if invokeTimeout <= 0 {
+		invokeTimeout = 2 * time.Hour
+	}
 	return &ManagerRasterMosaicExecutor{
 		systemClient:    systemClient,
 		workflowEngines: workflowEngines,
 		managerBaseURL:  strings.TrimRight(strings.TrimSpace(managerBaseURL), "/"),
 		internalAPIKey:  strings.TrimSpace(internalAPIKey),
+		invokeTimeout:   invokeTimeout,
 	}
 }
 
@@ -64,6 +71,9 @@ func (e *ManagerRasterMosaicExecutor) BuildRasterMosaic(ctx context.Context, req
 				"blocksize":           req.Config.COG.BlockSize,
 				"overview_resampling": req.Config.COG.OverviewResampling,
 				"validate_source_cog": req.Config.COG.ValidateSourceCOG,
+				"leaf_concurrency":    req.Config.COG.LeafConcurrency,
+				"num_threads":         req.Config.COG.NumThreads,
+				"leaf_retry_attempts": req.Config.COG.LeafRetryAttempts,
 			},
 			"overview": commonModels.JSONMap{
 				"enabled":    req.Config.Overview.Enabled,
@@ -77,6 +87,7 @@ func (e *ManagerRasterMosaicExecutor) BuildRasterMosaic(ctx context.Context, req
 				"format":   req.Config.Tiles.Format,
 			},
 		},
+		Timeout: e.invokeTimeout,
 	})
 	if err != nil {
 		return nil, operatorInvokeError("invoke raster mosaic operator", invokeResult, err)
@@ -259,6 +270,7 @@ func rasterMosaicGDALRoot(engine *commonModels.Engine, loc *resourcetree.Resourc
 			"AWS_SECRET_ACCESS_KEY":                   cfg.SecretKey,
 			"AWS_VIRTUAL_HOSTING":                     "FALSE",
 			"AWS_HTTPS":                               gdalHTTPSValue(useSSL),
+			"GDAL_DISABLE_READDIR_ON_OPEN":            "EMPTY_DIR",
 			"CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE": "YES",
 		}
 		return "/vsis3/" + fullName, env, commonModels.JSONMap{

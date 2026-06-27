@@ -57,7 +57,6 @@ dist/
 │   ├── system                   # System 后端
 │   ├── gateway                  # API Gateway
 │   ├── manager-backend          # Manager 后端
-│   ├── manager-worker           # Manager Worker
 │   ├── meta-backend             # Meta 后端
 │   ├── meta-worker              # Meta Worker
 │   ├── transfer-backend         # Transfer 后端
@@ -175,10 +174,9 @@ IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
 - `graph-backend` - Graph 后端
 - `gateway` - API Gateway
 
-**Worker 服务** (3 个):
+**Worker 服务** (2 个):
 - `meta-worker` - Meta Worker
 - `transfer-worker` - Transfer Worker
-- `manager-worker` - Manager Worker
 
 **Engine 服务** (3 个):
 - `python-workflow-engine` - Python Workflow Engine
@@ -372,10 +370,9 @@ harbor.example.com:5001/project/addp-manager-backend:latest
 - `addp-graph-backend`
 - `addp-gateway`
 
-**Worker 服务** (3 个):
+**Worker 服务** (2 个):
 - `addp-meta-worker`
 - `addp-transfer-worker`
-- `addp-manager-worker`
 
 **Engine 服务** (3 个):
 - `addp-python-workflow-engine`

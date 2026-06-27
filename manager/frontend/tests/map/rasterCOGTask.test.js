@@ -20,10 +20,33 @@ describe('rasterCOGTask', () => {
     })).toBe(true)
   })
 
-  it('does not show managed COG action when raster quick view is already usable', () => {
+  it('shows optional COG action for usable direct TIFF', () => {
     expect(shouldShowRasterCOGGenerationAction({
       can_use_quick_view: true,
-      unavailable_reason: 'requires_managed_cog'
+      render_source: 'direct_tiff_client',
+      raster: {
+        recommended_action: 'create_cog'
+      }
+    })).toBe(true)
+  })
+
+  it('shows COG action for non-COG TIFF that cannot map-locate', () => {
+    expect(shouldShowRasterCOGGenerationAction({
+      can_use_quick_view: false,
+      unavailable_reason: 'missing_crs',
+      raster: {
+        recommended_action: 'create_cog'
+      }
+    })).toBe(true)
+  })
+
+  it('does not show COG action for already optimized raster quick view', () => {
+    expect(shouldShowRasterCOGGenerationAction({
+      can_use_quick_view: true,
+      render_source: 'client_cog_render',
+      raster: {
+        recommended_action: 'create_managed_cog'
+      }
     })).toBe(false)
   })
 

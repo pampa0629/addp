@@ -30,6 +30,8 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 | `media` | 图片、视频、音频等可感知媒体内容 | 媒体信息、原始内容、缩略图、播放、转码 |
 | `container` | 内部包含子对象或子资源的数据 | 内部对象枚举、默认入口、子对象读取 |
 | `graph` | 节点、边、关系结构的数据 | 图结构信息、关系查询、子图样本 |
+| `model_3d` | 三维空间对象、网格、场景、构件或倾斜摄影模型 | 模型结构信息、三维预览、空间定位、LOD 或构件摘要 |
+| `point_cloud` | 三维点集合及其点属性、空间范围和抽样结构 | 点云信息、抽样预览、空间定位、LOD / 分块读取 |
 | `unknown` | 暂未识别或暂不接入的数据 | 基础存储信息、原始内容或下载 |
 
 ### 当前支持汇总
@@ -45,6 +47,8 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 | `media` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 media catalog 引擎。 | 图片：`image`、`jpeg`、`png`、`gif`、`tiff`、`webp`、`bmp`、`svg`、`avif`、`heic`。栅格数据集：`raster_mosaic`。视频：`video`、`mp4`、`mov`、`mkv`、`avi`、`webm`。音频：`audio`、`mp3`、`wav`、`flac`、`aac`、`ogg`。ZIP 内部媒体文件可作为 container child 被识别。 | `jpeg`、`png`、`gif`、`tiff`、`image` 当前有图片媒体信息 provider；`raster_mosaic` 表示由 manifest、index、leaf COG 和 overview COG 组成的 whole-scope 栅格镶嵌数据集；其他媒体格式当前主要提供格式身份、MIME / 扩展名识别和 raw / range / stream 内容承载。 |
 | `container` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 container catalog 引擎；目录、prefix、bucket 只是 catalog / storage 形态，不是 `container` data type。 | `excel`、`sqlite`、`geopackage`、`zip`。 | 容器 item 先记录轻量 children；进入某个 child 后，再按 child 自身格式归一为 `table`、`document`、`media`、`unknown` 等类型。JSON 作为 container 仍是概念可表达方向，当前内置 JSON plugin 未提供容器信息 provider。 |
 | `graph` | 原生图引擎：Neo4j。 | 当前没有内置 graph 文件格式 descriptor。 | RDF、GraphML、GEXF、图结构 JSON 仍是概念层典型来源；进入内置主线前需要先补 format descriptor、provider 和扫描规则。 |
+| `model_3d` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生三维模型 catalog 引擎。 | 第一阶段规划：`glb`。后续扩展：`gltf`、`obj`、`stl`、`osgb`、`3dtiles`、`ifc`、`rvt`。 | GLB / glTF、OSGB 倾斜摄影、3D Tiles、IFC / Revit BIM 都归入 `model_3d`；网格场景、倾斜摄影、BIM、分块场景等子形态由 `type_info.model_3d.model_kind` 表达，不新增平行 data type。 |
+| `point_cloud` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生点云 catalog 引擎。 | 第一阶段规划：`las`。后续扩展：`laz`、`copc`、`pcd`、点云型 `ply`、`ept`、`potree`、`e57`。 | 点云即使可被展开为 x/y/z 等列，也不默认归为 `table`；点数、点格式、维度、三维包围盒、scale / offset 等进入 `type_info.point_cloud`，空间参考进入 `capabilities.spatial`。 |
 | `unknown` | 文件 / 对象承载：NFS、S3、MinIO；其他存储扫描中无法判断内容语义的叶子也可落为 `unknown`。 | `unknown`。 | `unknown` 是识别失败或暂未接入时的兜底格式 / 数据类型组合；它保留 storage、item 等基础事实和 raw binary 读取能力，不引入 `file` data type。 |
 
 ### table
@@ -128,6 +132,38 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 
 通用 graph 类型信息只描述结构摘要，例如节点形状、关系形状、连接模式、属性结构和计数。实际节点样本、路径探索结果、图算法结果和前端图组件数据属于读取、查询或 Graph 模块能力，不进入 graph 的通用类型信息。
 
+### model_3d
+
+`model_3d` 是所有三维模型型 data item 的通用数据类型。
+
+典型来源：
+
+- GLB / glTF 单体或多资源模型。
+- OBJ / STL / PLY 等网格模型。
+- OSGB 倾斜摄影模型。
+- 3D Tiles 分块三维场景。
+- IFC / Revit 等 BIM / 参数化建筑模型。
+
+`model_3d` 不只表示普通网格模型，也覆盖倾斜摄影、BIM 构件模型和分块三维场景。子形态通过 `type_info.model_3d.model_kind` 表达，第一版取值建议为 `mesh_scene`、`photogrammetry_scene`、`bim_model`、`tiled_scene`、`generic`。OSGB 和 Revit / IFC 不新增独立 data type；它们的格式组织、构件属性、LOD、纹理、空间参考和原生摘要分别进入 layout、`format_info.<format>`、`type_info.model_3d` 和 `capabilities.spatial`。
+
+三维模型的预览数据、转换产物、缩略图、瓦片化结果、构件查询结果不进入 `type_info.model_3d`。Manager 应基于已入库 item 和标准 attributes 选择内容读取或派生预览能力。
+
+### point_cloud
+
+`point_cloud` 是所有点云型 data item 的通用数据类型。
+
+典型来源：
+
+- LAS / LAZ。
+- COPC。
+- PCD。
+- 点云型 PLY。
+- XYZ / PTS / PTX 等文本点云。
+- EPT / Potree 等 whole-scope 点云数据集。
+- E57 等多站扫描集合。
+
+点云虽然可以被展开成 x/y/z、intensity、classification 等列，但用户和平台的主要消费方式是点云抽样、三维预览、空间范围、点属性、LOD 和分块读取，因此不应仅因“可列化”而归为 `table`。点属性摘要进入 `type_info.point_cloud` 或 `capabilities.statistics`；真实点样本、抽稀点集和可视化瓦片属于内容读取或 Manager 派生产物，不写入 attributes。
+
 ### unknown
 
 `unknown` 用于暂未识别或暂不接入的数据。
@@ -150,6 +186,8 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 - `zip`、`rar`
 - `pdf`、`wps`
 - `jpeg`、`png`、`tiff`
+- `glb`、`gltf`、`obj`、`stl`、`osgb`、`3dtiles`、`ifc`
+- `las`、`laz`、`copc`、`pcd`、`ept`
 
 文件格式不等于数据类型，也不等于内容布局：
 
@@ -159,6 +197,10 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 - Raster mosaic = `data_type=media` + `layout=whole` + `format=raster_mosaic` + `capabilities.spatial`。
 - Excel = `data_type=container` + `layout=single` + `format=excel`。
 - Iceberg = `data_type=table` + `layout=whole` + `format=iceberg`。
+- GLB = `data_type=model_3d` + `layout=single` + `format=glb`。
+- 3D Tiles = `data_type=model_3d` + `layout=whole` + `format=3dtiles`，`tileset.json` 作为 manifest ref，分块场景语义由 `model_kind=tiled_scene` 表达；1.0 / 1.1 版本差异写入 `format_info.3dtiles`，不拆分 data type。
+- OSGB = `data_type=model_3d` + `layout=whole` + `format=osgb`，倾斜摄影语义由 `model_kind=photogrammetry_scene` 表达。
+- LAS = `data_type=point_cloud` + `layout=single` + `format=las`，CRS 和空间范围进入 `capabilities.spatial`。
 
 ## 类型信息与格式信息
 
@@ -171,6 +213,8 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 | `media` | 媒体种类、MIME、宽高、时长、编码、颜色空间 |
 | `container` | child 数量、默认 child、child 轻量摘要、child refs |
 | `graph` | node shapes、relationship shapes、连接模式、属性结构、节点数、关系数 |
+| `model_3d` | model_kind、mesh / node / material / texture / animation 数量、LOD 数量、三维包围盒、单位、up axis |
+| `point_cloud` | point_cloud_kind、点数、点格式、维度列表、三维包围盒、scale / offset、颜色 / intensity / classification 能力 |
 
 这些 type info 是结构事实，不是内容数据，也不是格式私有信息。文档正文、表格样本、图片缩略图、原始二进制、视频流、图节点样本等必须通过 content reader、sample reader、query provider 或业务模块结果表达，不写入 `type_info`。
 

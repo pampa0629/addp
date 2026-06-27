@@ -9,6 +9,7 @@ import (
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/contentadapter"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/common/rastermosaic"
@@ -63,6 +64,13 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 			}
 			itemAttributes = attrs
 		}
+		if item.Layout == format.LayoutWhole && item.DataType == datatype.Model3D {
+			attrs, ok := scopeModel3DAttributes(ctx, input, item)
+			if !ok {
+				continue
+			}
+			itemAttributes = attrs
+		}
 		detected := detectedItemFromResolvedItem(input.DirPath, item)
 		if len(itemAttributes) > 0 {
 			detected.Attributes = itemAttributes
@@ -79,6 +87,38 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 		}
 	}
 	return result, nil
+}
+
+func scopeModel3DAttributes(ctx context.Context, input DirectoryResolveInput, item dataitem.ResolvedItem) (map[string]interface{}, bool) {
+	if input.ContentReader == nil {
+		return nil, false
+	}
+	formatType := format.NormalizeFormat(item.Format)
+	if formatType == format.FormatUnknown {
+		return nil, false
+	}
+	provider, err := format.GetScopeModel3DInfoProvider(formatType)
+	if err != nil {
+		return nil, false
+	}
+	reader := contentadapter.NewMappedReader(input.ContentReader, input.ConnInfo, func(ref contentio.Ref) (plugin.CatalogPath, error) {
+		return resolveCatalogPath(input.EngineID, ref.Path, input.CatalogPathFor), nil
+	}, plugin.ReadOptions{})
+	info, err := provider.DescribeModel3DScope(ctx, reader, contentio.NewRef(item.ScopePath, contentio.RoleScope), nil)
+	if err != nil || info == nil {
+		return nil, false
+	}
+	attrs := map[string]interface{}{}
+	if info.Model3D != nil {
+		metaattr.MergeStandardAttributes(attrs, metaattr.Model3DInfoAttributes(info.Model3D, info.Spatial))
+	}
+	if len(info.FormatInfo) > 0 {
+		metaattr.MergeStandardAttributes(attrs, metaattr.FormatInfoAttributes(string(formatType), info.FormatInfo))
+	}
+	if len(attrs) == 0 {
+		return nil, false
+	}
+	return attrs, true
 }
 
 func rasterMosaicManifestAttributes(ctx context.Context, input DirectoryResolveInput, item dataitem.ResolvedItem) (map[string]interface{}, bool) {

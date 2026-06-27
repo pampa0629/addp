@@ -85,6 +85,7 @@ export const PAGE_MAPS = {
     'spatial-quick-view/vector-tile-cache': 'spatial-quick-view/vector-tile-cache',
     'spatial-quick-view/vector-optimization': 'spatial-quick-view/vector-optimization',
     'spatial-quick-view/raster-cog': 'spatial-quick-view/raster-cog',
+    'spatial-quick-view/raster-mosaic': 'spatial-quick-view/raster-mosaic',
     '': 'data-explorer',
   },
   meta: {
@@ -219,6 +220,7 @@ export const SIDEBAR_MENUS = {
           { index: '/manager/spatial-quick-view/vector-optimization', icon: TrendCharts, label: 'console.menus.manager.quickViewOptimization' },
           { index: '/manager/spatial-quick-view/vector-tile-cache',   icon: Grid,        label: 'console.menus.manager.tileCache' },
           { index: '/manager/spatial-quick-view/raster-cog',          icon: Files,       label: 'console.menus.manager.cogArtifacts' },
+          { index: '/manager/spatial-quick-view/raster-mosaic',       icon: Grid,        label: 'console.menus.manager.rasterMosaic' },
         ],
       },
     ],

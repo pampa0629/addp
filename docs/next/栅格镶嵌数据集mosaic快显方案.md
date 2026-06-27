@@ -367,15 +367,15 @@ Manager 前端已有单 TIFF 快显能力，当前实现使用 OpenLayers `GeoTI
 
 mosaic 应支持查看 item 内部的单个 leaf COG，但这属于 mosaic item 的内部浏览能力，不应把每个 leaf COG 自动提升为同级 Meta item。
 
-建议方式：
+已确认方式：
 
 1. `mosaic.addp.json` 或 `format_info.raster_mosaic` 中提供 source index 摘要。
-2. Manager 预览 mosaic item 时，可展示“组成栅格”列表。
-3. 用户选择某个 leaf 后，通过 `source_id`、`child_name` 或后续专用参数读取该 leaf 的基础信息和单图预览。
-4. leaf 查看只消费 mosaic item 内部 manifest 和 index，并使用 leaf COG 路径。
+2. Manager 预览 mosaic item 时，根据 source index 将 leaf COG 暴露为现有 multi ref 预览描述。
+3. 用户选择某个 leaf 后，继续使用现有 `GET /api/v1/manager/preview?locator=...&ref_path=...` 机制读取该 leaf 的基础信息和单图预览。
+4. `ref_path` 使用 mosaic 数据集内部的 leaf COG 路径；Manager 后端负责读取 manifest/index 并校验该 leaf 属于当前 mosaic item。
 5. 如用户确实需要治理单个 leaf COG，应在业务存储中按普通 TIFF/COG item 单独扫描该文件所在范围；这和 mosaic 内部浏览是两个不同入口。
 
-单 leaf COG 的查看可以复用现有 `RasterTIFFQuickView.vue` 和 `rasterGeoTIFFSourceOptions.js` 的能力。mosaic item 内部不应出现需要前端直接读取的原始大 TIFF。
+单 leaf COG 的查看复用已有 multi 单文件查看能力和 `RasterTIFFQuickView.vue` / `rasterGeoTIFFSourceOptions.js`。mosaic item 内部不应出现需要前端直接读取的原始大 TIFF。
 
 这个规则类似容器 child 的预览语义：内部对象可以被查看，但默认不自动升格为外部 Meta item。不同之处在于 mosaic 的整体 data type 仍是 `media`，不是 `container`。
 
@@ -556,7 +556,7 @@ mosaic 创建位置分为两种模式：
 我的建议：
 
 1. Manager 负责 mosaic 预览 HTTP API、鉴权、manifest/index 查询、运行时缓存和错误响应语义。
-2. 栅格 COG window 读取、重采样、NoData 合成、色带/拉伸和图片编码建议放入独立 raster-renderer sidecar，不把 GDAL 依赖直接压进 Manager 主进程。
+2. 栅格 COG window 读取、重采样、NoData 合成、色带/拉伸和图片编码建议放入独立 `raster-mosaic-runtime` sidecar，不把 GDAL 依赖直接压进 Manager 主进程。该 sidecar 只服务 `raster_mosaic`，不是通用栅格引擎。
 3. manifest/index 的 Go 结构和基础校验进入 common，避免 Meta、Manager 后续重复；Python 生成侧的 schema builder 进入 common-python。
 4. 如果后续 Service 或 Portal 也要复用 mosaic 预览，再把空间索引查询、渲染参数模型和 sidecar client 抽到 common。
 
@@ -570,11 +570,11 @@ mosaic 创建位置分为两种模式：
 4. 在 Manager 快显文档中补 mosaic item 的 capability 和 render source。
 5. 在任务体系中定义 mosaic 创建任务类型，例如 `raster_mosaic_generation`。
 6. 在存储流和下载语义中定义 mosaic item 的下载行为，是下载 manifest、打包完整数据集，还是按策略导出。
-7. 在 Manager 预览协议中定义 mosaic 内部 leaf COG 查看参数和返回语义。
+7. 在 Manager 预览协议中固化 mosaic 内部 leaf COG 查看参数和返回语义；当前实现已采用父 `locator` + `ref_path` 复用 multi 单文件预览。
 
 ## 十七、当前落地状态
 
-截至 2026-06-26，已完成第一阶段任务入口、Python 最小生成主路径和 Meta 入库触发闭环：
+截至 2026-06-26，已完成第一阶段任务入口、Python 最小生成主路径、Meta 入库触发和第一版 Manager 快显闭环：
 
 1. `common/execution` 已新增任务类型 `raster_mosaic_generation`。
 2. Manager 已新增 `manager.raster_mosaic_tasks` 任务定义表、模型、仓库和服务。
@@ -592,12 +592,19 @@ mosaic 创建位置分为两种模式：
 14. Manager mosaic generation 成功后已触发目标数据集根目录的 Meta manual deep scan，并把 Meta scan execution id 写入 generation execution metadata；扫描请求按 dataset root catalog path 提交，不展开几千个 leaf COG。
 15. `common/rastermosaic` 和 `common-python/addp_common.raster_mosaic` 已提供 manifest/source-index v1 的共享 schema 常量、结构和校验/生成辅助，Python Workflow 不再手写 schema 字符串。
 16. Manager 已禁止对象存储 `in_place`，MinIO/S3 源 node 必须用 `detached` 生成，避免非原子替换风险进入主路径。
+17. Manager quick view capability 已识别 `format=raster_mosaic` item，并返回 `render_source=raster_mosaic_tile`、空间范围和瓦片 URL 模板。
+18. Manager 已新增 `GET /api/v1/manager/raster_mosaic/tiles/{z}/{x}/{y}.png`，第一版只基于全局 overview COG 出 PNG/WebP 图片瓦片。
+19. `raster-mosaic-runtime` sidecar 已接入开发启动脚本。该 runtime 只服务 `raster_mosaic`，负责 GDAL 读取 overview COG、重采样、NoData 透明化和图片编码；Manager 后端负责鉴权、item/manifest 查询、业务存储访问参数解析和 runtime 调用。
+20. Manager 前端 `SpatialPreview.vue` / `RasterTIFFQuickView.vue` 已支持 `raster_mosaic_tile`，可以复用现有 OpenLayers 地图、底图切换、透明度和全幅显示能力；进入 mosaic 快显时不再触发无意义的基础表格预览请求。
+21. 真实业务 MinIO 样例已跑通：从 `addp/images` 的 28 个 GeoTIFF 生成 `addp/mosaics/srtm-test/srtm-test`，产出 `mosaic.addp.json`、`index/source-index.json`、`overviews/overview.cog.tif`，Meta 侧形成一个 `format=raster_mosaic`、`layout=whole` 的业务 item，前端地图可显示 mosaic 图层。
+22. Manager 父 mosaic 预览已返回 leaf refs，前端可复用现有 multi ref 下拉；选择 leaf 后通过父 `locator` + `ref_path` 进入已有单文件预览链路，leaf COG 不自动升格为同级 Meta item。
 
-下一步需要先讨论并确认：
+下一步需要继续讨论并确认：
 
-1. Manager 预览瓦片接口的 URL、返回格式、overview 优先策略和 leaf COG window 合成职责。
-2. raster-renderer sidecar 的职责边界、部署方式、缓存协议和错误语义。
+1. 中高层级是否进入 leaf COG window 合成主路径，以及 overview 与 leaf 合成的切换阈值、重叠策略和缓存策略。
+2. 栅格渲染风格参数协议，包括波段选择、色带、透明度、拉伸、NoData 和后续 data tile 能力的边界。
 3. 任务体系是否需要父子 execution 或关联 execution 视图，让用户能从 mosaic generation 直接看到后续 Meta scan 的完成状态。
+4. mosaic item 的下载、删除、移动和存储清理语义，尤其是 detached 数据集的目录级生命周期。
 
 ## 十八、当前结论
 

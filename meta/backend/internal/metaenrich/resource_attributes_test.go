@@ -4,11 +4,13 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	stdimage "image"
 	"image/color"
 	"image/png"
 	"io"
+	"math"
 	"testing"
 
 	"github.com/addp/common/dataitem"
@@ -250,6 +252,125 @@ func TestEnrichResourceAttributesWritesMediaInfoForMultiTIFF(t *testing.T) {
 	}
 }
 
+func TestEnrichResourceAttributesDetectsUnknownGLBAndWritesModel3DInfo(t *testing.T) {
+	t.Parallel()
+
+	content := resourceAttributesTestGLB([]byte(`{
+		"asset":{"version":"2.0","generator":"resource-attributes-test"},
+		"nodes":[{}],
+		"meshes":[{"primitives":[{"attributes":{"POSITION":0},"indices":1}]}],
+		"materials":[{}],
+		"textures":[{}],
+		"accessors":[
+			{"count":8,"type":"VEC3","min":[1,2,3],"max":[4,5,6]},
+			{"count":12,"type":"SCALAR"}
+		]
+	}`))
+	size := int64(len(content))
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Unknown,
+			Format:             string(format.FormatUnknown),
+			PrimaryContentPath: "models/building.glb",
+			SizeBytes:          &size,
+		},
+		PhysicalPath: "models/building.glb",
+	}
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
+
+	enriched, _, err := EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{
+		ContentReader: bytesContentReader{content: content},
+		Item:          item,
+		PhysicalPath:  "models/building.glb",
+		SizeBytes:     size,
+		CatalogPathFor: func(path string) plugin.CatalogPath {
+			return plugin.FileItemPath(1, path)
+		},
+	})
+	if err != nil {
+		t.Fatalf("EnrichResourceAttributes() error = %v", err)
+	}
+	if enriched.DataType != datatype.Model3D || enriched.Format != string(format.FormatGLB) {
+		t.Fatalf("enriched item = %s/%s, want model_3d/glb", enriched.DataType, enriched.Format)
+	}
+	if got := commonJSON.String(attrs, "item", "data_type"); got != string(datatype.Model3D) {
+		t.Fatalf("item.data_type = %q, want model_3d", got)
+	}
+	if got := commonJSON.String(attrs, "item", "format"); got != string(format.FormatGLB) {
+		t.Fatalf("item.format = %q, want glb", got)
+	}
+	model := commonJSON.Section(attrs, "type_info.model_3d")
+	if model["model_kind"] != string(datatype.Model3DKindMeshScene) {
+		t.Fatalf("type_info.model_3d = %#v, want mesh_scene", model)
+	}
+	if commonJSON.InterfaceInt64(model["vertex_count"]) != 8 || commonJSON.InterfaceInt64(model["triangle_count"]) != 4 {
+		t.Fatalf("type_info.model_3d = %#v, want vertex_count 8 and triangle_count 4", model)
+	}
+	formatInfo := commonJSON.Section(attrs, "format_info.glb")
+	if formatInfo["gltf_version"] != "2.0" {
+		t.Fatalf("format_info.glb = %#v, want gltf_version 2.0", formatInfo)
+	}
+}
+
+func TestEnrichResourceAttributesDetectsUnknownLASAndWritesPointCloudInfo(t *testing.T) {
+	t.Parallel()
+
+	content := resourceAttributesTestLASHeader()
+	size := int64(len(content))
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Unknown,
+			Format:             string(format.FormatUnknown),
+			PrimaryContentPath: "point-cloud/site.las",
+			SizeBytes:          &size,
+		},
+		PhysicalPath: "point-cloud/site.las",
+	}
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
+
+	enriched, _, err := EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{
+		ContentReader: bytesContentReader{content: content},
+		Item:          item,
+		PhysicalPath:  "point-cloud/site.las",
+		SizeBytes:     size,
+		CatalogPathFor: func(path string) plugin.CatalogPath {
+			return plugin.FileItemPath(1, path)
+		},
+	})
+	if err != nil {
+		t.Fatalf("EnrichResourceAttributes() error = %v", err)
+	}
+	if enriched.DataType != datatype.PointCloud || enriched.Format != string(format.FormatLAS) {
+		t.Fatalf("enriched item = %s/%s, want point_cloud/las", enriched.DataType, enriched.Format)
+	}
+	if got := commonJSON.String(attrs, "item", "data_type"); got != string(datatype.PointCloud) {
+		t.Fatalf("item.data_type = %q, want point_cloud", got)
+	}
+	if got := commonJSON.String(attrs, "item", "format"); got != string(format.FormatLAS) {
+		t.Fatalf("item.format = %q, want las", got)
+	}
+	pointCloud := commonJSON.Section(attrs, "type_info.point_cloud")
+	if pointCloud["point_cloud_kind"] != string(datatype.PointCloudKindRawPointCloud) {
+		t.Fatalf("type_info.point_cloud = %#v, want raw_point_cloud", pointCloud)
+	}
+	if commonJSON.InterfaceInt64(pointCloud["point_count"]) != 123456789 {
+		t.Fatalf("type_info.point_cloud = %#v, want point_count 123456789", pointCloud)
+	}
+	if pointCloud["point_format"] != "las_1.4_point_format_7" {
+		t.Fatalf("type_info.point_cloud = %#v, want point format 7", pointCloud)
+	}
+	spatial := commonJSON.Section(attrs, "capabilities.spatial")
+	if extent := commonJSON.InterfaceSlice(spatial["extent"]); len(extent) != 4 {
+		t.Fatalf("capabilities.spatial = %#v, want extent", spatial)
+	}
+	formatInfo := commonJSON.Section(attrs, "format_info.las")
+	if formatInfo["version"] != "1.4" {
+		t.Fatalf("format_info.las = %#v, want version 1.4", formatInfo)
+	}
+}
+
 func TestResolveAndEnrichMultiTIFFUsesPrimaryContent(t *testing.T) {
 	t.Parallel()
 
@@ -443,4 +564,55 @@ func resourceAttributesTestTIFF(t *testing.T, width, height int) []byte {
 		t.Fatalf("encode tiff: %v", err)
 	}
 	return buf.Bytes()
+}
+
+func resourceAttributesTestGLB(jsonChunk []byte) []byte {
+	for len(jsonChunk)%4 != 0 {
+		jsonChunk = append(jsonChunk, ' ')
+	}
+	totalLen := uint32(12 + 8 + len(jsonChunk))
+	buf := bytes.NewBuffer(make([]byte, 0, totalLen))
+	buf.WriteString("glTF")
+	_ = binary.Write(buf, binary.LittleEndian, uint32(2))
+	_ = binary.Write(buf, binary.LittleEndian, totalLen)
+	_ = binary.Write(buf, binary.LittleEndian, uint32(len(jsonChunk)))
+	_ = binary.Write(buf, binary.LittleEndian, uint32(0x4E4F534A))
+	buf.Write(jsonChunk)
+	return buf.Bytes()
+}
+
+func resourceAttributesTestLASHeader() []byte {
+	const headerSize = 375
+	buf := make([]byte, headerSize)
+	copy(buf[:4], []byte("LASF"))
+	buf[24] = 1
+	buf[25] = 4
+	copy(buf[26:58], []byte("ADDP"))
+	copy(buf[58:90], []byte("resource-attributes-test"))
+	binary.LittleEndian.PutUint16(buf[94:96], uint16(headerSize))
+	binary.LittleEndian.PutUint32(buf[96:100], headerSize)
+	binary.LittleEndian.PutUint32(buf[100:104], 2)
+	buf[104] = 7
+	binary.LittleEndian.PutUint16(buf[105:107], 36)
+	binary.LittleEndian.PutUint32(buf[107:111], 0)
+	resourceAttributesTestPutFloat64(buf[131:139], 0.01)
+	resourceAttributesTestPutFloat64(buf[139:147], 0.01)
+	resourceAttributesTestPutFloat64(buf[147:155], 0.01)
+	resourceAttributesTestPutFloat64(buf[155:163], 1000)
+	resourceAttributesTestPutFloat64(buf[163:171], 2000)
+	resourceAttributesTestPutFloat64(buf[171:179], 3000)
+	resourceAttributesTestPutFloat64(buf[179:187], 10)
+	resourceAttributesTestPutFloat64(buf[187:195], 1)
+	resourceAttributesTestPutFloat64(buf[195:203], 20)
+	resourceAttributesTestPutFloat64(buf[203:211], 2)
+	resourceAttributesTestPutFloat64(buf[211:219], 30)
+	resourceAttributesTestPutFloat64(buf[219:227], 3)
+	binary.LittleEndian.PutUint64(buf[235:243], 4096)
+	binary.LittleEndian.PutUint32(buf[243:247], 1)
+	binary.LittleEndian.PutUint64(buf[247:255], 123456789)
+	return buf
+}
+
+func resourceAttributesTestPutFloat64(target []byte, value float64) {
+	binary.LittleEndian.PutUint64(target, math.Float64bits(value))
 }

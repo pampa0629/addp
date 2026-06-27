@@ -49,6 +49,30 @@ func formatTypeFromMetaAttributes(attrs map[string]interface{}) format.FormatTyp
 	return format.NormalizeFormat(formatName)
 }
 
+func primaryRefPathFromMetaAttributes(attrs map[string]interface{}, role string) string {
+	role = strings.ToLower(strings.TrimSpace(role))
+	refs := commonJSON.InterfaceSlice(commonJSON.Section(attrs, "item")["refs"])
+	first := ""
+	for _, raw := range refs {
+		ref := commonJSON.InterfaceMap(raw)
+		path := strings.Trim(commonJSON.InterfaceString(ref["path"]), "/")
+		if path == "" {
+			continue
+		}
+		refRole := strings.ToLower(strings.TrimSpace(commonJSON.InterfaceString(ref["role"])))
+		if role != "" && refRole != role {
+			continue
+		}
+		if first == "" {
+			first = path
+		}
+		if commonJSON.InterfaceBool(ref["primary"]) {
+			return path
+		}
+	}
+	return first
+}
+
 func fileFormatTypeFromMetaAttributes(attrs map[string]interface{}) format.FormatType {
 	if formatType := formatTypeFromMetaAttributes(attrs); formatType != "" && formatType != format.FormatUnknown {
 		return formatType

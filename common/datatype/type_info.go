@@ -19,3 +19,9 @@ func (*ContainerInfo) TypeInfoDataType() DataType { return Container }
 
 // TypeInfoDataType reports that GraphInfo describes graph data.
 func (*GraphInfo) TypeInfoDataType() DataType { return Graph }
+
+// TypeInfoDataType reports that Model3DInfo describes 3D model data.
+func (*Model3DInfo) TypeInfoDataType() DataType { return Model3D }
+
+// TypeInfoDataType reports that PointCloudInfo describes point cloud data.
+func (*PointCloudInfo) TypeInfoDataType() DataType { return PointCloud }

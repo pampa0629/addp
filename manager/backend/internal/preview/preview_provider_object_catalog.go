@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
@@ -209,13 +211,97 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		GeometryColumns: []string{},
 	}
 
-	attributeSources := make([]models.JSONMap, 0, 1)
+	attributeSources := make([]models.JSONMap, 0, 2)
+	if len(req.Attributes) > 0 {
+		attributeSources = append(attributeSources, models.JSONMap(req.Attributes))
+	}
 	if item != nil && len(item.Attributes) > 0 {
 		attributeSources = append(attributeSources, item.Attributes)
 	}
 	combinedAttributes := mergeJSONMaps(attributeSources...)
 	if len(combinedAttributes) > 0 {
 		preview.Object.Attributes = combinedAttributes
+	}
+
+	if formatTypeFromMetaAttributes(combinedAttributes) == format.FormatRasterMosaic {
+		preview.Object.StorageRef = fmt.Sprintf("%s/%s", bucket, objectPath)
+		preview.Object.ContentType = "application/vnd.addp.raster-mosaic+json"
+		if item != nil {
+			if item.ObjectSizeBytes != nil {
+				preview.Object.SizeBytes = *item.ObjectSizeBytes
+			} else if item.SizeBytes != nil {
+				preview.Object.SizeBytes = *item.SizeBytes
+			}
+		}
+		preview.Object.Content = &models.ObjectPreviewContent{
+			Kind: "raster_mosaic",
+			Metadata: map[string]interface{}{
+				"format": "raster_mosaic",
+				"layout": "whole",
+			},
+		}
+		leafRefs, _, err := rasterMosaicLeafRefsForPreview(ctx, newObjectCatalogContentReader(contentReader, catalogProvider, connInfo, resource.ID, bucket), objectPath, format.FormatRasterMosaic, combinedAttributes)
+		if err != nil {
+			return nil, err
+		}
+		if len(leafRefs) > 0 {
+			preview.Object.Content.Metadata["refs"] = refPreviewDescriptors(format.FormatRasterMosaic, leafRefs)
+			preview.Object.Content.Metadata["layout"] = "raster_mosaic_leaf"
+		}
+		return preview, nil
+	}
+	if formatTypeFromMetaAttributes(combinedAttributes) == format.Format3DTiles {
+		manifestRef := primaryRefPathFromMetaAttributes(combinedAttributes, "manifest")
+		if manifestRef == "" {
+			manifestRef = strings.Trim(pathpkg.Join(objectPath, "tileset.json"), "/")
+		}
+		manifestStorageRef := manifestRef
+		if !strings.HasPrefix(manifestStorageRef, bucket+"/") {
+			manifestStorageRef = strings.Trim(bucket+"/"+manifestStorageRef, "/")
+		}
+		manifestObjectPath := strings.TrimPrefix(manifestStorageRef, bucket+"/")
+		dir, name := commonModels.SplitObjectPath(manifestObjectPath)
+		preview.Object.StorageRef = manifestStorageRef
+		preview.Object.ContentType = "application/vnd.ogc.3dtiles+json"
+		if item != nil {
+			if item.ObjectSizeBytes != nil {
+				preview.Object.SizeBytes = *item.ObjectSizeBytes
+			} else if item.SizeBytes != nil {
+				preview.Object.SizeBytes = *item.SizeBytes
+			}
+		}
+		req := &objectcontent.ObjectContentRequest{
+			Bucket:      bucket,
+			Path:        dir,
+			Name:        name,
+			Format:      string(format.Format3DTiles),
+			Extension:   ".json",
+			ContentType: preview.Object.ContentType,
+			Size:        preview.Object.SizeBytes,
+			Attributes:  preview.Object.Attributes,
+		}
+		if url := buildStorageStreamURL(resource.ID, preview.Object.StorageRef); url != "" {
+			req.PreviewURL = url
+			preview.Object.URL = url
+		}
+		if p.content != nil {
+			handler := p.content.Resolve(req)
+			if handler == nil {
+				return preview, nil
+			}
+			content, truncated, err := handler.Handle(ctx, req, nil)
+			if err != nil {
+				return nil, err
+			}
+			preview.Object.Content = content
+			if truncated || (content != nil && content.Truncated) {
+				preview.Object.Truncated = true
+				if preview.Object.Content != nil {
+					preview.Object.Content.Truncated = true
+				}
+			}
+		}
+		return preview, nil
 	}
 
 	if nodeType == "bucket" || nodeType == "prefix" || nodeType == "directory" || objectPath == "" {

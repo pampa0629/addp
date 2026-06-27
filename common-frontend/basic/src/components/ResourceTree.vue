@@ -68,6 +68,7 @@
           <slot name="node" :node="node" :data="data">
             <span
               class="tree-node-wrapper"
+              :class="{ 'resource-tree-unloaded-children-inline': isUnloadedExpandable(data) }"
               @dblclick="enableDblclickToggle ? handleNodeDblclick($event, node, data) : null"
             >
               <span class="tree-node" :class="[data.type, { highlight: data.highlight }]">
@@ -365,13 +366,25 @@ const treeProps = {
   label: 'label',
   children: 'children',
   isLeaf: (data, node) => {
-    // 如果节点有 hasChildren 字段，使用它来判断
-    if (data.hasChildren !== undefined) {
-      return !data.hasChildren
+    if (hasExpandableChildren(data)) {
+      return false
     }
-    // 否则根据 children 数组判断
+    if (data?.hasChildren === false || data?.metadata?.has_children === false) {
+      return true
+    }
     return !data.children || data.children.length === 0
   }
+}
+
+const hasExpandableChildren = (data) => {
+  if (!data) return false
+  if (data.hasChildren === true) return true
+  if (data.metadata?.has_children === true) return true
+  return Number(data.metadata?.item_count || 0) > 0
+}
+
+const isUnloadedExpandable = (data) => {
+  return hasExpandableChildren(data) && (!data.children || data.children.length === 0)
 }
 
 // 计算展开的节点
@@ -426,7 +439,7 @@ const resolveNodeClassName = (data, node) => {
     classes.push(props.nodeClassName)
   }
 
-  if (data?.hasChildren && (!data.children || data.children.length === 0)) {
+  if (isUnloadedExpandable(data)) {
     classes.push('resource-tree-unloaded-children')
   }
 
@@ -764,14 +777,10 @@ defineExpose({
   pointer-events: none;
 }
 
-.tree-container :deep(.el-tree-node.resource-tree-unloaded-children > .el-tree-node__content .el-tree-node__expand-icon.is-leaf::before) {
-  content: "";
-  display: inline-block;
-  width: 0;
-  height: 0;
-  border-top: 5px solid transparent;
-  border-bottom: 5px solid transparent;
-  border-left: 6px solid currentColor;
+.tree-container :deep(.el-tree-node__content:has(.tree-node-wrapper.resource-tree-unloaded-children-inline) .el-tree-node__expand-icon.is-leaf) {
+  visibility: visible;
+  color: var(--el-text-color-secondary);
+  pointer-events: none;
 }
 
 .tree-container :deep(.el-tree-node.is-current > .el-tree-node__content) {

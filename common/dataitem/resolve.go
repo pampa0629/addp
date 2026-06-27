@@ -594,17 +594,25 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 	if name == "." || name == "" {
 		name = scopePath
 	}
+	primaryContentPath := ""
+	for _, ref := range refs {
+		if ref.Primary {
+			primaryContentPath = ref.Path
+			break
+		}
+	}
 	return ResolvedItem{
-		Name:            name,
-		FullName:        scopePath,
-		Layout:          format.LayoutWhole,
-		DataType:        rule.DataType,
-		Format:          rule.Format,
-		ScopePath:       scopePath,
-		RefPaths:        refPaths,
-		RefList:         refs,
-		SizeBytes:       &size,
-		DetectionReason: "whole_scope",
+		Name:               name,
+		FullName:           scopePath,
+		Layout:             format.LayoutWhole,
+		DataType:           rule.DataType,
+		Format:             rule.Format,
+		PrimaryContentPath: primaryContentPath,
+		ScopePath:          scopePath,
+		RefPaths:           refPaths,
+		RefList:            refs,
+		SizeBytes:          &size,
+		DetectionReason:    "whole_scope",
 	}, true
 }
 

@@ -2490,6 +2490,9 @@ const docTemplate = `{
                 "full_name": {
                     "type": "string"
                 },
+                "has_children": {
+                    "type": "boolean"
+                },
                 "id": {
                     "type": "integer"
                 },

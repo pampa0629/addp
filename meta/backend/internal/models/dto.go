@@ -211,6 +211,7 @@ type MetaNodeLite struct {
 	ScannedDepth   string                 `json:"scanned_depth"`
 	ScannedAt      *string                `json:"scanned_at,omitempty"`
 	ItemCount      int                    `json:"item_count"`
+	HasChildren    bool                   `json:"has_children"`
 	TotalSizeBytes int64                  `json:"total_size_bytes"`
 	Attributes     map[string]interface{} `json:"attributes,omitempty"`
 }

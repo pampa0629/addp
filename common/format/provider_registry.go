@@ -186,6 +186,30 @@ func (r *ProviderRegistry) GetMediaInfoProvider(formatType FormatType) (MediaInf
 	return pluginCapability[MediaInfoProvider](r, formatType, "media info provider")
 }
 
+func GetModel3DInfoProvider(formatType FormatType) (Model3DInfoProvider, error) {
+	return globalProviderRegistry.GetModel3DInfoProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetModel3DInfoProvider(formatType FormatType) (Model3DInfoProvider, error) {
+	return pluginCapability[Model3DInfoProvider](r, formatType, "3D model info provider")
+}
+
+func GetScopeModel3DInfoProvider(formatType FormatType) (ScopeModel3DInfoProvider, error) {
+	return globalProviderRegistry.GetScopeModel3DInfoProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetScopeModel3DInfoProvider(formatType FormatType) (ScopeModel3DInfoProvider, error) {
+	return pluginCapability[ScopeModel3DInfoProvider](r, formatType, "scope 3D model info provider")
+}
+
+func GetPointCloudInfoProvider(formatType FormatType) (PointCloudInfoProvider, error) {
+	return globalProviderRegistry.GetPointCloudInfoProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetPointCloudInfoProvider(formatType FormatType) (PointCloudInfoProvider, error) {
+	return pluginCapability[PointCloudInfoProvider](r, formatType, "point cloud info provider")
+}
+
 func GetContainerInfoProvider(formatType FormatType) (ContainerInfoProvider, error) {
 	return globalProviderRegistry.GetContainerInfoProvider(formatType)
 }

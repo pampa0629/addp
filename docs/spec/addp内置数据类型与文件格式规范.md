@@ -57,6 +57,113 @@
 | DOCX | `single` | `document` | `docx` | 第一阶段以内置格式识别和 raw / range 预览为主 |
 | PPTX | `single` | `document` | `pptx` | 第一阶段以内置格式识别和 raw / range 预览为主 |
 | WPS | `single` | `document` | `wps` | 第一阶段以内置格式识别和 raw / range 预览为主 |
+| GLB | `single` | `model_3d` | `glb` | 第一阶段三维模型代表格式；预览优先走 raw / range / storage stream + 前端 Three.js |
+| 3D Tiles | `whole` | `model_3d` | `3dtiles` | 由 `tileset.json` manifest 声明的分块三维场景 |
+| LAS | `single` | `point_cloud` | `las` | 第一阶段点云代表格式；deep scan 读取 header 和轻量摘要，预览走抽样点集 |
+
+## GLB
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | `model_3d` |
+| `format` | `glb` |
+| 主资源 | `meta_item.full_name` 指向 `.glb` 文件资源 |
+
+GLB 是单资源二进制 glTF 模型。第一阶段 GLB 作为 `model_3d` 的代表格式接入，用于走通 Meta scan 到 Manager 三维预览主链路。`.gltf + .bin + textures`、OBJ、OSGB、3D Tiles、IFC / Revit 等格式不借用 `format=glb`，应分别建立自己的 format descriptor 和规则。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout`、`data_type=model_3d`、`format=glb` |
+| `type_info.model_3d` | `model_kind=mesh_scene`、节点数、mesh 数、顶点数、三角面数、材质数、纹理数、动画数、三维包围盒、单位、up axis 等跨格式模型摘要 |
+| `format_info.glb` | glTF 版本、generator、asset copyright、extensions used / required、是否包含 embedded resources、buffer / image / accessor 摘要等 GLB 私有事实 |
+| `capabilities.spatial` | 仅在模型有明确地理定位、CRS 或可解析空间范围时写入 |
+
+### 消费要求
+
+Manager 预览应消费已入库 `data_type=model_3d + format=glb` 和 storage / contentio 内容通道，优先通过 raw / range / storage stream 将 GLB 交给前端三维渲染器。预览器名称、前端材质、截图、转换产物、压缩结果不得写入 attributes。
+
+### 格式约束
+
+- 不得把 GLB 归为 `media` 或 `container`。
+- 不得把 glTF scene graph 当成 ADDP `graph` data type。
+- 不得把模型原始 JSON、binary chunk、纹理内容、前端渲染协议或缩略图写入 `type_info.model_3d`。
+- 后续 `gltf` multi 规则应通过 `layout=multi` 和 related refs 表达，不应和 GLB 共享同一个 primary ref 规则。
+
+## 3D Tiles
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `whole` |
+| `data_type` | `model_3d` |
+| `format` | `3dtiles` |
+| 主入口 | scope 根目录下的 `tileset.json` |
+| 主资源表达 | `meta_item.full_name` 指向 tileset 所在目录，`item.refs` 中 `tileset.json` 的 `role=manifest` 且 `primary=true` |
+
+3D Tiles 是以 `tileset.json` 为 manifest 的分块三维场景。ADDP 不把 `tileset.json` 当普通 JSON 表或文档入库，而是把其所在目录 / prefix 识别为一个 `layout=whole` 的 `model_3d` data item。3D Tiles 1.0、1.1 都使用同一个 `format=3dtiles`；版本差异写入 `format_info.3dtiles.asset_version`、extensions 和后续格式私有字段，不拆分 data type 或 format。
+
+内容识别不能只依赖文件名；扫描实现必须解析 manifest 并校验 `asset.version` 与 `root`，解析失败时不得产出 3D Tiles item。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=whole`、`data_type=model_3d`、`format=3dtiles`、`refs` 中记录 `tileset.json` manifest 及被认领的瓦片资源 |
+| `type_info.model_3d` | `model_kind=tiled_scene`、LOD 数量、三维包围盒等跨格式模型摘要 |
+| `format_info.3dtiles` | `manifest_ref`、`asset_version`、`tileset_version`、`geometric_error`、`root_refine`、tile/content/leaf/max_depth 统计、extensions used / required、property 数量等 3D Tiles 私有事实 |
+| `capabilities.spatial` | 仅在 manifest 中存在可解析 `region` 等明确地理范围时写入；3D Tiles region 按 EPSG:4326 经纬度范围表达 |
+
+### 消费要求
+
+Manager 预览应消费已入库 `data_type=model_3d + format=3dtiles`、`layout=whole` 和 `tileset.json` 入口，通过 storage stream 或同等内容通道保持 tileset 相对资源可访问。预览 DTO 可以使用 `frontend_renderer=3dtiles`，但 renderer 名称、加载 URL 重写规则、瓦片抽稀策略、截图或转换产物不得写入 Meta attributes。
+
+### 格式约束
+
+- 不得把 3D Tiles 归为 `json`、`container` 或 `media`。
+- 不得把瓦片文件列表、二进制 tile 内容、纹理内容或前端渲染状态写入 `type_info.model_3d`。
+- OSGB 倾斜摄影目录、I3S、Cesium ion 资产等需要单独 format 规则；不得用 `format=3dtiles` 兼容所有目录型三维模型。
+- 3D Tiles 内嵌的 b3dm / i3dm / pnts / glTF 是 tileset 内容资源，不默认作为独立 data item 重复入库。
+- 3D Tiles 1.1 的 structured metadata、multiple contents、implicit tiling 等能力先作为 `format_info.3dtiles` 的格式私有事实扩展；只有形成跨格式模型事实时才提升到 `type_info.model_3d` 或 `capabilities`。
+
+## LAS
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | `point_cloud` |
+| `format` | `las` |
+| 主资源 | `meta_item.full_name` 指向 `.las` 文件资源 |
+
+LAS 是单资源点云格式。第一阶段 LAS 作为 `point_cloud` 的代表格式接入，用于走通点云 header 解析、Meta attributes 写入和 Manager 抽样预览主链路。LAZ / COPC、EPT、Potree、E57、PCD、点云型 PLY 等格式不借用 `format=las`，应分别建立自己的 format descriptor 和规则。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout`、`data_type=point_cloud`、`format=las` |
+| `type_info.point_cloud` | `point_cloud_kind=raw_point_cloud`、点数、point format、维度数量、维度列表、三维包围盒、scale、offset、是否包含颜色 / intensity / classification 等跨格式点云摘要 |
+| `format_info.las` | LAS 版本、header size、offset to point data、point data record length、VLR / EVLR 数量、system identifier、generating software 等 LAS 私有事实 |
+| `capabilities.spatial` | CRS、空间参考定义、空间范围等可解析空间事实 |
+| `capabilities.statistics` | 分类分布、回波摘要、抽样规模、密度估算等可选画像事实 |
+
+### 消费要求
+
+Manager 点云预览应基于已入库 `data_type=point_cloud + format=las` 和标准内容通道读取抽样点集，不得把完整 LAS 内容或点样本塞入 attributes。大文件预览应通过抽样、分块或后续派生 LOD 产物实现；前端渲染协议属于 Manager preview DTO，不是 Meta attributes。
+
+### 格式约束
+
+- 不得仅因 LAS 点记录可列化为 x/y/z、intensity、classification 等字段而归为 `table`。
+- 不得把 LAS header 私有字段写入 `type_info.point_cloud`；LAS 原生 header 细节进入 `format_info.las`。
+- CRS、空间定位和空间范围进入 `capabilities.spatial`，不写入 `format_info.las` 的私有字段作为平台行为事实。
+- LAZ / COPC 压缩和层级结构需要单独 format 规则；不得用 `format=las` 兼容读取压缩点云。
 
 ## CSV / TSV
 
@@ -182,6 +289,15 @@ GeoJSON 是单资源空间矢量表格式。`.geojson`、`application/geo+json`�
 - 没有显式可解析 CRS / SRID 时，只有实际或显式 bbox 落在经纬度范围 `x=[-180,180]`、`y=[-90,90]` 内，才可按 GeoJSON 默认语义写入 `EPSG:4326`。bbox 明显越界时不得默认写入 4326，应保留 `capabilities.spatial.extent`，省略 SRID / CRS，并在 `format_info.geojson.coordinate_range_out_of_wgs84=true` 标记。
 - `format_info.geojson.structure` 应来自 GeoJSON provider 的格式私有事实；`.json` 后缀被升格为 GeoJSON 时，也只能写入 `format_info.geojson`，不得同时写入 `format_info.json`。
 
+### 空间行值编码
+
+| 方向 | 支持的 geometry encoding | 默认 encoding | native encoding | 说明 |
+|---|---|---|---|---|
+| read | `geojson`、`ewkb` | `geojson` | `geojson` | `geojson` 用于预览、调试和格式本地场景；`ewkb` 用于 Transfer 跨格式 / 跨 engine 链路。 |
+| write | `geojson`、`ewkb` | `geojson` | `geojson` | writer 可把 `ewkb` 转为 GeoJSON geometry object，但不执行 CRS 转换。 |
+
+GeoJSON 标准导出前，Transfer 必须保证传入 writer 的几何坐标已经满足 4326 / WGS84 经纬度约束。GeoJSON source 如果没有可识别 CRS 且坐标范围明显越界，不得被当作 4326 source 直接导出；需要用户补充 source CRS 后再由 planner 选择源端 transform 或 `vector_reproject`。
+
 ## Shapefile
 
 ### 识别与组织
@@ -217,6 +333,15 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。ref 匹配规则是�
 - 字段类型映射为 ADDP 通用字段类型。原始 DBF 类型属于 Shapefile format plugin 内部事实；如需给 Manager 展示，只能写入只读 attributes，不能进入 Transfer / engine / format writer 的执行决策。
 - 记录数来自真实 Shapefile 记录数，不写固定占位值。
 - 写出 `.prj` 时，format writer 只接受 `WriteOptions.ExtraParams["crs_definition"]` 作为 CRS 定义文本；该字段表达定义内容，不得写成 `format` 或 PostGIS `spatial_ref_sys`。
+
+### 空间行值编码
+
+| 方向 | 支持的 geometry encoding | 默认 encoding | native encoding | 说明 |
+|---|---|---|---|---|
+| read | `shapefile_shape`、`wkt`、`wkb`、`ewkb` | `wkt` | `shapefile_shape` | 默认 `wkt` 服务 sample / preview / 调试；Transfer 跨格式链路优先请求 `ewkb`。 |
+| write | `shapefile_shape`、`wkt`、`wkb`、`ewkb` | `wkt` | `shapefile_shape` | `shapefile_shape` 只用于 Shapefile 同构且无需 CRS 转换的 native passthrough。 |
+
+Shapefile 的 `.shp` 原生 shape record 对用户有格式语义价值，因此可以作为 `shapefile_shape` 暴露；但非 Shapefile writer 不应消费该编码。跨 format、写入 native table 或需要 CRS 转换时，Transfer 应切换到 portable encoding，第一阶段优先 `ewkb`。
 
 ### 标准写入示例
 
@@ -601,6 +726,9 @@ GeoJSON 虽然是 `data_type=table`，但对象内容预览应优先生成 GeoJS
 | 图片 URL 预览 | `image` | `url` | `image` |
 | 视频 URL 预览 | `video` | `url` | `video` |
 | PDF / DOCX / PPTX / WPS URL 预览 | 对应格式名 | `url` | 对应格式名 |
+| GLB 三维模型 URL 预览 | `model_3d` | `url` | `model_3d` |
+| 3D Tiles 分块三维场景 URL 预览 | `model_3d` | `url` | `3dtiles` |
+| LAS 点云抽样预览 | `point_cloud` | `json` | `point_cloud` |
 | 小体积原始二进制兜底 | 对应格式名 | `raw_binary` | 对应格式名 |
 | 表格材料 | `table` | `table` | `table` |
 | 容器索引 / 子对象导航 | `container` | `container` | `container` |
