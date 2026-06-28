@@ -60,6 +60,7 @@ var fallbackIdentifications = []fallbackIdentification{
 	{FormatGLB, ".glb", "model/gltf-binary", datatype.Model3D},
 	{FormatLAS, ".las", "application/vnd.las", datatype.PointCloud},
 	{Format3DTiles, "", "application/vnd.ogc.3dtiles+json", datatype.Model3D},
+	{FormatOSGB, ".osgb", "application/octet-stream", datatype.Model3D},
 }
 
 // fallbackFormatByExtension keeps detection minimally usable before builtin

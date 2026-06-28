@@ -15,6 +15,7 @@ import (
 	_ "github.com/addp/common/format/plugins/json"
 	_ "github.com/addp/common/format/plugins/las"
 	_ "github.com/addp/common/format/plugins/orc"
+	_ "github.com/addp/common/format/plugins/osgb"
 	_ "github.com/addp/common/format/plugins/parquet"
 	_ "github.com/addp/common/format/plugins/rastermosaic"
 	_ "github.com/addp/common/format/plugins/shapefile"

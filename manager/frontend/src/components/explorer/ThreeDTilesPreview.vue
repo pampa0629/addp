@@ -13,7 +13,10 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { TilesRenderer } from '3d-tiles-renderer/three'
+import { ReorientationPlugin } from '3d-tiles-renderer/three/plugins'
+import { patchGLBMissingMaterialExtensions } from '@/utils/gltfCompatibility'
 
 const props = defineProps({
   data: {
@@ -28,8 +31,8 @@ const props = defineProps({
 
 const viewportRef = ref(null)
 const loading = ref(false)
+const loadingText = ref('正在加载 3D Tiles...')
 const errorMessage = ref('')
-const loadingText = '正在加载 3D Tiles...'
 
 let renderer = null
 let scene = null
@@ -38,6 +41,9 @@ let controls = null
 let animationFrame = 0
 let resizeObserver = null
 let tiles = null
+let loadingTimer = 0
+let loadSerial = 0
+let cameraFitted = false
 
 const objectData = computed(() => props.data?.object || {})
 const content = computed(() => objectData.value?.content || {})
@@ -113,30 +119,48 @@ function resize() {
 
 function clearTiles() {
   if (!tiles) return
+  if (scene && tiles.group) {
+    scene.remove(tiles.group)
+  }
   tiles.dispose()
   tiles = null
+}
+
+function fitCameraToTilesOnce() {
+  if (cameraFitted) return
+  if (fitCameraToTiles()) {
+    cameraFitted = true
+  }
 }
 
 function fitCameraToTiles() {
   if (!tiles || !camera || !controls) return
   const sphere = new THREE.Sphere()
   if (!tiles.getBoundingSphere(sphere) || !Number.isFinite(sphere.radius) || sphere.radius <= 0) return
+  tiles.group.updateMatrixWorld(true)
+  sphere.applyMatrix4(tiles.group.matrixWorld)
   const radius = Math.max(sphere.radius, 1)
   const center = sphere.center
   camera.near = Math.max(radius / 10000, 0.1)
   camera.far = Math.max(radius * 1000, 1000)
-  camera.position.copy(center).add(new THREE.Vector3(radius * 1.45, radius * 1.1, radius * 1.65))
+  camera.up.set(0, 1, 0)
+  camera.position.copy(center).add(new THREE.Vector3(radius * 1.35, radius * 1.05, radius * 1.45))
   camera.updateProjectionMatrix()
   controls.target.copy(center)
   controls.update()
+  return true
 }
 
 async function loadTileset(url) {
+  const currentLoad = ++loadSerial
   loading.value = true
+  loadingText.value = '正在加载 3D Tiles...'
   errorMessage.value = ''
+  window.clearTimeout(loadingTimer)
   await nextTick()
   ensureScene()
   clearTiles()
+  cameraFitted = false
   if (!url) {
     errorMessage.value = '缺少 3D Tiles 预览地址'
     loading.value = false
@@ -145,22 +169,67 @@ async function loadTileset(url) {
 
   const source = buildTilesetSource(url)
   tiles = new TilesRenderer(source.rootURL)
+  installCompatibleGLTFLoader(tiles)
+  let rootLoaded = false
+  let modelLoaded = false
+  const finishLoading = () => {
+    if (currentLoad !== loadSerial) return
+    window.clearTimeout(loadingTimer)
+    loading.value = false
+  }
   tiles.fetchOptions = { credentials: 'same-origin' }
+  tiles.registerPlugin(new ReorientationPlugin({ recenter: true }))
   tiles.registerPlugin({
     name: 'addp-storage-stream-url',
     fetchData: (resourceURL, options = {}) => fetch(resolveTileResourceURL(resourceURL, source), withAuthOptions(options))
   })
   tiles.setCamera(camera)
   tiles.setResolutionFromRenderer(camera, renderer)
-  tiles.addEventListener('load-tileset', () => {
-    fitCameraToTiles()
+  tiles.addEventListener('load-root-tileset', () => {
+    if (currentLoad !== loadSerial) return
+    rootLoaded = true
+    loadingText.value = '正在加载瓦片...'
+    fitCameraToTilesOnce()
+  })
+  tiles.addEventListener('load-model', () => {
+    if (currentLoad !== loadSerial) return
+    modelLoaded = true
+    fitCameraToTilesOnce()
+    finishLoading()
+  })
+  tiles.addEventListener('tiles-load-end', () => {
+    if (currentLoad !== loadSerial) return
     loading.value = false
   })
   tiles.addEventListener('load-error', (event) => {
+    if (currentLoad !== loadSerial) return
+    window.clearTimeout(loadingTimer)
     errorMessage.value = event?.error?.message || '3D Tiles 加载失败'
     loading.value = false
   })
+  loadingTimer = window.setTimeout(() => {
+    if (currentLoad !== loadSerial || !loading.value) return
+    if (!rootLoaded) {
+      errorMessage.value = '3D Tiles 入口加载超时'
+      loading.value = false
+      return
+    }
+    if (!modelLoaded) {
+      loading.value = false
+    }
+  }, 15000)
   scene.add(tiles.group)
+}
+
+function installCompatibleGLTFLoader(targetTiles) {
+  const manager = targetTiles?.manager
+  if (!manager) return
+  const loader = new GLTFLoader(manager)
+  const parse = loader.parse.bind(loader)
+  loader.parse = (data, path, onLoad, onError) => {
+    parse(patchGLBMissingMaterialExtensions(data), path, onLoad, onError)
+  }
+  manager.addHandler(/\.(gltf|glb)$/i, loader)
 }
 
 function buildTilesetSource(url) {
@@ -248,6 +317,7 @@ function appendAuthToken(params) {
 
 function disposeScene() {
   window.cancelAnimationFrame(animationFrame)
+  window.clearTimeout(loadingTimer)
   resizeObserver?.disconnect()
   resizeObserver = null
   clearTiles()

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
@@ -142,18 +143,26 @@ func (p *fileCatalogPreviewProvider) previewFile(
 	preview.Object.ContentType = canonicalContentType
 
 	if p.content != nil {
-		dir, name := splitFSPath(filePath)
+		contentPath := filePath
+		contentFormat := normalizeObjectContentRequestFormat(catalogutil.StringAttribute(preview.Object.Attributes, "format"))
+		if format.NormalizeFormat(contentFormat) == format.Format3DTiles {
+			contentPath = threeDTilesManifestObjectPath(rootName, filePath, preview.Object.Attributes)
+			canonicalContentType = "application/vnd.ogc.3dtiles+json"
+			preview.Object.ContentType = canonicalContentType
+			preview.Object.StorageRef = contentPath
+		}
+		dir, name := splitFSPath(contentPath)
 		contentReq := &objectcontent.ObjectContentRequest{
 			Bucket:      rootName,
 			Path:        dir,
 			Name:        name,
-			Format:      normalizeObjectContentRequestFormat(catalogutil.StringAttribute(preview.Object.Attributes, "format")),
-			Extension:   defaultExtension(filePath),
+			Format:      contentFormat,
+			Extension:   defaultExtension(contentPath),
 			ContentType: canonicalContentType,
 			Size:        meta.Size,
 			Attributes:  preview.Object.Attributes,
 		}
-		if url := buildFileStorageStreamURL(engine.ID, filePath); url != "" {
+		if url := buildFileStorageStreamURL(engine.ID, contentPath); url != "" {
 			contentReq.PreviewURL = url
 			preview.Object.URL = url
 		}

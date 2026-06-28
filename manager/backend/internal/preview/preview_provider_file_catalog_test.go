@@ -226,6 +226,74 @@ func TestFileCatalogGLBPreviewUsesModel3DStorageStreamURL(t *testing.T) {
 	}
 }
 
+func TestFileCatalog3DTilesPreviewUsesManifestStorageStreamURL(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingFileCatalogPreviewPlugin{
+		engineType:   "nfs",
+		contentType:  "application/octet-stream",
+		sizeBytes:    128,
+		expectedPath: "/3d/mars3d-qx-dyt-3dtiles",
+	}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	contentRegistry := objectcontent.NewObjectContentRegistry()
+	objectcontent.LoadObjectContentPlugins(contentRegistry, "../../plugins")
+	provider := NewFileCatalogPreviewProvider(nil, contentRegistry)
+
+	preview, err := provider.Preview(context.Background(), &PreviewRequest{
+		Engine: &models.Engine{EngineType: "nfs", ID: 26},
+		Schema: "3d",
+		Table:  "mars3d-qx-dyt-3dtiles",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "model_3d",
+				"format":    "3dtiles",
+				"layout":    "whole",
+			},
+			"type_info": map[string]interface{}{
+				"model_3d": map[string]interface{}{
+					"model_kind": "tiled_scene",
+				},
+			},
+			"format_info": map[string]interface{}{
+				"3dtiles": map[string]interface{}{
+					"manifest_ref": "tileset.json",
+					"tile_count":   int64(3),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Object == nil || preview.Object.Content == nil {
+		t.Fatalf("object content missing: %#v", preview)
+	}
+	content := preview.Object.Content
+	if content.Kind != models.ObjectPreviewKindModel3D || content.PreviewMaterial != "url" || content.FrontendRenderer != "3dtiles" {
+		t.Fatalf("content = %#v, want 3dtiles URL preview", content)
+	}
+	if content.URL == "" || !strings.Contains(content.URL, "storage_ref=3d%2Fmars3d-qx-dyt-3dtiles%2Ftileset.json") {
+		t.Fatalf("content URL = %q, want tileset.json storage stream URL", content.URL)
+	}
+	if preview.Object.StorageRef != "3d/mars3d-qx-dyt-3dtiles/tileset.json" {
+		t.Fatalf("storage_ref = %q, want manifest path", preview.Object.StorageRef)
+	}
+	if preview.Object.ContentType != "application/vnd.ogc.3dtiles+json" {
+		t.Fatalf("content_type = %q, want 3D Tiles MIME", preview.Object.ContentType)
+	}
+	if enginePlugin.openContentCalls != 0 {
+		t.Fatalf("OpenContent calls = %d, want 0 when 3D Tiles preview uses storage stream URL", enginePlugin.openContentCalls)
+	}
+}
+
 func TestFileCatalogLASPreviewReturnsPointCloudJSON(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingFileCatalogPreviewPlugin{

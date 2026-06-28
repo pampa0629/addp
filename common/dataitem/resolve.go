@@ -475,6 +475,11 @@ func resolveWholeScope(candidates []Candidate, result *ResolveResult, input Reso
 			continue
 		}
 		result.Items = append(result.Items, item)
+		for _, path := range item.ClaimPaths {
+			if path != "" {
+				result.Claims[path] = true
+			}
+		}
 		for _, ref := range item.RefList {
 			result.Claims[ref.Path] = true
 		}
@@ -499,6 +504,7 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 	dataCandidates := []Candidate{}
 	requiredCandidates := []Candidate{}
 	unmatchedCandidates := []Candidate{}
+	claimCandidates := []Candidate{}
 	auxiliaryCount := 0
 	directDataCount := 0
 	partLikeDataCount := 0
@@ -562,11 +568,15 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 			if candidate.SizeBytes != nil {
 				total += *candidate.SizeBytes
 			}
-			dataCandidates = append(dataCandidates, candidate)
+			claimCandidates = append(claimCandidates, candidate)
 		}
 	}
 
-	refs := make([]ItemRef, 0, len(requiredCandidates)+len(dataCandidates))
+	refDataCandidates := dataCandidates
+	if requiredStrongHit {
+		refDataCandidates = nil
+	}
+	refs := make([]ItemRef, 0, len(requiredCandidates)+len(refDataCandidates))
 	refPaths := map[string]string{}
 	for _, candidate := range requiredCandidates {
 		refs = append(refs, ItemRef{
@@ -578,7 +588,7 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 		})
 		refPaths[candidate.Path] = candidate.Path
 	}
-	for _, candidate := range dataCandidates {
+	for _, candidate := range refDataCandidates {
 		refs = append(refs, ItemRef{
 			Role:      wholeScopeDataRole(candidate, requiredNames),
 			Path:      candidate.Path,
@@ -588,6 +598,7 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 		})
 		refPaths[candidate.Path] = candidate.Path
 	}
+	claimPaths := wholeScopeClaimPaths(requiredCandidates, dataCandidates, claimCandidates)
 
 	size := total
 	name := filepath.Base(scopePath)
@@ -611,9 +622,26 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 		ScopePath:          scopePath,
 		RefPaths:           refPaths,
 		RefList:            refs,
+		ClaimPaths:         claimPaths,
 		SizeBytes:          &size,
 		DetectionReason:    "whole_scope",
 	}, true
+}
+
+func wholeScopeClaimPaths(groups ...[]Candidate) []string {
+	seen := map[string]bool{}
+	paths := []string{}
+	for _, group := range groups {
+		for _, candidate := range group {
+			if candidate.Path == "" || seen[candidate.Path] {
+				continue
+			}
+			seen[candidate.Path] = true
+			paths = append(paths, candidate.Path)
+		}
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 func refSpecsFromRule(rule FormatRule) []format.RelatedRefSpec {

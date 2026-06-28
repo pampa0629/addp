@@ -92,6 +92,7 @@ type ResolvedItem struct {
 	ScopePath          string
 	RefPaths           map[string]string
 	RefList            []ItemRef
+	ClaimPaths         []string
 
 	SizeBytes *int64
 

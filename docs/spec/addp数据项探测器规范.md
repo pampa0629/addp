@@ -106,7 +106,7 @@ detector 必须先确定 data item 边界，再提取类型信息、格式信息
 
 1. primary content 或 whole scope 根范围最终写入 `meta_item.full_name`。
 2. attributes 不再定义通用 `entry_path`。
-3. `refs` 只表达 multi 或需要记录关键 ref 的 whole item 的 related refs，不替代 `full_name`。
+3. `refs` 只表达 multi 的 related refs，或 whole item 的 manifest / 关键入口 ref，不替代 `full_name`，也不保存 whole scope 的全部叶子资源。
 4. 容器内部对象默认不生成独立 `meta_item`；只有对应规范明确声明后才可展开。
 5. `meta_item.item_type` 跟随引擎 catalog / 路径模型的原生叶子术语，不因 `data_type`、`format` 或 Manager 预览方式改变。
 6. 除非经过规范修订，不得改变 `meta_item.name/full_name/item_type` 的来源语义。
@@ -198,10 +198,17 @@ type FormatRule struct {
 |---|---|---|
 | `single` | 入口资源 | 通常为 `false` |
 | `multi` | primary content + 已匹配 related refs | 必须为 `false`，不得独占目录或 prefix |
-| `whole` | whole scope 根范围和规范要求的关键资源 | 强匹配时可为 `true` |
+| `whole` | whole scope 范围内被该 item 认领的 manifest、关键资源和叶子资源 | 强匹配时可为 `true` |
 | 容器内部对象 | 默认不进入外部扫描 claims | 不影响外层扫描范围 |
 
 `exclusive=true` 只允许用于明确的 whole scope 场景。弱匹配、仅扩展名匹配、范围内存在未认领异类资源等情况不得直接独占扫描范围；whole scope 的 explain / confidence、manifest 规则等尚未定稿内容进入对应计划文档或格式后续事项，不在本规范内展开。
+
+whole scope 的 `refs` 与 `claims` 必须分工明确：
+
+1. `refs` 只保留 manifest 或关键入口资源，例如 3D Tiles 的 `tileset.json`、OSGB 的 `metadata.xml`、raster mosaic 的 `mosaic.addp.json`。
+2. `.b3dm`、`.i3dm`、`.pnts`、`.osgb`、leaf COG 等叶子资源由 `claims` 表达认领范围，不进入 `refs`。
+3. 没有 manifest 的 whole scope 规则可以使用数据资源作为入口 ref，但一旦存在 manifest 强命中，不得再把全部叶子资源写入 `refs`。
+4. Manager 和 Transfer 消费 whole item 时使用 `meta_item.full_name` / `storage.physical_path` 作为范围入口，不得从 `refs` 反推完整数据集文件清单。
 
 ## Shapefile 校准用例
 
@@ -230,6 +237,31 @@ type FormatRule struct {
 6. 两个 Shapefile item 的 `full_name` 分别来自入口文件全路径。
 7. Manager 中两个 Shapefile、PDF、CSV 都挂在 `/shp/` 目录下。
 8. Shapefile 内容读取使用 `meta_item.full_name` 和 `item.refs`，不得重新枚举 sibling 后猜测。
+
+## OSGB 校准用例
+
+目录：
+
+```text
+/models/osgb/
+  metadata.xml
+  Data/
+    Tile_1/
+      Tile_1_L14_0.osgb
+      Tile_1_L15_00.osgb
+    Tile_2/
+      Tile_2_L14_0.osgb
+```
+
+期望：
+
+1. `/models/osgb/` 生成一个 `data_type=model_3d`、`layout=whole`、`format=osgb` item。
+2. `meta_item.full_name` 来源于 OSGB 数据集根目录 `/models/osgb/`。
+3. `item.refs` 只包含 `metadata.xml` manifest，`role=manifest` 且 `primary=true`。
+4. 所有 `.osgb` 叶子文件和 `metadata.xml` 都进入 claims，避免重复落为单文件 item。
+5. 强命中时 `exclusive=true`，该目录下不再生成普通 `.osgb` file item。
+6. Meta deep scan 解析 `metadata.xml`，把 `ModelMetadata/SRS`、`SRSOrigin`、`Texture/ColorSource` 写入标准 attributes。
+7. Manager 不直接预览 OSGB 源 item；应通过 `model_3d_tiles_generation` 任务生成业务存储中的 3D Tiles item，再复用 3D Tiles 预览。
 
 ## TIFF / GeoTIFF 校准用例
 

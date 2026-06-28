@@ -82,6 +82,11 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 		if item.Layout == format.LayoutWhole && resolved.Exclusive {
 			result.Exclusive = true
 		}
+		for _, path := range item.ClaimPaths {
+			if path != "" {
+				result.Claims[path] = true
+			}
+		}
 		for _, path := range detected.RefFilePaths() {
 			result.Claims[path] = true
 		}
@@ -107,6 +112,9 @@ func scopeModel3DAttributes(ctx context.Context, input DirectoryResolveInput, it
 	info, err := provider.DescribeModel3DScope(ctx, reader, contentio.NewRef(item.ScopePath, contentio.RoleScope), nil)
 	if err != nil || info == nil {
 		return nil, false
+	}
+	if info.Model3D != nil && info.Model3D.SizeBytes == nil && item.SizeBytes != nil && *item.SizeBytes > 0 {
+		info.Model3D.SizeBytes = item.SizeBytes
 	}
 	attrs := map[string]interface{}{}
 	if info.Model3D != nil {

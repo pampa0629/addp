@@ -253,6 +253,50 @@ func TestResolveItemsDetects3DTilesManifestWholeScope(t *testing.T) {
 	}
 }
 
+func TestResolveItemsDetectsOSGBMetadataWholeScope(t *testing.T) {
+	t.Parallel()
+
+	size := int64(10)
+	result, err := ResolveItems(ResolveInput{
+		ScopeKind: ScopeKindDirectory,
+		ScopePath: "models/osgb",
+		Candidates: []Candidate{
+			{Path: "models/osgb/metadata.xml", Name: "metadata.xml", SizeBytes: &size},
+			{Path: "models/osgb/Data/Tile_1/Tile_1_L14_0.osgb", Name: "Tile_1_L14_0.osgb", SizeBytes: &size},
+			{Path: "models/osgb/Data/Tile_1/Tile_1_L15_00.osgb", Name: "Tile_1_L15_00.osgb", SizeBytes: &size},
+		},
+		Options: ResolveOptions{AllowWholeScope: true},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("items = %#v, want one OSGB item", result.Items)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutWhole || item.Format != string(format.FormatOSGB) || item.DataType != datatype.Model3D {
+		t.Fatalf("item = %#v, want model_3d osgb whole item", item)
+	}
+	if item.ScopePath != "models/osgb" || item.FullName != "models/osgb" {
+		t.Fatalf("item scope/full_name = %q/%q, want OSGB root", item.ScopePath, item.FullName)
+	}
+	if len(item.RefList) != 1 || item.RefList[0].Path != "models/osgb/metadata.xml" || item.RefList[0].Role != "manifest" || !item.RefList[0].Primary {
+		t.Fatalf("refs = %#v, want primary metadata manifest only", item.RefList)
+	}
+	if !result.Exclusive {
+		t.Fatal("OSGB whole scope should be exclusive")
+	}
+	for _, path := range []string{
+		"models/osgb/metadata.xml",
+		"models/osgb/Data/Tile_1/Tile_1_L14_0.osgb",
+		"models/osgb/Data/Tile_1/Tile_1_L15_00.osgb",
+	} {
+		if !result.Claims[path] {
+			t.Fatalf("claims = %#v, want %s claimed", result.Claims, path)
+		}
+	}
+}
+
 func TestResolveItemsKeepsSiblingTablesAsSingles(t *testing.T) {
 	t.Parallel()
 

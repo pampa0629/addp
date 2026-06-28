@@ -59,6 +59,7 @@
 | WPS | `single` | `document` | `wps` | 第一阶段以内置格式识别和 raw / range 预览为主 |
 | GLB | `single` | `model_3d` | `glb` | 第一阶段三维模型代表格式；预览优先走 raw / range / storage stream + 前端 Three.js |
 | 3D Tiles | `whole` | `model_3d` | `3dtiles` | 由 `tileset.json` manifest 声明的分块三维场景 |
+| OSGB | `whole` | `model_3d` | `osgb` | 由 `metadata.xml` manifest 声明的倾斜摄影三维模型数据集 |
 | LAS | `single` | `point_cloud` | `las` | 第一阶段点云代表格式；deep scan 读取 header 和轻量摘要，预览走抽样点集 |
 
 ## GLB
@@ -114,7 +115,7 @@ Manager 预览应消费已入库 `data_type=model_3d + format=glb` 和 storage /
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `layout=whole`、`data_type=model_3d`、`format=3dtiles`、`refs` 中记录 `tileset.json` manifest 及被认领的瓦片资源 |
+| `item` | `layout=whole`、`data_type=model_3d`、`format=3dtiles`、`refs` 中记录 `tileset.json` manifest；被认领的瓦片资源由 detector claims 表达 |
 | `type_info.model_3d` | `model_kind=tiled_scene`、LOD 数量、三维包围盒等跨格式模型摘要 |
 | `format_info.3dtiles` | `manifest_ref`、`asset_version`、`tileset_version`、`geometric_error`、`root_refine`、tile/content/leaf/max_depth 统计、extensions used / required、property 数量等 3D Tiles 私有事实 |
 | `capabilities.spatial` | 仅在 manifest 中存在可解析 `region` 等明确地理范围时写入；3D Tiles region 按 EPSG:4326 经纬度范围表达 |
@@ -130,6 +131,40 @@ Manager 预览应消费已入库 `data_type=model_3d + format=3dtiles`、`layout
 - OSGB 倾斜摄影目录、I3S、Cesium ion 资产等需要单独 format 规则；不得用 `format=3dtiles` 兼容所有目录型三维模型。
 - 3D Tiles 内嵌的 b3dm / i3dm / pnts / glTF 是 tileset 内容资源，不默认作为独立 data item 重复入库。
 - 3D Tiles 1.1 的 structured metadata、multiple contents、implicit tiling 等能力先作为 `format_info.3dtiles` 的格式私有事实扩展；只有形成跨格式模型事实时才提升到 `type_info.model_3d` 或 `capabilities`。
+
+## OSGB
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `whole` |
+| `data_type` | `model_3d` |
+| `format` | `osgb` |
+| 主入口 | scope 根目录下的 `metadata.xml` |
+| 主资源表达 | `meta_item.full_name` 指向 OSGB 数据集根目录，`item.refs` 中 `metadata.xml` 的 `role=manifest` 且 `primary=true` |
+
+OSGB 在 ADDP 中表示倾斜摄影三维模型数据集，不把每个 `.osgb` 叶子文件落为独立 item。扫描命中根目录下 `metadata.xml` 且可解析为 `ModelMetadata` 后，整个目录 / prefix 识别为一个 `layout=whole` 的 `model_3d` data item。`.osgb` 叶子文件由 detector claims 认领，`refs` 只保留 manifest 等关键入口。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=whole`、`data_type=model_3d`、`format=osgb`、`refs` 中记录 `metadata.xml` manifest |
+| `type_info.model_3d` | `model_kind=photogrammetry_scene`、数据集总大小等跨格式模型摘要 |
+| `format_info.osgb` | `manifest_ref`、`data_dir`、`metadata_version`、`srs`、`srs_origin`、`color_source` 等 OSGB 私有事实 |
+| `capabilities.spatial` | 当 `metadata.xml` 中 `SRS` 可解析为 `EPSG:<srid>` 时写入 `srid` 和 `crs_ref` |
+
+### 消费要求
+
+Manager 第一阶段不直接预览 OSGB 源数据。OSGB 源 item 应通过 `model_3d_tiles_generation` 任务转换为目标业务存储中的 `format=3dtiles`、`layout=whole` item；转换完成后触发 Meta deep scan，并复用 3D Tiles 预览链路。
+
+### 格式约束
+
+- 不得把 OSGB 目录归为普通 `container`、`unknown` 或每个 `.osgb` 单文件 item。
+- 不得仅因出现 `.osgb` 文件就独占整个目录；必须有根目录 `metadata.xml` 强命中。
+- 不得把 OSGB 源数据伪装为 `format=3dtiles`；转换结果才是 `format=3dtiles`。
+- OSGB 直接预览、缩略图和转换产物不写入 `type_info.model_3d` 或 `format_info.osgb`。
 
 ## LAS
 

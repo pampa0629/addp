@@ -80,6 +80,7 @@ func main() {
 	quickViewOptimizationRepo := repository.NewQuickViewOptimizationRepository(db)
 	rasterCOGRepo := repository.NewRasterCOGRepository(db)
 	rasterMosaicRepo := repository.NewRasterMosaicRepository(db)
+	model3DTilesRepo := repository.NewModel3DTilesRepository(db)
 	exportSessionRepo := repository.NewExportSessionRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
 	logger.L().Info("Manager repositories 初始化完成")
@@ -215,6 +216,7 @@ func main() {
 	quickViewOptimizationTaskSvc := service.NewQuickViewOptimizationTaskService(quickViewOptimizationRepo, taskExecRepo)
 	rasterCOGTaskSvc := service.NewRasterCOGTaskService(rasterCOGRepo, taskExecRepo)
 	rasterMosaicTaskSvc := service.NewRasterMosaicTaskService(rasterMosaicRepo, taskExecRepo)
+	model3DTilesTaskSvc := service.NewModel3DTilesTaskService(model3DTilesRepo, taskExecRepo)
 	rasterCOGTaskSvc.SetBucket(minioBucket)
 	rasterCOGTaskSvc.SetCleaner(service.NewMinIORasterCOGCleaner(minioClient, minioBucket))
 	if systemClient != nil {
@@ -270,6 +272,7 @@ func main() {
 
 	// 初始化 TaskProvider Handler
 	taskProviderHandler := api.NewTaskProviderHandler(embeddingTaskSvc, tileCacheTaskSvc, quickViewOptimizationTaskSvc, rasterCOGTaskSvc, taskExecRepo, rasterMosaicTaskSvc)
+	taskProviderHandler.SetModel3DTilesTaskService(model3DTilesTaskSvc)
 
 	// 设置 UnifiedMVTService 的 QuickViewService（延迟注入避免循环依赖）
 	unifiedMVTService.SetQuickViewService(quickViewService)
@@ -323,9 +326,15 @@ func main() {
 			cfg.InternalAPIKey,
 			cfg.RasterMosaicGeneration.Timeout,
 		))
+		model3DTilesTaskSvc.SetExecutor(service.NewManagerModel3DTilesExecutor(
+			systemClient,
+			systemClient,
+			cfg.RasterMosaicGeneration.Timeout,
+		))
 	}
 	if metaClient != nil {
 		rasterMosaicTaskSvc.SetMetaScanSubmitter(metaClient)
+		model3DTilesTaskSvc.SetMetaScanSubmitter(metaClient)
 	}
 
 	// ========== 服务注册（注册到 System service_registry）==========

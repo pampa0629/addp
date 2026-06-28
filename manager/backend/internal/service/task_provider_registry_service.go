@@ -113,6 +113,19 @@ func (s *TaskProviderRegistryService) Register() error {
 				"edit_url":                  "/manager/spatial-quick-view/raster-mosaic?tab=tasks&task_id=:id",
 				"deprecated":                false,
 			},
+			{
+				"type":                      "model_3d_tiles_generation",
+				"display_name":              "三维模型 3D Tiles 生成",
+				"description":               "将 OSGB 倾斜摄影三维模型转换为写入业务存储的 3D Tiles 数据集",
+				"definition_schema":         map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
+				"supports_schedule":         false,
+				"supports_cancel":           false,
+				"supports_inline_execution": false,
+				"create_url":                "/manager/model-3d-tiles?tab=tasks",
+				"edit_url":                  "/manager/model-3d-tiles?tab=tasks&task_id=:id",
+				"deprecated":                false,
+			},
 		},
 	}
 
@@ -127,7 +140,7 @@ func (s *TaskProviderRegistryService) Register() error {
 	registration := TaskProviderRegistration{
 		ModuleName:  "manager",
 		DisplayName: "数据管理",
-		Description: "矢量快显性能优化、矢量瓦片缓存、栅格快显 COG 和对象存储向量化任务",
+		Description: "矢量快显性能优化、矢量瓦片缓存、栅格快显 COG、栅格 mosaic、三维模型 3D Tiles 和对象存储向量化任务",
 
 		// API 端点配置（相对于 base_url，支持 {task_type}/{id} 占位符）
 		BaseURL:             s.managerURL,

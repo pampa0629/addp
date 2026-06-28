@@ -55,6 +55,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := ensureRasterMosaicSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure raster mosaic schema: %w", err)
 	}
+	if err := ensureModel3DTilesSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure model 3d tiles schema: %w", err)
+	}
 
 	// Configure connection pool for optimal performance
 	sqlDB, err := db.DB()
@@ -449,6 +452,31 @@ func ensureRasterMosaicSchema(db *gorm.DB) error {
 	}
 	if err := db.Exec(`
 		ALTER TABLE manager.raster_mosaic_tasks
+			ALTER COLUMN id TYPE BIGINT,
+			ALTER COLUMN tenant_id TYPE BIGINT,
+			ALTER COLUMN created_by TYPE BIGINT,
+			ALTER COLUMN enabled SET NOT NULL,
+			ALTER COLUMN created_at SET NOT NULL,
+			ALTER COLUMN updated_at SET NOT NULL
+	`).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureModel3DTilesSchema(db *gorm.DB) error {
+	if err := db.AutoMigrate(&models.Model3DTilesTask{}); err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		UPDATE manager.model_3d_tiles_tasks
+		SET enabled = false
+		WHERE enabled IS NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		ALTER TABLE manager.model_3d_tiles_tasks
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN created_by TYPE BIGINT,

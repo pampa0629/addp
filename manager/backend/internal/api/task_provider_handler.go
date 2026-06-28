@@ -28,6 +28,7 @@ type TaskProviderHandler struct {
 	quickViewOptimizationTaskSvc *service.QuickViewOptimizationTaskService
 	rasterCOGTaskSvc             *service.RasterCOGTaskService
 	rasterMosaicTaskSvc          *service.RasterMosaicTaskService
+	model3DTilesTaskSvc          *service.Model3DTilesTaskService
 	taskExecRepo                 *commonExecution.TaskExecutionRepository
 }
 
@@ -51,6 +52,10 @@ func NewTaskProviderHandler(
 		handler.rasterMosaicTaskSvc = rasterMosaicTaskSvc[0]
 	}
 	return handler
+}
+
+func (h *TaskProviderHandler) SetModel3DTilesTaskService(model3DTilesTaskSvc *service.Model3DTilesTaskService) {
+	h.model3DTilesTaskSvc = model3DTilesTaskSvc
 }
 
 // TaskListResponse 任务列表响应（统一包装 Manager provider 声明的任务类型）
@@ -302,13 +307,59 @@ type RasterMosaicTaskResponse struct {
 	UpdatedAt           time.Time                          `json:"updated_at"`
 }
 
+type Model3DTilesTaskRequest struct {
+	Name        string               `json:"name"`
+	Description string               `json:"description,omitempty"`
+	Enabled     *bool                `json:"enabled,omitempty"`
+	Schedule    string               `json:"schedule,omitempty"`
+	NextRunAt   *time.Time           `json:"next_run_at,omitempty"`
+	Config      commonModels.JSONMap `json:"config"`
+}
+
+type Model3DTilesTaskSourceResponse struct {
+	ItemLocator    string `json:"item_locator,omitempty"`
+	SourceEngineID uint   `json:"source_engine_id,omitempty"`
+	Format         string `json:"format,omitempty"`
+}
+
+type Model3DTilesTaskTargetResponse struct {
+	StorageLocator string `json:"storage_locator,omitempty"`
+	TargetEngineID uint   `json:"target_engine_id,omitempty"`
+	DatasetName    string `json:"dataset_name,omitempty"`
+}
+
+type Model3DTilesTaskTilesResponse struct {
+	Format string `json:"format"`
+}
+
+type Model3DTilesTaskResponse struct {
+	ID                  uint                            `json:"id"`
+	TenantID            uint                            `json:"tenant_id"`
+	TaskType            string                          `json:"task_type"`
+	Name                string                          `json:"name"`
+	Description         string                          `json:"description,omitempty"`
+	Enabled             bool                            `json:"enabled"`
+	Schedule            string                          `json:"schedule,omitempty"`
+	NextRunAt           *time.Time                      `json:"next_run_at,omitempty"`
+	LastRunAt           *time.Time                      `json:"last_run_at,omitempty"`
+	LastExecutionID     *string                         `json:"last_execution_id,omitempty"`
+	LastExecutionStatus *string                         `json:"last_execution_status,omitempty"`
+	CreatedBy           *uint                           `json:"created_by,omitempty"`
+	Config              commonModels.JSONMap            `json:"config"`
+	Source              *Model3DTilesTaskSourceResponse `json:"source,omitempty"`
+	Target              *Model3DTilesTaskTargetResponse `json:"target,omitempty"`
+	Tiles               *Model3DTilesTaskTilesResponse  `json:"tiles,omitempty"`
+	CreatedAt           time.Time                       `json:"created_at"`
+	UpdatedAt           time.Time                       `json:"updated_at"`
+}
+
 // ListTasks GET /api/v1/manager/tasks
-// 查询参数：?task_type=vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|embedding
+// 查询参数：?task_type=vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_tiles_generation|embedding
 // @Summary 列出任务 | List tasks
-// @Description 列出 Manager 模块的任务（矢量瓦片缓存生成、矢量快显性能优化、栅格快显 COG 生成、栅格 mosaic 生成和向量化任务）| List Manager module tasks (vector tile cache generation, vector quick view optimization, raster COG generation, raster mosaic generation, and embedding tasks)
+// @Description 列出 Manager 模块的任务（矢量瓦片缓存生成、矢量快显性能优化、栅格快显 COG 生成、栅格 mosaic 生成、三维模型 3D Tiles 生成和向量化任务）| List Manager module tasks
 // @Tags Manager
 // @Produce json
-// @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|embedding | Task type filter"
+// @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_tiles_generation|embedding | Task type filter"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} TaskListResponse "任务列表 | Task list"
@@ -409,6 +460,24 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
 		}
+	case commonExecution.TaskTypeModel3DTilesGeneration:
+		if h.model3DTilesTaskSvc == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "model 3d tiles generation task service is unavailable"})
+			return
+		}
+		tasks, t, err := h.model3DTilesTaskSvc.List(ctx, tenantID, page, pageSize)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		total = t
+		for _, task := range tasks {
+			items = append(items, TaskListItem{
+				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeModel3DTilesGeneration,
+				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
+				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
+			})
+		}
 	case commonExecution.TaskTypeEmbedding:
 		if h.embeddingTaskSvc == nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "embedding task service is unavailable"})
@@ -471,6 +540,17 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 			total += t
 			for _, task := range tasks {
 				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeRasterMosaicGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
+			}
+		}
+		if h.model3DTilesTaskSvc != nil {
+			tasks, t, err := h.model3DTilesTaskSvc.List(ctx, tenantID, page, pageSize)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			total += t
+			for _, task := range tasks {
+				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeModel3DTilesGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
 			}
 		}
 		if h.embeddingTaskSvc != nil {
@@ -583,7 +663,7 @@ func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
 // @Description 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and ID
 // @Tags Manager
 // @Produce json
-// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|embedding | Task type"
+// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_tiles_generation|embedding | Task type"
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} object "任务详情，按 task_type 返回矢量瓦片缓存、矢量快显性能优化、栅格 COG 生成或向量化任务详情 | Task detail by task_type"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -646,6 +726,17 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, rasterMosaicTaskResponse(task))
+	case commonExecution.TaskTypeModel3DTilesGeneration:
+		task, err := h.model3DTilesTaskSvc.GetByID(ctx, uint(id), tenantID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if task == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+			return
+		}
+		c.JSON(http.StatusOK, model3DTilesTaskResponse(task))
 	case commonExecution.TaskTypeEmbedding:
 		task, err := h.embeddingTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -711,7 +802,7 @@ type TaskExecuteResponse struct {
 // @Tags Manager
 // @Accept json
 // @Produce json
-// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|embedding | Task type"
+// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_tiles_generation|embedding | Task type"
 // @Param id path int true "任务ID | Task ID"
 // @Param body body TaskExecuteRequest false "执行配置 | Execution configuration"
 // @Success 202 {object} TaskExecuteResponse "执行ID | Execution ID"
@@ -763,6 +854,8 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 		executionID, err = h.rasterCOGTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	case commonExecution.TaskTypeRasterMosaicGeneration:
 		executionID, err = h.rasterMosaicTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+	case commonExecution.TaskTypeModel3DTilesGeneration:
+		executionID, err = h.model3DTilesTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	case commonExecution.TaskTypeEmbedding:
 		executionID, err = h.embeddingTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	default:
@@ -1596,6 +1689,159 @@ func (h *TaskProviderHandler) DeleteRasterMosaicTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }
 
+// ListModel3DTilesTasks GET /api/v1/manager/model_3d_tiles_tasks
+// @Summary 列出三维模型 3D Tiles 任务配置 | List model 3D Tiles generation task configurations
+// @Description 列出 Manager 模块的三维模型 3D Tiles 任务配置。该私有入口固定返回 task_type=model_3d_tiles_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D Tiles generation task configurations.
+// @Tags Manager
+// @Produce json
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /model_3d_tiles_tasks [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListModel3DTilesTasks(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	tasks, total, err := h.model3DTilesTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	items := make([]Model3DTilesTaskResponse, 0, len(tasks))
+	for _, task := range tasks {
+		items = append(items, model3DTilesTaskResponse(task))
+	}
+	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize})
+}
+
+// CreateModel3DTilesTask POST /api/v1/manager/model_3d_tiles_tasks
+// @Summary 创建三维模型 3D Tiles 任务配置 | Create model 3D Tiles generation task configuration
+// @Description 创建新的三维模型 3D Tiles 任务配置。任务从 OSGB whole item 读取源数据，并将 3D Tiles 数据集写入用户选择的业务存储。| Create a model 3D Tiles task from an OSGB whole item into selected business storage.
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param body body Model3DTilesTaskRequest true "model 3D Tiles generation task configuration"
+// @Success 201 {object} Model3DTilesTaskResponse "创建的任务配置 | Created task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /model_3d_tiles_tasks [post]
+// @Security BearerAuth
+func (h *TaskProviderHandler) CreateModel3DTilesTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	userID := c.GetUint("user_id")
+	req, err := decodeModel3DTilesTaskRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	task := models.Model3DTilesTask{
+		TenantID:    tenantID,
+		Name:        strings.TrimSpace(req.Name),
+		Description: strings.TrimSpace(req.Description),
+		Enabled:     enabled,
+		Schedule:    strings.TrimSpace(req.Schedule),
+		NextRunAt:   req.NextRunAt,
+		Config:      req.Config,
+		CreatedBy:   &userID,
+	}
+	if err := h.model3DTilesTaskSvc.Create(c.Request.Context(), &task); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, model3DTilesTaskResponse(&task))
+}
+
+// GetModel3DTilesTask GET /api/v1/manager/model_3d_tiles_tasks/:id
+// @Summary 获取三维模型 3D Tiles 任务配置 | Get model 3D Tiles generation task configuration
+// @Tags Manager
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} Model3DTilesTaskResponse "任务配置 | Task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Router /model_3d_tiles_tasks/{id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) GetModel3DTilesTask(c *gin.Context) {
+	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeModel3DTilesGeneration})
+	h.TaskDetail(c)
+}
+
+// UpdateModel3DTilesTask PUT /api/v1/manager/model_3d_tiles_tasks/:id
+// @Summary 更新三维模型 3D Tiles 任务配置 | Update model 3D Tiles generation task configuration
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Param body body Model3DTilesTaskRequest true "model 3D Tiles generation task configuration"
+// @Success 200 {object} Model3DTilesTaskResponse "更新后的任务配置 | Updated task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Router /model_3d_tiles_tasks/{id} [put]
+// @Security BearerAuth
+func (h *TaskProviderHandler) UpdateModel3DTilesTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	existing, err := h.model3DTilesTaskSvc.GetByID(c.Request.Context(), uint(id), tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existing == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+		return
+	}
+	req, err := decodeModel3DTilesTaskRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	existing.Name = strings.TrimSpace(req.Name)
+	existing.Description = strings.TrimSpace(req.Description)
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
+	existing.Schedule = strings.TrimSpace(req.Schedule)
+	existing.NextRunAt = req.NextRunAt
+	existing.Config = req.Config
+	if err := h.model3DTilesTaskSvc.Update(c.Request.Context(), existing); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, model3DTilesTaskResponse(existing))
+}
+
+// DeleteModel3DTilesTask DELETE /api/v1/manager/model_3d_tiles_tasks/:id
+// @Summary 删除三维模型 3D Tiles 任务配置 | Delete model 3D Tiles generation task configuration
+// @Tags Manager
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /model_3d_tiles_tasks/{id} [delete]
+// @Security BearerAuth
+func (h *TaskProviderHandler) DeleteModel3DTilesTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	if err := h.model3DTilesTaskSvc.Delete(c.Request.Context(), uint(id), tenantID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
 // ListRasterCOGs GET /api/v1/manager/raster_cog
 // @Summary 列出栅格快显 COG | List raster COG results
 // @Tags Manager
@@ -1928,6 +2174,22 @@ func decodeRasterMosaicTaskRequest(c *gin.Context) (RasterMosaicTaskRequest, err
 	return req, nil
 }
 
+func decodeModel3DTilesTaskRequest(c *gin.Context) (Model3DTilesTaskRequest, error) {
+	var req Model3DTilesTaskRequest
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		return req, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return req, errors.New("request body must contain a single JSON object")
+	}
+	if req.Config == nil {
+		req.Config = commonModels.JSONMap{}
+	}
+	return req, nil
+}
+
 func tileCacheTaskResponse(task *models.TileCacheTask) TileCacheTaskResponse {
 	resp := TileCacheTaskResponse{}
 	if task == nil {
@@ -2067,6 +2329,50 @@ func rasterMosaicTaskResponse(task *models.RasterMosaicTask) RasterMosaicTaskRes
 	if placement, ok := asJSONMap(task.Config["placement"]); ok {
 		resp.Placement = &RasterMosaicTaskPlacementResponse{
 			Mode: stringFromConfig(placement["mode"]),
+		}
+	}
+	return resp
+}
+
+func model3DTilesTaskResponse(task *models.Model3DTilesTask) Model3DTilesTaskResponse {
+	resp := Model3DTilesTaskResponse{}
+	if task == nil {
+		return resp
+	}
+	resp = Model3DTilesTaskResponse{
+		ID:                  task.ID,
+		TenantID:            task.TenantID,
+		TaskType:            commonExecution.TaskTypeModel3DTilesGeneration,
+		Name:                task.Name,
+		Description:         task.Description,
+		Enabled:             task.Enabled,
+		Schedule:            task.Schedule,
+		NextRunAt:           task.NextRunAt,
+		LastRunAt:           task.LastRunAt,
+		LastExecutionID:     task.LastExecutionID,
+		LastExecutionStatus: task.LastExecutionStatus,
+		CreatedBy:           task.CreatedBy,
+		Config:              task.Config,
+		CreatedAt:           task.CreatedAt,
+		UpdatedAt:           task.UpdatedAt,
+	}
+	if source, ok := asJSONMap(task.Config["source"]); ok {
+		resp.Source = &Model3DTilesTaskSourceResponse{
+			ItemLocator:    stringFromConfig(source["item_locator"]),
+			SourceEngineID: uintFromConfig(source["source_engine_id"]),
+			Format:         stringFromConfig(source["format"]),
+		}
+	}
+	if target, ok := asJSONMap(task.Config["target"]); ok {
+		resp.Target = &Model3DTilesTaskTargetResponse{
+			StorageLocator: stringFromConfig(target["storage_locator"]),
+			TargetEngineID: uintFromConfig(target["target_engine_id"]),
+			DatasetName:    stringFromConfig(target["dataset_name"]),
+		}
+	}
+	if tiles, ok := asJSONMap(task.Config["tiles"]); ok {
+		resp.Tiles = &Model3DTilesTaskTilesResponse{
+			Format: stringFromConfig(tiles["format"]),
 		}
 	}
 	return resp

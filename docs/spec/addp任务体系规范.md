@@ -159,7 +159,7 @@ Common 不维护全量业务 `task_type` 编译期枚举。`task_type` 由 owner
 | Meta | `scan` | `meta.scan_tasks` |
 | Transfer | `sync` | `transfer.transfer_tasks` |
 | Develop | `query` / `workflow` / `script` | `develop.dev_tasks` |
-| Manager | `tile_cache_generation` / `quick_view_optimization` / `embedding` / `raster_cog_generation` / `raster_mosaic_generation` | `manager.tile_cache_tasks` / `manager.quick_view_optimization_tasks` / `manager.embedding_tasks` / `manager.raster_cog_tasks` / `manager.raster_mosaic_tasks` |
+| Manager | `tile_cache_generation` / `quick_view_optimization` / `embedding` / `raster_cog_generation` / `raster_mosaic_generation` / `model_3d_tiles_generation` | `manager.tile_cache_tasks` / `manager.quick_view_optimization_tasks` / `manager.embedding_tasks` / `manager.raster_cog_tasks` / `manager.raster_mosaic_tasks` / `manager.model_3d_tiles_tasks` |
 | Quality | `check` | `quality.check_tasks` |
 | Graph | `kg_build` | `graph.build_tasks` |
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
@@ -168,7 +168,7 @@ System 资源回收（cleanup）不纳入 TaskProvider，也不进入 Orchestrat
 
 Transfer 的内部任务语义统一收敛为同步执行。阶段 1 对外只声明 `task_type=sync`，并通过 TaskProvider 和 `common.task_executions` 关联任务定义。Manager 的导入 / 导出入口通过 client 创建并触发 Transfer `sync`，不得在 Transfer 侧并行保留 `import`、`export`、`transfer` 等旧任务类型。
 
-Manager 的瓦片缓存生成、快显性能优化、embedding、QuickView、raster COG 和 raster mosaic 细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。瓦片缓存生成任务类型为 `tile_cache_generation`，任务定义表为 `manager.tile_cache_tasks`；快显性能优化任务类型为 `quick_view_optimization`，任务定义表为 `manager.quick_view_optimization_tasks`，结果表为 `manager.quick_view_optimization`；单 TIFF 栅格 COG 生成任务类型为 `raster_cog_generation`，任务定义表为 `manager.raster_cog_tasks`；栅格镶嵌数据集生成任务类型为 `raster_mosaic_generation`，任务定义表为 `manager.raster_mosaic_tasks`，结果是业务存储中的 `format=raster_mosaic` data item，不是 Manager infra artifact。MVT 是瓦片缓存格式，应进入任务配置，例如 `config.tile.format=mvt`，不作为任务类型。持久化 embedding 任务执行必须复用任务服务创建的主 execution；ad-hoc embedding 可以自行创建 execution，但不得产生 owner 任务定义，且没有 `source_task_id` 时必须写完整 `execution_config`。
+Manager 的瓦片缓存生成、快显性能优化、embedding、QuickView、raster COG、raster mosaic 和三维模型 3D Tiles 生成细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。瓦片缓存生成任务类型为 `tile_cache_generation`，任务定义表为 `manager.tile_cache_tasks`；快显性能优化任务类型为 `quick_view_optimization`，任务定义表为 `manager.quick_view_optimization_tasks`，结果表为 `manager.quick_view_optimization`；单 TIFF 栅格 COG 生成任务类型为 `raster_cog_generation`，任务定义表为 `manager.raster_cog_tasks`；栅格镶嵌数据集生成任务类型为 `raster_mosaic_generation`，任务定义表为 `manager.raster_mosaic_tasks`，结果是业务存储中的 `format=raster_mosaic` data item，不是 Manager infra artifact；OSGB 倾斜摄影转 3D Tiles 任务类型为 `model_3d_tiles_generation`，任务定义表为 `manager.model_3d_tiles_tasks`，结果是业务存储中的 `format=3dtiles`、`layout=whole` data item，不是 Manager 私有 artifact。MVT 是瓦片缓存格式，应进入任务配置，例如 `config.tile.format=mvt`，不作为任务类型。持久化 embedding 任务执行必须复用任务服务创建的主 execution；ad-hoc embedding 可以自行创建 execution，但不得产生 owner 任务定义，且没有 `source_task_id` 时必须写完整 `execution_config`。
 
 Manager 中 QuickView、瓦片缓存产物的 `ready`、`generating`、`stale`、`failed` 等状态属于 artifact state，不是统一 execution status。Manager 的即时向量化内存轮询状态虽不持久化为任务定义，但属于 execution-like 状态，成功态也必须使用 `success`，不得使用 `completed`。
 

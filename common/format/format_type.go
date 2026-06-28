@@ -60,6 +60,7 @@ const (
 	FormatGLB     FormatType = "glb"
 	FormatLAS     FormatType = "las"
 	Format3DTiles FormatType = "3dtiles"
+	FormatOSGB    FormatType = "osgb"
 
 	FormatUnknown FormatType = "unknown"
 )

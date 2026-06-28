@@ -151,6 +151,7 @@ const (
 	TaskTypeVectorQuickViewTargetGeneration = "vector_quick_view_target_generation"
 	TaskTypeRasterCOGGeneration             = "raster_cog_generation"
 	TaskTypeRasterMosaicGeneration          = "raster_mosaic_generation"
+	TaskTypeModel3DTilesGeneration          = "model_3d_tiles_generation"
 	TaskTypeEmbedding                       = "embedding"
 	// Graph 模块
 	TaskTypeKGBuild = "kg_build"

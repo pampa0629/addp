@@ -213,6 +213,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	qvoRepo := repository.NewQuickViewOptimizationRepository(db)
 	cogRepo := repository.NewRasterCOGRepository(db)
+	model3DTilesRepo := repository.NewModel3DTilesRepository(db)
 
 	if err := tileCacheRepo.CreateTask(context.Background(), &models.TileCacheTask{
 		TenantID: 1,
@@ -279,6 +280,28 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create raster COG generation task: %v", err)
 	}
+	if err := model3DTilesRepo.CreateTask(context.Background(), &models.Model3DTilesTask{
+		TenantID: 1,
+		Name:     "model 3d tiles generation task",
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"source": commonModels.JSONMap{
+				"item_locator":     "addp://engine/11/path/models/osgb?type=item&item_id=45",
+				"source_engine_id": uint(11),
+				"format":           "osgb",
+			},
+			"target": commonModels.JSONMap{
+				"storage_locator":  "addp://engine/12/path/models/tiles?type=node",
+				"target_engine_id": uint(12),
+				"dataset_name":     "osgb_3dtiles",
+			},
+			"tiles": commonModels.JSONMap{
+				"format": "3dtiles",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("create model 3d tiles generation task: %v", err)
+	}
 
 	handler := NewTaskProviderHandler(
 		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
@@ -287,6 +310,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 		service.NewRasterCOGTaskService(cogRepo, nil),
 		nil,
 	)
+	handler.SetModel3DTilesTaskService(service.NewModel3DTilesTaskService(model3DTilesRepo, nil))
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -297,11 +321,13 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	router.GET("/embedding_tasks", handler.ListEmbeddingTasks)
 	router.GET("/vector_quick_view_target_tasks", handler.ListQuickViewOptimizationTasks)
 	router.GET("/raster_cog_tasks", handler.ListRasterCOGTasks)
+	router.GET("/model_3d_tiles_tasks", handler.ListModel3DTilesTasks)
 
 	assertListedTaskTypeValues(t, router, "/vector_tile_cache_tasks", []string{commonExecution.TaskTypeVectorTileCacheGeneration})
 	assertListedTaskTypeValues(t, router, "/embedding_tasks", []string{commonExecution.TaskTypeEmbedding})
 	assertListedTaskTypeValues(t, router, "/vector_quick_view_target_tasks", []string{commonExecution.TaskTypeVectorQuickViewTargetGeneration})
 	assertListedTaskTypeValues(t, router, "/raster_cog_tasks", []string{commonExecution.TaskTypeRasterCOGGeneration})
+	assertListedTaskTypeValues(t, router, "/model_3d_tiles_tasks", []string{commonExecution.TaskTypeModel3DTilesGeneration})
 }
 
 func TestCreateEmbeddingTaskRejectsLegacyTopLevelFields(t *testing.T) {
@@ -604,6 +630,25 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create raster_cog_tasks table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.model_3d_tiles_tasks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		name TEXT NOT NULL,
+		description TEXT,
+		enabled BOOLEAN,
+		last_execution_id TEXT,
+		last_execution_status TEXT,
+		last_run_at DATETIME,
+		next_run_at DATETIME,
+		schedule TEXT,
+		created_by INTEGER,
+		config JSON,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create model_3d_tiles_tasks table: %v", err)
 	}
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
 		t.Fatalf("attach common schema: %v", err)

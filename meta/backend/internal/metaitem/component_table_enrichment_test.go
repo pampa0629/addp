@@ -219,6 +219,62 @@ func TestCommonDataItemResolverAdapts3DTilesWholeScope(t *testing.T) {
 	}
 }
 
+func TestCommonDataItemResolverAdaptsOSGBWholeScope(t *testing.T) {
+	d := &commonDataItemResolver{}
+	files := []StorageFileRef{
+		{Name: "metadata.xml", Path: "models/osgb/metadata.xml", Size: 10},
+		{Name: "Tile_1_L14_0.osgb", Path: "models/osgb/Data/Tile_1/Tile_1_L14_0.osgb", Size: 20},
+		{Name: "Tile_1_L15_00.osgb", Path: "models/osgb/Data/Tile_1/Tile_1_L15_00.osgb", Size: 30},
+	}
+
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+		ContentReader: refMapContentReader{content: map[string][]byte{
+			"models/osgb/metadata.xml": []byte(`<?xml version="1.0" encoding="utf-8"?>
+<ModelMetadata version="1">
+	<SRS>EPSG:4549</SRS>
+	<SRSOrigin>381180,4897399,0</SRSOrigin>
+	<Texture><ColorSource>Visible</ColorSource></Texture>
+</ModelMetadata>`),
+		}},
+		DirPath:        "models/osgb",
+		Files:          files[:1],
+		RecursiveFiles: files,
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if !result.Exclusive {
+		t.Fatal("OSGB should exclusively claim the whole scope")
+	}
+	if got, want := len(result.Items), 1; got != want {
+		t.Fatalf("Items len = %d, want %d", got, want)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutWhole || item.DataType != datatype.Model3D || item.Format != string(format.FormatOSGB) {
+		t.Fatalf("item = %#v, want model_3d osgb whole item", item)
+	}
+	if len(item.RefList) != 1 || item.RefList[0].Path != "models/osgb/metadata.xml" {
+		t.Fatalf("refs = %#v, want metadata manifest only", item.RefList)
+	}
+	modelInfo := commonJSON.Section(item.Attributes, "type_info.model_3d")
+	if modelInfo["model_kind"] != datatype.Model3DKindPhotogrammetryScene || commonJSON.InterfaceInt64(modelInfo["size_bytes"]) != 60 {
+		t.Fatalf("type_info.model_3d = %#v, want photogrammetry_scene and size", modelInfo)
+	}
+	formatInfo := commonJSON.Section(item.Attributes, "format_info.osgb")
+	if formatInfo["manifest_ref"] != "metadata.xml" || formatInfo["color_source"] != "Visible" {
+		t.Fatalf("format_info.osgb = %#v, want manifest and color source", formatInfo)
+	}
+	spatial := commonJSON.Section(item.Attributes, "capabilities.spatial")
+	if commonJSON.InterfaceInt64(spatial["srid"]) != 4549 {
+		t.Fatalf("capabilities.spatial = %#v, want EPSG:4549", spatial)
+	}
+	for _, file := range files {
+		if !result.Claims[file.Path] {
+			t.Fatalf("claims = %#v, want %s claimed", result.Claims, file.Path)
+		}
+	}
+}
+
 func TestCommonDataItemResolverRejects3DTilesManifestByNameOnly(t *testing.T) {
 	d := &commonDataItemResolver{}
 	files := []StorageFileRef{

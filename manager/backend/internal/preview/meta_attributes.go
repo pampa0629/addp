@@ -1,6 +1,7 @@
 package preview
 
 import (
+	pathpkg "path"
 	"strings"
 
 	"github.com/addp/common/datatype"
@@ -71,6 +72,29 @@ func primaryRefPathFromMetaAttributes(attrs map[string]interface{}, role string)
 		}
 	}
 	return first
+}
+
+func threeDTilesManifestObjectPath(bucket, objectPath string, attrs map[string]interface{}) string {
+	objectPath = strings.Trim(objectPath, "/")
+	bucket = strings.Trim(bucket, "/")
+	manifestRef := primaryRefPathFromMetaAttributes(attrs, "manifest")
+	if manifestRef == "" {
+		manifestRef = commonJSON.InterfaceString(commonJSON.Section(attrs, "format_info.3dtiles")["manifest_ref"])
+	}
+	if manifestRef == "" {
+		manifestRef = "tileset.json"
+	}
+	manifestRef = strings.Trim(manifestRef, "/")
+	if bucket != "" && strings.HasPrefix(manifestRef, bucket+"/") {
+		manifestRef = strings.TrimPrefix(manifestRef, bucket+"/")
+	}
+	if objectPath == "" {
+		return manifestRef
+	}
+	if manifestRef == objectPath || strings.HasPrefix(manifestRef, objectPath+"/") {
+		return manifestRef
+	}
+	return strings.Trim(pathpkg.Join(objectPath, manifestRef), "/")
 }
 
 func fileFormatTypeFromMetaAttributes(attrs map[string]interface{}) format.FormatType {

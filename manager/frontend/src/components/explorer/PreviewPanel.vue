@@ -374,6 +374,7 @@ import GeoJSONQuickView from '@/components/map/GeoJSONQuickView.vue'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import RasterTIFFQuickView from '@/components/map/RasterTIFFQuickView.vue'
 import { useExplorerStore } from '@/stores/explorer'
+import { dataFormatDisplayName } from '@/utils/formatDisplay'
 import {
   quickViewTileAdvisoryAction as tileAdvisoryAction,
   quickViewTileAdvisoryMessage as tileAdvisoryMessage,
@@ -1575,6 +1576,15 @@ const objectContentMetadata = computed(() => {
   return objectData.value?.content?.metadata || {}
 })
 
+const objectCanonicalFormat = computed(() => {
+  return String(
+    objectContentMetadata.value?.format ||
+    objectData.value?.attributes?.item?.format ||
+    props.previewData?.format ||
+    ''
+  ).trim()
+})
+
 function metadataValue(key) {
   const value = objectContentMetadata.value?.[key]
   return value !== undefined && value !== null && value !== '' ? value : undefined
@@ -1588,6 +1598,11 @@ function mediaDurationSeconds() {
 }
 
 const objectFileTypeLabel = computed(() => {
+  const canonicalFormat = objectCanonicalFormat.value
+  if (canonicalFormat) {
+    return t('manager.explorer.fileTypeExt', { ext: dataFormatDisplayName(canonicalFormat) })
+  }
+
   const contentType = objectContentType.value
   const path = objectData.value?.path || ''
 

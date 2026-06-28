@@ -138,6 +138,14 @@ func SetupRouter(
 			rasterMosaicTasksGroup.PUT("/:id", taskProviderHandler.UpdateRasterMosaicTask)
 			rasterMosaicTasksGroup.DELETE("/:id", taskProviderHandler.DeleteRasterMosaicTask)
 		}
+		model3DTilesTasksGroup := api.Group("/model_3d_tiles_tasks")
+		{
+			model3DTilesTasksGroup.GET("", taskProviderHandler.ListModel3DTilesTasks)
+			model3DTilesTasksGroup.POST("", taskProviderHandler.CreateModel3DTilesTask)
+			model3DTilesTasksGroup.GET("/:id", taskProviderHandler.GetModel3DTilesTask)
+			model3DTilesTasksGroup.PUT("/:id", taskProviderHandler.UpdateModel3DTilesTask)
+			model3DTilesTasksGroup.DELETE("/:id", taskProviderHandler.DeleteModel3DTilesTask)
+		}
 		if rasterMosaicTileHandler != nil {
 			rasterMosaicTilesGroup := api.Group("/raster_mosaic/tiles")
 			{

@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/url"
 	"os"
-	pathpkg "path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -251,10 +250,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		return preview, nil
 	}
 	if formatTypeFromMetaAttributes(combinedAttributes) == format.Format3DTiles {
-		manifestRef := primaryRefPathFromMetaAttributes(combinedAttributes, "manifest")
-		if manifestRef == "" {
-			manifestRef = strings.Trim(pathpkg.Join(objectPath, "tileset.json"), "/")
-		}
+		manifestRef := threeDTilesManifestObjectPath(bucket, objectPath, combinedAttributes)
 		manifestStorageRef := manifestRef
 		if !strings.HasPrefix(manifestStorageRef, bucket+"/") {
 			manifestStorageRef = strings.Trim(bucket+"/"+manifestStorageRef, "/")
