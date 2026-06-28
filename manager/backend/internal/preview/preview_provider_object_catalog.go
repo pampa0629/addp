@@ -58,18 +58,24 @@ func metaItemLiteAttributes(item *models.MetaItemLite) map[string]interface{} {
 }
 
 type objectCatalogPreviewProvider struct {
-	metadataRepo   *repository.MetadataRepository
-	metaClient     *commonClient.MetaClient
-	metaServiceURL string
-	content        *objectcontent.ObjectContentRegistry
+	metadataRepo      *repository.MetadataRepository
+	metaClient        *commonClient.MetaClient
+	metaServiceURL    string
+	content           *objectcontent.ObjectContentRegistry
+	model3DQuickViews Model3DQuickViewLookup
 }
 
-func NewObjectCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *objectcontent.ObjectContentRegistry) PreviewProvider {
+func NewObjectCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *objectcontent.ObjectContentRegistry, model3DQuickViews ...Model3DQuickViewLookup) PreviewProvider {
+	var quickViews Model3DQuickViewLookup
+	if len(model3DQuickViews) > 0 {
+		quickViews = model3DQuickViews[0]
+	}
 	return &objectCatalogPreviewProvider{
-		metadataRepo:   metadataRepo,
-		metaClient:     metaClient,
-		metaServiceURL: metaServiceURL,
-		content:        content,
+		metadataRepo:      metadataRepo,
+		metaClient:        metaClient,
+		metaServiceURL:    metaServiceURL,
+		content:           content,
+		model3DQuickViews: quickViews,
 	}
 }
 
@@ -222,6 +228,10 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		preview.Object.Attributes = combinedAttributes
 	}
 
+	if applyOSGBScenePreviewPrompt(combinedAttributes, preview.Object) {
+		return preview, nil
+	}
+
 	if formatTypeFromMetaAttributes(combinedAttributes) == format.FormatRasterMosaic {
 		preview.Object.StorageRef = fmt.Sprintf("%s/%s", bucket, objectPath)
 		preview.Object.ContentType = "application/vnd.addp.raster-mosaic+json"
@@ -367,6 +377,10 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 	}
 	canonicalContentType := objectcontent.InferContentType(objectPath, rawContentType)
 	preview.Object.ContentType = canonicalContentType
+
+	if handled, err := applyModel3DQuickViewPreview(ctx, p.model3DQuickViews, req, preview.Object); handled || err != nil {
+		return preview, err
+	}
 
 	if p.content != nil && objectPath != "" {
 		// 按照路径统一规范拆分：path（目录，以/结尾）、name（文件名）

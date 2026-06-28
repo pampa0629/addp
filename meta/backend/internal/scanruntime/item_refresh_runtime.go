@@ -4,12 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
+	"github.com/addp/meta/internal/metacatalog"
+	"github.com/addp/meta/internal/metaenrich"
+	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
@@ -82,20 +87,33 @@ func (r *ItemRefreshRuntime) RefreshKnownItem(
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 	catalogPathFor := scanflow.KnownItemCatalogPathResolver(resource.ID, p, descriptor)
 	physicalPath := scanflow.KnownItemPhysicalPath(descriptor, &item)
+	var detected *metaitem.DetectedItem
+	var attrs models.JSONMap
+	if redetected, ok := r.reDetectKnownWholeScopeItem(ctx, resource, p, contentReader, connInfo, descriptor, physicalPath); ok {
+		descriptor = knownItemDescriptorFromDetected(redetected, descriptor)
+		physicalPath = scanflow.KnownItemPhysicalPath(descriptor, &item)
+		attrs = metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(redetected)))
+		restoreKnownItemStorage(attrs, descriptor, &item)
+		detected = redetected
+	} else {
+		descriptor = r.reDetectKnownSingleItemFormat(ctx, contentReader, connInfo, catalogPathFor, descriptor, physicalPath)
+		attrs = metaattr.JSONMap(cloneJSONMap(item.Attributes))
+		restoreKnownItemStorage(attrs, descriptor, &item)
+		detected = scanflow.KnownItemDetectedItem(&item, descriptor)
+		metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(detected))
+	}
 	indexPath := scanflow.KnownItemPhysicalPath(descriptor, &item)
 	if descriptor.StorageBucket != "" {
 		indexPath = scanflow.KnownItemObjectPath(descriptor, physicalPath)
 	}
 
-	attrs := metaattr.JSONMap(cloneJSONMap(item.Attributes))
-	restoreKnownItemStorage(attrs, descriptor, &item)
 	return scanprocessor.New(r.repo, r.indexer, r.log).Process(ctx, scanprocessor.KnownItemInput(
 		resource,
 		tenantID,
 		&parentNode,
 		item,
 		attrs,
-		scanflow.KnownItemDetectedItem(&item, descriptor),
+		detected,
 		contentReader,
 		connInfo,
 		catalogPathFor,
@@ -104,6 +122,130 @@ func (r *ItemRefreshRuntime) RefreshKnownItem(
 		indexPath,
 		scanflow.KnownItemSize(descriptor, &item),
 	))
+}
+
+func (r *ItemRefreshRuntime) reDetectKnownWholeScopeItem(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	enginePlugin plugin.EnginePlugin,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	descriptor dataitem.ItemDescriptor,
+	physicalPath string,
+) (*metaitem.DetectedItem, bool) {
+	if resource == nil || descriptor.Layout != format.LayoutWhole || contentReader == nil || strings.TrimSpace(physicalPath) == "" {
+		return nil, false
+	}
+	catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
+	if !ok || scanflow.CatalogLeafTermForPlugin(enginePlugin, "") != plugin.CatalogTermFile {
+		return nil, false
+	}
+
+	scopePath := strings.Trim(physicalPath, "/")
+	files, subdirs, err := listKnownFileDirectory(ctx, resource.ID, catalogProvider, connInfo, scopePath, false)
+	if err != nil {
+		return nil, false
+	}
+	var recursiveFiles []metaitem.StorageFileRef
+	var recursiveSubdirs []metaitem.StorageDirectoryRef
+	if len(subdirs) > 0 {
+		recursiveFiles, recursiveSubdirs, err = listKnownFileDirectory(ctx, resource.ID, catalogProvider, connInfo, scopePath, true)
+		if err != nil {
+			return nil, false
+		}
+	}
+
+	detection, err := scanflow.DetectFileCatalogDirectoryItems(
+		ctx,
+		contentReader,
+		connInfo,
+		resource.ID,
+		scopePath,
+		files,
+		subdirs,
+		recursiveFiles,
+		recursiveSubdirs,
+	)
+	if err != nil || detection == nil {
+		return nil, false
+	}
+	for _, item := range detection.Items {
+		if item == nil || item.Layout != format.LayoutWhole {
+			continue
+		}
+		if strings.Trim(item.ScopePath, "/") == scopePath || strings.Trim(item.PhysicalPath, "/") == scopePath {
+			return item, true
+		}
+	}
+	return nil, false
+}
+
+func listKnownFileDirectory(
+	ctx context.Context,
+	engineID uint,
+	catalogProvider plugin.CatalogProvider,
+	connInfo plugin.ConnectionInfo,
+	dirPath string,
+	recursive bool,
+) ([]metaitem.StorageFileRef, []metaitem.StorageDirectoryRef, error) {
+	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.FileDirectoryPath(engineID, dirPath), plugin.ListOptions{Recursive: recursive})
+	if err != nil {
+		return nil, nil, err
+	}
+	files := make([]metaitem.StorageFileRef, 0, len(nodes))
+	subdirs := make([]metaitem.StorageDirectoryRef, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Role == plugin.CatalogRoleBranch {
+			if dir, ok := metacatalog.StorageDirectoryRefFromEntry(node); ok {
+				subdirs = append(subdirs, dir)
+			}
+			continue
+		}
+		if file, ok := metacatalog.StorageFileRefFromEntry(node); ok {
+			files = append(files, file)
+		}
+	}
+	return files, subdirs, nil
+}
+
+func knownItemDescriptorFromDetected(item *metaitem.DetectedItem, previous dataitem.ItemDescriptor) dataitem.ItemDescriptor {
+	if item == nil {
+		return previous
+	}
+	return dataitem.ItemDescriptor{
+		Layout:             item.Layout,
+		DataType:           item.DataType,
+		Format:             item.Format,
+		PrimaryContentPath: item.PrimaryContentPath,
+		ScopePath:          item.ScopePath,
+		PhysicalPath:       item.PhysicalPath,
+		StorageBucket:      previous.StorageBucket,
+		Refs:               item.RefList,
+		SizeBytes:          item.SizeBytes,
+	}
+}
+
+func (r *ItemRefreshRuntime) reDetectKnownSingleItemFormat(
+	ctx context.Context,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	catalogPathFor func(string) plugin.CatalogPath,
+	descriptor dataitem.ItemDescriptor,
+	physicalPath string,
+) dataitem.ItemDescriptor {
+	if descriptor.Layout != format.LayoutSingle || contentReader == nil || catalogPathFor == nil || physicalPath == "" {
+		return descriptor
+	}
+	detectedFormat, err := metaenrich.DetectSingleFileFormat(ctx, contentReader, connInfo, catalogPathFor(physicalPath), physicalPath)
+	if err != nil || detectedFormat == format.FormatUnknown {
+		return descriptor
+	}
+	if descriptor.Format == string(detectedFormat) {
+		return descriptor
+	}
+	descriptor.Format = string(detectedFormat)
+	descriptor.DataType = dataitem.DefaultDataTypeForFormat(descriptor.Format)
+	return descriptor
 }
 
 func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(

@@ -377,6 +377,18 @@ check_service_changed() {
             fi
             ;;
 
+        model3d-workflow-engine)
+            # Model3D runtime packages Python source plus converter Dockerfiles/patches/scripts.
+            comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" -o -name "*.patch" -o -name "*.sh" ')' \
+                -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
+                xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+
+            if [ -z "$comparison_time" ] || [ "$comparison_time" = "0" ]; then
+                echo -e "${YELLOW}Cannot determine source modification time, rebuilding...${NC}"
+                return 1
+            fi
+            ;;
+
         python-workflow-engine|spark-workflow-engine|jupyter-engine|raster-mosaic-runtime)
             # Python service: compare source file time (Dockerfile + Python source files)
             comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
@@ -480,6 +492,34 @@ build_service() {
     echo -e "${BLUE}========================================${NC}"
 
     echo -e "${YELLOW}Building image for ${service}...${NC}"
+
+    if [ "$service" = "model3d-workflow-engine" ]; then
+        if [[ "$BUILD_PLATFORMS" == *,* ]]; then
+            echo -e "${RED}Error: model3d-workflow-engine currently supports one Linux platform per build${NC}"
+            echo -e "${YELLOW}Hint: build linux/arm64 on Apple Silicon with the default native build path${NC}"
+            return 1
+        fi
+
+        local converter_image="${REGISTRY}/addp-model3d-converter:${IMAGE_TAG}"
+        if MODEL3D_DOCKER_PLATFORM="${BUILD_PLATFORMS}" \
+            MODEL3D_CONVERTER_IMAGE="${converter_image}" \
+            MODEL3D_RUNTIME_IMAGE="${image_name}" \
+            "${service_dir}/scripts/build-linux-arm64-images.sh"; then
+            if [ "$MULTI_ARCH" = false ]; then
+                echo -e "${YELLOW}Pushing ${converter_image} to registry...${NC}"
+                docker push "${converter_image}"
+                echo -e "${YELLOW}Pushing ${image_name} to registry...${NC}"
+                docker push "${image_name}"
+            fi
+            mkdir -p ".build-cache"
+            date +%s > ".build-cache/${service}-${IMAGE_TAG}.timestamp"
+            echo -e "${GREEN}✓ Successfully built and pushed ${service}${NC}"
+            return 0
+        fi
+
+        echo -e "${RED}✗ Failed to build ${service}${NC}"
+        return 1
+    fi
 
     # Determine build context and Dockerfile based on service type
     local build_context="."
@@ -757,6 +797,7 @@ main() {
         "graph-backend:graph/backend"
         "python-workflow-engine:engines/python-workflow"
         "raster-mosaic-runtime:manager/raster-mosaic-runtime"
+        "model3d-workflow-engine:engines/model3d-workflow"
         "spark-workflow-engine:engines/spark-workflow"
         "jupyter-engine:engines/jupyter"
         "transfer-worker:transfer/backend"

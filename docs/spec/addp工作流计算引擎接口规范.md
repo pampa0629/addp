@@ -4,7 +4,7 @@
 
 **版本**: v1.0.0
 **最后更新**: 2026-01-09
-**适用引擎**: Math Workflow、Python Workflow、Spark Workflow
+**适用引擎**: Math Workflow、Python Workflow、Spark Workflow、Model3D Workflow
 
 本文档定义 ADDP 工作流运行时的 `addp.workflow/v1` HTTP 协议。该协议由 Common Engine 的 `WorkflowRuntimeProvider` 消费；工作流引擎仍必须先通过 `EnginePlugin` 和 `engine.capabilities/v1` 纳入 System 统一引擎体系。
 
@@ -37,6 +37,7 @@ ADDP 工作流计算引擎采用 `EnginePlugin + WorkflowRuntimeProvider + HTTP 
 | **Math Workflow** | 8089 | Python + 基础数学库 | 数学运算、学习示例 | 5 |
 | **Python Workflow** | 8099 | Python + Pandas + GeoPandas | 中小规模空间和数据处理 | 42+ |
 | **Spark Workflow** | 8098 | PySpark + Sedona | 大规模分布式计算 | 35+ |
+| **Model3D Workflow** | 8101 | Python wrapper + 三维转换 CLI | 单 OSGB 快显转换、OSGB Scene 转 3D Tiles | 最小实现 |
 
 ### 1.3 引擎目录结构
 
@@ -634,7 +635,7 @@ def register_to_system():
 
 Math Workflow 是 `addp.workflow/v1` 参考实现，可以随 ADDP 开发环境启动服务，但不随启动自动注册。需要使用时，在 System 引擎管理中选择“注册扩展引擎”，填入 `engine_type=math_workflow`、默认端口 `8089`，可先通过表单“检查服务”确认 `/health` 与 `/api/operators` 可达，再测试连接并保存。
 
-内置扩展引擎和用户自研扩展引擎在 System 中待遇一致：业务模块不得假设 `python_workflow`、`spark_workflow`、`math_workflow` 等内置工作流引擎一定存在；只有已注册、启用且声明 `compute.workflow.supported=true` 的 Engine Instance 才能被发现和调用。生产内置工作流引擎自注册 payload 可以不提交 `capabilities`，由 System 按内置声明生成 `engine.capabilities/v1`；用户自研扩展引擎和参考示例引擎必须提交或由注册表单生成符合 `engine.capabilities/v1` 的 workflow 能力声明。算子列表、参数、分类、执行模式和输出端口通过 `GET /api/operators` 动态获取，不写入能力声明。
+内置扩展引擎和用户自研扩展引擎在 System 中待遇一致：业务模块不得假设 `python_workflow`、`spark_workflow`、`math_workflow`、`model3d_workflow` 等内置工作流引擎一定存在；只有已注册、启用且声明 `compute.workflow.supported=true` 的 Engine Instance 才能被发现和调用。生产内置工作流引擎自注册 payload 可以不提交 `capabilities`，由 System 按内置声明生成 `engine.capabilities/v1`；用户自研扩展引擎和参考示例引擎必须提交或由注册表单生成符合 `engine.capabilities/v1` 的 workflow 能力声明。算子列表、参数、分类、执行模式和输出端口通过 `GET /api/operators` 动态获取，不写入能力声明。
 
 System 在保存声明 `compute.workflow.supported=true` 且 `compute.workflow.runtime_api="addp.workflow/v1"` 的手动注册扩展运行时前，必须执行一次只读协议探测：
 
@@ -662,7 +663,9 @@ Common Engine 同时必须校验工作流定义本身：
 
 工作流运行时仍必须保留同等或更细的校验防线，但不能把 Common Engine 的前置校验缺失作为运行时私有行为处理。
 
-若某类工作流引擎需要绑定外部运行时资源，例如 `spark_workflow` 需要实际 Spark 资源 ID，应作为执行期运行时参数传入标准请求顶层字段（当前为 `engine_id`），而不是写入 `capabilities`，也不是由 Develop 等业务模块直接拼接引擎私有 HTTP 契约。对 `spark_workflow`，Develop 执行配置必须提供 `engine_specific.spark_cluster_id`；后端在调用 Provider 前必须校验该 ID 指向已启用的 `engine_type=spark` 通用引擎资源，并将其映射为标准请求顶层 `engine_id`。Python Workflow、Math Workflow 不需要也不得携带该 Spark 绑定。
+若某类工作流引擎需要绑定外部运行时资源，例如 `spark_workflow` 需要实际 Spark 资源 ID，应作为执行期运行时参数传入标准请求顶层字段（当前为 `engine_id`），而不是写入 `capabilities`，也不是由 Develop 等业务模块直接拼接引擎私有 HTTP 契约。对 `spark_workflow`，Develop 执行配置必须提供 `engine_specific.spark_cluster_id`；后端在调用 Provider 前必须校验该 ID 指向已启用的 `engine_type=spark` 通用引擎资源，并将其映射为标准请求顶层 `engine_id`。Python Workflow、Math Workflow、Model3D Workflow 不需要也不得携带该 Spark 绑定。
+
+Model3D Workflow 是三维模型转换专用运行时，`engine_type=model3d_workflow`，默认端口 `8101`。第一版暴露 direct operators：`osgb_to_glb` 用于单 OSGB 快显 GLB artifact 生成，`osgb_scene_to_3dtiles` 用于 OSGB Scene 到业务存储 3D Tiles 数据集生成。运行时内部可以通过外部专业 CLI 执行转换，但对 ADDP 只暴露 `addp.workflow/v1` 的 operator、参数、进度和结果事实；Manager 不得直接调用转换 CLI。
 
 单算子调用由 Common Engine 的 `WorkflowRuntimeProvider.InvokeOperator()` 统一调用，只允许调用 `execution_modes` 包含 `direct` 的算子。`InvokeOperator()` 是模块受控能力调用，不是任务执行入口；它不创建 Develop 任务，不进入 Orchestrator，也不进入 Monitor 通用执行监控。调用方模块必须持有明确业务目的并管理自身领域状态，例如 Manager 触发 `tiff_to_cog` 后负责记录 COG 生成结果状态、源 item fingerprint、目标 `storage_ref` 和失败原因。凡是需要任务编排、调度、重试、跨模块依赖或统一监控的执行，必须建模为工作流任务并走 `ExecuteWorkflow()`。
 

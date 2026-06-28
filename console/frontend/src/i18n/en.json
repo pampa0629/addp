@@ -207,11 +207,13 @@
         "dataExplorer": "Data Explorer",
         "dataRetrieval": "Data Retrieval",
         "vectorizationTasks": "Vectorization Tasks",
-        "spatialQuickView": "Spatial Quick View",
+        "spatialQuickView": "Quick View Management",
         "tileCache": "Vector Quick View - Tile Cache",
         "quickViewOptimization": "Vector Quick View - Optimization",
         "cogArtifacts": "Raster Quick View - COG",
-        "rasterMosaic": "Raster Quick View - Mosaic"
+        "rasterMosaic": "Raster Quick View - Mosaic",
+        "model3DQuickView": "3D Quick View - GLB",
+        "model3DTiles": "3D Quick View - 3D Tiles"
       },
       "standard": {
         "label": "Data Standards",

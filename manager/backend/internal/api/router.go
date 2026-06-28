@@ -40,6 +40,7 @@ func SetupRouter(
 	resourceActionHandler *ResourceActionHandler,
 	exportHandler *ExportHandler,
 	rasterMosaicTileHandler *RasterMosaicTileHandler,
+	model3DQuickViewHandler *Model3DQuickViewHandler,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -146,6 +147,14 @@ func SetupRouter(
 			model3DTilesTasksGroup.PUT("/:id", taskProviderHandler.UpdateModel3DTilesTask)
 			model3DTilesTasksGroup.DELETE("/:id", taskProviderHandler.DeleteModel3DTilesTask)
 		}
+		model3DQuickViewTasksGroup := api.Group("/model_3d_quick_view_tasks")
+		{
+			model3DQuickViewTasksGroup.GET("", taskProviderHandler.ListModel3DQuickViewTasks)
+			model3DQuickViewTasksGroup.POST("", taskProviderHandler.CreateModel3DQuickViewTask)
+			model3DQuickViewTasksGroup.GET("/:id", taskProviderHandler.GetModel3DQuickViewTask)
+			model3DQuickViewTasksGroup.PUT("/:id", taskProviderHandler.UpdateModel3DQuickViewTask)
+			model3DQuickViewTasksGroup.DELETE("/:id", taskProviderHandler.DeleteModel3DQuickViewTask)
+		}
 		if rasterMosaicTileHandler != nil {
 			rasterMosaicTilesGroup := api.Group("/raster_mosaic/tiles")
 			{
@@ -158,6 +167,15 @@ func SetupRouter(
 			rasterCOGsGroup.GET("/:id", taskProviderHandler.GetRasterCOG)
 			rasterCOGsGroup.DELETE("/:id", taskProviderHandler.DeleteRasterCOG)
 			rasterCOGsGroup.GET("/:id/content", rasterCOGHandler.GetRasterCOGContent)
+		}
+		model3DQuickViewsGroup := api.Group("/model_3d_quick_view")
+		{
+			model3DQuickViewsGroup.GET("", taskProviderHandler.ListModel3DQuickViews)
+			model3DQuickViewsGroup.GET("/:id", taskProviderHandler.GetModel3DQuickView)
+			model3DQuickViewsGroup.DELETE("/:id", taskProviderHandler.DeleteModel3DQuickView)
+			if model3DQuickViewHandler != nil {
+				model3DQuickViewsGroup.GET("/:id/content", model3DQuickViewHandler.GetModel3DQuickViewContent)
+			}
 		}
 		quickViewOptimizationTasksGroup := api.Group("/vector_quick_view_target_tasks")
 		{

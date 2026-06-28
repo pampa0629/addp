@@ -76,6 +76,26 @@
             {{ t('manager.explorer.vectorized') }}
           </el-tag>
 
+          <el-button
+            v-if="showModel3DQuickViewGenerationAction"
+            size="small"
+            type="primary"
+            :loading="model3DQuickViewGenerationLoading"
+            @click="handleGenerateModel3DQuickView"
+          >
+            <el-icon><MagicStick /></el-icon>
+            {{ t('manager.explorer.generateModel3DQuickView') }}
+          </el-button>
+          <el-button
+            v-if="showModel3DTilesGenerationAction"
+            size="small"
+            type="primary"
+            @click="handleGenerateModel3DTiles"
+          >
+            <el-icon><MagicStick /></el-icon>
+            {{ t('manager.explorer.generateModel3DTiles') }}
+          </el-button>
+
           <!-- 空间快显 / 瓦片缓存入口 -->
           <div v-if="showQuickViewActions" class="quick-view-actions">
             <el-switch
@@ -335,6 +355,26 @@
         class="quick-view-renderer"
         @tile-advisory="handleTileAdvisory"
       />
+      <div v-else-if="showModel3DTaskPrompt" class="model3d-task-prompt">
+        <div class="model3d-task-main">
+          <div class="model3d-task-title">{{ model3DTaskPromptTitle }}</div>
+          <div class="model3d-task-desc">{{ model3DTaskPromptDescription }}</div>
+        </div>
+        <dl class="model3d-task-facts">
+          <div>
+            <dt>{{ t('manager.explorer.model3DSourceFormat') }}</dt>
+            <dd>{{ model3DTaskPromptFormat }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('manager.explorer.model3DSourceSize') }}</dt>
+            <dd>{{ model3DTaskPromptSizeText }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('manager.explorer.model3DSourcePath') }}</dt>
+            <dd>{{ model3DTaskPromptPath }}</dd>
+          </div>
+        </dl>
+      </div>
       <component
         v-else-if="previewComponent && !isGraphOverview"
         :is="previewComponent"
@@ -373,6 +413,7 @@ import ExportDialog from '@/components/explorer/ExportDialog.vue'
 import GeoJSONQuickView from '@/components/map/GeoJSONQuickView.vue'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import RasterTIFFQuickView from '@/components/map/RasterTIFFQuickView.vue'
+import Model3DPreview from '@/components/explorer/Model3DPreview.vue'
 import { useExplorerStore } from '@/stores/explorer'
 import { dataFormatDisplayName } from '@/utils/formatDisplay'
 import {
@@ -443,6 +484,7 @@ const quickViewActionLoading = ref(false)
 const quickViewTileAdvisory = ref(null)
 const quickViewTileLastNotice = ref({ key: '', at: 0 })
 const rasterCOGGenerationLoading = ref(false)
+const model3DQuickViewGenerationLoading = ref(false)
 const activePreviewMode = ref('basic_preview')
 const mvtGridVisible = ref(false)
 const resourceActions = ref(null)
@@ -538,7 +580,7 @@ const previewComponentData = computed(() => {
 })
 
 // 检查是否有可用的预览组件
-const hasPreviewComponent = computed(() => Boolean(previewComponent.value))
+const hasPreviewComponent = computed(() => Boolean(previewComponent.value) || showQuickViewRenderer.value || showModel3DTaskPrompt.value)
 
 // 获取文件扩展名（用于错误提示）
 const fileExtension = computed(() => {
@@ -1199,6 +1241,30 @@ const isTIFFNode = computed(() => {
 
 const isRasterMosaicNode = computed(() => isRasterMosaicMeta(props.previewData, props.selectedNode || {}))
 
+const isModel3DOSGBNode = computed(() => {
+  const node = props.selectedNode || {}
+  const object = props.previewData?.object || {}
+  const attrs = object.attributes || {}
+  const item = attrs.item || {}
+  const contentMetadata = object.content?.metadata || {}
+  const metadata = props.previewData?.metadata || {}
+  const dataType = String(item.data_type || metadata.data_type || contentMetadata.data_type || '').trim().toLowerCase()
+  const format = String(
+    item.format ||
+    metadata.source_format ||
+    metadata.format ||
+    contentMetadata.source_format ||
+    contentMetadata.format ||
+    node.format ||
+    node.file_format ||
+    ''
+  ).trim().toLowerCase()
+  const layout = String(item.layout || metadata.layout || contentMetadata.layout || '').trim().toLowerCase()
+  if (dataType === 'model_3d' && format === 'osgb' && (!layout || layout === 'single')) return true
+  if (format === 'osgb') return true
+  return /\.osgb$/i.test(selectedNodePath.value)
+})
+
 const spatialInfoTooltip = computed(() => {
   if (!hasGeometry.value) return ''
 
@@ -1231,7 +1297,7 @@ const spatialInfoTooltip = computed(() => {
 })
 
 const spatialPreviewTarget = computed(() => {
-  if ((!hasGeometry.value && !isTIFFNode.value && !isRasterMosaicNode.value) || !props.selectedNode) return null
+  if ((!hasGeometry.value && !isTIFFNode.value && !isRasterMosaicNode.value && !isModel3DOSGBNode.value) || !props.selectedNode) return null
   const node = props.selectedNode
   const locator = String(node.locator || node.id || '').trim()
   let parsedLocator = null
@@ -1304,6 +1370,7 @@ const quickViewRenderer = computed(() => {
   if (!isQuickViewActive.value) return null
   if (quickViewRenderSource.value === 'direct_geojson') return GeoJSONQuickView
   if (isRasterQuickView.value) return RasterTIFFQuickView
+  if (quickViewRenderSource.value === 'model_3d_glb') return Model3DPreview
   if (isTileQuickViewRenderSource(quickViewRenderSource.value)) return VectorTilePreview
   return null
 })
@@ -1377,6 +1444,29 @@ const quickViewRendererProps = computed(() => {
   if (isRasterQuickView.value) {
     return { status: quickViewStatus.value }
   }
+  if (quickViewRenderSource.value === 'model_3d_glb') {
+    const previewURL = quickViewStatus.value?.quick_view?.preview_url || quickViewStatus.value?.model_3d?.preview_url || ''
+    return {
+      data: {
+        mode: 'object',
+        object: {
+          content_type: 'model/gltf-binary',
+          url: previewURL,
+          content: {
+            kind: 'model_3d',
+            frontend_renderer: 'model_3d',
+            url: previewURL,
+            metadata: {
+              model_3d: {
+                ...(quickViewStatus.value?.model_3d || {}),
+                model_kind: quickViewStatus.value?.model_3d?.model_kind || 'mesh_scene'
+              }
+            }
+          }
+        }
+      }
+    }
+  }
   const source = quickViewSourceContext.value
   return {
     locator: target.locator,
@@ -1412,7 +1502,8 @@ const quickViewRenderKey = computed(() => {
     quickViewRenderSource.value,
     quickViewStatus.value?.default_vector_tile_cache_id || '',
     quickViewStatus.value?.quick_view?.geojson_url || '',
-    quickViewStatus.value?.quick_view?.preview_url || ''
+    quickViewStatus.value?.quick_view?.preview_url || '',
+    quickViewStatus.value?.model_3d?.result_id || ''
   ].join('-')
 })
 
@@ -1533,6 +1624,75 @@ const handleGenerateRasterCOG = async () => {
   }
 }
 
+const handleGenerateModel3DQuickView = async () => {
+  const source = model3DQuickViewSourcePayload.value
+  if (!source) {
+    ElMessage.warning(t('manager.explorer.model3DQuickViewMissingIdentity'))
+    return
+  }
+  model3DQuickViewGenerationLoading.value = true
+  try {
+    const payload = {
+      name: t('manager.explorer.model3DQuickViewTaskName', { name: title.value || source.item_locator }),
+      enabled: true,
+      config: {
+        source,
+        result: {}
+      }
+    }
+    const task = await quickViewAPI.createModel3DQuickViewTask(payload)
+    const taskID = Number(task?.id || task?.data?.id || 0)
+    let executionID = ''
+    if (taskID) {
+      const execution = await quickViewAPI.executeModel3DQuickViewTask(taskID)
+      executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
+    }
+    ElMessage.success(t('manager.explorer.generateModel3DQuickViewSubmitted'))
+    if (executionID) {
+      const result = await waitForRasterCOGExecution(
+        executionID,
+        (id) => quickViewAPI.getExecutionStatus(id),
+        { maxAttempts: 60, intervalMs: 2000 }
+      )
+      if (result.success) {
+        ElMessage.success(t('manager.explorer.generateModel3DQuickViewReady'))
+      } else if (result.failed) {
+        ElMessage.error(t('manager.explorer.generateModel3DQuickViewExecutionFailed'))
+      } else if (!result.completed) {
+        ElMessage.warning(t('manager.explorer.generateModel3DQuickViewTimeout'))
+      }
+    }
+    await loadQuickViewStatus()
+    if (quickViewStatus.value?.can_use_quick_view && quickViewRenderSource.value === 'model_3d_glb') {
+      activePreviewMode.value = 'map_quick_view'
+    }
+  } catch (error) {
+    console.error('提交三维模型 GLB 快显生成失败:', error)
+    ElMessage.error(t('manager.explorer.generateModel3DQuickViewFailed'))
+  } finally {
+    model3DQuickViewGenerationLoading.value = false
+  }
+}
+
+const handleGenerateModel3DTiles = () => {
+  const source = model3DTilesSourcePayload.value
+  if (!source) {
+    ElMessage.warning(t('manager.explorer.model3DTilesMissingIdentity'))
+    return
+  }
+  router.push({
+    name: 'Model3DTiles',
+    query: {
+      create: '1',
+      source_locator: source.item_locator,
+      source_engine_id: String(source.source_engine_id || ''),
+      item_id: String(source.item_id || ''),
+      source_size_bytes: String(source.source_size_bytes || ''),
+      name: title.value || model3DTaskPromptPath.value || ''
+    }
+  })
+}
+
 const handleTileAdvisory = (advisory) => {
   quickViewTileAdvisory.value = advisory
   const action = tileAdvisoryAction(advisory, quickViewStatus.value, spatialPreviewTarget.value?.sourceSRID)
@@ -1574,6 +1734,150 @@ const objectContentType = computed(() => {
 
 const objectContentMetadata = computed(() => {
   return objectData.value?.content?.metadata || {}
+})
+
+const model3DQuickViewPromptMetadata = computed(() => {
+  const metadata = objectContentMetadata.value || {}
+  const taskType = String(metadata.task_type || metadata.quick_view_task_type || '').trim()
+  const sourceFormat = String(
+    metadata.source_format ||
+    objectData.value?.attributes?.item?.format ||
+    ''
+  ).trim().toLowerCase()
+  if (taskType !== 'model_3d_quick_view_generation' || sourceFormat !== 'osgb') {
+    return null
+  }
+  return metadata
+})
+
+const model3DTilesPromptMetadata = computed(() => {
+  const metadata = objectContentMetadata.value || {}
+  const taskType = String(metadata.task_type || metadata.quick_view_task_type || '').trim()
+  const sourceFormat = String(
+    metadata.source_format ||
+    objectData.value?.attributes?.item?.format ||
+    ''
+  ).trim().toLowerCase()
+  if (taskType !== 'model_3d_tiles_generation' || sourceFormat !== 'osgb_scene') {
+    return null
+  }
+  return metadata
+})
+
+const parseSelectedLocator = () => {
+  const locator = String(props.selectedNode?.locator || props.selectedNode?.id || '').trim()
+  if (!locator) return { locator: '', parsed: null }
+  try {
+    return { locator, parsed: parseLocator(locator) }
+  } catch (_error) {
+    return { locator, parsed: null }
+  }
+}
+
+const model3DQuickViewSourcePayload = computed(() => {
+  const metadata = model3DQuickViewPromptMetadata.value
+  const node = props.selectedNode || {}
+  const { locator, parsed: parsedLocator } = parseSelectedLocator()
+  if (!metadata || !locator) return null
+  const engineID = Number(
+    parsedLocator?.engineId ||
+    node.engineId ||
+    node.engine_id ||
+    objectData.value?.engine_id ||
+    objectData.value?.engineId ||
+    0
+  )
+  const itemFingerprint = String(
+    metadata.item_fingerprint ||
+    objectData.value?.attributes?.item?.fingerprint ||
+    ''
+  ).trim()
+  if (!engineID || !itemFingerprint) return null
+  const storage = objectData.value?.attributes?.storage || {}
+  const sizeBytes = Number(
+    objectData.value?.size_bytes ||
+    storage.total_size ||
+    storage.size ||
+    0
+  )
+  return {
+    item_locator: locator,
+    source_engine_id: engineID,
+    item_fingerprint: itemFingerprint,
+    item_id: Number(parsedLocator?.itemId || props.previewData?.item_id || 0),
+    format: 'osgb',
+    source_size_bytes: Number.isFinite(sizeBytes) ? sizeBytes : 0
+  }
+})
+
+const model3DTilesSourcePayload = computed(() => {
+  const metadata = model3DTilesPromptMetadata.value
+  const node = props.selectedNode || {}
+  const { locator, parsed: parsedLocator } = parseSelectedLocator()
+  if (!metadata || !locator) return null
+  const engineID = Number(
+    parsedLocator?.engineId ||
+    node.engineId ||
+    node.engine_id ||
+    objectData.value?.engine_id ||
+    objectData.value?.engineId ||
+    0
+  )
+  if (!engineID) return null
+  const storage = objectData.value?.attributes?.storage || {}
+  const sizeBytes = Number(
+    objectData.value?.size_bytes ||
+    storage.total_size ||
+    storage.size ||
+    0
+  )
+  return {
+    item_locator: locator,
+    source_engine_id: engineID,
+    item_id: Number(parsedLocator?.itemId || props.previewData?.item_id || 0),
+    format: 'osgb_scene',
+    source_size_bytes: Number.isFinite(sizeBytes) ? sizeBytes : 0
+  }
+})
+
+const showModel3DQuickViewGenerationAction = computed(() => {
+  return Boolean(model3DQuickViewSourcePayload.value) &&
+    !(quickViewStatus.value?.can_use_quick_view && quickViewRenderSource.value === 'model_3d_glb')
+})
+
+const showModel3DTilesGenerationAction = computed(() => Boolean(model3DTilesSourcePayload.value))
+const showModel3DTaskPrompt = computed(() => Boolean(model3DQuickViewPromptMetadata.value || model3DTilesPromptMetadata.value))
+const model3DTaskPromptFormat = computed(() => (
+  model3DTilesPromptMetadata.value ? 'osgb_scene' : 'osgb'
+))
+const model3DTaskPromptTitle = computed(() => (
+  model3DTilesPromptMetadata.value
+    ? t('manager.explorer.model3DTilesPromptTitle')
+    : t('manager.explorer.model3DQuickViewPromptTitle')
+))
+const model3DTaskPromptDescription = computed(() => (
+  model3DTilesPromptMetadata.value
+    ? t('manager.explorer.model3DTilesPromptDescription')
+    : t('manager.explorer.model3DQuickViewPromptDescription')
+))
+const formatByteCount = (value) => {
+  const bytes = Number(value || 0)
+  if (!Number.isFinite(bytes) || bytes <= 0) return '-'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = bytes
+  let unitIndex = 0
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex += 1
+  }
+  return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
+}
+const model3DTaskPromptSizeText = computed(() => {
+  const payload = model3DTilesSourcePayload.value || model3DQuickViewSourcePayload.value
+  return formatByteCount(payload?.source_size_bytes)
+})
+const model3DTaskPromptPath = computed(() => {
+  return objectData.value?.path || props.selectedNode?.path || props.selectedNode?.label || '-'
 })
 
 const objectCanonicalFormat = computed(() => {
@@ -2217,6 +2521,57 @@ const handleNavigate = (path) => {
   border-radius: 6px;
 }
 
+.model3d-task-prompt {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 420px);
+  gap: 16px;
+  align-items: start;
+  padding: 14px 16px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  background: var(--el-fill-color-blank);
+}
+
+.model3d-task-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--addp-text-primary);
+}
+
+.model3d-task-desc {
+  margin-top: 6px;
+  color: var(--addp-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.model3d-task-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.model3d-task-facts > div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 12px;
+}
+
+.model3d-task-facts dt {
+  color: var(--addp-text-tertiary);
+}
+
+.model3d-task-facts dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--addp-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .preview-advisory {
   flex: 0 0 auto;
 }
@@ -2354,5 +2709,15 @@ const handleNavigate = (path) => {
 
 .preview-panel :deep(.el-empty__description) {
   color: var(--addp-text-secondary) !important;
+}
+
+@media (max-width: 768px) {
+  .model3d-task-prompt {
+    grid-template-columns: 1fr;
+  }
+
+  .model3d-task-facts > div {
+    grid-template-columns: 78px minmax(0, 1fr);
+  }
 }
 </style>

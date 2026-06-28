@@ -61,11 +61,21 @@ const summaryItems = computed(() => {
 
 function withAuthToken(url) {
   if (!url || typeof url !== 'string') return ''
-  if (!url.startsWith('/api/v1/manager/storage-stream')) return url
+  if (!url.startsWith('/api/') && !url.startsWith('/manager/')) return url
   const token = localStorage.getItem('token')
   if (!token) return url
-  const separator = url.includes('?') ? '&' : '?'
-  return `${url}${separator}token=${encodeURIComponent(token)}`
+  try {
+    const parsed = new URL(url, window.location.origin)
+    if (!parsed.searchParams.has('token')) {
+      parsed.searchParams.set('token', token)
+    }
+    return parsed.origin === window.location.origin
+      ? `${parsed.pathname}${parsed.search}${parsed.hash}`
+      : parsed.toString()
+  } catch {
+    const separator = url.includes('?') ? '&' : '?'
+    return `${url}${separator}token=${encodeURIComponent(token)}`
+  }
 }
 
 function ensureScene() {

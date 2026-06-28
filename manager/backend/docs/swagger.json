@@ -1079,6 +1079,436 @@
                 }
             }
         },
+        "/model_3d_quick_view": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "列出三维模型 GLB 快显结果 | List model 3D quick view results",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "数据项ID | Item ID",
+                        "name": "item_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据项指纹 | Item fingerprint",
+                        "name": "item_fingerprint",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "task_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态 | Status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关键词 | Keyword",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "结果列表 | Result list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/model_3d_quick_view/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取三维模型 GLB 快显详情 | Get model 3D quick view detail",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "结果ID | Result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "结果详情 | Result detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.Model3DQuickView"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除三维模型 GLB 快显 | Delete model 3D quick view",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "结果ID | Result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/model_3d_quick_view/{id}/content": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按 model 3D quick view id 返回 Manager infra MinIO 中的 GLB 内容，支持 HTTP Range。该接口只读取 Manager 拥有生命周期且状态为 ready 的 GLB 快显结果。 | Return GLB content from Manager infra MinIO by result id with HTTP Range support. Only ready Manager-owned results are readable.",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "读取三维模型 GLB 快显 | Read model 3D quick view GLB result",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "model 3D quick view ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "GLB 内容流 | GLB content stream"
+                    },
+                    "206": {
+                        "description": "部分 GLB 内容流 | Partial GLB content stream"
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "GLB 不存在或未就绪 | GLB not found or not ready",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "416": {
+                        "description": "Range 不可满足 | Range not satisfiable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/model_3d_quick_view_tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "列出 Manager 模块的单 OSGB 转 GLB 快显任务配置。该私有入口固定返回 task_type=model_3d_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D quick view generation task configurations.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "列出三维模型 GLB 快显任务配置 | List model 3D quick view generation task configurations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务列表 | Task list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "创建新的单 OSGB 转 GLB 快显任务配置。任务从单个 OSGB item 读取源数据，并将 GLB artifact 写入 Manager infra MinIO。| Create a model 3D quick view task from a single OSGB item into Manager infra MinIO.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "创建三维模型 GLB 快显任务配置 | Create model 3D quick view generation task configuration",
+                "parameters": [
+                    {
+                        "description": "model 3D quick view generation task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.Model3DQuickViewTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "创建的任务配置 | Created task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.Model3DQuickViewTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/model_3d_quick_view_tasks/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取三维模型 GLB 快显任务配置 | Get model 3D quick view generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务配置 | Task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.Model3DQuickViewTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "更新三维模型 GLB 快显任务配置 | Update model 3D quick view generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "model 3D quick view generation task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.Model3DQuickViewTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的任务配置 | Updated task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.Model3DQuickViewTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除三维模型 GLB 快显任务配置 | Delete model 3D quick view generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/model_3d_tiles_tasks": {
             "get": {
                 "security": [
@@ -1131,7 +1561,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建新的三维模型 3D Tiles 任务配置。任务从 OSGB whole item 读取源数据，并将 3D Tiles 数据集写入用户选择的业务存储。| Create a model 3D Tiles task from an OSGB whole item into selected business storage.",
+                "description": "创建新的三维模型 3D Tiles 任务配置。任务从 OSGB Scene whole item 读取源数据，并将 3D Tiles 数据集写入用户选择的业务存储。| Create a model 3D Tiles task from an OSGB Scene whole item into selected business storage.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2778,7 +3208,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "列出 Manager 模块的任务（矢量瓦片缓存生成、矢量快显性能优化、栅格快显 COG 生成、栅格 mosaic 生成、三维模型 3D Tiles 生成和向量化任务）| List Manager module tasks",
+                "description": "列出 Manager 模块的任务（矢量瓦片缓存生成、矢量快显性能优化、栅格快显 COG 生成、栅格 mosaic 生成、三维模型 GLB 快显生成、三维模型 3D Tiles 生成和向量化任务）| List Manager module tasks",
                 "produces": [
                     "application/json"
                 ],
@@ -2789,7 +3219,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型过滤：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_tiles_generation|embedding | Task type filter",
+                        "description": "任务类型过滤：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|embedding | Task type filter",
                         "name": "task_type",
                         "in": "query"
                     },
@@ -2848,7 +3278,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_tiles_generation|embedding | Task type",
+                        "description": "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -2906,7 +3336,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_tiles_generation|embedding | Task type",
+                        "description": "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -3918,6 +4348,71 @@
                 }
             }
         },
+        "github_com_addp_manager_internal_models.Model3DQuickView": {
+            "type": "object",
+            "properties": {
+                "content_url": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "source_engine_id": {
+                    "type": "integer"
+                },
+                "source_format": {
+                    "type": "string"
+                },
+                "source_size_bytes": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "storage_ref": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_manager_internal_models.QuickViewOptimization": {
             "type": "object",
             "properties": {
@@ -4320,6 +4815,9 @@
                 "locator": {
                     "type": "string"
                 },
+                "model_3d": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewModel3DInfo"
+                },
                 "optimization": {
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewOptimizationInfo"
                 },
@@ -4367,6 +4865,35 @@
                 },
                 "vector_tile_cache_generation": {
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.TileCacheGeneration"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.QuickViewModel3DInfo": {
+            "type": "object",
+            "properties": {
+                "file_name": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "layout": {
+                    "type": "string"
+                },
+                "preview_url": {
+                    "type": "string"
+                },
+                "result_id": {
+                    "type": "integer"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "task_id": {
+                    "type": "integer"
                 }
             }
         },
@@ -5047,6 +5574,119 @@
                 },
                 "scope": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.Model3DQuickViewTaskRequest": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "schedule": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.Model3DQuickViewTaskResponse": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "result": {
+                    "$ref": "#/definitions/internal_api.Model3DQuickViewTaskResultResponse"
+                },
+                "schedule": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/internal_api.Model3DQuickViewTaskSourceResponse"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.Model3DQuickViewTaskResultResponse": {
+            "type": "object",
+            "properties": {
+                "file_name": {
+                    "type": "string"
+                },
+                "storage_ref": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.Model3DQuickViewTaskSourceResponse": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "item_locator": {
+                    "type": "string"
+                },
+                "source_engine_id": {
+                    "type": "integer"
+                },
+                "source_size_bytes": {
+                    "type": "integer"
                 }
             }
         },

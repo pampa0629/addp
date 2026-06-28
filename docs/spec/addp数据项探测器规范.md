@@ -100,7 +100,7 @@ detector 必须先确定 data item 边界，再提取类型信息、格式信息
 | `layout=single` 对象 / 文件资源 | 入口资源名，保留扩展名 | 入口资源完整路径 | MinIO / S3 中 `item_type=object`；NFS / 本地文件系统中 `item_type=file` |
 | `layout=single` 引擎原生资源 | 引擎原生名称 | 引擎内唯一逻辑全名 | PostgreSQL table、MongoDB collection 等 |
 | `layout=multi` | primary content 名，保留扩展名 | primary content 完整路径 | Shapefile 使用 `.shp` 作为 primary content；item_type 仍跟随承载引擎的叶子术语 |
-| `layout=whole` | 根目录、prefix、schema 名，或格式规范定义的数据集名 | whole scope 根范围完整路径 | Iceberg 表目录、OSGB 场景目录等 |
+| `layout=whole` | 根目录、prefix、schema 名，或格式规范定义的数据集名 | whole scope 根范围完整路径 | Iceberg 表目录、OSGB Scene 场景目录等 |
 
 规则：
 
@@ -138,7 +138,7 @@ item refresh 只允许刷新该 item 自身的 attributes、字段、format info
 | Native item detector | 数据库表、动态 schema 记录集合、图整体 | `single` 或引擎规范声明 | 由引擎稳定 catalog 边界决定 |
 | Single-resource detector | CSV、PDF、图片、SQLite、Excel、ZIP | `single` | 不独占目录 |
 | Sibling multi-resource detector | Shapefile、主文件 + 索引文件 + 元数据文件 | `multi` | 只认领匹配 ref，不独占目录 |
-| Whole-scope detector | Iceberg 表目录、OSGB 场景目录、完整数据集 prefix | `whole` | 强匹配时可独占扫描范围 |
+| Whole-scope detector | Iceberg 表目录、OSGB Scene 场景目录、完整数据集 prefix | `whole` | 强匹配时可独占扫描范围 |
 
 容器文件是 `data_type=container`，不是单独内容布局。SQLite、GeoPackage、Excel、ZIP 等通常由 single-resource detector 识别为 `layout=single`、`data_type=container`，内部对象先写入 attributes。
 
@@ -205,7 +205,7 @@ type FormatRule struct {
 
 whole scope 的 `refs` 与 `claims` 必须分工明确：
 
-1. `refs` 只保留 manifest 或关键入口资源，例如 3D Tiles 的 `tileset.json`、OSGB 的 `metadata.xml`、raster mosaic 的 `mosaic.addp.json`。
+1. `refs` 只保留 manifest 或关键入口资源，例如 3D Tiles 的 `tileset.json`、OSGB Scene 的 `metadata.xml`、raster mosaic 的 `mosaic.addp.json`。
 2. `.b3dm`、`.i3dm`、`.pnts`、`.osgb`、leaf COG 等叶子资源由 `claims` 表达认领范围，不进入 `refs`。
 3. 没有 manifest 的 whole scope 规则可以使用数据资源作为入口 ref，但一旦存在 manifest 强命中，不得再把全部叶子资源写入 `refs`。
 4. Manager 和 Transfer 消费 whole item 时使用 `meta_item.full_name` / `storage.physical_path` 作为范围入口，不得从 `refs` 反推完整数据集文件清单。
@@ -238,7 +238,7 @@ whole scope 的 `refs` 与 `claims` 必须分工明确：
 7. Manager 中两个 Shapefile、PDF、CSV 都挂在 `/shp/` 目录下。
 8. Shapefile 内容读取使用 `meta_item.full_name` 和 `item.refs`，不得重新枚举 sibling 后猜测。
 
-## OSGB 校准用例
+## OSGB Scene 校准用例
 
 目录：
 
@@ -255,13 +255,30 @@ whole scope 的 `refs` 与 `claims` 必须分工明确：
 
 期望：
 
-1. `/models/osgb/` 生成一个 `data_type=model_3d`、`layout=whole`、`format=osgb` item。
-2. `meta_item.full_name` 来源于 OSGB 数据集根目录 `/models/osgb/`。
+1. `/models/osgb/` 生成一个 `data_type=model_3d`、`layout=whole`、`format=osgb_scene` item。
+2. `meta_item.full_name` 来源于 OSGB Scene 数据集根目录 `/models/osgb/`。
 3. `item.refs` 只包含 `metadata.xml` manifest，`role=manifest` 且 `primary=true`。
 4. 所有 `.osgb` 叶子文件和 `metadata.xml` 都进入 claims，避免重复落为单文件 item。
 5. 强命中时 `exclusive=true`，该目录下不再生成普通 `.osgb` file item。
 6. Meta deep scan 解析 `metadata.xml`，把 `ModelMetadata/SRS`、`SRSOrigin`、`Texture/ColorSource` 写入标准 attributes。
-7. Manager 不直接预览 OSGB 源 item；应通过 `model_3d_tiles_generation` 任务生成业务存储中的 3D Tiles item，再复用 3D Tiles 预览。
+7. Manager 不直接预览 OSGB Scene 源 item；应通过 `model_3d_tiles_generation` 任务生成业务存储中的 3D Tiles item，再复用 3D Tiles 预览。
+
+## 单 OSGB 校准用例
+
+目录：
+
+```text
+/models/tiles/
+  Tile_1_L14_0.osgb
+  readme.txt
+```
+
+期望：
+
+1. `/models/tiles/Tile_1_L14_0.osgb` 生成一个 `data_type=model_3d`、`layout=single`、`format=osgb` item。
+2. `meta_item.full_name` 来源于单个 `.osgb` 文件完整路径。
+3. 单 OSGB item 不独占父目录，`readme.txt` 可继续按普通 single resource 识别。
+4. Manager 快显应通过 `model_3d_quick_view_generation` 生成 GLB artifact，不要求前端直接解析 OSGB。
 
 ## TIFF / GeoTIFF 校准用例
 

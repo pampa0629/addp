@@ -113,7 +113,7 @@ data item 的身份由 `meta_item` 表字段承载，例如 `id`、`tenant_id`�
 |---|---|---|
 | `single` | 一个引擎资源对应一个 data item | 数据库 table、对象存储 object、文件系统 file |
 | `multi` | 多个明确相关 ref 共同组成一个 data item | Shapefile 多对象 / 多文件、主 ref 加同级索引 ref |
-| `whole` | 整个目录、prefix、schema 或扫描范围构成一个 data item | Iceberg 表目录、OSGB 场景目录、完整数据集 prefix |
+| `whole` | 整个目录、prefix、schema 或扫描范围构成一个 data item | Iceberg 表目录、OSGB Scene 场景目录、完整数据集 prefix |
 
 `single` 不等于单文件。数据库表也是 `single`。SQLite、ZIP、RAR 等虽然内部包含子对象，但外层 data item 通常仍是 `single`。
 

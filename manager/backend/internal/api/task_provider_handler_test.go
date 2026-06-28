@@ -214,6 +214,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	qvoRepo := repository.NewQuickViewOptimizationRepository(db)
 	cogRepo := repository.NewRasterCOGRepository(db)
 	model3DTilesRepo := repository.NewModel3DTilesRepository(db)
+	model3DQuickViewRepo := repository.NewModel3DQuickViewRepository(db)
 
 	if err := tileCacheRepo.CreateTask(context.Background(), &models.TileCacheTask{
 		TenantID: 1,
@@ -288,7 +289,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 			"source": commonModels.JSONMap{
 				"item_locator":     "addp://engine/11/path/models/osgb?type=item&item_id=45",
 				"source_engine_id": uint(11),
-				"format":           "osgb",
+				"format":           "osgb_scene",
 			},
 			"target": commonModels.JSONMap{
 				"storage_locator":  "addp://engine/12/path/models/tiles?type=node",
@@ -302,6 +303,23 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create model 3d tiles generation task: %v", err)
 	}
+	if err := model3DQuickViewRepo.CreateTask(context.Background(), &models.Model3DQuickViewTask{
+		TenantID: 1,
+		Name:     "model 3d quick view generation task",
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"source": commonModels.JSONMap{
+				"item_locator":      "addp://engine/11/path/models/tile.osgb?type=file&item_id=46",
+				"source_engine_id":  uint(11),
+				"item_fingerprint":  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+				"item_id":           uint(46),
+				"format":            "osgb",
+				"source_size_bytes": int64(1024),
+			},
+		},
+	}); err != nil {
+		t.Fatalf("create model 3d quick view generation task: %v", err)
+	}
 
 	handler := NewTaskProviderHandler(
 		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
@@ -311,6 +329,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 		nil,
 	)
 	handler.SetModel3DTilesTaskService(service.NewModel3DTilesTaskService(model3DTilesRepo, nil))
+	handler.SetModel3DQuickViewTaskService(service.NewModel3DQuickViewTaskService(model3DQuickViewRepo, nil))
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -322,12 +341,14 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	router.GET("/vector_quick_view_target_tasks", handler.ListQuickViewOptimizationTasks)
 	router.GET("/raster_cog_tasks", handler.ListRasterCOGTasks)
 	router.GET("/model_3d_tiles_tasks", handler.ListModel3DTilesTasks)
+	router.GET("/model_3d_quick_view_tasks", handler.ListModel3DQuickViewTasks)
 
 	assertListedTaskTypeValues(t, router, "/vector_tile_cache_tasks", []string{commonExecution.TaskTypeVectorTileCacheGeneration})
 	assertListedTaskTypeValues(t, router, "/embedding_tasks", []string{commonExecution.TaskTypeEmbedding})
 	assertListedTaskTypeValues(t, router, "/vector_quick_view_target_tasks", []string{commonExecution.TaskTypeVectorQuickViewTargetGeneration})
 	assertListedTaskTypeValues(t, router, "/raster_cog_tasks", []string{commonExecution.TaskTypeRasterCOGGeneration})
 	assertListedTaskTypeValues(t, router, "/model_3d_tiles_tasks", []string{commonExecution.TaskTypeModel3DTilesGeneration})
+	assertListedTaskTypeValues(t, router, "/model_3d_quick_view_tasks", []string{commonExecution.TaskTypeModel3DQuickViewGeneration})
 }
 
 func TestCreateEmbeddingTaskRejectsLegacyTopLevelFields(t *testing.T) {
@@ -649,6 +670,50 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create model_3d_tiles_tasks table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.model_3d_quick_view_tasks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		name TEXT NOT NULL,
+		description TEXT,
+		enabled BOOLEAN,
+		last_execution_id TEXT,
+		last_execution_status TEXT,
+		last_run_at DATETIME,
+		next_run_at DATETIME,
+		schedule TEXT,
+		created_by INTEGER,
+		config JSON,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create model_3d_quick_view_tasks table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.model_3d_quick_view (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		item_fingerprint TEXT NOT NULL,
+		item_id INTEGER,
+		locator TEXT,
+		task_id INTEGER,
+		last_execution_id TEXT,
+		source_engine_id INTEGER NOT NULL,
+		source_format TEXT NOT NULL,
+		source_size_bytes INTEGER,
+		storage_ref TEXT NOT NULL,
+		file_name TEXT,
+		size_bytes INTEGER,
+		content_url TEXT,
+		status TEXT NOT NULL,
+		metadata JSON,
+		error_message TEXT,
+		created_by INTEGER,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create model_3d_quick_view table: %v", err)
 	}
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
 		t.Fatalf("attach common schema: %v", err)

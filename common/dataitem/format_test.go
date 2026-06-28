@@ -56,6 +56,23 @@ func TestInferDataTypeDoesNotClassifyUnknownMIMEPrefix(t *testing.T) {
 	}
 }
 
+func TestGenericBinaryMIMEDoesNotOverrideOSGBExtension(t *testing.T) {
+	candidate := Candidate{
+		Name:        "Tile_4_L20_00010t3.osgb",
+		Path:        "3d/single-osgb/Tile_4_L20_00010t3.osgb",
+		ContentType: "application/octet-stream",
+	}
+	if got := DetectFormat(candidate); got != string(format.FormatOSGB) {
+		t.Fatalf("DetectFormat() = %q, want osgb", got)
+	}
+	if got := InferFormat(candidate.Name, candidate.ContentType, ""); got != string(format.FormatOSGB) {
+		t.Fatalf("InferFormat() = %q, want osgb", got)
+	}
+	if got := InferDataType(string(format.FormatOSGB), candidate.ContentType); got != datatype.Model3D {
+		t.Fatalf("InferDataType(osgb, application/octet-stream) = %q, want model_3d", got)
+	}
+}
+
 func TestBuiltinMultiRulesIncludesGeoTIFFSidecars(t *testing.T) {
 	t.Parallel()
 

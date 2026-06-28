@@ -59,7 +59,8 @@
 | WPS | `single` | `document` | `wps` | 第一阶段以内置格式识别和 raw / range 预览为主 |
 | GLB | `single` | `model_3d` | `glb` | 第一阶段三维模型代表格式；预览优先走 raw / range / storage stream + 前端 Three.js |
 | 3D Tiles | `whole` | `model_3d` | `3dtiles` | 由 `tileset.json` manifest 声明的分块三维场景 |
-| OSGB | `whole` | `model_3d` | `osgb` | 由 `metadata.xml` manifest 声明的倾斜摄影三维模型数据集 |
+| OSGB | `single` | `model_3d` | `osgb` | 单个 `.osgb` 三维模型文件；快显通过 GLB artifact 实现 |
+| OSGB Scene | `whole` | `model_3d` | `osgb_scene` | 由 `metadata.xml` manifest 声明的一套 OSGB 倾斜摄影三维模型场景 |
 | LAS | `single` | `point_cloud` | `las` | 第一阶段点云代表格式；deep scan 读取 header 和轻量摘要，预览走抽样点集 |
 
 ## GLB
@@ -73,7 +74,7 @@
 | `format` | `glb` |
 | 主资源 | `meta_item.full_name` 指向 `.glb` 文件资源 |
 
-GLB 是单资源二进制 glTF 模型。第一阶段 GLB 作为 `model_3d` 的代表格式接入，用于走通 Meta scan 到 Manager 三维预览主链路。`.gltf + .bin + textures`、OBJ、OSGB、3D Tiles、IFC / Revit 等格式不借用 `format=glb`，应分别建立自己的 format descriptor 和规则。
+GLB 是单资源二进制 glTF 模型。第一阶段 GLB 作为 `model_3d` 的代表格式接入，用于走通 Meta scan 到 Manager 三维预览主链路。`.gltf + .bin + textures`、OBJ、OSGB、OSGB Scene、3D Tiles、IFC / Revit 等格式不借用 `format=glb`，应分别建立自己的 format descriptor 和规则。
 
 ### attributes 写入
 
@@ -138,33 +139,67 @@ Manager 预览应消费已入库 `data_type=model_3d + format=3dtiles`、`layout
 
 | 维度 | 取值 |
 |---|---|
-| `layout` | `whole` |
+| `layout` | `single` |
 | `data_type` | `model_3d` |
 | `format` | `osgb` |
-| 主入口 | scope 根目录下的 `metadata.xml` |
-| 主资源表达 | `meta_item.full_name` 指向 OSGB 数据集根目录，`item.refs` 中 `metadata.xml` 的 `role=manifest` 且 `primary=true` |
+| 主资源 | `meta_item.full_name` 指向 `.osgb` 文件资源 |
 
-OSGB 在 ADDP 中表示倾斜摄影三维模型数据集，不把每个 `.osgb` 叶子文件落为独立 item。扫描命中根目录下 `metadata.xml` 且可解析为 `ModelMetadata` 后，整个目录 / prefix 识别为一个 `layout=whole` 的 `model_3d` data item。`.osgb` 叶子文件由 detector claims 认领，`refs` 只保留 manifest 等关键入口。
+OSGB 在 ADDP 中首先表示单个 `.osgb` 文件。它类似单个 TIFF：可以被扫描为普通 single item，但浏览器直接解析和渲染成本较高。单 OSGB 的快显路线是通过 `model_3d_quick_view_generation` 调用 `model3d_workflow` 的 `osgb_to_glb` direct operator，生成 Manager infra MinIO 中的 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。
+
+单个 `.osgb` 文件只在未被 `osgb_scene` whole scope 强命中 claims 覆盖时落为独立 item。不得因为同目录存在多个 `.osgb` 文件就自动推断为倾斜摄影场景。
 
 ### attributes 写入
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `layout=whole`、`data_type=model_3d`、`format=osgb`、`refs` 中记录 `metadata.xml` manifest |
+| `item` | `layout=single`、`data_type=model_3d`、`format=osgb` |
+| `type_info.model_3d` | 第一阶段可为空或仅写跨格式稳定摘要；不得为了快显写入 GLB artifact 信息 |
+| `format_info.osgb` | 单文件 OSGB 私有摘要；第一阶段没有稳定 parser 时可以不写 |
+| `capabilities.spatial` | 仅在单文件解析出明确 CRS 或空间范围时写入 |
+
+### 消费要求
+
+Manager 不应把 `.osgb` 原始文件直接暴露给前端解析作为主路径。快显能力应消费已入库 `data_type=model_3d + layout=single + format=osgb` item，通过 `model_3d_quick_view_generation` 任务调用 `model3d_workflow` 的 `osgb_to_glb` direct operator，生成并登记 `manager.model_3d_quick_view` GLB artifact；该 artifact 存放在 Manager infra MinIO 中，不自动成为业务存储中的新 data item。
+
+### 格式约束
+
+- 不得把单个 `.osgb` 文件归为 `osgb_scene`、`container` 或 `unknown`。
+- 不得把单 OSGB 快显 GLB artifact 写入 `format_info.osgb` 或 `type_info.model_3d`。
+- 不得在单文件规则中解析目录级 `metadata.xml`；目录级 metadata 只属于 `osgb_scene`。
+
+## OSGB Scene
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `whole` |
+| `data_type` | `model_3d` |
+| `format` | `osgb_scene` |
+| 主入口 | scope 根目录下的 `metadata.xml` |
+| 主资源表达 | `meta_item.full_name` 指向 OSGB Scene 根目录，`item.refs` 中 `metadata.xml` 的 `role=manifest` 且 `primary=true` |
+
+OSGB Scene 在 ADDP 中表示一套 OSGB 倾斜摄影三维模型数据集，不占用单文件 `format=osgb` 名称。扫描命中根目录下 `metadata.xml` 且可解析为 `ModelMetadata` 后，整个目录 / prefix 识别为一个 `layout=whole` 的 `model_3d` data item。`.osgb` 叶子文件由 detector claims 认领，`refs` 只保留 manifest 等关键入口。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=whole`、`data_type=model_3d`、`format=osgb_scene`、`refs` 中记录 `metadata.xml` manifest |
 | `type_info.model_3d` | `model_kind=photogrammetry_scene`、数据集总大小等跨格式模型摘要 |
-| `format_info.osgb` | `manifest_ref`、`data_dir`、`metadata_version`、`srs`、`srs_origin`、`color_source` 等 OSGB 私有事实 |
+| `format_info.osgb_scene` | `manifest_ref`、`data_dir`、`metadata_version`、`srs`、`srs_origin`、`color_source` 等 OSGB Scene 私有事实 |
 | `capabilities.spatial` | 当 `metadata.xml` 中 `SRS` 可解析为 `EPSG:<srid>` 时写入 `srid` 和 `crs_ref` |
 
 ### 消费要求
 
-Manager 第一阶段不直接预览 OSGB 源数据。OSGB 源 item 应通过 `model_3d_tiles_generation` 任务转换为目标业务存储中的 `format=3dtiles`、`layout=whole` item；转换完成后触发 Meta deep scan，并复用 3D Tiles 预览链路。
+Manager 第一阶段不直接预览 OSGB Scene 源数据。OSGB Scene 源 item 应通过 `model_3d_tiles_generation` 任务转换为目标业务存储中的 `format=3dtiles`、`layout=whole` item；转换完成后触发 Meta deep scan，并复用 3D Tiles 预览链路。
 
 ### 格式约束
 
-- 不得把 OSGB 目录归为普通 `container`、`unknown` 或每个 `.osgb` 单文件 item。
+- 不得把 OSGB Scene 目录归为普通 `container`、`unknown` 或每个 `.osgb` 单文件 item。
 - 不得仅因出现 `.osgb` 文件就独占整个目录；必须有根目录 `metadata.xml` 强命中。
-- 不得把 OSGB 源数据伪装为 `format=3dtiles`；转换结果才是 `format=3dtiles`。
-- OSGB 直接预览、缩略图和转换产物不写入 `type_info.model_3d` 或 `format_info.osgb`。
+- 不得把 OSGB Scene 源数据伪装为 `format=3dtiles`；转换结果才是 `format=3dtiles`。
+- OSGB Scene 直接预览、缩略图和转换产物不写入 `type_info.model_3d` 或 `format_info.osgb_scene`。
 
 ## LAS
 

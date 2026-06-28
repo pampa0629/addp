@@ -60,6 +60,18 @@ const routes = [
         meta: { requiresAuth: true, title: '栅格快显 - Mosaic-addp' }
       },
       {
+        path: 'model-3d-quick-view',
+        name: 'Model3DQuickView',
+        component: () => import('../views/Model3DQuickView.vue'),
+        meta: { requiresAuth: true, title: '三维模型快显-addp' }
+      },
+      {
+        path: 'model-3d-tiles',
+        name: 'Model3DTiles',
+        component: () => import('../views/Model3DTiles.vue'),
+        meta: { requiresAuth: true, title: '倾斜摄影 3D Tiles-addp' }
+      },
+      {
         path: 'spatial-preview',
         name: 'SpatialPreview',
         component: () => import('../views/SpatialPreview.vue'),

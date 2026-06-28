@@ -22,14 +22,20 @@ import (
 // fileCatalogPreviewProvider 文件系统类存储引擎预览插件（NFS/对象存储等）
 // 使用 CatalogProvider / CatalogFactsProvider / ContentReadableProvider 读取，不依赖具体客户端。
 type fileCatalogPreviewProvider struct {
-	metadataRepo *repository.MetadataRepository
-	content      *objectcontent.ObjectContentRegistry
+	metadataRepo      *repository.MetadataRepository
+	content           *objectcontent.ObjectContentRegistry
+	model3DQuickViews Model3DQuickViewLookup
 }
 
-func NewFileCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, content *objectcontent.ObjectContentRegistry) PreviewProvider {
+func NewFileCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, content *objectcontent.ObjectContentRegistry, model3DQuickViews ...Model3DQuickViewLookup) PreviewProvider {
+	var quickViews Model3DQuickViewLookup
+	if len(model3DQuickViews) > 0 {
+		quickViews = model3DQuickViews[0]
+	}
 	return &fileCatalogPreviewProvider{
-		metadataRepo: metadataRepo,
-		content:      content,
+		metadataRepo:      metadataRepo,
+		content:           content,
+		model3DQuickViews: quickViews,
 	}
 }
 
@@ -83,11 +89,20 @@ func (p *fileCatalogPreviewProvider) Preview(ctx context.Context, req *PreviewRe
 	// "/file" 且 filePath 为空，不能因此误判为根目录。
 	isDirNode := req.NodeType == "prefix" || req.NodeType == "directory" || req.NodeType == "bucket" || req.NodeType == "dir" || req.NodeType == "root"
 	if isDirectoryPath(fullPath) || isDirNode {
+		if applyOSGBScenePreviewPrompt(req.Attributes, preview.Object) {
+			return preview, nil
+		}
 		return p.previewDirectory(ctx, catalogProvider, connInfo, engine, rootName, fullPath, preview)
+	}
+	if strings.TrimSpace(req.ScopePath) != "" && applyOSGBScenePreviewPrompt(req.Attributes, preview.Object) {
+		preview.Object.Path = strings.Trim(req.ScopePath, "/")
+		preview.Object.NodeType = "directory"
+		preview.Object.ContentType = "application/x-directory"
+		return preview, nil
 	}
 
 	// 文件预览
-	return p.previewFile(ctx, factsProvider, contentReader, connInfo, engine, rootName, fullPath, preview)
+	return p.previewFile(ctx, factsProvider, contentReader, connInfo, engine, rootName, fullPath, preview, req)
 }
 
 func (p *fileCatalogPreviewProvider) previewDirectory(
@@ -122,6 +137,7 @@ func (p *fileCatalogPreviewProvider) previewFile(
 	engine *commonModels.Engine,
 	rootName, filePath string,
 	preview *models.TablePreview,
+	req *PreviewRequest,
 ) (*models.TablePreview, error) {
 	ctxTimeout, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -141,6 +157,10 @@ func (p *fileCatalogPreviewProvider) previewFile(
 	rawContentType := meta.ContentType
 	canonicalContentType := objectcontent.InferContentType(filePath, rawContentType)
 	preview.Object.ContentType = canonicalContentType
+
+	if handled, err := applyModel3DQuickViewPreview(ctx, p.model3DQuickViews, req, preview.Object); handled || err != nil {
+		return preview, err
+	}
 
 	if p.content != nil {
 		contentPath := filePath

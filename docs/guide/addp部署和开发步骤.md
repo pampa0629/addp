@@ -39,7 +39,7 @@ bash scripts/dev/start.sh
 
 自动启动以下内容:
 1. 基础设施 (如未运行)
-2. 所有后端服务 (System、Manager、Meta、Transfer、Orchestrator、Develop、Python Workflow Engine)
+2. 所有后端服务 (System、Manager、Meta、Transfer、Orchestrator、Develop、Python Workflow Engine、Model3D Workflow Engine)
 3. Gateway 服务
 4. 所有前端服务 (可选,提示用户)
 
@@ -71,9 +71,23 @@ bash scripts/build/compile.sh
 # 构建 Docker 镜像
 bash scripts/build/build-images.sh
 
+# 只构建三维模型转换运行时镜像（Apple Silicon 默认为 linux/arm64）
+bash scripts/build/build-images.sh --services model3d-workflow-engine --force
+
 # 打包并推送镜像 (如需要)
 bash scripts/build/package.sh
 ```
+
+`model3d-workflow-engine` 使用专用镜像构建链路：先构建绑定 `_3dtile` 的 `addp-model3d-converter`，再构建内置转换器的 `addp-model3d-workflow-engine`。当前转换器构建一次只支持一个 Linux 平台，Apple Silicon 本机优先使用默认的 `linux/arm64` 容器路径。
+
+`model3d-workflow-engine` 运行在 Docker 中时，NFS/localfs 数据根目录必须挂载进 runtime 容器，并且 Manager 传给 operator 的本地路径必须在容器内可见。Compose 默认提供：
+
+```bash
+MODEL3D_DATA_HOST_PATH=./business/nfs/data
+MODEL3D_DATA_CONTAINER_PATH=/Users/pampa/code/addp/business/nfs/data
+```
+
+单 OSGB 快显生成的 GLB artifact 统一使用 ADDP infra MinIO 配置，不单独配置 `model3d_workflow` 专用 MinIO endpoint。Docker Compose 部署时，Manager 与 `model3d-workflow-engine` 同在 Compose 网络内，统一使用 infra MinIO 的 `minio:9000`；macOS 本机开发时，推荐使用宿主机 Python runtime 加 Docker `_3dtile` wrapper，Manager 与 runtime 统一访问 `localhost:19000`。
 
 ### 第四步: 本地 Docker Compose 模式
 
@@ -101,7 +115,7 @@ bash scripts/prod/start.sh
 
 1. **启动基础设施** (PostgreSQL、Redis、MinIO、Meilisearch)
 2. **启动 System Backend** (其他服务依赖它)
-3. **启动业务后端** (Manager、Meta、Transfer、Orchestrator、Develop、Python Workflow Engine、Gateway)
+3. **启动业务后端** (Manager、Meta、Transfer、Orchestrator、Develop、Python Workflow Engine、Model3D Workflow Engine、Gateway)
 4. **启动前端服务** (所有模块前端 + Console + Nginx)
 5. **健康检查** (验证所有服务就绪)
 

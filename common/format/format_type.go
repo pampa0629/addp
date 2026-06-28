@@ -57,10 +57,11 @@ const (
 	FormatAAC   FormatType = "aac"
 	FormatOGG   FormatType = "ogg"
 
-	FormatGLB     FormatType = "glb"
-	FormatLAS     FormatType = "las"
-	Format3DTiles FormatType = "3dtiles"
-	FormatOSGB    FormatType = "osgb"
+	FormatGLB       FormatType = "glb"
+	FormatLAS       FormatType = "las"
+	Format3DTiles   FormatType = "3dtiles"
+	FormatOSGB      FormatType = "osgb"
+	FormatOSGBScene FormatType = "osgb_scene"
 
 	FormatUnknown FormatType = "unknown"
 )

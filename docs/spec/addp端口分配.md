@@ -110,6 +110,7 @@ make ports-validate
 | Jupyter API Server    | 8097     | 8097        | Jupyter 执行引擎 API       |
 | Spark Workflow Engine | 8098     | 8098        | Spark 分布式工作流引擎     |
 | Python Workflow Engine     | 8099     | 8099        | 空间计算引擎 (Python)      |
+| Model3D Workflow Engine    | 8101     | 8101        | 三维模型转换工作流引擎     |
 | PostgreSQL (System)   | 15432    | 15432       | ADDP 系统元数据            |
 | Redis                 | 16379    | 16379       | 缓存和队列                 |
 | MinIO System API      | 19000    | 19000       | 系统文件存储               |
@@ -141,6 +142,7 @@ make ports-validate
   - 8097: Jupyter API Server
   - 8098: Spark Workflow Engine
   - 8099: Python Workflow Engine
+  - 8101: Model3D Workflow Engine
 
 ### 前端开发端口规则
 - **Console**：5170（控制台入口）

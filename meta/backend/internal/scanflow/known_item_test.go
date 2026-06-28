@@ -29,6 +29,30 @@ func TestKnownItemObjectPathRemovesBucketPrefix(t *testing.T) {
 	}
 }
 
+func TestKnownWholeItemPhysicalPathPrefersItemFullName(t *testing.T) {
+	descriptor := dataitem.DescriptorFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"layout": string(format.LayoutWhole),
+			"refs": []map[string]interface{}{
+				{"path": "3d/baita/metadata.xml", "role": "manifest", "primary": true},
+			},
+		},
+		"storage": map[string]interface{}{
+			"physical_path": "3d/baita/metadata.xml",
+			"path":          "3d/baita/",
+			"name":          "metadata.xml",
+		},
+	})
+	item := &models.MetaItem{FullName: "3d/baita"}
+
+	if got := KnownItemPhysicalPath(descriptor, item); got != "3d/baita" {
+		t.Fatalf("physical path = %q, want whole item full_name root", got)
+	}
+	if got := KnownItemPrimaryContentPath(descriptor, item); got != "3d/baita/metadata.xml" {
+		t.Fatalf("primary content path = %q, want manifest ref", got)
+	}
+}
+
 func TestKnownItemCatalogPathResolverUsesDescriptorBucket(t *testing.T) {
 	resolver := KnownItemCatalogPathResolver(9, nil, dataitem.ItemDescriptor{
 		StorageBucket: "addp",

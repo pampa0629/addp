@@ -17,6 +17,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { TilesRenderer } from '3d-tiles-renderer/three'
 import { ReorientationPlugin } from '3d-tiles-renderer/three/plugins'
 import { patchGLBMissingMaterialExtensions } from '@/utils/gltfCompatibility'
+import { buildTilesetSource, resolveTileResourceURL, withAuthToken } from '@/utils/threeDTilesPreviewUrl'
 
 const props = defineProps({
   data: {
@@ -232,87 +233,12 @@ function installCompatibleGLTFLoader(targetTiles) {
   manager.addHandler(/\.(gltf|glb)$/i, loader)
 }
 
-function buildTilesetSource(url) {
-  const parsed = parseStorageStreamURL(url)
-  if (!parsed) {
-    return { rootURL: withAuthToken(url), engineID: '', storageRef: '', virtual: false }
-  }
-  return {
-    rootURL: virtualTileURL(parsed.storageRef),
-    engineID: parsed.engineID,
-    storageRef: parsed.storageRef,
-    virtual: true
-  }
-}
-
-function parseStorageStreamURL(url) {
-  if (!url || typeof url !== 'string') return null
-  let parsed
-  try {
-    parsed = new URL(url, window.location.origin)
-  } catch {
-    return null
-  }
-  if (!parsed.pathname.endsWith('/api/v1/manager/storage-stream')) return null
-  const engineID = parsed.searchParams.get('engine_id') || ''
-  const storageRef = parsed.searchParams.get('storage_ref') || ''
-  if (!engineID || !storageRef) return null
-  return { engineID, storageRef }
-}
-
-function virtualTileURL(storageRef) {
-  const encoded = String(storageRef || '')
-    .split('/')
-    .filter(Boolean)
-    .map((part) => encodeURIComponent(part))
-    .join('/')
-  return `${window.location.origin}/__addp_3dtiles__/${encoded}`
-}
-
-function resolveTileResourceURL(resourceURL, source) {
-  if (!source?.virtual) return withAuthToken(resourceURL)
-  let parsed
-  try {
-    parsed = new URL(resourceURL, window.location.origin)
-  } catch {
-    return resourceURL
-  }
-  const prefix = '/__addp_3dtiles__/'
-  if (!parsed.pathname.startsWith(prefix)) return withAuthToken(resourceURL)
-  const encodedPath = parsed.pathname.slice(prefix.length)
-  const storageRef = encodedPath
-    .split('/')
-    .filter(Boolean)
-    .map((part) => decodeURIComponent(part))
-    .join('/')
-  const params = new URLSearchParams()
-  params.set('engine_id', source.engineID)
-  params.set('storage_ref', storageRef || source.storageRef)
-  appendAuthToken(params)
-  return `/api/v1/manager/storage-stream?${params.toString()}`
-}
-
 function withAuthOptions(options) {
   const next = { ...options }
   if (next.headers instanceof Headers) {
     next.headers = Object.fromEntries(next.headers.entries())
   }
   return next
-}
-
-function withAuthToken(url) {
-  if (!url || typeof url !== 'string') return ''
-  if (!url.startsWith('/api/') && !url.startsWith('/manager/')) return url
-  const parsed = new URL(url, window.location.origin)
-  appendAuthToken(parsed.searchParams)
-  return `${parsed.pathname}?${parsed.searchParams.toString()}`
-}
-
-function appendAuthToken(params) {
-  const token = localStorage.getItem('token')
-  if (token && !params.has('token')) {
-    params.set('token', token)
-  }
 }
 
 function disposeScene() {

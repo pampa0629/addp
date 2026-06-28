@@ -9,6 +9,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/models"
@@ -352,13 +353,13 @@ func normalizeModel3DTilesSource(config commonModels.JSONMap) (Model3DTilesSourc
 	source := Model3DTilesSourceConfig{
 		ItemLocator:    stringFromConfig(sourceMap["item_locator"]),
 		SourceEngineID: uintFromConfig(sourceMap["source_engine_id"]),
-		Format:         strings.ToLower(firstNonEmptyConfig(stringFromConfig(sourceMap["format"]), "osgb")),
+		Format:         strings.ToLower(firstNonEmptyConfig(stringFromConfig(sourceMap["format"]), string(format.FormatOSGBScene))),
 	}
 	if source.ItemLocator == "" || source.SourceEngineID == 0 {
 		return Model3DTilesSourceConfig{}, errors.New("model 3d tiles config.source requires item_locator and source_engine_id")
 	}
-	if source.Format != "osgb" {
-		return Model3DTilesSourceConfig{}, errors.New("model 3d tiles config.source.format must be osgb")
+	if source.Format != string(format.FormatOSGBScene) {
+		return Model3DTilesSourceConfig{}, errors.New("model 3d tiles config.source.format must be osgb_scene")
 	}
 	loc, err := resourcetree.ParseURI(source.ItemLocator)
 	if err != nil {

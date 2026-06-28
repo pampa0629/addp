@@ -16,7 +16,7 @@ func DetectFormat(candidate Candidate) string {
 	if value := strings.TrimSpace(interfaceString(candidate.Properties["format"])); value != "" {
 		return normalizeFormat(value)
 	}
-	if candidate.ContentType != "" {
+	if candidate.ContentType != "" && !format.IsGenericMIME(candidate.ContentType) {
 		if detected := format.MIMEToFormat(candidate.ContentType); detected != format.FormatUnknown {
 			return string(detected)
 		}
@@ -45,7 +45,7 @@ func InferFormat(fileName, contentType, explicitFormat string) string {
 			return canonical
 		}
 	}
-	if contentType != "" {
+	if contentType != "" && !format.IsGenericMIME(contentType) {
 		if detected := format.MIMEToFormat(contentType); detected != format.FormatUnknown {
 			return string(detected)
 		}
@@ -60,8 +60,10 @@ func InferDataType(formatName, contentType string) datatype.DataType {
 	if dataType := DefaultDataTypeForFormat(normalizeFormat(formatName)); dataType != datatype.Unknown {
 		return dataType
 	}
-	if detected := format.MIMEToFormat(contentType); detected != format.FormatUnknown {
-		return DefaultDataTypeForFormat(string(detected))
+	if !format.IsGenericMIME(contentType) {
+		if detected := format.MIMEToFormat(contentType); detected != format.FormatUnknown {
+			return DefaultDataTypeForFormat(string(detected))
+		}
 	}
 	return datatype.Unknown
 }

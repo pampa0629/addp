@@ -89,6 +89,7 @@ docker compose -f docker-compose.yml up -d \
   asset-backend \
   portal-backend \
   python-workflow-engine \
+  model3d-workflow-engine \
   spark-workflow-engine \
   jupyter-engine \
   gateway
@@ -117,6 +118,7 @@ services=(
   "jupyter-engine:8097"
   "spark-workflow-engine:8098"
   "python-workflow-engine:8099"
+  "model3d-workflow-engine:8101"
   "gateway:8000"
 )
 
@@ -222,6 +224,7 @@ echo -e "  Quality Backend:        http://localhost:8182"
 echo -e "  Asset Backend:          http://localhost:8183"
 echo -e "  Portal Backend:         http://localhost:8184"
 echo -e "  Python Workflow Engine: http://localhost:8099"
+echo -e "  Model3D Workflow Engine: http://localhost:8101"
 echo -e "  Spark Spark 工作流引擎:    http://localhost:8098"
 echo -e "  Gateway API:            http://localhost:8000"
 

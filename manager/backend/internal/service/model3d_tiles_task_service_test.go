@@ -6,7 +6,7 @@ import (
 	commonModels "github.com/addp/common/models"
 )
 
-func TestModel3DTilesTaskNormalizesOSGBTo3DTilesConfig(t *testing.T) {
+func TestModel3DTilesTaskNormalizesOSGBSceneTo3DTilesConfig(t *testing.T) {
 	config := commonModels.JSONMap{
 		"source": commonModels.JSONMap{
 			"item_locator":     "addp://engine/26/path/models/osgb?type=item&item_id=77",
@@ -23,8 +23,8 @@ func TestModel3DTilesTaskNormalizesOSGBTo3DTilesConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalize model 3d tiles config: %v", err)
 	}
-	if cfg.Source.Format != "osgb" {
-		t.Fatalf("source format = %q, want osgb", cfg.Source.Format)
+	if cfg.Source.Format != "osgb_scene" {
+		t.Fatalf("source format = %q, want osgb_scene", cfg.Source.Format)
 	}
 	if cfg.Target.DatasetName != "white_tower_3dtiles" {
 		t.Fatalf("dataset name = %q, want white_tower_3dtiles", cfg.Target.DatasetName)
@@ -38,7 +38,7 @@ func TestModel3DTilesTaskNormalizesOSGBTo3DTilesConfig(t *testing.T) {
 	}
 }
 
-func TestModel3DTilesTaskRejectsNonOSGBSource(t *testing.T) {
+func TestModel3DTilesTaskRejectsNonOSGBSceneSource(t *testing.T) {
 	config := commonModels.JSONMap{
 		"source": commonModels.JSONMap{
 			"item_locator":     "addp://engine/26/path/models/tiles?type=item&item_id=77",
@@ -53,9 +53,9 @@ func TestModel3DTilesTaskRejectsNonOSGBSource(t *testing.T) {
 
 	_, err := normalizeModel3DTilesTaskConfig(config)
 	if err == nil {
-		t.Fatal("normalize model 3d tiles config error is nil, want non-OSGB rejection")
+		t.Fatal("normalize model 3d tiles config error is nil, want non-OSGB-scene rejection")
 	}
-	if got := err.Error(); got != "model 3d tiles config.source.format must be osgb" {
+	if got := err.Error(); got != "model 3d tiles config.source.format must be osgb_scene" {
 		t.Fatalf("error = %q, want source format rejection", got)
 	}
 }

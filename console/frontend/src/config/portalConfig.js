@@ -86,6 +86,8 @@ export const PAGE_MAPS = {
     'spatial-quick-view/vector-optimization': 'spatial-quick-view/vector-optimization',
     'spatial-quick-view/raster-cog': 'spatial-quick-view/raster-cog',
     'spatial-quick-view/raster-mosaic': 'spatial-quick-view/raster-mosaic',
+    'model-3d-quick-view': 'model-3d-quick-view',
+    'model-3d-tiles': 'model-3d-tiles',
     '': 'data-explorer',
   },
   meta: {
@@ -221,6 +223,8 @@ export const SIDEBAR_MENUS = {
           { index: '/manager/spatial-quick-view/vector-tile-cache',   icon: Grid,        label: 'console.menus.manager.tileCache' },
           { index: '/manager/spatial-quick-view/raster-cog',          icon: Files,       label: 'console.menus.manager.cogArtifacts' },
           { index: '/manager/spatial-quick-view/raster-mosaic',       icon: Grid,        label: 'console.menus.manager.rasterMosaic' },
+          { index: '/manager/model-3d-quick-view',                    icon: Box,         label: 'console.menus.manager.model3DQuickView' },
+          { index: '/manager/model-3d-tiles',                         icon: Grid,        label: 'console.menus.manager.model3DTiles' },
         ],
       },
     ],

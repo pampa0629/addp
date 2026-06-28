@@ -28,6 +28,7 @@ type PreviewRequest struct {
 	Page            int
 	PageSize        int
 	TenantID        *uint
+	ItemFingerprint string
 	ItemType        string                   // 数据项类型（如 "table"），用于预览路由
 	ItemRowCount    *int64                   // 表/集合行数，来自 MetaItem.RowCount
 	ScannedDepth    string                   // Meta item/node 当前扫描深度

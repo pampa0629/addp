@@ -1,0 +1,75 @@
+diff --git a/build.rs b/build.rs
+index d27160b..c6e04d4 100644
+--- a/build.rs
++++ b/build.rs
+@@ -173,6 +173,11 @@ fn get_target_dir() -> std::path::PathBuf {
+ 
+ fn build_linux_unknown() {
+     let vcpkg_root = std::env::var("VCPKG_ROOT").expect("VCPKG_ROOT environment variable is not set");
++    let target = env::var("TARGET").unwrap_or_default();
++    let vcpkg_triplet = match target.as_str() {
++        "aarch64-unknown-linux-gnu" => "arm64-linux",
++        _ => "x64-linux",
++    };
+ 
+     let vcpkg_has_been_installed = env::var("VCPKG_HAS_BEEN_INSTALLED").unwrap_or_default() == "1";
+     if vcpkg_has_been_installed {
+@@ -186,6 +191,7 @@ fn build_linux_unknown() {
+     let mut config = Config::new(".");
+     config
+         .define("CMAKE_TOOLCHAIN_FILE",format!("{}/scripts/buildsystems/vcpkg.cmake", vcpkg_root))
++        .define("VCPKG_INSTALL_OPTIONS", "--allow-unsupported")
+         .define("CMAKE_C_COMPILER", "/usr/bin/gcc")
+         .define("CMAKE_CXX_COMPILER", "/usr/bin/g++")
+         .define("CMAKE_MAKE_PROGRAM", "/usr/bin/make")
+@@ -216,15 +222,14 @@ fn build_linux_unknown() {
+     let vcpkg_installed_dir = Path::new(&out_dir)
+         .join("build")
+         .join("vcpkg_installed")
+-        .join("x64-linux");
++        .join(vcpkg_triplet);
+     // Link Search Path for third party library
+     let vcpkg_installed_lib_dir = vcpkg_installed_dir.join("lib");
+     println!("cargo:rustc-link-search=native={}", vcpkg_installed_lib_dir.display());
+     let osg_plugins_lib = vcpkg_installed_lib_dir.join("osgPlugins-3.6.5");
+     println!("cargo:rustc-link-search=native={}", osg_plugins_lib.display());
+ 
+-    // 0. System C++ library first
+-    println!("cargo:rustc-link-lib=stdc++");
++    // 0. System libraries that do not depend on C++ symbols
+     println!("cargo:rustc-link-lib=z");
+ 
+     // 1. FFI static
+@@ -301,6 +306,24 @@ fn build_linux_unknown() {
+     // GeographicLib for geoid height calculation
+     println!("cargo:rustc-link-lib=GeographicLib");
+ 
++    // Static Linux linking needs provider libraries after dependent archives too.
++    println!("cargo:rustc-link-lib=static=draco");
++    println!("cargo:rustc-link-lib=GL");
++    println!("cargo:rustc-link-lib=kmlbase");
++    println!("cargo:rustc-link-lib=uriparser");
++    println!("cargo:rustc-link-lib=expat");
++    println!("cargo:rustc-link-lib=sharpyuv");
++    println!("cargo:rustc-link-lib=geos_c");
++    println!("cargo:rustc-link-lib=geos");
++    println!("cargo:rustc-link-lib=proj");
++    println!("cargo:rustc-link-lib=minizip");
++    println!("cargo:rustc-link-lib=xml2");
++    println!("cargo:rustc-link-lib=z");
++
++    // GNU ld resolves libraries left-to-right; libstdc++ must follow the C++ archives above.
++    println!("cargo:rustc-link-lib=stdc++");
++    println!("cargo:rustc-link-lib=z");
++
+     let vcpkg_share_dir = vcpkg_installed_dir.join("share");
+     copy_gdal_data(vcpkg_share_dir.to_str().unwrap());
+     copy_proj_data(vcpkg_share_dir.to_str().unwrap());
+@@ -721,6 +730,7 @@ fn main() {
+     match env::var("TARGET") {
+         Ok(val) => match val.as_str() {
+             "x86_64-unknown-linux-gnu" => build_linux_unknown(),
++            "aarch64-unknown-linux-gnu" => build_linux_unknown(),
+             "x86_64-pc-windows-msvc" => build_win_msvc(),
+             "aarch64-apple-darwin" => build_macos(),
+             "x86_64-apple-darwin" => build_macos_x86_64(),

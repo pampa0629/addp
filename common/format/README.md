@@ -215,7 +215,7 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | `ContainerInfoProvider` | `container` | 通常 `single` | `io.Reader` | 描述容器内部 child 列表和默认入口。 | Meta、Manager | zip、excel、sqlite、geopackage |
 | `ContainerChildResolver` | `container` 子内容 | `single` 父容器内部 | parent `contentio.Reader` + parent ref + child locator | 把容器 child 解析成可继续交给 format/provider 的 content。 | Manager、Transfer 后续 child 读取 | zip entry、Excel sheet、SQLite table |
 | `Model3DInfoProvider` | `model_3d` | `single` | `io.Reader` | 返回模型子形态、mesh / node / material / texture / animation / LOD 摘要、三维包围盒和可选空间事实。 | Meta、Manager | glb、gltf、obj、stl、ifc |
-| `ScopeModel3DInfoProvider` | `model_3d` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级三维模型类型信息。 | Meta、Manager | 3dtiles、osgb |
+| `ScopeModel3DInfoProvider` | `model_3d` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级三维模型类型信息。 | Meta、Manager | 3dtiles、osgb_scene |
 | `PointCloudInfoProvider` | `point_cloud` | 通常 `single`，EPT / Potree 等可为 `whole` | `io.Reader` 或 scope content reader | 返回点数、点格式、维度、三维包围盒、scale / offset、颜色 / intensity / classification 能力和可选空间事实。 | Meta、Manager | las、laz、copc、pcd、ept、potree |
 | `RelatedRefSpecProvider` | 任意 multi 格式 | `multi` | 无内容输入 | 声明 related ref 的角色、扩展名、必需性和 primary。 | Meta item detector、Transfer multi reader/writer 构造 | Shapefile 等多 content 格式 |
 | `RefDescriptorProvider` | 任意 multi 格式 | `multi` | `[]RelatedRef` | 把 refs 解释成用户可理解的描述。 | Manager、Meta 展示 | Shapefile 相关内容展示 |

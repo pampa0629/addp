@@ -250,8 +250,8 @@ func TestCommonDataItemResolverAdaptsOSGBWholeScope(t *testing.T) {
 		t.Fatalf("Items len = %d, want %d", got, want)
 	}
 	item := result.Items[0]
-	if item.Layout != format.LayoutWhole || item.DataType != datatype.Model3D || item.Format != string(format.FormatOSGB) {
-		t.Fatalf("item = %#v, want model_3d osgb whole item", item)
+	if item.Layout != format.LayoutWhole || item.DataType != datatype.Model3D || item.Format != string(format.FormatOSGBScene) {
+		t.Fatalf("item = %#v, want model_3d osgb_scene whole item", item)
 	}
 	if len(item.RefList) != 1 || item.RefList[0].Path != "models/osgb/metadata.xml" {
 		t.Fatalf("refs = %#v, want metadata manifest only", item.RefList)
@@ -260,9 +260,9 @@ func TestCommonDataItemResolverAdaptsOSGBWholeScope(t *testing.T) {
 	if modelInfo["model_kind"] != datatype.Model3DKindPhotogrammetryScene || commonJSON.InterfaceInt64(modelInfo["size_bytes"]) != 60 {
 		t.Fatalf("type_info.model_3d = %#v, want photogrammetry_scene and size", modelInfo)
 	}
-	formatInfo := commonJSON.Section(item.Attributes, "format_info.osgb")
+	formatInfo := commonJSON.Section(item.Attributes, "format_info.osgb_scene")
 	if formatInfo["manifest_ref"] != "metadata.xml" || formatInfo["color_source"] != "Visible" {
-		t.Fatalf("format_info.osgb = %#v, want manifest and color source", formatInfo)
+		t.Fatalf("format_info.osgb_scene = %#v, want manifest and color source", formatInfo)
 	}
 	spatial := commonJSON.Section(item.Attributes, "capabilities.spatial")
 	if commonJSON.InterfaceInt64(spatial["srid"]) != 4549 {

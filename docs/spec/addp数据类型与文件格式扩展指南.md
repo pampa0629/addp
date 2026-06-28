@@ -42,7 +42,7 @@
 
 三维模型和点云的常见边界：
 
-- GLB / glTF、OBJ、STL、OSGB、3D Tiles、IFC / Revit BIM 等统一归为 `model_3d`；网格模型、倾斜摄影、BIM 和分块场景由 `type_info.model_3d.model_kind`、format、layout 和 capabilities 区分，不新增平行 data type。
+- GLB / glTF、OBJ、STL、单 OSGB、OSGB Scene、3D Tiles、IFC / Revit BIM 等统一归为 `model_3d`；网格模型、倾斜摄影、BIM 和分块场景由 `type_info.model_3d.model_kind`、format、layout 和 capabilities 区分，不新增平行 data type。
 - LAS / LAZ / COPC、PCD、点云型 PLY、EPT / Potree、E57 等统一归为 `point_cloud`；不得仅因点记录可以列化为 x/y/z、intensity、classification 等字段就归为 `table`。
 - CRS、空间定位和空间范围仍是 `capabilities.spatial`，不是 `model_3d` 或 `point_cloud` 私有字段。
 

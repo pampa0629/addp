@@ -559,10 +559,10 @@ checkpoint / resume 属于批量执行的恢复契约，不是 sample offset，�
 它提供：
 
 - 三维模型通用元信息，例如 `model_kind`、节点数、mesh 数、顶点数、三角面数、材质数、纹理数、动画数、LOD 数量、三维包围盒、单位和 up axis。
-- 可选的同级横切事实，例如 OSGB、3D Tiles、IFC / Revit 或地理配准 GLB 解析得到的 `SpatialInfo`。
-- 可选的格式私有事实，例如 GLB asset / extension 摘要、OSGB tile tree 摘要、3D Tiles tileset 摘要、IFC property set 摘要。
+- 可选的同级横切事实，例如单 OSGB、OSGB Scene、3D Tiles、IFC / Revit 或地理配准 GLB 解析得到的 `SpatialInfo`。
+- 可选的格式私有事实，例如 GLB asset / extension 摘要、OSGB Scene tile tree 摘要、3D Tiles tileset 摘要、IFC property set 摘要。
 
-GLB / glTF、OBJ、STL、OSGB、3D Tiles、IFC / Revit BIM 等都归一为 `data_type=model_3d`。网格模型、倾斜摄影、BIM 和分块三维场景由 `datatype.Model3DInfo.ModelKind`、format、layout 和 capabilities 区分，不新增 `bim`、`osgb_model` 等平行 data type。
+GLB / glTF、OBJ、STL、单 OSGB、OSGB Scene、3D Tiles、IFC / Revit BIM 等都归一为 `data_type=model_3d`。网格模型、倾斜摄影、BIM 和分块三维场景由 `datatype.Model3DInfo.ModelKind`、format、layout 和 capabilities 区分，不新增 `bim`、`osgb_model` 等平行 data type。
 
 模型原始内容、前端渲染协议、缩略图、转换产物、派生瓦片、构件查询结果等应由 content reader、Manager 预览 DTO 或后续派生产物表达，不写入 `datatype.Model3DInfo`。
 

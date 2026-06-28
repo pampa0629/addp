@@ -274,8 +274,8 @@ func TestResolveItemsDetectsOSGBMetadataWholeScope(t *testing.T) {
 		t.Fatalf("items = %#v, want one OSGB item", result.Items)
 	}
 	item := result.Items[0]
-	if item.Layout != format.LayoutWhole || item.Format != string(format.FormatOSGB) || item.DataType != datatype.Model3D {
-		t.Fatalf("item = %#v, want model_3d osgb whole item", item)
+	if item.Layout != format.LayoutWhole || item.Format != string(format.FormatOSGBScene) || item.DataType != datatype.Model3D {
+		t.Fatalf("item = %#v, want model_3d osgb_scene whole item", item)
 	}
 	if item.ScopePath != "models/osgb" || item.FullName != "models/osgb" {
 		t.Fatalf("item scope/full_name = %q/%q, want OSGB root", item.ScopePath, item.FullName)
@@ -284,7 +284,7 @@ func TestResolveItemsDetectsOSGBMetadataWholeScope(t *testing.T) {
 		t.Fatalf("refs = %#v, want primary metadata manifest only", item.RefList)
 	}
 	if !result.Exclusive {
-		t.Fatal("OSGB whole scope should be exclusive")
+		t.Fatal("OSGB scene whole scope should be exclusive")
 	}
 	for _, path := range []string{
 		"models/osgb/metadata.xml",
@@ -294,6 +294,46 @@ func TestResolveItemsDetectsOSGBMetadataWholeScope(t *testing.T) {
 		if !result.Claims[path] {
 			t.Fatalf("claims = %#v, want %s claimed", result.Claims, path)
 		}
+	}
+}
+
+func TestResolveItemsDetectsSingleOSGBFile(t *testing.T) {
+	t.Parallel()
+
+	size := int64(10)
+	result, err := ResolveItems(ResolveInput{
+		ScopeKind: ScopeKindDirectory,
+		ScopePath: "models/singles",
+		Candidates: []Candidate{
+			{Path: "models/singles/tile.osgb", Name: "tile.osgb", SizeBytes: &size},
+			{Path: "models/singles/readme.txt", Name: "readme.txt", SizeBytes: &size},
+		},
+		Options: ResolveOptions{AllowWholeScope: true},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if result.Exclusive {
+		t.Fatal("single OSGB file must not exclusively claim parent scope")
+	}
+	var osgbItem *ResolvedItem
+	for i := range result.Items {
+		if result.Items[i].Format == string(format.FormatOSGB) {
+			osgbItem = &result.Items[i]
+			break
+		}
+	}
+	if osgbItem == nil {
+		t.Fatalf("items = %#v, want single OSGB item", result.Items)
+	}
+	if osgbItem.Layout != format.LayoutSingle || osgbItem.DataType != datatype.Model3D || osgbItem.PrimaryContentPath != "models/singles/tile.osgb" {
+		t.Fatalf("OSGB item = %#v, want model_3d osgb single item", osgbItem)
+	}
+	if !result.Claims["models/singles/tile.osgb"] {
+		t.Fatalf("claims = %#v, want single OSGB file claimed", result.Claims)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("items = %#v, want OSGB and readme single items", result.Items)
 	}
 }
 

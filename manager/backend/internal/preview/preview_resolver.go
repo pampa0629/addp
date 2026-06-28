@@ -506,6 +506,7 @@ func (r *PreviewResolver) buildProviderRequest(req *PreviewResolverRequest) (*Pr
 		Page:            page,
 		PageSize:        pageSize,
 		TenantID:        req.TenantID,
+		ItemFingerprint: req.ItemFingerprint,
 		ItemType:        req.ItemType,
 		ItemRowCount:    req.ItemRowCount,
 		ScannedDepth:    req.scannedDepth(),

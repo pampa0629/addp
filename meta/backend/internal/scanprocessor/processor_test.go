@@ -133,6 +133,44 @@ func TestFileDetectedMultiTIFFInputUsesPrimaryContentPath(t *testing.T) {
 	}
 }
 
+func TestFileDetectedWholeScopeInputUsesScopeRootPath(t *testing.T) {
+	t.Parallel()
+
+	size := int64(1024)
+	resource := &commonModels.Engine{ID: 9, EngineType: "static"}
+	parent := &models.MetaNode{ID: 3, FullName: "3d"}
+	detected := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			DataType:           datatype.Model3D,
+			Format:             string(format.FormatOSGBScene),
+			Layout:             format.LayoutWhole,
+			PrimaryContentPath: "3d/site/metadata.xml",
+			ScopePath:          "3d/site",
+			RefList: []dataitem.ItemRef{
+				{Path: "3d/site/metadata.xml", Role: "manifest", Required: true, Primary: true, Extension: ".xml"},
+			},
+			SizeBytes: &size,
+		},
+		PhysicalPath: "3d/site",
+	}
+	plan, ok := metacatalog.PlanFileCatalogDetectedItem(resource.ID, "3d/site", detected, "file")
+	if !ok {
+		t.Fatal("file item plan should be created")
+	}
+
+	input := FileDetectedInput(resource, 1, parent, plan, detected, nil, nil, models.ScannedDepthDeep)
+
+	if input.ItemName != "site" || input.FullName != "3d/site" {
+		t.Fatalf("item identity = %q/%q, want whole scope root", input.ItemName, input.FullName)
+	}
+	if input.PhysicalPath != "3d/site" {
+		t.Fatalf("physical path = %q, want whole scope root", input.PhysicalPath)
+	}
+	if input.CatalogPathFor(input.PhysicalPath).StringPath() != "3d/site" {
+		t.Fatalf("catalog path = %q, want whole scope root", input.CatalogPathFor(input.PhysicalPath).StringPath())
+	}
+}
+
 func TestObjectCompositeDetectedItemInputKeepsBucketAndObjectPaths(t *testing.T) {
 	t.Parallel()
 

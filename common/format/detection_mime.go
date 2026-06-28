@@ -12,6 +12,9 @@ func MIMEToFormat(mimeType string) FormatType {
 	if idx := strings.Index(mimeType, ";"); idx > 0 {
 		mimeType = strings.TrimSpace(mimeType[:idx])
 	}
+	if IsGenericMIME(mimeType) {
+		return FormatUnknown
+	}
 	if formatType := descriptorFormatByMIME(mimeType); formatType != FormatUnknown {
 		return formatType
 	}
@@ -68,7 +71,7 @@ func GuessContentType(filename string, peek []byte) string {
 	ext := filepath.Ext(filename)
 	descriptorFormat := descriptorFormatByExtension(ext)
 	descriptorMIME := descriptorMIMEByExtension(ext)
-	if mimeType := mime.TypeByExtension(ext); mimeType != "" && !isGenericMIMEGuess(mimeType) {
+	if mimeType := mime.TypeByExtension(ext); mimeType != "" && !IsGenericMIME(mimeType) {
 		if descriptorFormat == FormatUnknown || MIMEToFormat(mimeType) == descriptorFormat {
 			return mimeType
 		}
@@ -89,7 +92,7 @@ func descriptorMIMEByExtension(ext string) string {
 	return ""
 }
 
-func isGenericMIMEGuess(mimeType string) bool {
+func IsGenericMIME(mimeType string) bool {
 	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
 	if idx := strings.Index(mimeType, ";"); idx > 0 {
 		mimeType = strings.TrimSpace(mimeType[:idx])

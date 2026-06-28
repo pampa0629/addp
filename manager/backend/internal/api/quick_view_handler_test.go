@@ -205,6 +205,48 @@ func TestQuickViewSourceFromPreviewDetectsRasterTIFFObject(t *testing.T) {
 	}
 }
 
+func TestQuickViewSourceFromPreviewDetectsSingleOSGBObject(t *testing.T) {
+	locator := "addp://engine/26/path/3d/single-osgb/Tile_4_L20_00010t3.osgb?type=file&item_id=10282"
+	tablePreview := &models.TablePreview{
+		EngineID:   26,
+		EngineType: "nfs",
+		Object: &models.ObjectPreview{
+			EngineID: 26,
+			Attributes: map[string]interface{}{
+				"item": map[string]interface{}{
+					"data_type": "model_3d",
+					"format":    "osgb",
+					"layout":    "single",
+				},
+				"storage": map[string]interface{}{
+					"total_size": int64(612396),
+				},
+			},
+		},
+	}
+	result := &preview.PreviewResult{
+		Metadata: &preview.PreviewMetadata{
+			Locator:         locator,
+			ItemFingerprint: "fp-single-osgb",
+		},
+	}
+
+	source := quickViewSourceFromPreview(locator, nil, result, tablePreview)
+
+	if source.Model3D == nil {
+		t.Fatal("Model3D is nil, want single OSGB quick view source")
+	}
+	if source.Raster != nil || source.DirectGeoJSON || source.GeoJSONURL != "" || source.CanTile {
+		t.Fatalf("source routing = raster:%v direct_geojson:%v geojson_url:%q can_tile:%v, want model3d-only", source.Raster != nil, source.DirectGeoJSON, source.GeoJSONURL, source.CanTile)
+	}
+	if source.EngineID != 26 || source.Identity.Locator != locator || source.Identity.ItemFingerprint != "fp-single-osgb" {
+		t.Fatalf("source identity = engine:%d locator:%q fingerprint:%q", source.EngineID, source.Identity.Locator, source.Identity.ItemFingerprint)
+	}
+	if source.Model3D.Format != "osgb" || source.Model3D.Layout != "single" || source.Model3D.SourceSizeBytes != 612396 {
+		t.Fatalf("model3d facts = %#v, want single osgb facts", source.Model3D)
+	}
+}
+
 func TestApplyLocatorQuickViewURLsSetsRasterMosaicTileTemplate(t *testing.T) {
 	capability := &service.QuickViewCapability{
 		Locator:      "addp://engine/26/path/mosaics/srtm?type=directory&item_id=99",

@@ -122,6 +122,74 @@ export const quickViewAPI = {
     return request.delete(`/manager/raster_cog/${id}`)
   },
 
+  createModel3DQuickViewTask(payload) {
+    return request.post('/manager/model_3d_quick_view_tasks', payload)
+  },
+
+  listModel3DQuickViewTasks(params = {}) {
+    return request.get('/manager/model_3d_quick_view_tasks', { params })
+  },
+
+  getModel3DQuickViewTask(id) {
+    return request.get(`/manager/model_3d_quick_view_tasks/${id}`)
+  },
+
+  updateModel3DQuickViewTask(id, payload) {
+    return request.put(`/manager/model_3d_quick_view_tasks/${id}`, payload)
+  },
+
+  deleteModel3DQuickViewTask(id) {
+    return request.delete(`/manager/model_3d_quick_view_tasks/${id}`)
+  },
+
+  executeModel3DQuickViewTask(id, payload = {}) {
+    return request.post(`/manager/tasks/model_3d_quick_view_generation/${id}/execute`, {
+      trigger_type: 'manual',
+      source: 'manager',
+      ...payload
+    })
+  },
+
+  listModel3DQuickViews(params = {}) {
+    return request.get('/manager/model_3d_quick_view', { params })
+  },
+
+  getModel3DQuickView(id) {
+    return request.get(`/manager/model_3d_quick_view/${id}`)
+  },
+
+  deleteModel3DQuickView(id) {
+    return request.delete(`/manager/model_3d_quick_view/${id}`)
+  },
+
+  createModel3DTilesTask(payload) {
+    return request.post('/manager/model_3d_tiles_tasks', payload)
+  },
+
+  listModel3DTilesTasks(params = {}) {
+    return request.get('/manager/model_3d_tiles_tasks', { params })
+  },
+
+  getModel3DTilesTask(id) {
+    return request.get(`/manager/model_3d_tiles_tasks/${id}`)
+  },
+
+  updateModel3DTilesTask(id, payload) {
+    return request.put(`/manager/model_3d_tiles_tasks/${id}`, payload)
+  },
+
+  deleteModel3DTilesTask(id) {
+    return request.delete(`/manager/model_3d_tiles_tasks/${id}`)
+  },
+
+  executeModel3DTilesTask(id, payload = {}) {
+    return request.post(`/manager/tasks/model_3d_tiles_generation/${id}/execute`, {
+      trigger_type: 'manual',
+      source: 'manager',
+      ...payload
+    })
+  },
+
   getExecutionStatus(executionID) {
     return request.get(`/manager/executions/${executionID}`)
   }

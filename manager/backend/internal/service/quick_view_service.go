@@ -48,6 +48,7 @@ const (
 	QuickViewRenderSourceDirectTIFF    = "direct_tiff_client"
 	QuickViewRenderSourceRasterMosaic  = "raster_mosaic_tile"
 	QuickViewRenderSourceRealtimeTile  = "realtime_tile"
+	QuickViewRenderSourceModel3DGLB    = "model_3d_glb"
 
 	RealtimeTilePerformanceReady3857Target = "ready_3857_target"
 	RealtimeTilePerformanceSource3857Index = "source_3857_indexed"
@@ -77,6 +78,7 @@ type QuickViewService struct {
 	tileCacheRepo    *repository.TileCacheRepository
 	optimizationRepo *repository.QuickViewOptimizationRepository
 	rasterCOGRepo    *repository.RasterCOGRepository
+	model3DRepo      *repository.Model3DQuickViewRepository
 	metaClient       *commonClient.MetaClient
 	options          QuickViewCapabilityOptions
 	spatialLoader    func(ctx context.Context, tenantID, engineID uint, schema, table string) (*SpatialMetadataResult, error)
@@ -91,6 +93,7 @@ func NewQuickViewService(
 		tileCacheRepo:    repository.NewTileCacheRepository(db),
 		optimizationRepo: repository.NewQuickViewOptimizationRepository(db),
 		rasterCOGRepo:    repository.NewRasterCOGRepository(db),
+		model3DRepo:      repository.NewModel3DQuickViewRepository(db),
 		metaClient:       metaClient,
 	}
 }
@@ -157,6 +160,7 @@ type QuickViewSource struct {
 	SpatialMeta        *SpatialMetadataResult
 	Raster             *RasterQuickViewSource
 	RasterMosaic       *RasterMosaicQuickViewSource
+	Model3D            *Model3DQuickViewSource
 	DirectGeoJSON      bool
 	GeoJSONURL         string
 	CanTile            bool
@@ -210,6 +214,13 @@ type RasterMosaicQuickViewSource struct {
 	ExtentSRID     int
 }
 
+type Model3DQuickViewSource struct {
+	Format          string
+	Layout          string
+	SourceSizeBytes int64
+	PreviewURL      string
+}
+
 type RealtimeTileTarget struct {
 	Schema                      string
 	Table                       string
@@ -242,6 +253,7 @@ type QuickViewCapability struct {
 	RenderFacts          *QuickViewRenderFacts      `json:"render_facts,omitempty"`
 	Raster               *QuickViewRasterInfo       `json:"raster,omitempty"`
 	RasterMosaic         *QuickViewRasterMosaicInfo `json:"raster_mosaic,omitempty"`
+	Model3D              *QuickViewModel3DInfo      `json:"model_3d,omitempty"`
 	Optimization         *QuickViewOptimizationInfo `json:"optimization,omitempty"`
 	RealtimeTile         *QuickViewRealtimeTileInfo `json:"realtime_tile,omitempty"`
 	TileCacheGeneration  TileCacheGeneration        `json:"vector_tile_cache_generation"`
@@ -333,6 +345,17 @@ type QuickViewRasterMosaicInfo struct {
 	SourceCRS      string    `json:"source_crs,omitempty"`
 	Extent         []float64 `json:"extent,omitempty"`
 	ExtentSRID     int       `json:"extent_srid,omitempty"`
+}
+
+type QuickViewModel3DInfo struct {
+	Format          string  `json:"format,omitempty"`
+	Layout          string  `json:"layout,omitempty"`
+	ResultID        *uint   `json:"result_id,omitempty"`
+	TaskID          *uint   `json:"task_id,omitempty"`
+	LastExecutionID *string `json:"last_execution_id,omitempty"`
+	FileName        string  `json:"file_name,omitempty"`
+	SizeBytes       int64   `json:"size_bytes,omitempty"`
+	PreviewURL      string  `json:"preview_url,omitempty"`
 }
 
 type QuickViewRenderFacts struct {
@@ -508,7 +531,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		preferredMode = existing.PreferredMode
 		hasExistingPreference = true
 	}
-	if (source.Raster != nil || source.RasterMosaic != nil) && !hasExistingPreference {
+	if (source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil) && !hasExistingPreference {
 		preferredMode = models.QuickViewPreferredModeMapQuickView
 	}
 
@@ -548,6 +571,10 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		s.applyRasterMosaicCapability(capability, source.RasterMosaic)
 	} else if source.Raster != nil {
 		if err := s.applyRasterCapability(ctx, capability, identity, source.Raster, source.EngineID); err != nil {
+			return nil, err
+		}
+	} else if source.Model3D != nil {
+		if err := s.applyModel3DCapability(ctx, capability, identity, source.Model3D, source.EngineID); err != nil {
 			return nil, err
 		}
 	} else if readyTileCache != nil {
@@ -592,11 +619,11 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	if !capability.TileCacheGeneration.Available {
 		capability.CanGenerateTileCache = false
 	}
-	if source.Raster != nil || source.RasterMosaic != nil {
+	if source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil {
 		capability.CanGenerateTileCache = false
 		capability.TileCacheGeneration = TileCacheGeneration{
 			Available: false,
-			Reason:    "raster quick view does not use tile cache generation in phase 1",
+			Reason:    "this quick view source does not use vector tile cache generation",
 		}
 	}
 	if capability.ActiveMode == models.QuickViewPreferredModeMapQuickView && !capability.CanUseQuickView {
@@ -699,6 +726,46 @@ func (s *QuickViewService) applyRasterMosaicCapability(capability *QuickViewCapa
 	capability.RenderSource = QuickViewRenderSourceRasterMosaic
 	capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
 	capability.QuickView = renderInfoFromRasterMosaic(mosaic)
+}
+
+func (s *QuickViewService) applyModel3DCapability(ctx context.Context, capability *QuickViewCapability, identity QuickViewIdentity, model3D *Model3DQuickViewSource, engineID uint) error {
+	if capability == nil || model3D == nil {
+		return nil
+	}
+	capability.Model3D = model3DInfoFromSource(model3D)
+	capability.Raster = nil
+	capability.RasterMosaic = nil
+	capability.Optimization = nil
+	capability.RealtimeTile = nil
+	capability.DefaultTileCacheID = nil
+	capability.CanGenerateTileCache = false
+	capability.TileCacheGeneration = TileCacheGeneration{
+		Available: false,
+		Reason:    "model 3d quick view does not use vector tile cache generation",
+	}
+
+	readyGLB, err := s.readyModel3DQuickView(ctx, identity, engineID)
+	if err != nil {
+		return err
+	}
+	if readyGLB != nil {
+		capability.CanUseQuickView = true
+		capability.Status = QuickViewStatusAvailable
+		capability.UnavailableReason = ""
+		capability.RenderSource = QuickViewRenderSourceModel3DGLB
+		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
+		capability.QuickView = renderInfoFromModel3DQuickView(readyGLB)
+		capability.Model3D = model3DInfoFromQuickView(readyGLB, model3D)
+		return nil
+	}
+
+	capability.CanUseQuickView = false
+	capability.Status = QuickViewStatusUnavailable
+	capability.UnavailableReason = "requires_glb_generation"
+	capability.RenderSource = ""
+	capability.RecommendedMode = models.QuickViewPreferredModeBasicPreview
+	capability.QuickView = QuickViewRenderInfo{}
+	return nil
 }
 
 func (s *QuickViewService) GetDefaultTileCache(
@@ -885,6 +952,33 @@ func (s *QuickViewService) readyRasterCOG(ctx context.Context, identity QuickVie
 		return nil, err
 	}
 	return nil, nil
+}
+
+func (s *QuickViewService) readyModel3DQuickView(ctx context.Context, identity QuickViewIdentity, engineID uint) (*models.Model3DQuickView, error) {
+	if s.model3DRepo == nil || strings.TrimSpace(identity.ItemFingerprint) == "" {
+		return nil, nil
+	}
+	result, err := s.model3DRepo.GetLatestReadyByFingerprint(ctx, identity.TenantID, identity.ItemFingerprint)
+	if err != nil || result == nil {
+		return nil, err
+	}
+	if model3DQuickViewFactsMatch(result, identity, engineID) {
+		return result, nil
+	}
+	return nil, nil
+}
+
+func model3DQuickViewFactsMatch(result *models.Model3DQuickView, identity QuickViewIdentity, engineID uint) bool {
+	if result == nil || result.Status != models.Model3DQuickViewStatusReady {
+		return false
+	}
+	if engineID > 0 && result.SourceEngineID > 0 && result.SourceEngineID != engineID {
+		return false
+	}
+	if locator := strings.TrimSpace(identity.Locator); locator != "" && strings.TrimSpace(result.Locator) != "" && result.Locator != locator {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(result.SourceFormat), string(format.FormatOSGB))
 }
 
 func rasterCOGFactsMatch(result *models.RasterCOG, identity QuickViewIdentity, raster *RasterQuickViewSource, engineID uint) bool {
@@ -1267,6 +1361,17 @@ func renderInfoFromRasterMosaic(mosaic *RasterMosaicQuickViewSource) QuickViewRe
 	return info
 }
 
+func renderInfoFromModel3DQuickView(result *models.Model3DQuickView) QuickViewRenderInfo {
+	id := uint(0)
+	if result != nil {
+		id = result.ID
+	}
+	return QuickViewRenderInfo{
+		RenderSource: QuickViewRenderSourceModel3DGLB,
+		PreviewURL:   model3DQuickViewContentURL(id),
+	}
+}
+
 func rasterInfoFromSource(raster *RasterQuickViewSource) *QuickViewRasterInfo {
 	if raster == nil {
 		return nil
@@ -1362,6 +1467,42 @@ func rasterMosaicInfoFromSource(mosaic *RasterMosaicQuickViewSource) *QuickViewR
 	if len(mosaic.Extent) == 4 {
 		info.Extent = append([]float64(nil), mosaic.Extent...)
 	}
+	return info
+}
+
+func model3DInfoFromSource(model3D *Model3DQuickViewSource) *QuickViewModel3DInfo {
+	if model3D == nil {
+		return nil
+	}
+	return &QuickViewModel3DInfo{
+		Format:     strings.TrimSpace(model3D.Format),
+		Layout:     strings.TrimSpace(model3D.Layout),
+		SizeBytes:  model3D.SourceSizeBytes,
+		PreviewURL: strings.TrimSpace(model3D.PreviewURL),
+	}
+}
+
+func model3DInfoFromQuickView(result *models.Model3DQuickView, source *Model3DQuickViewSource) *QuickViewModel3DInfo {
+	info := model3DInfoFromSource(source)
+	if info == nil {
+		info = &QuickViewModel3DInfo{Format: string(format.FormatOSGB)}
+	}
+	if result == nil {
+		return info
+	}
+	info.Format = strings.TrimSpace(result.SourceFormat)
+	if info.Format == "" {
+		info.Format = string(format.FormatOSGB)
+	}
+	resultID := result.ID
+	info.ResultID = &resultID
+	info.TaskID = result.TaskID
+	info.LastExecutionID = result.LastExecutionID
+	info.FileName = strings.TrimSpace(result.FileName)
+	if result.SizeBytes > 0 {
+		info.SizeBytes = result.SizeBytes
+	}
+	info.PreviewURL = model3DQuickViewContentURL(result.ID)
 	return info
 }
 
@@ -1601,6 +1742,23 @@ func RasterMosaicQuickViewSourceFromAttributes(attrs map[string]interface{}) *Ra
 		mosaic.ExtentSRID = mosaic.SourceSRID
 	}
 	return mosaic
+}
+
+func Model3DQuickViewSourceFromAttributes(attrs map[string]interface{}) *Model3DQuickViewSource {
+	if len(attrs) == 0 {
+		return nil
+	}
+	if !strings.EqualFold(commonJSON.String(attrs, "item", "data_type"), string(datatype.Model3D)) ||
+		!strings.EqualFold(commonJSON.String(attrs, "item", "format"), string(format.FormatOSGB)) ||
+		!strings.EqualFold(commonJSON.String(attrs, "item", "layout"), string(format.LayoutSingle)) {
+		return nil
+	}
+	storageInfo := commonJSON.Section(attrs, "storage")
+	return &Model3DQuickViewSource{
+		Format:          string(format.FormatOSGB),
+		Layout:          string(format.LayoutSingle),
+		SourceSizeBytes: commonJSON.InterfaceInt64(storageInfo["total_size"]),
+	}
 }
 
 func RasterQuickViewSourceFromAttributes(attrs map[string]interface{}, locator string, engineID uint) *RasterQuickViewSource {

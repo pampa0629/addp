@@ -207,11 +207,13 @@
         "dataExplorer": "数据探查",
         "dataRetrieval": "数据检索",
         "vectorizationTasks": "向量化任务",
-        "spatialQuickView": "空间快显管理",
+        "spatialQuickView": "快显管理",
         "tileCache": "矢量快显 - 瓦片缓存",
         "quickViewOptimization": "矢量快显 - 性能优化",
         "cogArtifacts": "栅格快显 - COG",
-        "rasterMosaic": "栅格快显 - Mosaic"
+        "rasterMosaic": "栅格快显 - Mosaic",
+        "model3DQuickView": "三维快显 - GLB",
+        "model3DTiles": "三维快显 - 3D Tiles"
       },
       "standard": {
         "label": "数据标准",

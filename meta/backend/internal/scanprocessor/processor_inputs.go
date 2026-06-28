@@ -6,6 +6,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
@@ -196,6 +197,15 @@ func KnownItemInput(
 
 func detectedItemContentPath(item *metaitem.DetectedItem, fallback string) string {
 	if item == nil {
+		return strings.Trim(fallback, "/")
+	}
+	if item.Layout == format.LayoutWhole {
+		if item.ScopePath != "" {
+			return strings.Trim(item.ScopePath, "/")
+		}
+		if item.PhysicalPath != "" {
+			return strings.Trim(item.PhysicalPath, "/")
+		}
 		return strings.Trim(fallback, "/")
 	}
 	if item.PrimaryContentPath != "" {

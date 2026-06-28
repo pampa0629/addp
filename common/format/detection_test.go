@@ -237,6 +237,8 @@ func TestMIMEToFormat(t *testing.T) {
 		{"video/x-matroska", FormatMKV},
 		{"audio/mpeg", FormatMP3},
 		{"audio/wav", FormatWAV},
+		{"application/octet-stream", FormatUnknown},
+		{"binary/octet-stream", FormatUnknown},
 		{"unknown/type", FormatUnknown},
 		{"text/csv; charset=utf-8", FormatCSV}, // 带参数
 	}

@@ -25,6 +25,7 @@ show_usage() {
   echo "  -graph        启动 Graph 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -python-workflow    启动 Python Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -math-workflow      启动 Math Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -model3d-workflow   启动 Model3D Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -spark-workflow     启动 Spark 工作流引擎 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -jupyter      启动 Jupyter Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -gateway      启动 Gateway (依赖: 所有后端模块)"
@@ -42,6 +43,7 @@ show_usage() {
   echo "  $0 -develop       # 启动 Develop + 公共依赖 + 工作流引擎"
   echo "  $0 -python-workflow     # 启动 Python Workflow Engine + 公共依赖"
   echo "  $0 -math-workflow       # 启动 Math Workflow Engine + 公共依赖"
+  echo "  $0 -model3d-workflow    # 启动 Model3D Workflow Engine + 公共依赖"
   echo "  $0 -spark-workflow      # 启动 Spark 工作流引擎 + 公共依赖"
   echo "  $0 -jupyter       # 启动 Jupyter Engine + 公共依赖"
   exit 1
@@ -69,6 +71,8 @@ if [ -f ".env.local" ]; then
     set +a
 fi
 
+export MODEL3D_WORKFLOW_PORT="${MODEL3D_WORKFLOW_PORT:-8101}"
+
 # 自动生成服务 URL（基于 SERVICE_HOST + XXX_BACKEND_PORT）
 generate_service_urls() {
     local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality asset portal agent graph)
@@ -84,6 +88,7 @@ generate_service_urls() {
     # 特殊服务
     [ -n "$MEILISEARCH_PORT" ] && export MEILISEARCH_URL="http://${SERVICE_HOST}:${MEILISEARCH_PORT}"
     [ -n "$PYTHON_WORKFLOW_PORT" ] && export PYTHON_WORKFLOW_URL="http://${SERVICE_HOST}:${PYTHON_WORKFLOW_PORT}"
+    [ -n "$MODEL3D_WORKFLOW_PORT" ] && export MODEL3D_WORKFLOW_URL="http://${SERVICE_HOST}:${MODEL3D_WORKFLOW_PORT}"
     [ -n "$SPARK_WORKFLOW_PORT" ] && export SPARK_WORKFLOW_URL="http://${SERVICE_HOST}:${SPARK_WORKFLOW_PORT}"
     [ -n "$JUPYTER_API_PORT" ] && export JUPYTER_URL="http://${SERVICE_HOST}:${JUPYTER_API_PORT}"
 }
@@ -164,7 +169,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-spark-workflow|-jupyter|-gateway|-console)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-model3d-workflow|-spark-workflow|-jupyter|-gateway|-console)
       SELECTED_MODULE="${arg#-}"
       START_ALL=false
       ;;
@@ -213,6 +218,7 @@ START_GATEWAY=false
 START_CONSOLE=false
 START_PYTHON_WORKFLOW=false
 START_MATH_WORKFLOW=false
+START_MODEL3D_WORKFLOW=false
 START_SPARK_WORKFLOW=false
 START_JUPYTER=false
 
@@ -264,6 +270,7 @@ if [ "$START_ALL" = true ]; then
   START_CONSOLE=true
   START_PYTHON_WORKFLOW=true
   START_MATH_WORKFLOW=true
+  START_MODEL3D_WORKFLOW=true
   START_SPARK_WORKFLOW=true
   START_JUPYTER=true
 else
@@ -277,6 +284,7 @@ else
       START_MANAGER_FRONTEND=true
       START_TRANSFER_BACKEND=true
       START_TRANSFER_WORKER=true
+      START_MODEL3D_WORKFLOW=true
       ;;
     meta)
       START_META_FRONTEND=true
@@ -350,6 +358,9 @@ else
     math-workflow)
       START_MATH_WORKFLOW=true
       ;;
+    model3d-workflow)
+      START_MODEL3D_WORKFLOW=true
+      ;;
     spark-workflow)
       START_SPARK_WORKFLOW=true
       ;;
@@ -368,6 +379,7 @@ else
       START_STANDARD_BACKEND=true
       START_MODEL_BACKEND=true
       START_PYTHON_WORKFLOW=true
+      START_MODEL3D_WORKFLOW=true
       START_SPARK_WORKFLOW=true
       START_JUPYTER=true
       START_GATEWAY=true
@@ -398,6 +410,7 @@ else
       START_GATEWAY=true
       START_CONSOLE=true
       START_PYTHON_WORKFLOW=true
+      START_MODEL3D_WORKFLOW=true
       START_SPARK_WORKFLOW=true
       START_JUPYTER=true
       ;;
@@ -1461,6 +1474,115 @@ else
 fi
 
 # ============================================================
+# Step 4.3: Start Model3D Workflow Engine (Python service)
+# ============================================================
+
+if [ "$START_MODEL3D_WORKFLOW" = true ]; then
+  echo -e "${BLUE}Step 4.3/5: 启动 Model3D Workflow Engine${NC}"
+
+NEED_INSTALL=false
+if [ ! -d "engines/model3d-workflow/venv" ]; then
+    echo "首次启动，创建 Python 虚拟环境..."
+    cd engines/model3d-workflow
+    SELECTED_PYTHON=$(select_python)
+    PYTHON_VER=$($SELECTED_PYTHON --version)
+    echo "  使用 $PYTHON_VER"
+    $SELECTED_PYTHON -m venv venv
+    NEED_INSTALL=true
+else
+    if ! ./engines/model3d-workflow/venv/bin/python -c "import flask" &> /dev/null; then
+        echo "检测到虚拟环境缺少依赖，重新安装..."
+        cd engines/model3d-workflow
+        NEED_INSTALL=true
+    else
+        echo "虚拟环境已存在且依赖完整，跳过安装"
+    fi
+fi
+
+if [ "$NEED_INSTALL" = true ]; then
+    echo "使用 pip 安装依赖..."
+    PIP_CMD="./venv/bin/python -m pip install"
+    if [ -n "$PIP_INDEX_URL" ]; then
+        echo "  使用镜像源: $PIP_INDEX_URL"
+        PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
+        if [ -n "$PIP_TRUSTED_HOST" ]; then
+            PIP_CMD="$PIP_CMD --trusted-host $PIP_TRUSTED_HOST"
+        fi
+    fi
+
+    $PIP_CMD --upgrade pip
+    $PIP_CMD -r requirements.txt
+
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
+    else
+        echo -e "${RED}✗ Python 依赖安装失败${NC}"
+        exit 1
+    fi
+    cd ../..
+fi
+
+start_model3d_workflow_engine_process() {
+  echo "启动 Model3D Workflow Engine..."
+  cd engines/model3d-workflow
+
+  export PORT=$MODEL3D_WORKFLOW_PORT
+  export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
+
+  ./venv/bin/python api_server.py > ../../logs/model3d-workflow-engine.log 2> ../../logs/model3d-workflow-engine-stderr.log &
+  MODEL3D_WORKFLOW_PID=$!
+  echo $MODEL3D_WORKFLOW_PID > ../../.dev-pids/model3d-workflow-engine.pid
+  cd ../..
+
+  echo -e "${GREEN}✓ Model3D Workflow Engine 已启动 (PID: $MODEL3D_WORKFLOW_PID)${NC}"
+
+  echo -n "  等待服务就绪"
+  MAX_WAIT=60
+  WAIT_COUNT=0
+  while ! curl -s http://localhost:${MODEL3D_WORKFLOW_PORT}/health > /dev/null 2>&1; do
+    sleep 1
+    echo -n "."
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+      echo -e " ${RED}✗${NC}"
+      echo -e "${RED}✗ Model3D Workflow Engine 启动超时（60秒）${NC}"
+      echo -e "${YELLOW}查看日志: tail -f logs/model3d-workflow-engine.log${NC}"
+      echo -e "${YELLOW}或检查错误: tail -f logs/model3d-workflow-engine-stderr.log${NC}"
+      exit 1
+    fi
+  done
+  echo -e " ${GREEN}✓${NC}"
+  echo -e "${GREEN}✓ Model3D Workflow Engine 就绪 (http://localhost:${MODEL3D_WORKFLOW_PORT})${NC}"
+}
+
+if curl -s "http://localhost:${MODEL3D_WORKFLOW_PORT}/health" 2>/dev/null | grep -q '"service":"model3d-workflow-engine"'; then
+  MODEL3D_WORKFLOW_PID=$(cat .dev-pids/model3d-workflow-engine.pid 2>/dev/null || true)
+  if [ -n "$MODEL3D_WORKFLOW_PID" ] && ps -p "$MODEL3D_WORKFLOW_PID" > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Model3D Workflow Engine 已在运行 (PID: $MODEL3D_WORKFLOW_PID)${NC}"
+  elif docker ps --filter "name=^/model3d-workflow-engine$" --format '{{.Names}}' 2>/dev/null | grep -qx "model3d-workflow-engine"; then
+    echo -e "${YELLOW}⚠️  检测到 Docker 版 Model3D Workflow Engine 正占用 ${MODEL3D_WORKFLOW_PORT}${NC}"
+    echo -e "${YELLOW}   dev 模式需要宿主机 Python runtime，以便与 Manager 统一访问 infra MinIO localhost:${MINIO_API_PORT:-19000}${NC}"
+    echo "  停止 Docker 版 Model3D Workflow Engine..."
+    docker rm -f model3d-workflow-engine >/dev/null
+    rm -f .dev-pids/model3d-workflow-engine.pid
+    echo -e "${GREEN}✓ Docker 版 Model3D Workflow Engine 已停止，继续启动宿主机 runtime${NC}"
+    start_model3d_workflow_engine_process
+  else
+    echo -e "${GREEN}✓ Model3D Workflow Engine 已在运行 (http://localhost:${MODEL3D_WORKFLOW_PORT})${NC}"
+  fi
+elif check_service_running "model3d-workflow-engine" "$MODEL3D_WORKFLOW_PORT"; then
+  start_model3d_workflow_engine_process
+else
+  MODEL3D_WORKFLOW_PID=$(cat .dev-pids/model3d-workflow-engine.pid 2>/dev/null)
+  echo -e "${GREEN}✓ Model3D Workflow Engine 已在运行 (PID: $MODEL3D_WORKFLOW_PID)${NC}"
+fi
+  echo ""
+else
+  echo -e "${YELLOW}Step 4.3/5: 跳过 Model3D Workflow Engine${NC}"
+  echo ""
+fi
+
+# ============================================================
 # Step 4.5: Start Spark 工作流引擎 (Python service)
 # ============================================================
 if [ "$START_SPARK_WORKFLOW" = true ]; then
@@ -2234,6 +2356,7 @@ echo "  Quality:  http://localhost:${QUALITY_BACKEND_PORT}"
 echo "  Jupyter Engine:      http://localhost:${JUPYTER_API_PORT} (API) / http://localhost:${JUPYTER_LAB_PORT} (Lab UI)"
 echo "  Spark 工作流引擎: http://localhost:${SPARK_WORKFLOW_PORT}"
 echo "  Python Workflow Engine:    http://localhost:${PYTHON_WORKFLOW_PORT}"
+echo "  Model3D Workflow Engine:   http://localhost:${MODEL3D_WORKFLOW_PORT}"
 echo "  Raster Mosaic Runtime:     http://localhost:${RASTER_MOSAIC_RUNTIME_PORT}"
 echo "  System FE:    http://localhost:${SYSTEM_FE_PORT}"
 echo "  Manager FE:   http://localhost:${MANAGER_FE_PORT}"
@@ -2259,6 +2382,7 @@ echo "  Develop Backend:      $DEVELOP_PID"
 echo "  Service Backend:      $SERVICE_PID"
 echo "  Raster Mosaic Runtime:      $RASTER_MOSAIC_RUNTIME_PID"
 echo "  Python Workflow Engine:     $PYTHON_WORKFLOW_PID"
+echo "  Model3D Workflow Engine:    $MODEL3D_WORKFLOW_PID"
 echo "  Spark 工作流引擎:  $SPARK_WORKFLOW_PID"
 echo "  Jupyter Engine:       $JUPYTER_PID"
 echo "  Copilot Backend:      $COPILOT_PID"
@@ -2288,6 +2412,7 @@ echo "  Model:    logs/model-backend.log"
 echo "  Quality:  logs/quality-backend.log"
 echo "  Python Workflow Engine: logs/python-workflow-engine.log"
 echo "  Math Workflow Engine: logs/math-workflow-engine.log (显式 -math-workflow 启动时)"
+echo "  Model3D Workflow Engine: logs/model3d-workflow-engine.log"
 echo "  Spark 工作流引擎: logs/spark-workflow-engine.log"
 echo "  Jupyter Engine: logs/jupyter-engine.log"
 echo "  Gateway:  logs/gateway.log"

@@ -52,10 +52,16 @@ func KnownItemDetectedItem(item *models.MetaItem, descriptor dataitem.ItemDescri
 }
 
 func KnownItemPrimaryContentPath(descriptor dataitem.ItemDescriptor, item *models.MetaItem) string {
+	if descriptor.Layout == format.LayoutWhole {
+		return FirstNonEmpty(knownItemPrimaryRefPath(descriptor), descriptor.PrimaryContentPath, knownItemFullName(item), descriptor.ScopePath, descriptor.PhysicalPath, knownItemPathFromStorage(descriptor))
+	}
 	return FirstNonEmpty(descriptor.PrimaryContentPath, descriptor.PhysicalPath, knownItemPathFromStorage(descriptor), knownItemFullName(item))
 }
 
 func KnownItemPhysicalPath(descriptor dataitem.ItemDescriptor, item *models.MetaItem) string {
+	if descriptor.Layout == format.LayoutWhole {
+		return FirstNonEmpty(knownItemFullName(item), descriptor.ScopePath, descriptor.PhysicalPath, knownItemPathFromStorage(descriptor))
+	}
 	return FirstNonEmpty(descriptor.PhysicalPath, descriptor.PrimaryContentPath, knownItemPathFromStorage(descriptor), knownItemFullName(item))
 }
 
@@ -109,6 +115,15 @@ func knownItemPathFromStorage(descriptor dataitem.ItemDescriptor) string {
 		return strings.Trim(descriptor.StoragePath, "/")
 	}
 	return strings.Trim(path.Join(strings.Trim(descriptor.StoragePath, "/"), descriptor.StorageName), "/")
+}
+
+func knownItemPrimaryRefPath(descriptor dataitem.ItemDescriptor) string {
+	for _, ref := range descriptor.Refs {
+		if ref.Primary && strings.TrimSpace(ref.Path) != "" {
+			return strings.Trim(ref.Path, "/")
+		}
+	}
+	return ""
 }
 
 func knownItemFullName(item *models.MetaItem) string {

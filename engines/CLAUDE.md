@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-`engines/` 集中管理 ADDP 计算与 Notebook 运行时。Python Workflow、Spark Workflow 和 Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范。Develop 通过引擎能力声明和 HTTP API 发现算子、执行工作流或 Notebook。
+`engines/` 集中管理 ADDP 计算与 Notebook 运行时。Python Workflow、Spark Workflow 和 Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时。Develop 和业务模块通过引擎能力声明和 HTTP API 发现算子、执行工作流或 Notebook。
 
 ## 重要目录与端口
 
@@ -11,11 +11,12 @@ engines/
 ├── python-workflow/  # 空间工作流引擎，默认端口 8099
 ├── spark-workflow/   # Spark 工作流引擎，默认端口 8098
 ├── math-workflow/    # 数学工作流参考实现，默认端口 8089，开发环境自动启动服务但需手动注册
+├── model3d-workflow/ # 三维模型转换运行时，默认端口 8101，开发环境自动启动并自注册，需配置 MODEL3D_CONVERTER_BIN 指向可执行文件路径
 ├── jupyter/          # Jupyter API 8097，Lab 8088
 └── docs/             # 引擎 API 与设计文档
 ```
 
-端口以 `.env` 和 `scripts/dev/start.sh` 为准：`PYTHON_WORKFLOW_PORT`、`SPARK_WORKFLOW_PORT`、`MATH_WORKFLOW_PORT`、`JUPYTER_API_PORT`、`JUPYTER_LAB_PORT`。
+端口以 `.env` 和 `scripts/dev/start.sh` 为准：`PYTHON_WORKFLOW_PORT`、`SPARK_WORKFLOW_PORT`、`MATH_WORKFLOW_PORT`、`MODEL3D_WORKFLOW_PORT`、`JUPYTER_API_PORT`、`JUPYTER_LAB_PORT`。
 
 ## 开发规则
 
@@ -30,6 +31,7 @@ engines/
 bash scripts/dev/start.sh -python-workflow
 bash scripts/dev/start.sh -spark-workflow
 bash scripts/dev/start.sh -math-workflow
+bash scripts/dev/start.sh -model3d-workflow
 bash scripts/dev/start.sh -jupyter
 ```
 
@@ -39,6 +41,7 @@ bash scripts/dev/start.sh -jupyter
 curl http://localhost:8099/health
 curl http://localhost:8098/health
 curl http://localhost:8089/health
+curl http://localhost:8101/health
 curl http://localhost:8097/health
 ```
 

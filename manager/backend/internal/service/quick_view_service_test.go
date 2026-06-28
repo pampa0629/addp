@@ -504,6 +504,86 @@ func TestQuickViewCapabilityUsesReadyRasterCOGForLargeRasterItem(t *testing.T) {
 	}
 }
 
+func TestQuickViewCapabilityUsesReadyModel3DGLBForSingleOSGBItem(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	if err := db.Exec(`CREATE TABLE manager.model_3d_quick_view (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		item_fingerprint TEXT NOT NULL,
+		item_id INTEGER,
+		locator TEXT,
+		task_id INTEGER,
+		last_execution_id TEXT,
+		source_engine_id INTEGER NOT NULL,
+		source_format TEXT NOT NULL,
+		source_size_bytes INTEGER,
+		storage_ref TEXT NOT NULL,
+		file_name TEXT,
+		size_bytes INTEGER,
+		content_url TEXT,
+		status TEXT NOT NULL,
+		metadata JSON,
+		error_message TEXT,
+		created_by INTEGER,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create model_3d_quick_view table: %v", err)
+	}
+	svc := NewQuickViewService(db, nil)
+	locator := "addp://engine/26/path/3d/single-osgb/Tile_4_L20_00010t3.osgb?type=file&item_id=10282"
+	fingerprint := commonModels.GenerateItemFingerprint(26, "3d/single-osgb/Tile_4_L20_00010t3.osgb")
+	result := &models.Model3DQuickView{
+		TenantID:        7,
+		ItemFingerprint: fingerprint,
+		Locator:         locator,
+		SourceEngineID:  26,
+		SourceFormat:    "osgb",
+		SourceSizeBytes: 1024 * 1024,
+		StorageRef:      `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/model3d_quick_view/tile.glb"}`,
+		FileName:        "Tile_4_L20_00010t3.glb",
+		SizeBytes:       612396,
+		Status:          models.Model3DQuickViewStatusReady,
+		Metadata:        commonModels.JSONMap{},
+	}
+	if err := repository.NewModel3DQuickViewRepository(db).Create(context.Background(), result); err != nil {
+		t.Fatalf("create model3d quick view result: %v", err)
+	}
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: fingerprint,
+			Locator:         locator,
+		},
+		EngineID: 26,
+		Model3D: &Model3DQuickViewSource{
+			Format:          "osgb",
+			Layout:          "single",
+			SourceSizeBytes: 1024 * 1024,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build model3d quick view capability: %v", err)
+	}
+	if !capability.CanUseQuickView {
+		t.Fatalf("can_use_quick_view = false, want ready GLB; reason=%s", capability.UnavailableReason)
+	}
+	if capability.RenderSource != QuickViewRenderSourceModel3DGLB {
+		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceModel3DGLB)
+	}
+	if capability.QuickView.PreviewURL != fmt.Sprintf("/api/v1/manager/model_3d_quick_view/%d/content", result.ID) {
+		t.Fatalf("preview_url = %q, want model3d quick view content URL", capability.QuickView.PreviewURL)
+	}
+	if capability.Model3D == nil || capability.Model3D.Format != "osgb" || capability.Model3D.FileName != "Tile_4_L20_00010t3.glb" {
+		t.Fatalf("model3d info = %#v, want ready GLB facts", capability.Model3D)
+	}
+	if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
+		t.Fatalf("tile generation = can:%v available:%v, want false for model3d quick view", capability.CanGenerateTileCache, capability.TileCacheGeneration.Available)
+	}
+}
+
 func TestQuickViewCapabilityUsesReadyRasterCOGWithInferredExtentSRID(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
