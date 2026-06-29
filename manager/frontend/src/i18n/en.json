@@ -494,6 +494,7 @@
       "subtitle": "Manage whole OSGB photogrammetry scene to 3D Tiles business dataset generation tasks",
       "workflowDescription": "3D Tiles tasks target a whole osgb_scene photogrammetry model, call model3d_workflow to build streamable 3D Tiles, and write the result back to business object storage.",
       "tasksTab": "3D Tiles Generation Tasks",
+      "resultsTab": "3D Tiles Results",
       "create": "Create Task",
       "createTitle": "Create 3D Tiles Generation Task",
       "editTitle": "Edit 3D Tiles Generation Task",
@@ -530,6 +531,13 @@
       "lastRunAt": "Last Run",
       "actions": "Actions",
       "execute": "Generate",
+      "results": "Results",
+      "resultStatus": "Result Status",
+      "keywordPlaceholder": "Search tasks, source, or target",
+      "search": "Search",
+      "reset": "Reset",
+      "preview": "Preview",
+      "size": "Size",
       "edit": "Edit",
       "monitor": "Monitor",
       "delete": "Delete",
@@ -545,7 +553,9 @@
       "executeSubmitted": "3D Tiles generation submitted",
       "executeFailed": "Failed to execute 3D Tiles task",
       "loadTasksFailed": "Failed to load 3D Tiles tasks",
+      "loadResultsFailed": "Failed to load 3D Tiles results",
       "loadTaskFailed": "Failed to load 3D Tiles task details",
+      "taskWithId": "Task #{id}",
       "statusNeverRun": "Never Run",
       "status": {
         "pending": "Pending",
@@ -555,6 +565,13 @@
         "timeout": "Timeout",
         "cancelled": "Cancelled",
         "canceled": "Canceled"
+      },
+      "resultStatuses": {
+        "ready": "Ready",
+        "missing": "Not Indexed",
+        "running": "Running",
+        "failed": "Failed",
+        "never_run": "Never Run"
       }
     },
     "rasterMosaic": {

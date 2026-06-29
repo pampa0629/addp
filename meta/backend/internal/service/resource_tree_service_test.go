@@ -120,6 +120,44 @@ func TestResourceTreeGetTreeMarksNodeOnlyPrefixAsExpandableAtDepthLimit(t *testi
 	}
 }
 
+func TestResourceTreeGetTreeDoesNotAttachOrphanWholeItemToRoot(t *testing.T) {
+	db := metatest.OpenMetadataDB(t)
+	svc := newResourceTreeTestServiceWithDB(t, db, 7, 9)
+
+	root := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, NodeType: "root", Name: "NFS", FullName: "", Depth: 1})
+	dir3d := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &root.ID, NodeType: "dir", Name: "3d", FullName: "3d", Depth: 2})
+	scene := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &dir3d.ID, NodeType: "dir", Name: "白塔3dtiles", FullName: "3d/白塔3dtiles", Depth: 3})
+	container := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &scene.ID, NodeType: "dir", Name: "baita", FullName: "3d/白塔3dtiles/baita", Depth: 4})
+	createResourceTreeItem(t, db, models.MetaItem{
+		TenantID: 7, EngineID: 9, NodeID: container.ID,
+		ItemType: "file", Name: "baita", FullName: "3d/白塔3dtiles/baita",
+		Fingerprint: "fp-baita-tiles",
+		Attributes: models.JSONMap{
+			"item": map[string]interface{}{
+				"layout": "whole",
+				"format": "3dtiles",
+			},
+		},
+	})
+
+	tree, err := svc.GetTree(t.Context(), 7, 9, 2)
+	if err != nil {
+		t.Fatalf("GetTree() error = %v", err)
+	}
+	for _, child := range tree.Children {
+		if child.Label == "baita" {
+			t.Fatalf("root child contains orphan whole item: %#v", child)
+		}
+	}
+	sceneNode := findResourceTreeNodeForTest(tree, "3d/白塔3dtiles")
+	if sceneNode == nil {
+		t.Fatal("scene node not found at expand depth boundary")
+	}
+	if len(sceneNode.Children) != 0 {
+		t.Fatalf("scene children = %d, want lazy boundary without orphan item", len(sceneNode.Children))
+	}
+}
+
 func TestResourceTreeGetAncestorsRewritesItemLocatorFromCurrentMetaFacts(t *testing.T) {
 	db := metatest.OpenMetadataDB(t)
 	svc := newResourceTreeTestServiceWithDB(t, db, 7, 9)
@@ -148,6 +186,87 @@ func TestResourceTreeGetAncestorsRewritesItemLocatorFromCurrentMetaFacts(t *test
 	}
 	if !strings.HasSuffix(result.Ancestors[len(result.Ancestors)-1].Locator, "item_id="+uintStringForTest(item.ID)) {
 		t.Fatalf("last ancestor locator = %q, want current item id", result.Ancestors[len(result.Ancestors)-1].Locator)
+	}
+}
+
+func TestResourceTreeGetNodePresentsWholeScopeItemAtParent(t *testing.T) {
+	db := metatest.OpenMetadataDB(t)
+	svc := newResourceTreeTestServiceWithDB(t, db, 7, 9)
+
+	root := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, NodeType: "service", Name: "NFS", FullName: "", Depth: 0})
+	dir3d := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &root.ID, NodeType: "dir", Name: "3d", FullName: "3d", Depth: 1})
+	scene := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &dir3d.ID, NodeType: "dir", Name: "白塔3dtiles", FullName: "3d/白塔3dtiles", Depth: 2})
+	container := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &scene.ID, NodeType: "dir", Name: "baita", FullName: "3d/白塔3dtiles/baita", Depth: 3})
+	item := createResourceTreeItem(t, db, models.MetaItem{
+		TenantID: 7, EngineID: 9, NodeID: container.ID,
+		ItemType: "file", Name: "baita", FullName: "3d/白塔3dtiles/baita",
+		Fingerprint: "fp-baita-tiles",
+		Attributes: models.JSONMap{
+			"item": map[string]interface{}{
+				"layout":    "whole",
+				"data_type": "model3d",
+				"format":    "3dtiles",
+			},
+		},
+	})
+
+	result, err := svc.GetNode(t.Context(), 7, 9, "addp://engine/9/path/3d/%E7%99%BD%E5%A1%943dtiles?type=dir&node_id="+uintStringForTest(scene.ID))
+	if err != nil {
+		t.Fatalf("GetNode() error = %v", err)
+	}
+	if len(result.Children) != 1 {
+		t.Fatalf("children = %d, want collapsed whole item: %#v", len(result.Children), result.Children)
+	}
+	child := result.Children[0]
+	if child.Label != "baita" || child.Type != "file" {
+		t.Fatalf("child = %s/%s, want baita/file", child.Label, child.Type)
+	}
+	if !strings.Contains(child.Locator, "item_id="+uintStringForTest(item.ID)) || strings.Contains(child.Locator, "node_id="+uintStringForTest(container.ID)) {
+		t.Fatalf("child locator = %q, want item locator", child.Locator)
+	}
+	if got := child.Metadata["layout"]; got != "whole" {
+		t.Fatalf("child layout = %#v, want whole", got)
+	}
+	if got := child.Metadata["format"]; got != "3dtiles" {
+		t.Fatalf("child format = %#v, want 3dtiles", got)
+	}
+}
+
+func TestResourceTreeGetAncestorsPresentsWholeScopeItemWithoutContainer(t *testing.T) {
+	db := metatest.OpenMetadataDB(t)
+	svc := newResourceTreeTestServiceWithDB(t, db, 7, 9)
+
+	root := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, NodeType: "service", Name: "NFS", FullName: "", Depth: 0})
+	dir3d := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &root.ID, NodeType: "dir", Name: "3d", FullName: "3d", Depth: 1})
+	scene := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &dir3d.ID, NodeType: "dir", Name: "白塔3dtiles", FullName: "3d/白塔3dtiles", Depth: 2})
+	container := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &scene.ID, NodeType: "dir", Name: "baita", FullName: "3d/白塔3dtiles/baita", Depth: 3})
+	item := createResourceTreeItem(t, db, models.MetaItem{
+		TenantID: 7, EngineID: 9, NodeID: container.ID,
+		ItemType: "file", Name: "baita", FullName: "3d/白塔3dtiles/baita",
+		Fingerprint: "fp-baita-tiles",
+		Attributes: models.JSONMap{
+			"item": map[string]interface{}{
+				"layout": "whole",
+				"format": "3dtiles",
+			},
+		},
+	})
+
+	result, err := svc.GetAncestors(t.Context(), 7, 9, "addp://engine/9/path/3d/%E7%99%BD%E5%A1%943dtiles/baita?type=file&item_id="+uintStringForTest(item.ID))
+	if err != nil {
+		t.Fatalf("GetAncestors() error = %v", err)
+	}
+	if len(result.Ancestors) != 4 {
+		t.Fatalf("ancestor len = %d, want root/3d/scene/item", len(result.Ancestors))
+	}
+	for _, node := range result.Ancestors {
+		if strings.Contains(node.Locator, "node_id="+uintStringForTest(container.ID)) {
+			t.Fatalf("ancestor chain contains folded container locator: %q", node.Locator)
+		}
+	}
+	last := result.Ancestors[len(result.Ancestors)-1]
+	if last.Label != "baita" || !strings.Contains(last.Locator, "item_id="+uintStringForTest(item.ID)) {
+		t.Fatalf("last ancestor = %s %q, want whole item", last.Label, last.Locator)
 	}
 }
 

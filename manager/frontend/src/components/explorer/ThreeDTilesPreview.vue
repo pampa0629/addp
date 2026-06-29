@@ -45,6 +45,10 @@ let tiles = null
 let loadingTimer = 0
 let loadSerial = 0
 let cameraFitted = false
+let tilesBoundingRadius = 1
+
+const MIN_CAMERA_DISTANCE = 0.01
+const MIN_NEAR_PLANE = 0.01
 
 const objectData = computed(() => props.data?.object || {})
 const content = computed(() => objectData.value?.content || {})
@@ -74,7 +78,7 @@ function ensureScene() {
   camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100000000)
   camera.position.set(120, 90, 160)
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, logarithmicDepthBuffer: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
   renderer.outputColorSpace = THREE.SRGBColorSpace
   renderer.setClearColor(0x000000, 0)
@@ -83,6 +87,11 @@ function ensureScene() {
   controls = new OrbitControls(camera, renderer.domElement)
   controls.enableDamping = true
   controls.dampingFactor = 0.08
+  controls.minDistance = MIN_CAMERA_DISTANCE
+  controls.maxDistance = Infinity
+  if ('zoomToCursor' in controls) {
+    controls.zoomToCursor = true
+  }
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x56616f, 1.4))
   const keyLight = new THREE.DirectionalLight(0xffffff, 1.5)
@@ -98,6 +107,7 @@ function ensureScene() {
 function animate() {
   if (!renderer || !scene || !camera) return
   controls?.update()
+  updateCameraClipPlanes()
   camera.updateMatrixWorld()
   if (tiles) {
     tiles.setResolutionFromRenderer(camera, renderer)
@@ -144,12 +154,33 @@ function fitCameraToTiles() {
   const center = sphere.center
   camera.near = Math.max(radius / 10000, 0.1)
   camera.far = Math.max(radius * 1000, 1000)
+  tilesBoundingRadius = radius
   camera.up.set(0, 1, 0)
   camera.position.copy(center).add(new THREE.Vector3(radius * 1.35, radius * 1.05, radius * 1.45))
   camera.updateProjectionMatrix()
   controls.target.copy(center)
+  controls.minDistance = MIN_CAMERA_DISTANCE
+  controls.maxDistance = Infinity
   controls.update()
+  updateCameraClipPlanes(true)
   return true
+}
+
+function updateCameraClipPlanes(force = false) {
+  if (!camera || !controls) return
+  const distance = Math.max(camera.position.distanceTo(controls.target), MIN_CAMERA_DISTANCE)
+  const radius = Math.max(tilesBoundingRadius, 1)
+  const near = Math.max(Math.min(distance / 1000, radius / 1000000), MIN_NEAR_PLANE)
+  const far = Math.max(distance + radius * 8, 1000)
+  if (
+    force ||
+    Math.abs(camera.near - near) / Math.max(camera.near, 1) > 0.1 ||
+    Math.abs(camera.far - far) / Math.max(camera.far, 1) > 0.1
+  ) {
+    camera.near = near
+    camera.far = far
+    camera.updateProjectionMatrix()
+  }
 }
 
 async function loadTileset(url) {
@@ -162,6 +193,7 @@ async function loadTileset(url) {
   ensureScene()
   clearTiles()
   cameraFitted = false
+  tilesBoundingRadius = 1
   if (!url) {
     errorMessage.value = '缺少 3D Tiles 预览地址'
     loading.value = false

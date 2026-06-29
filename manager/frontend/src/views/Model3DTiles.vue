@@ -49,13 +49,14 @@
             <el-table-column :label="t('manager.model3DTiles.lastRunAt')" width="170">
               <template #default="{ row }">{{ formatDateTime(row.last_run_at) }}</template>
             </el-table-column>
-            <el-table-column :label="t('manager.model3DTiles.actions')" width="300" fixed="right">
+            <el-table-column :label="t('manager.model3DTiles.actions')" width="360" fixed="right">
               <template #default="{ row }">
                 <div class="row-actions">
                   <el-button size="small" @click="editTask(row)">{{ t('manager.model3DTiles.edit') }}</el-button>
                   <el-button type="primary" size="small" :loading="executingId === row.id" @click="executeTask(row)">
                     {{ t('manager.model3DTiles.execute') }}
                   </el-button>
+                  <el-button size="small" @click="viewTaskResults(row)">{{ t('manager.model3DTiles.results') }}</el-button>
                   <el-button size="small" :disabled="!row.last_execution_id" @click="openTaskExecution(row)">
                     {{ t('manager.model3DTiles.monitor') }}
                   </el-button>
@@ -74,6 +75,74 @@
             class="pagination"
             @size-change="handleTasksSizeChange"
             @current-change="loadTasks"
+          />
+        </el-tab-pane>
+
+        <el-tab-pane :label="t('manager.model3DTiles.resultsTab')" name="results">
+          <div class="filter-bar">
+            <el-tag v-if="resultTaskFilterLabel" type="primary" closable @close="clearResultTaskFilter">
+              {{ resultTaskFilterLabel }}
+            </el-tag>
+            <el-select v-model="resultFilters.status" class="status-filter" clearable :placeholder="t('manager.model3DTiles.resultStatus')">
+              <el-option v-for="status in resultStatuses" :key="status" :label="resultStatusLabel(status)" :value="status" />
+            </el-select>
+            <el-input
+              v-model="resultFilters.q"
+              class="keyword-filter"
+              clearable
+              :placeholder="t('manager.model3DTiles.keywordPlaceholder')"
+              @keyup.enter="applyResultFilters"
+            />
+            <el-button type="primary" @click="applyResultFilters">{{ t('manager.model3DTiles.search') }}</el-button>
+            <el-button @click="resetResultFilters">{{ t('manager.model3DTiles.reset') }}</el-button>
+            <el-button :icon="Refresh" circle @click="loadResults" />
+          </div>
+
+          <el-table :data="results" v-loading="resultsLoading" stripe>
+            <el-table-column prop="task_name" :label="t('manager.model3DTiles.name')" min-width="190" show-overflow-tooltip />
+            <el-table-column :label="t('manager.model3DTiles.source')" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">{{ locatorText(row.source_locator) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('manager.model3DTiles.target')" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.result_path || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="dataset_name" :label="t('manager.model3DTiles.datasetName')" min-width="150" show-overflow-tooltip />
+            <el-table-column :label="t('manager.model3DTiles.resultStatus')" width="120">
+              <template #default="{ row }">
+                <el-tag :type="resultStatusTagType(row.status)">
+                  {{ resultStatusLabel(row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('manager.model3DTiles.size')" width="120">
+              <template #default="{ row }">{{ formatBytes(row.size_bytes) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('manager.model3DTiles.lastRunAt')" width="170">
+              <template #default="{ row }">{{ formatDateTime(row.updated_at || row.last_run_at) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('manager.model3DTiles.actions')" width="220" fixed="right">
+              <template #default="{ row }">
+                <div class="row-actions">
+                  <el-button size="small" :disabled="!row.locator" @click="openResultPreview(row)">
+                    {{ t('manager.model3DTiles.preview') }}
+                  </el-button>
+                  <el-button size="small" :disabled="!row.last_execution_id" @click="openResultExecution(row)">
+                    {{ t('manager.model3DTiles.monitor') }}
+                  </el-button>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <el-pagination
+            v-model:current-page="resultsPage"
+            v-model:page-size="resultsPageSize"
+            :total="resultsTotal"
+            :page-sizes="[10, 20, 50, 100]"
+            layout="total, sizes, prev, pager, next, jumper"
+            class="pagination"
+            @size-change="handleResultsSizeChange"
+            @current-change="loadResults"
           />
         </el-tab-pane>
       </el-tabs>
@@ -149,25 +218,31 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { InfoFilled, Refresh } from '@element-plus/icons-vue'
 import { ResourceTreePicker, openMonitorExecution, parseLocatorSafe } from '@addp/common-frontend'
 import { quickViewAPI } from '../api/quickView'
-import { formatDateTime } from '../utils/formatters'
+import { dataExplorerAPI } from '../api/dataExplorer'
+import { formatBytes, formatDateTime } from '../utils/formatters'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 
-const activeTab = ref('tasks')
+const activeTab = ref(route.query.tab === 'results' ? 'results' : 'tasks')
 const tasks = ref([])
 const tasksLoading = ref(false)
 const tasksPage = ref(1)
 const tasksPageSize = ref(20)
 const tasksTotal = ref(0)
+const results = ref([])
+const resultsLoading = ref(false)
+const resultsPage = ref(1)
+const resultsPageSize = ref(20)
+const resultsTotal = ref(0)
 const executingId = ref(null)
 const taskDialogVisible = ref(false)
 const editingTask = ref(null)
@@ -176,8 +251,16 @@ const sourceSelection = ref(null)
 const targetSelection = ref(null)
 const sourceInitialLocator = ref('')
 const targetInitialLocator = ref('')
+const selectedResultTask = ref(null)
+const resultStatuses = ['ready', 'missing', 'running', 'failed', 'never_run']
+const resultFilters = reactive({ task_id: undefined, status: '', q: '' })
 
 const form = reactive(defaultForm())
+
+const resultTaskFilterLabel = computed(() => {
+  if (!selectedResultTask.value) return ''
+  return selectedResultTask.value.name || t('manager.model3DTiles.taskWithId', { id: selectedResultTask.value.id })
+})
 
 function defaultForm() {
   return {
@@ -255,6 +338,20 @@ const executionStatusLabel = (status) => {
   return t(`manager.model3DTiles.status.${key}`, key)
 }
 
+const resultStatusTagType = (status) => {
+  const value = String(status || '').toLowerCase()
+  if (value === 'ready') return 'success'
+  if (['failed', 'missing'].includes(value)) return 'danger'
+  if (value === 'running') return 'warning'
+  return 'info'
+}
+
+const resultStatusLabel = (status) => {
+  const key = String(status || '').trim().toLowerCase()
+  if (!key) return '-'
+  return t(`manager.model3DTiles.resultStatuses.${key}`, key)
+}
+
 const errorMessage = (error, fallback) => (
   error?.response?.data?.error ||
   error?.response?.data?.message ||
@@ -267,6 +364,17 @@ const locatorText = (locator) => {
   if (!parsed) return locator || '-'
   const parts = Array.isArray(parsed.path) ? parsed.path : []
   return parts.length ? parts.join(' / ') : (locator || '-')
+}
+
+const datasetName = (task) => String(target(task).dataset_name || 'model_3d_tiles').trim()
+
+const resultPath = (task) => {
+  const targetLocator = target(task).storage_locator
+  const parsed = parseLocatorSafe(targetLocator)
+  const parts = Array.isArray(parsed?.path) ? [...parsed.path] : []
+  const name = datasetName(task)
+  if (name) parts.push(name)
+  return parts.length ? parts.join(' / ') : name
 }
 
 const selectionLocator = (selection, fallback) => String(selection?.identity?.locator || fallback || '').trim()
@@ -289,9 +397,109 @@ const loadTasks = async () => {
   }
 }
 
+const loadResultTaskSource = async () => {
+  if (resultFilters.task_id) {
+    const response = await quickViewAPI.getModel3DTilesTask(resultFilters.task_id)
+    return [unwrapPayload(response)].filter(Boolean)
+  }
+  const response = await quickViewAPI.listModel3DTilesTasks({ page: 1, page_size: 500 })
+  return unwrapList(response).items
+}
+
+const loadResults = async () => {
+  resultsLoading.value = true
+  try {
+    const taskItems = await loadResultTaskSource()
+    const rows = await Promise.all(taskItems.map(resolveTaskResult))
+    const filtered = filterResultRows(rows)
+    resultsTotal.value = filtered.length
+    const start = (resultsPage.value - 1) * resultsPageSize.value
+    results.value = filtered.slice(start, start + resultsPageSize.value)
+  } catch (error) {
+    ElMessage.error(errorMessage(error, t('manager.model3DTiles.loadResultsFailed')))
+  } finally {
+    resultsLoading.value = false
+  }
+}
+
+const resolveTaskResult = async (task) => {
+  const taskTarget = target(task)
+  const targetLocator = String(taskTarget.storage_locator || '').trim()
+  const targetEngineID = Number(taskTarget.target_engine_id || parseLocatorSafe(targetLocator)?.engineId || 0)
+  const name = datasetName(task)
+  let resultNode = null
+  if (targetLocator && targetEngineID) {
+    try {
+      const response = await dataExplorerAPI.getNodeChildren(targetEngineID, targetLocator)
+      const children = response?.children || response?.data?.children || []
+      resultNode = children.find((child) => isTaskResultNode(child, name)) || null
+    } catch {
+      resultNode = null
+    }
+  }
+
+  const metadata = resultNode?.metadata || {}
+  const status = resultNode ? 'ready' : missingResultStatus(task)
+  return {
+    task_id: task.id,
+    task_name: task.name,
+    source_locator: source(task).item_locator,
+    target_locator: targetLocator,
+    target_engine_id: targetEngineID,
+    dataset_name: name,
+    result_path: resultPath(task),
+    locator: resultNode?.locator || resultNode?.id || '',
+    status,
+    format: metadata.format || metadata.item?.format || '',
+    size_bytes: Number(metadata.size_bytes || metadata.storage?.total_size || 0) || 0,
+    updated_at: metadata.scanned_at || metadata.updated_at || '',
+    last_run_at: task.last_run_at,
+    last_execution_id: task.last_execution_id
+  }
+}
+
+const isTaskResultNode = (node, name) => {
+  if (!node || !name) return false
+  const parsed = parseLocatorSafe(node.locator || node.id)
+  const lastPath = Array.isArray(parsed?.path) ? parsed.path[parsed.path.length - 1] : ''
+  const metadata = node.metadata || {}
+  const format = String(metadata.format || metadata.item?.format || '').toLowerCase()
+  return (node.label === name || lastPath === name) && format === '3dtiles'
+}
+
+const missingResultStatus = (task) => {
+  const status = lastExecutionStatus(task).toLowerCase()
+  if (!status) return 'never_run'
+  if (['pending', 'running'].includes(status)) return 'running'
+  if (['failed', 'timeout', 'cancelled', 'canceled'].includes(status)) return 'failed'
+  return 'missing'
+}
+
+const filterResultRows = (rows) => {
+  const status = String(resultFilters.status || '').trim().toLowerCase()
+  const keyword = String(resultFilters.q || '').trim().toLowerCase()
+  return rows.filter((row) => {
+    if (status && row.status !== status) return false
+    if (!keyword) return true
+    return [
+      row.task_name,
+      row.source_locator,
+      row.target_locator,
+      row.dataset_name,
+      row.result_path,
+      row.locator
+    ].some((value) => String(value || '').toLowerCase().includes(keyword))
+  })
+}
+
 const handleTasksSizeChange = () => {
   tasksPage.value = 1
   loadTasks()
+}
+
+const handleResultsSizeChange = () => {
+  resultsPage.value = 1
+  loadResults()
 }
 
 const clearDialogQuery = async () => {
@@ -410,6 +618,9 @@ const executeTask = async (task) => {
     const executionID = response?.execution_id || response?.data?.execution_id
     ElMessage.success(t('manager.model3DTiles.executeSubmitted'))
     await loadTasks()
+    if (activeTab.value === 'results') {
+      await loadResults()
+    }
     if (executionID) {
       await openMonitorExecution(executionID)
     }
@@ -425,13 +636,55 @@ const deleteTask = async (task) => {
   await quickViewAPI.deleteModel3DTilesTask(task.id)
   ElMessage.success(t('manager.model3DTiles.deleteSuccess'))
   await loadTasks()
+  if (activeTab.value === 'results') {
+    await loadResults()
+  }
 }
 
 const openTaskExecution = (task) => openMonitorExecution(task.last_execution_id)
+const openResultExecution = (result) => openMonitorExecution(result.last_execution_id)
+
+const viewTaskResults = async (task) => {
+  selectedResultTask.value = task
+  resultFilters.task_id = task.id
+  resultsPage.value = 1
+  activeTab.value = 'results'
+  await router.replace({ query: { ...route.query, tab: 'results', task_id: task.id } })
+  await loadResults()
+}
+
+const clearResultTaskFilter = async () => {
+  selectedResultTask.value = null
+  resultFilters.task_id = undefined
+  resultsPage.value = 1
+  const nextQuery = { ...route.query }
+  delete nextQuery.task_id
+  await router.replace({ query: nextQuery })
+  await loadResults()
+}
+
+const applyResultFilters = () => {
+  resultsPage.value = 1
+  loadResults()
+}
+
+const resetResultFilters = () => {
+  resultFilters.status = ''
+  resultFilters.q = ''
+  applyResultFilters()
+}
+
+const openResultPreview = (result) => {
+  if (!result?.locator) return
+  router.push({
+    name: 'DataExplorer',
+    query: { locator: result.locator }
+  })
+}
 
 const openTaskFromQuery = async () => {
   const taskID = Number(route.query.task_id || 0)
-  if (!taskID) return
+  if (!taskID || activeTab.value === 'results') return
   try {
     const response = await quickViewAPI.getModel3DTilesTask(taskID)
     editTask(unwrapPayload(response))
@@ -440,13 +693,34 @@ const openTaskFromQuery = async () => {
   }
 }
 
-const handleTabChange = async () => {
-  await router.replace({ query: { ...route.query, tab: activeTab.value } })
+const loadResultTaskFilterFromRoute = async () => {
+  const taskID = Number(route.query.task_id || 0)
+  if (!taskID) return
+  resultFilters.task_id = taskID
+  try {
+    selectedResultTask.value = unwrapPayload(await quickViewAPI.getModel3DTilesTask(taskID))
+  } catch {
+    selectedResultTask.value = null
+  }
+}
+
+const handleTabChange = async (tab) => {
+  await router.replace({ query: { ...route.query, tab } })
+  if (tab === 'results') {
+    await loadResultTaskFilterFromRoute()
+    await loadResults()
+    return
+  }
   await loadTasks()
 }
 
 onMounted(async () => {
-  await loadTasks()
+  if (activeTab.value === 'results') {
+    await loadResultTaskFilterFromRoute()
+    await loadResults()
+  } else {
+    await loadTasks()
+  }
   if (route.query.create === '1') {
     await openCreateDialog()
     return
@@ -460,12 +734,17 @@ onMounted(async () => {
   height: 100%;
 }
 
-.tab-toolbar {
+.tab-toolbar,
+.filter-bar {
   display: flex;
   gap: 12px;
   align-items: center;
   margin-bottom: 16px;
   flex-wrap: wrap;
+}
+
+.filter-bar {
+  justify-content: flex-start;
 }
 
 .toolbar-tip {
@@ -496,6 +775,14 @@ onMounted(async () => {
 .pagination {
   margin-top: 16px;
   justify-content: flex-end;
+}
+
+.status-filter {
+  width: 150px;
+}
+
+.keyword-filter {
+  width: 260px;
 }
 
 .form-grid {

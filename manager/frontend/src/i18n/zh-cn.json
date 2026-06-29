@@ -494,6 +494,7 @@
       "subtitle": "管理整套 OSGB 倾斜摄影转 3D Tiles 的业务数据集生成任务",
       "workflowDescription": "3D Tiles 任务面向整套 osgb_scene 倾斜摄影模型，调用 model3d_workflow 生成可前端流式预览的 3D Tiles 数据集，并写回业务对象存储。",
       "tasksTab": "3D Tiles 生成任务",
+      "resultsTab": "3D Tiles 结果",
       "create": "新建任务",
       "createTitle": "新建 3D Tiles 生成任务",
       "editTitle": "编辑 3D Tiles 生成任务",
@@ -530,6 +531,13 @@
       "lastRunAt": "最近运行",
       "actions": "操作",
       "execute": "生成",
+      "results": "结果",
+      "resultStatus": "结果状态",
+      "keywordPlaceholder": "搜索任务、源或目标",
+      "search": "查询",
+      "reset": "重置",
+      "preview": "预览",
+      "size": "大小",
       "edit": "编辑",
       "monitor": "监控",
       "delete": "删除",
@@ -545,7 +553,9 @@
       "executeSubmitted": "已提交 3D Tiles 生成",
       "executeFailed": "执行 3D Tiles 任务失败",
       "loadTasksFailed": "加载 3D Tiles 任务失败",
+      "loadResultsFailed": "加载 3D Tiles 结果失败",
       "loadTaskFailed": "加载 3D Tiles 任务详情失败",
+      "taskWithId": "任务 #{id}",
       "statusNeverRun": "未运行",
       "status": {
         "pending": "等待中",
@@ -555,6 +565,13 @@
         "timeout": "超时",
         "cancelled": "已取消",
         "canceled": "已取消"
+      },
+      "resultStatuses": {
+        "ready": "可预览",
+        "missing": "未解析",
+        "running": "生成中",
+        "failed": "失败",
+        "never_run": "未运行"
       }
     },
     "rasterMosaic": {

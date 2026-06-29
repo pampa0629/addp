@@ -114,6 +114,25 @@ func (s *MetadataQueryService) GetNodeItems(tenantID, nodeID uint) ([]models.Met
 	return result, nil
 }
 
+func (s *MetadataQueryService) GetItemsForNodes(tenantID uint, nodeIDs []uint) ([]models.MetaItemLite, error) {
+	if len(nodeIDs) == 0 {
+		return []models.MetaItemLite{}, nil
+	}
+
+	var items []models.MetaItem
+	if err := s.db.Where("tenant_id = ? AND node_id IN ? AND deleted_at IS NULL", tenantID, nodeIDs).
+		Order("name").
+		Find(&items).Error; err != nil {
+		return nil, fmt.Errorf("failed to query node items: %w", err)
+	}
+
+	result := make([]models.MetaItemLite, len(items))
+	for i, item := range items {
+		result[i] = metaquery.ToMetaItemLite(item)
+	}
+	return result, nil
+}
+
 func (s *MetadataQueryService) GetItemByID(tenantID, itemID uint) (*models.MetaItemLite, error) {
 	var item models.MetaItem
 

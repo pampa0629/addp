@@ -49,6 +49,12 @@ const modelURL = computed(() => {
 })
 
 const sourceURL = computed(() => withAuthToken(modelURL.value))
+const modelSourceFormat = computed(() => String(
+  modelInfo.value?.format ||
+  metadata.value?.source_format ||
+  objectData.value?.format ||
+  ''
+).trim().toLowerCase())
 
 const summaryItems = computed(() => {
   const info = modelInfo.value || {}
@@ -155,12 +161,42 @@ function fitCamera(object) {
   const size = box.getSize(new THREE.Vector3())
   const maxDim = Math.max(size.x, size.y, size.z, 1)
   const distance = maxDim / (2 * Math.tan((camera.fov * Math.PI) / 360))
-  camera.near = Math.max(maxDim / 10000, 0.01)
+  const terrainView = shouldUseTerrainCamera(size)
+  const offset = terrainView
+    ? terrainCameraOffset(size, distance)
+    : new THREE.Vector3(distance * 0.75, distance * 0.55, distance * 1.15)
+  const target = terrainView
+    ? terrainCameraTarget(center, size, offset)
+    : center
+  camera.near = Math.max(maxDim / (terrainView ? 100000 : 10000), 0.005)
   camera.far = Math.max(maxDim * 100, distance * 10)
-  camera.position.copy(center).add(new THREE.Vector3(distance * 0.75, distance * 0.55, distance * 1.15))
+  camera.up.set(0, 1, 0)
+  camera.position.copy(center).add(offset)
   camera.updateProjectionMatrix()
-  controls.target.copy(center)
+  controls.minDistance = Math.max(maxDim / 100000, 0.01)
+  controls.maxDistance = Infinity
+  controls.target.copy(target)
   controls.update()
+}
+
+function shouldUseTerrainCamera(size) {
+  if (modelSourceFormat.value === 'osgb') return true
+  const dimensions = [Math.abs(size.x), Math.abs(size.y), Math.abs(size.z)].sort((a, b) => a - b)
+  const maxDim = Math.max(dimensions[2], 1)
+  return dimensions[0] / maxDim < 0.18 && dimensions[1] / maxDim > 0.25
+}
+
+function terrainCameraOffset(size, distance) {
+  const viewDistance = distance * 0.82
+  return new THREE.Vector3(viewDistance * 0.85, viewDistance * 0.34, viewDistance * 1.15)
+}
+
+function terrainCameraTarget(center, size, offset) {
+  const target = center.clone()
+  target.y -= Math.abs(size.y) * 0.03
+  target.x -= Math.sign(offset.x || 1) * Math.abs(size.x) * 0.04
+  target.z -= Math.sign(offset.z || 1) * Math.abs(size.z) * 0.04
+  return target
 }
 
 async function loadModel(url) {

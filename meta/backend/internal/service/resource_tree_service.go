@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	metaErrors "github.com/addp/meta/internal/errors"
@@ -67,9 +68,19 @@ func (s *ResourceTreeService) GetNode(ctx context.Context, tenantID, engineID ui
 	}
 
 	children := make([]*resourcetree.TreeNode, 0, len(childNodes)+len(items))
-	children = append(children, s.treeBuilder.ConvertMetaNodes(engine, commonNodesFromLite(childNodes))...)
+	presentationNodes := commonNodesFromLite(childNodes)
 	itemNodes := s.treeBuilder.ConvertMetaItemsForEngine(engine.EngineType, commonItemsFromLite(items))
-	children = append(children, s.treeBuilder.ConvertMetaNodes(engine, itemNodes)...)
+	presentationNodes = append(presentationNodes, itemNodes...)
+	wholeItemNodes, err := s.wholeScopeItemsForChildContainers(tenantID, engine, childNodes)
+	if err != nil {
+		return nil, err
+	}
+	presentationNodes = append(presentationNodes, wholeItemNodes...)
+	if presentationTree, err := s.treeBuilder.BuildFromMeta(engine, presentationNodes, -1); err == nil && presentationTree != nil {
+		children = presentationTree.Children
+	} else {
+		children = s.treeBuilder.ConvertMetaNodes(engine, presentationNodes)
+	}
 
 	parent := s.treeBuilder.ConvertNodeToTree(loc, map[string]interface{}{
 		"engine_id":   engine.ID,
@@ -181,16 +192,28 @@ func (s *ResourceTreeService) metadataTreeNodes(engineType string, tree *metaMod
 	nodes := make([]*commonModels.MetaNode, 0, len(tree.TopNodes)+len(tree.ChildNodes)+len(tree.Items))
 	topNodes := commonNodesFromLite(tree.TopNodes)
 	nodes = append(nodes, topNodes...)
+	includedNodeIDs := make(map[uint]struct{}, len(tree.TopNodes)+len(tree.ChildNodes))
+	for _, node := range topNodes {
+		if node != nil {
+			includedNodeIDs[node.ID] = struct{}{}
+		}
+	}
 	rootDepth := resourceTreeRootDepth(topNodes)
 	for _, node := range commonNodesFromLite(tree.ChildNodes) {
 		if expandDepth == -1 || node.Depth <= rootDepth+expandDepth {
 			nodes = append(nodes, node)
+			includedNodeIDs[node.ID] = struct{}{}
 		}
 	}
 	if expandDepth == -1 || expandDepth >= 2 {
 		for _, node := range s.treeBuilder.ConvertMetaItemsForEngine(engineType, commonItemsFromLite(tree.Items)) {
 			if expandDepth != -1 && node.Depth > rootDepth+expandDepth {
 				continue
+			}
+			if node.ParentNodeID != nil {
+				if _, ok := includedNodeIDs[*node.ParentNodeID]; !ok {
+					continue
+				}
 			}
 			nodes = append(nodes, node)
 		}
@@ -256,6 +279,9 @@ func (s *ResourceTreeService) getItemAncestors(tenantID uint, engine *commonMode
 	if len(itemTreeNodes) != 1 {
 		return nil, fmt.Errorf("%w: failed to convert meta item ancestor target", metaErrors.ErrItemNotFound)
 	}
+	if shouldFoldWholeScopeItemAncestor(result.Item, result.Ancestors) {
+		chain = chain[:len(chain)-1]
+	}
 	chain = append(chain, itemTreeNodes[0])
 	return &metaModels.ResourceTreeAncestorsResponse{
 		EngineID:      engine.ID,
@@ -310,6 +336,62 @@ func commonItemsFromLite(items []metaModels.MetaItemLite) []commonModels.MetaIte
 		})
 	}
 	return out
+}
+
+func (s *ResourceTreeService) wholeScopeItemsForChildContainers(tenantID uint, engine *commonModels.Engine, childNodes []metaModels.MetaNodeLite) ([]*commonModels.MetaNode, error) {
+	childByID := make(map[uint]metaModels.MetaNodeLite, len(childNodes))
+	childNodeIDs := make([]uint, 0, len(childNodes))
+	for _, node := range childNodes {
+		if !isPathContainerNodeTypeForResourceTree(node.NodeType) {
+			continue
+		}
+		childByID[node.ID] = node
+		childNodeIDs = append(childNodeIDs, node.ID)
+	}
+	if len(childNodeIDs) == 0 {
+		return nil, nil
+	}
+
+	items, err := s.metadataQueryService.GetItemsForNodes(tenantID, childNodeIDs)
+	if err != nil {
+		return nil, err
+	}
+	wholeItems := make([]metaModels.MetaItemLite, 0)
+	for _, item := range items {
+		parent, ok := childByID[item.NodeID]
+		if !ok || !sameResourceTreeFullName(parent.FullName, item.FullName) || !isWholeScopeItemAttributes(item.Attributes) {
+			continue
+		}
+		wholeItems = append(wholeItems, item)
+	}
+	return s.treeBuilder.ConvertMetaItemsForEngine(engine.EngineType, commonItemsFromLite(wholeItems)), nil
+}
+
+func shouldFoldWholeScopeItemAncestor(item metaModels.MetaItemLite, ancestors []metaModels.MetaNodeLite) bool {
+	if len(ancestors) == 0 || !isWholeScopeItemAttributes(item.Attributes) {
+		return false
+	}
+	parent := ancestors[len(ancestors)-1]
+	return item.NodeID == parent.ID &&
+		sameResourceTreeFullName(parent.FullName, item.FullName) &&
+		isPathContainerNodeTypeForResourceTree(parent.NodeType)
+}
+
+func isWholeScopeItemAttributes(attrs map[string]interface{}) bool {
+	return strings.EqualFold(strings.TrimSpace(commonJSON.StringFromSections(attrs, "layout", "item")), "whole")
+}
+
+func sameResourceTreeFullName(left, right string) bool {
+	return strings.Trim(strings.TrimSpace(left), "/") == strings.Trim(strings.TrimSpace(right), "/")
+}
+
+func isPathContainerNodeTypeForResourceTree(nodeType string) bool {
+	switch strings.ToLower(strings.TrimSpace(nodeType)) {
+	case "root", "dir", "directory", "prefix", "bucket":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseMetaTimePtr(value *string) *time.Time {
