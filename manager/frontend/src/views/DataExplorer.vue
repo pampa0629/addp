@@ -153,7 +153,7 @@ const currentNodeChildren = computed(() => {
 // 事件处理：节点选择（从 ExplorerTree 组件触发）
 const handleNodeSelect = async ({ node, locator }) => {
   try {
-    if (nodeTypes.has(node.type) && (node.children || []).length === 0 && node.hasChildren) {
+    if (nodeTypes.has(node.type) && node.hasChildren && !node.loaded) {
       await store.loadNodeChildren(locator)
     }
 

@@ -76,6 +76,10 @@
               <el-icon><Box /></el-icon>
               <span>{{ t('manager.layout.model3DQuickView') }}</span>
             </el-menu-item>
+            <el-menu-item index="/gaussian-splat-quick-view">
+              <el-icon><Aim /></el-icon>
+              <span>{{ t('manager.layout.gaussianSplatQuickView') }}</span>
+            </el-menu-item>
             <el-menu-item index="/model-3d-tiles">
               <el-icon><Grid /></el-icon>
               <span>{{ t('manager.layout.model3DTiles') }}</span>
@@ -109,7 +113,8 @@ import {
   MagicStick,
   Picture,
   MapLocation,
-  Box
+  Box,
+  Aim
 } from '@element-plus/icons-vue'
 
 const route = useRoute()

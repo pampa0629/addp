@@ -46,7 +46,80 @@ func TestModel3DQuickViewTaskNormalizesSingleOSGBConfig(t *testing.T) {
 	}
 }
 
-func TestModel3DQuickViewTaskRejectsNonOSGBSource(t *testing.T) {
+func TestModel3DQuickViewTaskNormalizesMultiGLTFConfig(t *testing.T) {
+	config := commonModels.JSONMap{
+		"source": commonModels.JSONMap{
+			"item_locator":      "addp://engine/26/path/models/scene.gltf?type=item&item_id=77",
+			"source_engine_id":  uint(26),
+			"item_fingerprint":  "fp-gltf",
+			"item_id":           uint(77),
+			"format":            "gltf",
+			"source_size_bytes": int64(2048),
+		},
+	}
+
+	cfg, err := normalizeModel3DQuickViewTaskConfig(config, "manager", 7)
+	if err != nil {
+		t.Fatalf("normalize model 3d quick view config: %v", err)
+	}
+	if cfg.Source.Format != "gltf" {
+		t.Fatalf("source format = %q, want gltf", cfg.Source.Format)
+	}
+	if cfg.Result.FileName != "scene.glb" {
+		t.Fatalf("result file_name = %q, want scene.glb", cfg.Result.FileName)
+	}
+	if !strings.Contains(cfg.Result.StorageRef, "tenant_7/model3d-quick-view/fp-gltf/scene.glb") {
+		t.Fatalf("storage_ref = %q, want tenant-scoped GLB artifact", cfg.Result.StorageRef)
+	}
+}
+
+func TestModel3DQuickViewTaskNormalizesSingleFBXConfig(t *testing.T) {
+	config := commonModels.JSONMap{
+		"source": commonModels.JSONMap{
+			"item_locator":     "addp://engine/26/path/models/mesh.fbx?type=item&item_id=77",
+			"source_engine_id": uint(26),
+			"item_fingerprint": "fp-fbx",
+			"item_id":          uint(77),
+			"format":           "fbx",
+		},
+	}
+
+	cfg, err := normalizeModel3DQuickViewTaskConfig(config, "manager", 7)
+	if err != nil {
+		t.Fatalf("normalize model 3d quick view config: %v", err)
+	}
+	if cfg.Source.Format != "fbx" {
+		t.Fatalf("source format = %q, want fbx", cfg.Source.Format)
+	}
+	if cfg.Result.FileName != "mesh.glb" {
+		t.Fatalf("result file_name = %q, want mesh.glb", cfg.Result.FileName)
+	}
+}
+
+func TestModel3DQuickViewTaskNormalizesSingleOBJConfig(t *testing.T) {
+	config := commonModels.JSONMap{
+		"source": commonModels.JSONMap{
+			"item_locator":     "addp://engine/26/path/models/mesh.obj?type=item&item_id=77",
+			"source_engine_id": uint(26),
+			"item_fingerprint": "fp-obj",
+			"item_id":          uint(77),
+			"format":           "obj",
+		},
+	}
+
+	cfg, err := normalizeModel3DQuickViewTaskConfig(config, "manager", 7)
+	if err != nil {
+		t.Fatalf("normalize model 3d quick view config: %v", err)
+	}
+	if cfg.Source.Format != "obj" {
+		t.Fatalf("source format = %q, want obj", cfg.Source.Format)
+	}
+	if cfg.Result.FileName != "mesh.glb" {
+		t.Fatalf("result file_name = %q, want mesh.glb", cfg.Result.FileName)
+	}
+}
+
+func TestModel3DQuickViewTaskRejectsUnsupportedSource(t *testing.T) {
 	config := commonModels.JSONMap{
 		"source": commonModels.JSONMap{
 			"item_locator":     "addp://engine/26/path/models/tile.glb?type=item&item_id=77",
@@ -58,9 +131,9 @@ func TestModel3DQuickViewTaskRejectsNonOSGBSource(t *testing.T) {
 
 	_, err := normalizeModel3DQuickViewTaskConfig(config, "manager", 7)
 	if err == nil {
-		t.Fatal("normalize model 3d quick view config error is nil, want non-OSGB rejection")
+		t.Fatal("normalize model 3d quick view config error is nil, want unsupported source rejection")
 	}
-	if got := err.Error(); got != "model 3d quick view config.source.format must be osgb" {
+	if got := err.Error(); got != "model 3d quick view config.source.format must be osgb, gltf, fbx or obj" {
 		t.Fatalf("error = %q, want source format rejection", got)
 	}
 }

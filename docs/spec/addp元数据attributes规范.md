@@ -67,7 +67,7 @@ attributes 分区统一采用以下概念：
 |---|---|---|
 | `storage` | 这个 item 在引擎侧的存储和访问属性是什么 | physical_path、bucket、path、etag、content_type、last_modified_at、total_size |
 | `item` | 这个 data item 的核心语义是什么 | layout、data_type、format、refs、file_count、scope_exclusive |
-| `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children、model_3d mesh_count、point_cloud point_count |
+| `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children、model_3d mesh_count、point_cloud point_count、gaussian_splat splat_count |
 | `format_info` | 对应文件、容器或格式解析层面的私有信息是什么 | csv encoding、shapefile refs、sqlite version |
 | `access_index` | 面向内容读取的通用访问索引是什么 | table sparse_row_index |
 | `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
@@ -87,7 +87,7 @@ attributes 分区统一采用以下概念：
 | 大小 | `meta_item.size_bytes` + `attributes.storage.total_size` | 表列用于列表和排序，attributes 保存源存储视角 |
 | 修改时间 | `meta_item.data_updated_at` + `attributes.storage.last_modified_at` | `scanned_at` 不进入 attributes |
 | data item 核心语义 | `attributes.item` | layout、data_type、format、refs、file_count、scope_exclusive、claim_policy |
-| 类型信息 | `attributes.type_info.<data_type>` | table、document、media、container、graph、model_3d、point_cloud 等通用类型信息 |
+| 类型信息 | `attributes.type_info.<data_type>` | table、document、media、container、graph、model_3d、point_cloud、gaussian_splat 等通用类型信息 |
 | 格式信息 | `attributes.format_info.<format>` | 具体文件格式私有信息 |
 | 访问定位索引 | `attributes.access_index.<data_type>` | 面向内容读取优化的索引，例如 table 稀疏行索引 |
 | 横切能力 | `attributes.capabilities.<capability>` | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
@@ -102,7 +102,7 @@ attributes 分区统一采用以下概念：
 |---|---|---|
 | `storage` | 引擎抽象层、catalog、对象枚举 | physical_path、bucket、path、content_type、etag、last_modified_at、total_size |
 | `item` | Meta 扫描、Meta item normalizer | layout、data_type、format、refs、file_count、scope_exclusive、claim_policy |
-| `type_info` | 数据库 metadata、format info provider、采样器、Meta item normalizer | table fields、primary_key、row_count；media kind/width/height/duration_ms；document title/page_count；container children；graph shapes；model_3d 结构摘要；point_cloud 点云摘要 |
+| `type_info` | 数据库 metadata、format info provider、采样器、Meta item normalizer | table fields、primary_key、row_count；media kind/width/height/duration_ms；document title/page_count；container children；graph shapes；model_3d 结构摘要；point_cloud 点云摘要；gaussian_splat 高斯基元摘要 |
 | `format_info` | format plugin / provider、Meta item normalizer | CSV 分隔符、Shapefile related refs、JSON 结构类型、SQLite 版本等具体格式信息 |
 | `access_index` | format plugin / reader、Meta item normalizer | 用于按内容窗口读取的访问索引，例如 table 稀疏行号到字节偏移索引 |
 | `capabilities` | format provider、画像任务、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
@@ -120,6 +120,7 @@ attributes 分区统一采用以下概念：
 | `datatype.GraphInfo` | `attributes.type_info.graph` |
 | `datatype.Model3DInfo` | `attributes.type_info.model_3d` |
 | `datatype.PointCloudInfo` | `attributes.type_info.point_cloud` |
+| `datatype.GaussianSplatInfo` | `attributes.type_info.gaussian_splat` |
 | `datatype.SpatialInfo` | `attributes.capabilities.spatial` |
 | `datatype.AccessIndex` | `attributes.access_index.<data_type>` |
 
@@ -200,9 +201,14 @@ attributes 分区统一采用以下概念：
 | `graph` | `type_info.graph` | model、directed、node_shapes、relationship_shapes、node_count、relationship_count |
 | `model_3d` | `type_info.model_3d` | model_kind、node_count、mesh_count、vertex_count、triangle_count、material_count、texture_count、animation_count、lod_count、bounds_3d、unit、up_axis |
 | `point_cloud` | `type_info.point_cloud` | point_cloud_kind、point_count、point_format、dimension_count、dimensions、bounds_3d、scale、offset、has_color、has_intensity、has_classification |
+| `gaussian_splat` | `type_info.gaussian_splat` | representation、splat_count、has_opacity、has_scale、has_rotation、has_spherical_harmonics、sh_degree、bounds_3d、sampled_bounds_3d、sampled_bounds_method、sampled_bounds_sample_count |
 | `unknown` | `type_info.unknown` | detection_reason、fallback_action |
 
 `type_info.media` 只承载 `datatype.MediaInfo` 中跨图片、音频、视频稳定通用的字段。EXIF、视频 codec、音频 codec、帧率、采样率、码率、轨道数等细粒度事实暂不作为 media 主事实；如需持久化，应进入受控 `format_info.<format>`、`capabilities.extraction` 或后续另行规范的横切能力命名空间。
+
+`type_info.gaussian_splat.bounds_3d` 表示精确三维范围，只应在低成本元数据或小文件解析时写入。`sampled_bounds_3d` 表示采样得到的近似三维范围，必须同时写入 `sampled_bounds_method` 和 `sampled_bounds_sample_count`，可用于前端初始相机定位，但不得用于空间检索、质量治理或精确范围判断。Meta scan 不得为了 `bounds_3d` 全量扫描大规模高斯泼溅 PLY / SPLAT；需要精确范围时应通过后续画像或派生元数据任务生成。
+
+高斯泼溅格式私有诊断不得写入 `type_info.gaussian_splat`。例如 `.splat` 的 scale 分布、各向异性比例、低透明度计数和推荐渲染模式属于 `format_info.splat`，用于解释前端毛刺、过度模糊等格式渲染现象；这些事实不作为跨格式通用类型字段。
 
 `type_info.document` 只承载文档结构元信息。正文是否已抽取、抽取器、预览文本、截断状态和外部索引引用属于 `capabilities.extraction`，不得在 `type_info.document.text_extracted` 中重复写入。
 
@@ -224,9 +230,11 @@ attributes 分区统一采用以下概念：
 
 label set 必须标准化为去空、去重、排序后的稳定集合；当 node shape 或 endpoint 的 `name` / `shape_name` 为空时，可以由 label set 使用 `+` 连接派生。历史 Meta 数据如果仍使用 `edge_count`、顶层 `from_labels` / `to_labels`、独立 label item 或 relationship item，应删除后重新扫描，不在运行期保留兼容读取。
 
-`type_info.model_3d` 只承载三维模型跨格式稳定结构摘要。`model_kind` 表达模型子形态，第一版取值为 `mesh_scene`、`photogrammetry_scene`、`bim_model`、`tiled_scene`、`generic`。GLB / glTF、单 OSGB、OSGB Scene 倾斜摄影、3D Tiles、IFC / Revit BIM 都使用 `data_type=model_3d`；不得因为倾斜摄影或 BIM 另行新增 `data_type=osgb`、`data_type=bim` 或平行 type info。单个 `.osgb` 文件的格式私有字段进入 `format_info.osgb`；一套倾斜摄影场景的 `metadata.xml`、`Data/`、SRS 和纹理摘要进入 `format_info.osgb_scene`。格式原生字段、构件属性集、tileset 细节、纹理清单、BIM family / level / property set 等进入受控 `format_info.<format>`；空间参考、地理定位和空间范围进入 `capabilities.spatial`。模型原始内容、前端渲染协议、转换产物、缩略图、瓦片或构件查询结果不得写入 `type_info.model_3d`。
+`type_info.model_3d` 只承载三维模型跨格式稳定结构摘要。`model_kind` 表达模型子形态，第一版取值为 `mesh_scene`、`photogrammetry_scene`、`bim_model`、`tiled_scene`、`generic`。GLB / glTF、OBJ / STL / FBX、单 OSGB、OSGB Scene 倾斜摄影、3D Tiles、IFC / Revit BIM 都使用 `data_type=model_3d`；不得因为倾斜摄影或 BIM 另行新增 `data_type=osgb`、`data_type=bim` 或平行 type info。单个 `.osgb` 文件的格式私有字段进入 `format_info.osgb`；一套倾斜摄影场景的 `metadata.xml`、`Data/`、SRS 和纹理摘要进入 `format_info.osgb_scene`；`.gltf` manifest 的 asset、scene / buffer / image / accessor 计数、extensions 摘要和外部资源数量进入 `format_info.gltf`，本地资源路径只通过 `item.refs` 表达；OBJ 的 object / group / material library 摘要进入 `format_info.obj`；STL 的 ASCII / binary 编码和三角面摘要进入 `format_info.stl`；FBX 的 binary / ASCII header 编码事实进入 `format_info.fbx`。格式原生字段、构件属性集、tileset 细节、纹理清单、BIM family / level / property set 等进入受控 `format_info.<format>`；空间参考、地理定位和空间范围进入 `capabilities.spatial`。模型原始内容、前端渲染协议、转换产物、缩略图、瓦片或构件查询结果不得写入 `type_info.model_3d`。
 
 `type_info.point_cloud` 只承载点云跨格式稳定结构摘要。`point_cloud_kind` 表达点云子形态，第一版取值为 `raw_point_cloud`、`tiled_point_cloud`、`scan_collection`、`generic`。LAS / LAZ / COPC、PCD、点云型 PLY、EPT / Potree、E57 等都使用 `data_type=point_cloud`；不得仅因点记录可展开为 x/y/z 等列而归为 `table`。点样本、抽稀结果、前端渲染协议、Potree / EPT / COPC 层级内容、派生瓦片等属于内容读取或 Manager 派生产物，不写入 attributes。CRS、空间定位和空间范围进入 `capabilities.spatial`；分类分布、密度、采样规模等画像事实进入 `capabilities.statistics` 或后续受控画像结构。
+
+`type_info.gaussian_splat` 只承载高斯泼溅跨格式稳定结构摘要。`representation` 第一版固定使用 `3d_gaussian_splatting`，`splat_count` 表示高斯基元数量，`has_opacity`、`has_scale`、`has_rotation`、`has_spherical_harmonics` 和 `sh_degree` 表示渲染所需属性能力。3DGS PLY、`.splat`、`.ksplat`、`.spz` 等都使用 `data_type=gaussian_splat`；不得因为 PLY 内部使用 vertex 记录就归为 `point_cloud`，也不得因为它能三维渲染就归为 `model_3d`。原始高斯数据、压缩产物、前端渲染协议、排序结果或派生 splat artifact 不写入 `type_info.gaussian_splat`；格式私有 header、属性列表和 layout 写入 `format_info.<format>`。
 
 表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。`type_info.table` 是 `common/datatype.TableInfo` 的直接 JSON payload，`type_info.table.fields[]` 是 `common/datatype.FieldInfo` 的直接 JSON payload。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。
 

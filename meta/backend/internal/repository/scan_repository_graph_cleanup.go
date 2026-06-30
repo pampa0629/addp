@@ -57,6 +57,21 @@ func (r *ScanRepository) HardDeleteItemsByNodeExceptFullNames(nodeID uint, keepF
 	return query.Delete(&models.MetaItem{}).Error
 }
 
+// HardDeleteItemsByNodeFullNames 硬删除当前节点下指定 full_name 的数据项。
+func (r *ScanRepository) HardDeleteItemsByNodeFullNames(nodeID uint, fullNames map[string]bool) error {
+	if len(fullNames) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(fullNames))
+	for name := range fullNames {
+		names = append(names, name)
+	}
+	return r.db.Unscoped().
+		Where("node_id = ?", nodeID).
+		Where("full_name IN ?", names).
+		Delete(&models.MetaItem{}).Error
+}
+
 // HardDeleteChildNodesExceptFullNames 硬删除未出现在本轮扫描结果中的直接子节点及其子树。
 func (r *ScanRepository) HardDeleteChildNodesExceptFullNames(parentNodeID uint, keepFullNames map[string]bool) error {
 	var staleNodes []models.MetaNode

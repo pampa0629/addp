@@ -437,6 +437,15 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 		source.GeoJSONURL = locatorQuickViewGeoJSONURL(source.Identity.Locator, tablePreview)
 	}
 	if tablePreview.Object != nil {
+		gaussianSplat := service.GaussianSplatQuickViewSourceFromAttributes(tablePreview.Object.Attributes)
+		if gaussianSplat != nil {
+			source.EngineID = tablePreview.Object.EngineID
+			source.GaussianSplat = gaussianSplat
+			source.DirectGeoJSON = false
+			source.GeoJSONURL = ""
+			source.CanTile = false
+			return source
+		}
 		model3D := service.Model3DQuickViewSourceFromAttributes(tablePreview.Object.Attributes)
 		if model3D != nil {
 			source.EngineID = tablePreview.Object.EngineID

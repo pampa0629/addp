@@ -974,6 +974,436 @@ const docTemplate = `{
                 }
             }
         },
+        "/gaussian_splat_quick_view": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "列出高斯泼溅 KSplat 快显结果 | List Gaussian Splat KSplat quick view results",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "数据项ID | Item ID",
+                        "name": "item_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据项指纹 | Item fingerprint",
+                        "name": "item_fingerprint",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "task_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态 | Status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关键词 | Keyword",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "结果列表 | Result list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/gaussian_splat_quick_view/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取高斯泼溅 KSplat 快显详情 | Get Gaussian Splat KSplat quick view detail",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "结果ID | Result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "结果详情 | Result detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.GaussianSplatQuickView"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除高斯泼溅 KSplat 快显 | Delete Gaussian Splat KSplat quick view",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "结果ID | Result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/gaussian_splat_quick_view/{id}/content": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按 gaussian splat quick view id 返回 Manager infra MinIO 中的 KSplat 内容，支持 HTTP Range。该接口只读取 Manager 拥有生命周期且状态为 ready 的 KSplat 快显结果。 | Return KSplat content from Manager infra MinIO by result id with HTTP Range support. Only ready Manager-owned results are readable.",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "读取高斯泼溅 KSplat 快显 | Read Gaussian Splat KSplat quick view result",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "gaussian splat quick view ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "KSplat 内容流 | KSplat content stream"
+                    },
+                    "206": {
+                        "description": "部分 KSplat 内容流 | Partial KSplat content stream"
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "KSplat 不存在或未就绪 | KSplat not found or not ready",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "416": {
+                        "description": "Range 不可满足 | Range not satisfiable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/gaussian_splat_quick_view_tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "列出 Manager 模块的高斯泼溅 KSplat 快显任务配置。该私有入口固定返回 task_type=gaussian_splat_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager Gaussian Splat KSplat quick view generation task configurations.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "列出高斯泼溅 KSplat 快显任务配置 | List Gaussian Splat KSplat quick view generation task configurations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务列表 | Task list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "创建新的高斯泼溅 KSplat 快显任务配置。当前只接受源格式为 KSplat 的 gaussian_splat item，并将 KSplat artifact 写入 Manager infra MinIO；PLY / SPLAT 可使用基础高斯泼溅预览，真实转换器接入后再开放受管生成。| Create a Gaussian Splat quick view task from a KSplat gaussian_splat item into Manager infra MinIO. PLY / SPLAT use basic Gaussian Splat preview until the real converter is connected.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "创建高斯泼溅 KSplat 快显任务配置 | Create Gaussian Splat KSplat quick view generation task configuration",
+                "parameters": [
+                    {
+                        "description": "gaussian splat quick view generation task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.GaussianSplatQuickViewTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "创建的任务配置 | Created task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.GaussianSplatQuickViewTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/gaussian_splat_quick_view_tasks/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取高斯泼溅 KSplat 快显任务配置 | Get Gaussian Splat KSplat quick view generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务配置 | Task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.GaussianSplatQuickViewTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "更新高斯泼溅 KSplat 快显任务配置 | Update Gaussian Splat KSplat quick view generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "gaussian splat quick view generation task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.GaussianSplatQuickViewTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的任务配置 | Updated task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.GaussianSplatQuickViewTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除高斯泼溅 KSplat 快显任务配置 | Delete Gaussian Splat KSplat quick view generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/imports": {
             "post": {
                 "security": [
@@ -1289,7 +1719,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "列出 Manager 模块的单 OSGB 转 GLB 快显任务配置。该私有入口固定返回 task_type=model_3d_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D quick view generation task configurations.",
+                "description": "列出 Manager 模块的 OSGB / glTF / FBX / OBJ 转 GLB 快显任务配置。该私有入口固定返回 task_type=model_3d_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D quick view generation task configurations.",
                 "produces": [
                     "application/json"
                 ],
@@ -1334,7 +1764,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建新的单 OSGB 转 GLB 快显任务配置。任务从单个 OSGB item 读取源数据，并将 GLB artifact 写入 Manager infra MinIO。| Create a model 3D quick view task from a single OSGB item into Manager infra MinIO.",
+                "description": "创建新的 OSGB / glTF / FBX / OBJ 转 GLB 快显任务配置。任务从 OSGB、glTF、FBX 或 OBJ model_3d item 读取源数据，并将 GLB artifact 写入 Manager infra MinIO。| Create a model 3D quick view task from an OSGB, glTF, FBX or OBJ model item into Manager infra MinIO.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3226,7 +3656,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型过滤：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|embedding | Task type filter",
+                        "description": "任务类型过滤：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|gaussian_splat_quick_view_generation|embedding | Task type filter",
                         "name": "task_type",
                         "in": "query"
                     },
@@ -3285,7 +3715,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|embedding | Task type",
+                        "description": "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|gaussian_splat_quick_view_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -3343,7 +3773,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|embedding | Task type",
+                        "description": "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|gaussian_splat_quick_view_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -4271,6 +4701,71 @@ const docTemplate = `{
             "type": "object",
             "additionalProperties": true
         },
+        "github_com_addp_manager_internal_models.GaussianSplatQuickView": {
+            "type": "object",
+            "properties": {
+                "content_url": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "source_engine_id": {
+                    "type": "integer"
+                },
+                "source_format": {
+                    "type": "string"
+                },
+                "source_size_bytes": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "storage_ref": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_manager_internal_models.MetaExtractionScanStats": {
             "type": "object",
             "properties": {
@@ -4813,6 +5308,9 @@ const docTemplate = `{
                 "default_vector_tile_cache_id": {
                     "type": "integer"
                 },
+                "gaussian_splat": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewGaussianSplatInfo"
+                },
                 "item_fingerprint": {
                     "type": "string"
                 },
@@ -4872,6 +5370,62 @@ const docTemplate = `{
                 },
                 "vector_tile_cache_generation": {
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.TileCacheGeneration"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.QuickViewGaussianSplatInfo": {
+            "type": "object",
+            "properties": {
+                "file_name": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "has_opacity": {
+                    "type": "boolean"
+                },
+                "has_rotation": {
+                    "type": "boolean"
+                },
+                "has_scale": {
+                    "type": "boolean"
+                },
+                "has_spherical_harmonics": {
+                    "type": "boolean"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "layout": {
+                    "type": "string"
+                },
+                "preview_url": {
+                    "type": "string"
+                },
+                "recommended_action": {
+                    "type": "string"
+                },
+                "representation": {
+                    "type": "string"
+                },
+                "result_id": {
+                    "type": "integer"
+                },
+                "sh_degree": {
+                    "type": "integer"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "splat_count": {
+                    "type": "integer"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "unavailable_reason": {
+                    "type": "string"
                 }
             }
         },
@@ -5581,6 +6135,119 @@ const docTemplate = `{
                 },
                 "scope": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.GaussianSplatQuickViewTaskRequest": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "schedule": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.GaussianSplatQuickViewTaskResponse": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "result": {
+                    "$ref": "#/definitions/internal_api.GaussianSplatQuickViewTaskResultResponse"
+                },
+                "schedule": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/internal_api.GaussianSplatQuickViewTaskSourceResponse"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.GaussianSplatQuickViewTaskResultResponse": {
+            "type": "object",
+            "properties": {
+                "file_name": {
+                    "type": "string"
+                },
+                "storage_ref": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.GaussianSplatQuickViewTaskSourceResponse": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "item_locator": {
+                    "type": "string"
+                },
+                "source_engine_id": {
+                    "type": "integer"
+                },
+                "source_size_bytes": {
+                    "type": "integer"
                 }
             }
         },

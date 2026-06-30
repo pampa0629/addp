@@ -302,6 +302,135 @@ func TestManagerModel3DQuickViewExecutorPublishesGLBFromWorkflowRuntime(t *testi
 	}
 }
 
+func TestManagerModel3DQuickViewExecutorDispatchesGLTFToGLBOperator(t *testing.T) {
+	var capturedPath string
+	workflowServer := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/api/operators":
+				writeModel3DOperatorList(w, testModel3DWorkflowEngineType, []string{"direct"})
+			case r.URL.Path == "/api/operators/gltf_to_glb/invoke":
+				capturedPath = r.URL.Path
+				var payload struct {
+					Params map[string]interface{} `json:"params"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Fatalf("decode workflow request: %v", err)
+				}
+				accessPlan := payload.Params["access_plan"].(map[string]interface{})
+				sourcePlan := accessPlan["source"].(map[string]interface{})
+				if sourcePlan["local_path"] != "/mnt/addp-nfs/models/scene.gltf" {
+					t.Fatalf("source local_path = %#v", sourcePlan["local_path"])
+				}
+				_, _ = w.Write([]byte(`{"status":"success","execution_id":"model3d-glb-gltf","result":{"glb_uri":"s3://manager/model3d/scene.glb","glb_ref":"model3d/scene.glb","size_bytes":3}}`))
+			default:
+				t.Fatalf("unexpected workflow path: %s", r.URL.Path)
+			}
+		}),
+	}
+	workflowListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer workflowServer.Close()
+	go func() { _ = workflowServer.Serve(workflowListener) }()
+	_, workflowPort, err := net.SplitHostPort(workflowListener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	systemServer := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.URL.Path {
+			case "/api/v1/internal/engines/26":
+				_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Business NFS","engine_type":"nfs","connection_info":{"export_path":"/mnt/addp-nfs"},"is_active":true}`))
+			default:
+				t.Fatalf("unexpected system path: %s", r.URL.Path)
+			}
+		}),
+	}
+	systemListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer systemServer.Close()
+	go func() { _ = systemServer.Serve(systemListener) }()
+
+	executor := NewManagerModel3DQuickViewExecutor(
+		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
+		recordingWorkflowLister{engines: []commonModels.Engine{{
+			ID:         99,
+			Name:       "Tenant Model3D Workflow",
+			EngineType: testModel3DWorkflowEngineType,
+			ConnectionInfo: commonModels.ConnectionInfo{
+				"protocol": "http",
+				"host":     "127.0.0.1",
+				"port":     workflowPort,
+			},
+			IsActive:     true,
+			Capabilities: testRasterWorkflowCapabilities(t, testModel3DWorkflowEngineType),
+		}}},
+		&recordingModel3DQuickViewObjectStore{statSize: 3},
+		"minio:9000",
+		"minio-ak",
+		"minio-sk",
+		false,
+		"manager",
+		0,
+	)
+
+	result, err := executor.BuildModel3DQuickView(context.Background(), Model3DQuickViewExecutionRequest{
+		Task: &models.Model3DQuickViewTask{TenantID: 7, Name: "生成 glTF GLB"},
+		Config: Model3DQuickViewExecutionConfig{
+			Source: Model3DQuickViewSourceConfig{
+				ItemLocator:     "addp://engine/26/path/models/scene.gltf?type=file&item_id=77",
+				SourceEngineID:  26,
+				ItemFingerprint: "fp-gltf",
+				Format:          "gltf",
+			},
+			Result: Model3DQuickViewResultConfig{
+				StorageRef: `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"model3d/scene.glb"}`,
+				FileName:   "scene.glb",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildModel3DQuickView() error = %v", err)
+	}
+	if capturedPath != "/api/operators/gltf_to_glb/invoke" {
+		t.Fatalf("captured workflow path = %q, want gltf_to_glb invoke", capturedPath)
+	}
+	metadataSource := result.Metadata["source"].(commonModels.JSONMap)
+	if metadataSource["format"] != "gltf" {
+		t.Fatalf("metadata source format = %#v, want gltf", metadataSource["format"])
+	}
+}
+
+func TestModel3DQuickViewOperatorForFormat(t *testing.T) {
+	tests := []struct {
+		formatName string
+		operator   string
+	}{
+		{formatName: "osgb", operator: "osgb_to_glb"},
+		{formatName: "gltf", operator: "gltf_to_glb"},
+		{formatName: "fbx", operator: "fbx_to_glb"},
+		{formatName: "obj", operator: "obj_to_glb"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.formatName, func(t *testing.T) {
+			operator, normalized, err := model3DQuickViewOperatorForFormat(tt.formatName)
+			if err != nil {
+				t.Fatalf("model3DQuickViewOperatorForFormat() error = %v", err)
+			}
+			if operator != tt.operator || normalized != tt.formatName {
+				t.Fatalf("operator=%q normalized=%q, want %q/%q", operator, normalized, tt.operator, tt.formatName)
+			}
+		})
+	}
+}
+
 type recordingModel3DQuickViewObjectStore struct {
 	statSize   int64
 	statBucket string
@@ -343,6 +472,54 @@ func writeModel3DOperatorList(w http.ResponseWriter, engineType string, executio
 				},
 			},
 			{
+				"id":              "gltf_to_glb",
+				"name":            "gltf_to_glb",
+				"display_name":    "glTF 转 GLB",
+				"engine_type":     engineType,
+				"category":        "三维模型转换",
+				"category_path":   []string{"三维模型转换"},
+				"description":     "生成 GLB",
+				"execution_modes": executionModes,
+				"parameters": []map[string]interface{}{
+					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
+				},
+				"output_ports": []map[string]interface{}{
+					{"name": "default", "type": "object", "description": "GLB 生成结果", "is_default": true},
+				},
+			},
+			{
+				"id":              "fbx_to_glb",
+				"name":            "fbx_to_glb",
+				"display_name":    "FBX 转 GLB",
+				"engine_type":     engineType,
+				"category":        "三维模型转换",
+				"category_path":   []string{"三维模型转换"},
+				"description":     "生成 GLB",
+				"execution_modes": executionModes,
+				"parameters": []map[string]interface{}{
+					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
+				},
+				"output_ports": []map[string]interface{}{
+					{"name": "default", "type": "object", "description": "GLB 生成结果", "is_default": true},
+				},
+			},
+			{
+				"id":              "obj_to_glb",
+				"name":            "obj_to_glb",
+				"display_name":    "OBJ 转 GLB",
+				"engine_type":     engineType,
+				"category":        "三维模型转换",
+				"category_path":   []string{"三维模型转换"},
+				"description":     "生成 GLB",
+				"execution_modes": executionModes,
+				"parameters": []map[string]interface{}{
+					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
+				},
+				"output_ports": []map[string]interface{}{
+					{"name": "default", "type": "object", "description": "GLB 生成结果", "is_default": true},
+				},
+			},
+			{
 				"id":              "osgb_scene_to_3dtiles",
 				"name":            "osgb_scene_to_3dtiles",
 				"display_name":    "OSGB Scene 转 3D Tiles",
@@ -359,7 +536,7 @@ func writeModel3DOperatorList(w http.ResponseWriter, engineType string, executio
 				},
 			},
 		},
-		"count": 2,
+		"count": 4,
 	}
 	_ = json.NewEncoder(w).Encode(payload)
 }

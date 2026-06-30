@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/models"
@@ -504,9 +505,296 @@ func TestQuickViewCapabilityUsesReadyRasterCOGForLargeRasterItem(t *testing.T) {
 	}
 }
 
-func TestQuickViewCapabilityUsesReadyModel3DGLBForSingleOSGBItem(t *testing.T) {
+func TestQuickViewCapabilityUsesReadyModel3DGLBForSupportedSourceFormats(t *testing.T) {
+	for _, tc := range []struct {
+		format   string
+		fullName string
+		fileName string
+	}{
+		{format: "osgb", fullName: "3d/single-osgb/Tile_4_L20_00010t3.osgb", fileName: "Tile_4_L20_00010t3.glb"},
+		{format: "gltf", fullName: "3d/gltf/scene/scene.gltf", fileName: "scene.glb"},
+		{format: "fbx", fullName: "3d/fbx/gunsfbx/gunsfbx.fbx", fileName: "gunsfbx.glb"},
+		{format: "obj", fullName: "3d/obj/AssaultRifle/AssaultRifle_01.obj", fileName: "AssaultRifle_01.glb"},
+	} {
+		t.Run(tc.format, func(t *testing.T) {
+			db := newTileCacheTaskServiceTestDB(t)
+			if err := db.Exec(`CREATE TABLE manager.model_3d_quick_view (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				tenant_id INTEGER NOT NULL,
+				item_fingerprint TEXT NOT NULL,
+				item_id INTEGER,
+				locator TEXT,
+				task_id INTEGER,
+				last_execution_id TEXT,
+				source_engine_id INTEGER NOT NULL,
+				source_format TEXT NOT NULL,
+				source_size_bytes INTEGER,
+				storage_ref TEXT NOT NULL,
+				file_name TEXT,
+				size_bytes INTEGER,
+				content_url TEXT,
+				status TEXT NOT NULL,
+				metadata JSON,
+				error_message TEXT,
+				created_by INTEGER,
+				created_at DATETIME,
+				updated_at DATETIME,
+				deleted_at DATETIME
+			)`).Error; err != nil {
+				t.Fatalf("create model_3d_quick_view table: %v", err)
+			}
+			svc := NewQuickViewService(db, nil)
+			locator := fmt.Sprintf("addp://engine/26/path/%s?type=file&item_id=10282", tc.fullName)
+			fingerprint := commonModels.GenerateItemFingerprint(26, tc.fullName)
+			result := &models.Model3DQuickView{
+				TenantID:        7,
+				ItemFingerprint: fingerprint,
+				Locator:         locator,
+				SourceEngineID:  26,
+				SourceFormat:    tc.format,
+				SourceSizeBytes: 1024 * 1024,
+				StorageRef:      fmt.Sprintf(`{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/model3d_quick_view/%s"}`, tc.fileName),
+				FileName:        tc.fileName,
+				SizeBytes:       612396,
+				Status:          models.Model3DQuickViewStatusReady,
+				Metadata:        commonModels.JSONMap{},
+			}
+			if err := repository.NewModel3DQuickViewRepository(db).Create(context.Background(), result); err != nil {
+				t.Fatalf("create model3d quick view result: %v", err)
+			}
+
+			capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+				Identity: QuickViewIdentity{
+					TenantID:        7,
+					ItemFingerprint: fingerprint,
+					Locator:         locator,
+				},
+				EngineID: 26,
+				Model3D: &Model3DQuickViewSource{
+					Format:          tc.format,
+					Layout:          "single",
+					SourceSizeBytes: 1024 * 1024,
+				},
+			})
+			if err != nil {
+				t.Fatalf("build model3d quick view capability: %v", err)
+			}
+			if !capability.CanUseQuickView {
+				t.Fatalf("can_use_quick_view = false, want ready GLB; reason=%s", capability.UnavailableReason)
+			}
+			if capability.RenderSource != QuickViewRenderSourceModel3DGLB {
+				t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceModel3DGLB)
+			}
+			if capability.QuickView.PreviewURL != fmt.Sprintf("/api/v1/manager/model_3d_quick_view/%d/content", result.ID) {
+				t.Fatalf("preview_url = %q, want model3d quick view content URL", capability.QuickView.PreviewURL)
+			}
+			if capability.Model3D == nil || capability.Model3D.Format != tc.format || capability.Model3D.FileName != tc.fileName {
+				t.Fatalf("model3d info = %#v, want ready GLB facts", capability.Model3D)
+			}
+			if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
+				t.Fatalf("tile generation = can:%v available:%v, want false for model3d quick view", capability.CanGenerateTileCache, capability.TileCacheGeneration.Available)
+			}
+		})
+	}
+}
+
+func TestModel3DQuickViewSourceFromAttributesSupportsOBJSingleItem(t *testing.T) {
+	source := Model3DQuickViewSourceFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"data_type": "model_3d",
+			"format":    "obj",
+			"layout":    "single",
+		},
+		"storage": map[string]interface{}{
+			"total_size": int64(8192),
+		},
+	})
+	if source == nil {
+		t.Fatal("source is nil, want OBJ single item to be a model3d GLB quick view source")
+	}
+	if source.Format != "obj" || source.Layout != "single" || source.SourceSizeBytes != 8192 {
+		t.Fatalf("source = %#v, want OBJ single item facts", source)
+	}
+}
+
+func TestGaussianSplatQuickViewSourceFromAttributes(t *testing.T) {
+	for _, formatName := range []string{"ply", "splat", "ksplat"} {
+		formatName := formatName
+		t.Run(formatName, func(t *testing.T) {
+			source := GaussianSplatQuickViewSourceFromAttributes(map[string]interface{}{
+				"item": map[string]interface{}{
+					"data_type": "gaussian_splat",
+					"format":    formatName,
+					"layout":    "single",
+				},
+				"type_info": map[string]interface{}{
+					"gaussian_splat": map[string]interface{}{
+						"representation":          "3d_gaussian_splatting",
+						"splat_count":             int64(128),
+						"has_opacity":             true,
+						"has_scale":               true,
+						"has_rotation":            true,
+						"has_spherical_harmonics": true,
+						"sh_degree":               int64(3),
+					},
+				},
+				"storage": map[string]interface{}{
+					"total_size": int64(4096),
+				},
+			})
+			if source == nil {
+				t.Fatal("source is nil, want gaussian splat quick view source")
+			}
+			if source.Format != formatName || source.Layout != "single" || source.Representation != "3d_gaussian_splatting" || source.SplatCount != 128 || source.SourceSizeBytes != 4096 {
+				t.Fatalf("source = %#v, want gaussian splat facts", source)
+			}
+			if source.HasOpacity == nil || !*source.HasOpacity || source.SHDegree == nil || *source.SHDegree != 3 {
+				t.Fatalf("source optional facts = %#v, want opacity and sh degree", source)
+			}
+		})
+	}
+	if model3D := Model3DQuickViewSourceFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"data_type": "gaussian_splat",
+			"format":    "ply",
+			"layout":    "single",
+		},
+	}); model3D != nil {
+		t.Fatalf("model3d source = %#v, want nil for gaussian splat", model3D)
+	}
+}
+
+func TestQuickViewCapabilityKeepsGaussianSplatOutOfGLBRoute(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
-	if err := db.Exec(`CREATE TABLE manager.model_3d_quick_view (
+	createGaussianSplatQuickViewTable(t, db)
+	svc := NewQuickViewService(db, nil)
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: "fp-gaussian",
+			Locator:         "addp://engine/26/path/3d/splat/model.ply?type=file&item_id=201",
+		},
+		EngineID: 26,
+		GaussianSplat: &GaussianSplatQuickViewSource{
+			Format:          "ply",
+			Layout:          "single",
+			Representation:  "3d_gaussian_splatting",
+			SplatCount:      128,
+			SourceSizeBytes: 4096,
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
+	}
+	if capability.CanUseQuickView || capability.RenderSource != "" || capability.UnavailableReason != "gaussian_splat_direct_preview" {
+		t.Fatalf("capability quick view = can:%v render:%q reason:%q, want direct gaussian preview without managed KSplat recommendation", capability.CanUseQuickView, capability.RenderSource, capability.UnavailableReason)
+	}
+	if capability.Model3D != nil {
+		t.Fatalf("model_3d capability = %#v, want nil for gaussian splat", capability.Model3D)
+	}
+	if capability.GaussianSplat == nil || capability.GaussianSplat.Format != "ply" || capability.GaussianSplat.SplatCount != 128 {
+		t.Fatalf("gaussian_splat capability = %#v, want gaussian splat facts", capability.GaussianSplat)
+	}
+	if capability.GaussianSplat.RecommendedAction != "" {
+		t.Fatalf("recommended_action = %q, want empty for non-KSplat gaussian source", capability.GaussianSplat.RecommendedAction)
+	}
+	if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
+		t.Fatalf("tile generation = can:%v available:%v, want false for gaussian splat", capability.CanGenerateTileCache, capability.TileCacheGeneration.Available)
+	}
+}
+
+func TestQuickViewCapabilityRecommendsManagedQuickViewForKSplatSource(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	createGaussianSplatQuickViewTable(t, db)
+	svc := NewQuickViewService(db, nil)
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: "fp-ksplat",
+			Locator:         "addp://engine/26/path/3d/splat/model.ksplat?type=file&item_id=202",
+		},
+		EngineID: 26,
+		GaussianSplat: &GaussianSplatQuickViewSource{
+			Format:          "ksplat",
+			Layout:          "single",
+			Representation:  "3d_gaussian_splatting",
+			SplatCount:      128,
+			SourceSizeBytes: 4096,
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
+	}
+	if capability.CanUseQuickView || capability.RenderSource != "" || capability.UnavailableReason != "requires_ksplat_generation" {
+		t.Fatalf("capability quick view = can:%v render:%q reason:%q, want managed KSplat generation requirement", capability.CanUseQuickView, capability.RenderSource, capability.UnavailableReason)
+	}
+	if capability.GaussianSplat == nil || capability.GaussianSplat.RecommendedAction != commonExecution.TaskTypeGaussianSplatQuickViewGeneration {
+		t.Fatalf("gaussian_splat = %#v, want KSplat generation recommendation", capability.GaussianSplat)
+	}
+}
+
+func TestQuickViewCapabilityUsesReadyGaussianSplatKSplat(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	createGaussianSplatQuickViewTable(t, db)
+	svc := NewQuickViewService(db, nil)
+	locator := "addp://engine/26/path/3d/ksplat/model.ksplat?type=file&item_id=201"
+	result := &models.GaussianSplatQuickView{
+		TenantID:        7,
+		ItemFingerprint: "fp-gaussian",
+		Locator:         locator,
+		SourceEngineID:  26,
+		SourceFormat:    "ksplat",
+		SourceSizeBytes: 4096,
+		StorageRef:      `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/gaussian-splat-quick-view/fp-gaussian/model.ksplat"}`,
+		FileName:        "model.ksplat",
+		SizeBytes:       4096,
+		Status:          models.GaussianSplatQuickViewStatusReady,
+		Metadata:        commonModels.JSONMap{},
+	}
+	if err := repository.NewGaussianSplatQuickViewRepository(db).Create(context.Background(), result); err != nil {
+		t.Fatalf("create gaussian splat quick view result: %v", err)
+	}
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: "fp-gaussian",
+			Locator:         locator,
+		},
+		EngineID: 26,
+		GaussianSplat: &GaussianSplatQuickViewSource{
+			Format:          "ksplat",
+			Layout:          "single",
+			Representation:  "3d_gaussian_splatting",
+			SplatCount:      128,
+			SourceSizeBytes: 4096,
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
+	}
+	if !capability.CanUseQuickView {
+		t.Fatalf("can_use_quick_view = false, want ready KSplat; reason=%s", capability.UnavailableReason)
+	}
+	if capability.RenderSource != QuickViewRenderSourceGaussianSplatKSplat {
+		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceGaussianSplatKSplat)
+	}
+	if capability.QuickView.PreviewURL != fmt.Sprintf("/api/v1/manager/gaussian_splat_quick_view/%d/content", result.ID) {
+		t.Fatalf("preview_url = %q, want gaussian splat quick view content URL", capability.QuickView.PreviewURL)
+	}
+	if capability.GaussianSplat == nil || capability.GaussianSplat.Format != "ksplat" || capability.GaussianSplat.FileName != "model.ksplat" {
+		t.Fatalf("gaussian_splat capability = %#v, want ready KSplat facts", capability.GaussianSplat)
+	}
+	if capability.Model3D != nil {
+		t.Fatalf("model_3d capability = %#v, want nil for gaussian splat", capability.Model3D)
+	}
+}
+
+func createGaussianSplatQuickViewTable(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec(`CREATE TABLE manager.gaussian_splat_quick_view (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		item_fingerprint TEXT NOT NULL,
@@ -529,58 +817,7 @@ func TestQuickViewCapabilityUsesReadyModel3DGLBForSingleOSGBItem(t *testing.T) {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create model_3d_quick_view table: %v", err)
-	}
-	svc := NewQuickViewService(db, nil)
-	locator := "addp://engine/26/path/3d/single-osgb/Tile_4_L20_00010t3.osgb?type=file&item_id=10282"
-	fingerprint := commonModels.GenerateItemFingerprint(26, "3d/single-osgb/Tile_4_L20_00010t3.osgb")
-	result := &models.Model3DQuickView{
-		TenantID:        7,
-		ItemFingerprint: fingerprint,
-		Locator:         locator,
-		SourceEngineID:  26,
-		SourceFormat:    "osgb",
-		SourceSizeBytes: 1024 * 1024,
-		StorageRef:      `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/model3d_quick_view/tile.glb"}`,
-		FileName:        "Tile_4_L20_00010t3.glb",
-		SizeBytes:       612396,
-		Status:          models.Model3DQuickViewStatusReady,
-		Metadata:        commonModels.JSONMap{},
-	}
-	if err := repository.NewModel3DQuickViewRepository(db).Create(context.Background(), result); err != nil {
-		t.Fatalf("create model3d quick view result: %v", err)
-	}
-
-	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
-		Identity: QuickViewIdentity{
-			TenantID:        7,
-			ItemFingerprint: fingerprint,
-			Locator:         locator,
-		},
-		EngineID: 26,
-		Model3D: &Model3DQuickViewSource{
-			Format:          "osgb",
-			Layout:          "single",
-			SourceSizeBytes: 1024 * 1024,
-		},
-	})
-	if err != nil {
-		t.Fatalf("build model3d quick view capability: %v", err)
-	}
-	if !capability.CanUseQuickView {
-		t.Fatalf("can_use_quick_view = false, want ready GLB; reason=%s", capability.UnavailableReason)
-	}
-	if capability.RenderSource != QuickViewRenderSourceModel3DGLB {
-		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceModel3DGLB)
-	}
-	if capability.QuickView.PreviewURL != fmt.Sprintf("/api/v1/manager/model_3d_quick_view/%d/content", result.ID) {
-		t.Fatalf("preview_url = %q, want model3d quick view content URL", capability.QuickView.PreviewURL)
-	}
-	if capability.Model3D == nil || capability.Model3D.Format != "osgb" || capability.Model3D.FileName != "Tile_4_L20_00010t3.glb" {
-		t.Fatalf("model3d info = %#v, want ready GLB facts", capability.Model3D)
-	}
-	if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
-		t.Fatalf("tile generation = can:%v available:%v, want false for model3d quick view", capability.CanGenerateTileCache, capability.TileCacheGeneration.Available)
+		t.Fatalf("create gaussian_splat_quick_view table: %v", err)
 	}
 }
 

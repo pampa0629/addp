@@ -213,6 +213,7 @@
         "cogArtifacts": "Raster Quick View - COG",
         "rasterMosaic": "Raster Quick View - Mosaic",
         "model3DQuickView": "3D Quick View - GLB",
+        "gaussianSplatQuickView": "Gaussian Quick View - KSplat",
         "model3DTiles": "3D Quick View - 3D Tiles"
       },
       "standard": {

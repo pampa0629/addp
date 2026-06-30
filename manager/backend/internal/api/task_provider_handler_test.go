@@ -215,6 +215,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	cogRepo := repository.NewRasterCOGRepository(db)
 	model3DTilesRepo := repository.NewModel3DTilesRepository(db)
 	model3DQuickViewRepo := repository.NewModel3DQuickViewRepository(db)
+	gaussianSplatQuickViewRepo := repository.NewGaussianSplatQuickViewRepository(db)
 
 	if err := tileCacheRepo.CreateTask(context.Background(), &models.TileCacheTask{
 		TenantID: 1,
@@ -320,6 +321,23 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create model 3d quick view generation task: %v", err)
 	}
+	if err := gaussianSplatQuickViewRepo.CreateTask(context.Background(), &models.GaussianSplatQuickViewTask{
+		TenantID: 1,
+		Name:     "gaussian splat quick view generation task",
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"source": commonModels.JSONMap{
+				"item_locator":      "addp://engine/11/path/models/model.ksplat?type=file&item_id=47",
+				"source_engine_id":  uint(11),
+				"item_fingerprint":  "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+				"item_id":           uint(47),
+				"format":            "ksplat",
+				"source_size_bytes": int64(1024),
+			},
+		},
+	}); err != nil {
+		t.Fatalf("create gaussian splat quick view generation task: %v", err)
+	}
 
 	handler := NewTaskProviderHandler(
 		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
@@ -330,6 +348,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	)
 	handler.SetModel3DTilesTaskService(service.NewModel3DTilesTaskService(model3DTilesRepo, nil))
 	handler.SetModel3DQuickViewTaskService(service.NewModel3DQuickViewTaskService(model3DQuickViewRepo, nil))
+	handler.SetGaussianSplatQuickViewTaskService(service.NewGaussianSplatQuickViewTaskService(gaussianSplatQuickViewRepo, nil))
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -342,6 +361,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	router.GET("/raster_cog_tasks", handler.ListRasterCOGTasks)
 	router.GET("/model_3d_tiles_tasks", handler.ListModel3DTilesTasks)
 	router.GET("/model_3d_quick_view_tasks", handler.ListModel3DQuickViewTasks)
+	router.GET("/gaussian_splat_quick_view_tasks", handler.ListGaussianSplatQuickViewTasks)
 
 	assertListedTaskTypeValues(t, router, "/vector_tile_cache_tasks", []string{commonExecution.TaskTypeVectorTileCacheGeneration})
 	assertListedTaskTypeValues(t, router, "/embedding_tasks", []string{commonExecution.TaskTypeEmbedding})
@@ -349,6 +369,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	assertListedTaskTypeValues(t, router, "/raster_cog_tasks", []string{commonExecution.TaskTypeRasterCOGGeneration})
 	assertListedTaskTypeValues(t, router, "/model_3d_tiles_tasks", []string{commonExecution.TaskTypeModel3DTilesGeneration})
 	assertListedTaskTypeValues(t, router, "/model_3d_quick_view_tasks", []string{commonExecution.TaskTypeModel3DQuickViewGeneration})
+	assertListedTaskTypeValues(t, router, "/gaussian_splat_quick_view_tasks", []string{commonExecution.TaskTypeGaussianSplatQuickViewGeneration})
 }
 
 func TestCreateEmbeddingTaskRejectsLegacyTopLevelFields(t *testing.T) {
@@ -690,6 +711,25 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create model_3d_quick_view_tasks table: %v", err)
 	}
+	if err := db.Exec(`CREATE TABLE manager.gaussian_splat_quick_view_tasks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		name TEXT NOT NULL,
+		description TEXT,
+		enabled BOOLEAN,
+		last_execution_id TEXT,
+		last_execution_status TEXT,
+		last_run_at DATETIME,
+		next_run_at DATETIME,
+		schedule TEXT,
+		created_by INTEGER,
+		config JSON,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create gaussian_splat_quick_view_tasks table: %v", err)
+	}
 	if err := db.Exec(`CREATE TABLE manager.model_3d_quick_view (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
@@ -714,6 +754,31 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create model_3d_quick_view table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.gaussian_splat_quick_view (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		item_fingerprint TEXT NOT NULL,
+		item_id INTEGER,
+		locator TEXT,
+		task_id INTEGER,
+		last_execution_id TEXT,
+		source_engine_id INTEGER NOT NULL,
+		source_format TEXT NOT NULL,
+		source_size_bytes INTEGER,
+		storage_ref TEXT NOT NULL,
+		file_name TEXT,
+		size_bytes INTEGER,
+		content_url TEXT,
+		status TEXT NOT NULL,
+		metadata JSON,
+		error_message TEXT,
+		created_by INTEGER,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create gaussian_splat_quick_view table: %v", err)
 	}
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
 		t.Fatalf("attach common schema: %v", err)

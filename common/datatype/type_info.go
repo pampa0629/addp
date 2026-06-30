@@ -25,3 +25,6 @@ func (*Model3DInfo) TypeInfoDataType() DataType { return Model3D }
 
 // TypeInfoDataType reports that PointCloudInfo describes point cloud data.
 func (*PointCloudInfo) TypeInfoDataType() DataType { return PointCloud }
+
+// TypeInfoDataType reports that GaussianSplatInfo describes Gaussian splatting data.
+func (*GaussianSplatInfo) TypeInfoDataType() DataType { return GaussianSplat }

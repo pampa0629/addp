@@ -18,6 +18,7 @@ type CompositeItemInfo struct {
 	Container          *datatype.ContainerInfo
 	Model3D            *datatype.Model3DInfo
 	PointCloud         *datatype.PointCloudInfo
+	GaussianSplat      *datatype.GaussianSplatInfo
 	Attributes         map[string]interface{}
 	Layout             format.Layout
 	DataType           datatype.DataType
@@ -65,14 +66,15 @@ type ResolveOptions struct {
 // DetectedItem 是 Meta 识别后的标准化 data item 计划。
 type DetectedItem struct {
 	dataitem.ResolvedItem
-	PhysicalPath string
-	Fields       []datatype.FieldInfo
-	Document     *datatype.DocumentInfo
-	Media        *datatype.MediaInfo
-	Container    *datatype.ContainerInfo
-	Model3D      *datatype.Model3DInfo
-	PointCloud   *datatype.PointCloudInfo
-	Attributes   map[string]interface{}
+	PhysicalPath  string
+	Fields        []datatype.FieldInfo
+	Document      *datatype.DocumentInfo
+	Media         *datatype.MediaInfo
+	Container     *datatype.ContainerInfo
+	Model3D       *datatype.Model3DInfo
+	PointCloud    *datatype.PointCloudInfo
+	GaussianSplat *datatype.GaussianSplatInfo
+	Attributes    map[string]interface{}
 }
 
 func (item *DetectedItem) Size() int64 {
@@ -113,14 +115,15 @@ func DetectedItemFromCompositeInfo(info *CompositeItemInfo, physicalPath string,
 			SizeBytes:          &sizeBytes,
 			RefList:            ItemRefsFromPaths(info.RefFiles),
 		},
-		PhysicalPath: physicalPath,
-		Fields:       info.Fields,
-		Document:     info.Document.Clone(),
-		Media:        info.Media.Clone(),
-		Container:    info.Container.Clone(),
-		Model3D:      info.Model3D.Clone(),
-		PointCloud:   info.PointCloud.Clone(),
-		Attributes:   info.Attributes,
+		PhysicalPath:  physicalPath,
+		Fields:        info.Fields,
+		Document:      info.Document.Clone(),
+		Media:         info.Media.Clone(),
+		Container:     info.Container.Clone(),
+		Model3D:       info.Model3D.Clone(),
+		PointCloud:    info.PointCloud.Clone(),
+		GaussianSplat: info.GaussianSplat.Clone(),
+		Attributes:    info.Attributes,
 	}
 }
 

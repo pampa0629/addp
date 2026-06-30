@@ -105,6 +105,8 @@ func (h *Model3DQuickViewHandler) GetModel3DQuickViewContent(c *gin.Context) {
 
 	contentType := "model/gltf-binary"
 	c.Header("Content-Type", contentType)
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
 	c.Header("Accept-Ranges", "bytes")
 	c.Header("Content-Disposition", storageStreamContentDisposition(result.FileName, contentType))
 	c.Header("Content-Length", strconv.FormatInt(contentLength, 10))

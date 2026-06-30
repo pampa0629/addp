@@ -81,6 +81,13 @@ func ApplyPointCloudInfo(attrs models.JSONMap, item *DetectedItem, spatialInfo *
 	metaattr.MergeAttributeMaps(attrs, metaattr.PointCloudInfoAttributes(item.PointCloud, spatialInfo))
 }
 
+func ApplyGaussianSplatInfo(attrs models.JSONMap, item *DetectedItem, spatialInfo *datatype.SpatialInfo) {
+	if attrs == nil || item == nil || item.GaussianSplat == nil {
+		return
+	}
+	metaattr.MergeAttributeMaps(attrs, metaattr.GaussianSplatInfoAttributes(item.GaussianSplat, spatialInfo))
+}
+
 func ApplyContainerInfo(attrs models.JSONMap, item *DetectedItem) {
 	if attrs == nil || item == nil || item.Container == nil {
 		return

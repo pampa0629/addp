@@ -6,6 +6,7 @@
     "/plugins/unsupported-preview.js",
     "/plugins/map-preview.js",
     "/plugins/tiles-3d-preview.js",
+    "/plugins/gaussian-splat-preview.js",
     "/plugins/model-3d-preview.js",
     "/plugins/point-cloud-preview.js",
     "/plugins/image-preview.js",

@@ -18,6 +18,7 @@ import {
   VideoPlay, WarningFilled, ZoomIn, ZoomOut
 } from '@element-plus/icons-vue'
 import App from './App.vue'
+import GaussianSplatPreview from '@/components/explorer/GaussianSplatPreview.vue'
 import Model3DPreview from '@/components/explorer/Model3DPreview.vue'
 import PointCloudPreview from '@/components/explorer/PointCloudPreview.vue'
 import ThreeDTilesPreview from '@/components/explorer/ThreeDTilesPreview.vue'
@@ -95,6 +96,7 @@ if (typeof window !== 'undefined') {
     UnsupportedPreview,
     MarkdownPreview,
     VideoPreview,
+    GaussianSplatPreview,
     Model3DPreview,
     PointCloudPreview,
     ThreeDTilesPreview

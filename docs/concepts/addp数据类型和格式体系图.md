@@ -32,6 +32,7 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 | `graph` | 节点、边、关系结构的数据 | 图结构信息、关系查询、子图样本 |
 | `model_3d` | 三维空间对象、网格、场景、构件或倾斜摄影模型 | 模型结构信息、三维预览、空间定位、LOD 或构件摘要 |
 | `point_cloud` | 三维点集合及其点属性、空间范围和抽样结构 | 点云信息、抽样预览、空间定位、LOD / 分块读取 |
+| `gaussian_splat` | 三维高斯泼溅场景数据 | 高斯基元信息、高斯泼溅预览、压缩或派生 splat 产物 |
 | `unknown` | 暂未识别或暂不接入的数据 | 基础存储信息、原始内容或下载 |
 
 ### 当前支持汇总
@@ -47,8 +48,9 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 | `media` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 media catalog 引擎。 | 图片：`image`、`jpeg`、`png`、`gif`、`tiff`、`webp`、`bmp`、`svg`、`avif`、`heic`。栅格数据集：`raster_mosaic`。视频：`video`、`mp4`、`mov`、`mkv`、`avi`、`webm`。音频：`audio`、`mp3`、`wav`、`flac`、`aac`、`ogg`。ZIP 内部媒体文件可作为 container child 被识别。 | `jpeg`、`png`、`gif`、`tiff`、`image` 当前有图片媒体信息 provider；`raster_mosaic` 表示由 manifest、index、leaf COG 和 overview COG 组成的 whole-scope 栅格镶嵌数据集；其他媒体格式当前主要提供格式身份、MIME / 扩展名识别和 raw / range / stream 内容承载。 |
 | `container` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 container catalog 引擎；目录、prefix、bucket 只是 catalog / storage 形态，不是 `container` data type。 | `excel`、`sqlite`、`geopackage`、`zip`。 | 容器 item 先记录轻量 children；进入某个 child 后，再按 child 自身格式归一为 `table`、`document`、`media`、`unknown` 等类型。JSON 作为 container 仍是概念可表达方向，当前内置 JSON plugin 未提供容器信息 provider。 |
 | `graph` | 原生图引擎：Neo4j。 | 当前没有内置 graph 文件格式 descriptor。 | RDF、GraphML、GEXF、图结构 JSON 仍是概念层典型来源；进入内置主线前需要先补 format descriptor、provider 和扫描规则。 |
-| `model_3d` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生三维模型 catalog 引擎。 | 当前内置：`glb`、`osgb`、`osgb_scene`、`3dtiles`。后续扩展：`gltf`、`obj`、`stl`、`ifc`、`rvt`。 | GLB / glTF、单 OSGB、OSGB 倾斜摄影场景、3D Tiles、IFC / Revit BIM 都归入 `model_3d`；网格场景、倾斜摄影、BIM、分块场景等子形态由 `type_info.model_3d.model_kind` 表达，不新增平行 data type。OSGB scene 源 item 先做 Meta scan，预览通过转换后的 3D Tiles item 复用链路。 |
-| `point_cloud` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生点云 catalog 引擎。 | 当前内置：`las`。后续扩展：`laz`、`copc`、`pcd`、点云型 `ply`、`ept`、`potree`、`e57`。 | 点云即使可被展开为 x/y/z 等列，也不默认归为 `table`；点数、点格式、维度、三维包围盒、scale / offset 等进入 `type_info.point_cloud`，空间参考进入 `capabilities.spatial`。 |
+| `model_3d` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生三维模型 catalog 引擎。 | 当前内置：`glb`、`gltf`、`obj`、`stl`、`fbx`、网格型 `ply`、`osgb`、`osgb_scene`、`3dtiles`。后续扩展：`ifc`、`rvt`、`3mx`、`slpk`。 | GLB / glTF、OBJ / STL / FBX、PLY mesh、单 OSGB、OSGB 倾斜摄影场景、3D Tiles、IFC / Revit BIM 都归入 `model_3d`；网格场景、倾斜摄影、BIM、分块场景等子形态由 `type_info.model_3d.model_kind` 表达，不新增平行 data type。OSGB scene 源 item 先做 Meta scan，预览通过转换后的 3D Tiles item 复用链路；OBJ / FBX 可通过转换后的 GLB artifact 快显，STL 第一阶段只做 scan。 |
+| `point_cloud` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生点云 catalog 引擎。 | 当前内置：`las`、点云型 `ply`。后续扩展：`laz`、`copc`、`pcd`、`ept`、`potree`、`e57`。 | 点云即使可被展开为 x/y/z 等列，也不默认归为 `table`；点数、点格式、维度、三维包围盒、scale / offset 等进入 `type_info.point_cloud`，空间参考进入 `capabilities.spatial`。 |
+| `gaussian_splat` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生高斯泼溅 catalog 引擎。 | 当前内置：3DGS 型 `ply`、`.splat`、`.ksplat`。后续扩展：`.spz`。 | 高斯泼溅虽然通常由 PLY vertex 或 splat record 承载，但每条记录表示可渲染高斯基元，不是普通点云采样点；尺度、旋转、不透明度、球谐颜色等进入 `type_info.gaussian_splat`，格式私有事实进入 `format_info.<format>`。 |
 | `unknown` | 文件 / 对象承载：NFS、S3、MinIO；其他存储扫描中无法判断内容语义的叶子也可落为 `unknown`。 | `unknown`。 | `unknown` 是识别失败或暂未接入时的兜底格式 / 数据类型组合；它保留 storage、item 等基础事实和 raw binary 读取能力，不引入 `file` data type。 |
 
 ### table
@@ -165,6 +167,27 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 
 点云虽然可以被展开成 x/y/z、intensity、classification 等列，但用户和平台的主要消费方式是点云抽样、三维预览、空间范围、点属性、LOD 和分块读取，因此不应仅因“可列化”而归为 `table`。点属性摘要进入 `type_info.point_cloud` 或 `capabilities.statistics`；真实点样本、抽稀点集和可视化瓦片属于内容读取或 Manager 派生产物，不写入 attributes。
 
+### gaussian_splat
+
+`gaussian_splat` 是三维高斯泼溅型 data item 的通用数据类型。
+
+典型来源：
+
+- 3D Gaussian Splatting PLY。
+- `.splat`。
+- `.ksplat`。
+- `.spz`。
+
+高斯泼溅与普通点云的共同点是都可以由大量 vertex-like 记录组成；关键区别是高斯泼溅的每个记录不是采样点，而是带尺度、旋转、不透明度和视角相关颜色的可渲染高斯基元。因此它不能归入 `point_cloud`，也不应走 `model_3d` 的 mesh / GLB 转换路线。
+
+PLY 是内容敏感格式：同一个 `format=ply` 可以根据 header 分别落为三种 data type：
+
+- `element face` 数量大于 0：`data_type=model_3d`，`format=ply`，`format_info.ply.layout=mesh`。
+- 没有 face，且具备 `x/y/z`、`opacity`、`scale_0..2`、`rot_0..3`、`f_dc_0..2` 或颜色字段：`data_type=gaussian_splat`，`format=ply`，`format_info.ply.layout=gaussian_splat`。
+- 没有 face，且不满足高斯泼溅字段组合：`data_type=point_cloud`，`format=ply`，`format_info.ply.layout=point_cloud`。
+
+`.splat` 和 `.ksplat` 单文件按格式身份归为 `data_type=gaussian_splat`、`format=splat|ksplat`，复用高斯泼溅预览路线。
+
 ### unknown
 
 `unknown` 用于暂未识别或暂不接入的数据。
@@ -199,6 +222,11 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 - Excel = `data_type=container` + `layout=single` + `format=excel`。
 - Iceberg = `data_type=table` + `layout=whole` + `format=iceberg`。
 - GLB = `data_type=model_3d` + `layout=single` + `format=glb`。
+- glTF = `data_type=model_3d` + `layout=multi` + `format=gltf`，`.gltf` manifest 为 primary ref，`buffers[].uri` / `images[].uri` 中命中的本地相对资源作为 related refs。
+- OBJ / STL / FBX = `data_type=model_3d` + `layout=single` + 对应 `format`，普通单体网格语义由 `model_kind=mesh_scene` 表达；OBJ / FBX 可生成 GLB 快显，STL 第一阶段只做 scan。
+- PLY mesh = `data_type=model_3d` + `layout=single` + `format=ply`，由 `element face` 判定为网格模型。
+- PLY point cloud = `data_type=point_cloud` + `layout=single` + `format=ply`，没有 face 且不满足高斯泼溅字段组合。
+- PLY / SPLAT / KSPLAT Gaussian Splat = `data_type=gaussian_splat` + `layout=single` + `format=ply|splat|ksplat`，PLY 由 header 中的高斯基元属性判定，SPLAT / KSPLAT 由格式身份判定，均不转换为 GLB。
 - 3D Tiles = `data_type=model_3d` + `layout=whole` + `format=3dtiles`，`tileset.json` 作为 manifest ref，分块场景语义由 `model_kind=tiled_scene` 表达；1.0 / 1.1 版本差异写入 `format_info.3dtiles`，不拆分 data type。
 - OSGB = `data_type=model_3d` + `layout=single` + `format=osgb`，表示单个 `.osgb` 文件；浏览器快显通过转换后的 GLB artifact 实现。
 - OSGB Scene = `data_type=model_3d` + `layout=whole` + `format=osgb_scene`，表示由 `metadata.xml` 和 `Data/` 组织的一套倾斜摄影场景，倾斜摄影语义可由 `model_kind=photogrammetry_scene` 表达。
@@ -217,6 +245,7 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 | `graph` | node shapes、relationship shapes、连接模式、属性结构、节点数、关系数 |
 | `model_3d` | model_kind、mesh / node / material / texture / animation 数量、LOD 数量、三维包围盒、单位、up axis |
 | `point_cloud` | point_cloud_kind、点数、点格式、维度列表、三维包围盒、scale / offset、颜色 / intensity / classification 能力 |
+| `gaussian_splat` | representation、splat_count、opacity / scale / rotation / spherical harmonics 能力、三维包围盒 |
 
 这些 type info 是结构事实，不是内容数据，也不是格式私有信息。文档正文、表格样本、图片缩略图、原始二进制、视频流、图节点样本等必须通过 content reader、sample reader、query provider 或业务模块结果表达，不写入 `type_info`。
 

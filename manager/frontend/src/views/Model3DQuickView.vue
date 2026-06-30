@@ -110,6 +110,14 @@
                 </el-tag>
               </template>
             </el-table-column>
+            <el-table-column :label="t('manager.model3DQuickView.diagnostics')" width="170">
+              <template #default="{ row }">
+                <el-tag v-if="diagnosticSummary(row)" type="info" effect="plain">
+                  {{ diagnosticSummary(row) }}
+                </el-tag>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
             <el-table-column :label="t('manager.model3DQuickView.size')" width="120">
               <template #default="{ row }">{{ formatBytes(row.size_bytes) }}</template>
             </el-table-column>
@@ -117,11 +125,14 @@
             <el-table-column :label="t('manager.model3DQuickView.updatedAt')" width="170">
               <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
             </el-table-column>
-            <el-table-column :label="t('manager.model3DQuickView.actions')" width="280" fixed="right">
+            <el-table-column :label="t('manager.model3DQuickView.actions')" width="360" fixed="right">
               <template #default="{ row }">
                 <div class="row-actions">
                   <el-button size="small" :disabled="row.status !== 'ready' || !row.content_url" @click="openGLB(row)">
                     {{ t('manager.model3DQuickView.previewGLB') }}
+                  </el-button>
+                  <el-button size="small" :disabled="!hasDiagnostics(row)" @click="openDiagnostics(row)">
+                    {{ t('manager.model3DQuickView.diagnostics') }}
                   </el-button>
                   <el-button size="small" :disabled="!row.last_execution_id" @click="openResultExecution(row)">
                     {{ t('manager.model3DQuickView.monitor') }}
@@ -204,6 +215,49 @@
         <el-button type="primary" :loading="saving" @click="saveTask">{{ t('manager.model3DQuickView.save') }}</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="diagnosticsDialogVisible"
+      :title="t('manager.model3DQuickView.diagnosticsTitle')"
+      width="760px"
+      destroy-on-close
+    >
+      <template v-if="selectedDiagnosticResult">
+        <el-descriptions :column="2" border size="small">
+          <el-descriptions-item :label="t('manager.model3DQuickView.sourceFormat')">
+            {{ diagnosticValue(diagnosticSourceFormat(selectedDiagnosticResult)) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('manager.model3DQuickView.converter')">
+            {{ diagnosticValue(glbFacts(selectedDiagnosticResult).converter) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('manager.model3DQuickView.workflowOperator')">
+            {{ diagnosticValue(workflowRuntime(selectedDiagnosticResult).operator) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('manager.model3DQuickView.workflowExecutionTime')">
+            {{ diagnosticExecutionTime(selectedDiagnosticResult) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('manager.model3DQuickView.glbRef')">
+            {{ diagnosticValue(glbFacts(selectedDiagnosticResult).glb_ref || artifactFacts(selectedDiagnosticResult).object) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('manager.model3DQuickView.materialCount')">
+            {{ diagnosticValue(postprocessFacts(selectedDiagnosticResult).material_count) }}
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <div class="diagnostics-section">
+          <div class="diagnostics-section-title">{{ t('manager.model3DQuickView.postprocess') }}</div>
+          <el-tag v-if="materialAlphaNormalized(selectedDiagnosticResult)" type="success" effect="plain">
+            {{ t('manager.model3DQuickView.materialAlphaNormalized') }}
+          </el-tag>
+          <span v-else class="diagnostics-muted">{{ t('manager.model3DQuickView.diagnosticsNone') }}</span>
+        </div>
+
+        <div v-if="diagnosticCommand(selectedDiagnosticResult)" class="diagnostics-section">
+          <div class="diagnostics-section-title">{{ t('manager.model3DQuickView.command') }}</div>
+          <pre class="diagnostics-command">{{ diagnosticCommand(selectedDiagnosticResult) }}</pre>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -239,6 +293,8 @@ const editingTask = ref(null)
 const saving = ref(false)
 const sourceSelection = ref(null)
 const sourceInitialLocator = ref('')
+const diagnosticsDialogVisible = ref(false)
+const selectedDiagnosticResult = ref(null)
 const resultStatuses = ['building', 'ready', 'failed', 'deleted']
 const resultFilters = reactive({ task_id: undefined, status: '', q: '' })
 
@@ -290,6 +346,8 @@ const unwrapList = (response) => {
   return { items, total: Number(payload?.total || items.length || 0) }
 }
 
+const unwrapPayload = (response) => response?.data?.data || response?.data || response || {}
+
 const source = (task) => task?.source || task?.config?.source || {}
 
 const lastExecutionStatus = (task) => String(task?.last_execution_status || task?.lastExecutionStatus || '').trim()
@@ -313,6 +371,40 @@ const resultStatusTagType = (status) => {
 }
 
 const resultStatusLabel = (status) => status || '-'
+const objectValue = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+const resultMetadata = (result) => objectValue(result?.metadata)
+const glbFacts = (result) => objectValue(resultMetadata(result).glb_facts)
+const postprocessFacts = (result) => objectValue(glbFacts(result).postprocess)
+const workflowRuntime = (result) => objectValue(resultMetadata(result).workflow_runtime)
+const sourceFacts = (result) => objectValue(resultMetadata(result).source)
+const artifactFacts = (result) => objectValue(resultMetadata(result).artifact)
+const materialAlphaNormalized = (result) => postprocessFacts(result).obj_textured_material_alpha === 'normalized_to_opaque'
+const diagnosticSourceFormat = (result) => glbFacts(result).source_format || sourceFacts(result).format || result?.source_format || ''
+const hasDiagnostics = (result) => {
+  return Object.keys(glbFacts(result)).length > 0 ||
+    Object.keys(workflowRuntime(result)).length > 0 ||
+    Object.keys(artifactFacts(result)).length > 0
+}
+const diagnosticSummary = (result) => {
+  if (materialAlphaNormalized(result)) return t('manager.model3DQuickView.materialAlphaNormalizedShort')
+  if (hasDiagnostics(result)) return t('manager.model3DQuickView.diagnosticsAvailable')
+  return ''
+}
+const diagnosticValue = (value) => {
+  if (value === undefined || value === null || value === '') return '-'
+  return String(value)
+}
+const diagnosticExecutionTime = (result) => {
+  const value = workflowRuntime(result).execution_time_ms
+  const numberValue = Number(value)
+  if (!Number.isFinite(numberValue) || numberValue <= 0) return '-'
+  return t('manager.model3DQuickView.executionTimeMs', { ms: numberValue })
+}
+const diagnosticCommand = (result) => {
+  const command = glbFacts(result).command
+  if (!Array.isArray(command) || command.length === 0) return ''
+  return command.map((part) => String(part)).join(' ')
+}
 const sourceFactText = (value) => {
   const text = String(value || '').trim()
   if (!text) return '-'
@@ -476,7 +568,7 @@ const taskPayload = (validated) => ({
       source_engine_id: validated.sourceEngineID,
       item_fingerprint: String(form.source.item_fingerprint || '').trim(),
       item_id: Number(form.source.item_id || 0),
-      format: 'osgb',
+      format: model3DQuickViewSourceFormat(form.source.format),
       source_size_bytes: Number(form.source.source_size_bytes || 0)
     },
     result: {
@@ -484,6 +576,11 @@ const taskPayload = (validated) => ({
     }
   }
 })
+
+const model3DQuickViewSourceFormat = (value) => {
+  const sourceFormat = String(value || '').trim().toLowerCase()
+  return ['osgb', 'gltf', 'fbx', 'obj'].includes(sourceFormat) ? sourceFormat : 'osgb'
+}
 
 const saveTask = async () => {
   const validated = validateForm()
@@ -536,6 +633,9 @@ const clearResultTaskFilter = async () => {
   selectedResultTask.value = null
   resultFilters.task_id = undefined
   resultsPage.value = 1
+  const nextQuery = { ...route.query }
+  delete nextQuery.task_id
+  await router.replace({ query: nextQuery })
   await loadResults()
 }
 
@@ -566,9 +666,36 @@ const deleteResult = async (result) => {
 const openTaskExecution = (task) => openMonitorExecution(task.last_execution_id)
 const openResultExecution = (result) => openMonitorExecution(result.last_execution_id)
 
+const openDiagnostics = (result) => {
+  selectedDiagnosticResult.value = result
+  diagnosticsDialogVisible.value = true
+}
+
 const openGLB = (result) => {
   if (result?.content_url) {
     window.open(result.content_url, '_blank', 'noopener')
+  }
+}
+
+const openTaskFromQuery = async () => {
+  const taskID = Number(route.query.task_id || 0)
+  if (!taskID || activeTab.value === 'results') return
+  try {
+    const response = await quickViewAPI.getModel3DQuickViewTask(taskID)
+    editTask(unwrapPayload(response))
+  } catch (error) {
+    ElMessage.error(errorMessage(error, t('manager.model3DQuickView.loadTaskFailed')))
+  }
+}
+
+const loadResultTaskFilterFromRoute = async () => {
+  const taskID = Number(route.query.task_id || 0)
+  if (!taskID) return
+  resultFilters.task_id = taskID
+  try {
+    selectedResultTask.value = unwrapPayload(await quickViewAPI.getModel3DQuickViewTask(taskID))
+  } catch {
+    selectedResultTask.value = null
   }
 }
 
@@ -582,13 +709,15 @@ watch(
 )
 
 onMounted(async () => {
-  if (route.query.task_id) {
-    resultFilters.task_id = Number(route.query.task_id)
+  if (activeTab.value === 'results') {
+    await loadResultTaskFilterFromRoute()
   }
   await Promise.all([loadTasks(), loadResults()])
   if (route.query.create === '1') {
     await openCreateDialog()
+    return
   }
+  await openTaskFromQuery()
 })
 </script>
 
@@ -657,6 +786,34 @@ onMounted(async () => {
 
 .source-facts {
   margin: 16px 0 18px;
+}
+
+.diagnostics-section {
+  margin-top: 16px;
+}
+
+.diagnostics-section-title {
+  margin-bottom: 8px;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.diagnostics-muted {
+  color: var(--el-text-color-secondary);
+}
+
+.diagnostics-command {
+  max-height: 160px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  color: var(--el-text-color-primary);
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 @media (max-width: 768px) {

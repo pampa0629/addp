@@ -11,6 +11,8 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 )
@@ -340,6 +342,155 @@ func TestFileCatalogOSGBPreviewSuggestsQuickViewTaskWhenMissing(t *testing.T) {
 	}
 }
 
+func TestModel3DQuickViewSourceFormatSupportsSingleFBX(t *testing.T) {
+	got := model3DQuickViewSourceFormat(map[string]interface{}{
+		"item": map[string]interface{}{
+			"data_type": "model_3d",
+			"format":    string(format.FormatFBX),
+			"layout":    "single",
+		},
+	})
+	if got != format.FormatFBX {
+		t.Fatalf("model3DQuickViewSourceFormat() = %q, want %q", got, format.FormatFBX)
+	}
+}
+
+func TestModel3DQuickViewSourceFormatSupportsSingleOBJ(t *testing.T) {
+	got := model3DQuickViewSourceFormat(map[string]interface{}{
+		"item": map[string]interface{}{
+			"data_type": "model_3d",
+			"format":    string(format.FormatOBJ),
+			"layout":    "single",
+		},
+	})
+	if got != format.FormatOBJ {
+		t.Fatalf("model3DQuickViewSourceFormat() = %q, want %q", got, format.FormatOBJ)
+	}
+}
+
+func TestModel3DQuickViewSourceFormatRejectsUnsupportedSingleSTL(t *testing.T) {
+	got := model3DQuickViewSourceFormat(map[string]interface{}{
+		"item": map[string]interface{}{
+			"data_type": "model_3d",
+			"format":    string(format.FormatSTL),
+			"layout":    "single",
+		},
+	})
+	if got != format.FormatUnknown {
+		t.Fatalf("model3DQuickViewSourceFormat() = %q, want unknown", got)
+	}
+}
+
+func TestFileCatalogGLTFPreviewUsesReadyGLBQuickView(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingFileCatalogPreviewPlugin{
+		engineType:   "nfs",
+		contentType:  "model/gltf+json",
+		sizeBytes:    4096,
+		expectedPath: "/models/scene.gltf",
+	}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	lookup := &recordingModel3DQuickViewLookup{
+		result: &models.Model3DQuickView{
+			ID:         89,
+			FileName:   "scene.glb",
+			SizeBytes:  2048,
+			ContentURL: "/api/v1/manager/model_3d_quick_view/89/content",
+		},
+	}
+	contentRegistry := objectcontent.NewObjectContentRegistry()
+	objectcontent.LoadObjectContentPlugins(contentRegistry, "../../plugins")
+	provider := NewFileCatalogPreviewProvider(nil, contentRegistry, lookup)
+
+	preview, err := provider.Preview(context.Background(), &PreviewRequest{
+		Engine:          &models.Engine{EngineType: "nfs", ID: 26},
+		Schema:          "models",
+		Table:           "scene.gltf",
+		TenantID:        uintPtr(1),
+		ItemFingerprint: "fp-gltf",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "model_3d",
+				"format":    "gltf",
+				"layout":    "multi",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if lookup.calls != 1 || lookup.tenantID != 1 || lookup.fingerprint != "fp-gltf" {
+		t.Fatalf("lookup = %#v, want tenant/fingerprint lookup", lookup)
+	}
+	content := preview.Object.Content
+	if content == nil || content.Kind != models.ObjectPreviewKindModel3D || content.URL != "/api/v1/manager/model_3d_quick_view/89/content" {
+		t.Fatalf("content = %#v, want GLB quick view URL", content)
+	}
+	if content.Metadata["source_format"] != "gltf" {
+		t.Fatalf("metadata source_format = %#v, want gltf", content.Metadata["source_format"])
+	}
+	if enginePlugin.openContentCalls != 0 {
+		t.Fatalf("OpenContent calls = %d, want 0 when glTF preview uses GLB quick view artifact", enginePlugin.openContentCalls)
+	}
+}
+
+func TestFileCatalogGLTFPreviewSuggestsQuickViewTaskWhenMissing(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingFileCatalogPreviewPlugin{
+		engineType:   "nfs",
+		contentType:  "model/gltf+json",
+		sizeBytes:    4096,
+		expectedPath: "/models/scene.gltf",
+	}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	lookup := &recordingModel3DQuickViewLookup{}
+	provider := NewFileCatalogPreviewProvider(nil, objectcontent.NewObjectContentRegistry(), lookup)
+
+	preview, err := provider.Preview(context.Background(), &PreviewRequest{
+		Engine:          &models.Engine{EngineType: "nfs", ID: 26},
+		Schema:          "models",
+		Table:           "scene.gltf",
+		TenantID:        uintPtr(1),
+		ItemFingerprint: "fp-gltf",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "model_3d",
+				"format":    "gltf",
+				"layout":    "multi",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	content := preview.Object.Content
+	if content == nil || content.Kind != models.ObjectPreviewKindUnsupported || content.PreviewMaterial != models.PreviewMaterialUnsupported {
+		t.Fatalf("content = %#v, want unsupported quick view prompt", content)
+	}
+	if content.Metadata["task_type"] != commonExecution.TaskTypeModel3DQuickViewGeneration {
+		t.Fatalf("metadata task_type = %#v, want quick view task type", content.Metadata["task_type"])
+	}
+	if content.Metadata["source_format"] != "gltf" {
+		t.Fatalf("metadata source_format = %#v, want gltf", content.Metadata["source_format"])
+	}
+}
+
 func TestFileCatalogOSGBScenePreviewSuggests3DTilesTask(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingFileCatalogPreviewPlugin{engineType: "nfs"}
@@ -549,6 +700,66 @@ func TestFileCatalogLASPreviewReturnsPointCloudJSON(t *testing.T) {
 	}
 	if enginePlugin.openContentCalls == 0 {
 		t.Fatal("OpenContent calls = 0, want stream read for LAS preview")
+	}
+}
+
+func TestFileCatalogGaussianSplatPLYPreviewReturnsURL(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingFileCatalogPreviewPlugin{
+		engineType:   "nfs",
+		contentType:  "application/octet-stream",
+		sizeBytes:    4096,
+		expectedPath: "/3d/gaussian/model.ply",
+	}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	contentRegistry := objectcontent.NewObjectContentRegistry()
+	objectcontent.LoadObjectContentPlugins(contentRegistry, "../../plugins")
+	provider := NewFileCatalogPreviewProvider(nil, contentRegistry)
+
+	preview, err := provider.Preview(context.Background(), &PreviewRequest{
+		Engine: &models.Engine{EngineType: "nfs", ID: 26},
+		Schema: "3d/gaussian",
+		Table:  "model.ply",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "gaussian_splat",
+				"format":    "ply",
+				"layout":    "single",
+			},
+			"type_info": map[string]interface{}{
+				"gaussian_splat": map[string]interface{}{
+					"splat_count": int64(128),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Object == nil || preview.Object.Content == nil {
+		t.Fatalf("object content missing: %#v", preview)
+	}
+	content := preview.Object.Content
+	if content.Kind != models.ObjectPreviewKindGaussianSplat || content.PreviewMaterial != models.PreviewMaterialURL || content.FrontendRenderer != models.ObjectPreviewKindGaussianSplat {
+		t.Fatalf("content = %#v, want gaussian_splat URL preview", content)
+	}
+	if content.URL == "" || !strings.Contains(content.URL, "storage_ref=3d%2Fgaussian%2Fmodel.ply") {
+		t.Fatalf("content URL = %q, want storage stream URL", content.URL)
+	}
+	gaussianInfo := commonJSON.Section(content.Metadata, "gaussian_splat")
+	if commonJSON.InterfaceInt64(gaussianInfo["splat_count"]) != 128 {
+		t.Fatalf("metadata.gaussian_splat = %#v, want splat_count", gaussianInfo)
+	}
+	if enginePlugin.openContentCalls != 0 {
+		t.Fatalf("OpenContent calls = %d, want 0 for URL-based gaussian splat preview", enginePlugin.openContentCalls)
 	}
 }
 

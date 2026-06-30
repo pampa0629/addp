@@ -59,6 +59,12 @@ func TestDescriptorsKeepOnlyStaticFactsForBuiltinFormats(t *testing.T) {
 		{FormatPNG, datatype.Media, LayoutSingle},
 		{FormatExcel, datatype.Container, LayoutSingle},
 		{FormatSQLite, datatype.Container, LayoutSingle},
+		{FormatOBJ, datatype.Model3D, LayoutSingle},
+		{FormatSTL, datatype.Model3D, LayoutSingle},
+		{FormatFBX, datatype.Model3D, LayoutSingle},
+		{FormatPLY, datatype.Model3D, LayoutSingle},
+		{FormatSplat, datatype.GaussianSplat, LayoutSingle},
+		{FormatKSplat, datatype.GaussianSplat, LayoutSingle},
 	}
 
 	for _, tt := range tests {

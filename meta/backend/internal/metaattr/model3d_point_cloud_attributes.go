@@ -26,3 +26,14 @@ func PointCloudInfoAttributes(pointCloudInfo *datatype.PointCloudInfo, spatialIn
 	}
 	return attrs
 }
+
+func GaussianSplatInfoAttributes(gaussianSplatInfo *datatype.GaussianSplatInfo, spatialInfo *datatype.SpatialInfo) models.JSONMap {
+	attrs := models.JSONMap{}
+	if gaussianPayload := datatype.GaussianSplatInfoPayload(gaussianSplatInfo); len(gaussianPayload) > 0 {
+		UpsertNested(attrs, "type_info", "gaussian_splat", gaussianPayload)
+	}
+	if spatialPayload := datatype.SpatialInfoPayload(spatialInfo); len(spatialPayload) > 0 {
+		UpsertNested(attrs, "capabilities", "spatial", spatialPayload)
+	}
+	return attrs
+}

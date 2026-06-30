@@ -280,6 +280,84 @@ whole scope 的 `refs` 与 `claims` 必须分工明确：
 3. 单 OSGB item 不独占父目录，`readme.txt` 可继续按普通 single resource 识别。
 4. Manager 快显应通过 `model_3d_quick_view_generation` 生成 GLB artifact，不要求前端直接解析 OSGB。
 
+## glTF multi 校准用例
+
+目录：
+
+```text
+/models/building/
+  scene.gltf
+  buffers/geometry.bin
+  textures/baseColor.png
+  textures/normal.ktx2
+  readme.txt
+```
+
+`scene.gltf`：
+
+```json
+{
+  "asset": {"version": "2.0", "generator": "ADDP test"},
+  "scene": 0,
+  "scenes": [{"nodes": [0]}],
+  "nodes": [{"mesh": 0}],
+  "meshes": [{
+    "primitives": [{
+      "attributes": {"POSITION": 0},
+      "indices": 1
+    }]
+  }],
+  "accessors": [
+    {"count": 8, "type": "VEC3", "min": [0, 0, 0], "max": [1, 2, 3]},
+    {"count": 12, "type": "SCALAR"}
+  ],
+  "buffers": [{"uri": "buffers/geometry.bin", "byteLength": 256}],
+  "images": [
+    {"uri": "textures/baseColor.png"},
+    {"uri": "textures/normal.ktx2"}
+  ],
+  "materials": [{}],
+  "textures": [{}, {}],
+  "extensionsUsed": ["KHR_texture_basisu"]
+}
+```
+
+期望：
+
+1. `scene.gltf`、`buffers/geometry.bin`、两张纹理生成一个 `data_type=model_3d`、`layout=multi`、`format=gltf` item。
+2. 该 item 的 `meta_item.full_name` 来源于 `/models/building/scene.gltf`。
+3. `item.refs` 记录 `.gltf` manifest、buffer 和 image resources；manifest 的 `role=manifest` 且 `primary=true`。
+4. 四个 glTF 相关资源进入 claims，`readme.txt` 仍按普通 single resource 识别。
+5. `type_info.model_3d.model_kind=mesh_scene`，顶点、三角面和三维包围盒来自 glTF accessors。
+6. `format_info.gltf` 记录 glTF 版本、generator、scene / buffer / image / accessor 数量和 extensions 摘要；资源路径不写入 `format_info.gltf`。
+7. 如果 manifest 中任一本地相对 URI 缺失，或 `scene.gltf` 不是合法 glTF manifest，则不得生成 glTF item，也不得用同 basename 文件猜测补全。
+8. `data:` URI 和外部 URL 不生成本地 ref；是否允许直接预览由 Manager 内容代理或后续快显任务决定，不改变 Meta item 边界。
+
+## OBJ / STL / FBX 单体网格校准用例
+
+目录：
+
+```text
+/models/mesh/
+  tower.obj
+  tower.mtl
+  tower.stl
+  machine.fbx
+  readme.txt
+```
+
+期望：
+
+1. `tower.obj` 生成一个 `data_type=model_3d`、`layout=single`、`format=obj` item，`meta_item.full_name` 来源于 `/models/mesh/tower.obj`。
+2. `tower.stl` 生成一个 `data_type=model_3d`、`layout=single`、`format=stl` item，`meta_item.full_name` 来源于 `/models/mesh/tower.stl`。
+3. `machine.fbx` 生成一个 `data_type=model_3d`、`layout=single`、`format=fbx` item，`meta_item.full_name` 来源于 `/models/mesh/machine.fbx`。
+4. 三者的 `type_info.model_3d.model_kind` 均为 `mesh_scene`；只能写入扫描可稳定确认的 mesh、顶点、三角面、包围盒等跨格式摘要。
+5. OBJ 文本中的 object / group / `mtllib` / `usemtl` 摘要进入 `format_info.obj`；P3BJet 等导出器写在注释头部的 `BoundingBox(...)`、`Vertices:`、`Faces:` 可以作为声明摘要进入 `type_info.model_3d` 和 `format_info.obj.declared_*`；超大 OBJ 超过扫描预算时不得失败，应写入 `format_info.obj.scan_complete=false`。
+6. STL 的 ASCII / binary 编码、顶点数、三角面数进入 `format_info.stl`；超大 ASCII / binary STL 超过扫描预算时不得失败，应写入 `format_info.stl.scan_complete=false`；不得臆造材质、纹理或业务语义。
+7. FBX 的 binary / ASCII 编码事实进入 `format_info.fbx`；不解析 proprietary scene graph 时不得臆造节点、材质、动画等细节。
+8. Manager 对 `format=obj` 和 `format=fbx` 暴露 `model_3d_quick_view_generation` GLB 快显任务入口；STL 第一阶段只支持 scan 和属性展示，不暴露 STL 转 GLB 任务入口。
+9. `tower.mtl`、未被明确规范认领的纹理和 `readme.txt` 仍按普通 single resource 识别或进入对应格式规则；OBJ / STL / FBX 单体 item 不独占父目录。
+
 ## TIFF / GeoTIFF 校准用例
 
 TIFF / GeoTIFF 的主资源是 `.tif` 或 `.tiff`。当同 basename 存在空间辅助文件时，应按 sibling multi-resource 归并为同一个 data item，而不是把 `.tfw`、`.hdr`、`.aux.xml`、`.ovr` 等分别落成独立空间 item。

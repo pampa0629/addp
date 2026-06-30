@@ -51,7 +51,7 @@ FROM debian:bookworm-slim AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libgl1 libglu1-mesa libx11-6 libxrandr2 libxi6 libxxf86vm1 \
+    ca-certificates assimp-utils libgl1 libglu1-mesa libx11-6 libxrandr2 libxi6 libxxf86vm1 \
   && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /opt/addp/model3d-workflow/bin

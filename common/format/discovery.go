@@ -9,30 +9,31 @@ type FormatCapabilitySnapshot struct {
 }
 
 type FormatImplementationSnapshot struct {
-	FormatPlugin             bool `json:"format_plugin,omitempty"`
-	FormatDescriptorProvider bool `json:"format_descriptor_provider,omitempty"`
-	FormatInfoProvider       bool `json:"format_info_provider,omitempty"`
-	TableInfoProvider        bool `json:"table_info_provider,omitempty"`
-	TableSampleReader        bool `json:"table_sample_reader,omitempty"`
-	MultiTableInfoProvider   bool `json:"multi_table_info_provider,omitempty"`
-	MultiTableSampleReader   bool `json:"multi_table_sample_reader,omitempty"`
-	ScopeTableInfoProvider   bool `json:"scope_table_info_provider,omitempty"`
-	ScopeTableSampleReader   bool `json:"scope_table_sample_reader,omitempty"`
-	ScopeTableReader         bool `json:"scope_table_reader_provider,omitempty"`
-	TableReaderProvider      bool `json:"table_reader_provider,omitempty"`
-	MultiTableReader         bool `json:"multi_table_reader_provider,omitempty"`
-	TableWriterProvider      bool `json:"table_writer_provider,omitempty"`
-	MultiTableWriter         bool `json:"multi_table_writer_provider,omitempty"`
-	DocumentInfoProvider     bool `json:"document_info_provider,omitempty"`
-	DocumentTextReader       bool `json:"document_text_reader,omitempty"`
-	BinaryContentReader      bool `json:"binary_content_reader,omitempty"`
-	MediaInfoProvider        bool `json:"media_info_provider,omitempty"`
-	Model3DInfoProvider      bool `json:"model_3d_info_provider,omitempty"`
-	ScopeModel3DInfoProvider bool `json:"scope_model_3d_info_provider,omitempty"`
-	PointCloudInfoProvider   bool `json:"point_cloud_info_provider,omitempty"`
-	ContainerInfoProvider    bool `json:"container_info_provider,omitempty"`
-	ContainerChildResolver   bool `json:"container_child_resolver,omitempty"`
-	AccessIndexProvider      bool `json:"access_index_provider,omitempty"`
+	FormatPlugin              bool `json:"format_plugin,omitempty"`
+	FormatDescriptorProvider  bool `json:"format_descriptor_provider,omitempty"`
+	FormatInfoProvider        bool `json:"format_info_provider,omitempty"`
+	TableInfoProvider         bool `json:"table_info_provider,omitempty"`
+	TableSampleReader         bool `json:"table_sample_reader,omitempty"`
+	MultiTableInfoProvider    bool `json:"multi_table_info_provider,omitempty"`
+	MultiTableSampleReader    bool `json:"multi_table_sample_reader,omitempty"`
+	ScopeTableInfoProvider    bool `json:"scope_table_info_provider,omitempty"`
+	ScopeTableSampleReader    bool `json:"scope_table_sample_reader,omitempty"`
+	ScopeTableReader          bool `json:"scope_table_reader_provider,omitempty"`
+	TableReaderProvider       bool `json:"table_reader_provider,omitempty"`
+	MultiTableReader          bool `json:"multi_table_reader_provider,omitempty"`
+	TableWriterProvider       bool `json:"table_writer_provider,omitempty"`
+	MultiTableWriter          bool `json:"multi_table_writer_provider,omitempty"`
+	DocumentInfoProvider      bool `json:"document_info_provider,omitempty"`
+	DocumentTextReader        bool `json:"document_text_reader,omitempty"`
+	BinaryContentReader       bool `json:"binary_content_reader,omitempty"`
+	MediaInfoProvider         bool `json:"media_info_provider,omitempty"`
+	Model3DInfoProvider       bool `json:"model_3d_info_provider,omitempty"`
+	ScopeModel3DInfoProvider  bool `json:"scope_model_3d_info_provider,omitempty"`
+	PointCloudInfoProvider    bool `json:"point_cloud_info_provider,omitempty"`
+	GaussianSplatInfoProvider bool `json:"gaussian_splat_info_provider,omitempty"`
+	ContainerInfoProvider     bool `json:"container_info_provider,omitempty"`
+	ContainerChildResolver    bool `json:"container_child_resolver,omitempty"`
+	AccessIndexProvider       bool `json:"access_index_provider,omitempty"`
 }
 
 func ListFormatCapabilitySnapshots() []FormatCapabilitySnapshot {
@@ -90,6 +91,7 @@ func implementationSnapshotForFormat(formatType FormatType) FormatImplementation
 	_, status.Model3DInfoProvider = plugin.(Model3DInfoProvider)
 	_, status.ScopeModel3DInfoProvider = plugin.(ScopeModel3DInfoProvider)
 	_, status.PointCloudInfoProvider = plugin.(PointCloudInfoProvider)
+	_, status.GaussianSplatInfoProvider = plugin.(GaussianSplatInfoProvider)
 	_, status.ContainerInfoProvider = plugin.(ContainerInfoProvider)
 	_, status.ContainerChildResolver = plugin.(ContainerChildResolver)
 	if provider, ok := plugin.(AccessIndexProvider); ok {

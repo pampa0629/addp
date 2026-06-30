@@ -7,6 +7,7 @@ FROM ${PYTHON_IMAGE}
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV MODEL3D_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/_3dtile
+ENV MODEL3D_MESH_CONVERTER_BIN=/usr/bin/assimp
 ENV GDAL_DATA=/opt/addp/model3d-workflow/bin/gdal
 ENV PROJ_DATA=/opt/addp/model3d-workflow/bin/proj
 ENV OSG_LIBRARY_PATH=/opt/addp/model3d-workflow/bin/osgPlugins-3.6.5
@@ -15,7 +16,7 @@ ENV PORT=8101
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libgl1 libglu1-mesa libx11-6 libxrandr2 libxi6 libxxf86vm1 \
+    ca-certificates assimp-utils libgl1 libglu1-mesa libx11-6 libxrandr2 libxi6 libxxf86vm1 \
   && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /app/requirements.txt

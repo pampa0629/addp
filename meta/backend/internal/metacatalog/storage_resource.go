@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/metaitem"
@@ -32,6 +33,9 @@ func StorageFileRefFromEntry(node plugin.CatalogEntry) (metaitem.StorageFileRef,
 	if node.Role != plugin.CatalogRoleLeaf {
 		return metaitem.StorageFileRef{}, false
 	}
+	if IgnoreSystemCatalogEntry(node) {
+		return metaitem.StorageFileRef{}, false
+	}
 	return metaitem.StorageFileRef{
 		Name:        node.Name,
 		Path:        catalogEntryStoragePath(node),
@@ -46,11 +50,19 @@ func StorageDirectoryRefFromEntry(node plugin.CatalogEntry) (metaitem.StorageDir
 	if node.Role != plugin.CatalogRoleBranch {
 		return metaitem.StorageDirectoryRef{}, false
 	}
+	if IgnoreSystemCatalogEntry(node) {
+		return metaitem.StorageDirectoryRef{}, false
+	}
 	return metaitem.StorageDirectoryRef{
 		Name:        node.Name,
 		Path:        catalogEntryStoragePath(node),
 		CatalogPath: node.Path,
 	}, true
+}
+
+func IgnoreSystemCatalogEntry(node plugin.CatalogEntry) bool {
+	ignore, _ := dataitem.IgnoreSystemEntry(node.Name, catalogEntryStoragePath(node))
+	return ignore
 }
 
 func ObjectStorageResourceFromNode(bucket string, node plugin.CatalogEntry) StorageResource {

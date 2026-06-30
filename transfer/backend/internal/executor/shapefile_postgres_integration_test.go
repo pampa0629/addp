@@ -18,6 +18,7 @@ import (
 	"github.com/addp/common/format"
 	geojsonformat "github.com/addp/common/format/plugins/geojson"
 	shapefileformat "github.com/addp/common/format/plugins/shapefile"
+	"github.com/addp/transfer/internal/testpg"
 	"github.com/jonas-p/go-shp"
 	_ "github.com/lib/pq"
 )
@@ -30,20 +31,9 @@ func TestIntegrationShapefileToPostgresWritesEWKBGeometry(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	connInfo := integrationPostgresConnInfo()
+	connInfo := integrationPostgresConnInfo(t)
 	pg := &postgresql.PostgreSQLPlugin{}
-	connStr, err := pg.BuildDSN(connInfo)
-	if err != nil {
-		t.Fatalf("BuildDSN failed: %v", err)
-	}
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		t.Fatalf("open postgres failed: %v", err)
-	}
-	defer db.Close()
-	if _, err := db.ExecContext(ctx, "SELECT postgis_version()"); err != nil {
-		t.Skipf("PostGIS is not available: %v", err)
-	}
+	db := openIntegrationPostgres(t, ctx, pg, connInfo)
 
 	source := &fakeContentWriter{files: map[string][]byte{}}
 	shapefilePlugin := shapefileformat.NewPlugin(nil)
@@ -154,10 +144,9 @@ func TestIntegrationShapefilePointZToPostgresPreservesZ(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	connInfo := integrationPostgresConnInfo()
+	connInfo := integrationPostgresConnInfo(t)
 	pg := &postgresql.PostgreSQLPlugin{}
 	db := openIntegrationPostgres(t, ctx, pg, connInfo)
-	defer db.Close()
 
 	schemaName, tableName := runShapefileZToPostgres(t, ctx, db, pg, connInfo, "cities_z", shp.POINTZ, &shp.PointZ{X: 120, Y: 30, Z: 99.5, M: 0})
 
@@ -191,10 +180,9 @@ func TestIntegrationShapefileComplexZToPostgresPreservesZ(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	connInfo := integrationPostgresConnInfo()
+	connInfo := integrationPostgresConnInfo(t)
 	pg := &postgresql.PostgreSQLPlugin{}
 	db := openIntegrationPostgres(t, ctx, pg, connInfo)
-	defer db.Close()
 
 	tests := []struct {
 		name           string
@@ -286,10 +274,9 @@ func TestIntegrationPostgresSpatialTableToShapefilePreservesSpatialMetadata(t *t
 	}
 
 	ctx := context.Background()
-	connInfo := integrationPostgresConnInfo()
+	connInfo := integrationPostgresConnInfo(t)
 	pg := &postgresql.PostgreSQLPlugin{}
 	db := openIntegrationPostgres(t, ctx, pg, connInfo)
-	defer db.Close()
 
 	schemaName := integrationPostgresTestSchema(t, ctx, db)
 	tableName := fmt.Sprintf("pg_to_shp_%d", time.Now().UnixNano())
@@ -384,10 +371,9 @@ func TestIntegrationPostgresSpatialTableToGeoJSONTransformsTo4326(t *testing.T) 
 	}
 
 	ctx := context.Background()
-	connInfo := integrationPostgresConnInfo()
+	connInfo := integrationPostgresConnInfo(t)
 	pg := &postgresql.PostgreSQLPlugin{}
 	db := openIntegrationPostgres(t, ctx, pg, connInfo)
-	defer db.Close()
 
 	schemaName := integrationPostgresTestSchema(t, ctx, db)
 	tableName := fmt.Sprintf("pg_3857_to_geojson_%d", time.Now().UnixNano())
@@ -463,15 +449,9 @@ func TestIntegrationPostgresSpatialTableToGeoJSONTransformsTo4326(t *testing.T) 
 	}
 }
 
-func integrationPostgresConnInfo() engineplugin.ConnectionInfo {
-	return engineplugin.ConnectionInfo{
-		"host":     integrationEnv("ADDP_TEST_POSTGRES_HOST", "localhost"),
-		"port":     integrationEnv("ADDP_TEST_POSTGRES_PORT", "15432"),
-		"user":     integrationEnv("ADDP_TEST_POSTGRES_USER", "addp"),
-		"password": integrationEnv("ADDP_TEST_POSTGRES_PASSWORD", "addp_password"),
-		"database": integrationEnv("ADDP_TEST_POSTGRES_DATABASE", "addp"),
-		"sslmode":  integrationEnv("ADDP_TEST_POSTGRES_SSLMODE", "disable"),
-	}
+func integrationPostgresConnInfo(t *testing.T) engineplugin.ConnectionInfo {
+	t.Helper()
+	return testpg.ConnInfoFromEnv(t)
 }
 
 func openIntegrationPostgres(t *testing.T, ctx context.Context, pg *postgresql.PostgreSQLPlugin, connInfo engineplugin.ConnectionInfo) *sql.DB {
@@ -489,14 +469,11 @@ func openIntegrationPostgres(t *testing.T, ctx context.Context, pg *postgresql.P
 		_ = db.Close()
 		t.Skipf("PostGIS is not available: %v", err)
 	}
+	testpg.DropSchemasWithPrefixes(t, ctx, db, "transfer_test_")
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
 	return db
-}
-
-func integrationEnv(key, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-		return value
-	}
-	return fallback
 }
 
 func integrationPostgresTablePath(schemaName, tableName string) engineplugin.CatalogPath {
@@ -513,12 +490,7 @@ func integrationPostgresTestSchema(t *testing.T, ctx context.Context, db *sql.DB
 	t.Helper()
 
 	schemaName := fmt.Sprintf("transfer_test_%d", time.Now().UnixNano())
-	if _, err := db.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA "%s"`, schemaName)); err != nil {
-		t.Fatalf("create test schema failed: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE`, schemaName))
-	})
+	testpg.CreateSchema(t, ctx, db, schemaName)
 	return schemaName
 }
 

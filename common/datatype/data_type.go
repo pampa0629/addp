@@ -6,25 +6,27 @@ import "strings"
 type DataType string
 
 const (
-	Unknown    DataType = "unknown"
-	Table      DataType = "table"
-	Document   DataType = "document"
-	Media      DataType = "media"
-	Container  DataType = "container"
-	Graph      DataType = "graph"
-	Model3D    DataType = "model_3d"
-	PointCloud DataType = "point_cloud"
+	Unknown       DataType = "unknown"
+	Table         DataType = "table"
+	Document      DataType = "document"
+	Media         DataType = "media"
+	Container     DataType = "container"
+	Graph         DataType = "graph"
+	Model3D       DataType = "model_3d"
+	PointCloud    DataType = "point_cloud"
+	GaussianSplat DataType = "gaussian_splat"
 )
 
 var knownDataTypes = map[DataType]struct{}{
-	Unknown:    {},
-	Table:      {},
-	Document:   {},
-	Media:      {},
-	Container:  {},
-	Graph:      {},
-	Model3D:    {},
-	PointCloud: {},
+	Unknown:       {},
+	Table:         {},
+	Document:      {},
+	Media:         {},
+	Container:     {},
+	Graph:         {},
+	Model3D:       {},
+	PointCloud:    {},
+	GaussianSplat: {},
 }
 
 // ParseDataType normalizes a string into a known ADDP data type.

@@ -247,6 +247,89 @@ func TestQuickViewSourceFromPreviewDetectsSingleOSGBObject(t *testing.T) {
 	}
 }
 
+func TestQuickViewSourceFromPreviewDetectsSingleOBJObject(t *testing.T) {
+	locator := "addp://engine/26/path/3d/obj/AssaultRifle/AssaultRifle_01.obj?type=file&item_id=10366"
+	tablePreview := &models.TablePreview{
+		EngineID:   26,
+		EngineType: "nfs",
+		Object: &models.ObjectPreview{
+			EngineID: 26,
+			Attributes: map[string]interface{}{
+				"item": map[string]interface{}{
+					"data_type": "model_3d",
+					"format":    "obj",
+					"layout":    "single",
+				},
+				"storage": map[string]interface{}{
+					"total_size": int64(2048),
+				},
+			},
+		},
+	}
+	result := &preview.PreviewResult{
+		Metadata: &preview.PreviewMetadata{
+			Locator:         locator,
+			ItemFingerprint: "fp-obj",
+		},
+	}
+
+	source := quickViewSourceFromPreview(locator, nil, result, tablePreview)
+
+	if source.Model3D == nil {
+		t.Fatal("Model3D is nil, want single OBJ quick view source")
+	}
+	if source.Raster != nil || source.DirectGeoJSON || source.GeoJSONURL != "" || source.CanTile {
+		t.Fatalf("source routing = raster:%v direct_geojson:%v geojson_url:%q can_tile:%v, want model3d-only", source.Raster != nil, source.DirectGeoJSON, source.GeoJSONURL, source.CanTile)
+	}
+	if source.Model3D.Format != "obj" || source.Model3D.Layout != "single" || source.Model3D.SourceSizeBytes != 2048 {
+		t.Fatalf("model3d facts = %#v, want single obj facts", source.Model3D)
+	}
+}
+
+func TestQuickViewSourceFromPreviewDetectsGaussianSplatPLYObject(t *testing.T) {
+	locator := "addp://engine/26/path/3d/gaussian/model.ply?type=file&item_id=10901"
+	tablePreview := &models.TablePreview{
+		EngineID:   26,
+		EngineType: "nfs",
+		Object: &models.ObjectPreview{
+			EngineID: 26,
+			Attributes: map[string]interface{}{
+				"item": map[string]interface{}{
+					"data_type": "gaussian_splat",
+					"format":    "ply",
+					"layout":    "single",
+				},
+				"type_info": map[string]interface{}{
+					"gaussian_splat": map[string]interface{}{
+						"splat_count": int64(256),
+					},
+				},
+				"storage": map[string]interface{}{
+					"total_size": int64(8192),
+				},
+			},
+		},
+	}
+	result := &preview.PreviewResult{
+		Metadata: &preview.PreviewMetadata{
+			Locator:         locator,
+			ItemFingerprint: "fp-gaussian-ply",
+		},
+	}
+
+	source := quickViewSourceFromPreview(locator, nil, result, tablePreview)
+
+	if source.GaussianSplat == nil {
+		t.Fatal("GaussianSplat is nil, want gaussian splat quick view source")
+	}
+	if source.Model3D != nil || source.Raster != nil || source.DirectGeoJSON || source.GeoJSONURL != "" || source.CanTile {
+		t.Fatalf("source routing = model3d:%v raster:%v direct_geojson:%v geojson_url:%q can_tile:%v, want gaussian-only", source.Model3D != nil, source.Raster != nil, source.DirectGeoJSON, source.GeoJSONURL, source.CanTile)
+	}
+	if source.GaussianSplat.Format != "ply" || source.GaussianSplat.SplatCount != 256 || source.GaussianSplat.SourceSizeBytes != 8192 {
+		t.Fatalf("gaussian facts = %#v, want ply gaussian facts", source.GaussianSplat)
+	}
+}
+
 func TestApplyLocatorQuickViewURLsSetsRasterMosaicTileTemplate(t *testing.T) {
 	capability := &service.QuickViewCapability{
 		Locator:      "addp://engine/26/path/mosaics/srtm?type=directory&item_id=99",

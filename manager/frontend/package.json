@@ -13,6 +13,7 @@
     "@amap/amap-jsapi-loader": "^1.0.1",
     "@antv/g6": "^4.8.24",
     "@element-plus/icons-vue": "2.3.2",
+    "@mkkellogg/gaussian-splats-3d": "^0.4.7",
     "3d-tiles-renderer": "^0.4.28",
     "axios": "1.7.9",
     "dompurify": "^3.0.6",

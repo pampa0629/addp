@@ -1038,6 +1038,7 @@ services:
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - MODEL3D_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/_3dtile
+      - MODEL3D_MESH_CONVERTER_BIN=/usr/bin/assimp
       - GDAL_DATA=/opt/addp/model3d-workflow/bin/gdal
       - PROJ_DATA=/opt/addp/model3d-workflow/bin/proj
       - OSG_LIBRARY_PATH=/opt/addp/model3d-workflow/bin/osgPlugins-3.6.5

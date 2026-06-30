@@ -19,11 +19,12 @@ func applyModel3DQuickViewPreview(ctx context.Context, lookup Model3DQuickViewLo
 	if lookup == nil || req == nil || object == nil {
 		return false, nil
 	}
-	if formatTypeFromMetaAttributes(req.Attributes) != format.FormatOSGB {
+	sourceFormat := model3DQuickViewSourceFormat(req.Attributes)
+	if sourceFormat == format.FormatUnknown {
 		return false, nil
 	}
 	if req.TenantID == nil || *req.TenantID == 0 || strings.TrimSpace(req.ItemFingerprint) == "" {
-		object.Content = model3DQuickViewUnsupportedContent("identity_unresolved", req.ItemFingerprint, 0)
+		object.Content = model3DQuickViewUnsupportedContent(sourceFormat, "identity_unresolved", req.ItemFingerprint, 0)
 		return true, nil
 	}
 	result, err := lookup.GetLatestReadyByFingerprint(ctx, *req.TenantID, req.ItemFingerprint)
@@ -31,7 +32,7 @@ func applyModel3DQuickViewPreview(ctx context.Context, lookup Model3DQuickViewLo
 		return false, err
 	}
 	if result == nil || strings.TrimSpace(result.ContentURL) == "" {
-		object.Content = model3DQuickViewUnsupportedContent("quick_view_missing", req.ItemFingerprint, 0)
+		object.Content = model3DQuickViewUnsupportedContent(sourceFormat, "quick_view_missing", req.ItemFingerprint, 0)
 		return true, nil
 	}
 
@@ -42,7 +43,7 @@ func applyModel3DQuickViewPreview(ctx context.Context, lookup Model3DQuickViewLo
 		PreviewMaterial:  models.PreviewMaterialURL,
 		FrontendRenderer: models.ObjectPreviewKindModel3D,
 		URL:              object.URL,
-		Metadata: model3DQuickViewMetadata("ready", req.ItemFingerprint, result.ID, map[string]interface{}{
+		Metadata: model3DQuickViewMetadata(sourceFormat, "ready", req.ItemFingerprint, result.ID, map[string]interface{}{
 			"file_name":  result.FileName,
 			"size_bytes": result.SizeBytes,
 		}),
@@ -50,21 +51,50 @@ func applyModel3DQuickViewPreview(ctx context.Context, lookup Model3DQuickViewLo
 	return true, nil
 }
 
-func model3DQuickViewUnsupportedContent(status, itemFingerprint string, resultID uint) *models.ObjectPreviewContent {
+func model3DQuickViewSourceFormat(attrs map[string]interface{}) format.FormatType {
+	if !strings.EqualFold(itemDataTypeFromMetaAttributes(attrs), "model_3d") {
+		return format.FormatUnknown
+	}
+	formatType := formatTypeFromMetaAttributes(attrs)
+	layout := itemLayoutFromMetaAttributes(attrs)
+	switch formatType {
+	case format.FormatOSGB:
+		if layout == "" || layout == string(format.LayoutSingle) {
+			return formatType
+		}
+	case format.FormatGLTF:
+		if layout == string(format.LayoutMulti) {
+			return formatType
+		}
+	case format.FormatFBX:
+		if layout == "" || layout == string(format.LayoutSingle) {
+			return formatType
+		}
+	case format.FormatOBJ:
+		if layout == "" || layout == string(format.LayoutSingle) {
+			return formatType
+		}
+	default:
+		return format.FormatUnknown
+	}
+	return format.FormatUnknown
+}
+
+func model3DQuickViewUnsupportedContent(sourceFormat format.FormatType, status, itemFingerprint string, resultID uint) *models.ObjectPreviewContent {
 	return objectcontent.DecoratePreviewContent(&models.ObjectPreviewContent{
 		Kind:             models.ObjectPreviewKindUnsupported,
 		PreviewMaterial:  models.PreviewMaterialUnsupported,
 		FrontendRenderer: models.ObjectPreviewKindUnsupported,
-		Metadata: model3DQuickViewMetadata(status, itemFingerprint, resultID, map[string]interface{}{
+		Metadata: model3DQuickViewMetadata(sourceFormat, status, itemFingerprint, resultID, map[string]interface{}{
 			"action":    "create_task",
 			"task_type": commonExecution.TaskTypeModel3DQuickViewGeneration,
 		}),
 	})
 }
 
-func model3DQuickViewMetadata(status, itemFingerprint string, resultID uint, extra map[string]interface{}) map[string]interface{} {
+func model3DQuickViewMetadata(sourceFormat format.FormatType, status, itemFingerprint string, resultID uint, extra map[string]interface{}) map[string]interface{} {
 	metadata := map[string]interface{}{
-		"source_format":        string(format.FormatOSGB),
+		"source_format":        string(sourceFormat),
 		"quick_view_status":    status,
 		"item_fingerprint":     strings.TrimSpace(itemFingerprint),
 		"preview_material":     models.PreviewMaterialUnsupported,

@@ -34,17 +34,20 @@
 | `graph` | 节点、边、关系结构 | 引擎原生图使用 `CatalogFactsProvider` 的 `CatalogFacts.Graph` / `GraphSampleProvider`；文件型图数据先补对应 format 能力 |
 | `model_3d` | 三维空间对象、网格、场景、构件、倾斜摄影或 BIM 模型 | `Model3DInfoProvider`；第一阶段可先实现 descriptor 和轻量 info，预览通过 Manager content reader / storage stream |
 | `point_cloud` | 三维点集合、点属性、空间范围和抽样 / LOD 是主要消费方式 | `PointCloudInfoProvider`；需要预览时实现点云抽样 reader 或 Manager 派生预览能力 |
+| `gaussian_splat` | 三维高斯基元、尺度、旋转、不透明度和视角相关颜色是主要消费方式 | `GaussianSplatInfoProvider`；需要预览时实现高斯泼溅 renderer 或 Manager 派生 splat artifact |
 | `unknown` | 暂不能归类 | 只保留 storage、item 等基础事实；原始字节读取由 engine / contentio / URL 内容通道或 `BinaryContentReader` 的探测兜底提供 |
 
 只有以上数据类型无法表达用户理解方式、内容读取方式和治理方式时，才新增 data type。新增 data type 必须先修订概念文档和能力规范。
 
-通用 data type、type info、field type、空间信息和访问索引的事实源是 `common/datatype`。新增格式或 provider 不得在格式包内新增平行的 `FieldType`、`TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`、`Model3DInfo`、`PointCloudInfo` 等公共模型；确有新增通用字段时，先修订 `common/datatype` 设计和相关规范。
+通用 data type、type info、field type、空间信息和访问索引的事实源是 `common/datatype`。新增格式或 provider 不得在格式包内新增平行的 `FieldType`、`TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`、`Model3DInfo`、`PointCloudInfo`、`GaussianSplatInfo` 等公共模型；确有新增通用字段时，先修订 `common/datatype` 设计和相关规范。
 
 三维模型和点云的常见边界：
 
 - GLB / glTF、OBJ、STL、单 OSGB、OSGB Scene、3D Tiles、IFC / Revit BIM 等统一归为 `model_3d`；网格模型、倾斜摄影、BIM 和分块场景由 `type_info.model_3d.model_kind`、format、layout 和 capabilities 区分，不新增平行 data type。
 - LAS / LAZ / COPC、PCD、点云型 PLY、EPT / Potree、E57 等统一归为 `point_cloud`；不得仅因点记录可以列化为 x/y/z、intensity、classification 等字段就归为 `table`。
-- CRS、空间定位和空间范围仍是 `capabilities.spatial`，不是 `model_3d` 或 `point_cloud` 私有字段。
+- 3D Gaussian Splatting PLY、`.splat`、`.ksplat`、`.spz` 等统一归为 `gaussian_splat`；不得仅因底层记录形似点集合而归为 `point_cloud`，也不得走 mesh / GLB 的 `model_3d` 快显路线。
+- PLY 是内容敏感格式：`face_count > 0` 时归为 `model_3d`；无 face 且具备传统 3DGS 属性，或具备 SuperSplat 压缩 PLY 的 `chunk` element 与 `packed_position` / `packed_rotation` / `packed_scale` / `packed_color` vertex 属性时归为 `gaussian_splat`；无 face 且不满足高斯泼溅属性时归为 `point_cloud`。
+- CRS、空间定位和空间范围仍是 `capabilities.spatial`，不是 `model_3d`、`point_cloud` 或 `gaussian_splat` 私有字段。
 
 ## 2. 判断内容布局
 
@@ -131,6 +134,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor
 | 容器 child 解析 | `ContainerChildResolver` | Manager、Transfer 后续 child 读取 |
 | 三维模型元信息 | `Model3DInfoProvider` | Meta、Manager |
 | 点云元信息 | `PointCloudInfoProvider` | Meta、Manager |
+| 高斯泼溅元信息 | `GaussianSplatInfoProvider` | Meta、Manager |
 | 空间横切事实 | 通过 describe result 或等价结构提供 `datatype.SpatialInfo`，由 Meta 写入 `capabilities.spatial` | Meta、Manager、Search |
 | 访问定位索引 | 通过 describe result 或等价结构提供 `datatype.AccessIndex`，由 Meta 写入 `access_index.<data_type>`；`AccessIndex` 不是 data type 或 type info | Meta、Manager、Transfer |
 
@@ -143,6 +147,7 @@ Info provider 一次解析可能同时得到多类事实。以 table 为例：
 | `datatype.TableInfo` | `attributes.type_info.table` |
 | `datatype.Model3DInfo` | `attributes.type_info.model_3d` |
 | `datatype.PointCloudInfo` | `attributes.type_info.point_cloud` |
+| `datatype.GaussianSplatInfo` | `attributes.type_info.gaussian_splat` |
 | `datatype.SpatialInfo` | `attributes.capabilities.spatial` |
 | `datatype.AccessIndex` | `attributes.access_index.table` |
 | `format_info.<format>` 候选事实 | `attributes.format_info.<format>` |

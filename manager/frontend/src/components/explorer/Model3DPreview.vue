@@ -38,6 +38,10 @@ let controls = null
 let animationFrame = 0
 let resizeObserver = null
 let activeObject = null
+let modelBoundingRadius = 1
+
+const MIN_CAMERA_DISTANCE = 0.01
+const MIN_NEAR_PLANE = 0.01
 
 const objectData = computed(() => props.data?.object || {})
 const content = computed(() => objectData.value?.content || {})
@@ -90,10 +94,10 @@ function ensureScene() {
   scene = new THREE.Scene()
   scene.background = null
 
-  camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100000)
+  camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100000)
   camera.position.set(4, 3, 6)
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, logarithmicDepthBuffer: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
   renderer.outputColorSpace = THREE.SRGBColorSpace
   renderer.setClearColor(0x000000, 0)
@@ -102,6 +106,7 @@ function ensureScene() {
   controls = new OrbitControls(camera, renderer.domElement)
   controls.enableDamping = true
   controls.dampingFactor = 0.08
+  controls.minDistance = MIN_CAMERA_DISTANCE
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x4b5563, 1.7))
   const keyLight = new THREE.DirectionalLight(0xffffff, 1.8)
@@ -125,6 +130,8 @@ function ensureScene() {
 function animate() {
   if (!renderer || !scene || !camera) return
   controls?.update()
+  updateCameraClipPlanes()
+  camera.updateMatrixWorld()
   renderer.render(scene, camera)
   animationFrame = window.requestAnimationFrame(animate)
 }
@@ -151,6 +158,7 @@ function clearModel() {
     }
   })
   activeObject = null
+  modelBoundingRadius = 1
 }
 
 function fitCamera(object) {
@@ -160,6 +168,7 @@ function fitCamera(object) {
   const center = box.getCenter(new THREE.Vector3())
   const size = box.getSize(new THREE.Vector3())
   const maxDim = Math.max(size.x, size.y, size.z, 1)
+  modelBoundingRadius = Math.max(size.length() / 2, maxDim / 2, 1)
   const distance = maxDim / (2 * Math.tan((camera.fov * Math.PI) / 360))
   const terrainView = shouldUseTerrainCamera(size)
   const offset = terrainView
@@ -168,15 +177,13 @@ function fitCamera(object) {
   const target = terrainView
     ? terrainCameraTarget(center, size, offset)
     : center
-  camera.near = Math.max(maxDim / (terrainView ? 100000 : 10000), 0.005)
-  camera.far = Math.max(maxDim * 100, distance * 10)
   camera.up.set(0, 1, 0)
   camera.position.copy(center).add(offset)
-  camera.updateProjectionMatrix()
-  controls.minDistance = Math.max(maxDim / 100000, 0.01)
+  controls.minDistance = MIN_CAMERA_DISTANCE
   controls.maxDistance = Infinity
   controls.target.copy(target)
   controls.update()
+  updateCameraClipPlanes(true)
 }
 
 function shouldUseTerrainCamera(size) {
@@ -199,6 +206,57 @@ function terrainCameraTarget(center, size, offset) {
   return target
 }
 
+function updateCameraClipPlanes(force = false) {
+  if (!camera || !controls) return
+  const distance = Math.max(camera.position.distanceTo(controls.target), MIN_CAMERA_DISTANCE)
+  const radius = Math.max(modelBoundingRadius, 1)
+  const near = Math.max(Math.min(distance / 500, radius / 1000), MIN_NEAR_PLANE)
+  const far = Math.max(distance + radius * 8, 100)
+  if (
+    force ||
+    Math.abs(camera.near - near) / Math.max(camera.near, 1) > 0.1 ||
+    Math.abs(camera.far - far) / Math.max(camera.far, 1) > 0.1
+  ) {
+    camera.near = near
+    camera.far = far
+    camera.updateProjectionMatrix()
+  }
+}
+
+function stabilizeLineMeshDepth(object) {
+  let hasLine = false
+  let hasMesh = false
+  object.traverse?.((node) => {
+    hasLine ||= Boolean(node.isLine || node.isLineSegments || node.isLineLoop)
+    hasMesh ||= Boolean(node.isMesh)
+  })
+  if (!hasLine || !hasMesh) return
+
+  object.traverse?.((node) => {
+    if (node.isMesh) {
+      node.material = mapMaterials(node.material, (material) => {
+        const next = material.clone()
+        next.polygonOffset = true
+        next.polygonOffsetFactor = 1
+        next.polygonOffsetUnits = 1
+        return next
+      })
+    }
+    if (node.isLine || node.isLineSegments || node.isLineLoop) {
+      node.material = mapMaterials(node.material, (material) => {
+        const next = material.clone()
+        next.depthWrite = false
+        return next
+      })
+    }
+  })
+}
+
+function mapMaterials(material, mapper) {
+  if (Array.isArray(material)) return material.map((item) => item ? mapper(item) : item)
+  return material ? mapper(material) : material
+}
+
 async function loadModel(url) {
   loading.value = true
   errorMessage.value = ''
@@ -219,6 +277,7 @@ async function loadModel(url) {
       if (!activeObject) {
         errorMessage.value = '模型内容为空'
       } else {
+        stabilizeLineMeshDepth(activeObject)
         scene.add(activeObject)
         fitCamera(activeObject)
       }

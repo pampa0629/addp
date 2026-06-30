@@ -29,7 +29,7 @@ def test_health(client):
     data = response.get_json()
     assert data["status"] in {"healthy", "degraded"}
     assert data["service"] == "model3d-workflow-engine"
-    assert data["operators_count"] == 2
+    assert data["operators_count"] == 6
     assert "conversion_ready" in data
     assert data["dependencies"]["converter"]["binding"] == "model3d_workflow"
 
@@ -39,7 +39,7 @@ def test_get_operators(client):
     assert response.status_code == 200
     data = response.get_json()
     assert data["status"] == "success"
-    assert data["count"] == 2
+    assert data["count"] == 6
     assert_operator_metadata_contract(data["operators"], expected_engine_type="model3d_workflow")
 
 

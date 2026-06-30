@@ -58,6 +58,13 @@ const (
 	FormatOGG   FormatType = "ogg"
 
 	FormatGLB       FormatType = "glb"
+	FormatGLTF      FormatType = "gltf"
+	FormatOBJ       FormatType = "obj"
+	FormatSTL       FormatType = "stl"
+	FormatFBX       FormatType = "fbx"
+	FormatPLY       FormatType = "ply"
+	FormatSplat     FormatType = "splat"
+	FormatKSplat    FormatType = "ksplat"
 	FormatLAS       FormatType = "las"
 	Format3DTiles   FormatType = "3dtiles"
 	FormatOSGB      FormatType = "osgb"

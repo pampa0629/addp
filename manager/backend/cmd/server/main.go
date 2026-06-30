@@ -81,6 +81,7 @@ func main() {
 	rasterCOGRepo := repository.NewRasterCOGRepository(db)
 	rasterMosaicRepo := repository.NewRasterMosaicRepository(db)
 	model3DQuickViewRepo := repository.NewModel3DQuickViewRepository(db)
+	gaussianSplatQuickViewRepo := repository.NewGaussianSplatQuickViewRepository(db)
 	model3DTilesRepo := repository.NewModel3DTilesRepository(db)
 	exportSessionRepo := repository.NewExportSessionRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
@@ -218,11 +219,14 @@ func main() {
 	rasterCOGTaskSvc := service.NewRasterCOGTaskService(rasterCOGRepo, taskExecRepo)
 	rasterMosaicTaskSvc := service.NewRasterMosaicTaskService(rasterMosaicRepo, taskExecRepo)
 	model3DQuickViewTaskSvc := service.NewModel3DQuickViewTaskService(model3DQuickViewRepo, taskExecRepo)
+	gaussianSplatQuickViewTaskSvc := service.NewGaussianSplatQuickViewTaskService(gaussianSplatQuickViewRepo, taskExecRepo)
 	model3DTilesTaskSvc := service.NewModel3DTilesTaskService(model3DTilesRepo, taskExecRepo)
 	rasterCOGTaskSvc.SetBucket(minioBucket)
 	rasterCOGTaskSvc.SetCleaner(service.NewMinIORasterCOGCleaner(minioClient, minioBucket))
 	model3DQuickViewTaskSvc.SetBucket(minioBucket)
 	model3DQuickViewTaskSvc.SetCleaner(service.NewMinIOModel3DQuickViewCleaner(minioClient, minioBucket))
+	gaussianSplatQuickViewTaskSvc.SetBucket(minioBucket)
+	gaussianSplatQuickViewTaskSvc.SetCleaner(service.NewMinIOGaussianSplatQuickViewCleaner(minioClient, minioBucket))
 	if systemClient != nil {
 		rasterCOGTaskSvc.SetExecutor(service.NewManagerRasterCOGExecutor(
 			systemClient,
@@ -277,6 +281,7 @@ func main() {
 	// 初始化 TaskProvider Handler
 	taskProviderHandler := api.NewTaskProviderHandler(embeddingTaskSvc, tileCacheTaskSvc, quickViewOptimizationTaskSvc, rasterCOGTaskSvc, taskExecRepo, rasterMosaicTaskSvc)
 	taskProviderHandler.SetModel3DQuickViewTaskService(model3DQuickViewTaskSvc)
+	taskProviderHandler.SetGaussianSplatQuickViewTaskService(gaussianSplatQuickViewTaskSvc)
 	taskProviderHandler.SetModel3DTilesTaskService(model3DTilesTaskSvc)
 
 	// 设置 UnifiedMVTService 的 QuickViewService（延迟注入避免循环依赖）
@@ -317,9 +322,10 @@ func main() {
 	)
 	rasterMosaicTileHandler := api.NewRasterMosaicTileHandler(rasterMosaicTileService)
 	model3DQuickViewHandler := api.NewModel3DQuickViewHandler(model3DQuickViewRepo, minioClient, minioBucket)
+	gaussianSplatQuickViewHandler := api.NewGaussianSplatQuickViewHandler(gaussianSplatQuickViewRepo, minioClient, minioBucket)
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DQuickViewHandler)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DQuickViewHandler, gaussianSplatQuickViewHandler)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("manager")
@@ -338,6 +344,17 @@ func main() {
 			cfg.RasterMosaicGeneration.Timeout,
 		))
 		model3DQuickViewTaskSvc.SetExecutor(service.NewManagerModel3DQuickViewExecutor(
+			systemClient,
+			systemClient,
+			minioClient,
+			cfg.MinioEndpoint,
+			cfg.MinioAccessKey,
+			cfg.MinioSecretKey,
+			cfg.MinioUseSSL,
+			minioBucket,
+			cfg.RasterMosaicGeneration.Timeout,
+		))
+		gaussianSplatQuickViewTaskSvc.SetExecutor(service.NewManagerGaussianSplatQuickViewExecutor(
 			systemClient,
 			systemClient,
 			minioClient,

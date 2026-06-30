@@ -15,6 +15,9 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.manager.quickViewOptimization', module: 'manager', route: '/manager/spatial-quick-view/vector-optimization', keywords: ['矢量快显性能优化', '快显性能优化', '快显优化', '动态MVT', '3857', 'quick view optimization', 'quick view', 'mvt'] },
   { labelKey: 'console.menus.manager.cogArtifacts',       module: 'manager', route: '/manager/spatial-quick-view/raster-cog', keywords: ['栅格快显COG', 'COG', 'COG生成', 'TIFF', 'GeoTIFF', '栅格快显', 'cloud optimized geotiff'] },
   { labelKey: 'console.menus.manager.rasterMosaic',       module: 'manager', route: '/manager/spatial-quick-view/raster-mosaic', keywords: ['栅格镶嵌数据集', '镶嵌数据集', 'Mosaic生成', 'raster mosaic', 'raster_mosaic', 'mosaic'] },
+  { labelKey: 'console.menus.manager.model3DQuickView',   module: 'manager', route: '/manager/model-3d-quick-view', keywords: ['三维快显GLB', '三维模型快显', 'GLB快显', 'OSGB', 'FBX', 'OBJ', 'gltf', '3d model quick view', 'glb'] },
+  { labelKey: 'console.menus.manager.gaussianSplatQuickView', module: 'manager', route: '/manager/gaussian-splat-quick-view', keywords: ['高斯泼溅快显', '高斯快显', 'KSplat', 'SPLAT', 'gaussian splat', 'gaussian splatting', 'ksplat'] },
+  { labelKey: 'console.menus.manager.model3DTiles',       module: 'manager', route: '/manager/model-3d-tiles', keywords: ['三维快显3D Tiles', '倾斜摄影', '3D Tiles', 'osgb scene', 'photogrammetry'] },
   // 数据标准
   { labelKey: 'console.menus.standard.domains',      module: 'standard', route: '/standard/domains',      keywords: ['业务域', '业务领域', 'domain'] },
   { labelKey: 'console.menus.standard.glossaries',   module: 'standard', route: '/standard/glossaries',   keywords: ['业务术语', '术语', 'glossary', 'term'] },

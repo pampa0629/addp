@@ -14,6 +14,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
@@ -42,13 +43,14 @@ const (
 	QuickViewStatusGenerating  = "generating"
 	QuickViewStatusFailed      = "failed"
 
-	QuickViewRenderSourceCachedTile    = "cached_tile"
-	QuickViewRenderSourceClientCOG     = "client_cog_render"
-	QuickViewRenderSourceDirectGeoJSON = "direct_geojson"
-	QuickViewRenderSourceDirectTIFF    = "direct_tiff_client"
-	QuickViewRenderSourceRasterMosaic  = "raster_mosaic_tile"
-	QuickViewRenderSourceRealtimeTile  = "realtime_tile"
-	QuickViewRenderSourceModel3DGLB    = "model_3d_glb"
+	QuickViewRenderSourceCachedTile          = "cached_tile"
+	QuickViewRenderSourceClientCOG           = "client_cog_render"
+	QuickViewRenderSourceDirectGeoJSON       = "direct_geojson"
+	QuickViewRenderSourceDirectTIFF          = "direct_tiff_client"
+	QuickViewRenderSourceRasterMosaic        = "raster_mosaic_tile"
+	QuickViewRenderSourceRealtimeTile        = "realtime_tile"
+	QuickViewRenderSourceModel3DGLB          = "model_3d_glb"
+	QuickViewRenderSourceGaussianSplatKSplat = "gaussian_splat_ksplat"
 
 	RealtimeTilePerformanceReady3857Target = "ready_3857_target"
 	RealtimeTilePerformanceSource3857Index = "source_3857_indexed"
@@ -74,14 +76,15 @@ const (
 )
 
 type QuickViewService struct {
-	repo             *repository.QuickViewRepository
-	tileCacheRepo    *repository.TileCacheRepository
-	optimizationRepo *repository.QuickViewOptimizationRepository
-	rasterCOGRepo    *repository.RasterCOGRepository
-	model3DRepo      *repository.Model3DQuickViewRepository
-	metaClient       *commonClient.MetaClient
-	options          QuickViewCapabilityOptions
-	spatialLoader    func(ctx context.Context, tenantID, engineID uint, schema, table string) (*SpatialMetadataResult, error)
+	repo              *repository.QuickViewRepository
+	tileCacheRepo     *repository.TileCacheRepository
+	optimizationRepo  *repository.QuickViewOptimizationRepository
+	rasterCOGRepo     *repository.RasterCOGRepository
+	model3DRepo       *repository.Model3DQuickViewRepository
+	gaussianSplatRepo *repository.GaussianSplatQuickViewRepository
+	metaClient        *commonClient.MetaClient
+	options           QuickViewCapabilityOptions
+	spatialLoader     func(ctx context.Context, tenantID, engineID uint, schema, table string) (*SpatialMetadataResult, error)
 }
 
 func NewQuickViewService(
@@ -89,12 +92,13 @@ func NewQuickViewService(
 	metaClient *commonClient.MetaClient,
 ) *QuickViewService {
 	return &QuickViewService{
-		repo:             repository.NewQuickViewRepository(db),
-		tileCacheRepo:    repository.NewTileCacheRepository(db),
-		optimizationRepo: repository.NewQuickViewOptimizationRepository(db),
-		rasterCOGRepo:    repository.NewRasterCOGRepository(db),
-		model3DRepo:      repository.NewModel3DQuickViewRepository(db),
-		metaClient:       metaClient,
+		repo:              repository.NewQuickViewRepository(db),
+		tileCacheRepo:     repository.NewTileCacheRepository(db),
+		optimizationRepo:  repository.NewQuickViewOptimizationRepository(db),
+		rasterCOGRepo:     repository.NewRasterCOGRepository(db),
+		model3DRepo:       repository.NewModel3DQuickViewRepository(db),
+		gaussianSplatRepo: repository.NewGaussianSplatQuickViewRepository(db),
+		metaClient:        metaClient,
 	}
 }
 
@@ -161,6 +165,7 @@ type QuickViewSource struct {
 	Raster             *RasterQuickViewSource
 	RasterMosaic       *RasterMosaicQuickViewSource
 	Model3D            *Model3DQuickViewSource
+	GaussianSplat      *GaussianSplatQuickViewSource
 	DirectGeoJSON      bool
 	GeoJSONURL         string
 	CanTile            bool
@@ -221,6 +226,19 @@ type Model3DQuickViewSource struct {
 	PreviewURL      string
 }
 
+type GaussianSplatQuickViewSource struct {
+	Format                string
+	Layout                string
+	Representation        string
+	SplatCount            int64
+	SourceSizeBytes       int64
+	HasOpacity            *bool
+	HasScale              *bool
+	HasRotation           *bool
+	HasSphericalHarmonics *bool
+	SHDegree              *int
+}
+
 type RealtimeTileTarget struct {
 	Schema                      string
 	Table                       string
@@ -234,30 +252,31 @@ type RealtimeTileTarget struct {
 }
 
 type QuickViewCapability struct {
-	TenantID             uint                       `json:"tenant_id"`
-	ItemFingerprint      string                     `json:"item_fingerprint,omitempty"`
-	Locator              string                     `json:"locator,omitempty"`
-	SourceEngineID       uint                       `json:"source_engine_id,omitempty"`
-	SourceSchema         string                     `json:"source_schema,omitempty"`
-	SourceTable          string                     `json:"source_table,omitempty"`
-	CanUseQuickView      bool                       `json:"can_use_quick_view"`
-	CanGenerateTileCache bool                       `json:"can_generate_vector_tile_cache"`
-	PreferredMode        string                     `json:"preferred_mode"`
-	RecommendedMode      string                     `json:"recommended_mode"`
-	ActiveMode           string                     `json:"active_mode"`
-	DefaultTileCacheID   *uint                      `json:"default_vector_tile_cache_id,omitempty"`
-	Status               string                     `json:"status"`
-	UnavailableReason    string                     `json:"unavailable_reason,omitempty"`
-	RenderSource         string                     `json:"render_source,omitempty"`
-	QuickView            QuickViewRenderInfo        `json:"quick_view"`
-	RenderFacts          *QuickViewRenderFacts      `json:"render_facts,omitempty"`
-	Raster               *QuickViewRasterInfo       `json:"raster,omitempty"`
-	RasterMosaic         *QuickViewRasterMosaicInfo `json:"raster_mosaic,omitempty"`
-	Model3D              *QuickViewModel3DInfo      `json:"model_3d,omitempty"`
-	Optimization         *QuickViewOptimizationInfo `json:"optimization,omitempty"`
-	RealtimeTile         *QuickViewRealtimeTileInfo `json:"realtime_tile,omitempty"`
-	TileCacheGeneration  TileCacheGeneration        `json:"vector_tile_cache_generation"`
-	LastCheckedAt        *time.Time                 `json:"last_checked_at,omitempty"`
+	TenantID             uint                        `json:"tenant_id"`
+	ItemFingerprint      string                      `json:"item_fingerprint,omitempty"`
+	Locator              string                      `json:"locator,omitempty"`
+	SourceEngineID       uint                        `json:"source_engine_id,omitempty"`
+	SourceSchema         string                      `json:"source_schema,omitempty"`
+	SourceTable          string                      `json:"source_table,omitempty"`
+	CanUseQuickView      bool                        `json:"can_use_quick_view"`
+	CanGenerateTileCache bool                        `json:"can_generate_vector_tile_cache"`
+	PreferredMode        string                      `json:"preferred_mode"`
+	RecommendedMode      string                      `json:"recommended_mode"`
+	ActiveMode           string                      `json:"active_mode"`
+	DefaultTileCacheID   *uint                       `json:"default_vector_tile_cache_id,omitempty"`
+	Status               string                      `json:"status"`
+	UnavailableReason    string                      `json:"unavailable_reason,omitempty"`
+	RenderSource         string                      `json:"render_source,omitempty"`
+	QuickView            QuickViewRenderInfo         `json:"quick_view"`
+	RenderFacts          *QuickViewRenderFacts       `json:"render_facts,omitempty"`
+	Raster               *QuickViewRasterInfo        `json:"raster,omitempty"`
+	RasterMosaic         *QuickViewRasterMosaicInfo  `json:"raster_mosaic,omitempty"`
+	Model3D              *QuickViewModel3DInfo       `json:"model_3d,omitempty"`
+	GaussianSplat        *QuickViewGaussianSplatInfo `json:"gaussian_splat,omitempty"`
+	Optimization         *QuickViewOptimizationInfo  `json:"optimization,omitempty"`
+	RealtimeTile         *QuickViewRealtimeTileInfo  `json:"realtime_tile,omitempty"`
+	TileCacheGeneration  TileCacheGeneration         `json:"vector_tile_cache_generation"`
+	LastCheckedAt        *time.Time                  `json:"last_checked_at,omitempty"`
 }
 
 type QuickViewOptimizationInfo struct {
@@ -356,6 +375,26 @@ type QuickViewModel3DInfo struct {
 	FileName        string  `json:"file_name,omitempty"`
 	SizeBytes       int64   `json:"size_bytes,omitempty"`
 	PreviewURL      string  `json:"preview_url,omitempty"`
+}
+
+type QuickViewGaussianSplatInfo struct {
+	Format                string  `json:"format,omitempty"`
+	Layout                string  `json:"layout,omitempty"`
+	Representation        string  `json:"representation,omitempty"`
+	ResultID              *uint   `json:"result_id,omitempty"`
+	TaskID                *uint   `json:"task_id,omitempty"`
+	LastExecutionID       *string `json:"last_execution_id,omitempty"`
+	FileName              string  `json:"file_name,omitempty"`
+	SplatCount            int64   `json:"splat_count,omitempty"`
+	SizeBytes             int64   `json:"size_bytes,omitempty"`
+	PreviewURL            string  `json:"preview_url,omitempty"`
+	HasOpacity            *bool   `json:"has_opacity,omitempty"`
+	HasScale              *bool   `json:"has_scale,omitempty"`
+	HasRotation           *bool   `json:"has_rotation,omitempty"`
+	HasSphericalHarmonics *bool   `json:"has_spherical_harmonics,omitempty"`
+	SHDegree              *int    `json:"sh_degree,omitempty"`
+	UnavailableReason     string  `json:"unavailable_reason,omitempty"`
+	RecommendedAction     string  `json:"recommended_action,omitempty"`
 }
 
 type QuickViewRenderFacts struct {
@@ -531,7 +570,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		preferredMode = existing.PreferredMode
 		hasExistingPreference = true
 	}
-	if (source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil) && !hasExistingPreference {
+	if (source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil || source.GaussianSplat != nil) && !hasExistingPreference {
 		preferredMode = models.QuickViewPreferredModeMapQuickView
 	}
 
@@ -571,6 +610,10 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		s.applyRasterMosaicCapability(capability, source.RasterMosaic)
 	} else if source.Raster != nil {
 		if err := s.applyRasterCapability(ctx, capability, identity, source.Raster, source.EngineID); err != nil {
+			return nil, err
+		}
+	} else if source.GaussianSplat != nil {
+		if err := s.applyGaussianSplatCapability(ctx, capability, identity, source.GaussianSplat, source.EngineID); err != nil {
 			return nil, err
 		}
 	} else if source.Model3D != nil {
@@ -619,7 +662,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	if !capability.TileCacheGeneration.Available {
 		capability.CanGenerateTileCache = false
 	}
-	if source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil {
+	if source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil || source.GaussianSplat != nil {
 		capability.CanGenerateTileCache = false
 		capability.TileCacheGeneration = TileCacheGeneration{
 			Available: false,
@@ -765,6 +808,58 @@ func (s *QuickViewService) applyModel3DCapability(ctx context.Context, capabilit
 	capability.RenderSource = ""
 	capability.RecommendedMode = models.QuickViewPreferredModeBasicPreview
 	capability.QuickView = QuickViewRenderInfo{}
+	return nil
+}
+
+func (s *QuickViewService) applyGaussianSplatCapability(ctx context.Context, capability *QuickViewCapability, identity QuickViewIdentity, gaussian *GaussianSplatQuickViewSource, engineID uint) error {
+	if capability == nil || gaussian == nil {
+		return nil
+	}
+	capability.GaussianSplat = gaussianSplatInfoFromSource(gaussian)
+	capability.Raster = nil
+	capability.RasterMosaic = nil
+	capability.Model3D = nil
+	capability.Optimization = nil
+	capability.RealtimeTile = nil
+	capability.DefaultTileCacheID = nil
+	capability.CanUseQuickView = false
+	capability.Status = QuickViewStatusUnavailable
+	capability.UnavailableReason = "requires_ksplat_generation"
+	capability.RenderSource = ""
+	capability.RecommendedMode = models.QuickViewPreferredModeBasicPreview
+	capability.QuickView = QuickViewRenderInfo{}
+	capability.CanGenerateTileCache = false
+	capability.TileCacheGeneration = TileCacheGeneration{
+		Available: false,
+		Reason:    "gaussian splat quick view does not use vector tile cache generation",
+	}
+
+	readyKSplat, err := s.readyGaussianSplatQuickView(ctx, identity, engineID)
+	if err != nil {
+		return err
+	}
+	if readyKSplat != nil {
+		capability.CanUseQuickView = true
+		capability.Status = QuickViewStatusAvailable
+		capability.UnavailableReason = ""
+		capability.RenderSource = QuickViewRenderSourceGaussianSplatKSplat
+		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
+		capability.QuickView = renderInfoFromGaussianSplatQuickView(readyKSplat)
+		capability.GaussianSplat = gaussianSplatInfoFromQuickView(readyKSplat, gaussian)
+		return nil
+	}
+
+	reason := "gaussian_splat_direct_preview"
+	if strings.EqualFold(gaussian.Format, string(format.FormatKSplat)) {
+		reason = "requires_ksplat_generation"
+	}
+	capability.UnavailableReason = reason
+	if capability.GaussianSplat != nil {
+		capability.GaussianSplat.UnavailableReason = reason
+		if reason == "requires_ksplat_generation" {
+			capability.GaussianSplat.RecommendedAction = commonExecution.TaskTypeGaussianSplatQuickViewGeneration
+		}
+	}
 	return nil
 }
 
@@ -968,6 +1063,20 @@ func (s *QuickViewService) readyModel3DQuickView(ctx context.Context, identity Q
 	return nil, nil
 }
 
+func (s *QuickViewService) readyGaussianSplatQuickView(ctx context.Context, identity QuickViewIdentity, engineID uint) (*models.GaussianSplatQuickView, error) {
+	if s.gaussianSplatRepo == nil || strings.TrimSpace(identity.ItemFingerprint) == "" {
+		return nil, nil
+	}
+	result, err := s.gaussianSplatRepo.GetLatestReadyByFingerprint(ctx, identity.TenantID, identity.ItemFingerprint)
+	if err != nil || result == nil {
+		return nil, err
+	}
+	if gaussianSplatQuickViewFactsMatch(result, identity, engineID) {
+		return result, nil
+	}
+	return nil, nil
+}
+
 func model3DQuickViewFactsMatch(result *models.Model3DQuickView, identity QuickViewIdentity, engineID uint) bool {
 	if result == nil || result.Status != models.Model3DQuickViewStatusReady {
 		return false
@@ -978,7 +1087,20 @@ func model3DQuickViewFactsMatch(result *models.Model3DQuickView, identity QuickV
 	if locator := strings.TrimSpace(identity.Locator); locator != "" && strings.TrimSpace(result.Locator) != "" && result.Locator != locator {
 		return false
 	}
-	return strings.EqualFold(strings.TrimSpace(result.SourceFormat), string(format.FormatOSGB))
+	return isModel3DQuickViewTaskSourceFormat(result.SourceFormat)
+}
+
+func gaussianSplatQuickViewFactsMatch(result *models.GaussianSplatQuickView, identity QuickViewIdentity, engineID uint) bool {
+	if result == nil || result.Status != models.GaussianSplatQuickViewStatusReady {
+		return false
+	}
+	if engineID > 0 && result.SourceEngineID > 0 && result.SourceEngineID != engineID {
+		return false
+	}
+	if locator := strings.TrimSpace(identity.Locator); locator != "" && strings.TrimSpace(result.Locator) != "" && result.Locator != locator {
+		return false
+	}
+	return isGaussianSplatQuickViewTaskSourceFormat(result.SourceFormat)
 }
 
 func rasterCOGFactsMatch(result *models.RasterCOG, identity QuickViewIdentity, raster *RasterQuickViewSource, engineID uint) bool {
@@ -1372,6 +1494,17 @@ func renderInfoFromModel3DQuickView(result *models.Model3DQuickView) QuickViewRe
 	}
 }
 
+func renderInfoFromGaussianSplatQuickView(result *models.GaussianSplatQuickView) QuickViewRenderInfo {
+	id := uint(0)
+	if result != nil {
+		id = result.ID
+	}
+	return QuickViewRenderInfo{
+		RenderSource: QuickViewRenderSourceGaussianSplatKSplat,
+		PreviewURL:   gaussianSplatQuickViewContentURL(id),
+	}
+}
+
 func rasterInfoFromSource(raster *RasterQuickViewSource) *QuickViewRasterInfo {
 	if raster == nil {
 		return nil
@@ -1480,6 +1613,50 @@ func model3DInfoFromSource(model3D *Model3DQuickViewSource) *QuickViewModel3DInf
 		SizeBytes:  model3D.SourceSizeBytes,
 		PreviewURL: strings.TrimSpace(model3D.PreviewURL),
 	}
+}
+
+func gaussianSplatInfoFromSource(gaussian *GaussianSplatQuickViewSource) *QuickViewGaussianSplatInfo {
+	if gaussian == nil {
+		return nil
+	}
+	return &QuickViewGaussianSplatInfo{
+		Format:                strings.TrimSpace(gaussian.Format),
+		Layout:                strings.TrimSpace(gaussian.Layout),
+		Representation:        strings.TrimSpace(gaussian.Representation),
+		SplatCount:            gaussian.SplatCount,
+		SizeBytes:             gaussian.SourceSizeBytes,
+		HasOpacity:            cloneBoolPtr(gaussian.HasOpacity),
+		HasScale:              cloneBoolPtr(gaussian.HasScale),
+		HasRotation:           cloneBoolPtr(gaussian.HasRotation),
+		HasSphericalHarmonics: cloneBoolPtr(gaussian.HasSphericalHarmonics),
+		SHDegree:              cloneIntPtr(gaussian.SHDegree),
+	}
+}
+
+func gaussianSplatInfoFromQuickView(result *models.GaussianSplatQuickView, source *GaussianSplatQuickViewSource) *QuickViewGaussianSplatInfo {
+	info := gaussianSplatInfoFromSource(source)
+	if info == nil {
+		info = &QuickViewGaussianSplatInfo{Format: string(format.FormatKSplat)}
+	}
+	if result == nil {
+		return info
+	}
+	info.Format = strings.TrimSpace(result.SourceFormat)
+	if info.Format == "" {
+		info.Format = string(format.FormatKSplat)
+	}
+	resultID := result.ID
+	info.ResultID = &resultID
+	info.TaskID = result.TaskID
+	info.LastExecutionID = result.LastExecutionID
+	info.FileName = strings.TrimSpace(result.FileName)
+	if result.SizeBytes > 0 {
+		info.SizeBytes = result.SizeBytes
+	}
+	info.PreviewURL = gaussianSplatQuickViewContentURL(result.ID)
+	info.UnavailableReason = ""
+	info.RecommendedAction = ""
+	return info
 }
 
 func model3DInfoFromQuickView(result *models.Model3DQuickView, source *Model3DQuickViewSource) *QuickViewModel3DInfo {
@@ -1748,16 +1925,110 @@ func Model3DQuickViewSourceFromAttributes(attrs map[string]interface{}) *Model3D
 	if len(attrs) == 0 {
 		return nil
 	}
-	if !strings.EqualFold(commonJSON.String(attrs, "item", "data_type"), string(datatype.Model3D)) ||
-		!strings.EqualFold(commonJSON.String(attrs, "item", "format"), string(format.FormatOSGB)) ||
-		!strings.EqualFold(commonJSON.String(attrs, "item", "layout"), string(format.LayoutSingle)) {
+	if !strings.EqualFold(commonJSON.String(attrs, "item", "data_type"), string(datatype.Model3D)) {
+		return nil
+	}
+	itemFormat := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "format")))
+	itemLayout := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "layout")))
+	if !isModel3DQuickViewSourceFormat(itemFormat, itemLayout) {
 		return nil
 	}
 	storageInfo := commonJSON.Section(attrs, "storage")
 	return &Model3DQuickViewSource{
-		Format:          string(format.FormatOSGB),
-		Layout:          string(format.LayoutSingle),
+		Format:          itemFormat,
+		Layout:          itemLayout,
 		SourceSizeBytes: commonJSON.InterfaceInt64(storageInfo["total_size"]),
+	}
+}
+
+func GaussianSplatQuickViewSourceFromAttributes(attrs map[string]interface{}) *GaussianSplatQuickViewSource {
+	if len(attrs) == 0 {
+		return nil
+	}
+	if !strings.EqualFold(commonJSON.String(attrs, "item", "data_type"), string(datatype.GaussianSplat)) {
+		return nil
+	}
+	itemFormat := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "format")))
+	if itemFormat != string(format.FormatPLY) &&
+		itemFormat != string(format.FormatSplat) &&
+		itemFormat != string(format.FormatKSplat) {
+		return nil
+	}
+	itemLayout := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "layout")))
+	typeInfo := commonJSON.Section(attrs, "type_info.gaussian_splat")
+	storageInfo := commonJSON.Section(attrs, "storage")
+	sourceSizeBytes := commonJSON.InterfaceInt64(storageInfo["total_size"])
+	if sourceSizeBytes <= 0 {
+		sourceSizeBytes = commonJSON.InterfaceInt64(typeInfo["size_bytes"])
+	}
+	source := &GaussianSplatQuickViewSource{
+		Format:                itemFormat,
+		Layout:                itemLayout,
+		Representation:        strings.TrimSpace(commonJSON.InterfaceString(typeInfo["representation"])),
+		SplatCount:            commonJSON.InterfaceInt64(typeInfo["splat_count"]),
+		SourceSizeBytes:       sourceSizeBytes,
+		HasOpacity:            optionalBoolPtr(typeInfo, "has_opacity"),
+		HasScale:              optionalBoolPtr(typeInfo, "has_scale"),
+		HasRotation:           optionalBoolPtr(typeInfo, "has_rotation"),
+		HasSphericalHarmonics: optionalBoolPtr(typeInfo, "has_spherical_harmonics"),
+		SHDegree:              optionalIntPtr(typeInfo, "sh_degree"),
+	}
+	if source.Representation == "" {
+		source.Representation = datatype.GaussianSplatRepresentation3DGS
+	}
+	return source
+}
+
+func optionalBoolPtr(values map[string]interface{}, key string) *bool {
+	if values == nil {
+		return nil
+	}
+	if _, ok := values[key]; !ok {
+		return nil
+	}
+	value := commonJSON.InterfaceBool(values[key])
+	return &value
+}
+
+func optionalIntPtr(values map[string]interface{}, key string) *int {
+	if values == nil {
+		return nil
+	}
+	if _, ok := values[key]; !ok {
+		return nil
+	}
+	value := int(commonJSON.InterfaceInt64(values[key]))
+	return &value
+}
+
+func cloneBoolPtr(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func cloneIntPtr(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func isModel3DQuickViewSourceFormat(itemFormat, itemLayout string) bool {
+	switch itemFormat {
+	case string(format.FormatOSGB):
+		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
+	case string(format.FormatGLTF):
+		return itemLayout == string(format.LayoutMulti)
+	case string(format.FormatFBX):
+		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
+	case string(format.FormatOBJ):
+		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
+	default:
+		return false
 	}
 }
 

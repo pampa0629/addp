@@ -275,6 +275,170 @@ func TestCommonDataItemResolverAdaptsOSGBWholeScope(t *testing.T) {
 	}
 }
 
+func TestCommonDataItemResolverAdaptsGLTFManifestMultiItem(t *testing.T) {
+	d := &commonDataItemResolver{}
+	files := []StorageFileRef{
+		{Name: "scene.gltf", Path: "models/building/scene.gltf", Size: 10},
+		{Name: "geometry.bin", Path: "models/building/buffers/geometry.bin", Size: 20},
+		{Name: "baseColor.png", Path: "models/building/textures/baseColor.png", Size: 30},
+		{Name: "normal.ktx2", Path: "models/building/textures/normal.ktx2", Size: 40},
+		{Name: "readme.txt", Path: "models/building/readme.txt", Size: 50},
+	}
+
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+		ContentReader: refMapContentReader{content: map[string][]byte{
+			"models/building/scene.gltf": []byte(`{
+				"asset":{"version":"2.0","generator":"ADDP test"},
+				"buffers":[{"uri":"buffers/geometry.bin","byteLength":256}],
+				"images":[{"uri":"textures/baseColor.png"},{"uri":"textures/normal.ktx2"},{"uri":"data:image/png;base64,AAAA"}]
+			}`),
+		}},
+		DirPath: "models/building",
+		Files:   files,
+		Options: ResolveOptions{IncludeSingleResources: true},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if result.Exclusive {
+		t.Fatal("glTF multi item must not exclusively claim the scope")
+	}
+	if got, want := len(result.Items), 2; got != want {
+		t.Fatalf("Items = %#v, want glTF item plus readme", result.Items)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutMulti || item.DataType != datatype.Model3D || item.Format != string(format.FormatGLTF) {
+		t.Fatalf("item = %#v, want model_3d gltf multi item", item)
+	}
+	if item.PrimaryContentPath != "models/building/scene.gltf" {
+		t.Fatalf("PrimaryContentPath = %q, want glTF manifest", item.PrimaryContentPath)
+	}
+	if got, want := len(item.RefList), 4; got != want {
+		t.Fatalf("refs = %#v, want manifest, buffer and two images", item.RefList)
+	}
+	hasManifest := false
+	for _, ref := range item.RefList {
+		if ref.Path == "models/building/scene.gltf" && ref.Role == "manifest" && ref.Primary {
+			hasManifest = true
+		}
+	}
+	if !hasManifest {
+		t.Fatalf("refs = %#v, want primary manifest ref", item.RefList)
+	}
+	if !result.Claims["models/building/scene.gltf"] ||
+		!result.Claims["models/building/buffers/geometry.bin"] ||
+		!result.Claims["models/building/textures/baseColor.png"] ||
+		!result.Claims["models/building/textures/normal.ktx2"] {
+		t.Fatalf("claims = %#v, want glTF local resources claimed", result.Claims)
+	}
+	if result.Claims["models/building/readme.txt"] {
+		t.Fatalf("claims = %#v, readme must not be claimed by glTF", result.Claims)
+	}
+	if result.Items[1].PrimaryContentPath != "models/building/readme.txt" {
+		t.Fatalf("second item = %#v, want readme single item", result.Items[1])
+	}
+}
+
+func TestCommonDataItemResolverRejectsIncompleteGLTFRefs(t *testing.T) {
+	d := &commonDataItemResolver{}
+	files := []StorageFileRef{
+		{Name: "scene.gltf", Path: "models/incomplete/scene.gltf", Size: 10},
+	}
+
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+		ContentReader: refMapContentReader{content: map[string][]byte{
+			"models/incomplete/scene.gltf": []byte(`{"asset":{"version":"2.0"},"buffers":[{"uri":"missing.bin","byteLength":256}]}`),
+		}},
+		DirPath: "models/incomplete",
+		Files:   files,
+		Options: ResolveOptions{IncludeSingleResources: true},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if len(result.Items) != 0 || len(result.Claims) != 0 {
+		t.Fatalf("ResolveItems() = %#v, want no glTF item with missing local refs", result)
+	}
+}
+
+func TestCommonDataItemResolverClaimsOBJMaterialLibraryRefs(t *testing.T) {
+	d := &commonDataItemResolver{}
+	files := []StorageFileRef{
+		{Name: "rifle.obj", Path: "models/obj/rifle.obj", Size: 100},
+		{Name: "rifle.mtl", Path: "models/obj/rifle.mtl", Size: 20},
+		{Name: "albedo.png", Path: "models/obj/textures/albedo.png", Size: 30},
+		{Name: "readme.txt", Path: "models/obj/readme.txt", Size: 10},
+	}
+
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+		ContentReader: refMapContentReader{content: map[string][]byte{
+			"models/obj/rifle.obj":           []byte("mtllib rifle.mtl\nv 0 0 0\n"),
+			"models/obj/rifle.mtl":           []byte("newmtl default\nmap_Kd textures/albedo.png\n"),
+			"models/obj/textures/albedo.png": []byte("png"),
+			"models/obj/readme.txt":          []byte("readme"),
+		}},
+		DirPath: "models/obj",
+		Files:   files,
+		Options: ResolveOptions{IncludeSingleResources: true},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if result.Exclusive {
+		t.Fatal("OBJ material refs must not exclusively claim the scope")
+	}
+	if got, want := len(result.Items), 2; got != want {
+		t.Fatalf("Items = %#v, want OBJ item plus readme", result.Items)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutSingle || item.DataType != datatype.Model3D || item.Format != string(format.FormatOBJ) {
+		t.Fatalf("item = %#v, want model_3d obj single item", item)
+	}
+	if item.PrimaryContentPath != "models/obj/rifle.obj" {
+		t.Fatalf("PrimaryContentPath = %q, want OBJ file", item.PrimaryContentPath)
+	}
+	if got, want := len(item.RefList), 3; got != want {
+		t.Fatalf("refs = %#v, want OBJ, MTL and texture refs", item.RefList)
+	}
+	if !result.Claims["models/obj/rifle.obj"] ||
+		!result.Claims["models/obj/rifle.mtl"] ||
+		!result.Claims["models/obj/textures/albedo.png"] {
+		t.Fatalf("claims = %#v, want OBJ local resources claimed", result.Claims)
+	}
+	if result.Claims["models/obj/readme.txt"] {
+		t.Fatalf("claims = %#v, readme must not be claimed by OBJ", result.Claims)
+	}
+	if result.Items[1].PrimaryContentPath != "models/obj/readme.txt" {
+		t.Fatalf("second item = %#v, want readme single item", result.Items[1])
+	}
+}
+
+func TestCommonDataItemResolverDoesNotClaimOBJDirectoryImagesWithoutMTL(t *testing.T) {
+	d := &commonDataItemResolver{}
+	files := []StorageFileRef{
+		{Name: "mesh.obj", Path: "models/obj/mesh.obj", Size: 100},
+		{Name: "mesh_001.jpg", Path: "models/obj/mesh_001.jpg", Size: 30},
+	}
+
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+		ContentReader: refMapContentReader{content: map[string][]byte{
+			"models/obj/mesh.obj": []byte("mtllib missing.mtl\nusemtl material_0\nv 0 0 0\n"),
+		}},
+		DirPath: "models/obj",
+		Files:   files,
+		Options: ResolveOptions{IncludeSingleResources: true},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if got, want := len(result.Items), 2; got != want {
+		t.Fatalf("Items = %#v, want OBJ and JPG as independent items when MTL is missing", result.Items)
+	}
+	if result.Claims["models/obj/mesh_001.jpg"] {
+		t.Fatalf("claims = %#v, JPG must not be claimed without MTL map_Kd evidence", result.Claims)
+	}
+}
+
 func TestCommonDataItemResolverRejects3DTilesManifestByNameOnly(t *testing.T) {
 	d := &commonDataItemResolver{}
 	files := []StorageFileRef{

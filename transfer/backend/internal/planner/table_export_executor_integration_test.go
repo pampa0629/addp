@@ -9,7 +9,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 	"github.com/addp/common/format"
 	geojsonformat "github.com/addp/common/format/plugins/geojson"
 	"github.com/addp/transfer/internal/executor"
+	"github.com/addp/transfer/internal/testpg"
 	_ "github.com/lib/pq"
 )
 
@@ -28,10 +28,9 @@ func TestIntegrationPlannerPlanExecutesPostgresGeoJSONReadTransform(t *testing.T
 	}
 
 	ctx := context.Background()
-	connInfo := plannerIntegrationPostgresConnInfo()
+	connInfo := plannerIntegrationPostgresConnInfo(t)
 	pg := &postgresql.PostgreSQLPlugin{}
 	db := openPlannerIntegrationPostgres(t, ctx, pg, connInfo)
-	defer db.Close()
 
 	schemaName := plannerIntegrationPostgresTestSchema(t, ctx, db)
 	tableName := fmt.Sprintf("planner_pg_3857_to_geojson_%d", time.Now().UnixNano())
@@ -109,22 +108,9 @@ func TestIntegrationPlannerPlanExecutesPostgresGeoJSONReadTransform(t *testing.T
 	}
 }
 
-func plannerIntegrationPostgresConnInfo() engineplugin.ConnectionInfo {
-	return engineplugin.ConnectionInfo{
-		"host":     plannerIntegrationEnv("ADDP_TEST_POSTGRES_HOST", "localhost"),
-		"port":     plannerIntegrationEnv("ADDP_TEST_POSTGRES_PORT", "15432"),
-		"user":     plannerIntegrationEnv("ADDP_TEST_POSTGRES_USER", "addp"),
-		"password": plannerIntegrationEnv("ADDP_TEST_POSTGRES_PASSWORD", "addp_password"),
-		"database": plannerIntegrationEnv("ADDP_TEST_POSTGRES_DATABASE", "addp"),
-		"sslmode":  plannerIntegrationEnv("ADDP_TEST_POSTGRES_SSLMODE", "disable"),
-	}
-}
-
-func plannerIntegrationEnv(key, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-		return value
-	}
-	return fallback
+func plannerIntegrationPostgresConnInfo(t *testing.T) engineplugin.ConnectionInfo {
+	t.Helper()
+	return testpg.ConnInfoFromEnv(t)
 }
 
 func openPlannerIntegrationPostgres(t *testing.T, ctx context.Context, pg *postgresql.PostgreSQLPlugin, connInfo engineplugin.ConnectionInfo) *sql.DB {
@@ -142,6 +128,10 @@ func openPlannerIntegrationPostgres(t *testing.T, ctx context.Context, pg *postg
 		_ = db.Close()
 		t.Skipf("PostGIS is not available: %v", err)
 	}
+	testpg.DropSchemasWithPrefixes(t, ctx, db, "transfer_planner_test_")
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
 	return db
 }
 
@@ -149,12 +139,7 @@ func plannerIntegrationPostgresTestSchema(t *testing.T, ctx context.Context, db 
 	t.Helper()
 
 	schemaName := fmt.Sprintf("transfer_planner_test_%d", time.Now().UnixNano())
-	if _, err := db.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA "%s"`, schemaName)); err != nil {
-		t.Fatalf("create test schema failed: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE`, schemaName))
-	})
+	testpg.CreateSchema(t, ctx, db, schemaName)
 	return schemaName
 }
 

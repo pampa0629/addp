@@ -249,6 +249,22 @@ type PointCloudInfoProvider interface {
 	DescribePointCloud(ctx context.Context, input io.Reader, options *ParseOptions) (*PointCloudDescribeResult, error)
 }
 
+type GaussianSplatInfoProvider interface {
+	FormatPlugin
+	DescribeGaussianSplat(ctx context.Context, input GaussianSplatDescribeInput, options *ParseOptions) (*GaussianSplatDescribeResult, error)
+}
+
+// GaussianSplatDescribeInput carries both sequential and optional range access
+// for one Gaussian splatting resource. Providers use Reader for low-cost header
+// and exact small-file parsing; RangeReader/Ref/SizeBytes allow approximate
+// sampled bounds without scanning a large body.
+type GaussianSplatDescribeInput struct {
+	Reader      io.Reader
+	RangeReader contentio.RangeReader
+	Ref         contentio.Ref
+	SizeBytes   int64
+}
+
 // RelatedRefSpecProvider 表示格式能够声明多 ref 资源的 ref 规格。
 //
 // 该接口只描述 ref 角色和必需性，调用方仍负责 data item 边界识别、

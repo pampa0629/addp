@@ -1,4 +1,6 @@
 import sys
+import json
+import struct
 from pathlib import Path
 
 import pytest
@@ -17,7 +19,14 @@ from operators import CommandResult, ConverterError, converter_status, invoke_op
 
 def test_operator_metadata_contract():
     operators = list_operators()
-    assert [operator["name"] for operator in operators] == ["osgb_to_glb", "osgb_scene_to_3dtiles"]
+    assert [operator["name"] for operator in operators] == [
+        "osgb_to_glb",
+        "gltf_to_glb",
+        "fbx_to_glb",
+        "obj_to_glb",
+        "osgb_scene_to_3dtiles",
+        "gaussian_splat_to_ksplat",
+    ]
     assert_operator_metadata_contract(operators, expected_engine_type="model3d_workflow")
 
 
@@ -27,6 +36,8 @@ def test_converter_status_defaults_to_engine_bound_binary():
     assert status["binding"] == "model3d_workflow"
     assert status["env"] == "MODEL3D_CONVERTER_BIN"
     assert status["path"].endswith("engines/model3d-workflow/bin/_3dtile")
+    assert status["mesh_converter"]["env"] == "MODEL3D_MESH_CONVERTER_BIN"
+    assert status["mesh_converter"]["path"].endswith("engines/model3d-workflow/bin/assimp")
 
 
 def test_converter_status_rejects_path_command_name():
@@ -34,6 +45,83 @@ def test_converter_status_rejects_path_command_name():
 
     assert status["available"] is False
     assert "not a PATH command name" in status["details"]
+
+
+def test_gaussian_splat_to_ksplat_publishes_existing_ksplat(tmp_path, monkeypatch):
+    source = tmp_path / "model.ksplat"
+    source.write_bytes(b"ksplat")
+    captured = {}
+
+    def fake_publish(path, publish):
+        captured["path"] = path
+        captured["publish"] = publish
+        return {
+            "object_uri": publish["locator"],
+            "object_name": publish["object"],
+            "uploaded_files": 1,
+            "uploaded_bytes": path.stat().st_size,
+            "content_type": publish.get("content_type") or "application/vnd.gaussian-ksplat",
+        }
+
+    monkeypatch.setattr(operators, "publish_object_store_file", fake_publish)
+
+    facts = invoke_operator(
+        "gaussian_splat_to_ksplat",
+        {
+            "access_plan": {
+                "source": {"local_path": str(source), "format": "ksplat"},
+                "target": {
+                    "file_name": "model.ksplat",
+                    "publish": {
+                        "method": "object_store",
+                        "endpoint": "minio:9000",
+                        "access_key": "ak",
+                        "secret_key": "sk",
+                        "use_ssl": False,
+                        "bucket": "manager",
+                        "object": "tenant_1/gaussian-splat/model.ksplat",
+                        "locator": "s3://manager/tenant_1/gaussian-splat/model.ksplat",
+                    },
+                },
+            }
+        },
+    )
+
+    assert captured["path"] == source
+    assert facts["ksplat_ref"] == "tenant_1/gaussian-splat/model.ksplat"
+    assert facts["ksplat_uri"] == "s3://manager/tenant_1/gaussian-splat/model.ksplat"
+    assert facts["size_bytes"] == 6
+    assert facts["converter"] == "copy"
+    assert "secret_key" not in str(facts)
+
+
+def test_gaussian_splat_to_ksplat_rejects_non_ksplat_source(tmp_path):
+    source = tmp_path / "model.ply"
+    source.write_bytes(b"ply")
+
+    with pytest.raises(ConverterError) as exc:
+        invoke_operator(
+            "gaussian_splat_to_ksplat",
+            {
+                "access_plan": {
+                    "source": {"local_path": str(source), "format": "ply"},
+                    "target": {
+                        "file_name": "model.ksplat",
+                        "publish": {
+                            "method": "object_store",
+                            "endpoint": "minio:9000",
+                            "access_key": "ak",
+                            "secret_key": "sk",
+                            "bucket": "manager",
+                            "object": "model.ksplat",
+                        },
+                    },
+                }
+            },
+        )
+
+    assert exc.value.error_code == "UNSUPPORTED_SOURCE_FORMAT"
+    assert "dedicated converter" in (exc.value.details or "")
 
 
 def test_osgb_scene_to_3dtiles_invokes_converter_and_returns_facts(tmp_path):
@@ -330,6 +418,312 @@ def test_osgb_to_glb_invokes_converter_and_returns_facts(tmp_path, monkeypatch):
     assert captured["publish_path"].exists() is False
 
 
+def test_gltf_to_glb_invokes_converter_and_returns_facts(tmp_path, monkeypatch):
+    source = tmp_path / "scene.gltf"
+    converter = tmp_path / "engine" / "bin" / "assimp"
+    source.write_text('{"asset":{"version":"2.0"}}', encoding="utf-8")
+    captured = {}
+
+    def fake_runner(command, timeout_seconds):
+        target = Path(command[-2])
+        captured["target"] = target
+        target.write_bytes(b"glb")
+        return CommandResult(returncode=0, stderr="")
+
+    def fake_publish(path, publish):
+        captured["publish_path"] = path
+        assert path.name == "scene.glb"
+        return {
+            "object_uri": "s3://manager/model3d/scene.glb",
+            "object_name": "model3d/scene.glb",
+            "uploaded_bytes": path.stat().st_size,
+        }
+
+    monkeypatch.setattr(operators, "publish_object_store_file", fake_publish)
+    facts = invoke_operator(
+        "gltf_to_glb",
+        {
+            "access_plan": {
+                "source": {"local_path": str(source)},
+                "target": {
+                    "file_name": "scene.glb",
+                    "publish": {
+                        "method": "object_store",
+                        "endpoint": "minio:9000",
+                        "access_key": "ak",
+                        "secret_key": "sk",
+                        "use_ssl": False,
+                        "bucket": "manager",
+                        "object": "model3d/scene.glb",
+                    },
+                },
+            }
+        },
+        runner=fake_runner,
+        env={"MODEL3D_MESH_CONVERTER_BIN": str(converter)},
+    )
+
+    assert facts["glb_uri"] == "s3://manager/model3d/scene.glb"
+    assert facts["glb_ref"] == "model3d/scene.glb"
+    assert facts["source_format"] == "gltf"
+    assert facts["command"] == [str(converter), "export", str(source), str(captured["target"]), "-embtex"]
+    assert captured["publish_path"].exists() is False
+
+
+def test_fbx_to_glb_invokes_converter_and_returns_facts(tmp_path, monkeypatch):
+    source = tmp_path / "mesh.fbx"
+    converter = tmp_path / "engine" / "bin" / "assimp"
+    source.write_text("mesh", encoding="utf-8")
+    captured = {}
+
+    def fake_runner(command, timeout_seconds):
+        target = Path(command[-2])
+        captured["target"] = target
+        target.write_bytes(_glb_bytes({"asset": {"version": "2.0"}}))
+        return CommandResult(returncode=0)
+
+    def fake_publish(path, publish):
+        captured["publish_path"] = path
+        return {
+            "object_uri": "s3://manager/model3d/fbx.glb",
+            "object_name": "model3d/fbx.glb",
+            "uploaded_bytes": path.stat().st_size,
+        }
+
+    monkeypatch.setattr(operators, "publish_object_store_file", fake_publish)
+    facts = invoke_operator(
+        "fbx_to_glb",
+        {
+            "access_plan": {
+                "source": {"local_path": str(source)},
+                "target": {
+                    "file_name": "fbx.glb",
+                    "publish": {
+                        "method": "object_store",
+                        "endpoint": "minio:9000",
+                        "access_key": "ak",
+                        "secret_key": "sk",
+                        "bucket": "manager",
+                        "object": "model3d/fbx.glb",
+                    },
+                },
+            }
+        },
+        runner=fake_runner,
+        env={"MODEL3D_MESH_CONVERTER_BIN": str(converter)},
+    )
+
+    assert facts["source_format"] == "fbx"
+    assert facts["glb_ref"] == "model3d/fbx.glb"
+    assert facts["command"] == [str(converter), "export", str(source), str(captured["target"]), "-embtex"]
+    assert captured["publish_path"].exists() is False
+
+
+def test_obj_to_glb_invokes_converter_and_returns_facts(tmp_path, monkeypatch):
+    source = tmp_path / "mesh.obj"
+    converter = tmp_path / "engine" / "bin" / "assimp"
+    source.write_text("v 0 0 0\n", encoding="utf-8")
+    captured = {}
+
+    def fake_runner(command, timeout_seconds):
+        target = Path(command[-2])
+        captured["target"] = target
+        target.write_bytes(_glb_bytes({"asset": {"version": "2.0"}}))
+        return CommandResult(returncode=0)
+
+    def fake_publish(path, publish):
+        captured["publish_path"] = path
+        return {
+            "object_uri": "s3://manager/model3d/obj.glb",
+            "object_name": "model3d/obj.glb",
+            "uploaded_bytes": path.stat().st_size,
+        }
+
+    monkeypatch.setattr(operators, "publish_object_store_file", fake_publish)
+    facts = invoke_operator(
+        "obj_to_glb",
+        {
+            "access_plan": {
+                "source": {"local_path": str(source)},
+                "target": {
+                    "file_name": "obj.glb",
+                    "publish": {
+                        "method": "object_store",
+                        "endpoint": "minio:9000",
+                        "access_key": "ak",
+                        "secret_key": "sk",
+                        "bucket": "manager",
+                        "object": "model3d/obj.glb",
+                    },
+                },
+            }
+        },
+        runner=fake_runner,
+        env={"MODEL3D_MESH_CONVERTER_BIN": str(converter)},
+    )
+
+    assert facts["source_format"] == "obj"
+    assert facts["glb_ref"] == "model3d/obj.glb"
+    assert facts["command"] == [str(converter), "export", str(source), str(captured["target"]), "-embtex"]
+    assert captured["publish_path"].exists() is False
+
+
+def test_obj_to_glb_repairs_assimp_transparent_textured_materials(tmp_path, monkeypatch):
+    source = tmp_path / "mesh.obj"
+    converter = tmp_path / "engine" / "bin" / "assimp"
+    source.write_text("mtllib mesh.mtl\nv 0 0 0\n", encoding="utf-8")
+    (tmp_path / "mesh.mtl").write_text("newmtl material_0\nTr 1.000000\nmap_Kd texture.jpg\n", encoding="utf-8")
+    captured = {}
+
+    def fake_runner(command, timeout_seconds):
+        target = Path(command[-2])
+        captured["target"] = target
+        target.write_bytes(
+            _glb_bytes(
+                {
+                    "asset": {"version": "2.0"},
+                    "materials": [
+                        {
+                            "name": "material_0_material",
+                            "pbrMetallicRoughness": {
+                                "baseColorTexture": {"index": 0},
+                                "baseColorFactor": [1.0, 1.0, 1.0, 0.0],
+                            },
+                            "alphaMode": "BLEND",
+                            "extensions": {
+                                "KHR_materials_pbrSpecularGlossiness": {
+                                    "diffuseTexture": {"index": 0},
+                                    "diffuseFactor": [1.0, 1.0, 1.0, 0.0],
+                                }
+                            },
+                        }
+                    ],
+                    "textures": [{"source": 0}],
+                    "images": [{"bufferView": 0, "mimeType": "image/jpeg"}],
+                    "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 3}],
+                    "buffers": [{"byteLength": 3}],
+                },
+                b"jpg",
+            )
+        )
+        return CommandResult(returncode=0)
+
+    def fake_publish(path, publish):
+        captured["published_doc"] = _glb_json(path.read_bytes())
+        return {
+            "object_uri": "s3://manager/model3d/obj.glb",
+            "object_name": "model3d/obj.glb",
+            "uploaded_bytes": path.stat().st_size,
+        }
+
+    monkeypatch.setattr(operators, "publish_object_store_file", fake_publish)
+    facts = invoke_operator(
+        "obj_to_glb",
+        {
+            "access_plan": {
+                "source": {"local_path": str(source)},
+                "target": {
+                    "file_name": "obj.glb",
+                    "publish": {
+                        "method": "object_store",
+                        "endpoint": "minio:9000",
+                        "access_key": "ak",
+                        "secret_key": "sk",
+                        "bucket": "manager",
+                        "object": "model3d/obj.glb",
+                    },
+                },
+            }
+        },
+        runner=fake_runner,
+        env={"MODEL3D_MESH_CONVERTER_BIN": str(converter)},
+    )
+
+    material = captured["published_doc"]["materials"][0]
+    assert material["pbrMetallicRoughness"]["baseColorFactor"][3] == 1.0
+    assert material["extensions"]["KHR_materials_pbrSpecularGlossiness"]["diffuseFactor"][3] == 1.0
+    assert "alphaMode" not in material
+    assert facts["postprocess"] == {
+        "obj_textured_material_alpha": "normalized_to_opaque",
+        "material_count": 1,
+    }
+
+
+def test_obj_to_glb_rejects_missing_material_library(tmp_path, monkeypatch):
+    source = tmp_path / "mesh.obj"
+    converter = tmp_path / "engine" / "bin" / "assimp"
+    source.write_text("mtllib missing.mtl\nv 0 0 0\n", encoding="utf-8")
+
+    def fake_runner(command, timeout_seconds):
+        raise AssertionError("converter must not run when OBJ material library is missing")
+
+    with pytest.raises(ConverterError) as exc_info:
+        invoke_operator(
+            "obj_to_glb",
+            {
+                "access_plan": {
+                    "source": {"local_path": str(source)},
+                    "target": {
+                        "file_name": "obj.glb",
+                        "publish": {
+                            "method": "object_store",
+                            "endpoint": "minio:9000",
+                            "access_key": "ak",
+                            "secret_key": "sk",
+                            "bucket": "manager",
+                            "object": "model3d/obj.glb",
+                        },
+                    },
+                }
+            },
+            runner=fake_runner,
+            env={"MODEL3D_MESH_CONVERTER_BIN": str(converter)},
+        )
+
+    assert exc_info.value.error_code == "MISSING_OBJ_MATERIAL_LIBRARY"
+    assert exc_info.value.details == "missing.mtl"
+
+
+def test_fbx_to_glb_rejects_directory_output(tmp_path, monkeypatch):
+    source = tmp_path / "mesh.fbx"
+    converter = tmp_path / "engine" / "bin" / "assimp"
+    source.write_text("mesh", encoding="utf-8")
+
+    def fake_runner(command, timeout_seconds):
+        Path(command[-2]).mkdir()
+        return CommandResult(returncode=0)
+
+    def fake_publish(path, publish):
+        raise AssertionError("directory output must not be published as GLB")
+
+    monkeypatch.setattr(operators, "publish_object_store_file", fake_publish)
+
+    with pytest.raises(ConverterError) as exc_info:
+        invoke_operator(
+            "fbx_to_glb",
+            {
+                "access_plan": {
+                    "source": {"local_path": str(source)},
+                    "target": {
+                        "file_name": "fbx.glb",
+                        "publish": {
+                            "method": "object_store",
+                            "endpoint": "minio:9000",
+                            "access_key": "ak",
+                            "secret_key": "sk",
+                            "bucket": "manager",
+                            "object": "model3d/fbx.glb",
+                        },
+                    },
+                }
+            },
+            runner=fake_runner,
+            env={"MODEL3D_MESH_CONVERTER_BIN": str(converter)},
+        )
+
+    assert exc_info.value.error_code == "OUTPUT_NOT_FOUND"
+
+
 def test_publish_object_store_file_uploads_glb_last_fact(tmp_path, monkeypatch):
     glb = tmp_path / "preview.glb"
     converter = tmp_path / "engine" / "bin" / "_3dtile"
@@ -404,3 +798,24 @@ def test_missing_access_plan_is_invalid():
         invoke_operator("osgb_scene_to_3dtiles", {}, runner=lambda command, timeout: CommandResult(0))
 
     assert exc_info.value.error_code == "INVALID_PARAMS"
+
+
+def _glb_bytes(doc, bin_chunk=b""):
+    json_bytes = json.dumps(doc, separators=(",", ":")).encode("utf-8")
+    json_bytes += b" " * ((4 - len(json_bytes) % 4) % 4)
+    chunks = [(b"JSON", json_bytes)]
+    if bin_chunk:
+        bin_chunk += b"\x00" * ((4 - len(bin_chunk) % 4) % 4)
+        chunks.append((b"BIN\x00", bin_chunk))
+    total_length = 12 + sum(8 + len(chunk) for _, chunk in chunks)
+    output = bytearray(struct.pack("<4sII", b"glTF", 2, total_length))
+    for chunk_type, chunk in chunks:
+        output += struct.pack("<I4s", len(chunk), chunk_type)
+        output += chunk
+    return bytes(output)
+
+
+def _glb_json(data):
+    chunk_length, chunk_type = struct.unpack_from("<I4s", data, 12)
+    assert chunk_type == b"JSON"
+    return json.loads(data[20 : 20 + chunk_length].decode("utf-8").strip())

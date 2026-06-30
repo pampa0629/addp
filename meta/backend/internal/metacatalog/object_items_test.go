@@ -140,6 +140,24 @@ func TestStorageFileRefFromEntryProjectsCatalogEntrySummary(t *testing.T) {
 	}
 }
 
+func TestStorageFileRefFromEntryIgnoresSystemFiles(t *testing.T) {
+	t.Parallel()
+
+	sizeBytes := int64(1)
+	_, ok := StorageFileRefFromEntry(plugin.CatalogEntry{
+		Name: ".DS_Store",
+		Path: plugin.FileItemPath(7, "datasets/.DS_Store"),
+		Role: plugin.CatalogRoleLeaf,
+		Storage: &plugin.CatalogStorageFacts{
+			Path:      "datasets/.DS_Store",
+			SizeBytes: &sizeBytes,
+		},
+	})
+	if ok {
+		t.Fatal("StorageFileRefFromEntry() ok = true, want system file ignored")
+	}
+}
+
 func TestStorageDirectoryRefFromEntryFallsBackToCatalogPath(t *testing.T) {
 	t.Parallel()
 
@@ -153,6 +171,22 @@ func TestStorageDirectoryRefFromEntryFallsBackToCatalogPath(t *testing.T) {
 	}
 	if entry.Name != "datasets" || entry.Path != "datasets" {
 		t.Fatalf("entry = %#v", entry)
+	}
+}
+
+func TestStorageDirectoryRefFromEntryIgnoresSystemDirectories(t *testing.T) {
+	t.Parallel()
+
+	_, ok := StorageDirectoryRefFromEntry(plugin.CatalogEntry{
+		Name: "__MACOSX",
+		Path: plugin.FileDirectoryPath(7, "__MACOSX"),
+		Role: plugin.CatalogRoleBranch,
+		Storage: &plugin.CatalogStorageFacts{
+			Path: "__MACOSX",
+		},
+	})
+	if ok {
+		t.Fatal("StorageDirectoryRefFromEntry() ok = true, want system directory ignored")
 	}
 }
 

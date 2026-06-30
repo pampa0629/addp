@@ -280,21 +280,22 @@ type ObjectPreviewContent struct {
 }
 
 const (
-	ObjectPreviewKindPDF         = "pdf"
-	ObjectPreviewKindDOCX        = "docx"
-	ObjectPreviewKindWPS         = "wps"
-	ObjectPreviewKindPPTX        = "pptx"
-	ObjectPreviewKindImage       = "image"
-	ObjectPreviewKindVideo       = "video"
-	ObjectPreviewKindAudio       = "audio"
-	ObjectPreviewKindJSON        = "json"
-	ObjectPreviewKindContainer   = "container"
-	ObjectPreviewKindText        = "text"
-	ObjectPreviewKindMarkdown    = "markdown"
-	ObjectPreviewKindTable       = "table"
-	ObjectPreviewKindModel3D     = "model_3d"
-	ObjectPreviewKindPointCloud  = "point_cloud"
-	ObjectPreviewKindUnsupported = "unsupported"
+	ObjectPreviewKindPDF           = "pdf"
+	ObjectPreviewKindDOCX          = "docx"
+	ObjectPreviewKindWPS           = "wps"
+	ObjectPreviewKindPPTX          = "pptx"
+	ObjectPreviewKindImage         = "image"
+	ObjectPreviewKindVideo         = "video"
+	ObjectPreviewKindAudio         = "audio"
+	ObjectPreviewKindJSON          = "json"
+	ObjectPreviewKindContainer     = "container"
+	ObjectPreviewKindText          = "text"
+	ObjectPreviewKindMarkdown      = "markdown"
+	ObjectPreviewKindTable         = "table"
+	ObjectPreviewKindModel3D       = "model_3d"
+	ObjectPreviewKindPointCloud    = "point_cloud"
+	ObjectPreviewKindGaussianSplat = "gaussian_splat"
+	ObjectPreviewKindUnsupported   = "unsupported"
 )
 
 const (

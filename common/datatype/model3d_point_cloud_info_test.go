@@ -71,3 +71,43 @@ func TestPointCloudInfoPayloadNormalizesFacts(t *testing.T) {
 		t.Fatalf("HasColor = %v, want true", info.HasColor)
 	}
 }
+
+func TestGaussianSplatInfoPayloadNormalizesFacts(t *testing.T) {
+	splatCount := int64(128)
+	shDegree := -1
+	hasScale := true
+	sampledBoundsSampleCount := int64(256)
+	info := GaussianSplatInfoFromPayload(map[string]interface{}{
+		"representation":              " 3d_gaussian_splatting ",
+		"splat_count":                 splatCount,
+		"has_scale":                   hasScale,
+		"sh_degree":                   shDegree,
+		"sampled_bounds_3d":           map[string]interface{}{"min_x": 1.0, "max_x": 2.0},
+		"sampled_bounds_method":       " sampled_binary_vertices ",
+		"sampled_bounds_sample_count": sampledBoundsSampleCount,
+	})
+	if info == nil {
+		t.Fatal("GaussianSplatInfoFromPayload() = nil")
+	}
+	if info.Representation != GaussianSplatRepresentation3DGS {
+		t.Fatalf("Representation = %q, want %q", info.Representation, GaussianSplatRepresentation3DGS)
+	}
+	if info.SplatCount == nil || *info.SplatCount != splatCount {
+		t.Fatalf("SplatCount = %v, want %d", info.SplatCount, splatCount)
+	}
+	if info.SHDegree != nil {
+		t.Fatalf("SHDegree = %v, want nil for negative input", *info.SHDegree)
+	}
+	if info.HasScale == nil || !*info.HasScale {
+		t.Fatalf("HasScale = %v, want true", info.HasScale)
+	}
+	if info.SampledBounds3D == nil || info.SampledBounds3D.MinX == nil || *info.SampledBounds3D.MinX != 1 {
+		t.Fatalf("SampledBounds3D = %#v, want min_x", info.SampledBounds3D)
+	}
+	if info.SampledBoundsMethod != "sampled_binary_vertices" {
+		t.Fatalf("SampledBoundsMethod = %q, want sampled_binary_vertices", info.SampledBoundsMethod)
+	}
+	if info.SampledBoundsSampleCount == nil || *info.SampledBoundsSampleCount != sampledBoundsSampleCount {
+		t.Fatalf("SampledBoundsSampleCount = %v, want %d", info.SampledBoundsSampleCount, sampledBoundsSampleCount)
+	}
+}

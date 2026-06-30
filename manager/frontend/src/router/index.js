@@ -66,6 +66,12 @@ const routes = [
         meta: { requiresAuth: true, title: '三维模型快显-addp' }
       },
       {
+        path: 'gaussian-splat-quick-view',
+        name: 'GaussianSplatQuickView',
+        component: () => import('../views/GaussianSplatQuickView.vue'),
+        meta: { requiresAuth: true, title: '高斯泼溅快显-addp' }
+      },
+      {
         path: 'model-3d-tiles',
         name: 'Model3DTiles',
         component: () => import('../views/Model3DTiles.vue'),

@@ -10,8 +10,8 @@
 
 - 根据文件名、MIME、magic bytes 识别 `FormatType`。
 - 维护 `FormatDescriptor` 静态事实，例如 data type、layout 和识别事实。
-- 提供 format identity、FormatPlugin、provider / reader 动态查询；通用 `DataType`、`FieldType`、`TableInfo`、`Model3DInfo`、`PointCloudInfo` 等结构化语义模型归属 `common/datatype`。
-- 注册 format plugin，并通过同一个 plugin 的接口断言获取 info provider / content reader，例如 `FormatPlugin`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`MultiTableReaderProvider`、`TableWriterProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、`Model3DInfoProvider`、`PointCloudInfoProvider`。
+- 提供 format identity、FormatPlugin、provider / reader 动态查询；通用 `DataType`、`FieldType`、`TableInfo`、`Model3DInfo`、`PointCloudInfo`、`GaussianSplatInfo` 等结构化语义模型归属 `common/datatype`。
+- 注册 format plugin，并通过同一个 plugin 的接口断言获取 info provider / content reader，例如 `FormatPlugin`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`MultiTableReaderProvider`、`TableWriterProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、`Model3DInfoProvider`、`PointCloudInfoProvider`、`GaussianSplatInfoProvider`。
 - 提供 `TypeMapper` 注册机制，供 engine / format 在自身边界内把原生类型映射到 ADDP 通用字段类型；上层执行链路不读取原生字段类型。
 - 不再保留 `FileMetadataExtractor` 旁路注册表；新增格式必须通过 FormatPlugin、info provider 和 content reader 进入主线。
 
@@ -36,8 +36,8 @@
 | 格式检测 | `detection.go`、`detection_mime.go`、`detection_magic.go` | 基于扩展名、MIME、magic bytes 和 descriptor 识别 format candidate，不决定 data item 边界；根包保留稳定 facade。 |
 | FormatPlugin、info provider、content reader 接口 | `provider.go` | 只定义格式层能力接口，不接 engine id，不返回 Manager DTO。 |
 | plugin 注册与动态能力查询 | `provider_registry.go`、`provider_register.go`、`provider_constructors.go`、`provider_views.go` | 注册当前进程已加载的 plugin；获取具体 provider / reader / writer 时对同一 plugin 做接口断言。 |
-| data type 通用 info 模型 | `common/datatype` | `common/format` 只通过 provider 返回 `datatype.TableInfo`、`datatype.DocumentInfo`、`datatype.MediaInfo`、`datatype.ContainerInfo`、`datatype.Model3DInfo`、`datatype.PointCloudInfo` 等通用事实，不再保留平行结构。内容样本不进入这些 info。 |
-| 格式私有 info 与横切事实候选 | `plugins/<format>/`，目标通过 describe result 或等价结构返回 | 具体格式私有结构留在对应插件目录；`SpatialInfo`、`AccessIndex`、`FormatInfo` 与 `TableInfo` / `Model3DInfo` / `PointCloudInfo` 同级返回，由 Meta 映射到 `capabilities.*`、`access_index.*`、`format_info.*`。 |
+| data type 通用 info 模型 | `common/datatype` | `common/format` 只通过 provider 返回 `datatype.TableInfo`、`datatype.DocumentInfo`、`datatype.MediaInfo`、`datatype.ContainerInfo`、`datatype.Model3DInfo`、`datatype.PointCloudInfo`、`datatype.GaussianSplatInfo` 等通用事实，不再保留平行结构。内容样本不进入这些 info。 |
+| 格式私有 info 与横切事实候选 | `plugins/<format>/`，目标通过 describe result 或等价结构返回 | 具体格式私有结构留在对应插件目录；`SpatialInfo`、`AccessIndex`、`FormatInfo` 与 `TableInfo` / `Model3DInfo` / `PointCloudInfo` / `GaussianSplatInfo` 同级返回，由 Meta 映射到 `capabilities.*`、`access_index.*`、`format_info.*`。 |
 | 解析选项和 manifest | `options.go`、`manifest.go` | provider / reader 调用选项，以及第三方 descriptor manifest 加载。 |
 | 类型映射注册机制 | `type_mapper.go`、`mappers/`、`plugins/<format>/` | 根包只提供注册表和通用接口；数据库 engine 映射位于 `mappers/`，格式私有映射留在对应 `plugins/<format>/` 目录内。 |
 | 内置格式加载入口 | `builtin/` | 统一 blank import 内置格式插件和 type mapper。 |
@@ -217,6 +217,7 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | `Model3DInfoProvider` | `model_3d` | `single` | `io.Reader` | 返回模型子形态、mesh / node / material / texture / animation / LOD 摘要、三维包围盒和可选空间事实。 | Meta、Manager | glb、gltf、obj、stl、ifc |
 | `ScopeModel3DInfoProvider` | `model_3d` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级三维模型类型信息。 | Meta、Manager | 3dtiles、osgb_scene |
 | `PointCloudInfoProvider` | `point_cloud` | 通常 `single`，EPT / Potree 等可为 `whole` | `io.Reader` 或 scope content reader | 返回点数、点格式、维度、三维包围盒、scale / offset、颜色 / intensity / classification 能力和可选空间事实。 | Meta、Manager | las、laz、copc、pcd、ept、potree |
+| `GaussianSplatInfoProvider` | `gaussian_splat` | 通常 `single` | `GaussianSplatDescribeInput` | 返回高斯基元数量、opacity / scale / rotation / spherical harmonics 能力、精确 `bounds_3d` 或采样 `sampled_bounds_3d`，以及可选空间事实。 | Meta、Manager | 3DGS PLY、splat、ksplat、spz |
 | `RelatedRefSpecProvider` | 任意 multi 格式 | `multi` | 无内容输入 | 声明 related ref 的角色、扩展名、必需性和 primary。 | Meta item detector、Transfer multi reader/writer 构造 | Shapefile 等多 content 格式 |
 | `RefDescriptorProvider` | 任意 multi 格式 | `multi` | `[]RelatedRef` | 把 refs 解释成用户可理解的描述。 | Manager、Meta 展示 | Shapefile 相关内容展示 |
 
@@ -504,7 +505,7 @@ func (m *OracleTypeMapper) FromCommon(commonType datatype.FieldType) (string, in
 
 当前写法：
 
-- 确定的类型元数据进入 `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider`、`Model3DInfoProvider`、`PointCloudInfoProvider` 等 info provider。
+- 确定的类型元数据进入 `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider`、`Model3DInfoProvider`、`PointCloudInfoProvider`、`GaussianSplatInfoProvider` 等 info provider。
 - 格式私有元信息进入 `FormatInfoProvider`。
 - 空间等横切事实和访问索引作为同级结果进入 Meta normalizer，不塞进 `TableInfo`。
 - 样本、文本片段、缩略图、raw content、range content 等进入独立 content reader。

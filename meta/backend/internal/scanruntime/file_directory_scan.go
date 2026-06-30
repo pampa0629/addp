@@ -29,7 +29,7 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 	scanDepth string,
 	force bool,
 ) (int, scanflow.ExtractionCounts, error) {
-	files, subdirs, err := s.listDirectory(ctx, resource, catalogProvider, connInfo, dirPath)
+	files, subdirs, ignoredEntries, err := s.listDirectoryWithIgnored(ctx, resource, catalogProvider, connInfo, dirPath)
 	if err != nil {
 		return 0, scanflow.ExtractionCounts{}, fmt.Errorf("failed to list directory %s: %w", dirPath, err)
 	}
@@ -41,6 +41,16 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 	scannedFileFullNames := make(map[string]bool, len(files))
 	for _, file := range files {
 		scannedFileFullNames[metapath.JoinFSPath(parentNode.FullName, file.Name)] = true
+	}
+	ignoredFullNames := make(map[string]bool, len(ignoredEntries))
+	for _, entry := range ignoredEntries {
+		ignoredFullNames[metapath.JoinFSPath(parentNode.FullName, entry.Name)] = true
+	}
+	if err := s.repo.HardDeleteItemsByNodeFullNames(parentNode.ID, ignoredFullNames); err != nil {
+		s.log.Warn("清理系统噪声文件数据项失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
+	}
+	if err := s.repo.HardDeleteChildNodesByFullNames(parentNode.ID, ignoredFullNames); err != nil {
+		s.log.Warn("清理系统噪声目录节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
 	}
 	if err := s.repo.HardDeleteChildNodesByFullNames(parentNode.ID, scannedFileFullNames); err != nil {
 		s.log.Warn("清理文件路径冲突节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)

@@ -115,6 +115,9 @@ func TestResolveItemsIgnoresSystemEntries(t *testing.T) {
 		Candidates: []Candidate{
 			{Path: "__MACOSX/._data.csv", Name: "._data.csv"},
 			{Path: ".DS_Store", Name: ".DS_Store"},
+			{Path: "._data.csv", Name: "._data.csv"},
+			{Path: "Thumbs.db", Name: "Thumbs.db"},
+			{Path: "desktop.ini", Name: "desktop.ini"},
 			{Path: "data.csv", Name: "data.csv"},
 		},
 		Options: ResolveOptions{IncludeIgnored: true},
@@ -122,8 +125,8 @@ func TestResolveItemsIgnoresSystemEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveItems() error = %v", err)
 	}
-	if len(result.Ignored) != 2 {
-		t.Fatalf("ignored = %#v, want macOS entries ignored", result.Ignored)
+	if len(result.Ignored) != 5 {
+		t.Fatalf("ignored = %#v, want system entries ignored", result.Ignored)
 	}
 	if len(result.Items) != 1 || result.Items[0].Format != "csv" {
 		t.Fatalf("items = %#v, want one csv item", result.Items)

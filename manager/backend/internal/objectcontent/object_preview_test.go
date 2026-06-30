@@ -397,6 +397,130 @@ func TestPointCloudContentHandlerSamplesLASPoints(t *testing.T) {
 	}
 }
 
+func TestGaussianSplatContentHandlerRequiresGaussianDatatype(t *testing.T) {
+	t.Parallel()
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "gaussian", Builtin: models.ObjectPreviewKindGaussianSplat})
+	if err != nil {
+		t.Fatalf("build gaussian splat handler: %v", err)
+	}
+	plainPLY := &ObjectContentRequest{
+		Format:    string(format.FormatPLY),
+		Extension: ".ply",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "model_3d",
+				"format":    "ply",
+			},
+		},
+	}
+	if handler.Matches(plainPLY) {
+		t.Fatal("gaussian splat handler matched model_3d PLY, want datatype-specific match")
+	}
+
+	req := &ObjectContentRequest{
+		Format:     string(format.FormatPLY),
+		Extension:  ".ply",
+		Size:       4096,
+		PreviewURL: "/api/v1/manager/storage-stream?engine_id=26&storage_ref=3d%2Fgaussian%2Fmodel.ply",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "gaussian_splat",
+				"format":    "ply",
+			},
+			"type_info": map[string]interface{}{
+				"gaussian_splat": map[string]interface{}{
+					"splat_count": int64(128),
+				},
+			},
+			"format_info": map[string]interface{}{
+				"ply": map[string]interface{}{
+					"layout":              "gaussian_splat",
+					"is_compressed_splat": true,
+				},
+			},
+		},
+	}
+	if !handler.Matches(req) {
+		t.Fatal("gaussian splat handler did not match gaussian_splat PLY")
+	}
+	content, truncated, err := handler.Handle(context.Background(), req, nil)
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if truncated {
+		t.Fatal("truncated = true, want false")
+	}
+	if content.Kind != models.ObjectPreviewKindGaussianSplat || content.PreviewMaterial != models.PreviewMaterialURL || content.FrontendRenderer != models.ObjectPreviewKindGaussianSplat {
+		t.Fatalf("content = %#v, want gaussian_splat URL preview", content)
+	}
+	if content.URL != "/api/v1/manager/storage-stream?engine_id=26&storage_ref=3d%2Fgaussian%2Fmodel.ply" {
+		t.Fatalf("content.URL = %q, want storage stream URL", content.URL)
+	}
+	gaussianInfo := commonJSON.Section(content.Metadata, "gaussian_splat")
+	if commonJSON.InterfaceInt64(gaussianInfo["splat_count"]) != 128 {
+		t.Fatalf("metadata.gaussian_splat = %#v, want splat_count", gaussianInfo)
+	}
+	if content.Metadata["quick_view_status"] != "ready" {
+		t.Fatalf("quick_view_status = %#v, want ready", content.Metadata["quick_view_status"])
+	}
+	plyInfo := commonJSON.Section(content.Metadata, "format_info.ply")
+	if plyInfo["is_compressed_splat"] != true {
+		t.Fatalf("metadata.format_info.ply = %#v, want compressed splat marker", plyInfo)
+	}
+
+	splatReq := &ObjectContentRequest{
+		Format:     string(format.FormatSplat),
+		Extension:  ".splat",
+		Size:       2048,
+		PreviewURL: "/api/v1/manager/storage-stream?engine_id=26&storage_ref=3d%2Fsplat%2Frubin.splat",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "gaussian_splat",
+				"format":    "splat",
+			},
+		},
+	}
+	if !handler.Matches(splatReq) {
+		t.Fatal("gaussian splat handler did not match gaussian_splat SPLAT")
+	}
+	splatContent, truncated, err := handler.Handle(context.Background(), splatReq, nil)
+	if err != nil {
+		t.Fatalf("Handle(SPLAT) error = %v", err)
+	}
+	if truncated {
+		t.Fatal("truncated = true for SPLAT, want false")
+	}
+	if splatContent.Kind != models.ObjectPreviewKindGaussianSplat || splatContent.PreviewMaterial != models.PreviewMaterialURL || splatContent.FrontendRenderer != models.ObjectPreviewKindGaussianSplat {
+		t.Fatalf("SPLAT content = %#v, want gaussian_splat URL preview", splatContent)
+	}
+
+	ksplatReq := &ObjectContentRequest{
+		Format:     string(format.FormatKSplat),
+		Extension:  ".ksplat",
+		Size:       2048,
+		PreviewURL: "/api/v1/manager/storage-stream?engine_id=26&storage_ref=3d%2Fsplat%2Frubin.ksplat",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "gaussian_splat",
+				"format":    "ksplat",
+			},
+		},
+	}
+	if !handler.Matches(ksplatReq) {
+		t.Fatal("gaussian splat handler did not match gaussian_splat KSPLAT")
+	}
+	ksplatContent, truncated, err := handler.Handle(context.Background(), ksplatReq, nil)
+	if err != nil {
+		t.Fatalf("Handle(KSPLAT) error = %v", err)
+	}
+	if truncated {
+		t.Fatal("truncated = true for KSPLAT, want false")
+	}
+	if ksplatContent.Kind != models.ObjectPreviewKindGaussianSplat || ksplatContent.PreviewMaterial != models.PreviewMaterialURL || ksplatContent.FrontendRenderer != models.ObjectPreviewKindGaussianSplat {
+		t.Fatalf("KSPLAT content = %#v, want gaussian_splat URL preview", ksplatContent)
+	}
+}
+
 func TestLoadObjectContentPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
 	registry := NewObjectContentRegistry()
 	LoadObjectContentPlugins(registry, "")
@@ -430,6 +554,45 @@ func TestLoadObjectContentPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing
 			name: "audio",
 			req:  ObjectContentRequest{Extension: ".wav", ContentType: "audio/wav"},
 			want: "builtin:content-audio",
+		},
+		{
+			name: "gaussian_splat_ply",
+			req: ObjectContentRequest{
+				Format: string(format.FormatPLY),
+				Attributes: map[string]interface{}{
+					"item": map[string]interface{}{
+						"data_type": "gaussian_splat",
+						"format":    "ply",
+					},
+				},
+			},
+			want: "builtin:content-gaussian-splat",
+		},
+		{
+			name: "gaussian_splat_splat",
+			req: ObjectContentRequest{
+				Format: string(format.FormatSplat),
+				Attributes: map[string]interface{}{
+					"item": map[string]interface{}{
+						"data_type": "gaussian_splat",
+						"format":    "splat",
+					},
+				},
+			},
+			want: "builtin:content-gaussian-splat",
+		},
+		{
+			name: "gaussian_splat_ksplat",
+			req: ObjectContentRequest{
+				Format: string(format.FormatKSplat),
+				Attributes: map[string]interface{}{
+					"item": map[string]interface{}{
+						"data_type": "gaussian_splat",
+						"format":    "ksplat",
+					},
+				},
+			},
+			want: "builtin:content-gaussian-splat",
 		},
 	}
 

@@ -162,6 +162,46 @@ export const quickViewAPI = {
     return request.delete(`/manager/model_3d_quick_view/${id}`)
   },
 
+  createGaussianSplatQuickViewTask(payload) {
+    return request.post('/manager/gaussian_splat_quick_view_tasks', payload)
+  },
+
+  listGaussianSplatQuickViewTasks(params = {}) {
+    return request.get('/manager/gaussian_splat_quick_view_tasks', { params })
+  },
+
+  getGaussianSplatQuickViewTask(id) {
+    return request.get(`/manager/gaussian_splat_quick_view_tasks/${id}`)
+  },
+
+  updateGaussianSplatQuickViewTask(id, payload) {
+    return request.put(`/manager/gaussian_splat_quick_view_tasks/${id}`, payload)
+  },
+
+  deleteGaussianSplatQuickViewTask(id) {
+    return request.delete(`/manager/gaussian_splat_quick_view_tasks/${id}`)
+  },
+
+  executeGaussianSplatQuickViewTask(id, payload = {}) {
+    return request.post(`/manager/tasks/gaussian_splat_quick_view_generation/${id}/execute`, {
+      trigger_type: 'manual',
+      source: 'manager',
+      ...payload
+    })
+  },
+
+  listGaussianSplatQuickViews(params = {}) {
+    return request.get('/manager/gaussian_splat_quick_view', { params })
+  },
+
+  getGaussianSplatQuickView(id) {
+    return request.get(`/manager/gaussian_splat_quick_view/${id}`)
+  },
+
+  deleteGaussianSplatQuickView(id) {
+    return request.delete(`/manager/gaussian_splat_quick_view/${id}`)
+  },
+
   createModel3DTilesTask(payload) {
     return request.post('/manager/model_3d_tiles_tasks', payload)
   },

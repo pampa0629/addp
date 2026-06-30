@@ -101,3 +101,25 @@ func TestFormatCapabilitySnapshotReportsTableWriterProvider(t *testing.T) {
 		t.Fatalf("implementations = %#v, want table writer provider", snapshot.Implementations)
 	}
 }
+
+func TestFormatCapabilitySnapshotReportsPLYDynamic3DProviders(t *testing.T) {
+	snapshot, ok := GetFormatCapabilitySnapshot(FormatPLY)
+	if !ok {
+		t.Fatal("expected PLY capability snapshot")
+	}
+	if !snapshot.Implementations.Model3DInfoProvider ||
+		!snapshot.Implementations.PointCloudInfoProvider ||
+		!snapshot.Implementations.GaussianSplatInfoProvider {
+		t.Fatalf("implementations = %#v, want model_3d, point_cloud and gaussian_splat providers", snapshot.Implementations)
+	}
+}
+
+func TestFormatCapabilitySnapshotReportsKSplatGaussianSplatProvider(t *testing.T) {
+	snapshot, ok := GetFormatCapabilitySnapshot(FormatKSplat)
+	if !ok {
+		t.Fatal("expected KSPLAT capability snapshot")
+	}
+	if !snapshot.Implementations.GaussianSplatInfoProvider {
+		t.Fatalf("implementations = %#v, want gaussian_splat provider", snapshot.Implementations)
+	}
+}

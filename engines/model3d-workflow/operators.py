@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import json
 import shutil
+import struct
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -16,6 +18,8 @@ ENGINE_TYPE = "model3d_workflow"
 ENGINE_ROOT = Path(__file__).resolve().parent
 DEFAULT_CONVERTER_BIN = str(ENGINE_ROOT / "bin" / "_3dtile")
 CONVERTER_ENV = "MODEL3D_CONVERTER_BIN"
+DEFAULT_MESH_CONVERTER_BIN = str(ENGINE_ROOT / "bin" / "assimp")
+MESH_CONVERTER_ENV = "MODEL3D_MESH_CONVERTER_BIN"
 TILE_EXTENSIONS = {".b3dm", ".i3dm", ".pnts", ".cmpt", ".glb", ".gltf"}
 TILESET_REF = "tileset.json"
 
@@ -48,15 +52,32 @@ CommandRunner = Callable[[list[str], int | None], CommandResult]
 
 def converter_status(env: dict[str, str] | None = None) -> dict[str, Any]:
     converter = _converter_bin(env)
-    available = _converter_available(converter, env)
-    detail = "" if available else _converter_unavailable_detail(converter)
+    mesh_converter = _mesh_converter_bin(env)
+    converter_available = _executable_available(converter)
+    mesh_converter_available = _executable_available(mesh_converter)
+    available = converter_available and mesh_converter_available
+    details = [
+        detail
+        for detail in [
+            "" if converter_available else _executable_unavailable_detail(CONVERTER_ENV, converter),
+            "" if mesh_converter_available else _executable_unavailable_detail(MESH_CONVERTER_ENV, mesh_converter),
+        ]
+        if detail
+    ]
     return {
         "name": "_3dtile",
         "env": CONVERTER_ENV,
         "path": converter,
         "available": available,
         "binding": "model3d_workflow",
-        "details": detail,
+        "details": "; ".join(details),
+        "mesh_converter": {
+            "name": "assimp",
+            "env": MESH_CONVERTER_ENV,
+            "path": mesh_converter,
+            "available": mesh_converter_available,
+            "details": "" if mesh_converter_available else _executable_unavailable_detail(MESH_CONVERTER_ENV, mesh_converter),
+        },
     }
 
 
@@ -77,6 +98,102 @@ def list_operators() -> list[dict[str, Any]]:
                     "type": "object",
                     "required": True,
                     "description": "源 OSGB 文件访问计划和 GLB artifact 对象存储发布计划。",
+                },
+                {
+                    "name": "options",
+                    "type": "object",
+                    "required": False,
+                    "description": "转换器私有选项，第一版透传给运行时审计，不拼接为命令参数。",
+                },
+            ],
+            "output_ports": [
+                {
+                    "name": "result",
+                    "type": "object",
+                    "description": "GLB artifact 的对象引用、大小、发布结果和转换器信息。",
+                    "is_default": True,
+                }
+            ],
+        },
+        {
+            "id": "gltf_to_glb",
+            "name": "gltf_to_glb",
+            "display_name": "glTF 转 GLB",
+            "engine_type": ENGINE_TYPE,
+            "category": "三维模型转换",
+            "category_path": ["三维模型转换", "快显"],
+            "description": "将 glTF 多资源模型打包为前端可快速预览的 GLB artifact。",
+            "execution_modes": ["direct"],
+            "parameters": [
+                {
+                    "name": "access_plan",
+                    "type": "object",
+                    "required": True,
+                    "description": "源 glTF manifest 访问计划和 GLB artifact 对象存储发布计划。",
+                },
+                {
+                    "name": "options",
+                    "type": "object",
+                    "required": False,
+                    "description": "转换器私有选项，第一版透传给运行时审计，不拼接为命令参数。",
+                },
+            ],
+            "output_ports": [
+                {
+                    "name": "result",
+                    "type": "object",
+                    "description": "GLB artifact 的对象引用、大小、发布结果和转换器信息。",
+                    "is_default": True,
+                }
+            ],
+        },
+        {
+            "id": "fbx_to_glb",
+            "name": "fbx_to_glb",
+            "display_name": "FBX 转 GLB",
+            "engine_type": ENGINE_TYPE,
+            "category": "三维模型转换",
+            "category_path": ["三维模型转换", "快显"],
+            "description": "将 FBX 单体网格模型转换为前端可快速预览的 GLB artifact。",
+            "execution_modes": ["direct"],
+            "parameters": [
+                {
+                    "name": "access_plan",
+                    "type": "object",
+                    "required": True,
+                    "description": "源 FBX 文件访问计划和 GLB artifact 对象存储发布计划。",
+                },
+                {
+                    "name": "options",
+                    "type": "object",
+                    "required": False,
+                    "description": "转换器私有选项，第一版透传给运行时审计，不拼接为命令参数。",
+                },
+            ],
+            "output_ports": [
+                {
+                    "name": "result",
+                    "type": "object",
+                    "description": "GLB artifact 的对象引用、大小、发布结果和转换器信息。",
+                    "is_default": True,
+                }
+            ],
+        },
+        {
+            "id": "obj_to_glb",
+            "name": "obj_to_glb",
+            "display_name": "OBJ 转 GLB",
+            "engine_type": ENGINE_TYPE,
+            "category": "三维模型转换",
+            "category_path": ["三维模型转换", "快显"],
+            "description": "将 OBJ 单体网格模型转换为前端可快速预览的 GLB artifact。",
+            "execution_modes": ["direct"],
+            "parameters": [
+                {
+                    "name": "access_plan",
+                    "type": "object",
+                    "required": True,
+                    "description": "源 OBJ 文件访问计划和 GLB artifact 对象存储发布计划。",
                 },
                 {
                     "name": "options",
@@ -132,6 +249,38 @@ def list_operators() -> list[dict[str, Any]]:
                 }
             ],
         },
+        {
+            "id": "gaussian_splat_to_ksplat",
+            "name": "gaussian_splat_to_ksplat",
+            "display_name": "Gaussian Splat 转 KSplat",
+            "engine_type": ENGINE_TYPE,
+            "category": "三维模型转换",
+            "category_path": ["三维模型转换", "高斯泼溅"],
+            "description": "将高斯泼溅源数据发布为 Manager 受管 KSplat 快显 artifact。第一版只支持源已经是 KSplat 的受管发布。",
+            "execution_modes": ["direct"],
+            "parameters": [
+                {
+                    "name": "access_plan",
+                    "type": "object",
+                    "required": True,
+                    "description": "高斯泼溅源文件访问计划和 KSplat artifact 对象存储发布计划。",
+                },
+                {
+                    "name": "options",
+                    "type": "object",
+                    "required": False,
+                    "description": "转换器私有选项；PLY/SPLAT 转 KSplat 转换器接入前不接受非 KSplat 源。",
+                },
+            ],
+            "output_ports": [
+                {
+                    "name": "result",
+                    "type": "object",
+                    "description": "KSplat artifact 的对象引用、大小、发布结果和转换器信息。",
+                    "is_default": True,
+                }
+            ],
+        },
     ]
 
 
@@ -151,9 +300,57 @@ def invoke_operator(
         raise ConverterError("OPERATOR_NOT_FOUND", f"Operator not found: {name}", http_status=404)
     if name == "osgb_to_glb":
         return osgb_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
+    if name == "gltf_to_glb":
+        return gltf_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
+    if name == "fbx_to_glb":
+        return fbx_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
+    if name == "obj_to_glb":
+        return obj_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name == "osgb_scene_to_3dtiles":
         return osgb_scene_to_3dtiles(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
+    if name == "gaussian_splat_to_ksplat":
+        return gaussian_splat_to_ksplat(params)
     raise ConverterError("OPERATOR_NOT_FOUND", f"Operator not found: {name}", http_status=404)
+
+
+def gaussian_splat_to_ksplat(params: dict[str, Any]) -> dict[str, Any]:
+    access_plan = _required_object(params, "access_plan")
+    source = _required_object(access_plan, "source")
+    target = _required_object(access_plan, "target")
+    source_path = _first_text(source, "local_path", "root_uri")
+    source_format = _text(source.get("format")).lower()
+    publish = _required_object(target, "publish")
+    file_name = _required_text(target, "file_name")
+
+    if not source_path:
+        raise ConverterError("INVALID_PARAMS", "access_plan.source.local_path or root_uri is required")
+    if source_format != "ksplat":
+        raise ConverterError(
+            "UNSUPPORTED_SOURCE_FORMAT",
+            "gaussian_splat_to_ksplat currently supports only KSplat sources",
+            details="PLY/SPLAT to KSplat conversion requires a dedicated converter integration",
+        )
+    if _text(publish.get("method")) != "object_store":
+        raise ConverterError("INVALID_PARAMS", "access_plan.target.publish.method must be object_store")
+    if not file_name.lower().endswith(".ksplat"):
+        raise ConverterError("INVALID_PARAMS", "access_plan.target.file_name must end with .ksplat")
+
+    source_file = Path(source_path)
+    if not source_file.is_file():
+        raise ConverterError("SOURCE_NOT_FOUND", "KSplat source file was not found", details=str(source_file))
+
+    publish_result = publish_object_store_file(source_file, publish)
+    return {
+        "ksplat_uri": publish_result["object_uri"],
+        "ksplat_ref": publish_result["object_name"],
+        "size_bytes": publish_result["uploaded_bytes"],
+        "publish": publish_result,
+        "source_format": source_format,
+        "converter": "copy",
+        "command": [],
+        "stdout": "",
+        "stderr": "",
+    }
 
 
 def osgb_to_glb(
@@ -162,6 +359,25 @@ def osgb_to_glb(
     runner: CommandRunner | None = None,
     env: dict[str, str] | None = None,
     timeout_seconds: int | None = None,
+) -> dict[str, Any]:
+    return _single_model_to_glb(
+        params,
+        source_label="OSGB",
+        converter_format="gltf",
+        runner=runner,
+        env=env,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def _single_model_to_glb(
+    params: dict[str, Any],
+    *,
+    source_label: str,
+    converter_format: str,
+    runner: CommandRunner | None,
+    env: dict[str, str] | None,
+    timeout_seconds: int | None,
 ) -> dict[str, Any]:
     access_plan = _required_object(params, "access_plan")
     source = _required_object(access_plan, "source")
@@ -180,9 +396,9 @@ def osgb_to_glb(
 
     try:
         converter = _converter_bin(env)
-        command = [converter, "-f", "gltf", "-i", source_path, "-o", str(target_file)]
+        command = [converter, "-f", converter_format, "-i", source_path, "-o", str(target_file)]
         result = _run_converter(command, runner=runner, env=env, timeout_seconds=timeout_seconds)
-        if not target_file.exists():
+        if not target_file.is_file():
             raise ConverterError(
                 "OUTPUT_NOT_FOUND",
                 "GLB output file was not generated",
@@ -196,6 +412,7 @@ def osgb_to_glb(
             "glb_ref": publish_result["object_name"],
             "size_bytes": publish_result["uploaded_bytes"],
             "publish": publish_result,
+            "source_format": source_label.lower(),
             "converter": converter,
             "command": _redact_command(command),
             "stdout": result.stdout,
@@ -203,6 +420,292 @@ def osgb_to_glb(
         }
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def gltf_to_glb(
+    params: dict[str, Any],
+    *,
+    runner: CommandRunner | None = None,
+    env: dict[str, str] | None = None,
+    timeout_seconds: int | None = None,
+) -> dict[str, Any]:
+    return _mesh_model_to_glb(
+        params,
+        source_label="glTF",
+        runner=runner,
+        env=env,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def fbx_to_glb(
+    params: dict[str, Any],
+    *,
+    runner: CommandRunner | None = None,
+    env: dict[str, str] | None = None,
+    timeout_seconds: int | None = None,
+) -> dict[str, Any]:
+    return _mesh_model_to_glb(
+        params,
+        source_label="FBX",
+        runner=runner,
+        env=env,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def obj_to_glb(
+    params: dict[str, Any],
+    *,
+    runner: CommandRunner | None = None,
+    env: dict[str, str] | None = None,
+    timeout_seconds: int | None = None,
+) -> dict[str, Any]:
+    return _mesh_model_to_glb(
+        params,
+        source_label="OBJ",
+        runner=runner,
+        env=env,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def _mesh_model_to_glb(
+    params: dict[str, Any],
+    *,
+    source_label: str,
+    runner: CommandRunner | None,
+    env: dict[str, str] | None,
+    timeout_seconds: int | None,
+) -> dict[str, Any]:
+    access_plan = _required_object(params, "access_plan")
+    source = _required_object(access_plan, "source")
+    target = _required_object(access_plan, "target")
+    source_path = _first_text(source, "local_path", "root_uri")
+    publish = _required_object(target, "publish")
+    file_name = _required_text(target, "file_name")
+
+    if not source_path:
+        raise ConverterError("INVALID_PARAMS", "access_plan.source.local_path or root_uri is required")
+    if _text(publish.get("method")) != "object_store":
+        raise ConverterError("INVALID_PARAMS", "access_plan.target.publish.method must be object_store")
+
+    if source_label.lower() == "obj":
+        _validate_obj_material_libraries(Path(source_path))
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="addp-model3d-glb-"))
+    target_file = temp_dir / file_name
+
+    try:
+        converter = _mesh_converter_bin(env)
+        command = [converter, "export", source_path, str(target_file), "-embtex"]
+        result = _run_executable(command, runner=runner, env_name=MESH_CONVERTER_ENV, timeout_seconds=timeout_seconds)
+        if not target_file.is_file():
+            raise ConverterError(
+                "OUTPUT_NOT_FOUND",
+                "GLB output file was not generated",
+                details=str(target_file),
+                http_status=500,
+            )
+
+        postprocess = {}
+        if source_label.lower() == "obj":
+            postprocess = _repair_obj_glb_fully_transparent_textured_materials(target_file)
+
+        publish_result = publish_object_store_file(target_file, publish)
+        facts = {
+            "glb_uri": publish_result["object_uri"],
+            "glb_ref": publish_result["object_name"],
+            "size_bytes": publish_result["uploaded_bytes"],
+            "publish": publish_result,
+            "source_format": source_label.lower(),
+            "converter": converter,
+            "command": _redact_command(command),
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+        if postprocess:
+            facts["postprocess"] = postprocess
+        return facts
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def _validate_obj_material_libraries(source_path: Path) -> None:
+    if not source_path.is_file():
+        return
+    refs = _obj_material_library_refs(source_path)
+    if not refs:
+        return
+    missing = []
+    for ref in refs:
+        ref_path = Path(ref.replace("\\", "/"))
+        if ref_path.is_absolute():
+            candidate = ref_path
+        else:
+            candidate = source_path.parent / ref_path
+        if not candidate.is_file():
+            missing.append(ref)
+    if missing:
+        raise ConverterError(
+            "MISSING_OBJ_MATERIAL_LIBRARY",
+            "OBJ declares material libraries that are missing",
+            details=", ".join(missing),
+        )
+
+
+def _obj_material_library_refs(source_path: Path) -> list[str]:
+    refs: list[str] = []
+    seen: set[str] = set()
+    with source_path.open("r", encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            statement = line.split("#", 1)[0].strip()
+            if not statement:
+                continue
+            parts = statement.split()
+            if len(parts) < 2 or parts[0].lower() != "mtllib":
+                continue
+            for ref in parts[1:]:
+                ref = ref.strip()
+                if ref and ref not in seen:
+                    refs.append(ref)
+                    seen.add(ref)
+    return refs
+
+
+def _repair_obj_glb_fully_transparent_textured_materials(glb_path: Path) -> dict[str, Any]:
+    doc, chunks = _read_glb(glb_path)
+    materials = doc.get("materials")
+    if not isinstance(materials, list):
+        return {}
+
+    textured_materials = [material for material in materials if _material_has_base_color_texture(material)]
+    if not textured_materials:
+        return {}
+    if any(not _material_alpha_is_fully_transparent(material) for material in textured_materials):
+        return {}
+
+    repaired = 0
+    for material in textured_materials:
+        if _set_material_alpha(material, 1.0):
+            repaired += 1
+        if material.get("alphaMode") == "BLEND":
+            material.pop("alphaMode", None)
+    if repaired == 0:
+        return {}
+
+    _write_glb(glb_path, doc, chunks)
+    return {
+        "obj_textured_material_alpha": "normalized_to_opaque",
+        "material_count": repaired,
+    }
+
+
+def _material_has_base_color_texture(material: Any) -> bool:
+    if not isinstance(material, dict):
+        return False
+    pbr = material.get("pbrMetallicRoughness")
+    if isinstance(pbr, dict) and isinstance(pbr.get("baseColorTexture"), dict):
+        return True
+    specular = _material_specular_glossiness_extension(material)
+    return isinstance(specular, dict) and isinstance(specular.get("diffuseTexture"), dict)
+
+
+def _material_alpha_is_fully_transparent(material: Any) -> bool:
+    if not isinstance(material, dict):
+        return False
+    alpha_values: list[float] = []
+    pbr = material.get("pbrMetallicRoughness")
+    if isinstance(pbr, dict):
+        factor = pbr.get("baseColorFactor")
+        if isinstance(factor, list) and len(factor) >= 4:
+            alpha_values.append(_float(factor[3], 1.0))
+    specular = _material_specular_glossiness_extension(material)
+    if isinstance(specular, dict):
+        factor = specular.get("diffuseFactor")
+        if isinstance(factor, list) and len(factor) >= 4:
+            alpha_values.append(_float(factor[3], 1.0))
+    return bool(alpha_values) and all(value <= 0.001 for value in alpha_values)
+
+
+def _set_material_alpha(material: dict[str, Any], alpha: float) -> bool:
+    changed = False
+    pbr = material.get("pbrMetallicRoughness")
+    if isinstance(pbr, dict):
+        factor = pbr.get("baseColorFactor")
+        if isinstance(factor, list) and len(factor) >= 4 and _float(factor[3], 1.0) <= 0.001:
+            factor[3] = alpha
+            changed = True
+    specular = _material_specular_glossiness_extension(material)
+    if isinstance(specular, dict):
+        factor = specular.get("diffuseFactor")
+        if isinstance(factor, list) and len(factor) >= 4 and _float(factor[3], 1.0) <= 0.001:
+            factor[3] = alpha
+            changed = True
+    return changed
+
+
+def _material_specular_glossiness_extension(material: dict[str, Any]) -> dict[str, Any] | None:
+    extensions = material.get("extensions")
+    if not isinstance(extensions, dict):
+        return None
+    specular = extensions.get("KHR_materials_pbrSpecularGlossiness")
+    return specular if isinstance(specular, dict) else None
+
+
+def _float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _read_glb(glb_path: Path) -> tuple[dict[str, Any], list[tuple[bytes, bytes]]]:
+    data = glb_path.read_bytes()
+    if len(data) < 20:
+        raise ConverterError("INVALID_GLB", "GLB output is too small", details=str(glb_path), http_status=500)
+    magic, version, total_length = struct.unpack_from("<4sII", data, 0)
+    if magic != b"glTF" or version != 2 or total_length != len(data):
+        raise ConverterError("INVALID_GLB", "GLB output header is invalid", details=str(glb_path), http_status=500)
+
+    offset = 12
+    chunks: list[tuple[bytes, bytes]] = []
+    json_doc: dict[str, Any] | None = None
+    while offset + 8 <= len(data):
+        chunk_length, chunk_type = struct.unpack_from("<I4s", data, offset)
+        offset += 8
+        chunk_data = data[offset : offset + chunk_length]
+        offset += chunk_length
+        chunks.append((chunk_type, chunk_data))
+        if chunk_type == b"JSON":
+            json_doc = json.loads(chunk_data.decode("utf-8").rstrip(" \t\r\n\0"))
+    if json_doc is None:
+        raise ConverterError("INVALID_GLB", "GLB output has no JSON chunk", details=str(glb_path), http_status=500)
+    return json_doc, chunks
+
+
+def _write_glb(glb_path: Path, doc: dict[str, Any], chunks: list[tuple[bytes, bytes]]) -> None:
+    json_bytes = json.dumps(doc, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    json_bytes += b" " * ((4 - len(json_bytes) % 4) % 4)
+
+    next_chunks: list[tuple[bytes, bytes]] = []
+    json_written = False
+    for chunk_type, chunk_data in chunks:
+        if chunk_type == b"JSON":
+            next_chunks.append((b"JSON", json_bytes))
+            json_written = True
+        else:
+            padded = chunk_data + b"\x00" * ((4 - len(chunk_data) % 4) % 4)
+            next_chunks.append((chunk_type, padded))
+    if not json_written:
+        next_chunks.insert(0, (b"JSON", json_bytes))
+
+    total_length = 12 + sum(8 + len(chunk_data) for _, chunk_data in next_chunks)
+    output = bytearray(struct.pack("<4sII", b"glTF", 2, total_length))
+    for chunk_type, chunk_data in next_chunks:
+        output += struct.pack("<I4s", len(chunk_data), chunk_type)
+        output += chunk_data
+    glb_path.write_bytes(output)
 
 
 def osgb_scene_to_3dtiles(
@@ -376,7 +879,7 @@ def publish_object_store_file(path: Path, publish: dict[str, Any]) -> dict[str, 
     secure = bool(publish.get("use_ssl"))
     content_type = _text(publish.get("content_type")) or _content_type_for_object(object_name)
 
-    if not path.exists():
+    if not path.is_file():
         raise ConverterError(
             "OUTPUT_NOT_FOUND",
             "GLB output file was not generated",
@@ -432,10 +935,27 @@ def _run_converter(
     timeout_seconds: int | None,
 ) -> CommandResult:
     if runner is None:
-        _ensure_converter_available(command[0], env)
+        _ensure_executable_available(command[0], CONVERTER_ENV)
         runner = run_command
 
-    result = runner(command, timeout_seconds)
+    return _handle_command_result(runner(command, timeout_seconds))
+
+
+def _run_executable(
+    command: list[str],
+    *,
+    runner: CommandRunner | None,
+    env_name: str,
+    timeout_seconds: int | None,
+) -> CommandResult:
+    if runner is None:
+        _ensure_executable_available(command[0], env_name)
+        runner = run_command
+
+    return _handle_command_result(runner(command, timeout_seconds))
+
+
+def _handle_command_result(result: CommandResult) -> CommandResult:
     if result.returncode != 0:
         raise ConverterError(
             "EXECUTION_FAILED",
@@ -451,19 +971,24 @@ def _converter_bin(env: dict[str, str] | None) -> str:
     return _text(values.get(CONVERTER_ENV)) or DEFAULT_CONVERTER_BIN
 
 
-def _converter_available(converter: str, env: dict[str, str] | None) -> bool:
-    if not _is_explicit_file_path(converter):
+def _mesh_converter_bin(env: dict[str, str] | None) -> str:
+    values = env if env is not None else os.environ
+    return _text(values.get(MESH_CONVERTER_ENV)) or DEFAULT_MESH_CONVERTER_BIN
+
+
+def _executable_available(path: str) -> bool:
+    if not _is_explicit_file_path(path):
         return False
-    return Path(converter).is_file() and os.access(converter, os.X_OK)
+    return Path(path).is_file() and os.access(path, os.X_OK)
 
 
-def _ensure_converter_available(converter: str, env: dict[str, str] | None) -> None:
-    if _converter_available(converter, env):
+def _ensure_executable_available(path: str, env_name: str) -> None:
+    if _executable_available(path):
         return
     raise ConverterError(
         "CONVERTER_UNAVAILABLE",
         "model3d converter executable was not found",
-        details=_converter_unavailable_detail(converter),
+        details=_executable_unavailable_detail(env_name, path),
         http_status=503,
     )
 
@@ -479,10 +1004,10 @@ def _is_explicit_file_path(converter: str) -> bool:
     )
 
 
-def _converter_unavailable_detail(converter: str) -> str:
-    if not _is_explicit_file_path(converter):
-        return f"{CONVERTER_ENV} must point to the engine-bound _3dtile executable file, not a PATH command name: {converter}"
-    return f"{converter} was not found or is not executable"
+def _executable_unavailable_detail(env_name: str, path: str) -> str:
+    if not _is_explicit_file_path(path):
+        return f"{env_name} must point to the engine-bound executable file, not a PATH command name: {path}"
+    return f"{path} was not found or is not executable"
 
 
 def _count_tiles(root: Path) -> int:
@@ -541,4 +1066,6 @@ def _content_type_for_object(object_name: str) -> str:
         return "model/gltf-binary"
     if ext == ".gltf":
         return "model/gltf+json"
+    if ext == ".ksplat":
+        return "application/vnd.gaussian-ksplat"
     return "application/octet-stream"

@@ -82,6 +82,8 @@ func buildBuiltinContentHandler(cfg ObjectContentPluginConfig) (ObjectContentHan
 		return buildModel3DContentHandler(cfg), nil
 	case models.ObjectPreviewKindPointCloud:
 		return buildPointCloudContentHandler(cfg), nil
+	case models.ObjectPreviewKindGaussianSplat:
+		return buildGaussianSplatContentHandler(cfg), nil
 	case models.ObjectPreviewKindText:
 		return buildTextContentHandler(cfg, commonformat.FormatText, models.ObjectPreviewKindText), nil
 	case models.ObjectPreviewKindMarkdown:
@@ -142,6 +144,7 @@ func fallbackBuiltinContentPlugins() []ObjectContentPluginConfig {
 		},
 		ObjectContentPluginConfig{Name: "builtin:content-model-3d", Type: "builtin", Builtin: models.ObjectPreviewKindModel3D},
 		ObjectContentPluginConfig{Name: "builtin:content-point-cloud", Type: "builtin", Builtin: models.ObjectPreviewKindPointCloud},
+		ObjectContentPluginConfig{Name: "builtin:content-gaussian-splat", Type: "builtin", Builtin: models.ObjectPreviewKindGaussianSplat},
 		ObjectContentPluginConfig{Name: "builtin:content-json", Type: "builtin", Builtin: models.ObjectPreviewKindJSON},
 		ObjectContentPluginConfig{Name: "builtin:content-container", Type: "builtin", Builtin: models.ObjectPreviewKindContainer},
 		ObjectContentPluginConfig{Name: "builtin:content-markdown", Type: "builtin", Builtin: models.ObjectPreviewKindMarkdown},
@@ -309,6 +312,8 @@ func defaultBuiltinContentPriority(kind string) int {
 		return 62
 	case models.ObjectPreviewKindPointCloud:
 		return 61
+	case models.ObjectPreviewKindGaussianSplat:
+		return 61
 	case models.ObjectPreviewKindJSON:
 		return 60
 	case models.ObjectPreviewKindContainer:
@@ -338,6 +343,16 @@ func buildPointCloudContentHandler(cfg ObjectContentPluginConfig) ObjectContentH
 			name:     cfg.Name,
 			priority: cfg.priorityOr(defaultBuiltinContentPriority(models.ObjectPreviewKindPointCloud)),
 			matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatLAS, nil, nil),
+		},
+	}
+}
+
+func buildGaussianSplatContentHandler(cfg ObjectContentPluginConfig) ObjectContentHandler {
+	return &gaussianSplatContentHandler{
+		baseContentHandler: baseContentHandler{
+			name:     cfg.Name,
+			priority: cfg.priorityOr(defaultBuiltinContentPriority(models.ObjectPreviewKindGaussianSplat)),
+			matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatPLY, []commonformat.FormatType{commonformat.FormatSplat, commonformat.FormatKSplat}, nil),
 		},
 	}
 }

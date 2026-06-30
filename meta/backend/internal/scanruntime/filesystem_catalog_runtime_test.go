@@ -144,6 +144,73 @@ func TestFilesystemScanRootDoesNotPromoteRootFilesToNodes(t *testing.T) {
 	}
 }
 
+func TestFilesystemScanIgnoresSystemFiles(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	svc := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
+	root, err := repo.UpsertNode(1, 26, nil, plugin.CatalogTermRoot, "Business NFS", strPtr(""), models.JSONMap{})
+	if err != nil {
+		t.Fatalf("create root node: %v", err)
+	}
+	if _, err := repo.UpsertItemWithDepth(1, 26, root, plugin.CatalogTermFile, ".DS_Store", ".DS_Store", models.JSONMap{}, nil, nil, nil, models.ScannedDepthDeep); err != nil {
+		t.Fatalf("create old .DS_Store item: %v", err)
+	}
+	sizeBytes := int64(12)
+	systemSizeBytes := int64(1)
+	provider := filesystemScanTestProvider{
+		entriesByPath: map[string][]plugin.CatalogEntry{
+			"": {
+				{
+					Name: ".DS_Store",
+					Path: plugin.FileItemPath(26, ".DS_Store"),
+					Term: plugin.CatalogTermFile,
+					Kind: plugin.CatalogKindFile,
+					Role: plugin.CatalogRoleLeaf,
+					Storage: &plugin.CatalogStorageFacts{
+						Path:      ".DS_Store",
+						SizeBytes: &systemSizeBytes,
+					},
+				},
+				{
+					Name: "README.md",
+					Path: plugin.FileItemPath(26, "README.md"),
+					Term: plugin.CatalogTermFile,
+					Kind: plugin.CatalogKindFile,
+					Role: plugin.CatalogRoleLeaf,
+					Storage: &plugin.CatalogStorageFacts{
+						Path:      "README.md",
+						SizeBytes: &sizeBytes,
+					},
+				},
+			},
+		},
+		content: "hello world\n",
+	}
+	plugin.Register(provider)
+	t.Cleanup(func() {
+		plugin.Unregister(provider.Type())
+	})
+	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
+
+	result, err := svc.ScanPaths(resource, 1, nil, models.ScannedDepthBasic, false, nil)
+	if err != nil {
+		t.Fatalf("ScanPaths() error = %v", err)
+	}
+	if result.Items != 1 {
+		t.Fatalf("items = %d, want only README.md", result.Items)
+	}
+	if _, ok, err := repo.FindItemByFullName(1, 26, ".DS_Store"); err != nil {
+		t.Fatalf("FindItemByFullName(.DS_Store) error = %v", err)
+	} else if ok {
+		t.Fatal(".DS_Store meta_item should not be created")
+	}
+	if _, ok, err := repo.FindItemByFullName(1, 26, "README.md"); err != nil {
+		t.Fatalf("FindItemByFullName(README.md) error = %v", err)
+	} else if !ok {
+		t.Fatal("README.md meta_item not found")
+	}
+}
+
 func TestFilesystemForceScanReconcilesStaleRootFileNodes(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	repo := metaRepo.NewScanRepository(db)

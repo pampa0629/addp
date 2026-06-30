@@ -96,6 +96,9 @@ func objectCatalogEntriesToStorageResources(
 ) []metacatalog.StorageResource {
 	resources := make([]metacatalog.StorageResource, 0, len(objects))
 	for _, obj := range objects {
+		if metacatalog.IgnoreSystemCatalogEntry(obj) {
+			continue
+		}
 		resources = append(resources, metacatalog.ObjectStorageResourceFromNode(bucket, obj))
 	}
 	return resources

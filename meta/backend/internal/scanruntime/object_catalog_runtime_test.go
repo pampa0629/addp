@@ -48,6 +48,40 @@ func TestDetectObjectCatalogResourceFormatUsesCommonFormatSniffing(t *testing.T)
 	}
 }
 
+func TestObjectCatalogEntriesToStorageResourcesIgnoresSystemFiles(t *testing.T) {
+	t.Parallel()
+
+	readmeSize := int64(12)
+	systemSize := int64(1)
+	entries := []plugin.CatalogEntry{
+		{
+			Name: ".DS_Store",
+			Path: plugin.ObjectItemPath(7, "addp", "docs/.DS_Store"),
+			Role: plugin.CatalogRoleLeaf,
+			Kind: plugin.CatalogKindObject,
+			Storage: &plugin.CatalogStorageFacts{
+				Path:      "addp/docs/.DS_Store",
+				SizeBytes: &systemSize,
+			},
+		},
+		{
+			Name: "README.md",
+			Path: plugin.ObjectItemPath(7, "addp", "docs/README.md"),
+			Role: plugin.CatalogRoleLeaf,
+			Kind: plugin.CatalogKindObject,
+			Storage: &plugin.CatalogStorageFacts{
+				Path:      "addp/docs/README.md",
+				SizeBytes: &readmeSize,
+			},
+		},
+	}
+
+	resources := objectCatalogEntriesToStorageResources(entries, "addp")
+	if len(resources) != 1 || resources[0].FullPath != "addp/docs/README.md" {
+		t.Fatalf("resources = %#v, want only README.md", resources)
+	}
+}
+
 func TestDetectObjectCatalogResourceFormatPromotesUnknownText(t *testing.T) {
 	t.Parallel()
 

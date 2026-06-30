@@ -10,6 +10,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	rastercogref "github.com/addp/manager/internal/cog"
@@ -80,7 +81,11 @@ func (e *ManagerModel3DQuickViewExecutor) BuildModel3DQuickView(ctx context.Cont
 		return nil, err
 	}
 
-	workflowEngine, workflowOperator, err := e.selectDirectWorkflowRuntime(ctx, req.Task.TenantID, "osgb_to_glb")
+	operatorName, sourceFormat, err := model3DQuickViewOperatorForFormat(req.Config.Source.Format)
+	if err != nil {
+		return nil, err
+	}
+	workflowEngine, workflowOperator, err := e.selectDirectWorkflowRuntime(ctx, req.Task.TenantID, operatorName)
 	if err != nil {
 		return nil, err
 	}
@@ -114,10 +119,10 @@ func (e *ManagerModel3DQuickViewExecutor) BuildModel3DQuickView(ctx context.Cont
 		Timeout: e.invokeTimeout,
 	})
 	if err != nil {
-		return nil, operatorInvokeError("invoke OSGB to GLB operator", invokeResult, err)
+		return nil, operatorInvokeError("invoke model 3d to GLB operator", invokeResult, err)
 	}
 	if invokeResult.Status != "" && invokeResult.Status != "success" {
-		return nil, operatorInvokeError("OSGB to GLB direct operator invocation failed", invokeResult, nil)
+		return nil, operatorInvokeError("model 3d to GLB direct operator invocation failed", invokeResult, nil)
 	}
 	info, err := e.objectStore.StatObject(ctx, bucket, objectName, minio.StatObjectOptions{})
 	if err != nil {
@@ -133,6 +138,7 @@ func (e *ManagerModel3DQuickViewExecutor) BuildModel3DQuickView(ctx context.Cont
 		Metadata: commonModels.JSONMap{
 			"source": commonModels.JSONMap{
 				"access": sourceFacts,
+				"format": sourceFormat,
 			},
 			"workflow_runtime": commonModels.JSONMap{
 				"engine_id":    workflowEngine.ID,
@@ -174,9 +180,24 @@ func (e *ManagerModel3DQuickViewExecutor) prepareSourcePath(ctx context.Context,
 	}
 	sourcePath, _, access, err := model3DTilesLocalRoot(engine, loc, "")
 	if err != nil {
-		return "", nil, fmt.Errorf("prepare single OSGB source path: %w", err)
+		return "", nil, fmt.Errorf("prepare model 3d quick view source path: %w", err)
 	}
 	return sourcePath, access, nil
+}
+
+func model3DQuickViewOperatorForFormat(sourceFormat string) (operatorName string, normalizedFormat string, err error) {
+	switch format.NormalizeFormat(sourceFormat) {
+	case format.FormatOSGB:
+		return "osgb_to_glb", string(format.FormatOSGB), nil
+	case format.FormatGLTF:
+		return "gltf_to_glb", string(format.FormatGLTF), nil
+	case format.FormatFBX:
+		return "fbx_to_glb", string(format.FormatFBX), nil
+	case format.FormatOBJ:
+		return "obj_to_glb", string(format.FormatOBJ), nil
+	default:
+		return "", "", fmt.Errorf("model 3d quick view source format %q is not supported", strings.TrimSpace(sourceFormat))
+	}
 }
 
 func (e *ManagerModel3DQuickViewExecutor) ensureTargetBucket(ctx context.Context, bucket string) error {

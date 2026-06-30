@@ -235,11 +235,11 @@ const handleNodeClick = async (node) => {
     return
   }
 
-  // 仅在需要首次加载子节点时介入，避免与 el-tree 的 expand-on-click-node 冲突
-  // 注意：不使用 !node.loaded 判断，避免已有子节点的节点在折叠后点击时被重新展开
+  // 仅在需要首次加载子节点时介入，避免与 el-tree 的 expand-on-click-node 冲突。
+  // 初始 expand_depth 树可能只带部分 children，必须以 loaded=false 作为懒加载边界。
   const isDirLike = isBranchNode(node)
   if (isDirLike) {
-    const needsLoading = (node.children || []).length === 0 && node.hasChildren
+    const needsLoading = node.hasChildren && !node.loaded
     if (!isCurrentlyExpanded && needsLoading) {
       // 首次展开：el-tree 因暂无子节点可能不会自动展开，需要强制 store 记录展开状态
       store.expandNode(locator)
@@ -371,8 +371,8 @@ const handleNodeExpand = async (node) => {
     return
   }
 
-  // 使用增量加载替代全量重载：容器节点展开且子节点为空时，只加载该节点的直接子节点。
-  const needsLoading = isBranchNode(node) && (node.children || []).length === 0
+  // 使用增量加载替代全量重载：容器节点首次展开时，只加载该节点的直接子节点。
+  const needsLoading = isBranchNode(node) && node.hasChildren && !node.loaded
 
   if (needsLoading && locator) {
     try {

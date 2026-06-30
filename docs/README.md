@@ -75,6 +75,18 @@
 6. [Manager raster_cog 表](../manager/docs/tables/raster_cog表.md) 与 [raster_cog_tasks 表](../manager/docs/tables/raster_cog_tasks表.md)：确认 COG 结果和任务定义的字段、状态和生命周期。
 7. [栅格算子体系后续专题](next/栅格算子体系后续专题.md)：查看 `raster_reproject`、`raster_clip`、`raster_statistics`、`raster_to_tiles` 等第一阶段之外的后续算子规划。
 
+## 三维模型、倾斜摄影与点云主题
+
+处理 GLB / glTF、OSGB、OSGB Scene、3D Tiles、BIM、普通三维网格、点云或高斯泼溅格式时，建议按以下顺序阅读：
+
+1. [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)：确认 `model_3d`、`point_cloud` 与 `gaussian_splat` 的数据类型边界。
+2. [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)：确认 GLB、3D Tiles、OSGB、OSGB Scene、LAS 和 PLY 的稳定规则。
+3. [数据项探测器规范](spec/addp数据项探测器规范.md)：确认 whole-scope 场景、manifest、refs 和 claims 规则。
+4. [元数据 attributes 规范](spec/addp元数据attributes规范.md)：确认 `type_info.model_3d`、`type_info.point_cloud`、`type_info.gaussian_splat` 和 `format_info.<format>` 的字段归属。
+5. [三维模型与点云阶段记录](next/三维模型与点云首轮验证记录.md)：查看当前已验证样例和专题索引。
+6. [OSGB 倾斜摄影与 3D Tiles 方案](next/OSGB倾斜摄影与3DTiles方案.md)：处理单 OSGB GLB 快显、OSGB Scene 转 3D Tiles、`model3d_workflow` 或对象存储 staging / publish 时阅读。
+7. [三维模型格式扩展路线](next/三维模型格式扩展路线.md)：处理 OBJ / STL / FBX 已落地能力、IFC / 3MX / SLPK / LAZ / COPC / E57 等后续格式规划时阅读。
+
 ## 数据类型与格式主题
 
 处理数据类型、内容布局、文件格式、attributes、provider 或内容 I/O 抽象时，建议按以下顺序阅读：

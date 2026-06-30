@@ -45,3 +45,14 @@ type PointCloudDescribeResult struct {
 	Spatial    *datatype.SpatialInfo    `json:"spatial,omitempty"`
 	FormatInfo map[string]interface{}   `json:"format_info,omitempty"`
 }
+
+// GaussianSplatDescribeResult groups facts that may be produced by one
+// Gaussian splatting format parse.
+//
+// GaussianSplat maps to type_info.gaussian_splat, Spatial to
+// capabilities.spatial and FormatInfo to format_info.<format>.
+type GaussianSplatDescribeResult struct {
+	GaussianSplat *datatype.GaussianSplatInfo `json:"gaussian_splat,omitempty"`
+	Spatial       *datatype.SpatialInfo       `json:"spatial,omitempty"`
+	FormatInfo    map[string]interface{}      `json:"format_info,omitempty"`
+}

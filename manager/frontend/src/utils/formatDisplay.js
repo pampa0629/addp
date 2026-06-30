@@ -2,6 +2,8 @@ const formatDisplayNames = {
   '3dtiles': '3D Tiles',
   glb: 'GLB',
   gltf: 'glTF',
+  splat: 'Splat',
+  ksplat: 'KSplat',
   las: 'LAS',
   laz: 'LAZ',
   geojson: 'GeoJSON',

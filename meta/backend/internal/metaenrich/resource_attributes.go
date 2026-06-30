@@ -64,10 +64,13 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		if err := EnrichSingleMediaItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.CatalogPathFor); err != nil {
 			return item, item.Fields, err
 		}
-		if err := EnrichSingleModel3DItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.CatalogPathFor); err != nil {
+		if err := EnrichSingleGaussianSplatItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.SizeBytes, input.CatalogPathFor); err != nil {
 			return item, item.Fields, err
 		}
 		if err := EnrichSinglePointCloudItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.CatalogPathFor); err != nil {
+			return item, item.Fields, err
+		}
+		if err := EnrichSingleModel3DItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.CatalogPathFor); err != nil {
 			return item, item.Fields, err
 		}
 	}

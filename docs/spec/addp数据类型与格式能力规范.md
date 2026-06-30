@@ -27,7 +27,7 @@ item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)�
 - 这个格式能否通过 content reader 提供样本、文本、原始内容，以及是否有 reader / writer provider 支持批量读写。
 - 解码结果如何归一为 `common/datatype` 定义的平台 data type 语义。
 
-其中 `xxx info` 是对应 data type 的通用元数据，例如 `datatype.TableInfo`、`datatype.DocumentInfo`、`datatype.MediaInfo`、`datatype.ContainerInfo`、`datatype.Model3DInfo`、`datatype.PointCloudInfo`。这些结构的事实源属于 `common/datatype`，不属于 `common/format`。`xxx info provider` 只负责从具体格式中提取并返回这类元数据；样本、文本片段、缩略图、raw content、range content、三维模型流、点云抽样等内容数据必须通过独立 content reader 表达。
+其中 `xxx info` 是对应 data type 的通用元数据，例如 `datatype.TableInfo`、`datatype.DocumentInfo`、`datatype.MediaInfo`、`datatype.ContainerInfo`、`datatype.Model3DInfo`、`datatype.PointCloudInfo`、`datatype.GaussianSplatInfo`。这些结构的事实源属于 `common/datatype`，不属于 `common/format`。`xxx info provider` 只负责从具体格式中提取并返回这类元数据；样本、文本片段、缩略图、raw content、range content、三维模型流、点云抽样、高斯泼溅渲染数据等内容数据必须通过独立 content reader 表达。
 
 ## `common/datatype` 与 `common/format` 分工
 
@@ -35,10 +35,10 @@ item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)�
 
 | 类型 | 归属 | 说明 |
 |---|---|---|
-| `DataType` | `common/datatype` | `table`、`document`、`media`、`container`、`graph`、`model_3d`、`point_cloud`、`unknown` |
+| `DataType` | `common/datatype` | `table`、`document`、`media`、`container`、`graph`、`model_3d`、`point_cloud`、`gaussian_splat`、`unknown` |
 | `FieldType` / `FieldInfo` | `common/datatype` | 平台通用字段类型和字段语义 |
 | `GeometryType` | `common/datatype` | 平台标准 OGC 几何拓扑类型 |
-| `TableInfo` / `DocumentInfo` / `MediaInfo` / `ContainerInfo` / `GraphInfo` / `Model3DInfo` / `PointCloudInfo` | `common/datatype` | 各 data type 的通用 type info |
+| `TableInfo` / `DocumentInfo` / `MediaInfo` / `ContainerInfo` / `GraphInfo` / `Model3DInfo` / `PointCloudInfo` / `GaussianSplatInfo` | `common/datatype` | 各 data type 的通用 type info |
 | `SpatialInfo` | `common/datatype` | 空间横切事实，落点是 `attributes.capabilities.spatial` |
 | `AccessIndex` | 暂居 `common/datatype` | 内容读取索引，落点是 `attributes.access_index.<data_type>`；不是 data type，也不是 type info |
 
@@ -53,7 +53,7 @@ item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)�
 - 具体格式解析、编码、解码和格式私有信息。
 - native type mapper，将格式或引擎原生类型转换为 `datatype.FieldType`。
 
-`common/format` 不再定义通用 data type、field type 或 type info。新增格式实现不得在格式包内新增平行的 `FieldType`、`TableInfo`、`DocumentInfo`、`Model3DInfo`、`PointCloudInfo` 等公共模型。
+`common/format` 不再定义通用 data type、field type 或 type info。新增格式实现不得在格式包内新增平行的 `FieldType`、`TableInfo`、`DocumentInfo`、`Model3DInfo`、`PointCloudInfo`、`GaussianSplatInfo` 等公共模型。
 
 `common/format` 不定义任何展示概念。页面展示策略、前端渲染器选择和 Manager 返回给前端的 DTO 均属于 Manager / Frontend 边界。
 
@@ -159,6 +159,7 @@ func init() {
 | `ContainerChildResolver` | `GetContainerChildResolver(format)` |
 | `Model3DInfoProvider` | `GetModel3DInfoProvider(format)` |
 | `PointCloudInfoProvider` | `GetPointCloudInfoProvider(format)` |
+| `GaussianSplatInfoProvider` | `GetGaussianSplatInfoProvider(format)` |
 
 内置格式通过 `common/format/builtin` 统一 blank import 加载。Meta、Manager 或测试进程如果需要完整内置格式识别、provider / reader / writer 和 type mapper，应显式导入：
 
@@ -196,7 +197,7 @@ import _ "github.com/addp/common/format/builtin"
 | Content Reader | 能否提供按 data type 组织后的内容数据 | 行样本、文本片段、容器树、二进制片段 | Manager、Transfer |
 | Runtime provider | 当前进程是否已经加载可调用的 reader / writer provider | batch read / write、multi read / write、commit policy | Transfer |
 
-当前代码中 `FormatDescriptor` 是静态声明事实源；`FormatPlugin` 是格式包的代码入口；`FormatDescriptorProvider` 是 plugin 可选实现的静态描述能力；`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`BinaryContentReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、`Model3DInfoProvider`、`PointCloudInfoProvider`、type mapper 等是具体实现能力。静态声明可以先于 plugin / provider 完整实现存在，因此文档必须区分“声明支持”和“已有实现”。
+当前代码中 `FormatDescriptor` 是静态声明事实源；`FormatPlugin` 是格式包的代码入口；`FormatDescriptorProvider` 是 plugin 可选实现的静态描述能力；`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`BinaryContentReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、`Model3DInfoProvider`、`PointCloudInfoProvider`、`GaussianSplatInfoProvider`、type mapper 等是具体实现能力。静态声明可以先于 plugin / provider 完整实现存在，因此文档必须区分“声明支持”和“已有实现”。
 
 ### Format Identity 与 Format Detection
 
@@ -271,13 +272,14 @@ Info / facts 能力负责把原始资源转成平台能理解的类型信息、�
 - `type_info.container`
 - `type_info.model_3d`
 - `type_info.point_cloud`
+- `type_info.gaussian_splat`
 - `format_info.<format>`
 - `capabilities.spatial`
 - `capabilities.extraction`
 - `capabilities.statistics`
 - `access_index.<data_type>`
 
-表格解析能力应说明字段名、原始字段类型、行数、主键等 table info 是否可得。文档解析能力应说明标题、页数、语言、字数等 document info 是否可得；正文抽取状态属于 `capabilities.extraction`，不属于 `DocumentInfo`。媒体提取能力应说明宽高、时长、基础编码、颜色模式等通用 media info 是否可得；EXIF、视频 codec、音频 codec、帧率、采样率、码率、轨道数等细粒度事实暂不进入 `datatype.MediaInfo`，需要保留时进入受控 `format_info.<format>` 或 `capabilities.extraction`。容器能力应说明内部对象、默认入口和对象摘要是否可得。三维模型能力应说明模型子形态、mesh / node / material / texture / animation / LOD 摘要和三维包围盒是否可得。点云能力应说明点数、点格式、维度、三维包围盒、scale / offset、颜色 / intensity / classification 能力是否可得。空间能力应说明 geometry columns、primary geometry column、SRID / CRS、extent 和 spatial index 是否可得。访问索引能力应说明索引类型、定位单位、锚点和失效判断来源是否可得。
+表格解析能力应说明字段名、原始字段类型、行数、主键等 table info 是否可得。文档解析能力应说明标题、页数、语言、字数等 document info 是否可得；正文抽取状态属于 `capabilities.extraction`，不属于 `DocumentInfo`。媒体提取能力应说明宽高、时长、基础编码、颜色模式等通用 media info 是否可得；EXIF、视频 codec、音频 codec、帧率、采样率、码率、轨道数等细粒度事实暂不进入 `datatype.MediaInfo`，需要保留时进入受控 `format_info.<format>` 或 `capabilities.extraction`。容器能力应说明内部对象、默认入口和对象摘要是否可得。三维模型能力应说明模型子形态、mesh / node / material / texture / animation / LOD 摘要和三维包围盒是否可得。点云能力应说明点数、点格式、维度、三维包围盒、scale / offset、颜色 / intensity / classification 能力是否可得。高斯泼溅能力应说明高斯基元数量、opacity / scale / rotation / spherical harmonics 能力和三维包围盒是否可得。空间能力应说明 geometry columns、primary geometry column、SRID / CRS、extent 和 spatial index 是否可得。访问索引能力应说明索引类型、定位单位、锚点和失效判断来源是否可得。
 
 Provider 一次解析可能同时得到多个事实。为避免污染各 data type 的 type info，应通过 describe result 或等价结构将这些事实同级返回，再由 Meta normalizer 写入各自 attributes 分区。
 
@@ -301,7 +303,7 @@ type TableDescribeResult struct {
 | `AccessIndex` | `attributes.access_index.table` |
 | `FormatInfo` | `attributes.format_info.<format>` |
 
-media 已使用同一原则：`MediaDescribeResult.Media` 写入 `type_info.media`，`MediaDescribeResult.Spatial` 写入 `capabilities.spatial`，`MediaDescribeResult.FormatInfo` 写入 `format_info.<format>`。`model_3d` 和 `point_cloud` 也应采用同级 describe result：`Model3D` / `PointCloud` 写入对应 `type_info`，`Spatial` 写入 `capabilities.spatial`，格式私有事实写入 `format_info.<format>`。后续 document、container、graph 如果也存在“一次解析产出多个事实”的场景，应继续按同级结果表达，不能把横切事实或访问索引塞进各自 `TypeInfo`。
+media 已使用同一原则：`MediaDescribeResult.Media` 写入 `type_info.media`，`MediaDescribeResult.Spatial` 写入 `capabilities.spatial`，`MediaDescribeResult.FormatInfo` 写入 `format_info.<format>`。`model_3d`、`point_cloud` 和 `gaussian_splat` 也应采用同级 describe result：`Model3D` / `PointCloud` / `GaussianSplat` 写入对应 `type_info`，`Spatial` 写入 `capabilities.spatial`，格式私有事实写入 `format_info.<format>`。后续 document、container、graph 如果也存在“一次解析产出多个事实”的场景，应继续按同级结果表达，不能把横切事实或访问索引塞进各自 `TypeInfo`。
 
 空间表的几何字段遵循以下规则：
 
@@ -430,10 +432,10 @@ GeoJSON 的对象内容预览应返回 `content.kind=json`、`preview_material=g
 
 当前边界：
 
-1. 可确定的 data type 元数据进入对应 `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider`、`Model3DInfoProvider` 或 `PointCloudInfoProvider`。
+1. 可确定的 data type 元数据进入对应 `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider`、`Model3DInfoProvider`、`PointCloudInfoProvider` 或 `GaussianSplatInfoProvider`。
 2. 格式私有元信息进入 `FormatInfoProvider`，由 Meta normalizer 写入 `format_info.<format>`。
 3. 样本、连续读取会话、文本片段、缩略图、raw content、range content 等进入 content reader / reader provider。
-4. Meta 只负责编排 provider / reader 结果并写入标准 attributes 分区；按需对象元信息提取也必须走 FormatInfoProvider / MediaInfoProvider / Model3DInfoProvider / PointCloudInfoProvider 等主线能力。
+4. Meta 只负责编排 provider / reader 结果并写入标准 attributes 分区；按需对象元信息提取也必须走 FormatInfoProvider / MediaInfoProvider / Model3DInfoProvider / PointCloudInfoProvider / GaussianSplatInfoProvider 等主线能力。
 
 ## Info Provider 与 Content Reader
 
@@ -443,7 +445,7 @@ info provider 和 content reader 是上层消费者面向数据类型能力的�
 
 | 类别 | 职责 | 示例 |
 |---|---|---|
-| info provider | 提供对应 data type 的元数据，供 Meta 写入 `type_info.*` | `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider`、`Model3DInfoProvider`、`PointCloudInfoProvider` |
+| info provider | 提供对应 data type 的元数据，供 Meta 写入 `type_info.*` | `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider`、`Model3DInfoProvider`、`PointCloudInfoProvider`、`GaussianSplatInfoProvider` |
 | sample / text reader | 提供按 data type 组织后的轻量内容数据，供 Manager / Search / 轻量探查消费 | `TableSampleReader`、`DocumentTextReader`、`MediaThumbnailReader`、点云抽样 reader |
 | continuous reader provider | 打开一次连续读取会话，供 Transfer 等批处理消费 | `TableReaderProvider`、`MultiTableReaderProvider`、`ScopeTableReaderProvider` |
 | writer provider | 打开一次连续写出会话，供 Transfer 写侧消费 | `TableWriterProvider`、`MultiTableWriterProvider` |
@@ -577,6 +579,20 @@ GLB / glTF、OBJ、STL、单 OSGB、OSGB Scene、3D Tiles、IFC / Revit BIM 等�
 - 可选的格式私有事实，例如 LAS header / VLR 摘要、COPC hierarchy 摘要、EPT manifest 摘要、E57 scan group 摘要。
 
 LAS / LAZ / COPC、PCD、点云型 PLY、EPT / Potree、E57 等都归一为 `data_type=point_cloud`。点云不得仅因点记录可展开为 x/y/z、intensity、classification 等列而归为 `table`；真实点样本、抽稀点集、LOD tile 或前端渲染协议应由 content reader、Manager 预览 DTO 或后续派生产物表达，不写入 `datatype.PointCloudInfo`。
+
+### GaussianSplatInfoProvider
+
+`GaussianSplatInfoProvider` 面向高斯泼溅型 data item。
+
+它提供：
+
+- 高斯泼溅通用元信息，例如 `representation`、高斯基元数量、是否包含 opacity、scale、rotation、spherical harmonics，以及球谐阶数。
+- 可选的同级横切事实，例如源数据带有空间定位时解析得到的 `SpatialInfo`。
+- 可选的格式私有事实，例如 PLY header 属性列表、`.splat` / `.ksplat` / `.spz` 编码摘要。
+
+`bounds_3d` 表示精确范围。`GaussianSplatInfoProvider` 使用结构化输入，既包含顺序 reader，也可携带 engine range reader、ref 和 size。对大规模 PLY / SPLAT，Meta scan 不得为了精确 `bounds_3d` 全量扫描 body；provider 应在同一次 `DescribeGaussianSplat` 中基于 range reader 写入 `sampled_bounds_3d`、`sampled_bounds_method` 和 `sampled_bounds_sample_count`。`sampled_bounds_3d` 是采样事实，可用于前端初始定位，不得用于空间检索、质量治理或精确范围判断。
+
+3D Gaussian Splatting PLY、`.splat`、`.ksplat`、`.spz` 等都归一为 `data_type=gaussian_splat`。高斯泼溅不得仅因底层记录形似点集合而归为 `point_cloud`，也不得因为可以三维渲染而走 `model_3d` 的 mesh / GLB 路线；真实高斯基元内容、排序结果、压缩产物、前端渲染协议或派生 splat artifact 应由 content reader、Manager 预览 DTO 或后续派生产物表达，不写入 `datatype.GaussianSplatInfo`。
 
 ### ContainerInfoProvider / ContainerChildResolver
 

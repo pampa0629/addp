@@ -1,9 +1,12 @@
 package metaitem
 
 import (
+	"bufio"
 	"context"
 	"io"
+	"path"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/addp/common/contentio"
@@ -34,14 +37,7 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 	if len(input.RecursiveFiles) > 0 {
 		files = input.RecursiveFiles
 	}
-	resolved, err := dataitem.ResolveItems(dataitem.ResolveInput{
-		ScopeKind:  dataitem.ScopeKindDirectory,
-		ScopePath:  input.DirPath,
-		Candidates: fileEntriesToCandidates(files),
-		Options: dataitem.ResolveOptions{
-			AllowWholeScope: true,
-		},
-	})
+	initialResolved, err := resolveCommonItems(input.DirPath, files)
 	if err != nil {
 		return nil, err
 	}
@@ -49,8 +45,59 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 		Items:  []*DetectedItem{},
 		Claims: ResourceClaimSet{},
 	}
-	if resolved == nil {
+	if initialResolved == nil {
 		return result, nil
+	}
+	if initialResolved.Exclusive {
+		appendResolvedCommonItems(ctx, input, initialResolved, result)
+		return result, nil
+	}
+
+	for _, item := range resolveOBJResourceItems(ctx, input, files) {
+		appendResolvedDetection(input, result, item)
+	}
+	for _, item := range resolveGLTFManifestItems(ctx, input, files) {
+		appendResolvedDetection(input, result, item)
+	}
+
+	resolved, err := resolveCommonItems(input.DirPath, filterManifestAndClaimedStorageFiles(files, result.Claims))
+	if err != nil {
+		return nil, err
+	}
+	appendResolvedCommonItems(ctx, input, resolved, result)
+	return result, nil
+}
+
+func appendResolvedDetection(input DirectoryResolveInput, result *DetectionResult, item dataitem.ResolvedItem) {
+	if result == nil {
+		return
+	}
+	detected := detectedItemFromResolvedItem(input.DirPath, item)
+	result.Items = append(result.Items, detected)
+	for _, path := range item.ClaimPaths {
+		if path != "" {
+			result.Claims[path] = true
+		}
+	}
+	for _, path := range detected.RefFilePaths() {
+		result.Claims[path] = true
+	}
+}
+
+func resolveCommonItems(dirPath string, files []StorageFileRef) (*dataitem.ResolveResult, error) {
+	return dataitem.ResolveItems(dataitem.ResolveInput{
+		ScopeKind:  dataitem.ScopeKindDirectory,
+		ScopePath:  dirPath,
+		Candidates: fileEntriesToCandidates(files),
+		Options: dataitem.ResolveOptions{
+			AllowWholeScope: true,
+		},
+	})
+}
+
+func appendResolvedCommonItems(ctx context.Context, input DirectoryResolveInput, resolved *dataitem.ResolveResult, result *DetectionResult) {
+	if resolved == nil || result == nil {
+		return
 	}
 	for _, item := range resolved.Items {
 		if item.Layout == format.LayoutSingle && !input.Options.IncludeSingleResources {
@@ -91,7 +138,6 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 			result.Claims[path] = true
 		}
 	}
-	return result, nil
 }
 
 func scopeModel3DAttributes(ctx context.Context, input DirectoryResolveInput, item dataitem.ResolvedItem) (map[string]interface{}, bool) {
@@ -127,6 +173,339 @@ func scopeModel3DAttributes(ctx context.Context, input DirectoryResolveInput, it
 		return nil, false
 	}
 	return attrs, true
+}
+
+const maxOBJResourceManifestBytes = 1 << 20
+
+var mtlTextureRefKeywords = map[string]bool{
+	"map_ka":   true,
+	"map_kd":   true,
+	"map_ks":   true,
+	"map_ke":   true,
+	"map_ns":   true,
+	"map_d":    true,
+	"map_bump": true,
+	"bump":     true,
+	"disp":     true,
+	"decal":    true,
+	"norm":     true,
+	"refl":     true,
+}
+
+func resolveOBJResourceItems(ctx context.Context, input DirectoryResolveInput, files []StorageFileRef) []dataitem.ResolvedItem {
+	if input.ContentReader == nil || len(files) == 0 {
+		return nil
+	}
+	byPath := map[string]StorageFileRef{}
+	for _, file := range files {
+		if file.Path != "" {
+			byPath[file.Path] = file
+		}
+	}
+	items := []dataitem.ResolvedItem{}
+	for _, file := range files {
+		if strings.ToLower(path.Ext(file.Path)) != ".obj" {
+			continue
+		}
+		item, ok := resolveSingleOBJResourceItem(ctx, input, file, byPath)
+		if ok {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
+func resolveSingleOBJResourceItem(ctx context.Context, input DirectoryResolveInput, objFile StorageFileRef, byPath map[string]StorageFileRef) (dataitem.ResolvedItem, bool) {
+	reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, resolveCatalogPath(input.EngineID, objFile.Path, input.CatalogPathFor), plugin.ReadOptions{Length: maxOBJResourceManifestBytes})
+	if err != nil {
+		return dataitem.ResolvedItem{}, false
+	}
+	defer reader.Close()
+
+	materialRefs := scanOBJMaterialLibraryRefs(reader)
+	if len(materialRefs) == 0 {
+		return dataitem.ResolvedItem{}, false
+	}
+
+	refList := []dataitem.ItemRef{{
+		Role:      "model",
+		Path:      objFile.Path,
+		Required:  true,
+		Primary:   true,
+		Extension: ".obj",
+	}}
+	claimPaths := []string{objFile.Path}
+	totalSize := objFile.Size
+	seen := map[string]bool{objFile.Path: true}
+	roleCounts := map[string]int{}
+
+	for _, materialRef := range materialRefs {
+		materialPath, materialFile, ok := resolveLocalOBJResourcePath(objFile.Path, materialRef, byPath)
+		if !ok || seen[materialPath] {
+			continue
+		}
+		refList = append(refList, dataitem.ItemRef{
+			Role:      uniqueRefRole("material_library", roleCounts),
+			Path:      materialPath,
+			Required:  true,
+			Extension: strings.ToLower(path.Ext(materialPath)),
+		})
+		claimPaths = append(claimPaths, materialPath)
+		totalSize += materialFile.Size
+		seen[materialPath] = true
+
+		for _, textureRef := range scanMTLTextureRefs(ctx, input, materialPath) {
+			texturePath, textureFile, ok := resolveLocalOBJResourcePath(materialPath, textureRef, byPath)
+			if !ok || seen[texturePath] {
+				continue
+			}
+			refList = append(refList, dataitem.ItemRef{
+				Role:      uniqueRefRole("texture", roleCounts),
+				Path:      texturePath,
+				Required:  false,
+				Extension: strings.ToLower(path.Ext(texturePath)),
+			})
+			claimPaths = append(claimPaths, texturePath)
+			totalSize += textureFile.Size
+			seen[texturePath] = true
+		}
+	}
+	if len(refList) == 1 {
+		return dataitem.ResolvedItem{}, false
+	}
+	return dataitem.ResolvedItem{
+		Name:               objFile.Name,
+		FullName:           objFile.Path,
+		Layout:             format.LayoutSingle,
+		DataType:           datatype.Model3D,
+		Format:             string(format.FormatOBJ),
+		PrimaryContentPath: objFile.Path,
+		RefList:            refList,
+		ClaimPaths:         claimPaths,
+		SizeBytes:          &totalSize,
+		DetectionReason:    "obj_material_library",
+	}, true
+}
+
+func scanOBJMaterialLibraryRefs(reader io.Reader) []string {
+	scanner := bufio.NewScanner(io.LimitReader(reader, maxOBJResourceManifestBytes))
+	scanner.Buffer(make([]byte, 16*1024), 1024*1024)
+	refs := []string{}
+	seen := map[string]bool{}
+	for scanner.Scan() {
+		for _, ref := range parseOBJResourceStatement(scanner.Text(), "mtllib") {
+			if ref != "" && !seen[ref] {
+				refs = append(refs, ref)
+				seen[ref] = true
+			}
+		}
+	}
+	return refs
+}
+
+func scanMTLTextureRefs(ctx context.Context, input DirectoryResolveInput, materialPath string) []string {
+	reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, resolveCatalogPath(input.EngineID, materialPath, input.CatalogPathFor), plugin.ReadOptions{Length: maxOBJResourceManifestBytes})
+	if err != nil {
+		return nil
+	}
+	defer reader.Close()
+
+	scanner := bufio.NewScanner(io.LimitReader(reader, maxOBJResourceManifestBytes))
+	scanner.Buffer(make([]byte, 16*1024), 1024*1024)
+	refs := []string{}
+	seen := map[string]bool{}
+	for scanner.Scan() {
+		line := stripOBJComment(scanner.Text())
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		if !mtlTextureRefKeywords[strings.ToLower(fields[0])] {
+			continue
+		}
+		for _, ref := range resourceRefCandidates(line, fields[0], []string{fields[len(fields)-1]}) {
+			if ref != "" && !seen[ref] {
+				refs = append(refs, ref)
+				seen[ref] = true
+			}
+		}
+	}
+	return refs
+}
+
+func parseOBJResourceStatement(line, keyword string) []string {
+	line = stripOBJComment(line)
+	fields := strings.Fields(line)
+	if len(fields) < 2 || !strings.EqualFold(fields[0], keyword) {
+		return nil
+	}
+	return resourceRefCandidates(line, fields[0], fields[1:])
+}
+
+func resourceRefCandidates(line, keyword string, tokens []string) []string {
+	remainder := strings.TrimSpace(strings.TrimSpace(line)[len(keyword):])
+	candidates := []string{}
+	if remainder != "" {
+		candidates = append(candidates, remainder)
+	}
+	candidates = append(candidates, tokens...)
+	return uniqueNonEmptyStrings(candidates)
+}
+
+func stripOBJComment(line string) string {
+	if index := strings.Index(line, "#"); index >= 0 {
+		line = line[:index]
+	}
+	return strings.TrimSpace(line)
+}
+
+func resolveLocalOBJResourcePath(basePath, ref string, byPath map[string]StorageFileRef) (string, StorageFileRef, bool) {
+	ref = strings.TrimSpace(strings.ReplaceAll(ref, "\\", "/"))
+	if ref == "" || strings.HasPrefix(ref, "/") || strings.Contains(ref, "://") {
+		return "", StorageFileRef{}, false
+	}
+	baseDir := path.Dir(basePath)
+	if baseDir == "." {
+		baseDir = ""
+	}
+	resourcePath := path.Clean(path.Join(baseDir, ref))
+	if !isPathUnderScope(resourcePath, baseDir) {
+		return "", StorageFileRef{}, false
+	}
+	file, ok := byPath[resourcePath]
+	return resourcePath, file, ok
+}
+
+func isPathUnderScope(candidate, scope string) bool {
+	if candidate == "." || strings.HasPrefix(candidate, "../") || candidate == ".." {
+		return false
+	}
+	if scope == "" {
+		return !strings.HasPrefix(candidate, "/")
+	}
+	return candidate == scope || strings.HasPrefix(candidate, strings.TrimRight(scope, "/")+"/")
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	seen := map[string]bool{}
+	result := []string{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		result = append(result, value)
+		seen[value] = true
+	}
+	return result
+}
+
+func resolveGLTFManifestItems(ctx context.Context, input DirectoryResolveInput, files []StorageFileRef) []dataitem.ResolvedItem {
+	if input.ContentReader == nil || len(files) == 0 {
+		return nil
+	}
+	byPath := map[string]StorageFileRef{}
+	for _, file := range files {
+		if file.Path != "" {
+			byPath[file.Path] = file
+		}
+	}
+	items := []dataitem.ResolvedItem{}
+	for _, file := range files {
+		if strings.ToLower(path.Ext(file.Path)) != ".gltf" {
+			continue
+		}
+		item, ok := resolveSingleGLTFManifestItem(ctx, input, file, byPath)
+		if ok {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
+func resolveSingleGLTFManifestItem(ctx context.Context, input DirectoryResolveInput, manifest StorageFileRef, byPath map[string]StorageFileRef) (dataitem.ResolvedItem, bool) {
+	reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, resolveCatalogPath(input.EngineID, manifest.Path, input.CatalogPathFor), plugin.ReadOptions{Length: format.MaxGLTFManifestBytes + 1})
+	if err != nil {
+		return dataitem.ResolvedItem{}, false
+	}
+	defer reader.Close()
+
+	doc, err := format.DecodeGLTFManifest(reader, format.MaxGLTFManifestBytes)
+	if err != nil {
+		return dataitem.ResolvedItem{}, false
+	}
+	refList := []dataitem.ItemRef{{
+		Role:      "manifest",
+		Path:      manifest.Path,
+		Required:  true,
+		Primary:   true,
+		Extension: ".gltf",
+	}}
+	claimPaths := []string{manifest.Path}
+	totalSize := manifest.Size
+	seen := map[string]bool{manifest.Path: true}
+	roleCounts := map[string]int{}
+	manifestDir := path.Dir(manifest.Path)
+	if manifestDir == "." {
+		manifestDir = ""
+	}
+	for _, resource := range format.LocalGLTFResourceRefs(doc) {
+		resourcePath := path.Clean(path.Join(manifestDir, resource.URI))
+		file, ok := byPath[resourcePath]
+		if !ok {
+			return dataitem.ResolvedItem{}, false
+		}
+		if seen[resourcePath] {
+			continue
+		}
+		refList = append(refList, dataitem.ItemRef{
+			Role:      uniqueRefRole(resource.Role, roleCounts),
+			Path:      resourcePath,
+			Required:  true,
+			Extension: strings.ToLower(path.Ext(resourcePath)),
+		})
+		claimPaths = append(claimPaths, resourcePath)
+		totalSize += file.Size
+		seen[resourcePath] = true
+	}
+	return dataitem.ResolvedItem{
+		Name:               manifest.Name,
+		FullName:           manifest.Path,
+		Layout:             format.LayoutMulti,
+		DataType:           datatype.Model3D,
+		Format:             string(format.FormatGLTF),
+		PrimaryContentPath: manifest.Path,
+		RefList:            refList,
+		ClaimPaths:         claimPaths,
+		SizeBytes:          &totalSize,
+		DetectionReason:    "gltf_manifest",
+	}, true
+}
+
+func uniqueRefRole(base string, counts map[string]int) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = "resource"
+	}
+	count := counts[base]
+	counts[base] = count + 1
+	if count == 0 {
+		return base
+	}
+	return base + "_" + strconv.Itoa(count)
+}
+
+func filterManifestAndClaimedStorageFiles(files []StorageFileRef, claims ResourceClaimSet) []StorageFileRef {
+	filtered := make([]StorageFileRef, 0, len(files))
+	for _, file := range files {
+		if strings.ToLower(path.Ext(file.Path)) == ".gltf" {
+			continue
+		}
+		if file.Path == "" || len(claims) == 0 || !claims[file.Path] {
+			filtered = append(filtered, file)
+		}
+	}
+	return filtered
 }
 
 func rasterMosaicManifestAttributes(ctx context.Context, input DirectoryResolveInput, item dataitem.ResolvedItem) (map[string]interface{}, bool) {

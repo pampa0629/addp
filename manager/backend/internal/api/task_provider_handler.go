@@ -23,14 +23,15 @@ import (
 //
 //	GET /api/v1/manager/tasks/:task_type/:id, GET /api/v1/manager/executions/:execution_id
 type TaskProviderHandler struct {
-	embeddingTaskSvc             *service.EmbeddingTaskService
-	tileCacheTaskSvc             *service.TileCacheTaskService
-	quickViewOptimizationTaskSvc *service.QuickViewOptimizationTaskService
-	rasterCOGTaskSvc             *service.RasterCOGTaskService
-	rasterMosaicTaskSvc          *service.RasterMosaicTaskService
-	model3DQuickViewTaskSvc      *service.Model3DQuickViewTaskService
-	model3DTilesTaskSvc          *service.Model3DTilesTaskService
-	taskExecRepo                 *commonExecution.TaskExecutionRepository
+	embeddingTaskSvc              *service.EmbeddingTaskService
+	tileCacheTaskSvc              *service.TileCacheTaskService
+	quickViewOptimizationTaskSvc  *service.QuickViewOptimizationTaskService
+	rasterCOGTaskSvc              *service.RasterCOGTaskService
+	rasterMosaicTaskSvc           *service.RasterMosaicTaskService
+	model3DQuickViewTaskSvc       *service.Model3DQuickViewTaskService
+	model3DTilesTaskSvc           *service.Model3DTilesTaskService
+	gaussianSplatQuickViewTaskSvc *service.GaussianSplatQuickViewTaskService
+	taskExecRepo                  *commonExecution.TaskExecutionRepository
 }
 
 // NewTaskProviderHandler 创建处理器
@@ -61,6 +62,10 @@ func (h *TaskProviderHandler) SetModel3DTilesTaskService(model3DTilesTaskSvc *se
 
 func (h *TaskProviderHandler) SetModel3DQuickViewTaskService(model3DQuickViewTaskSvc *service.Model3DQuickViewTaskService) {
 	h.model3DQuickViewTaskSvc = model3DQuickViewTaskSvc
+}
+
+func (h *TaskProviderHandler) SetGaussianSplatQuickViewTaskService(gaussianSplatQuickViewTaskSvc *service.GaussianSplatQuickViewTaskService) {
+	h.gaussianSplatQuickViewTaskSvc = gaussianSplatQuickViewTaskSvc
 }
 
 // TaskListResponse 任务列表响应（统一包装 Manager provider 声明的任务类型）
@@ -401,13 +406,56 @@ type Model3DQuickViewTaskResponse struct {
 	UpdatedAt           time.Time                           `json:"updated_at"`
 }
 
+type GaussianSplatQuickViewTaskRequest struct {
+	Name        string               `json:"name"`
+	Description string               `json:"description,omitempty"`
+	Enabled     *bool                `json:"enabled,omitempty"`
+	Schedule    string               `json:"schedule,omitempty"`
+	NextRunAt   *time.Time           `json:"next_run_at,omitempty"`
+	Config      commonModels.JSONMap `json:"config"`
+}
+
+type GaussianSplatQuickViewTaskSourceResponse struct {
+	ItemLocator     string `json:"item_locator,omitempty"`
+	SourceEngineID  uint   `json:"source_engine_id,omitempty"`
+	ItemFingerprint string `json:"item_fingerprint,omitempty"`
+	ItemID          uint   `json:"item_id,omitempty"`
+	Format          string `json:"format,omitempty"`
+	SourceSizeBytes int64  `json:"source_size_bytes,omitempty"`
+}
+
+type GaussianSplatQuickViewTaskResultResponse struct {
+	StorageRef string `json:"storage_ref,omitempty"`
+	FileName   string `json:"file_name,omitempty"`
+}
+
+type GaussianSplatQuickViewTaskResponse struct {
+	ID                  uint                                      `json:"id"`
+	TenantID            uint                                      `json:"tenant_id"`
+	TaskType            string                                    `json:"task_type"`
+	Name                string                                    `json:"name"`
+	Description         string                                    `json:"description,omitempty"`
+	Enabled             bool                                      `json:"enabled"`
+	Schedule            string                                    `json:"schedule,omitempty"`
+	NextRunAt           *time.Time                                `json:"next_run_at,omitempty"`
+	LastRunAt           *time.Time                                `json:"last_run_at,omitempty"`
+	LastExecutionID     *string                                   `json:"last_execution_id,omitempty"`
+	LastExecutionStatus *string                                   `json:"last_execution_status,omitempty"`
+	CreatedBy           *uint                                     `json:"created_by,omitempty"`
+	Config              commonModels.JSONMap                      `json:"config"`
+	Source              *GaussianSplatQuickViewTaskSourceResponse `json:"source,omitempty"`
+	Result              *GaussianSplatQuickViewTaskResultResponse `json:"result,omitempty"`
+	CreatedAt           time.Time                                 `json:"created_at"`
+	UpdatedAt           time.Time                                 `json:"updated_at"`
+}
+
 // ListTasks GET /api/v1/manager/tasks
-// 查询参数：?task_type=vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|embedding
+// 查询参数：?task_type=vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|gaussian_splat_quick_view_generation|embedding
 // @Summary 列出任务 | List tasks
 // @Description 列出 Manager 模块的任务（矢量瓦片缓存生成、矢量快显性能优化、栅格快显 COG 生成、栅格 mosaic 生成、三维模型 GLB 快显生成、三维模型 3D Tiles 生成和向量化任务）| List Manager module tasks
 // @Tags Manager
 // @Produce json
-// @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|embedding | Task type filter"
+// @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|gaussian_splat_quick_view_generation|embedding | Task type filter"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} TaskListResponse "任务列表 | Task list"
@@ -544,6 +592,24 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
 		}
+	case commonExecution.TaskTypeGaussianSplatQuickViewGeneration:
+		if h.gaussianSplatQuickViewTaskSvc == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gaussian splat quick view generation task service is unavailable"})
+			return
+		}
+		tasks, t, err := h.gaussianSplatQuickViewTaskSvc.List(ctx, tenantID, page, pageSize)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		total = t
+		for _, task := range tasks {
+			items = append(items, TaskListItem{
+				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeGaussianSplatQuickViewGeneration,
+				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
+				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
+			})
+		}
 	case commonExecution.TaskTypeEmbedding:
 		if h.embeddingTaskSvc == nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "embedding task service is unavailable"})
@@ -628,6 +694,17 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 			total += t
 			for _, task := range tasks {
 				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeModel3DQuickViewGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
+			}
+		}
+		if h.gaussianSplatQuickViewTaskSvc != nil {
+			tasks, t, err := h.gaussianSplatQuickViewTaskSvc.List(ctx, tenantID, page, pageSize)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			total += t
+			for _, task := range tasks {
+				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeGaussianSplatQuickViewGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
 			}
 		}
 		if h.embeddingTaskSvc != nil {
@@ -740,7 +817,7 @@ func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
 // @Description 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and ID
 // @Tags Manager
 // @Produce json
-// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|embedding | Task type"
+// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|gaussian_splat_quick_view_generation|embedding | Task type"
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} object "任务详情，按 task_type 返回矢量瓦片缓存、矢量快显性能优化、栅格 COG 生成或向量化任务详情 | Task detail by task_type"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -825,6 +902,17 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, model3DQuickViewTaskResponse(task))
+	case commonExecution.TaskTypeGaussianSplatQuickViewGeneration:
+		task, err := h.gaussianSplatQuickViewTaskSvc.GetByID(ctx, uint(id), tenantID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if task == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+			return
+		}
+		c.JSON(http.StatusOK, gaussianSplatQuickViewTaskResponse(task))
 	case commonExecution.TaskTypeEmbedding:
 		task, err := h.embeddingTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -890,7 +978,7 @@ type TaskExecuteResponse struct {
 // @Tags Manager
 // @Accept json
 // @Produce json
-// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|embedding | Task type"
+// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|gaussian_splat_quick_view_generation|embedding | Task type"
 // @Param id path int true "任务ID | Task ID"
 // @Param body body TaskExecuteRequest false "执行配置 | Execution configuration"
 // @Success 202 {object} TaskExecuteResponse "执行ID | Execution ID"
@@ -946,6 +1034,8 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 		executionID, err = h.model3DTilesTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	case commonExecution.TaskTypeModel3DQuickViewGeneration:
 		executionID, err = h.model3DQuickViewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+	case commonExecution.TaskTypeGaussianSplatQuickViewGeneration:
+		executionID, err = h.gaussianSplatQuickViewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	case commonExecution.TaskTypeEmbedding:
 		executionID, err = h.embeddingTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	default:
@@ -1934,7 +2024,7 @@ func (h *TaskProviderHandler) DeleteModel3DTilesTask(c *gin.Context) {
 
 // ListModel3DQuickViewTasks GET /api/v1/manager/model_3d_quick_view_tasks
 // @Summary 列出三维模型 GLB 快显任务配置 | List model 3D quick view generation task configurations
-// @Description 列出 Manager 模块的单 OSGB 转 GLB 快显任务配置。该私有入口固定返回 task_type=model_3d_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D quick view generation task configurations.
+// @Description 列出 Manager 模块的 OSGB / glTF / FBX / OBJ 转 GLB 快显任务配置。该私有入口固定返回 task_type=model_3d_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D quick view generation task configurations.
 // @Tags Manager
 // @Produce json
 // @Param page query int false "页码，默认1 | Page number, default 1"
@@ -1961,7 +2051,7 @@ func (h *TaskProviderHandler) ListModel3DQuickViewTasks(c *gin.Context) {
 
 // CreateModel3DQuickViewTask POST /api/v1/manager/model_3d_quick_view_tasks
 // @Summary 创建三维模型 GLB 快显任务配置 | Create model 3D quick view generation task configuration
-// @Description 创建新的单 OSGB 转 GLB 快显任务配置。任务从单个 OSGB item 读取源数据，并将 GLB artifact 写入 Manager infra MinIO。| Create a model 3D quick view task from a single OSGB item into Manager infra MinIO.
+// @Description 创建新的 OSGB / glTF / FBX / OBJ 转 GLB 快显任务配置。任务从 OSGB、glTF、FBX 或 OBJ model_3d item 读取源数据，并将 GLB artifact 写入 Manager infra MinIO。| Create a model 3D quick view task from an OSGB, glTF, FBX or OBJ model item into Manager infra MinIO.
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -2079,6 +2169,159 @@ func (h *TaskProviderHandler) DeleteModel3DQuickViewTask(c *gin.Context) {
 		return
 	}
 	if err := h.model3DQuickViewTaskSvc.Delete(c.Request.Context(), uint(id), tenantID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+// ListGaussianSplatQuickViewTasks GET /api/v1/manager/gaussian_splat_quick_view_tasks
+// @Summary 列出高斯泼溅 KSplat 快显任务配置 | List Gaussian Splat KSplat quick view generation task configurations
+// @Description 列出 Manager 模块的高斯泼溅 KSplat 快显任务配置。该私有入口固定返回 task_type=gaussian_splat_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager Gaussian Splat KSplat quick view generation task configurations.
+// @Tags Manager
+// @Produce json
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /gaussian_splat_quick_view_tasks [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListGaussianSplatQuickViewTasks(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	tasks, total, err := h.gaussianSplatQuickViewTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	items := make([]GaussianSplatQuickViewTaskResponse, 0, len(tasks))
+	for _, task := range tasks {
+		items = append(items, gaussianSplatQuickViewTaskResponse(task))
+	}
+	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize})
+}
+
+// CreateGaussianSplatQuickViewTask POST /api/v1/manager/gaussian_splat_quick_view_tasks
+// @Summary 创建高斯泼溅 KSplat 快显任务配置 | Create Gaussian Splat KSplat quick view generation task configuration
+// @Description 创建新的高斯泼溅 KSplat 快显任务配置。当前只接受源格式为 KSplat 的 gaussian_splat item，并将 KSplat artifact 写入 Manager infra MinIO；PLY / SPLAT 可使用基础高斯泼溅预览，真实转换器接入后再开放受管生成。| Create a Gaussian Splat quick view task from a KSplat gaussian_splat item into Manager infra MinIO. PLY / SPLAT use basic Gaussian Splat preview until the real converter is connected.
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param body body GaussianSplatQuickViewTaskRequest true "gaussian splat quick view generation task configuration"
+// @Success 201 {object} GaussianSplatQuickViewTaskResponse "创建的任务配置 | Created task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /gaussian_splat_quick_view_tasks [post]
+// @Security BearerAuth
+func (h *TaskProviderHandler) CreateGaussianSplatQuickViewTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	userID := c.GetUint("user_id")
+	req, err := decodeGaussianSplatQuickViewTaskRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	task := models.GaussianSplatQuickViewTask{
+		TenantID:    tenantID,
+		Name:        strings.TrimSpace(req.Name),
+		Description: strings.TrimSpace(req.Description),
+		Enabled:     enabled,
+		Schedule:    strings.TrimSpace(req.Schedule),
+		NextRunAt:   req.NextRunAt,
+		Config:      req.Config,
+		CreatedBy:   &userID,
+	}
+	if err := h.gaussianSplatQuickViewTaskSvc.Create(c.Request.Context(), &task); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gaussianSplatQuickViewTaskResponse(&task))
+}
+
+// GetGaussianSplatQuickViewTask GET /api/v1/manager/gaussian_splat_quick_view_tasks/:id
+// @Summary 获取高斯泼溅 KSplat 快显任务配置 | Get Gaussian Splat KSplat quick view generation task configuration
+// @Tags Manager
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} GaussianSplatQuickViewTaskResponse "任务配置 | Task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Router /gaussian_splat_quick_view_tasks/{id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) GetGaussianSplatQuickViewTask(c *gin.Context) {
+	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeGaussianSplatQuickViewGeneration})
+	h.TaskDetail(c)
+}
+
+// UpdateGaussianSplatQuickViewTask PUT /api/v1/manager/gaussian_splat_quick_view_tasks/:id
+// @Summary 更新高斯泼溅 KSplat 快显任务配置 | Update Gaussian Splat KSplat quick view generation task configuration
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Param body body GaussianSplatQuickViewTaskRequest true "gaussian splat quick view generation task configuration"
+// @Success 200 {object} GaussianSplatQuickViewTaskResponse "更新后的任务配置 | Updated task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Router /gaussian_splat_quick_view_tasks/{id} [put]
+// @Security BearerAuth
+func (h *TaskProviderHandler) UpdateGaussianSplatQuickViewTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	existing, err := h.gaussianSplatQuickViewTaskSvc.GetByID(c.Request.Context(), uint(id), tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existing == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+		return
+	}
+	req, err := decodeGaussianSplatQuickViewTaskRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	existing.Name = strings.TrimSpace(req.Name)
+	existing.Description = strings.TrimSpace(req.Description)
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
+	existing.Schedule = strings.TrimSpace(req.Schedule)
+	existing.NextRunAt = req.NextRunAt
+	existing.Config = req.Config
+	if err := h.gaussianSplatQuickViewTaskSvc.Update(c.Request.Context(), existing); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gaussianSplatQuickViewTaskResponse(existing))
+}
+
+// DeleteGaussianSplatQuickViewTask DELETE /api/v1/manager/gaussian_splat_quick_view_tasks/:id
+// @Summary 删除高斯泼溅 KSplat 快显任务配置 | Delete Gaussian Splat KSplat quick view generation task configuration
+// @Tags Manager
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /gaussian_splat_quick_view_tasks/{id} [delete]
+// @Security BearerAuth
+func (h *TaskProviderHandler) DeleteGaussianSplatQuickViewTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	if err := h.gaussianSplatQuickViewTaskSvc.Delete(c.Request.Context(), uint(id), tenantID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -2251,6 +2494,92 @@ func (h *TaskProviderHandler) DeleteModel3DQuickView(c *gin.Context) {
 		return
 	}
 	if err := h.model3DQuickViewTaskSvc.DeleteResult(c.Request.Context(), uint(id), tenantID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+// ListGaussianSplatQuickViews GET /api/v1/manager/gaussian_splat_quick_view
+// @Summary 列出高斯泼溅 KSplat 快显结果 | List Gaussian Splat KSplat quick view results
+// @Tags Manager
+// @Produce json
+// @Param item_id query int false "数据项ID | Item ID"
+// @Param item_fingerprint query string false "数据项指纹 | Item fingerprint"
+// @Param task_id query int false "任务ID | Task ID"
+// @Param status query string false "状态 | Status"
+// @Param q query string false "关键词 | Keyword"
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "结果列表 | Result list"
+// @Router /gaussian_splat_quick_view [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListGaussianSplatQuickViews(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	itemID64, _ := strconv.ParseUint(c.Query("item_id"), 10, 32)
+	taskID64, _ := strconv.ParseUint(c.Query("task_id"), 10, 32)
+	results, total, err := h.gaussianSplatQuickViewTaskSvc.ListResults(c.Request.Context(), repository.GaussianSplatQuickViewFilter{
+		TenantID:        tenantID,
+		ItemID:          uint(itemID64),
+		ItemFingerprint: c.Query("item_fingerprint"),
+		TaskID:          uint(taskID64),
+		Status:          c.Query("status"),
+		Q:               c.Query("q"),
+		Page:            page,
+		PageSize:        pageSize,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": results, "total": total, "page": page, "page_size": pageSize})
+}
+
+// GetGaussianSplatQuickView GET /api/v1/manager/gaussian_splat_quick_view/:id
+// @Summary 获取高斯泼溅 KSplat 快显详情 | Get Gaussian Splat KSplat quick view detail
+// @Tags Manager
+// @Produce json
+// @Param id path int true "结果ID | Result ID"
+// @Success 200 {object} models.GaussianSplatQuickView "结果详情 | Result detail"
+// @Router /gaussian_splat_quick_view/{id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) GetGaussianSplatQuickView(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
+		return
+	}
+	result, err := h.gaussianSplatQuickViewTaskSvc.GetResult(c.Request.Context(), uint(id), tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if result == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "结果不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// DeleteGaussianSplatQuickView DELETE /api/v1/manager/gaussian_splat_quick_view/:id
+// @Summary 删除高斯泼溅 KSplat 快显 | Delete Gaussian Splat KSplat quick view
+// @Tags Manager
+// @Produce json
+// @Param id path int true "结果ID | Result ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Router /gaussian_splat_quick_view/{id} [delete]
+// @Security BearerAuth
+func (h *TaskProviderHandler) DeleteGaussianSplatQuickView(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
+		return
+	}
+	if err := h.gaussianSplatQuickViewTaskSvc.DeleteResult(c.Request.Context(), uint(id), tenantID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -2535,6 +2864,22 @@ func decodeModel3DQuickViewTaskRequest(c *gin.Context) (Model3DQuickViewTaskRequ
 	return req, nil
 }
 
+func decodeGaussianSplatQuickViewTaskRequest(c *gin.Context) (GaussianSplatQuickViewTaskRequest, error) {
+	var req GaussianSplatQuickViewTaskRequest
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		return req, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return req, errors.New("request body must contain a single JSON object")
+	}
+	if req.Config == nil {
+		req.Config = commonModels.JSONMap{}
+	}
+	return req, nil
+}
+
 func tileCacheTaskResponse(task *models.TileCacheTask) TileCacheTaskResponse {
 	resp := TileCacheTaskResponse{}
 	if task == nil {
@@ -2757,6 +3102,47 @@ func model3DQuickViewTaskResponse(task *models.Model3DQuickViewTask) Model3DQuic
 	}
 	if result, ok := asJSONMap(task.Config["result"]); ok {
 		resp.Result = &Model3DQuickViewTaskResultResponse{
+			StorageRef: stringFromConfig(result["storage_ref"]),
+			FileName:   stringFromConfig(result["file_name"]),
+		}
+	}
+	return resp
+}
+
+func gaussianSplatQuickViewTaskResponse(task *models.GaussianSplatQuickViewTask) GaussianSplatQuickViewTaskResponse {
+	resp := GaussianSplatQuickViewTaskResponse{}
+	if task == nil {
+		return resp
+	}
+	resp = GaussianSplatQuickViewTaskResponse{
+		ID:                  task.ID,
+		TenantID:            task.TenantID,
+		TaskType:            commonExecution.TaskTypeGaussianSplatQuickViewGeneration,
+		Name:                task.Name,
+		Description:         task.Description,
+		Enabled:             task.Enabled,
+		Schedule:            task.Schedule,
+		NextRunAt:           task.NextRunAt,
+		LastRunAt:           task.LastRunAt,
+		LastExecutionID:     task.LastExecutionID,
+		LastExecutionStatus: task.LastExecutionStatus,
+		CreatedBy:           task.CreatedBy,
+		Config:              task.Config,
+		CreatedAt:           task.CreatedAt,
+		UpdatedAt:           task.UpdatedAt,
+	}
+	if source, ok := asJSONMap(task.Config["source"]); ok {
+		resp.Source = &GaussianSplatQuickViewTaskSourceResponse{
+			ItemLocator:     stringFromConfig(source["item_locator"]),
+			SourceEngineID:  uintFromConfig(source["source_engine_id"]),
+			ItemFingerprint: stringFromConfig(source["item_fingerprint"]),
+			ItemID:          uintFromConfig(source["item_id"]),
+			Format:          stringFromConfig(source["format"]),
+			SourceSizeBytes: int64FromAPIConfig(source["source_size_bytes"], 0),
+		}
+	}
+	if result, ok := asJSONMap(task.Config["result"]); ok {
+		resp.Result = &GaussianSplatQuickViewTaskResultResponse{
 			StorageRef: stringFromConfig(result["storage_ref"]),
 			FileName:   stringFromConfig(result["file_name"]),
 		}

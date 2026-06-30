@@ -2,7 +2,7 @@
 
 更新时间：2026-06-28
 
-状态说明：本文为 `docs/next/` 专题方案，用于统一 ADDP 中单个 OSGB 文件、OSGB 倾斜摄影数据集、单文件快显 GLB 产物、3D Tiles 业务数据集和 `model3d_workflow` 运行时的概念边界与落地路径。当前已完成格式拆分、`model3d_workflow` 最小运行时、OSGB Scene 转 3D Tiles 任务语义修正、单 OSGB GLB 快显任务与 Manager artifact 闭环、Manager 预览和任务页面接入、Linux arm64 生产镜像内置 `_3dtile` 转换工具、MinIO/S3 source staging 与 target publish，以及 3D Tiles 前端第一主路线收敛。后续只保留对象存储断点复用、workspace TTL、源对象摘要和 CesiumJS 级 GIS 三维能力评估。
+状态说明：本文为 `docs/next/` 专题方案，用于统一 ADDP 中单个 OSGB 文件、OSGB 倾斜摄影数据集、单文件快显 GLB 产物、3D Tiles 业务数据集和 `model3d_workflow` 运行时的概念边界与落地路径。当前已完成格式拆分、`model3d_workflow` 最小运行时、OSGB Scene 转 3D Tiles 任务语义修正、单 OSGB GLB 快显任务与 Manager artifact 闭环、Manager 预览和任务页面接入、Linux arm64 生产镜像内置 `_3dtile` 转换工具、MinIO/S3 source staging 与 target publish，以及 3D Tiles 前端第一主路线收敛。本文只保留 OSGB 专题主线；OBJ / STL / FBX 已落地能力和 IFC / 3MX / SLPK / 点云等后续路线见 `docs/next/三维模型格式扩展路线.md`。
 
 相关文档：
 
@@ -16,6 +16,8 @@
 - `manager/docs/快显概念说明.md`
 - `manager/docs/快显实现规范.md`
 - `manager/docs/数据预览语义协议.md`
+- `docs/next/三维模型与点云首轮验证记录.md`
+- `docs/next/三维模型格式扩展路线.md`
 - `docs/next/栅格镶嵌数据集mosaic快显方案.md`
 
 ## 一、核心结论
@@ -817,11 +819,15 @@ flowchart TD
     G --> H["Manager 3D Tiles preview"]
 ```
 
-## 十四、实施推进建议
+## 十四、实施推进记录
+
+本节保留从概念收敛到实现落地的阶段记录。已经完成的阶段不再作为待办清单使用，新的后续增强集中在第十六节。
 
 ### 14.1 第一阶段：文档和概念收敛
 
 目标：先把当前混用 `osgb` 的概念修正。
+
+状态：已完成。
 
 任务：
 
@@ -838,6 +844,8 @@ flowchart TD
 
 目标：让 Meta 正确区分单 OSGB 和 OSGB scene。
 
+状态：已完成。
+
 任务：
 
 1. 保留 `format=osgb`，但语义改为单 `.osgb` 文件。
@@ -852,6 +860,8 @@ flowchart TD
 ### 14.3 第三阶段：`model3d_workflow` 最小运行时
 
 目标：新增 runtime 并通过健康检查、算子列表和 direct invoke 合约。
+
+状态：已完成。
 
 任务：
 
@@ -868,6 +878,8 @@ flowchart TD
 
 目标：单 `.osgb` item 可以生成 GLB 并预览。
 
+状态：已完成。
+
 任务：
 
 1. 新增 `model_3d_quick_view_generation` 任务类型。
@@ -876,13 +888,15 @@ flowchart TD
 4. Manager 生成 infra MinIO target。
 5. direct invoke `osgb_to_glb`。
 6. `model3d_workflow` 本地生成 GLB。
-7. Manager 上传 GLB 到 infra MinIO。
+7. `model3d_workflow` 上传 GLB 到 infra MinIO。
 8. Manager 登记 artifact，并通过 `/api/v1/manager/model_3d_quick_view/{id}/content` 提供带 Range 支持的 GLB 内容流。
 9. Preview 对 ready GLB 返回 `content.kind=model_3d`、`preview_material=url`、`frontend_renderer=model_3d`。
 
 ### 14.5 第五阶段：OSGB scene 转 3D Tiles 闭环
 
 目标：NFS 中的 OSGB scene 可以生成目标 NFS 业务存储中的 3D Tiles item。
+
+状态：已完成。
 
 任务：
 
@@ -930,9 +944,9 @@ flowchart TD
 4. 下载进度上报。
 5. 明确任务失败后的 workspace TTL 清理。
 
-## 十五、第一批代码修改清单
+## 十五、第一批代码修改记录
 
-在用户确认正式开工后，建议按以下顺序修改：
+本节记录第一批实现的推进顺序，当前不再作为待办入口：
 
 1. 文档规范同步。
 2. `common/format` 拆分 `osgb` 和 `osgb_scene`。

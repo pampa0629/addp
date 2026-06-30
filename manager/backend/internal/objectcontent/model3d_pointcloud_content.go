@@ -9,7 +9,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -49,6 +51,44 @@ func model3DFrontendRenderer(req *ObjectContentRequest) string {
 
 type pointCloudContentHandler struct {
 	baseContentHandler
+}
+
+type gaussianSplatContentHandler struct {
+	baseContentHandler
+}
+
+func (h *gaussianSplatContentHandler) Matches(req *ObjectContentRequest) bool {
+	if req == nil || !h.baseContentHandler.Matches(req) {
+		return false
+	}
+	return strings.EqualFold(commonJSON.String(req.Attributes, "item", "data_type"), string(datatype.GaussianSplat))
+}
+
+func (h *gaussianSplatContentHandler) Handle(_ context.Context, req *ObjectContentRequest, _ ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
+	metadata := buildPreviewMetadata(req, 0)
+	metadata["quick_view_status"] = "ready"
+	metadata["quick_view_task_type"] = ""
+	previewURL := ""
+	if req != nil {
+		previewURL = strings.TrimSpace(req.PreviewURL)
+	}
+	if previewURL == "" {
+		metadata["quick_view_status"] = "preview_url_missing"
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind:             models.ObjectPreviewKindGaussianSplat,
+			PreviewMaterial:  models.PreviewMaterialUnsupported,
+			FrontendRenderer: models.ObjectPreviewKindGaussianSplat,
+			Metadata:         metadata,
+		}), false, nil
+	}
+	content := &models.ObjectPreviewContent{
+		Kind:             models.ObjectPreviewKindGaussianSplat,
+		PreviewMaterial:  models.PreviewMaterialURL,
+		FrontendRenderer: models.ObjectPreviewKindGaussianSplat,
+		URL:              previewURL,
+		Metadata:         metadata,
+	}
+	return decoratePreviewContent(content), false, nil
 }
 
 func (h *pointCloudContentHandler) HandleStream(ctx context.Context, req *ObjectContentRequest, streamer ObjectStreamProvider) (*models.ObjectPreviewContent, bool, error) {

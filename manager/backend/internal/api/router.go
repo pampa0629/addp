@@ -41,6 +41,7 @@ func SetupRouter(
 	exportHandler *ExportHandler,
 	rasterMosaicTileHandler *RasterMosaicTileHandler,
 	model3DQuickViewHandler *Model3DQuickViewHandler,
+	gaussianSplatQuickViewHandler *GaussianSplatQuickViewHandler,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -155,6 +156,14 @@ func SetupRouter(
 			model3DQuickViewTasksGroup.PUT("/:id", taskProviderHandler.UpdateModel3DQuickViewTask)
 			model3DQuickViewTasksGroup.DELETE("/:id", taskProviderHandler.DeleteModel3DQuickViewTask)
 		}
+		gaussianSplatQuickViewTasksGroup := api.Group("/gaussian_splat_quick_view_tasks")
+		{
+			gaussianSplatQuickViewTasksGroup.GET("", taskProviderHandler.ListGaussianSplatQuickViewTasks)
+			gaussianSplatQuickViewTasksGroup.POST("", taskProviderHandler.CreateGaussianSplatQuickViewTask)
+			gaussianSplatQuickViewTasksGroup.GET("/:id", taskProviderHandler.GetGaussianSplatQuickViewTask)
+			gaussianSplatQuickViewTasksGroup.PUT("/:id", taskProviderHandler.UpdateGaussianSplatQuickViewTask)
+			gaussianSplatQuickViewTasksGroup.DELETE("/:id", taskProviderHandler.DeleteGaussianSplatQuickViewTask)
+		}
 		if rasterMosaicTileHandler != nil {
 			rasterMosaicTilesGroup := api.Group("/raster_mosaic/tiles")
 			{
@@ -175,6 +184,15 @@ func SetupRouter(
 			model3DQuickViewsGroup.DELETE("/:id", taskProviderHandler.DeleteModel3DQuickView)
 			if model3DQuickViewHandler != nil {
 				model3DQuickViewsGroup.GET("/:id/content", model3DQuickViewHandler.GetModel3DQuickViewContent)
+			}
+		}
+		gaussianSplatQuickViewsGroup := api.Group("/gaussian_splat_quick_view")
+		{
+			gaussianSplatQuickViewsGroup.GET("", taskProviderHandler.ListGaussianSplatQuickViews)
+			gaussianSplatQuickViewsGroup.GET("/:id", taskProviderHandler.GetGaussianSplatQuickView)
+			gaussianSplatQuickViewsGroup.DELETE("/:id", taskProviderHandler.DeleteGaussianSplatQuickView)
+			if gaussianSplatQuickViewHandler != nil {
+				gaussianSplatQuickViewsGroup.GET("/:id/content", gaussianSplatQuickViewHandler.GetGaussianSplatQuickViewContent)
 			}
 		}
 		quickViewOptimizationTasksGroup := api.Group("/vector_quick_view_target_tasks")

@@ -180,11 +180,11 @@ func buildPreviewMetadata(req *ObjectContentRequest, limit int64) map[string]int
 	if req.ContentType != "" {
 		metadata["content_type"] = req.ContentType
 	}
-	appendAttributePreviewMetadata(metadata, req.Attributes)
+	appendAttributePreviewMetadata(metadata, req.Attributes, req.Format)
 	return metadata
 }
 
-func appendAttributePreviewMetadata(metadata map[string]interface{}, attrs map[string]interface{}) {
+func appendAttributePreviewMetadata(metadata map[string]interface{}, attrs map[string]interface{}, formatName string) {
 	if metadata == nil || len(attrs) == 0 {
 		return
 	}
@@ -202,6 +202,16 @@ func appendAttributePreviewMetadata(metadata map[string]interface{}, attrs map[s
 	}
 	if pointCloudInfo := commonJSON.Section(attrs, "type_info.point_cloud"); len(pointCloudInfo) > 0 {
 		metadata["point_cloud"] = pointCloudInfo
+	}
+	if gaussianSplatInfo := commonJSON.Section(attrs, "type_info.gaussian_splat"); len(gaussianSplatInfo) > 0 {
+		metadata["gaussian_splat"] = gaussianSplatInfo
+	}
+	if formatName != "" {
+		if formatAttrs := commonJSON.Section(attrs, "format_info."+formatName); len(formatAttrs) > 0 {
+			metadata["format_info"] = map[string]interface{}{
+				formatName: formatAttrs,
+			}
+		}
 	}
 	if tilesInfo := commonJSON.Section(attrs, "format_info.3dtiles"); len(tilesInfo) > 0 {
 		metadata["format_info"] = map[string]interface{}{
@@ -386,6 +396,8 @@ func defaultFrontendRenderer(kind string) string {
 		return models.ObjectPreviewKindModel3D
 	case models.ObjectPreviewKindPointCloud:
 		return models.ObjectPreviewKindPointCloud
+	case models.ObjectPreviewKindGaussianSplat:
+		return models.ObjectPreviewKindGaussianSplat
 	case models.ObjectPreviewKindText:
 		return models.ObjectPreviewKindText
 	case models.ObjectPreviewKindUnsupported:
@@ -404,20 +416,21 @@ func buildLimitExceededMessage(kind string, req *ObjectContentRequest, limit int
 
 func contentKindLabel(kind string) string {
 	labels := map[string]string{
-		models.ObjectPreviewKindPDF:         "PDF",
-		models.ObjectPreviewKindDOCX:        "DOCX",
-		models.ObjectPreviewKindWPS:         "WPS",
-		models.ObjectPreviewKindPPTX:        "PPTX",
-		models.ObjectPreviewKindImage:       "图片",
-		models.ObjectPreviewKindVideo:       "视频",
-		models.ObjectPreviewKindAudio:       "音频",
-		models.ObjectPreviewKindJSON:        "JSON",
-		models.ObjectPreviewKindContainer:   "容器",
-		models.ObjectPreviewKindModel3D:     "三维模型",
-		models.ObjectPreviewKindPointCloud:  "点云",
-		models.ObjectPreviewKindText:        "文本",
-		models.ObjectPreviewKindMarkdown:    "Markdown",
-		models.ObjectPreviewKindUnsupported: "暂不支持的格式",
+		models.ObjectPreviewKindPDF:           "PDF",
+		models.ObjectPreviewKindDOCX:          "DOCX",
+		models.ObjectPreviewKindWPS:           "WPS",
+		models.ObjectPreviewKindPPTX:          "PPTX",
+		models.ObjectPreviewKindImage:         "图片",
+		models.ObjectPreviewKindVideo:         "视频",
+		models.ObjectPreviewKindAudio:         "音频",
+		models.ObjectPreviewKindJSON:          "JSON",
+		models.ObjectPreviewKindContainer:     "容器",
+		models.ObjectPreviewKindModel3D:       "三维模型",
+		models.ObjectPreviewKindPointCloud:    "点云",
+		models.ObjectPreviewKindGaussianSplat: "高斯泼溅",
+		models.ObjectPreviewKindText:          "文本",
+		models.ObjectPreviewKindMarkdown:      "Markdown",
+		models.ObjectPreviewKindUnsupported:   "暂不支持的格式",
 	}
 	if label, ok := labels[kind]; ok {
 		return label

@@ -58,6 +58,11 @@
 | PPTX | `single` | `document` | `pptx` | 第一阶段以内置格式识别和 raw / range 预览为主 |
 | WPS | `single` | `document` | `wps` | 第一阶段以内置格式识别和 raw / range 预览为主 |
 | GLB | `single` | `model_3d` | `glb` | 第一阶段三维模型代表格式；预览优先走 raw / range / storage stream + 前端 Three.js |
+| glTF | `multi` | `model_3d` | `gltf` | 由 `.gltf` manifest 声明的多资源三维模型，buffers / images 作为 related refs |
+| OBJ | `single` | `model_3d` | `obj` | Wavefront OBJ 单体网格模型；第一阶段支持识别和轻量摘要 |
+| STL | `single` | `model_3d` | `stl` | STL 单体网格模型；第一阶段支持识别和轻量摘要 |
+| PLY | `single` | `model_3d` | `ply` | PLY 单文件三维模型 / 点集合；第一阶段支持 header 识别和轻量摘要 |
+| FBX | `single` | `model_3d` | `fbx` | FBX 单体网格模型；快显通过 GLB artifact 实现 |
 | 3D Tiles | `whole` | `model_3d` | `3dtiles` | 由 `tileset.json` manifest 声明的分块三维场景 |
 | OSGB | `single` | `model_3d` | `osgb` | 单个 `.osgb` 三维模型文件；快显通过 GLB artifact 实现 |
 | OSGB Scene | `whole` | `model_3d` | `osgb_scene` | 由 `metadata.xml` manifest 声明的一套 OSGB 倾斜摄影三维模型场景 |
@@ -95,6 +100,200 @@ Manager 预览应消费已入库 `data_type=model_3d + format=glb` 和 storage /
 - 不得把 glTF scene graph 当成 ADDP `graph` data type。
 - 不得把模型原始 JSON、binary chunk、纹理内容、前端渲染协议或缩略图写入 `type_info.model_3d`。
 - 后续 `gltf` multi 规则应通过 `layout=multi` 和 related refs 表达，不应和 GLB 共享同一个 primary ref 规则。
+
+## glTF
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `multi` |
+| `data_type` | `model_3d` |
+| `format` | `gltf` |
+| 主资源 | `.gltf` manifest，`meta_item.full_name` 来源于该 manifest 文件 |
+| related refs | manifest 自身、`buffers[].uri`、`images[].uri` 中可解析且存在的本地相对资源 |
+
+glTF 是 JSON manifest 加外部二进制 buffer、纹理图片等资源组成的多资源三维模型。扫描实现必须解析 `.gltf` manifest 后才能建立 data item 边界：`buffers[].uri` 和 `images[].uri` 中的本地相对路径进入 `item.refs`，其中 `.gltf` manifest 为 `role=manifest` 且 `primary=true`，buffer 资源使用 `role=buffer` / `buffer_1` 等唯一 role，image 资源使用 `role=image` / `image_1` 等唯一 role。`data:` URI 和 `http://` / `https://` 等外部 URL 不形成本地 ref。
+
+如果 `.gltf` manifest 引用的任一本地相对资源不在当前扫描可见候选集合内，扫描不得产出完整 glTF item。不得通过同 basename、同目录图片或 `.bin` 文件推断 glTF refs；资源边界只以 manifest 显式 URI 为准。被 manifest 引用并命中的本地资源必须进入 detector claims，避免 `.bin`、纹理图片等被重复落为独立 item。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=multi`、`data_type=model_3d`、`format=gltf`、`refs` 中记录 manifest、buffer、image 等 related refs |
+| `type_info.model_3d` | `model_kind=mesh_scene`、节点数、mesh 数、顶点数、三角面数、材质数、纹理数、动画数、三维包围盒、单位、up axis 等跨格式模型摘要 |
+| `format_info.gltf` | glTF 版本、generator、asset copyright、默认 scene、scene / buffer / image / accessor 数量、extensions used / required、外部资源数量等 glTF 私有事实 |
+| `capabilities.spatial` | 仅在模型有明确地理定位、CRS 或可解析空间范围时写入 |
+
+### 消费要求
+
+Manager 第一阶段应基于已入库 `data_type=model_3d + layout=multi + format=gltf` 和 `item.refs` 消费 glTF 多资源模型。主快显路线是通过 `model_3d_quick_view_generation` 调用 `model3d_workflow` 的 `gltf_to_glb` direct operator，将 manifest、buffer 和纹理资源打包为 Manager infra MinIO 中的 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。后续如需要浏览器直接预览原生 glTF，必须保持 manifest 相对 URI 可通过 content stream 或同等资源代理访问；不得把 glTF 源 item 伪装为 GLB。
+
+### 格式约束
+
+- 不得把 `.gltf` 当普通 `json` 表、文档或容器入库。
+- 不得把 `.bin`、纹理图片、KTX2 等被 manifest 引用的资源重复落成独立 item。
+- 不得使用同 basename 规则、目录图片扫描或前端运行时猜测来补全 glTF refs。
+- glTF JSON 原文、buffer 内容、纹理内容、前端渲染 URL 和转换产物不得写入 `type_info.model_3d`。
+
+## OBJ
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | `model_3d` |
+| `format` | `obj` |
+| 主资源 | `meta_item.full_name` 指向 `.obj` 文件资源 |
+
+OBJ 按单资源三维模型接入，主 item 是 `.obj` 文件。扫描器应读取 OBJ 文本中的 `mtllib`，将命中的本地 `.mtl` 作为 related refs / claims；对于 `.mtl` 中命中的本地贴图资源，也作为同一 OBJ item 的 refs / claims。不得在没有 manifest 边界的情况下把目录提升为 `layout=multi`。如果 OBJ 声明了 `mtllib`，但对应 `.mtl` 不存在，扫描不得凭同目录图片或同 basename 图片猜测贴图关系。扫描可读取 OBJ 文本中的 `v`、`f`、`o`、`g`、`mtllib`、`usemtl` 形成轻量摘要；对于 P3BJet 等导出器写在注释头部的 `BoundingBox(...)`、`Vertices:`、`Faces:`，可优先作为声明摘要写入，避免超大 OBJ 必须全量逐行解析。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=single`、`data_type=model_3d`、`format=obj` |
+| `type_info.model_3d` | `model_kind=mesh_scene`、mesh 数、顶点数、三角面数、三维包围盒等跨格式模型摘要 |
+| `format_info.obj` | OBJ 私有摘要，例如 face 数、object / group 数、material library 数、是否使用材质、声明顶点 / 面数、扫描行数和 `scan_complete` |
+
+### 消费要求
+
+Manager 不要求浏览器直接解析 OBJ。主快显路线是通过 `model_3d_quick_view_generation` 调用 `model3d_workflow` 的 `obj_to_glb` direct operator，由运行时内置的 `assimp export` 生成 Manager infra MinIO 中的自包含 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。OBJ 的 `.mtl` 和纹理引用由转换器从源文件相对路径解析并嵌入 GLB，不作为浏览器直接访问源目录贴图的主路径。转换前应校验 OBJ 声明的本地 `.mtl` 是否存在；缺失时任务应失败并提示缺失材质库，不能登记一个无贴图灰模为 ready artifact。
+
+超大 OBJ deep scan 不应因为行数超过预算而失败。扫描器可以返回预算内 partial 摘要，并通过 `format_info.obj.scan_complete=false` 与 `scanned_line_count` 表示未做全量解析；如果文件头部已声明顶点数、面数和包围盒，这些声明事实可进入 `type_info.model_3d` 与 `format_info.obj.declared_*`。
+
+## STL
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | `model_3d` |
+| `format` | `stl` |
+| 主资源 | `meta_item.full_name` 指向 `.stl` 文件资源 |
+
+STL 第一阶段按单资源三维模型接入，支持 ASCII STL 与 binary STL 的轻量摘要。STL 材质表达弱，不能把材质、纹理或业务语义臆造进 `type_info.model_3d`。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=single`、`data_type=model_3d`、`format=stl` |
+| `type_info.model_3d` | `model_kind=mesh_scene`、mesh 数、顶点数、三角面数、三维包围盒等跨格式模型摘要 |
+| `format_info.stl` | STL 私有摘要，例如 encoding、顶点数、三角面数、扫描行数 / 采样三角面数和 `scan_complete` |
+
+### 消费要求
+
+Manager 第一阶段不要求浏览器直接解析 STL，也不暴露 STL 转 GLB 快显任务入口。当前内置 `_3dtile` 转换器未声明 STL 输入能力；STL 快显需要后续引入可稳定运行的转换器后，再新增明确的 `stl_to_glb` operator。
+
+超大 ASCII STL deep scan 不应因为行数超过预算而失败，应返回预算内 partial 摘要并写入 `format_info.stl.scan_complete=false`。Binary STL 的 triangle count 来自 80 字节 header 后的 uint32 计数；扫描器可以只读取预算内三角面用于 bounds 采样，不能为了计算 bounds 强制全量读取超大 binary STL。
+
+## PLY
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | 按 PLY header 判定为 `model_3d`、`point_cloud` 或 `gaussian_splat` |
+| `format` | `ply` |
+| 主资源 | `meta_item.full_name` 指向 `.ply` 文件资源 |
+
+PLY 是单资源、内容敏感格式。它既可能表达 polygon mesh，也可能只包含顶点集合或 Gaussian Splat 导出数据；扫描不得仅凭 `.ply` 扩展名臆造面、材质、三角面或点云事实。实现必须优先读取 PLY header，记录 format、version、element counts、vertex properties 和可识别的 Gaussian Splat 信号，并按 header 事实确定 `data_type`。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=single`、`format=ply`、按 header 判定后的 `data_type` |
+| `type_info.model_3d` | 仅 mesh PLY 写入；`model_kind`、顶点数和 mesh 相关轻量事实 |
+| `type_info.point_cloud` | 仅点云型 PLY 写入；点数、维度列表、颜色 / intensity 能力 |
+| `type_info.gaussian_splat` | 仅 3DGS 型 PLY 写入；高斯基元数量、opacity / scale / rotation / spherical harmonics 能力 |
+| `format_info.ply` | PLY 私有摘要，例如 encoding、version、layout、vertex / face count、element counts、vertex property 数、是否 Gaussian Splat |
+
+### 消费要求
+
+Manager 按 `data_type` 选择消费路线。普通 mesh PLY 后续可以评估 Three.js PLYLoader 直读或 Blender / assimp 转 GLB；点云型 PLY 走点云路线；Gaussian Splat PLY 走高斯泼溅 renderer，不得简单等同于 mesh GLB，也不开放 `model_3d` 的 GLB 快显任务入口。
+
+PLY deep scan 不应读取完整大文件数据体；header 级事实足以完成首轮识别和轻量摘要。模型包围盒、材质、纹理、法线等事实只有在稳定解析后才可写入。
+
+## SPLAT
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | `gaussian_splat` |
+| `format` | `splat` |
+| 主资源 | `meta_item.full_name` 指向 `.splat` 文件资源 |
+
+`.splat` 是高斯泼溅的直接消费格式。Meta scan 通过扩展名和内置 descriptor 将其归为 `gaussian_splat`，不归入 `model_3d` 或 `point_cloud`。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=single`、`data_type=gaussian_splat`、`format=splat` |
+| `type_info.gaussian_splat` | `representation=3d_gaussian_splatting`；不强制扫描完整文件计算基元数 |
+| `format_info.splat` | `encoding=splat` 等格式私有轻量事实 |
+
+### 消费要求
+
+Manager 可使用高斯泼溅 renderer 直接读取 `.splat` URL 做基础预览；不得开放 GLB 快显生成入口。`.splat` 当前也不得开放受管 KSplat 生成入口；需要平台受管 artifact、统一对象存储发布或大模型优化时，待真实 SPLAT 到 KSplat 转换器接入后，仍走 `gaussian_splat_quick_view_generation` 专用路线，不复用 `model_3d_quick_view_generation`。
+
+## KSPLAT
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | `gaussian_splat` |
+| `format` | `ksplat` |
+| 主资源 | `meta_item.full_name` 指向 `.ksplat` 文件资源 |
+
+`.ksplat` 是面向高斯泼溅渲染优化的压缩消费格式。Meta scan 通过扩展名和内置 descriptor 将其归为 `gaussian_splat`，不归入 `model_3d` 或 `point_cloud`。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=single`、`data_type=gaussian_splat`、`format=ksplat` |
+| `type_info.gaussian_splat` | `representation=3d_gaussian_splatting`；不强制扫描完整文件计算基元数 |
+| `format_info.ksplat` | `encoding=ksplat` 等格式私有轻量事实 |
+
+### 消费要求
+
+Manager 可使用高斯泼溅 renderer 直接读取 `.ksplat` URL 做基础预览；不得开放 GLB 快显生成入口。`.ksplat` 同时是高斯泼溅受管快显的目标 artifact 格式；`gaussian_splat_quick_view_generation` 当前只对源已经是 `.ksplat` 的 item 做受管发布，PLY / SPLAT 继续走基础高斯泼溅预览，待真实 PLY / SPLAT 到 KSplat 转换器接入后仍沿用同一专用任务类型，不复用 `model_3d_quick_view_generation`。
+
+## FBX
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | `model_3d` |
+| `format` | `fbx` |
+| 主资源 | `meta_item.full_name` 指向 `.fbx` 文件资源 |
+
+FBX 第一阶段按单资源三维模型接入。扫描只做格式识别和轻量 header 摘要，不解析完整 proprietary scene graph；复杂节点、材质和动画事实不得臆造进 `type_info.model_3d`。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=single`、`data_type=model_3d`、`format=fbx` |
+| `type_info.model_3d` | `model_kind=mesh_scene`、mesh 数等可稳定确认的跨格式模型摘要 |
+| `format_info.fbx` | FBX 私有摘要，例如 encoding |
+
+### 消费要求
+
+Manager 第一阶段不要求浏览器直接解析 FBX。主快显路线是通过 `model_3d_quick_view_generation` 调用 `model3d_workflow` 的 `fbx_to_glb` direct operator，由运行时内置的 `assimp export` 生成 Manager infra MinIO 中的 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。`_3dtile -f fbx` 的输出语义是 3D Tiles 目录，不得用于登记 GLB artifact。
 
 ## 3D Tiles
 
@@ -234,6 +433,52 @@ Manager 点云预览应基于已入库 `data_type=point_cloud + format=las` 和�
 - 不得把 LAS header 私有字段写入 `type_info.point_cloud`；LAS 原生 header 细节进入 `format_info.las`。
 - CRS、空间定位和空间范围进入 `capabilities.spatial`，不写入 `format_info.las` 的私有字段作为平台行为事实。
 - LAZ / COPC 压缩和层级结构需要单独 format 规则；不得用 `format=las` 兼容读取压缩点云。
+
+## PLY
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `format` | `ply` |
+| 主资源 | `meta_item.full_name` 指向 `.ply` 文件资源 |
+
+PLY 是内容敏感格式，不能仅凭扩展名固定归入单一数据类型。Meta deep scan 必须读取 PLY header，并按以下规则确定 `data_type`：
+
+| header 事实 | `data_type` | `format_info.ply.layout` |
+|---|---|---|
+| `element face` 数量大于 0 | `model_3d` | `mesh` |
+| 无 face，且具备 `x/y/z`、`opacity`、`scale_0..2`、`rot_0..3`、`f_dc_0..2` 或颜色字段 | `gaussian_splat` | `gaussian_splat` |
+| 无 face，且具备 `chunk` element 与 `packed_position`、`packed_rotation`、`packed_scale`、`packed_color` vertex 属性 | `gaussian_splat` | `gaussian_splat` |
+| 无 face，且不满足高斯泼溅字段组合 | `point_cloud` | `point_cloud` |
+
+SuperSplat 压缩 PLY 仍归入 `data_type=gaussian_splat`、`format=ply`，并通过 `format_info.ply.is_compressed_splat=true` 表达格式私有事实。Manager 基础预览读取该标记选择非渐进加载策略，不把压缩 PLY 转入 GLB 快显路线。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=single`、`format=ply`、按 header 判定后的 `data_type` |
+| `type_info.model_3d` | 仅 mesh PLY 写入；`model_kind=mesh_scene`、vertex count、mesh count 等跨格式三维模型摘要 |
+| `type_info.point_cloud` | 仅点云型 PLY 写入；`point_cloud_kind=raw_point_cloud`、点数、维度列表、颜色 / intensity 能力等跨格式点云摘要 |
+| `type_info.gaussian_splat` | 仅 3DGS 型 PLY 写入；`representation=3d_gaussian_splatting`、splat count、opacity / scale / rotation / spherical harmonics 能力 |
+| `format_info.ply` | encoding、version、layout、vertex count、face count、header line count、vertex properties、element counts、是否高斯泼溅等 PLY 私有事实 |
+
+### 消费要求
+
+Manager 需要按 `data_type` 分别选择快显路线：
+
+- mesh PLY 可走三维模型快显路线，后续可接 PLY -> GLB。
+- 点云型 PLY 走点云快显路线。
+- 3DGS 型 PLY 走高斯泼溅快显路线，不转换为 GLB。
+
+### 格式约束
+
+- 不得把所有 `.ply` 固定归入 `model_3d` 或 `point_cloud`。
+- 不得仅因 3DGS PLY 使用 vertex 记录就归为 `point_cloud`。
+- 不得把高斯泼溅的渲染协议、排序结果、压缩产物或派生 splat artifact 写入 `type_info.gaussian_splat`。
+- PLY header 私有属性列表进入 `format_info.ply`，跨格式通用摘要进入对应 `type_info.<data_type>`。
 
 ## CSV / TSV
 
@@ -799,6 +1044,7 @@ GeoJSON 虽然是 `data_type=table`，但对象内容预览应优先生成 GeoJS
 | GLB 三维模型 URL 预览 | `model_3d` | `url` | `model_3d` |
 | 3D Tiles 分块三维场景 URL 预览 | `model_3d` | `url` | `3dtiles` |
 | LAS 点云抽样预览 | `point_cloud` | `json` | `point_cloud` |
+| 高斯泼溅 URL 预览 | `gaussian_splat` | `url` | `gaussian_splat` |
 | 小体积原始二进制兜底 | 对应格式名 | `raw_binary` | 对应格式名 |
 | 表格材料 | `table` | `table` | `table` |
 | 容器索引 / 子对象导航 | `container` | `container` | `container` |
