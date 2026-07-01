@@ -14,6 +14,13 @@ export const quickViewAPI = {
     )
   },
 
+  updateViewStateByLocator(locator, viewState) {
+    return request.patch(
+      '/manager/quick-view/view-state',
+      { locator, view_state: viewState || {} }
+    )
+  },
+
   listOptimizationTasks(params = {}) {
     return request.get('/manager/vector_quick_view_target_tasks', { params })
   },
@@ -196,6 +203,10 @@ export const quickViewAPI = {
 
   getGaussianSplatQuickView(id) {
     return request.get(`/manager/gaussian_splat_quick_view/${id}`)
+  },
+
+  inspectGaussianSplatQuickView(id) {
+    return request.get(`/manager/gaussian_splat_quick_view/${id}/inspect`)
   },
 
   deleteGaussianSplatQuickView(id) {

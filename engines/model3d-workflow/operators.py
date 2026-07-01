@@ -20,6 +20,8 @@ DEFAULT_CONVERTER_BIN = str(ENGINE_ROOT / "bin" / "_3dtile")
 CONVERTER_ENV = "MODEL3D_CONVERTER_BIN"
 DEFAULT_MESH_CONVERTER_BIN = str(ENGINE_ROOT / "bin" / "assimp")
 MESH_CONVERTER_ENV = "MODEL3D_MESH_CONVERTER_BIN"
+GAUSSIAN_SPLAT_CONVERTER_SCRIPT = str(ENGINE_ROOT / "create_ksplat.mjs")
+GAUSSIAN_SPLAT_NODE_ENV = "MODEL3D_GAUSSIAN_SPLAT_NODE_BIN"
 TILE_EXTENSIONS = {".b3dm", ".i3dm", ".pnts", ".cmpt", ".glb", ".gltf"}
 TILESET_REF = "tileset.json"
 
@@ -53,14 +55,17 @@ CommandRunner = Callable[[list[str], int | None], CommandResult]
 def converter_status(env: dict[str, str] | None = None) -> dict[str, Any]:
     converter = _converter_bin(env)
     mesh_converter = _mesh_converter_bin(env)
+    gaussian_splat_node = _gaussian_splat_node_bin(env)
     converter_available = _executable_available(converter)
     mesh_converter_available = _executable_available(mesh_converter)
-    available = converter_available and mesh_converter_available
+    gaussian_splat_converter_available = _gaussian_splat_converter_available(gaussian_splat_node)
+    available = converter_available and mesh_converter_available and gaussian_splat_converter_available
     details = [
         detail
         for detail in [
             "" if converter_available else _executable_unavailable_detail(CONVERTER_ENV, converter),
             "" if mesh_converter_available else _executable_unavailable_detail(MESH_CONVERTER_ENV, mesh_converter),
+            "" if gaussian_splat_converter_available else _gaussian_splat_converter_unavailable_detail(gaussian_splat_node),
         ]
         if detail
     ]
@@ -77,6 +82,14 @@ def converter_status(env: dict[str, str] | None = None) -> dict[str, Any]:
             "path": mesh_converter,
             "available": mesh_converter_available,
             "details": "" if mesh_converter_available else _executable_unavailable_detail(MESH_CONVERTER_ENV, mesh_converter),
+        },
+        "gaussian_splat_converter": {
+            "name": "create_ksplat",
+            "env": GAUSSIAN_SPLAT_NODE_ENV,
+            "node_path": gaussian_splat_node,
+            "script": GAUSSIAN_SPLAT_CONVERTER_SCRIPT,
+            "available": gaussian_splat_converter_available,
+            "details": "" if gaussian_splat_converter_available else _gaussian_splat_converter_unavailable_detail(gaussian_splat_node),
         },
     }
 
@@ -252,31 +265,31 @@ def list_operators() -> list[dict[str, Any]]:
         {
             "id": "gaussian_splat_to_ksplat",
             "name": "gaussian_splat_to_ksplat",
-            "display_name": "Gaussian Splat 转 KSplat",
+            "display_name": "Gaussian Splat 转 KPlat",
             "engine_type": ENGINE_TYPE,
             "category": "三维模型转换",
             "category_path": ["三维模型转换", "高斯泼溅"],
-            "description": "将高斯泼溅源数据发布为 Manager 受管 KSplat 快显 artifact。第一版只支持源已经是 KSplat 的受管发布。",
+            "description": "将 PLY / SPLAT 高斯泼溅源转换为 Manager 受管 KPlat 快显 artifact；源已经是 KSplat 时直接发布登记。",
             "execution_modes": ["direct"],
             "parameters": [
                 {
                     "name": "access_plan",
                     "type": "object",
                     "required": True,
-                    "description": "高斯泼溅源文件访问计划和 KSplat artifact 对象存储发布计划。",
+                    "description": "高斯泼溅源文件访问计划和 KPlat artifact 对象存储发布计划。",
                 },
                 {
                     "name": "options",
                     "type": "object",
                     "required": False,
-                    "description": "转换器私有选项；PLY/SPLAT 转 KSplat 转换器接入前不接受非 KSplat 源。",
+                    "description": "转换器私有选项，支持 compression_level、alpha_threshold 和 spherical_harmonics_degree。",
                 },
             ],
             "output_ports": [
                 {
                     "name": "result",
                     "type": "object",
-                    "description": "KSplat artifact 的对象引用、大小、发布结果和转换器信息。",
+                    "description": "KPlat artifact 的对象引用、大小、发布结果和转换器信息。",
                     "is_default": True,
                 }
             ],
@@ -309,14 +322,21 @@ def invoke_operator(
     if name == "osgb_scene_to_3dtiles":
         return osgb_scene_to_3dtiles(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name == "gaussian_splat_to_ksplat":
-        return gaussian_splat_to_ksplat(params)
+        return gaussian_splat_to_ksplat(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
     raise ConverterError("OPERATOR_NOT_FOUND", f"Operator not found: {name}", http_status=404)
 
 
-def gaussian_splat_to_ksplat(params: dict[str, Any]) -> dict[str, Any]:
+def gaussian_splat_to_ksplat(
+    params: dict[str, Any],
+    *,
+    runner: CommandRunner | None = None,
+    env: dict[str, str] | None = None,
+    timeout_seconds: int | None = None,
+) -> dict[str, Any]:
     access_plan = _required_object(params, "access_plan")
     source = _required_object(access_plan, "source")
     target = _required_object(access_plan, "target")
+    options = _optional_object(params, "options")
     source_path = _first_text(source, "local_path", "root_uri")
     source_format = _text(source.get("format")).lower()
     publish = _required_object(target, "publish")
@@ -324,11 +344,11 @@ def gaussian_splat_to_ksplat(params: dict[str, Any]) -> dict[str, Any]:
 
     if not source_path:
         raise ConverterError("INVALID_PARAMS", "access_plan.source.local_path or root_uri is required")
-    if source_format != "ksplat":
+    if source_format not in {"ply", "splat", "ksplat"}:
         raise ConverterError(
             "UNSUPPORTED_SOURCE_FORMAT",
-            "gaussian_splat_to_ksplat currently supports only KSplat sources",
-            details="PLY/SPLAT to KSplat conversion requires a dedicated converter integration",
+            "gaussian_splat_to_ksplat supports only PLY, SPLAT or KSplat sources",
+            details=f"source format: {source_format or '<empty>'}",
         )
     if _text(publish.get("method")) != "object_store":
         raise ConverterError("INVALID_PARAMS", "access_plan.target.publish.method must be object_store")
@@ -337,20 +357,73 @@ def gaussian_splat_to_ksplat(params: dict[str, Any]) -> dict[str, Any]:
 
     source_file = Path(source_path)
     if not source_file.is_file():
-        raise ConverterError("SOURCE_NOT_FOUND", "KSplat source file was not found", details=str(source_file))
+        raise ConverterError("SOURCE_NOT_FOUND", "Gaussian splat source file was not found", details=str(source_file))
 
-    publish_result = publish_object_store_file(source_file, publish)
-    return {
-        "ksplat_uri": publish_result["object_uri"],
-        "ksplat_ref": publish_result["object_name"],
-        "size_bytes": publish_result["uploaded_bytes"],
-        "publish": publish_result,
-        "source_format": source_format,
-        "converter": "copy",
-        "command": [],
-        "stdout": "",
-        "stderr": "",
-    }
+    if source_format == "ksplat":
+        publish_result = publish_object_store_file(source_file, publish)
+        return {
+            "ksplat_uri": publish_result["object_uri"],
+            "ksplat_ref": publish_result["object_name"],
+            "size_bytes": publish_result["uploaded_bytes"],
+            "publish": publish_result,
+            "source_format": source_format,
+            "target_format": "ksplat",
+            "converter": "copy",
+            "command": [],
+            "stdout": "",
+            "stderr": "",
+        }
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="addp-gaussian-ksplat-"))
+    target_file = temp_dir / file_name
+    try:
+        node_bin = _gaussian_splat_node_bin(env)
+        _ensure_gaussian_splat_converter_available(node_bin)
+        conversion_options = _gaussian_splat_conversion_options(options)
+        command = [
+            node_bin,
+            GAUSSIAN_SPLAT_CONVERTER_SCRIPT,
+            str(source_file),
+            str(target_file),
+            source_format,
+            str(_int_option(options, "compression_level", 1, 0, 2)),
+            str(_int_option(options, "alpha_threshold", 1, 0, 255)),
+            str(_int_option(options, "spherical_harmonics_degree", 0, 0, 2)),
+            str(conversion_options["section_size"]),
+            _scene_center_arg(conversion_options["scene_center"]),
+            _number_arg(conversion_options["block_size"]),
+            str(conversion_options["bucket_size"]),
+        ]
+        result = _run_executable(command, runner=runner, env_name=GAUSSIAN_SPLAT_NODE_ENV, timeout_seconds=timeout_seconds)
+        if not target_file.is_file():
+            raise ConverterError(
+                "OUTPUT_NOT_FOUND",
+                "KSplat output file was not generated",
+                details=str(target_file),
+                http_status=500,
+            )
+
+        publish_result = publish_object_store_file(target_file, publish)
+        return {
+            "ksplat_uri": publish_result["object_uri"],
+            "ksplat_ref": publish_result["object_name"],
+            "size_bytes": publish_result["uploaded_bytes"],
+            "publish": publish_result,
+            "source_format": source_format,
+            "target_format": "ksplat",
+            "converter": GAUSSIAN_SPLAT_CONVERTER_SCRIPT,
+            "section_size": conversion_options["section_size"],
+            "scene_center": conversion_options["scene_center"],
+            "scene_center_source": conversion_options["scene_center_source"],
+            "block_size": conversion_options["block_size"],
+            "bucket_size": conversion_options["bucket_size"],
+            "converter_facts": _json_object_from_stdout(result.stdout),
+            "command": _redact_command(command),
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def osgb_to_glb(
@@ -976,6 +1049,14 @@ def _mesh_converter_bin(env: dict[str, str] | None) -> str:
     return _text(values.get(MESH_CONVERTER_ENV)) or DEFAULT_MESH_CONVERTER_BIN
 
 
+def _gaussian_splat_node_bin(env: dict[str, str] | None) -> str:
+    values = env if env is not None else os.environ
+    configured = _text(values.get(GAUSSIAN_SPLAT_NODE_ENV))
+    if configured:
+        return configured
+    return shutil.which("node") or "node"
+
+
 def _executable_available(path: str) -> bool:
     if not _is_explicit_file_path(path):
         return False
@@ -991,6 +1072,32 @@ def _ensure_executable_available(path: str, env_name: str) -> None:
         details=_executable_unavailable_detail(env_name, path),
         http_status=503,
     )
+
+
+def _gaussian_splat_converter_available(node_bin: str) -> bool:
+    if not _executable_available(node_bin):
+        return False
+    return Path(GAUSSIAN_SPLAT_CONVERTER_SCRIPT).is_file()
+
+
+def _ensure_gaussian_splat_converter_available(node_bin: str) -> None:
+    if _gaussian_splat_converter_available(node_bin):
+        return
+    raise ConverterError(
+        "CONVERTER_UNAVAILABLE",
+        "Gaussian splat KPlat converter is unavailable",
+        details=_gaussian_splat_converter_unavailable_detail(node_bin),
+        http_status=503,
+    )
+
+
+def _gaussian_splat_converter_unavailable_detail(node_bin: str) -> str:
+    details = []
+    if not _executable_available(node_bin):
+        details.append(_executable_unavailable_detail(GAUSSIAN_SPLAT_NODE_ENV, node_bin))
+    if not Path(GAUSSIAN_SPLAT_CONVERTER_SCRIPT).is_file():
+        details.append(f"{GAUSSIAN_SPLAT_CONVERTER_SCRIPT} was not found")
+    return "; ".join(details)
 
 
 def _is_explicit_file_path(converter: str) -> bool:
@@ -1043,6 +1150,114 @@ def _first_text(payload: dict[str, Any], *keys: str) -> str:
 
 def _text(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
+
+
+def _int_option(options: dict[str, Any], key: str, default: int, min_value: int, max_value: int) -> int:
+    value = options.get(key)
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(min_value, min(max_value, parsed))
+
+
+def _float_option(options: dict[str, Any], key: str, default: float, min_value: float, max_value: float) -> float:
+    value = options.get(key)
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return max(min_value, min(max_value, parsed))
+
+
+def _gaussian_splat_conversion_options(options: dict[str, Any]) -> dict[str, Any]:
+    scene_center, source = _scene_center_option(options)
+    if scene_center is None:
+        scene_center = [0.0, 0.0, 0.0]
+        source = "default"
+    return {
+        "section_size": _int_option(options, "section_size", 262144, 1, 2_147_483_647),
+        "scene_center": scene_center,
+        "scene_center_source": source,
+        "block_size": _float_option(options, "block_size", 5.0, 0.000001, 1_000_000_000.0),
+        "bucket_size": _int_option(options, "bucket_size", 256, 1, 2_147_483_647),
+    }
+
+
+def _scene_center_option(options: dict[str, Any]) -> tuple[list[float] | None, str]:
+    for key in ("scene_center", "center"):
+        center = _vector3_option(options.get(key))
+        if center is not None:
+            return center, key
+    center = _bounds_center_option(options.get("bounds_3d"))
+    if center is not None:
+        return center, "bounds_3d"
+    center = _bounds_center_option(options.get("sampled_bounds_3d"))
+    if center is not None:
+        return center, "sampled_bounds_3d"
+    return None, ""
+
+
+def _vector3_option(value: Any) -> list[float] | None:
+    if isinstance(value, str):
+        parts = [part.strip() for part in value.split(",")]
+        if len(parts) != 3:
+            return None
+        return _float_vector(parts)
+    if isinstance(value, (list, tuple)) and len(value) == 3:
+        return _float_vector(value)
+    if isinstance(value, dict):
+        return _float_vector([value.get("x"), value.get("y"), value.get("z")])
+    return None
+
+
+def _bounds_center_option(value: Any) -> list[float] | None:
+    if not isinstance(value, dict):
+        return None
+    min_values = _float_vector([value.get("min_x"), value.get("min_y"), value.get("min_z")])
+    max_values = _float_vector([value.get("max_x"), value.get("max_y"), value.get("max_z")])
+    if min_values is None or max_values is None:
+        return None
+    return [
+        (min_values[0] + max_values[0]) / 2.0,
+        (min_values[1] + max_values[1]) / 2.0,
+        (min_values[2] + max_values[2]) / 2.0,
+    ]
+
+
+def _float_vector(values: list[Any] | tuple[Any, ...]) -> list[float] | None:
+    vector: list[float] = []
+    for value in values:
+        if isinstance(value, bool):
+            return None
+        try:
+            vector.append(float(value))
+        except (TypeError, ValueError):
+            return None
+    return vector
+
+
+def _scene_center_arg(values: list[float]) -> str:
+    return ",".join(_number_arg(value) for value in values)
+
+
+def _number_arg(value: float) -> str:
+    return f"{value:.12g}"
+
+
+def _json_object_from_stdout(stdout: str) -> dict[str, Any]:
+    text = (stdout or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _redact_command(command: list[str]) -> list[str]:

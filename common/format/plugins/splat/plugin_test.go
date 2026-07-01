@@ -87,10 +87,10 @@ func TestDescribeGaussianSplatReportsScaleDiagnostics(t *testing.T) {
 	}
 }
 
-func TestDescribeGaussianSplatSamplesLargeSplatBounds(t *testing.T) {
+func TestDescribeGaussianSplatScansMediumSplatSequentially(t *testing.T) {
 	var content bytes.Buffer
 	writeSplatTestRecord(&content, -1, 2, 10)
-	for i := 1; i < maxExactSplatBoundsRecords; i++ {
+	for i := 1; i < 100001; i++ {
 		writeSplatTestRecord(&content, 0, 0, 15)
 	}
 	writeSplatTestRecord(&content, 3, -4, 20)
@@ -101,6 +101,50 @@ func TestDescribeGaussianSplatSamplesLargeSplatBounds(t *testing.T) {
 		RangeReader: reader,
 		Ref:         contentio.NewRef("site.splat", contentio.RoleMain),
 		SizeBytes:   int64(content.Len()),
+	}, nil)
+	if err != nil {
+		t.Fatalf("DescribeGaussianSplat() error = %v", err)
+	}
+	assertSplatBounds(t, result.GaussianSplat.Bounds3D, -1, -4, 10, 3, 2, 20)
+	if result.GaussianSplat.SampledBounds3D != nil {
+		t.Fatalf("SampledBounds3D = %#v, want nil for medium splat", result.GaussianSplat.SampledBounds3D)
+	}
+	scaleStats, ok := result.FormatInfo["scale_stats"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("scale_stats = %#v, want map", result.FormatInfo["scale_stats"])
+	}
+	if scaleStats["method"] != "exact_splat_records" {
+		t.Fatalf("scale_stats.method = %#v, want exact_splat_records", scaleStats["method"])
+	}
+}
+
+func TestDescribeSplatRecordsUsesBufferedSequentialReads(t *testing.T) {
+	var content bytes.Buffer
+	writeSplatTestRecord(&content, -1, 2, 10)
+	for i := 1; i < 100001; i++ {
+		writeSplatTestRecord(&content, 0, 0, 15)
+	}
+	writeSplatTestRecord(&content, 3, -4, 20)
+
+	reader := &countingSplatReader{reader: bytes.NewReader(content.Bytes())}
+	result, err := describeSplatRecords(context.Background(), reader)
+	if err != nil {
+		t.Fatalf("describeSplatRecords() error = %v", err)
+	}
+	assertSplatBounds(t, result.Bounds, -1, -4, 10, 3, 2, 20)
+	if reader.reads >= 200 {
+		t.Fatalf("underlying reads = %d, want buffered sequential reads", reader.reads)
+	}
+}
+
+func TestDescribeGaussianSplatSamplesLargeSplatBounds(t *testing.T) {
+	recordCount := maxExactSplatDescribeBytes/int64(splatRecordSize) + 1
+	reader := splatSyntheticRangeReader{recordCount: recordCount}
+
+	result, err := NewPlugin().DescribeGaussianSplat(context.Background(), format.GaussianSplatDescribeInput{
+		RangeReader: reader,
+		Ref:         contentio.NewRef("site.splat", contentio.RoleMain),
+		SizeBytes:   recordCount * int64(splatRecordSize),
 	}, nil)
 	if err != nil {
 		t.Fatalf("DescribeGaussianSplat() error = %v", err)
@@ -140,6 +184,16 @@ type splatMemoryRangeReader struct {
 	content []byte
 }
 
+type countingSplatReader struct {
+	reader *bytes.Reader
+	reads  int
+}
+
+func (r *countingSplatReader) Read(p []byte) (int, error) {
+	r.reads++
+	return r.reader.Read(p)
+}
+
 func (r splatMemoryRangeReader) Open(context.Context, contentio.Ref) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(r.content)), nil
 }
@@ -158,6 +212,49 @@ func (r splatMemoryRangeReader) OpenRange(_ context.Context, _ contentio.Ref, of
 	start := minInt64(offset, int64(len(r.content)))
 	end := minInt64(start+length, int64(len(r.content)))
 	return io.NopCloser(bytes.NewReader(r.content[start:end])), nil
+}
+
+type splatSyntheticRangeReader struct {
+	recordCount int64
+}
+
+func (r splatSyntheticRangeReader) Open(context.Context, contentio.Ref) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(nil)), nil
+}
+
+func (r splatSyntheticRangeReader) Stat(_ context.Context, ref contentio.Ref) (*contentio.Stat, error) {
+	return &contentio.Stat{
+		Ref:    ref,
+		Size:   r.recordCount * int64(splatRecordSize),
+		Exists: true,
+	}, nil
+}
+
+func (r splatSyntheticRangeReader) OpenRange(_ context.Context, _ contentio.Ref, offset, length int64) (io.ReadCloser, error) {
+	if length <= 0 || offset < 0 || offset%int64(splatRecordSize) != 0 {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
+	startIndex := offset / int64(splatRecordSize)
+	if startIndex < 0 || startIndex >= r.recordCount {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
+	requestedRecords := length / int64(splatRecordSize)
+	if requestedRecords <= 0 {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
+	endIndex := minInt64(startIndex+requestedRecords, r.recordCount)
+	var content bytes.Buffer
+	for index := startIndex; index < endIndex; index++ {
+		switch index {
+		case 0:
+			writeSplatTestRecord(&content, -1, 2, 10)
+		case r.recordCount - 1:
+			writeSplatTestRecord(&content, 3, -4, 20)
+		default:
+			writeSplatTestRecord(&content, 0, 0, 15)
+		}
+	}
+	return io.NopCloser(bytes.NewReader(content.Bytes()[:minInt64(length, int64(content.Len()))])), nil
 }
 
 func minInt64(a, b int64) int64 {

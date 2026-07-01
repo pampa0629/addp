@@ -9,13 +9,14 @@
 - `fbx_to_glb`：FBX 单体网格模型转换为 GLB 快显 artifact。
 - `obj_to_glb`：OBJ 单体网格模型转换为 GLB 快显 artifact。
 - `osgb_scene_to_3dtiles`：一套 OSGB 倾斜摄影数据集转换为 3D Tiles，支持 NFS/localfs/MinIO/S3 source 输出到 NFS/localfs/MinIO/S3 target。
-- `gaussian_splat_to_ksplat`：高斯泼溅源发布为 Manager 受管 KSplat 快显 artifact；第一版只支持源已经是 `.ksplat` 的受管发布，PLY/SPLAT 转 KSplat 转换器后续单独接入。
+- `gaussian_splat_to_ksplat`：高斯泼溅源生成 Manager 受管 KPlat 快显 artifact；`ply` / `splat` 源会转换为 `.ksplat` 文件，`ksplat` 源直接发布登记。
 
-运行时通过随引擎绑定的专业转换器执行实际转换。OSGB / OSGB Scene 默认使用 `engines/model3d-workflow/bin/_3dtile`，glTF / FBX / OBJ 这类 mesh 模型转 GLB 默认使用 `engines/model3d-workflow/bin/assimp`。glTF / FBX / OBJ 生成的 GLB artifact 必须嵌入纹理，避免前端从原始源目录相对加载贴图。`gaussian_splat_to_ksplat` 当前只做 `.ksplat` 受管发布，不调用 mesh / OSGB 转换器。可用环境变量覆盖到同一运行时部署中的实际可执行文件路径，但不能只写 `_3dtile` 或 `assimp` 这类依赖系统 `PATH` 的命令名：
+运行时通过随引擎绑定的专业转换器执行实际转换。OSGB / OSGB Scene 默认使用 `engines/model3d-workflow/bin/_3dtile`，glTF / FBX / OBJ 这类 mesh 模型转 GLB 默认使用 `engines/model3d-workflow/bin/assimp`。glTF / FBX / OBJ 生成的 GLB artifact 必须嵌入纹理，避免前端从原始源目录相对加载贴图。`gaussian_splat_to_ksplat` 使用运行时内置 Node 脚本 `create_ksplat.mjs` 和 `@mkkellogg/gaussian-splats-3d` 生成 `.ksplat`，不调用 mesh / OSGB 转换器；生成时优先使用 `options.scene_center`，否则由 `options.bounds_3d` / `options.sampled_bounds_3d` 推导中心，并默认使用 `section_size=262144`、`block_size=5.0`、`bucket_size=256` 组织 KPlat section，让渐进加载尽量先显示模型中心区域。`.ksplat` 源直接发布登记，不做二次转换，因此其渐进 section 顺序沿用源文件。可用环境变量覆盖到同一运行时部署中的实际可执行文件路径，但不能只写 `_3dtile` 或 `assimp` 这类依赖系统 `PATH` 的命令名：
 
 ```bash
 export MODEL3D_CONVERTER_BIN=/path/to/_3dtile
 export MODEL3D_MESH_CONVERTER_BIN=/path/to/assimp
+export MODEL3D_GAUSSIAN_SPLAT_NODE_BIN=/path/to/node
 ```
 
 本运行时的稳定集成面是 ADDP operator 契约，不是转换器内部 SDK。转换器缺失、执行失败或输出缺失时，`/health` 会标记 `conversion_ready=false`，引擎连接测试和 operator 发现会失败，不生成伪结果。
@@ -49,6 +50,7 @@ cd engines/model3d-workflow
 ```text
 MODEL3D_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/_3dtile
 MODEL3D_MESH_CONVERTER_BIN=/usr/bin/assimp
+MODEL3D_GAUSSIAN_SPLAT_NODE_BIN=/usr/bin/node
 GDAL_DATA=/opt/addp/model3d-workflow/bin/gdal
 PROJ_DATA=/opt/addp/model3d-workflow/bin/proj
 OSG_LIBRARY_PATH=/opt/addp/model3d-workflow/bin/osgPlugins-3.6.5
@@ -71,7 +73,7 @@ MODEL3D_DATA_HOST_PATH=./business/nfs/data
 MODEL3D_DATA_CONTAINER_PATH=/Users/pampa/code/addp/business/nfs/data
 ```
 
-三维模型 GLB 和高斯泼溅 KSplat 快显 artifact 由 `model3d_workflow` 直接上传到 Manager infra MinIO。MinIO endpoint 统一来自 ADDP infra MinIO 配置，不为 `model3d_workflow` 另设专用 endpoint。Docker Compose 部署时，Manager 与 runtime 同在 Compose 网络内，统一使用 `minio:9000`；macOS 本机开发时，推荐使用宿主机 Python runtime 加 Docker `_3dtile` / `assimp` wrapper，Manager 与 runtime 统一访问 `localhost:19000`。
+三维模型 GLB 和高斯泼溅 KPlat 快显 artifact 由 `model3d_workflow` 直接上传到 Manager infra MinIO。MinIO endpoint 统一来自 ADDP infra MinIO 配置，不为 `model3d_workflow` 另设专用 endpoint。Docker Compose 部署时，Manager 与 runtime 同在 Compose 网络内，统一使用 `minio:9000`；macOS 本机开发时，推荐使用宿主机 Python runtime 加 Docker `_3dtile` / `assimp` wrapper，Manager 与 runtime 统一访问 `localhost:19000`。
 
 OSGB Scene 的对象存储 source 由运行时 staging：先递归下载到本地临时 workspace，再调用 `_3dtile`。对象存储 target 由运行时发布：转换器先输出到本地临时 workspace，再递归上传到 MinIO/S3，并最后上传 `tileset.json`。
 

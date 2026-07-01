@@ -38,6 +38,8 @@ def test_converter_status_defaults_to_engine_bound_binary():
     assert status["path"].endswith("engines/model3d-workflow/bin/_3dtile")
     assert status["mesh_converter"]["env"] == "MODEL3D_MESH_CONVERTER_BIN"
     assert status["mesh_converter"]["path"].endswith("engines/model3d-workflow/bin/assimp")
+    assert status["gaussian_splat_converter"]["env"] == "MODEL3D_GAUSSIAN_SPLAT_NODE_BIN"
+    assert status["gaussian_splat_converter"]["script"].endswith("engines/model3d-workflow/create_ksplat.mjs")
 
 
 def test_converter_status_rejects_path_command_name():
@@ -92,19 +94,229 @@ def test_gaussian_splat_to_ksplat_publishes_existing_ksplat(tmp_path, monkeypatc
     assert facts["ksplat_uri"] == "s3://manager/tenant_1/gaussian-splat/model.ksplat"
     assert facts["size_bytes"] == 6
     assert facts["converter"] == "copy"
+    assert facts["source_format"] == "ksplat"
+    assert facts["target_format"] == "ksplat"
     assert "secret_key" not in str(facts)
 
 
-def test_gaussian_splat_to_ksplat_rejects_non_ksplat_source(tmp_path):
+def test_gaussian_splat_to_ksplat_converts_ply_source(tmp_path, monkeypatch):
     source = tmp_path / "model.ply"
     source.write_bytes(b"ply")
+    node = tmp_path / "node"
+    node.write_text("#!/bin/sh\n", encoding="utf-8")
+    node.chmod(0o755)
+    captured = {}
+
+    def fake_runner(command, timeout_seconds):
+        captured["command"] = command
+        target = Path(command[3])
+        target.write_bytes(b"ksplat")
+        return CommandResult(returncode=0, stdout="converted")
+
+    def fake_publish(path, publish):
+        captured["publish_path"] = path
+        return {
+            "object_uri": publish["locator"],
+            "object_name": publish["object"],
+            "uploaded_files": 1,
+            "uploaded_bytes": path.stat().st_size,
+            "content_type": publish.get("content_type") or "application/vnd.gaussian-ksplat",
+        }
+
+    monkeypatch.setattr(operators, "publish_object_store_file", fake_publish)
+
+    facts = invoke_operator(
+        "gaussian_splat_to_ksplat",
+        {
+            "access_plan": {
+                "source": {"local_path": str(source), "format": "ply"},
+                "target": {
+                    "file_name": "model.ksplat",
+                    "publish": {
+                        "method": "object_store",
+                        "endpoint": "minio:9000",
+                        "access_key": "ak",
+                        "secret_key": "sk",
+                        "bucket": "manager",
+                        "object": "model.ksplat",
+                        "locator": "s3://manager/model.ksplat",
+                    },
+                },
+            },
+            "options": {
+                "compression_level": 2,
+                "alpha_threshold": 8,
+                "spherical_harmonics_degree": 1,
+                "bounds_3d": {
+                    "min_x": 1,
+                    "min_y": 2,
+                    "min_z": 3,
+                    "max_x": 4,
+                    "max_y": 6,
+                    "max_z": 8,
+                },
+            },
+        },
+        runner=fake_runner,
+        env={"MODEL3D_GAUSSIAN_SPLAT_NODE_BIN": str(node)},
+    )
+
+    assert captured["command"] == [
+        str(node),
+        operators.GAUSSIAN_SPLAT_CONVERTER_SCRIPT,
+        str(source),
+        str(captured["publish_path"]),
+        "ply",
+        "2",
+        "8",
+        "1",
+        "262144",
+        "2.5,4,5.5",
+        "5",
+        "256",
+    ]
+    assert facts["ksplat_ref"] == "model.ksplat"
+    assert facts["size_bytes"] == 6
+    assert facts["source_format"] == "ply"
+    assert facts["target_format"] == "ksplat"
+    assert facts["converter"] == operators.GAUSSIAN_SPLAT_CONVERTER_SCRIPT
+    assert facts["scene_center"] == [2.5, 4.0, 5.5]
+    assert facts["scene_center_source"] == "bounds_3d"
+    assert facts["section_size"] == 262144
+    assert facts["block_size"] == 5.0
+    assert facts["bucket_size"] == 256
+    assert "secret_key" not in str(facts)
+
+
+def test_gaussian_splat_to_ksplat_converts_splat_source(tmp_path, monkeypatch):
+    source = tmp_path / "model.splat"
+    source.write_bytes(b"splat")
+    node = tmp_path / "node"
+    node.write_text("#!/bin/sh\n", encoding="utf-8")
+    node.chmod(0o755)
+    captured = {}
+
+    def fake_runner(command, timeout_seconds):
+        captured["command"] = command
+        Path(command[3]).write_bytes(b"ksplat")
+        return CommandResult(returncode=0)
+
+    def fake_publish(path, publish):
+        return {
+            "object_uri": "s3://manager/model.ksplat",
+            "object_name": "model.ksplat",
+            "uploaded_files": 1,
+            "uploaded_bytes": path.stat().st_size,
+        }
+
+    monkeypatch.setattr(operators, "publish_object_store_file", fake_publish)
+
+    facts = invoke_operator(
+        "gaussian_splat_to_ksplat",
+        {
+            "access_plan": {
+                "source": {"local_path": str(source), "format": "splat"},
+                "target": {
+                    "file_name": "model.ksplat",
+                    "publish": {
+                        "method": "object_store",
+                        "endpoint": "minio:9000",
+                        "access_key": "ak",
+                        "secret_key": "sk",
+                        "bucket": "manager",
+                        "object": "model.ksplat",
+                    },
+                },
+            },
+            "options": {
+                "sampled_bounds_3d": {
+                    "min_x": -10,
+                    "min_y": -20,
+                    "min_z": -30,
+                    "max_x": 10,
+                    "max_y": 20,
+                    "max_z": 30,
+                },
+                "block_size": 7.5,
+                "bucket_size": 512,
+            },
+        },
+        runner=fake_runner,
+        env={"MODEL3D_GAUSSIAN_SPLAT_NODE_BIN": str(node)},
+    )
+
+    assert captured["command"][4] == "splat"
+    assert captured["command"][8:] == ["262144", "0,0,0", "7.5", "512"]
+    assert facts["source_format"] == "splat"
+    assert facts["target_format"] == "ksplat"
+    assert facts["scene_center_source"] == "sampled_bounds_3d"
+
+
+def test_gaussian_splat_to_ksplat_runs_real_converter_when_node_modules_exist(tmp_path, monkeypatch):
+    node_modules = Path(operators.__file__).resolve().parent / "node_modules" / "@mkkellogg" / "gaussian-splats-3d"
+    if not node_modules.exists():
+        pytest.skip("model3d workflow Node dependencies are not installed")
+    node_bin = Path(sys.executable).parent / "node"
+    if not node_bin.exists():
+        node_path = operators.shutil.which("node")
+        if not node_path:
+            pytest.skip("node executable is not available")
+        node_bin = Path(node_path)
+    if not node_bin.is_file():
+        pytest.skip("node executable is not available")
+
+    source = tmp_path / "tiny.splat"
+    source.write_bytes(_minimal_splat_bytes())
+    captured = {}
+
+    def fake_publish(path, publish):
+        captured["path"] = path
+        assert path.is_file()
+        return {
+            "object_uri": "s3://manager/tiny.ksplat",
+            "object_name": "tiny.ksplat",
+            "uploaded_files": 1,
+            "uploaded_bytes": path.stat().st_size,
+        }
+
+    monkeypatch.setattr(operators, "publish_object_store_file", fake_publish)
+    facts = invoke_operator(
+        "gaussian_splat_to_ksplat",
+        {
+            "access_plan": {
+                "source": {"local_path": str(source), "format": "splat"},
+                "target": {
+                    "file_name": "tiny.ksplat",
+                    "publish": {
+                        "method": "object_store",
+                        "endpoint": "minio:9000",
+                        "access_key": "ak",
+                        "secret_key": "sk",
+                        "bucket": "manager",
+                        "object": "tiny.ksplat",
+                    },
+                },
+            },
+        },
+        env={"MODEL3D_GAUSSIAN_SPLAT_NODE_BIN": str(node_bin)},
+    )
+
+    assert facts["source_format"] == "splat"
+    assert facts["target_format"] == "ksplat"
+    assert facts["size_bytes"] > 0
+    assert captured["path"].exists() is False
+
+
+def test_gaussian_splat_to_ksplat_rejects_unsupported_source(tmp_path):
+    source = tmp_path / "model.xyz"
+    source.write_bytes(b"xyz")
 
     with pytest.raises(ConverterError) as exc:
         invoke_operator(
             "gaussian_splat_to_ksplat",
             {
                 "access_plan": {
-                    "source": {"local_path": str(source), "format": "ply"},
+                    "source": {"local_path": str(source), "format": "xyz"},
                     "target": {
                         "file_name": "model.ksplat",
                         "publish": {
@@ -121,7 +333,15 @@ def test_gaussian_splat_to_ksplat_rejects_non_ksplat_source(tmp_path):
         )
 
     assert exc.value.error_code == "UNSUPPORTED_SOURCE_FORMAT"
-    assert "dedicated converter" in (exc.value.details or "")
+    assert "xyz" in (exc.value.details or "")
+
+
+def _minimal_splat_bytes() -> bytes:
+    record = bytearray(32)
+    for offset, value in enumerate([0.0, 0.0, 0.0, 1.0, 1.0, 1.0]):
+        struct.pack_into("<f", record, offset * 4, value)
+    record[24:32] = bytes([255, 64, 32, 255, 255, 0, 0, 0])
+    return bytes(record)
 
 
 def test_osgb_scene_to_3dtiles_invokes_converter_and_returns_facts(tmp_path):

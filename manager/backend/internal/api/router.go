@@ -192,6 +192,7 @@ func SetupRouter(
 			gaussianSplatQuickViewsGroup.GET("/:id", taskProviderHandler.GetGaussianSplatQuickView)
 			gaussianSplatQuickViewsGroup.DELETE("/:id", taskProviderHandler.DeleteGaussianSplatQuickView)
 			if gaussianSplatQuickViewHandler != nil {
+				gaussianSplatQuickViewsGroup.GET("/:id/inspect", gaussianSplatQuickViewHandler.InspectGaussianSplatQuickView)
 				gaussianSplatQuickViewsGroup.GET("/:id/content", gaussianSplatQuickViewHandler.GetGaussianSplatQuickViewContent)
 			}
 		}
@@ -279,6 +280,7 @@ func SetupRouter(
 		api.GET("/quick-view/geojson", quickViewHandler.GetQuickViewGeoJSONByLocator)
 		api.GET("/quick-view/tiles/:z/:x/:y.mvt", quickViewHandler.GetQuickViewTileByLocator)
 		api.PATCH("/quick-view/preferred-mode", quickViewHandler.UpdatePreferredModeByLocator)
+		api.PATCH("/quick-view/view-state", quickViewHandler.UpdateViewStateByLocator)
 	}
 
 	return router

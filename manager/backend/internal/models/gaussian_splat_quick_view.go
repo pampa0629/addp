@@ -14,8 +14,8 @@ const (
 	GaussianSplatQuickViewStatusDeleted  = "deleted"
 )
 
-// GaussianSplatQuickViewTask 高斯泼溅 KSplat 快显生成任务定义。
-// 任务结果是 Manager infra MinIO 中的 KSplat artifact。
+// GaussianSplatQuickViewTask 3DGS - KPlat 快显生成任务定义。
+// 任务结果是 Manager infra MinIO 中的 KPlat artifact。
 type GaussianSplatQuickViewTask struct {
 	ID       uint `gorm:"primaryKey" json:"id"`
 	TenantID uint `gorm:"not null;index:idx_gaussian_splat_quick_view_tasks_tenant" json:"tenant_id"`
@@ -42,7 +42,7 @@ func (GaussianSplatQuickViewTask) TableName() string {
 	return "manager.gaussian_splat_quick_view_tasks"
 }
 
-// GaussianSplatQuickView 记录 Manager 拥有生命周期的高斯泼溅 KSplat 快显。
+// GaussianSplatQuickView 记录 Manager 拥有生命周期的 3DGS - KPlat 快显。
 type GaussianSplatQuickView struct {
 	ID              uint   `gorm:"primaryKey" json:"id"`
 	TenantID        uint   `gorm:"not null;index:idx_gaussian_splat_quick_view_tenant_item_fingerprint,priority:1;index:idx_gaussian_splat_quick_view_tenant_item,priority:1" json:"tenant_id"`

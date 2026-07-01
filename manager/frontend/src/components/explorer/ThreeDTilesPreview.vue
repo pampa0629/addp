@@ -27,8 +27,14 @@ const props = defineProps({
   loading: {
     type: Boolean,
     default: false
+  },
+  viewState: {
+    type: Object,
+    default: () => ({})
   }
 })
+
+const emit = defineEmits(['view-state-change'])
 
 const viewportRef = ref(null)
 const loading = ref(false)
@@ -92,6 +98,7 @@ function ensureScene() {
   if ('zoomToCursor' in controls) {
     controls.zoomToCursor = true
   }
+  controls.addEventListener('end', emitCameraViewState)
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x56616f, 1.4))
   const keyLight = new THREE.DirectionalLight(0xffffff, 1.5)
@@ -139,6 +146,10 @@ function clearTiles() {
 
 function fitCameraToTilesOnce() {
   if (cameraFitted) return
+  if (applyCameraViewState(props.viewState)) {
+    cameraFitted = true
+    return
+  }
   if (fitCameraToTiles()) {
     cameraFitted = true
   }
@@ -164,6 +175,37 @@ function fitCameraToTiles() {
   controls.update()
   updateCameraClipPlanes(true)
   return true
+}
+
+function finiteVector(values) {
+  if (!Array.isArray(values) || values.length < 3) return null
+  const vector = values.slice(0, 3).map((value) => Number(value))
+  return vector.every(Number.isFinite) ? vector : null
+}
+
+function applyCameraViewState(state) {
+  if (!camera || !controls || !state || typeof state !== 'object') return false
+  const position = finiteVector(state.position)
+  const target = finiteVector(state.target)
+  const up = finiteVector(state.up)
+  if (!position || !target) return false
+  camera.position.set(position[0], position[1], position[2])
+  if (up) {
+    camera.up.set(up[0], up[1], up[2])
+  }
+  controls.target.set(target[0], target[1], target[2])
+  controls.update()
+  updateCameraClipPlanes(true)
+  return true
+}
+
+function emitCameraViewState() {
+  if (!camera || !controls) return
+  emit('view-state-change', {
+    position: camera.position.toArray(),
+    target: controls.target.toArray(),
+    up: camera.up.toArray()
+  })
 }
 
 function updateCameraClipPlanes(force = false) {
@@ -279,6 +321,7 @@ function disposeScene() {
   resizeObserver?.disconnect()
   resizeObserver = null
   clearTiles()
+  controls?.removeEventListener?.('end', emitCameraViewState)
   controls?.dispose()
   renderer?.dispose()
   renderer?.domElement?.remove()

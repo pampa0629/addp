@@ -26,7 +26,10 @@
       v-if="showMap && geoFeatures.length > 0"
       :features="geoFeatures"
       :base-map-type="baseMapType"
+      :preserve-view="hasSavedViewState"
+      :view-state="viewState"
       height="360px"
+      @view-state-change="handleViewStateChange"
     />
     <div v-else-if="showMap" class="map-placeholder">
       <el-empty :description="suppressedMapMessage || t('map.noGeometryData')" :image-size="60" />
@@ -57,8 +60,14 @@ const props = defineProps({
   data: {
     type: Object,
     required: true
+  },
+  viewState: {
+    type: Object,
+    default: () => ({})
   }
 })
+
+const emit = defineEmits(['view-state-change'])
 
 const { baseMapOptions, defaultBaseMapType, getBaseMapProfile, loadMapConfig } = useMapConfig()
 
@@ -73,6 +82,15 @@ const baseMapNotice = computed(() => {
 })
 
 const objectData = computed(() => props.data?.object || {})
+
+const hasSavedViewState = computed(() => {
+  const center = props.viewState?.center
+  return Array.isArray(center) &&
+    center.length >= 2 &&
+    Number.isFinite(Number(center[0])) &&
+    Number.isFinite(Number(center[1])) &&
+    Number.isFinite(Number(props.viewState?.zoom))
+})
 
 const geojsonData = computed(() => {
   return objectData.value?.content?.geojson || objectData.value?.content?.GeoJSON || null
@@ -126,6 +144,10 @@ const geoFeatures = computed(() => {
 const formattedJson = computed(() => {
   return safeStringify(geojsonData.value)
 })
+
+const handleViewStateChange = (state) => {
+  emit('view-state-change', state)
+}
 
 // 当 baseMapOptions 变化时，自动设置默认底图
 watch(

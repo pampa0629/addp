@@ -86,6 +86,11 @@ func (e *ManagerGaussianSplatQuickViewExecutor) BuildGaussianSplatQuickView(ctx 
 	if err != nil {
 		return nil, err
 	}
+	options := req.Config.Options.Clone()
+	if options == nil {
+		options = commonModels.JSONMap{}
+	}
+	applyGaussianSplatBoundsOptions(options, req.Config.Source)
 	invokeResult, err := dbbridge.InvokeOperator(ctx, &workflowEngine, workflowOperator.Name, plugin.OperatorInvokeRequest{
 		Params: map[string]interface{}{
 			"access_plan": commonModels.JSONMap{
@@ -112,19 +117,19 @@ func (e *ManagerGaussianSplatQuickViewExecutor) BuildGaussianSplatQuickView(ctx 
 					},
 				},
 			},
-			"options": req.Config.Options.Clone(),
+			"options": options,
 		},
 		Timeout: e.invokeTimeout,
 	})
 	if err != nil {
-		return nil, operatorInvokeError("invoke gaussian splat to KSplat operator", invokeResult, err)
+		return nil, operatorInvokeError("invoke gaussian splat to KPlat operator", invokeResult, err)
 	}
 	if invokeResult.Status != "" && invokeResult.Status != "success" {
-		return nil, operatorInvokeError("gaussian splat to KSplat direct operator invocation failed", invokeResult, nil)
+		return nil, operatorInvokeError("gaussian splat to KPlat direct operator invocation failed", invokeResult, nil)
 	}
 	info, err := e.objectStore.StatObject(ctx, bucket, objectName, minio.StatObjectOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("stat gaussian splat quick view KSplat: %w", err)
+		return nil, fmt.Errorf("stat gaussian splat quick view KPlat: %w", err)
 	}
 
 	facts := operatorInvokeJSONFacts(invokeResult)
@@ -159,6 +164,25 @@ func (e *ManagerGaussianSplatQuickViewExecutor) BuildGaussianSplatQuickView(ctx 
 		result.Metadata["workflow_runtime"].(commonModels.JSONMap)["execution_time_ms"] = *invokeResult.ExecutionTimeMs
 	}
 	return result, nil
+}
+
+func applyGaussianSplatBoundsOptions(options commonModels.JSONMap, source GaussianSplatQuickViewSourceConfig) {
+	if options == nil {
+		return
+	}
+	if _, ok := options["bounds_3d"]; !ok {
+		if bounds := bounds3DToTaskConfig(source.Bounds3D); bounds != nil {
+			options["bounds_3d"] = bounds
+		}
+	}
+	if _, ok := options["sampled_bounds_3d"]; !ok {
+		if bounds := bounds3DToTaskConfig(source.SampledBounds3D); bounds != nil {
+			options["sampled_bounds_3d"] = bounds
+		}
+	}
+	if _, ok := options["sampled_bounds_sample_count"]; !ok && source.SampledBoundsSampleCount != nil {
+		options["sampled_bounds_sample_count"] = *source.SampledBoundsSampleCount
+	}
 }
 
 func (e *ManagerGaussianSplatQuickViewExecutor) prepareSourcePath(ctx context.Context, tenantID uint, source GaussianSplatQuickViewSourceConfig) (string, commonModels.JSONMap, error) {

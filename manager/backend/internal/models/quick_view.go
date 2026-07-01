@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	commonModels "github.com/addp/common/models"
+)
 
 const (
 	QuickViewPreferredModeBasicPreview = "basic_preview"
@@ -15,7 +19,8 @@ type QuickView struct {
 	ItemFingerprint string `gorm:"size:64;not null;uniqueIndex:idx_quick_view_tenant_fingerprint,priority:2" json:"item_fingerprint"`
 	Locator         string `gorm:"type:text;not null" json:"locator"`
 
-	PreferredMode string `gorm:"default:'basic_preview';size:32" json:"preferred_mode"`
+	PreferredMode string               `gorm:"default:'basic_preview';size:32" json:"preferred_mode"`
+	ViewState     commonModels.JSONMap `gorm:"type:jsonb;not null;default:'{}'" json:"view_state,omitempty"`
 
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`

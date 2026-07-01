@@ -1,14 +1,14 @@
 # quick_view 表结构和 API 说明
 
-> 状态：当前实现说明。`manager.quick_view` 是快显偏好表，不保存快显能力快照、快显性能优化结果、瓦片缓存结果事实、生成任务定义或执行历史。快显性能优化结果见 `manager.vector_quick_view_targets`，瓦片缓存结果见 `manager.vector_tile_cache`，任务定义见对应任务表。
+> 状态：当前实现说明。`manager.quick_view` 是快显偏好和预览交互状态表，不保存快显能力快照、快显性能优化结果、瓦片缓存结果事实、生成任务定义或执行历史。快显性能优化结果见 `manager.vector_quick_view_targets`，瓦片缓存结果见 `manager.vector_tile_cache`，任务定义见对应任务表。
 
 ## 一、表定位
 
-`manager.quick_view` 表达 Manager 空间预览中的用户显示偏好。
+`manager.quick_view` 表达 Manager 预览中的用户显示偏好和轻量交互状态。
 
 它回答：
 
-> 当前 spatial item 的用户偏好预览模式是什么。
+> 当前 item 的用户偏好预览模式是什么，以及基础预览 / 快显各自最近一次地图视口或三维相机状态是什么。
 
 它不回答：
 
@@ -23,7 +23,7 @@
 
 | 对象 | 职责 |
 | --- | --- |
-| `manager.quick_view` | 用户预览模式偏好 |
+| `manager.quick_view` | 用户预览模式偏好和预览交互状态 |
 | `manager.vector_quick_view_targets` | Manager 创建并拥有生命周期的 3857 快显性能优化结果状态 |
 | `manager.vector_quick_view_target_tasks` | 快显性能优化任务定义 |
 | `manager.vector_tile_cache` | 瓦片缓存结果状态 |
@@ -40,6 +40,7 @@
 | `item_fingerprint` | varchar(64) | 标准 data item 指纹，和 `tenant_id` 组成唯一偏好身份 |
 | `locator` | text | 资源树或数据项回跳定位，不作为去重主键 |
 | `preferred_mode` | varchar | `basic_preview` / `map_quick_view` |
+| `view_state` | jsonb | 快显 / 预览交互状态。顶层按 `basic_preview` / `quick_view` 区分显示模式，模式内按 `map` / `scene_3d` 区分渲染域 |
 | `created_at` / `updated_at` | timestamp | 生命周期字段 |
 
 `can_use_quick_view`、`can_generate_vector_tile_cache`、`status`、`render_source`、`default_vector_tile_cache_id`、`unavailable_reason` 是快显能力 API 的动态响应字段，不是 `manager.quick_view` 表字段。
@@ -105,7 +106,28 @@
 
 `quick_view` 不保存执行历史，也不保存当前快显能力状态和推荐结果。
 
-## 八、已完成职责收敛
+## 八、预览交互状态
+
+`view_state` 只保存用户交互产生的渲染状态，不保存源 metadata、快显结果、任务配置或执行历史。
+
+当前唯一结构：
+
+```json
+{
+  "basic_preview": {
+    "map": {},
+    "scene_3d": {}
+  },
+  "quick_view": {
+    "map": {},
+    "scene_3d": {}
+  }
+}
+```
+
+顶层按显示模式区分，避免基础预览和快显互相覆盖视角；模式内按渲染域区分，避免把数据类型耦合进 UI 状态。`map` 保存地图视口状态，`scene_3d` 保存三维相机状态。具体渲染器可以在对应对象内保存自身需要的字段，但不得新增 `model_3d`、`tiles_3d`、`gaussian_splat` 等按数据类型拆分的顶层或模式内 key。
+
+## 九、已完成职责收敛
 
 `quick_view` 不再保存以下旧字段或语义：
 
@@ -128,7 +150,7 @@
 | 执行进度、耗时、错误详情、统计摘要 | `common.task_executions.metadata` / `error_details` |
 | 快显性能优化目标状态 | `manager.vector_quick_view_targets` |
 
-## 九、相关文档
+## 十、相关文档
 
 - [快显概念说明](../快显概念说明.md)
 - [快显实现规范](../快显实现规范.md)

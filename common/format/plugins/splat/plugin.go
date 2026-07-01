@@ -1,6 +1,7 @@
 package splat
 
 import (
+	"bufio"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -14,10 +15,12 @@ import (
 )
 
 const (
-	splatRecordSize               = 32
-	maxExactSplatBoundsRecords    = 100000
-	splatSampledBoundsSampleCount = 8192
-	splatAnisotropyWarningRatio   = 20
+	splatRecordSize                      = 32
+	maxExactSplatDescribeBytes     int64 = 32 * 1024 * 1024
+	splatSequentialReadBufferBytes       = 1024 * 1024
+	splatSampledBoundsSampleCount        = 8192
+	splatSampledWindowCount              = 256
+	splatAnisotropyWarningRatio          = 20
 )
 
 type Plugin struct{}
@@ -71,7 +74,7 @@ func (p *Plugin) DescribeGaussianSplat(ctx context.Context, input format.Gaussia
 		"encoding":    "splat",
 		"record_size": int64(splatRecordSize),
 	}
-	if recordCount > maxExactSplatBoundsRecords && input.RangeReader != nil {
+	if shouldSampleSplatRecords(input.SizeBytes, recordCount, input.RangeReader != nil) {
 		sampled, err := describeSplatSampledRecords(ctx, input.RangeReader, input.Ref, input.SizeBytes)
 		if err != nil {
 			return nil, err
@@ -108,21 +111,31 @@ func (p *Plugin) DescribeGaussianSplat(ctx context.Context, input format.Gaussia
 	}, nil
 }
 
+func shouldSampleSplatRecords(sizeBytes int64, recordCount int64, hasRangeReader bool) bool {
+	return hasRangeReader &&
+		sizeBytes > maxExactSplatDescribeBytes &&
+		recordCount > int64(splatSampledBoundsSampleCount)
+}
+
 func describeSplatSampledRecords(ctx context.Context, reader contentio.RangeReader, ref contentio.Ref, sizeBytes int64) (*splatDescribeFacts, error) {
 	recordSize := int64(splatRecordSize)
 	if reader == nil || sizeBytes < recordSize {
 		return nil, nil
 	}
 	recordCount := sizeBytes / recordSize
-	indexes := uniformSplatSampleIndexes(recordCount, splatSampledBoundsSampleCount)
-	if len(indexes) == 0 {
+	windows := uniformSplatSampleWindows(recordCount, splatSampledBoundsSampleCount, splatSampledWindowCount)
+	if len(windows) == 0 {
 		return nil, nil
 	}
 	var bounds splatBounds
 	stats := newSplatScaleStats()
-	buffer := make([]byte, splatRecordSize)
-	for _, index := range indexes {
-		rc, err := reader.OpenRange(ctx, ref, index*recordSize, recordSize)
+	var processed int64
+	for _, window := range windows {
+		if window.count <= 0 {
+			continue
+		}
+		buffer := make([]byte, window.count*recordSize)
+		rc, err := reader.OpenRange(ctx, ref, window.start*recordSize, window.count*recordSize)
 		if err != nil {
 			return nil, err
 		}
@@ -134,19 +147,21 @@ func describeSplatSampledRecords(ctx context.Context, reader contentio.RangeRead
 		if closeErr != nil {
 			return nil, closeErr
 		}
-		if n < splatRecordSize {
-			continue
+		recordBytes := n - (n % splatRecordSize)
+		for offset := 0; offset < recordBytes; offset += splatRecordSize {
+			record := buffer[offset : offset+splatRecordSize]
+			x := float64(math.Float32frombits(binary.LittleEndian.Uint32(record[0:4])))
+			y := float64(math.Float32frombits(binary.LittleEndian.Uint32(record[4:8])))
+			z := float64(math.Float32frombits(binary.LittleEndian.Uint32(record[8:12])))
+			bounds.add(x, y, z)
+			stats.add(
+				float64(math.Float32frombits(binary.LittleEndian.Uint32(record[12:16]))),
+				float64(math.Float32frombits(binary.LittleEndian.Uint32(record[16:20]))),
+				float64(math.Float32frombits(binary.LittleEndian.Uint32(record[20:24]))),
+				record[27],
+			)
+			processed++
 		}
-		x := float64(math.Float32frombits(binary.LittleEndian.Uint32(buffer[0:4])))
-		y := float64(math.Float32frombits(binary.LittleEndian.Uint32(buffer[4:8])))
-		z := float64(math.Float32frombits(binary.LittleEndian.Uint32(buffer[8:12])))
-		bounds.add(x, y, z)
-		stats.add(
-			float64(math.Float32frombits(binary.LittleEndian.Uint32(buffer[12:16]))),
-			float64(math.Float32frombits(binary.LittleEndian.Uint32(buffer[16:20]))),
-			float64(math.Float32frombits(binary.LittleEndian.Uint32(buffer[20:24]))),
-			buffer[27],
-		)
 	}
 	result := bounds.result()
 	if result == nil {
@@ -155,7 +170,7 @@ func describeSplatSampledRecords(ctx context.Context, reader contentio.RangeRead
 	return &splatDescribeFacts{
 		SampledBounds3D:          result,
 		SampledBoundsMethod:      "sampled_splat_records",
-		SampledBoundsSampleCount: int64Ptr(int64(len(indexes))),
+		SampledBoundsSampleCount: int64Ptr(processed),
 		FormatInfo:               stats.formatInfo("sampled_splat_records"),
 	}, nil
 }
@@ -164,12 +179,13 @@ func describeSplatRecords(ctx context.Context, input io.Reader) (*splatDescribeF
 	if input == nil {
 		return &splatDescribeFacts{}, nil
 	}
+	reader := bufio.NewReaderSize(input, splatSequentialReadBufferBytes)
 	var count int64
 	var bounds splatBounds
 	stats := newSplatScaleStats()
 	buffer := make([]byte, splatRecordSize)
 	for {
-		_, err := io.ReadFull(input, buffer)
+		_, err := io.ReadFull(reader, buffer)
 		if err == io.EOF {
 			break
 		}
@@ -250,16 +266,13 @@ func (s *splatScaleStats) add(scaleX, scaleY, scaleZ float64, alpha byte) {
 	if alpha < 25 {
 		s.lowAlphaCount++
 	}
-	scales := []float64{scaleX, scaleY, scaleZ}
-	for _, scale := range scales {
-		if math.IsNaN(scale) || math.IsInf(scale, 0) || scale < 0 {
-			s.invalidScaleCount++
-			return
-		}
+	if invalidSplatScale(scaleX) || invalidSplatScale(scaleY) || invalidSplatScale(scaleZ) {
+		s.invalidScaleCount++
+		return
 	}
-	sort.Float64s(scales)
-	maxScale := scales[2]
-	minScale := math.Max(scales[0], 1e-12)
+	minScale := math.Min(scaleX, math.Min(scaleY, scaleZ))
+	maxScale := math.Max(scaleX, math.Max(scaleY, scaleZ))
+	minScale = math.Max(minScale, 1e-12)
 	ratio := maxScale / minScale
 	if ratio > splatAnisotropyWarningRatio {
 		s.anisotropicCount++
@@ -272,6 +285,10 @@ func (s *splatScaleStats) add(scaleX, scaleY, scaleZ float64, alpha byte) {
 	}
 	s.anisotropyRatios = append(s.anisotropyRatios, ratio)
 	s.maxScaleDistribution = append(s.maxScaleDistribution, maxScale)
+}
+
+func invalidSplatScale(scale float64) bool {
+	return math.IsNaN(scale) || math.IsInf(scale, 0) || scale < 0
 }
 
 func (s *splatScaleStats) formatInfo(method string) map[string]interface{} {
@@ -397,26 +414,54 @@ func float64Ptr(value float64) *float64 {
 	return &value
 }
 
-func uniformSplatSampleIndexes(count int64, maxSamples int) []int64 {
-	if count <= 0 || maxSamples <= 0 {
+type splatSampleWindow struct {
+	start int64
+	count int64
+}
+
+func uniformSplatSampleWindows(recordCount int64, maxSamples int, maxWindows int) []splatSampleWindow {
+	if recordCount <= 0 || maxSamples <= 0 || maxWindows <= 0 {
 		return nil
 	}
-	if count <= int64(maxSamples) {
-		indexes := make([]int64, 0, count)
-		for i := int64(0); i < count; i++ {
-			indexes = append(indexes, i)
-		}
-		return indexes
+	if recordCount <= int64(maxSamples) {
+		return []splatSampleWindow{{start: 0, count: recordCount}}
 	}
-	indexes := make([]int64, 0, maxSamples)
-	last := int64(-1)
-	for i := 0; i < maxSamples; i++ {
-		index := int64(math.Round(float64(i) * float64(count-1) / float64(maxSamples-1)))
-		if index == last {
+	windowCount := maxWindows
+	if maxSamples < windowCount {
+		windowCount = maxSamples
+	}
+	recordsPerWindow := maxSamples / windowCount
+	if recordsPerWindow <= 0 {
+		recordsPerWindow = 1
+	}
+	if int64(recordsPerWindow) > recordCount {
+		recordsPerWindow = int(recordCount)
+	}
+	windows := make([]splatSampleWindow, 0, windowCount)
+	lastEnd := int64(0)
+	for i := 0; i < windowCount; i++ {
+		center := int64(0)
+		if windowCount > 1 {
+			center = int64(math.Round(float64(i) * float64(recordCount-1) / float64(windowCount-1)))
+		}
+		start := center - int64(recordsPerWindow/2)
+		if start < 0 {
+			start = 0
+		}
+		maxStart := recordCount - int64(recordsPerWindow)
+		if start > maxStart {
+			start = maxStart
+		}
+		end := start + int64(recordsPerWindow)
+		if len(windows) > 0 && start <= lastEnd {
+			if end > lastEnd {
+				windows[len(windows)-1].count = end - windows[len(windows)-1].start
+				lastEnd = end
+			}
 			continue
 		}
-		indexes = append(indexes, index)
-		last = index
+		windows = append(windows, splatSampleWindow{start: start, count: int64(recordsPerWindow)})
+		lastEnd = end
 	}
-	return indexes
+	return windows
 }

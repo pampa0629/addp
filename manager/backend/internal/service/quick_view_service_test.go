@@ -629,13 +629,15 @@ func TestGaussianSplatQuickViewSourceFromAttributes(t *testing.T) {
 				},
 				"type_info": map[string]interface{}{
 					"gaussian_splat": map[string]interface{}{
-						"representation":          "3d_gaussian_splatting",
-						"splat_count":             int64(128),
-						"has_opacity":             true,
-						"has_scale":               true,
-						"has_rotation":            true,
-						"has_spherical_harmonics": true,
-						"sh_degree":               int64(3),
+						"representation":              "3d_gaussian_splatting",
+						"splat_count":                 int64(128),
+						"has_opacity":                 true,
+						"has_scale":                   true,
+						"has_rotation":                true,
+						"has_spherical_harmonics":     true,
+						"sh_degree":                   int64(3),
+						"sampled_bounds_3d":           map[string]interface{}{"min_x": 1.0, "min_y": 2.0, "min_z": 3.0, "max_x": 4.0, "max_y": 5.0, "max_z": 6.0},
+						"sampled_bounds_sample_count": int64(2048),
 					},
 				},
 				"storage": map[string]interface{}{
@@ -651,6 +653,12 @@ func TestGaussianSplatQuickViewSourceFromAttributes(t *testing.T) {
 			if source.HasOpacity == nil || !*source.HasOpacity || source.SHDegree == nil || *source.SHDegree != 3 {
 				t.Fatalf("source optional facts = %#v, want opacity and sh degree", source)
 			}
+			if source.SampledBounds3D == nil || source.SampledBounds3D.MinX == nil || *source.SampledBounds3D.MinX != 1.0 {
+				t.Fatalf("source sampled bounds = %#v, want sampled bounds from attributes", source.SampledBounds3D)
+			}
+			if source.SampledBoundsSampleCount == nil || *source.SampledBoundsSampleCount != 2048 {
+				t.Fatalf("source sampled bounds sample count = %#v, want 2048", source.SampledBoundsSampleCount)
+			}
 		})
 	}
 	if model3D := Model3DQuickViewSourceFromAttributes(map[string]interface{}{
@@ -664,74 +672,47 @@ func TestGaussianSplatQuickViewSourceFromAttributes(t *testing.T) {
 	}
 }
 
-func TestQuickViewCapabilityKeepsGaussianSplatOutOfGLBRoute(t *testing.T) {
+func TestQuickViewCapabilityRecommendsKPlatGenerationForGaussianSources(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	createGaussianSplatQuickViewTable(t, db)
 	svc := NewQuickViewService(db, nil)
 
-	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
-		Identity: QuickViewIdentity{
-			TenantID:        7,
-			ItemFingerprint: "fp-gaussian",
-			Locator:         "addp://engine/26/path/3d/splat/model.ply?type=file&item_id=201",
-		},
-		EngineID: 26,
-		GaussianSplat: &GaussianSplatQuickViewSource{
-			Format:          "ply",
-			Layout:          "single",
-			Representation:  "3d_gaussian_splatting",
-			SplatCount:      128,
-			SourceSizeBytes: 4096,
-		},
-	})
-	if err != nil {
-		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
-	}
-	if capability.CanUseQuickView || capability.RenderSource != "" || capability.UnavailableReason != "gaussian_splat_direct_preview" {
-		t.Fatalf("capability quick view = can:%v render:%q reason:%q, want direct gaussian preview without managed KSplat recommendation", capability.CanUseQuickView, capability.RenderSource, capability.UnavailableReason)
-	}
-	if capability.Model3D != nil {
-		t.Fatalf("model_3d capability = %#v, want nil for gaussian splat", capability.Model3D)
-	}
-	if capability.GaussianSplat == nil || capability.GaussianSplat.Format != "ply" || capability.GaussianSplat.SplatCount != 128 {
-		t.Fatalf("gaussian_splat capability = %#v, want gaussian splat facts", capability.GaussianSplat)
-	}
-	if capability.GaussianSplat.RecommendedAction != "" {
-		t.Fatalf("recommended_action = %q, want empty for non-KSplat gaussian source", capability.GaussianSplat.RecommendedAction)
-	}
-	if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
-		t.Fatalf("tile generation = can:%v available:%v, want false for gaussian splat", capability.CanGenerateTileCache, capability.TileCacheGeneration.Available)
-	}
-}
-
-func TestQuickViewCapabilityRecommendsManagedQuickViewForKSplatSource(t *testing.T) {
-	db := newTileCacheTaskServiceTestDB(t)
-	createGaussianSplatQuickViewTable(t, db)
-	svc := NewQuickViewService(db, nil)
-
-	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
-		Identity: QuickViewIdentity{
-			TenantID:        7,
-			ItemFingerprint: "fp-ksplat",
-			Locator:         "addp://engine/26/path/3d/splat/model.ksplat?type=file&item_id=202",
-		},
-		EngineID: 26,
-		GaussianSplat: &GaussianSplatQuickViewSource{
-			Format:          "ksplat",
-			Layout:          "single",
-			Representation:  "3d_gaussian_splatting",
-			SplatCount:      128,
-			SourceSizeBytes: 4096,
-		},
-	})
-	if err != nil {
-		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
-	}
-	if capability.CanUseQuickView || capability.RenderSource != "" || capability.UnavailableReason != "requires_ksplat_generation" {
-		t.Fatalf("capability quick view = can:%v render:%q reason:%q, want managed KSplat generation requirement", capability.CanUseQuickView, capability.RenderSource, capability.UnavailableReason)
-	}
-	if capability.GaussianSplat == nil || capability.GaussianSplat.RecommendedAction != commonExecution.TaskTypeGaussianSplatQuickViewGeneration {
-		t.Fatalf("gaussian_splat = %#v, want KSplat generation recommendation", capability.GaussianSplat)
+	for _, sourceFormat := range []string{"ply", "splat", "ksplat"} {
+		t.Run(sourceFormat, func(t *testing.T) {
+			capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+				Identity: QuickViewIdentity{
+					TenantID:        7,
+					ItemFingerprint: "fp-gaussian-" + sourceFormat,
+					Locator:         "addp://engine/26/path/3d/splat/model." + sourceFormat + "?type=file&item_id=201",
+				},
+				EngineID: 26,
+				GaussianSplat: &GaussianSplatQuickViewSource{
+					Format:          sourceFormat,
+					Layout:          "single",
+					Representation:  "3d_gaussian_splatting",
+					SplatCount:      128,
+					SourceSizeBytes: 4096,
+				},
+			})
+			if err != nil {
+				t.Fatalf("BuildCapabilityFromSource() error = %v", err)
+			}
+			if capability.CanUseQuickView || capability.RenderSource != "" || capability.UnavailableReason != "requires_kplat_generation" {
+				t.Fatalf("capability quick view = can:%v render:%q reason:%q, want managed KPlat generation requirement", capability.CanUseQuickView, capability.RenderSource, capability.UnavailableReason)
+			}
+			if capability.Model3D != nil {
+				t.Fatalf("model_3d capability = %#v, want nil for gaussian splat", capability.Model3D)
+			}
+			if capability.GaussianSplat == nil || capability.GaussianSplat.Format != sourceFormat || capability.GaussianSplat.SplatCount != 128 {
+				t.Fatalf("gaussian_splat capability = %#v, want gaussian splat facts", capability.GaussianSplat)
+			}
+			if capability.GaussianSplat.RecommendedAction != commonExecution.TaskTypeGaussianSplatQuickViewGeneration {
+				t.Fatalf("recommended_action = %q, want KPlat generation recommendation", capability.GaussianSplat.RecommendedAction)
+			}
+			if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
+				t.Fatalf("tile generation = can:%v available:%v, want false for gaussian splat", capability.CanGenerateTileCache, capability.TileCacheGeneration.Available)
+			}
+		})
 	}
 }
 
@@ -765,11 +746,13 @@ func TestQuickViewCapabilityUsesReadyGaussianSplatKSplat(t *testing.T) {
 		},
 		EngineID: 26,
 		GaussianSplat: &GaussianSplatQuickViewSource{
-			Format:          "ksplat",
-			Layout:          "single",
-			Representation:  "3d_gaussian_splatting",
-			SplatCount:      128,
-			SourceSizeBytes: 4096,
+			Format:                   "ksplat",
+			Layout:                   "single",
+			Representation:           "3d_gaussian_splatting",
+			SplatCount:               128,
+			SourceSizeBytes:          4096,
+			SampledBounds3D:          &datatype.Bounds3D{MinX: float64Ptr(1), MinY: float64Ptr(2), MinZ: float64Ptr(3), MaxX: float64Ptr(4), MaxY: float64Ptr(5), MaxZ: float64Ptr(6)},
+			SampledBoundsSampleCount: int64Ptr(2048),
 		},
 	})
 	if err != nil {
@@ -786,6 +769,12 @@ func TestQuickViewCapabilityUsesReadyGaussianSplatKSplat(t *testing.T) {
 	}
 	if capability.GaussianSplat == nil || capability.GaussianSplat.Format != "ksplat" || capability.GaussianSplat.FileName != "model.ksplat" {
 		t.Fatalf("gaussian_splat capability = %#v, want ready KSplat facts", capability.GaussianSplat)
+	}
+	if capability.GaussianSplat.SampledBounds3D == nil || capability.GaussianSplat.SampledBounds3D.MinX == nil || *capability.GaussianSplat.SampledBounds3D.MinX != 1 {
+		t.Fatalf("gaussian_splat sampled bounds = %#v, want source sampled bounds", capability.GaussianSplat.SampledBounds3D)
+	}
+	if capability.GaussianSplat.SampledBoundsSampleCount == nil || *capability.GaussianSplat.SampledBoundsSampleCount != 2048 {
+		t.Fatalf("gaussian_splat sampled bounds sample count = %#v, want 2048", capability.GaussianSplat.SampledBoundsSampleCount)
 	}
 	if capability.Model3D != nil {
 		t.Fatalf("model_3d capability = %#v, want nil for gaussian splat", capability.Model3D)
@@ -819,6 +808,14 @@ func createGaussianSplatQuickViewTable(t *testing.T, db *gorm.DB) {
 	)`).Error; err != nil {
 		t.Fatalf("create gaussian_splat_quick_view table: %v", err)
 	}
+}
+
+func float64Ptr(value float64) *float64 {
+	return &value
+}
+
+func int64Ptr(value int64) *int64 {
+	return &value
 }
 
 func TestQuickViewCapabilityUsesReadyRasterCOGWithInferredExtentSRID(t *testing.T) {
@@ -2278,5 +2275,96 @@ func TestQuickViewCapabilityReportsExternal3857MaterializedViewOptimization(t *t
 		capability.RealtimeTile.PerformanceMode != RealtimeTilePerformanceReady3857Target ||
 		capability.RealtimeTile.TimeoutRecommendation != RealtimeTileRecommendationTileCacheGeneration {
 		t.Fatalf("realtime_tile = %#v, want ready 3857 target recommending tile cache", capability.RealtimeTile)
+	}
+}
+
+func TestQuickViewServiceUpdatesViewStateInQuickViewPreference(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	identity := QuickViewIdentity{
+		TenantID:        7,
+		ItemFingerprint: spatialItemFingerprint(26, "public", "buildings"),
+		Locator:         tableLocator(26, "public", "buildings"),
+	}
+	viewState := commonModels.JSONMap{
+		"model_3d": map[string]interface{}{
+			"camera": "legacy-flat",
+		},
+		"quick_view": map[string]interface{}{
+			"map": map[string]interface{}{
+				"center": []interface{}{120.1, 30.2},
+				"zoom":   12,
+			},
+			"scene_3d": map[string]interface{}{
+				"camera": map[string]interface{}{
+					"position": []interface{}{1, 2, 3},
+					"target":   []interface{}{0, 0, 0},
+				},
+			},
+			"gaussian_splat": map[string]interface{}{
+				"camera": "legacy-nested",
+			},
+		},
+	}
+
+	if err := svc.UpdateViewStateByIdentity(context.Background(), identity, viewState); err != nil {
+		t.Fatalf("update view state: %v", err)
+	}
+
+	stored, err := repository.NewQuickViewRepository(db).GetByIdentity(identity.TenantID, identity.ItemFingerprint, identity.Locator)
+	if err != nil {
+		t.Fatalf("get quick view preference: %v", err)
+	}
+	if stored.PreferredMode != models.QuickViewPreferredModeBasicPreview {
+		t.Fatalf("preferred_mode = %q, want basic_preview", stored.PreferredMode)
+	}
+	quickViewState, ok := stored.ViewState["quick_view"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("view_state.quick_view = %#v, want object", stored.ViewState["quick_view"])
+	}
+	gotMap, ok := quickViewState["map"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("view_state.quick_view.map = %#v, want object", quickViewState["map"])
+	}
+	if gotMap["zoom"] != float64(12) {
+		t.Fatalf("view_state.quick_view.map.zoom = %#v, want 12", gotMap["zoom"])
+	}
+	gotScene, ok := quickViewState["scene_3d"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("view_state.quick_view.scene_3d = %#v, want object", quickViewState["scene_3d"])
+	}
+	gotCamera, ok := gotScene["camera"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("view_state.quick_view.scene_3d.camera = %#v, want object", gotScene["camera"])
+	}
+	if gotCamera["position"] == nil || gotCamera["target"] == nil {
+		t.Fatalf("view_state.quick_view.scene_3d.camera = %#v, want position and target", gotCamera)
+	}
+	if _, ok := stored.ViewState["model_3d"]; ok {
+		t.Fatalf("view_state.model_3d should not be persisted: %#v", stored.ViewState)
+	}
+	if _, ok := quickViewState["gaussian_splat"]; ok {
+		t.Fatalf("view_state.quick_view.gaussian_splat should not be persisted: %#v", quickViewState)
+	}
+}
+
+func TestGaussianSplatProgressiveOrder(t *testing.T) {
+	centerFirst := gaussianSplatProgressiveOrder(commonModels.JSONMap{
+		"ksplat_facts": map[string]interface{}{
+			"converter":           "create_ksplat.mjs",
+			"scene_center_source": "sampled_bounds_3d",
+		},
+	})
+	if centerFirst != "center_first" {
+		t.Fatalf("progressive order = %q, want center_first", centerFirst)
+	}
+
+	sourceOrder := gaussianSplatProgressiveOrder(commonModels.JSONMap{
+		"ksplat_facts": map[string]interface{}{
+			"converter": "copy",
+		},
+	})
+	if sourceOrder != "source_order" {
+		t.Fatalf("progressive order = %q, want source_order", sourceOrder)
 	}
 }

@@ -39,7 +39,18 @@ const geoJSONFormat = new GeoJSON()
  * OpenLayers 地图管理 Composable
  * @param {Object} config - 地图配置 { tdtKey }
  */
-export function useOpenLayersMap(config) {
+function normalizeInitialViewState(state) {
+  const center = Array.isArray(state?.center)
+    ? state.center.slice(0, 2).map((value) => Number(value))
+    : null
+  const zoom = Number(state?.zoom)
+  if (!center || center.length < 2 || !center.every(isFinite) || !isFinite(zoom)) {
+    return { center: DEFAULT_CENTER, zoom: 4 }
+  }
+  return { center, zoom }
+}
+
+export function useOpenLayersMap(config, options = {}) {
   const mapInstance = ref(null)
   const vectorSource = ref(null)
   const vectorLayer = ref(null)
@@ -53,7 +64,7 @@ export function useOpenLayersMap(config) {
   let viewEventKeys = []
   let mapClickKey = null
   let featureClickHandler = null
-  let viewState = { center: DEFAULT_CENTER, zoom: 4 }
+  let viewState = normalizeInitialViewState(options.initialViewState)
 
   const updateViewState = () => {
     if (!mapInstance.value) return
@@ -68,6 +79,7 @@ export function useOpenLayersMap(config) {
           center: lonLat,
           zoom
         }
+        options.onViewStateChange?.(viewState)
       }
     }
   }

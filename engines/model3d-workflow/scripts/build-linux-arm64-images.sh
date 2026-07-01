@@ -50,6 +50,36 @@ docker build \
 
 echo "Smoke checking runtime image"
 docker run --rm --platform "${PLATFORM}" --entrypoint /opt/addp/model3d-workflow/bin/_3dtile "${RUNTIME_IMAGE}" --help >/dev/null
+docker run -i --rm --platform "${PLATFORM}" --entrypoint python "${RUNTIME_IMAGE}" - <<'PY'
+from pathlib import Path
+import operators
+import struct
+import subprocess
+import tempfile
+
+status = operators.converter_status()
+if not status.get("available"):
+    raise SystemExit(f"model3d workflow converters are unavailable: {status.get('details')}")
+
+with tempfile.TemporaryDirectory() as tmp:
+    source = Path(tmp) / "tiny.splat"
+    target = Path(tmp) / "tiny.ksplat"
+    record = bytearray(32)
+    for index, value in enumerate([0.0, 0.0, 0.0, 1.0, 1.0, 1.0]):
+        struct.pack_into("<f", record, index * 4, value)
+    record[24:32] = bytes([255, 64, 32, 255, 255, 0, 0, 0])
+    source.write_bytes(record)
+    completed = subprocess.run(
+        ["/usr/bin/node", "/app/create_ksplat.mjs", str(source), str(target), "splat"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise SystemExit(completed.stderr or completed.stdout or "KPlat smoke conversion failed")
+    if not target.is_file() or target.stat().st_size == 0:
+        raise SystemExit("KPlat smoke conversion produced no output")
+PY
 
 echo "Built images:"
 echo "  ${CONVERTER_IMAGE}"

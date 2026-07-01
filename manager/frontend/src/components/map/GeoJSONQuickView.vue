@@ -46,7 +46,10 @@
         v-else
         :features="geoFeatures"
         :base-map-type="baseMapType"
+        :preserve-view="hasSavedViewState"
+        :view-state="viewState"
         height="100%"
+        @view-state-change="handleViewStateChange"
       />
     </div>
   </div>
@@ -68,8 +71,14 @@ const props = defineProps({
   status: {
     type: Object,
     required: true
+  },
+  viewState: {
+    type: Object,
+    default: () => ({})
   }
 })
+
+const emit = defineEmits(['view-state-change'])
 
 const { t } = useI18n()
 const { baseMapOptions, loadMapConfig } = useMapConfig()
@@ -81,6 +90,10 @@ const error = ref('')
 let requestSeq = 0
 
 const quickViewInfo = computed(() => props.status?.quick_view || props.status?.quickView || {})
+const hasSavedViewState = computed(() => {
+  const center = props.viewState?.center
+  return Array.isArray(center) && center.length >= 2 && Number.isFinite(Number(center[0])) && Number.isFinite(Number(center[1])) && Number.isFinite(Number(props.viewState?.zoom))
+})
 const geoJSONURL = computed(() => {
   const raw = String(quickViewInfo.value.geojson_url || quickViewInfo.value.geoJSONURL || '').trim()
   return raw.replace(/^\/api\/v1(?=\/manager\/)/, '')
@@ -199,6 +212,10 @@ const loadGeoJSON = async () => {
       loading.value = false
     }
   }
+}
+
+const handleViewStateChange = (state) => {
+  emit('view-state-change', state)
 }
 
 watch(

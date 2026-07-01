@@ -1148,7 +1148,8 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 		tenant_id INTEGER NOT NULL,
 		item_fingerprint TEXT NOT NULL,
 		locator TEXT,
-			preferred_mode TEXT NOT NULL DEFAULT 'basic_preview',
+		preferred_mode TEXT NOT NULL DEFAULT 'basic_preview',
+		view_state JSON NOT NULL DEFAULT '{}',
 		created_at DATETIME,
 		updated_at DATETIME
 	)`).Error; err != nil {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	commonapi "github.com/addp/common/api"
+	commonModels "github.com/addp/common/models"
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
@@ -156,5 +157,40 @@ func (r *QuickViewRepository) UpdatePreferredMode(
 		ItemFingerprint: itemFingerprint,
 		Locator:         strings.TrimSpace(locator),
 		PreferredMode:   mode,
+	}).Error
+}
+
+func (r *QuickViewRepository) UpdateViewState(
+	tenantID uint,
+	itemFingerprint string,
+	locator string,
+	viewState commonModels.JSONMap,
+) error {
+	itemFingerprint = strings.TrimSpace(itemFingerprint)
+	if itemFingerprint == "" {
+		return errors.New("quick view item_fingerprint is required")
+	}
+	if viewState == nil {
+		viewState = commonModels.JSONMap{}
+	}
+	updates := map[string]interface{}{
+		"view_state": viewState,
+		"locator":    strings.TrimSpace(locator),
+	}
+	result := r.db.Model(&models.QuickView{}).
+		Where("tenant_id = ? AND item_fingerprint = ?", tenantID, itemFingerprint).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		return nil
+	}
+	return r.db.Create(&models.QuickView{
+		TenantID:        tenantID,
+		ItemFingerprint: itemFingerprint,
+		Locator:         strings.TrimSpace(locator),
+		PreferredMode:   models.QuickViewPreferredModeBasicPreview,
+		ViewState:       viewState,
 	}).Error
 }

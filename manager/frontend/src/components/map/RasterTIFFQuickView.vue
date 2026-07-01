@@ -80,6 +80,7 @@ import { useI18n } from 'vue-i18n'
 import { fromUrl as tiffFromUrl } from 'geotiff'
 import Map from 'ol/Map.js'
 import View from 'ol/View.js'
+import { toLonLat } from 'ol/proj.js'
 import GeoTIFFSource from 'ol/source/GeoTIFF'
 import XYZ from 'ol/source/XYZ.js'
 import TileLayer from 'ol/layer/Tile.js'
@@ -87,6 +88,7 @@ import WebGLTileLayer from 'ol/layer/WebGLTile.js'
 import TileState from 'ol/TileState.js'
 import { defaults as defaultControls, ZoomToExtent } from 'ol/control.js'
 import { defaults as defaultInteractions, MouseWheelZoom } from 'ol/interaction.js'
+import { unByKey } from 'ol/Observable.js'
 import { fromLonLat, createGaodeBaseLayer, createTiandituBaseLayers, useMapConfig } from '@common-ui-map'
 import {
   rasterGeoTIFFProjectionFromQuickView,
@@ -114,8 +116,14 @@ const props = defineProps({
   status: {
     type: Object,
     required: true
+  },
+  viewState: {
+    type: Object,
+    default: () => ({})
   }
 })
+
+const emit = defineEmits(['view-state-change'])
 
 const { t } = useI18n()
 const { mapConfig, baseMapOptions, loadMapConfig } = useMapConfig()
@@ -135,6 +143,7 @@ let sizeUpdateFrame = null
 let sourceReadySeq = 0
 let displayRangeSeq = 0
 let rasterMosaicTileBaseURL = ''
+let mapMoveEndKey = null
 
 const quickViewInfo = computed(() => props.status?.quick_view || {})
 const rasterInfo = computed(() => props.status?.raster || {})
@@ -222,11 +231,53 @@ function fitToExtent({ duration = 0 } = {}) {
   return true
 }
 
+function finiteMapViewState() {
+  const state = props.viewState || {}
+  const center = Array.isArray(state.center)
+    ? state.center.slice(0, 2).map((value) => Number(value))
+    : null
+  const zoom = Number(state.zoom)
+  if (!center || center.length < 2 || !center.every(Number.isFinite) || !Number.isFinite(zoom)) {
+    return null
+  }
+  return {
+    center,
+    zoom,
+    rotation: Number.isFinite(Number(state.rotation)) ? Number(state.rotation) : 0
+  }
+}
+
+function applyMapViewState(state) {
+  if (!map || !state) return false
+  const view = map.getView()
+  view.setCenter(fromLonLat(state.center))
+  view.setZoom(state.zoom)
+  view.setRotation(state.rotation || 0)
+  return true
+}
+
+function emitMapViewState() {
+  if (!map) return
+  const view = map.getView()
+  const center = toLonLat(view.getCenter() || [0, 0])
+  emit('view-state-change', {
+    center,
+    zoom: view.getZoom(),
+    rotation: view.getRotation()
+  })
+}
+
 async function applyRasterSourceView(source, seq) {
   if (!source || !map) return false
   try {
     await source.getView()
     if (seq !== sourceReadySeq || !map) return false
+    const savedMapViewState = finiteMapViewState()
+    if (savedMapViewState) {
+      applyMapViewState(savedMapViewState)
+      scheduleMapSizeUpdate()
+      return true
+    }
     fitToExtent()
     scheduleMapSizeUpdate()
     return true
@@ -516,17 +567,21 @@ async function initMap() {
     ]),
     controls,
     view: new View({
-      center: fromLonLat(centerFromExtent()),
-      zoom: 8,
+      center: fromLonLat(finiteMapViewState()?.center || centerFromExtent()),
+      zoom: finiteMapViewState()?.zoom || 8,
       maxZoom: 19,
       minZoom: 1,
       enableRotation: false
     })
   })
+  mapMoveEndKey = map.on('moveend', emitMapViewState)
   scheduleMapSizeUpdate()
   nextTick(async () => {
+    const savedMapViewState = finiteMapViewState()
     if (isMosaicQuickView.value) {
-      fitToExtent()
+      if (!applyMapViewState(savedMapViewState)) {
+        fitToExtent()
+      }
       return
     }
     if (!(await applyRasterSourceView(rasterSource, seq))) {
@@ -547,6 +602,10 @@ function centerFromExtent() {
 }
 
 function disposeMap() {
+  if (mapMoveEndKey) {
+    unByKey(mapMoveEndKey)
+    mapMoveEndKey = null
+  }
   if (map) {
     map.setTarget(null)
     map = null

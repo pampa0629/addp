@@ -246,6 +246,59 @@
             {{ formatBytes(ksplatFacts(selectedDiagnosticResult).size_bytes || selectedDiagnosticResult.size_bytes) }}
           </el-descriptions-item>
         </el-descriptions>
+        <el-divider content-position="left">{{ t('manager.gaussianSplatQuickView.contentInspection') }}</el-divider>
+        <div v-if="inspectionLoading" class="inspection-loading">
+          {{ t('manager.gaussianSplatQuickView.inspectLoading') }}
+        </div>
+        <el-alert
+          v-else-if="inspectionError"
+          type="error"
+          :closable="false"
+          :title="inspectionError"
+          show-icon
+        />
+        <template v-else-if="selectedInspection">
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item :label="t('manager.gaussianSplatQuickView.inspectStatus')">
+              <el-tag :type="inspectionStatusTagType(selectedInspection.summary?.status)">
+                {{ diagnosticValue(selectedInspection.summary?.message) }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('manager.gaussianSplatQuickView.splatCount')">
+              {{ numberText(selectedInspection.header?.splat_count) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('manager.gaussianSplatQuickView.kplatVersion')">
+              {{ kplatVersionText(selectedInspection.header) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('manager.gaussianSplatQuickView.compressionLevel')">
+              {{ diagnosticValue(selectedInspection.header?.compression_level) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('manager.gaussianSplatQuickView.objectSize')">
+              {{ formatBytes(selectedInspection.object_size_bytes) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('manager.gaussianSplatQuickView.bytesInspected')">
+              {{ numberText(selectedInspection.bytes_inspected) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('manager.gaussianSplatQuickView.objectContentType')">
+              {{ diagnosticValue(selectedInspection.object_content_type || selectedInspection.expected_content_type) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('manager.gaussianSplatQuickView.headerSignature')">
+              {{ diagnosticValue(selectedInspection.header_signature_hex) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('manager.gaussianSplatQuickView.sceneCenter')" :span="2">
+              {{ sceneCenterText(selectedInspection.header?.scene_center) }}
+            </el-descriptions-item>
+          </el-descriptions>
+          <el-table class="inspection-checks" :data="selectedInspection.checks || []" size="small" border>
+            <el-table-column prop="name" :label="t('manager.gaussianSplatQuickView.inspectCheck')" width="170" />
+            <el-table-column :label="t('manager.gaussianSplatQuickView.inspectCheckStatus')" width="100">
+              <template #default="{ row }">
+                <el-tag :type="inspectionStatusTagType(row.status)" size="small">{{ row.status }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="message" :label="t('manager.gaussianSplatQuickView.inspectCheckMessage')" min-width="260" show-overflow-tooltip />
+          </el-table>
+        </template>
       </template>
     </el-dialog>
   </div>
@@ -285,6 +338,9 @@ const sourceSelection = ref(null)
 const sourceInitialLocator = ref('')
 const diagnosticsDialogVisible = ref(false)
 const selectedDiagnosticResult = ref(null)
+const selectedInspection = ref(null)
+const inspectionLoading = ref(false)
+const inspectionError = ref('')
 const resultStatuses = ['building', 'ready', 'failed', 'deleted']
 const resultFilters = reactive({ task_id: undefined, status: '', q: '' })
 
@@ -368,7 +424,8 @@ const sourceFacts = (result) => objectValue(resultMetadata(result).source)
 const artifactFacts = (result) => objectValue(resultMetadata(result).artifact)
 
 const hasDiagnostics = (result) => {
-  return Object.keys(ksplatFacts(result)).length > 0 ||
+  return result?.status === 'ready' ||
+    Object.keys(ksplatFacts(result)).length > 0 ||
     Object.keys(workflowRuntime(result)).length > 0 ||
     Object.keys(artifactFacts(result)).length > 0
 }
@@ -376,6 +433,7 @@ const hasDiagnostics = (result) => {
 const diagnosticSummary = (result) => {
   if (!hasDiagnostics(result)) return ''
   if (workflowRuntime(result).operator) return String(workflowRuntime(result).operator)
+  if (result?.status === 'ready') return t('manager.gaussianSplatQuickView.contentInspection')
   return t('manager.gaussianSplatQuickView.diagnosticsAvailable')
 }
 
@@ -391,6 +449,31 @@ const diagnosticExecutionTime = (result) => {
   const numberValue = Number(value)
   if (!Number.isFinite(numberValue) || numberValue <= 0) return '-'
   return t('manager.gaussianSplatQuickView.executionTimeMs', { ms: numberValue })
+}
+
+const numberText = (value) => {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? numberValue.toLocaleString() : '-'
+}
+
+const kplatVersionText = (header) => {
+  if (!header) return '-'
+  return `${diagnosticValue(header.version_major)}.${diagnosticValue(header.version_minor)}`
+}
+
+const sceneCenterText = (value) => {
+  if (!Array.isArray(value) || value.length < 3) return '-'
+  return value.slice(0, 3).map((part) => {
+    const numberValue = Number(part)
+    return Number.isFinite(numberValue) ? numberValue.toFixed(4) : '-'
+  }).join(', ')
+}
+
+const inspectionStatusTagType = (status) => {
+  const value = String(status || '').toLowerCase()
+  if (value === 'ok') return 'success'
+  if (value === 'failed') return 'danger'
+  return 'warning'
 }
 
 const formatLabel = (value) => {
@@ -530,8 +613,8 @@ const loadSourceFacts = async (locator) => {
     form.source.item_fingerprint = String(capability?.item_fingerprint || form.source.item_fingerprint || '').trim()
     form.source.source_size_bytes = Number(gaussianSplat.size_bytes || form.source.source_size_bytes || 0)
     form.source.format = gaussianSplatQuickViewSourceFormat(gaussianSplat.format || form.source.format)
-    if (form.source.format !== 'ksplat') {
-      ElMessage.warning(t('manager.gaussianSplatQuickView.ksplatSourceRequired'))
+    if (!gaussianSplatQuickViewSourceFormat(form.source.format)) {
+      ElMessage.warning(t('manager.gaussianSplatQuickView.sourceFormatRequired'))
     }
   } catch (error) {
     ElMessage.warning(errorMessage(error, t('manager.gaussianSplatQuickView.loadSourceFactsFailed')))
@@ -553,8 +636,8 @@ const validateForm = () => {
     ElMessage.warning(t('manager.gaussianSplatQuickView.itemFingerprintRequired'))
     return null
   }
-  if (gaussianSplatQuickViewSourceFormat(form.source.format) !== 'ksplat') {
-    ElMessage.warning(t('manager.gaussianSplatQuickView.ksplatSourceRequired'))
+  if (!gaussianSplatQuickViewSourceFormat(form.source.format)) {
+    ElMessage.warning(t('manager.gaussianSplatQuickView.sourceFormatRequired'))
     return null
   }
   return { sourceLocator, sourceEngineID }
@@ -580,7 +663,7 @@ const taskPayload = (validated) => ({
 
 const gaussianSplatQuickViewSourceFormat = (value) => {
   const sourceFormat = String(value || '').trim().toLowerCase()
-  return sourceFormat === 'ksplat' ? sourceFormat : ''
+  return ['ply', 'splat', 'ksplat'].includes(sourceFormat) ? sourceFormat : ''
 }
 
 const saveTask = async () => {
@@ -667,9 +750,20 @@ const deleteResult = async (result) => {
 const openTaskExecution = (task) => openMonitorExecution(task.last_execution_id)
 const openResultExecution = (result) => openMonitorExecution(result.last_execution_id)
 
-const openDiagnostics = (result) => {
+const openDiagnostics = async (result) => {
   selectedDiagnosticResult.value = result
+  selectedInspection.value = null
+  inspectionError.value = ''
   diagnosticsDialogVisible.value = true
+  if (!result?.id || result.status !== 'ready') return
+  inspectionLoading.value = true
+  try {
+    selectedInspection.value = unwrapPayload(await quickViewAPI.inspectGaussianSplatQuickView(result.id))
+  } catch (error) {
+    inspectionError.value = errorMessage(error, t('manager.gaussianSplatQuickView.inspectFailed'))
+  } finally {
+    inspectionLoading.value = false
+  }
 }
 
 const openSourcePreview = (result) => {
@@ -789,6 +883,15 @@ onMounted(async () => {
 
 .source-facts {
   margin: 16px 0 18px;
+}
+
+.inspection-loading {
+  padding: 16px 0;
+  color: var(--el-text-color-secondary);
+}
+
+.inspection-checks {
+  margin-top: 12px;
 }
 
 @media (max-width: 760px) {

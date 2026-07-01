@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
+	commonModels "github.com/addp/common/models"
 	commonSpatial "github.com/addp/common/spatial"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/models"
@@ -57,6 +58,11 @@ func NewQuickViewHandler(service *service.QuickViewService, previewResolver *pre
 type UpdatePreferredModeRequest struct {
 	Locator       string `json:"locator" binding:"required"`
 	PreferredMode string `json:"preferred_mode" binding:"required,oneof=basic_preview map_quick_view"`
+}
+
+type UpdateQuickViewStateRequest struct {
+	Locator   string               `json:"locator" binding:"required"`
+	ViewState commonModels.JSONMap `json:"view_state" binding:"required"`
 }
 
 // GetQuickViewCapabilityByLocator 获取 locator 快显能力
@@ -129,6 +135,50 @@ func (h *QuickViewHandler) UpdatePreferredModeByLocator(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message":        "Preferred mode updated successfully",
 		"preferred_mode": req.PreferredMode,
+	})
+}
+
+// UpdateViewStateByLocator 更新 locator 快显视角状态
+// @Summary 更新 locator 快显视角状态 | Update locator quick view state
+// @Description 以 Resource Locator 为数据项身份更新快显/预览交互状态。view_state 是统一 JSON 字段，顶层按 basic_preview / quick_view 区分显示模式，模式内按 map / scene_3d 区分渲染域。 | Update quick view interaction state by Resource Locator. view_state is a unified JSON field grouped by display mode basic_preview / quick_view, then by render domain map / scene_3d.
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param body body UpdateQuickViewStateRequest true "快显视角状态 | Quick view state"
+// @Success 200 {object} map[string]interface{} "更新成功 | Updated successfully"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @Router /quick-view/view-state [patch]
+// @Security BearerAuth
+func (h *QuickViewHandler) UpdateViewStateByLocator(c *gin.Context) {
+	var req UpdateQuickViewStateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidRequestBody, err.Error())
+		return
+	}
+	locator := strings.TrimSpace(req.Locator)
+	if locator == "" {
+		missingLocator(c)
+		return
+	}
+	tenantID := tenantIDFromContext(c)
+	capability, err := h.quickViewCapabilityForLocator(c.Request.Context(), tenantID, locator)
+	if err != nil {
+		quickViewLocatorError(c, err)
+		return
+	}
+	identity := service.QuickViewIdentity{
+		TenantID:        capability.TenantID,
+		Locator:         capability.Locator,
+		ItemFingerprint: capability.ItemFingerprint,
+	}
+	if err := h.service.UpdateViewStateByIdentity(c.Request.Context(), identity, req.ViewState); err != nil {
+		quickViewLocatorError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "Quick view state updated successfully",
+		"view_state": req.ViewState,
 	})
 }
 

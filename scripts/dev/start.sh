@@ -73,6 +73,28 @@ fi
 
 export MODEL3D_WORKFLOW_PORT="${MODEL3D_WORKFLOW_PORT:-8101}"
 
+ensure_model3d_node_dependencies() {
+  local dir="engines/model3d-workflow"
+  if [ ! -f "$dir/package.json" ]; then
+    return 0
+  fi
+  if [ -d "$dir/node_modules/@mkkellogg/gaussian-splats-3d" ]; then
+    echo "Model3D Workflow Node 依赖已存在，跳过安装"
+    return 0
+  fi
+  if ! command -v npm >/dev/null 2>&1; then
+    echo -e "${RED}✗ Model3D Workflow 需要 npm 安装高斯泼溅 KPlat 转换依赖${NC}"
+    exit 1
+  fi
+  echo "安装 Model3D Workflow Node 依赖..."
+  if [ -f "$dir/package-lock.json" ]; then
+    (cd "$dir" && npm ci --omit=dev)
+  else
+    (cd "$dir" && npm install --omit=dev)
+  fi
+  echo -e "${GREEN}✓ Model3D Workflow Node 依赖安装完成${NC}"
+}
+
 # 自动生成服务 URL（基于 SERVICE_HOST + XXX_BACKEND_PORT）
 generate_service_urls() {
     local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality asset portal agent graph)
@@ -1521,6 +1543,8 @@ if [ "$NEED_INSTALL" = true ]; then
     fi
     cd ../..
 fi
+
+ensure_model3d_node_dependencies
 
 start_model3d_workflow_engine_process() {
   echo "启动 Model3D Workflow Engine..."

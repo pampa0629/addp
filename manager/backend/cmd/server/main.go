@@ -227,6 +227,7 @@ func main() {
 	model3DQuickViewTaskSvc.SetCleaner(service.NewMinIOModel3DQuickViewCleaner(minioClient, minioBucket))
 	gaussianSplatQuickViewTaskSvc.SetBucket(minioBucket)
 	gaussianSplatQuickViewTaskSvc.SetCleaner(service.NewMinIOGaussianSplatQuickViewCleaner(minioClient, minioBucket))
+	gaussianSplatQuickViewTaskSvc.SetMetaClient(metaClient)
 	if systemClient != nil {
 		rasterCOGTaskSvc.SetExecutor(service.NewManagerRasterCOGExecutor(
 			systemClient,

@@ -94,7 +94,7 @@
             @click="handleGenerateGaussianSplatQuickView"
           >
             <el-icon><MagicStick /></el-icon>
-            {{ t('manager.explorer.generateGaussianSplatQuickView') }}
+            {{ gaussianSplatQuickViewActionText }}
           </el-button>
           <el-button
             v-if="showModel3DTilesGenerationAction"
@@ -364,6 +364,7 @@
         v-bind="quickViewRendererProps"
         class="quick-view-renderer"
         @tile-advisory="handleTileAdvisory"
+        @view-state-change="handleQuickViewStateChange"
       />
       <div v-else-if="showModel3DTaskPrompt" class="model3d-task-prompt">
         <div class="model3d-task-main">
@@ -391,10 +392,12 @@
         :key="refKey"
         :data="previewComponentData"
         v-bind="previewComponentProps"
+        :view-state="activeBasicPreviewState"
         :loading="loading"
         @page-change="handlePageChange"
         @navigate="handleNavigate"
         @child-change="handleChildChange"
+        @view-state-change="handleBasicPreviewStateChange"
       />
     </div>
 
@@ -504,6 +507,8 @@ const exportDialogVisible = ref(false)
 const exporting = ref(false)
 let exportPollTimer = null
 let quickViewRequestSeq = 0
+let quickViewStateSaveTimer = 0
+let quickViewStatusLocator = ''
 
 const DIRECT_GEOJSON_MAX_ROWS = 2000
 
@@ -980,6 +985,9 @@ watch(
   () => {
     markdownRawMode.value = false
     activePreviewMode.value = 'basic_preview'
+    quickViewStatus.value = null
+    quickViewStatusLocator = ''
+    quickViewLoadError.value = ''
     activeGraphSampleKey.value = ''
     activeGraphSampleKind.value = ''
     activeGraphSampleTotal.value = null
@@ -1164,6 +1172,10 @@ onUnmounted(() => {
   if (exportPollTimer) {
     window.clearTimeout(exportPollTimer)
     exportPollTimer = null
+  }
+  if (quickViewStateSaveTimer) {
+    window.clearTimeout(quickViewStateSaveTimer)
+    quickViewStateSaveTimer = 0
   }
   quickViewRequestSeq += 1
 })
@@ -1469,6 +1481,84 @@ const quickViewSourceContext = computed(() => ({
   geometryColumn: String(quickViewStatus.value?.quick_view?.geometry_column || spatialPreviewTarget.value?.geometryColumn || '').trim()
 }))
 
+const quickViewState = computed(() => {
+  const state = quickViewStatus.value?.view_state
+  return state && typeof state === 'object' && !Array.isArray(state) ? state : {}
+})
+
+const quickViewRendererStateKey = computed(() => {
+  if (quickViewRenderSource.value === 'model_3d_glb') return 'scene_3d'
+  if (quickViewRenderSource.value === 'gaussian_splat_ksplat') return 'scene_3d'
+  if (quickViewRenderSource.value === 'model_3d_tiles') return 'scene_3d'
+  if (quickViewRenderSource.value === 'direct_geojson' || isTileQuickViewRenderSource(quickViewRenderSource.value)) return 'map'
+  if (isRasterQuickView.value) return 'map'
+  return ''
+})
+
+const basicPreviewRendererStateKey = computed(() => {
+  if (previewPluginName.value === 'model-3d') return 'scene_3d'
+  if (previewPluginName.value === 'gaussian-splat') return 'scene_3d'
+  if (previewPluginName.value === 'tiles-3d') return 'scene_3d'
+  if (previewPluginName.value === 'map' || previewPluginName.value === 'table') return 'map'
+  return ''
+})
+
+function objectState(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function rendererState(mode, renderer) {
+  if (!mode || !renderer) return {}
+  const modeState = objectState(quickViewState.value[mode])
+  return objectState(modeState[renderer])
+}
+
+const activeQuickViewState = computed(() => {
+  return rendererState('quick_view', quickViewRendererStateKey.value)
+})
+
+const activeBasicPreviewState = computed(() => {
+  return rendererState('basic_preview', basicPreviewRendererStateKey.value)
+})
+
+function mergeRendererState(mode, renderer, state) {
+  const currentModeState = objectState(quickViewState.value[mode])
+  return {
+    ...quickViewState.value,
+    [mode]: {
+      ...currentModeState,
+      [renderer]: state
+    }
+  }
+}
+
+function scheduleQuickViewStateSave(nextState) {
+  const target = spatialPreviewTarget.value
+  if (!target) return
+  if (quickViewStateSaveTimer) {
+    window.clearTimeout(quickViewStateSaveTimer)
+  }
+  if (quickViewStatus.value) {
+    quickViewStatus.value = {
+      ...quickViewStatus.value,
+      view_state: nextState
+    }
+  }
+  quickViewStateSaveTimer = window.setTimeout(async () => {
+    quickViewStateSaveTimer = 0
+    try {
+      await quickViewAPI.updateViewStateByLocator(target.locator, nextState)
+    } catch (error) {
+      console.error('保存预览视角状态失败:', error)
+    }
+  }, 800)
+}
+
+function handleRendererStateChange(mode, renderer, state) {
+  if (!mode || !renderer || !state || typeof state !== 'object' || Array.isArray(state)) return
+  scheduleQuickViewStateSave(mergeRendererState(mode, renderer, state))
+}
+
 const quickViewRendererProps = computed(() => {
   if (selectedRefRasterQuickViewStatus.value) {
     return { status: selectedRefRasterQuickViewStatus.value }
@@ -1476,10 +1566,16 @@ const quickViewRendererProps = computed(() => {
   const target = spatialPreviewTarget.value
   if (!target || !quickViewStatus.value) return {}
   if (quickViewRenderSource.value === 'direct_geojson') {
-    return { status: quickViewStatus.value }
+    return {
+      status: quickViewStatus.value,
+      viewState: activeQuickViewState.value
+    }
   }
   if (isRasterQuickView.value) {
-    return { status: quickViewStatus.value }
+    return {
+      status: quickViewStatus.value,
+      viewState: activeQuickViewState.value
+    }
   }
   if (quickViewRenderSource.value === 'model_3d_glb') {
     const previewURL = quickViewStatus.value?.quick_view?.preview_url || quickViewStatus.value?.model_3d?.preview_url || ''
@@ -1501,7 +1597,8 @@ const quickViewRendererProps = computed(() => {
             }
           }
         }
-      }
+      },
+      viewState: activeQuickViewState.value
     }
   }
   if (quickViewRenderSource.value === 'gaussian_splat_ksplat') {
@@ -1517,6 +1614,7 @@ const quickViewRendererProps = computed(() => {
             frontend_renderer: 'gaussian_splat',
             url: previewURL,
             metadata: {
+              format: 'ksplat',
               gaussian_splat: {
                 ...(quickViewStatus.value?.gaussian_splat || {}),
                 format: 'ksplat'
@@ -1524,7 +1622,8 @@ const quickViewRendererProps = computed(() => {
             }
           }
         }
-      }
+      },
+      viewState: activeQuickViewState.value
     }
   }
   const source = quickViewSourceContext.value
@@ -1538,7 +1637,8 @@ const quickViewRendererProps = computed(() => {
     tileRenderInfo: quickViewStatus.value?.quick_view || {},
     renderSource: quickViewRenderSource.value,
     defaultTileCacheId: quickViewStatus.value?.default_vector_tile_cache_id || '',
-    showMvtGrid: mvtGridVisible.value
+    showMvtGrid: mvtGridVisible.value,
+    viewState: activeQuickViewState.value
   }
 })
 
@@ -1570,15 +1670,24 @@ const quickViewRenderKey = computed(() => {
 
 const loadQuickViewStatus = async () => {
   const target = spatialPreviewTarget.value
-  quickViewStatus.value = null
   quickViewLoadError.value = ''
   quickViewRequestSeq += 1
   const seq = quickViewRequestSeq
-  if (!target) return
+  if (!target) {
+    quickViewStatus.value = null
+    quickViewStatusLocator = ''
+    return
+  }
+  const locator = target.locator || ''
+  if (quickViewStatusLocator !== locator) {
+    quickViewStatus.value = null
+    quickViewStatusLocator = locator
+  }
   try {
     const status = await quickViewAPI.getQuickViewCapabilityByLocator(target.locator)
     if (seq === quickViewRequestSeq) {
       quickViewStatus.value = status
+      quickViewStatusLocator = locator
       quickViewTileAdvisory.value = null
       quickViewTileLastNotice.value = { key: '', at: 0 }
       if (status?.preferred_mode === 'map_quick_view' && status?.can_use_quick_view) {
@@ -1589,7 +1698,9 @@ const loadQuickViewStatus = async () => {
     }
   } catch (error) {
     if (seq === quickViewRequestSeq) {
-      quickViewStatus.value = null
+      if (quickViewStatusLocator !== locator) {
+        quickViewStatus.value = null
+      }
       quickViewLoadError.value = t('manager.spatialPreview.quickViewLoadFailed')
     }
     console.error('加载快显状态失败:', error)
@@ -1613,6 +1724,14 @@ const handleSwitchQuickView = async () => {
   } finally {
     quickViewActionLoading.value = false
   }
+}
+
+const handleQuickViewStateChange = (state) => {
+  handleRendererStateChange('quick_view', quickViewRendererStateKey.value, state)
+}
+
+const handleBasicPreviewStateChange = (state) => {
+  handleRendererStateChange('basic_preview', basicPreviewRendererStateKey.value, state)
 }
 
 const handleBackToBasicPreview = async () => {
@@ -1778,7 +1897,7 @@ const handleGenerateGaussianSplatQuickView = async () => {
       activePreviewMode.value = 'map_quick_view'
     }
   } catch (error) {
-    console.error('提交高斯泼溅 KSplat 快显生成失败:', error)
+    console.error('提交 3DGS KPlat 快显生成失败:', error)
     ElMessage.error(t('manager.explorer.generateGaussianSplatQuickViewFailed'))
   } finally {
     gaussianSplatQuickViewGenerationLoading.value = false
@@ -1922,6 +2041,7 @@ const model3DQuickViewSourcePayload = computed(() => {
   )
   const itemFingerprint = String(
     metadata.item_fingerprint ||
+    props.previewData?.metadata?.item_fingerprint ||
     objectData.value?.attributes?.item?.fingerprint ||
     ''
   ).trim()
@@ -1988,6 +2108,7 @@ const gaussianSplatQuickViewSourcePayload = computed(() => {
   )
   const itemFingerprint = String(
     metadata.item_fingerprint ||
+    props.previewData?.metadata?.item_fingerprint ||
     objectData.value?.attributes?.item?.fingerprint ||
     ''
   ).trim()
@@ -1999,7 +2120,10 @@ const gaussianSplatQuickViewSourcePayload = computed(() => {
     storage.size ||
     0
   )
-  return {
+  const gaussianInfo = objectData.value?.attributes?.type_info?.gaussian_splat ||
+    quickViewStatus.value?.gaussian_splat ||
+    {}
+  const source = {
     item_locator: locator,
     source_engine_id: engineID,
     item_fingerprint: itemFingerprint,
@@ -2007,7 +2131,28 @@ const gaussianSplatQuickViewSourcePayload = computed(() => {
     format: String(metadata.source_format || objectData.value?.attributes?.item?.format || '').trim().toLowerCase(),
     source_size_bytes: Number.isFinite(sizeBytes) ? sizeBytes : 0
   }
+  const bounds3D = normalizeBounds3D(gaussianInfo.bounds_3d)
+  const sampledBounds3D = normalizeBounds3D(gaussianInfo.sampled_bounds_3d)
+  if (bounds3D) source.bounds_3d = bounds3D
+  if (sampledBounds3D) source.sampled_bounds_3d = sampledBounds3D
+  const sampleCount = Number(gaussianInfo.sampled_bounds_sample_count || 0)
+  if (Number.isFinite(sampleCount) && sampleCount > 0) {
+    source.sampled_bounds_sample_count = sampleCount
+  }
+  return source
 })
+
+const normalizeBounds3D = (bounds) => {
+  if (!bounds || typeof bounds !== 'object') return null
+  const keys = ['min_x', 'min_y', 'min_z', 'max_x', 'max_y', 'max_z']
+  const normalized = {}
+  for (const key of keys) {
+    const value = Number(bounds[key])
+    if (!Number.isFinite(value)) return null
+    normalized[key] = value
+  }
+  return normalized
+}
 
 const showModel3DQuickViewGenerationAction = computed(() => {
   return Boolean(model3DQuickViewSourcePayload.value) &&
@@ -2019,6 +2164,12 @@ const showGaussianSplatQuickViewGenerationAction = computed(() => {
   return Boolean(gaussianSplatQuickViewSourcePayload.value) &&
     recommendedAction === 'gaussian_splat_quick_view_generation' &&
     !(quickViewStatus.value?.can_use_quick_view && quickViewRenderSource.value === 'gaussian_splat_ksplat')
+})
+const gaussianSplatQuickViewActionText = computed(() => {
+  const sourceFormat = String(gaussianSplatQuickViewSourcePayload.value?.format || '').trim().toLowerCase()
+  return sourceFormat === 'ksplat'
+    ? t('manager.explorer.publishGaussianSplatQuickView')
+    : t('manager.explorer.generateGaussianSplatQuickView')
 })
 
 const showModel3DTilesGenerationAction = computed(() => Boolean(model3DTilesSourcePayload.value))

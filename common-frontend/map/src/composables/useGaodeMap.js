@@ -100,12 +100,23 @@ const positionToArray = (position) => {
   return null
 }
 
+const normalizeInitialViewState = (state) => {
+  const center = Array.isArray(state?.center)
+    ? state.center.slice(0, 2).map((value) => Number(value))
+    : null
+  const zoom = Number(state?.zoom)
+  if (!center || center.length < 2 || !center.every(isFinite) || !isFinite(zoom)) {
+    return { center: DEFAULT_CENTER, zoom: 4 }
+  }
+  return { center, zoom }
+}
+
 /**
  * 高德地图管理 Composable
  * @param {Object} config - 地图配置 { amapKey, amapSecurityJsCode }
  * @param {Object} baseMapProfile - 底图 profile，coordinate_policy=gcj02 时只在展示边界偏移
  */
-export function useGaodeMap(config, baseMapProfile = {}) {
+export function useGaodeMap(config, baseMapProfile = {}, options = {}) {
   const mapInstance = ref(null)
   const amapLib = ref(null)
   const overlays = ref([])
@@ -115,7 +126,7 @@ export function useGaodeMap(config, baseMapProfile = {}) {
   let highlightedOverlays = []
 
   let eventsBound = false
-  let viewState = { center: mapDisplayCoordinate(DEFAULT_CENTER, baseMapProfile), zoom: 4 }
+  let viewState = normalizeInitialViewState(options.initialViewState)
 
   const toDisplayCoordinate = (coordinate) => mapDisplayCoordinate(coordinate, baseMapProfile)
   const toSourceCoordinate = (coordinate) => mapSourceCoordinate(coordinate, baseMapProfile)
@@ -150,9 +161,10 @@ export function useGaodeMap(config, baseMapProfile = {}) {
     const zoom = mapInstance.value.getZoom?.()
     if (center && isFinite(center.lng) && isFinite(center.lat) && isFinite(zoom)) {
       viewState = {
-        center: [center.lng, center.lat],
+        center: toSourceCoordinate([center.lng, center.lat]),
         zoom
       }
+      options.onViewStateChange?.(viewState)
     }
   }
 
@@ -168,7 +180,8 @@ export function useGaodeMap(config, baseMapProfile = {}) {
     const [lng, lat] = viewState.center
     if (!isFinite(lng) || !isFinite(lat)) return
     const zoom = isFinite(viewState.zoom) ? viewState.zoom : 4
-    mapInstance.value.setZoomAndCenter(zoom, new amapLib.value.LngLat(lng, lat))
+    const [displayLng, displayLat] = toDisplayCoordinate([lng, lat])
+    mapInstance.value.setZoomAndCenter(zoom, new amapLib.value.LngLat(displayLng, displayLat))
   }
 
   const initMap = async (container) => {
@@ -201,7 +214,7 @@ export function useGaodeMap(config, baseMapProfile = {}) {
     if (!container) return null
 
     const initialCenter = viewState?.center && isFinite(viewState.center[0]) && isFinite(viewState.center[1])
-      ? viewState.center
+      ? toDisplayCoordinate(viewState.center)
       : mapDisplayCoordinate(DEFAULT_CENTER, baseMapProfile)
     const initialZoom = viewState && isFinite(viewState.zoom) ? viewState.zoom : 4
 
@@ -382,7 +395,8 @@ export function useGaodeMap(config, baseMapProfile = {}) {
       if (!options.preserveView) {
         const defaultCenter = mapDisplayCoordinate(DEFAULT_CENTER, baseMapProfile)
         mapInstance.value.setZoomAndCenter(4, defaultCenter)
-        viewState = { center: defaultCenter, zoom: 4 }
+        viewState = { center: DEFAULT_CENTER, zoom: 4 }
+        options.onViewStateChange?.(viewState)
       } else {
         updateViewState()
       }

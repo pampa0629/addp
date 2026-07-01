@@ -987,7 +987,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "列出高斯泼溅 KSplat 快显结果 | List Gaussian Splat KSplat quick view results",
+                "summary": "列出 3DGS - KPlat 快显结果 | List 3DGS - KPlat quick view results",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1056,7 +1056,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "获取高斯泼溅 KSplat 快显详情 | Get Gaussian Splat KSplat quick view detail",
+                "summary": "获取 3DGS - KPlat 快显详情 | Get 3DGS - KPlat quick view detail",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1087,7 +1087,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "删除高斯泼溅 KSplat 快显 | Delete Gaussian Splat KSplat quick view",
+                "summary": "删除 3DGS - KPlat 快显 | Delete 3DGS - KPlat quick view",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1115,14 +1115,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按 gaussian splat quick view id 返回 Manager infra MinIO 中的 KSplat 内容，支持 HTTP Range。该接口只读取 Manager 拥有生命周期且状态为 ready 的 KSplat 快显结果。 | Return KSplat content from Manager infra MinIO by result id with HTTP Range support. Only ready Manager-owned results are readable.",
+                "description": "按 gaussian splat quick view id 返回 Manager infra MinIO 中的 KPlat 内容，支持 HTTP Range。该接口只读取 Manager 拥有生命周期且状态为 ready 的 KPlat 快显结果。 | Return KPlat content from Manager infra MinIO by result id with HTTP Range support. Only ready Manager-owned results are readable.",
                 "produces": [
                     "application/octet-stream"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "读取高斯泼溅 KSplat 快显 | Read Gaussian Splat KSplat quick view result",
+                "summary": "读取 3DGS - KPlat 快显 | Read 3DGS - KPlat quick view result",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1134,10 +1134,10 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "KSplat 内容流 | KSplat content stream"
+                        "description": "KPlat 内容流 | KPlat content stream"
                     },
                     "206": {
-                        "description": "部分 KSplat 内容流 | Partial KSplat content stream"
+                        "description": "部分 KPlat 内容流 | Partial KPlat content stream"
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
@@ -1147,7 +1147,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "KSplat 不存在或未就绪 | KSplat not found or not ready",
+                        "description": "KPlat 不存在或未就绪 | KPlat not found or not ready",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1170,6 +1170,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/gaussian_splat_quick_view/{id}/inspect": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "只读取 Manager infra MinIO 中 KPlat artifact 的对象元信息和头部，返回轻量健康检查事实，不下载完整内容。| Read object metadata and the KPlat header only, returning lightweight health facts without downloading the full artifact.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "检查 3DGS - KPlat 快显 | Inspect 3DGS - KPlat quick view result",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "gaussian splat quick view ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "KPlat 快显检查结果 | KPlat inspection result",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.GaussianSplatQuickViewInspectResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "KPlat 不存在或未就绪 | KPlat not found or not ready",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/gaussian_splat_quick_view_tasks": {
             "get": {
                 "security": [
@@ -1177,14 +1232,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "列出 Manager 模块的高斯泼溅 KSplat 快显任务配置。该私有入口固定返回 task_type=gaussian_splat_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager Gaussian Splat KSplat quick view generation task configurations.",
+                "description": "列出 Manager 模块的 3DGS - KPlat 快显任务配置。该私有入口固定返回 task_type=gaussian_splat_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager 3DGS - KPlat quick view generation task configurations.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "列出高斯泼溅 KSplat 快显任务配置 | List Gaussian Splat KSplat quick view generation task configurations",
+                "summary": "列出 3DGS - KPlat 快显任务配置 | List 3DGS - KPlat quick view generation task configurations",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1222,7 +1277,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建新的高斯泼溅 KSplat 快显任务配置。当前只接受源格式为 KSplat 的 gaussian_splat item，并将 KSplat artifact 写入 Manager infra MinIO；PLY / SPLAT 可使用基础高斯泼溅预览，真实转换器接入后再开放受管生成。| Create a Gaussian Splat quick view task from a KSplat gaussian_splat item into Manager infra MinIO. PLY / SPLAT use basic Gaussian Splat preview until the real converter is connected.",
+                "description": "创建新的 3DGS - KPlat 快显任务配置。源必须是 format=ply、splat 或 ksplat 的 gaussian_splat item；PLY / SPLAT 会转换为 KPlat artifact，KSplat 源直接发布登记，结果写入 Manager infra MinIO。| Create a 3DGS - KPlat quick view task from a format=ply, splat, or ksplat gaussian_splat item into Manager infra MinIO. PLY / SPLAT are converted to KPlat artifacts and KSplat sources are published directly.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1232,7 +1287,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "创建高斯泼溅 KSplat 快显任务配置 | Create Gaussian Splat KSplat quick view generation task configuration",
+                "summary": "创建 3DGS - KPlat 快显任务配置 | Create 3DGS - KPlat quick view generation task configuration",
                 "parameters": [
                     {
                         "description": "gaussian splat quick view generation task configuration",
@@ -1274,7 +1329,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "获取高斯泼溅 KSplat 快显任务配置 | Get Gaussian Splat KSplat quick view generation task configuration",
+                "summary": "获取 3DGS - KPlat 快显任务配置 | Get 3DGS - KPlat quick view generation task configuration",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1322,7 +1377,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "更新高斯泼溅 KSplat 快显任务配置 | Update Gaussian Splat KSplat quick view generation task configuration",
+                "summary": "更新 3DGS - KPlat 快显任务配置 | Update 3DGS - KPlat quick view generation task configuration",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1376,7 +1431,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "删除高斯泼溅 KSplat 快显任务配置 | Delete Gaussian Splat KSplat quick view generation task configuration",
+                "summary": "删除 3DGS - KPlat 快显任务配置 | Delete 3DGS - KPlat quick view generation task configuration",
                 "parameters": [
                     {
                         "type": "integer",
@@ -2608,6 +2663,60 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/quick-view/view-state": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "以 Resource Locator 为数据项身份更新快显/预览交互状态。view_state 是统一 JSON 字段，顶层按 basic_preview / quick_view 区分显示模式，模式内按 map / scene_3d 区分渲染域。 | Update quick view interaction state by Resource Locator. view_state is a unified JSON field grouped by display mode basic_preview / quick_view, then by render domain map / scene_3d.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "更新 locator 快显视角状态 | Update locator quick view state",
+                "parameters": [
+                    {
+                        "description": "快显视角状态 | Quick view state",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.UpdateQuickViewStateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新成功 | Updated successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Resource not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4577,6 +4686,29 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "datatype.Bounds3D": {
+            "type": "object",
+            "properties": {
+                "max_x": {
+                    "type": "number"
+                },
+                "max_y": {
+                    "type": "number"
+                },
+                "max_z": {
+                    "type": "number"
+                },
+                "min_x": {
+                    "type": "number"
+                },
+                "min_y": {
+                    "type": "number"
+                },
+                "min_z": {
+                    "type": "number"
+                }
+            }
+        },
         "execution.TaskExecution": {
             "type": "object",
             "properties": {
@@ -5370,12 +5502,18 @@ const docTemplate = `{
                 },
                 "vector_tile_cache_generation": {
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.TileCacheGeneration"
+                },
+                "view_state": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
                 }
             }
         },
         "github_com_addp_manager_internal_service.QuickViewGaussianSplatInfo": {
             "type": "object",
             "properties": {
+                "bounds_3d": {
+                    "$ref": "#/definitions/datatype.Bounds3D"
+                },
                 "file_name": {
                     "type": "string"
                 },
@@ -5403,6 +5541,9 @@ const docTemplate = `{
                 "preview_url": {
                     "type": "string"
                 },
+                "progressive_order": {
+                    "type": "string"
+                },
                 "recommended_action": {
                     "type": "string"
                 },
@@ -5410,6 +5551,15 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "result_id": {
+                    "type": "integer"
+                },
+                "sampled_bounds_3d": {
+                    "$ref": "#/definitions/datatype.Bounds3D"
+                },
+                "sampled_bounds_method": {
+                    "type": "string"
+                },
+                "sampled_bounds_sample_count": {
                     "type": "integer"
                 },
                 "sh_degree": {
@@ -6138,6 +6288,122 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.GaussianSplatKPlatHeader": {
+            "type": "object",
+            "properties": {
+                "compression_level": {
+                    "type": "integer"
+                },
+                "max_section_count": {
+                    "type": "integer"
+                },
+                "max_spherical_harmonics_coeff": {
+                    "type": "number"
+                },
+                "max_splat_count": {
+                    "type": "integer"
+                },
+                "min_spherical_harmonics_coeff": {
+                    "type": "number"
+                },
+                "scene_center": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "section_count": {
+                    "type": "integer"
+                },
+                "splat_count": {
+                    "type": "integer"
+                },
+                "version_major": {
+                    "type": "integer"
+                },
+                "version_minor": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.GaussianSplatQuickViewCheck": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.GaussianSplatQuickViewInspectResponse": {
+            "type": "object",
+            "properties": {
+                "bytes_inspected": {
+                    "type": "integer"
+                },
+                "checks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.GaussianSplatQuickViewCheck"
+                    }
+                },
+                "expected_content_type": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "header": {
+                    "$ref": "#/definitions/internal_api.GaussianSplatKPlatHeader"
+                },
+                "header_signature_hex": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "object_bucket": {
+                    "type": "string"
+                },
+                "object_content_type": {
+                    "type": "string"
+                },
+                "object_name": {
+                    "type": "string"
+                },
+                "object_size_bytes": {
+                    "type": "integer"
+                },
+                "recorded_size_bytes": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "storage_ref": {
+                    "type": "string"
+                },
+                "summary": {
+                    "$ref": "#/definitions/internal_api.GaussianSplatQuickViewInspectSummary"
+                }
+            }
+        },
+        "internal_api.GaussianSplatQuickViewInspectSummary": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.GaussianSplatQuickViewTaskRequest": {
             "type": "object",
             "properties": {
@@ -6231,6 +6497,9 @@ const docTemplate = `{
         "internal_api.GaussianSplatQuickViewTaskSourceResponse": {
             "type": "object",
             "properties": {
+                "bounds_3d": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
                 "format": {
                     "type": "string"
                 },
@@ -6242,6 +6511,12 @@ const docTemplate = `{
                 },
                 "item_locator": {
                     "type": "string"
+                },
+                "sampled_bounds_3d": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "sampled_bounds_sample_count": {
+                    "type": "integer"
                 },
                 "source_engine_id": {
                     "type": "integer"
@@ -7093,6 +7368,21 @@ const docTemplate = `{
                         "basic_preview",
                         "map_quick_view"
                     ]
+                }
+            }
+        },
+        "internal_api.UpdateQuickViewStateRequest": {
+            "type": "object",
+            "required": [
+                "locator",
+                "view_state"
+            ],
+            "properties": {
+                "locator": {
+                    "type": "string"
+                },
+                "view_state": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
                 }
             }
         }

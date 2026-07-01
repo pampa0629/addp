@@ -141,8 +141,8 @@ func (s *TaskProviderRegistryService) Register() error {
 			},
 			{
 				"type":                      "gaussian_splat_quick_view_generation",
-				"display_name":              "高斯泼溅 KSplat 快显生成",
-				"description":               "将高斯泼溅数据发布为 Manager 受管的 KSplat 快显 artifact",
+				"display_name":              "3DGS - KPlat 快显生成",
+				"description":               "将 3DGS 高斯泼溅数据转换或发布为 Manager 受管的 KPlat 快显 artifact",
 				"definition_schema":         map[string]interface{}{"type": "object"},
 				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
 				"supports_schedule":         false,
@@ -166,7 +166,7 @@ func (s *TaskProviderRegistryService) Register() error {
 	registration := TaskProviderRegistration{
 		ModuleName:  "manager",
 		DisplayName: "数据管理",
-		Description: "矢量快显性能优化、矢量瓦片缓存、栅格快显 COG、栅格 mosaic、三维模型 3D Tiles、三维模型 GLB 快显、高斯泼溅 KSplat 快显和对象存储向量化任务",
+		Description: "矢量快显性能优化、矢量瓦片缓存、栅格快显 COG、栅格 mosaic、三维模型 3D Tiles、三维模型 GLB 快显、3DGS - KPlat 快显和对象存储向量化任务",
 
 		// API 端点配置（相对于 base_url，支持 {task_type}/{id} 占位符）
 		BaseURL:             s.managerURL,

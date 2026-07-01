@@ -66,5 +66,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_gaussian_splat_quick_view_current_unique
     ON manager.gaussian_splat_quick_view (tenant_id, item_fingerprint)
     WHERE deleted_at IS NULL AND status <> 'deleted';
 
-COMMENT ON TABLE manager.gaussian_splat_quick_view_tasks IS '高斯泼溅 KSplat 快显生成任务定义表';
-COMMENT ON TABLE manager.gaussian_splat_quick_view IS 'Manager 受管高斯泼溅 KSplat 快显结果表';
+COMMENT ON TABLE manager.gaussian_splat_quick_view_tasks IS '3DGS - KPlat 快显生成任务定义表';
+COMMENT ON TABLE manager.gaussian_splat_quick_view IS 'Manager 受管 3DGS - KPlat 快显结果表';

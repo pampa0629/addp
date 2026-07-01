@@ -57,13 +57,20 @@ const props = defineProps({
   loading: {
     type: Boolean,
     default: false
+  },
+  viewState: {
+    type: Object,
+    default: () => ({})
   }
 })
+
+const emit = defineEmits(['view-state-change'])
 
 const { t } = useI18n()
 const viewportRef = ref(null)
 const loading = ref(false)
 const errorMessage = ref('')
+const lastDiagnostic = ref(null)
 const loadProgress = ref(null)
 const previewReady = ref(false)
 const qualityMode = ref('smooth')
@@ -96,6 +103,7 @@ const splatURL = computed(() => content.value?.url || objectData.value?.url || '
 const sourceURL = computed(() => withAuthToken(splatURL.value))
 const sourceFormat = computed(() => String(
   metadata.value?.format ||
+  gaussianInfo.value?.format ||
   objectData.value?.attributes?.item?.format ||
   objectData.value?.format ||
   ''
@@ -175,8 +183,17 @@ function sceneFormat(GaussianSplats3D) {
   }
 }
 
+function isSupportedSourceFormat() {
+  return ['ply', 'splat', 'ksplat'].includes(sourceFormat.value)
+}
+
 function defaultQualityMode() {
   return isLargeDirectPLY.value ? 'smooth' : 'standard'
+}
+
+function initialQualityMode() {
+  const mode = String(props.viewState?.quality_mode || '').trim()
+  return ['smooth', 'standard', 'sharp'].includes(mode) ? mode : defaultQualityMode()
 }
 
 function qualityProfile() {
@@ -196,6 +213,15 @@ function sphericalHarmonicsDegree(profile) {
 
 function isCompressedPLY() {
   return sourceFormat.value === 'ply' && formatInfo.value?.ply?.is_compressed_splat === true
+}
+
+function shouldProgressivelyLoad() {
+  if (isCompressedPLY()) return false
+  if (sourceFormat.value === 'ksplat') {
+    const order = String(gaussianInfo.value?.progressive_order || '').trim()
+    return order === '' || order === 'center_first'
+  }
+  return true
 }
 
 function bounds3D() {
@@ -275,7 +301,7 @@ function cameraFrameFromBoundsWithMode(bounds, mode) {
 function addSceneOptions(GaussianSplats3D) {
   return {
     format: sceneFormat(GaussianSplats3D),
-    progressiveLoad: !isCompressedPLY(),
+    progressiveLoad: shouldProgressivelyLoad(),
     showLoadingUI: false,
     splatAlphaRemovalThreshold: sourceFormat.value === 'splat' ? 25 : 1,
     onProgress: (percentComplete) => {
@@ -344,6 +370,12 @@ function setVector3(target, values) {
   target.z = values[2]
 }
 
+function finiteVector(values) {
+  if (!Array.isArray(values) || values.length < 3) return null
+  const vector = values.slice(0, 3).map((value) => Number(value))
+  return vector.every(Number.isFinite) ? vector : null
+}
+
 function requestViewerRender() {
   if (!viewer) return
   if (typeof viewer.forceRenderNextFrame === 'function') {
@@ -366,23 +398,63 @@ function applyCameraFrame(mode) {
   requestViewerRender()
 }
 
+function applyCameraViewState(state) {
+  if (!viewer?.camera || !state || typeof state !== 'object') return false
+  const position = finiteVector(state.position)
+  const target = finiteVector(state.target)
+  const up = finiteVector(state.up)
+  if (!position || !target) return false
+  setVector3(viewer.camera.position, position)
+  setVector3(viewer.camera.up, up || [0, 0, 1])
+  if (viewer.controls?.target) {
+    setVector3(viewer.controls.target, target)
+  }
+  viewer.camera.lookAt?.(...target)
+  viewer.controls?.update?.()
+  requestViewerRender()
+  return true
+}
+
+function emitCameraViewState() {
+  if (!viewer?.camera) return
+  const target = viewer.controls?.target
+  emit('view-state-change', {
+    position: [
+      Number(viewer.camera.position?.x || 0),
+      Number(viewer.camera.position?.y || 0),
+      Number(viewer.camera.position?.z || 0)
+    ],
+    target: [
+      Number(target?.x || 0),
+      Number(target?.y || 0),
+      Number(target?.z || 0)
+    ],
+    up: [
+      Number(viewer.camera.up?.x || 0),
+      Number(viewer.camera.up?.y || 0),
+      Number(viewer.camera.up?.z || 1)
+    ],
+    quality_mode: qualityMode.value
+  })
+}
+
 function splatScaleForQualityMode(options = {}) {
-	if (sourceFormat.value === 'splat') {
-		if (options.interaction === true || interactionTemporarilyReduced) return 0.24
-		if (qualityMode.value === 'sharp') return 0.28
-		if (qualityMode.value === 'standard') return 0.34
-		return 0.42
-	}
-	if (options.interaction === true || interactionTemporarilyReduced) {
-		return isLargeDirectPLY.value ? 0.46 : 0.58
-	}
-	if (qualityMode.value === 'sharp') {
-		return isLargeDirectPLY.value ? 0.48 : 0.65
-	}
-	if (qualityMode.value === 'standard') {
-		return isLargeDirectPLY.value ? 0.58 : 0.72
-	}
-	return isLargeDirectPLY.value ? 0.72 : 0.9
+  if (sourceFormat.value === 'splat') {
+    if (options.interaction === true || interactionTemporarilyReduced) return 0.24
+    if (qualityMode.value === 'sharp') return 0.28
+    if (qualityMode.value === 'standard') return 0.34
+    return 0.42
+  }
+  if (options.interaction === true || interactionTemporarilyReduced) {
+    return isLargeDirectPLY.value ? 0.46 : 0.58
+  }
+  if (qualityMode.value === 'sharp') {
+    return isLargeDirectPLY.value ? 0.48 : 0.65
+  }
+  if (qualityMode.value === 'standard') {
+    return isLargeDirectPLY.value ? 0.58 : 0.72
+  }
+  return isLargeDirectPLY.value ? 0.72 : 0.9
 }
 
 function applyQualityModeToViewer(options = {}) {
@@ -403,6 +475,7 @@ function setQualityMode(mode) {
   if (!['smooth', 'standard', 'sharp'].includes(mode) || qualityMode.value === mode) return
   qualityMode.value = mode
   applyQualityModeToViewer()
+  emitCameraViewState()
 }
 
 function clearInteractionRestoreTimer() {
@@ -420,6 +493,7 @@ function handleInteractionStart() {
 
 function handleInteractionEnd() {
   clearInteractionRestoreTimer()
+  emitCameraViewState()
   interactionRestoreTimer = window.setTimeout(() => {
     interactionRestoreTimer = null
     interactionTemporarilyReduced = false
@@ -452,11 +526,15 @@ function detachInteractionQualityControls() {
 }
 
 function withTimeout(promise, timeoutMs) {
+  const nativePromise = promise?.promise && typeof promise.promise.then === 'function'
+    ? promise.promise
+    : promise
   return new Promise((resolve, reject) => {
     const timer = window.setTimeout(() => {
+      promise?.abort?.('Load timeout')
       reject(new Error(t('manager.spatialPreview.loadGaussianSplatTimeout')))
     }, timeoutMs)
-    promise.then(
+    nativePromise.then(
       (value) => {
         window.clearTimeout(timer)
         resolve(value)
@@ -467,6 +545,84 @@ function withTimeout(promise, timeoutMs) {
       }
     )
   })
+}
+
+function loadedSplatCount(targetViewer) {
+  try {
+    const count = Number(targetViewer?.splatMesh?.getSplatCount?.())
+    return Number.isFinite(count) ? count : null
+  } catch {
+    return null
+  }
+}
+
+function loadDiagnostic(error, phase) {
+  const message = String(error?.message || error || '').trim()
+  const lowered = message.toLowerCase()
+  let reason = 'unknown'
+  let userMessage = message || t('manager.spatialPreview.loadGaussianSplatFailed')
+
+  if (message === t('manager.spatialPreview.loadGaussianSplatTimeout')) {
+    reason = 'timeout'
+    userMessage = t('manager.spatialPreview.loadGaussianSplatTimeout')
+  } else if (lowered.includes('scene disposed') || lowered.includes('abort')) {
+    reason = 'interrupted'
+    userMessage = t('manager.spatialPreview.loadGaussianSplatInterrupted')
+  } else if (
+    lowered.includes('failed to fetch') ||
+    lowered.includes('network') ||
+    lowered.includes('404') ||
+    lowered.includes('403') ||
+    lowered.includes('500')
+  ) {
+    reason = 'network'
+    userMessage = t('manager.spatialPreview.loadGaussianSplatNetworkFailed')
+  } else if (
+    lowered.includes('file type') ||
+    lowered.includes('parse') ||
+    lowered.includes('header') ||
+    lowered.includes('invalid') ||
+    lowered.includes('unexpected') ||
+    lowered.includes('cannot convert undefined') ||
+    lowered.includes('cannot read properties') ||
+    lowered.includes('unsupported')
+  ) {
+    reason = 'format'
+    userMessage = t('manager.spatialPreview.loadGaussianSplatFormatFailed')
+  } else if (
+    lowered.includes('webgl') ||
+    lowered.includes('gpu') ||
+    lowered.includes('texture') ||
+    lowered.includes('shader') ||
+    lowered.includes('memory') ||
+    lowered.includes('allocation')
+  ) {
+    reason = 'render_resource'
+    userMessage = t('manager.spatialPreview.loadGaussianSplatResourceFailed')
+  } else if (lowered.includes('empty') || lowered.includes('no splat')) {
+    reason = 'empty'
+    userMessage = t('manager.spatialPreview.loadGaussianSplatEmpty')
+  }
+
+  return {
+    reason,
+    phase,
+    message,
+    format: sourceFormat.value,
+    url: splatURL.value,
+    sourceSizeBytes: sourceSizeBytes.value,
+    splatCount: splatCount.value,
+    progress: loadProgress.value,
+    userMessage
+  }
+}
+
+function reportLoadError(error, phase) {
+  const diagnostic = loadDiagnostic(error, phase)
+  lastDiagnostic.value = diagnostic
+  errorMessage.value = diagnostic.userMessage
+  const log = diagnostic.reason === 'interrupted' ? console.debug : console.error
+  log('Gaussian splat preview failed', diagnostic, error)
 }
 
 async function disposeViewer() {
@@ -487,10 +643,16 @@ async function loadSplat(url) {
   const token = ++loadToken
   await disposeViewer()
   errorMessage.value = ''
+  lastDiagnostic.value = null
   loadProgress.value = null
   if (!url) {
     loading.value = false
     errorMessage.value = t('manager.spatialPreview.missingGaussianSplatURL')
+    return
+  }
+  if (!isSupportedSourceFormat()) {
+    loading.value = false
+    errorMessage.value = t('manager.spatialPreview.unsupportedGaussianSplatFormat')
     return
   }
   await nextTick()
@@ -511,17 +673,20 @@ async function loadSplat(url) {
       await nextViewer.dispose?.()
       return
     }
+    const renderedSplatCount = loadedSplatCount(nextViewer)
+    if (renderedSplatCount !== null && renderedSplatCount <= 0) {
+      throw new Error('no splats loaded')
+    }
     nextViewer.start()
     bindInteractionQualityControls()
     previewReady.value = true
     applyQualityModeToViewer()
-    applyCameraFrame('level')
+    if (!applyCameraViewState(props.viewState)) {
+      applyCameraFrame('level')
+    }
   } catch (error) {
     if (token === loadToken) {
-      const message = String(error?.message || '')
-      errorMessage.value = message.includes('Scene disposed')
-        ? t('manager.spatialPreview.loadGaussianSplatFailed')
-        : (message || t('manager.spatialPreview.loadGaussianSplatFailed'))
+      reportLoadError(error, 'load')
       await disposeViewer()
     }
   } finally {
@@ -533,7 +698,7 @@ async function loadSplat(url) {
 }
 
 watch(sourceURL, (url) => {
-  qualityMode.value = defaultQualityMode()
+  qualityMode.value = initialQualityMode()
   loadSplat(url)
 }, { immediate: true })
 

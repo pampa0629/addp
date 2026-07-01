@@ -23,16 +23,23 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  viewState: {
+    type: Object,
+    default: () => ({})
+  },
   popupOptions: {
     type: Object,
     default: () => ({})
   }
 })
 
-const emit = defineEmits(['feature-click'])
+const emit = defineEmits(['feature-click', 'view-state-change'])
 
 const mapContainer = ref(null)
-const { mapInstance, initMap, renderFeatures, focusFeature, showPopup, hidePopup, destroy } = useGaodeMap(props.config, props.baseMapProfile)
+const { mapInstance, initMap, renderFeatures, focusFeature, showPopup, hidePopup, destroy } = useGaodeMap(props.config, props.baseMapProfile, {
+  initialViewState: props.viewState,
+  onViewStateChange: (state) => emit('view-state-change', state)
+})
 
 let isInitialized = false
 

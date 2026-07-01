@@ -227,16 +227,20 @@ type Model3DQuickViewSource struct {
 }
 
 type GaussianSplatQuickViewSource struct {
-	Format                string
-	Layout                string
-	Representation        string
-	SplatCount            int64
-	SourceSizeBytes       int64
-	HasOpacity            *bool
-	HasScale              *bool
-	HasRotation           *bool
-	HasSphericalHarmonics *bool
-	SHDegree              *int
+	Format                   string
+	Layout                   string
+	Representation           string
+	SplatCount               int64
+	SourceSizeBytes          int64
+	HasOpacity               *bool
+	HasScale                 *bool
+	HasRotation              *bool
+	HasSphericalHarmonics    *bool
+	SHDegree                 *int
+	Bounds3D                 *datatype.Bounds3D
+	SampledBounds3D          *datatype.Bounds3D
+	SampledBoundsMethod      string
+	SampledBoundsSampleCount *int64
 }
 
 type RealtimeTileTarget struct {
@@ -261,6 +265,7 @@ type QuickViewCapability struct {
 	CanUseQuickView      bool                        `json:"can_use_quick_view"`
 	CanGenerateTileCache bool                        `json:"can_generate_vector_tile_cache"`
 	PreferredMode        string                      `json:"preferred_mode"`
+	ViewState            commonModels.JSONMap        `json:"view_state,omitempty"`
 	RecommendedMode      string                      `json:"recommended_mode"`
 	ActiveMode           string                      `json:"active_mode"`
 	DefaultTileCacheID   *uint                       `json:"default_vector_tile_cache_id,omitempty"`
@@ -378,23 +383,28 @@ type QuickViewModel3DInfo struct {
 }
 
 type QuickViewGaussianSplatInfo struct {
-	Format                string  `json:"format,omitempty"`
-	Layout                string  `json:"layout,omitempty"`
-	Representation        string  `json:"representation,omitempty"`
-	ResultID              *uint   `json:"result_id,omitempty"`
-	TaskID                *uint   `json:"task_id,omitempty"`
-	LastExecutionID       *string `json:"last_execution_id,omitempty"`
-	FileName              string  `json:"file_name,omitempty"`
-	SplatCount            int64   `json:"splat_count,omitempty"`
-	SizeBytes             int64   `json:"size_bytes,omitempty"`
-	PreviewURL            string  `json:"preview_url,omitempty"`
-	HasOpacity            *bool   `json:"has_opacity,omitempty"`
-	HasScale              *bool   `json:"has_scale,omitempty"`
-	HasRotation           *bool   `json:"has_rotation,omitempty"`
-	HasSphericalHarmonics *bool   `json:"has_spherical_harmonics,omitempty"`
-	SHDegree              *int    `json:"sh_degree,omitempty"`
-	UnavailableReason     string  `json:"unavailable_reason,omitempty"`
-	RecommendedAction     string  `json:"recommended_action,omitempty"`
+	Format                   string             `json:"format,omitempty"`
+	Layout                   string             `json:"layout,omitempty"`
+	Representation           string             `json:"representation,omitempty"`
+	ProgressiveOrder         string             `json:"progressive_order,omitempty"`
+	ResultID                 *uint              `json:"result_id,omitempty"`
+	TaskID                   *uint              `json:"task_id,omitempty"`
+	LastExecutionID          *string            `json:"last_execution_id,omitempty"`
+	FileName                 string             `json:"file_name,omitempty"`
+	SplatCount               int64              `json:"splat_count,omitempty"`
+	SizeBytes                int64              `json:"size_bytes,omitempty"`
+	PreviewURL               string             `json:"preview_url,omitempty"`
+	HasOpacity               *bool              `json:"has_opacity,omitempty"`
+	HasScale                 *bool              `json:"has_scale,omitempty"`
+	HasRotation              *bool              `json:"has_rotation,omitempty"`
+	HasSphericalHarmonics    *bool              `json:"has_spherical_harmonics,omitempty"`
+	SHDegree                 *int               `json:"sh_degree,omitempty"`
+	Bounds3D                 *datatype.Bounds3D `json:"bounds_3d,omitempty"`
+	SampledBounds3D          *datatype.Bounds3D `json:"sampled_bounds_3d,omitempty"`
+	SampledBoundsMethod      string             `json:"sampled_bounds_method,omitempty"`
+	SampledBoundsSampleCount *int64             `json:"sampled_bounds_sample_count,omitempty"`
+	UnavailableReason        string             `json:"unavailable_reason,omitempty"`
+	RecommendedAction        string             `json:"recommended_action,omitempty"`
 }
 
 type QuickViewRenderFacts struct {
@@ -460,6 +470,10 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 	if existing != nil && strings.TrimSpace(existing.PreferredMode) != "" {
 		preferredMode = existing.PreferredMode
 	}
+	viewState := commonModels.JSONMap{}
+	if existing != nil && existing.ViewState != nil {
+		viewState = existing.ViewState
+	}
 
 	var spatialMeta *SpatialMetadataResult
 	var spatialErr error
@@ -486,6 +500,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 		SourceSchema:      strings.TrimSpace(schema),
 		SourceTable:       strings.TrimSpace(table),
 		PreferredMode:     preferredMode,
+		ViewState:         viewState,
 		RecommendedMode:   models.QuickViewPreferredModeBasicPreview,
 		ActiveMode:        preferredMode,
 		Status:            initialStatus,
@@ -570,6 +585,10 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		preferredMode = existing.PreferredMode
 		hasExistingPreference = true
 	}
+	viewState := commonModels.JSONMap{}
+	if existing != nil && existing.ViewState != nil {
+		viewState = existing.ViewState
+	}
 	if (source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil || source.GaussianSplat != nil) && !hasExistingPreference {
 		preferredMode = models.QuickViewPreferredModeMapQuickView
 	}
@@ -594,6 +613,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		SourceSchema:      strings.TrimSpace(source.Schema),
 		SourceTable:       strings.TrimSpace(source.Table),
 		PreferredMode:     preferredMode,
+		ViewState:         viewState,
 		RecommendedMode:   models.QuickViewPreferredModeBasicPreview,
 		ActiveMode:        preferredMode,
 		Status:            initialStatus,
@@ -824,7 +844,7 @@ func (s *QuickViewService) applyGaussianSplatCapability(ctx context.Context, cap
 	capability.DefaultTileCacheID = nil
 	capability.CanUseQuickView = false
 	capability.Status = QuickViewStatusUnavailable
-	capability.UnavailableReason = "requires_ksplat_generation"
+	capability.UnavailableReason = "requires_kplat_generation"
 	capability.RenderSource = ""
 	capability.RecommendedMode = models.QuickViewPreferredModeBasicPreview
 	capability.QuickView = QuickViewRenderInfo{}
@@ -849,16 +869,11 @@ func (s *QuickViewService) applyGaussianSplatCapability(ctx context.Context, cap
 		return nil
 	}
 
-	reason := "gaussian_splat_direct_preview"
-	if strings.EqualFold(gaussian.Format, string(format.FormatKSplat)) {
-		reason = "requires_ksplat_generation"
-	}
+	reason := "requires_kplat_generation"
 	capability.UnavailableReason = reason
 	if capability.GaussianSplat != nil {
 		capability.GaussianSplat.UnavailableReason = reason
-		if reason == "requires_ksplat_generation" {
-			capability.GaussianSplat.RecommendedAction = commonExecution.TaskTypeGaussianSplatQuickViewGeneration
-		}
+		capability.GaussianSplat.RecommendedAction = commonExecution.TaskTypeGaussianSplatQuickViewGeneration
 	}
 	return nil
 }
@@ -926,6 +941,63 @@ func (s *QuickViewService) UpdatePreferredModeByIdentity(
 		}
 	}
 	return s.repo.UpdatePreferredMode(identity.TenantID, identity.ItemFingerprint, identity.Locator, preferredMode)
+}
+
+func (s *QuickViewService) UpdateViewStateByIdentity(
+	_ context.Context,
+	identity QuickViewIdentity,
+	viewState commonModels.JSONMap,
+) error {
+	if identity.TenantID == 0 {
+		identity.TenantID = 1
+	}
+	identity.Locator = strings.TrimSpace(identity.Locator)
+	if strings.TrimSpace(identity.ItemFingerprint) == "" {
+		return fmt.Errorf("%w: item identity is missing", ErrQuickViewInvalidPreferredMode)
+	}
+	if viewState == nil {
+		viewState = commonModels.JSONMap{}
+	}
+	return s.repo.UpdateViewState(identity.TenantID, identity.ItemFingerprint, identity.Locator, normalizeQuickViewViewStatePayload(viewState))
+}
+
+func normalizeQuickViewViewStatePayload(viewState commonModels.JSONMap) commonModels.JSONMap {
+	if viewState == nil {
+		return commonModels.JSONMap{}
+	}
+	normalized := commonModels.JSONMap{}
+	for _, mode := range []string{"basic_preview", "quick_view"} {
+		modeState := jsonObjectMap(viewState[mode])
+		if len(modeState) == 0 {
+			continue
+		}
+		normalizedMode := commonModels.JSONMap{}
+		for _, renderer := range []string{"map", "scene_3d"} {
+			rendererState := jsonObjectMap(modeState[renderer])
+			if len(rendererState) > 0 {
+				normalizedMode[renderer] = rendererState
+			}
+		}
+		if len(normalizedMode) > 0 {
+			normalized[mode] = normalizedMode
+		}
+	}
+	return normalized
+}
+
+func jsonObjectMap(value interface{}) commonModels.JSONMap {
+	switch typed := value.(type) {
+	case commonModels.JSONMap:
+		return typed.Clone()
+	case map[string]interface{}:
+		out := commonModels.JSONMap{}
+		for key, val := range typed {
+			out[key] = val
+		}
+		return out
+	default:
+		return commonModels.JSONMap{}
+	}
 }
 
 func (s *QuickViewService) GetSpatialMetadataFromMeta(
@@ -1620,16 +1692,20 @@ func gaussianSplatInfoFromSource(gaussian *GaussianSplatQuickViewSource) *QuickV
 		return nil
 	}
 	return &QuickViewGaussianSplatInfo{
-		Format:                strings.TrimSpace(gaussian.Format),
-		Layout:                strings.TrimSpace(gaussian.Layout),
-		Representation:        strings.TrimSpace(gaussian.Representation),
-		SplatCount:            gaussian.SplatCount,
-		SizeBytes:             gaussian.SourceSizeBytes,
-		HasOpacity:            cloneBoolPtr(gaussian.HasOpacity),
-		HasScale:              cloneBoolPtr(gaussian.HasScale),
-		HasRotation:           cloneBoolPtr(gaussian.HasRotation),
-		HasSphericalHarmonics: cloneBoolPtr(gaussian.HasSphericalHarmonics),
-		SHDegree:              cloneIntPtr(gaussian.SHDegree),
+		Format:                   strings.TrimSpace(gaussian.Format),
+		Layout:                   strings.TrimSpace(gaussian.Layout),
+		Representation:           strings.TrimSpace(gaussian.Representation),
+		SplatCount:               gaussian.SplatCount,
+		SizeBytes:                gaussian.SourceSizeBytes,
+		HasOpacity:               cloneBoolPtr(gaussian.HasOpacity),
+		HasScale:                 cloneBoolPtr(gaussian.HasScale),
+		HasRotation:              cloneBoolPtr(gaussian.HasRotation),
+		HasSphericalHarmonics:    cloneBoolPtr(gaussian.HasSphericalHarmonics),
+		SHDegree:                 cloneIntPtr(gaussian.SHDegree),
+		Bounds3D:                 datatype.NormalizeBounds3D(gaussian.Bounds3D),
+		SampledBounds3D:          datatype.NormalizeBounds3D(gaussian.SampledBounds3D),
+		SampledBoundsMethod:      strings.TrimSpace(gaussian.SampledBoundsMethod),
+		SampledBoundsSampleCount: cloneInt64Ptr(gaussian.SampledBoundsSampleCount),
 	}
 }
 
@@ -1653,10 +1729,25 @@ func gaussianSplatInfoFromQuickView(result *models.GaussianSplatQuickView, sourc
 	if result.SizeBytes > 0 {
 		info.SizeBytes = result.SizeBytes
 	}
+	info.ProgressiveOrder = gaussianSplatProgressiveOrder(result.Metadata)
 	info.PreviewURL = gaussianSplatQuickViewContentURL(result.ID)
 	info.UnavailableReason = ""
 	info.RecommendedAction = ""
 	return info
+}
+
+func gaussianSplatProgressiveOrder(metadata commonModels.JSONMap) string {
+	facts := commonJSON.Section(metadata, "ksplat_facts")
+	if len(facts) == 0 {
+		return ""
+	}
+	if strings.EqualFold(strings.TrimSpace(commonJSON.InterfaceString(facts["converter"])), "copy") {
+		return "source_order"
+	}
+	if strings.TrimSpace(commonJSON.InterfaceString(facts["scene_center_source"])) != "" {
+		return "center_first"
+	}
+	return ""
 }
 
 func model3DInfoFromQuickView(result *models.Model3DQuickView, source *Model3DQuickViewSource) *QuickViewModel3DInfo {
@@ -1962,16 +2053,20 @@ func GaussianSplatQuickViewSourceFromAttributes(attrs map[string]interface{}) *G
 		sourceSizeBytes = commonJSON.InterfaceInt64(typeInfo["size_bytes"])
 	}
 	source := &GaussianSplatQuickViewSource{
-		Format:                itemFormat,
-		Layout:                itemLayout,
-		Representation:        strings.TrimSpace(commonJSON.InterfaceString(typeInfo["representation"])),
-		SplatCount:            commonJSON.InterfaceInt64(typeInfo["splat_count"]),
-		SourceSizeBytes:       sourceSizeBytes,
-		HasOpacity:            optionalBoolPtr(typeInfo, "has_opacity"),
-		HasScale:              optionalBoolPtr(typeInfo, "has_scale"),
-		HasRotation:           optionalBoolPtr(typeInfo, "has_rotation"),
-		HasSphericalHarmonics: optionalBoolPtr(typeInfo, "has_spherical_harmonics"),
-		SHDegree:              optionalIntPtr(typeInfo, "sh_degree"),
+		Format:                   itemFormat,
+		Layout:                   itemLayout,
+		Representation:           strings.TrimSpace(commonJSON.InterfaceString(typeInfo["representation"])),
+		SplatCount:               commonJSON.InterfaceInt64(typeInfo["splat_count"]),
+		SourceSizeBytes:          sourceSizeBytes,
+		HasOpacity:               optionalBoolPtr(typeInfo, "has_opacity"),
+		HasScale:                 optionalBoolPtr(typeInfo, "has_scale"),
+		HasRotation:              optionalBoolPtr(typeInfo, "has_rotation"),
+		HasSphericalHarmonics:    optionalBoolPtr(typeInfo, "has_spherical_harmonics"),
+		SHDegree:                 optionalIntPtr(typeInfo, "sh_degree"),
+		Bounds3D:                 bounds3DFromPayload(commonJSON.Section(typeInfo, "bounds_3d")),
+		SampledBounds3D:          bounds3DFromPayload(commonJSON.Section(typeInfo, "sampled_bounds_3d")),
+		SampledBoundsMethod:      strings.TrimSpace(commonJSON.InterfaceString(typeInfo["sampled_bounds_method"])),
+		SampledBoundsSampleCount: optionalInt64Ptr(typeInfo, "sampled_bounds_sample_count"),
 	}
 	if source.Representation == "" {
 		source.Representation = datatype.GaussianSplatRepresentation3DGS
@@ -2001,6 +2096,28 @@ func optionalIntPtr(values map[string]interface{}, key string) *int {
 	return &value
 }
 
+func optionalInt64Ptr(values map[string]interface{}, key string) *int64 {
+	if values == nil {
+		return nil
+	}
+	if _, ok := values[key]; !ok {
+		return nil
+	}
+	value := commonJSON.InterfaceInt64(values[key])
+	return &value
+}
+
+func bounds3DFromPayload(payload map[string]interface{}) *datatype.Bounds3D {
+	if len(payload) == 0 {
+		return nil
+	}
+	var bounds datatype.Bounds3D
+	if err := commonJSON.DecodeStruct(payload, &bounds); err != nil {
+		return nil
+	}
+	return datatype.NormalizeBounds3D(&bounds)
+}
+
 func cloneBoolPtr(value *bool) *bool {
 	if value == nil {
 		return nil
@@ -2010,6 +2127,14 @@ func cloneBoolPtr(value *bool) *bool {
 }
 
 func cloneIntPtr(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func cloneInt64Ptr(value *int64) *int64 {
 	if value == nil {
 		return nil
 	}

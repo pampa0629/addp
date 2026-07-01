@@ -416,12 +416,15 @@ type GaussianSplatQuickViewTaskRequest struct {
 }
 
 type GaussianSplatQuickViewTaskSourceResponse struct {
-	ItemLocator     string `json:"item_locator,omitempty"`
-	SourceEngineID  uint   `json:"source_engine_id,omitempty"`
-	ItemFingerprint string `json:"item_fingerprint,omitempty"`
-	ItemID          uint   `json:"item_id,omitempty"`
-	Format          string `json:"format,omitempty"`
-	SourceSizeBytes int64  `json:"source_size_bytes,omitempty"`
+	ItemLocator              string               `json:"item_locator,omitempty"`
+	SourceEngineID           uint                 `json:"source_engine_id,omitempty"`
+	ItemFingerprint          string               `json:"item_fingerprint,omitempty"`
+	ItemID                   uint                 `json:"item_id,omitempty"`
+	Format                   string               `json:"format,omitempty"`
+	SourceSizeBytes          int64                `json:"source_size_bytes,omitempty"`
+	Bounds3D                 commonModels.JSONMap `json:"bounds_3d,omitempty"`
+	SampledBounds3D          commonModels.JSONMap `json:"sampled_bounds_3d,omitempty"`
+	SampledBoundsSampleCount *int64               `json:"sampled_bounds_sample_count,omitempty"`
 }
 
 type GaussianSplatQuickViewTaskResultResponse struct {
@@ -2176,8 +2179,8 @@ func (h *TaskProviderHandler) DeleteModel3DQuickViewTask(c *gin.Context) {
 }
 
 // ListGaussianSplatQuickViewTasks GET /api/v1/manager/gaussian_splat_quick_view_tasks
-// @Summary 列出高斯泼溅 KSplat 快显任务配置 | List Gaussian Splat KSplat quick view generation task configurations
-// @Description 列出 Manager 模块的高斯泼溅 KSplat 快显任务配置。该私有入口固定返回 task_type=gaussian_splat_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager Gaussian Splat KSplat quick view generation task configurations.
+// @Summary 列出 3DGS - KPlat 快显任务配置 | List 3DGS - KPlat quick view generation task configurations
+// @Description 列出 Manager 模块的 3DGS - KPlat 快显任务配置。该私有入口固定返回 task_type=gaussian_splat_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager 3DGS - KPlat quick view generation task configurations.
 // @Tags Manager
 // @Produce json
 // @Param page query int false "页码，默认1 | Page number, default 1"
@@ -2203,8 +2206,8 @@ func (h *TaskProviderHandler) ListGaussianSplatQuickViewTasks(c *gin.Context) {
 }
 
 // CreateGaussianSplatQuickViewTask POST /api/v1/manager/gaussian_splat_quick_view_tasks
-// @Summary 创建高斯泼溅 KSplat 快显任务配置 | Create Gaussian Splat KSplat quick view generation task configuration
-// @Description 创建新的高斯泼溅 KSplat 快显任务配置。当前只接受源格式为 KSplat 的 gaussian_splat item，并将 KSplat artifact 写入 Manager infra MinIO；PLY / SPLAT 可使用基础高斯泼溅预览，真实转换器接入后再开放受管生成。| Create a Gaussian Splat quick view task from a KSplat gaussian_splat item into Manager infra MinIO. PLY / SPLAT use basic Gaussian Splat preview until the real converter is connected.
+// @Summary 创建 3DGS - KPlat 快显任务配置 | Create 3DGS - KPlat quick view generation task configuration
+// @Description 创建新的 3DGS - KPlat 快显任务配置。源必须是 format=ply、splat 或 ksplat 的 gaussian_splat item；PLY / SPLAT 会转换为 KPlat artifact，KSplat 源直接发布登记，结果写入 Manager infra MinIO。| Create a 3DGS - KPlat quick view task from a format=ply, splat, or ksplat gaussian_splat item into Manager infra MinIO. PLY / SPLAT are converted to KPlat artifacts and KSplat sources are published directly.
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -2243,7 +2246,7 @@ func (h *TaskProviderHandler) CreateGaussianSplatQuickViewTask(c *gin.Context) {
 }
 
 // GetGaussianSplatQuickViewTask GET /api/v1/manager/gaussian_splat_quick_view_tasks/:id
-// @Summary 获取高斯泼溅 KSplat 快显任务配置 | Get Gaussian Splat KSplat quick view generation task configuration
+// @Summary 获取 3DGS - KPlat 快显任务配置 | Get 3DGS - KPlat quick view generation task configuration
 // @Tags Manager
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
@@ -2258,7 +2261,7 @@ func (h *TaskProviderHandler) GetGaussianSplatQuickViewTask(c *gin.Context) {
 }
 
 // UpdateGaussianSplatQuickViewTask PUT /api/v1/manager/gaussian_splat_quick_view_tasks/:id
-// @Summary 更新高斯泼溅 KSplat 快显任务配置 | Update Gaussian Splat KSplat quick view generation task configuration
+// @Summary 更新 3DGS - KPlat 快显任务配置 | Update 3DGS - KPlat quick view generation task configuration
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -2306,7 +2309,7 @@ func (h *TaskProviderHandler) UpdateGaussianSplatQuickViewTask(c *gin.Context) {
 }
 
 // DeleteGaussianSplatQuickViewTask DELETE /api/v1/manager/gaussian_splat_quick_view_tasks/:id
-// @Summary 删除高斯泼溅 KSplat 快显任务配置 | Delete Gaussian Splat KSplat quick view generation task configuration
+// @Summary 删除 3DGS - KPlat 快显任务配置 | Delete 3DGS - KPlat quick view generation task configuration
 // @Tags Manager
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
@@ -2501,7 +2504,7 @@ func (h *TaskProviderHandler) DeleteModel3DQuickView(c *gin.Context) {
 }
 
 // ListGaussianSplatQuickViews GET /api/v1/manager/gaussian_splat_quick_view
-// @Summary 列出高斯泼溅 KSplat 快显结果 | List Gaussian Splat KSplat quick view results
+// @Summary 列出 3DGS - KPlat 快显结果 | List 3DGS - KPlat quick view results
 // @Tags Manager
 // @Produce json
 // @Param item_id query int false "数据项ID | Item ID"
@@ -2538,7 +2541,7 @@ func (h *TaskProviderHandler) ListGaussianSplatQuickViews(c *gin.Context) {
 }
 
 // GetGaussianSplatQuickView GET /api/v1/manager/gaussian_splat_quick_view/:id
-// @Summary 获取高斯泼溅 KSplat 快显详情 | Get Gaussian Splat KSplat quick view detail
+// @Summary 获取 3DGS - KPlat 快显详情 | Get 3DGS - KPlat quick view detail
 // @Tags Manager
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
@@ -2565,7 +2568,7 @@ func (h *TaskProviderHandler) GetGaussianSplatQuickView(c *gin.Context) {
 }
 
 // DeleteGaussianSplatQuickView DELETE /api/v1/manager/gaussian_splat_quick_view/:id
-// @Summary 删除高斯泼溅 KSplat 快显 | Delete Gaussian Splat KSplat quick view
+// @Summary 删除 3DGS - KPlat 快显 | Delete 3DGS - KPlat quick view
 // @Tags Manager
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
@@ -3133,12 +3136,15 @@ func gaussianSplatQuickViewTaskResponse(task *models.GaussianSplatQuickViewTask)
 	}
 	if source, ok := asJSONMap(task.Config["source"]); ok {
 		resp.Source = &GaussianSplatQuickViewTaskSourceResponse{
-			ItemLocator:     stringFromConfig(source["item_locator"]),
-			SourceEngineID:  uintFromConfig(source["source_engine_id"]),
-			ItemFingerprint: stringFromConfig(source["item_fingerprint"]),
-			ItemID:          uintFromConfig(source["item_id"]),
-			Format:          stringFromConfig(source["format"]),
-			SourceSizeBytes: int64FromAPIConfig(source["source_size_bytes"], 0),
+			ItemLocator:              stringFromConfig(source["item_locator"]),
+			SourceEngineID:           uintFromConfig(source["source_engine_id"]),
+			ItemFingerprint:          stringFromConfig(source["item_fingerprint"]),
+			ItemID:                   uintFromConfig(source["item_id"]),
+			Format:                   stringFromConfig(source["format"]),
+			SourceSizeBytes:          int64FromAPIConfig(source["source_size_bytes"], 0),
+			Bounds3D:                 jsonMapFromAPIConfig(source["bounds_3d"]),
+			SampledBounds3D:          jsonMapFromAPIConfig(source["sampled_bounds_3d"]),
+			SampledBoundsSampleCount: int64PtrFromAPIConfig(source["sampled_bounds_sample_count"]),
 		}
 	}
 	if result, ok := asJSONMap(task.Config["result"]); ok {
@@ -3218,6 +3224,22 @@ func int64FromAPIConfig(value interface{}, defaultValue int64) int64 {
 		return int64(v)
 	}
 	return defaultValue
+}
+
+func int64PtrFromAPIConfig(value interface{}) *int64 {
+	if value == nil {
+		return nil
+	}
+	parsed := int64FromAPIConfig(value, 0)
+	return &parsed
+}
+
+func jsonMapFromAPIConfig(value interface{}) commonModels.JSONMap {
+	payload, ok := asJSONMap(value)
+	if !ok {
+		return nil
+	}
+	return payload
 }
 
 func stringSliceFromAPIConfig(value interface{}) []string {

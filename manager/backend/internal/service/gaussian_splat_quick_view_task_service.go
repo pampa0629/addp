@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
@@ -42,12 +44,15 @@ type GaussianSplatQuickViewExecutionConfig struct {
 }
 
 type GaussianSplatQuickViewSourceConfig struct {
-	ItemLocator     string
-	SourceEngineID  uint
-	ItemFingerprint string
-	ItemID          uint
-	Format          string
-	SourceSizeBytes int64
+	ItemLocator              string
+	SourceEngineID           uint
+	ItemFingerprint          string
+	ItemID                   uint
+	Format                   string
+	SourceSizeBytes          int64
+	Bounds3D                 *datatype.Bounds3D
+	SampledBounds3D          *datatype.Bounds3D
+	SampledBoundsSampleCount *int64
 }
 
 type GaussianSplatQuickViewResultConfig struct {
@@ -64,6 +69,7 @@ type GaussianSplatQuickViewTaskService struct {
 	taskExecRepo *commonExecution.TaskExecutionRepository
 	executor     GaussianSplatQuickViewExecutor
 	cleaner      GaussianSplatQuickViewCleaner
+	metaClient   *commonClient.MetaClient
 	bucket       string
 }
 
@@ -79,12 +85,19 @@ func (s *GaussianSplatQuickViewTaskService) SetCleaner(cleaner GaussianSplatQuic
 	s.cleaner = cleaner
 }
 
+func (s *GaussianSplatQuickViewTaskService) SetMetaClient(metaClient *commonClient.MetaClient) {
+	s.metaClient = metaClient
+}
+
 func (s *GaussianSplatQuickViewTaskService) SetBucket(bucket string) {
 	s.bucket = strings.TrimSpace(bucket)
 }
 
 func (s *GaussianSplatQuickViewTaskService) Create(ctx context.Context, task *models.GaussianSplatQuickViewTask) error {
 	if err := normalizeGaussianSplatQuickViewTask(task, s.bucket); err != nil {
+		return err
+	}
+	if err := s.enrichGaussianSplatQuickViewTaskSourceFacts(ctx, task); err != nil {
 		return err
 	}
 	cfg, err := normalizeGaussianSplatQuickViewTaskConfig(task.Config, s.bucket, task.TenantID)
@@ -123,6 +136,9 @@ func (s *GaussianSplatQuickViewTaskService) List(ctx context.Context, tenantID u
 
 func (s *GaussianSplatQuickViewTaskService) Update(ctx context.Context, task *models.GaussianSplatQuickViewTask) error {
 	if err := normalizeGaussianSplatQuickViewTask(task, s.bucket); err != nil {
+		return err
+	}
+	if err := s.enrichGaussianSplatQuickViewTaskSourceFacts(ctx, task); err != nil {
 		return err
 	}
 	return s.repo.UpdateTask(ctx, task)
@@ -181,6 +197,12 @@ func (s *GaussianSplatQuickViewTaskService) Execute(ctx context.Context, taskID 
 	if task == nil {
 		return "", ErrTaskNotFound
 	}
+	if err := s.enrichGaussianSplatQuickViewTaskSourceFacts(ctx, task); err != nil {
+		return "", err
+	}
+	if err := s.repo.UpdateTask(ctx, task); err != nil {
+		return "", err
+	}
 	if s.taskExecRepo == nil {
 		return "", errors.New("task execution repository is required")
 	}
@@ -195,7 +217,7 @@ func (s *GaussianSplatQuickViewTaskService) Execute(ctx context.Context, taskID 
 
 	executionID := uuid.New().String()
 	now := time.Now()
-	currentStep := "生成高斯泼溅 KSplat 快显"
+	currentStep := "生成 3DGS KPlat 快显"
 	executionConfig := task.Config.Clone()
 	if executionConfig == nil {
 		executionConfig = commonModels.JSONMap{}
@@ -397,18 +419,21 @@ func normalizeGaussianSplatQuickViewSource(config commonModels.JSONMap) (Gaussia
 		return GaussianSplatQuickViewSourceConfig{}, errors.New("gaussian splat quick view config.source is required")
 	}
 	source := GaussianSplatQuickViewSourceConfig{
-		ItemLocator:     stringFromConfig(sourceMap["item_locator"]),
-		SourceEngineID:  uintFromConfig(sourceMap["source_engine_id"]),
-		ItemFingerprint: strings.TrimSpace(stringFromConfig(sourceMap["item_fingerprint"])),
-		ItemID:          uintFromConfig(sourceMap["item_id"]),
-		Format:          strings.ToLower(firstNonEmptyConfig(stringFromConfig(sourceMap["format"]), string(format.FormatKSplat))),
-		SourceSizeBytes: int64FromConfig(sourceMap["source_size_bytes"], 0),
+		ItemLocator:              stringFromConfig(sourceMap["item_locator"]),
+		SourceEngineID:           uintFromConfig(sourceMap["source_engine_id"]),
+		ItemFingerprint:          strings.TrimSpace(stringFromConfig(sourceMap["item_fingerprint"])),
+		ItemID:                   uintFromConfig(sourceMap["item_id"]),
+		Format:                   strings.ToLower(firstNonEmptyConfig(stringFromConfig(sourceMap["format"]), string(format.FormatKSplat))),
+		SourceSizeBytes:          int64FromConfig(sourceMap["source_size_bytes"], 0),
+		Bounds3D:                 bounds3DFromTaskConfig(sourceMap["bounds_3d"]),
+		SampledBounds3D:          bounds3DFromTaskConfig(sourceMap["sampled_bounds_3d"]),
+		SampledBoundsSampleCount: int64PtrFromConfig(sourceMap["sampled_bounds_sample_count"]),
 	}
 	if source.ItemLocator == "" || source.SourceEngineID == 0 || source.ItemFingerprint == "" {
 		return GaussianSplatQuickViewSourceConfig{}, errors.New("gaussian splat quick view config.source requires item_locator, source_engine_id and item_fingerprint")
 	}
 	if !isGaussianSplatQuickViewTaskSourceFormat(source.Format) {
-		return GaussianSplatQuickViewSourceConfig{}, errors.New("gaussian splat quick view config.source.format must be ksplat")
+		return GaussianSplatQuickViewSourceConfig{}, errors.New("gaussian splat quick view config.source.format must be ply, splat or ksplat")
 	}
 	loc, err := resourcetree.ParseURI(source.ItemLocator)
 	if err != nil {
@@ -417,7 +442,7 @@ func normalizeGaussianSplatQuickViewSource(config commonModels.JSONMap) (Gaussia
 	if loc.EngineID != source.SourceEngineID {
 		return GaussianSplatQuickViewSourceConfig{}, errors.New("gaussian splat quick view config.source.item_locator engine_id does not match source_engine_id")
 	}
-	config["source"] = commonModels.JSONMap{
+	normalized := commonModels.JSONMap{
 		"item_locator":      source.ItemLocator,
 		"source_engine_id":  source.SourceEngineID,
 		"item_fingerprint":  source.ItemFingerprint,
@@ -425,16 +450,119 @@ func normalizeGaussianSplatQuickViewSource(config commonModels.JSONMap) (Gaussia
 		"format":            source.Format,
 		"source_size_bytes": source.SourceSizeBytes,
 	}
+	if bounds := bounds3DToTaskConfig(source.Bounds3D); bounds != nil {
+		normalized["bounds_3d"] = bounds
+	}
+	if bounds := bounds3DToTaskConfig(source.SampledBounds3D); bounds != nil {
+		normalized["sampled_bounds_3d"] = bounds
+	}
+	if source.SampledBoundsSampleCount != nil {
+		normalized["sampled_bounds_sample_count"] = *source.SampledBoundsSampleCount
+	}
+	config["source"] = normalized
 	return source, nil
 }
 
 func isGaussianSplatQuickViewTaskSourceFormat(sourceFormat string) bool {
 	switch strings.ToLower(strings.TrimSpace(sourceFormat)) {
-	case string(format.FormatKSplat):
+	case string(format.FormatPLY), string(format.FormatSplat), string(format.FormatKSplat):
 		return true
 	default:
 		return false
 	}
+}
+
+func bounds3DFromTaskConfig(value interface{}) *datatype.Bounds3D {
+	payload, ok := asJSONMap(value)
+	if !ok {
+		return nil
+	}
+	return bounds3DFromPayload(payload)
+}
+
+func (s *GaussianSplatQuickViewTaskService) enrichGaussianSplatQuickViewTaskSourceFacts(ctx context.Context, task *models.GaussianSplatQuickViewTask) error {
+	if s == nil || s.metaClient == nil || task == nil || task.Config == nil {
+		return nil
+	}
+	sourceMap, ok := asJSONMap(task.Config["source"])
+	if !ok || sourceMap == nil {
+		return nil
+	}
+	if bounds3DFromTaskConfig(sourceMap["bounds_3d"]) != nil && bounds3DFromTaskConfig(sourceMap["sampled_bounds_3d"]) != nil {
+		return nil
+	}
+	itemID := uintFromConfig(sourceMap["item_id"])
+	if itemID == 0 {
+		locator := strings.TrimSpace(stringFromConfig(sourceMap["item_locator"]))
+		if loc, err := resourcetree.ParseURI(locator); err == nil && loc.ItemID != nil {
+			itemID = *loc.ItemID
+		}
+	}
+	if itemID == 0 {
+		return nil
+	}
+	metaClient := s.metaClient.WithTenantID(task.TenantID)
+	item, err := metaClient.GetItemByID(itemID)
+	if err != nil {
+		return fmt.Errorf("load gaussian splat source metadata: %w", err)
+	}
+	if item == nil || item.Attributes == nil {
+		return nil
+	}
+	source := GaussianSplatQuickViewSourceFromAttributes(item.Attributes)
+	if source == nil {
+		return nil
+	}
+	if sourceMap["bounds_3d"] == nil {
+		if bounds := bounds3DToTaskConfig(source.Bounds3D); bounds != nil {
+			sourceMap["bounds_3d"] = bounds
+		}
+	}
+	if sourceMap["sampled_bounds_3d"] == nil {
+		if bounds := bounds3DToTaskConfig(source.SampledBounds3D); bounds != nil {
+			sourceMap["sampled_bounds_3d"] = bounds
+		}
+	}
+	if sourceMap["sampled_bounds_sample_count"] == nil && source.SampledBoundsSampleCount != nil {
+		sourceMap["sampled_bounds_sample_count"] = *source.SampledBoundsSampleCount
+	}
+	task.Config["source"] = sourceMap
+	return nil
+}
+
+func bounds3DToTaskConfig(bounds *datatype.Bounds3D) commonModels.JSONMap {
+	bounds = datatype.NormalizeBounds3D(bounds)
+	if bounds == nil {
+		return nil
+	}
+	payload := commonModels.JSONMap{}
+	if bounds.MinX != nil {
+		payload["min_x"] = *bounds.MinX
+	}
+	if bounds.MinY != nil {
+		payload["min_y"] = *bounds.MinY
+	}
+	if bounds.MinZ != nil {
+		payload["min_z"] = *bounds.MinZ
+	}
+	if bounds.MaxX != nil {
+		payload["max_x"] = *bounds.MaxX
+	}
+	if bounds.MaxY != nil {
+		payload["max_y"] = *bounds.MaxY
+	}
+	if bounds.MaxZ != nil {
+		payload["max_z"] = *bounds.MaxZ
+	}
+	return payload
+}
+
+func int64PtrFromConfig(value interface{}) *int64 {
+	if value == nil {
+		return nil
+	}
+	parsed := int64FromConfig(value, 0)
+	return &parsed
 }
 
 func normalizeGaussianSplatQuickViewResult(config commonModels.JSONMap, source GaussianSplatQuickViewSourceConfig, bucket string, tenantID uint) GaussianSplatQuickViewResultConfig {

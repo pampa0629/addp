@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// GaussianSplatQuickViewRepository 维护高斯泼溅 KSplat 快显任务定义和结果。
+// GaussianSplatQuickViewRepository 维护 3DGS - KPlat 快显任务定义和结果。
 type GaussianSplatQuickViewRepository struct {
 	db *gorm.DB
 }

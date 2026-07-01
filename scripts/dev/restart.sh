@@ -242,6 +242,28 @@ require_service_python() {
     fi
 }
 
+ensure_model3d_node_dependencies() {
+    local dir="engines/model3d-workflow"
+    if [ ! -f "$dir/package.json" ]; then
+        return 0
+    fi
+    if [ -d "$dir/node_modules/@mkkellogg/gaussian-splats-3d" ]; then
+        echo "  Model3D Workflow Node 依赖已存在，跳过安装"
+        return 0
+    fi
+    if ! command -v npm >/dev/null 2>&1; then
+        echo "❌ Model3D Workflow 需要 npm 安装高斯泼溅 KPlat 转换依赖"
+        return 1
+    fi
+    echo "  安装 Model3D Workflow Node 依赖..."
+    if [ -f "$dir/package-lock.json" ]; then
+        (cd "$dir" && npm ci --omit=dev)
+    else
+        (cd "$dir" && npm install --omit=dev)
+    fi
+    echo "  ✓ Model3D Workflow Node 依赖安装完成"
+}
+
 wait_http_ready() {
     local label="$1"
     local url="$2"
@@ -334,6 +356,7 @@ restart_model3d_workflow_service() {
     stop_pidfile_process ".dev-pids/model3d-workflow-engine.pid" "Model3D Workflow Engine"
     stop_matching_port_process "$port" "Model3D Workflow Engine" "python.*api_server\\.py|engines/model3d-workflow"
     require_service_python "engines/model3d-workflow" "Model3D Workflow Engine" "model3d-workflow"
+    ensure_model3d_node_dependencies
     echo "  启动 Model3D Workflow Engine..."
     (
         cd engines/model3d-workflow

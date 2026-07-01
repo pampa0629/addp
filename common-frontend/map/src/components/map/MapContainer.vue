@@ -8,9 +8,11 @@
       :base-type="baseMapType"
       :base-map-profile="baseMapProfile"
       :preserve-view="preserveView"
+      :view-state="viewState"
       :popup-options="mapPopupOptions"
       ref="rendererRef"
       @feature-click="handleFeatureClick"
+      @view-state-change="handleViewStateChange"
     />
     <div v-else class="map-placeholder">
       <el-empty :description="t('map.mapServiceNotConfigured')" />
@@ -42,13 +44,17 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  viewState: {
+    type: Object,
+    default: () => ({})
+  },
   popupOptions: {
     type: Object,
     default: () => ({})
   }
 })
 
-const emit = defineEmits(['feature-click'])
+const emit = defineEmits(['feature-click', 'view-state-change'])
 
 const rendererRef = ref(null)
 
@@ -89,6 +95,10 @@ const mapRenderer = computed(() => {
 
 const handleFeatureClick = (event) => {
   emit('feature-click', event)
+}
+
+const handleViewStateChange = (state) => {
+  emit('view-state-change', state)
 }
 
 const focusFeature = (rowKey, options = {}) => {

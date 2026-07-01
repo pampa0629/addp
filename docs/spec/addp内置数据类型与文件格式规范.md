@@ -243,7 +243,7 @@ PLY deep scan 不应读取完整大文件数据体；header 级事实足以完�
 
 ### 消费要求
 
-Manager 可使用高斯泼溅 renderer 直接读取 `.splat` URL 做基础预览；不得开放 GLB 快显生成入口。`.splat` 当前也不得开放受管 KSplat 生成入口；需要平台受管 artifact、统一对象存储发布或大模型优化时，待真实 SPLAT 到 KSplat 转换器接入后，仍走 `gaussian_splat_quick_view_generation` 专用路线，不复用 `model_3d_quick_view_generation`。
+Manager 可使用高斯泼溅 renderer 直接读取 `.splat` URL 做基础预览；不得开放 GLB 快显生成入口。需要平台受管 artifact、统一对象存储发布或大模型优化时，走 `gaussian_splat_quick_view_generation` 专用路线，由 `model3d_workflow` 的 `gaussian_splat_to_ksplat` operator 转换为 KPlat artifact，不复用 `model_3d_quick_view_generation`。
 
 ## KSPLAT
 
@@ -268,7 +268,7 @@ Manager 可使用高斯泼溅 renderer 直接读取 `.splat` URL 做基础预览
 
 ### 消费要求
 
-Manager 可使用高斯泼溅 renderer 直接读取 `.ksplat` URL 做基础预览；不得开放 GLB 快显生成入口。`.ksplat` 同时是高斯泼溅受管快显的目标 artifact 格式；`gaussian_splat_quick_view_generation` 当前只对源已经是 `.ksplat` 的 item 做受管发布，PLY / SPLAT 继续走基础高斯泼溅预览，待真实 PLY / SPLAT 到 KSplat 转换器接入后仍沿用同一专用任务类型，不复用 `model_3d_quick_view_generation`。
+Manager 可使用高斯泼溅 renderer 直接读取 `.ksplat` URL 做基础预览；不得开放 GLB 快显生成入口。`.ksplat` 同时是高斯泼溅受管快显的目标文件格式；`gaussian_splat_quick_view_generation` 对 `ply` / `splat` 源执行真实转换，对源已经是 `.ksplat` 的 item 只做受管发布登记，不复用 `model_3d_quick_view_generation`。
 
 ## FBX
 

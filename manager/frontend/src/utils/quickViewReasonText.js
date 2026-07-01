@@ -14,8 +14,7 @@ const QUICK_VIEW_REASON_KEYS = {
   'missing_crs': 'manager.spatialPreview.missingCRS',
   'client_render_budget_exceeded': 'manager.spatialPreview.clientRenderBudgetExceeded',
   'gaussian_splat_preview_not_supported': 'manager.spatialPreview.gaussianSplatPreviewNotSupported',
-  'gaussian_splat_direct_preview': 'manager.spatialPreview.gaussianSplatDirectPreview',
-  'requires_ksplat_generation': 'manager.spatialPreview.requiresKSplatGeneration',
+  'requires_kplat_generation': 'manager.spatialPreview.requiresKPlatGeneration',
   'raster preview URL is unavailable': 'manager.spatialPreview.missingQuickViewURL'
 }
 

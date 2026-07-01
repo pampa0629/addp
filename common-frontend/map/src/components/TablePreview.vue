@@ -30,8 +30,11 @@
           ref="mapRef"
           :features="geoFeatures"
           :base-map-type="baseMapType"
+          :preserve-view="hasSavedViewState"
+          :view-state="viewState"
           height="100%"
           @feature-click="handleFeatureClick"
+          @view-state-change="handleViewStateChange"
         />
         <div v-else class="map-placeholder">
           <el-empty :description="suppressedMapMessage || t('map.noGeometryData')" :image-size="60" />
@@ -232,10 +235,14 @@ const props = defineProps({
   loading: {
     type: Boolean,
     default: false
+  },
+  viewState: {
+    type: Object,
+    default: () => ({})
   }
 })
 
-const emit = defineEmits(['page-change'])
+const emit = defineEmits(['page-change', 'view-state-change'])
 
 const { baseMapOptions, defaultBaseMapType, getBaseMapProfile, loadMapConfig } = useMapConfig()
 
@@ -247,6 +254,19 @@ const paginationRef = ref(null)
 const shapefileMetaRef = ref(null)
 
 const getSectionHeight = (target, fallback = 0) => target?.value?.offsetHeight || fallback
+
+const hasSavedViewState = computed(() => {
+  const center = props.viewState?.center
+  return Array.isArray(center) &&
+    center.length >= 2 &&
+    Number.isFinite(Number(center[0])) &&
+    Number.isFinite(Number(center[1])) &&
+    Number.isFinite(Number(props.viewState?.zoom))
+})
+
+const handleViewStateChange = (state) => {
+  emit('view-state-change', state)
+}
 
 const getVisibleSectionCount = () => {
   let count = 1

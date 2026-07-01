@@ -37,6 +37,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import Map from 'ol/Map.js'
 import View from 'ol/View.js'
+import { toLonLat } from 'ol/proj.js'
 import { defaults as defaultInteractions, MouseWheelZoom } from 'ol/interaction.js'
 import { defaults as defaultControls, ZoomToExtent } from 'ol/control.js'
 import { unByKey } from 'ol/Observable.js'
@@ -70,11 +71,12 @@ const props = defineProps({
   renderSource: { type: String, default: '' },
   defaultTileCacheId: { type: [Number, String], default: '' },
   showMvtGrid: { type: Boolean, default: false },
+  viewState: { type: Object, default: () => ({}) },
   center: { type: Array, default: () => [120.2, 30.3] },
   zoom: { type: Number, default: 10 }
 })
 
-const emit = defineEmits(['featureClick', 'tile-advisory'])
+const emit = defineEmits(['featureClick', 'tile-advisory', 'view-state-change'])
 
 const { t } = useI18n()
 
@@ -250,6 +252,42 @@ function fitToRenderExtent({ duration = 0 } = {}) {
   return true
 }
 
+function finiteMapViewState() {
+  const state = props.viewState || {}
+  const center = Array.isArray(state.center)
+    ? state.center.slice(0, 2).map((value) => Number(value))
+    : null
+  const zoom = Number(state.zoom)
+  if (!center || center.length < 2 || !center.every(Number.isFinite) || !Number.isFinite(zoom)) {
+    return null
+  }
+  return {
+    center,
+    zoom,
+    rotation: Number.isFinite(Number(state.rotation)) ? Number(state.rotation) : 0
+  }
+}
+
+function applyMapViewState(state) {
+  if (!map || !state) return false
+  const view = map.getView()
+  view.setCenter(fromLonLat(state.center))
+  view.setZoom(state.zoom)
+  view.setRotation(state.rotation || 0)
+  return true
+}
+
+function emitMapViewState() {
+  if (!map) return
+  const view = map.getView()
+  const center = toLonLat(view.getCenter() || [0, 0])
+  emit('view-state-change', {
+    center,
+    zoom: view.getZoom(),
+    rotation: view.getRotation()
+  })
+}
+
 // 重试加载渲染信息
 function retryLoadConfig() {
   error.value = ''
@@ -266,10 +304,14 @@ async function initMap() {
   isLoadingConfig.value = false
 
   // 2. 准备初始视图参数（稍后如果有extent会调用fit）
+  const savedMapViewState = finiteMapViewState()
   let initialCenter = props.center
   let initialZoom = props.zoom
 
-  if (tileRenderInfo.value?.extent?.length === 4) {
+  if (savedMapViewState) {
+    initialCenter = savedMapViewState.center
+    initialZoom = savedMapViewState.zoom
+  } else if (tileRenderInfo.value?.extent?.length === 4) {
     const [minX, minY, maxX, maxY] = tileRenderInfo.value.extent
     initialCenter = [(minX + maxX) / 2, (minY + maxY) / 2]
     initialZoom = tileRenderInfo.value.min_zoom || props.zoom
@@ -335,13 +377,20 @@ async function initMap() {
   scheduleMapSizeUpdate()
 
   // 6. 如果有 extent，自动全幅显示
-  fitToRenderExtent()
+  if (savedMapViewState) {
+    applyMapViewState(savedMapViewState)
+  } else {
+    fitToRenderExtent()
+  }
   updateMvtGrid(map)
 
   // 7. 创建 Popup
   createPopup(map)
 
-  mvtGridMoveKey = map.on('moveend', () => updateMvtGrid(map))
+  mvtGridMoveKey = map.on('moveend', () => {
+    updateMvtGrid(map)
+    emitMapViewState()
+  })
   mapMoveStartKey = map.on('movestart', resetTileRenderState)
 
   // 8. 监听 zoom 变化

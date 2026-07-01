@@ -763,6 +763,73 @@ func TestFileCatalogGaussianSplatPLYPreviewReturnsURL(t *testing.T) {
 	}
 }
 
+func TestFileCatalogGaussianSplatPreviewKeepsSourceWhenKPlatReady(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingFileCatalogPreviewPlugin{
+		engineType:   "nfs",
+		contentType:  "application/octet-stream",
+		sizeBytes:    4096,
+		expectedPath: "/3d/gaussian/model.ply",
+	}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	contentRegistry := objectcontent.NewObjectContentRegistry()
+	objectcontent.LoadObjectContentPlugins(contentRegistry, "../../plugins")
+	provider := NewFileCatalogPreviewProvider(nil, contentRegistry)
+
+	preview, err := provider.Preview(context.Background(), &PreviewRequest{
+		Engine:          &models.Engine{EngineType: "nfs", ID: 26},
+		Schema:          "3d/gaussian",
+		Table:           "model.ply",
+		TenantID:        uintPtr(1),
+		ItemFingerprint: "fp-gaussian",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "gaussian_splat",
+				"format":    "ply",
+				"layout":    "single",
+			},
+			"type_info": map[string]interface{}{
+				"gaussian_splat": map[string]interface{}{
+					"splat_count":                 int64(128),
+					"sampled_bounds_3d":           map[string]interface{}{"min_x": 1.0, "min_y": 2.0, "min_z": 3.0, "max_x": 4.0, "max_y": 5.0, "max_z": 6.0},
+					"sampled_bounds_sample_count": int64(128),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	content := preview.Object.Content
+	if content == nil || content.Kind != models.ObjectPreviewKindGaussianSplat || content.PreviewMaterial != models.PreviewMaterialURL || content.FrontendRenderer != models.ObjectPreviewKindGaussianSplat {
+		t.Fatalf("content = %#v, want gaussian_splat source URL preview", content)
+	}
+	if content.URL == "" || !strings.Contains(content.URL, "storage_ref=3d%2Fgaussian%2Fmodel.ply") || preview.Object.URL != content.URL {
+		t.Fatalf("content URL = %q object URL = %q, want source storage stream URL", content.URL, preview.Object.URL)
+	}
+	if content.Metadata["format"] != string(format.FormatPLY) {
+		t.Fatalf("metadata.format = %#v, want ply", content.Metadata["format"])
+	}
+	gaussianInfo := commonJSON.Section(content.Metadata, "gaussian_splat")
+	if gaussianInfo["format"] == string(format.FormatKSplat) {
+		t.Fatalf("metadata.gaussian_splat.format = %#v, want source format to stay ply", gaussianInfo["format"])
+	}
+	if commonJSON.InterfaceInt64(gaussianInfo["sampled_bounds_sample_count"]) != 128 {
+		t.Fatalf("metadata.gaussian_splat = %#v, want sampled bounds facts", gaussianInfo)
+	}
+	if enginePlugin.openContentCalls != 0 {
+		t.Fatalf("OpenContent calls = %d, want 0 for URL-based gaussian splat source preview", enginePlugin.openContentCalls)
+	}
+}
+
 type recordingFileCatalogPreviewPlugin struct {
 	engineType        string
 	listChildrenCalls int
