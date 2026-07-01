@@ -1,12 +1,12 @@
 -- 014_recreate_vector_tile_cache_state.sql
--- Clean break: MVT task definitions and Quick View cache-state columns are replaced
--- by tile cache task definitions, tile cache result state, and compact quick view preference.
+-- Clean break: MVT task definitions and legacy cache-state columns are replaced
+-- by tile cache task definitions, tile cache result state, and compact preview state.
 
 DO $$
 BEGIN
     EXECUTE 'DROP TABLE IF EXISTS manager.' || quote_ident('mvt' || '_tasks');
 END $$;
-DROP TABLE IF EXISTS manager.quick_view;
+DROP TABLE IF EXISTS manager.preview_state;
 DROP TABLE IF EXISTS manager.vector_tile_cache;
 DROP TABLE IF EXISTS manager.vector_tile_cache_tasks;
 
@@ -65,7 +65,7 @@ CREATE UNIQUE INDEX idx_vector_tile_cache_tenant_fingerprint_format_unique
     ON manager.vector_tile_cache (tenant_id, item_fingerprint, tile_format)
     WHERE deleted_at IS NULL;
 
-CREATE TABLE manager.quick_view (
+CREATE TABLE manager.preview_state (
     id                          SERIAL PRIMARY KEY,
     tenant_id                   INTEGER NOT NULL,
     item_fingerprint            VARCHAR(64) NOT NULL,
@@ -75,9 +75,9 @@ CREATE TABLE manager.quick_view (
     updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_quick_view_tenant_fingerprint
-    ON manager.quick_view (tenant_id, item_fingerprint);
+CREATE UNIQUE INDEX idx_preview_state_tenant_fingerprint
+    ON manager.preview_state (tenant_id, item_fingerprint);
 
 COMMENT ON TABLE manager.vector_tile_cache_tasks IS '瓦片缓存生成任务定义表';
 COMMENT ON TABLE manager.vector_tile_cache IS '瓦片缓存结果状态表';
-COMMENT ON TABLE manager.quick_view IS 'Manager 空间预览用户偏好表，快显能力查询时动态合成';
+COMMENT ON TABLE manager.preview_state IS 'Manager 数据项预览状态表，保存预览模式偏好和 basic_preview / quick_view 的交互视角状态';

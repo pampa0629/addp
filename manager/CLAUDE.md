@@ -6,7 +6,7 @@ Manager 模块负责数据探查、数据预览、混合检索、空间快显和
 
 空间快显与瓦片缓存的目标边界：
 
-- `manager.quick_view`：快显偏好，表达某个 spatial item 的用户预览模式偏好；是否可快显、推荐渲染源和默认瓦片缓存结果由 Quick View Capability API 动态合成。
+- `manager.preview_state`：预览状态，表达某个 spatial item 的用户预览模式偏好；是否可快显、推荐渲染源和默认瓦片缓存结果由 Quick View Capability API 动态合成。
 - `manager.vector_quick_view_targets`：快显性能优化结果状态，只登记 Manager 创建并拥有生命周期的 3857 快显优化目标；同源 schema 下自动识别的外部 3857 目标只读消费，不进入该表。
 - `manager.vector_quick_view_target_tasks`：快显性能优化任务定义，TaskProvider `task_type=vector_quick_view_target_generation`，当前不声明标准取消和自身定时调度能力。
 - `manager.raster_cog`：栅格快显 COG生成结果，只登记 Manager 创建或登记到 infra MinIO 的 COG 副本；源 NFS 或业务 MinIO COG 不直接暴露给前端。
@@ -39,10 +39,11 @@ manager/
 │   ├── 快显实现规范.md
 │   ├── 数据预览与资源树实现规范.md
 │   ├── 数据预览语义协议.md
+│   ├── 三维模型与高斯泼溅预览说明.md
 │   ├── 存储流与原始下载语义.md
 │   ├── 向量化概念说明.md
 │   ├── 向量化能力说明.md
-│   └── tables/               # 表级说明：search_history、embeddings、quick_view、vector_tile_cache 等
+│   └── tables/               # 表级说明：search_history、embeddings、preview_state、vector_tile_cache 等
 └── frontend/src/
     ├── views/                 # DataExplorer、DataRetrieval、Preview、SpatialPreview
     ├── components/explorer/
@@ -58,7 +59,7 @@ manager/
 - 预览与下载：`GET /preview`、`GET /storage-stream`、`GET /downloads/file?locator={ResourceLocator}`。
 - 搜索：`GET /search`、`GET /search/history`、`DELETE /search/history/:id`、`DELETE /search/history`。
 - 空间要素辅助：`GET /engines/:id/spatial/features/:feature_id/centroid`、`GET /engines/:id/spatial/features/:feature_id/geometry`。
-- Quick View：统一使用 ResourceLocator 入口，`GET /quick-view/capability?locator={ResourceLocator}` 返回快显能力状态，`GET /quick-view/geojson?locator={ResourceLocator}` 返回 GeoJSON，`GET /quick-view/tiles/:z/:x/:y.mvt?locator={ResourceLocator}` 返回 MVT，`GET /raster_cog/:id/content` 返回 ready raster COG 内容，`PATCH /quick-view/preferred-mode` 更新显示偏好；raster COG 通过 `raster_cog_generation` 任务生成或登记，raster mosaic 通过 `raster_mosaic_generation` 从 node 生成业务 item，瓦片缓存生成通过 `vector_tile_cache_generation` 任务执行。
+- Quick View：统一使用 ResourceLocator 入口，`GET /quick-view/capability?locator={ResourceLocator}` 返回快显能力状态，`GET /quick-view/geojson?locator={ResourceLocator}` 返回 GeoJSON，`GET /quick-view/tiles/:z/:x/:y.mvt?locator={ResourceLocator}` 返回 MVT，`GET /raster_cog/:id/content` 返回 ready raster COG 内容，`PATCH /preview-state/preferred-mode` 更新显示偏好；raster COG 通过 `raster_cog_generation` 任务生成或登记，raster mosaic 通过 `raster_mosaic_generation` 从 node 生成业务 item，瓦片缓存生成通过 `vector_tile_cache_generation` 任务执行。
 - 任务提供者：`GET /tasks`、`GET /tasks/:task_type/:id`、`POST /tasks/:task_type/:id/execute`、`GET /executions/:execution_id`。
 - 数据进出与向量化：`POST /uploads`、`POST /imports`、`POST /exports`、`GET /exports/:id/file`、`POST /embedding_executions`、`GET /embeddings`、`GET /items/:item_id/embedding`。
 
@@ -106,8 +107,9 @@ curl http://localhost:8081/health
 - `manager/docs/向量化能力说明.md`
 - `manager/docs/数据预览与资源树实现规范.md`
 - `manager/docs/数据预览语义协议.md`
+- `manager/docs/三维模型与高斯泼溅预览说明.md`
 - `manager/docs/存储流与原始下载语义.md`
-- `manager/docs/tables/quick_view表.md`
+- `manager/docs/tables/preview_state表.md`
 - `manager/docs/tables/vector_quick_view_targets表.md`
 - `manager/docs/tables/vector_quick_view_target_tasks表.md`
 - `manager/docs/tables/raster_cog表.md`

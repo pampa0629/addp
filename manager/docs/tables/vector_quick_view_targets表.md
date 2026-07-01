@@ -10,7 +10,7 @@
 
 它不替代：
 
-1. `manager.quick_view` 的用户预览模式偏好。
+1. `manager.preview_state` 的用户预览模式偏好。
 2. `manager.vector_quick_view_target_tasks` 的任务定义。
 3. `manager.vector_tile_cache` 的瓦片缓存结果。
 4. `common.task_executions` 的执行历史。

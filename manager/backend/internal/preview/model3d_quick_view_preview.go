@@ -74,6 +74,10 @@ func model3DQuickViewSourceFormat(attrs map[string]interface{}) format.FormatTyp
 		if layout == "" || layout == string(format.LayoutSingle) {
 			return formatType
 		}
+	case format.FormatSTL:
+		if layout == "" || layout == string(format.LayoutSingle) {
+			return formatType
+		}
 	default:
 		return format.FormatUnknown
 	}

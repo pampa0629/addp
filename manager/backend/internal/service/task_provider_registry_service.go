@@ -129,7 +129,7 @@ func (s *TaskProviderRegistryService) Register() error {
 			{
 				"type":                      "model_3d_quick_view_generation",
 				"display_name":              "三维模型 GLB 快显生成",
-				"description":               "将 OSGB、glTF、FBX 或 OBJ 三维模型转换为 Manager 受管的 GLB 快显 artifact",
+				"description":               "将 OSGB、glTF、FBX、OBJ 或 STL 三维模型转换为 Manager 受管的 GLB 快显 artifact",
 				"definition_schema":         map[string]interface{}{"type": "object"},
 				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
 				"supports_schedule":         false,

@@ -1,10 +1,10 @@
-# quick_view 表结构和 API 说明
+# preview_state 表结构和 API 说明
 
-> 状态：当前实现说明。`manager.quick_view` 是快显偏好和预览交互状态表，不保存快显能力快照、快显性能优化结果、瓦片缓存结果事实、生成任务定义或执行历史。快显性能优化结果见 `manager.vector_quick_view_targets`，瓦片缓存结果见 `manager.vector_tile_cache`，任务定义见对应任务表。
+> 状态：当前实现说明。`manager.preview_state` 是预览模式偏好和预览交互状态表，不保存快显能力快照、快显性能优化结果、瓦片缓存结果事实、生成任务定义或执行历史。快显性能优化结果见 `manager.vector_quick_view_targets`，瓦片缓存结果见 `manager.vector_tile_cache`，任务定义见对应任务表。
 
 ## 一、表定位
 
-`manager.quick_view` 表达 Manager 预览中的用户显示偏好和轻量交互状态。
+`manager.preview_state` 表达 Manager 预览中的用户显示偏好和轻量交互状态。
 
 它回答：
 
@@ -23,7 +23,7 @@
 
 | 对象 | 职责 |
 | --- | --- |
-| `manager.quick_view` | 用户预览模式偏好和预览交互状态 |
+| `manager.preview_state` | 用户预览模式偏好和预览交互状态 |
 | `manager.vector_quick_view_targets` | Manager 创建并拥有生命周期的 3857 快显性能优化结果状态 |
 | `manager.vector_quick_view_target_tasks` | 快显性能优化任务定义 |
 | `manager.vector_tile_cache` | 瓦片缓存结果状态 |
@@ -43,7 +43,7 @@
 | `view_state` | jsonb | 快显 / 预览交互状态。顶层按 `basic_preview` / `quick_view` 区分显示模式，模式内按 `map` / `scene_3d` 区分渲染域 |
 | `created_at` / `updated_at` | timestamp | 生命周期字段 |
 
-`can_use_quick_view`、`can_generate_vector_tile_cache`、`status`、`render_source`、`default_vector_tile_cache_id`、`unavailable_reason` 是快显能力 API 的动态响应字段，不是 `manager.quick_view` 表字段。
+`can_use_quick_view`、`can_generate_vector_tile_cache`、`status`、`render_source`、`default_vector_tile_cache_id`、`unavailable_reason` 是快显能力 API 的动态响应字段，不是 `manager.preview_state` 表字段。
 
 ## 三、动态状态语义
 
@@ -54,13 +54,13 @@
 | `generating` | 关联瓦片缓存任务正在生成，快显能力等待产物完成 |
 | `failed` | 最近一次关联生成失败，当前快显不可用或不可可靠使用 |
 
-状态来源由快显能力判断服务统一计算，不写入 `manager.quick_view`。
+状态来源由快显能力判断服务统一计算，不写入 `manager.preview_state`。
 
 ## 四、索引建议
 
 | 索引名 | 字段 | 说明 |
 | --- | --- | --- |
-| `idx_quick_view_tenant_fingerprint` | `tenant_id, item_fingerprint` | 按标准 item 指纹保存唯一偏好 |
+| `idx_preview_state_tenant_fingerprint` | `tenant_id, item_fingerprint` | 按标准 item 指纹保存唯一偏好 |
 
 ## 五、UI 行为
 
@@ -104,7 +104,7 @@
   -> 创建或更新 vector_tile_cache
 ```
 
-`quick_view` 不保存执行历史，也不保存当前快显能力状态和推荐结果。
+`preview_state` 不保存执行历史，也不保存当前快显能力状态和推荐结果。
 
 ## 八、预览交互状态
 
@@ -129,7 +129,7 @@
 
 ## 九、已完成职责收敛
 
-`quick_view` 不再保存以下旧字段或语义：
+`preview_state` 不再保存以下旧字段或语义：
 
 1. `engine_id` / `schema_name` / `table_name`
 2. `min_zoom` / `max_zoom` / `actual_max_zoom`

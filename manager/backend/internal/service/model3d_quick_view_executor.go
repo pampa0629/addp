@@ -195,6 +195,8 @@ func model3DQuickViewOperatorForFormat(sourceFormat string) (operatorName string
 		return "fbx_to_glb", string(format.FormatFBX), nil
 	case format.FormatOBJ:
 		return "obj_to_glb", string(format.FormatOBJ), nil
+	case format.FormatSTL:
+		return "stl_to_glb", string(format.FormatSTL), nil
 	default:
 		return "", "", fmt.Errorf("model 3d quick view source format %q is not supported", strings.TrimSpace(sourceFormat))
 	}

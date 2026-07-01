@@ -9,14 +9,14 @@ export const quickViewAPI = {
 
   updatePreferredModeByLocator(locator, preferredMode) {
     return request.patch(
-      '/manager/quick-view/preferred-mode',
+      '/manager/preview-state/preferred-mode',
       { locator, preferred_mode: preferredMode }
     )
   },
 
   updateViewStateByLocator(locator, viewState) {
     return request.patch(
-      '/manager/quick-view/view-state',
+      '/manager/preview-state/view-state',
       { locator, view_state: viewState || {} }
     )
   },

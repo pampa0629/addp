@@ -225,6 +225,38 @@ def list_operators() -> list[dict[str, Any]]:
             ],
         },
         {
+            "id": "stl_to_glb",
+            "name": "stl_to_glb",
+            "display_name": "STL 转 GLB",
+            "engine_type": ENGINE_TYPE,
+            "category": "三维模型转换",
+            "category_path": ["三维模型转换", "快显"],
+            "description": "将 STL 单体网格模型转换为前端可快速预览的 GLB artifact。",
+            "execution_modes": ["direct"],
+            "parameters": [
+                {
+                    "name": "access_plan",
+                    "type": "object",
+                    "required": True,
+                    "description": "源 STL 文件访问计划和 GLB artifact 对象存储发布计划。",
+                },
+                {
+                    "name": "options",
+                    "type": "object",
+                    "required": False,
+                    "description": "转换器私有选项，第一版透传给运行时审计，不拼接为命令参数。",
+                },
+            ],
+            "output_ports": [
+                {
+                    "name": "result",
+                    "type": "object",
+                    "description": "GLB artifact 的对象引用、大小、发布结果和转换器信息。",
+                    "is_default": True,
+                }
+            ],
+        },
+        {
             "id": "osgb_scene_to_3dtiles",
             "name": "osgb_scene_to_3dtiles",
             "display_name": "OSGB Scene 转 3D Tiles",
@@ -319,6 +351,8 @@ def invoke_operator(
         return fbx_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name == "obj_to_glb":
         return obj_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
+    if name == "stl_to_glb":
+        return stl_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name == "osgb_scene_to_3dtiles":
         return osgb_scene_to_3dtiles(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name == "gaussian_splat_to_ksplat":
@@ -537,6 +571,22 @@ def obj_to_glb(
     return _mesh_model_to_glb(
         params,
         source_label="OBJ",
+        runner=runner,
+        env=env,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def stl_to_glb(
+    params: dict[str, Any],
+    *,
+    runner: CommandRunner | None = None,
+    env: dict[str, str] | None = None,
+    timeout_seconds: int | None = None,
+) -> dict[str, Any]:
+    return _mesh_model_to_glb(
+        params,
+        source_label="STL",
         runner=runner,
         env=env,
         timeout_seconds=timeout_seconds,

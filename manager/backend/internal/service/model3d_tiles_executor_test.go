@@ -417,6 +417,7 @@ func TestModel3DQuickViewOperatorForFormat(t *testing.T) {
 		{formatName: "gltf", operator: "gltf_to_glb"},
 		{formatName: "fbx", operator: "fbx_to_glb"},
 		{formatName: "obj", operator: "obj_to_glb"},
+		{formatName: "stl", operator: "stl_to_glb"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.formatName, func(t *testing.T) {
@@ -507,6 +508,22 @@ func writeModel3DOperatorList(w http.ResponseWriter, engineType string, executio
 				"id":              "obj_to_glb",
 				"name":            "obj_to_glb",
 				"display_name":    "OBJ 转 GLB",
+				"engine_type":     engineType,
+				"category":        "三维模型转换",
+				"category_path":   []string{"三维模型转换"},
+				"description":     "生成 GLB",
+				"execution_modes": executionModes,
+				"parameters": []map[string]interface{}{
+					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
+				},
+				"output_ports": []map[string]interface{}{
+					{"name": "default", "type": "object", "description": "GLB 生成结果", "is_default": true},
+				},
+			},
+			{
+				"id":              "stl_to_glb",
+				"name":            "stl_to_glb",
+				"display_name":    "STL 转 GLB",
 				"engine_type":     engineType,
 				"category":        "三维模型转换",
 				"category_path":   []string{"三维模型转换"},

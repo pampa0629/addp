@@ -3,6 +3,8 @@ package ksplat
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"math"
 	"testing"
 
 	"github.com/addp/common/datatype"
@@ -23,8 +25,20 @@ func TestKSplatDescriptor(t *testing.T) {
 }
 
 func TestDescribeGaussianSplatReturnsStableKSplatFacts(t *testing.T) {
+	header := make([]byte, kplatHeaderSizeBytes)
+	header[0] = 0
+	header[1] = 1
+	binary.LittleEndian.PutUint32(header[4:8], 15)
+	binary.LittleEndian.PutUint32(header[8:12], 12)
+	binary.LittleEndian.PutUint32(header[12:16], 4096)
+	binary.LittleEndian.PutUint32(header[16:20], 2048)
+	binary.LittleEndian.PutUint16(header[20:22], 1)
+	binary.LittleEndian.PutUint32(header[24:28], math.Float32bits(-53.5))
+	binary.LittleEndian.PutUint32(header[28:32], math.Float32bits(1.25))
+	binary.LittleEndian.PutUint32(header[32:36], math.Float32bits(1522.75))
+
 	result, err := NewPlugin().DescribeGaussianSplat(context.Background(), format.GaussianSplatDescribeInput{
-		Reader: bytes.NewReader([]byte{0, 1, 2, 3}),
+		Reader: bytes.NewReader(header),
 	}, nil)
 	if err != nil {
 		t.Fatalf("DescribeGaussianSplat() error = %v", err)
@@ -35,7 +49,17 @@ func TestDescribeGaussianSplatReturnsStableKSplatFacts(t *testing.T) {
 	if result.GaussianSplat.Representation != datatype.GaussianSplatRepresentation3DGS {
 		t.Fatalf("Representation = %q, want 3d_gaussian_splatting", result.GaussianSplat.Representation)
 	}
+	if result.GaussianSplat.SplatCount == nil || *result.GaussianSplat.SplatCount != 2048 {
+		t.Fatalf("SplatCount = %#v, want 2048", result.GaussianSplat.SplatCount)
+	}
 	if result.FormatInfo["encoding"] != "ksplat" {
 		t.Fatalf("format_info = %#v, want ksplat encoding", result.FormatInfo)
+	}
+	if result.FormatInfo["section_count"] != int64(12) || result.FormatInfo["compression_level"] != 1 {
+		t.Fatalf("format_info = %#v, want section and compression facts", result.FormatInfo)
+	}
+	center, ok := result.FormatInfo["scene_center"].([]float64)
+	if !ok || len(center) != 3 || center[0] != -53.5 || center[1] != 1.25 || center[2] != 1522.75 {
+		t.Fatalf("scene_center = %#v, want parsed KPlat scene center", result.FormatInfo["scene_center"])
 	}
 }

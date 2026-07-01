@@ -579,7 +579,7 @@ const taskPayload = (validated) => ({
 
 const model3DQuickViewSourceFormat = (value) => {
   const sourceFormat = String(value || '').trim().toLowerCase()
-  return ['osgb', 'gltf', 'fbx', 'obj'].includes(sourceFormat) ? sourceFormat : 'osgb'
+  return ['osgb', 'gltf', 'fbx', 'obj', 'stl'].includes(sourceFormat) ? sourceFormat : 'osgb'
 }
 
 const saveTask = async () => {

@@ -36,13 +36,6 @@ func TestGaussianSplatQuickViewTaskNormalizesSupportedSources(t *testing.T) {
 			fingerprint: "fp-splat",
 			wantFile:    "model.ksplat",
 		},
-		{
-			name:        "ksplat",
-			format:      "ksplat",
-			locator:     "addp://engine/26/path/models/model.ksplat?type=file&item_id=79",
-			fingerprint: "fp-ksplat",
-			wantFile:    "model.ksplat",
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			config := commonModels.JSONMap{
@@ -183,11 +176,11 @@ func TestGaussianSplatQuickViewTaskEnrichesBoundsFromMetaItem(t *testing.T) {
 func TestGaussianSplatQuickViewTaskRejectsUnsupportedSource(t *testing.T) {
 	config := commonModels.JSONMap{
 		"source": commonModels.JSONMap{
-			"item_locator":     "addp://engine/26/path/models/model.xyz?type=file&item_id=78",
+			"item_locator":     "addp://engine/26/path/models/model.ksplat?type=file&item_id=78",
 			"source_engine_id": uint(26),
-			"item_fingerprint": "fp-xyz",
+			"item_fingerprint": "fp-ksplat",
 			"item_id":          uint(78),
-			"format":           "xyz",
+			"format":           "ksplat",
 		},
 	}
 
@@ -195,7 +188,7 @@ func TestGaussianSplatQuickViewTaskRejectsUnsupportedSource(t *testing.T) {
 	if err == nil {
 		t.Fatal("normalize gaussian splat quick view config error is nil, want unsupported source rejection")
 	}
-	if got := err.Error(); got != "gaussian splat quick view config.source.format must be ply, splat or ksplat" {
+	if got := err.Error(); got != "gaussian splat quick view config.source.format must be ply or splat" {
 		t.Fatalf("error = %q, want supported source format list", got)
 	}
 }

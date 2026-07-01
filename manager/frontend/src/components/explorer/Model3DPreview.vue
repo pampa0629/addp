@@ -45,9 +45,10 @@ let animationFrame = 0
 let resizeObserver = null
 let activeObject = null
 let modelBoundingRadius = 1
+let modelBoundingCenter = new THREE.Vector3()
 
 const MIN_CAMERA_DISTANCE = 0.01
-const MIN_NEAR_PLANE = 0.01
+const MIN_NEAR_PLANE = 0.001
 
 const objectData = computed(() => props.data?.object || {})
 const content = computed(() => objectData.value?.content || {})
@@ -166,16 +167,26 @@ function clearModel() {
   })
   activeObject = null
   modelBoundingRadius = 1
+  modelBoundingCenter.set(0, 0, 0)
 }
 
-function fitCamera(object) {
-  if (!object || !camera || !controls) return
+function updateModelBounds(object) {
+  if (!object) return null
   const box = new THREE.Box3().setFromObject(object)
-  if (box.isEmpty()) return
+  if (box.isEmpty()) return null
   const center = box.getCenter(new THREE.Vector3())
   const size = box.getSize(new THREE.Vector3())
   const maxDim = Math.max(size.x, size.y, size.z, 1)
   modelBoundingRadius = Math.max(size.length() / 2, maxDim / 2, 1)
+  modelBoundingCenter.copy(center)
+  return { center, size, maxDim }
+}
+
+function fitCamera(object) {
+  if (!object || !camera || !controls) return
+  const bounds = updateModelBounds(object)
+  if (!bounds) return
+  const { center, size, maxDim } = bounds
   const distance = maxDim / (2 * Math.tan((camera.fov * Math.PI) / 360))
   const terrainView = shouldUseTerrainCamera(size)
   const offset = terrainView
@@ -248,12 +259,18 @@ function updateCameraClipPlanes(force = false) {
   if (!camera || !controls) return
   const distance = Math.max(camera.position.distanceTo(controls.target), MIN_CAMERA_DISTANCE)
   const radius = Math.max(modelBoundingRadius, 1)
-  const near = Math.max(Math.min(distance / 500, radius / 1000), MIN_NEAR_PLANE)
-  const far = Math.max(distance + radius * 8, 100)
+  const distanceToCenter = Math.max(camera.position.distanceTo(modelBoundingCenter), MIN_CAMERA_DISTANCE)
+  const distanceToModelSurface = distanceToCenter - radius
+  const inspectNear = Math.max(Math.min(distance / 5000, radius / 100000), MIN_NEAR_PLANE)
+  const stableNear = Math.max(distanceToModelSurface * 0.35, radius / 10000, MIN_NEAR_PLANE)
+  const near = distanceToModelSurface > radius * 0.02 ? stableNear : inspectNear
+  const far = Math.max(distanceToCenter + radius * 4, distance + radius * 4, 100)
+  const nearBase = Math.max(Math.abs(camera.near), near, MIN_NEAR_PLANE)
+  const farBase = Math.max(Math.abs(camera.far), far, 1)
   if (
     force ||
-    Math.abs(camera.near - near) / Math.max(camera.near, 1) > 0.1 ||
-    Math.abs(camera.far - far) / Math.max(camera.far, 1) > 0.1
+    Math.abs(camera.near - near) / nearBase > 0.1 ||
+    Math.abs(camera.far - far) / farBase > 0.1
   ) {
     camera.near = near
     camera.far = far
@@ -317,6 +334,7 @@ async function loadModel(url) {
       } else {
         stabilizeLineMeshDepth(activeObject)
         scene.add(activeObject)
+        updateModelBounds(activeObject)
         if (!applyCameraViewState(props.viewState)) {
           fitCamera(activeObject)
         }

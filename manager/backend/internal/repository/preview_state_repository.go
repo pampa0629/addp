@@ -12,73 +12,68 @@ import (
 	"gorm.io/gorm"
 )
 
-// QuickViewRepository 快显数据访问层
-type QuickViewRepository struct {
+// PreviewStateRepository 维护数据项预览模式偏好和交互视角状态。
+type PreviewStateRepository struct {
 	db *gorm.DB
 }
 
-// NewQuickViewRepository 创建快显仓储
-func NewQuickViewRepository(db *gorm.DB) *QuickViewRepository {
-	return &QuickViewRepository{db: db}
+func NewPreviewStateRepository(db *gorm.DB) *PreviewStateRepository {
+	return &PreviewStateRepository{db: db}
 }
 
 // GetDB 获取数据库连接（用于复杂查询）
-func (r *QuickViewRepository) GetDB() *gorm.DB {
+func (r *PreviewStateRepository) GetDB() *gorm.DB {
 	return r.db
 }
 
-// Create 创建快显记录
-func (r *QuickViewRepository) Create(qv *models.QuickView) error {
-	return r.db.Create(qv).Error
+func (r *PreviewStateRepository) Create(state *models.PreviewState) error {
+	return r.db.Create(state).Error
 }
 
-func (r *QuickViewRepository) GetByIdentity(tenantID uint, itemFingerprint string, locator string) (*models.QuickView, error) {
+func (r *PreviewStateRepository) GetByIdentity(tenantID uint, itemFingerprint string, locator string) (*models.PreviewState, error) {
 	itemFingerprint = strings.TrimSpace(itemFingerprint)
 	if itemFingerprint == "" {
 		return nil, commonapi.ErrNotFound
 	}
-	var qv models.QuickView
-	err := r.db.Where("tenant_id = ? AND item_fingerprint = ?", tenantID, itemFingerprint).First(&qv).Error
+	var state models.PreviewState
+	err := r.db.Where("tenant_id = ? AND item_fingerprint = ?", tenantID, itemFingerprint).First(&state).Error
 	if err != nil {
 		return nil, commonrepo.WrapDBError(err)
 	}
-	return &qv, nil
+	return &state, nil
 }
 
-func (r *QuickViewRepository) EnsurePreference(qv *models.QuickView) error {
-	if qv == nil {
+func (r *PreviewStateRepository) EnsurePreference(state *models.PreviewState) error {
+	if state == nil {
 		return nil
 	}
-	existing, err := r.GetByIdentity(qv.TenantID, qv.ItemFingerprint, qv.Locator)
+	existing, err := r.GetByIdentity(state.TenantID, state.ItemFingerprint, state.Locator)
 	if err != nil {
 		if err == commonapi.ErrNotFound {
-			if strings.TrimSpace(qv.PreferredMode) == "" {
-				qv.PreferredMode = models.QuickViewPreferredModeBasicPreview
+			if strings.TrimSpace(state.PreferredMode) == "" {
+				state.PreferredMode = models.PreviewModeBasicPreview
 			}
-			return r.db.Create(qv).Error
+			return r.db.Create(state).Error
 		}
 		return err
 	}
-	if strings.TrimSpace(qv.PreferredMode) == "" || strings.TrimSpace(qv.PreferredMode) == existing.PreferredMode {
+	if strings.TrimSpace(state.PreferredMode) == "" || strings.TrimSpace(state.PreferredMode) == existing.PreferredMode {
 		return nil
 	}
-	return r.db.Model(&models.QuickView{}).Where("id = ?", existing.ID).Update("preferred_mode", qv.PreferredMode).Error
+	return r.db.Model(&models.PreviewState{}).Where("id = ?", existing.ID).Update("preferred_mode", state.PreferredMode).Error
 }
 
-// GetByID 根据ID获取快显记录
-func (r *QuickViewRepository) GetByID(id uint) (*models.QuickView, error) {
-	var qv models.QuickView
-	err := r.db.First(&qv, id).Error
+func (r *PreviewStateRepository) GetByID(id uint) (*models.PreviewState, error) {
+	var state models.PreviewState
+	err := r.db.First(&state, id).Error
 	if err != nil {
 		return nil, commonrepo.WrapDBError(err)
 	}
-	return &qv, nil
+	return &state, nil
 }
 
-// Update 更新快显记录
-// Deprecated: 使用 UpdateStatusOnly, UpdateGenerationResult 等专用方法以确保字段保护
-func (r *QuickViewRepository) Update(qv *models.QuickView) error {
-	return r.db.Save(qv).Error
+func (r *PreviewStateRepository) Update(state *models.PreviewState) error {
+	return r.db.Save(state).Error
 }
 
 // ListParams 列表参数
@@ -90,10 +85,10 @@ type ListParams struct {
 }
 
 // GetStatistics 获取统计信息
-func (r *QuickViewRepository) GetStatistics(tenantID uint) (*Statistics, error) {
+func (r *PreviewStateRepository) GetStatistics(tenantID uint) (*Statistics, error) {
 	var stats Statistics
 
-	r.db.Model(&models.QuickView{}).
+	r.db.Model(&models.PreviewState{}).
 		Where("tenant_id = ?", tenantID).
 		Count(&stats.Total)
 
@@ -108,13 +103,12 @@ type Statistics struct {
 	Failed     int64 `json:"failed"`
 }
 
-// Delete 删除快显记录
-func (r *QuickViewRepository) Delete(id uint) error {
-	return r.db.Delete(&models.QuickView{}, id).Error
+func (r *PreviewStateRepository) Delete(id uint) error {
+	return r.db.Delete(&models.PreviewState{}, id).Error
 }
 
-func (r *QuickViewRepository) ListQuickViews(ctx context.Context, tenantID uint) ([]*models.QuickView, error) {
-	var results []*models.QuickView
+func (r *PreviewStateRepository) ListPreviewStates(ctx context.Context, tenantID uint) ([]*models.PreviewState, error) {
+	var results []*models.PreviewState
 	err := r.db.WithContext(ctx).
 		Where("tenant_id = ?", tenantID).
 		Order("updated_at DESC, id DESC").
@@ -122,14 +116,14 @@ func (r *QuickViewRepository) ListQuickViews(ctx context.Context, tenantID uint)
 	return results, err
 }
 
-func (r *QuickViewRepository) DeleteByTenantAndFingerprint(ctx context.Context, tenantID uint, itemFingerprint string) error {
+func (r *PreviewStateRepository) DeleteByTenantAndFingerprint(ctx context.Context, tenantID uint, itemFingerprint string) error {
 	return r.db.WithContext(ctx).
 		Where("tenant_id = ? AND item_fingerprint = ?", tenantID, strings.TrimSpace(itemFingerprint)).
-		Delete(&models.QuickView{}).Error
+		Delete(&models.PreviewState{}).Error
 }
 
 // UpdatePreferredMode 更新用户偏好的显示模式
-func (r *QuickViewRepository) UpdatePreferredMode(
+func (r *PreviewStateRepository) UpdatePreferredMode(
 	tenantID uint,
 	itemFingerprint string,
 	locator string,
@@ -137,13 +131,13 @@ func (r *QuickViewRepository) UpdatePreferredMode(
 ) error {
 	itemFingerprint = strings.TrimSpace(itemFingerprint)
 	if itemFingerprint == "" {
-		return errors.New("quick view item_fingerprint is required")
+		return errors.New("preview state item_fingerprint is required")
 	}
 	updates := map[string]interface{}{
 		"preferred_mode": mode,
 		"locator":        strings.TrimSpace(locator),
 	}
-	result := r.db.Model(&models.QuickView{}).
+	result := r.db.Model(&models.PreviewState{}).
 		Where("tenant_id = ? AND item_fingerprint = ?", tenantID, itemFingerprint).
 		Updates(updates)
 	if result.Error != nil {
@@ -152,7 +146,7 @@ func (r *QuickViewRepository) UpdatePreferredMode(
 	if result.RowsAffected > 0 {
 		return nil
 	}
-	return r.db.Create(&models.QuickView{
+	return r.db.Create(&models.PreviewState{
 		TenantID:        tenantID,
 		ItemFingerprint: itemFingerprint,
 		Locator:         strings.TrimSpace(locator),
@@ -160,7 +154,7 @@ func (r *QuickViewRepository) UpdatePreferredMode(
 	}).Error
 }
 
-func (r *QuickViewRepository) UpdateViewState(
+func (r *PreviewStateRepository) UpdateViewState(
 	tenantID uint,
 	itemFingerprint string,
 	locator string,
@@ -168,7 +162,7 @@ func (r *QuickViewRepository) UpdateViewState(
 ) error {
 	itemFingerprint = strings.TrimSpace(itemFingerprint)
 	if itemFingerprint == "" {
-		return errors.New("quick view item_fingerprint is required")
+		return errors.New("preview state item_fingerprint is required")
 	}
 	if viewState == nil {
 		viewState = commonModels.JSONMap{}
@@ -177,7 +171,7 @@ func (r *QuickViewRepository) UpdateViewState(
 		"view_state": viewState,
 		"locator":    strings.TrimSpace(locator),
 	}
-	result := r.db.Model(&models.QuickView{}).
+	result := r.db.Model(&models.PreviewState{}).
 		Where("tenant_id = ? AND item_fingerprint = ?", tenantID, itemFingerprint).
 		Updates(updates)
 	if result.Error != nil {
@@ -186,11 +180,11 @@ func (r *QuickViewRepository) UpdateViewState(
 	if result.RowsAffected > 0 {
 		return nil
 	}
-	return r.db.Create(&models.QuickView{
+	return r.db.Create(&models.PreviewState{
 		TenantID:        tenantID,
 		ItemFingerprint: itemFingerprint,
 		Locator:         strings.TrimSpace(locator),
-		PreferredMode:   models.QuickViewPreferredModeBasicPreview,
+		PreferredMode:   models.PreviewModeBasicPreview,
 		ViewState:       viewState,
 	}).Error
 }

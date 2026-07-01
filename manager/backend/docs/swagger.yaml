@@ -582,6 +582,10 @@ definitions:
         type: string
       sampled_bounds_sample_count:
         type: integer
+      scene_center:
+        items:
+          type: number
+        type: array
       sh_degree:
         type: integer
       size_bytes:
@@ -1774,7 +1778,7 @@ definitions:
     - locator
     - preferred_mode
     type: object
-  internal_api.UpdateQuickViewStateRequest:
+  internal_api.UpdatePreviewStateRequest:
     properties:
       locator:
         type: string
@@ -2639,11 +2643,11 @@ paths:
     post:
       consumes:
       - application/json
-      description: 创建新的 3DGS - KPlat 快显任务配置。源必须是 format=ply、splat 或 ksplat 的 gaussian_splat
-        item；PLY / SPLAT 会转换为 KPlat artifact，KSplat 源直接发布登记，结果写入 Manager infra MinIO。|
-        Create a 3DGS - KPlat quick view task from a format=ply, splat, or ksplat
-        gaussian_splat item into Manager infra MinIO. PLY / SPLAT are converted to
-        KPlat artifacts and KSplat sources are published directly.
+      description: 创建新的 3DGS - KPlat 快显任务配置。源必须是 format=ply 或 splat 的 gaussian_splat
+        item，并转换为 KPlat artifact 写入 Manager infra MinIO；format=ksplat 的源文件直接基础预览，不创建快显任务。|
+        Create a 3DGS - KPlat quick view task from a format=ply or splat gaussian_splat
+        item into Manager infra MinIO. format=ksplat sources are previewed directly
+        and do not create quick view tasks.
       parameters:
       - description: gaussian splat quick view generation task configuration
         in: body
@@ -2970,8 +2974,9 @@ paths:
       - Manager
   /model_3d_quick_view_tasks:
     get:
-      description: 列出 Manager 模块的 OSGB / glTF / FBX / OBJ 转 GLB 快显任务配置。该私有入口固定返回 task_type=model_3d_quick_view_generation；编排模块应使用标准
-        /tasks 入口。| List Manager model 3D quick view generation task configurations.
+      description: 列出 Manager 模块的 OSGB / glTF / FBX / OBJ / STL 转 GLB 快显任务配置。该私有入口固定返回
+        task_type=model_3d_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager
+        model 3D quick view generation task configurations.
       parameters:
       - description: 页码，默认1 | Page number, default 1
         in: query
@@ -3002,10 +3007,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: 创建新的 OSGB / glTF / FBX / OBJ 转 GLB 快显任务配置。任务从 OSGB、glTF、FBX 或 OBJ
-        model_3d item 读取源数据，并将 GLB artifact 写入 Manager infra MinIO。| Create a model
-        3D quick view task from an OSGB, glTF, FBX or OBJ model item into Manager
-        infra MinIO.
+      description: 创建新的 OSGB / glTF / FBX / OBJ / STL 转 GLB 快显任务配置。任务从 OSGB、glTF、FBX、OBJ
+        或 STL model_3d item 读取源数据，并将 GLB artifact 写入 Manager infra MinIO。| Create
+        a model 3D quick view task from an OSGB, glTF, FBX, OBJ or STL model item
+        into Manager infra MinIO.
       parameters:
       - description: model 3D quick view generation task configuration
         in: body
@@ -3355,6 +3360,80 @@ paths:
       summary: 数据预览 | Data preview
       tags:
       - Manager
+  /preview-state/preferred-mode:
+    patch:
+      consumes:
+      - application/json
+      description: '以 Resource Locator 为数据项身份更新显示偏好：basic_preview 或 map_quick_view
+        | Update preferred display mode by Resource Locator: basic_preview or map_quick_view'
+      parameters:
+      - description: 显示模式配置 | Display mode configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdatePreferredModeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新成功 | Updated successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 资源不存在 | Resource not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新 locator 预览模式偏好 | Update locator preferred preview mode
+      tags:
+      - Manager
+  /preview-state/view-state:
+    patch:
+      consumes:
+      - application/json
+      description: 以 Resource Locator 为数据项身份更新预览交互状态。view_state 是统一 JSON 字段，顶层按 basic_preview
+        / quick_view 区分显示模式，模式内按 map / scene_3d 区分渲染域。 | Update preview interaction
+        state by Resource Locator. view_state is a unified JSON field grouped by display
+        mode basic_preview / quick_view, then by render domain map / scene_3d.
+      parameters:
+      - description: 预览交互状态 | Preview state
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdatePreviewStateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新成功 | Updated successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 资源不存在 | Resource not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新 locator 预览交互状态 | Update locator preview state
+      tags:
+      - Manager
   /quick-view/capability:
     get:
       description: 以 Resource Locator 为数据项身份返回快显能力状态。快显判断基于 ADDP engine、datatype、format
@@ -3456,42 +3535,6 @@ paths:
       summary: 获取统一 GeoJSON 快显数据 | Get unified quick-view GeoJSON
       tags:
       - Manager
-  /quick-view/preferred-mode:
-    patch:
-      consumes:
-      - application/json
-      description: '以 Resource Locator 为数据项身份更新显示偏好：basic_preview 或 map_quick_view
-        | Update preferred display mode by Resource Locator: basic_preview or map_quick_view'
-      parameters:
-      - description: 显示模式配置 | Display mode configuration
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.UpdatePreferredModeRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 更新成功 | Updated successfully
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "404":
-          description: 资源不存在 | Resource not found
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新 locator 预览模式偏好 | Update locator preferred preview mode
-      tags:
-      - Manager
   /quick-view/tiles/{z}/{x}/{y}.mvt:
     get:
       description: 以 Resource Locator 为身份返回 MVT 瓦片。实时 MVT 由 PostGIS 空间 item 提供，其他空间
@@ -3584,45 +3627,6 @@ paths:
       security:
       - BearerAuth: []
       summary: 获取统一 MVT 快显瓦片 | Get unified quick-view MVT tile
-      tags:
-      - Manager
-  /quick-view/view-state:
-    patch:
-      consumes:
-      - application/json
-      description: 以 Resource Locator 为数据项身份更新快显/预览交互状态。view_state 是统一 JSON 字段，顶层按
-        basic_preview / quick_view 区分显示模式，模式内按 map / scene_3d 区分渲染域。 | Update quick
-        view interaction state by Resource Locator. view_state is a unified JSON field
-        grouped by display mode basic_preview / quick_view, then by render domain
-        map / scene_3d.
-      parameters:
-      - description: 快显视角状态 | Quick view state
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.UpdateQuickViewStateRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 更新成功 | Updated successfully
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "404":
-          description: 资源不存在 | Resource not found
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新 locator 快显视角状态 | Update locator quick view state
       tags:
       - Manager
   /raster_cog:

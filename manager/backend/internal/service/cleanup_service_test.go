@@ -40,7 +40,7 @@ func TestManagerCleanupSummaries(t *testing.T) {
 	t.Parallel()
 
 	stats := &ManagerCleanupStats{
-		QuickViewPreferences:     2,
+		PreviewStates:            2,
 		TileCaches:               3,
 		Embeddings:               5,
 		QuickViewOptimizations:   7,

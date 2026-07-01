@@ -76,7 +76,7 @@ const (
 )
 
 type QuickViewService struct {
-	repo              *repository.QuickViewRepository
+	repo              *repository.PreviewStateRepository
 	tileCacheRepo     *repository.TileCacheRepository
 	optimizationRepo  *repository.QuickViewOptimizationRepository
 	rasterCOGRepo     *repository.RasterCOGRepository
@@ -92,7 +92,7 @@ func NewQuickViewService(
 	metaClient *commonClient.MetaClient,
 ) *QuickViewService {
 	return &QuickViewService{
-		repo:              repository.NewQuickViewRepository(db),
+		repo:              repository.NewPreviewStateRepository(db),
 		tileCacheRepo:     repository.NewTileCacheRepository(db),
 		optimizationRepo:  repository.NewQuickViewOptimizationRepository(db),
 		rasterCOGRepo:     repository.NewRasterCOGRepository(db),
@@ -102,7 +102,7 @@ func NewQuickViewService(
 	}
 }
 
-func (s *QuickViewService) Repository() *repository.QuickViewRepository {
+func (s *QuickViewService) Repository() *repository.PreviewStateRepository {
 	if s == nil {
 		return nil
 	}
@@ -230,8 +230,10 @@ type GaussianSplatQuickViewSource struct {
 	Format                   string
 	Layout                   string
 	Representation           string
+	SceneCenter              []float64
 	SplatCount               int64
 	SourceSizeBytes          int64
+	PreviewURL               string
 	HasOpacity               *bool
 	HasScale                 *bool
 	HasRotation              *bool
@@ -386,6 +388,7 @@ type QuickViewGaussianSplatInfo struct {
 	Format                   string             `json:"format,omitempty"`
 	Layout                   string             `json:"layout,omitempty"`
 	Representation           string             `json:"representation,omitempty"`
+	SceneCenter              []float64          `json:"scene_center,omitempty"`
 	ProgressiveOrder         string             `json:"progressive_order,omitempty"`
 	ResultID                 *uint              `json:"result_id,omitempty"`
 	TaskID                   *uint              `json:"task_id,omitempty"`
@@ -430,7 +433,7 @@ type TileCacheGeneration struct {
 	CreateURL string `json:"create_url,omitempty"`
 }
 
-func (s *QuickViewService) GetPreference(ctx context.Context, identity QuickViewIdentity) (*models.QuickView, error) {
+func (s *QuickViewService) GetPreference(ctx context.Context, identity QuickViewIdentity) (*models.PreviewState, error) {
 	if identity.TenantID == 0 {
 		identity.TenantID = 1
 	}
@@ -442,11 +445,11 @@ func (s *QuickViewService) GetPreference(ctx context.Context, identity QuickView
 	if !errors.Is(err, commonapi.ErrNotFound) && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
-	return &models.QuickView{
+	return &models.PreviewState{
 		TenantID:        identity.TenantID,
 		ItemFingerprint: identity.ItemFingerprint,
 		Locator:         identity.Locator,
-		PreferredMode:   models.QuickViewPreferredModeBasicPreview,
+		PreferredMode:   models.PreviewModeBasicPreview,
 	}, nil
 }
 
@@ -462,7 +465,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 	}
 
 	now := time.Now()
-	preferredMode := models.QuickViewPreferredModeBasicPreview
+	preferredMode := models.PreviewModeBasicPreview
 	existing, err := s.repo.GetByIdentity(identity.TenantID, identity.ItemFingerprint, identity.Locator)
 	if err != nil && !errors.Is(err, commonapi.ErrNotFound) && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
@@ -501,7 +504,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 		SourceTable:       strings.TrimSpace(table),
 		PreferredMode:     preferredMode,
 		ViewState:         viewState,
-		RecommendedMode:   models.QuickViewPreferredModeBasicPreview,
+		RecommendedMode:   models.PreviewModeBasicPreview,
 		ActiveMode:        preferredMode,
 		Status:            initialStatus,
 		UnavailableReason: initialReason,
@@ -518,7 +521,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 		capability.Status = QuickViewStatusAvailable
 		capability.UnavailableReason = ""
 		capability.RenderSource = QuickViewRenderSourceCachedTile
-		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
+		capability.RecommendedMode = models.PreviewModeMapQuickView
 		capability.DefaultTileCacheID = &readyTileCache.ID
 		capability.QuickView = renderInfoFromTileCache(engineID, schema, table, readyTileCache, spatialMeta)
 	} else if directGeoJSONAvailable(s.directGeoJSONMaxRows(), spatialMeta) {
@@ -526,7 +529,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 		capability.Status = QuickViewStatusAvailable
 		capability.UnavailableReason = ""
 		capability.RenderSource = QuickViewRenderSourceDirectGeoJSON
-		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
+		capability.RecommendedMode = models.PreviewModeMapQuickView
 		capability.QuickView = renderInfoFromSpatialMeta(engineID, schema, table, spatialMeta)
 	} else if spatialErr != nil {
 		capability.TileCacheGeneration.Available = false
@@ -549,8 +552,8 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 	if !capability.TileCacheGeneration.Available {
 		capability.CanGenerateTileCache = false
 	}
-	if capability.ActiveMode == models.QuickViewPreferredModeMapQuickView && !capability.CanUseQuickView {
-		capability.ActiveMode = models.QuickViewPreferredModeBasicPreview
+	if capability.ActiveMode == models.PreviewModeMapQuickView && !capability.CanUseQuickView {
+		capability.ActiveMode = models.PreviewModeBasicPreview
 	}
 	capability.RenderFacts = renderFactsFromSpatialMeta(spatialMeta)
 	applyOptimizationRenderFacts(capability.RenderFacts, optimizationInfo)
@@ -575,7 +578,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	}
 
 	now := time.Now()
-	preferredMode := models.QuickViewPreferredModeBasicPreview
+	preferredMode := models.PreviewModeBasicPreview
 	hasExistingPreference := false
 	existing, err := s.repo.GetByIdentity(identity.TenantID, identity.ItemFingerprint, identity.Locator)
 	if err != nil && !errors.Is(err, commonapi.ErrNotFound) && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -589,8 +592,8 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	if existing != nil && existing.ViewState != nil {
 		viewState = existing.ViewState
 	}
-	if (source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil || source.GaussianSplat != nil) && !hasExistingPreference {
-		preferredMode = models.QuickViewPreferredModeMapQuickView
+	if (source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil || source.GaussianSplat != nil) && !hasExistingPreference && !isSourceKSplat(source.GaussianSplat) {
+		preferredMode = models.PreviewModeMapQuickView
 	}
 
 	readyTileCache, err := s.defaultReadyTileCache(ctx, identity)
@@ -614,7 +617,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		SourceTable:       strings.TrimSpace(source.Table),
 		PreferredMode:     preferredMode,
 		ViewState:         viewState,
-		RecommendedMode:   models.QuickViewPreferredModeBasicPreview,
+		RecommendedMode:   models.PreviewModeBasicPreview,
 		ActiveMode:        preferredMode,
 		Status:            initialStatus,
 		UnavailableReason: initialReason,
@@ -645,7 +648,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		capability.Status = QuickViewStatusAvailable
 		capability.UnavailableReason = ""
 		capability.RenderSource = QuickViewRenderSourceCachedTile
-		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
+		capability.RecommendedMode = models.PreviewModeMapQuickView
 		capability.DefaultTileCacheID = &readyTileCache.ID
 		capability.QuickView = renderInfoFromTileCache(source.EngineID, source.Schema, source.Table, readyTileCache, source.SpatialMeta)
 	} else if source.DirectGeoJSON && directGeoJSONAvailable(s.directGeoJSONMaxRows(), source.SpatialMeta) {
@@ -653,7 +656,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		capability.Status = QuickViewStatusAvailable
 		capability.UnavailableReason = ""
 		capability.RenderSource = QuickViewRenderSourceDirectGeoJSON
-		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
+		capability.RecommendedMode = models.PreviewModeMapQuickView
 		capability.QuickView = renderInfoFromLocatorGeoJSON(source.SpatialMeta, source.GeoJSONURL)
 		capability.RealtimeTile = s.realtimeTileInfoFromTarget(source.RealtimeTileTarget)
 	} else if source.RealtimeTileTarget != nil {
@@ -661,7 +664,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		capability.Status = QuickViewStatusAvailable
 		capability.UnavailableReason = ""
 		capability.RenderSource = QuickViewRenderSourceRealtimeTile
-		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
+		capability.RecommendedMode = models.PreviewModeMapQuickView
 		capability.QuickView = renderInfoFromRealtimeTile(source.EngineID, source.Schema, source.Table, source.SpatialMeta)
 		capability.RealtimeTile = s.realtimeTileInfoFromTarget(source.RealtimeTileTarget)
 		capability.CanGenerateTileCache = true
@@ -689,8 +692,8 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 			Reason:    "this quick view source does not use vector tile cache generation",
 		}
 	}
-	if capability.ActiveMode == models.QuickViewPreferredModeMapQuickView && !capability.CanUseQuickView {
-		capability.ActiveMode = models.QuickViewPreferredModeBasicPreview
+	if capability.ActiveMode == models.PreviewModeMapQuickView && !capability.CanUseQuickView {
+		capability.ActiveMode = models.PreviewModeBasicPreview
 	}
 	capability.RenderFacts = renderFactsFromSpatialMeta(source.SpatialMeta)
 	applyOptimizationRenderFacts(capability.RenderFacts, optimizationInfo)
@@ -723,7 +726,7 @@ func (s *QuickViewService) applyRasterCapability(ctx context.Context, capability
 		capability.Status = QuickViewStatusAvailable
 		capability.UnavailableReason = ""
 		capability.RenderSource = QuickViewRenderSourceClientCOG
-		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
+		capability.RecommendedMode = models.PreviewModeMapQuickView
 		capability.QuickView = renderInfoFromRasterCOG(readyRasterCOG, raster)
 		capability.Raster = rasterInfoFromRasterCOG(readyRasterCOG, raster)
 		return nil
@@ -735,7 +738,7 @@ func (s *QuickViewService) applyRasterCapability(ctx context.Context, capability
 		capability.Status = QuickViewStatusAvailable
 		capability.UnavailableReason = ""
 		capability.RenderSource = QuickViewRenderSourceDirectTIFF
-		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
+		capability.RecommendedMode = models.PreviewModeMapQuickView
 		capability.QuickView = renderInfoFromRaster(raster)
 		capability.Raster.UnavailableReason = ""
 		capability.Raster.RecommendedAction = rasterDirectTIFFOptionalAction(raster)
@@ -746,7 +749,7 @@ func (s *QuickViewService) applyRasterCapability(ctx context.Context, capability
 	capability.Status = QuickViewStatusUnavailable
 	capability.UnavailableReason = reason
 	capability.RenderSource = ""
-	capability.RecommendedMode = models.QuickViewPreferredModeBasicPreview
+	capability.RecommendedMode = models.PreviewModeBasicPreview
 	capability.QuickView = QuickViewRenderInfo{}
 	capability.Raster.UnavailableReason = reason
 	if action := rasterRecommendedActionForReason(reason); action != "" {
@@ -779,7 +782,7 @@ func (s *QuickViewService) applyRasterMosaicCapability(capability *QuickViewCapa
 		capability.Status = QuickViewStatusUnavailable
 		capability.UnavailableReason = "raster mosaic overview COG is unavailable"
 		capability.RenderSource = ""
-		capability.RecommendedMode = models.QuickViewPreferredModeBasicPreview
+		capability.RecommendedMode = models.PreviewModeBasicPreview
 		capability.QuickView = QuickViewRenderInfo{}
 		return
 	}
@@ -787,7 +790,7 @@ func (s *QuickViewService) applyRasterMosaicCapability(capability *QuickViewCapa
 	capability.Status = QuickViewStatusAvailable
 	capability.UnavailableReason = ""
 	capability.RenderSource = QuickViewRenderSourceRasterMosaic
-	capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
+	capability.RecommendedMode = models.PreviewModeMapQuickView
 	capability.QuickView = renderInfoFromRasterMosaic(mosaic)
 }
 
@@ -816,7 +819,7 @@ func (s *QuickViewService) applyModel3DCapability(ctx context.Context, capabilit
 		capability.Status = QuickViewStatusAvailable
 		capability.UnavailableReason = ""
 		capability.RenderSource = QuickViewRenderSourceModel3DGLB
-		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
+		capability.RecommendedMode = models.PreviewModeMapQuickView
 		capability.QuickView = renderInfoFromModel3DQuickView(readyGLB)
 		capability.Model3D = model3DInfoFromQuickView(readyGLB, model3D)
 		return nil
@@ -826,7 +829,7 @@ func (s *QuickViewService) applyModel3DCapability(ctx context.Context, capabilit
 	capability.Status = QuickViewStatusUnavailable
 	capability.UnavailableReason = "requires_glb_generation"
 	capability.RenderSource = ""
-	capability.RecommendedMode = models.QuickViewPreferredModeBasicPreview
+	capability.RecommendedMode = models.PreviewModeBasicPreview
 	capability.QuickView = QuickViewRenderInfo{}
 	return nil
 }
@@ -846,12 +849,22 @@ func (s *QuickViewService) applyGaussianSplatCapability(ctx context.Context, cap
 	capability.Status = QuickViewStatusUnavailable
 	capability.UnavailableReason = "requires_kplat_generation"
 	capability.RenderSource = ""
-	capability.RecommendedMode = models.QuickViewPreferredModeBasicPreview
+	capability.RecommendedMode = models.PreviewModeBasicPreview
 	capability.QuickView = QuickViewRenderInfo{}
 	capability.CanGenerateTileCache = false
 	capability.TileCacheGeneration = TileCacheGeneration{
 		Available: false,
 		Reason:    "gaussian splat quick view does not use vector tile cache generation",
+	}
+
+	if isSourceKSplat(gaussian) {
+		reason := "source_format_direct_preview"
+		capability.UnavailableReason = reason
+		if capability.GaussianSplat != nil {
+			capability.GaussianSplat.UnavailableReason = reason
+			capability.GaussianSplat.RecommendedAction = ""
+		}
+		return nil
 	}
 
 	readyKSplat, err := s.readyGaussianSplatQuickView(ctx, identity, engineID)
@@ -863,7 +876,7 @@ func (s *QuickViewService) applyGaussianSplatCapability(ctx context.Context, cap
 		capability.Status = QuickViewStatusAvailable
 		capability.UnavailableReason = ""
 		capability.RenderSource = QuickViewRenderSourceGaussianSplatKSplat
-		capability.RecommendedMode = models.QuickViewPreferredModeMapQuickView
+		capability.RecommendedMode = models.PreviewModeMapQuickView
 		capability.QuickView = renderInfoFromGaussianSplatQuickView(readyKSplat)
 		capability.GaussianSplat = gaussianSplatInfoFromQuickView(readyKSplat, gaussian)
 		return nil
@@ -876,6 +889,10 @@ func (s *QuickViewService) applyGaussianSplatCapability(ctx context.Context, cap
 		capability.GaussianSplat.RecommendedAction = commonExecution.TaskTypeGaussianSplatQuickViewGeneration
 	}
 	return nil
+}
+
+func isSourceKSplat(gaussian *GaussianSplatQuickViewSource) bool {
+	return gaussian != nil && strings.EqualFold(strings.TrimSpace(gaussian.Format), string(format.FormatKSplat))
 }
 
 func (s *QuickViewService) GetDefaultTileCache(
@@ -914,7 +931,7 @@ func (s *QuickViewService) UpdatePreferredModeByIdentity(
 	preferredMode string,
 	capabilityLoader func(context.Context) (*QuickViewCapability, error),
 ) error {
-	if preferredMode != models.QuickViewPreferredModeBasicPreview && preferredMode != models.QuickViewPreferredModeMapQuickView {
+	if preferredMode != models.PreviewModeBasicPreview && preferredMode != models.PreviewModeMapQuickView {
 		return fmt.Errorf("%w: %s", ErrQuickViewInvalidPreferredMode, preferredMode)
 	}
 	if identity.TenantID == 0 {
@@ -924,7 +941,7 @@ func (s *QuickViewService) UpdatePreferredModeByIdentity(
 	if strings.TrimSpace(identity.ItemFingerprint) == "" {
 		return fmt.Errorf("%w: item identity is missing", ErrQuickViewInvalidPreferredMode)
 	}
-	if preferredMode == models.QuickViewPreferredModeMapQuickView {
+	if preferredMode == models.PreviewModeMapQuickView {
 		capability, err := capabilityLoader(ctx)
 		if err != nil {
 			return err
@@ -958,10 +975,10 @@ func (s *QuickViewService) UpdateViewStateByIdentity(
 	if viewState == nil {
 		viewState = commonModels.JSONMap{}
 	}
-	return s.repo.UpdateViewState(identity.TenantID, identity.ItemFingerprint, identity.Locator, normalizeQuickViewViewStatePayload(viewState))
+	return s.repo.UpdateViewState(identity.TenantID, identity.ItemFingerprint, identity.Locator, normalizePreviewViewStatePayload(viewState))
 }
 
-func normalizeQuickViewViewStatePayload(viewState commonModels.JSONMap) commonModels.JSONMap {
+func normalizePreviewViewStatePayload(viewState commonModels.JSONMap) commonModels.JSONMap {
 	if viewState == nil {
 		return commonModels.JSONMap{}
 	}
@@ -1695,8 +1712,10 @@ func gaussianSplatInfoFromSource(gaussian *GaussianSplatQuickViewSource) *QuickV
 		Format:                   strings.TrimSpace(gaussian.Format),
 		Layout:                   strings.TrimSpace(gaussian.Layout),
 		Representation:           strings.TrimSpace(gaussian.Representation),
+		SceneCenter:              cloneFloat64Slice(gaussian.SceneCenter),
 		SplatCount:               gaussian.SplatCount,
 		SizeBytes:                gaussian.SourceSizeBytes,
+		PreviewURL:               strings.TrimSpace(gaussian.PreviewURL),
 		HasOpacity:               cloneBoolPtr(gaussian.HasOpacity),
 		HasScale:                 cloneBoolPtr(gaussian.HasScale),
 		HasRotation:              cloneBoolPtr(gaussian.HasRotation),
@@ -2056,6 +2075,7 @@ func GaussianSplatQuickViewSourceFromAttributes(attrs map[string]interface{}) *G
 		Format:                   itemFormat,
 		Layout:                   itemLayout,
 		Representation:           strings.TrimSpace(commonJSON.InterfaceString(typeInfo["representation"])),
+		SceneCenter:              validSceneCenter(commonJSON.InterfaceFloat64Slice(commonJSON.Value(attrs, "format_info."+itemFormat, "scene_center"))),
 		SplatCount:               commonJSON.InterfaceInt64(typeInfo["splat_count"]),
 		SourceSizeBytes:          sourceSizeBytes,
 		HasOpacity:               optionalBoolPtr(typeInfo, "has_opacity"),
@@ -2118,6 +2138,26 @@ func bounds3DFromPayload(payload map[string]interface{}) *datatype.Bounds3D {
 	return datatype.NormalizeBounds3D(&bounds)
 }
 
+func validSceneCenter(values []float64) []float64 {
+	if len(values) < 3 {
+		return nil
+	}
+	center := values[:3]
+	for _, value := range center {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return nil
+		}
+	}
+	return append([]float64(nil), center...)
+}
+
+func cloneFloat64Slice(values []float64) []float64 {
+	if len(values) == 0 {
+		return nil
+	}
+	return append([]float64(nil), values...)
+}
+
 func cloneBoolPtr(value *bool) *bool {
 	if value == nil {
 		return nil
@@ -2151,6 +2191,8 @@ func isModel3DQuickViewSourceFormat(itemFormat, itemLayout string) bool {
 	case string(format.FormatFBX):
 		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
 	case string(format.FormatOBJ):
+		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
+	case string(format.FormatSTL):
 		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
 	default:
 		return false

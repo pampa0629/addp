@@ -20,7 +20,7 @@ cleanup 覆盖以下对象：
 | 类型 | 示例 | 说明 |
 | --- | --- | --- |
 | 源事实 | `meta.meta_node`、`meta.meta_item`、Meta search index | 由事实 owner 模块清理。 |
-| 派生产物状态 | `manager.tile_cache`、`manager.embeddings`、`manager.quick_view_optimization` | 描述当前产物是否可用、由什么配置生成、在哪里。 |
+| 派生产物状态 | `manager.vector_tile_cache`、`manager.embeddings`、`manager.vector_quick_view_targets` | 描述当前产物是否可用、由什么配置生成、在哪里。 |
 | 物理产物 | MinIO objects、PG materialized view / index、pgvector 行、Redis key | 只能由产物 owner 模块按登记状态清理。 |
 | 任务定义残留 | 强绑定已删除 engine / item / tenant 的任务定义 | 是否删除、禁用或标记缺源由 owner 模块定义并在 cleanup result（资源回收结果）中报告。 |
 | 运行时缓存 | 内存缓存、Redis 缓存、临时文件 | 由创建缓存的模块清理。 |
@@ -90,18 +90,18 @@ Meta 资源回收执行方只治理 Meta-owned 资源：
 
 Meta 不得：
 
-- 读取 Manager 私有表，例如 `manager.quick_view`、`manager.tile_cache`、`manager.embeddings`。
+- 读取 Manager 私有表，例如 `manager.preview_state`、`manager.vector_tile_cache`、`manager.embeddings`。
 - 推导 Manager 的 MinIO bucket、prefix 或对象路径。
-- 删除 Manager quick view、MVT tiles、tile cache、embedding、preview cache。
+- 删除 Manager preview state、MVT tiles、tile cache、embedding、preview cache。
 - 清理 System audit logs 或其他 System-owned 产物。
 
 ### 4. Manager
 
 Manager 资源回收执行方只治理 Manager-owned 派生产物和缓存：
 
-- `manager.quick_view`。
-- `manager.quick_view_optimization` 以及 Manager 创建并登记的 3857 优化目标。
-- `manager.tile_cache`、`manager.tile_cache_tasks`、`storage_ref` 指向的瓦片对象和 manifest。
+- `manager.preview_state`。
+- `manager.vector_quick_view_targets` 以及 Manager 创建并登记的 3857 优化目标。
+- `manager.vector_tile_cache`、`manager.vector_tile_cache_tasks`、`storage_ref` 指向的瓦片对象和 manifest。
 - Manager runtime tile cache。
 - `manager.embeddings`、`manager.embedding_tasks` 以及向量化结果。
 - Manager preview cache、缩略图、抽取缓存等后续 Manager-owned 产物。
@@ -114,7 +114,7 @@ Manager 不得：
 - 删除自动识别的外部 3857 物化视图、外部表或外部索引。
 - 通过 Meta attributes 或硬编码 MinIO prefix 反推自身产物位置。
 
-Manager 删除瓦片对象时必须从 `manager.tile_cache.storage_ref` 解析存储位置，不得硬编码 `manager/mvt-tiles/<fingerprint>` 或旧 quick view 字段。
+Manager 删除瓦片对象时必须从 `manager.vector_tile_cache.storage_ref` 解析存储位置，不得硬编码 `manager/mvt-tiles/<fingerprint>` 或旧 quick view 字段。
 
 ### 5. Transfer 和其他模块
 

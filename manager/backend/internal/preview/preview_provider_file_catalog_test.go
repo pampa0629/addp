@@ -368,7 +368,7 @@ func TestModel3DQuickViewSourceFormatSupportsSingleOBJ(t *testing.T) {
 	}
 }
 
-func TestModel3DQuickViewSourceFormatRejectsUnsupportedSingleSTL(t *testing.T) {
+func TestModel3DQuickViewSourceFormatSupportsSingleSTL(t *testing.T) {
 	got := model3DQuickViewSourceFormat(map[string]interface{}{
 		"item": map[string]interface{}{
 			"data_type": "model_3d",
@@ -376,8 +376,8 @@ func TestModel3DQuickViewSourceFormatRejectsUnsupportedSingleSTL(t *testing.T) {
 			"layout":    "single",
 		},
 	})
-	if got != format.FormatUnknown {
-		t.Fatalf("model3DQuickViewSourceFormat() = %q, want unknown", got)
+	if got != format.FormatSTL {
+		t.Fatalf("model3DQuickViewSourceFormat() = %q, want %q", got, format.FormatSTL)
 	}
 }
 

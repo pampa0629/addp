@@ -663,7 +663,7 @@ const taskPayload = (validated) => ({
 
 const gaussianSplatQuickViewSourceFormat = (value) => {
   const sourceFormat = String(value || '').trim().toLowerCase()
-  return ['ply', 'splat', 'ksplat'].includes(sourceFormat) ? sourceFormat : ''
+  return ['ply', 'splat'].includes(sourceFormat) ? sourceFormat : ''
 }
 
 const saveTask = async () => {

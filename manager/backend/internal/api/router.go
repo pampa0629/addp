@@ -279,8 +279,8 @@ func SetupRouter(
 		api.GET("/quick-view/capability", quickViewHandler.GetQuickViewCapabilityByLocator)
 		api.GET("/quick-view/geojson", quickViewHandler.GetQuickViewGeoJSONByLocator)
 		api.GET("/quick-view/tiles/:z/:x/:y.mvt", quickViewHandler.GetQuickViewTileByLocator)
-		api.PATCH("/quick-view/preferred-mode", quickViewHandler.UpdatePreferredModeByLocator)
-		api.PATCH("/quick-view/view-state", quickViewHandler.UpdateViewStateByLocator)
+		api.PATCH("/preview-state/preferred-mode", quickViewHandler.UpdatePreferredModeByLocator)
+		api.PATCH("/preview-state/view-state", quickViewHandler.UpdateViewStateByLocator)
 	}
 
 	return router

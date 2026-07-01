@@ -68,11 +68,11 @@ func TestQuickViewCapabilityUsesDirectGeoJSONForSmallSpatialTable(t *testing.T) 
 			}
 
 			var preferenceCount int64
-			if err := db.Model(&models.QuickView{}).Count(&preferenceCount).Error; err != nil {
-				t.Fatalf("count quick view preferences: %v", err)
+			if err := db.Model(&models.PreviewState{}).Count(&preferenceCount).Error; err != nil {
+				t.Fatalf("count preview states: %v", err)
 			}
 			if preferenceCount != 0 {
-				t.Fatalf("quick_view preference count = %d, want 0 because capability is dynamic", preferenceCount)
+				t.Fatalf("preview state count = %d, want 0 because capability is dynamic", preferenceCount)
 			}
 		})
 	}
@@ -166,7 +166,7 @@ func TestQuickViewCapabilityUsesDirectTIFFForSmallRasterItem(t *testing.T) {
 	if capability.RenderSource != QuickViewRenderSourceDirectTIFF {
 		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectTIFF)
 	}
-	if capability.PreferredMode != models.QuickViewPreferredModeMapQuickView || capability.ActiveMode != models.QuickViewPreferredModeMapQuickView {
+	if capability.PreferredMode != models.PreviewModeMapQuickView || capability.ActiveMode != models.PreviewModeMapQuickView {
 		t.Fatalf("preview mode = preferred:%s active:%s, want map_quick_view default for raster item", capability.PreferredMode, capability.ActiveMode)
 	}
 	if capability.QuickView.PreviewURL == "" {
@@ -330,7 +330,7 @@ func TestQuickViewCapabilityUsesRasterMosaicTileForMosaicItem(t *testing.T) {
 	if capability.RenderSource != QuickViewRenderSourceRasterMosaic {
 		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceRasterMosaic)
 	}
-	if capability.PreferredMode != models.QuickViewPreferredModeMapQuickView || capability.ActiveMode != models.QuickViewPreferredModeMapQuickView {
+	if capability.PreferredMode != models.PreviewModeMapQuickView || capability.ActiveMode != models.PreviewModeMapQuickView {
 		t.Fatalf("preview mode = preferred:%s active:%s, want map_quick_view default for raster mosaic", capability.PreferredMode, capability.ActiveMode)
 	}
 	if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
@@ -356,7 +356,7 @@ func TestQuickViewCapabilityRespectsExistingBasicPreviewPreferenceForRasterItem(
 	})
 	locator := "addp://engine/26/path/rasters/small.tif?type=file&item_id=99"
 	itemFingerprint := commonModels.GenerateItemFingerprint(26, "rasters/small.tif")
-	if err := svc.repo.UpdatePreferredMode(7, itemFingerprint, locator, models.QuickViewPreferredModeBasicPreview); err != nil {
+	if err := svc.repo.UpdatePreferredMode(7, itemFingerprint, locator, models.PreviewModeBasicPreview); err != nil {
 		t.Fatalf("save existing preference: %v", err)
 	}
 
@@ -387,7 +387,7 @@ func TestQuickViewCapabilityRespectsExistingBasicPreviewPreferenceForRasterItem(
 	if !capability.CanUseQuickView || capability.RenderSource != QuickViewRenderSourceDirectTIFF {
 		t.Fatalf("raster quick view capability = can:%v source:%s", capability.CanUseQuickView, capability.RenderSource)
 	}
-	if capability.PreferredMode != models.QuickViewPreferredModeBasicPreview || capability.ActiveMode != models.QuickViewPreferredModeBasicPreview {
+	if capability.PreferredMode != models.PreviewModeBasicPreview || capability.ActiveMode != models.PreviewModeBasicPreview {
 		t.Fatalf("preview mode = preferred:%s active:%s, want existing basic_preview preference", capability.PreferredMode, capability.ActiveMode)
 	}
 }
@@ -617,6 +617,25 @@ func TestModel3DQuickViewSourceFromAttributesSupportsOBJSingleItem(t *testing.T)
 	}
 }
 
+func TestModel3DQuickViewSourceFromAttributesSupportsSTLSingleItem(t *testing.T) {
+	source := Model3DQuickViewSourceFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"data_type": "model_3d",
+			"format":    "stl",
+			"layout":    "single",
+		},
+		"storage": map[string]interface{}{
+			"total_size": int64(4096),
+		},
+	})
+	if source == nil {
+		t.Fatal("source is nil, want STL single item to be a model3d GLB quick view source")
+	}
+	if source.Format != "stl" || source.Layout != "single" || source.SourceSizeBytes != 4096 {
+		t.Fatalf("source = %#v, want STL single item facts", source)
+	}
+}
+
 func TestGaussianSplatQuickViewSourceFromAttributes(t *testing.T) {
 	for _, formatName := range []string{"ply", "splat", "ksplat"} {
 		formatName := formatName
@@ -640,6 +659,11 @@ func TestGaussianSplatQuickViewSourceFromAttributes(t *testing.T) {
 						"sampled_bounds_sample_count": int64(2048),
 					},
 				},
+				"format_info": map[string]interface{}{
+					formatName: map[string]interface{}{
+						"scene_center": []interface{}{1.5, 2.5, 3.5},
+					},
+				},
 				"storage": map[string]interface{}{
 					"total_size": int64(4096),
 				},
@@ -652,6 +676,9 @@ func TestGaussianSplatQuickViewSourceFromAttributes(t *testing.T) {
 			}
 			if source.HasOpacity == nil || !*source.HasOpacity || source.SHDegree == nil || *source.SHDegree != 3 {
 				t.Fatalf("source optional facts = %#v, want opacity and sh degree", source)
+			}
+			if len(source.SceneCenter) != 3 || source.SceneCenter[0] != 1.5 || source.SceneCenter[2] != 3.5 {
+				t.Fatalf("source scene center = %#v, want format_info scene center", source.SceneCenter)
 			}
 			if source.SampledBounds3D == nil || source.SampledBounds3D.MinX == nil || *source.SampledBounds3D.MinX != 1.0 {
 				t.Fatalf("source sampled bounds = %#v, want sampled bounds from attributes", source.SampledBounds3D)
@@ -672,12 +699,12 @@ func TestGaussianSplatQuickViewSourceFromAttributes(t *testing.T) {
 	}
 }
 
-func TestQuickViewCapabilityRecommendsKPlatGenerationForGaussianSources(t *testing.T) {
+func TestQuickViewCapabilityRecommendsKPlatGenerationForConvertibleGaussianSources(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	createGaussianSplatQuickViewTable(t, db)
 	svc := NewQuickViewService(db, nil)
 
-	for _, sourceFormat := range []string{"ply", "splat", "ksplat"} {
+	for _, sourceFormat := range []string{"ply", "splat"} {
 		t.Run(sourceFormat, func(t *testing.T) {
 			capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
 				Identity: QuickViewIdentity{
@@ -716,17 +743,62 @@ func TestQuickViewCapabilityRecommendsKPlatGenerationForGaussianSources(t *testi
 	}
 }
 
+func TestQuickViewCapabilityTreatsSourceKSplatAsBasicPreview(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	createGaussianSplatQuickViewTable(t, db)
+	svc := NewQuickViewService(db, nil)
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: "fp-gaussian-ksplat",
+			Locator:         "addp://engine/26/path/3d/splat/model.ksplat?type=file&item_id=201",
+		},
+		EngineID: 26,
+		GaussianSplat: &GaussianSplatQuickViewSource{
+			Format:          "ksplat",
+			Layout:          "single",
+			Representation:  "3d_gaussian_splatting",
+			SceneCenter:     []float64{-53.4, -0.7, 1522.4},
+			SplatCount:      128,
+			SourceSizeBytes: 4096,
+			PreviewURL:      "/api/v1/manager/storage-stream?engine_id=26&storage_ref=3d%2Fsplat%2Fmodel.ksplat",
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
+	}
+	if capability.CanUseQuickView || capability.RenderSource != "" || capability.UnavailableReason != "source_format_direct_preview" {
+		t.Fatalf("capability quick view = can:%v render:%q reason:%q, want source KPlat basic preview only", capability.CanUseQuickView, capability.RenderSource, capability.UnavailableReason)
+	}
+	if capability.QuickView.PreviewURL != "" {
+		t.Fatalf("quick view preview_url = %q, want empty for source KPlat", capability.QuickView.PreviewURL)
+	}
+	if capability.PreferredMode != models.PreviewModeBasicPreview || capability.ActiveMode != models.PreviewModeBasicPreview {
+		t.Fatalf("preview mode = preferred:%q active:%q, want basic preview", capability.PreferredMode, capability.ActiveMode)
+	}
+	if capability.GaussianSplat == nil || capability.GaussianSplat.RecommendedAction != "" || capability.GaussianSplat.UnavailableReason != "source_format_direct_preview" {
+		t.Fatalf("gaussian_splat = %#v, want source KPlat direct preview facts", capability.GaussianSplat)
+	}
+	if len(capability.GaussianSplat.SceneCenter) != 3 || capability.GaussianSplat.SceneCenter[2] != 1522.4 {
+		t.Fatalf("scene_center = %#v, want source scene center", capability.GaussianSplat.SceneCenter)
+	}
+	if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
+		t.Fatalf("tile generation = can:%v available:%v, want false for gaussian splat", capability.CanGenerateTileCache, capability.TileCacheGeneration.Available)
+	}
+}
+
 func TestQuickViewCapabilityUsesReadyGaussianSplatKSplat(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	createGaussianSplatQuickViewTable(t, db)
 	svc := NewQuickViewService(db, nil)
-	locator := "addp://engine/26/path/3d/ksplat/model.ksplat?type=file&item_id=201"
+	locator := "addp://engine/26/path/3d/gaussian/model.ply?type=file&item_id=201"
 	result := &models.GaussianSplatQuickView{
 		TenantID:        7,
 		ItemFingerprint: "fp-gaussian",
 		Locator:         locator,
 		SourceEngineID:  26,
-		SourceFormat:    "ksplat",
+		SourceFormat:    "ply",
 		SourceSizeBytes: 4096,
 		StorageRef:      `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/gaussian-splat-quick-view/fp-gaussian/model.ksplat"}`,
 		FileName:        "model.ksplat",
@@ -746,7 +818,7 @@ func TestQuickViewCapabilityUsesReadyGaussianSplatKSplat(t *testing.T) {
 		},
 		EngineID: 26,
 		GaussianSplat: &GaussianSplatQuickViewSource{
-			Format:                   "ksplat",
+			Format:                   "ply",
 			Layout:                   "single",
 			Representation:           "3d_gaussian_splatting",
 			SplatCount:               128,
@@ -767,7 +839,7 @@ func TestQuickViewCapabilityUsesReadyGaussianSplatKSplat(t *testing.T) {
 	if capability.QuickView.PreviewURL != fmt.Sprintf("/api/v1/manager/gaussian_splat_quick_view/%d/content", result.ID) {
 		t.Fatalf("preview_url = %q, want gaussian splat quick view content URL", capability.QuickView.PreviewURL)
 	}
-	if capability.GaussianSplat == nil || capability.GaussianSplat.Format != "ksplat" || capability.GaussianSplat.FileName != "model.ksplat" {
+	if capability.GaussianSplat == nil || capability.GaussianSplat.FileName != "model.ksplat" || capability.GaussianSplat.RecommendedAction != "" {
 		t.Fatalf("gaussian_splat capability = %#v, want ready KSplat facts", capability.GaussianSplat)
 	}
 	if capability.GaussianSplat.SampledBounds3D == nil || capability.GaussianSplat.SampledBounds3D.MinX == nil || *capability.GaussianSplat.SampledBounds3D.MinX != 1 {
@@ -1243,7 +1315,7 @@ func TestQuickViewCapabilityUsesDirectGeoJSONForSmallPGTableAndKeepsRealtimeAlte
 	}
 }
 
-func TestQuickViewPreferenceUsesStandardItemFingerprint(t *testing.T) {
+func TestPreviewStateUsesStandardItemFingerprint(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	itemFingerprint := spatialItemFingerprint(11, "public", "roads")
@@ -1253,35 +1325,35 @@ func TestQuickViewPreferenceUsesStandardItemFingerprint(t *testing.T) {
 		TenantID:        7,
 		ItemFingerprint: itemFingerprint,
 		Locator:         locator,
-	}, models.QuickViewPreferredModeBasicPreview, nil)
+	}, models.PreviewModeBasicPreview, nil)
 	if err != nil {
 		t.Fatalf("update preferred mode by standard item fingerprint: %v", err)
 	}
 
-	repo := repository.NewQuickViewRepository(db)
-	preference, err := repo.GetByIdentity(7, itemFingerprint, locator)
+	repo := repository.NewPreviewStateRepository(db)
+	state, err := repo.GetByIdentity(7, itemFingerprint, locator)
 	if err != nil {
-		t.Fatalf("load quick view preference: %v", err)
+		t.Fatalf("load preview state: %v", err)
 	}
-	if preference.ItemFingerprint != itemFingerprint {
-		t.Fatalf("item_fingerprint = %s, want %s", preference.ItemFingerprint, itemFingerprint)
+	if state.ItemFingerprint != itemFingerprint {
+		t.Fatalf("item_fingerprint = %s, want %s", state.ItemFingerprint, itemFingerprint)
 	}
-	if strings.HasPrefix(preference.ItemFingerprint, "locator:") {
-		t.Fatalf("item_fingerprint = %s, must not be derived from locator", preference.ItemFingerprint)
+	if strings.HasPrefix(state.ItemFingerprint, "locator:") {
+		t.Fatalf("item_fingerprint = %s, must not be derived from locator", state.ItemFingerprint)
 	}
-	if preference.Locator != locator {
-		t.Fatalf("locator = %s, want %s", preference.Locator, locator)
+	if state.Locator != locator {
+		t.Fatalf("locator = %s, want %s", state.Locator, locator)
 	}
 }
 
-func TestQuickViewPreferenceRejectsLocatorWithoutItemFingerprint(t *testing.T) {
+func TestPreviewStateRejectsLocatorWithoutItemFingerprint(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 
 	err := svc.UpdatePreferredModeByIdentity(context.Background(), QuickViewIdentity{
 		TenantID: 7,
 		Locator:  "addp://engine/11/path/public/roads?type=table&item_id=99",
-	}, models.QuickViewPreferredModeBasicPreview, nil)
+	}, models.PreviewModeBasicPreview, nil)
 	if err == nil || !strings.Contains(err.Error(), "item identity is missing") {
 		t.Fatalf("update preferred mode error = %v, want missing item identity", err)
 	}
@@ -2278,7 +2350,7 @@ func TestQuickViewCapabilityReportsExternal3857MaterializedViewOptimization(t *t
 	}
 }
 
-func TestQuickViewServiceUpdatesViewStateInQuickViewPreference(t *testing.T) {
+func TestQuickViewServiceUpdatesPreviewState(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	identity := QuickViewIdentity{
@@ -2311,11 +2383,11 @@ func TestQuickViewServiceUpdatesViewStateInQuickViewPreference(t *testing.T) {
 		t.Fatalf("update view state: %v", err)
 	}
 
-	stored, err := repository.NewQuickViewRepository(db).GetByIdentity(identity.TenantID, identity.ItemFingerprint, identity.Locator)
+	stored, err := repository.NewPreviewStateRepository(db).GetByIdentity(identity.TenantID, identity.ItemFingerprint, identity.Locator)
 	if err != nil {
-		t.Fatalf("get quick view preference: %v", err)
+		t.Fatalf("get preview state: %v", err)
 	}
-	if stored.PreferredMode != models.QuickViewPreferredModeBasicPreview {
+	if stored.PreferredMode != models.PreviewModeBasicPreview {
 		t.Fatalf("preferred_mode = %q, want basic_preview", stored.PreferredMode)
 	}
 	quickViewState, ok := stored.ViewState["quick_view"].(map[string]interface{})

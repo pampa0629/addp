@@ -408,7 +408,7 @@ func normalizeModel3DQuickViewSource(config commonModels.JSONMap) (Model3DQuickV
 		return Model3DQuickViewSourceConfig{}, errors.New("model 3d quick view config.source requires item_locator, source_engine_id and item_fingerprint")
 	}
 	if !isModel3DQuickViewTaskSourceFormat(source.Format) {
-		return Model3DQuickViewSourceConfig{}, errors.New("model 3d quick view config.source.format must be osgb, gltf, fbx or obj")
+		return Model3DQuickViewSourceConfig{}, errors.New("model 3d quick view config.source.format must be osgb, gltf, fbx, obj or stl")
 	}
 	loc, err := resourcetree.ParseURI(source.ItemLocator)
 	if err != nil {
@@ -430,7 +430,7 @@ func normalizeModel3DQuickViewSource(config commonModels.JSONMap) (Model3DQuickV
 
 func isModel3DQuickViewTaskSourceFormat(sourceFormat string) bool {
 	switch strings.ToLower(strings.TrimSpace(sourceFormat)) {
-	case string(format.FormatOSGB), string(format.FormatGLTF), string(format.FormatFBX), string(format.FormatOBJ):
+	case string(format.FormatOSGB), string(format.FormatGLTF), string(format.FormatFBX), string(format.FormatOBJ), string(format.FormatSTL):
 		return true
 	default:
 		return false
@@ -462,7 +462,7 @@ func defaultModel3DQuickViewFileName(locator string) string {
 			base = parts[len(parts)-1]
 		}
 	}
-	for _, ext := range []string{".osgb", ".gltf", ".fbx", ".obj"} {
+	for _, ext := range []string{".osgb", ".gltf", ".fbx", ".obj", ".stl"} {
 		if strings.HasSuffix(strings.ToLower(base), ext) {
 			base = base[:len(base)-len(ext)]
 			break

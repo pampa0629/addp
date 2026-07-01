@@ -60,7 +60,7 @@
 | GLB | `single` | `model_3d` | `glb` | 第一阶段三维模型代表格式；预览优先走 raw / range / storage stream + 前端 Three.js |
 | glTF | `multi` | `model_3d` | `gltf` | 由 `.gltf` manifest 声明的多资源三维模型，buffers / images 作为 related refs |
 | OBJ | `single` | `model_3d` | `obj` | Wavefront OBJ 单体网格模型；第一阶段支持识别和轻量摘要 |
-| STL | `single` | `model_3d` | `stl` | STL 单体网格模型；第一阶段支持识别和轻量摘要 |
+| STL | `single` | `model_3d` | `stl` | STL 单体网格模型；支持识别、轻量摘要和 GLB 快显 |
 | PLY | `single` | `model_3d` | `ply` | PLY 单文件三维模型 / 点集合；第一阶段支持 header 识别和轻量摘要 |
 | FBX | `single` | `model_3d` | `fbx` | FBX 单体网格模型；快显通过 GLB artifact 实现 |
 | 3D Tiles | `whole` | `model_3d` | `3dtiles` | 由 `tileset.json` manifest 声明的分块三维场景 |
@@ -175,7 +175,7 @@ Manager 不要求浏览器直接解析 OBJ。主快显路线是通过 `model_3d_
 | `format` | `stl` |
 | 主资源 | `meta_item.full_name` 指向 `.stl` 文件资源 |
 
-STL 第一阶段按单资源三维模型接入，支持 ASCII STL 与 binary STL 的轻量摘要。STL 材质表达弱，不能把材质、纹理或业务语义臆造进 `type_info.model_3d`。
+STL 按单资源三维模型接入，支持 ASCII STL 与 binary STL 的轻量摘要和 GLB 快显。STL 材质表达弱，不能把材质、纹理或业务语义臆造进 `type_info.model_3d`。
 
 ### attributes 写入
 
@@ -187,7 +187,7 @@ STL 第一阶段按单资源三维模型接入，支持 ASCII STL 与 binary STL
 
 ### 消费要求
 
-Manager 第一阶段不要求浏览器直接解析 STL，也不暴露 STL 转 GLB 快显任务入口。当前内置 `_3dtile` 转换器未声明 STL 输入能力；STL 快显需要后续引入可稳定运行的转换器后，再新增明确的 `stl_to_glb` operator。
+Manager 不要求浏览器直接解析 STL。主快显路线是通过 `model_3d_quick_view_generation` 调用 `model3d_workflow` 的 `stl_to_glb` direct operator，由运行时内置的 `assimp export` 生成 Manager infra MinIO 中的 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。STL 材质表达弱，转换结果不应臆造材质、纹理或业务语义。
 
 超大 ASCII STL deep scan 不应因为行数超过预算而失败，应返回预算内 partial 摘要并写入 `format_info.stl.scan_complete=false`。Binary STL 的 triangle count 来自 80 字节 header 后的 uint32 计数；扫描器可以只读取预算内三角面用于 bounds 采样，不能为了计算 bounds 强制全量读取超大 binary STL。
 
@@ -268,7 +268,7 @@ Manager 可使用高斯泼溅 renderer 直接读取 `.splat` URL 做基础预览
 
 ### 消费要求
 
-Manager 可使用高斯泼溅 renderer 直接读取 `.ksplat` URL 做基础预览；不得开放 GLB 快显生成入口。`.ksplat` 同时是高斯泼溅受管快显的目标文件格式；`gaussian_splat_quick_view_generation` 对 `ply` / `splat` 源执行真实转换，对源已经是 `.ksplat` 的 item 只做受管发布登记，不复用 `model_3d_quick_view_generation`。
+Manager 可使用高斯泼溅 renderer 直接读取 `.ksplat` URL 做基础预览；不得开放 GLB 快显生成入口，也不为源 `.ksplat` 创建 KPlat 快显任务。`.ksplat` 同时是高斯泼溅受管快显的目标文件格式；`gaussian_splat_quick_view_generation` 只对 `ply` / `splat` 源执行真实转换，不复用 `model_3d_quick_view_generation`。
 
 ## FBX
 

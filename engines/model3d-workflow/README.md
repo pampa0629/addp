@@ -8,10 +8,11 @@
 - `gltf_to_glb`：`.gltf` manifest 声明的多资源模型打包为 GLB 快显 artifact。
 - `fbx_to_glb`：FBX 单体网格模型转换为 GLB 快显 artifact。
 - `obj_to_glb`：OBJ 单体网格模型转换为 GLB 快显 artifact。
+- `stl_to_glb`：STL 单体网格模型转换为 GLB 快显 artifact。
 - `osgb_scene_to_3dtiles`：一套 OSGB 倾斜摄影数据集转换为 3D Tiles，支持 NFS/localfs/MinIO/S3 source 输出到 NFS/localfs/MinIO/S3 target。
-- `gaussian_splat_to_ksplat`：高斯泼溅源生成 Manager 受管 KPlat 快显 artifact；`ply` / `splat` 源会转换为 `.ksplat` 文件，`ksplat` 源直接发布登记。
+- `gaussian_splat_to_ksplat`：高斯泼溅源生成 Manager 受管 KPlat 快显 artifact；只接受 `ply` / `splat` 源并转换为 `.ksplat` 文件。源格式已经是 `ksplat` 时由 Manager 基础预览直接读取，不创建 KPlat 快显任务，也不登记受管快显结果。
 
-运行时通过随引擎绑定的专业转换器执行实际转换。OSGB / OSGB Scene 默认使用 `engines/model3d-workflow/bin/_3dtile`，glTF / FBX / OBJ 这类 mesh 模型转 GLB 默认使用 `engines/model3d-workflow/bin/assimp`。glTF / FBX / OBJ 生成的 GLB artifact 必须嵌入纹理，避免前端从原始源目录相对加载贴图。`gaussian_splat_to_ksplat` 使用运行时内置 Node 脚本 `create_ksplat.mjs` 和 `@mkkellogg/gaussian-splats-3d` 生成 `.ksplat`，不调用 mesh / OSGB 转换器；生成时优先使用 `options.scene_center`，否则由 `options.bounds_3d` / `options.sampled_bounds_3d` 推导中心，并默认使用 `section_size=262144`、`block_size=5.0`、`bucket_size=256` 组织 KPlat section，让渐进加载尽量先显示模型中心区域。`.ksplat` 源直接发布登记，不做二次转换，因此其渐进 section 顺序沿用源文件。可用环境变量覆盖到同一运行时部署中的实际可执行文件路径，但不能只写 `_3dtile` 或 `assimp` 这类依赖系统 `PATH` 的命令名：
+运行时通过随引擎绑定的专业转换器执行实际转换。OSGB / OSGB Scene 默认使用 `engines/model3d-workflow/bin/_3dtile`，glTF / FBX / OBJ / STL 这类 mesh 模型转 GLB 默认使用 `engines/model3d-workflow/bin/assimp`。glTF / FBX / OBJ / STL 生成的 GLB artifact 必须自包含；其中 glTF / FBX / OBJ 必须嵌入纹理，避免前端从原始源目录相对加载贴图。`gaussian_splat_to_ksplat` 使用运行时内置 Node 脚本 `create_ksplat.mjs` 和 `@mkkellogg/gaussian-splats-3d` 生成 `.ksplat`，不调用 mesh / OSGB 转换器；生成时优先使用 `options.scene_center`，否则由 `options.bounds_3d` / `options.sampled_bounds_3d` 推导中心，并默认使用 `section_size=262144`、`block_size=5.0`、`bucket_size=256` 组织 KPlat section，让渐进加载尽量先显示模型中心区域。`.ksplat` 源已经是前端目标渲染格式，不进入该 operator；其视角状态由 `manager.preview_state` 保存。可用环境变量覆盖到同一运行时部署中的实际可执行文件路径，但不能只写 `_3dtile` 或 `assimp` 这类依赖系统 `PATH` 的命令名：
 
 ```bash
 export MODEL3D_CONVERTER_BIN=/path/to/_3dtile

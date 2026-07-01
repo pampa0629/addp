@@ -26,10 +26,10 @@ type QuickViewOptimizationDBProvider interface {
 }
 
 type QuickViewOptimizationTaskService struct {
-	repo          *repository.QuickViewOptimizationRepository
-	quickViewRepo *repository.QuickViewRepository
-	taskExecRepo  *commonExecution.TaskExecutionRepository
-	dbProvider    QuickViewOptimizationDBProvider
+	repo             *repository.QuickViewOptimizationRepository
+	previewStateRepo *repository.PreviewStateRepository
+	taskExecRepo     *commonExecution.TaskExecutionRepository
+	dbProvider       QuickViewOptimizationDBProvider
 }
 
 type quickViewOptimizationIdentity struct {
@@ -85,8 +85,8 @@ func (s *QuickViewOptimizationTaskService) SetDBProvider(provider QuickViewOptim
 	s.dbProvider = provider
 }
 
-func (s *QuickViewOptimizationTaskService) SetQuickViewRepository(repo *repository.QuickViewRepository) {
-	s.quickViewRepo = repo
+func (s *QuickViewOptimizationTaskService) SetPreviewStateRepository(repo *repository.PreviewStateRepository) {
+	s.previewStateRepo = repo
 }
 
 func (s *QuickViewOptimizationTaskService) Create(ctx context.Context, task *models.QuickViewOptimizationTask) error {
@@ -180,16 +180,16 @@ func (s *QuickViewOptimizationTaskService) DeleteResultsForSourceTable(ctx conte
 		if err := s.DeleteResult(ctx, result.ID, tenantID); err != nil {
 			return err
 		}
-		if s.quickViewRepo != nil && strings.TrimSpace(result.ItemFingerprint) != "" {
-			if err := s.quickViewRepo.DeleteByTenantAndFingerprint(ctx, tenantID, result.ItemFingerprint); err != nil {
+		if s.previewStateRepo != nil && strings.TrimSpace(result.ItemFingerprint) != "" {
+			if err := s.previewStateRepo.DeleteByTenantAndFingerprint(ctx, tenantID, result.ItemFingerprint); err != nil {
 				return err
 			}
 		}
 	}
-	if s.quickViewRepo != nil {
+	if s.previewStateRepo != nil {
 		sourceFingerprint := spatialItemFingerprint(engineID, schema, table)
 		if sourceFingerprint != "" {
-			if err := s.quickViewRepo.DeleteByTenantAndFingerprint(ctx, tenantID, sourceFingerprint); err != nil {
+			if err := s.previewStateRepo.DeleteByTenantAndFingerprint(ctx, tenantID, sourceFingerprint); err != nil {
 				return err
 			}
 		}

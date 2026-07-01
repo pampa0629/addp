@@ -1143,7 +1143,7 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create vector_tile_cache table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.quick_view (
+	if err := db.Exec(`CREATE TABLE manager.preview_state (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		item_fingerprint TEXT NOT NULL,
@@ -1153,7 +1153,7 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 		created_at DATETIME,
 		updated_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create quick_view table: %v", err)
+		t.Fatalf("create preview_state table: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE manager.vector_quick_view_target_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

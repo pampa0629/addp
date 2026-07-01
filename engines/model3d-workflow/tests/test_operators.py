@@ -24,6 +24,7 @@ def test_operator_metadata_contract():
         "gltf_to_glb",
         "fbx_to_glb",
         "obj_to_glb",
+        "stl_to_glb",
         "osgb_scene_to_3dtiles",
         "gaussian_splat_to_ksplat",
     ]
@@ -784,6 +785,55 @@ def test_obj_to_glb_invokes_converter_and_returns_facts(tmp_path, monkeypatch):
 
     assert facts["source_format"] == "obj"
     assert facts["glb_ref"] == "model3d/obj.glb"
+    assert facts["command"] == [str(converter), "export", str(source), str(captured["target"]), "-embtex"]
+    assert captured["publish_path"].exists() is False
+
+
+def test_stl_to_glb_invokes_converter_and_returns_facts(tmp_path, monkeypatch):
+    source = tmp_path / "mesh.stl"
+    converter = tmp_path / "engine" / "bin" / "assimp"
+    source.write_text("solid mesh\nendsolid mesh\n", encoding="utf-8")
+    captured = {}
+
+    def fake_runner(command, timeout_seconds):
+        target = Path(command[-2])
+        captured["target"] = target
+        target.write_bytes(_glb_bytes({"asset": {"version": "2.0"}}))
+        return CommandResult(returncode=0)
+
+    def fake_publish(path, publish):
+        captured["publish_path"] = path
+        return {
+            "object_uri": "s3://manager/model3d/stl.glb",
+            "object_name": "model3d/stl.glb",
+            "uploaded_bytes": path.stat().st_size,
+        }
+
+    monkeypatch.setattr(operators, "publish_object_store_file", fake_publish)
+    facts = invoke_operator(
+        "stl_to_glb",
+        {
+            "access_plan": {
+                "source": {"local_path": str(source)},
+                "target": {
+                    "file_name": "stl.glb",
+                    "publish": {
+                        "method": "object_store",
+                        "endpoint": "minio:9000",
+                        "access_key": "ak",
+                        "secret_key": "sk",
+                        "bucket": "manager",
+                        "object": "model3d/stl.glb",
+                    },
+                },
+            }
+        },
+        runner=fake_runner,
+        env={"MODEL3D_MESH_CONVERTER_BIN": str(converter)},
+    )
+
+    assert facts["source_format"] == "stl"
+    assert facts["glb_ref"] == "model3d/stl.glb"
     assert facts["command"] == [str(converter), "export", str(source), str(captured["target"]), "-embtex"]
     assert captured["publish_path"].exists() is False
 

@@ -355,7 +355,7 @@ whole scope 的 `refs` 与 `claims` 必须分工明确：
 5. OBJ 文本中的 object / group / `mtllib` / `usemtl` 摘要进入 `format_info.obj`；P3BJet 等导出器写在注释头部的 `BoundingBox(...)`、`Vertices:`、`Faces:` 可以作为声明摘要进入 `type_info.model_3d` 和 `format_info.obj.declared_*`；超大 OBJ 超过扫描预算时不得失败，应写入 `format_info.obj.scan_complete=false`。
 6. STL 的 ASCII / binary 编码、顶点数、三角面数进入 `format_info.stl`；超大 ASCII / binary STL 超过扫描预算时不得失败，应写入 `format_info.stl.scan_complete=false`；不得臆造材质、纹理或业务语义。
 7. FBX 的 binary / ASCII 编码事实进入 `format_info.fbx`；不解析 proprietary scene graph 时不得臆造节点、材质、动画等细节。
-8. Manager 对 `format=obj` 和 `format=fbx` 暴露 `model_3d_quick_view_generation` GLB 快显任务入口；STL 第一阶段只支持 scan 和属性展示，不暴露 STL 转 GLB 任务入口。
+8. Manager 对 `format=obj`、`format=stl` 和 `format=fbx` 暴露 `model_3d_quick_view_generation` GLB 快显任务入口。
 9. `tower.mtl`、未被明确规范认领的纹理和 `readme.txt` 仍按普通 single resource 识别或进入对应格式规则；OBJ / STL / FBX 单体 item 不独占父目录。
 
 ## TIFF / GeoTIFF 校准用例

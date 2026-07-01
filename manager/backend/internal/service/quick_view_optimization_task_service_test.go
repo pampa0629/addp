@@ -228,25 +228,25 @@ func TestQuickViewOptimizationDeleteResultRecordsCleanupFailure(t *testing.T) {
 func TestQuickViewOptimizationDeleteResultsForSourceTableDeletesPreference(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	repo := repository.NewQuickViewOptimizationRepository(db)
-	quickViewRepo := repository.NewQuickViewRepository(db)
+	previewStateRepo := repository.NewPreviewStateRepository(db)
 	svc := NewQuickViewOptimizationTaskService(repo, nil)
-	svc.SetQuickViewRepository(quickViewRepo)
+	svc.SetPreviewStateRepository(previewStateRepo)
 
 	result := newQuickViewOptimizationResult()
 	result.Status = models.QuickViewOptimizationStatusDeleted
 	if err := repo.CreateResult(context.Background(), result); err != nil {
 		t.Fatalf("create quick view optimization result: %v", err)
 	}
-	if err := quickViewRepo.UpdatePreferredMode(result.TenantID, result.ItemFingerprint, result.Locator, models.QuickViewPreferredModeMapQuickView); err != nil {
-		t.Fatalf("create quick view preference: %v", err)
+	if err := previewStateRepo.UpdatePreferredMode(result.TenantID, result.ItemFingerprint, result.Locator, models.PreviewModeMapQuickView); err != nil {
+		t.Fatalf("create preview state: %v", err)
 	}
 
 	if err := svc.DeleteResultsForSourceTable(context.Background(), result.TenantID, result.SourceEngineID, result.SourceSchema, result.SourceTable); err != nil {
 		t.Fatalf("delete results for source table: %v", err)
 	}
 
-	if _, err := quickViewRepo.GetByIdentity(result.TenantID, result.ItemFingerprint, result.Locator); !errors.Is(err, commonapi.ErrNotFound) {
-		t.Fatalf("quick view preference error = %v, want ErrNotFound", err)
+	if _, err := previewStateRepo.GetByIdentity(result.TenantID, result.ItemFingerprint, result.Locator); !errors.Is(err, commonapi.ErrNotFound) {
+		t.Fatalf("preview state error = %v, want ErrNotFound", err)
 	}
 }
 

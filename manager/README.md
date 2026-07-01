@@ -8,6 +8,7 @@
 - **[CLAUDE.md](./CLAUDE.md)** - 模块定位、核心 API、开发规则和文档导航
 - **[manager/docs/数据预览与资源树实现规范.md](./docs/数据预览与资源树实现规范.md)** - 数据探查、资源树、预览 API、PreviewResolver 和 PreviewProvider 当前实现规范
 - **[manager/docs/数据预览语义协议.md](./docs/数据预览语义协议.md)** - `content.kind`、`preview_material`、`frontend_renderer` 等预览响应语义
+- **[manager/docs/三维模型与高斯泼溅预览说明.md](./docs/三维模型与高斯泼溅预览说明.md)** - 三维模型、3D Tiles 和 3DGS 预览、快显任务与状态说明
 - **[manager/docs/存储流与原始下载语义.md](./docs/存储流与原始下载语义.md)** - `storage-stream`、`downloads/file` 与 DownloadPlan 语义
 
 ## 🎯 核心功能
@@ -95,7 +96,7 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 5. Meilisearch 负责全文和属性检索，pgvector 负责向量命中，Manager 搜索服务负责融合结果。
 
 ### 快显、快显性能优化与瓦片缓存
-1. `quick_view` - 快显偏好，只记录 item 的预览模式偏好。
+1. `preview_state` - 预览状态，只记录 item 的预览模式偏好和基础预览 / 快显各自的视角状态。
 2. `vector_quick_view_targets` - 快显性能优化结果，只登记 Manager 创建并拥有生命周期的 3857 优化目标。
 3. `vector_quick_view_target_tasks` - 快显性能优化任务定义，TaskProvider `task_type=vector_quick_view_target_generation`。
 4. `raster_cog` - 栅格快显 COG生成结果，只登记 Manager 创建并上传到 infra MinIO 的 COG 副本。
@@ -111,7 +112,7 @@ COG 生成运行要求：
 - MinIO / S3 源：Manager 为源对象生成 presigned URL，Python 通过 GDAL `/vsicurl/` 读取。
 - 目标 COG：Python 通过 GDAL `/vsis3/` 写入 Manager infra MinIO，Manager 负责登记 `raster_cog`。
 
-详细架构请查看 [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md)。
+三维模型、3D Tiles 和高斯泼溅的预览路线请查看 [三维模型与高斯泼溅预览说明](./docs/三维模型与高斯泼溅预览说明.md)。详细架构请查看 [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md)。
 
 ## 🐛 常见问题
 

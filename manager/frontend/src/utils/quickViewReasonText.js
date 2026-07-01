@@ -15,6 +15,7 @@ const QUICK_VIEW_REASON_KEYS = {
   'client_render_budget_exceeded': 'manager.spatialPreview.clientRenderBudgetExceeded',
   'gaussian_splat_preview_not_supported': 'manager.spatialPreview.gaussianSplatPreviewNotSupported',
   'requires_kplat_generation': 'manager.spatialPreview.requiresKPlatGeneration',
+  'source_format_direct_preview': 'manager.spatialPreview.sourceFormatDirectPreview',
   'raster preview URL is unavailable': 'manager.spatialPreview.missingQuickViewURL'
 }
 

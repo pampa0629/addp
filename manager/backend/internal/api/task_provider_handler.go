@@ -2027,7 +2027,7 @@ func (h *TaskProviderHandler) DeleteModel3DTilesTask(c *gin.Context) {
 
 // ListModel3DQuickViewTasks GET /api/v1/manager/model_3d_quick_view_tasks
 // @Summary 列出三维模型 GLB 快显任务配置 | List model 3D quick view generation task configurations
-// @Description 列出 Manager 模块的 OSGB / glTF / FBX / OBJ 转 GLB 快显任务配置。该私有入口固定返回 task_type=model_3d_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D quick view generation task configurations.
+// @Description 列出 Manager 模块的 OSGB / glTF / FBX / OBJ / STL 转 GLB 快显任务配置。该私有入口固定返回 task_type=model_3d_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D quick view generation task configurations.
 // @Tags Manager
 // @Produce json
 // @Param page query int false "页码，默认1 | Page number, default 1"
@@ -2054,7 +2054,7 @@ func (h *TaskProviderHandler) ListModel3DQuickViewTasks(c *gin.Context) {
 
 // CreateModel3DQuickViewTask POST /api/v1/manager/model_3d_quick_view_tasks
 // @Summary 创建三维模型 GLB 快显任务配置 | Create model 3D quick view generation task configuration
-// @Description 创建新的 OSGB / glTF / FBX / OBJ 转 GLB 快显任务配置。任务从 OSGB、glTF、FBX 或 OBJ model_3d item 读取源数据，并将 GLB artifact 写入 Manager infra MinIO。| Create a model 3D quick view task from an OSGB, glTF, FBX or OBJ model item into Manager infra MinIO.
+// @Description 创建新的 OSGB / glTF / FBX / OBJ / STL 转 GLB 快显任务配置。任务从 OSGB、glTF、FBX、OBJ 或 STL model_3d item 读取源数据，并将 GLB artifact 写入 Manager infra MinIO。| Create a model 3D quick view task from an OSGB, glTF, FBX, OBJ or STL model item into Manager infra MinIO.
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -2207,7 +2207,7 @@ func (h *TaskProviderHandler) ListGaussianSplatQuickViewTasks(c *gin.Context) {
 
 // CreateGaussianSplatQuickViewTask POST /api/v1/manager/gaussian_splat_quick_view_tasks
 // @Summary 创建 3DGS - KPlat 快显任务配置 | Create 3DGS - KPlat quick view generation task configuration
-// @Description 创建新的 3DGS - KPlat 快显任务配置。源必须是 format=ply、splat 或 ksplat 的 gaussian_splat item；PLY / SPLAT 会转换为 KPlat artifact，KSplat 源直接发布登记，结果写入 Manager infra MinIO。| Create a 3DGS - KPlat quick view task from a format=ply, splat, or ksplat gaussian_splat item into Manager infra MinIO. PLY / SPLAT are converted to KPlat artifacts and KSplat sources are published directly.
+// @Description 创建新的 3DGS - KPlat 快显任务配置。源必须是 format=ply 或 splat 的 gaussian_splat item，并转换为 KPlat artifact 写入 Manager infra MinIO；format=ksplat 的源文件直接基础预览，不创建快显任务。| Create a 3DGS - KPlat quick view task from a format=ply or splat gaussian_splat item into Manager infra MinIO. format=ksplat sources are previewed directly and do not create quick view tasks.
 // @Tags Manager
 // @Accept json
 // @Produce json

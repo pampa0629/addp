@@ -60,7 +60,7 @@ type UpdatePreferredModeRequest struct {
 	PreferredMode string `json:"preferred_mode" binding:"required,oneof=basic_preview map_quick_view"`
 }
 
-type UpdateQuickViewStateRequest struct {
+type UpdatePreviewStateRequest struct {
 	Locator   string               `json:"locator" binding:"required"`
 	ViewState commonModels.JSONMap `json:"view_state" binding:"required"`
 }
@@ -102,7 +102,7 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "更新成功 | Updated successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
-// @Router /quick-view/preferred-mode [patch]
+// @Router /preview-state/preferred-mode [patch]
 // @Security BearerAuth
 func (h *QuickViewHandler) UpdatePreferredModeByLocator(c *gin.Context) {
 	var req UpdatePreferredModeRequest
@@ -138,20 +138,20 @@ func (h *QuickViewHandler) UpdatePreferredModeByLocator(c *gin.Context) {
 	})
 }
 
-// UpdateViewStateByLocator 更新 locator 快显视角状态
-// @Summary 更新 locator 快显视角状态 | Update locator quick view state
-// @Description 以 Resource Locator 为数据项身份更新快显/预览交互状态。view_state 是统一 JSON 字段，顶层按 basic_preview / quick_view 区分显示模式，模式内按 map / scene_3d 区分渲染域。 | Update quick view interaction state by Resource Locator. view_state is a unified JSON field grouped by display mode basic_preview / quick_view, then by render domain map / scene_3d.
+// UpdateViewStateByLocator 更新 locator 预览交互状态
+// @Summary 更新 locator 预览交互状态 | Update locator preview state
+// @Description 以 Resource Locator 为数据项身份更新预览交互状态。view_state 是统一 JSON 字段，顶层按 basic_preview / quick_view 区分显示模式，模式内按 map / scene_3d 区分渲染域。 | Update preview interaction state by Resource Locator. view_state is a unified JSON field grouped by display mode basic_preview / quick_view, then by render domain map / scene_3d.
 // @Tags Manager
 // @Accept json
 // @Produce json
-// @Param body body UpdateQuickViewStateRequest true "快显视角状态 | Quick view state"
+// @Param body body UpdatePreviewStateRequest true "预览交互状态 | Preview state"
 // @Success 200 {object} map[string]interface{} "更新成功 | Updated successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
-// @Router /quick-view/view-state [patch]
+// @Router /preview-state/view-state [patch]
 // @Security BearerAuth
 func (h *QuickViewHandler) UpdateViewStateByLocator(c *gin.Context) {
-	var req UpdateQuickViewStateRequest
+	var req UpdatePreviewStateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidRequestBody, err.Error())
 		return
@@ -177,7 +177,7 @@ func (h *QuickViewHandler) UpdateViewStateByLocator(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"message":    "Quick view state updated successfully",
+		"message":    "Preview state updated successfully",
 		"view_state": req.ViewState,
 	})
 }
@@ -490,6 +490,12 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 		gaussianSplat := service.GaussianSplatQuickViewSourceFromAttributes(tablePreview.Object.Attributes)
 		if gaussianSplat != nil {
 			source.EngineID = tablePreview.Object.EngineID
+			if tablePreview.Object.Content != nil {
+				gaussianSplat.PreviewURL = strings.TrimSpace(tablePreview.Object.Content.URL)
+			}
+			if gaussianSplat.PreviewURL == "" {
+				gaussianSplat.PreviewURL = strings.TrimSpace(tablePreview.Object.URL)
+			}
 			source.GaussianSplat = gaussianSplat
 			source.DirectGeoJSON = false
 			source.GeoJSONURL = ""

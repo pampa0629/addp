@@ -241,7 +241,7 @@ func main() {
 		))
 	}
 	quickViewOptimizationTaskSvc.SetDBProvider(mvtService)
-	quickViewOptimizationTaskSvc.SetQuickViewRepository(quickViewService.Repository())
+	quickViewOptimizationTaskSvc.SetPreviewStateRepository(quickViewService.Repository())
 	tileCacheTaskSvc.SetQuickViewService(quickViewService)
 	tileCacheTaskSvc.SetRealtimeTileTargetResolver(mvtService)
 	tileCacheTaskSvc.SetTileCacheRuntimeCacheInvalidator(spatialPreviewService)

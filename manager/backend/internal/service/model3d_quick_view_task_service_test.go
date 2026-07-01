@@ -119,6 +119,29 @@ func TestModel3DQuickViewTaskNormalizesSingleOBJConfig(t *testing.T) {
 	}
 }
 
+func TestModel3DQuickViewTaskNormalizesSingleSTLConfig(t *testing.T) {
+	config := commonModels.JSONMap{
+		"source": commonModels.JSONMap{
+			"item_locator":     "addp://engine/26/path/models/mesh.stl?type=item&item_id=77",
+			"source_engine_id": uint(26),
+			"item_fingerprint": "fp-stl",
+			"item_id":          uint(77),
+			"format":           "stl",
+		},
+	}
+
+	cfg, err := normalizeModel3DQuickViewTaskConfig(config, "manager", 7)
+	if err != nil {
+		t.Fatalf("normalize model 3d quick view config: %v", err)
+	}
+	if cfg.Source.Format != "stl" {
+		t.Fatalf("source format = %q, want stl", cfg.Source.Format)
+	}
+	if cfg.Result.FileName != "mesh.glb" {
+		t.Fatalf("result file_name = %q, want mesh.glb", cfg.Result.FileName)
+	}
+}
+
 func TestModel3DQuickViewTaskRejectsUnsupportedSource(t *testing.T) {
 	config := commonModels.JSONMap{
 		"source": commonModels.JSONMap{
@@ -133,7 +156,7 @@ func TestModel3DQuickViewTaskRejectsUnsupportedSource(t *testing.T) {
 	if err == nil {
 		t.Fatal("normalize model 3d quick view config error is nil, want unsupported source rejection")
 	}
-	if got := err.Error(); got != "model 3d quick view config.source.format must be osgb, gltf, fbx or obj" {
+	if got := err.Error(); got != "model 3d quick view config.source.format must be osgb, gltf, fbx, obj or stl" {
 		t.Fatalf("error = %q, want source format rejection", got)
 	}
 }

@@ -1,5 +1,5 @@
 -- 015_enforce_vector_tile_cache_resource_locator.sql
--- Clean break: tile cache and quick view table locators use ResourceLocator only.
+-- Clean break: tile cache and preview state locators use ResourceLocator only.
 
 
 DELETE FROM manager.vector_tile_cache
@@ -10,7 +10,7 @@ WHERE locator IS NULL
    OR COALESCE(item_fingerprint, '') = ''
    OR item_fingerprint LIKE 'locator:%';
 
-DELETE FROM manager.quick_view
+DELETE FROM manager.preview_state
 WHERE COALESCE(item_fingerprint, '') = ''
    OR item_fingerprint LIKE 'locator:%'
    OR COALESCE(locator, '') = ''

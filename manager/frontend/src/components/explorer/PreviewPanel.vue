@@ -1288,8 +1288,9 @@ const isModel3DQuickViewSourceNode = computed(() => {
   if (dataType === 'model_3d' && format === 'gltf' && layout === 'multi') return true
   if (dataType === 'model_3d' && format === 'fbx' && (!layout || layout === 'single')) return true
   if (dataType === 'model_3d' && format === 'obj' && (!layout || layout === 'single')) return true
-  if (['osgb', 'gltf', 'fbx', 'obj'].includes(format)) return true
-  return /\.(osgb|gltf|fbx|obj)$/i.test(selectedNodePath.value)
+  if (dataType === 'model_3d' && format === 'stl' && (!layout || layout === 'single')) return true
+  if (['osgb', 'gltf', 'fbx', 'obj', 'stl'].includes(format)) return true
+  return /\.(osgb|gltf|fbx|obj|stl)$/i.test(selectedNodePath.value)
 })
 
 const isGaussianSplatQuickViewSourceNode = computed(() => {
@@ -1974,7 +1975,7 @@ const model3DQuickViewPromptMetadata = computed(() => {
     objectData.value?.attributes?.item?.format ||
     ''
   ).trim().toLowerCase()
-  if (taskType !== 'model_3d_quick_view_generation' || !['osgb', 'gltf', 'fbx', 'obj'].includes(sourceFormat)) {
+  if (taskType !== 'model_3d_quick_view_generation' || !['osgb', 'gltf', 'fbx', 'obj', 'stl'].includes(sourceFormat)) {
     return null
   }
   return metadata
@@ -2004,10 +2005,10 @@ const gaussianSplatQuickViewPromptMetadata = computed(() => {
     item.format ||
     ''
   ).trim().toLowerCase()
-  if (taskType === 'gaussian_splat_quick_view_generation' && dataType === 'gaussian_splat' && ['ply', 'splat', 'ksplat'].includes(sourceFormat)) {
+  if (taskType === 'gaussian_splat_quick_view_generation' && dataType === 'gaussian_splat' && ['ply', 'splat'].includes(sourceFormat)) {
     return metadata
   }
-  if (dataType === 'gaussian_splat' && ['ply', 'splat', 'ksplat'].includes(sourceFormat)) {
+  if (dataType === 'gaussian_splat' && ['ply', 'splat'].includes(sourceFormat)) {
     return {
       ...metadata,
       source_format: sourceFormat
@@ -2166,10 +2167,7 @@ const showGaussianSplatQuickViewGenerationAction = computed(() => {
     !(quickViewStatus.value?.can_use_quick_view && quickViewRenderSource.value === 'gaussian_splat_ksplat')
 })
 const gaussianSplatQuickViewActionText = computed(() => {
-  const sourceFormat = String(gaussianSplatQuickViewSourcePayload.value?.format || '').trim().toLowerCase()
-  return sourceFormat === 'ksplat'
-    ? t('manager.explorer.publishGaussianSplatQuickView')
-    : t('manager.explorer.generateGaussianSplatQuickView')
+  return t('manager.explorer.generateGaussianSplatQuickView')
 })
 
 const showModel3DTilesGenerationAction = computed(() => Boolean(model3DTilesSourcePayload.value))

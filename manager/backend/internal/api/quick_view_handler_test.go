@@ -293,6 +293,10 @@ func TestQuickViewSourceFromPreviewDetectsGaussianSplatPLYObject(t *testing.T) {
 		EngineType: "nfs",
 		Object: &models.ObjectPreview{
 			EngineID: 26,
+			URL:      "/api/v1/manager/storage-stream?engine_id=26&storage_ref=3d%2Fgaussian%2Fmodel.ply",
+			Content: &models.ObjectPreviewContent{
+				URL: "/api/v1/manager/storage-stream?engine_id=26&storage_ref=3d%2Fgaussian%2Fmodel.ply",
+			},
 			Attributes: map[string]interface{}{
 				"item": map[string]interface{}{
 					"data_type": "gaussian_splat",
@@ -327,6 +331,9 @@ func TestQuickViewSourceFromPreviewDetectsGaussianSplatPLYObject(t *testing.T) {
 	}
 	if source.GaussianSplat.Format != "ply" || source.GaussianSplat.SplatCount != 256 || source.GaussianSplat.SourceSizeBytes != 8192 {
 		t.Fatalf("gaussian facts = %#v, want ply gaussian facts", source.GaussianSplat)
+	}
+	if source.GaussianSplat.PreviewURL != "/api/v1/manager/storage-stream?engine_id=26&storage_ref=3d%2Fgaussian%2Fmodel.ply" {
+		t.Fatalf("preview_url = %q, want object content URL", source.GaussianSplat.PreviewURL)
 	}
 }
 

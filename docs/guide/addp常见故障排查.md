@@ -314,13 +314,13 @@ item 刷新原先复用了 catalog scan 的入口，把 `item_id` 先转换为 c
 
 #### 当前状态
 
-该旧准备路径已经删除。瓦片缓存生成任务不再隐式创建物化视图、空间索引或执行准备检查；3857 快显性能优化目标只能由 `quick_view_optimization` 任务显式创建和刷新。
+该旧准备路径已经删除。瓦片缓存生成任务不再隐式创建物化视图、空间索引或执行准备检查；3857 快显性能优化目标只能由 `vector_quick_view_target_generation` 任务显式创建和刷新。
 
 当前排查方式：
 
 1. 在空间预览页看到源表转换慢路径、动态 MVT 超时或优化建议时，先进入“快显性能优化”。
-2. 创建并执行 `quick_view_optimization` 任务。
-3. 确认 `manager.quick_view_optimization.status=ready` 后，再生成瓦片缓存。
+2. 创建并执行 `vector_quick_view_target_generation` 任务。
+3. 确认 `manager.vector_quick_view_targets.status=ready` 后，再生成瓦片缓存。
 4. 若仍有大小写字段相关错误，检查 `manager/backend/internal/service/quick_view_optimization_task_service.go` 和 `common/spatial` 是否使用 PostGIS 标识符引用函数。
 
 #### 验证命令

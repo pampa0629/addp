@@ -11,9 +11,9 @@
         :aria-label="t('manager.spatialPreview.gaussianSplatQualityMode')"
         @change="setQualityMode"
       >
-        <el-radio-button label="smooth">{{ t('manager.spatialPreview.gaussianSplatQualitySmooth') }}</el-radio-button>
-        <el-radio-button label="standard">{{ t('manager.spatialPreview.gaussianSplatQualityStandard') }}</el-radio-button>
-        <el-radio-button label="sharp">{{ t('manager.spatialPreview.gaussianSplatQualitySharp') }}</el-radio-button>
+        <el-radio-button value="smooth">{{ t('manager.spatialPreview.gaussianSplatQualitySmooth') }}</el-radio-button>
+        <el-radio-button value="standard">{{ t('manager.spatialPreview.gaussianSplatQualityStandard') }}</el-radio-button>
+        <el-radio-button value="sharp">{{ t('manager.spatialPreview.gaussianSplatQualitySharp') }}</el-radio-button>
       </el-radio-group>
       <el-button
         circle
@@ -93,11 +93,18 @@ let interactionRestoreTimer = null
 let interactionTemporarilyReduced = false
 
 const objectData = computed(() => props.data?.object || {})
+const attributes = computed(() => objectData.value?.attributes || {})
 const content = computed(() => objectData.value?.content || {})
 const metadata = computed(() => content.value?.metadata || {})
-const gaussianInfo = computed(() => metadata.value?.gaussian_splat || {})
-const formatInfo = computed(() => metadata.value?.format_info || {})
-const storageInfo = computed(() => objectData.value?.attributes?.storage || {})
+const gaussianInfo = computed(() => ({
+  ...(attributes.value?.type_info?.gaussian_splat || {}),
+  ...(metadata.value?.gaussian_splat || {})
+}))
+const formatInfo = computed(() => mergeFormatInfo(
+  attributes.value?.format_info || {},
+  metadata.value?.format_info || {}
+))
+const storageInfo = computed(() => attributes.value?.storage || {})
 
 const splatURL = computed(() => content.value?.url || objectData.value?.url || '')
 const sourceURL = computed(() => withAuthToken(splatURL.value))
@@ -143,6 +150,21 @@ function formatByteCount(value) {
     unitIndex += 1
   }
   return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
+}
+
+function mergeFormatInfo(base, override) {
+  const result = {}
+  const formatNames = new Set([
+    ...Object.keys(base || {}),
+    ...Object.keys(override || {})
+  ])
+  for (const formatName of formatNames) {
+    result[formatName] = {
+      ...((base || {})[formatName] || {}),
+      ...((override || {})[formatName] || {})
+    }
+  }
+  return result
 }
 
 function withAuthToken(url) {
@@ -240,12 +262,26 @@ function bounds3D() {
 function cameraFrame() {
   const bounds = bounds3D()
   if (!bounds) {
+    const center = sceneCenter()
+    if (center) {
+      return {
+        lookAt: center,
+        position: [center[0] - 1, center[1] - 4, center[2] + 6]
+      }
+    }
     return {
       lookAt: [0, 0, 0],
       position: [-1, -4, 6]
     }
   }
   return cameraFrameFromBounds(bounds)
+}
+
+function sceneCenter() {
+  const center = formatInfo.value?.ksplat?.scene_center || gaussianInfo.value?.scene_center
+  if (!Array.isArray(center) || center.length < 3) return null
+  const normalized = center.slice(0, 3).map(Number)
+  return normalized.every(Number.isFinite) ? normalized : null
 }
 
 function cameraFrameFromBounds(bounds) {
@@ -345,16 +381,17 @@ function viewerOptions(GaussianSplats3D, rootElement) {
 function cameraFrameForMode(mode) {
   const bounds = bounds3D()
   if (bounds) return cameraFrameFromBoundsWithMode(bounds, mode)
+  const center = sceneCenter() || [0, 0, 0]
   if (mode === 'top') {
     return {
-      lookAt: [0, 0, 0],
-      position: [0, -0.02, 6],
+      lookAt: center,
+      position: [center[0], center[1] - 0.02, center[2] + 6],
       up: [0, 1, 0]
     }
   }
   return {
-    lookAt: [0, 0, 0],
-    position: [-0.8, -5.5, 1.1],
+    lookAt: center,
+    position: [center[0] - 0.8, center[1] - 5.5, center[2] + 1.1],
     up: [0, 0, 1]
   }
 }
@@ -625,6 +662,14 @@ function reportLoadError(error, phase) {
   log('Gaussian splat preview failed', diagnostic, error)
 }
 
+function isExpectedDisposeDOMError(error) {
+  const name = String(error?.name || '').trim()
+  const message = String(error?.message || error || '').toLowerCase()
+  return name === 'NotFoundError' &&
+    message.includes('removechild') &&
+    message.includes('not a child')
+}
+
 async function disposeViewer() {
   const current = viewer
   viewer = null
@@ -635,6 +680,7 @@ async function disposeViewer() {
     current.stop?.()
     await current.dispose?.()
   } catch (error) {
+    if (isExpectedDisposeDOMError(error)) return
     console.warn('Failed to dispose gaussian splat preview resources', error)
   }
 }

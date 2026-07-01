@@ -23,19 +23,19 @@ import (
 )
 
 type CleanupService struct {
-	redis           *redis.Client
-	metaClient      *commonClient.MetaClient
-	taskExecRepo    *commonExecution.TaskExecutionRepository
-	quickViewRepo   *repository.QuickViewRepository
-	tileCacheSvc    *TileCacheTaskService
-	embeddingRepo   *repository.EmbeddingRepository
-	optimizationSvc *QuickViewOptimizationTaskService
-	exportRepo      *repository.ExportSessionRepository
-	minioClient     *minio.Client
-	minioBucket     string
-	exportCleanup   ExportCleanupOptions
-	log             *slog.Logger
-	stopCh          chan struct{}
+	redis            *redis.Client
+	metaClient       *commonClient.MetaClient
+	taskExecRepo     *commonExecution.TaskExecutionRepository
+	previewStateRepo *repository.PreviewStateRepository
+	tileCacheSvc     *TileCacheTaskService
+	embeddingRepo    *repository.EmbeddingRepository
+	optimizationSvc  *QuickViewOptimizationTaskService
+	exportRepo       *repository.ExportSessionRepository
+	minioClient      *minio.Client
+	minioBucket      string
+	exportCleanup    ExportCleanupOptions
+	log              *slog.Logger
+	stopCh           chan struct{}
 }
 
 type ExportCleanupOptions struct {
@@ -46,7 +46,7 @@ type ExportCleanupOptions struct {
 }
 
 type ManagerCleanupStats struct {
-	QuickViewPreferences     int      `json:"quick_view_preferences"`
+	PreviewStates            int      `json:"preview_states"`
 	TileCaches               int      `json:"vector_tile_caches"`
 	Embeddings               int      `json:"embeddings"`
 	QuickViewOptimizations   int      `json:"vector_quick_view_target_generations"`
@@ -62,7 +62,7 @@ func NewCleanupService(
 	redisClient *redis.Client,
 	metaClient *commonClient.MetaClient,
 	taskExecRepo *commonExecution.TaskExecutionRepository,
-	quickViewRepo *repository.QuickViewRepository,
+	previewStateRepo *repository.PreviewStateRepository,
 	tileCacheSvc *TileCacheTaskService,
 	embeddingRepo *repository.EmbeddingRepository,
 	optimizationSvc *QuickViewOptimizationTaskService,
@@ -73,19 +73,19 @@ func NewCleanupService(
 ) *CleanupService {
 	exportCleanup = normalizeExportCleanupOptions(exportCleanup)
 	return &CleanupService{
-		redis:           redisClient,
-		metaClient:      metaClient,
-		taskExecRepo:    taskExecRepo,
-		quickViewRepo:   quickViewRepo,
-		tileCacheSvc:    tileCacheSvc,
-		embeddingRepo:   embeddingRepo,
-		optimizationSvc: optimizationSvc,
-		exportRepo:      exportRepo,
-		minioClient:     minioClient,
-		minioBucket:     strings.Trim(minioBucket, "/"),
-		exportCleanup:   exportCleanup,
-		log:             logger.With("component", "manager_cleanup_service"),
-		stopCh:          make(chan struct{}),
+		redis:            redisClient,
+		metaClient:       metaClient,
+		taskExecRepo:     taskExecRepo,
+		previewStateRepo: previewStateRepo,
+		tileCacheSvc:     tileCacheSvc,
+		embeddingRepo:    embeddingRepo,
+		optimizationSvc:  optimizationSvc,
+		exportRepo:       exportRepo,
+		minioClient:      minioClient,
+		minioBucket:      strings.Trim(minioBucket, "/"),
+		exportCleanup:    exportCleanup,
+		log:              logger.With("component", "manager_cleanup_service"),
+		stopCh:           make(chan struct{}),
 	}
 }
 
@@ -366,12 +366,12 @@ func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uin
 	if tenantID == 0 {
 		return stats, errors.New("manager resource reclaim requires tenant_id")
 	}
-	if s.quickViewRepo != nil {
-		items, err := s.quickViewRepo.ListQuickViews(ctx, tenantID)
+	if s.previewStateRepo != nil {
+		items, err := s.previewStateRepo.ListPreviewStates(ctx, tenantID)
 		if err != nil {
 			return nil, err
 		}
-		stats.QuickViewPreferences = len(s.filterMissingQuickViews(ctx, tenantID, items, cleanupContext))
+		stats.PreviewStates = len(s.filterMissingPreviewStates(ctx, tenantID, items, cleanupContext))
 	}
 	if s.tileCacheSvc != nil && s.tileCacheSvc.tileCacheRepo != nil {
 		items, err := s.tileCacheSvc.tileCacheRepo.ListAllTileCaches(ctx, tenantID)
@@ -413,17 +413,17 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 		return stats, fmt.Errorf("unsupported cleanup_mode: %s", cleanupMode)
 	}
 
-	if s.quickViewRepo != nil {
-		items, err := s.quickViewRepo.ListQuickViews(ctx, tenantID)
+	if s.previewStateRepo != nil {
+		items, err := s.previewStateRepo.ListPreviewStates(ctx, tenantID)
 		if err != nil {
 			return nil, err
 		}
-		for _, item := range s.filterMissingQuickViews(ctx, tenantID, items, cleanupContext) {
-			if err := s.quickViewRepo.DeleteByTenantAndFingerprint(ctx, tenantID, item.ItemFingerprint); err != nil {
-				stats.Errors = append(stats.Errors, fmt.Sprintf("delete quick_view %d: %v", item.ID, err))
+		for _, item := range s.filterMissingPreviewStates(ctx, tenantID, items, cleanupContext) {
+			if err := s.previewStateRepo.DeleteByTenantAndFingerprint(ctx, tenantID, item.ItemFingerprint); err != nil {
+				stats.Errors = append(stats.Errors, fmt.Sprintf("delete preview_state %d: %v", item.ID, err))
 				continue
 			}
-			stats.QuickViewPreferences++
+			stats.PreviewStates++
 			stats.MarkedMissingSource++
 		}
 	}
@@ -590,8 +590,8 @@ func (s *CleanupService) cleanupTaskDefinitions(ctx context.Context, tenantID ui
 	return nil
 }
 
-func (s *CleanupService) filterMissingQuickViews(ctx context.Context, tenantID uint, items []*models.QuickView, cleanupContext map[string]interface{}) []*models.QuickView {
-	out := make([]*models.QuickView, 0)
+func (s *CleanupService) filterMissingPreviewStates(ctx context.Context, tenantID uint, items []*models.PreviewState, cleanupContext map[string]interface{}) []*models.PreviewState {
+	out := make([]*models.PreviewState, 0)
 	for _, item := range items {
 		if item == nil {
 			continue
@@ -873,7 +873,7 @@ func managerScanSummary(stats *ManagerCleanupStats) events.CleanupResultSummary 
 	if stats == nil {
 		return events.CleanupResultSummary{RiskLevel: "low"}
 	}
-	scanned := stats.QuickViewPreferences + stats.TileCaches + stats.Embeddings + stats.QuickViewOptimizations + stats.DisabledTaskDefinitions
+	scanned := stats.PreviewStates + stats.TileCaches + stats.Embeddings + stats.QuickViewOptimizations + stats.DisabledTaskDefinitions
 	return events.CleanupResultSummary{
 		ScannedItems:            scanned,
 		DisabledTaskDefinitions: stats.DisabledTaskDefinitions,
@@ -887,7 +887,7 @@ func managerExecuteSummary(stats *ManagerCleanupStats) events.CleanupResultSumma
 	if stats == nil {
 		return events.CleanupResultSummary{RiskLevel: "low"}
 	}
-	affected := stats.QuickViewPreferences + stats.TileCaches + stats.Embeddings + stats.QuickViewOptimizations + stats.DisabledTaskDefinitions
+	affected := stats.PreviewStates + stats.TileCaches + stats.Embeddings + stats.QuickViewOptimizations + stats.DisabledTaskDefinitions
 	return events.CleanupResultSummary{
 		AffectedRecords:          affected,
 		DeletedPhysicalArtifacts: stats.DeletedPhysicalArtifacts,

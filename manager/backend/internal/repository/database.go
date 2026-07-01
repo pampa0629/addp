@@ -103,12 +103,16 @@ func dropLegacyQuickViewTables(db *gorm.DB) error {
 }
 
 func ensureTileCacheStateSchema(db *gorm.DB) error {
+	if err := renameQuickViewTableToPreviewState(db); err != nil {
+		return err
+	}
+
 	var legacyQuickViewColumns int64
 	if err := db.Raw(`
 		SELECT COUNT(*)
 		FROM information_schema.columns
 		WHERE table_schema = 'manager'
-		  AND table_name = 'quick_view'
+		  AND table_name = 'preview_state'
 		  AND column_name IN (
 		    'engine_id', 'schema_name', 'table_name', 'min_zoom', 'max_zoom',
 		    'actual_max_zoom', 'total_tiles', 'cached_tiles', 'fingerprint',
@@ -124,7 +128,7 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		SELECT COUNT(*)
 		FROM information_schema.columns
 		WHERE table_schema = 'manager'
-		  AND table_name = 'quick_view'
+		  AND table_name = 'preview_state'
 		  AND column_name IN (
 		    'can_use_quick_view', 'can_generate_vector_tile_cache', 'default_artifact_id',
 		    'status', 'unavailable_reason', 'last_checked_at'
@@ -138,14 +142,14 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		SELECT COUNT(*)
 		FROM information_schema.columns
 		WHERE table_schema = 'manager'
-		  AND table_name = 'quick_view'
+		  AND table_name = 'preview_state'
 		  AND column_name IN ('item_fingerprint', 'preferred_mode')
 	`).Scan(&quickViewRequiredColumns).Error; err != nil {
 		return err
 	}
 
 	if legacyQuickViewColumns > 0 || quickViewDerivedColumns > 0 || quickViewRequiredColumns < 2 {
-		if err := db.Exec(`DROP TABLE IF EXISTS manager.quick_view`).Error; err != nil {
+		if err := db.Exec(`DROP TABLE IF EXISTS manager.preview_state`).Error; err != nil {
 			return err
 		}
 	}
@@ -230,10 +234,10 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		}
 	}
 
-	if err := db.AutoMigrate(&models.TileCacheTask{}, &models.TileCache{}, &models.QuickView{}); err != nil {
+	if err := db.AutoMigrate(&models.TileCacheTask{}, &models.TileCache{}, &models.PreviewState{}); err != nil {
 		return err
 	}
-	if err := normalizeQuickViewViewState(db); err != nil {
+	if err := normalizePreviewStateViewState(db); err != nil {
 		return err
 	}
 	if err := db.Exec(`
@@ -244,7 +248,7 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		DELETE FROM manager.quick_view
+		DELETE FROM manager.preview_state
 		WHERE COALESCE(item_fingerprint, '') = ''
 		   OR item_fingerprint LIKE 'locator:%'
 		   OR COALESCE(locator, '') = ''
@@ -307,7 +311,35 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 	return nil
 }
 
-func normalizeQuickViewViewState(db *gorm.DB) error {
+func renameQuickViewTableToPreviewState(db *gorm.DB) error {
+	var legacyExists bool
+	if err := db.Raw(`SELECT to_regclass('manager.quick_view') IS NOT NULL`).Scan(&legacyExists).Error; err != nil {
+		return err
+	}
+	if !legacyExists {
+		return nil
+	}
+	var targetExists bool
+	if err := db.Raw(`SELECT to_regclass('manager.preview_state') IS NOT NULL`).Scan(&targetExists).Error; err != nil {
+		return err
+	}
+	if !targetExists {
+		if err := db.Exec(`ALTER TABLE manager.quick_view RENAME TO preview_state`).Error; err != nil {
+			return err
+		}
+	} else if err := db.Exec(`DROP TABLE IF EXISTS manager.quick_view`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_quick_view_tenant_fingerprint`).Error; err != nil {
+		return err
+	}
+	return db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_preview_state_tenant_fingerprint
+		ON manager.preview_state (tenant_id, item_fingerprint)
+	`).Error
+}
+
+func normalizePreviewStateViewState(db *gorm.DB) error {
 	if err := db.Exec(`
 		WITH normalized AS (
 			SELECT
@@ -326,9 +358,9 @@ func normalizeQuickViewViewState(db *gorm.DB) error {
 					COALESCE(view_state->'tiles_3d', '{}'::jsonb) ||
 					COALESCE(view_state->'gaussian_splat', '{}'::jsonb)
 				) AS flat_scene_3d_state
-			FROM manager.quick_view
+			FROM manager.preview_state
 		)
-		UPDATE manager.quick_view AS qv
+		UPDATE manager.preview_state AS qv
 		SET view_state = jsonb_build_object(
 			'basic_preview',
 			jsonb_strip_nulls(jsonb_build_object(
@@ -377,8 +409,8 @@ func normalizeQuickViewViewState(db *gorm.DB) error {
 		return err
 	}
 	return db.Exec(`
-		COMMENT ON COLUMN manager.quick_view.view_state IS
-		'快显/预览交互状态。顶层按显示模式分为 basic_preview 和 quick_view，模式内按渲染域保存 map 地图视口和 scene_3d 三维相机状态'
+		COMMENT ON COLUMN manager.preview_state.view_state IS
+		'预览交互状态。顶层按显示模式分为 basic_preview 和 quick_view，模式内按渲染域保存 map 地图视口和 scene_3d 三维相机状态'
 	`).Error
 }
 

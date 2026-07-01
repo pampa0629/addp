@@ -159,7 +159,7 @@ Common 不维护全量业务 `task_type` 编译期枚举。`task_type` 由 owner
 | Meta | `scan` | `meta.scan_tasks` |
 | Transfer | `sync` | `transfer.transfer_tasks` |
 | Develop | `query` / `workflow` / `script` | `develop.dev_tasks` |
-| Manager | `tile_cache_generation` / `quick_view_optimization` / `embedding` / `raster_cog_generation` / `raster_mosaic_generation` / `model_3d_quick_view_generation` / `model_3d_tiles_generation` / `gaussian_splat_quick_view_generation` | `manager.tile_cache_tasks` / `manager.quick_view_optimization_tasks` / `manager.embedding_tasks` / `manager.raster_cog_tasks` / `manager.raster_mosaic_tasks` / `manager.model_3d_quick_view_tasks` / `manager.model_3d_tiles_tasks` / `manager.gaussian_splat_quick_view_tasks` |
+| Manager | `vector_tile_cache_generation` / `vector_quick_view_target_generation` / `embedding` / `raster_cog_generation` / `raster_mosaic_generation` / `model_3d_quick_view_generation` / `model_3d_tiles_generation` / `gaussian_splat_quick_view_generation` | `manager.vector_tile_cache_tasks` / `manager.vector_quick_view_target_tasks` / `manager.embedding_tasks` / `manager.raster_cog_tasks` / `manager.raster_mosaic_tasks` / `manager.model_3d_quick_view_tasks` / `manager.model_3d_tiles_tasks` / `manager.gaussian_splat_quick_view_tasks` |
 | Quality | `check` | `quality.check_tasks` |
 | Graph | `kg_build` | `graph.build_tasks` |
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
@@ -168,7 +168,7 @@ System 资源回收（cleanup）不纳入 TaskProvider，也不进入 Orchestrat
 
 Transfer 的内部任务语义统一收敛为同步执行。阶段 1 对外只声明 `task_type=sync`，并通过 TaskProvider 和 `common.task_executions` 关联任务定义。Manager 的导入 / 导出入口通过 client 创建并触发 Transfer `sync`，不得在 Transfer 侧并行保留 `import`、`export`、`transfer` 等旧任务类型。
 
-Manager 的瓦片缓存生成、快显性能优化、embedding、QuickView、raster COG、raster mosaic、三维模型 GLB 快显、三维模型 3D Tiles 生成和 3DGS - KPlat 快显细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。瓦片缓存生成任务类型为 `tile_cache_generation`，任务定义表为 `manager.tile_cache_tasks`；快显性能优化任务类型为 `quick_view_optimization`，任务定义表为 `manager.quick_view_optimization_tasks`，结果表为 `manager.quick_view_optimization`；单 TIFF 栅格 COG 生成任务类型为 `raster_cog_generation`，任务定义表为 `manager.raster_cog_tasks`；栅格镶嵌数据集生成任务类型为 `raster_mosaic_generation`，任务定义表为 `manager.raster_mosaic_tasks`，结果是业务存储中的 `format=raster_mosaic` data item，不是 Manager infra artifact；三维模型 GLB 快显任务类型为 `model_3d_quick_view_generation`，任务定义表为 `manager.model_3d_quick_view_tasks`，源 item 必须是 `format=osgb`、`layout=single`，`format=gltf`、`layout=multi`，或 `format=fbx|obj`、`layout=single`，结果表为 `manager.model_3d_quick_view`，结果是 Manager infra MinIO 中的 GLB artifact，不自动升格为业务 data item；OSGB Scene 倾斜摄影转 3D Tiles 任务类型为 `model_3d_tiles_generation`，任务定义表为 `manager.model_3d_tiles_tasks`，源 item 必须是 `format=osgb_scene`、`layout=whole`，结果是业务存储中的 `format=3dtiles`、`layout=whole` data item，不是 Manager 私有 artifact；3DGS - KPlat 快显任务类型为 `gaussian_splat_quick_view_generation`，任务定义表为 `manager.gaussian_splat_quick_view_tasks`，源 item 必须是 `data_type=gaussian_splat + layout=single + format=ply|splat|ksplat`，结果表为 `manager.gaussian_splat_quick_view`，结果是 Manager infra MinIO 中的 KPlat artifact，不自动升格为业务 data item；`format=ply|splat` 的高斯泼溅 item 会转换为 `.ksplat` 文件，`format=ksplat` 的源 item 只做受管发布登记。MVT 是瓦片缓存格式，应进入任务配置，例如 `config.tile.format=mvt`，不作为任务类型。持久化 embedding 任务执行必须复用任务服务创建的主 execution；ad-hoc embedding 可以自行创建 execution，但不得产生 owner 任务定义，且没有 `source_task_id` 时必须写完整 `execution_config`。
+Manager 的瓦片缓存生成、快显性能优化、embedding、PreviewState、raster COG、raster mosaic、三维模型 GLB 快显、三维模型 3D Tiles 生成和 3DGS - KPlat 快显细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。瓦片缓存生成任务类型为 `vector_tile_cache_generation`，任务定义表为 `manager.vector_tile_cache_tasks`；快显性能优化任务类型为 `vector_quick_view_target_generation`，任务定义表为 `manager.vector_quick_view_target_tasks`，结果表为 `manager.vector_quick_view_targets`；单 TIFF 栅格 COG 生成任务类型为 `raster_cog_generation`，任务定义表为 `manager.raster_cog_tasks`；栅格镶嵌数据集生成任务类型为 `raster_mosaic_generation`，任务定义表为 `manager.raster_mosaic_tasks`，结果是业务存储中的 `format=raster_mosaic` data item，不是 Manager infra artifact；三维模型 GLB 快显任务类型为 `model_3d_quick_view_generation`，任务定义表为 `manager.model_3d_quick_view_tasks`，源 item 必须是 `format=osgb`、`layout=single`，`format=gltf`、`layout=multi`，或 `format=fbx|obj|stl`、`layout=single`，结果表为 `manager.model_3d_quick_view`，结果是 Manager infra MinIO 中的 GLB artifact，不自动升格为业务 data item；OSGB Scene 倾斜摄影转 3D Tiles 任务类型为 `model_3d_tiles_generation`，任务定义表为 `manager.model_3d_tiles_tasks`，源 item 必须是 `format=osgb_scene`、`layout=whole`，结果是业务存储中的 `format=3dtiles`、`layout=whole` data item，不是 Manager 私有 artifact；3DGS - KPlat 快显任务类型为 `gaussian_splat_quick_view_generation`，任务定义表为 `manager.gaussian_splat_quick_view_tasks`，源 item 必须是 `data_type=gaussian_splat + layout=single + format=ply|splat`，结果表为 `manager.gaussian_splat_quick_view`，结果是 Manager infra MinIO 中的 KPlat artifact，不自动升格为业务 data item；`format=ply|splat` 的高斯泼溅 item 会转换为 `.ksplat` 文件，`format=ksplat` 的源 item 直接基础预览，不创建 KPlat 快显任务。PreviewState 目标落点为 `manager.preview_state`，用于保存基础预览和快显预览的模式偏好与视角状态，不属于任务定义或快显结果表。MVT 是瓦片缓存格式，应进入任务配置，例如 `config.tile.format=mvt`，不作为任务类型。持久化 embedding 任务执行必须复用任务服务创建的主 execution；ad-hoc embedding 可以自行创建 execution，但不得产生 owner 任务定义，且没有 `source_task_id` 时必须写完整 `execution_config`。
 
 Manager 中 QuickView、瓦片缓存产物的 `ready`、`generating`、`stale`、`failed` 等状态属于 artifact state，不是统一 execution status。Manager 的即时向量化内存轮询状态虽不持久化为任务定义，但属于 execution-like 状态，成功态也必须使用 `success`，不得使用 `completed`。
 
@@ -297,8 +297,8 @@ HTTP 状态码表达错误类型，响应体不得重复携带 `status=error`。
 
 | provider | task_type | 任务定义表 | 执行 owner |
 | --- | --- | --- | --- |
-| `manager` | `tile_cache_generation` | `manager.tile_cache_tasks` | Manager |
-| `manager` | `quick_view_optimization` | `manager.quick_view_optimization_tasks` | Manager |
+| `manager` | `vector_tile_cache_generation` | `manager.vector_tile_cache_tasks` | Manager |
+| `manager` | `vector_quick_view_target_generation` | `manager.vector_quick_view_target_tasks` | Manager |
 | `manager` | `embedding` | `manager.embedding_tasks` | Manager |
 
 约束：
@@ -337,7 +337,7 @@ TaskProvider 注册时必须使用 `task.capabilities/v1` schema，并声明稳�
 
 | 字段 | 说明 |
 | --- | --- |
-| `type` | 稳定任务类型，例如 `tile_cache_generation`；必须匹配 `^[a-z][a-z0-9_]*$` |
+| `type` | 稳定任务类型，例如 `vector_tile_cache_generation`；必须匹配 `^[a-z][a-z0-9_]*$` |
 | `display_name` | 展示名称 |
 | `description` | 任务类型说明 |
 | `definition_schema` | 任务定义公开摘要 JSON Schema，不用于 Orchestrator 创建、编辑或渲染完整 owner 任务定义；当前必须是对象 schema |

@@ -50,7 +50,7 @@ graph TB
         Meta --> |注册 capabilities| MetaCap[Meta task_capabilities<br/>scan]
         Transfer --> |注册 capabilities| TransferCap[Transfer task_capabilities<br/>sync]
         Develop --> |注册 capabilities| DevelopCap[Develop task_capabilities<br/>query<br/>workflow<br/>script]
-        Manager --> |注册 capabilities| ManagerCap[Manager task_capabilities<br/>tile_cache_generation<br/>quick_view_optimization<br/>embedding]
+        Manager --> |注册 capabilities| ManagerCap[Manager task_capabilities<br/>vector_tile_cache_generation<br/>vector_quick_view_target_generation<br/>embedding]
         Quality --> |注册 capabilities| QualityCap[Quality task_capabilities<br/>check]
         Graph --> |注册 capabilities| GraphCap[Graph task_capabilities<br/>kg_build]
         OrchestratorProvider --> |注册 capabilities| OrchestratorCap[Orchestrator task_capabilities<br/>orchestration]
@@ -118,8 +118,8 @@ graph TB
 | **Develop** | 执行查询 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=query` |
 | **Develop** | 执行工作流 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=workflow` |
 | **Develop** | 执行脚本 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=script` |
-| **Manager** | 生成瓦片缓存 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=tile_cache_generation` |
-| **Manager** | 快显性能优化 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=quick_view_optimization` |
+| **Manager** | 生成瓦片缓存 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=vector_tile_cache_generation` |
+| **Manager** | 快显性能优化 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=vector_quick_view_target_generation` |
 | **Manager** | 向量化 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=embedding` |
 | **Quality** | 质量检查 | `POST /api/v1/quality/tasks/{task_type}/{id}/execute` | `task_type=check` |
 | **Graph** | 图谱构建 | `POST /api/v1/graph/tasks/{task_type}/{id}/execute` | `task_type=kg_build` |
@@ -152,7 +152,7 @@ graph TB
 
         TaskWF --> TaskNode1[业务任务<br/>扫描元数据<br/>Meta.scan]
         TaskWF --> TaskNode2[业务任务<br/>Transfer任务<br/>Transfer.sync]
-        TaskWF --> TaskNode3[业务任务<br/>生成瓦片<br/>Manager.tile_cache_generation]
+        TaskWF --> TaskNode3[业务任务<br/>生成瓦片<br/>Manager.vector_tile_cache_generation]
 
         TaskNode1 --> TaskNode2
         TaskNode2 --> TaskNode3
@@ -230,7 +230,7 @@ flowchart TD
     Start([开始]) --> ScanMeta[扫描元数据<br/>Meta.scan<br/>task_id=11]
     ScanMeta --> ImportData[Transfer任务<br/>Transfer.sync<br/>task_id=21]
     ImportData --> ExecuteWorkflow[执行工作流<br/>Develop.workflow<br/>参数: input={{ImportData.target_table}}]
-    ExecuteWorkflow --> GenerateTileCache[生成瓦片缓存<br/>Manager.tile_cache_generation<br/>task_id=31]
+    ExecuteWorkflow --> GenerateTileCache[生成瓦片缓存<br/>Manager.vector_tile_cache_generation<br/>task_id=31]
     GenerateTileCache --> End([结束])
 
     classDef meta fill:#e1f5ff,stroke:#01579b
@@ -288,7 +288,7 @@ flowchart TD
       "id": "generate_tile_cache",
       "name": "生成瓦片缓存",
       "provider": "manager",
-      "task_type": "tile_cache_generation",
+      "task_type": "vector_tile_cache_generation",
       "task_id": 31,
       "parameters": {},
       "depends_on": ["execute_workflow"],

@@ -1277,7 +1277,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建新的 3DGS - KPlat 快显任务配置。源必须是 format=ply、splat 或 ksplat 的 gaussian_splat item；PLY / SPLAT 会转换为 KPlat artifact，KSplat 源直接发布登记，结果写入 Manager infra MinIO。| Create a 3DGS - KPlat quick view task from a format=ply, splat, or ksplat gaussian_splat item into Manager infra MinIO. PLY / SPLAT are converted to KPlat artifacts and KSplat sources are published directly.",
+                "description": "创建新的 3DGS - KPlat 快显任务配置。源必须是 format=ply 或 splat 的 gaussian_splat item，并转换为 KPlat artifact 写入 Manager infra MinIO；format=ksplat 的源文件直接基础预览，不创建快显任务。| Create a 3DGS - KPlat quick view task from a format=ply or splat gaussian_splat item into Manager infra MinIO. format=ksplat sources are previewed directly and do not create quick view tasks.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1774,7 +1774,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "列出 Manager 模块的 OSGB / glTF / FBX / OBJ 转 GLB 快显任务配置。该私有入口固定返回 task_type=model_3d_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D quick view generation task configurations.",
+                "description": "列出 Manager 模块的 OSGB / glTF / FBX / OBJ / STL 转 GLB 快显任务配置。该私有入口固定返回 task_type=model_3d_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D quick view generation task configurations.",
                 "produces": [
                     "application/json"
                 ],
@@ -1819,7 +1819,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建新的 OSGB / glTF / FBX / OBJ 转 GLB 快显任务配置。任务从 OSGB、glTF、FBX 或 OBJ model_3d item 读取源数据，并将 GLB artifact 写入 Manager infra MinIO。| Create a model 3D quick view task from an OSGB, glTF, FBX or OBJ model item into Manager infra MinIO.",
+                "description": "创建新的 OSGB / glTF / FBX / OBJ / STL 转 GLB 快显任务配置。任务从 OSGB、glTF、FBX、OBJ 或 STL model_3d item 读取源数据，并将 GLB artifact 写入 Manager infra MinIO。| Create a model 3D quick view task from an OSGB, glTF, FBX, OBJ or STL model item into Manager infra MinIO.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2351,6 +2351,114 @@ const docTemplate = `{
                 }
             }
         },
+        "/preview-state/preferred-mode": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "以 Resource Locator 为数据项身份更新显示偏好：basic_preview 或 map_quick_view | Update preferred display mode by Resource Locator: basic_preview or map_quick_view",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "更新 locator 预览模式偏好 | Update locator preferred preview mode",
+                "parameters": [
+                    {
+                        "description": "显示模式配置 | Display mode configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.UpdatePreferredModeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新成功 | Updated successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Resource not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/preview-state/view-state": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "以 Resource Locator 为数据项身份更新预览交互状态。view_state 是统一 JSON 字段，顶层按 basic_preview / quick_view 区分显示模式，模式内按 map / scene_3d 区分渲染域。 | Update preview interaction state by Resource Locator. view_state is a unified JSON field grouped by display mode basic_preview / quick_view, then by render domain map / scene_3d.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "更新 locator 预览交互状态 | Update locator preview state",
+                "parameters": [
+                    {
+                        "description": "预览交互状态 | Preview state",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.UpdatePreviewStateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新成功 | Updated successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Resource not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/quick-view/capability": {
             "get": {
                 "security": [
@@ -2494,60 +2602,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/quick-view/preferred-mode": {
-            "patch": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "以 Resource Locator 为数据项身份更新显示偏好：basic_preview 或 map_quick_view | Update preferred display mode by Resource Locator: basic_preview or map_quick_view",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "更新 locator 预览模式偏好 | Update locator preferred preview mode",
-                "parameters": [
-                    {
-                        "description": "显示模式配置 | Display mode configuration",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.UpdatePreferredModeRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "更新成功 | Updated successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "资源不存在 | Resource not found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/quick-view/tiles/{z}/{x}/{y}.mvt": {
             "get": {
                 "security": [
@@ -2663,60 +2717,6 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/quick-view/view-state": {
-            "patch": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "以 Resource Locator 为数据项身份更新快显/预览交互状态。view_state 是统一 JSON 字段，顶层按 basic_preview / quick_view 区分显示模式，模式内按 map / scene_3d 区分渲染域。 | Update quick view interaction state by Resource Locator. view_state is a unified JSON field grouped by display mode basic_preview / quick_view, then by render domain map / scene_3d.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "更新 locator 快显视角状态 | Update locator quick view state",
-                "parameters": [
-                    {
-                        "description": "快显视角状态 | Quick view state",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.UpdateQuickViewStateRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "更新成功 | Updated successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "资源不存在 | Resource not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5562,6 +5562,12 @@ const docTemplate = `{
                 "sampled_bounds_sample_count": {
                     "type": "integer"
                 },
+                "scene_center": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
                 "sh_degree": {
                     "type": "integer"
                 },
@@ -7371,7 +7377,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.UpdateQuickViewStateRequest": {
+        "internal_api.UpdatePreviewStateRequest": {
             "type": "object",
             "required": [
                 "locator",

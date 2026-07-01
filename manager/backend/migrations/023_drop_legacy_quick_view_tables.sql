@@ -1,7 +1,7 @@
 -- 023_drop_legacy_quick_view_tables.sql
 -- 清理空间快显体系统一命名前遗留的 Manager 表。
 -- 当前唯一保留的表：
---   manager.quick_view
+--   manager.preview_state
 --   manager.vector_quick_view_targets
 --   manager.vector_quick_view_target_tasks
 --   manager.vector_tile_cache

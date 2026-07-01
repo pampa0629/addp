@@ -10,7 +10,7 @@
 
 它不替代：
 
-1. `manager.quick_view` 的用户预览模式偏好。
+1. `manager.preview_state` 的用户预览模式偏好。
 2. `manager.vector_tile_cache_tasks` 的任务定义。
 3. `common.task_executions` 的执行历史。
 
@@ -62,5 +62,5 @@
 ## 五、相关文档
 
 - [快显实现规范](../快显实现规范.md)
-- [quick_view 表结构和 API 说明](./quick_view表.md)
+- [preview_state 表结构和 API 说明](./preview_state表.md)
 - [数据库架构](../数据库架构.md)

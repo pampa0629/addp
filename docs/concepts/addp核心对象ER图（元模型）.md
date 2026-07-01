@@ -85,7 +85,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 - Transfer: `sync`
 - Develop: `query` / `workflow` / `script`
 - Orchestrator: `orchestration`
-- Manager: `tile_cache_generation` / `quick_view_optimization` / `embedding`
+- Manager: `vector_tile_cache_generation` / `vector_quick_view_target_generation` / `embedding`
 - Quality: `check`
 - Graph: `kg_build`
 
@@ -97,13 +97,13 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 | ------------ | ------------- | ----------------------------------------------------------------- |
 | 瓦片缓存生成任务 | TileCacheTask | Task 派生，生成瓦片缓存结果，执行时更新 TileCache |
 | 向量化任务   | EmbeddingTask | Task 派生，对 data item 范围执行向量化，写入 Embedding artifact state |
-| 快显偏好 | QuickView | 空间预览快显偏好，只保存 item 身份、回跳定位和用户显示偏好 |
+| 预览状态 | PreviewState | 数据项预览状态，保存 item 身份、预览模式偏好和 map / scene_3d 交互视角 |
 | 瓦片缓存结果 | TileCache | 空间 data item 的瓦片缓存结果状态，记录最小必要结果事实 |
 | 向量记录     | Embedding     | 单个 data item 的当前向量化结果状态，以 item_fingerprint 去重     |
 
-**关于 QuickView**：
-- 是快显偏好，不是任务，也不是瓦片缓存结果。
-- QuickView 只保存用户偏好；可快显能力、推荐结果和渲染源由能力 API 根据空间元数据与 `TileCache` 动态合成。
+**关于 PreviewState**：
+- 是预览状态，不是任务，也不是快显或瓦片缓存结果。
+- PreviewState 保存用户预览状态；可快显能力、推荐结果和渲染源由能力 API 根据空间元数据、数据格式和各类快显结果动态合成。
 - 瓦片缓存生成必须先创建 `TileCacheTask`，再执行；不设计无任务定义的 ad-hoc 瓦片缓存生成。
 
 ---
@@ -496,7 +496,7 @@ erDiagram
         string execution_id UK "UUID，全局唯一，跨模块追踪"
         uint tenant_id FK
         string module "meta|transfer|develop|orchestrator|manager|quality|graph"
-        string task_type "scan|sync|query|workflow|script|orchestration|tile_cache_generation|quick_view_optimization|embedding|check|kg_build"
+        string task_type "scan|sync|query|workflow|script|orchestration|vector_tile_cache_generation|vector_quick_view_target_generation|embedding|check|kg_build"
         string source "触发来源模块"
         string source_task_id "对应模块任务 ID（字符串，无 DB FK）"
         string source_task_name "任务名称（冗余，便于展示）"
@@ -593,7 +593,7 @@ erDiagram
         timestamp deleted_at
     }
 
-    QuickView {
+    PreviewState {
         uint id PK
         uint tenant_id FK
         string item_fingerprint UK "标准 data item 指纹"
@@ -609,7 +609,7 @@ erDiagram
         string item_fingerprint "标准 data item 指纹"
         uint item_id "当前 meta item 行引用"
         string locator "资源树回跳定位"
-        uint task_id "manager.tile_cache_tasks.id"
+        uint task_id "manager.vector_tile_cache_tasks.id"
         string last_execution_id
         string tile_format "mvt|raster|image|..."
         string storage_ref "瓦片缓存或 manifest 存储引用"

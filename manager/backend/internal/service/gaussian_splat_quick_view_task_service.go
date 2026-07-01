@@ -423,7 +423,7 @@ func normalizeGaussianSplatQuickViewSource(config commonModels.JSONMap) (Gaussia
 		SourceEngineID:           uintFromConfig(sourceMap["source_engine_id"]),
 		ItemFingerprint:          strings.TrimSpace(stringFromConfig(sourceMap["item_fingerprint"])),
 		ItemID:                   uintFromConfig(sourceMap["item_id"]),
-		Format:                   strings.ToLower(firstNonEmptyConfig(stringFromConfig(sourceMap["format"]), string(format.FormatKSplat))),
+		Format:                   strings.ToLower(strings.TrimSpace(stringFromConfig(sourceMap["format"]))),
 		SourceSizeBytes:          int64FromConfig(sourceMap["source_size_bytes"], 0),
 		Bounds3D:                 bounds3DFromTaskConfig(sourceMap["bounds_3d"]),
 		SampledBounds3D:          bounds3DFromTaskConfig(sourceMap["sampled_bounds_3d"]),
@@ -433,7 +433,7 @@ func normalizeGaussianSplatQuickViewSource(config commonModels.JSONMap) (Gaussia
 		return GaussianSplatQuickViewSourceConfig{}, errors.New("gaussian splat quick view config.source requires item_locator, source_engine_id and item_fingerprint")
 	}
 	if !isGaussianSplatQuickViewTaskSourceFormat(source.Format) {
-		return GaussianSplatQuickViewSourceConfig{}, errors.New("gaussian splat quick view config.source.format must be ply, splat or ksplat")
+		return GaussianSplatQuickViewSourceConfig{}, errors.New("gaussian splat quick view config.source.format must be ply or splat")
 	}
 	loc, err := resourcetree.ParseURI(source.ItemLocator)
 	if err != nil {
@@ -465,7 +465,7 @@ func normalizeGaussianSplatQuickViewSource(config commonModels.JSONMap) (Gaussia
 
 func isGaussianSplatQuickViewTaskSourceFormat(sourceFormat string) bool {
 	switch strings.ToLower(strings.TrimSpace(sourceFormat)) {
-	case string(format.FormatPLY), string(format.FormatSplat), string(format.FormatKSplat):
+	case string(format.FormatPLY), string(format.FormatSplat):
 		return true
 	default:
 		return false
