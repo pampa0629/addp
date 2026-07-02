@@ -12,6 +12,12 @@ func DetectFormat(filename string, peek []byte) FormatType {
 	if format := descriptorFormatByFileName(filename); format != FormatUnknown {
 		return format
 	}
+	if format := descriptorFormatByCompoundExtension(filename); format != FormatUnknown {
+		if needMagicValidation(format) && len(peek) > 0 && !validateMagicBytes(format, peek) {
+			return FormatUnknown
+		}
+		return format
+	}
 	ext := strings.ToLower(filepath.Ext(filename))
 	if format := extToFormat(ext); format != FormatUnknown {
 		if len(peek) > 0 && formatCanBeRefinedByContent(format) {
@@ -52,6 +58,21 @@ func descriptorFormatByFileName(filename string) FormatType {
 	for _, descriptor := range ListFormatDescriptors() {
 		for _, candidate := range descriptor.Identification.FileNames {
 			if candidate == name {
+				return descriptor.Format
+			}
+		}
+	}
+	return FormatUnknown
+}
+
+func descriptorFormatByCompoundExtension(filename string) FormatType {
+	name := strings.ToLower(strings.TrimSpace(filepath.Base(filename)))
+	if name == "" {
+		return FormatUnknown
+	}
+	for _, descriptor := range ListFormatDescriptors() {
+		for _, extension := range descriptor.Identification.Extensions {
+			if strings.Count(extension, ".") > 1 && strings.HasSuffix(name, extension) {
 				return descriptor.Format
 			}
 		}

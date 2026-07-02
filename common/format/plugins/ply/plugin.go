@@ -75,8 +75,8 @@ func (p *Plugin) DescribeModel3D(ctx context.Context, input io.Reader, options *
 	return &format.Model3DDescribeResult{Model3D: model, FormatInfo: formatInfo}, nil
 }
 
-func (p *Plugin) DescribePointCloud(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.PointCloudDescribeResult, error) {
-	header, err := readPLYHeader(ctx, input)
+func (p *Plugin) DescribePointCloud(ctx context.Context, input format.PointCloudDescribeInput, options *format.ParseOptions) (*format.PointCloudDescribeResult, error) {
+	header, err := readPLYHeader(ctx, input.Reader)
 	if err != nil {
 		return nil, err
 	}

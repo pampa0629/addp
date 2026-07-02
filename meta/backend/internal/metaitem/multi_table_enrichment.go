@@ -118,6 +118,13 @@ func appendResolvedCommonItems(ctx context.Context, input DirectoryResolveInput,
 			}
 			itemAttributes = attrs
 		}
+		if item.Layout == format.LayoutWhole && item.DataType == datatype.PointCloud {
+			attrs, ok := scopePointCloudAttributes(ctx, input, item)
+			if !ok {
+				continue
+			}
+			itemAttributes = attrs
+		}
 		detected := detectedItemFromResolvedItem(input.DirPath, item)
 		if len(itemAttributes) > 0 {
 			detected.Attributes = itemAttributes
@@ -165,6 +172,41 @@ func scopeModel3DAttributes(ctx context.Context, input DirectoryResolveInput, it
 	attrs := map[string]interface{}{}
 	if info.Model3D != nil {
 		metaattr.MergeStandardAttributes(attrs, metaattr.Model3DInfoAttributes(info.Model3D, info.Spatial))
+	}
+	if len(info.FormatInfo) > 0 {
+		metaattr.MergeStandardAttributes(attrs, metaattr.FormatInfoAttributes(string(formatType), info.FormatInfo))
+	}
+	if len(attrs) == 0 {
+		return nil, false
+	}
+	return attrs, true
+}
+
+func scopePointCloudAttributes(ctx context.Context, input DirectoryResolveInput, item dataitem.ResolvedItem) (map[string]interface{}, bool) {
+	if input.ContentReader == nil {
+		return nil, false
+	}
+	formatType := format.NormalizeFormat(item.Format)
+	if formatType == format.FormatUnknown {
+		return nil, false
+	}
+	provider, err := format.GetScopePointCloudInfoProvider(formatType)
+	if err != nil {
+		return nil, false
+	}
+	reader := contentadapter.NewMappedReader(input.ContentReader, input.ConnInfo, func(ref contentio.Ref) (plugin.CatalogPath, error) {
+		return resolveCatalogPath(input.EngineID, ref.Path, input.CatalogPathFor), nil
+	}, plugin.ReadOptions{})
+	info, err := provider.DescribePointCloudScope(ctx, reader, contentio.NewRef(item.ScopePath, contentio.RoleScope), nil)
+	if err != nil || info == nil {
+		return nil, false
+	}
+	if info.PointCloud != nil && info.PointCloud.SizeBytes == nil && item.SizeBytes != nil && *item.SizeBytes > 0 {
+		info.PointCloud.SizeBytes = item.SizeBytes
+	}
+	attrs := map[string]interface{}{}
+	if info.PointCloud != nil {
+		metaattr.MergeStandardAttributes(attrs, metaattr.PointCloudInfoAttributes(info.PointCloud, info.Spatial))
 	}
 	if len(info.FormatInfo) > 0 {
 		metaattr.MergeStandardAttributes(attrs, metaattr.FormatInfoAttributes(string(formatType), info.FormatInfo))

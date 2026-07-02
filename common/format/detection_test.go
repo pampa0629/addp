@@ -183,6 +183,36 @@ func TestDetectFormat(t *testing.T) {
 			want:     FormatIFC,
 		},
 		{
+			name:     "LAZ by extension validates LAS-family header",
+			filename: "scan.laz",
+			peek:     []byte("LASF\x00\x00\x00\x00"),
+			want:     FormatLAZ,
+		},
+		{
+			name:     "COPC compound extension wins over LAZ extension",
+			filename: "scan.copc.laz",
+			peek:     []byte("LASF\x00\x00\x00\x00"),
+			want:     FormatCOPC,
+		},
+		{
+			name:     "E57 by extension validates ASTM header",
+			filename: "scan.e57",
+			peek:     []byte("ASTM-E57\x00\x00"),
+			want:     FormatE57,
+		},
+		{
+			name:     "PCD by extension",
+			filename: "scan.pcd",
+			peek:     []byte("# .PCD v0.7 - Point Cloud Data file format\n"),
+			want:     FormatPCD,
+		},
+		{
+			name:     "XYZ by extension",
+			filename: "scan.xyz",
+			peek:     []byte("0 1 2\n"),
+			want:     FormatXYZ,
+		},
+		{
 			name:     "Unknown format",
 			filename: "data.unknown",
 			peek:     nil,

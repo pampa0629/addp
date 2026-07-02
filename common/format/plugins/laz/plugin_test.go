@@ -1,4 +1,4 @@
-package las
+package laz
 
 import (
 	"bytes"
@@ -12,10 +12,10 @@ import (
 	"github.com/addp/common/format/plugins/internal/lasfamily"
 )
 
-func TestLASDescriptor(t *testing.T) {
+func TestLAZDescriptor(t *testing.T) {
 	descriptor := NewPlugin().Descriptor()
-	if descriptor.Format != format.FormatLAS {
-		t.Fatalf("Format = %q, want %q", descriptor.Format, format.FormatLAS)
+	if descriptor.Format != format.FormatLAZ {
+		t.Fatalf("Format = %q, want %q", descriptor.Format, format.FormatLAZ)
 	}
 	if descriptor.DataType != datatype.PointCloud {
 		t.Fatalf("DataType = %q, want %q", descriptor.DataType, datatype.PointCloud)
@@ -25,8 +25,8 @@ func TestLASDescriptor(t *testing.T) {
 	}
 }
 
-func TestDescribePointCloudReadsLASHeader(t *testing.T) {
-	result, err := NewPlugin().DescribePointCloud(context.Background(), format.PointCloudDescribeInput{Reader: bytes.NewReader(buildLASHeader())}, nil)
+func TestDescribePointCloudReadsLAZHeader(t *testing.T) {
+	result, err := NewPlugin().DescribePointCloud(context.Background(), format.PointCloudDescribeInput{Reader: bytes.NewReader(buildLAZHeader())}, nil)
 	if err != nil {
 		t.Fatalf("DescribePointCloud() error = %v", err)
 	}
@@ -39,21 +39,34 @@ func TestDescribePointCloudReadsLASHeader(t *testing.T) {
 	if result.PointCloud.PointCount == nil || *result.PointCloud.PointCount != 123456789 {
 		t.Fatalf("PointCount = %v, want 123456789", result.PointCloud.PointCount)
 	}
-	if result.PointCloud.PointFormat != "las_1.4_point_format_7" {
-		t.Fatalf("PointFormat = %q, want las_1.4_point_format_7", result.PointCloud.PointFormat)
-	}
-	if result.PointCloud.Bounds3D == nil || result.PointCloud.Bounds3D.MaxZ == nil || *result.PointCloud.Bounds3D.MaxZ != 30 {
-		t.Fatalf("Bounds3D = %#v, want max_z 30", result.PointCloud.Bounds3D)
-	}
-	if result.Spatial == nil || result.Spatial.Extent == nil {
-		t.Fatalf("Spatial = %#v, want extent", result.Spatial)
-	}
-	if result.FormatInfo["version"] != "1.4" {
-		t.Fatalf("format_info.version = %#v, want 1.4", result.FormatInfo["version"])
+	if result.FormatInfo["compression"] != "laszip" {
+		t.Fatalf("format_info.compression = %#v, want laszip", result.FormatInfo["compression"])
 	}
 }
 
-func buildLASHeader() []byte {
+func TestDescribePointCloudDoesNotReadLAS14EVLRFieldsFromLAS12Header(t *testing.T) {
+	result, err := NewPlugin().DescribePointCloud(context.Background(), format.PointCloudDescribeInput{Reader: bytes.NewReader(buildLAZ12HeaderWithPayloadBytes())}, nil)
+	if err != nil {
+		t.Fatalf("DescribePointCloud() error = %v", err)
+	}
+	if _, ok := result.FormatInfo["evlr_offset"]; ok {
+		t.Fatalf("format_info.evlr_offset = %#v, want omitted for LAS 1.2 header", result.FormatInfo["evlr_offset"])
+	}
+	if _, ok := result.FormatInfo["evlr_count"]; ok {
+		t.Fatalf("format_info.evlr_count = %#v, want omitted for LAS 1.2 header", result.FormatInfo["evlr_count"])
+	}
+}
+
+func buildLAZ12HeaderWithPayloadBytes() []byte {
+	buf := buildLAZHeader()
+	buf[25] = 2
+	binary.LittleEndian.PutUint16(buf[94:96], 227)
+	binary.LittleEndian.PutUint32(buf[107:111], 100000)
+	copy(buf[235:255], []byte("projection-payload!!"))
+	return buf
+}
+
+func buildLAZHeader() []byte {
 	buf := make([]byte, lasfamily.MaxHeaderRead)
 	copy(buf[:4], []byte(lasfamily.Magic))
 	buf[24] = 1
@@ -65,7 +78,6 @@ func buildLASHeader() []byte {
 	binary.LittleEndian.PutUint32(buf[100:104], 2)
 	buf[104] = 7
 	binary.LittleEndian.PutUint16(buf[105:107], 36)
-	binary.LittleEndian.PutUint32(buf[107:111], 0)
 	putFloat64(buf[131:139], 0.01)
 	putFloat64(buf[139:147], 0.01)
 	putFloat64(buf[147:155], 0.01)
@@ -78,8 +90,6 @@ func buildLASHeader() []byte {
 	putFloat64(buf[203:211], 2)
 	putFloat64(buf[211:219], 30)
 	putFloat64(buf[219:227], 3)
-	binary.LittleEndian.PutUint64(buf[235:243], 4096)
-	binary.LittleEndian.PutUint32(buf[243:247], 1)
 	binary.LittleEndian.PutUint64(buf[247:255], 123456789)
 	return buf
 }

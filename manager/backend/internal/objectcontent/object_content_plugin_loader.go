@@ -353,7 +353,20 @@ func buildPointCloudContentHandler(cfg ObjectContentPluginConfig) ObjectContentH
 		baseContentHandler: baseContentHandler{
 			name:     cfg.Name,
 			priority: cfg.priorityOr(defaultBuiltinContentPriority(models.ObjectPreviewKindPointCloud)),
-			matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatLAS, nil, nil),
+			matcher: descriptorObjectContentMatcher(
+				cfg.Match,
+				commonformat.FormatLAS,
+				[]commonformat.FormatType{
+					commonformat.FormatLAZ,
+					commonformat.FormatCOPC,
+					commonformat.FormatE57,
+					commonformat.FormatPCD,
+					commonformat.FormatXYZ,
+					commonformat.FormatEPT,
+					commonformat.FormatPLY,
+				},
+				nil,
+			),
 		},
 	}
 }

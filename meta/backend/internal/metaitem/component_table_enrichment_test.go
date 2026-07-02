@@ -219,6 +219,79 @@ func TestCommonDataItemResolverAdapts3DTilesWholeScope(t *testing.T) {
 	}
 }
 
+func TestCommonDataItemResolverAdaptsEPTWholeScope(t *testing.T) {
+	d := &commonDataItemResolver{}
+	files := []StorageFileRef{
+		{Name: "ept.json", Path: "pointcloud/ept/ept.json", Size: 10},
+		{Name: "0-0-0-0.laz", Path: "pointcloud/ept/ept-data/0-0-0-0.laz", Size: 20},
+		{Name: "0-0-0-0.json", Path: "pointcloud/ept/ept-hierarchy/0-0-0-0.json", Size: 30},
+	}
+
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+		ContentReader: refMapContentReader{content: map[string][]byte{
+			"pointcloud/ept/ept.json": []byte(`{
+				"version":"1.1.0",
+				"dataType":"laszip",
+				"points":42,
+				"bounds":[0,1,2,10,20,30],
+				"boundsConforming":[1,2,3,9,19,29],
+				"schema":[
+					{"name":"X","type":"signed","size":4,"scale":0.01,"offset":0},
+					{"name":"Y","type":"signed","size":4,"scale":0.01,"offset":0},
+					{"name":"Z","type":"signed","size":4,"scale":0.01,"offset":0},
+					{"name":"Intensity","type":"unsigned","size":2},
+					{"name":"Classification","type":"unsigned","size":1},
+					{"name":"Red","type":"unsigned","size":2},
+					{"name":"Green","type":"unsigned","size":2},
+					{"name":"Blue","type":"unsigned","size":2}
+				],
+				"span":128,
+				"hierarchyType":"json",
+				"srs":{"authority":"EPSG","horizontal":"4978"}
+			}`),
+		}},
+		DirPath:        "pointcloud/ept",
+		Files:          files[:1],
+		RecursiveFiles: files,
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if !result.Exclusive {
+		t.Fatal("EPT should exclusively claim the whole scope")
+	}
+	if got, want := len(result.Items), 1; got != want {
+		t.Fatalf("Items len = %d, want %d", got, want)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutWhole || item.DataType != datatype.PointCloud || item.Format != string(format.FormatEPT) {
+		t.Fatalf("item = %#v, want point_cloud ept whole item", item)
+	}
+	if item.ScopePath != "pointcloud/ept" || item.PrimaryContentPath != "pointcloud/ept/ept.json" {
+		t.Fatalf("scope/primary = %q/%q, want EPT root and manifest", item.ScopePath, item.PrimaryContentPath)
+	}
+	pointCloud := commonJSON.Section(item.Attributes, "type_info.point_cloud")
+	if pointCloud["point_cloud_kind"] != datatype.PointCloudKindTiledPointCloud || commonJSON.InterfaceInt64(pointCloud["point_count"]) != 42 {
+		t.Fatalf("type_info.point_cloud = %#v, want tiled point cloud count", pointCloud)
+	}
+	if commonJSON.InterfaceInt64(pointCloud["dimension_count"]) != 8 || !commonJSON.InterfaceBool(pointCloud["has_color"]) {
+		t.Fatalf("type_info.point_cloud = %#v, want dimensions and color capability", pointCloud)
+	}
+	formatInfo := commonJSON.Section(item.Attributes, "format_info.ept")
+	if formatInfo["manifest_ref"] != "ept.json" || formatInfo["hierarchy_type"] != "json" || commonJSON.InterfaceInt64(formatInfo["span"]) != 128 {
+		t.Fatalf("format_info.ept = %#v, want manifest facts", formatInfo)
+	}
+	spatial := commonJSON.Section(item.Attributes, "capabilities.spatial")
+	if commonJSON.InterfaceInt64(spatial["srid"]) != 4978 {
+		t.Fatalf("capabilities.spatial = %#v, want EPSG:4978", spatial)
+	}
+	for _, file := range files {
+		if !result.Claims[file.Path] {
+			t.Fatalf("claims = %#v, want %s claimed", result.Claims, file.Path)
+		}
+	}
+}
+
 func TestCommonDataItemResolverAdaptsOSGBWholeScope(t *testing.T) {
 	d := &commonDataItemResolver{}
 	files := []StorageFileRef{

@@ -8,7 +8,10 @@ import (
 
 	// 导入内置 table 格式能力，触发 init() 自动注册
 	_ "github.com/addp/common/format/plugins/avro"
+	_ "github.com/addp/common/format/plugins/copc"
 	_ "github.com/addp/common/format/plugins/csv"
+	_ "github.com/addp/common/format/plugins/e57"
+	_ "github.com/addp/common/format/plugins/ept"
 	_ "github.com/addp/common/format/plugins/excel"
 	_ "github.com/addp/common/format/plugins/fbx"
 	_ "github.com/addp/common/format/plugins/geojson"
@@ -18,11 +21,13 @@ import (
 	_ "github.com/addp/common/format/plugins/json"
 	_ "github.com/addp/common/format/plugins/ksplat"
 	_ "github.com/addp/common/format/plugins/las"
+	_ "github.com/addp/common/format/plugins/laz"
 	_ "github.com/addp/common/format/plugins/obj"
 	_ "github.com/addp/common/format/plugins/orc"
 	_ "github.com/addp/common/format/plugins/osgb"
 	_ "github.com/addp/common/format/plugins/osgbscene"
 	_ "github.com/addp/common/format/plugins/parquet"
+	_ "github.com/addp/common/format/plugins/pcd"
 	_ "github.com/addp/common/format/plugins/ply"
 	_ "github.com/addp/common/format/plugins/rastermosaic"
 	_ "github.com/addp/common/format/plugins/shapefile"
@@ -30,6 +35,7 @@ import (
 	_ "github.com/addp/common/format/plugins/sqlite"
 	_ "github.com/addp/common/format/plugins/stl"
 	_ "github.com/addp/common/format/plugins/unknown"
+	_ "github.com/addp/common/format/plugins/xyz"
 	_ "github.com/addp/common/format/plugins/zip"
 
 	// 导入内置文档 info provider / text reader，触发 init() 自动注册

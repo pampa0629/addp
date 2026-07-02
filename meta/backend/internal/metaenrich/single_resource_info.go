@@ -347,7 +347,26 @@ func EnrichSinglePointCloudItem(
 	}
 	defer rc.Close()
 
-	info, err := provider.DescribePointCloud(ctx, rc, nil)
+	describeInput := format.PointCloudDescribeInput{
+		Reader: rc,
+		Ref:    contentio.NewRef(path, contentio.RoleMain),
+	}
+	if sizeBytes := item.SizeBytes; sizeBytes != nil {
+		describeInput.SizeBytes = *sizeBytes
+	}
+	if _, ok := contentReader.(plugin.RangeReadableProvider); ok {
+		catalogPath := catalogPathFor(path)
+		mappedReader := contentadapter.NewMappedReader(
+			contentReader,
+			connInfo,
+			func(contentio.Ref) (plugin.CatalogPath, error) { return catalogPath, nil },
+			plugin.ReadOptions{},
+		)
+		if rangeReader, ok := mappedReader.(contentio.RangeReader); ok {
+			describeInput.RangeReader = rangeReader
+		}
+	}
+	info, err := provider.DescribePointCloud(ctx, describeInput, nil)
 	if err != nil {
 		return err
 	}

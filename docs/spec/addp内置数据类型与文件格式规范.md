@@ -68,6 +68,12 @@
 | OSGB | `single` | `model_3d` | `osgb` | 单个 `.osgb` 三维模型文件；快显通过 GLB artifact 实现 |
 | OSGB Scene | `whole` | `model_3d` | `osgb_scene` | 由 `metadata.xml` manifest 声明的一套 OSGB 倾斜摄影三维模型场景 |
 | LAS | `single` | `point_cloud` | `las` | 第一阶段点云代表格式；deep scan 读取 header 和轻量摘要，预览走抽样点集 |
+| LAZ | `single` | `point_cloud` | `laz` | LAS 压缩点云格式；deep scan 读取 LAS-family header 和轻量摘要，不复用 `format=las` |
+| COPC | `single` | `point_cloud` | `copc` | Cloud Optimized Point Cloud；第一阶段读取 LAS-family header 摘要，作为分块点云主线格式接入 |
+| E57 | `single` | `point_cloud` | `e57` | ASTM E57 单文件扫描点云；deep scan 读取 header 和预算内 XML 轻量摘要 |
+| PCD | `single` | `point_cloud` | `pcd` | Point Cloud Data 单文件点云；deep scan 读取 PCD header 轻量摘要 |
+| XYZ | `single` | `point_cloud` | `xyz` | 文本 XYZ 点云；deep scan 做预算内采样摘要 |
+| EPT | `whole` | `point_cloud` | `ept` | Entwine Point Tiles whole-scope 点云数据集；`ept.json` manifest 强命中 |
 
 ## GLB
 
@@ -466,6 +472,198 @@ Manager 点云预览应基于已入库 `data_type=point_cloud + format=las` 和�
 - 不得把 LAS header 私有字段写入 `type_info.point_cloud`；LAS 原生 header 细节进入 `format_info.las`。
 - CRS、空间定位和空间范围进入 `capabilities.spatial`，不写入 `format_info.las` 的私有字段作为平台行为事实。
 - LAZ / COPC 压缩和层级结构需要单独 format 规则；不得用 `format=las` 兼容读取压缩点云。
+
+## LAZ
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | `point_cloud` |
+| `format` | `laz` |
+| 主资源 | `meta_item.full_name` 指向 `.laz` 文件资源 |
+
+LAZ 是 LAS 的压缩形态。它使用 LAS-family header，但在 ADDP 中必须作为独立文件格式登记为 `format=laz`，不得复用 `format=las` 或通过 LAS 兼容分支表达。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout`、`data_type=point_cloud`、`format=laz` |
+| `type_info.point_cloud` | `point_cloud_kind=raw_point_cloud`、点数、point format、维度数量、维度列表、三维包围盒、scale、offset、是否包含颜色 / intensity / classification 等跨格式点云摘要 |
+| `format_info.laz` | LAS-family header 摘要、`compression=laszip`、VLR / EVLR 数量、system identifier、generating software 等 LAZ 私有事实 |
+| `capabilities.spatial` | CRS、空间参考定义、空间范围等可解析空间事实 |
+
+### 消费要求
+
+Manager 不得把 LAZ 源文件伪装成 LAS 抽样预览。第一阶段先消费已入库 `data_type=point_cloud + format=laz` 和轻量 attributes，返回不支持在线点样本预览的基础预览结果；需要可视化抽样时应使用支持 LAZ 解压的点云 reader，或通过后续派生 COPC / 点云瓦片产物实现。
+
+### 格式约束
+
+- 不得把 LAZ 写为 `format=las`。
+- 不得把压缩点数据、解压样本或前端渲染协议写入 attributes。
+- LAZ 的 LAS-family header 可复用解析逻辑，但 `format_info` 只能写入 `format_info.laz`。
+
+## COPC
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | `point_cloud` |
+| `format` | `copc` |
+| 主资源 | `meta_item.full_name` 指向 `.copc.laz` 或 `.copc` 文件资源 |
+
+COPC 是 Cloud Optimized Point Cloud 文件格式，是点云大数据量浏览的优先目标格式。第一阶段按单文件点云 item 接入，读取 LAS-family header、COPC Info VLR 和预算内 hierarchy page 形成轻量摘要；range 分块读取和前端流式预览后续单独补齐。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout`、`data_type=point_cloud`、`format=copc` |
+| `type_info.point_cloud` | `point_cloud_kind=tiled_point_cloud`、点数、point format、维度数量、维度列表、三维包围盒、scale、offset、是否包含颜色 / intensity / classification 等跨格式点云摘要 |
+| `format_info.copc` | LAS-family header 摘要、`profile=copc`、`compression=laszip`、VLR / EVLR 数量、COPC Info VLR 的 octree center、half size、root spacing、root hierarchy offset / size、GPSTime 范围，以及调用方提供 range reader 时读取到的 root hierarchy 与预算内整体 hierarchy 摘要等 COPC 私有事实 |
+| `capabilities.spatial` | CRS、空间参考定义、空间范围等可解析空间事实 |
+
+### 消费要求
+
+Manager 应把 COPC 作为点云浏览增强目标。第一阶段可展示 Meta 已入库摘要，返回不支持在线点样本预览的基础预览结果；大文件浏览应后续通过 range 分块读取、后端代理读取或点云专用 workflow runtime 实现，不得走 `model_3d` 的 GLB 快显路线。
+
+### 格式约束
+
+- `.copc.laz` 必须识别为 `format=copc`，不得被 `.laz` 后缀降级为 `format=laz`。
+- 不得把 COPC 伪装为 LAS / LAZ；LAS-family header 只是物理头部结构复用。
+- COPC Info VLR、root hierarchy entry 摘要和预算内递归 hierarchy 摘要可写入 `format_info.copc`；点样本、瓦片或前端渲染协议不写入 `type_info.point_cloud`。
+
+## E57
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | `point_cloud` |
+| `format` | `e57` |
+| 主资源 | `meta_item.full_name` 指向 `.e57` 文件资源 |
+
+E57 是扫描仪点云和多站扫描集合常见的单文件格式。第一阶段读取 E57 header 和 XML section，提取 data3D 站点数量、点数、cartesian bounds 和维度摘要。调用方提供 range reader 时可按范围读取 XML section；没有 range reader 且 XML 偏移或长度超过预算时，只写 header 级 `format_info.e57`，不得强制全量读取大文件。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout`、`data_type=point_cloud`、`format=e57` |
+| `type_info.point_cloud` | `point_cloud_kind=scan_collection`、点数、维度列表、三维包围盒等跨格式点云摘要；XML 超预算或缺失时至少可保留 `point_cloud_kind=scan_collection` |
+| `format_info.e57` | header version、physical length、XML offset / length、page size、XML 是否读取、format name、guid、E57 library version、scan count、scan names 等 E57 私有事实 |
+| `capabilities.spatial` | 仅在解析到明确 CRS、坐标系或空间范围时写入 |
+
+### 消费要求
+
+Manager 第一阶段应基于已入库 `data_type=point_cloud + format=e57` 展示点云数据项身份、基础存储事实和轻量摘要，返回不支持在线点样本预览的基础预览结果；抽样预览、完整站点列表和 E57 -> COPC 派生路线后续实现。
+
+### 格式约束
+
+- 不得仅凭 `.e57` 扩展名臆造站点数、点数、bounds 或 CRS；只有 header / XML 中明确解析到的事实才能写入。
+- 不得把 E57 多站扫描集合拆成多个普通文件 item。
+- 不得走 `model_3d` 的 GLB 快显路线。
+
+## PCD
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | `point_cloud` |
+| `format` | `pcd` |
+| 主资源 | `meta_item.full_name` 指向 `.pcd` 文件资源 |
+
+PCD 是 Point Cloud Library 使用的单文件点云格式。第一阶段只读取 PCD header，不读取 binary 点数据体；ASCII PCD 也不作为普通表格入库。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout`、`data_type=point_cloud`、`format=pcd` |
+| `type_info.point_cloud` | `point_cloud_kind=raw_point_cloud`、点数、维度数量、维度列表、是否包含颜色 / intensity 等跨格式点云摘要 |
+| `format_info.pcd` | PCD version、fields、size、type、count、width、height、viewpoint、points、data encoding、header line count 等 PCD 私有事实 |
+| `capabilities.spatial` | 仅在后续稳定采样或读取 bounds 后写入 |
+
+### 消费要求
+
+Manager 第一阶段应展示点云身份和 PCD header 摘要，返回不支持在线点样本预览的基础预览结果；点样本和前端渲染协议不得写入 attributes。PCD 抽样预览需要独立 reader 支持字段布局后再实现。
+
+### 格式约束
+
+- 不得把 ASCII PCD 归为 `table`。
+- 不得为了计算 bounds 全量读取大 PCD 点数据体。
+- `rgb` / `rgba` 字段只表达点云颜色能力，不拆成表格字段。
+
+## XYZ
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | `point_cloud` |
+| `format` | `xyz` |
+| 主资源 | `meta_item.full_name` 指向 `.xyz` 文件资源 |
+
+XYZ 表示无标准 header 的文本点云，每行至少包含 x、y、z 三个数值列。第一阶段只做预算内文本采样，提取点数估计、维度列表和采样 bounds；没有明确 schema 时不得扩展为表格数据项。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout`、`data_type=point_cloud`、`format=xyz` |
+| `type_info.point_cloud` | `point_cloud_kind=raw_point_cloud`、预算内点数、`dimensions=[x,y,z]`；只有确认 `scan_complete=true` 时才写精确 `bounds_3d` |
+| `format_info.xyz` | delimiter、column_count、sampled_line_count、scan_complete、comment_prefix 等 XYZ 私有事实 |
+| `capabilities.spatial` | 仅在 bounds 可由扫描样本稳定表达时写入 extent |
+
+### 消费要求
+
+Manager 第一阶段应把 XYZ 作为点云 item 展示和后续点云抽样预览候选，并在未实现点云抽样 reader 前返回不支持在线点样本预览的基础预览结果；不得因为它是文本数字列就走表格预览主线。
+
+### 格式约束
+
+- 不得把 XYZ 文件归为 `table`。
+- 不得在未全量扫描大文件时把采样点数伪装为精确总点数。
+- 不得硬编码除 x/y/z 以外的列语义；颜色、intensity 等列需要后续规范确认后再写入。
+
+## EPT
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `whole` |
+| `data_type` | `point_cloud` |
+| `format` | `ept` |
+| 主入口 | scope 根目录下的 `ept.json` |
+
+EPT 是 Entwine Point Tiles 点云数据集。它是 whole-scope 数据集，不是单个 `ept.json` 文档，也不能把 `ept-data/`、`ept-hierarchy/` 下的大量分块拆成普通文件 item。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=whole`、`data_type=point_cloud`、`format=ept`、`scope_exclusive=true`、`claim_policy=whole_scope`，`refs` 中记录 `ept.json` manifest |
+| `type_info.point_cloud` | `point_cloud_kind=tiled_point_cloud`、点数、点格式、维度列表、bounds / boundsConforming 对应的三维范围、颜色 / intensity / classification 能力 |
+| `format_info.ept` | manifest ref、version、data type、points、bounds、boundsConforming、schema、span、hierarchy type、SRS 等 EPT 私有事实 |
+| `capabilities.spatial` | manifest 中明确 EPSG 空间参考或可解析空间范围时写入 |
+
+### 消费要求
+
+Manager 第一阶段应把 EPT 作为 whole-scope 点云 item 展示，不得尝试按普通 JSON 文档预览 `ept.json`。原生分块预览、转换到 COPC / 点云瓦片等能力后续单独实现。
+
+### 格式约束
+
+- 只有根范围强命中 `ept.json` 时才生成 EPT whole item。
+- `ept-data/`、`ept-hierarchy/`、`ept-sources/` 等叶子资源由 whole-scope claims 认领，不写入 `item.refs`。
+- 不得把 EPT 数据集伪装成 COPC；转换结果如果生成 COPC，应作为新的 `format=copc` item。
 
 ## PLY
 

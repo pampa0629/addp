@@ -246,12 +246,29 @@ type ScopeModel3DInfoProvider interface {
 
 type PointCloudInfoProvider interface {
 	FormatPlugin
-	DescribePointCloud(ctx context.Context, input io.Reader, options *ParseOptions) (*PointCloudDescribeResult, error)
+	DescribePointCloud(ctx context.Context, input PointCloudDescribeInput, options *ParseOptions) (*PointCloudDescribeResult, error)
+}
+
+// ScopePointCloudInfoProvider 表示 whole scope 点云格式能够提取点云类型信息。
+type ScopePointCloudInfoProvider interface {
+	FormatPlugin
+	DescribePointCloudScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (*PointCloudDescribeResult, error)
 }
 
 type GaussianSplatInfoProvider interface {
 	FormatPlugin
 	DescribeGaussianSplat(ctx context.Context, input GaussianSplatDescribeInput, options *ParseOptions) (*GaussianSplatDescribeResult, error)
+}
+
+// PointCloudDescribeInput carries both sequential and optional range access
+// for one point cloud resource. Providers use Reader for low-cost header and
+// small metadata parsing; RangeReader/Ref/SizeBytes allow range-scoped metadata
+// such as COPC hierarchy pages without forcing callers to open full content.
+type PointCloudDescribeInput struct {
+	Reader      io.Reader
+	RangeReader contentio.RangeReader
+	Ref         contentio.Ref
+	SizeBytes   int64
 }
 
 // GaussianSplatDescribeInput carries both sequential and optional range access

@@ -71,7 +71,7 @@ property uchar blue
 property float intensity
 end_header
 `)
-	result, err := NewPlugin().DescribePointCloud(context.Background(), bytes.NewReader(content), nil)
+	result, err := NewPlugin().DescribePointCloud(context.Background(), format.PointCloudDescribeInput{Reader: bytes.NewReader(content)}, nil)
 	if err != nil {
 		t.Fatalf("DescribePointCloud() error = %v", err)
 	}

@@ -67,6 +67,11 @@ var fallbackIdentifications = []fallbackIdentification{
 	{FormatSplat, ".splat", "application/vnd.gaussian-splat", datatype.GaussianSplat},
 	{FormatKSplat, ".ksplat", "application/vnd.gaussian-ksplat", datatype.GaussianSplat},
 	{FormatLAS, ".las", "application/vnd.las", datatype.PointCloud},
+	{FormatLAZ, ".laz", "application/vnd.laszip", datatype.PointCloud},
+	{FormatCOPC, ".copc", "application/vnd.copc", datatype.PointCloud},
+	{FormatE57, ".e57", "model/e57", datatype.PointCloud},
+	{FormatPCD, ".pcd", "application/vnd.pointcloud.pcd", datatype.PointCloud},
+	{FormatXYZ, ".xyz", "text/plain", datatype.PointCloud},
 	{Format3DTiles, "", "application/vnd.ogc.3dtiles+json", datatype.Model3D},
 	{FormatOSGB, ".osgb", "application/octet-stream", datatype.Model3D},
 }

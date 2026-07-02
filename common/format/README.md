@@ -11,7 +11,7 @@
 - 根据文件名、MIME、magic bytes 识别 `FormatType`。
 - 维护 `FormatDescriptor` 静态事实，例如 data type、layout 和识别事实。
 - 提供 format identity、FormatPlugin、provider / reader 动态查询；通用 `DataType`、`FieldType`、`TableInfo`、`Model3DInfo`、`PointCloudInfo`、`GaussianSplatInfo` 等结构化语义模型归属 `common/datatype`。
-- 注册 format plugin，并通过同一个 plugin 的接口断言获取 info provider / content reader，例如 `FormatPlugin`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`MultiTableReaderProvider`、`TableWriterProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、`Model3DInfoProvider`、`PointCloudInfoProvider`、`GaussianSplatInfoProvider`。
+- 注册 format plugin，并通过同一个 plugin 的接口断言获取 info provider / content reader，例如 `FormatPlugin`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`MultiTableReaderProvider`、`TableWriterProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、`Model3DInfoProvider`、`ScopeModel3DInfoProvider`、`PointCloudInfoProvider`、`ScopePointCloudInfoProvider`、`GaussianSplatInfoProvider`。
 - 提供 `TypeMapper` 注册机制，供 engine / format 在自身边界内把原生类型映射到 ADDP 通用字段类型；上层执行链路不读取原生字段类型。
 - 不再保留 `FileMetadataExtractor` 旁路注册表；新增格式必须通过 FormatPlugin、info provider 和 content reader 进入主线。
 
@@ -216,7 +216,8 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | `ContainerChildResolver` | `container` 子内容 | `single` 父容器内部 | parent `contentio.Reader` + parent ref + child locator | 把容器 child 解析成可继续交给 format/provider 的 content。 | Manager、Transfer 后续 child 读取 | zip entry、Excel sheet、SQLite table |
 | `Model3DInfoProvider` | `model_3d` | `single` | `io.Reader` | 返回模型子形态、mesh / node / material / texture / animation / LOD 摘要、三维包围盒和可选空间事实。 | Meta、Manager | glb、gltf、obj、stl、ifc |
 | `ScopeModel3DInfoProvider` | `model_3d` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级三维模型类型信息。 | Meta、Manager | 3dtiles、osgb_scene |
-| `PointCloudInfoProvider` | `point_cloud` | 通常 `single`，EPT / Potree 等可为 `whole` | `io.Reader` 或 scope content reader | 返回点数、点格式、维度、三维包围盒、scale / offset、颜色 / intensity / classification 能力和可选空间事实。 | Meta、Manager | las、laz、copc、pcd、ept、potree |
+| `PointCloudInfoProvider` | `point_cloud` | `single` | `PointCloudDescribeInput` | 返回点数、点格式、维度、三维包围盒、scale / offset、颜色 / intensity / classification 能力和可选空间事实；可选 range reader 用于 COPC hierarchy 等范围元数据。 | Meta、Manager | las、laz、copc、e57、pcd、xyz、点云型 ply |
+| `ScopePointCloudInfoProvider` | `point_cloud` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级点云类型信息。 | Meta、Manager | ept；未来 potree |
 | `GaussianSplatInfoProvider` | `gaussian_splat` | 通常 `single` | `GaussianSplatDescribeInput` | 返回高斯基元数量、opacity / scale / rotation / spherical harmonics 能力、精确 `bounds_3d` 或采样 `sampled_bounds_3d`，以及可选空间事实。 | Meta、Manager | 3DGS PLY、splat、ksplat、spz |
 | `RelatedRefSpecProvider` | 任意 multi 格式 | `multi` | 无内容输入 | 声明 related ref 的角色、扩展名、必需性和 primary。 | Meta item detector、Transfer multi reader/writer 构造 | Shapefile 等多 content 格式 |
 | `RefDescriptorProvider` | 任意 multi 格式 | `multi` | `[]RelatedRef` | 把 refs 解释成用户可理解的描述。 | Manager、Meta 展示 | Shapefile 相关内容展示 |

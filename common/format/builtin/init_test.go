@@ -83,3 +83,54 @@ func TestDescriptorOnlyTableFormatsExposeMissingProviders(t *testing.T) {
 		})
 	}
 }
+
+func TestPointCloudFormatsExposeExpectedProviders(t *testing.T) {
+	tests := []struct {
+		formatType format.FormatType
+		wantInfo   bool
+	}{
+		{formatType: format.FormatLAS, wantInfo: true},
+		{formatType: format.FormatLAZ, wantInfo: true},
+		{formatType: format.FormatCOPC, wantInfo: true},
+		{formatType: format.FormatE57, wantInfo: true},
+		{formatType: format.FormatPCD, wantInfo: true},
+		{formatType: format.FormatXYZ, wantInfo: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.formatType), func(t *testing.T) {
+			snapshot, ok := format.GetFormatCapabilitySnapshot(tt.formatType)
+			if !ok {
+				t.Fatalf("expected capability snapshot for %s", tt.formatType)
+			}
+			if !snapshot.Implementations.FormatPlugin {
+				t.Fatalf("%s implementations = %#v, want format plugin", tt.formatType, snapshot.Implementations)
+			}
+			if snapshot.Descriptor.DataType != "point_cloud" {
+				t.Fatalf("%s data_type = %q, want point_cloud", tt.formatType, snapshot.Descriptor.DataType)
+			}
+			if snapshot.Implementations.PointCloudInfoProvider != tt.wantInfo {
+				t.Fatalf("%s point cloud info provider = %v, want %v", tt.formatType, snapshot.Implementations.PointCloudInfoProvider, tt.wantInfo)
+			}
+		})
+	}
+}
+
+func TestWholeScopePointCloudFormatsExposeScopeProviders(t *testing.T) {
+	snapshot, ok := format.GetFormatCapabilitySnapshot(format.FormatEPT)
+	if !ok {
+		t.Fatal("expected capability snapshot for ept")
+	}
+	if !snapshot.Implementations.FormatPlugin {
+		t.Fatalf("ept implementations = %#v, want format plugin", snapshot.Implementations)
+	}
+	if snapshot.Descriptor.DataType != "point_cloud" {
+		t.Fatalf("ept data_type = %q, want point_cloud", snapshot.Descriptor.DataType)
+	}
+	if !snapshot.Implementations.ScopePointCloudInfoProvider {
+		t.Fatalf("ept implementations = %#v, want scope point cloud provider", snapshot.Implementations)
+	}
+	if snapshot.Implementations.PointCloudInfoProvider {
+		t.Fatalf("ept should not expose single-resource point cloud provider: %#v", snapshot.Implementations)
+	}
+}

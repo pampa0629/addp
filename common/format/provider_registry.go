@@ -210,6 +210,14 @@ func (r *ProviderRegistry) GetPointCloudInfoProvider(formatType FormatType) (Poi
 	return pluginCapability[PointCloudInfoProvider](r, formatType, "point cloud info provider")
 }
 
+func GetScopePointCloudInfoProvider(formatType FormatType) (ScopePointCloudInfoProvider, error) {
+	return globalProviderRegistry.GetScopePointCloudInfoProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetScopePointCloudInfoProvider(formatType FormatType) (ScopePointCloudInfoProvider, error) {
+	return pluginCapability[ScopePointCloudInfoProvider](r, formatType, "scope point cloud info provider")
+}
+
 func GetGaussianSplatInfoProvider(formatType FormatType) (GaussianSplatInfoProvider, error) {
 	return globalProviderRegistry.GetGaussianSplatInfoProvider(formatType)
 }

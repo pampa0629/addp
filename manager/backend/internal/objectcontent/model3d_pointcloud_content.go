@@ -28,7 +28,7 @@ func (h *model3DContentHandler) Matches(req *ObjectContentRequest) bool {
 	if req == nil || !h.baseContentHandler.Matches(req) {
 		return false
 	}
-	if format.NormalizeFormat(req.Format) != format.FormatPLY {
+	if pointCloudRequestFormat(req) != format.FormatPLY {
 		return true
 	}
 	return strings.EqualFold(commonJSON.String(req.Attributes, "item", "data_type"), string(datatype.Model3D))
@@ -61,6 +61,16 @@ func model3DFrontendRenderer(req *ObjectContentRequest) string {
 
 type pointCloudContentHandler struct {
 	baseContentHandler
+}
+
+func (h *pointCloudContentHandler) Matches(req *ObjectContentRequest) bool {
+	if req == nil || !h.baseContentHandler.Matches(req) {
+		return false
+	}
+	if pointCloudRequestFormat(req) != format.FormatPLY {
+		return true
+	}
+	return strings.EqualFold(commonJSON.String(req.Attributes, "item", "data_type"), string(datatype.PointCloud))
 }
 
 type gaussianSplatContentHandler struct {
@@ -102,6 +112,9 @@ func (h *gaussianSplatContentHandler) Handle(_ context.Context, req *ObjectConte
 }
 
 func (h *pointCloudContentHandler) HandleStream(ctx context.Context, req *ObjectContentRequest, streamer ObjectStreamProvider) (*models.ObjectPreviewContent, bool, error) {
+	if !pointCloudSupportsDirectSampling(req) {
+		return unsupportedPointCloudContent(req), false, nil
+	}
 	if streamer == nil {
 		return h.Handle(ctx, req, nil)
 	}
@@ -137,6 +150,9 @@ func (h *pointCloudContentHandler) HandleStream(ctx context.Context, req *Object
 }
 
 func (h *pointCloudContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
+	if !pointCloudSupportsDirectSampling(req) {
+		return unsupportedPointCloudContent(req), false, nil
+	}
 	if fetcher == nil {
 		return decoratePreviewContent(&models.ObjectPreviewContent{
 			Kind:     models.ObjectPreviewKindUnsupported,
@@ -155,6 +171,45 @@ func (h *pointCloudContentHandler) Handle(ctx context.Context, req *ObjectConten
 		content.Truncated = true
 	}
 	return content, truncated, nil
+}
+
+func pointCloudSupportsDirectSampling(req *ObjectContentRequest) bool {
+	if req == nil {
+		return false
+	}
+	return pointCloudRequestFormat(req) == format.FormatLAS
+}
+
+func pointCloudRequestFormat(req *ObjectContentRequest) format.FormatType {
+	if req == nil {
+		return format.FormatUnknown
+	}
+	formatType := format.NormalizeFormat(req.Format)
+	if formatType != "" && formatType != format.FormatUnknown {
+		return formatType
+	}
+	if req.Name != "" {
+		if detected := format.DetectFormat(req.Name, nil); detected != "" && detected != format.FormatUnknown {
+			return detected
+		}
+	}
+	if req.Extension != "" {
+		if detected := format.DetectFormat("file"+req.Extension, nil); detected != "" && detected != format.FormatUnknown {
+			return detected
+		}
+	}
+	return format.FormatUnknown
+}
+
+func unsupportedPointCloudContent(req *ObjectContentRequest) *models.ObjectPreviewContent {
+	metadata := buildPreviewMetadata(req, 0)
+	metadata["preview_reason"] = "point_cloud_sampling_unavailable"
+	return decoratePreviewContent(&models.ObjectPreviewContent{
+		Kind:             models.ObjectPreviewKindPointCloud,
+		PreviewMaterial:  models.PreviewMaterialUnsupported,
+		FrontendRenderer: models.ObjectPreviewKindUnsupported,
+		Metadata:         metadata,
+	})
 }
 
 func (h *pointCloudContentHandler) previewLAS(ctx context.Context, req *ObjectContentRequest, reader io.ReadSeeker) (*models.ObjectPreviewContent, bool, error) {

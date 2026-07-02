@@ -11,6 +11,7 @@ import (
 	"image/png"
 	"io"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/dataitem"
@@ -103,7 +104,7 @@ func TestEnrichResourceAttributesDetectsUnknownDocumentAndWritesDocumentInfo(t *
 	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
 
 	enriched, _, err := EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{
-		ContentReader: bytesContentReader{content: content},
+		ContentReader: rangeBytesContentReader{content: content},
 		Item:          item,
 		PhysicalPath:  "docs/report.docx",
 		SizeBytes:     size,
@@ -825,6 +826,249 @@ func TestEnrichResourceAttributesDetectsUnknownLASAndWritesPointCloudInfo(t *tes
 	}
 }
 
+func TestEnrichResourceAttributesDetectsUnknownLAZAndWritesPointCloudInfo(t *testing.T) {
+	t.Parallel()
+
+	content := resourceAttributesTestLASHeader()
+	size := int64(len(content))
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Unknown,
+			Format:             string(format.FormatUnknown),
+			PrimaryContentPath: "point-cloud/site.laz",
+			SizeBytes:          &size,
+		},
+		PhysicalPath: "point-cloud/site.laz",
+	}
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
+
+	enriched, _, err := EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{
+		ContentReader: bytesContentReader{content: content},
+		Item:          item,
+		PhysicalPath:  "point-cloud/site.laz",
+		SizeBytes:     size,
+		CatalogPathFor: func(path string) plugin.CatalogPath {
+			return plugin.FileItemPath(1, path)
+		},
+	})
+	if err != nil {
+		t.Fatalf("EnrichResourceAttributes() error = %v", err)
+	}
+	if enriched.DataType != datatype.PointCloud || enriched.Format != string(format.FormatLAZ) {
+		t.Fatalf("enriched item = %s/%s, want point_cloud/laz", enriched.DataType, enriched.Format)
+	}
+	pointCloud := commonJSON.Section(attrs, "type_info.point_cloud")
+	if pointCloud["point_cloud_kind"] != string(datatype.PointCloudKindRawPointCloud) {
+		t.Fatalf("type_info.point_cloud = %#v, want raw_point_cloud", pointCloud)
+	}
+	formatInfo := commonJSON.Section(attrs, "format_info.laz")
+	if formatInfo["compression"] != "laszip" || formatInfo["version"] != "1.4" {
+		t.Fatalf("format_info.laz = %#v, want laszip version 1.4", formatInfo)
+	}
+}
+
+func TestEnrichResourceAttributesDetectsUnknownCOPCAndWritesTiledPointCloudInfo(t *testing.T) {
+	t.Parallel()
+
+	content := resourceAttributesTestCOPCHeader()
+	size := int64(len(content))
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Unknown,
+			Format:             string(format.FormatUnknown),
+			PrimaryContentPath: "point-cloud/site.copc.laz",
+			SizeBytes:          &size,
+		},
+		PhysicalPath: "point-cloud/site.copc.laz",
+	}
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
+
+	enriched, _, err := EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{
+		ContentReader: rangeBytesContentReader{content: content},
+		Item:          item,
+		PhysicalPath:  "point-cloud/site.copc.laz",
+		SizeBytes:     size,
+		CatalogPathFor: func(path string) plugin.CatalogPath {
+			return plugin.FileItemPath(1, path)
+		},
+	})
+	if err != nil {
+		t.Fatalf("EnrichResourceAttributes() error = %v", err)
+	}
+	if enriched.DataType != datatype.PointCloud || enriched.Format != string(format.FormatCOPC) {
+		t.Fatalf("enriched item = %s/%s, want point_cloud/copc", enriched.DataType, enriched.Format)
+	}
+	pointCloud := commonJSON.Section(attrs, "type_info.point_cloud")
+	if pointCloud["point_cloud_kind"] != string(datatype.PointCloudKindTiledPointCloud) {
+		t.Fatalf("type_info.point_cloud = %#v, want tiled_point_cloud", pointCloud)
+	}
+	formatInfo := commonJSON.Section(attrs, "format_info.copc")
+	if formatInfo["profile"] != "copc" ||
+		formatInfo["compression"] != "laszip" ||
+		commonJSON.InterfaceInt64(formatInfo["root_hierarchy_size"]) != 64 ||
+		commonJSON.InterfaceInt64(formatInfo["root_hierarchy_entry_count"]) != 2 ||
+		commonJSON.InterfaceInt64(formatInfo["root_hierarchy_point_count"]) != 250 {
+		t.Fatalf("format_info.copc = %#v, want copc laszip with root hierarchy summary", formatInfo)
+	}
+}
+
+func TestEnrichResourceAttributesDetectsUnknownE57AndWritesScanCollectionInfo(t *testing.T) {
+	t.Parallel()
+
+	content := resourceAttributesTestE57()
+	size := int64(len(content))
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Unknown,
+			Format:             string(format.FormatUnknown),
+			PrimaryContentPath: "point-cloud/bunny.e57",
+			SizeBytes:          &size,
+		},
+		PhysicalPath: "point-cloud/bunny.e57",
+	}
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
+
+	enriched, _, err := EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{
+		ContentReader: bytesContentReader{content: content},
+		Item:          item,
+		PhysicalPath:  "point-cloud/bunny.e57",
+		SizeBytes:     size,
+		CatalogPathFor: func(path string) plugin.CatalogPath {
+			return plugin.FileItemPath(1, path)
+		},
+	})
+	if err != nil {
+		t.Fatalf("EnrichResourceAttributes() error = %v", err)
+	}
+	if enriched.DataType != datatype.PointCloud || enriched.Format != string(format.FormatE57) {
+		t.Fatalf("enriched item = %s/%s, want point_cloud/e57", enriched.DataType, enriched.Format)
+	}
+	pointCloud := commonJSON.Section(attrs, "type_info.point_cloud")
+	if pointCloud["point_cloud_kind"] != string(datatype.PointCloudKindScanCollection) {
+		t.Fatalf("type_info.point_cloud = %#v, want scan_collection", pointCloud)
+	}
+	if commonJSON.InterfaceInt64(pointCloud["point_count"]) != 30571 {
+		t.Fatalf("type_info.point_cloud = %#v, want point_count 30571", pointCloud)
+	}
+	spatial := commonJSON.Section(attrs, "capabilities.spatial")
+	if extent := commonJSON.InterfaceSlice(spatial["extent"]); len(extent) != 4 {
+		t.Fatalf("capabilities.spatial = %#v, want extent", spatial)
+	}
+	formatInfo := commonJSON.Section(attrs, "format_info.e57")
+	if formatInfo["scan_count"] != 1 || formatInfo["xml_read"] != true {
+		t.Fatalf("format_info.e57 = %#v, want scan_count 1 and xml_read true", formatInfo)
+	}
+}
+
+func TestEnrichResourceAttributesDetectsUnknownPCDAndWritesPointCloudInfo(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`# .PCD v0.7 - Point Cloud Data file format
+VERSION 0.7
+FIELDS x y z rgb
+SIZE 4 4 4 4
+TYPE F F F U
+COUNT 1 1 1 1
+WIDTH 2
+HEIGHT 1
+POINTS 2
+DATA ascii
+0 1 2 255
+3 4 5 255
+`)
+	size := int64(len(content))
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Unknown,
+			Format:             string(format.FormatUnknown),
+			PrimaryContentPath: "point-cloud/sample.pcd",
+			SizeBytes:          &size,
+		},
+		PhysicalPath: "point-cloud/sample.pcd",
+	}
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
+
+	enriched, _, err := EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{
+		ContentReader: bytesContentReader{content: content},
+		Item:          item,
+		PhysicalPath:  "point-cloud/sample.pcd",
+		SizeBytes:     size,
+		CatalogPathFor: func(path string) plugin.CatalogPath {
+			return plugin.FileItemPath(1, path)
+		},
+	})
+	if err != nil {
+		t.Fatalf("EnrichResourceAttributes() error = %v", err)
+	}
+	if enriched.DataType != datatype.PointCloud || enriched.Format != string(format.FormatPCD) {
+		t.Fatalf("enriched item = %s/%s, want point_cloud/pcd", enriched.DataType, enriched.Format)
+	}
+	pointCloud := commonJSON.Section(attrs, "type_info.point_cloud")
+	if commonJSON.InterfaceInt64(pointCloud["point_count"]) != 2 {
+		t.Fatalf("type_info.point_cloud = %#v, want point_count 2", pointCloud)
+	}
+	if pointCloud["has_color"] != true {
+		t.Fatalf("type_info.point_cloud = %#v, want has_color true", pointCloud)
+	}
+	formatInfo := commonJSON.Section(attrs, "format_info.pcd")
+	if formatInfo["data"] != "ascii" || commonJSON.InterfaceInt64(formatInfo["points"]) != 2 {
+		t.Fatalf("format_info.pcd = %#v, want ascii points 2", formatInfo)
+	}
+}
+
+func TestEnrichResourceAttributesDetectsUnknownXYZAndWritesPointCloudInfo(t *testing.T) {
+	t.Parallel()
+
+	content := []byte("0 1 2\n3 4 5\n")
+	size := int64(len(content))
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Unknown,
+			Format:             string(format.FormatUnknown),
+			PrimaryContentPath: "point-cloud/sample.xyz",
+			SizeBytes:          &size,
+		},
+		PhysicalPath: "point-cloud/sample.xyz",
+	}
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
+
+	enriched, _, err := EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{
+		ContentReader: bytesContentReader{content: content},
+		Item:          item,
+		PhysicalPath:  "point-cloud/sample.xyz",
+		SizeBytes:     size,
+		CatalogPathFor: func(path string) plugin.CatalogPath {
+			return plugin.FileItemPath(1, path)
+		},
+	})
+	if err != nil {
+		t.Fatalf("EnrichResourceAttributes() error = %v", err)
+	}
+	if enriched.DataType != datatype.PointCloud || enriched.Format != string(format.FormatXYZ) {
+		t.Fatalf("enriched item = %s/%s, want point_cloud/xyz", enriched.DataType, enriched.Format)
+	}
+	pointCloud := commonJSON.Section(attrs, "type_info.point_cloud")
+	if commonJSON.InterfaceInt64(pointCloud["point_count"]) != 2 {
+		t.Fatalf("type_info.point_cloud = %#v, want point_count 2", pointCloud)
+	}
+	if bounds := commonJSON.Section(attrs, "type_info.point_cloud")["bounds_3d"]; bounds == nil {
+		t.Fatalf("type_info.point_cloud = %#v, want bounds_3d", pointCloud)
+	}
+	spatial := commonJSON.Section(attrs, "capabilities.spatial")
+	if extent := commonJSON.InterfaceSlice(spatial["extent"]); len(extent) != 4 {
+		t.Fatalf("capabilities.spatial = %#v, want extent", spatial)
+	}
+	formatInfo := commonJSON.Section(attrs, "format_info.xyz")
+	if formatInfo["scan_complete"] != true || formatInfo["delimiter"] != "whitespace" {
+		t.Fatalf("format_info.xyz = %#v, want complete whitespace", formatInfo)
+	}
+}
+
 func TestResolveAndEnrichMultiTIFFUsesPrimaryContent(t *testing.T) {
 	t.Parallel()
 
@@ -1242,6 +1486,104 @@ func resourceAttributesTestLASHeader() []byte {
 	binary.LittleEndian.PutUint32(buf[243:247], 1)
 	binary.LittleEndian.PutUint64(buf[247:255], 123456789)
 	return buf
+}
+
+func resourceAttributesTestCOPCHeader() []byte {
+	const (
+		infoOffset    = 375
+		vlrHeaderSize = 54
+		infoSize      = 160
+	)
+	headerSize := infoOffset + vlrHeaderSize + infoSize
+	buf := make([]byte, headerSize)
+	copy(buf[:infoOffset], resourceAttributesTestLASHeader())
+	binary.LittleEndian.PutUint32(buf[96:100], uint32(len(buf)))
+	binary.LittleEndian.PutUint32(buf[100:104], 1)
+	buf[104] = 8
+	binary.LittleEndian.PutUint16(buf[105:107], 38)
+	vlrHeader := buf[infoOffset : infoOffset+vlrHeaderSize]
+	copy(vlrHeader[2:18], []byte("copc"))
+	binary.LittleEndian.PutUint16(vlrHeader[18:20], 1)
+	binary.LittleEndian.PutUint16(vlrHeader[20:22], infoSize)
+	copy(vlrHeader[22:54], []byte("COPC info"))
+	info := buf[infoOffset+vlrHeaderSize:]
+	resourceAttributesTestPutFloat64(info[0:8], 100)
+	resourceAttributesTestPutFloat64(info[8:16], 200)
+	resourceAttributesTestPutFloat64(info[16:24], 300)
+	resourceAttributesTestPutFloat64(info[24:32], 500)
+	resourceAttributesTestPutFloat64(info[32:40], 0.25)
+	binary.LittleEndian.PutUint64(info[40:48], uint64(headerSize))
+	binary.LittleEndian.PutUint64(info[48:56], 64)
+	resourceAttributesTestPutFloat64(info[56:64], 10)
+	resourceAttributesTestPutFloat64(info[64:72], 20)
+	hierarchy := make([]byte, 64)
+	binary.LittleEndian.PutUint32(hierarchy[0:4], 0)
+	binary.LittleEndian.PutUint32(hierarchy[28:32], 0)
+	binary.LittleEndian.PutUint32(hierarchy[32:36], 1)
+	binary.LittleEndian.PutUint32(hierarchy[56:60], 4096)
+	binary.LittleEndian.PutUint32(hierarchy[60:64], 250)
+	buf = append(buf, hierarchy...)
+	return buf
+}
+
+func resourceAttributesTestE57() []byte {
+	xmlPayload := strings.TrimSpace(`
+<?xml version="1.0" encoding="UTF-8"?>
+<e57Root type="Structure" xmlns="http://www.astm.org/COMMIT/E57/2010-e57-v1.0">
+  <formatName type="String">ASTM E57 3D Imaging Data File</formatName>
+  <guid type="String">{resource-attributes-test}</guid>
+  <versionMajor type="Integer">1</versionMajor>
+  <versionMinor type="Integer">0</versionMinor>
+  <e57LibraryVersion type="String">ADDP test</e57LibraryVersion>
+  <coordinateMetadata type="String"/>
+  <data3D type="Vector" allowHeterogeneousChildren="1">
+    <vectorChild type="Structure">
+      <name type="String">bunny</name>
+      <cartesianBounds type="Structure">
+        <xMinimum type="Float">-0.094689</xMinimum>
+        <xMaximum type="Float">0.061009</xMaximum>
+        <yMinimum type="Float">0.040011</yMinimum>
+        <yMaximum type="Float">0.187321</yMaximum>
+        <zMinimum type="Float">-0.061873</zMinimum>
+        <zMaximum type="Float">0.058799</zMaximum>
+      </cartesianBounds>
+      <points type="CompressedVector" fileOffset="48" recordCount="30571">
+        <prototype type="Structure">
+          <cartesianX type="Float"/>
+          <cartesianY type="Float"/>
+          <cartesianZ type="Float"/>
+        </prototype>
+      </points>
+    </vectorChild>
+  </data3D>
+</e57Root>`)
+	xmlBytes := []byte(xmlPayload)
+	const pageSize = 1024
+	const xmlOffset = 1024
+	file := make([]byte, xmlOffset)
+	copy(file[:8], []byte("ASTM-E57"))
+	binary.LittleEndian.PutUint32(file[8:12], 1)
+	binary.LittleEndian.PutUint64(file[24:32], xmlOffset)
+	binary.LittleEndian.PutUint64(file[32:40], uint64(len(xmlBytes)))
+	binary.LittleEndian.PutUint64(file[40:48], pageSize)
+	file = append(file, resourceAttributesTestE57PagedPayload(xmlBytes, pageSize)...)
+	binary.LittleEndian.PutUint64(file[16:24], uint64(len(file)))
+	return file
+}
+
+func resourceAttributesTestE57PagedPayload(payload []byte, pageSize int) []byte {
+	payloadSize := pageSize - 4
+	var output []byte
+	for len(payload) > 0 {
+		chunkSize := payloadSize
+		if len(payload) < chunkSize {
+			chunkSize = len(payload)
+		}
+		output = append(output, payload[:chunkSize]...)
+		payload = payload[chunkSize:]
+		output = append(output, 0, 0, 0, 0)
+	}
+	return output
 }
 
 func resourceAttributesTestPutFloat64(target []byte, value float64) {

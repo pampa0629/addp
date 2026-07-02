@@ -49,7 +49,7 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 | `container` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 container catalog 引擎；目录、prefix、bucket 只是 catalog / storage 形态，不是 `container` data type。 | `excel`、`sqlite`、`geopackage`、`zip`。 | 容器 item 先记录轻量 children；进入某个 child 后，再按 child 自身格式归一为 `table`、`document`、`media`、`unknown` 等类型。JSON 作为 container 仍是概念可表达方向，当前内置 JSON plugin 未提供容器信息 provider。 |
 | `graph` | 原生图引擎：Neo4j。 | 当前没有内置 graph 文件格式 descriptor。 | RDF、GraphML、GEXF、图结构 JSON 仍是概念层典型来源；进入内置主线前需要先补 format descriptor、provider 和扫描规则。 |
 | `model_3d` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生三维模型 catalog 引擎。 | 当前内置：`glb`、`gltf`、`obj`、`stl`、`fbx`、`ifc`、网格型 `ply`、`osgb`、`osgb_scene`、`3dtiles`。后续扩展：`rvt`、`3mx`、`slpk`。 | GLB / glTF、OBJ / STL / FBX、PLY mesh、IFC BIM、单 OSGB、OSGB 倾斜摄影场景、3D Tiles、Revit BIM 都归入 `model_3d`；网格场景、倾斜摄影、BIM、分块场景等子形态由 `type_info.model_3d.model_kind` 表达，不新增平行 data type。OSGB scene 源 item 先做 Meta scan，预览通过转换后的 3D Tiles item 复用链路；OBJ / STL / FBX / IFC 可通过转换后的 GLB artifact 快显，其中 IFC 必须走专用 `ifc_to_glb`。 |
-| `point_cloud` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生点云 catalog 引擎。 | 当前内置：`las`、点云型 `ply`。后续扩展：`laz`、`copc`、`pcd`、`ept`、`potree`、`e57`。 | 点云即使可被展开为 x/y/z 等列，也不默认归为 `table`；点数、点格式、维度、三维包围盒、scale / offset 等进入 `type_info.point_cloud`，空间参考进入 `capabilities.spatial`。 |
+| `point_cloud` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生点云 catalog 引擎。 | 当前内置：`las`、`laz`、`copc`、`e57`、`pcd`、`xyz`、`ept`、点云型 `ply`。后续扩展：`potree`。 | 点云即使可被展开为 x/y/z 等列，也不默认归为 `table`；点数、点格式、维度、三维包围盒、scale / offset 等进入 `type_info.point_cloud`，空间参考进入 `capabilities.spatial`。 |
 | `gaussian_splat` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生高斯泼溅 catalog 引擎。 | 当前内置：3DGS 型 `ply`、`.splat`、`.ksplat`。后续扩展：`.spz`。 | 高斯泼溅虽然通常由 PLY vertex 或 splat record 承载，但每条记录表示可渲染高斯基元，不是普通点云采样点；尺度、旋转、不透明度、球谐颜色等进入 `type_info.gaussian_splat`，格式私有事实进入 `format_info.<format>`。 |
 | `unknown` | 文件 / 对象承载：NFS、S3、MinIO；其他存储扫描中无法判断内容语义的叶子也可落为 `unknown`。 | `unknown`。 | `unknown` 是识别失败或暂未接入时的兜底格式 / 数据类型组合；它保留 storage、item 等基础事实和 raw binary 读取能力，不引入 `file` data type。 |
 
@@ -211,7 +211,7 @@ PLY 是内容敏感格式：同一个 `format=ply` 可以根据 header 分别落
 - `pdf`、`wps`
 - `jpeg`、`png`、`tiff`
 - `glb`、`gltf`、`obj`、`stl`、`fbx`、`ifc`、`osgb`、`osgb_scene`、`3dtiles`
-- `las`、`laz`、`copc`、`pcd`、`ept`
+- `las`、`laz`、`copc`、`e57`、`pcd`、`xyz`、`ept`
 
 文件格式不等于数据类型，也不等于内容布局：
 
@@ -231,7 +231,12 @@ PLY 是内容敏感格式：同一个 `format=ply` 可以根据 header 分别落
 - 3D Tiles = `data_type=model_3d` + `layout=whole` + `format=3dtiles`，`tileset.json` 作为 manifest ref，分块场景语义由 `model_kind=tiled_scene` 表达；1.0 / 1.1 版本差异写入 `format_info.3dtiles`，不拆分 data type。
 - OSGB = `data_type=model_3d` + `layout=single` + `format=osgb`，表示单个 `.osgb` 文件；浏览器快显通过转换后的 GLB artifact 实现。
 - OSGB Scene = `data_type=model_3d` + `layout=whole` + `format=osgb_scene`，表示由 `metadata.xml` 和 `Data/` 组织的一套倾斜摄影场景，倾斜摄影语义可由 `model_kind=photogrammetry_scene` 表达。
-- LAS = `data_type=point_cloud` + `layout=single` + `format=las`，CRS 和空间范围进入 `capabilities.spatial`。
+- LAS / LAZ = `data_type=point_cloud` + `layout=single` + `format=las|laz`，CRS 和空间范围进入 `capabilities.spatial`。
+- COPC = `data_type=point_cloud` + `layout=single` + `format=copc`，作为分块点云文件接入，点数、bounds、scale / offset 等轻量摘要进入 `type_info.point_cloud`，COPC profile、压缩信息和 Info VLR 摘要进入 `format_info.copc`。
+- E57 = `data_type=point_cloud` + `layout=single` + `format=e57`，读取 header 和预算内 XML section 后写入 scan collection 摘要。
+- PCD = `data_type=point_cloud` + `layout=single` + `format=pcd`，PCD header 中的 fields、points、width / height 和 data encoding 进入点云摘要与 `format_info.pcd`。
+- XYZ = `data_type=point_cloud` + `layout=single` + `format=xyz`，表示无标准 header 的文本点云；第一阶段只做预算内采样摘要，不把文本列化为 `table`。
+- EPT = `data_type=point_cloud` + `layout=whole` + `format=ept`，`ept.json` 作为 manifest ref；manifest 级结构摘要通过 scope 点云 provider 写入 `type_info.point_cloud`、`format_info.ept` 和可解析的空间能力。
 
 ## 类型信息与格式信息
 

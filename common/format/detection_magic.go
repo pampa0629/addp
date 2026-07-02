@@ -8,7 +8,7 @@ import (
 
 func needMagicValidation(format FormatType) bool {
 	switch format {
-	case FormatPDF, FormatSQLite, FormatGeoPackage, FormatJPEG, FormatPNG, FormatGIF, FormatGLB, FormatLAS:
+	case FormatPDF, FormatSQLite, FormatGeoPackage, FormatJPEG, FormatPNG, FormatGIF, FormatGLB, FormatLAS, FormatLAZ, FormatCOPC, FormatE57:
 		return true
 	default:
 		return false
@@ -45,8 +45,10 @@ func getMagicBytes(format FormatType) []byte {
 		return []byte("GIF89a")
 	case FormatGLB:
 		return []byte("glTF")
-	case FormatLAS:
+	case FormatLAS, FormatLAZ, FormatCOPC:
 		return []byte("LASF")
+	case FormatE57:
+		return []byte("ASTM-E57")
 	default:
 		return nil
 	}

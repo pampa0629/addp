@@ -266,6 +266,21 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 			req:  ObjectContentRequest{Format: "las", Extension: ".las", ContentType: "application/vnd.las"},
 			want: "builtin:content-point-cloud",
 		},
+		{
+			name: "laz",
+			req:  ObjectContentRequest{Format: "laz", Extension: ".laz", ContentType: "application/vnd.laszip"},
+			want: "builtin:content-point-cloud",
+		},
+		{
+			name: "copc",
+			req:  ObjectContentRequest{Format: "copc", Extension: ".copc", ContentType: "application/vnd.copc"},
+			want: "builtin:content-point-cloud",
+		},
+		{
+			name: "e57",
+			req:  ObjectContentRequest{Format: "e57", Extension: ".e57", ContentType: "model/e57"},
+			want: "builtin:content-point-cloud",
+		},
 	}
 	for _, tt := range tests {
 		tt := tt
@@ -493,6 +508,103 @@ func TestPointCloudContentHandlerSamplesLASPoints(t *testing.T) {
 	}
 	if points[0]["x"] != 1.0 || points[0]["y"] != 2.0 || points[0]["z"] != 3.0 {
 		t.Fatalf("first point = %#v, want scaled coordinates 1/2/3", points[0])
+	}
+}
+
+func TestPointCloudContentHandlerReturnsUnsupportedForNonLASFormats(t *testing.T) {
+	t.Parallel()
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "pointcloud", Builtin: models.ObjectPreviewKindPointCloud})
+	if err != nil {
+		t.Fatalf("build pointcloud handler: %v", err)
+	}
+	req := &ObjectContentRequest{
+		Format:    string(format.FormatCOPC),
+		Extension: ".copc",
+		Size:      4096,
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "point_cloud",
+				"format":    "copc",
+			},
+			"type_info": map[string]interface{}{
+				"point_cloud": map[string]interface{}{
+					"point_cloud_kind": "tiled_point_cloud",
+					"point_count":      int64(1234),
+				},
+			},
+		},
+	}
+	if !handler.Matches(req) {
+		t.Fatal("point cloud handler did not match COPC")
+	}
+	called := false
+	content, truncated, err := handler.Handle(context.Background(), req, func(int64) ([]byte, bool, error) {
+		called = true
+		return nil, false, nil
+	})
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if called {
+		t.Fatal("fetcher was called for unsupported COPC sampling")
+	}
+	if truncated {
+		t.Fatal("truncated = true, want false")
+	}
+	if content.Kind != models.ObjectPreviewKindPointCloud ||
+		content.PreviewMaterial != models.PreviewMaterialUnsupported ||
+		content.FrontendRenderer != models.ObjectPreviewKindUnsupported {
+		t.Fatalf("content = %#v, want unsupported point_cloud metadata preview", content)
+	}
+	pointCloud := commonJSON.Section(content.Metadata, "point_cloud")
+	if commonJSON.InterfaceInt64(pointCloud["point_count"]) != 1234 {
+		t.Fatalf("metadata.point_cloud = %#v, want point_count 1234", pointCloud)
+	}
+}
+
+func TestPointCloudContentHandlerRequiresPointCloudDatatypeForPLY(t *testing.T) {
+	t.Parallel()
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "pointcloud", Builtin: models.ObjectPreviewKindPointCloud})
+	if err != nil {
+		t.Fatalf("build pointcloud handler: %v", err)
+	}
+	modelPLY := &ObjectContentRequest{
+		Format:    string(format.FormatPLY),
+		Extension: ".ply",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "model_3d",
+				"format":    "ply",
+			},
+		},
+	}
+	if handler.Matches(modelPLY) {
+		t.Fatal("point cloud handler matched model_3d PLY, want datatype-specific match")
+	}
+	modelPLYByExtension := &ObjectContentRequest{
+		Extension: ".ply",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "model_3d",
+				"format":    "ply",
+			},
+		},
+	}
+	if handler.Matches(modelPLYByExtension) {
+		t.Fatal("point cloud handler matched extension-only model_3d PLY, want datatype-specific match")
+	}
+	pointCloudPLY := &ObjectContentRequest{
+		Format:    string(format.FormatPLY),
+		Extension: ".ply",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "point_cloud",
+				"format":    "ply",
+			},
+		},
+	}
+	if !handler.Matches(pointCloudPLY) {
+		t.Fatal("point cloud handler did not match point_cloud PLY")
 	}
 }
 

@@ -256,6 +256,53 @@ func TestResolveItemsDetects3DTilesManifestWholeScope(t *testing.T) {
 	}
 }
 
+func TestResolveItemsDetectsEPTManifestWholeScope(t *testing.T) {
+	t.Parallel()
+
+	size := int64(10)
+	result, err := ResolveItems(ResolveInput{
+		ScopeKind: ScopeKindDirectory,
+		ScopePath: "pointcloud/ept",
+		Candidates: []Candidate{
+			{Path: "pointcloud/ept/ept.json", Name: "ept.json", SizeBytes: &size},
+			{Path: "pointcloud/ept/ept-data/0-0-0-0.laz", Name: "0-0-0-0.laz", SizeBytes: &size},
+			{Path: "pointcloud/ept/ept-hierarchy/0-0-0-0.json", Name: "0-0-0-0.json", SizeBytes: &size},
+		},
+		Options: ResolveOptions{AllowWholeScope: true},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("items = %#v, want one EPT item", result.Items)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutWhole || item.Format != string(format.FormatEPT) || item.DataType != datatype.PointCloud {
+		t.Fatalf("item = %#v, want point_cloud ept whole item", item)
+	}
+	if item.ScopePath != "pointcloud/ept" || item.FullName != "pointcloud/ept" {
+		t.Fatalf("item scope/full_name = %q/%q, want EPT root", item.ScopePath, item.FullName)
+	}
+	if item.PrimaryContentPath != "pointcloud/ept/ept.json" {
+		t.Fatalf("PrimaryContentPath = %q, want EPT manifest", item.PrimaryContentPath)
+	}
+	if item.RefList[0].Path != "pointcloud/ept/ept.json" || item.RefList[0].Role != "manifest" || !item.RefList[0].Primary {
+		t.Fatalf("refs = %#v, want primary manifest", item.RefList)
+	}
+	if !result.Exclusive {
+		t.Fatal("EPT whole scope should be exclusive")
+	}
+	for _, path := range []string{
+		"pointcloud/ept/ept.json",
+		"pointcloud/ept/ept-data/0-0-0-0.laz",
+		"pointcloud/ept/ept-hierarchy/0-0-0-0.json",
+	} {
+		if !result.Claims[path] {
+			t.Fatalf("claims = %#v, want %s claimed", result.Claims, path)
+		}
+	}
+}
+
 func TestResolveItemsDetectsOSGBMetadataWholeScope(t *testing.T) {
 	t.Parallel()
 

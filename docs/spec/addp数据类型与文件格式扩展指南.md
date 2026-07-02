@@ -134,6 +134,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor
 | 容器 child 解析 | `ContainerChildResolver` | Manager、Transfer 后续 child 读取 |
 | 三维模型元信息 | `Model3DInfoProvider` | Meta、Manager |
 | 点云元信息 | `PointCloudInfoProvider` | Meta、Manager |
+| scope 点云元信息 | `ScopePointCloudInfoProvider` | Meta、Manager |
 | 高斯泼溅元信息 | `GaussianSplatInfoProvider` | Meta、Manager |
 | 空间横切事实 | 通过 describe result 或等价结构提供 `datatype.SpatialInfo`，由 Meta 写入 `capabilities.spatial` | Meta、Manager、Search |
 | 访问定位索引 | 通过 describe result 或等价结构提供 `datatype.AccessIndex`，由 Meta 写入 `access_index.<data_type>`；`AccessIndex` 不是 data type 或 type info | Meta、Manager、Transfer |

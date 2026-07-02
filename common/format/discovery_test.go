@@ -123,3 +123,13 @@ func TestFormatCapabilitySnapshotReportsKSplatGaussianSplatProvider(t *testing.T
 		t.Fatalf("implementations = %#v, want gaussian_splat provider", snapshot.Implementations)
 	}
 }
+
+func TestFormatCapabilitySnapshotReportsEPTScopePointCloudProvider(t *testing.T) {
+	snapshot, ok := GetFormatCapabilitySnapshot(FormatEPT)
+	if !ok {
+		t.Fatal("expected EPT capability snapshot")
+	}
+	if !snapshot.Implementations.ScopePointCloudInfoProvider {
+		t.Fatalf("implementations = %#v, want scope point cloud provider", snapshot.Implementations)
+	}
+}
