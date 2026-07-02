@@ -11,7 +11,7 @@ import (
 	"github.com/addp/common/format"
 )
 
-const kplatHeaderSizeBytes = 4096
+const ksplatHeaderSizeBytes = 4096
 
 type Plugin struct{}
 
@@ -55,7 +55,7 @@ func (p *Plugin) DescribeGaussianSplat(ctx context.Context, input format.Gaussia
 	formatInfo := map[string]interface{}{
 		"encoding": "ksplat",
 	}
-	if header, err := readKPlatHeader(input.Reader); err == nil && header != nil {
+	if header, err := readKSplatHeader(input.Reader); err == nil && header != nil {
 		if header.SplatCount > 0 {
 			splatCount := int64(header.SplatCount)
 			info.SplatCount = &splatCount
@@ -78,7 +78,7 @@ func (p *Plugin) DescribeGaussianSplat(ctx context.Context, input format.Gaussia
 	}, nil
 }
 
-type kplatHeader struct {
+type ksplatHeader struct {
 	VersionMajor     byte
 	VersionMinor     byte
 	MaxSectionCount  uint32
@@ -89,18 +89,18 @@ type kplatHeader struct {
 	SceneCenter      [3]float32
 }
 
-func readKPlatHeader(reader io.Reader) (*kplatHeader, error) {
+func readKSplatHeader(reader io.Reader) (*ksplatHeader, error) {
 	if reader == nil {
 		return nil, nil
 	}
-	headerBytes, err := io.ReadAll(io.LimitReader(reader, kplatHeaderSizeBytes))
+	headerBytes, err := io.ReadAll(io.LimitReader(reader, ksplatHeaderSizeBytes))
 	if err != nil {
 		return nil, err
 	}
-	if len(headerBytes) < kplatHeaderSizeBytes {
+	if len(headerBytes) < ksplatHeaderSizeBytes {
 		return nil, nil
 	}
-	return &kplatHeader{
+	return &ksplatHeader{
 		VersionMajor:     headerBytes[0],
 		VersionMinor:     headerBytes[1],
 		MaxSectionCount:  binary.LittleEndian.Uint32(headerBytes[4:8]),

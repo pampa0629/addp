@@ -46,8 +46,8 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := ensureTileCacheStateSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure tile cache state schema: %w", err)
 	}
-	if err := ensureQuickViewOptimizationSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure quick view optimization schema: %w", err)
+	if err := ensureVectorMaterializedViewSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure vector materialized view schema: %w", err)
 	}
 	if err := ensureRasterCOGSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure raster COG schema: %w", err)
@@ -55,14 +55,17 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := ensureRasterMosaicSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure raster mosaic schema: %w", err)
 	}
-	if err := ensureModel3DQuickViewSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure model 3d quick view schema: %w", err)
+	if err := ensureModel3DGLBSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure model 3d GLB schema: %w", err)
 	}
-	if err := ensureGaussianSplatQuickViewSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure gaussian splat quick view schema: %w", err)
+	if err := ensureGaussianSplatKSplatSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure gaussian splat KSplat schema: %w", err)
 	}
 	if err := ensureModel3DTilesSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure model 3d tiles schema: %w", err)
+	}
+	if err := normalizePreviewArtifactSchemaNames(db); err != nil {
+		return nil, fmt.Errorf("failed to normalize preview artifact schema names: %w", err)
 	}
 
 	// Configure connection pool for optimal performance
@@ -84,9 +87,34 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 }
 
 func dropLegacyQuickViewTables(db *gorm.DB) error {
+	legacyTaskTypes := []string{
+		"quick_view_optimization",
+		"quick_view_optimization_generation",
+		"vector_quick_view_target_generation",
+		"tile_cache_generation",
+		"cog_artifact_generation",
+		"mvt_generation",
+		"model_3d_quick_view_generation",
+		"gaussian_splat_quick_view_generation",
+	}
+	if err := db.Exec(`
+		DELETE FROM common.task_executions
+		WHERE module = 'manager'
+		  AND task_type IN ?
+	`, legacyTaskTypes).Error; err != nil {
+		return err
+	}
+
 	legacyTables := []string{
+		"quick_view",
 		"quick_view_optimization",
 		"quick_view_optimization_tasks",
+		"vector_quick_view_target_tasks",
+		"vector_quick_view_targets",
+		"model_3d_quick_view_tasks",
+		"model_3d_quick_view",
+		"gaussian_splat_quick_view_tasks",
+		"gaussian_splat_quick_view",
 		"tile_cache",
 		"tile_cache_tasks",
 		"cog_artifacts",
@@ -102,11 +130,98 @@ func dropLegacyQuickViewTables(db *gorm.DB) error {
 	return nil
 }
 
-func ensureTileCacheStateSchema(db *gorm.DB) error {
-	if err := renameQuickViewTableToPreviewState(db); err != nil {
-		return err
+func normalizePreviewArtifactSchemaNames(db *gorm.DB) error {
+	constraints := []struct {
+		tableName     string
+		legacyName    string
+		canonicalName string
+	}{
+		{"preview_state", "quick_view_pkey", "preview_state_pkey"},
+		{"vector_materialized_view_tasks", "vector_quick_view_target_tasks_pkey", "vector_materialized_view_tasks_pkey"},
+		{"vector_materialized_view", "vector_quick_view_targets_pkey", "vector_materialized_view_pkey"},
+		{"model_3d_glb_tasks", "model_3d_quick_view_tasks_pkey", "model_3d_glb_tasks_pkey"},
+		{"model_3d_glb", "model_3d_quick_view_pkey", "model_3d_glb_pkey"},
+		{"gaussian_splat_ksplat_tasks", "gaussian_splat_quick_view_tasks_pkey", "gaussian_splat_ksplat_tasks_pkey"},
+		{"gaussian_splat_ksplat", "gaussian_splat_quick_view_pkey", "gaussian_splat_ksplat_pkey"},
+	}
+	for _, constraint := range constraints {
+		if err := db.Exec(fmt.Sprintf(`
+			DO $$
+			BEGIN
+				IF EXISTS (
+					SELECT 1
+					FROM pg_constraint
+					WHERE conrelid = to_regclass('manager.%s')
+					  AND conname = '%s'
+				) AND NOT EXISTS (
+					SELECT 1
+					FROM pg_constraint
+					WHERE conrelid = to_regclass('manager.%s')
+					  AND conname = '%s'
+				) THEN
+					EXECUTE format(
+						'ALTER TABLE manager.%%I RENAME CONSTRAINT %%I TO %%I',
+						'%s', '%s', '%s'
+					);
+				END IF;
+			END $$;
+		`,
+			constraint.tableName,
+			constraint.legacyName,
+			constraint.tableName,
+			constraint.canonicalName,
+			constraint.tableName,
+			constraint.legacyName,
+			constraint.canonicalName,
+		)).Error; err != nil {
+			return err
+		}
 	}
 
+	legacyIndexes := []string{
+		"idx_qvo_tasks_tenant",
+		"idx_qvo_tasks_schedule",
+		"idx_qvo_tasks_last_execution",
+		"idx_qvo_tasks_deleted_at",
+		"idx_qvo_tenant_item_fingerprint",
+		"idx_qvo_tenant_item",
+		"idx_qvo_task",
+		"idx_qvo_execution",
+		"idx_qvo_status",
+		"idx_qvo_deleted_at",
+		"idx_qvo_current_target_unique",
+		"idx_model_3d_quick_view_tasks_tenant",
+		"idx_model_3d_quick_view_tasks_last_execution",
+		"idx_model_3d_quick_view_tasks_deleted_at",
+		"idx_model_3d_quick_view_tasks_source_unique",
+		"idx_model_3d_quick_view_tenant_item",
+		"idx_model_3d_quick_view_tenant_item_fingerprint",
+		"idx_model_3d_quick_view_task",
+		"idx_model_3d_quick_view_execution",
+		"idx_model_3d_quick_view_status",
+		"idx_model_3d_quick_view_deleted_at",
+		"idx_model_3d_quick_view_current_unique",
+		"idx_gaussian_splat_quick_view_tasks_tenant",
+		"idx_gaussian_splat_quick_view_tasks_last_execution",
+		"idx_gaussian_splat_quick_view_tasks_deleted_at",
+		"idx_gaussian_splat_quick_view_tasks_source_unique",
+		"idx_gaussian_splat_quick_view_tenant_item",
+		"idx_gaussian_splat_quick_view_tenant_item_fingerprint",
+		"idx_gaussian_splat_quick_view_task",
+		"idx_gaussian_splat_quick_view_execution",
+		"idx_gaussian_splat_quick_view_status",
+		"idx_gaussian_splat_quick_view_deleted_at",
+		"idx_gaussian_splat_quick_view_current_unique",
+	}
+	for _, indexName := range legacyIndexes {
+		if err := db.Exec(fmt.Sprintf(`DROP INDEX IF EXISTS manager.%q`, indexName)).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureTileCacheStateSchema(db *gorm.DB) error {
 	var legacyQuickViewColumns int64
 	if err := db.Raw(`
 		SELECT COUNT(*)
@@ -282,7 +397,10 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 					WHEN metadata->'tile_generation_target'->>'target_kind' IS NOT NULL
 						THEN metadata->'tile_generation_target'->>'target_kind'
 					WHEN metadata->'tile_generation_target'->>'prepared_3857' = 'true'
-						AND metadata->'tile_generation_target'->>'table' LIKE 'addp_qvo_%'
+						AND (
+							metadata->'tile_generation_target'->>'table' LIKE 'addp_qvo_%'
+							OR metadata->'tile_generation_target'->>'table' LIKE 'addp_vmv_%'
+						)
 						THEN 'source_schema_materialized_view'
 					WHEN metadata->'tile_generation_target'->>'prepared_3857' = 'true'
 						THEN 'external_3857_materialized_view'
@@ -309,34 +427,6 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		return err
 	}
 	return nil
-}
-
-func renameQuickViewTableToPreviewState(db *gorm.DB) error {
-	var legacyExists bool
-	if err := db.Raw(`SELECT to_regclass('manager.quick_view') IS NOT NULL`).Scan(&legacyExists).Error; err != nil {
-		return err
-	}
-	if !legacyExists {
-		return nil
-	}
-	var targetExists bool
-	if err := db.Raw(`SELECT to_regclass('manager.preview_state') IS NOT NULL`).Scan(&targetExists).Error; err != nil {
-		return err
-	}
-	if !targetExists {
-		if err := db.Exec(`ALTER TABLE manager.quick_view RENAME TO preview_state`).Error; err != nil {
-			return err
-		}
-	} else if err := db.Exec(`DROP TABLE IF EXISTS manager.quick_view`).Error; err != nil {
-		return err
-	}
-	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_quick_view_tenant_fingerprint`).Error; err != nil {
-		return err
-	}
-	return db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_preview_state_tenant_fingerprint
-		ON manager.preview_state (tenant_id, item_fingerprint)
-	`).Error
 }
 
 func normalizePreviewStateViewState(db *gorm.DB) error {
@@ -414,47 +504,47 @@ func normalizePreviewStateViewState(db *gorm.DB) error {
 	`).Error
 }
 
-func ensureQuickViewOptimizationSchema(db *gorm.DB) error {
-	if err := db.AutoMigrate(&models.QuickViewOptimizationTask{}, &models.QuickViewOptimization{}); err != nil {
+func ensureVectorMaterializedViewSchema(db *gorm.DB) error {
+	if err := db.AutoMigrate(&models.VectorMaterializedViewTask{}, &models.VectorMaterializedView{}); err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.vector_quick_view_target_tasks
+		UPDATE manager.vector_materialized_view_tasks
 		SET enabled = false
 		WHERE enabled IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.vector_quick_view_target_tasks
+		UPDATE manager.vector_materialized_view_tasks
 		SET created_at = NOW()
 		WHERE created_at IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.vector_quick_view_target_tasks
+		UPDATE manager.vector_materialized_view_tasks
 		SET updated_at = NOW()
 		WHERE updated_at IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.vector_quick_view_targets
+		UPDATE manager.vector_materialized_view
 		SET created_at = NOW()
 		WHERE created_at IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.vector_quick_view_targets
+		UPDATE manager.vector_materialized_view
 		SET updated_at = NOW()
 		WHERE updated_at IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.vector_quick_view_target_tasks
+		ALTER TABLE manager.vector_materialized_view_tasks
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN created_by TYPE BIGINT,
@@ -465,7 +555,7 @@ func ensureQuickViewOptimizationSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.vector_quick_view_targets
+		ALTER TABLE manager.vector_materialized_view
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN item_id TYPE BIGINT,
@@ -480,15 +570,15 @@ func ensureQuickViewOptimizationSchema(db *gorm.DB) error {
 	`).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_manager_vector_quick_view_target_tasks_deleted_at`).Error; err != nil {
+	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_manager_vector_materialized_view_tasks_deleted_at`).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_manager_vector_quick_view_target_generation_deleted_at`).Error; err != nil {
+	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_manager_vector_materialized_view_generation_deleted_at`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_qvo_current_target_unique
-		ON manager.vector_quick_view_targets (tenant_id, item_fingerprint, source_geometry_column, target_srid)
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_vector_materialized_view_current_unique
+		ON manager.vector_materialized_view (tenant_id, item_fingerprint, source_geometry_column, target_srid)
 		WHERE deleted_at IS NULL
 	`).Error; err != nil {
 		return err
@@ -605,19 +695,19 @@ func ensureModel3DTilesSchema(db *gorm.DB) error {
 	return nil
 }
 
-func ensureModel3DQuickViewSchema(db *gorm.DB) error {
-	if err := db.AutoMigrate(&models.Model3DQuickViewTask{}, &models.Model3DQuickView{}); err != nil {
+func ensureModel3DGLBSchema(db *gorm.DB) error {
+	if err := db.AutoMigrate(&models.Model3DGLBTask{}, &models.Model3DGLB{}); err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.model_3d_quick_view_tasks
+		UPDATE manager.model_3d_glb_tasks
 		SET enabled = false
 		WHERE enabled IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.model_3d_quick_view_tasks
+		ALTER TABLE manager.model_3d_glb_tasks
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN created_by TYPE BIGINT,
@@ -628,7 +718,7 @@ func ensureModel3DQuickViewSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.model_3d_quick_view
+		ALTER TABLE manager.model_3d_glb
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN item_id TYPE BIGINT,
@@ -648,11 +738,11 @@ func ensureModel3DQuickViewSchema(db *gorm.DB) error {
 					PARTITION BY tenant_id, config->'source'->>'item_fingerprint'
 					ORDER BY updated_at DESC, id DESC
 				) AS rn
-			FROM manager.model_3d_quick_view_tasks
+			FROM manager.model_3d_glb_tasks
 			WHERE deleted_at IS NULL
 				AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
 		)
-		UPDATE manager.model_3d_quick_view_tasks AS tasks
+		UPDATE manager.model_3d_glb_tasks AS tasks
 		SET deleted_at = NOW(), updated_at = NOW(), enabled = false
 		FROM ranked
 		WHERE tasks.id = ranked.id AND ranked.rn > 1
@@ -660,15 +750,15 @@ func ensureModel3DQuickViewSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_model_3d_quick_view_tasks_source_unique
-		ON manager.model_3d_quick_view_tasks (tenant_id, ((config->'source'->>'item_fingerprint')))
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_model_3d_glb_tasks_source_unique
+		ON manager.model_3d_glb_tasks (tenant_id, ((config->'source'->>'item_fingerprint')))
 		WHERE deleted_at IS NULL AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_model_3d_quick_view_current_unique
-		ON manager.model_3d_quick_view (tenant_id, item_fingerprint)
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_model_3d_glb_current_unique
+		ON manager.model_3d_glb (tenant_id, item_fingerprint)
 		WHERE deleted_at IS NULL AND status <> 'deleted'
 	`).Error; err != nil {
 		return err
@@ -676,19 +766,19 @@ func ensureModel3DQuickViewSchema(db *gorm.DB) error {
 	return nil
 }
 
-func ensureGaussianSplatQuickViewSchema(db *gorm.DB) error {
-	if err := db.AutoMigrate(&models.GaussianSplatQuickViewTask{}, &models.GaussianSplatQuickView{}); err != nil {
+func ensureGaussianSplatKSplatSchema(db *gorm.DB) error {
+	if err := db.AutoMigrate(&models.GaussianSplatKSplatTask{}, &models.GaussianSplatKSplat{}); err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.gaussian_splat_quick_view_tasks
+		UPDATE manager.gaussian_splat_ksplat_tasks
 		SET enabled = false
 		WHERE enabled IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.gaussian_splat_quick_view_tasks
+		ALTER TABLE manager.gaussian_splat_ksplat_tasks
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN created_by TYPE BIGINT,
@@ -699,7 +789,7 @@ func ensureGaussianSplatQuickViewSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.gaussian_splat_quick_view
+		ALTER TABLE manager.gaussian_splat_ksplat
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN item_id TYPE BIGINT,
@@ -719,11 +809,11 @@ func ensureGaussianSplatQuickViewSchema(db *gorm.DB) error {
 					PARTITION BY tenant_id, config->'source'->>'item_fingerprint'
 					ORDER BY updated_at DESC, id DESC
 				) AS rn
-			FROM manager.gaussian_splat_quick_view_tasks
+			FROM manager.gaussian_splat_ksplat_tasks
 			WHERE deleted_at IS NULL
 				AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
 		)
-		UPDATE manager.gaussian_splat_quick_view_tasks AS tasks
+		UPDATE manager.gaussian_splat_ksplat_tasks AS tasks
 		SET deleted_at = NOW(), updated_at = NOW(), enabled = false
 		FROM ranked
 		WHERE tasks.id = ranked.id AND ranked.rn > 1
@@ -731,15 +821,15 @@ func ensureGaussianSplatQuickViewSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_gaussian_splat_quick_view_tasks_source_unique
-		ON manager.gaussian_splat_quick_view_tasks (tenant_id, ((config->'source'->>'item_fingerprint')))
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_gaussian_splat_ksplat_tasks_source_unique
+		ON manager.gaussian_splat_ksplat_tasks (tenant_id, ((config->'source'->>'item_fingerprint')))
 		WHERE deleted_at IS NULL AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_gaussian_splat_quick_view_current_unique
-		ON manager.gaussian_splat_quick_view (tenant_id, item_fingerprint)
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_gaussian_splat_ksplat_current_unique
+		ON manager.gaussian_splat_ksplat (tenant_id, item_fingerprint)
 		WHERE deleted_at IS NULL AND status <> 'deleted'
 	`).Error; err != nil {
 		return err

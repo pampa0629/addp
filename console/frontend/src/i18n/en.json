@@ -209,7 +209,7 @@
         "vectorizationTasks": "Vectorization Tasks",
         "spatialQuickView": "Quick View Management",
         "tileCache": "Vector Quick View - Tile Cache",
-        "quickViewOptimization": "Vector Quick View - Optimization",
+        "vectorMaterializedView": "Vector Quick View - Materialized View",
         "cogArtifacts": "Raster Quick View - COG",
         "rasterMosaic": "Raster Quick View - Mosaic",
         "model3DQuickView": "3D Quick View - GLB",

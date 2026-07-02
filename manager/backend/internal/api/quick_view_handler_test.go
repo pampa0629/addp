@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -286,6 +287,45 @@ func TestQuickViewSourceFromPreviewDetectsSingleOBJObject(t *testing.T) {
 	}
 }
 
+func TestQuickViewSourceFromPreviewDetectsSingleIFCObject(t *testing.T) {
+	locator := "addp://engine/26/path/3d/ifc/building.ifc?type=file&item_id=10988"
+	tablePreview := &models.TablePreview{
+		EngineID:   26,
+		EngineType: "nfs",
+		Object: &models.ObjectPreview{
+			EngineID: 26,
+			Attributes: map[string]interface{}{
+				"item": map[string]interface{}{
+					"data_type": "model_3d",
+					"format":    "ifc",
+					"layout":    "single",
+				},
+				"storage": map[string]interface{}{
+					"total_size": int64(4096),
+				},
+			},
+		},
+	}
+	result := &preview.PreviewResult{
+		Metadata: &preview.PreviewMetadata{
+			Locator:         locator,
+			ItemFingerprint: "fp-ifc",
+		},
+	}
+
+	source := quickViewSourceFromPreview(locator, nil, result, tablePreview)
+
+	if source.Model3D == nil {
+		t.Fatal("Model3D is nil, want single IFC quick view source")
+	}
+	if source.Raster != nil || source.DirectGeoJSON || source.GeoJSONURL != "" || source.CanTile {
+		t.Fatalf("source routing = raster:%v direct_geojson:%v geojson_url:%q can_tile:%v, want model3d-only", source.Raster != nil, source.DirectGeoJSON, source.GeoJSONURL, source.CanTile)
+	}
+	if source.Model3D.Format != "ifc" || source.Model3D.Layout != "single" || source.Model3D.SourceSizeBytes != 4096 {
+		t.Fatalf("model3d facts = %#v, want single ifc facts", source.Model3D)
+	}
+}
+
 func TestQuickViewSourceFromPreviewDetectsGaussianSplatPLYObject(t *testing.T) {
 	locator := "addp://engine/26/path/3d/gaussian/model.ply?type=file&item_id=10901"
 	tablePreview := &models.TablePreview{
@@ -324,7 +364,7 @@ func TestQuickViewSourceFromPreviewDetectsGaussianSplatPLYObject(t *testing.T) {
 	source := quickViewSourceFromPreview(locator, nil, result, tablePreview)
 
 	if source.GaussianSplat == nil {
-		t.Fatal("GaussianSplat is nil, want gaussian splat quick view source")
+		t.Fatal("GaussianSplat is nil, want gaussian splat KSplat source")
 	}
 	if source.Model3D != nil || source.Raster != nil || source.DirectGeoJSON || source.GeoJSONURL != "" || source.CanTile {
 		t.Fatalf("source routing = model3d:%v raster:%v direct_geojson:%v geojson_url:%q can_tile:%v, want gaussian-only", source.Model3D != nil, source.Raster != nil, source.DirectGeoJSON, source.GeoJSONURL, source.CanTile)
@@ -356,6 +396,207 @@ func TestApplyLocatorQuickViewURLsSetsRasterMosaicTileTemplate(t *testing.T) {
 	}
 	if !strings.Contains(capability.QuickView.TileURLTemplate, "gamma=0.6") {
 		t.Fatalf("tile_url_template = %q, want default gamma", capability.QuickView.TileURLTemplate)
+	}
+}
+
+func TestQuickViewCapabilityJSONCarriesBackendStateControls(t *testing.T) {
+	capability := service.QuickViewCapability{
+		TenantID:          7,
+		ItemFingerprint:   "fp-ifc",
+		Locator:           "addp://engine/26/path/3d/ifc/building.ifc?type=file&item_id=10988",
+		SourceKind:        service.QuickViewSourceKindModel3D,
+		CanUseQuickView:   false,
+		PreferredMode:     models.PreviewModeBasicPreview,
+		RecommendedMode:   models.PreviewModeBasicPreview,
+		ActiveMode:        models.PreviewModeBasicPreview,
+		Status:            service.QuickViewStatusUnavailable,
+		UnavailableReason: "requires_glb_generation",
+		AvailableActions:  []string{service.QuickViewActionGenerateModel3DGLB},
+	}
+
+	body, err := json.Marshal(capability)
+	if err != nil {
+		t.Fatalf("marshal quick view capability: %v", err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal quick view capability: %v", err)
+	}
+	if payload["source_kind"] != service.QuickViewSourceKindModel3D {
+		t.Fatalf("source_kind = %#v, want model_3d", payload["source_kind"])
+	}
+	actions, ok := payload["available_actions"].([]interface{})
+	if !ok || len(actions) != 1 || actions[0] != service.QuickViewActionGenerateModel3DGLB {
+		t.Fatalf("available_actions = %#v, want GLB generation action", payload["available_actions"])
+	}
+}
+
+func TestQuickViewCapabilityJSONCarriesEmptyAvailableActions(t *testing.T) {
+	capability := service.QuickViewCapability{
+		TenantID:         7,
+		SourceKind:       service.QuickViewSourceKindVector,
+		CanUseQuickView:  false,
+		PreferredMode:    models.PreviewModeBasicPreview,
+		RecommendedMode:  models.PreviewModeBasicPreview,
+		ActiveMode:       models.PreviewModeBasicPreview,
+		Status:           service.QuickViewStatusUnavailable,
+		AvailableActions: []string{},
+	}
+
+	body, err := json.Marshal(capability)
+	if err != nil {
+		t.Fatalf("marshal quick view capability: %v", err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal quick view capability: %v", err)
+	}
+	actions, ok := payload["available_actions"].([]interface{})
+	if !ok || len(actions) != 0 {
+		t.Fatalf("available_actions = %#v, want empty array", payload["available_actions"])
+	}
+}
+
+func TestModel3DGLBTaskConfigFromQuickViewUsesCapabilityIdentity(t *testing.T) {
+	capability := &service.QuickViewCapability{
+		TenantID:        7,
+		ItemFingerprint: "fp-ifc",
+		Locator:         "addp://engine/26/path/3d/ifc/building.ifc?type=file&item_id=10441",
+		SourceKind:      service.QuickViewSourceKindModel3D,
+	}
+	source := service.QuickViewSource{
+		EngineID: 26,
+		Model3D: &service.Model3DGLBSource{
+			Format:          "ifc",
+			SourceSizeBytes: 1234,
+		},
+	}
+
+	config, err := model3DGLBTaskConfigFromQuickView(capability, source)
+	if err != nil {
+		t.Fatalf("model3DGLBTaskConfigFromQuickView returned error: %v", err)
+	}
+	sourceMap, ok := asJSONMap(config["source"])
+	if !ok {
+		t.Fatalf("config.source = %#v, want JSON map", config["source"])
+	}
+	if sourceMap["item_locator"] != capability.Locator {
+		t.Fatalf("item_locator = %#v, want %s", sourceMap["item_locator"], capability.Locator)
+	}
+	if sourceMap["source_engine_id"] != uint(26) {
+		t.Fatalf("source_engine_id = %#v, want 26", sourceMap["source_engine_id"])
+	}
+	if sourceMap["item_fingerprint"] != "fp-ifc" {
+		t.Fatalf("item_fingerprint = %#v, want fp-ifc", sourceMap["item_fingerprint"])
+	}
+	if sourceMap["item_id"] != uint(10441) {
+		t.Fatalf("item_id = %#v, want 10441", sourceMap["item_id"])
+	}
+	if sourceMap["format"] != "ifc" {
+		t.Fatalf("format = %#v, want ifc", sourceMap["format"])
+	}
+	if sourceMap["source_size_bytes"] != int64(1234) {
+		t.Fatalf("source_size_bytes = %#v, want 1234", sourceMap["source_size_bytes"])
+	}
+}
+
+func TestRasterCOGTaskConfigFromQuickViewUsesCapabilityIdentity(t *testing.T) {
+	capability := &service.QuickViewCapability{
+		TenantID:        7,
+		ItemFingerprint: "fp-raster",
+		Locator:         "addp://engine/26/path/rasters/dem.tif?type=file&item_id=42",
+		SourceKind:      service.QuickViewSourceKindRaster,
+	}
+	source := service.QuickViewSource{
+		EngineID: 26,
+		Raster: &service.RasterQuickViewSource{
+			Profile:    "tiff",
+			SizeBytes:  8192,
+			Width:      512,
+			Height:     256,
+			BandCount:  1,
+			SourceSRID: 4326,
+			Extent:     []float64{110, 20, 120, 30},
+			ExtentSRID: 4326,
+		},
+	}
+
+	config, err := rasterCOGTaskConfigFromQuickView(capability, source)
+	if err != nil {
+		t.Fatalf("rasterCOGTaskConfigFromQuickView returned error: %v", err)
+	}
+	target, ok := asJSONMap(config["target"])
+	if !ok {
+		t.Fatalf("config.target = %#v, want JSON map", config["target"])
+	}
+	if target["locator"] != capability.Locator {
+		t.Fatalf("locator = %#v, want %s", target["locator"], capability.Locator)
+	}
+	if target["source_engine_id"] != uint(26) {
+		t.Fatalf("source_engine_id = %#v, want 26", target["source_engine_id"])
+	}
+	if target["item_fingerprint"] != "fp-raster" {
+		t.Fatalf("item_fingerprint = %#v, want fp-raster", target["item_fingerprint"])
+	}
+	if target["item_id"] != uint(42) {
+		t.Fatalf("item_id = %#v, want 42", target["item_id"])
+	}
+	raster, ok := asJSONMap(config["raster"])
+	if !ok {
+		t.Fatalf("config.raster = %#v, want JSON map", config["raster"])
+	}
+	if raster["source_profile"] != "tiff" || raster["width"] != int64(512) || raster["height"] != int64(256) {
+		t.Fatalf("raster config = %#v, want source profile and dimensions", raster)
+	}
+	cog, ok := asJSONMap(config["cog"])
+	if !ok {
+		t.Fatalf("config.cog = %#v, want JSON map", config["cog"])
+	}
+	if cog["compression"] != "DEFLATE" || cog["blocksize"] != 512 {
+		t.Fatalf("cog config = %#v, want default COG options", cog)
+	}
+}
+
+func TestGaussianSplatKSplatTaskConfigFromQuickViewUsesCapabilityIdentity(t *testing.T) {
+	capability := &service.QuickViewCapability{
+		TenantID:        7,
+		ItemFingerprint: "fp-gaussian",
+		Locator:         "addp://engine/26/path/3dgs/sample.ply?type=file&item_id=109",
+		SourceKind:      service.QuickViewSourceKindGaussianSplat,
+	}
+	source := service.QuickViewSource{
+		EngineID: 26,
+		GaussianSplat: &service.GaussianSplatKSplatSource{
+			Format:          "ply",
+			SourceSizeBytes: 4096,
+		},
+	}
+
+	config, err := gaussianSplatKSplatTaskConfigFromQuickView(capability, source)
+	if err != nil {
+		t.Fatalf("gaussianSplatKSplatTaskConfigFromQuickView returned error: %v", err)
+	}
+	sourceMap, ok := asJSONMap(config["source"])
+	if !ok {
+		t.Fatalf("config.source = %#v, want JSON map", config["source"])
+	}
+	if sourceMap["item_locator"] != capability.Locator {
+		t.Fatalf("item_locator = %#v, want %s", sourceMap["item_locator"], capability.Locator)
+	}
+	if sourceMap["source_engine_id"] != uint(26) {
+		t.Fatalf("source_engine_id = %#v, want 26", sourceMap["source_engine_id"])
+	}
+	if sourceMap["item_fingerprint"] != "fp-gaussian" {
+		t.Fatalf("item_fingerprint = %#v, want fp-gaussian", sourceMap["item_fingerprint"])
+	}
+	if sourceMap["item_id"] != uint(109) {
+		t.Fatalf("item_id = %#v, want 109", sourceMap["item_id"])
+	}
+	if sourceMap["format"] != "ply" {
+		t.Fatalf("format = %#v, want ply", sourceMap["format"])
+	}
+	if sourceMap["source_size_bytes"] != int64(4096) {
+		t.Fatalf("source_size_bytes = %#v, want 4096", sourceMap["source_size_bytes"])
 	}
 }
 

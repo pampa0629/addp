@@ -19,7 +19,7 @@ type taskProviderTaskCapability struct {
 	Deprecated              bool   `json:"deprecated"`
 }
 
-func TestTaskProviderRegistryQuickViewOptimizationCapability(t *testing.T) {
+func TestTaskProviderRegistryVectorMaterializedViewCapability(t *testing.T) {
 	var captured TaskProviderRegistration
 	var capturedPath string
 	var capturedInternalAPIKey string
@@ -73,24 +73,24 @@ func TestTaskProviderRegistryQuickViewOptimizationCapability(t *testing.T) {
 		t.Fatalf("schema_version = %q, want task.capabilities/v1", capabilities.SchemaVersion)
 	}
 
-	quickView := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, "vector_quick_view_target_generation")
+	quickView := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, "vector_materialized_view_generation")
 	if quickView.SupportsSchedule {
-		t.Fatal("vector_quick_view_target_generation supports_schedule = true, want false")
+		t.Fatal("vector_materialized_view_generation supports_schedule = true, want false")
 	}
 	if quickView.SupportsCancel {
-		t.Fatal("vector_quick_view_target_generation supports_cancel = true, want false")
+		t.Fatal("vector_materialized_view_generation supports_cancel = true, want false")
 	}
 	if quickView.SupportsInlineExecution {
-		t.Fatal("vector_quick_view_target_generation supports_inline_execution = true, want false")
+		t.Fatal("vector_materialized_view_generation supports_inline_execution = true, want false")
 	}
-	if quickView.CreateURL != "/manager/spatial-quick-view/vector-optimization?tab=tasks" {
-		t.Fatalf("vector_quick_view_target_generation create_url = %q, want quick view optimization tasks page", quickView.CreateURL)
+	if quickView.CreateURL != "/manager/spatial-quick-view/vector-materialized-view?tab=tasks" {
+		t.Fatalf("vector_materialized_view_generation create_url = %q, want vector materialized view tasks page", quickView.CreateURL)
 	}
-	if quickView.EditURL != "/manager/spatial-quick-view/vector-optimization?tab=tasks&task_id=:id" {
-		t.Fatalf("vector_quick_view_target_generation edit_url = %q, want quick view optimization task edit page", quickView.EditURL)
+	if quickView.EditURL != "/manager/spatial-quick-view/vector-materialized-view?tab=tasks&task_id=:id" {
+		t.Fatalf("vector_materialized_view_generation edit_url = %q, want vector materialized view task edit page", quickView.EditURL)
 	}
 	if quickView.Deprecated {
-		t.Fatal("vector_quick_view_target_generation deprecated = true, want false")
+		t.Fatal("vector_materialized_view_generation deprecated = true, want false")
 	}
 
 	cog := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, "raster_cog_generation")

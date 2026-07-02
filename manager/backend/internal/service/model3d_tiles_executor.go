@@ -182,7 +182,7 @@ func model3DTilesLocalRoot(engine *commonModels.Engine, loc *resourcetree.Resour
 			"access_method": "mounted_path",
 		}, nil
 	case "minio", "s3":
-		return "", nil, nil, errors.New("model 3d tiles generation first phase supports nfs/localfs only; object store requires staging support")
+		return "", nil, nil, errors.New("model 3D conversion first phase supports nfs/localfs only; object store requires staging support")
 	default:
 		return "", nil, nil, fmt.Errorf("engine %s is not supported by model 3D conversion runtime", engine.EngineType)
 	}

@@ -656,7 +656,7 @@ func multiScaleCandidates(scenarios []ScenarioReport) []MultiScaleCandidate {
 				Trigger:           trigger,
 				Summary:           tile.Summary,
 				CurrentUserAction: "vector_tile_cache_generation",
-				FollowUpTopic:     "multi_scale_vector_quick_view_target_generation",
+				FollowUpTopic:     "multi_scale_vector_materialized_view_generation",
 				Rationale:         multiScaleCandidateRationale(trigger, tile.Summary),
 			})
 		}
@@ -725,7 +725,7 @@ func retryPolicyForRenderPath(path string) string {
 
 func recommendedActionForRenderPath(path string) string {
 	if path == "source_transform_path" {
-		return "vector_quick_view_target_generation"
+		return "vector_materialized_view_generation"
 	}
 	return "vector_tile_cache_generation"
 }
@@ -748,7 +748,7 @@ func recommendationRationale(path string, summary MetricSummary, benchmarkTimeou
 		fmt.Sprintf("observed p95=%.2fms p99=%.2fms with benchmark timeout_ms=%d", summary.P95DurationMS, summary.P99DurationMS, benchmarkTimeoutMS),
 	}
 	if path == "source_transform_path" {
-		rationale = append(rationale, "slow path timeouts should suppress the tile URL and guide users to quick view optimization")
+		rationale = append(rationale, "slow path timeouts should suppress the tile URL and guide users to vector materialized view")
 	} else {
 		rationale = append(rationale, "indexed 3857 target timeouts should use ttl retry and guide users to tile cache generation")
 		rationale = append(rationale, "Retry-After is a client cooldown policy; keep the default unless UX or load validation requires a different value")

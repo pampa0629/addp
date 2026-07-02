@@ -56,9 +56,9 @@
               <el-icon><MapLocation /></el-icon>
               <span>{{ t('manager.layout.spatialQuickView') }}</span>
             </template>
-            <el-menu-item index="/spatial-quick-view/vector-optimization">
+            <el-menu-item index="/spatial-quick-view/vector-materialized-view">
               <el-icon><MagicStick /></el-icon>
-              <span>{{ t('manager.layout.vectorQuickViewOptimization') }}</span>
+              <span>{{ t('manager.layout.vectorMaterializedView') }}</span>
             </el-menu-item>
             <el-menu-item index="/spatial-quick-view/vector-tile-cache">
               <el-icon><Grid /></el-icon>
@@ -72,17 +72,17 @@
               <el-icon><Grid /></el-icon>
               <span>{{ t('manager.layout.rasterMosaic') }}</span>
             </el-menu-item>
-            <el-menu-item index="/model-3d-quick-view">
+            <el-menu-item index="/model-3d-glb">
               <el-icon><Box /></el-icon>
-              <span>{{ t('manager.layout.model3DQuickView') }}</span>
-            </el-menu-item>
-            <el-menu-item index="/gaussian-splat-quick-view">
-              <el-icon><Aim /></el-icon>
-              <span>{{ t('manager.layout.gaussianSplatQuickView') }}</span>
+              <span>{{ t('manager.layout.model3DGLB') }}</span>
             </el-menu-item>
             <el-menu-item index="/model-3d-tiles">
               <el-icon><Grid /></el-icon>
               <span>{{ t('manager.layout.model3DTiles') }}</span>
+            </el-menu-item>
+            <el-menu-item index="/gaussian-splat-ksplat">
+              <el-icon><Aim /></el-icon>
+              <span>{{ t('manager.layout.gaussianSplatKSplat') }}</span>
             </el-menu-item>
           </el-sub-menu>
         </el-menu>

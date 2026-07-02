@@ -95,16 +95,18 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 4. 向量化结果写入 `manager.embeddings`，搜索只消费 `status=ready` 且模型、维度匹配的结果。
 5. Meilisearch 负责全文和属性检索，pgvector 负责向量命中，Manager 搜索服务负责融合结果。
 
-### 快显、快显性能优化与瓦片缓存
+### 快显、矢量物化视图与瓦片缓存
 1. `preview_state` - 预览状态，只记录 item 的预览模式偏好和基础预览 / 快显各自的视角状态。
-2. `vector_quick_view_targets` - 快显性能优化结果，只登记 Manager 创建并拥有生命周期的 3857 优化目标。
-3. `vector_quick_view_target_tasks` - 快显性能优化任务定义，TaskProvider `task_type=vector_quick_view_target_generation`。
+2. `vector_materialized_view` - 矢量物化视图结果，只登记 Manager 创建并拥有生命周期的 3857 优化目标。
+3. `vector_materialized_view_tasks` - 矢量物化视图任务定义，TaskProvider `task_type=vector_materialized_view_generation`。
 4. `raster_cog` - 栅格快显 COG生成结果，只登记 Manager 创建并上传到 infra MinIO 的 COG 副本。
 5. `raster_cog_tasks` - 栅格快显 COG生成任务定义，TaskProvider `task_type=raster_cog_generation`，当前不声明自身定时调度能力。
 6. `vector_tile_cache` - 瓦片缓存结果状态，记录存储引用、格式、范围和层级。
 7. `vector_tile_cache_tasks` - 瓦片缓存生成任务定义，TaskProvider `task_type=vector_tile_cache_generation`。
-8. MVT 是瓦片格式，进入 `config.tile.format=mvt`，不是任务类型；COG 是 TIFF profile 或 Manager COG 生成结果，不是新的基础 format。
-9. 当前 `vector_tile_cache_generation`、`vector_quick_view_target_generation` 和 `raster_cog_generation` 由 Manager Backend 内部执行；COG 生成使用 Manager 预处理 GDAL `source_uri` / `target_uri` / `gdal_env`，再通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 Python Workflow，并直接写入 infra MinIO 的单一路线。
+8. `model_3d_glb` / `model_3d_glb_tasks` - 单体三维模型 GLB 快显结果和任务定义，TaskProvider `task_type=model_3d_glb_generation`。
+9. `gaussian_splat_ksplat` / `gaussian_splat_ksplat_tasks` - 3DGS - KSplat 快显结果和任务定义，TaskProvider `task_type=gaussian_splat_ksplat_generation`。
+10. MVT 是瓦片格式，进入 `config.tile.format=mvt`，不是任务类型；COG 是 TIFF profile 或 Manager COG 生成结果，不是新的基础 format。
+11. 当前 `vector_tile_cache_generation`、`vector_materialized_view_generation` 和 `raster_cog_generation` 由 Manager Backend 内部执行；COG 生成使用 Manager 预处理 GDAL `source_uri` / `target_uri` / `gdal_env`，再通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 Python Workflow，并直接写入 infra MinIO 的单一路线。
 
 COG 生成运行要求：
 
@@ -129,7 +131,7 @@ tail -f logs/manager-backend.log
 
 ### 地图加载慢？
 
-地图加载慢时，先看快显能力诊断：动态 MVT 走源表转换慢路径或瓦片返回慢路径超时建议时，应从空间预览页进入“执行快显优化”，创建并执行 `vector_quick_view_target_generation` 任务；优化结果 ready 后，低层级或大范围稳定浏览再通过“生成瓦片缓存”创建 `vector_tile_cache_generation` 任务。若当前 item 已有 ready 瓦片缓存结果，预览页展示“切换快显”；若仍使用动态 MVT，可同时保留“执行快显优化”和“生成瓦片缓存”的引导入口。
+地图加载慢时，先看快显能力诊断：动态 MVT 走源表转换慢路径或瓦片返回慢路径超时建议时，应从空间预览页进入“执行矢量物化视图”，创建并执行 `vector_materialized_view_generation` 任务；矢量物化视图结果 ready 后，低层级或大范围稳定浏览再通过“生成瓦片缓存”创建 `vector_tile_cache_generation` 任务。若当前 item 已有 ready 瓦片缓存结果，预览页展示“切换快显”；若仍使用动态 MVT，可同时保留“执行矢量物化视图”和“生成瓦片缓存”的引导入口。
 
 更多预览与下载边界请查看 [数据预览语义协议](./docs/数据预览语义协议.md) 和 [存储流与原始下载语义](./docs/存储流与原始下载语义.md)。
 
@@ -139,8 +141,8 @@ tail -f logs/manager-backend.log
 - **[manager/docs/数据预览与资源树实现规范.md](./docs/数据预览与资源树实现规范.md)** - Manager 数据探查、资源树、预览 API 和插件编排实现规范
 - **[manager/docs/数据预览语义协议.md](./docs/数据预览语义协议.md)** - Manager 预览响应材料和前端渲染语义
 - **[manager/docs/存储流与原始下载语义.md](./docs/存储流与原始下载语义.md)** - Manager 存储叶子流式预览和逻辑对象原始下载语义
-- **[manager/docs/快显概念说明.md](./docs/快显概念说明.md)** - Manager 快显、快显性能优化和瓦片缓存的价值、概念、分工和边界
-- **[manager/docs/快显实现规范.md](./docs/快显实现规范.md)** - 快显、快显性能优化、瓦片缓存结果和生成任务的表结构、API 契约、技术路线与验证记录
+- **[manager/docs/快显概念说明.md](./docs/快显概念说明.md)** - Manager 快显、矢量物化视图和瓦片缓存的价值、概念、分工和边界
+- **[manager/docs/快显实现规范.md](./docs/快显实现规范.md)** - 快显、矢量物化视图、瓦片缓存结果和生成任务的表结构、API 契约、技术路线与验证记录
 - **[manager/docs/向量化概念说明.md](./docs/向量化概念说明.md)** - Manager 向量化价值、对象边界、任务边界和结果边界
 - **[manager/docs/向量化能力说明.md](./docs/向量化能力说明.md)** - Manager 向量化结果、任务、执行、检索和 UI 行为说明
 - **[manager/docs/数据库架构.md](./docs/数据库架构.md)** - Manager schema 表清单、关系、索引和数据流

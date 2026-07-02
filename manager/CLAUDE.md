@@ -7,8 +7,8 @@ Manager 模块负责数据探查、数据预览、混合检索、空间快显和
 空间快显与瓦片缓存的目标边界：
 
 - `manager.preview_state`：预览状态，表达某个 spatial item 的用户预览模式偏好；是否可快显、推荐渲染源和默认瓦片缓存结果由 Quick View Capability API 动态合成。
-- `manager.vector_quick_view_targets`：快显性能优化结果状态，只登记 Manager 创建并拥有生命周期的 3857 快显优化目标；同源 schema 下自动识别的外部 3857 目标只读消费，不进入该表。
-- `manager.vector_quick_view_target_tasks`：快显性能优化任务定义，TaskProvider `task_type=vector_quick_view_target_generation`，当前不声明标准取消和自身定时调度能力。
+- `manager.vector_materialized_view`：矢量物化视图结果状态，只登记 Manager 创建并拥有生命周期的 3857 矢量物化视图目标；同源 schema 下自动识别的外部 3857 目标只读消费，不进入该表。
+- `manager.vector_materialized_view_tasks`：矢量物化视图任务定义，TaskProvider `task_type=vector_materialized_view_generation`，当前不声明标准取消和自身定时调度能力。
 - `manager.raster_cog`：栅格快显 COG生成结果，只登记 Manager 创建或登记到 infra MinIO 的 COG 副本；源 NFS 或业务 MinIO COG 不直接暴露给前端。
 - `manager.raster_cog_tasks`：栅格快显 COG生成任务定义，TaskProvider `task_type=raster_cog_generation`，当前不声明标准取消和自身定时调度能力。
 - `manager.raster_mosaic_tasks`：栅格 mosaic 生成任务定义，TaskProvider `task_type=raster_mosaic_generation`，从资源树 node 创建，结果写入用户选择的业务存储并形成 `raster_mosaic` 业务 item；Manager 不登记或拥有 mosaic 长期产物。
@@ -76,12 +76,12 @@ manager/
 - 资源树 item / node 向量化是 ad-hoc execution，不写入 `manager.embedding_tasks`；只有独立向量化页面创建的配置才是任务定义。
 - 空间相关逻辑不得默认几何字段名为 `geom`，应从 Meta、预览检测或请求参数获取。
 - 不得把 Quick View 称为任务；瓦片缓存生成任务统一使用 `vector_tile_cache_generation` / `manager.vector_tile_cache_tasks`。
-- 快显性能优化任务统一使用 `vector_quick_view_target_generation` / `manager.vector_quick_view_target_tasks`；结果只登记 Manager 创建并拥有生命周期的 3857 目标。
-- 栅格快显 COG生成结果统一使用 `manager.raster_cog`，任务定义统一使用 `manager.raster_cog_tasks` / `raster_cog_generation`；不得写入 `vector_tile_cache` 或 `vector_quick_view_target_generation`，不得让前端感知 NFS path、业务 MinIO bucket/object 或底层 `storage_ref`。
+- 矢量物化视图任务统一使用 `vector_materialized_view_generation` / `manager.vector_materialized_view_tasks`；结果只登记 Manager 创建并拥有生命周期的 3857 目标。
+- 栅格快显 COG生成结果统一使用 `manager.raster_cog`，任务定义统一使用 `manager.raster_cog_tasks` / `raster_cog_generation`；不得写入 `vector_tile_cache` 或 `vector_materialized_view_generation`，不得让前端感知 NFS path、业务 MinIO bucket/object 或底层 `storage_ref`。
 - 栅格 mosaic 生成任务统一使用 `manager.raster_mosaic_tasks` / `raster_mosaic_generation`；创建入口是资源树 node，目标是用户选择的业务存储，结果是 `data_type=media`、`format=raster_mosaic`、`layout=whole` 的业务 item。mosaic 的 leaf COG、overview COG、index、manifest 和可选 tiles 都不写入 Manager infra MinIO，不进入 `manager.raster_cog`。
 - COG 生成只能由 Manager 任务执行器派生 GDAL 参数后，通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 Python Workflow；不得退回构造单节点 workflow 或直接拼接 Python Workflow 私有 HTTP。
-- 瓦片缓存生成任务不得隐式创建 3857 物化视图、空间索引或执行准备动作；需要性能准备时必须显式执行快显性能优化任务。
-- 自动识别的外部 3857 目标只能只读消费，不写入 `manager.vector_quick_view_targets`，也不获得 Manager 删除、刷新或 stale 生命周期。
+- 瓦片缓存生成任务不得隐式创建 3857 物化视图、空间索引或执行准备动作；需要性能准备时必须显式执行矢量物化视图任务。
+- 自动识别的外部 3857 目标只能只读消费，不写入 `manager.vector_materialized_view`，也不获得 Manager 删除、刷新或 stale 生命周期。
 - 不得同时保留 Backend 内执行和 Manager Worker 执行两条瓦片缓存生成路径；运行时只能有一条主路径。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh manager` 和 `bash scripts/swagger/check-route-coverage.sh manager`。
 
@@ -110,8 +110,12 @@ curl http://localhost:8081/health
 - `manager/docs/三维模型与高斯泼溅预览说明.md`
 - `manager/docs/存储流与原始下载语义.md`
 - `manager/docs/tables/preview_state表.md`
-- `manager/docs/tables/vector_quick_view_targets表.md`
-- `manager/docs/tables/vector_quick_view_target_tasks表.md`
+- `manager/docs/tables/vector_materialized_view表.md`
+- `manager/docs/tables/vector_materialized_view_tasks表.md`
+- `manager/docs/tables/model_3d_glb表.md`
+- `manager/docs/tables/model_3d_glb_tasks表.md`
+- `manager/docs/tables/gaussian_splat_ksplat表.md`
+- `manager/docs/tables/gaussian_splat_ksplat_tasks表.md`
 - `manager/docs/tables/raster_cog表.md`
 - `manager/docs/tables/raster_cog_tasks表.md`
 - `manager/docs/tables/raster_mosaic_tasks表.md`

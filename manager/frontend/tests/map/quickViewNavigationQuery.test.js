@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildQuickViewOptimizationCreateQuery,
+  buildVectorMaterializedViewCreateQuery,
   buildTileCacheCreateQuery
 } from '../../src/utils/quickViewNavigationQuery'
 
@@ -49,8 +49,8 @@ describe('quickViewNavigationQuery', () => {
     })
   })
 
-  it('builds quick view optimization create query without tile-only extent fields', () => {
-    expect(buildQuickViewOptimizationCreateQuery(target, status)).toEqual({
+  it('builds vector materialized view create query without tile-only extent fields', () => {
+    expect(buildVectorMaterializedViewCreateQuery(target, status)).toEqual({
       tab: 'tasks',
       create: '1',
       locator: 'addp://engine/11/path/public/dltb?type=table&item_id=88',
@@ -63,7 +63,7 @@ describe('quickViewNavigationQuery', () => {
   })
 
   it('omits empty identity fields instead of writing blank query values', () => {
-    expect(buildQuickViewOptimizationCreateQuery({
+    expect(buildVectorMaterializedViewCreateQuery({
       engineId: null,
       schema: undefined,
       table: '',

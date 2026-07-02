@@ -74,7 +74,7 @@
         "metadata": "Execution Metadata",
         "metadata_fields": {
           "tile_generation_target": "Tile generation target",
-          "quick_view_target": "Quick view target",
+          "vector_materialized_view_target": "Vector materialized view target",
           "geometry_column": "Geometry column",
           "target_srid": "Target SRID",
           "source_srid": "Source SRID",

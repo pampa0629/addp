@@ -42,10 +42,10 @@ const routes = [
         meta: { requiresAuth: true, title: '矢量快显 - 瓦片缓存-addp' }
       },
       {
-        path: 'spatial-quick-view/vector-optimization',
-        name: 'QuickViewOptimization',
-        component: () => import('../views/QuickViewOptimization.vue'),
-        meta: { requiresAuth: true, title: '矢量快显 - 性能优化-addp' }
+        path: 'spatial-quick-view/vector-materialized-view',
+        name: 'VectorMaterializedView',
+        component: () => import('../views/VectorMaterializedView.vue'),
+        meta: { requiresAuth: true, title: '矢量快显 - 物化视图-addp' }
       },
       {
         path: 'spatial-quick-view/raster-cog',
@@ -60,16 +60,16 @@ const routes = [
         meta: { requiresAuth: true, title: '栅格快显 - Mosaic-addp' }
       },
       {
-        path: 'model-3d-quick-view',
-        name: 'Model3DQuickView',
-        component: () => import('../views/Model3DQuickView.vue'),
-        meta: { requiresAuth: true, title: '三维模型快显-addp' }
+        path: 'model-3d-glb',
+        name: 'Model3DGLB',
+        component: () => import('../views/Model3DGLB.vue'),
+        meta: { requiresAuth: true, title: '三维模型 GLB-addp' }
       },
       {
-        path: 'gaussian-splat-quick-view',
-        name: 'GaussianSplatQuickView',
-        component: () => import('../views/GaussianSplatQuickView.vue'),
-        meta: { requiresAuth: true, title: '高斯泼溅快显-addp' }
+        path: 'gaussian-splat-ksplat',
+        name: 'GaussianSplatKSplat',
+        component: () => import('../views/GaussianSplatKSplat.vue'),
+        meta: { requiresAuth: true, title: '3DGS KSplats-addp' }
       },
       {
         path: 'model-3d-tiles',

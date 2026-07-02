@@ -9,6 +9,8 @@ describe('quickViewReasonText', () => {
       .toBe('translated:manager.spatialPreview.tileGenerationRequiresNumericSRID')
     expect(quickViewReasonText(t, 'direct GeoJSON quick view exceeds row limit'))
       .toBe('translated:manager.spatialPreview.directGeoJSONRowLimitExceeded')
+    expect(quickViewReasonText(t, 'requires_ksplat_generation'))
+      .toBe('translated:manager.spatialPreview.requiresKSplatGeneration')
   })
 
   it('keeps unknown reasons visible for diagnostics', () => {

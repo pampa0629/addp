@@ -43,7 +43,7 @@ func TestManagerCleanupSummaries(t *testing.T) {
 		PreviewStates:            2,
 		TileCaches:               3,
 		Embeddings:               5,
-		QuickViewOptimizations:   7,
+		VectorMaterializedViews:  7,
 		DeletedPhysicalArtifacts: 4,
 		MarkedMissingSource:      6,
 		SkippedExternalTargets:   1,

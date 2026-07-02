@@ -258,7 +258,7 @@
               v-if="tileCacheOptimizationAdvice.actionVisible"
               size="small"
               type="warning"
-              @click="openQuickViewOptimizationCreate"
+              @click="openVectorMaterializedViewCreate"
             >
               {{ t('manager.spatialPreview.optimizeQuickView') }}
             </el-button>
@@ -430,7 +430,7 @@ import {
   createTileCacheTaskFormFromTask,
   createTileCacheTaskPayload
 } from '../utils/tileCacheTaskForm'
-import { buildQuickViewOptimizationCreateQuery } from '../utils/quickViewNavigationQuery'
+import { buildVectorMaterializedViewCreateQuery } from '../utils/quickViewNavigationQuery'
 import { tileCacheOptimizationAdvice as buildTileCacheOptimizationAdvice } from '../utils/tileCacheOptimizationAdvice'
 import {
   createResourceRootNode,
@@ -869,7 +869,7 @@ const tileCacheFormConfigFromCapability = (capability) => {
 }
 
 const applyRouteOptimizationAdvice = () => {
-  if (!route.query.vector_quick_view_target_id && route.query.vector_quick_view_target_generation !== 'ready') return
+  if (!route.query.vector_materialized_view_id && route.query.vector_materialized_view_generation !== 'ready') return
   tileCacheOptimizationAdvice.visible = true
   tileCacheOptimizationAdvice.type = 'success'
   tileCacheOptimizationAdvice.actionVisible = false
@@ -877,11 +877,11 @@ const applyRouteOptimizationAdvice = () => {
   tileCacheOptimizationAdvice.message = t('manager.tileCache.optimizationTargetReady')
 }
 
-const openQuickViewOptimizationCreate = () => {
+const openVectorMaterializedViewCreate = () => {
   const target = form.config.target
   router.push({
-    name: 'QuickViewOptimization',
-    query: buildQuickViewOptimizationCreateQuery({
+    name: 'VectorMaterializedView',
+    query: buildVectorMaterializedViewCreateQuery({
       engineId: target.source_engine_id,
       schema: target.schema,
       table: target.table,

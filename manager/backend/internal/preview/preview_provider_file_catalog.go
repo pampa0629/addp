@@ -22,20 +22,14 @@ import (
 // fileCatalogPreviewProvider 文件系统类存储引擎预览插件（NFS/对象存储等）
 // 使用 CatalogProvider / CatalogFactsProvider / ContentReadableProvider 读取，不依赖具体客户端。
 type fileCatalogPreviewProvider struct {
-	metadataRepo      *repository.MetadataRepository
-	content           *objectcontent.ObjectContentRegistry
-	model3DQuickViews Model3DQuickViewLookup
+	metadataRepo *repository.MetadataRepository
+	content      *objectcontent.ObjectContentRegistry
 }
 
-func NewFileCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, content *objectcontent.ObjectContentRegistry, model3DQuickViews ...Model3DQuickViewLookup) PreviewProvider {
-	var quickViews Model3DQuickViewLookup
-	if len(model3DQuickViews) > 0 {
-		quickViews = model3DQuickViews[0]
-	}
+func NewFileCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, content *objectcontent.ObjectContentRegistry) PreviewProvider {
 	return &fileCatalogPreviewProvider{
-		metadataRepo:      metadataRepo,
-		content:           content,
-		model3DQuickViews: quickViews,
+		metadataRepo: metadataRepo,
+		content:      content,
 	}
 }
 
@@ -157,10 +151,6 @@ func (p *fileCatalogPreviewProvider) previewFile(
 	rawContentType := meta.ContentType
 	canonicalContentType := objectcontent.InferContentType(filePath, rawContentType)
 	preview.Object.ContentType = canonicalContentType
-
-	if handled, err := applyModel3DQuickViewPreview(ctx, p.model3DQuickViews, req, preview.Object); handled || err != nil {
-		return preview, err
-	}
 
 	if p.content != nil {
 		contentPath := filePath

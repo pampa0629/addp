@@ -14,35 +14,35 @@ import (
 	"github.com/addp/manager/internal/repository"
 )
 
-var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRepository, *commonClient.MetaClient, string, *objectcontent.ObjectContentRegistry, Model3DQuickViewLookup) (PreviewProvider, error){
-	"database-table": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry, _ Model3DQuickViewLookup) (PreviewProvider, error) {
+var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRepository, *commonClient.MetaClient, string, *objectcontent.ObjectContentRegistry) (PreviewProvider, error){
+	"database-table": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewDatabaseTablePreviewProvider(repo, metaClient), nil
 	},
-	"dynamic-schema-collection": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry, _ Model3DQuickViewLookup) (PreviewProvider, error) {
+	"dynamic-schema-collection": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewDynamicSchemaCollectionPreviewProvider(), nil
 	},
-	"graph": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry, _ Model3DQuickViewLookup) (PreviewProvider, error) {
+	"graph": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewGraphPreviewProvider(), nil
 	},
-	"file-table": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry, _ Model3DQuickViewLookup) (PreviewProvider, error) {
+	"file-table": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewFileTablePreviewProvider(), nil
 	},
-	"scope-table": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry, _ Model3DQuickViewLookup) (PreviewProvider, error) {
+	"scope-table": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewScopeTablePreviewProvider(), nil
 	},
-	"container-child": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, content *objectcontent.ObjectContentRegistry, _ Model3DQuickViewLookup) (PreviewProvider, error) {
+	"container-child": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, content *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewContainerChildPreviewProvider(content), nil
 	},
-	"ref-file": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, content *objectcontent.ObjectContentRegistry, _ Model3DQuickViewLookup) (PreviewProvider, error) {
+	"ref-file": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, content *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewRefFilePreviewProvider(content), nil
 	},
-	"object-catalog": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *objectcontent.ObjectContentRegistry, quickViews Model3DQuickViewLookup) (PreviewProvider, error) {
-		return NewObjectCatalogPreviewProvider(repo, metaClient, metaServiceURL, content, quickViews), nil
+	"object-catalog": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
+		return NewObjectCatalogPreviewProvider(repo, metaClient, metaServiceURL, content), nil
 	},
-	"file-catalog": func(repo *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, content *objectcontent.ObjectContentRegistry, quickViews Model3DQuickViewLookup) (PreviewProvider, error) {
-		return NewFileCatalogPreviewProvider(repo, content, quickViews), nil
+	"file-catalog": func(repo *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, content *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
+		return NewFileCatalogPreviewProvider(repo, content), nil
 	},
-	"schema-node": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry, _ Model3DQuickViewLookup) (PreviewProvider, error) {
+	"schema-node": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewSchemaPreviewProvider(repo, metaClient), nil
 	},
 }
@@ -51,33 +51,29 @@ type PreviewPluginConfigFile struct {
 	Providers []PluginConfig `json:"providers,omitempty"`
 }
 
-func LoadPreviewPlugins(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, contentRegistry *objectcontent.ObjectContentRegistry, metaServiceURL string, pluginDirSpec string, model3DQuickViews ...Model3DQuickViewLookup) {
+func LoadPreviewPlugins(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, contentRegistry *objectcontent.ObjectContentRegistry, metaServiceURL string, pluginDirSpec string) {
 	if registry == nil || metadataRepo == nil {
 		return
-	}
-	var quickViews Model3DQuickViewLookup
-	if len(model3DQuickViews) > 0 {
-		quickViews = model3DQuickViews[0]
 	}
 
 	dirs := splitPluginDirSpec(pluginDirSpec)
 	if len(dirs) == 0 {
-		registerDefaultBuiltinPreviewProviders(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, quickViews)
+		registerDefaultBuiltinPreviewProviders(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry)
 		return
 	}
 	for _, dir := range dirs {
 		path := filepath.Join(dir, "preview.json")
-		loadPluginsFromPreviewConfig(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, quickViews, path)
+		loadPluginsFromPreviewConfig(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, path)
 	}
 }
 
-func registerDefaultBuiltinPreviewProviders(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry, quickViews Model3DQuickViewLookup) {
-	registerBuiltinPreviewProviders(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, quickViews, fallbackBuiltinPreviewPlugins())
+func registerDefaultBuiltinPreviewProviders(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry) {
+	registerBuiltinPreviewProviders(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, fallbackBuiltinPreviewPlugins())
 }
 
-func registerBuiltinPreviewProviders(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry, quickViews Model3DQuickViewLookup, configs []PluginConfig) {
+func registerBuiltinPreviewProviders(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry, configs []PluginConfig) {
 	for _, cfg := range configs {
-		provider, err := buildBuiltinPreviewProvider(cfg, metadataRepo, metaClient, metaServiceURL, contentRegistry, quickViews)
+		provider, err := buildBuiltinPreviewProvider(cfg, metadataRepo, metaClient, metaServiceURL, contentRegistry)
 		if err != nil {
 			logger.L().Warn("数据预览: 默认内置插件初始化失败", "builtin", cfg.Builtin, "error", err)
 			continue
@@ -117,7 +113,7 @@ func splitPluginDirSpec(spec string) []string {
 	return paths
 }
 
-func loadPluginsFromPreviewConfig(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry, quickViews Model3DQuickViewLookup, path string) {
+func loadPluginsFromPreviewConfig(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry, path string) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		logger.L().Warn("数据预览: 读取插件配置失败", "path", path, "error", err)
@@ -134,13 +130,13 @@ func loadPluginsFromPreviewConfig(registry *PreviewRegistry, metadataRepo *repos
 		return
 	}
 
-	registerDefaultBuiltinPreviewProviders(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, quickViews)
+	registerDefaultBuiltinPreviewProviders(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry)
 	for _, cfg := range configFile.Providers {
-		loadPluginConfig(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, quickViews, cfg, path)
+		loadPluginConfig(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, cfg, path)
 	}
 }
 
-func loadPluginConfig(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry, quickViews Model3DQuickViewLookup, cfg PluginConfig, source string) {
+func loadPluginConfig(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry, cfg PluginConfig, source string) {
 	if !cfg.isEnabled() {
 		if name := builtinPreviewProviderName(cfg); name != "" {
 			registry.Unregister(name)
@@ -153,7 +149,7 @@ func loadPluginConfig(registry *PreviewRegistry, metadataRepo *repository.Metada
 
 	switch cfg.pluginType() {
 	case "builtin":
-		p, err := buildBuiltinPreviewProvider(cfg, metadataRepo, metaClient, metaServiceURL, contentRegistry, quickViews)
+		p, err := buildBuiltinPreviewProvider(cfg, metadataRepo, metaClient, metaServiceURL, contentRegistry)
 		if err != nil {
 			logger.L().Warn("数据预览: 内置插件初始化失败", "config", source, "builtin", cfg.Builtin, "error", err)
 			return
@@ -175,13 +171,13 @@ func loadPluginConfig(registry *PreviewRegistry, metadataRepo *repository.Metada
 	logger.L().Info("数据预览: 注册插件成功", "config", source, "plugin", provider.Name())
 }
 
-func buildBuiltinPreviewProvider(cfg PluginConfig, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry, quickViews Model3DQuickViewLookup) (PreviewProvider, error) {
+func buildBuiltinPreviewProvider(cfg PluginConfig, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 	builtin := strings.TrimSpace(cfg.Builtin)
 	factory, ok := builtinProviderFactoriesWithContent[builtin]
 	if !ok {
 		return nil, fmt.Errorf("未知的内置插件 %q", cfg.Builtin)
 	}
-	provider, err := factory(metadataRepo, metaClient, metaServiceURL, contentRegistry, quickViews)
+	provider, err := factory(metadataRepo, metaClient, metaServiceURL, contentRegistry)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +204,7 @@ func RegisterBuiltinPluginFactory(name string, factory builtinProviderFactory) e
 	if factory == nil {
 		return fmt.Errorf("builtin factory for %s is nil", name)
 	}
-	builtinProviderFactoriesWithContent[name] = func(repo *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry, _ Model3DQuickViewLookup) (PreviewProvider, error) {
+	builtinProviderFactoriesWithContent[name] = func(repo *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return factory(repo)
 	}
 	return nil

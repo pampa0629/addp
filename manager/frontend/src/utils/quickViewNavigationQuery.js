@@ -59,7 +59,7 @@ export function buildTileCacheCreateQuery(target = {}, quickViewStatus = {}) {
   }, context))
 }
 
-export function buildQuickViewOptimizationCreateQuery(target = {}, quickViewStatus = {}) {
+export function buildVectorMaterializedViewCreateQuery(target = {}, quickViewStatus = {}) {
   const context = quickViewContext(target, quickViewStatus)
   return cleanQuery(withIdentityFields({
     tab: 'tasks',

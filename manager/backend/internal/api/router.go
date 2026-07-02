@@ -40,8 +40,8 @@ func SetupRouter(
 	resourceActionHandler *ResourceActionHandler,
 	exportHandler *ExportHandler,
 	rasterMosaicTileHandler *RasterMosaicTileHandler,
-	model3DQuickViewHandler *Model3DQuickViewHandler,
-	gaussianSplatQuickViewHandler *GaussianSplatQuickViewHandler,
+	model3DGLBHandler *Model3DGLBHandler,
+	gaussianSplatKSplatHandler *GaussianSplatKSplatHandler,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -148,21 +148,21 @@ func SetupRouter(
 			model3DTilesTasksGroup.PUT("/:id", taskProviderHandler.UpdateModel3DTilesTask)
 			model3DTilesTasksGroup.DELETE("/:id", taskProviderHandler.DeleteModel3DTilesTask)
 		}
-		model3DQuickViewTasksGroup := api.Group("/model_3d_quick_view_tasks")
+		model3DGLBTasksGroup := api.Group("/model_3d_glb_tasks")
 		{
-			model3DQuickViewTasksGroup.GET("", taskProviderHandler.ListModel3DQuickViewTasks)
-			model3DQuickViewTasksGroup.POST("", taskProviderHandler.CreateModel3DQuickViewTask)
-			model3DQuickViewTasksGroup.GET("/:id", taskProviderHandler.GetModel3DQuickViewTask)
-			model3DQuickViewTasksGroup.PUT("/:id", taskProviderHandler.UpdateModel3DQuickViewTask)
-			model3DQuickViewTasksGroup.DELETE("/:id", taskProviderHandler.DeleteModel3DQuickViewTask)
+			model3DGLBTasksGroup.GET("", taskProviderHandler.ListModel3DGLBTasks)
+			model3DGLBTasksGroup.POST("", taskProviderHandler.CreateModel3DGLBTask)
+			model3DGLBTasksGroup.GET("/:id", taskProviderHandler.GetModel3DGLBTask)
+			model3DGLBTasksGroup.PUT("/:id", taskProviderHandler.UpdateModel3DGLBTask)
+			model3DGLBTasksGroup.DELETE("/:id", taskProviderHandler.DeleteModel3DGLBTask)
 		}
-		gaussianSplatQuickViewTasksGroup := api.Group("/gaussian_splat_quick_view_tasks")
+		gaussianSplatKSplatTasksGroup := api.Group("/gaussian_splat_ksplat_tasks")
 		{
-			gaussianSplatQuickViewTasksGroup.GET("", taskProviderHandler.ListGaussianSplatQuickViewTasks)
-			gaussianSplatQuickViewTasksGroup.POST("", taskProviderHandler.CreateGaussianSplatQuickViewTask)
-			gaussianSplatQuickViewTasksGroup.GET("/:id", taskProviderHandler.GetGaussianSplatQuickViewTask)
-			gaussianSplatQuickViewTasksGroup.PUT("/:id", taskProviderHandler.UpdateGaussianSplatQuickViewTask)
-			gaussianSplatQuickViewTasksGroup.DELETE("/:id", taskProviderHandler.DeleteGaussianSplatQuickViewTask)
+			gaussianSplatKSplatTasksGroup.GET("", taskProviderHandler.ListGaussianSplatKSplatTasks)
+			gaussianSplatKSplatTasksGroup.POST("", taskProviderHandler.CreateGaussianSplatKSplatTask)
+			gaussianSplatKSplatTasksGroup.GET("/:id", taskProviderHandler.GetGaussianSplatKSplatTask)
+			gaussianSplatKSplatTasksGroup.PUT("/:id", taskProviderHandler.UpdateGaussianSplatKSplatTask)
+			gaussianSplatKSplatTasksGroup.DELETE("/:id", taskProviderHandler.DeleteGaussianSplatKSplatTask)
 		}
 		if rasterMosaicTileHandler != nil {
 			rasterMosaicTilesGroup := api.Group("/raster_mosaic/tiles")
@@ -177,38 +177,38 @@ func SetupRouter(
 			rasterCOGsGroup.DELETE("/:id", taskProviderHandler.DeleteRasterCOG)
 			rasterCOGsGroup.GET("/:id/content", rasterCOGHandler.GetRasterCOGContent)
 		}
-		model3DQuickViewsGroup := api.Group("/model_3d_quick_view")
+		model3DGLBsGroup := api.Group("/model_3d_glb")
 		{
-			model3DQuickViewsGroup.GET("", taskProviderHandler.ListModel3DQuickViews)
-			model3DQuickViewsGroup.GET("/:id", taskProviderHandler.GetModel3DQuickView)
-			model3DQuickViewsGroup.DELETE("/:id", taskProviderHandler.DeleteModel3DQuickView)
-			if model3DQuickViewHandler != nil {
-				model3DQuickViewsGroup.GET("/:id/content", model3DQuickViewHandler.GetModel3DQuickViewContent)
+			model3DGLBsGroup.GET("", taskProviderHandler.ListModel3DGLBs)
+			model3DGLBsGroup.GET("/:id", taskProviderHandler.GetModel3DGLB)
+			model3DGLBsGroup.DELETE("/:id", taskProviderHandler.DeleteModel3DGLB)
+			if model3DGLBHandler != nil {
+				model3DGLBsGroup.GET("/:id/content", model3DGLBHandler.GetModel3DGLBContent)
 			}
 		}
-		gaussianSplatQuickViewsGroup := api.Group("/gaussian_splat_quick_view")
+		gaussianSplatKSplatsGroup := api.Group("/gaussian_splat_ksplat")
 		{
-			gaussianSplatQuickViewsGroup.GET("", taskProviderHandler.ListGaussianSplatQuickViews)
-			gaussianSplatQuickViewsGroup.GET("/:id", taskProviderHandler.GetGaussianSplatQuickView)
-			gaussianSplatQuickViewsGroup.DELETE("/:id", taskProviderHandler.DeleteGaussianSplatQuickView)
-			if gaussianSplatQuickViewHandler != nil {
-				gaussianSplatQuickViewsGroup.GET("/:id/inspect", gaussianSplatQuickViewHandler.InspectGaussianSplatQuickView)
-				gaussianSplatQuickViewsGroup.GET("/:id/content", gaussianSplatQuickViewHandler.GetGaussianSplatQuickViewContent)
+			gaussianSplatKSplatsGroup.GET("", taskProviderHandler.ListGaussianSplatKSplats)
+			gaussianSplatKSplatsGroup.GET("/:id", taskProviderHandler.GetGaussianSplatKSplat)
+			gaussianSplatKSplatsGroup.DELETE("/:id", taskProviderHandler.DeleteGaussianSplatKSplat)
+			if gaussianSplatKSplatHandler != nil {
+				gaussianSplatKSplatsGroup.GET("/:id/inspect", gaussianSplatKSplatHandler.InspectGaussianSplatKSplat)
+				gaussianSplatKSplatsGroup.GET("/:id/content", gaussianSplatKSplatHandler.GetGaussianSplatKSplatContent)
 			}
 		}
-		quickViewOptimizationTasksGroup := api.Group("/vector_quick_view_target_tasks")
+		vectorMaterializedViewTasksGroup := api.Group("/vector_materialized_view_tasks")
 		{
-			quickViewOptimizationTasksGroup.GET("", taskProviderHandler.ListQuickViewOptimizationTasks)
-			quickViewOptimizationTasksGroup.POST("", taskProviderHandler.CreateQuickViewOptimizationTask)
-			quickViewOptimizationTasksGroup.GET("/:id", taskProviderHandler.GetQuickViewOptimizationTask)
-			quickViewOptimizationTasksGroup.PUT("/:id", taskProviderHandler.UpdateQuickViewOptimizationTask)
-			quickViewOptimizationTasksGroup.DELETE("/:id", taskProviderHandler.DeleteQuickViewOptimizationTask)
+			vectorMaterializedViewTasksGroup.GET("", taskProviderHandler.ListVectorMaterializedViewTasks)
+			vectorMaterializedViewTasksGroup.POST("", taskProviderHandler.CreateVectorMaterializedViewTask)
+			vectorMaterializedViewTasksGroup.GET("/:id", taskProviderHandler.GetVectorMaterializedViewTask)
+			vectorMaterializedViewTasksGroup.PUT("/:id", taskProviderHandler.UpdateVectorMaterializedViewTask)
+			vectorMaterializedViewTasksGroup.DELETE("/:id", taskProviderHandler.DeleteVectorMaterializedViewTask)
 		}
-		quickViewOptimizationGroup := api.Group("/vector_quick_view_targets")
+		vectorMaterializedViewGroup := api.Group("/vector_materialized_view")
 		{
-			quickViewOptimizationGroup.GET("", taskProviderHandler.ListQuickViewOptimizations)
-			quickViewOptimizationGroup.GET("/:id", taskProviderHandler.GetQuickViewOptimization)
-			quickViewOptimizationGroup.DELETE("/:id", taskProviderHandler.DeleteQuickViewOptimization)
+			vectorMaterializedViewGroup.GET("", taskProviderHandler.ListVectorMaterializedViews)
+			vectorMaterializedViewGroup.GET("/:id", taskProviderHandler.GetVectorMaterializedView)
+			vectorMaterializedViewGroup.DELETE("/:id", taskProviderHandler.DeleteVectorMaterializedView)
 		}
 
 		// EmbeddingTask CRUD
@@ -276,7 +276,11 @@ func SetupRouter(
 
 		// Quick View API：统一 ResourceLocator 入口
 		quickViewHandler := NewQuickViewHandler(quickViewService, previewResolver, unifiedMVTService, redisClient)
+		if taskProviderHandler != nil {
+			quickViewHandler.SetArtifactTaskServices(taskProviderHandler.rasterCOGTaskSvc, taskProviderHandler.model3DGLBTaskSvc, taskProviderHandler.gaussianSplatKSplatTaskSvc)
+		}
 		api.GET("/quick-view/capability", quickViewHandler.GetQuickViewCapabilityByLocator)
+		api.POST("/quick-view/actions", quickViewHandler.ExecuteQuickViewAction)
 		api.GET("/quick-view/geojson", quickViewHandler.GetQuickViewGeoJSONByLocator)
 		api.GET("/quick-view/tiles/:z/:x/:y.mvt", quickViewHandler.GetQuickViewTileByLocator)
 		api.PATCH("/preview-state/preferred-mode", quickViewHandler.UpdatePreferredModeByLocator)

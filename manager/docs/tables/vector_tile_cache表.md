@@ -35,7 +35,7 @@
 | `created_by` | integer | 创建人 |
 | `created_at` / `updated_at` / `deleted_at` | timestamp | 生命周期字段 |
 
-当前只保留核心字段。瓦片数量、产物大小、访问策略、清理策略、快显性能优化目标状态、转换引擎等信息分别放在 manifest、execution metadata、`manager.vector_quick_view_targets` 或后续专题中。
+当前只保留核心字段。瓦片数量、产物大小、访问策略、清理策略、矢量物化视图目标状态、转换引擎等信息分别放在 manifest、execution metadata、`manager.vector_materialized_view` 或后续专题中。
 
 ## 三、状态语义
 

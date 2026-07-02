@@ -4,6 +4,7 @@ FROM ${RUST_IMAGE} AS builder
 ARG THREE_DTILES_REPO=https://github.com/fanvanzh/3dtiles.git
 ARG THREE_DTILES_REF=acbcf603f33fdfe3c34b704a8b019c4fd32a8376
 ARG VCPKG_COMMIT=84bab45d415d22042bd0b9081aea57f362da3f35
+ARG IFCCONVERT_URL=https://s3.amazonaws.com/ifcopenshell-builds/IfcConvert-v0.8.4-bf4aa8c-linuxarm64.zip
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV VCPKG_ROOT=/opt/vcpkg
@@ -46,6 +47,12 @@ RUN mkdir -p /out \
   && cp -r target/release/gdal /out/gdal \
   && cp -r target/release/proj /out/proj \
   && cp -r target/release/osgPlugins-3.6.5 /out/osgPlugins-3.6.5
+RUN mkdir -p /tmp/ifcconvert \
+  && curl -fL "${IFCCONVERT_URL}" -o /tmp/ifcconvert/IfcConvert.zip \
+  && unzip -q /tmp/ifcconvert/IfcConvert.zip -d /tmp/ifcconvert \
+  && cp /tmp/ifcconvert/IfcConvert /out/IfcConvert \
+  && chmod +x /out/IfcConvert \
+  && rm -rf /tmp/ifcconvert
 
 FROM debian:bookworm-slim AS runtime
 
@@ -58,6 +65,7 @@ RUN mkdir -p /opt/addp/model3d-workflow/bin
 COPY --from=builder /out/ /opt/addp/model3d-workflow/bin/
 
 ENV MODEL3D_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/_3dtile
+ENV MODEL3D_IFC_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/IfcConvert
 ENV GDAL_DATA=/opt/addp/model3d-workflow/bin/gdal
 ENV PROJ_DATA=/opt/addp/model3d-workflow/bin/proj
 ENV OSG_LIBRARY_PATH=/opt/addp/model3d-workflow/bin/osgPlugins-3.6.5

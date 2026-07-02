@@ -229,265 +229,71 @@ func TestFileCatalogGLBPreviewUsesModel3DStorageStreamURL(t *testing.T) {
 	}
 }
 
-func TestFileCatalogOSGBPreviewUsesReadyGLBQuickView(t *testing.T) {
-	previous, previousErr := plugin.Get("nfs")
-	enginePlugin := &recordingFileCatalogPreviewPlugin{
-		engineType:   "nfs",
-		contentType:  "application/octet-stream",
-		sizeBytes:    4096,
-		expectedPath: "/models/tile.osgb",
+func TestFileCatalogDirectModel3DSourcePreviewFormats(t *testing.T) {
+	tests := []struct {
+		name        string
+		formatType  string
+		extension   string
+		contentType string
+	}{
+		{name: "fbx", formatType: "fbx", extension: ".fbx", contentType: "application/vnd.autodesk.fbx"},
+		{name: "obj", formatType: "obj", extension: ".obj", contentType: "model/obj"},
+		{name: "ply", formatType: "ply", extension: ".ply", contentType: "model/ply"},
+		{name: "stl", formatType: "stl", extension: ".stl", contentType: "model/stl"},
 	}
-	plugin.Register(enginePlugin)
-	defer func() {
-		if previousErr == nil {
-			plugin.Register(previous)
-			return
-		}
-		plugin.Unregister(enginePlugin.Type())
-	}()
 
-	lookup := &recordingModel3DQuickViewLookup{
-		result: &models.Model3DQuickView{
-			ID:         88,
-			FileName:   "tile.glb",
-			SizeBytes:  2048,
-			ContentURL: "/api/v1/manager/model_3d_quick_view/88/content",
-		},
-	}
-	contentRegistry := objectcontent.NewObjectContentRegistry()
-	objectcontent.LoadObjectContentPlugins(contentRegistry, "../../plugins")
-	provider := NewFileCatalogPreviewProvider(nil, contentRegistry, lookup)
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			previous, previousErr := plugin.Get("nfs")
+			enginePlugin := &recordingFileCatalogPreviewPlugin{
+				engineType:   "nfs",
+				contentType:  tt.contentType,
+				sizeBytes:    4096,
+				expectedPath: "/models/mesh" + tt.extension,
+			}
+			plugin.Register(enginePlugin)
+			defer func() {
+				if previousErr == nil {
+					plugin.Register(previous)
+					return
+				}
+				plugin.Unregister(enginePlugin.Type())
+			}()
 
-	preview, err := provider.Preview(context.Background(), &PreviewRequest{
-		Engine:          &models.Engine{EngineType: "nfs", ID: 26},
-		Schema:          "models",
-		Table:           "tile.osgb",
-		TenantID:        uintPtr(1),
-		ItemFingerprint: "fp-osgb",
-		Attributes: map[string]interface{}{
-			"item": map[string]interface{}{
-				"data_type": "model_3d",
-				"format":    "osgb",
-				"layout":    "single",
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Preview() error = %v", err)
-	}
-	if lookup.calls != 1 || lookup.tenantID != 1 || lookup.fingerprint != "fp-osgb" {
-		t.Fatalf("lookup = %#v, want tenant/fingerprint lookup", lookup)
-	}
-	content := preview.Object.Content
-	if content == nil || content.Kind != models.ObjectPreviewKindModel3D || content.PreviewMaterial != models.PreviewMaterialURL || content.FrontendRenderer != models.ObjectPreviewKindModel3D {
-		t.Fatalf("content = %#v, want model_3d URL quick view", content)
-	}
-	if content.URL != "/api/v1/manager/model_3d_quick_view/88/content" || preview.Object.URL != content.URL {
-		t.Fatalf("content URL = %q object URL = %q, want quick view content URL", content.URL, preview.Object.URL)
-	}
-	if enginePlugin.openContentCalls != 0 {
-		t.Fatalf("OpenContent calls = %d, want 0 when OSGB preview uses GLB quick view artifact", enginePlugin.openContentCalls)
-	}
-}
+			contentRegistry := objectcontent.NewObjectContentRegistry()
+			objectcontent.LoadObjectContentPlugins(contentRegistry, "../../plugins")
+			provider := NewFileCatalogPreviewProvider(nil, contentRegistry)
 
-func TestFileCatalogOSGBPreviewSuggestsQuickViewTaskWhenMissing(t *testing.T) {
-	previous, previousErr := plugin.Get("nfs")
-	enginePlugin := &recordingFileCatalogPreviewPlugin{
-		engineType:   "nfs",
-		contentType:  "application/octet-stream",
-		sizeBytes:    4096,
-		expectedPath: "/models/tile.osgb",
-	}
-	plugin.Register(enginePlugin)
-	defer func() {
-		if previousErr == nil {
-			plugin.Register(previous)
-			return
-		}
-		plugin.Unregister(enginePlugin.Type())
-	}()
-
-	lookup := &recordingModel3DQuickViewLookup{}
-	provider := NewFileCatalogPreviewProvider(nil, objectcontent.NewObjectContentRegistry(), lookup)
-
-	preview, err := provider.Preview(context.Background(), &PreviewRequest{
-		Engine:          &models.Engine{EngineType: "nfs", ID: 26},
-		Schema:          "models",
-		Table:           "tile.osgb",
-		TenantID:        uintPtr(1),
-		ItemFingerprint: "fp-osgb",
-		Attributes: map[string]interface{}{
-			"item": map[string]interface{}{
-				"data_type": "model_3d",
-				"format":    "osgb",
-				"layout":    "single",
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Preview() error = %v", err)
-	}
-	content := preview.Object.Content
-	if content == nil || content.Kind != models.ObjectPreviewKindUnsupported || content.PreviewMaterial != models.PreviewMaterialUnsupported || content.FrontendRenderer != models.ObjectPreviewKindUnsupported {
-		t.Fatalf("content = %#v, want unsupported quick view prompt", content)
-	}
-	if content.Metadata["task_type"] != commonExecution.TaskTypeModel3DQuickViewGeneration {
-		t.Fatalf("metadata task_type = %#v, want quick view task type", content.Metadata["task_type"])
-	}
-	if content.Metadata["quick_view_status"] != "quick_view_missing" {
-		t.Fatalf("metadata quick_view_status = %#v, want quick_view_missing", content.Metadata["quick_view_status"])
-	}
-	if preview.Object.URL != "" {
-		t.Fatalf("object URL = %q, want empty without ready GLB", preview.Object.URL)
-	}
-}
-
-func TestModel3DQuickViewSourceFormatSupportsSingleFBX(t *testing.T) {
-	got := model3DQuickViewSourceFormat(map[string]interface{}{
-		"item": map[string]interface{}{
-			"data_type": "model_3d",
-			"format":    string(format.FormatFBX),
-			"layout":    "single",
-		},
-	})
-	if got != format.FormatFBX {
-		t.Fatalf("model3DQuickViewSourceFormat() = %q, want %q", got, format.FormatFBX)
-	}
-}
-
-func TestModel3DQuickViewSourceFormatSupportsSingleOBJ(t *testing.T) {
-	got := model3DQuickViewSourceFormat(map[string]interface{}{
-		"item": map[string]interface{}{
-			"data_type": "model_3d",
-			"format":    string(format.FormatOBJ),
-			"layout":    "single",
-		},
-	})
-	if got != format.FormatOBJ {
-		t.Fatalf("model3DQuickViewSourceFormat() = %q, want %q", got, format.FormatOBJ)
-	}
-}
-
-func TestModel3DQuickViewSourceFormatSupportsSingleSTL(t *testing.T) {
-	got := model3DQuickViewSourceFormat(map[string]interface{}{
-		"item": map[string]interface{}{
-			"data_type": "model_3d",
-			"format":    string(format.FormatSTL),
-			"layout":    "single",
-		},
-	})
-	if got != format.FormatSTL {
-		t.Fatalf("model3DQuickViewSourceFormat() = %q, want %q", got, format.FormatSTL)
-	}
-}
-
-func TestFileCatalogGLTFPreviewUsesReadyGLBQuickView(t *testing.T) {
-	previous, previousErr := plugin.Get("nfs")
-	enginePlugin := &recordingFileCatalogPreviewPlugin{
-		engineType:   "nfs",
-		contentType:  "model/gltf+json",
-		sizeBytes:    4096,
-		expectedPath: "/models/scene.gltf",
-	}
-	plugin.Register(enginePlugin)
-	defer func() {
-		if previousErr == nil {
-			plugin.Register(previous)
-			return
-		}
-		plugin.Unregister(enginePlugin.Type())
-	}()
-
-	lookup := &recordingModel3DQuickViewLookup{
-		result: &models.Model3DQuickView{
-			ID:         89,
-			FileName:   "scene.glb",
-			SizeBytes:  2048,
-			ContentURL: "/api/v1/manager/model_3d_quick_view/89/content",
-		},
-	}
-	contentRegistry := objectcontent.NewObjectContentRegistry()
-	objectcontent.LoadObjectContentPlugins(contentRegistry, "../../plugins")
-	provider := NewFileCatalogPreviewProvider(nil, contentRegistry, lookup)
-
-	preview, err := provider.Preview(context.Background(), &PreviewRequest{
-		Engine:          &models.Engine{EngineType: "nfs", ID: 26},
-		Schema:          "models",
-		Table:           "scene.gltf",
-		TenantID:        uintPtr(1),
-		ItemFingerprint: "fp-gltf",
-		Attributes: map[string]interface{}{
-			"item": map[string]interface{}{
-				"data_type": "model_3d",
-				"format":    "gltf",
-				"layout":    "multi",
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Preview() error = %v", err)
-	}
-	if lookup.calls != 1 || lookup.tenantID != 1 || lookup.fingerprint != "fp-gltf" {
-		t.Fatalf("lookup = %#v, want tenant/fingerprint lookup", lookup)
-	}
-	content := preview.Object.Content
-	if content == nil || content.Kind != models.ObjectPreviewKindModel3D || content.URL != "/api/v1/manager/model_3d_quick_view/89/content" {
-		t.Fatalf("content = %#v, want GLB quick view URL", content)
-	}
-	if content.Metadata["source_format"] != "gltf" {
-		t.Fatalf("metadata source_format = %#v, want gltf", content.Metadata["source_format"])
-	}
-	if enginePlugin.openContentCalls != 0 {
-		t.Fatalf("OpenContent calls = %d, want 0 when glTF preview uses GLB quick view artifact", enginePlugin.openContentCalls)
-	}
-}
-
-func TestFileCatalogGLTFPreviewSuggestsQuickViewTaskWhenMissing(t *testing.T) {
-	previous, previousErr := plugin.Get("nfs")
-	enginePlugin := &recordingFileCatalogPreviewPlugin{
-		engineType:   "nfs",
-		contentType:  "model/gltf+json",
-		sizeBytes:    4096,
-		expectedPath: "/models/scene.gltf",
-	}
-	plugin.Register(enginePlugin)
-	defer func() {
-		if previousErr == nil {
-			plugin.Register(previous)
-			return
-		}
-		plugin.Unregister(enginePlugin.Type())
-	}()
-
-	lookup := &recordingModel3DQuickViewLookup{}
-	provider := NewFileCatalogPreviewProvider(nil, objectcontent.NewObjectContentRegistry(), lookup)
-
-	preview, err := provider.Preview(context.Background(), &PreviewRequest{
-		Engine:          &models.Engine{EngineType: "nfs", ID: 26},
-		Schema:          "models",
-		Table:           "scene.gltf",
-		TenantID:        uintPtr(1),
-		ItemFingerprint: "fp-gltf",
-		Attributes: map[string]interface{}{
-			"item": map[string]interface{}{
-				"data_type": "model_3d",
-				"format":    "gltf",
-				"layout":    "multi",
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Preview() error = %v", err)
-	}
-	content := preview.Object.Content
-	if content == nil || content.Kind != models.ObjectPreviewKindUnsupported || content.PreviewMaterial != models.PreviewMaterialUnsupported {
-		t.Fatalf("content = %#v, want unsupported quick view prompt", content)
-	}
-	if content.Metadata["task_type"] != commonExecution.TaskTypeModel3DQuickViewGeneration {
-		t.Fatalf("metadata task_type = %#v, want quick view task type", content.Metadata["task_type"])
-	}
-	if content.Metadata["source_format"] != "gltf" {
-		t.Fatalf("metadata source_format = %#v, want gltf", content.Metadata["source_format"])
+			preview, err := provider.Preview(context.Background(), &PreviewRequest{
+				Engine:          &models.Engine{EngineType: "nfs", ID: 26},
+				Schema:          "models",
+				Table:           "mesh" + tt.extension,
+				TenantID:        uintPtr(1),
+				ItemFingerprint: "fp-" + tt.formatType,
+				Attributes: map[string]interface{}{
+					"item": map[string]interface{}{
+						"data_type": "model_3d",
+						"format":    tt.formatType,
+						"layout":    "single",
+					},
+				},
+			})
+			if err != nil {
+				t.Fatalf("Preview() error = %v", err)
+			}
+			content := preview.Object.Content
+			if content == nil || content.Kind != models.ObjectPreviewKindModel3D || content.PreviewMaterial != models.PreviewMaterialURL || content.FrontendRenderer != models.ObjectPreviewKindModel3D {
+				t.Fatalf("content = %#v, want %s source model_3d URL preview", content, tt.formatType)
+			}
+			wantStorageRef := "storage_ref=models%2Fmesh" + tt.extension
+			if !strings.Contains(content.URL, wantStorageRef) || preview.Object.URL != content.URL {
+				t.Fatalf("content URL = %q object URL = %q, want %s source storage stream URL", content.URL, preview.Object.URL, tt.formatType)
+			}
+			if enginePlugin.openContentCalls != 0 {
+				t.Fatalf("OpenContent calls = %d, want 0 when %s preview uses storage stream URL", enginePlugin.openContentCalls, tt.formatType)
+			}
+		})
 	}
 }
 
@@ -763,7 +569,7 @@ func TestFileCatalogGaussianSplatPLYPreviewReturnsURL(t *testing.T) {
 	}
 }
 
-func TestFileCatalogGaussianSplatPreviewKeepsSourceWhenKPlatReady(t *testing.T) {
+func TestFileCatalogGaussianSplatPreviewKeepsSourceWhenKSplatReady(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingFileCatalogPreviewPlugin{
 		engineType:   "nfs",
@@ -898,20 +704,6 @@ func (p *recordingFileCatalogPreviewPlugin) OpenContent(context.Context, plugin.
 		return io.NopCloser(strings.NewReader(string(p.content))), nil
 	}
 	return io.NopCloser(strings.NewReader("unused")), nil
-}
-
-type recordingModel3DQuickViewLookup struct {
-	result      *models.Model3DQuickView
-	calls       int
-	tenantID    uint
-	fingerprint string
-}
-
-func (l *recordingModel3DQuickViewLookup) GetLatestReadyByFingerprint(_ context.Context, tenantID uint, itemFingerprint string) (*models.Model3DQuickView, error) {
-	l.calls++
-	l.tenantID = tenantID
-	l.fingerprint = itemFingerprint
-	return l.result, nil
 }
 
 func uintPtr(value uint) *uint {

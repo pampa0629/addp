@@ -33,7 +33,7 @@ graph TB
         Meta[Meta 模块<br/>scan]
         Transfer[Transfer 模块<br/>sync]
         Develop[Develop 模块<br/>query / workflow / script]
-        Manager[Manager 模块<br/>vector_tile_cache_generation / vector_quick_view_target_generation / embedding]
+        Manager[Manager 模块<br/>vector_tile_cache_generation / vector_materialized_view_generation / embedding]
         Quality[Quality 模块<br/>check]
         Graph[Graph 模块<br/>kg_build]
         Orchestrator[Orchestrator 模块<br/>orchestration]
@@ -77,7 +77,7 @@ graph TB
 | `id` | bigint | 执行记录 ID |
 | `tenant_id` | int | 租户 ID (租户隔离) |
 | `module` | string | 模块名称 (meta/transfer/develop/manager/quality/graph/orchestrator) |
-| `task_type` | string | 任务类型 (scan/sync/orchestration/query/workflow/script/vector_tile_cache_generation/vector_quick_view_target_generation/embedding/check/kg_build) |
+| `task_type` | string | 任务类型 (scan/sync/orchestration/query/workflow/script/vector_tile_cache_generation/vector_materialized_view_generation/embedding/check/kg_build) |
 | `source` | string | 触发来源模块 |
 | `source_task_id` | string | 任务 ID (对应模块内的任务定义 ID) |
 | `trigger_type` | string | `manual` / `scheduled` |
@@ -208,7 +208,7 @@ sequenceDiagram
 - 关联日志
 - 仅当对应 TaskProvider task type 明确声明 `supports_cancel=true` 时，才在监控侧展示取消入口；`supports_cancel=false` 的执行只展示状态和诊断，不提供标准取消动作。
 
-执行元数据由任务 owner 模块写入 `common.task_executions.metadata`，Monitor 只负责通用展示和轻量摘要，不反向拥有或改写模块产物。对于 Manager 瓦片缓存生成和快显性能优化，执行详情应能展示实际生成目标、`target_kind`、是否使用外部 3857 优化目标、是否建议快显性能优化、瓦片生成统计等诊断字段，并保留原始 JSON 作为兜底。
+执行元数据由任务 owner 模块写入 `common.task_executions.metadata`，Monitor 只负责通用展示和轻量摘要，不反向拥有或改写模块产物。对于 Manager 瓦片缓存生成和矢量物化视图，执行详情应能展示实际生成目标、`target_kind`、是否使用外部 3857 优化目标、是否建议矢量物化视图、瓦片生成统计等诊断字段，并保留原始 JSON 作为兜底。
 
 **4. 统计分析**:
 - 成功率趋势图
@@ -234,7 +234,7 @@ sequenceDiagram
 | | `workflow` | 工作流执行任务 | 执行空间分析工作流 |
 | | `script` | 脚本执行任务 | 执行命令式脚本；当前可由 Jupyter Notebook runtime 承载 |
 | **Manager** | `vector_tile_cache_generation` | 瓦片缓存生成任务 | 为空间数据生成瓦片缓存 |
-| | `vector_quick_view_target_generation` | 快显性能优化任务 | 为 PostGIS 空间数据创建或刷新 3857 快显优化目标 |
+| | `vector_materialized_view_generation` | 矢量物化视图任务 | 为 PostGIS 空间数据创建或刷新 3857 矢量物化视图目标 |
 | | `embedding` | 向量化任务 | 对对象存储文件进行向量化 |
 | **Quality** | `check` | 数据质量检查任务 | 执行质量规则检查 |
 | **Graph** | `kg_build` | 知识图谱构建任务 | 构建知识图谱 |

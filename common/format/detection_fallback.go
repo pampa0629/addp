@@ -62,6 +62,7 @@ var fallbackIdentifications = []fallbackIdentification{
 	{FormatOBJ, ".obj", "model/obj", datatype.Model3D},
 	{FormatSTL, ".stl", "model/stl", datatype.Model3D},
 	{FormatFBX, ".fbx", "application/vnd.autodesk.fbx", datatype.Model3D},
+	{FormatIFC, ".ifc", "application/x-step", datatype.Model3D},
 	{FormatPLY, ".ply", "model/ply", datatype.Model3D},
 	{FormatSplat, ".splat", "application/vnd.gaussian-splat", datatype.GaussianSplat},
 	{FormatKSplat, ".ksplat", "application/vnd.gaussian-ksplat", datatype.GaussianSplat},

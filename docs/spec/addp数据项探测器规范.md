@@ -278,7 +278,7 @@ whole scope 的 `refs` 与 `claims` 必须分工明确：
 1. `/models/tiles/Tile_1_L14_0.osgb` 生成一个 `data_type=model_3d`、`layout=single`、`format=osgb` item。
 2. `meta_item.full_name` 来源于单个 `.osgb` 文件完整路径。
 3. 单 OSGB item 不独占父目录，`readme.txt` 可继续按普通 single resource 识别。
-4. Manager 快显应通过 `model_3d_quick_view_generation` 生成 GLB artifact，不要求前端直接解析 OSGB。
+4. Manager 快显应通过 `model_3d_glb_generation` 生成 GLB artifact，不要求前端直接解析 OSGB。
 
 ## glTF multi 校准用例
 
@@ -333,7 +333,7 @@ whole scope 的 `refs` 与 `claims` 必须分工明确：
 7. 如果 manifest 中任一本地相对 URI 缺失，或 `scene.gltf` 不是合法 glTF manifest，则不得生成 glTF item，也不得用同 basename 文件猜测补全。
 8. `data:` URI 和外部 URL 不生成本地 ref；是否允许直接预览由 Manager 内容代理或后续快显任务决定，不改变 Meta item 边界。
 
-## OBJ / STL / FBX 单体网格校准用例
+## OBJ / STL / FBX 单体网格与 IFC BIM 校准用例
 
 目录：
 
@@ -343,6 +343,7 @@ whole scope 的 `refs` 与 `claims` 必须分工明确：
   tower.mtl
   tower.stl
   machine.fbx
+  building.ifc
   readme.txt
 ```
 
@@ -351,12 +352,14 @@ whole scope 的 `refs` 与 `claims` 必须分工明确：
 1. `tower.obj` 生成一个 `data_type=model_3d`、`layout=single`、`format=obj` item，`meta_item.full_name` 来源于 `/models/mesh/tower.obj`。
 2. `tower.stl` 生成一个 `data_type=model_3d`、`layout=single`、`format=stl` item，`meta_item.full_name` 来源于 `/models/mesh/tower.stl`。
 3. `machine.fbx` 生成一个 `data_type=model_3d`、`layout=single`、`format=fbx` item，`meta_item.full_name` 来源于 `/models/mesh/machine.fbx`。
-4. 三者的 `type_info.model_3d.model_kind` 均为 `mesh_scene`；只能写入扫描可稳定确认的 mesh、顶点、三角面、包围盒等跨格式摘要。
-5. OBJ 文本中的 object / group / `mtllib` / `usemtl` 摘要进入 `format_info.obj`；P3BJet 等导出器写在注释头部的 `BoundingBox(...)`、`Vertices:`、`Faces:` 可以作为声明摘要进入 `type_info.model_3d` 和 `format_info.obj.declared_*`；超大 OBJ 超过扫描预算时不得失败，应写入 `format_info.obj.scan_complete=false`。
-6. STL 的 ASCII / binary 编码、顶点数、三角面数进入 `format_info.stl`；超大 ASCII / binary STL 超过扫描预算时不得失败，应写入 `format_info.stl.scan_complete=false`；不得臆造材质、纹理或业务语义。
-7. FBX 的 binary / ASCII 编码事实进入 `format_info.fbx`；不解析 proprietary scene graph 时不得臆造节点、材质、动画等细节。
-8. Manager 对 `format=obj`、`format=stl` 和 `format=fbx` 暴露 `model_3d_quick_view_generation` GLB 快显任务入口。
-9. `tower.mtl`、未被明确规范认领的纹理和 `readme.txt` 仍按普通 single resource 识别或进入对应格式规则；OBJ / STL / FBX 单体 item 不独占父目录。
+4. `building.ifc` 生成一个 `data_type=model_3d`、`layout=single`、`format=ifc` item，`meta_item.full_name` 来源于 `/models/mesh/building.ifc`。
+5. OBJ / STL / FBX 的 `type_info.model_3d.model_kind` 均为 `mesh_scene`；只能写入扫描可稳定确认的 mesh、顶点、三角面、包围盒等跨格式摘要。IFC 的 `type_info.model_3d.model_kind=bim_model`，不得按普通 mesh 处理。
+6. OBJ 文本中的 object / group / `mtllib` / `usemtl` 摘要进入 `format_info.obj`；P3BJet 等导出器写在注释头部的 `BoundingBox(...)`、`Vertices:`、`Faces:` 可以作为声明摘要进入 `type_info.model_3d` 和 `format_info.obj.declared_*`；超大 OBJ 超过扫描预算时不得失败，应写入 `format_info.obj.scan_complete=false`。
+7. STL 的 ASCII / binary 编码、顶点数、三角面数进入 `format_info.stl`；超大 ASCII / binary STL 超过扫描预算时不得失败，应写入 `format_info.stl.scan_complete=false`；不得臆造材质、纹理或业务语义。
+8. FBX 的 binary / ASCII 编码事实进入 `format_info.fbx`；不解析 proprietary scene graph 时不得臆造节点、材质、动画等细节。
+9. IFC 的 STEP schema identifiers、entity count 和 entity type counts 进入 `format_info.ifc`；构件属性集、楼层、空间树和几何转换结果不进入 `type_info.model_3d`。
+10. Manager 对 `format=obj`、`format=stl`、`format=fbx` 和 `format=ifc` 暴露 `model_3d_glb_generation` GLB 快显任务入口；IFC 必须走 `model3d_workflow.ifc_to_glb` 专用 operator，不得复用 glTF / FBX / OBJ / STL 的 mesh converter 路线。
+11. `tower.mtl`、未被明确规范认领的纹理和 `readme.txt` 仍按普通 single resource 识别或进入对应格式规则；OBJ / STL / FBX / IFC 单体 item 不独占父目录。
 
 ## TIFF / GeoTIFF 校准用例
 

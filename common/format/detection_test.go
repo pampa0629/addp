@@ -171,6 +171,18 @@ func TestDetectFormat(t *testing.T) {
 			want:     FormatSQLite,
 		},
 		{
+			name:     "IFC by extension",
+			filename: "models/building.ifc",
+			peek:     nil,
+			want:     FormatIFC,
+		},
+		{
+			name:     "IFC by content signature",
+			filename: "unknown",
+			peek:     []byte("ISO-10303-21;\nHEADER;\nFILE_SCHEMA(('IFC4'));\n"),
+			want:     FormatIFC,
+		},
+		{
 			name:     "Unknown format",
 			filename: "data.unknown",
 			peek:     nil,

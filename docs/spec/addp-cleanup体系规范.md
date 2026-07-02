@@ -20,7 +20,7 @@ cleanup 覆盖以下对象：
 | 类型 | 示例 | 说明 |
 | --- | --- | --- |
 | 源事实 | `meta.meta_node`、`meta.meta_item`、Meta search index | 由事实 owner 模块清理。 |
-| 派生产物状态 | `manager.vector_tile_cache`、`manager.embeddings`、`manager.vector_quick_view_targets` | 描述当前产物是否可用、由什么配置生成、在哪里。 |
+| 派生产物状态 | `manager.vector_tile_cache`、`manager.embeddings`、`manager.vector_materialized_view` | 描述当前产物是否可用、由什么配置生成、在哪里。 |
 | 物理产物 | MinIO objects、PG materialized view / index、pgvector 行、Redis key | 只能由产物 owner 模块按登记状态清理。 |
 | 任务定义残留 | 强绑定已删除 engine / item / tenant 的任务定义 | 是否删除、禁用或标记缺源由 owner 模块定义并在 cleanup result（资源回收结果）中报告。 |
 | 运行时缓存 | 内存缓存、Redis 缓存、临时文件 | 由创建缓存的模块清理。 |
@@ -38,7 +38,7 @@ cleanup 从监控视角具有 execution 特征，必须纳入 Monitor；从编�
 | cleanup result | 资源回收执行方写回的模块级资源回收结果。包含统一状态字段和模块私有统计明细。 |
 | logical cleanup | 逻辑清理。把事实、产物状态或任务定义从活跃路径移除，或标记为 `deleted`、`missing_source`、`outdated`、`disabled` 等。 |
 | physical cleanup | 物理清理。删除实际存储资源，例如对象存储 key、PG 派生对象、向量行、缓存 key、临时文件。 |
-| artifact state | 派生产物当前状态对象，例如瓦片缓存结果、embedding result、快显性能优化结果。不是执行记录。 |
+| artifact state | 派生产物当前状态对象，例如瓦片缓存结果、embedding result、矢量物化视图结果。不是执行记录。 |
 | physical artifact | 可删除的物理资源，例如对象存储 key、PG 派生对象、向量行、缓存 key。 |
 | lifecycle event | 中性的生命周期事件，例如 engine deleted、tenant deleted、item deleted。各模块独立消费并处理 owner 范围内资源。 |
 
@@ -100,7 +100,7 @@ Meta 不得：
 Manager 资源回收执行方只治理 Manager-owned 派生产物和缓存：
 
 - `manager.preview_state`。
-- `manager.vector_quick_view_targets` 以及 Manager 创建并登记的 3857 优化目标。
+- `manager.vector_materialized_view` 以及 Manager 创建并登记的 3857 优化目标。
 - `manager.vector_tile_cache`、`manager.vector_tile_cache_tasks`、`storage_ref` 指向的瓦片对象和 manifest。
 - Manager runtime tile cache。
 - `manager.embeddings`、`manager.embedding_tasks` 以及向量化结果。
@@ -506,7 +506,7 @@ curl -sS "$BASE/monitor/executions/by-execution-id/$EXECUTION_ID/tree" \
 | System cleanup UI 提供 Monitor 跳转。 | 已完成 |
 | 从 Meta 移除对 Manager 表、Manager bucket 和 System bucket 的直接 cleanup 逻辑。 | 已完成 |
 | 清理旧协议字段、旧 bucket prefix 假设、`soft_delete` / `hard_delete` 跨模块语义和双轨实现。 | 已完成主路径；保留文档中的禁止规则说明 |
-| Manager 任务定义残留治理，例如 embedding / tile cache / quick view optimization 任务定义的禁用或归档。 | 已完成主路径 |
+| Manager 任务定义残留治理，例如 embedding / tile cache / vector materialized view 任务定义的禁用或归档。 | 已完成主路径 |
 | Meta 扫描任务定义残留治理，例如 engine 删除后强绑定该 engine 的自动扫描任务定义禁用或删除。 | 已完成主路径 |
 | Transfer 任务定义残留治理，例如 engine 删除后引用该 engine 的传输任务定义禁用或删除。 | 已完成主路径 |
 | Service 服务发布定义残留治理，例如 engine 删除后引用该 engine 的查询服务、图查询服务和动态图层禁用或删除。 | 已完成主路径 |

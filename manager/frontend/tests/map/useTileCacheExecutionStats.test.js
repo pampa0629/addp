@@ -5,7 +5,7 @@ import { useTileCacheExecutionStats } from '../../src/composables/useTileCacheEx
 const translations = {
   'manager.tileCache.generationTarget': '生成目标',
   'manager.tileCache.generationTargetSourceTable': '源表',
-  'manager.tileCache.generationTargetQuickViewOptimization': '快显性能优化目标',
+  'manager.tileCache.generationTargetVectorMaterializedView': '矢量物化视图目标',
   'manager.tileCache.generationTargetExternal3857': '外部 3857 优化目标',
   'manager.tileCache.tilesTotalEstimate': '预计瓦片',
   'manager.tileCache.tilesProcessed': '已处理瓦片',

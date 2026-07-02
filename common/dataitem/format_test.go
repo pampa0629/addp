@@ -73,6 +73,23 @@ func TestGenericBinaryMIMEDoesNotOverrideOSGBExtension(t *testing.T) {
 	}
 }
 
+func TestIFCFormatInfersModel3DFromNFSStylePath(t *testing.T) {
+	candidate := Candidate{
+		Name:        "buildingSMART_IFC4_Building-Architecture.ifc",
+		Path:        "3d/ifc/buildingSMART_IFC4_Building-Architecture.ifc",
+		ContentType: "application/octet-stream",
+	}
+	if got := DetectFormat(candidate); got != string(format.FormatIFC) {
+		t.Fatalf("DetectFormat() = %q, want ifc", got)
+	}
+	if got := InferFormat(candidate.Name, candidate.ContentType, ""); got != string(format.FormatIFC) {
+		t.Fatalf("InferFormat() = %q, want ifc", got)
+	}
+	if got := InferDataType(string(format.FormatIFC), candidate.ContentType); got != datatype.Model3D {
+		t.Fatalf("InferDataType(ifc, application/octet-stream) = %q, want model_3d", got)
+	}
+}
+
 func TestBuiltinMultiRulesIncludesGeoTIFFSidecars(t *testing.T) {
 	t.Parallel()
 

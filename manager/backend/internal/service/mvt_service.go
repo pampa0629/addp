@@ -20,7 +20,7 @@ type MVTService struct {
 	metadataRepo     *repository.MetadataRepository
 	systemClient     *commonClient.SystemClient
 	tileGenerator    *mvt.TileGenerator // ✅ 复用底层实现
-	optimizationRepo *repository.QuickViewOptimizationRepository
+	optimizationRepo *repository.VectorMaterializedViewRepository
 }
 
 func NewMVTService(meta *repository.MetadataRepository, systemClient *commonClient.SystemClient, maxDBConns int) *MVTService {
@@ -34,7 +34,7 @@ func NewMVTService(meta *repository.MetadataRepository, systemClient *commonClie
 	}
 }
 
-func (s *MVTService) SetQuickViewOptimizationRepository(repo *repository.QuickViewOptimizationRepository) {
+func (s *MVTService) SetVectorMaterializedViewRepository(repo *repository.VectorMaterializedViewRepository) {
 	s.optimizationRepo = repo
 }
 
@@ -185,24 +185,24 @@ func (s *MVTService) ResolveRealtimeTileTarget(
 			return sourceTransformRealtimeTileTarget(schema, table, geomCol, sourceSRID), err
 		}
 		if result != nil {
-			if !quickViewOptimizationCurrentFactsMatch(result, resourceID, schema, table, geomCol, sourceSRID) {
-				if err := s.optimizationRepo.MarkResultStale(ctx, result.ID, result.TenantID, models.QuickViewOptimizationStaleReasonSourceFactsChanged); err != nil {
+			if !vectorMaterializedViewCurrentFactsMatch(result, resourceID, schema, table, geomCol, sourceSRID) {
+				if err := s.optimizationRepo.MarkResultStale(ctx, result.ID, result.TenantID, models.VectorMaterializedViewStaleReasonSourceFactsChanged); err != nil {
 					return nil, err
 				}
 			} else {
-				status, err := validateManagerQuickViewOptimizationTarget(ctx, db, result)
+				status, err := validateManagerVectorMaterializedViewTarget(ctx, db, result)
 				if err != nil {
 					return nil, err
 				}
 				if status.Ready {
 					return &RealtimeTileTarget{
-						Schema:                      result.TargetSchema,
-						Table:                       result.TargetTable,
-						GeomColumn:                  result.TargetGeometryColumn,
-						SRID:                        spatial.SRIDWebMercator,
-						QuickViewOptimizationTarget: true,
-						TargetKind:                  result.TargetKind,
-						PerformanceMode:             RealtimeTilePerformanceReady3857Target,
+						Schema:                       result.TargetSchema,
+						Table:                        result.TargetTable,
+						GeomColumn:                   result.TargetGeometryColumn,
+						SRID:                         spatial.SRIDWebMercator,
+						VectorMaterializedViewTarget: true,
+						TargetKind:                   result.TargetKind,
+						PerformanceMode:              RealtimeTilePerformanceReady3857Target,
 					}, nil
 				}
 				if err := s.optimizationRepo.MarkResultStale(ctx, result.ID, result.TenantID, status.Reason); err != nil {
@@ -226,14 +226,14 @@ type managerOptimizationTargetStatus struct {
 	Reason string
 }
 
-func validateManagerQuickViewOptimizationTarget(ctx context.Context, db *sql.DB, result *models.QuickViewOptimization) (managerOptimizationTargetStatus, error) {
+func validateManagerVectorMaterializedViewTarget(ctx context.Context, db *sql.DB, result *models.VectorMaterializedView) (managerOptimizationTargetStatus, error) {
 	status := managerOptimizationTargetIdentityStatus(result)
 	if !status.Ready {
 		return status, nil
 	}
 	populated := true
 	var err error
-	if result.TargetKind == models.QuickViewOptimizationTargetKindSourceSchemaMaterializedView {
+	if result.TargetKind == models.VectorMaterializedViewTargetKindSourceSchemaMaterializedView {
 		populated, err = materializedViewPopulated(ctx, db, result.TargetSchema, result.TargetTable)
 		if err != nil {
 			return managerOptimizationTargetStatus{}, err
@@ -254,39 +254,39 @@ func validateManagerQuickViewOptimizationTarget(ctx context.Context, db *sql.DB,
 	return managerOptimizationTargetFactsStatus(result, populated, columnExists, indexed, srid), nil
 }
 
-func managerOptimizationTargetIdentityStatus(result *models.QuickViewOptimization) managerOptimizationTargetStatus {
+func managerOptimizationTargetIdentityStatus(result *models.VectorMaterializedView) managerOptimizationTargetStatus {
 	if result == nil {
-		return managerOptimizationTargetStatus{Reason: "quick view optimization result is missing"}
+		return managerOptimizationTargetStatus{Reason: "vector materialized view result is missing"}
 	}
 	if strings.TrimSpace(result.TargetSchema) == "" ||
 		strings.TrimSpace(result.TargetTable) == "" ||
 		strings.TrimSpace(result.TargetGeometryColumn) == "" {
-		return managerOptimizationTargetStatus{Reason: "quick view optimization target identity is incomplete"}
+		return managerOptimizationTargetStatus{Reason: "vector materialized view target identity is incomplete"}
 	}
 	if result.TargetSRID != spatial.SRIDWebMercator {
-		return managerOptimizationTargetStatus{Reason: "quick view optimization target srid is not 3857"}
+		return managerOptimizationTargetStatus{Reason: "vector materialized view target srid is not 3857"}
 	}
 	return managerOptimizationTargetStatus{Ready: true}
 }
 
-func managerOptimizationTargetFactsStatus(result *models.QuickViewOptimization, populated, columnExists, indexed bool, actualSRID int) managerOptimizationTargetStatus {
+func managerOptimizationTargetFactsStatus(result *models.VectorMaterializedView, populated, columnExists, indexed bool, actualSRID int) managerOptimizationTargetStatus {
 	if status := managerOptimizationTargetIdentityStatus(result); !status.Ready {
 		return status
 	}
 	if !populated {
-		return managerOptimizationTargetStatus{Reason: "quick view optimization materialized view is not populated"}
+		return managerOptimizationTargetStatus{Reason: "vector materialized view materialized view is not populated"}
 	}
 	if !columnExists {
-		return managerOptimizationTargetStatus{Reason: "quick view optimization target geometry column is missing"}
+		return managerOptimizationTargetStatus{Reason: "vector materialized view target geometry column is missing"}
 	}
 	if actualSRID == 0 {
-		return managerOptimizationTargetStatus{Reason: "quick view optimization target geometry srid is missing"}
+		return managerOptimizationTargetStatus{Reason: "vector materialized view target geometry srid is missing"}
 	}
 	if actualSRID != spatial.SRIDWebMercator {
-		return managerOptimizationTargetStatus{Reason: "quick view optimization target geometry srid is not 3857"}
+		return managerOptimizationTargetStatus{Reason: "vector materialized view target geometry srid is not 3857"}
 	}
 	if !indexed {
-		return managerOptimizationTargetStatus{Reason: "quick view optimization target geometry GiST index is missing"}
+		return managerOptimizationTargetStatus{Reason: "vector materialized view target geometry GiST index is missing"}
 	}
 	return managerOptimizationTargetStatus{Ready: true}
 }
@@ -300,7 +300,7 @@ func sourceTransformRealtimeTileTarget(schema, table, geomCol string, sourceSRID
 		TargetKind:                 RealtimeTileTargetKindSourceTable,
 		PerformanceMode:            RealtimeTilePerformanceSourceTransform,
 		OptimizationRecommended:    true,
-		OptimizationRecommendation: RealtimeTileRecommendationQuickViewOptimization,
+		OptimizationRecommendation: RealtimeTileRecommendationVectorMaterializedView,
 	}
 }
 
@@ -347,13 +347,13 @@ func discoverExternal3857MaterializedView(ctx context.Context, db *sql.DB, schem
 			continue
 		}
 		return &RealtimeTileTarget{
-			Schema:                      schema,
-			Table:                       candidate,
-			GeomColumn:                  "geom_3857",
-			SRID:                        spatial.SRIDWebMercator,
-			QuickViewOptimizationTarget: true,
-			TargetKind:                  QuickViewOptimizationTargetKindExternal3857MaterializedView,
-			PerformanceMode:             RealtimeTilePerformanceReady3857Target,
+			Schema:                       schema,
+			Table:                        candidate,
+			GeomColumn:                   "geom_3857",
+			SRID:                         spatial.SRIDWebMercator,
+			VectorMaterializedViewTarget: true,
+			TargetKind:                   VectorMaterializedViewTargetKindExternal3857MaterializedView,
+			PerformanceMode:              RealtimeTilePerformanceReady3857Target,
 		}, nil
 	}
 	return nil, nil

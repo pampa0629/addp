@@ -314,14 +314,14 @@ item 刷新原先复用了 catalog scan 的入口，把 `item_id` 先转换为 c
 
 #### 当前状态
 
-该旧准备路径已经删除。瓦片缓存生成任务不再隐式创建物化视图、空间索引或执行准备检查；3857 快显性能优化目标只能由 `vector_quick_view_target_generation` 任务显式创建和刷新。
+该旧准备路径已经删除。瓦片缓存生成任务不再隐式创建物化视图、空间索引或执行准备检查；3857 矢量物化视图目标只能由 `vector_materialized_view_generation` 任务显式创建和刷新。
 
 当前排查方式：
 
-1. 在空间预览页看到源表转换慢路径、动态 MVT 超时或优化建议时，先进入“快显性能优化”。
-2. 创建并执行 `vector_quick_view_target_generation` 任务。
-3. 确认 `manager.vector_quick_view_targets.status=ready` 后，再生成瓦片缓存。
-4. 若仍有大小写字段相关错误，检查 `manager/backend/internal/service/quick_view_optimization_task_service.go` 和 `common/spatial` 是否使用 PostGIS 标识符引用函数。
+1. 在空间预览页看到源表转换慢路径、动态 MVT 超时或优化建议时，先进入“矢量物化视图”。
+2. 创建并执行 `vector_materialized_view_generation` 任务。
+3. 确认 `manager.vector_materialized_view.status=ready` 后，再生成瓦片缓存。
+4. 若仍有大小写字段相关错误，检查 `manager/backend/internal/service/vector_materialized_view_task_service.go` 和 `common/spatial` 是否使用 PostGIS 标识符引用函数。
 
 #### 验证命令
 
@@ -777,8 +777,8 @@ query := fmt.Sprintf(`SELECT "%s" FROM "%s"."%s"`, geomColumn, schema, table)
 
 **Manager 模块**：
 
-1. [manager/backend/internal/service/quick_view_optimization_task_service.go](../../manager/backend/internal/service/quick_view_optimization_task_service.go)
-   - 快显性能优化目标创建：`CREATE MATERIALIZED VIEW`、`ST_Transform`、GiST 索引、`ANALYZE` 均使用 `common/spatial` 的 PostGIS 标识符引用函数。
+1. [manager/backend/internal/service/vector_materialized_view_task_service.go](../../manager/backend/internal/service/vector_materialized_view_task_service.go)
+   - 矢量物化视图目标创建：`CREATE MATERIALIZED VIEW`、`ST_Transform`、GiST 索引、`ANALYZE` 均使用 `common/spatial` 的 PostGIS 标识符引用函数。
 
 2. [manager/backend/internal/mvt/quick_view_service.go](../../manager/backend/internal/mvt/quick_view_service.go)
    - 动态 MVT 只消费调用方解析后的目标，不再隐式准备 3857 派生对象。
@@ -843,7 +843,7 @@ VALUES (ST_GeomFromText('POINT(120.0 30.0)', 4326), 'Test Data');
 测试流程：
 1. 在 Manager 数据浏览器中浏览该表 ✅
 2. 验证数据预览正常显示 ✅
-3. 创建并执行快显性能优化任务，验证快显性能优化目标创建成功 ✅
+3. 创建并执行矢量物化视图任务，验证矢量物化视图目标创建成功 ✅
 4. 创建并执行瓦片缓存生成任务，验证 MVT 瓦片可以正常生成 ✅
 5. 在 Service 模块中发布 WFS 服务 ✅
 6. 验证 WFS GetFeature 请求正常 ✅
@@ -890,7 +890,7 @@ whereClause := fmt.Sprintf("%s > 100", dialect.QuoteIdentifier(col))
 
 | 模块 | 修复文件数 | 影响功能 | 风险等级 |
 |------|-----------|---------|----------|
-| Manager | 3 | 快显性能优化目标创建、动态 MVT、瓦片缓存生成 | 🔴 高 |
+| Manager | 3 | 矢量物化视图目标创建、动态 MVT、瓦片缓存生成 | 🔴 高 |
 | Service | 1 | OGC WFS 要素查询 | 🟠 中 |
 | Transfer | 0 | 已正确实现 | ✅ 无 |
 | Meta | 0 | 已正确实现 | ✅ 无 |

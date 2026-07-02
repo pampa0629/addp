@@ -263,7 +263,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "任务详情，按 task_type 返回矢量瓦片缓存、矢量快显性能优化、栅格 COG 生成或向量化任务详情 | Task detail by task_type",
+                        "description": "任务详情，按 task_type 返回矢量瓦片缓存、矢量物化视图、栅格 COG 生成或向量化任务详情 | Task detail by task_type",
                         "schema": {
                             "type": "object"
                         }
@@ -974,7 +974,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/gaussian_splat_quick_view": {
+        "/gaussian_splat_ksplat": {
             "get": {
                 "security": [
                     {
@@ -987,7 +987,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "列出 3DGS - KPlat 快显结果 | List 3DGS - KPlat quick view results",
+                "summary": "列出 3DGS - KSplat 快显结果 | List 3DGS - KSplat quick view results",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1043,7 +1043,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/gaussian_splat_quick_view/{id}": {
+        "/gaussian_splat_ksplat/{id}": {
             "get": {
                 "security": [
                     {
@@ -1056,7 +1056,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "获取 3DGS - KPlat 快显详情 | Get 3DGS - KPlat quick view detail",
+                "summary": "获取 3DGS - KSplat 快显详情 | Get 3DGS - KSplat quick view detail",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1070,7 +1070,7 @@ const docTemplate = `{
                     "200": {
                         "description": "结果详情 | Result detail",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_manager_internal_models.GaussianSplatQuickView"
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.GaussianSplatKSplat"
                         }
                     }
                 }
@@ -1087,7 +1087,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "删除 3DGS - KPlat 快显 | Delete 3DGS - KPlat quick view",
+                "summary": "删除 3DGS - KSplat 快显 | Delete 3DGS - KSplat quick view",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1108,25 +1108,25 @@ const docTemplate = `{
                 }
             }
         },
-        "/gaussian_splat_quick_view/{id}/content": {
+        "/gaussian_splat_ksplat/{id}/content": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "按 gaussian splat quick view id 返回 Manager infra MinIO 中的 KPlat 内容，支持 HTTP Range。该接口只读取 Manager 拥有生命周期且状态为 ready 的 KPlat 快显结果。 | Return KPlat content from Manager infra MinIO by result id with HTTP Range support. Only ready Manager-owned results are readable.",
+                "description": "按 gaussian splat KSplat id 返回 Manager infra MinIO 中的 KSplat 内容，支持 HTTP Range。该接口只读取 Manager 拥有生命周期且状态为 ready 的 KSplat 快显结果。 | Return KSplat content from Manager infra MinIO by result id with HTTP Range support. Only ready Manager-owned results are readable.",
                 "produces": [
                     "application/octet-stream"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "读取 3DGS - KPlat 快显 | Read 3DGS - KPlat quick view result",
+                "summary": "读取 3DGS - KSplat 快显 | Read 3DGS - KSplat quick view result",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "gaussian splat quick view ID",
+                        "description": "gaussian splat KSplat ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1134,10 +1134,10 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "KPlat 内容流 | KPlat content stream"
+                        "description": "KSplat 内容流 | KSplat content stream"
                     },
                     "206": {
-                        "description": "部分 KPlat 内容流 | Partial KPlat content stream"
+                        "description": "部分 KSplat 内容流 | Partial KSplat content stream"
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
@@ -1147,7 +1147,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "KPlat 不存在或未就绪 | KPlat not found or not ready",
+                        "description": "KSplat 不存在或未就绪 | KSplat not found or not ready",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1170,25 +1170,25 @@ const docTemplate = `{
                 }
             }
         },
-        "/gaussian_splat_quick_view/{id}/inspect": {
+        "/gaussian_splat_ksplat/{id}/inspect": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "只读取 Manager infra MinIO 中 KPlat artifact 的对象元信息和头部，返回轻量健康检查事实，不下载完整内容。| Read object metadata and the KPlat header only, returning lightweight health facts without downloading the full artifact.",
+                "description": "只读取 Manager infra MinIO 中 KSplat artifact 的对象元信息和头部，返回轻量健康检查事实，不下载完整内容。| Read object metadata and the KSplat header only, returning lightweight health facts without downloading the full artifact.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "检查 3DGS - KPlat 快显 | Inspect 3DGS - KPlat quick view result",
+                "summary": "检查 3DGS - KSplat 快显 | Inspect 3DGS - KSplat quick view result",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "gaussian splat quick view ID",
+                        "description": "gaussian splat KSplat ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1196,9 +1196,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "KPlat 快显检查结果 | KPlat inspection result",
+                        "description": "KSplat 快显检查结果 | KSplat inspection result",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.GaussianSplatQuickViewInspectResponse"
+                            "$ref": "#/definitions/internal_api.GaussianSplatKSplatInspectResponse"
                         }
                     },
                     "400": {
@@ -1209,7 +1209,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "KPlat 不存在或未就绪 | KPlat not found or not ready",
+                        "description": "KSplat 不存在或未就绪 | KSplat not found or not ready",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1225,21 +1225,21 @@ const docTemplate = `{
                 }
             }
         },
-        "/gaussian_splat_quick_view_tasks": {
+        "/gaussian_splat_ksplat_tasks": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "列出 Manager 模块的 3DGS - KPlat 快显任务配置。该私有入口固定返回 task_type=gaussian_splat_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager 3DGS - KPlat quick view generation task configurations.",
+                "description": "列出 Manager 模块的 3DGS - KSplat 快显任务配置。该私有入口固定返回 task_type=gaussian_splat_ksplat_generation；编排模块应使用标准 /tasks 入口。| List Manager 3DGS - KSplat quick view generation task configurations.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "列出 3DGS - KPlat 快显任务配置 | List 3DGS - KPlat quick view generation task configurations",
+                "summary": "列出 3DGS - KSplat 快显任务配置 | List 3DGS - KSplat quick view generation task configurations",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1277,7 +1277,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建新的 3DGS - KPlat 快显任务配置。源必须是 format=ply 或 splat 的 gaussian_splat item，并转换为 KPlat artifact 写入 Manager infra MinIO；format=ksplat 的源文件直接基础预览，不创建快显任务。| Create a 3DGS - KPlat quick view task from a format=ply or splat gaussian_splat item into Manager infra MinIO. format=ksplat sources are previewed directly and do not create quick view tasks.",
+                "description": "创建新的 3DGS - KSplat 快显任务配置。源必须是 format=ply 或 splat 的 gaussian_splat item，并转换为 KSplat artifact 写入 Manager infra MinIO；format=ksplat 的源文件直接基础预览，不创建快显任务。| Create a 3DGS - KSplat quick view task from a format=ply or splat gaussian_splat item into Manager infra MinIO. format=ksplat sources are previewed directly and do not create quick view tasks.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1287,15 +1287,15 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "创建 3DGS - KPlat 快显任务配置 | Create 3DGS - KPlat quick view generation task configuration",
+                "summary": "创建 3DGS - KSplat 快显任务配置 | Create 3DGS - KSplat quick view generation task configuration",
                 "parameters": [
                     {
-                        "description": "gaussian splat quick view generation task configuration",
+                        "description": "gaussian splat KSplat generation task configuration",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.GaussianSplatQuickViewTaskRequest"
+                            "$ref": "#/definitions/internal_api.GaussianSplatKSplatTaskRequest"
                         }
                     }
                 ],
@@ -1303,7 +1303,7 @@ const docTemplate = `{
                     "201": {
                         "description": "创建的任务配置 | Created task configuration",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.GaussianSplatQuickViewTaskResponse"
+                            "$ref": "#/definitions/internal_api.GaussianSplatKSplatTaskResponse"
                         }
                     },
                     "400": {
@@ -1316,7 +1316,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/gaussian_splat_quick_view_tasks/{id}": {
+        "/gaussian_splat_ksplat_tasks/{id}": {
             "get": {
                 "security": [
                     {
@@ -1329,7 +1329,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "获取 3DGS - KPlat 快显任务配置 | Get 3DGS - KPlat quick view generation task configuration",
+                "summary": "获取 3DGS - KSplat 快显任务配置 | Get 3DGS - KSplat quick view generation task configuration",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1343,7 +1343,7 @@ const docTemplate = `{
                     "200": {
                         "description": "任务配置 | Task configuration",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.GaussianSplatQuickViewTaskResponse"
+                            "$ref": "#/definitions/internal_api.GaussianSplatKSplatTaskResponse"
                         }
                     },
                     "400": {
@@ -1377,7 +1377,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "更新 3DGS - KPlat 快显任务配置 | Update 3DGS - KPlat quick view generation task configuration",
+                "summary": "更新 3DGS - KSplat 快显任务配置 | Update 3DGS - KSplat quick view generation task configuration",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1387,12 +1387,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "gaussian splat quick view generation task configuration",
+                        "description": "gaussian splat KSplat generation task configuration",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.GaussianSplatQuickViewTaskRequest"
+                            "$ref": "#/definitions/internal_api.GaussianSplatKSplatTaskRequest"
                         }
                     }
                 ],
@@ -1400,7 +1400,7 @@ const docTemplate = `{
                     "200": {
                         "description": "更新后的任务配置 | Updated task configuration",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.GaussianSplatQuickViewTaskResponse"
+                            "$ref": "#/definitions/internal_api.GaussianSplatKSplatTaskResponse"
                         }
                     },
                     "400": {
@@ -1431,7 +1431,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "删除 3DGS - KPlat 快显任务配置 | Delete 3DGS - KPlat quick view generation task configuration",
+                "summary": "删除 3DGS - KSplat 快显任务配置 | Delete 3DGS - KSplat quick view generation task configuration",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1571,7 +1571,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/model_3d_quick_view": {
+        "/model_3d_glb": {
             "get": {
                 "security": [
                     {
@@ -1584,7 +1584,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "列出三维模型 GLB 快显结果 | List model 3D quick view results",
+                "summary": "列出三维模型 GLB 快显结果 | List model 3D GLB results",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1640,7 +1640,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/model_3d_quick_view/{id}": {
+        "/model_3d_glb/{id}": {
             "get": {
                 "security": [
                     {
@@ -1653,7 +1653,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "获取三维模型 GLB 快显详情 | Get model 3D quick view detail",
+                "summary": "获取三维模型 GLB 快显详情 | Get model 3D GLB detail",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1667,7 +1667,7 @@ const docTemplate = `{
                     "200": {
                         "description": "结果详情 | Result detail",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_manager_internal_models.Model3DQuickView"
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.Model3DGLB"
                         }
                     }
                 }
@@ -1684,7 +1684,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "删除三维模型 GLB 快显 | Delete model 3D quick view",
+                "summary": "删除三维模型 GLB 快显 | Delete model 3D GLB",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1705,25 +1705,25 @@ const docTemplate = `{
                 }
             }
         },
-        "/model_3d_quick_view/{id}/content": {
+        "/model_3d_glb/{id}/content": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "按 model 3D quick view id 返回 Manager infra MinIO 中的 GLB 内容，支持 HTTP Range。该接口只读取 Manager 拥有生命周期且状态为 ready 的 GLB 快显结果。 | Return GLB content from Manager infra MinIO by result id with HTTP Range support. Only ready Manager-owned results are readable.",
+                "description": "按 model 3D GLB id 返回 Manager infra MinIO 中的 GLB 内容，支持 HTTP Range。该接口只读取 Manager 拥有生命周期且状态为 ready 的 GLB 快显结果。 | Return GLB content from Manager infra MinIO by result id with HTTP Range support. Only ready Manager-owned results are readable.",
                 "produces": [
                     "application/octet-stream"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "读取三维模型 GLB 快显 | Read model 3D quick view GLB result",
+                "summary": "读取三维模型 GLB 快显 | Read model 3D GLB GLB result",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "model 3D quick view ID",
+                        "description": "model 3D GLB ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1767,21 +1767,21 @@ const docTemplate = `{
                 }
             }
         },
-        "/model_3d_quick_view_tasks": {
+        "/model_3d_glb_tasks": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "列出 Manager 模块的 OSGB / glTF / FBX / OBJ / STL 转 GLB 快显任务配置。该私有入口固定返回 task_type=model_3d_quick_view_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D quick view generation task configurations.",
+                "description": "列出 Manager 模块的 OSGB / glTF / FBX / OBJ / STL / IFC 转 GLB 快显任务配置。该私有入口固定返回 task_type=model_3d_glb_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D GLB generation task configurations.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "列出三维模型 GLB 快显任务配置 | List model 3D quick view generation task configurations",
+                "summary": "列出三维模型 GLB 快显任务配置 | List model 3D GLB generation task configurations",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1819,7 +1819,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建新的 OSGB / glTF / FBX / OBJ / STL 转 GLB 快显任务配置。任务从 OSGB、glTF、FBX、OBJ 或 STL model_3d item 读取源数据，并将 GLB artifact 写入 Manager infra MinIO。| Create a model 3D quick view task from an OSGB, glTF, FBX, OBJ or STL model item into Manager infra MinIO.",
+                "description": "创建新的 OSGB / glTF / FBX / OBJ / STL / IFC 转 GLB 快显任务配置。任务从 OSGB、glTF、FBX、OBJ、STL 或 IFC model_3d item 读取源数据，并将 GLB artifact 写入 Manager infra MinIO。| Create a model 3D GLB task from an OSGB, glTF, FBX, OBJ, STL or IFC model item into Manager infra MinIO.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1829,15 +1829,15 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "创建三维模型 GLB 快显任务配置 | Create model 3D quick view generation task configuration",
+                "summary": "创建三维模型 GLB 快显任务配置 | Create model 3D GLB generation task configuration",
                 "parameters": [
                     {
-                        "description": "model 3D quick view generation task configuration",
+                        "description": "model 3D GLB generation task configuration",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.Model3DQuickViewTaskRequest"
+                            "$ref": "#/definitions/internal_api.Model3DGLBTaskRequest"
                         }
                     }
                 ],
@@ -1845,7 +1845,7 @@ const docTemplate = `{
                     "201": {
                         "description": "创建的任务配置 | Created task configuration",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.Model3DQuickViewTaskResponse"
+                            "$ref": "#/definitions/internal_api.Model3DGLBTaskResponse"
                         }
                     },
                     "400": {
@@ -1858,7 +1858,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/model_3d_quick_view_tasks/{id}": {
+        "/model_3d_glb_tasks/{id}": {
             "get": {
                 "security": [
                     {
@@ -1871,7 +1871,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "获取三维模型 GLB 快显任务配置 | Get model 3D quick view generation task configuration",
+                "summary": "获取三维模型 GLB 快显任务配置 | Get model 3D GLB generation task configuration",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1885,7 +1885,7 @@ const docTemplate = `{
                     "200": {
                         "description": "任务配置 | Task configuration",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.Model3DQuickViewTaskResponse"
+                            "$ref": "#/definitions/internal_api.Model3DGLBTaskResponse"
                         }
                     },
                     "400": {
@@ -1919,7 +1919,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "更新三维模型 GLB 快显任务配置 | Update model 3D quick view generation task configuration",
+                "summary": "更新三维模型 GLB 快显任务配置 | Update model 3D GLB generation task configuration",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1929,12 +1929,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "model 3D quick view generation task configuration",
+                        "description": "model 3D GLB generation task configuration",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.Model3DQuickViewTaskRequest"
+                            "$ref": "#/definitions/internal_api.Model3DGLBTaskRequest"
                         }
                     }
                 ],
@@ -1942,7 +1942,7 @@ const docTemplate = `{
                     "200": {
                         "description": "更新后的任务配置 | Updated task configuration",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.Model3DQuickViewTaskResponse"
+                            "$ref": "#/definitions/internal_api.Model3DGLBTaskResponse"
                         }
                     },
                     "400": {
@@ -1973,7 +1973,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "删除三维模型 GLB 快显任务配置 | Delete model 3D quick view generation task configuration",
+                "summary": "删除三维模型 GLB 快显任务配置 | Delete model 3D GLB generation task configuration",
                 "parameters": [
                     {
                         "type": "integer",
@@ -2459,6 +2459,73 @@ const docTemplate = `{
                 }
             }
         },
+        "/quick-view/actions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，目前支持生成栅格 COG、三维模型 GLB 快显和 3DGS KSplat 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "执行 locator 快显动作 | Execute locator quick view action",
+                "parameters": [
+                    {
+                        "description": "快显动作请求 | Quick view action request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ExecuteQuickViewActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "已提交执行 | Execution submitted",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ExecuteQuickViewActionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Resource not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/quick-view/capability": {
             "get": {
                 "security": [
@@ -2681,7 +2748,7 @@ const docTemplate = `{
                             },
                             "X-ADDP-Tile-Recommendation": {
                                 "type": "string",
-                                "description": "超时或降级时的推荐动作：vector_quick_view_target_generation 或 vector_tile_cache_generation | Recommended action when timeout or degraded"
+                                "description": "超时或降级时的推荐动作：vector_materialized_view_generation 或 vector_tile_cache_generation | Recommended action when timeout or degraded"
                             },
                             "X-ADDP-Tile-Retry-Policy": {
                                 "type": "string",
@@ -3754,7 +3821,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "列出 Manager 模块的任务（矢量瓦片缓存生成、矢量快显性能优化、栅格快显 COG 生成、栅格 mosaic 生成、三维模型 GLB 快显生成、三维模型 3D Tiles 生成和向量化任务）| List Manager module tasks",
+                "description": "列出 Manager 模块的任务（矢量瓦片缓存生成、矢量物化视图、栅格快显 COG 生成、栅格 mosaic 生成、三维模型 GLB 快显生成、三维模型 3D Tiles 生成和向量化任务）| List Manager module tasks",
                 "produces": [
                     "application/json"
                 ],
@@ -3765,7 +3832,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型过滤：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|gaussian_splat_quick_view_generation|embedding | Task type filter",
+                        "description": "任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|embedding | Task type filter",
                         "name": "task_type",
                         "in": "query"
                     },
@@ -3824,7 +3891,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|gaussian_splat_quick_view_generation|embedding | Task type",
+                        "description": "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -3839,7 +3906,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "任务详情，按 task_type 返回矢量瓦片缓存、矢量快显性能优化、栅格 COG 生成或向量化任务详情 | Task detail by task_type",
+                        "description": "任务详情，按 task_type 返回矢量瓦片缓存、矢量物化视图、栅格 COG 生成或向量化任务详情 | Task detail by task_type",
                         "schema": {
                             "type": "object"
                         }
@@ -3882,7 +3949,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：vector_tile_cache_generation|vector_quick_view_target_generation|raster_cog_generation|raster_mosaic_generation|model_3d_quick_view_generation|model_3d_tiles_generation|gaussian_splat_quick_view_generation|embedding | Task type",
+                        "description": "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -3992,83 +4059,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/vector_quick_view_target_tasks": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "列出 Manager 模块的快显性能优化任务配置。该私有入口固定返回 task_type=vector_quick_view_target_generation；编排模块应使用标准 /tasks 入口。| List Manager quick view optimization task configurations. This private endpoint always returns task_type=vector_quick_view_target_generation; orchestrator should use the standard /tasks endpoint.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "列出快显性能优化任务配置 | List quick view optimization task configurations",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "页码，默认1 | Page number, default 1",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "每页数量，默认20 | Page size, default 20",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "任务列表 | Task list",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "创建快显性能优化任务配置 | Create quick view optimization task configuration",
-                "parameters": [
-                    {
-                        "description": "快显性能优化任务配置 | Quick view optimization task configuration",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "创建的任务配置 | Created task configuration",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/vector_quick_view_target_tasks/{id}": {
+        "/vector_materialized_view": {
             "get": {
                 "security": [
                     {
@@ -4081,115 +4072,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "获取快显性能优化任务配置 | Get quick view optimization task configuration",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "任务配置 | Task configuration",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskResponse"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "更新快显性能优化任务配置 | Update quick view optimization task configuration",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "快显性能优化任务配置 | Quick view optimization task configuration",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "更新后的任务配置 | Updated task configuration",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskResponse"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "删除快显性能优化任务配置 | Delete quick view optimization task configuration",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "删除成功 | Deleted successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/vector_quick_view_targets": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "列出快显性能优化结果 | List quick view optimization results",
+                "summary": "列出矢量物化视图结果 | List vector materialized view results",
                 "parameters": [
                     {
                         "type": "integer",
@@ -4245,7 +4128,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/vector_quick_view_targets/{id}": {
+        "/vector_materialized_view/{id}": {
             "get": {
                 "security": [
                     {
@@ -4258,7 +4141,7 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "获取快显性能优化结果详情 | Get quick view optimization result detail",
+                "summary": "获取矢量物化视图结果详情 | Get vector materialized view result detail",
                 "parameters": [
                     {
                         "type": "integer",
@@ -4272,7 +4155,7 @@ const docTemplate = `{
                     "200": {
                         "description": "结果详情 | Result detail",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_manager_internal_models.QuickViewOptimization"
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.VectorMaterializedView"
                         }
                     }
                 }
@@ -4289,11 +4172,195 @@ const docTemplate = `{
                 "tags": [
                     "Manager"
                 ],
-                "summary": "删除快显性能优化结果 | Delete quick view optimization result",
+                "summary": "删除矢量物化视图结果 | Delete vector materialized view result",
                 "parameters": [
                     {
                         "type": "integer",
                         "description": "结果ID | Result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/vector_materialized_view_tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "列出 Manager 模块的矢量物化视图任务配置。该私有入口固定返回 task_type=vector_materialized_view_generation；编排模块应使用标准 /tasks 入口。| List Manager vector materialized view task configurations. This private endpoint always returns task_type=vector_materialized_view_generation; orchestrator should use the standard /tasks endpoint.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "列出矢量物化视图任务配置 | List vector materialized view task configurations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务列表 | Task list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "创建矢量物化视图任务配置 | Create vector materialized view task configuration",
+                "parameters": [
+                    {
+                        "description": "矢量物化视图任务配置 | Vector materialized view task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.VectorMaterializedViewTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "创建的任务配置 | Created task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.VectorMaterializedViewTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/vector_materialized_view_tasks/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取矢量物化视图任务配置 | Get vector materialized view task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务配置 | Task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.VectorMaterializedViewTaskResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "更新矢量物化视图任务配置 | Update vector materialized view task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "矢量物化视图任务配置 | Vector materialized view task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.VectorMaterializedViewTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的任务配置 | Updated task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.VectorMaterializedViewTaskResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除矢量物化视图任务配置 | Delete vector materialized view task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -4833,7 +4900,7 @@ const docTemplate = `{
             "type": "object",
             "additionalProperties": true
         },
-        "github_com_addp_manager_internal_models.GaussianSplatQuickView": {
+        "github_com_addp_manager_internal_models.GaussianSplatKSplat": {
             "type": "object",
             "properties": {
                 "content_url": {
@@ -4982,7 +5049,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_manager_internal_models.Model3DQuickView": {
+        "github_com_addp_manager_internal_models.Model3DGLB": {
             "type": "object",
             "properties": {
                 "content_url": {
@@ -5034,95 +5101,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "storage_ref": {
-                    "type": "string"
-                },
-                "task_id": {
-                    "type": "integer"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_manager_internal_models.QuickViewOptimization": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "error_message": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "item_fingerprint": {
-                    "type": "string"
-                },
-                "item_id": {
-                    "type": "integer"
-                },
-                "last_execution_id": {
-                    "type": "string"
-                },
-                "locator": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
-                },
-                "render_extent": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "render_extent_srid": {
-                    "type": "integer"
-                },
-                "row_count_estimate": {
-                    "type": "integer"
-                },
-                "source_engine_id": {
-                    "type": "integer"
-                },
-                "source_fingerprint_snapshot": {
-                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
-                },
-                "source_geometry_column": {
-                    "type": "string"
-                },
-                "source_schema": {
-                    "type": "string"
-                },
-                "source_srid": {
-                    "type": "integer"
-                },
-                "source_table": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "target_geometry_column": {
-                    "type": "string"
-                },
-                "target_kind": {
-                    "type": "string"
-                },
-                "target_schema": {
-                    "type": "string"
-                },
-                "target_srid": {
-                    "type": "integer"
-                },
-                "target_table": {
                     "type": "string"
                 },
                 "task_id": {
@@ -5287,6 +5265,95 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_manager_internal_models.VectorMaterializedView": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "render_extent": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "render_extent_srid": {
+                    "type": "integer"
+                },
+                "row_count_estimate": {
+                    "type": "integer"
+                },
+                "source_engine_id": {
+                    "type": "integer"
+                },
+                "source_fingerprint_snapshot": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "source_geometry_column": {
+                    "type": "string"
+                },
+                "source_schema": {
+                    "type": "string"
+                },
+                "source_srid": {
+                    "type": "integer"
+                },
+                "source_table": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "target_geometry_column": {
+                    "type": "string"
+                },
+                "target_kind": {
+                    "type": "string"
+                },
+                "target_schema": {
+                    "type": "string"
+                },
+                "target_srid": {
+                    "type": "integer"
+                },
+                "target_table": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_manager_internal_service.EmbeddingExecutionRequest": {
             "type": "object",
             "properties": {
@@ -5431,6 +5498,12 @@ const docTemplate = `{
                 "active_mode": {
                     "type": "string"
                 },
+                "available_actions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "can_generate_vector_tile_cache": {
                     "type": "boolean"
                 },
@@ -5456,7 +5529,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewModel3DInfo"
                 },
                 "optimization": {
-                    "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewOptimizationInfo"
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.VectorMaterializedViewInfo"
                 },
                 "preferred_mode": {
                     "type": "string"
@@ -5484,6 +5557,9 @@ const docTemplate = `{
                 },
                 "source_engine_id": {
                     "type": "integer"
+                },
+                "source_kind": {
+                    "type": "string"
                 },
                 "source_schema": {
                     "type": "string"
@@ -5608,53 +5684,6 @@ const docTemplate = `{
                 },
                 "size_bytes": {
                     "type": "integer"
-                },
-                "task_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_manager_internal_service.QuickViewOptimizationInfo": {
-            "type": "object",
-            "properties": {
-                "available": {
-                    "type": "boolean"
-                },
-                "last_execution_id": {
-                    "type": "string"
-                },
-                "reason": {
-                    "type": "string"
-                },
-                "render_extent": {
-                    "type": "array",
-                    "items": {
-                        "type": "number"
-                    }
-                },
-                "render_extent_srid": {
-                    "type": "integer"
-                },
-                "result_id": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "target_geometry_column": {
-                    "type": "string"
-                },
-                "target_kind": {
-                    "type": "string"
-                },
-                "target_schema": {
-                    "type": "string"
-                },
-                "target_srid": {
-                    "type": "integer"
-                },
-                "target_table": {
-                    "type": "string"
                 },
                 "task_id": {
                     "type": "integer"
@@ -6178,6 +6207,53 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_manager_internal_service.VectorMaterializedViewInfo": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "render_extent": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "render_extent_srid": {
+                    "type": "integer"
+                },
+                "result_id": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "target_geometry_column": {
+                    "type": "string"
+                },
+                "target_kind": {
+                    "type": "string"
+                },
+                "target_schema": {
+                    "type": "string"
+                },
+                "target_srid": {
+                    "type": "integer"
+                },
+                "target_table": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_manager_internal_service.ZoomRecommendation": {
             "type": "object",
             "properties": {
@@ -6294,7 +6370,56 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.GaussianSplatKPlatHeader": {
+        "internal_api.ExecuteQuickViewActionRequest": {
+            "type": "object",
+            "required": [
+                "action",
+                "locator"
+            ],
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ExecuteQuickViewActionResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "task_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.GaussianSplatKSplatCheck": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.GaussianSplatKSplatHeader": {
             "type": "object",
             "properties": {
                 "compression_level": {
@@ -6332,21 +6457,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.GaussianSplatQuickViewCheck": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.GaussianSplatQuickViewInspectResponse": {
+        "internal_api.GaussianSplatKSplatInspectResponse": {
             "type": "object",
             "properties": {
                 "bytes_inspected": {
@@ -6355,7 +6466,7 @@ const docTemplate = `{
                 "checks": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/internal_api.GaussianSplatQuickViewCheck"
+                        "$ref": "#/definitions/internal_api.GaussianSplatKSplatCheck"
                     }
                 },
                 "expected_content_type": {
@@ -6365,7 +6476,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "header": {
-                    "$ref": "#/definitions/internal_api.GaussianSplatKPlatHeader"
+                    "$ref": "#/definitions/internal_api.GaussianSplatKSplatHeader"
                 },
                 "header_signature_hex": {
                     "type": "string"
@@ -6395,11 +6506,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "summary": {
-                    "$ref": "#/definitions/internal_api.GaussianSplatQuickViewInspectSummary"
+                    "$ref": "#/definitions/internal_api.GaussianSplatKSplatInspectSummary"
                 }
             }
         },
-        "internal_api.GaussianSplatQuickViewInspectSummary": {
+        "internal_api.GaussianSplatKSplatInspectSummary": {
             "type": "object",
             "properties": {
                 "message": {
@@ -6410,7 +6521,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.GaussianSplatQuickViewTaskRequest": {
+        "internal_api.GaussianSplatKSplatTaskRequest": {
             "type": "object",
             "properties": {
                 "config": {
@@ -6433,7 +6544,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.GaussianSplatQuickViewTaskResponse": {
+        "internal_api.GaussianSplatKSplatTaskResponse": {
             "type": "object",
             "properties": {
                 "config": {
@@ -6470,13 +6581,13 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "result": {
-                    "$ref": "#/definitions/internal_api.GaussianSplatQuickViewTaskResultResponse"
+                    "$ref": "#/definitions/internal_api.GaussianSplatKSplatTaskResultResponse"
                 },
                 "schedule": {
                     "type": "string"
                 },
                 "source": {
-                    "$ref": "#/definitions/internal_api.GaussianSplatQuickViewTaskSourceResponse"
+                    "$ref": "#/definitions/internal_api.GaussianSplatKSplatTaskSourceResponse"
                 },
                 "task_type": {
                     "type": "string"
@@ -6489,7 +6600,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.GaussianSplatQuickViewTaskResultResponse": {
+        "internal_api.GaussianSplatKSplatTaskResultResponse": {
             "type": "object",
             "properties": {
                 "file_name": {
@@ -6500,7 +6611,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.GaussianSplatQuickViewTaskSourceResponse": {
+        "internal_api.GaussianSplatKSplatTaskSourceResponse": {
             "type": "object",
             "properties": {
                 "bounds_3d": {
@@ -6532,7 +6643,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.Model3DQuickViewTaskRequest": {
+        "internal_api.Model3DGLBTaskRequest": {
             "type": "object",
             "properties": {
                 "config": {
@@ -6555,7 +6666,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.Model3DQuickViewTaskResponse": {
+        "internal_api.Model3DGLBTaskResponse": {
             "type": "object",
             "properties": {
                 "config": {
@@ -6592,13 +6703,13 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "result": {
-                    "$ref": "#/definitions/internal_api.Model3DQuickViewTaskResultResponse"
+                    "$ref": "#/definitions/internal_api.Model3DGLBTaskResultResponse"
                 },
                 "schedule": {
                     "type": "string"
                 },
                 "source": {
-                    "$ref": "#/definitions/internal_api.Model3DQuickViewTaskSourceResponse"
+                    "$ref": "#/definitions/internal_api.Model3DGLBTaskSourceResponse"
                 },
                 "task_type": {
                     "type": "string"
@@ -6611,7 +6722,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.Model3DQuickViewTaskResultResponse": {
+        "internal_api.Model3DGLBTaskResultResponse": {
             "type": "object",
             "properties": {
                 "file_name": {
@@ -6622,7 +6733,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.Model3DQuickViewTaskSourceResponse": {
+        "internal_api.Model3DGLBTaskSourceResponse": {
             "type": "object",
             "properties": {
                 "format": {
@@ -6759,122 +6870,6 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "format": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.QuickViewOptimizationTaskGeometryResponse": {
-            "type": "object",
-            "properties": {
-                "geometry_column": {
-                    "type": "string"
-                },
-                "source_srid": {
-                    "type": "integer"
-                },
-                "target_srid": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.QuickViewOptimizationTaskRequest": {
-            "type": "object",
-            "properties": {
-                "config": {
-                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "next_run_at": {
-                    "type": "string"
-                },
-                "schedule": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.QuickViewOptimizationTaskResponse": {
-            "type": "object",
-            "properties": {
-                "config": {
-                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "geometry": {
-                    "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskGeometryResponse"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "last_execution_id": {
-                    "type": "string"
-                },
-                "last_execution_status": {
-                    "type": "string"
-                },
-                "last_run_at": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "next_run_at": {
-                    "type": "string"
-                },
-                "schedule": {
-                    "type": "string"
-                },
-                "target": {
-                    "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskTargetResponse"
-                },
-                "task_type": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.QuickViewOptimizationTaskTargetResponse": {
-            "type": "object",
-            "properties": {
-                "item_fingerprint": {
-                    "type": "string"
-                },
-                "item_id": {
-                    "type": "integer"
-                },
-                "locator": {
-                    "type": "string"
-                },
-                "schema": {
-                    "type": "string"
-                },
-                "source_engine_id": {
-                    "type": "integer"
-                },
-                "table": {
                     "type": "string"
                 }
             }
@@ -7389,6 +7384,122 @@ const docTemplate = `{
                 },
                 "view_state": {
                     "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                }
+            }
+        },
+        "internal_api.VectorMaterializedViewTaskGeometryResponse": {
+            "type": "object",
+            "properties": {
+                "geometry_column": {
+                    "type": "string"
+                },
+                "source_srid": {
+                    "type": "integer"
+                },
+                "target_srid": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.VectorMaterializedViewTaskRequest": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "schedule": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.VectorMaterializedViewTaskResponse": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "geometry": {
+                    "$ref": "#/definitions/internal_api.VectorMaterializedViewTaskGeometryResponse"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "schedule": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/internal_api.VectorMaterializedViewTaskTargetResponse"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.VectorMaterializedViewTaskTargetResponse": {
+            "type": "object",
+            "properties": {
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "schema": {
+                    "type": "string"
+                },
+                "source_engine_id": {
+                    "type": "integer"
+                },
+                "table": {
+                    "type": "string"
                 }
             }
         }

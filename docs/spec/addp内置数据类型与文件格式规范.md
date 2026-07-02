@@ -63,6 +63,7 @@
 | STL | `single` | `model_3d` | `stl` | STL 单体网格模型；支持识别、轻量摘要和 GLB 快显 |
 | PLY | `single` | `model_3d` | `ply` | PLY 单文件三维模型 / 点集合；第一阶段支持 header 识别和轻量摘要 |
 | FBX | `single` | `model_3d` | `fbx` | FBX 单体网格模型；快显通过 GLB artifact 实现 |
+| IFC | `single` | `model_3d` | `ifc` | IFC BIM 模型；第一阶段支持识别和轻量 BIM 摘要 |
 | 3D Tiles | `whole` | `model_3d` | `3dtiles` | 由 `tileset.json` manifest 声明的分块三维场景 |
 | OSGB | `single` | `model_3d` | `osgb` | 单个 `.osgb` 三维模型文件；快显通过 GLB artifact 实现 |
 | OSGB Scene | `whole` | `model_3d` | `osgb_scene` | 由 `metadata.xml` manifest 声明的一套 OSGB 倾斜摄影三维模型场景 |
@@ -128,7 +129,7 @@ glTF 是 JSON manifest 加外部二进制 buffer、纹理图片等资源组成�
 
 ### 消费要求
 
-Manager 第一阶段应基于已入库 `data_type=model_3d + layout=multi + format=gltf` 和 `item.refs` 消费 glTF 多资源模型。主快显路线是通过 `model_3d_quick_view_generation` 调用 `model3d_workflow` 的 `gltf_to_glb` direct operator，将 manifest、buffer 和纹理资源打包为 Manager infra MinIO 中的 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。后续如需要浏览器直接预览原生 glTF，必须保持 manifest 相对 URI 可通过 content stream 或同等资源代理访问；不得把 glTF 源 item 伪装为 GLB。
+Manager 第一阶段应基于已入库 `data_type=model_3d + layout=multi + format=gltf` 和 `item.refs` 消费 glTF 多资源模型。主快显路线是通过 `model_3d_glb_generation` 调用 `model3d_workflow` 的 `gltf_to_glb` direct operator，将 manifest、buffer 和纹理资源打包为 Manager infra MinIO 中的 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。后续如需要浏览器直接预览原生 glTF，必须保持 manifest 相对 URI 可通过 content stream 或同等资源代理访问；不得把 glTF 源 item 伪装为 GLB。
 
 ### 格式约束
 
@@ -160,7 +161,7 @@ OBJ 按单资源三维模型接入，主 item 是 `.obj` 文件。扫描器应�
 
 ### 消费要求
 
-Manager 不要求浏览器直接解析 OBJ。主快显路线是通过 `model_3d_quick_view_generation` 调用 `model3d_workflow` 的 `obj_to_glb` direct operator，由运行时内置的 `assimp export` 生成 Manager infra MinIO 中的自包含 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。OBJ 的 `.mtl` 和纹理引用由转换器从源文件相对路径解析并嵌入 GLB，不作为浏览器直接访问源目录贴图的主路径。转换前应校验 OBJ 声明的本地 `.mtl` 是否存在；缺失时任务应失败并提示缺失材质库，不能登记一个无贴图灰模为 ready artifact。
+Manager 基础预览可将单文件 OBJ 源文件通过 storage stream 交给前端三维渲染器直接读取；该基础预览不查找、替换或依赖 Manager 受管 GLB artifact。快显路线仍是通过 `model_3d_glb_generation` 调用 `model3d_workflow` 的 `obj_to_glb` direct operator，由运行时内置的 `assimp export` 生成 Manager infra MinIO 中的自包含 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。OBJ 的 `.mtl` 和纹理引用由转换器从源文件相对路径解析并嵌入 GLB，不作为浏览器基础预览访问源目录贴图的主路径。转换前应校验 OBJ 声明的本地 `.mtl` 是否存在；缺失时任务应失败并提示缺失材质库，不能登记一个无贴图灰模为 ready artifact。
 
 超大 OBJ deep scan 不应因为行数超过预算而失败。扫描器可以返回预算内 partial 摘要，并通过 `format_info.obj.scan_complete=false` 与 `scanned_line_count` 表示未做全量解析；如果文件头部已声明顶点数、面数和包围盒，这些声明事实可进入 `type_info.model_3d` 与 `format_info.obj.declared_*`。
 
@@ -187,7 +188,7 @@ STL 按单资源三维模型接入，支持 ASCII STL 与 binary STL 的轻量�
 
 ### 消费要求
 
-Manager 不要求浏览器直接解析 STL。主快显路线是通过 `model_3d_quick_view_generation` 调用 `model3d_workflow` 的 `stl_to_glb` direct operator，由运行时内置的 `assimp export` 生成 Manager infra MinIO 中的 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。STL 材质表达弱，转换结果不应臆造材质、纹理或业务语义。
+Manager 基础预览可将单文件 STL 源文件通过 storage stream 交给前端三维渲染器直接读取；该基础预览不查找、替换或依赖 Manager 受管 GLB artifact。快显路线仍是通过 `model_3d_glb_generation` 调用 `model3d_workflow` 的 `stl_to_glb` direct operator，由运行时内置的 `assimp export` 生成 Manager infra MinIO 中的 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。STL 材质表达弱，转换结果不应臆造材质、纹理或业务语义。
 
 超大 ASCII STL deep scan 不应因为行数超过预算而失败，应返回预算内 partial 摘要并写入 `format_info.stl.scan_complete=false`。Binary STL 的 triangle count 来自 80 字节 header 后的 uint32 计数；扫描器可以只读取预算内三角面用于 bounds 采样，不能为了计算 bounds 强制全量读取超大 binary STL。
 
@@ -216,7 +217,7 @@ PLY 是单资源、内容敏感格式。它既可能表达 polygon mesh，也可
 
 ### 消费要求
 
-Manager 按 `data_type` 选择消费路线。普通 mesh PLY 后续可以评估 Three.js PLYLoader 直读或 Blender / assimp 转 GLB；点云型 PLY 走点云路线；Gaussian Splat PLY 走高斯泼溅 renderer，不得简单等同于 mesh GLB，也不开放 `model_3d` 的 GLB 快显任务入口。
+Manager 按 `data_type` 选择消费路线。`data_type=model_3d` 的普通 mesh PLY 可通过 storage stream 交给前端 Three.js PLYLoader 做基础预览；该基础预览不查找、替换或依赖 Manager 受管 GLB artifact。点云型 PLY 走点云路线；Gaussian Splat PLY 走高斯泼溅 renderer，不得简单等同于 mesh GLB，也不开放 `model_3d` 的 GLB 快显任务入口。
 
 PLY deep scan 不应读取完整大文件数据体；header 级事实足以完成首轮识别和轻量摘要。模型包围盒、材质、纹理、法线等事实只有在稳定解析后才可写入。
 
@@ -243,7 +244,7 @@ PLY deep scan 不应读取完整大文件数据体；header 级事实足以完�
 
 ### 消费要求
 
-Manager 可使用高斯泼溅 renderer 直接读取 `.splat` URL 做基础预览；不得开放 GLB 快显生成入口。需要平台受管 artifact、统一对象存储发布或大模型优化时，走 `gaussian_splat_quick_view_generation` 专用路线，由 `model3d_workflow` 的 `gaussian_splat_to_ksplat` operator 转换为 KPlat artifact，不复用 `model_3d_quick_view_generation`。
+Manager 可使用高斯泼溅 renderer 直接读取 `.splat` URL 做基础预览；不得开放 GLB 快显生成入口。需要平台受管 artifact、统一对象存储发布或大模型优化时，走 `gaussian_splat_ksplat_generation` 专用路线，由 `model3d_workflow` 的 `gaussian_splat_to_ksplat` operator 转换为 KSplat artifact，不复用 `model_3d_glb_generation`。
 
 ## KSPLAT
 
@@ -268,7 +269,7 @@ Manager 可使用高斯泼溅 renderer 直接读取 `.splat` URL 做基础预览
 
 ### 消费要求
 
-Manager 可使用高斯泼溅 renderer 直接读取 `.ksplat` URL 做基础预览；不得开放 GLB 快显生成入口，也不为源 `.ksplat` 创建 KPlat 快显任务。`.ksplat` 同时是高斯泼溅受管快显的目标文件格式；`gaussian_splat_quick_view_generation` 只对 `ply` / `splat` 源执行真实转换，不复用 `model_3d_quick_view_generation`。
+Manager 可使用高斯泼溅 renderer 直接读取 `.ksplat` URL 做基础预览；不得开放 GLB 快显生成入口，也不为源 `.ksplat` 创建 KSplat 快显任务。`.ksplat` 同时是高斯泼溅受管快显的目标文件格式；`gaussian_splat_ksplat_generation` 只对 `ply` / `splat` 源执行真实转换，不复用 `model_3d_glb_generation`。
 
 ## FBX
 
@@ -293,7 +294,39 @@ FBX 第一阶段按单资源三维模型接入。扫描只做格式识别和轻�
 
 ### 消费要求
 
-Manager 第一阶段不要求浏览器直接解析 FBX。主快显路线是通过 `model_3d_quick_view_generation` 调用 `model3d_workflow` 的 `fbx_to_glb` direct operator，由运行时内置的 `assimp export` 生成 Manager infra MinIO 中的 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。`_3dtile -f fbx` 的输出语义是 3D Tiles 目录，不得用于登记 GLB artifact。
+Manager 基础预览可将单文件 FBX 源文件通过 storage stream 交给前端三维渲染器直接读取；该基础预览不查找、替换或依赖 Manager 受管 GLB artifact。快显路线仍是通过 `model_3d_glb_generation` 调用 `model3d_workflow` 的 `fbx_to_glb` direct operator，由运行时内置的 `assimp export` 生成 Manager infra MinIO 中的 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。`_3dtile -f fbx` 的输出语义是 3D Tiles 目录，不得用于登记 GLB artifact。
+
+## IFC
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | `model_3d` |
+| `format` | `ifc` |
+| 主资源 | `meta_item.full_name` 指向 `.ifc` 文件资源 |
+
+IFC 第一阶段按单资源 BIM 模型接入。IFC 是 STEP Physical File 形态的 BIM / 参数化建筑模型，不得把 `.ifc` 当普通 `text`、`document`、`table` 或普通 mesh 入库。扫描器只做格式识别和轻量 STEP 摘要，不解析完整构件属性树、楼层空间树或几何表达。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=single`、`data_type=model_3d`、`format=ifc` |
+| `type_info.model_3d` | `model_kind=bim_model`；其它跨格式三维模型摘要只有能稳定确认时才写入 |
+| `format_info.ifc` | IFC 私有轻量摘要，例如 `encoding=step`、schema identifiers / schema version、entity count、entity type counts、扫描行数和 `scan_complete` |
+| `capabilities.spatial` | 仅在 IFC 中存在明确 CRS、地理定位或可解析空间范围时写入 |
+
+### 消费要求
+
+Manager 当前不要求浏览器直接解析 IFC。主快显路线是通过 `model_3d_glb_generation` 调用 `model3d_workflow` 的 `ifc_to_glb` direct operator，由运行时绑定的 `IfcConvert` 生成 Manager infra MinIO 中的 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。IFC -> 3D Tiles、构件属性查询、楼层 / 空间树和属性服务不属于第一阶段。
+
+### 格式约束
+
+- 不得把 IFC 归为 `document`、`table`、`container` 或普通 `mesh_scene`。
+- 不得把 IFC 构件属性集、楼层、空间树、几何体、缩略图、转换产物或前端渲染协议写入 `type_info.model_3d`。
+- 不得复用 FBX / OBJ / STL 的 GLB 快显任务或假定 `assimp` 能稳定转换 IFC；IFC 只能通过 `ifc_to_glb` 专用 operator 进入 GLB 快显路线。
 
 ## 3D Tiles
 
@@ -343,7 +376,7 @@ Manager 预览应消费已入库 `data_type=model_3d + format=3dtiles`、`layout
 | `format` | `osgb` |
 | 主资源 | `meta_item.full_name` 指向 `.osgb` 文件资源 |
 
-OSGB 在 ADDP 中首先表示单个 `.osgb` 文件。它类似单个 TIFF：可以被扫描为普通 single item，但浏览器直接解析和渲染成本较高。单 OSGB 的快显路线是通过 `model_3d_quick_view_generation` 调用 `model3d_workflow` 的 `osgb_to_glb` direct operator，生成 Manager infra MinIO 中的 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。
+OSGB 在 ADDP 中首先表示单个 `.osgb` 文件。它类似单个 TIFF：可以被扫描为普通 single item，但浏览器直接解析和渲染成本较高。单 OSGB 的快显路线是通过 `model_3d_glb_generation` 调用 `model3d_workflow` 的 `osgb_to_glb` direct operator，生成 Manager infra MinIO 中的 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。
 
 单个 `.osgb` 文件只在未被 `osgb_scene` whole scope 强命中 claims 覆盖时落为独立 item。不得因为同目录存在多个 `.osgb` 文件就自动推断为倾斜摄影场景。
 
@@ -358,7 +391,7 @@ OSGB 在 ADDP 中首先表示单个 `.osgb` 文件。它类似单个 TIFF：可�
 
 ### 消费要求
 
-Manager 不应把 `.osgb` 原始文件直接暴露给前端解析作为主路径。快显能力应消费已入库 `data_type=model_3d + layout=single + format=osgb` item，通过 `model_3d_quick_view_generation` 任务调用 `model3d_workflow` 的 `osgb_to_glb` direct operator，生成并登记 `manager.model_3d_quick_view` GLB artifact；该 artifact 存放在 Manager infra MinIO 中，不自动成为业务存储中的新 data item。
+Manager 不应把 `.osgb` 原始文件直接暴露给前端解析作为主路径。快显能力应消费已入库 `data_type=model_3d + layout=single + format=osgb` item，通过 `model_3d_glb_generation` 任务调用 `model3d_workflow` 的 `osgb_to_glb` direct operator，生成并登记 `manager.model_3d_glb` GLB artifact；该 artifact 存放在 Manager infra MinIO 中，不自动成为业务存储中的新 data item。
 
 ### 格式约束
 

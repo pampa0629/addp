@@ -74,7 +74,7 @@
         "metadata": "执行元数据",
         "metadata_fields": {
           "tile_generation_target": "瓦片生成目标",
-          "quick_view_target": "快显优化目标",
+          "vector_materialized_view_target": "矢量物化视图目标",
           "geometry_column": "几何字段",
           "target_srid": "目标 SRID",
           "source_srid": "源 SRID",

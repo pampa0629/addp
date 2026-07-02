@@ -252,7 +252,7 @@ ensure_model3d_node_dependencies() {
         return 0
     fi
     if ! command -v npm >/dev/null 2>&1; then
-        echo "❌ Model3D Workflow 需要 npm 安装高斯泼溅 KPlat 转换依赖"
+        echo "❌ Model3D Workflow 需要 npm 安装高斯泼溅 KSplat 转换依赖"
         return 1
     fi
     echo "  安装 Model3D Workflow Node 依赖..."

@@ -51,7 +51,7 @@ func TestModel3DTilesLocalRootRejectsObjectStore(t *testing.T) {
 	if err == nil {
 		t.Fatal("model3DTilesLocalRoot() error is nil, want object store staging rejection")
 	}
-	if got := err.Error(); got != "model 3d tiles generation first phase supports nfs/localfs only; object store requires staging support" {
+	if got := err.Error(); got != "model 3D conversion first phase supports nfs/localfs only; object store requires staging support" {
 		t.Fatalf("error = %q, want object store staging rejection", got)
 	}
 }
@@ -183,7 +183,7 @@ func TestManagerModel3DTilesExecutorStagesObjectStoreSourceAndPublishesTarget(t 
 	}
 }
 
-func TestManagerModel3DQuickViewExecutorPublishesGLBFromWorkflowRuntime(t *testing.T) {
+func TestManagerModel3DGLBExecutorPublishesGLBFromWorkflowRuntime(t *testing.T) {
 	var capturedParams map[string]interface{}
 	workflowServer := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -234,8 +234,8 @@ func TestManagerModel3DQuickViewExecutorPublishesGLBFromWorkflowRuntime(t *testi
 	defer systemServer.Close()
 	go func() { _ = systemServer.Serve(systemListener) }()
 
-	objectStore := &recordingModel3DQuickViewObjectStore{statSize: 3}
-	executor := NewManagerModel3DQuickViewExecutor(
+	objectStore := &recordingModel3DGLBObjectStore{statSize: 3}
+	executor := NewManagerModel3DGLBExecutor(
 		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
 		recordingWorkflowLister{engines: []commonModels.Engine{{
 			ID:         99,
@@ -258,23 +258,23 @@ func TestManagerModel3DQuickViewExecutorPublishesGLBFromWorkflowRuntime(t *testi
 		0,
 	)
 
-	result, err := executor.BuildModel3DQuickView(context.Background(), Model3DQuickViewExecutionRequest{
-		Task: &models.Model3DQuickViewTask{TenantID: 7, Name: "生成 GLB"},
-		Config: Model3DQuickViewExecutionConfig{
-			Source: Model3DQuickViewSourceConfig{
+	result, err := executor.BuildModel3DGLB(context.Background(), Model3DGLBExecutionRequest{
+		Task: &models.Model3DGLBTask{TenantID: 7, Name: "生成 GLB"},
+		Config: Model3DGLBExecutionConfig{
+			Source: Model3DGLBSourceConfig{
 				ItemLocator:     "addp://engine/26/path/3d/single-osgb/tile.osgb?type=file&item_id=77",
 				SourceEngineID:  26,
 				ItemFingerprint: "fp-1",
 				Format:          "osgb",
 			},
-			Result: Model3DQuickViewResultConfig{
+			Result: Model3DGLBResultConfig{
 				StorageRef: `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"model3d/preview.glb"}`,
 				FileName:   "preview.glb",
 			},
 		},
 	})
 	if err != nil {
-		t.Fatalf("BuildModel3DQuickView() error = %v", err)
+		t.Fatalf("BuildModel3DGLB() error = %v", err)
 	}
 	if result.StorageRef != `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"model3d/preview.glb"}` || result.SizeBytes != 3 {
 		t.Fatalf("unexpected result: %+v", result)
@@ -302,7 +302,7 @@ func TestManagerModel3DQuickViewExecutorPublishesGLBFromWorkflowRuntime(t *testi
 	}
 }
 
-func TestManagerModel3DQuickViewExecutorDispatchesGLTFToGLBOperator(t *testing.T) {
+func TestManagerModel3DGLBExecutorDispatchesGLTFToGLBOperator(t *testing.T) {
 	var capturedPath string
 	workflowServer := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -358,7 +358,7 @@ func TestManagerModel3DQuickViewExecutorDispatchesGLTFToGLBOperator(t *testing.T
 	defer systemServer.Close()
 	go func() { _ = systemServer.Serve(systemListener) }()
 
-	executor := NewManagerModel3DQuickViewExecutor(
+	executor := NewManagerModel3DGLBExecutor(
 		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
 		recordingWorkflowLister{engines: []commonModels.Engine{{
 			ID:         99,
@@ -372,7 +372,7 @@ func TestManagerModel3DQuickViewExecutorDispatchesGLTFToGLBOperator(t *testing.T
 			IsActive:     true,
 			Capabilities: testRasterWorkflowCapabilities(t, testModel3DWorkflowEngineType),
 		}}},
-		&recordingModel3DQuickViewObjectStore{statSize: 3},
+		&recordingModel3DGLBObjectStore{statSize: 3},
 		"minio:9000",
 		"minio-ak",
 		"minio-sk",
@@ -381,23 +381,23 @@ func TestManagerModel3DQuickViewExecutorDispatchesGLTFToGLBOperator(t *testing.T
 		0,
 	)
 
-	result, err := executor.BuildModel3DQuickView(context.Background(), Model3DQuickViewExecutionRequest{
-		Task: &models.Model3DQuickViewTask{TenantID: 7, Name: "生成 glTF GLB"},
-		Config: Model3DQuickViewExecutionConfig{
-			Source: Model3DQuickViewSourceConfig{
+	result, err := executor.BuildModel3DGLB(context.Background(), Model3DGLBExecutionRequest{
+		Task: &models.Model3DGLBTask{TenantID: 7, Name: "生成 glTF GLB"},
+		Config: Model3DGLBExecutionConfig{
+			Source: Model3DGLBSourceConfig{
 				ItemLocator:     "addp://engine/26/path/models/scene.gltf?type=file&item_id=77",
 				SourceEngineID:  26,
 				ItemFingerprint: "fp-gltf",
 				Format:          "gltf",
 			},
-			Result: Model3DQuickViewResultConfig{
+			Result: Model3DGLBResultConfig{
 				StorageRef: `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"model3d/scene.glb"}`,
 				FileName:   "scene.glb",
 			},
 		},
 	})
 	if err != nil {
-		t.Fatalf("BuildModel3DQuickView() error = %v", err)
+		t.Fatalf("BuildModel3DGLB() error = %v", err)
 	}
 	if capturedPath != "/api/operators/gltf_to_glb/invoke" {
 		t.Fatalf("captured workflow path = %q, want gltf_to_glb invoke", capturedPath)
@@ -408,7 +408,7 @@ func TestManagerModel3DQuickViewExecutorDispatchesGLTFToGLBOperator(t *testing.T
 	}
 }
 
-func TestModel3DQuickViewOperatorForFormat(t *testing.T) {
+func TestModel3DGLBOperatorForFormat(t *testing.T) {
 	tests := []struct {
 		formatName string
 		operator   string
@@ -418,12 +418,13 @@ func TestModel3DQuickViewOperatorForFormat(t *testing.T) {
 		{formatName: "fbx", operator: "fbx_to_glb"},
 		{formatName: "obj", operator: "obj_to_glb"},
 		{formatName: "stl", operator: "stl_to_glb"},
+		{formatName: "ifc", operator: "ifc_to_glb"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.formatName, func(t *testing.T) {
-			operator, normalized, err := model3DQuickViewOperatorForFormat(tt.formatName)
+			operator, normalized, err := model3DGLBOperatorForFormat(tt.formatName)
 			if err != nil {
-				t.Fatalf("model3DQuickViewOperatorForFormat() error = %v", err)
+				t.Fatalf("model3DGLBOperatorForFormat() error = %v", err)
 			}
 			if operator != tt.operator || normalized != tt.formatName {
 				t.Fatalf("operator=%q normalized=%q, want %q/%q", operator, normalized, tt.operator, tt.formatName)
@@ -432,21 +433,21 @@ func TestModel3DQuickViewOperatorForFormat(t *testing.T) {
 	}
 }
 
-type recordingModel3DQuickViewObjectStore struct {
+type recordingModel3DGLBObjectStore struct {
 	statSize   int64
 	statBucket string
 	statObject string
 }
 
-func (s *recordingModel3DQuickViewObjectStore) BucketExists(context.Context, string) (bool, error) {
+func (s *recordingModel3DGLBObjectStore) BucketExists(context.Context, string) (bool, error) {
 	return true, nil
 }
 
-func (s *recordingModel3DQuickViewObjectStore) MakeBucket(context.Context, string, minio.MakeBucketOptions) error {
+func (s *recordingModel3DGLBObjectStore) MakeBucket(context.Context, string, minio.MakeBucketOptions) error {
 	return nil
 }
 
-func (s *recordingModel3DQuickViewObjectStore) StatObject(_ context.Context, bucket string, object string, _ minio.StatObjectOptions) (minio.ObjectInfo, error) {
+func (s *recordingModel3DGLBObjectStore) StatObject(_ context.Context, bucket string, object string, _ minio.StatObjectOptions) (minio.ObjectInfo, error) {
 	s.statBucket = bucket
 	s.statObject = object
 	return minio.ObjectInfo{Size: s.statSize}, nil
@@ -524,6 +525,22 @@ func writeModel3DOperatorList(w http.ResponseWriter, engineType string, executio
 				"id":              "stl_to_glb",
 				"name":            "stl_to_glb",
 				"display_name":    "STL 转 GLB",
+				"engine_type":     engineType,
+				"category":        "三维模型转换",
+				"category_path":   []string{"三维模型转换"},
+				"description":     "生成 GLB",
+				"execution_modes": executionModes,
+				"parameters": []map[string]interface{}{
+					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
+				},
+				"output_ports": []map[string]interface{}{
+					{"name": "default", "type": "object", "description": "GLB 生成结果", "is_default": true},
+				},
+			},
+			{
+				"id":              "ifc_to_glb",
+				"name":            "ifc_to_glb",
+				"display_name":    "IFC 转 GLB",
 				"engine_type":     engineType,
 				"category":        "三维模型转换",
 				"category_path":   []string{"三维模型转换"},

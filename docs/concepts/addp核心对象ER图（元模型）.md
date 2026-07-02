@@ -15,7 +15,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 | -------- | ----------- | -------------------------------------------------------------- | ------------------------------------------------- |
 | 调度配置 | Schedule    | 定时触发能力（Cron 表达式），定义"何时执行"                    | Task 及所有派生任务均可具备                       |
 | 执行记录 | Execution   | 单次运行的状态/进度/耗时/错误，记录"执行了什么、结果如何"      | 所有 Task 派生对象执行后均写入 common.task_executions |
-| 数据指纹 | Fingerprint | 内容摘要（MD5/SHA），用于去重、变更检测、血缘追踪              | DataNode / DataItem / QuickView / Embedding       |
+| 数据指纹 | Fingerprint | 内容摘要（MD5/SHA），用于去重、变更检测、血缘追踪              | DataNode / DataItem / PreviewState / Embedding       |
 | 向量嵌入 | Embedding   | data item 的当前向量化结果状态与 pgvector 向量内容，支持语义检索 | DataItem（文件/对象/表）                          |
 | 审计日志 | AuditLog    | 所有操作的不可变轨迹（操作人/时间/HTTP方法/路径/状态码）       | 全局，由 System 集中记录                          |
 
@@ -77,7 +77,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 **任务的共同能力**：
 - **Schedule**：所有 Task 均可配置定时调度（Cron 表达式）
 - **Execution**：所有 Task 执行后写入 `common.task_executions` 统一记录
-- **可被 Orchestration 编排**：ScanTask / TransferTask / DevTask / TileCacheTask / QuickViewOptimizationTask / EmbeddingTask / CheckTask / GraphBuildTask / Orchestration 均可作为 Orchestration 的步骤（Step）
+- **可被 Orchestration 编排**：ScanTask / TransferTask / DevTask / TileCacheTask / VectorMaterializedViewTask / EmbeddingTask / CheckTask / GraphBuildTask / Orchestration 均可作为 Orchestration 的步骤（Step）
 - **Orchestration 的递归性**：Orchestration 执行完也产生 Execution，并以 `task_type=orchestration` 暴露给任务库；保存和执行时必须防止递归引用
 
 **任务类型（task_type in common.task_executions）**：
@@ -85,7 +85,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 - Transfer: `sync`
 - Develop: `query` / `workflow` / `script`
 - Orchestrator: `orchestration`
-- Manager: `vector_tile_cache_generation` / `vector_quick_view_target_generation` / `embedding`
+- Manager: `vector_tile_cache_generation` / `vector_materialized_view_generation` / `embedding`
 - Quality: `check`
 - Graph: `kg_build`
 
@@ -496,7 +496,7 @@ erDiagram
         string execution_id UK "UUID，全局唯一，跨模块追踪"
         uint tenant_id FK
         string module "meta|transfer|develop|orchestrator|manager|quality|graph"
-        string task_type "scan|sync|query|workflow|script|orchestration|vector_tile_cache_generation|vector_quick_view_target_generation|embedding|check|kg_build"
+        string task_type "scan|sync|query|workflow|script|orchestration|vector_tile_cache_generation|vector_materialized_view_generation|embedding|check|kg_build"
         string source "触发来源模块"
         string source_task_id "对应模块任务 ID（字符串，无 DB FK）"
         string source_task_name "任务名称（冗余，便于展示）"
@@ -598,7 +598,7 @@ erDiagram
         uint tenant_id FK
         string item_fingerprint UK "标准 data item 指纹"
         string locator "资源树回跳定位"
-        string preferred_mode "table_geojson | quick_view"
+        string preferred_mode "basic_preview | map_quick_view"
         timestamp created_at
         timestamp updated_at
     }
@@ -651,16 +651,16 @@ erDiagram
 ```
 
 **说明**：
-- `QuickView` 是快显偏好，不是任务，也不是瓦片缓存结果；它只保存当前 item 的显示偏好，`can_use_quick_view`、`can_generate_tile_cache`、`default_tile_cache_id` 等能力字段由能力 API 动态合成。
+- `PreviewState` 是预览状态，不是任务，也不是瓦片缓存结果；它只保存当前 item 的显示偏好和轻量交互视角，`can_use_quick_view`、`can_generate_tile_cache`、`default_tile_cache_id` 等能力字段由能力 API 动态合成。
 - `TileCache` 是瓦片缓存结果状态，记录最小必要结果事实，例如存储引用、格式、范围、层级、配置指纹、最近 execution 和状态。
-- `TileCacheTask` 执行流程：创建 execution → 按 `config` 生成或刷新 `TileCache` → 回写 `TileCacheTask.last_execution_id` / `last_execution_status`；执行链路不写回 `QuickView` 能力字段。
+- `TileCacheTask` 执行流程：创建 execution → 按 `config` 生成或刷新 `TileCache` → 回写 `TileCacheTask.last_execution_id` / `last_execution_status`；执行链路不写回 `PreviewState` 能力字段。
 - 瓦片缓存生成必须先创建 `TileCacheTask`，再执行；不设计无任务定义的 ad-hoc 瓦片缓存生成。
 
 **⚠️ 发现的问题**：
 
 | # | 问题描述 | 当前状态 | 影响 |
 |---|----------|----------|------|
-| MG-1 | 瓦片缓存结果状态需要从 QuickView 中独立出来 | 已收敛 | `QuickView` 负责快显偏好，`TileCache` 负责结果事实 |
+| MG-1 | 瓦片缓存结果状态需要从 PreviewState 中独立出来 | 已收敛 | `PreviewState` 负责预览偏好和交互状态，`TileCache` 负责结果事实 |
 | MG-2 | `Embedding.item_fingerprint` 与 `tenant_id` 组成唯一键，按标准 data item 指纹去重；重复执行只跳过或覆盖当前结果 | 已收敛 | 与 Manager 向量化能力说明一致 |
 
 ---
@@ -1208,7 +1208,7 @@ graph LR
         TileCacheTask
         TileCache
         EmbeddingTask
-        QuickView
+        PreviewState
         Embedding
     end
 
@@ -1274,7 +1274,7 @@ graph LR
 
     %% Manager 内部
     TileCacheTask --> TileCache
-    TileCache -.->|"能力 API 动态选择"| QuickView
+    TileCache -.->|"能力 API 动态选择"| PreviewState
     EmbeddingTask --> Embedding
 
     %% Orchestration 编排（步骤存 JSONB，软引用）
@@ -1342,7 +1342,7 @@ graph TD
     TRF["Transfer\nTransferTask / FieldMapping"]
     DEV["Develop\nDevTask"]
     ORC["Orchestrator\nOrchestration"]
-    MGR["Manager\nTileCacheTask / TileCache / QuickView / EmbeddingTask / Embedding"]
+    MGR["Manager\nTileCacheTask / TileCache / PreviewState / EmbeddingTask / Embedding"]
     QLT["Quality\nCheckTask"]
     GPH["Graph\nGraphBuildTask"]
     MON["Monitor (公共)\nTaskExecution"]
@@ -1395,7 +1395,7 @@ graph TD
 | T-4  | Task     | Orchestration 可作为另一 Orchestration 的 Step，但必须防止自引用或循环引用 | 中 | 受限支持 |
 | M-1  | Meta     | ScanTask 的调度字段（schedule_type + cron_expression）与其他任务单字段 schedule 不一致 | 中 | ✅ 已修正，见 T-1 |
 | M-2  | Meta     | DataItem.attributes JSONB 存字段列表，无字段级查询能力                | —      | 已确认合理（依赖 Meilisearch）|
-| MG-1 | Manager  | 瓦片缓存结果状态从 QuickView 独立为 TileCache | — | 已按快显与瓦片缓存概念收敛 |
+| MG-1 | Manager  | 瓦片缓存结果状态从 PreviewState 独立为 TileCache | — | 已按预览状态与瓦片缓存概念收敛 |
 | MG-2 | Manager  | Embedding 以 `tenant_id + item_fingerprint` 唯一，重复执行只跳过或覆盖当前 artifact state | — | 已按 Manager 向量化能力说明收敛 |
 | SV-1 | Service  | TileServiceLayer.engine_id 藏在 layer_config JSONB 中，无 DB FK       | 中     | 待讨论     |
 | SV-2 | Service  | 三类服务无统一父表，服务目录需 UNION 查询                             | 低     | 待讨论     |

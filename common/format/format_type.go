@@ -62,6 +62,7 @@ const (
 	FormatOBJ       FormatType = "obj"
 	FormatSTL       FormatType = "stl"
 	FormatFBX       FormatType = "fbx"
+	FormatIFC       FormatType = "ifc"
 	FormatPLY       FormatType = "ply"
 	FormatSplat     FormatType = "splat"
 	FormatKSplat    FormatType = "ksplat"

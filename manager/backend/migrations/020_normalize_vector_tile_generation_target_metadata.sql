@@ -12,7 +12,10 @@ SET metadata = jsonb_set(
             WHEN metadata->'tile_generation_target'->>'target_kind' IS NOT NULL
                 THEN metadata->'tile_generation_target'->>'target_kind'
             WHEN metadata->'tile_generation_target'->>'prepared_3857' = 'true'
-                AND metadata->'tile_generation_target'->>'table' LIKE 'addp_qvo_%'
+                AND (
+                    metadata->'tile_generation_target'->>'table' LIKE 'addp_qvo_%'
+                    OR metadata->'tile_generation_target'->>'table' LIKE 'addp_vmv_%'
+                )
                 THEN 'source_schema_materialized_view'
             WHEN metadata->'tile_generation_target'->>'prepared_3857' = 'true'
                 THEN 'external_3857_materialized_view'

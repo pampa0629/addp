@@ -4,13 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	commonSpatial "github.com/addp/common/spatial"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/models"
@@ -46,13 +49,22 @@ func quickViewLocatorError(c *gin.Context, err error) {
 }
 
 type QuickViewHandler struct {
-	service         *service.QuickViewService
-	previewResolver *preview.PreviewResolver
-	mvtService      *service.UnifiedMVTService
+	service                    *service.QuickViewService
+	previewResolver            *preview.PreviewResolver
+	mvtService                 *service.UnifiedMVTService
+	rasterCOGTaskSvc           *service.RasterCOGTaskService
+	model3DGLBTaskSvc          *service.Model3DGLBTaskService
+	gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService
 }
 
 func NewQuickViewHandler(service *service.QuickViewService, previewResolver *preview.PreviewResolver, mvtService *service.UnifiedMVTService, _ *redis.Client) *QuickViewHandler {
 	return &QuickViewHandler{service: service, previewResolver: previewResolver, mvtService: mvtService}
+}
+
+func (h *QuickViewHandler) SetArtifactTaskServices(rasterCOGTaskSvc *service.RasterCOGTaskService, model3DGLBTaskSvc *service.Model3DGLBTaskService, gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService) {
+	h.rasterCOGTaskSvc = rasterCOGTaskSvc
+	h.model3DGLBTaskSvc = model3DGLBTaskSvc
+	h.gaussianSplatKSplatTaskSvc = gaussianSplatKSplatTaskSvc
 }
 
 type UpdatePreferredModeRequest struct {
@@ -63,6 +75,19 @@ type UpdatePreferredModeRequest struct {
 type UpdatePreviewStateRequest struct {
 	Locator   string               `json:"locator" binding:"required"`
 	ViewState commonModels.JSONMap `json:"view_state" binding:"required"`
+}
+
+type ExecuteQuickViewActionRequest struct {
+	Locator string `json:"locator" binding:"required"`
+	Action  string `json:"action" binding:"required"`
+}
+
+type ExecuteQuickViewActionResponse struct {
+	Action      string `json:"action"`
+	TaskType    string `json:"task_type"`
+	TaskID      uint   `json:"task_id"`
+	ExecutionID string `json:"execution_id"`
+	Status      string `json:"status"`
 }
 
 // GetQuickViewCapabilityByLocator 获取 locator 快显能力
@@ -90,6 +115,84 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, capability)
+}
+
+// ExecuteQuickViewAction 执行 locator 快显动作
+// @Summary 执行 locator 快显动作 | Execute locator quick view action
+// @Description 前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，目前支持生成栅格 COG、三维模型 GLB 快显和 3DGS KSplat 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts.
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param body body ExecuteQuickViewActionRequest true "快显动作请求 | Quick view action request"
+// @Success 202 {object} ExecuteQuickViewActionResponse "已提交执行 | Execution submitted"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
+// @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /quick-view/actions [post]
+// @Security BearerAuth
+func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
+	var req ExecuteQuickViewActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidRequestBody, err.Error())
+		return
+	}
+	locator := strings.TrimSpace(req.Locator)
+	if locator == "" {
+		missingLocator(c)
+		return
+	}
+	action := strings.TrimSpace(req.Action)
+	if action == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "quick view action is required"})
+		return
+	}
+
+	tenantID := tenantIDFromContext(c)
+	capability, err := h.quickViewCapabilityForLocator(c.Request.Context(), tenantID, locator)
+	if err != nil {
+		quickViewLocatorError(c, err)
+		return
+	}
+	if !quickViewCapabilityHasAction(capability, action) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "quick view action is not available for this locator"})
+		return
+	}
+	source, err := h.quickViewSourceForLocator(c.Request.Context(), tenantID, locator)
+	if err != nil {
+		quickViewLocatorError(c, err)
+		return
+	}
+
+	userID := c.GetUint("user_id")
+	var taskType string
+	var taskID uint
+	var executionID string
+	switch action {
+	case service.QuickViewActionGenerateRasterCOG:
+		taskType = commonExecution.TaskTypeRasterCOGGeneration
+		taskID, executionID, err = h.createAndExecuteRasterCOGTask(c.Request.Context(), userID, capability, source)
+	case service.QuickViewActionGenerateModel3DGLB:
+		taskType = commonExecution.TaskTypeModel3DGLBGeneration
+		taskID, executionID, err = h.createAndExecuteModel3DGLBTask(c.Request.Context(), userID, capability, source)
+	case service.QuickViewActionGenerateGaussianSplatKSplat:
+		taskType = commonExecution.TaskTypeGaussianSplatKSplatGeneration
+		taskID, executionID, err = h.createAndExecuteGaussianSplatKSplatTask(c.Request.Context(), userID, capability, source)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported quick view action: " + action})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusAccepted, ExecuteQuickViewActionResponse{
+		Action:      action,
+		TaskType:    taskType,
+		TaskID:      taskID,
+		ExecutionID: executionID,
+		Status:      commonExecution.ExecutionStatusRunning,
+	})
 }
 
 // UpdatePreferredModeByLocator 更新 locator 预览模式偏好
@@ -242,7 +345,7 @@ func (h *QuickViewHandler) GetQuickViewGeoJSONByLocator(c *gin.Context) {
 // @Header 200 {string} X-ADDP-Tile-Status "瓦片语义状态：ok、empty、timeout 或 degraded | Tile semantic status: ok, empty, timeout, or degraded"
 // @Header 200 {string} X-ADDP-Tile-Performance-Mode "动态瓦片性能模式：ready_3857_target、source_3857_indexed、source_3857_unindexed 或 source_transform_path | Realtime tile performance mode"
 // @Header 200 {string} X-ADDP-Tile-Timeout-Budget-MS "动态 MVT 单瓦片超时预算，单位毫秒 | Realtime MVT per-tile timeout budget in milliseconds"
-// @Header 200 {string} X-ADDP-Tile-Recommendation "超时或降级时的推荐动作：vector_quick_view_target_generation 或 vector_tile_cache_generation | Recommended action when timeout or degraded"
+// @Header 200 {string} X-ADDP-Tile-Recommendation "超时或降级时的推荐动作：vector_materialized_view_generation 或 vector_tile_cache_generation | Recommended action when timeout or degraded"
 // @Header 200 {string} X-ADDP-Tile-Retry-Policy "超时或降级后的重试策略：suppress_tile 或 ttl | Retry policy after timeout or degraded"
 // @Header 200 {string} X-Generation-Time "动态生成耗时 | Dynamic generation duration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -462,6 +565,230 @@ func (h *QuickViewHandler) quickViewSourceForLocator(ctx context.Context, tenant
 	return source, nil
 }
 
+func (h *QuickViewHandler) createAndExecuteModel3DGLBTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource) (uint, string, error) {
+	if h.model3DGLBTaskSvc == nil {
+		return 0, "", errors.New("model 3d GLB task service is not initialized")
+	}
+	config, err := model3DGLBTaskConfigFromQuickView(capability, source)
+	if err != nil {
+		return 0, "", err
+	}
+	task := models.Model3DGLBTask{
+		TenantID:  capability.TenantID,
+		Name:      quickViewActionTaskName("三维模型 GLB 快显", capability),
+		Enabled:   true,
+		Config:    config,
+		CreatedBy: &userID,
+	}
+	if err := h.model3DGLBTaskSvc.Create(ctx, &task); err != nil {
+		return 0, "", err
+	}
+	executionID, err := h.model3DGLBTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	if err != nil {
+		return task.ID, "", err
+	}
+	return task.ID, executionID, nil
+}
+
+func (h *QuickViewHandler) createAndExecuteRasterCOGTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource) (uint, string, error) {
+	if h.rasterCOGTaskSvc == nil {
+		return 0, "", errors.New("raster COG task service is not initialized")
+	}
+	config, err := rasterCOGTaskConfigFromQuickView(capability, source)
+	if err != nil {
+		return 0, "", err
+	}
+	task := models.RasterCOGTask{
+		TenantID:  capability.TenantID,
+		Name:      quickViewActionTaskName("栅格 COG 快显", capability),
+		Enabled:   true,
+		Config:    config,
+		CreatedBy: &userID,
+	}
+	if err := h.rasterCOGTaskSvc.Create(ctx, &task); err != nil {
+		return 0, "", err
+	}
+	executionID, err := h.rasterCOGTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	if err != nil {
+		return task.ID, "", err
+	}
+	return task.ID, executionID, nil
+}
+
+func (h *QuickViewHandler) createAndExecuteGaussianSplatKSplatTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource) (uint, string, error) {
+	if h.gaussianSplatKSplatTaskSvc == nil {
+		return 0, "", errors.New("gaussian splat KSplat task service is not initialized")
+	}
+	config, err := gaussianSplatKSplatTaskConfigFromQuickView(capability, source)
+	if err != nil {
+		return 0, "", err
+	}
+	task := models.GaussianSplatKSplatTask{
+		TenantID:  capability.TenantID,
+		Name:      quickViewActionTaskName("3DGS KSplat 快显", capability),
+		Enabled:   true,
+		Config:    config,
+		CreatedBy: &userID,
+	}
+	if err := h.gaussianSplatKSplatTaskSvc.Create(ctx, &task); err != nil {
+		return 0, "", err
+	}
+	executionID, err := h.gaussianSplatKSplatTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	if err != nil {
+		return task.ID, "", err
+	}
+	return task.ID, executionID, nil
+}
+
+func rasterCOGTaskConfigFromQuickView(capability *service.QuickViewCapability, source service.QuickViewSource) (commonModels.JSONMap, error) {
+	if capability == nil || capability.SourceKind != service.QuickViewSourceKindRaster || source.Raster == nil {
+		return nil, errors.New("quick view source is not a raster COG generation source")
+	}
+	targetMap, err := quickViewRasterTargetConfig(capability, source.EngineID)
+	if err != nil {
+		return nil, err
+	}
+	raster := source.Raster
+	rasterMap := commonModels.JSONMap{
+		"source_profile":    firstNonEmptyString(raster.Profile, "unknown"),
+		"source_size_bytes": raster.SizeBytes,
+		"width":             raster.Width,
+		"height":            raster.Height,
+		"band_count":        raster.BandCount,
+	}
+	if raster.SourceSRID > 0 {
+		rasterMap["source_srid"] = raster.SourceSRID
+	}
+	if strings.TrimSpace(raster.SourceCRS) != "" {
+		rasterMap["source_crs"] = strings.TrimSpace(raster.SourceCRS)
+	}
+	if len(raster.Extent) == 4 {
+		rasterMap["extent"] = append([]float64(nil), raster.Extent...)
+	}
+	if raster.ExtentSRID > 0 {
+		rasterMap["extent_srid"] = raster.ExtentSRID
+	}
+	return commonModels.JSONMap{
+		"target": targetMap,
+		"raster": rasterMap,
+		"cog": commonModels.JSONMap{
+			"compression":         "DEFLATE",
+			"blocksize":           512,
+			"overview_resampling": "NEAREST",
+		},
+	}, nil
+}
+
+func model3DGLBTaskConfigFromQuickView(capability *service.QuickViewCapability, source service.QuickViewSource) (commonModels.JSONMap, error) {
+	if capability == nil || capability.SourceKind != service.QuickViewSourceKindModel3D || source.Model3D == nil {
+		return nil, errors.New("quick view source is not a model_3d GLB generation source")
+	}
+	sourceMap, err := quickViewArtifactSourceConfig(capability, source.EngineID, source.Model3D.Format, source.Model3D.SourceSizeBytes)
+	if err != nil {
+		return nil, err
+	}
+	return commonModels.JSONMap{
+		"source": sourceMap,
+		"result": commonModels.JSONMap{},
+	}, nil
+}
+
+func gaussianSplatKSplatTaskConfigFromQuickView(capability *service.QuickViewCapability, source service.QuickViewSource) (commonModels.JSONMap, error) {
+	if capability == nil || capability.SourceKind != service.QuickViewSourceKindGaussianSplat || source.GaussianSplat == nil {
+		return nil, errors.New("quick view source is not a gaussian_splat KSplat generation source")
+	}
+	sourceMap, err := quickViewArtifactSourceConfig(capability, source.EngineID, source.GaussianSplat.Format, source.GaussianSplat.SourceSizeBytes)
+	if err != nil {
+		return nil, err
+	}
+	return commonModels.JSONMap{
+		"source": sourceMap,
+		"result": commonModels.JSONMap{},
+	}, nil
+}
+
+func quickViewRasterTargetConfig(capability *service.QuickViewCapability, sourceEngineID uint) (commonModels.JSONMap, error) {
+	locator := strings.TrimSpace(capability.Locator)
+	if locator == "" || sourceEngineID == 0 {
+		return nil, errors.New("quick view capability missing raster source identity")
+	}
+	parsed, err := resourcetree.ParseURI(locator)
+	if err != nil {
+		return nil, fmt.Errorf("quick view locator is invalid: %w", err)
+	}
+	itemID := uint(0)
+	if parsed.ItemID != nil {
+		itemID = *parsed.ItemID
+	}
+	target := commonModels.JSONMap{
+		"source_engine_id": sourceEngineID,
+		"locator":          locator,
+	}
+	if itemID > 0 {
+		target["item_id"] = itemID
+	}
+	if itemFingerprint := strings.TrimSpace(capability.ItemFingerprint); itemFingerprint != "" {
+		target["item_fingerprint"] = itemFingerprint
+	}
+	return target, nil
+}
+
+func quickViewArtifactSourceConfig(capability *service.QuickViewCapability, sourceEngineID uint, sourceFormat string, sourceSizeBytes int64) (commonModels.JSONMap, error) {
+	locator := strings.TrimSpace(capability.Locator)
+	itemFingerprint := strings.TrimSpace(capability.ItemFingerprint)
+	if locator == "" || itemFingerprint == "" || sourceEngineID == 0 {
+		return nil, errors.New("quick view capability missing source identity")
+	}
+	parsed, err := resourcetree.ParseURI(locator)
+	if err != nil {
+		return nil, fmt.Errorf("quick view locator is invalid: %w", err)
+	}
+	itemID := uint(0)
+	if parsed.ItemID != nil {
+		itemID = *parsed.ItemID
+	}
+	return commonModels.JSONMap{
+		"item_locator":      locator,
+		"source_engine_id":  sourceEngineID,
+		"item_fingerprint":  itemFingerprint,
+		"item_id":           itemID,
+		"format":            strings.ToLower(strings.TrimSpace(sourceFormat)),
+		"source_size_bytes": sourceSizeBytes,
+	}, nil
+}
+
+func quickViewCapabilityHasAction(capability *service.QuickViewCapability, action string) bool {
+	if capability == nil {
+		return false
+	}
+	for _, candidate := range capability.AvailableActions {
+		if candidate == action {
+			return true
+		}
+	}
+	return false
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if text := strings.TrimSpace(value); text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func quickViewActionTaskName(prefix string, capability *service.QuickViewCapability) string {
+	locator := ""
+	if capability != nil {
+		locator = strings.TrimSpace(capability.Locator)
+	}
+	if locator == "" {
+		return prefix
+	}
+	return prefix + " - " + locator
+}
+
 func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.PreviewResult, tablePreview *models.TablePreview) service.QuickViewSource {
 	storageTenantID := uint(0)
 	if tenantID != nil {
@@ -487,7 +814,7 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 		source.GeoJSONURL = locatorQuickViewGeoJSONURL(source.Identity.Locator, tablePreview)
 	}
 	if tablePreview.Object != nil {
-		gaussianSplat := service.GaussianSplatQuickViewSourceFromAttributes(tablePreview.Object.Attributes)
+		gaussianSplat := service.GaussianSplatKSplatSourceFromAttributes(tablePreview.Object.Attributes)
 		if gaussianSplat != nil {
 			source.EngineID = tablePreview.Object.EngineID
 			if tablePreview.Object.Content != nil {
@@ -502,7 +829,7 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 			source.CanTile = false
 			return source
 		}
-		model3D := service.Model3DQuickViewSourceFromAttributes(tablePreview.Object.Attributes)
+		model3D := service.Model3DGLBSourceFromAttributes(tablePreview.Object.Attributes)
 		if model3D != nil {
 			source.EngineID = tablePreview.Object.EngineID
 			source.Model3D = model3D

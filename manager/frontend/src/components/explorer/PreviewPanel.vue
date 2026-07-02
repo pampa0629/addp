@@ -77,24 +77,24 @@
           </el-tag>
 
           <el-button
-            v-if="showModel3DQuickViewGenerationAction"
+            v-if="showModel3DGLBGenerationAction"
             size="small"
             type="primary"
-            :loading="model3DQuickViewGenerationLoading"
-            @click="handleGenerateModel3DQuickView"
+            :loading="model3DGLBGenerationLoading"
+            @click="handleGenerateModel3DGLB"
           >
             <el-icon><MagicStick /></el-icon>
-            {{ t('manager.explorer.generateModel3DQuickView') }}
+            {{ t('manager.explorer.generateModel3DGLB') }}
           </el-button>
           <el-button
-            v-if="showGaussianSplatQuickViewGenerationAction"
+            v-if="showGaussianSplatKSplatGenerationAction"
             size="small"
             type="primary"
-            :loading="gaussianSplatQuickViewGenerationLoading"
-            @click="handleGenerateGaussianSplatQuickView"
+            :loading="gaussianSplatKSplatGenerationLoading"
+            @click="handleGenerateGaussianSplatKSplat"
           >
             <el-icon><MagicStick /></el-icon>
-            {{ gaussianSplatQuickViewActionText }}
+            {{ gaussianSplatKSplatActionText }}
           </el-button>
           <el-button
             v-if="showModel3DTilesGenerationAction"
@@ -124,7 +124,7 @@
               <el-icon><Select /></el-icon>
             </el-tag>
             <el-tooltip
-              v-else-if="quickViewStatus && !quickViewStatus.can_generate_vector_tile_cache"
+              v-else-if="showQuickViewUnavailableNotice"
               :content="quickViewUnavailableText"
               placement="bottom"
               :show-after="300"
@@ -140,7 +140,7 @@
               <el-icon class="quick-view-status-icon is-danger"><WarningFilled /></el-icon>
             </el-tooltip>
             <el-button
-              v-if="isQuickViewActive"
+              v-if="showBackToBasicPreviewAction"
               size="small"
               :loading="quickViewActionLoading"
               @click="handleBackToBasicPreview"
@@ -148,7 +148,7 @@
               {{ t('manager.spatialPreview.backToBasicPreview') }}
             </el-button>
             <el-button
-              v-else-if="quickViewStatus?.can_use_quick_view"
+              v-else-if="showSwitchQuickViewAction"
               size="small"
               type="primary"
               :loading="quickViewActionLoading"
@@ -166,7 +166,7 @@
               {{ t('manager.spatialPreview.generateRasterCOG') }}
             </el-button>
             <el-button
-              v-else-if="quickViewStatus?.can_generate_vector_tile_cache"
+              v-else-if="showTileCacheGenerationAction"
               size="small"
               type="primary"
               @click="handleGenerateTileCache"
@@ -174,10 +174,10 @@
               {{ t('manager.spatialPreview.generateTileCache') }}
             </el-button>
             <el-button
-              v-if="showQuickViewOptimizationAction"
+              v-if="showVectorMaterializedViewAction"
               size="small"
               type="warning"
-              @click="handleQuickViewOptimization"
+              @click="handleVectorMaterializedView"
             >
               <el-icon><MagicStick /></el-icon>
               {{ t('manager.spatialPreview.optimizeQuickView') }}
@@ -437,18 +437,21 @@ import {
 } from '@/utils/quickViewTileAdvisory'
 import { quickViewReasonText } from '@/utils/quickViewReasonText'
 import {
-  buildQuickViewOptimizationCreateQuery,
+  buildVectorMaterializedViewCreateQuery,
   buildTileCacheCreateQuery
 } from '@/utils/quickViewNavigationQuery'
 import {
-  buildRasterCOGTaskPayload,
-  shouldShowRasterCOGGenerationAction,
   waitForRasterCOGExecution
 } from '@/utils/rasterCOGTask'
 import {
+  hasQuickViewAction,
   isRasterQuickViewRenderSource,
-  isTileQuickViewRenderSource
+  isTileQuickViewRenderSource,
+  shouldShowQuickViewUnavailableNotice as shouldShowQuickViewUnavailableNoticeForStatus
 } from '@/utils/quickViewRenderSource'
+import {
+  waitForQuickViewArtifactReady
+} from '@/utils/quickViewArtifactReady'
 import {
   rasterExtentSRIDFromMetadata,
   isRasterMosaicMeta,
@@ -498,8 +501,8 @@ const quickViewActionLoading = ref(false)
 const quickViewTileAdvisory = ref(null)
 const quickViewTileLastNotice = ref({ key: '', at: 0 })
 const rasterCOGGenerationLoading = ref(false)
-const model3DQuickViewGenerationLoading = ref(false)
-const gaussianSplatQuickViewGenerationLoading = ref(false)
+const model3DGLBGenerationLoading = ref(false)
+const gaussianSplatKSplatGenerationLoading = ref(false)
 const activePreviewMode = ref('basic_preview')
 const mvtGridVisible = ref(false)
 const resourceActions = ref(null)
@@ -1041,6 +1044,37 @@ const handlePreviewAdvisoryRefresh = async () => {
   }
 }
 
+const reloadCurrentPreview = async () => {
+  const locator = String(props.selectedNode?.locator || props.selectedNode?.id || '').trim()
+  if (!locator) return null
+  return store.loadPreview(
+    locator,
+    store.pagination.page || 1,
+    store.selectedChildName,
+    store.selectedRefPath,
+    store.selectedNestedChildPath,
+    store.selectedChildKey
+  )
+}
+
+const refreshQuickViewStatus = async () => {
+  await loadQuickViewStatus()
+  return quickViewStatus.value
+}
+
+const refreshPreviewAfterArtifactReady = async (renderSource) => {
+  const result = await waitForQuickViewArtifactReady(
+    refreshQuickViewStatus,
+    renderSource,
+    { maxAttempts: 8, intervalMs: 1000, initialDelayMs: 300 }
+  )
+  await reloadCurrentPreview()
+  if (!result.ready) {
+    await loadQuickViewStatus()
+  }
+  return result
+}
+
 const showDownloadControl = computed(() => {
   if (!props.selectedNode) return false
   if (isGraphOverview.value) return false
@@ -1265,7 +1299,7 @@ const isTIFFNode = computed(() => {
 
 const isRasterMosaicNode = computed(() => isRasterMosaicMeta(props.previewData, props.selectedNode || {}))
 
-const isModel3DQuickViewSourceNode = computed(() => {
+const isModel3DGLBSourceNode = computed(() => {
   const node = props.selectedNode || {}
   const object = props.previewData?.object || {}
   const attrs = object.attributes || {}
@@ -1289,11 +1323,12 @@ const isModel3DQuickViewSourceNode = computed(() => {
   if (dataType === 'model_3d' && format === 'fbx' && (!layout || layout === 'single')) return true
   if (dataType === 'model_3d' && format === 'obj' && (!layout || layout === 'single')) return true
   if (dataType === 'model_3d' && format === 'stl' && (!layout || layout === 'single')) return true
-  if (['osgb', 'gltf', 'fbx', 'obj', 'stl'].includes(format)) return true
-  return /\.(osgb|gltf|fbx|obj|stl)$/i.test(selectedNodePath.value)
+  if (dataType === 'model_3d' && format === 'ifc' && (!layout || layout === 'single')) return true
+  if (['osgb', 'gltf', 'fbx', 'obj', 'stl', 'ifc'].includes(format)) return true
+  return /\.(osgb|gltf|fbx|obj|stl|ifc)$/i.test(selectedNodePath.value)
 })
 
-const isGaussianSplatQuickViewSourceNode = computed(() => {
+const isGaussianSplatKSplatSourceNode = computed(() => {
   const node = props.selectedNode || {}
   const object = props.previewData?.object || {}
   const attrs = object.attributes || {}
@@ -1346,7 +1381,7 @@ const spatialInfoTooltip = computed(() => {
 })
 
 const spatialPreviewTarget = computed(() => {
-  if ((!hasGeometry.value && !isTIFFNode.value && !isRasterMosaicNode.value && !isModel3DQuickViewSourceNode.value && !isGaussianSplatQuickViewSourceNode.value) || !props.selectedNode) return null
+  if ((!hasGeometry.value && !isTIFFNode.value && !isRasterMosaicNode.value && !isModel3DGLBSourceNode.value && !isGaussianSplatKSplatSourceNode.value) || !props.selectedNode) return null
   const node = props.selectedNode
   const locator = String(node.locator || node.id || '').trim()
   let parsedLocator = null
@@ -1425,8 +1460,22 @@ const quickViewRenderer = computed(() => {
   return null
 })
 
+const canUseQuickViewAction = (action) => hasQuickViewAction(quickViewStatus.value, action)
+
+const showBackToBasicPreviewAction = computed(() => {
+  return canUseQuickViewAction('back_to_basic_preview')
+})
+
+const showSwitchQuickViewAction = computed(() => {
+  return canUseQuickViewAction('switch_quick_view')
+})
+
+const showTileCacheGenerationAction = computed(() => {
+  return canUseQuickViewAction('generate_vector_tile_cache')
+})
+
 const showRasterCOGGenerationAction = computed(() => {
-  return shouldShowRasterCOGGenerationAction(quickViewStatus.value)
+  return canUseQuickViewAction('generate_raster_cog')
 })
 
 const isExternalOptimizationTarget = computed(() => {
@@ -1452,23 +1501,12 @@ const quickViewUnavailableText = computed(() => {
     t('manager.spatialPreview.quickViewUnavailable')
 })
 
-const quickViewOptimizationRecommended = computed(() => {
-  const realtime = quickViewStatus.value?.realtime_tile || {}
-  return realtime.optimization_recommended === true ||
-    quickViewStatus.value?.optimization?.status === 'stale' ||
-    realtime.performance_mode === 'source_transform_path' ||
-    quickViewTileAdvisory.value?.recommendation === 'vector_quick_view_target_generation' ||
-    quickViewTileAdvisory.value?.retryPolicy === 'suppress_tile'
+const showQuickViewUnavailableNotice = computed(() => {
+  return shouldShowQuickViewUnavailableNoticeForStatus(quickViewStatus.value)
 })
 
-const showQuickViewOptimizationAction = computed(() => {
-  const target = spatialPreviewTarget.value
-  const optimization = quickViewStatus.value?.optimization || {}
-  return !!target &&
-    quickViewRenderSource.value === 'realtime_tile' &&
-    quickViewOptimizationRecommended.value &&
-    optimization.available !== true &&
-    Number(quickViewStatus.value?.render_facts?.source_srid || target.sourceSRID || 0) !== 3857
+const showVectorMaterializedViewAction = computed(() => {
+  return canUseQuickViewAction('generate_vector_materialized_view')
 })
 
 const showMvtGridToggle = computed(() => {
@@ -1591,8 +1629,12 @@ const quickViewRendererProps = computed(() => {
             frontend_renderer: 'model_3d',
             url: previewURL,
             metadata: {
+              format: 'glb',
+              render_source: 'model_3d_glb',
+              preview_artifact_status: 'ready',
               model_3d: {
                 ...(quickViewStatus.value?.model_3d || {}),
+                artifact_format: 'glb',
                 model_kind: quickViewStatus.value?.model_3d?.model_kind || 'mesh_scene'
               }
             }
@@ -1760,12 +1802,12 @@ const handleGenerateTileCache = () => {
   })
 }
 
-const handleQuickViewOptimization = () => {
+const handleVectorMaterializedView = () => {
   const target = spatialPreviewTarget.value
   if (!target) return
   router.push({
-    name: 'QuickViewOptimization',
-    query: buildQuickViewOptimizationCreateQuery(target, quickViewStatus.value)
+    name: 'VectorMaterializedView',
+    query: buildVectorMaterializedViewCreateQuery(target, quickViewStatus.value)
   })
 }
 
@@ -1774,15 +1816,9 @@ const handleGenerateRasterCOG = async () => {
   if (!target || !quickViewStatus.value) return
   rasterCOGGenerationLoading.value = true
   try {
-    const payload = buildRasterCOGTaskPayload(
-      target,
-      quickViewStatus.value,
-      t('manager.spatialPreview.rasterCOGTaskName', { name: title.value || target.locator })
-    )
-    const task = await quickViewAPI.createRasterCOGTask(payload)
-    const execution = await quickViewAPI.executeRasterCOGTask(task.id)
+    const execution = await quickViewAPI.executeQuickViewAction(target.locator, 'generate_raster_cog')
     ElMessage.success(t('manager.spatialPreview.generateRasterCOGSubmitted'))
-    const executionID = String(execution?.execution_id || '').trim()
+    const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
     if (executionID) {
       const result = await waitForRasterCOGExecution(
         executionID,
@@ -1805,30 +1841,17 @@ const handleGenerateRasterCOG = async () => {
   }
 }
 
-const handleGenerateModel3DQuickView = async () => {
-  const source = model3DQuickViewSourcePayload.value
-  if (!source) {
-    ElMessage.warning(t('manager.explorer.model3DQuickViewMissingIdentity'))
+const handleGenerateModel3DGLB = async () => {
+  const locator = String(props.selectedNode?.locator || props.selectedNode?.id || '').trim()
+  if (!locator) {
+    ElMessage.warning(t('manager.explorer.model3DGLBMissingIdentity'))
     return
   }
-  model3DQuickViewGenerationLoading.value = true
+  model3DGLBGenerationLoading.value = true
   try {
-    const payload = {
-      name: t('manager.explorer.model3DQuickViewTaskName', { name: title.value || source.item_locator }),
-      enabled: true,
-      config: {
-        source,
-        result: {}
-      }
-    }
-    const task = await quickViewAPI.createModel3DQuickViewTask(payload)
-    const taskID = Number(task?.id || task?.data?.id || 0)
-    let executionID = ''
-    if (taskID) {
-      const execution = await quickViewAPI.executeModel3DQuickViewTask(taskID)
-      executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
-    }
-    ElMessage.success(t('manager.explorer.generateModel3DQuickViewSubmitted'))
+    const execution = await quickViewAPI.executeQuickViewAction(locator, 'generate_model_3d_glb')
+    const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
+    ElMessage.success(t('manager.explorer.generateModel3DGLBSubmitted'))
     if (executionID) {
       const result = await waitForRasterCOGExecution(
         executionID,
@@ -1836,49 +1859,36 @@ const handleGenerateModel3DQuickView = async () => {
         { maxAttempts: 60, intervalMs: 2000 }
       )
       if (result.success) {
-        ElMessage.success(t('manager.explorer.generateModel3DQuickViewReady'))
+        ElMessage.success(t('manager.explorer.generateModel3DGLBReady'))
       } else if (result.failed) {
-        ElMessage.error(t('manager.explorer.generateModel3DQuickViewExecutionFailed'))
+        ElMessage.error(t('manager.explorer.generateModel3DGLBExecutionFailed'))
       } else if (!result.completed) {
-        ElMessage.warning(t('manager.explorer.generateModel3DQuickViewTimeout'))
+        ElMessage.warning(t('manager.explorer.generateModel3DGLBTimeout'))
       }
     }
-    await loadQuickViewStatus()
+    await refreshPreviewAfterArtifactReady('model_3d_glb')
     if (quickViewStatus.value?.can_use_quick_view && quickViewRenderSource.value === 'model_3d_glb') {
       activePreviewMode.value = 'map_quick_view'
     }
   } catch (error) {
     console.error('提交三维模型 GLB 快显生成失败:', error)
-    ElMessage.error(t('manager.explorer.generateModel3DQuickViewFailed'))
+    ElMessage.error(t('manager.explorer.generateModel3DGLBFailed'))
   } finally {
-    model3DQuickViewGenerationLoading.value = false
+    model3DGLBGenerationLoading.value = false
   }
 }
 
-const handleGenerateGaussianSplatQuickView = async () => {
-  const source = gaussianSplatQuickViewSourcePayload.value
-  if (!source) {
-    ElMessage.warning(t('manager.explorer.gaussianSplatQuickViewMissingIdentity'))
+const handleGenerateGaussianSplatKSplat = async () => {
+  const locator = String(props.selectedNode?.locator || props.selectedNode?.id || '').trim()
+  if (!locator) {
+    ElMessage.warning(t('manager.explorer.gaussianSplatKSplatMissingIdentity'))
     return
   }
-  gaussianSplatQuickViewGenerationLoading.value = true
+  gaussianSplatKSplatGenerationLoading.value = true
   try {
-    const payload = {
-      name: t('manager.explorer.gaussianSplatQuickViewTaskName', { name: title.value || source.item_locator }),
-      enabled: true,
-      config: {
-        source,
-        result: {}
-      }
-    }
-    const task = await quickViewAPI.createGaussianSplatQuickViewTask(payload)
-    const taskID = Number(task?.id || task?.data?.id || 0)
-    let executionID = ''
-    if (taskID) {
-      const execution = await quickViewAPI.executeGaussianSplatQuickViewTask(taskID)
-      executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
-    }
-    ElMessage.success(t('manager.explorer.generateGaussianSplatQuickViewSubmitted'))
+    const execution = await quickViewAPI.executeQuickViewAction(locator, 'generate_gaussian_splat_ksplat')
+    const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
+    ElMessage.success(t('manager.explorer.generateGaussianSplatKSplatSubmitted'))
     if (executionID) {
       const result = await waitForRasterCOGExecution(
         executionID,
@@ -1886,22 +1896,22 @@ const handleGenerateGaussianSplatQuickView = async () => {
         { maxAttempts: 60, intervalMs: 2000 }
       )
       if (result.success) {
-        ElMessage.success(t('manager.explorer.generateGaussianSplatQuickViewReady'))
+        ElMessage.success(t('manager.explorer.generateGaussianSplatKSplatReady'))
       } else if (result.failed) {
-        ElMessage.error(t('manager.explorer.generateGaussianSplatQuickViewExecutionFailed'))
+        ElMessage.error(t('manager.explorer.generateGaussianSplatKSplatExecutionFailed'))
       } else if (!result.completed) {
-        ElMessage.warning(t('manager.explorer.generateGaussianSplatQuickViewTimeout'))
+        ElMessage.warning(t('manager.explorer.generateGaussianSplatKSplatTimeout'))
       }
     }
-    await loadQuickViewStatus()
+    await refreshPreviewAfterArtifactReady('gaussian_splat_ksplat')
     if (quickViewStatus.value?.can_use_quick_view && quickViewRenderSource.value === 'gaussian_splat_ksplat') {
       activePreviewMode.value = 'map_quick_view'
     }
   } catch (error) {
-    console.error('提交 3DGS KPlat 快显生成失败:', error)
-    ElMessage.error(t('manager.explorer.generateGaussianSplatQuickViewFailed'))
+    console.error('提交 3DGS KSplat 快显生成失败:', error)
+    ElMessage.error(t('manager.explorer.generateGaussianSplatKSplatFailed'))
   } finally {
-    gaussianSplatQuickViewGenerationLoading.value = false
+    gaussianSplatKSplatGenerationLoading.value = false
   }
 }
 
@@ -1967,15 +1977,13 @@ const objectContentMetadata = computed(() => {
   return objectData.value?.content?.metadata || {}
 })
 
-const model3DQuickViewPromptMetadata = computed(() => {
+const model3DGLBPromptMetadata = computed(() => {
   const metadata = objectContentMetadata.value || {}
-  const taskType = String(metadata.task_type || metadata.quick_view_task_type || '').trim()
-  const sourceFormat = String(
-    metadata.source_format ||
-    objectData.value?.attributes?.item?.format ||
-    ''
-  ).trim().toLowerCase()
-  if (taskType !== 'model_3d_quick_view_generation' || !['osgb', 'gltf', 'fbx', 'obj', 'stl'].includes(sourceFormat)) {
+  if (String(metadata.preview_artifact_status || '').trim() === 'ready') {
+    return null
+  }
+  const taskType = String(metadata.task_type || metadata.preview_artifact_task_type || '').trim()
+  if (taskType !== 'model_3d_glb_generation') {
     return null
   }
   return metadata
@@ -1983,7 +1991,10 @@ const model3DQuickViewPromptMetadata = computed(() => {
 
 const model3DTilesPromptMetadata = computed(() => {
   const metadata = objectContentMetadata.value || {}
-  const taskType = String(metadata.task_type || metadata.quick_view_task_type || '').trim()
+  if (String(metadata.preview_artifact_status || '').trim() === 'ready') {
+    return null
+  }
+  const taskType = String(metadata.task_type || metadata.preview_artifact_task_type || '').trim()
   const sourceFormat = String(
     metadata.source_format ||
     objectData.value?.attributes?.item?.format ||
@@ -1995,28 +2006,6 @@ const model3DTilesPromptMetadata = computed(() => {
   return metadata
 })
 
-const gaussianSplatQuickViewPromptMetadata = computed(() => {
-  const metadata = objectContentMetadata.value || {}
-  const item = objectData.value?.attributes?.item || {}
-  const taskType = String(metadata.task_type || metadata.quick_view_task_type || '').trim()
-  const dataType = String(item.data_type || metadata.data_type || '').trim().toLowerCase()
-  const sourceFormat = String(
-    metadata.source_format ||
-    item.format ||
-    ''
-  ).trim().toLowerCase()
-  if (taskType === 'gaussian_splat_quick_view_generation' && dataType === 'gaussian_splat' && ['ply', 'splat'].includes(sourceFormat)) {
-    return metadata
-  }
-  if (dataType === 'gaussian_splat' && ['ply', 'splat'].includes(sourceFormat)) {
-    return {
-      ...metadata,
-      source_format: sourceFormat
-    }
-  }
-  return null
-})
-
 const parseSelectedLocator = () => {
   const locator = String(props.selectedNode?.locator || props.selectedNode?.id || '').trim()
   if (!locator) return { locator: '', parsed: null }
@@ -2026,43 +2015,6 @@ const parseSelectedLocator = () => {
     return { locator, parsed: null }
   }
 }
-
-const model3DQuickViewSourcePayload = computed(() => {
-  const metadata = model3DQuickViewPromptMetadata.value
-  const node = props.selectedNode || {}
-  const { locator, parsed: parsedLocator } = parseSelectedLocator()
-  if (!metadata || !locator) return null
-  const engineID = Number(
-    parsedLocator?.engineId ||
-    node.engineId ||
-    node.engine_id ||
-    objectData.value?.engine_id ||
-    objectData.value?.engineId ||
-    0
-  )
-  const itemFingerprint = String(
-    metadata.item_fingerprint ||
-    props.previewData?.metadata?.item_fingerprint ||
-    objectData.value?.attributes?.item?.fingerprint ||
-    ''
-  ).trim()
-  if (!engineID || !itemFingerprint) return null
-  const storage = objectData.value?.attributes?.storage || {}
-  const sizeBytes = Number(
-    objectData.value?.size_bytes ||
-    storage.total_size ||
-    storage.size ||
-    0
-  )
-  return {
-    item_locator: locator,
-    source_engine_id: engineID,
-    item_fingerprint: itemFingerprint,
-    item_id: Number(parsedLocator?.itemId || props.previewData?.item_id || 0),
-    format: String(metadata.source_format || objectData.value?.attributes?.item?.format || '').trim().toLowerCase(),
-    source_size_bytes: Number.isFinite(sizeBytes) ? sizeBytes : 0
-  }
-})
 
 const model3DTilesSourcePayload = computed(() => {
   const metadata = model3DTilesPromptMetadata.value
@@ -2094,97 +2046,32 @@ const model3DTilesSourcePayload = computed(() => {
   }
 })
 
-const gaussianSplatQuickViewSourcePayload = computed(() => {
-  const metadata = gaussianSplatQuickViewPromptMetadata.value
-  const node = props.selectedNode || {}
-  const { locator, parsed: parsedLocator } = parseSelectedLocator()
-  if (!metadata || !locator) return null
-  const engineID = Number(
-    parsedLocator?.engineId ||
-    node.engineId ||
-    node.engine_id ||
-    objectData.value?.engine_id ||
-    objectData.value?.engineId ||
-    0
-  )
-  const itemFingerprint = String(
-    metadata.item_fingerprint ||
-    props.previewData?.metadata?.item_fingerprint ||
-    objectData.value?.attributes?.item?.fingerprint ||
-    ''
-  ).trim()
-  if (!engineID || !itemFingerprint) return null
-  const storage = objectData.value?.attributes?.storage || {}
-  const sizeBytes = Number(
-    objectData.value?.size_bytes ||
-    storage.total_size ||
-    storage.size ||
-    0
-  )
-  const gaussianInfo = objectData.value?.attributes?.type_info?.gaussian_splat ||
-    quickViewStatus.value?.gaussian_splat ||
-    {}
-  const source = {
-    item_locator: locator,
-    source_engine_id: engineID,
-    item_fingerprint: itemFingerprint,
-    item_id: Number(parsedLocator?.itemId || props.previewData?.item_id || 0),
-    format: String(metadata.source_format || objectData.value?.attributes?.item?.format || '').trim().toLowerCase(),
-    source_size_bytes: Number.isFinite(sizeBytes) ? sizeBytes : 0
-  }
-  const bounds3D = normalizeBounds3D(gaussianInfo.bounds_3d)
-  const sampledBounds3D = normalizeBounds3D(gaussianInfo.sampled_bounds_3d)
-  if (bounds3D) source.bounds_3d = bounds3D
-  if (sampledBounds3D) source.sampled_bounds_3d = sampledBounds3D
-  const sampleCount = Number(gaussianInfo.sampled_bounds_sample_count || 0)
-  if (Number.isFinite(sampleCount) && sampleCount > 0) {
-    source.sampled_bounds_sample_count = sampleCount
-  }
-  return source
+const showModel3DGLBGenerationAction = computed(() => {
+  return canUseQuickViewAction('generate_model_3d_glb')
 })
 
-const normalizeBounds3D = (bounds) => {
-  if (!bounds || typeof bounds !== 'object') return null
-  const keys = ['min_x', 'min_y', 'min_z', 'max_x', 'max_y', 'max_z']
-  const normalized = {}
-  for (const key of keys) {
-    const value = Number(bounds[key])
-    if (!Number.isFinite(value)) return null
-    normalized[key] = value
-  }
-  return normalized
-}
-
-const showModel3DQuickViewGenerationAction = computed(() => {
-  return Boolean(model3DQuickViewSourcePayload.value) &&
-    !(quickViewStatus.value?.can_use_quick_view && quickViewRenderSource.value === 'model_3d_glb')
+const showGaussianSplatKSplatGenerationAction = computed(() => {
+  return canUseQuickViewAction('generate_gaussian_splat_ksplat')
 })
-
-const showGaussianSplatQuickViewGenerationAction = computed(() => {
-  const recommendedAction = String(quickViewStatus.value?.gaussian_splat?.recommended_action || '').trim()
-  return Boolean(gaussianSplatQuickViewSourcePayload.value) &&
-    recommendedAction === 'gaussian_splat_quick_view_generation' &&
-    !(quickViewStatus.value?.can_use_quick_view && quickViewRenderSource.value === 'gaussian_splat_ksplat')
-})
-const gaussianSplatQuickViewActionText = computed(() => {
-  return t('manager.explorer.generateGaussianSplatQuickView')
+const gaussianSplatKSplatActionText = computed(() => {
+  return t('manager.explorer.generateGaussianSplatKSplat')
 })
 
 const showModel3DTilesGenerationAction = computed(() => Boolean(model3DTilesSourcePayload.value))
-const showModel3DTaskPrompt = computed(() => Boolean(model3DQuickViewPromptMetadata.value || model3DTilesPromptMetadata.value))
+const showModel3DTaskPrompt = computed(() => Boolean(model3DGLBPromptMetadata.value || model3DTilesPromptMetadata.value))
 const model3DTaskPromptFormat = computed(() => {
-  const metadata = model3DTilesPromptMetadata.value || model3DQuickViewPromptMetadata.value || {}
+  const metadata = model3DTilesPromptMetadata.value || model3DGLBPromptMetadata.value || {}
   return String(metadata.source_format || objectData.value?.attributes?.item?.format || '').trim().toLowerCase() || '-'
 })
 const model3DTaskPromptTitle = computed(() => (
   model3DTilesPromptMetadata.value
     ? t('manager.explorer.model3DTilesPromptTitle')
-    : t('manager.explorer.model3DQuickViewPromptTitle')
+    : t('manager.explorer.model3DGLBPromptTitle')
 ))
 const model3DTaskPromptDescription = computed(() => (
   model3DTilesPromptMetadata.value
     ? t('manager.explorer.model3DTilesPromptDescription')
-    : t('manager.explorer.model3DQuickViewPromptDescription')
+    : t('manager.explorer.model3DGLBPromptDescription')
 ))
 const formatByteCount = (value) => {
   const bytes = Number(value || 0)
@@ -2199,8 +2086,16 @@ const formatByteCount = (value) => {
   return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
 }
 const model3DTaskPromptSizeText = computed(() => {
-  const payload = model3DTilesSourcePayload.value || model3DQuickViewSourcePayload.value
-  return formatByteCount(payload?.source_size_bytes)
+  const storage = objectData.value?.attributes?.storage || {}
+  const sizeBytes = Number(
+    model3DTilesSourcePayload.value?.source_size_bytes ||
+    quickViewStatus.value?.model_3d?.size_bytes ||
+    objectData.value?.size_bytes ||
+    storage.total_size ||
+    storage.size ||
+    0
+  )
+  return formatByteCount(sizeBytes)
 })
 const model3DTaskPromptPath = computed(() => {
   return objectData.value?.path || props.selectedNode?.path || props.selectedNode?.label || '-'

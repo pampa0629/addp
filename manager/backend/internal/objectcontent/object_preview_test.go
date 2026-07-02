@@ -317,6 +317,105 @@ func TestModel3DContentHandlerReturnsStorageStreamURL(t *testing.T) {
 	}
 }
 
+func TestModel3DContentHandlerSupportsDirectSourcePreviewFormats(t *testing.T) {
+	t.Parallel()
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "model3d", Builtin: models.ObjectPreviewKindModel3D})
+	if err != nil {
+		t.Fatalf("build model3d handler: %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		formatType format.FormatType
+		extension  string
+	}{
+		{name: "fbx", formatType: format.FormatFBX, extension: ".fbx"},
+		{name: "obj", formatType: format.FormatOBJ, extension: ".obj"},
+		{name: "ply", formatType: format.FormatPLY, extension: ".ply"},
+		{name: "stl", formatType: format.FormatSTL, extension: ".stl"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			req := &ObjectContentRequest{
+				Format:     string(tt.formatType),
+				Extension:  tt.extension,
+				PreviewURL: "/api/v1/manager/storage-stream?engine_id=1&storage_ref=models%2Fmesh" + tt.extension,
+				Attributes: map[string]interface{}{
+					"item": map[string]interface{}{
+						"data_type": "model_3d",
+						"format":    string(tt.formatType),
+					},
+					"type_info": map[string]interface{}{
+						"model_3d": map[string]interface{}{
+							"model_kind":     "mesh_scene",
+							"triangle_count": int64(128),
+						},
+					},
+				},
+			}
+			if !handler.Matches(req) {
+				t.Fatalf("model3d handler should match %s source", tt.formatType)
+			}
+			content, truncated, err := handler.Handle(context.Background(), req, nil)
+			if err != nil {
+				t.Fatalf("Handle() error = %v", err)
+			}
+			if truncated {
+				t.Fatal("truncated = true, want false")
+			}
+			if content.Kind != models.ObjectPreviewKindModel3D || content.PreviewMaterial != models.PreviewMaterialURL || content.FrontendRenderer != models.ObjectPreviewKindModel3D {
+				t.Fatalf("content = %#v, want %s model_3d URL preview", content, tt.formatType)
+			}
+			if content.URL != req.PreviewURL {
+				t.Fatalf("content.URL = %q, want source storage stream URL %q", content.URL, req.PreviewURL)
+			}
+			if content.Metadata["format"] != string(tt.formatType) {
+				t.Fatalf("metadata.format = %#v, want %s", content.Metadata["format"], tt.formatType)
+			}
+		})
+	}
+}
+
+func TestModel3DContentHandlerRequiresModel3DDatatypeForPLY(t *testing.T) {
+	t.Parallel()
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "model3d", Builtin: models.ObjectPreviewKindModel3D})
+	if err != nil {
+		t.Fatalf("build model3d handler: %v", err)
+	}
+	tests := []struct {
+		name     string
+		dataType string
+		want     bool
+	}{
+		{name: "model3d", dataType: "model_3d", want: true},
+		{name: "gaussian", dataType: "gaussian_splat", want: false},
+		{name: "point cloud", dataType: "point_cloud", want: false},
+		{name: "missing", dataType: "", want: false},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			req := &ObjectContentRequest{
+				Format:    string(format.FormatPLY),
+				Extension: ".ply",
+				Attributes: map[string]interface{}{
+					"item": map[string]interface{}{
+						"data_type": tt.dataType,
+						"format":    "ply",
+					},
+				},
+			}
+			if got := handler.Matches(req); got != tt.want {
+				t.Fatalf("Matches() = %v, want %v for data_type=%q", got, tt.want, tt.dataType)
+			}
+		})
+	}
+}
+
 func TestModel3DContentHandlerRoutes3DTilesRenderer(t *testing.T) {
 	t.Parallel()
 	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "model3d", Builtin: models.ObjectPreviewKindModel3D})
@@ -460,8 +559,8 @@ func TestGaussianSplatContentHandlerRequiresGaussianDatatype(t *testing.T) {
 	if commonJSON.InterfaceInt64(gaussianInfo["splat_count"]) != 128 {
 		t.Fatalf("metadata.gaussian_splat = %#v, want splat_count", gaussianInfo)
 	}
-	if content.Metadata["quick_view_status"] != "ready" {
-		t.Fatalf("quick_view_status = %#v, want ready", content.Metadata["quick_view_status"])
+	if content.Metadata["preview_artifact_status"] != "ready" {
+		t.Fatalf("preview_artifact_status = %#v, want ready", content.Metadata["preview_artifact_status"])
 	}
 	plyInfo := commonJSON.Section(content.Metadata, "format_info.ply")
 	if plyInfo["is_compressed_splat"] != true {
@@ -554,6 +653,19 @@ func TestLoadObjectContentPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing
 			name: "audio",
 			req:  ObjectContentRequest{Extension: ".wav", ContentType: "audio/wav"},
 			want: "builtin:content-audio",
+		},
+		{
+			name: "model_3d_ply",
+			req: ObjectContentRequest{
+				Format: string(format.FormatPLY),
+				Attributes: map[string]interface{}{
+					"item": map[string]interface{}{
+						"data_type": "model_3d",
+						"format":    "ply",
+					},
+				},
+			},
+			want: "builtin:content-model-3d",
 		},
 		{
 			name: "gaussian_splat_ply",

@@ -25,7 +25,7 @@ func TestKSplatDescriptor(t *testing.T) {
 }
 
 func TestDescribeGaussianSplatReturnsStableKSplatFacts(t *testing.T) {
-	header := make([]byte, kplatHeaderSizeBytes)
+	header := make([]byte, ksplatHeaderSizeBytes)
 	header[0] = 0
 	header[1] = 1
 	binary.LittleEndian.PutUint32(header[4:8], 15)
@@ -60,6 +60,6 @@ func TestDescribeGaussianSplatReturnsStableKSplatFacts(t *testing.T) {
 	}
 	center, ok := result.FormatInfo["scene_center"].([]float64)
 	if !ok || len(center) != 3 || center[0] != -53.5 || center[1] != 1.25 || center[2] != 1522.75 {
-		t.Fatalf("scene_center = %#v, want parsed KPlat scene center", result.FormatInfo["scene_center"])
+		t.Fatalf("scene_center = %#v, want parsed KSplat scene center", result.FormatInfo["scene_center"])
 	}
 }

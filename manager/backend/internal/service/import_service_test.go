@@ -48,7 +48,7 @@ func TestBuildShapefileImportTaskConfigUsesEndpointSpec(t *testing.T) {
 	}
 }
 
-func TestImportShapefileCleansQuickViewOptimizationsBeforeUpload(t *testing.T) {
+func TestImportShapefileCleansVectorMaterializedViewsBeforeUpload(t *testing.T) {
 	cleaner := &recordingImportOptimizationCleaner{}
 	minioClient, err := minio.New("127.0.0.1:1", &minio.Options{
 		Creds:  credentials.NewStaticV4("minioadmin", "minioadmin", ""),
@@ -58,9 +58,9 @@ func TestImportShapefileCleansQuickViewOptimizationsBeforeUpload(t *testing.T) {
 		t.Fatalf("new minio client: %v", err)
 	}
 	service := &ImportService{
-		minioClient:                  minioClient,
-		minioBucket:                  "manager",
-		quickViewOptimizationCleaner: cleaner,
+		minioClient:                   minioClient,
+		minioBucket:                   "manager",
+		vectorMaterializedViewCleaner: cleaner,
 	}
 	req := &ImportShapefileRequest{
 		Files:          completeImportShapefileUploadFiles("roads"),
@@ -82,13 +82,13 @@ func TestImportShapefileCleansQuickViewOptimizationsBeforeUpload(t *testing.T) {
 	}
 }
 
-func TestImportShapefileStopsWhenQuickViewOptimizationCleanupFails(t *testing.T) {
+func TestImportShapefileStopsWhenVectorMaterializedViewCleanupFails(t *testing.T) {
 	cleaner := &recordingImportOptimizationCleaner{err: errors.New("cleanup failed")}
 	transferClient := &recordingImportTransferClient{}
 	service := &ImportService{
-		minioBucket:                  "manager",
-		transferClient:               transferClient,
-		quickViewOptimizationCleaner: cleaner,
+		minioBucket:                   "manager",
+		transferClient:                transferClient,
+		vectorMaterializedViewCleaner: cleaner,
 	}
 	req := &ImportShapefileRequest{
 		Files:          completeImportShapefileUploadFiles("roads"),
@@ -99,7 +99,7 @@ func TestImportShapefileStopsWhenQuickViewOptimizationCleanupFails(t *testing.T)
 	}
 
 	_, err := service.ImportShapefile(context.Background(), req)
-	if err == nil || !strings.Contains(err.Error(), "cleanup manager quick view optimization") {
+	if err == nil || !strings.Contains(err.Error(), "cleanup manager vector materialized view") {
 		t.Fatalf("ImportShapefile() error = %v, want cleanup failure", err)
 	}
 	if transferClient.createCalls != 0 || transferClient.triggerCalls != 0 {

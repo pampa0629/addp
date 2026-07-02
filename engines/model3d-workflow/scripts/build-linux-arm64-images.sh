@@ -19,6 +19,11 @@ if [[ "${PLATFORM}" != linux/* ]]; then
   exit 1
 fi
 
+if [[ "${PLATFORM}" != "linux/arm64" ]]; then
+  echo "model3d converter build currently binds Linux arm64 IfcConvert, got: ${PLATFORM}" >&2
+  exit 1
+fi
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required" >&2
   exit 1
@@ -37,6 +42,7 @@ docker build \
 
 echo "Smoke checking converter image"
 docker run --rm --platform "${PLATFORM}" "${CONVERTER_IMAGE}" --help >/dev/null
+docker run --rm --platform "${PLATFORM}" --entrypoint /opt/addp/model3d-workflow/bin/IfcConvert "${CONVERTER_IMAGE}" --version >/dev/null
 
 echo "Building Model3D workflow runtime image"
 echo "  platform: ${PLATFORM}"
@@ -50,6 +56,7 @@ docker build \
 
 echo "Smoke checking runtime image"
 docker run --rm --platform "${PLATFORM}" --entrypoint /opt/addp/model3d-workflow/bin/_3dtile "${RUNTIME_IMAGE}" --help >/dev/null
+docker run --rm --platform "${PLATFORM}" --entrypoint /opt/addp/model3d-workflow/bin/IfcConvert "${RUNTIME_IMAGE}" --version >/dev/null
 docker run -i --rm --platform "${PLATFORM}" --entrypoint python "${RUNTIME_IMAGE}" - <<'PY'
 from pathlib import Path
 import operators
@@ -76,9 +83,9 @@ with tempfile.TemporaryDirectory() as tmp:
         text=True,
     )
     if completed.returncode != 0:
-        raise SystemExit(completed.stderr or completed.stdout or "KPlat smoke conversion failed")
+        raise SystemExit(completed.stderr or completed.stdout or "KSplat smoke conversion failed")
     if not target.is_file() or target.stat().st_size == 0:
-        raise SystemExit("KPlat smoke conversion produced no output")
+        raise SystemExit("KSplat smoke conversion produced no output")
 PY
 
 echo "Built images:"

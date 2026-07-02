@@ -8,6 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV MODEL3D_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/_3dtile
 ENV MODEL3D_MESH_CONVERTER_BIN=/usr/bin/assimp
+ENV MODEL3D_IFC_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/IfcConvert
 ENV MODEL3D_GAUSSIAN_SPLAT_NODE_BIN=/usr/bin/node
 ENV GDAL_DATA=/opt/addp/model3d-workflow/bin/gdal
 ENV PROJ_DATA=/opt/addp/model3d-workflow/bin/proj

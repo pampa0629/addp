@@ -10,8 +10,8 @@ const t = (key, params = {}) => {
   const messages = {
     'manager.spatialPreview.tileTimeoutCacheRecommendedWithBudget': '超过 {timeout} 秒，生成瓦片缓存',
     'manager.spatialPreview.tileTimeoutCacheRecommended': '生成瓦片缓存',
-    'manager.spatialPreview.tileTimeoutOptimizationRecommendedWithBudget': '超过 {timeout} 秒，执行快显优化',
-    'manager.spatialPreview.tileTimeoutOptimizationRecommended': '执行快显优化'
+    'manager.spatialPreview.tileTimeoutOptimizationRecommendedWithBudget': '超过 {timeout} 秒，执行矢量物化视图',
+    'manager.spatialPreview.tileTimeoutOptimizationRecommended': '执行矢量物化视图'
   }
   let message = messages[key] || key
   for (const [name, value] of Object.entries(params)) {
@@ -21,7 +21,7 @@ const t = (key, params = {}) => {
 }
 
 describe('quickViewTileAdvisory', () => {
-  it('routes source-transform suppression to quick view optimization when no 3857 target is available', () => {
+  it('routes source-transform suppression to vector materialized view when no 3857 target is available', () => {
     const action = quickViewTileAdvisoryAction(
       { retryPolicy: 'suppress_tile', timeoutBudgetMS: '5000' },
       {
@@ -30,8 +30,8 @@ describe('quickViewTileAdvisory', () => {
       }
     )
 
-    expect(action).toBe('vector_quick_view_target_generation')
-    expect(quickViewTileAdvisoryMessage(t, action, { timeoutBudgetMS: '5000' })).toBe('超过 5 秒，执行快显优化')
+    expect(action).toBe('vector_materialized_view_generation')
+    expect(quickViewTileAdvisoryMessage(t, action, { timeoutBudgetMS: '5000' })).toBe('超过 5 秒，执行矢量物化视图')
   })
 
   it('routes timeout on available 3857 target to tile cache generation', () => {

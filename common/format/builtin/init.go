@@ -14,6 +14,7 @@ import (
 	_ "github.com/addp/common/format/plugins/geojson"
 	_ "github.com/addp/common/format/plugins/glb"
 	_ "github.com/addp/common/format/plugins/gltf"
+	_ "github.com/addp/common/format/plugins/ifc"
 	_ "github.com/addp/common/format/plugins/json"
 	_ "github.com/addp/common/format/plugins/ksplat"
 	_ "github.com/addp/common/format/plugins/las"

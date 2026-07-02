@@ -29,7 +29,7 @@ type CleanupService struct {
 	previewStateRepo *repository.PreviewStateRepository
 	tileCacheSvc     *TileCacheTaskService
 	embeddingRepo    *repository.EmbeddingRepository
-	optimizationSvc  *QuickViewOptimizationTaskService
+	optimizationSvc  *VectorMaterializedViewTaskService
 	exportRepo       *repository.ExportSessionRepository
 	minioClient      *minio.Client
 	minioBucket      string
@@ -49,7 +49,7 @@ type ManagerCleanupStats struct {
 	PreviewStates            int      `json:"preview_states"`
 	TileCaches               int      `json:"vector_tile_caches"`
 	Embeddings               int      `json:"embeddings"`
-	QuickViewOptimizations   int      `json:"vector_quick_view_target_generations"`
+	VectorMaterializedViews  int      `json:"vector_materialized_view_generations"`
 	ExportSessions           int      `json:"export_sessions,omitempty"`
 	DeletedPhysicalArtifacts int      `json:"deleted_physical_artifacts,omitempty"`
 	MarkedMissingSource      int      `json:"marked_missing_source,omitempty"`
@@ -65,7 +65,7 @@ func NewCleanupService(
 	previewStateRepo *repository.PreviewStateRepository,
 	tileCacheSvc *TileCacheTaskService,
 	embeddingRepo *repository.EmbeddingRepository,
-	optimizationSvc *QuickViewOptimizationTaskService,
+	optimizationSvc *VectorMaterializedViewTaskService,
 	exportRepo *repository.ExportSessionRepository,
 	minioClient *minio.Client,
 	minioBucket string,
@@ -392,7 +392,7 @@ func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uin
 		if err != nil {
 			return nil, err
 		}
-		stats.QuickViewOptimizations = len(s.filterMissingQuickViewOptimizations(ctx, tenantID, items, cleanupContext))
+		stats.VectorMaterializedViews = len(s.filterMissingVectorMaterializedViews(ctx, tenantID, items, cleanupContext))
 	}
 	taskCandidates, err := s.countTaskDefinitionCleanupCandidates(ctx, tenantID, cleanupContext)
 	if err != nil {
@@ -478,22 +478,22 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 		if err != nil {
 			return nil, err
 		}
-		for _, item := range s.filterMissingQuickViewOptimizations(ctx, tenantID, items, cleanupContext) {
-			if item.TargetKind != models.QuickViewOptimizationTargetKindSourceSchemaMaterializedView {
+		for _, item := range s.filterMissingVectorMaterializedViews(ctx, tenantID, items, cleanupContext) {
+			if item.TargetKind != models.VectorMaterializedViewTargetKindSourceSchemaMaterializedView {
 				stats.SkippedExternalTargets++
 				continue
 			}
 			if cleanupMode == events.CleanupModePhysical {
 				if err := s.optimizationSvc.DeleteResult(ctx, item.ID, tenantID); err != nil {
-					stats.Errors = append(stats.Errors, fmt.Sprintf("delete vector_quick_view_target_generation %d: %v", item.ID, err))
+					stats.Errors = append(stats.Errors, fmt.Sprintf("delete vector_materialized_view_generation %d: %v", item.ID, err))
 					continue
 				}
 				stats.DeletedPhysicalArtifacts++
 			} else if err := s.optimizationSvc.repo.MarkResultStale(ctx, item.ID, tenantID, "resource reclaim logical cleanup: missing source"); err != nil {
-				stats.Errors = append(stats.Errors, fmt.Sprintf("mark vector_quick_view_target_generation %d: %v", item.ID, err))
+				stats.Errors = append(stats.Errors, fmt.Sprintf("mark vector_materialized_view_generation %d: %v", item.ID, err))
 				continue
 			}
-			stats.QuickViewOptimizations++
+			stats.VectorMaterializedViews++
 			stats.MarkedMissingSource++
 		}
 	}
@@ -524,7 +524,7 @@ func (s *CleanupService) countTaskDefinitionCleanupCandidates(ctx context.Contex
 		if err != nil {
 			return 0, err
 		}
-		total += len(s.filterQuickViewOptimizationTasksForCleanup(ctx, tenantID, tasks, cleanupContext))
+		total += len(s.filterVectorMaterializedViewTasksForCleanup(ctx, tenantID, tasks, cleanupContext))
 	}
 	return total, nil
 }
@@ -574,14 +574,14 @@ func (s *CleanupService) cleanupTaskDefinitions(ctx context.Context, tenantID ui
 		if err != nil {
 			return err
 		}
-		for _, task := range s.filterQuickViewOptimizationTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
+		for _, task := range s.filterVectorMaterializedViewTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
 			if cleanupMode == events.CleanupModePhysical {
 				if err := s.optimizationSvc.repo.DeleteTask(ctx, task.ID, tenantID); err != nil {
-					stats.Errors = append(stats.Errors, fmt.Sprintf("delete vector_quick_view_target_generation_task %d: %v", task.ID, err))
+					stats.Errors = append(stats.Errors, fmt.Sprintf("delete vector_materialized_view_generation_task %d: %v", task.ID, err))
 					continue
 				}
 			} else if err := s.optimizationSvc.repo.DisableTaskForCleanup(ctx, tenantID, task.ID, cleanupTaskDefinitionReason(cleanupContext)); err != nil {
-				stats.Errors = append(stats.Errors, fmt.Sprintf("disable vector_quick_view_target_generation_task %d: %v", task.ID, err))
+				stats.Errors = append(stats.Errors, fmt.Sprintf("disable vector_materialized_view_generation_task %d: %v", task.ID, err))
 				continue
 			}
 			stats.DisabledTaskDefinitions++
@@ -642,8 +642,8 @@ func (s *CleanupService) filterMissingEmbeddings(ctx context.Context, tenantID u
 	return out
 }
 
-func (s *CleanupService) filterMissingQuickViewOptimizations(ctx context.Context, tenantID uint, items []*models.QuickViewOptimization, cleanupContext map[string]interface{}) []*models.QuickViewOptimization {
-	out := make([]*models.QuickViewOptimization, 0)
+func (s *CleanupService) filterMissingVectorMaterializedViews(ctx context.Context, tenantID uint, items []*models.VectorMaterializedView, cleanupContext map[string]interface{}) []*models.VectorMaterializedView {
+	out := make([]*models.VectorMaterializedView, 0)
 	for _, item := range items {
 		if item == nil {
 			continue
@@ -696,8 +696,8 @@ func (s *CleanupService) filterTileCacheTasksForCleanup(ctx context.Context, ten
 	return out
 }
 
-func (s *CleanupService) filterQuickViewOptimizationTasksForCleanup(ctx context.Context, tenantID uint, tasks []*models.QuickViewOptimizationTask, cleanupContext map[string]interface{}) []*models.QuickViewOptimizationTask {
-	out := make([]*models.QuickViewOptimizationTask, 0)
+func (s *CleanupService) filterVectorMaterializedViewTasksForCleanup(ctx context.Context, tenantID uint, tasks []*models.VectorMaterializedViewTask, cleanupContext map[string]interface{}) []*models.VectorMaterializedViewTask {
+	out := make([]*models.VectorMaterializedViewTask, 0)
 	for _, task := range tasks {
 		if task == nil || !task.Enabled {
 			continue
@@ -873,7 +873,7 @@ func managerScanSummary(stats *ManagerCleanupStats) events.CleanupResultSummary 
 	if stats == nil {
 		return events.CleanupResultSummary{RiskLevel: "low"}
 	}
-	scanned := stats.PreviewStates + stats.TileCaches + stats.Embeddings + stats.QuickViewOptimizations + stats.DisabledTaskDefinitions
+	scanned := stats.PreviewStates + stats.TileCaches + stats.Embeddings + stats.VectorMaterializedViews + stats.DisabledTaskDefinitions
 	return events.CleanupResultSummary{
 		ScannedItems:            scanned,
 		DisabledTaskDefinitions: stats.DisabledTaskDefinitions,
@@ -887,7 +887,7 @@ func managerExecuteSummary(stats *ManagerCleanupStats) events.CleanupResultSumma
 	if stats == nil {
 		return events.CleanupResultSummary{RiskLevel: "low"}
 	}
-	affected := stats.PreviewStates + stats.TileCaches + stats.Embeddings + stats.QuickViewOptimizations + stats.DisabledTaskDefinitions
+	affected := stats.PreviewStates + stats.TileCaches + stats.Embeddings + stats.VectorMaterializedViews + stats.DisabledTaskDefinitions
 	return events.CleanupResultSummary{
 		AffectedRecords:          affected,
 		DeletedPhysicalArtifacts: stats.DeletedPhysicalArtifacts,

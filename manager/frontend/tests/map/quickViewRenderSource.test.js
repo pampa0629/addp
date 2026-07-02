@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  hasQuickViewAction,
   isRasterQuickViewRenderSource,
   isTileQuickViewRenderSource,
   normalizeQuickViewRenderSource,
+  shouldShowQuickViewUnavailableNotice,
   shouldLoadBasicPreview
 } from '../../src/utils/quickViewRenderSource.js'
 
@@ -30,5 +32,35 @@ describe('quickViewRenderSource', () => {
   it('normalizes empty render source values', () => {
     expect(normalizeQuickViewRenderSource(null)).toBe('')
     expect(normalizeQuickViewRenderSource(' raster_mosaic_tile ')).toBe('raster_mosaic_tile')
+  })
+
+  it('shows unavailable notices only for source kinds that should surface them', () => {
+    expect(shouldShowQuickViewUnavailableNotice({
+      source_kind: 'model_3d',
+      can_use_quick_view: false,
+      unavailable_reason: 'quick view geometry metadata is unavailable'
+    })).toBe(false)
+
+    expect(shouldShowQuickViewUnavailableNotice({
+      source_kind: 'vector',
+      can_use_quick_view: false,
+      unavailable_reason: 'quick view geometry metadata is unavailable'
+    })).toBe(true)
+
+    expect(shouldShowQuickViewUnavailableNotice({
+      source_kind: 'raster',
+      can_use_quick_view: false,
+      unavailable_reason: 'missing_crs'
+    })).toBe(true)
+  })
+
+  it('reads backend-provided quick view actions', () => {
+    expect(hasQuickViewAction({
+      available_actions: ['switch_quick_view', 'generate_model_3d_glb']
+    }, 'generate_model_3d_glb')).toBe(true)
+
+    expect(hasQuickViewAction({
+      available_actions: ['switch_quick_view']
+    }, 'generate_model_3d_glb')).toBe(false)
   })
 })

@@ -422,7 +422,7 @@ function normalizeObject(value) {
 function buildMetadataSummaryItems(metadata) {
   const items = []
   appendTileGenerationTargetSummary(items, normalizeObject(metadata.tile_generation_target))
-  appendQuickViewOptimizationSummary(items, metadata)
+  appendVectorMaterializedViewSummary(items, metadata)
   appendMetadataField(items, 'source_srid', metadata.source_srid)
   appendMetadataField(items, 'target_srid', metadata.target_srid)
   appendMetadataField(items, 'extent_srid', metadata.extent_srid)
@@ -454,11 +454,11 @@ function appendTileGenerationTargetSummary(items, target) {
   appendMetadataField(items, 'optimization_recommendation', target.optimization_recommendation)
 }
 
-function appendQuickViewOptimizationSummary(items, metadata) {
+function appendVectorMaterializedViewSummary(items, metadata) {
   if (!hasValue(metadata.target_table) && !hasValue(metadata.target_kind)) return
 
   const qualifiedName = [metadata.target_schema, metadata.target_table].filter(hasValue).join('.')
-  appendMetadataField(items, 'quick_view_target', qualifiedName)
+  appendMetadataField(items, 'vector_materialized_view_target', qualifiedName)
   appendMetadataField(items, 'target_kind', metadata.target_kind, {
     value: formatTargetKind(metadata.target_kind),
     tagType: targetKindTagType(metadata.target_kind)

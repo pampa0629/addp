@@ -29,7 +29,7 @@ def test_health(client):
     data = response.get_json()
     assert data["status"] in {"healthy", "degraded"}
     assert data["service"] == "model3d-workflow-engine"
-    assert data["operators_count"] == 6
+    assert data["operators_count"] == 8
     assert "conversion_ready" in data
     assert data["dependencies"]["converter"]["binding"] == "model3d_workflow"
 
@@ -39,7 +39,7 @@ def test_get_operators(client):
     assert response.status_code == 200
     data = response.get_json()
     assert data["status"] == "success"
-    assert data["count"] == 6
+    assert data["count"] == 8
     assert_operator_metadata_contract(data["operators"], expected_engine_type="model3d_workflow")
 
 
@@ -162,6 +162,7 @@ def test_register_to_system_posts_model3d_workflow_payload(monkeypatch):
     monkeypatch.setenv("INTERNAL_API_KEY", "internal-key")
     monkeypatch.setenv("PORT", "8101")
     monkeypatch.setenv("MODEL3D_CONVERTER_BIN", sys.executable)
+    monkeypatch.setenv("MODEL3D_IFC_CONVERTER_BIN", sys.executable)
 
     assert api_server.register_to_system() is True
     assert calls == [

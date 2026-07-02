@@ -25,6 +25,7 @@ def test_operator_metadata_contract():
         "fbx_to_glb",
         "obj_to_glb",
         "stl_to_glb",
+        "ifc_to_glb",
         "osgb_scene_to_3dtiles",
         "gaussian_splat_to_ksplat",
     ]
@@ -39,6 +40,8 @@ def test_converter_status_defaults_to_engine_bound_binary():
     assert status["path"].endswith("engines/model3d-workflow/bin/_3dtile")
     assert status["mesh_converter"]["env"] == "MODEL3D_MESH_CONVERTER_BIN"
     assert status["mesh_converter"]["path"].endswith("engines/model3d-workflow/bin/assimp")
+    assert status["ifc_converter"]["env"] == "MODEL3D_IFC_CONVERTER_BIN"
+    assert status["ifc_converter"]["path"].endswith("engines/model3d-workflow/bin/IfcConvert")
     assert status["gaussian_splat_converter"]["env"] == "MODEL3D_GAUSSIAN_SPLAT_NODE_BIN"
     assert status["gaussian_splat_converter"]["script"].endswith("engines/model3d-workflow/create_ksplat.mjs")
 
@@ -835,6 +838,60 @@ def test_stl_to_glb_invokes_converter_and_returns_facts(tmp_path, monkeypatch):
     assert facts["source_format"] == "stl"
     assert facts["glb_ref"] == "model3d/stl.glb"
     assert facts["command"] == [str(converter), "export", str(source), str(captured["target"]), "-embtex"]
+    assert captured["publish_path"].exists() is False
+
+
+def test_ifc_to_glb_invokes_ifcconvert_and_returns_facts(tmp_path, monkeypatch):
+    source = tmp_path / "building.ifc"
+    converter = tmp_path / "engine" / "bin" / "IfcConvert"
+    source.write_text("ISO-10303-21;\nHEADER;\nFILE_SCHEMA(('IFC4'));\nENDSEC;\nDATA;\nENDSEC;\nEND-ISO-10303-21;\n", encoding="utf-8")
+    converter.parent.mkdir(parents=True)
+    converter.write_text("#!/bin/sh\n", encoding="utf-8")
+    converter.chmod(0o755)
+    captured = {}
+
+    def fake_runner(command, timeout_seconds):
+        target = Path(command[-1])
+        captured["target"] = target
+        target.write_bytes(_glb_bytes({"asset": {"version": "2.0"}}))
+        return CommandResult(returncode=0, stdout="converted", stderr="material warnings")
+
+    def fake_publish(path, publish):
+        captured["publish_path"] = path
+        return {
+            "object_uri": "s3://manager/model3d/ifc.glb",
+            "object_name": "model3d/ifc.glb",
+            "uploaded_bytes": path.stat().st_size,
+        }
+
+    monkeypatch.setattr(operators, "publish_object_store_file", fake_publish)
+    facts = invoke_operator(
+        "ifc_to_glb",
+        {
+            "access_plan": {
+                "source": {"local_path": str(source)},
+                "target": {
+                    "file_name": "ifc.glb",
+                    "publish": {
+                        "method": "object_store",
+                        "endpoint": "minio:9000",
+                        "access_key": "ak",
+                        "secret_key": "sk",
+                        "bucket": "manager",
+                        "object": "model3d/ifc.glb",
+                    },
+                },
+            }
+        },
+        runner=fake_runner,
+        env={"MODEL3D_IFC_CONVERTER_BIN": str(converter)},
+    )
+
+    assert facts["source_format"] == "ifc"
+    assert facts["glb_ref"] == "model3d/ifc.glb"
+    assert facts["command"] == [str(converter), "--center-model", str(source), str(captured["target"])]
+    assert facts["stdout"] == "converted"
+    assert facts["stderr"] == "material warnings"
     assert captured["publish_path"].exists() is False
 
 

@@ -442,7 +442,7 @@ func buildTileCacheGenerationMetadata(
 	tileTargetSRID := intFromTileCacheConfig(tileConfig["target_srid"], spatial.SRIDWebMercator)
 
 	metadata := commonModels.JSONMap{
-		"vector_tile_cache_id":           tileCacheID,
+		"vector_tile_cache_id":    tileCacheID,
 		"actual_max_zoom":         result.ActualMaxZoom,
 		"min_zoom":                cfg.MinZoom,
 		"max_zoom":                cfg.MaxZoom,
@@ -736,15 +736,15 @@ func optimizationJSONMap(optimization commonModels.OptimizationConfig) commonMod
 }
 
 type tileGenerationTarget struct {
-	Schema                      string
-	Table                       string
-	GeomColumn                  string
-	SRID                        int
-	PrimaryKey                  string
-	QuickViewOptimizationTarget bool
-	TargetKind                  string
-	OptimizationRecommended     bool
-	OptimizationRecommendation  string
+	Schema                       string
+	Table                        string
+	GeomColumn                   string
+	SRID                         int
+	PrimaryKey                   string
+	VectorMaterializedViewTarget bool
+	TargetKind                   string
+	OptimizationRecommended      bool
+	OptimizationRecommendation   string
 }
 
 func (s *TileCacheTaskService) resolveTileGenerationTarget(
@@ -777,7 +777,7 @@ func (s *TileCacheTaskService) resolveTileGenerationTarget(
 			PrimaryKey:                 primaryKey,
 			TargetKind:                 RealtimeTileTargetKindSourceTable,
 			OptimizationRecommended:    true,
-			OptimizationRecommendation: "vector_quick_view_target_generation is recommended before generating cache for non-3857 spatial data",
+			OptimizationRecommendation: "vector_materialized_view_generation is recommended before generating cache for non-3857 spatial data",
 		}, nil
 	}
 	target, err := s.tileTargetResolver.ResolveRealtimeTileTarget(ctx, tenantID, engineID, schema, table, geomColumn, sourceSRID)
@@ -788,7 +788,7 @@ func (s *TileCacheTaskService) resolveTileGenerationTarget(
 		recommendOptimization := sourceSRID != spatial.SRIDWebMercator
 		recommendation := ""
 		if recommendOptimization {
-			recommendation = "vector_quick_view_target_generation is recommended before generating cache for non-3857 spatial data"
+			recommendation = "vector_materialized_view_generation is recommended before generating cache for non-3857 spatial data"
 		}
 		return tileGenerationTarget{
 			Schema:                     schema,
@@ -802,21 +802,21 @@ func (s *TileCacheTaskService) resolveTileGenerationTarget(
 		}, nil
 	}
 	targetPrimaryKey := primaryKey
-	if !target.QuickViewOptimizationTarget {
+	if !target.VectorMaterializedViewTarget {
 		targetPrimaryKey = primaryKey
 	} else {
 		targetPrimaryKey = ""
 	}
 	return tileGenerationTarget{
-		Schema:                      target.Schema,
-		Table:                       target.Table,
-		GeomColumn:                  target.GeomColumn,
-		SRID:                        target.SRID,
-		PrimaryKey:                  targetPrimaryKey,
-		QuickViewOptimizationTarget: target.QuickViewOptimizationTarget,
-		TargetKind:                  target.TargetKind,
-		OptimizationRecommended:     target.OptimizationRecommended,
-		OptimizationRecommendation:  target.OptimizationRecommendation,
+		Schema:                       target.Schema,
+		Table:                        target.Table,
+		GeomColumn:                   target.GeomColumn,
+		SRID:                         target.SRID,
+		PrimaryKey:                   targetPrimaryKey,
+		VectorMaterializedViewTarget: target.VectorMaterializedViewTarget,
+		TargetKind:                   target.TargetKind,
+		OptimizationRecommended:      target.OptimizationRecommended,
+		OptimizationRecommendation:   target.OptimizationRecommendation,
 	}, nil
 }
 
@@ -837,7 +837,7 @@ func normalizeTileCacheTask(task *models.TileCacheTask) error {
 		return errors.New("tile cache task config is required")
 	}
 	if _, ok := task.Config["preparation"]; ok {
-		return errors.New("tile cache task config.preparation has been removed; create a vector_quick_view_target_generation task instead")
+		return errors.New("tile cache task config.preparation has been removed; create a vector_materialized_view_generation task instead")
 	}
 	if _, err := normalizeTileCacheTaskTarget(task.Config); err != nil {
 		return err

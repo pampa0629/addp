@@ -7,6 +7,10 @@ export const quickViewAPI = {
     })
   },
 
+  executeQuickViewAction(locator, action) {
+    return request.post('/manager/quick-view/actions', { locator, action })
+  },
+
   updatePreferredModeByLocator(locator, preferredMode) {
     return request.patch(
       '/manager/preview-state/preferred-mode',
@@ -22,27 +26,27 @@ export const quickViewAPI = {
   },
 
   listOptimizationTasks(params = {}) {
-    return request.get('/manager/vector_quick_view_target_tasks', { params })
+    return request.get('/manager/vector_materialized_view_tasks', { params })
   },
 
   getOptimizationTask(id) {
-    return request.get(`/manager/vector_quick_view_target_tasks/${id}`)
+    return request.get(`/manager/vector_materialized_view_tasks/${id}`)
   },
 
   createOptimizationTask(payload) {
-    return request.post('/manager/vector_quick_view_target_tasks', payload)
+    return request.post('/manager/vector_materialized_view_tasks', payload)
   },
 
   updateOptimizationTask(id, payload) {
-    return request.put(`/manager/vector_quick_view_target_tasks/${id}`, payload)
+    return request.put(`/manager/vector_materialized_view_tasks/${id}`, payload)
   },
 
   deleteOptimizationTask(id) {
-    return request.delete(`/manager/vector_quick_view_target_tasks/${id}`)
+    return request.delete(`/manager/vector_materialized_view_tasks/${id}`)
   },
 
   executeOptimizationTask(id, payload = {}) {
-    return request.post(`/manager/tasks/vector_quick_view_target_generation/${id}/execute`, {
+    return request.post(`/manager/tasks/vector_materialized_view_generation/${id}/execute`, {
       trigger_type: 'manual',
       source: 'manager',
       ...payload
@@ -50,15 +54,15 @@ export const quickViewAPI = {
   },
 
   listOptimizations(params = {}) {
-    return request.get('/manager/vector_quick_view_targets', { params })
+    return request.get('/manager/vector_materialized_view', { params })
   },
 
   getOptimization(id) {
-    return request.get(`/manager/vector_quick_view_targets/${id}`)
+    return request.get(`/manager/vector_materialized_view/${id}`)
   },
 
   deleteOptimization(id) {
-    return request.delete(`/manager/vector_quick_view_targets/${id}`)
+    return request.delete(`/manager/vector_materialized_view/${id}`)
   },
 
   createRasterCOGTask(payload) {
@@ -129,88 +133,88 @@ export const quickViewAPI = {
     return request.delete(`/manager/raster_cog/${id}`)
   },
 
-  createModel3DQuickViewTask(payload) {
-    return request.post('/manager/model_3d_quick_view_tasks', payload)
+  createModel3DGLBTask(payload) {
+    return request.post('/manager/model_3d_glb_tasks', payload)
   },
 
-  listModel3DQuickViewTasks(params = {}) {
-    return request.get('/manager/model_3d_quick_view_tasks', { params })
+  listModel3DGLBTasks(params = {}) {
+    return request.get('/manager/model_3d_glb_tasks', { params })
   },
 
-  getModel3DQuickViewTask(id) {
-    return request.get(`/manager/model_3d_quick_view_tasks/${id}`)
+  getModel3DGLBTask(id) {
+    return request.get(`/manager/model_3d_glb_tasks/${id}`)
   },
 
-  updateModel3DQuickViewTask(id, payload) {
-    return request.put(`/manager/model_3d_quick_view_tasks/${id}`, payload)
+  updateModel3DGLBTask(id, payload) {
+    return request.put(`/manager/model_3d_glb_tasks/${id}`, payload)
   },
 
-  deleteModel3DQuickViewTask(id) {
-    return request.delete(`/manager/model_3d_quick_view_tasks/${id}`)
+  deleteModel3DGLBTask(id) {
+    return request.delete(`/manager/model_3d_glb_tasks/${id}`)
   },
 
-  executeModel3DQuickViewTask(id, payload = {}) {
-    return request.post(`/manager/tasks/model_3d_quick_view_generation/${id}/execute`, {
+  executeModel3DGLBTask(id, payload = {}) {
+    return request.post(`/manager/tasks/model_3d_glb_generation/${id}/execute`, {
       trigger_type: 'manual',
       source: 'manager',
       ...payload
     })
   },
 
-  listModel3DQuickViews(params = {}) {
-    return request.get('/manager/model_3d_quick_view', { params })
+  listModel3DGLBs(params = {}) {
+    return request.get('/manager/model_3d_glb', { params })
   },
 
-  getModel3DQuickView(id) {
-    return request.get(`/manager/model_3d_quick_view/${id}`)
+  getModel3DGLB(id) {
+    return request.get(`/manager/model_3d_glb/${id}`)
   },
 
-  deleteModel3DQuickView(id) {
-    return request.delete(`/manager/model_3d_quick_view/${id}`)
+  deleteModel3DGLB(id) {
+    return request.delete(`/manager/model_3d_glb/${id}`)
   },
 
-  createGaussianSplatQuickViewTask(payload) {
-    return request.post('/manager/gaussian_splat_quick_view_tasks', payload)
+  createGaussianSplatKSplatTask(payload) {
+    return request.post('/manager/gaussian_splat_ksplat_tasks', payload)
   },
 
-  listGaussianSplatQuickViewTasks(params = {}) {
-    return request.get('/manager/gaussian_splat_quick_view_tasks', { params })
+  listGaussianSplatKSplatTasks(params = {}) {
+    return request.get('/manager/gaussian_splat_ksplat_tasks', { params })
   },
 
-  getGaussianSplatQuickViewTask(id) {
-    return request.get(`/manager/gaussian_splat_quick_view_tasks/${id}`)
+  getGaussianSplatKSplatTask(id) {
+    return request.get(`/manager/gaussian_splat_ksplat_tasks/${id}`)
   },
 
-  updateGaussianSplatQuickViewTask(id, payload) {
-    return request.put(`/manager/gaussian_splat_quick_view_tasks/${id}`, payload)
+  updateGaussianSplatKSplatTask(id, payload) {
+    return request.put(`/manager/gaussian_splat_ksplat_tasks/${id}`, payload)
   },
 
-  deleteGaussianSplatQuickViewTask(id) {
-    return request.delete(`/manager/gaussian_splat_quick_view_tasks/${id}`)
+  deleteGaussianSplatKSplatTask(id) {
+    return request.delete(`/manager/gaussian_splat_ksplat_tasks/${id}`)
   },
 
-  executeGaussianSplatQuickViewTask(id, payload = {}) {
-    return request.post(`/manager/tasks/gaussian_splat_quick_view_generation/${id}/execute`, {
+  executeGaussianSplatKSplatTask(id, payload = {}) {
+    return request.post(`/manager/tasks/gaussian_splat_ksplat_generation/${id}/execute`, {
       trigger_type: 'manual',
       source: 'manager',
       ...payload
     })
   },
 
-  listGaussianSplatQuickViews(params = {}) {
-    return request.get('/manager/gaussian_splat_quick_view', { params })
+  listGaussianSplatKSplats(params = {}) {
+    return request.get('/manager/gaussian_splat_ksplat', { params })
   },
 
-  getGaussianSplatQuickView(id) {
-    return request.get(`/manager/gaussian_splat_quick_view/${id}`)
+  getGaussianSplatKSplat(id) {
+    return request.get(`/manager/gaussian_splat_ksplat/${id}`)
   },
 
-  inspectGaussianSplatQuickView(id) {
-    return request.get(`/manager/gaussian_splat_quick_view/${id}/inspect`)
+  inspectGaussianSplatKSplat(id) {
+    return request.get(`/manager/gaussian_splat_ksplat/${id}/inspect`)
   },
 
-  deleteGaussianSplatQuickView(id) {
-    return request.delete(`/manager/gaussian_splat_quick_view/${id}`)
+  deleteGaussianSplatKSplat(id) {
+    return request.delete(`/manager/gaussian_splat_ksplat/${id}`)
   },
 
   createModel3DTilesTask(payload) {

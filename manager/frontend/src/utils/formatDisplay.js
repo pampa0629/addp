@@ -3,7 +3,7 @@ const formatDisplayNames = {
   glb: 'GLB',
   gltf: 'glTF',
   splat: 'Splat',
-  ksplat: 'KPlat',
+  ksplat: 'KSplat',
   las: 'LAS',
   laz: 'LAZ',
   geojson: 'GeoJSON',

@@ -20,6 +20,8 @@ DEFAULT_CONVERTER_BIN = str(ENGINE_ROOT / "bin" / "_3dtile")
 CONVERTER_ENV = "MODEL3D_CONVERTER_BIN"
 DEFAULT_MESH_CONVERTER_BIN = str(ENGINE_ROOT / "bin" / "assimp")
 MESH_CONVERTER_ENV = "MODEL3D_MESH_CONVERTER_BIN"
+DEFAULT_IFC_CONVERTER_BIN = str(ENGINE_ROOT / "bin" / "IfcConvert")
+IFC_CONVERTER_ENV = "MODEL3D_IFC_CONVERTER_BIN"
 GAUSSIAN_SPLAT_CONVERTER_SCRIPT = str(ENGINE_ROOT / "create_ksplat.mjs")
 GAUSSIAN_SPLAT_NODE_ENV = "MODEL3D_GAUSSIAN_SPLAT_NODE_BIN"
 TILE_EXTENSIONS = {".b3dm", ".i3dm", ".pnts", ".cmpt", ".glb", ".gltf"}
@@ -55,16 +57,19 @@ CommandRunner = Callable[[list[str], int | None], CommandResult]
 def converter_status(env: dict[str, str] | None = None) -> dict[str, Any]:
     converter = _converter_bin(env)
     mesh_converter = _mesh_converter_bin(env)
+    ifc_converter = _ifc_converter_bin(env)
     gaussian_splat_node = _gaussian_splat_node_bin(env)
     converter_available = _executable_available(converter)
     mesh_converter_available = _executable_available(mesh_converter)
+    ifc_converter_available = _executable_available(ifc_converter)
     gaussian_splat_converter_available = _gaussian_splat_converter_available(gaussian_splat_node)
-    available = converter_available and mesh_converter_available and gaussian_splat_converter_available
+    available = converter_available and mesh_converter_available and ifc_converter_available and gaussian_splat_converter_available
     details = [
         detail
         for detail in [
             "" if converter_available else _executable_unavailable_detail(CONVERTER_ENV, converter),
             "" if mesh_converter_available else _executable_unavailable_detail(MESH_CONVERTER_ENV, mesh_converter),
+            "" if ifc_converter_available else _executable_unavailable_detail(IFC_CONVERTER_ENV, ifc_converter),
             "" if gaussian_splat_converter_available else _gaussian_splat_converter_unavailable_detail(gaussian_splat_node),
         ]
         if detail
@@ -82,6 +87,13 @@ def converter_status(env: dict[str, str] | None = None) -> dict[str, Any]:
             "path": mesh_converter,
             "available": mesh_converter_available,
             "details": "" if mesh_converter_available else _executable_unavailable_detail(MESH_CONVERTER_ENV, mesh_converter),
+        },
+        "ifc_converter": {
+            "name": "IfcConvert",
+            "env": IFC_CONVERTER_ENV,
+            "path": ifc_converter,
+            "available": ifc_converter_available,
+            "details": "" if ifc_converter_available else _executable_unavailable_detail(IFC_CONVERTER_ENV, ifc_converter),
         },
         "gaussian_splat_converter": {
             "name": "create_ksplat",
@@ -257,6 +269,38 @@ def list_operators() -> list[dict[str, Any]]:
             ],
         },
         {
+            "id": "ifc_to_glb",
+            "name": "ifc_to_glb",
+            "display_name": "IFC 转 GLB",
+            "engine_type": ENGINE_TYPE,
+            "category": "三维模型转换",
+            "category_path": ["三维模型转换", "快显"],
+            "description": "将 IFC BIM 模型通过 IfcConvert 转换为前端可快速预览的 GLB artifact。",
+            "execution_modes": ["direct"],
+            "parameters": [
+                {
+                    "name": "access_plan",
+                    "type": "object",
+                    "required": True,
+                    "description": "源 IFC 文件访问计划和 GLB artifact 对象存储发布计划。",
+                },
+                {
+                    "name": "options",
+                    "type": "object",
+                    "required": False,
+                    "description": "转换选项，第一版支持 center_model 控制是否将模型居中。",
+                },
+            ],
+            "output_ports": [
+                {
+                    "name": "result",
+                    "type": "object",
+                    "description": "GLB artifact 的对象引用、大小、发布结果和 IfcConvert 转换摘要。",
+                    "is_default": True,
+                }
+            ],
+        },
+        {
             "id": "osgb_scene_to_3dtiles",
             "name": "osgb_scene_to_3dtiles",
             "display_name": "OSGB Scene 转 3D Tiles",
@@ -297,18 +341,18 @@ def list_operators() -> list[dict[str, Any]]:
         {
             "id": "gaussian_splat_to_ksplat",
             "name": "gaussian_splat_to_ksplat",
-            "display_name": "Gaussian Splat 转 KPlat",
+            "display_name": "Gaussian Splat 转 KSplat",
             "engine_type": ENGINE_TYPE,
             "category": "三维模型转换",
             "category_path": ["三维模型转换", "高斯泼溅"],
-            "description": "将 PLY / SPLAT 高斯泼溅源转换为 Manager 受管 KPlat 快显 artifact；源已经是 KSplat 时直接发布登记。",
+            "description": "将 PLY / SPLAT 高斯泼溅源转换为 Manager 受管 KSplat 快显 artifact；源已经是 KSplat 时直接发布登记。",
             "execution_modes": ["direct"],
             "parameters": [
                 {
                     "name": "access_plan",
                     "type": "object",
                     "required": True,
-                    "description": "高斯泼溅源文件访问计划和 KPlat artifact 对象存储发布计划。",
+                    "description": "高斯泼溅源文件访问计划和 KSplat artifact 对象存储发布计划。",
                 },
                 {
                     "name": "options",
@@ -321,7 +365,7 @@ def list_operators() -> list[dict[str, Any]]:
                 {
                     "name": "result",
                     "type": "object",
-                    "description": "KPlat artifact 的对象引用、大小、发布结果和转换器信息。",
+                    "description": "KSplat artifact 的对象引用、大小、发布结果和转换器信息。",
                     "is_default": True,
                 }
             ],
@@ -353,6 +397,8 @@ def invoke_operator(
         return obj_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name == "stl_to_glb":
         return stl_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
+    if name == "ifc_to_glb":
+        return ifc_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name == "osgb_scene_to_3dtiles":
         return osgb_scene_to_3dtiles(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name == "gaussian_splat_to_ksplat":
@@ -591,6 +637,60 @@ def stl_to_glb(
         env=env,
         timeout_seconds=timeout_seconds,
     )
+
+
+def ifc_to_glb(
+    params: dict[str, Any],
+    *,
+    runner: CommandRunner | None = None,
+    env: dict[str, str] | None = None,
+    timeout_seconds: int | None = None,
+) -> dict[str, Any]:
+    access_plan = _required_object(params, "access_plan")
+    source = _required_object(access_plan, "source")
+    target = _required_object(access_plan, "target")
+    source_path = _first_text(source, "local_path", "root_uri")
+    publish = _required_object(target, "publish")
+    file_name = _required_text(target, "file_name")
+
+    if not source_path:
+        raise ConverterError("INVALID_PARAMS", "access_plan.source.local_path or root_uri is required")
+    if _text(publish.get("method")) != "object_store":
+        raise ConverterError("INVALID_PARAMS", "access_plan.target.publish.method must be object_store")
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="addp-ifc-glb-"))
+    target_file = temp_dir / file_name
+    try:
+        converter = _ifc_converter_bin(env)
+        command = [converter]
+        options = params.get("options")
+        options = options if isinstance(options, dict) else {}
+        if bool(options.get("center_model", True)):
+            command.append("--center-model")
+        command.extend([source_path, str(target_file)])
+        result = _run_executable(command, runner=runner, env_name=IFC_CONVERTER_ENV, timeout_seconds=timeout_seconds)
+        if not target_file.is_file():
+            raise ConverterError(
+                "OUTPUT_NOT_FOUND",
+                "GLB output file was not generated",
+                details=str(target_file),
+                http_status=500,
+            )
+
+        publish_result = publish_object_store_file(target_file, publish)
+        return {
+            "glb_uri": publish_result["object_uri"],
+            "glb_ref": publish_result["object_name"],
+            "size_bytes": publish_result["uploaded_bytes"],
+            "publish": publish_result,
+            "source_format": "ifc",
+            "converter": converter,
+            "command": _redact_command(command),
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def _mesh_model_to_glb(
@@ -1099,6 +1199,11 @@ def _mesh_converter_bin(env: dict[str, str] | None) -> str:
     return _text(values.get(MESH_CONVERTER_ENV)) or DEFAULT_MESH_CONVERTER_BIN
 
 
+def _ifc_converter_bin(env: dict[str, str] | None) -> str:
+    values = env if env is not None else os.environ
+    return _text(values.get(IFC_CONVERTER_ENV)) or DEFAULT_IFC_CONVERTER_BIN
+
+
 def _gaussian_splat_node_bin(env: dict[str, str] | None) -> str:
     values = env if env is not None else os.environ
     configured = _text(values.get(GAUSSIAN_SPLAT_NODE_ENV))
@@ -1135,7 +1240,7 @@ def _ensure_gaussian_splat_converter_available(node_bin: str) -> None:
         return
     raise ConverterError(
         "CONVERTER_UNAVAILABLE",
-        "Gaussian splat KPlat converter is unavailable",
+        "Gaussian splat KSplat converter is unavailable",
         details=_gaussian_splat_converter_unavailable_detail(node_bin),
         http_status=503,
     )

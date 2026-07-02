@@ -13,7 +13,7 @@
           <el-icon class="quick-view-status-icon is-success"><Select /></el-icon>
         </el-tooltip>
         <el-tooltip
-          v-else-if="!quickViewStatus.can_generate_vector_tile_cache"
+          v-else-if="showQuickViewUnavailableNotice"
           :content="quickViewUnavailableText"
           placement="bottom"
           :show-after="300"
@@ -21,14 +21,14 @@
           <el-icon class="quick-view-status-icon is-info"><InfoFilled /></el-icon>
         </el-tooltip>
         <el-button
-          v-if="isQuickViewActive"
+          v-if="showBackToBasicPreviewAction"
           size="small"
           @click="backToBasicPreview"
         >
           {{ t('manager.spatialPreview.backToBasicPreview') }}
         </el-button>
         <el-button
-          v-else-if="quickViewStatus.can_use_quick_view"
+          v-else-if="showSwitchQuickViewAction"
           type="primary"
           size="small"
           @click="switchToQuickView"
@@ -45,7 +45,7 @@
           {{ t('manager.spatialPreview.generateRasterCOG') }}
         </el-button>
         <el-button
-          v-else-if="quickViewStatus.can_generate_vector_tile_cache"
+          v-else-if="showTileCacheGenerationAction"
           type="primary"
           size="small"
           @click="openTileCacheCreate"
@@ -53,10 +53,10 @@
           {{ t('manager.spatialPreview.generateTileCache') }}
         </el-button>
         <el-button
-          v-if="showQuickViewOptimizationAction"
+          v-if="showVectorMaterializedViewAction"
           size="small"
           type="warning"
-          @click="openQuickViewOptimizationCreate"
+          @click="openVectorMaterializedViewCreate"
         >
           {{ t('manager.spatialPreview.optimizeQuickView') }}
         </el-button>
@@ -124,17 +124,17 @@ import {
 } from '@/utils/quickViewTileAdvisory'
 import { quickViewReasonText } from '@/utils/quickViewReasonText'
 import {
-  buildQuickViewOptimizationCreateQuery,
+  buildVectorMaterializedViewCreateQuery,
   buildTileCacheCreateQuery
 } from '@/utils/quickViewNavigationQuery'
 import {
-  buildRasterCOGTaskPayload,
-  shouldShowRasterCOGGenerationAction,
   waitForRasterCOGExecution
 } from '@/utils/rasterCOGTask'
 import {
+  hasQuickViewAction,
   isRasterQuickViewRenderSource,
   isTileQuickViewRenderSource,
+  shouldShowQuickViewUnavailableNotice as shouldShowQuickViewUnavailableNoticeForStatus,
   shouldLoadBasicPreview
 } from '@/utils/quickViewRenderSource'
 import { TablePreview } from '@common-ui-map'
@@ -178,8 +178,18 @@ const sourceLabel = computed(() => {
 const isQuickViewActive = computed(() => {
   return activePreviewMode.value === 'map_quick_view' && !!quickViewStatus.value?.can_use_quick_view
 })
+const canUseQuickViewAction = (action) => hasQuickViewAction(quickViewStatus.value, action)
+const showBackToBasicPreviewAction = computed(() => {
+  return canUseQuickViewAction('back_to_basic_preview')
+})
+const showSwitchQuickViewAction = computed(() => {
+  return canUseQuickViewAction('switch_quick_view')
+})
 const showRasterCOGGenerationAction = computed(() => {
-  return shouldShowRasterCOGGenerationAction(quickViewStatus.value)
+  return canUseQuickViewAction('generate_raster_cog')
+})
+const showTileCacheGenerationAction = computed(() => {
+  return canUseQuickViewAction('generate_vector_tile_cache')
 })
 const isExternalOptimizationTarget = computed(() => {
   return quickViewStatus.value?.optimization?.target_kind === 'external_3857_materialized_view'
@@ -202,19 +212,12 @@ const quickViewUnavailableText = computed(() => {
     t('manager.spatialPreview.quickViewUnavailable')
 })
 
-const showQuickViewOptimizationAction = computed(() => {
-  const realtime = quickViewStatus.value?.realtime_tile || {}
-  const optimization = quickViewStatus.value?.optimization || {}
-  return quickViewRenderSource.value === 'realtime_tile' &&
-    optimization.available !== true &&
-    Number(quickViewStatus.value?.render_facts?.source_srid || 0) !== 3857 &&
-    (
-      optimization.status === 'stale' ||
-      realtime.optimization_recommended === true ||
-      realtime.performance_mode === 'source_transform_path' ||
-      quickViewTileAdvisory.value?.recommendation === 'vector_quick_view_target_generation' ||
-      quickViewTileAdvisory.value?.retryPolicy === 'suppress_tile'
-    )
+const showQuickViewUnavailableNotice = computed(() => {
+  return shouldShowQuickViewUnavailableNoticeForStatus(quickViewStatus.value)
+})
+
+const showVectorMaterializedViewAction = computed(() => {
+  return canUseQuickViewAction('generate_vector_materialized_view')
 })
 const basicPreviewData = ref(null)
 const basicPreviewLoading = ref(false)
@@ -325,10 +328,10 @@ const openTileCacheCreate = () => {
   })
 }
 
-const openQuickViewOptimizationCreate = () => {
+const openVectorMaterializedViewCreate = () => {
   router.push({
-    name: 'QuickViewOptimization',
-    query: buildQuickViewOptimizationCreateQuery(spatialPreviewNavigationTarget(), quickViewStatus.value)
+    name: 'VectorMaterializedView',
+    query: buildVectorMaterializedViewCreateQuery(spatialPreviewNavigationTarget(), quickViewStatus.value)
   })
 }
 
@@ -336,16 +339,9 @@ const generateRasterCOG = async () => {
   if (!quickViewStatus.value || !locator.value) return
   rasterCOGGenerationLoading.value = true
   try {
-    const target = spatialPreviewNavigationTarget()
-    const payload = buildRasterCOGTaskPayload(
-      target,
-      quickViewStatus.value,
-      t('manager.spatialPreview.rasterCOGTaskName', { name: sourceLabel.value || target.locator })
-    )
-    const task = await quickViewAPI.createRasterCOGTask(payload)
-    const execution = await quickViewAPI.executeRasterCOGTask(task.id)
+    const execution = await quickViewAPI.executeQuickViewAction(locator.value, 'generate_raster_cog')
     ElMessage.success(t('manager.spatialPreview.generateRasterCOGSubmitted'))
-    const executionID = String(execution?.execution_id || '').trim()
+    const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
     if (executionID) {
       const result = await waitForRasterCOGExecution(
         executionID,

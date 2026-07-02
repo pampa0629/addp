@@ -26,7 +26,7 @@ describe('tileCacheOptimizationAdvice', () => {
     })
   })
 
-  it('routes stale Manager target to quick view optimization action', () => {
+  it('routes stale Manager target to vector materialized view action', () => {
     expect(tileCacheOptimizationAdvice({
       optimization_available: false,
       optimization_status: 'stale',
@@ -39,7 +39,7 @@ describe('tileCacheOptimizationAdvice', () => {
     })
   })
 
-  it('routes non-3857 source-transform path to quick view optimization action', () => {
+  it('routes non-3857 source-transform path to vector materialized view action', () => {
     expect(tileCacheOptimizationAdvice({
       optimization_recommended: true,
       source_srid: 2360
@@ -51,7 +51,7 @@ describe('tileCacheOptimizationAdvice', () => {
     })
   })
 
-  it('does not recommend quick view optimization for source 3857 without stale target', () => {
+  it('does not recommend vector materialized view for source 3857 without stale target', () => {
     expect(tileCacheOptimizationAdvice({
       optimization_recommended: true,
       source_srid: 3857

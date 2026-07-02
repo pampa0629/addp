@@ -13,7 +13,11 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
+import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js'
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 
 const props = defineProps({
   data: {
@@ -62,10 +66,26 @@ const modelURL = computed(() => {
 const sourceURL = computed(() => withAuthToken(modelURL.value))
 const modelSourceFormat = computed(() => String(
   modelInfo.value?.format ||
+  metadata.value?.format ||
   metadata.value?.source_format ||
   objectData.value?.format ||
   ''
 ).trim().toLowerCase())
+const modelLoadFormat = computed(() => {
+  const renderSource = String(metadata.value?.render_source || content.value?.render_source || '').trim()
+  const artifactFormat = String(modelInfo.value?.artifact_format || metadata.value?.artifact_format || '').trim().toLowerCase()
+  const contentType = String(objectData.value?.content_type || content.value?.content_type || '').trim().toLowerCase()
+  if (renderSource === 'model_3d_glb' || artifactFormat === 'glb' || contentType === 'model/gltf-binary') {
+    return 'glb'
+  }
+  return String(
+    metadata.value?.format ||
+    metadata.value?.source_format ||
+    modelInfo.value?.format ||
+    objectData.value?.format ||
+    ''
+  ).trim().toLowerCase()
+})
 
 const summaryItems = computed(() => {
   const info = modelInfo.value || {}
@@ -323,30 +343,129 @@ async function loadModel(url) {
     loading.value = false
     return
   }
+  if (modelLoadFormat.value === 'stl') {
+    loadSTLModel(url)
+    return
+  }
+  if (modelLoadFormat.value === 'obj') {
+    loadOBJModel(url)
+    return
+  }
+  if (modelLoadFormat.value === 'fbx') {
+    loadFBXModel(url)
+    return
+  }
+  if (modelLoadFormat.value === 'ply') {
+    loadPLYModel(url)
+    return
+  }
+  loadGLTFModel(url)
+}
+
+function applyLoadedObject(object) {
+  clearModel()
+  activeObject = object
+  if (!activeObject) {
+    errorMessage.value = '模型内容为空'
+  } else {
+    stabilizeLineMeshDepth(activeObject)
+    scene.add(activeObject)
+    updateModelBounds(activeObject)
+    if (!applyCameraViewState(props.viewState)) {
+      fitCamera(activeObject)
+    }
+  }
+  loading.value = false
+}
+
+function handleModelLoadError(error) {
+  errorMessage.value = error?.message || '三维模型加载失败'
+  loading.value = false
+}
+
+function loadGLTFModel(url) {
   const loader = new GLTFLoader()
   loader.load(
     url,
     (gltf) => {
-      clearModel()
-      activeObject = gltf.scene || gltf.scenes?.[0]
-      if (!activeObject) {
-        errorMessage.value = '模型内容为空'
-      } else {
-        stabilizeLineMeshDepth(activeObject)
-        scene.add(activeObject)
-        updateModelBounds(activeObject)
-        if (!applyCameraViewState(props.viewState)) {
-          fitCamera(activeObject)
-        }
-      }
-      loading.value = false
+      applyLoadedObject(gltf.scene || gltf.scenes?.[0])
     },
     undefined,
-    (error) => {
-      errorMessage.value = error?.message || '三维模型加载失败'
-      loading.value = false
-    }
+    handleModelLoadError
   )
+}
+
+function loadSTLModel(url) {
+  const loader = new STLLoader()
+  loader.load(
+    url,
+    (geometry) => {
+      geometry.computeVertexNormals()
+      const material = new THREE.MeshStandardMaterial({
+        color: 0xa7abb2,
+        metalness: 0.06,
+        roughness: 0.58
+      })
+      applyLoadedObject(new THREE.Mesh(geometry, material))
+    },
+    undefined,
+    handleModelLoadError
+  )
+}
+
+function loadPLYModel(url) {
+  const loader = new PLYLoader()
+  loader.load(
+    url,
+    (geometry) => {
+      geometry.computeVertexNormals()
+      const material = new THREE.MeshStandardMaterial({
+        color: 0xa7abb2,
+        metalness: 0.04,
+        roughness: 0.62
+      })
+      applyLoadedObject(new THREE.Mesh(geometry, material))
+    },
+    undefined,
+    handleModelLoadError
+  )
+}
+
+function loadOBJModel(url) {
+  const loader = new OBJLoader()
+  loader.load(
+    url,
+    (object) => {
+      applyFallbackMaterial(object)
+      applyLoadedObject(object)
+    },
+    undefined,
+    handleModelLoadError
+  )
+}
+
+function loadFBXModel(url) {
+  const loader = new FBXLoader()
+  loader.load(
+    url,
+    (object) => {
+      applyFallbackMaterial(object)
+      applyLoadedObject(object)
+    },
+    undefined,
+    handleModelLoadError
+  )
+}
+
+function applyFallbackMaterial(object) {
+  object?.traverse?.((node) => {
+    if (!node.isMesh || node.material) return
+    node.material = new THREE.MeshStandardMaterial({
+      color: 0xa7abb2,
+      metalness: 0.04,
+      roughness: 0.62
+    })
+  })
 }
 
 function disposeScene() {

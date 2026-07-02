@@ -29,10 +29,10 @@ func TestTaskLastExecutionUpdatesAreTenantScoped(t *testing.T) {
 			wantTenant7: "exec-tenant-7",
 		},
 		{
-			name:  "quick view optimization",
-			table: "manager.vector_quick_view_target_tasks",
+			name:  "vector materialized view",
+			table: "manager.vector_materialized_view_tasks",
 			update: func() error {
-				return NewQuickViewOptimizationRepository(db).UpdateTaskLastExecution(ctx, 1, 7, "exec-tenant-7", "running", now)
+				return NewVectorMaterializedViewRepository(db).UpdateTaskLastExecution(ctx, 1, 7, "exec-tenant-7", "running", now)
 			},
 			wantTenant7: "exec-tenant-7",
 		},
@@ -83,7 +83,7 @@ func newTaskLastExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 	}
 	for _, table := range []string{
 		"vector_tile_cache_tasks",
-		"vector_quick_view_target_tasks",
+		"vector_materialized_view_tasks",
 		"raster_cog_tasks",
 	} {
 		if err := db.Exec(`CREATE TABLE manager.` + table + ` (

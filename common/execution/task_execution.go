@@ -148,12 +148,12 @@ const (
 	TaskTypeOrchestration = "orchestration"
 	// Manager 模块
 	TaskTypeVectorTileCacheGeneration        = "vector_tile_cache_generation"
-	TaskTypeVectorQuickViewTargetGeneration  = "vector_quick_view_target_generation"
+	TaskTypeVectorMaterializedViewGeneration = "vector_materialized_view_generation"
 	TaskTypeRasterCOGGeneration              = "raster_cog_generation"
 	TaskTypeRasterMosaicGeneration           = "raster_mosaic_generation"
-	TaskTypeModel3DQuickViewGeneration       = "model_3d_quick_view_generation"
+	TaskTypeModel3DGLBGeneration             = "model_3d_glb_generation"
 	TaskTypeModel3DTilesGeneration           = "model_3d_tiles_generation"
-	TaskTypeGaussianSplatQuickViewGeneration = "gaussian_splat_quick_view_generation"
+	TaskTypeGaussianSplatKSplatGeneration    = "gaussian_splat_ksplat_generation"
 	TaskTypeEmbedding                        = "embedding"
 	// Graph 模块
 	TaskTypeKGBuild = "kg_build"

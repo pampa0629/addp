@@ -58,8 +58,8 @@
 6. [元数据 attributes 规范](spec/addp元数据attributes规范.md)：确认 locator 不作为 attributes 标准事实持久化。
 7. [Manager 数据预览与资源树实现规范](../manager/docs/数据预览与资源树实现规范.md)：确认 Manager 资源树、预览 API、PreviewResolver 和 PreviewProvider 当前实现契约。
 8. [Manager 数据预览语义协议](../manager/docs/数据预览语义协议.md)：确认 `content.kind`、`preview_material` 和 `frontend_renderer` 等预览响应语义。
-9. [Manager 快显概念说明](../manager/docs/快显概念说明.md)：确认快显、快显性能优化和瓦片缓存的概念边界。
-10. [Manager 快显实现规范](../manager/docs/快显实现规范.md)：确认快显性能优化任务、结果、外部 3857 目标、瓦片缓存和 UI 引导闭环。
+9. [Manager 快显概念说明](../manager/docs/快显概念说明.md)：确认快显、矢量物化视图和瓦片缓存的概念边界。
+10. [Manager 快显实现规范](../manager/docs/快显实现规范.md)：确认矢量物化视图任务、结果、外部 3857 目标、瓦片缓存和 UI 引导闭环。
 11. [Manager 向量化概念说明](../manager/docs/向量化概念说明.md)：确认 Manager 资源树 item / node 向量化、向量化任务和向量化结果的模块内概念边界。
 12. [Manager 向量化能力说明](../manager/docs/向量化能力说明.md)：确认 Manager 向量化结果字段、状态枚举、API、执行配置和 UI 契约。
 
@@ -80,12 +80,12 @@
 处理 GLB / glTF、OSGB、OSGB Scene、3D Tiles、BIM、普通三维网格、点云或高斯泼溅格式时，建议按以下顺序阅读：
 
 1. [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)：确认 `model_3d`、`point_cloud` 与 `gaussian_splat` 的数据类型边界。
-2. [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)：确认 GLB、3D Tiles、OSGB、OSGB Scene、LAS 和 PLY 的稳定规则。
+2. [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)：确认 GLB、3D Tiles、OSGB、OSGB Scene、IFC、LAS 和 PLY 的稳定规则。
 3. [数据项探测器规范](spec/addp数据项探测器规范.md)：确认 whole-scope 场景、manifest、refs 和 claims 规则。
 4. [元数据 attributes 规范](spec/addp元数据attributes规范.md)：确认 `type_info.model_3d`、`type_info.point_cloud`、`type_info.gaussian_splat` 和 `format_info.<format>` 的字段归属。
 5. [Manager 三维模型与高斯泼溅预览说明](../manager/docs/三维模型与高斯泼溅预览说明.md)：确认三维模型、3D Tiles、3DGS 基础预览、快显任务、结果状态和视角保存边界。
 6. [Model3D Workflow](../engines/model3d-workflow/README.md)：处理 OSGB、glTF、FBX、OBJ、OSGB Scene 和 3DGS 转换运行时、对象存储 staging / publish 或 Docker 部署时阅读。
-7. [三维与点云后续路线](next/三维与点云后续路线.md)：处理 IFC / 3MX / SLPK / LAZ / COPC / E57 / SPZ 等尚未落地能力时阅读。
+7. [三维与点云后续路线](next/三维与点云后续路线.md)：处理 IFC 转换验证、3MX / SLPK / LAZ / COPC / E57 / SPZ 等尚未落地能力时阅读。
 
 ## 数据类型与格式主题
 

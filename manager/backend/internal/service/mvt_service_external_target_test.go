@@ -41,7 +41,7 @@ func TestDiscoverExternal3857MaterializedViewForDLTB(t *testing.T) {
 	if target.Schema != "public" ||
 		target.GeomColumn != "geom_3857" ||
 		target.SRID != spatial.SRIDWebMercator ||
-		!target.QuickViewOptimizationTarget ||
+		!target.VectorMaterializedViewTarget ||
 		target.PerformanceMode != RealtimeTilePerformanceReady3857Target {
 		t.Fatalf("target = %#v, want verified ready 3857 target", target)
 	}
@@ -51,11 +51,11 @@ func TestDiscoverExternal3857MaterializedViewForDLTB(t *testing.T) {
 }
 
 func TestManagerOptimizationTargetFactsStatus(t *testing.T) {
-	result := &models.QuickViewOptimization{
+	result := &models.VectorMaterializedView{
 		TargetSRID:           spatial.SRIDWebMercator,
 		TargetSchema:         "public",
-		TargetTable:          "addp_qvo_roads",
-		TargetGeometryColumn: models.QuickViewOptimizationTargetGeometryColumn,
+		TargetTable:          "addp_vmv_roads",
+		TargetGeometryColumn: models.VectorMaterializedViewTargetGeometryColumn,
 	}
 	tests := []struct {
 		name         string
@@ -80,7 +80,7 @@ func TestManagerOptimizationTargetFactsStatus(t *testing.T) {
 			columnExists: true,
 			indexed:      true,
 			actualSRID:   spatial.SRIDWebMercator,
-			wantReason:   "quick view optimization materialized view is not populated",
+			wantReason:   "vector materialized view materialized view is not populated",
 		},
 		{
 			name:         "missing_column",
@@ -88,7 +88,7 @@ func TestManagerOptimizationTargetFactsStatus(t *testing.T) {
 			columnExists: false,
 			indexed:      true,
 			actualSRID:   spatial.SRIDWebMercator,
-			wantReason:   "quick view optimization target geometry column is missing",
+			wantReason:   "vector materialized view target geometry column is missing",
 		},
 		{
 			name:         "wrong_srid",
@@ -96,7 +96,7 @@ func TestManagerOptimizationTargetFactsStatus(t *testing.T) {
 			columnExists: true,
 			indexed:      true,
 			actualSRID:   4326,
-			wantReason:   "quick view optimization target geometry srid is not 3857",
+			wantReason:   "vector materialized view target geometry srid is not 3857",
 		},
 		{
 			name:         "missing_index",
@@ -104,7 +104,7 @@ func TestManagerOptimizationTargetFactsStatus(t *testing.T) {
 			columnExists: true,
 			indexed:      false,
 			actualSRID:   spatial.SRIDWebMercator,
-			wantReason:   "quick view optimization target geometry GiST index is missing",
+			wantReason:   "vector materialized view target geometry GiST index is missing",
 		},
 	}
 	for _, tt := range tests {

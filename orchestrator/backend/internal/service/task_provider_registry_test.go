@@ -80,7 +80,7 @@ func TestValidateStepTaskReferencesValidatesParametersForRepeatedTaskType(t *tes
 
 func TestValidateStepTaskReferencesRejectsUndeclaredTaskType(t *testing.T) {
 	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
-		"manager": taskProviderForTest("manager", taskCapabilitiesForTest("mvt_generation", false, `{"type":"object","additionalProperties":false}`)),
+		"manager": taskProviderForTest("manager", taskCapabilitiesForTest("vector_tile_cache_generation", false, `{"type":"object","additionalProperties":false}`)),
 	})
 
 	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{

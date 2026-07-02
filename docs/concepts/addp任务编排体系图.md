@@ -50,7 +50,7 @@ graph TB
         Meta --> |注册 capabilities| MetaCap[Meta task_capabilities<br/>scan]
         Transfer --> |注册 capabilities| TransferCap[Transfer task_capabilities<br/>sync]
         Develop --> |注册 capabilities| DevelopCap[Develop task_capabilities<br/>query<br/>workflow<br/>script]
-        Manager --> |注册 capabilities| ManagerCap[Manager task_capabilities<br/>vector_tile_cache_generation<br/>vector_quick_view_target_generation<br/>embedding]
+        Manager --> |注册 capabilities| ManagerCap[Manager task_capabilities<br/>vector_tile_cache_generation<br/>vector_materialized_view_generation<br/>embedding]
         Quality --> |注册 capabilities| QualityCap[Quality task_capabilities<br/>check]
         Graph --> |注册 capabilities| GraphCap[Graph task_capabilities<br/>kg_build]
         OrchestratorProvider --> |注册 capabilities| OrchestratorCap[Orchestrator task_capabilities<br/>orchestration]
@@ -119,7 +119,7 @@ graph TB
 | **Develop** | 执行工作流 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=workflow` |
 | **Develop** | 执行脚本 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=script` |
 | **Manager** | 生成瓦片缓存 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=vector_tile_cache_generation` |
-| **Manager** | 快显性能优化 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=vector_quick_view_target_generation` |
+| **Manager** | 矢量物化视图 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=vector_materialized_view_generation` |
 | **Manager** | 向量化 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=embedding` |
 | **Quality** | 质量检查 | `POST /api/v1/quality/tasks/{task_type}/{id}/execute` | `task_type=check` |
 | **Graph** | 图谱构建 | `POST /api/v1/graph/tasks/{task_type}/{id}/execute` | `task_type=kg_build` |

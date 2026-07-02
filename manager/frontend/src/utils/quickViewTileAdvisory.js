@@ -7,11 +7,11 @@ export function quickViewTileAdvisoryAction(advisory = {}, quickViewStatus = {},
   const retryPolicy = String(advisory?.retryPolicy || '').trim()
   if (recommendation === 'vector_tile_cache_generation') return 'vector_tile_cache_generation'
 
-  if (recommendation === 'vector_quick_view_target_generation' || retryPolicy === 'suppress_tile') {
+  if (recommendation === 'vector_materialized_view_generation' || retryPolicy === 'suppress_tile') {
     const optimization = quickViewStatus?.optimization || {}
     if (optimization.available === true) return 'vector_tile_cache_generation'
     const sourceSRID = Number(quickViewStatus?.render_facts?.source_srid || fallbackSourceSRID || 0)
-    return sourceSRID === 3857 ? 'vector_tile_cache_generation' : 'vector_quick_view_target_generation'
+    return sourceSRID === 3857 ? 'vector_tile_cache_generation' : 'vector_materialized_view_generation'
   }
 
   return ''
@@ -27,7 +27,7 @@ export function quickViewTileAdvisoryMessage(t, action, advisory = {}, quickView
       ? 'manager.spatialPreview.tileTimeoutCacheRecommendedWithBudget'
       : 'manager.spatialPreview.tileTimeoutCacheRecommended', params)
   }
-  if (action === 'vector_quick_view_target_generation') {
+  if (action === 'vector_materialized_view_generation') {
     return t(timeoutBudgetMS > 0
       ? 'manager.spatialPreview.tileTimeoutOptimizationRecommendedWithBudget'
       : 'manager.spatialPreview.tileTimeoutOptimizationRecommended', params)

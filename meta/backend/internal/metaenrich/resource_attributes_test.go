@@ -313,15 +313,16 @@ func TestEnrichResourceAttributesDetectsUnknownGLBAndWritesModel3DInfo(t *testin
 	}
 }
 
-func TestEnrichResourceAttributesDetectsSingleMeshModel3DFormats(t *testing.T) {
+func TestEnrichResourceAttributesDetectsSingleModel3DFormats(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		path       string
-		content    []byte
-		wantFormat format.FormatType
-		infoKey    string
+		name          string
+		path          string
+		content       []byte
+		wantFormat    format.FormatType
+		wantModelKind string
+		infoKey       string
 	}{
 		{
 			name: "obj",
@@ -332,8 +333,9 @@ v 1 0 0
 v 0 1 0
 f 1 2 3
 `),
-			wantFormat: format.FormatOBJ,
-			infoKey:    "format_info.obj",
+			wantFormat:    format.FormatOBJ,
+			wantModelKind: datatype.Model3DKindMeshScene,
+			infoKey:       "format_info.obj",
 		},
 		{
 			name: "stl",
@@ -347,15 +349,33 @@ facet normal 0 0 1
  endloop
 endfacet
 endsolid mesh`),
-			wantFormat: format.FormatSTL,
-			infoKey:    "format_info.stl",
+			wantFormat:    format.FormatSTL,
+			wantModelKind: datatype.Model3DKindMeshScene,
+			infoKey:       "format_info.stl",
 		},
 		{
-			name:       "fbx",
-			path:       "models/mesh.fbx",
-			content:    append([]byte("Kaydara FBX Binary  \x00\x1a\x00"), []byte{0, 0, 0, 0}...),
-			wantFormat: format.FormatFBX,
-			infoKey:    "format_info.fbx",
+			name:          "fbx",
+			path:          "models/mesh.fbx",
+			content:       append([]byte("Kaydara FBX Binary  \x00\x1a\x00"), []byte{0, 0, 0, 0}...),
+			wantFormat:    format.FormatFBX,
+			wantModelKind: datatype.Model3DKindMeshScene,
+			infoKey:       "format_info.fbx",
+		},
+		{
+			name: "ifc",
+			path: "models/building.ifc",
+			content: []byte(`ISO-10303-21;
+HEADER;
+FILE_SCHEMA(('IFC4'));
+ENDSEC;
+DATA;
+#1=IFCPROJECT('0',$,'Project',$,$,$,$,$,$);
+#2=IFCBUILDING('1',$,'Building',$,$,$,$,$,$,$,$);
+ENDSEC;
+END-ISO-10303-21;`),
+			wantFormat:    format.FormatIFC,
+			wantModelKind: datatype.Model3DKindBIMModel,
+			infoKey:       "format_info.ifc",
 		},
 	}
 	for _, tt := range tests {
@@ -391,8 +411,8 @@ endsolid mesh`),
 				t.Fatalf("enriched item = %s/%s, want model_3d/%s", enriched.DataType, enriched.Format, tt.wantFormat)
 			}
 			model := commonJSON.Section(attrs, "type_info.model_3d")
-			if model["model_kind"] != string(datatype.Model3DKindMeshScene) {
-				t.Fatalf("type_info.model_3d = %#v, want mesh_scene", model)
+			if model["model_kind"] != tt.wantModelKind {
+				t.Fatalf("type_info.model_3d = %#v, want %s", model, tt.wantModelKind)
 			}
 			if info := commonJSON.Section(attrs, tt.infoKey); len(info) == 0 {
 				t.Fatalf("%s is empty, attrs=%#v", tt.infoKey, attrs)

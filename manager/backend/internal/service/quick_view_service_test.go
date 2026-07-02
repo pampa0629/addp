@@ -518,49 +518,25 @@ func TestQuickViewCapabilityUsesReadyModel3DGLBForSupportedSourceFormats(t *test
 	} {
 		t.Run(tc.format, func(t *testing.T) {
 			db := newTileCacheTaskServiceTestDB(t)
-			if err := db.Exec(`CREATE TABLE manager.model_3d_quick_view (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				tenant_id INTEGER NOT NULL,
-				item_fingerprint TEXT NOT NULL,
-				item_id INTEGER,
-				locator TEXT,
-				task_id INTEGER,
-				last_execution_id TEXT,
-				source_engine_id INTEGER NOT NULL,
-				source_format TEXT NOT NULL,
-				source_size_bytes INTEGER,
-				storage_ref TEXT NOT NULL,
-				file_name TEXT,
-				size_bytes INTEGER,
-				content_url TEXT,
-				status TEXT NOT NULL,
-				metadata JSON,
-				error_message TEXT,
-				created_by INTEGER,
-				created_at DATETIME,
-				updated_at DATETIME,
-				deleted_at DATETIME
-			)`).Error; err != nil {
-				t.Fatalf("create model_3d_quick_view table: %v", err)
-			}
+			createModel3DGLBTableForTest(t, db)
 			svc := NewQuickViewService(db, nil)
 			locator := fmt.Sprintf("addp://engine/26/path/%s?type=file&item_id=10282", tc.fullName)
 			fingerprint := commonModels.GenerateItemFingerprint(26, tc.fullName)
-			result := &models.Model3DQuickView{
+			result := &models.Model3DGLB{
 				TenantID:        7,
 				ItemFingerprint: fingerprint,
 				Locator:         locator,
 				SourceEngineID:  26,
 				SourceFormat:    tc.format,
 				SourceSizeBytes: 1024 * 1024,
-				StorageRef:      fmt.Sprintf(`{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/model3d_quick_view/%s"}`, tc.fileName),
+				StorageRef:      fmt.Sprintf(`{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/model3d_glb/%s"}`, tc.fileName),
 				FileName:        tc.fileName,
 				SizeBytes:       612396,
-				Status:          models.Model3DQuickViewStatusReady,
+				Status:          models.Model3DGLBStatusReady,
 				Metadata:        commonModels.JSONMap{},
 			}
-			if err := repository.NewModel3DQuickViewRepository(db).Create(context.Background(), result); err != nil {
-				t.Fatalf("create model3d quick view result: %v", err)
+			if err := repository.NewModel3DGLBRepository(db).Create(context.Background(), result); err != nil {
+				t.Fatalf("create model3d GLB preview artifact result: %v", err)
 			}
 
 			capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
@@ -570,14 +546,14 @@ func TestQuickViewCapabilityUsesReadyModel3DGLBForSupportedSourceFormats(t *test
 					Locator:         locator,
 				},
 				EngineID: 26,
-				Model3D: &Model3DQuickViewSource{
+				Model3D: &Model3DGLBSource{
 					Format:          tc.format,
 					Layout:          "single",
 					SourceSizeBytes: 1024 * 1024,
 				},
 			})
 			if err != nil {
-				t.Fatalf("build model3d quick view capability: %v", err)
+				t.Fatalf("build model3d GLB preview capability: %v", err)
 			}
 			if !capability.CanUseQuickView {
 				t.Fatalf("can_use_quick_view = false, want ready GLB; reason=%s", capability.UnavailableReason)
@@ -585,21 +561,27 @@ func TestQuickViewCapabilityUsesReadyModel3DGLBForSupportedSourceFormats(t *test
 			if capability.RenderSource != QuickViewRenderSourceModel3DGLB {
 				t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceModel3DGLB)
 			}
-			if capability.QuickView.PreviewURL != fmt.Sprintf("/api/v1/manager/model_3d_quick_view/%d/content", result.ID) {
-				t.Fatalf("preview_url = %q, want model3d quick view content URL", capability.QuickView.PreviewURL)
+			if capability.QuickView.PreviewURL != fmt.Sprintf("/api/v1/manager/model_3d_glb/%d/content", result.ID) {
+				t.Fatalf("preview_url = %q, want model3d GLB preview artifact content URL", capability.QuickView.PreviewURL)
 			}
 			if capability.Model3D == nil || capability.Model3D.Format != tc.format || capability.Model3D.FileName != tc.fileName {
 				t.Fatalf("model3d info = %#v, want ready GLB facts", capability.Model3D)
 			}
 			if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
-				t.Fatalf("tile generation = can:%v available:%v, want false for model3d quick view", capability.CanGenerateTileCache, capability.TileCacheGeneration.Available)
+				t.Fatalf("tile generation = can:%v available:%v, want false for model3d GLB preview artifact", capability.CanGenerateTileCache, capability.TileCacheGeneration.Available)
+			}
+			if capability.SourceKind != QuickViewSourceKindModel3D {
+				t.Fatalf("source_kind = %q, want %q", capability.SourceKind, QuickViewSourceKindModel3D)
+			}
+			if !containsString(capability.AvailableActions, QuickViewActionBackToBasicPreview) {
+				t.Fatalf("available_actions = %#v, want back to basic preview action", capability.AvailableActions)
 			}
 		})
 	}
 }
 
-func TestModel3DQuickViewSourceFromAttributesSupportsOBJSingleItem(t *testing.T) {
-	source := Model3DQuickViewSourceFromAttributes(map[string]interface{}{
+func TestModel3DGLBSourceFromAttributesSupportsOBJSingleItem(t *testing.T) {
+	source := Model3DGLBSourceFromAttributes(map[string]interface{}{
 		"item": map[string]interface{}{
 			"data_type": "model_3d",
 			"format":    "obj",
@@ -617,8 +599,8 @@ func TestModel3DQuickViewSourceFromAttributesSupportsOBJSingleItem(t *testing.T)
 	}
 }
 
-func TestModel3DQuickViewSourceFromAttributesSupportsSTLSingleItem(t *testing.T) {
-	source := Model3DQuickViewSourceFromAttributes(map[string]interface{}{
+func TestModel3DGLBSourceFromAttributesSupportsSTLSingleItem(t *testing.T) {
+	source := Model3DGLBSourceFromAttributes(map[string]interface{}{
 		"item": map[string]interface{}{
 			"data_type": "model_3d",
 			"format":    "stl",
@@ -636,11 +618,216 @@ func TestModel3DQuickViewSourceFromAttributesSupportsSTLSingleItem(t *testing.T)
 	}
 }
 
-func TestGaussianSplatQuickViewSourceFromAttributes(t *testing.T) {
+func TestModel3DGLBSourceFromAttributesSupportsIFCSingleItem(t *testing.T) {
+	source := Model3DGLBSourceFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"data_type": "model_3d",
+			"format":    "ifc",
+			"layout":    "single",
+		},
+		"storage": map[string]interface{}{
+			"total_size": int64(16384),
+		},
+	})
+	if source == nil {
+		t.Fatal("source is nil, want IFC single item to be a model3d GLB quick view source")
+	}
+	if source.Format != "ifc" || source.Layout != "single" || source.SourceSizeBytes != 16384 {
+		t.Fatalf("source = %#v, want IFC single item facts", source)
+	}
+}
+
+func TestModel3DGLBCapabilityRecommendsGLBGenerationWhenMissing(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	createModel3DGLBTableForTest(t, db)
+	svc := NewQuickViewService(db, nil)
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: "fp-ifc-missing",
+			Locator:         "addp://engine/26/path/3d/ifc/building.ifc?type=file&item_id=10988",
+		},
+		EngineID: 26,
+		Model3D: &Model3DGLBSource{
+			Format:          "ifc",
+			Layout:          "single",
+			SourceSizeBytes: 4096,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build model3d GLB capability: %v", err)
+	}
+	if capability.SourceKind != QuickViewSourceKindModel3D {
+		t.Fatalf("source_kind = %q, want %q", capability.SourceKind, QuickViewSourceKindModel3D)
+	}
+	if capability.CanUseQuickView || capability.UnavailableReason != "requires_glb_generation" {
+		t.Fatalf("capability quick view = can:%v reason:%q, want GLB generation requirement", capability.CanUseQuickView, capability.UnavailableReason)
+	}
+	if !containsString(capability.AvailableActions, QuickViewActionGenerateModel3DGLB) {
+		t.Fatalf("available_actions = %#v, want GLB generation action", capability.AvailableActions)
+	}
+}
+
+func TestQuickViewCapabilityAvailableActions(t *testing.T) {
+	t.Run("switch quick view when quick view is ready but inactive", func(t *testing.T) {
+		db := newTileCacheTaskServiceTestDB(t)
+		svc := NewQuickViewService(db, nil)
+		svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+		fingerprint := commonModels.GenerateItemFingerprint(26, "shp/farmland.shp")
+		locator := "addp://engine/26/path/shp/farmland.shp?type=file"
+		if err := svc.repo.UpdatePreferredMode(7, fingerprint, locator, models.PreviewModeBasicPreview); err != nil {
+			t.Fatalf("save preview preference: %v", err)
+		}
+
+		capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+			Identity: QuickViewIdentity{
+				TenantID:        7,
+				ItemFingerprint: fingerprint,
+				Locator:         locator,
+			},
+			EngineID:      26,
+			DirectGeoJSON: true,
+			GeoJSONURL:    "/api/v1/manager/quick-view/geojson",
+			SpatialMeta: &SpatialMetadataResult{
+				GeomColumn:  "geometry",
+				SRID:        4326,
+				ExtentSRID:  4326,
+				Extent:      []float64{110, 20, 120, 30},
+				RecordCount: 127,
+			},
+		})
+		if err != nil {
+			t.Fatalf("build quick view capability: %v", err)
+		}
+		assertActions(t, capability.AvailableActions, QuickViewActionSwitchQuickView)
+		assertNoActions(t, capability.AvailableActions, QuickViewActionBackToBasicPreview)
+	})
+
+	t.Run("back to basic preview when quick view is active", func(t *testing.T) {
+		db := newTileCacheTaskServiceTestDB(t)
+		svc := NewQuickViewService(db, nil)
+		svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+		fingerprint := commonModels.GenerateItemFingerprint(26, "shp/farmland.shp")
+		locator := "addp://engine/26/path/shp/farmland.shp?type=file"
+		if err := svc.repo.UpdatePreferredMode(7, fingerprint, locator, models.PreviewModeMapQuickView); err != nil {
+			t.Fatalf("save preview preference: %v", err)
+		}
+
+		capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+			Identity: QuickViewIdentity{
+				TenantID:        7,
+				ItemFingerprint: fingerprint,
+				Locator:         locator,
+			},
+			EngineID:      26,
+			DirectGeoJSON: true,
+			GeoJSONURL:    "/api/v1/manager/quick-view/geojson",
+			SpatialMeta: &SpatialMetadataResult{
+				GeomColumn:  "geometry",
+				SRID:        4326,
+				ExtentSRID:  4326,
+				Extent:      []float64{110, 20, 120, 30},
+				RecordCount: 127,
+			},
+		})
+		if err != nil {
+			t.Fatalf("build quick view capability: %v", err)
+		}
+		assertActions(t, capability.AvailableActions, QuickViewActionBackToBasicPreview)
+		assertNoActions(t, capability.AvailableActions, QuickViewActionSwitchQuickView)
+	})
+
+	t.Run("vector tile generation when spatial metadata is tile ready", func(t *testing.T) {
+		db := newTileCacheTaskServiceTestDB(t)
+		svc := NewQuickViewService(db, nil)
+
+		capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+			Identity: QuickViewIdentity{
+				TenantID:        7,
+				ItemFingerprint: commonModels.GenerateItemFingerprint(26, "shp/large.shp"),
+				Locator:         "addp://engine/26/path/shp/large.shp?type=file",
+			},
+			EngineID: 26,
+			CanTile:  true,
+			SpatialMeta: &SpatialMetadataResult{
+				GeomColumn:  "geometry",
+				SRID:        4326,
+				ExtentSRID:  4326,
+				Extent:      []float64{110, 20, 120, 30},
+				RecordCount: 100000,
+			},
+		})
+		if err != nil {
+			t.Fatalf("build quick view capability: %v", err)
+		}
+		assertActions(t, capability.AvailableActions, QuickViewActionGenerateTileCache)
+	})
+
+	t.Run("raster COG generation when large raster requires COG", func(t *testing.T) {
+		db := newTileCacheTaskServiceTestDB(t)
+		svc := NewQuickViewService(db, nil)
+
+		capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+			Identity: QuickViewIdentity{
+				TenantID:        7,
+				ItemFingerprint: commonModels.GenerateItemFingerprint(26, "rasters/large.tif"),
+				Locator:         "addp://engine/26/path/rasters/large.tif?type=file",
+			},
+			EngineID: 26,
+			Raster: &RasterQuickViewSource{
+				Format:     "tiff",
+				Profile:    "geotiff",
+				SizeBytes:  900 * 1024 * 1024,
+				Width:      120000,
+				Height:     80000,
+				SourceSRID: 4326,
+				ExtentSRID: 4326,
+				Extent:     []float64{110, 20, 120, 30},
+				PreviewURL: "/api/v1/manager/storage-stream?engine_id=26&storage_ref=rasters%2Flarge.tif",
+			},
+		})
+		if err != nil {
+			t.Fatalf("build quick view capability: %v", err)
+		}
+		assertActions(t, capability.AvailableActions, QuickViewActionGenerateRasterCOG)
+		assertNoActions(t, capability.AvailableActions, QuickViewActionGenerateTileCache)
+	})
+}
+
+func createModel3DGLBTableForTest(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec(`CREATE TABLE manager.model_3d_glb (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		item_fingerprint TEXT NOT NULL,
+		item_id INTEGER,
+		locator TEXT,
+		task_id INTEGER,
+		last_execution_id TEXT,
+		source_engine_id INTEGER NOT NULL,
+		source_format TEXT NOT NULL,
+		source_size_bytes INTEGER,
+		storage_ref TEXT NOT NULL,
+		file_name TEXT,
+		size_bytes INTEGER,
+		content_url TEXT,
+		status TEXT NOT NULL,
+		metadata JSON,
+		error_message TEXT,
+		created_by INTEGER,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create model_3d_glb table: %v", err)
+	}
+}
+
+func TestGaussianSplatKSplatSourceFromAttributes(t *testing.T) {
 	for _, formatName := range []string{"ply", "splat", "ksplat"} {
 		formatName := formatName
 		t.Run(formatName, func(t *testing.T) {
-			source := GaussianSplatQuickViewSourceFromAttributes(map[string]interface{}{
+			source := GaussianSplatKSplatSourceFromAttributes(map[string]interface{}{
 				"item": map[string]interface{}{
 					"data_type": "gaussian_splat",
 					"format":    formatName,
@@ -669,7 +856,7 @@ func TestGaussianSplatQuickViewSourceFromAttributes(t *testing.T) {
 				},
 			})
 			if source == nil {
-				t.Fatal("source is nil, want gaussian splat quick view source")
+				t.Fatal("source is nil, want gaussian splat KSplat source")
 			}
 			if source.Format != formatName || source.Layout != "single" || source.Representation != "3d_gaussian_splatting" || source.SplatCount != 128 || source.SourceSizeBytes != 4096 {
 				t.Fatalf("source = %#v, want gaussian splat facts", source)
@@ -688,7 +875,7 @@ func TestGaussianSplatQuickViewSourceFromAttributes(t *testing.T) {
 			}
 		})
 	}
-	if model3D := Model3DQuickViewSourceFromAttributes(map[string]interface{}{
+	if model3D := Model3DGLBSourceFromAttributes(map[string]interface{}{
 		"item": map[string]interface{}{
 			"data_type": "gaussian_splat",
 			"format":    "ply",
@@ -699,9 +886,9 @@ func TestGaussianSplatQuickViewSourceFromAttributes(t *testing.T) {
 	}
 }
 
-func TestQuickViewCapabilityRecommendsKPlatGenerationForConvertibleGaussianSources(t *testing.T) {
+func TestQuickViewCapabilityRecommendsKSplatGenerationForConvertibleGaussianSources(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
-	createGaussianSplatQuickViewTable(t, db)
+	createGaussianSplatKSplatTable(t, db)
 	svc := NewQuickViewService(db, nil)
 
 	for _, sourceFormat := range []string{"ply", "splat"} {
@@ -713,7 +900,7 @@ func TestQuickViewCapabilityRecommendsKPlatGenerationForConvertibleGaussianSourc
 					Locator:         "addp://engine/26/path/3d/splat/model." + sourceFormat + "?type=file&item_id=201",
 				},
 				EngineID: 26,
-				GaussianSplat: &GaussianSplatQuickViewSource{
+				GaussianSplat: &GaussianSplatKSplatSource{
 					Format:          sourceFormat,
 					Layout:          "single",
 					Representation:  "3d_gaussian_splatting",
@@ -724,8 +911,8 @@ func TestQuickViewCapabilityRecommendsKPlatGenerationForConvertibleGaussianSourc
 			if err != nil {
 				t.Fatalf("BuildCapabilityFromSource() error = %v", err)
 			}
-			if capability.CanUseQuickView || capability.RenderSource != "" || capability.UnavailableReason != "requires_kplat_generation" {
-				t.Fatalf("capability quick view = can:%v render:%q reason:%q, want managed KPlat generation requirement", capability.CanUseQuickView, capability.RenderSource, capability.UnavailableReason)
+			if capability.CanUseQuickView || capability.RenderSource != "" || capability.UnavailableReason != "requires_ksplat_generation" {
+				t.Fatalf("capability quick view = can:%v render:%q reason:%q, want managed KSplat generation requirement", capability.CanUseQuickView, capability.RenderSource, capability.UnavailableReason)
 			}
 			if capability.Model3D != nil {
 				t.Fatalf("model_3d capability = %#v, want nil for gaussian splat", capability.Model3D)
@@ -733,8 +920,8 @@ func TestQuickViewCapabilityRecommendsKPlatGenerationForConvertibleGaussianSourc
 			if capability.GaussianSplat == nil || capability.GaussianSplat.Format != sourceFormat || capability.GaussianSplat.SplatCount != 128 {
 				t.Fatalf("gaussian_splat capability = %#v, want gaussian splat facts", capability.GaussianSplat)
 			}
-			if capability.GaussianSplat.RecommendedAction != commonExecution.TaskTypeGaussianSplatQuickViewGeneration {
-				t.Fatalf("recommended_action = %q, want KPlat generation recommendation", capability.GaussianSplat.RecommendedAction)
+			if capability.GaussianSplat.RecommendedAction != commonExecution.TaskTypeGaussianSplatKSplatGeneration {
+				t.Fatalf("recommended_action = %q, want KSplat generation recommendation", capability.GaussianSplat.RecommendedAction)
 			}
 			if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
 				t.Fatalf("tile generation = can:%v available:%v, want false for gaussian splat", capability.CanGenerateTileCache, capability.TileCacheGeneration.Available)
@@ -745,7 +932,7 @@ func TestQuickViewCapabilityRecommendsKPlatGenerationForConvertibleGaussianSourc
 
 func TestQuickViewCapabilityTreatsSourceKSplatAsBasicPreview(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
-	createGaussianSplatQuickViewTable(t, db)
+	createGaussianSplatKSplatTable(t, db)
 	svc := NewQuickViewService(db, nil)
 
 	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
@@ -755,7 +942,7 @@ func TestQuickViewCapabilityTreatsSourceKSplatAsBasicPreview(t *testing.T) {
 			Locator:         "addp://engine/26/path/3d/splat/model.ksplat?type=file&item_id=201",
 		},
 		EngineID: 26,
-		GaussianSplat: &GaussianSplatQuickViewSource{
+		GaussianSplat: &GaussianSplatKSplatSource{
 			Format:          "ksplat",
 			Layout:          "single",
 			Representation:  "3d_gaussian_splatting",
@@ -769,16 +956,16 @@ func TestQuickViewCapabilityTreatsSourceKSplatAsBasicPreview(t *testing.T) {
 		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
 	}
 	if capability.CanUseQuickView || capability.RenderSource != "" || capability.UnavailableReason != "source_format_direct_preview" {
-		t.Fatalf("capability quick view = can:%v render:%q reason:%q, want source KPlat basic preview only", capability.CanUseQuickView, capability.RenderSource, capability.UnavailableReason)
+		t.Fatalf("capability quick view = can:%v render:%q reason:%q, want source KSplat basic preview only", capability.CanUseQuickView, capability.RenderSource, capability.UnavailableReason)
 	}
 	if capability.QuickView.PreviewURL != "" {
-		t.Fatalf("quick view preview_url = %q, want empty for source KPlat", capability.QuickView.PreviewURL)
+		t.Fatalf("quick view preview_url = %q, want empty for source KSplat", capability.QuickView.PreviewURL)
 	}
 	if capability.PreferredMode != models.PreviewModeBasicPreview || capability.ActiveMode != models.PreviewModeBasicPreview {
 		t.Fatalf("preview mode = preferred:%q active:%q, want basic preview", capability.PreferredMode, capability.ActiveMode)
 	}
 	if capability.GaussianSplat == nil || capability.GaussianSplat.RecommendedAction != "" || capability.GaussianSplat.UnavailableReason != "source_format_direct_preview" {
-		t.Fatalf("gaussian_splat = %#v, want source KPlat direct preview facts", capability.GaussianSplat)
+		t.Fatalf("gaussian_splat = %#v, want source KSplat direct preview facts", capability.GaussianSplat)
 	}
 	if len(capability.GaussianSplat.SceneCenter) != 3 || capability.GaussianSplat.SceneCenter[2] != 1522.4 {
 		t.Fatalf("scene_center = %#v, want source scene center", capability.GaussianSplat.SceneCenter)
@@ -790,24 +977,24 @@ func TestQuickViewCapabilityTreatsSourceKSplatAsBasicPreview(t *testing.T) {
 
 func TestQuickViewCapabilityUsesReadyGaussianSplatKSplat(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
-	createGaussianSplatQuickViewTable(t, db)
+	createGaussianSplatKSplatTable(t, db)
 	svc := NewQuickViewService(db, nil)
 	locator := "addp://engine/26/path/3d/gaussian/model.ply?type=file&item_id=201"
-	result := &models.GaussianSplatQuickView{
+	result := &models.GaussianSplatKSplat{
 		TenantID:        7,
 		ItemFingerprint: "fp-gaussian",
 		Locator:         locator,
 		SourceEngineID:  26,
 		SourceFormat:    "ply",
 		SourceSizeBytes: 4096,
-		StorageRef:      `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/gaussian-splat-quick-view/fp-gaussian/model.ksplat"}`,
+		StorageRef:      `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/gaussian-splat-ksplat/fp-gaussian/model.ksplat"}`,
 		FileName:        "model.ksplat",
 		SizeBytes:       4096,
-		Status:          models.GaussianSplatQuickViewStatusReady,
+		Status:          models.GaussianSplatKSplatStatusReady,
 		Metadata:        commonModels.JSONMap{},
 	}
-	if err := repository.NewGaussianSplatQuickViewRepository(db).Create(context.Background(), result); err != nil {
-		t.Fatalf("create gaussian splat quick view result: %v", err)
+	if err := repository.NewGaussianSplatKSplatRepository(db).Create(context.Background(), result); err != nil {
+		t.Fatalf("create gaussian splat KSplat result: %v", err)
 	}
 
 	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
@@ -817,7 +1004,7 @@ func TestQuickViewCapabilityUsesReadyGaussianSplatKSplat(t *testing.T) {
 			Locator:         locator,
 		},
 		EngineID: 26,
-		GaussianSplat: &GaussianSplatQuickViewSource{
+		GaussianSplat: &GaussianSplatKSplatSource{
 			Format:                   "ply",
 			Layout:                   "single",
 			Representation:           "3d_gaussian_splatting",
@@ -836,8 +1023,8 @@ func TestQuickViewCapabilityUsesReadyGaussianSplatKSplat(t *testing.T) {
 	if capability.RenderSource != QuickViewRenderSourceGaussianSplatKSplat {
 		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceGaussianSplatKSplat)
 	}
-	if capability.QuickView.PreviewURL != fmt.Sprintf("/api/v1/manager/gaussian_splat_quick_view/%d/content", result.ID) {
-		t.Fatalf("preview_url = %q, want gaussian splat quick view content URL", capability.QuickView.PreviewURL)
+	if capability.QuickView.PreviewURL != fmt.Sprintf("/api/v1/manager/gaussian_splat_ksplat/%d/content", result.ID) {
+		t.Fatalf("preview_url = %q, want gaussian splat KSplat content URL", capability.QuickView.PreviewURL)
 	}
 	if capability.GaussianSplat == nil || capability.GaussianSplat.FileName != "model.ksplat" || capability.GaussianSplat.RecommendedAction != "" {
 		t.Fatalf("gaussian_splat capability = %#v, want ready KSplat facts", capability.GaussianSplat)
@@ -853,9 +1040,9 @@ func TestQuickViewCapabilityUsesReadyGaussianSplatKSplat(t *testing.T) {
 	}
 }
 
-func createGaussianSplatQuickViewTable(t *testing.T, db *gorm.DB) {
+func createGaussianSplatKSplatTable(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	if err := db.Exec(`CREATE TABLE manager.gaussian_splat_quick_view (
+	if err := db.Exec(`CREATE TABLE manager.gaussian_splat_ksplat (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		item_fingerprint TEXT NOT NULL,
@@ -878,7 +1065,7 @@ func createGaussianSplatQuickViewTable(t *testing.T, db *gorm.DB) {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create gaussian_splat_quick_view table: %v", err)
+		t.Fatalf("create gaussian_splat_ksplat table: %v", err)
 	}
 }
 
@@ -1292,7 +1479,7 @@ func TestQuickViewCapabilityUsesDirectGeoJSONForSmallPGTableAndKeepsRealtimeAlte
 			SRID:                       4326,
 			PerformanceMode:            RealtimeTilePerformanceSourceTransform,
 			OptimizationRecommended:    true,
-			OptimizationRecommendation: RealtimeTileRecommendationQuickViewOptimization,
+			OptimizationRecommendation: RealtimeTileRecommendationVectorMaterializedView,
 		},
 	})
 	if err != nil {
@@ -1389,7 +1576,7 @@ func TestQuickViewCapabilityPrefersReadyTileCacheResultOverDirectGeoJSON(t *test
 	}
 }
 
-func TestQuickViewCapabilityUsesSourceTransformRealtimeTileForLargePGTableWithoutQuickViewOptimizationTarget(t *testing.T) {
+func TestQuickViewCapabilityUsesSourceTransformRealtimeTileForLargePGTableWithoutVectorMaterializedViewTarget(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
@@ -1421,7 +1608,7 @@ func TestQuickViewCapabilityUsesSourceTransformRealtimeTileForLargePGTableWithou
 			SRID:                       2360,
 			PerformanceMode:            RealtimeTilePerformanceSourceTransform,
 			OptimizationRecommended:    true,
-			OptimizationRecommendation: RealtimeTileRecommendationQuickViewOptimization,
+			OptimizationRecommendation: RealtimeTileRecommendationVectorMaterializedView,
 		},
 	})
 	if err != nil {
@@ -1444,7 +1631,7 @@ func TestQuickViewCapabilityUsesSourceTransformRealtimeTileForLargePGTableWithou
 		t.Fatalf("performance_mode = %s, want %s", capability.RealtimeTile.PerformanceMode, RealtimeTilePerformanceSourceTransform)
 	}
 	if !capability.RealtimeTile.OptimizationRecommended ||
-		capability.RealtimeTile.TimeoutRecommendation != RealtimeTileRecommendationQuickViewOptimization ||
+		capability.RealtimeTile.TimeoutRecommendation != RealtimeTileRecommendationVectorMaterializedView ||
 		capability.RealtimeTile.TimeoutRetryPolicy != RealtimeTileTimeoutRetrySuppressTile {
 		t.Fatalf("realtime_tile = %#v, want optimization recommendation and suppress retry", capability.RealtimeTile)
 	}
@@ -1515,7 +1702,7 @@ func TestQuickViewCapabilityUsesSource3857RealtimeTileWhenResolved(t *testing.T)
 	}
 	if capability.Optimization == nil ||
 		capability.Optimization.Available ||
-		capability.Optimization.Status != QuickViewOptimizationStatusNotRequired {
+		capability.Optimization.Status != VectorMaterializedViewStatusNotRequired {
 		t.Fatalf("optimization = %#v, want not_required for indexed source 3857", capability.Optimization)
 	}
 }
@@ -1561,16 +1748,16 @@ func TestQuickViewCapabilitySource3857UnindexedDoesNotRecommendOptimizationTask(
 		capability.RealtimeTile.OptimizationRecommendation != "" ||
 		capability.RealtimeTile.TimeoutRecommendation != RealtimeTileRecommendationTileCacheGeneration ||
 		capability.RealtimeTile.TimeoutRetryPolicy != RealtimeTileTimeoutRetrySuppressTile {
-		t.Fatalf("realtime_tile = %#v, want tile cache recommendation without quick view optimization task", capability.RealtimeTile)
+		t.Fatalf("realtime_tile = %#v, want tile cache recommendation without vector materialized view task", capability.RealtimeTile)
 	}
 	if capability.Optimization == nil ||
 		capability.Optimization.Available ||
-		capability.Optimization.Status != QuickViewOptimizationStatusNotRequired {
+		capability.Optimization.Status != VectorMaterializedViewStatusNotRequired {
 		t.Fatalf("optimization = %#v, want not_required for source 3857", capability.Optimization)
 	}
 }
 
-func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithQuickViewOptimizationTarget(t *testing.T) {
+func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithVectorMaterializedViewTarget(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
@@ -1596,11 +1783,11 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithQuickViewOpt
 			RecordCount:     73090,
 		},
 		RealtimeTileTarget: &RealtimeTileTarget{
-			Schema:                      "public",
-			Table:                       "farmland_mv3857",
-			GeomColumn:                  "geom_3857",
-			SRID:                        3857,
-			QuickViewOptimizationTarget: true,
+			Schema:                       "public",
+			Table:                        "farmland_mv3857",
+			GeomColumn:                   "geom_3857",
+			SRID:                         3857,
+			VectorMaterializedViewTarget: true,
 		},
 	})
 	if err != nil {
@@ -1628,7 +1815,7 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithQuickViewOpt
 	}
 }
 
-func TestQuickViewCapabilityUsesRealtimeTileForLargePGTableWithoutQuickViewOptimizationTarget(t *testing.T) {
+func TestQuickViewCapabilityUsesRealtimeTileForLargePGTableWithoutVectorMaterializedViewTarget(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
@@ -1660,7 +1847,7 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargePGTableWithoutQuickViewOptim
 			SRID:                       4549,
 			PerformanceMode:            RealtimeTilePerformanceSourceTransform,
 			OptimizationRecommended:    true,
-			OptimizationRecommendation: RealtimeTileRecommendationQuickViewOptimization,
+			OptimizationRecommendation: RealtimeTileRecommendationVectorMaterializedView,
 		},
 	})
 	if err != nil {
@@ -1679,7 +1866,7 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargePGTableWithoutQuickViewOptim
 		t.Fatalf("performance_mode = %s, want source transform path", capability.RealtimeTile.PerformanceMode)
 	}
 	if !capability.RealtimeTile.OptimizationRecommended ||
-		capability.RealtimeTile.TimeoutRecommendation != RealtimeTileRecommendationQuickViewOptimization ||
+		capability.RealtimeTile.TimeoutRecommendation != RealtimeTileRecommendationVectorMaterializedView ||
 		capability.RealtimeTile.TimeoutRetryPolicy != RealtimeTileTimeoutRetrySuppressTile {
 		t.Fatalf("realtime_tile = %#v, want optimization recommendation and suppress retry", capability.RealtimeTile)
 	}
@@ -1711,12 +1898,12 @@ func TestQuickViewCapabilityReady3857RealtimeTimeoutRecommendsTileCache(t *testi
 			RecordCount:     146180,
 		},
 		RealtimeTileTarget: &RealtimeTileTarget{
-			Schema:                      "public",
-			Table:                       "addp_qvo_a2",
-			GeomColumn:                  "geom_3857",
-			SRID:                        3857,
-			QuickViewOptimizationTarget: true,
-			PerformanceMode:             RealtimeTilePerformanceReady3857Target,
+			Schema:                       "public",
+			Table:                        "addp_vmv_a2",
+			GeomColumn:                   "geom_3857",
+			SRID:                         3857,
+			VectorMaterializedViewTarget: true,
+			PerformanceMode:              RealtimeTilePerformanceReady3857Target,
 		},
 	})
 	if err != nil {
@@ -1763,11 +1950,11 @@ func TestQuickViewCapabilityUsesRenderExtentForNonWGS84SpatialTable(t *testing.T
 			RecordCount:        10597882,
 		},
 		RealtimeTileTarget: &RealtimeTileTarget{
-			Schema:                      "public",
-			Table:                       "dltb_mv3857",
-			GeomColumn:                  "geom_3857",
-			SRID:                        3857,
-			QuickViewOptimizationTarget: true,
+			Schema:                       "public",
+			Table:                        "dltb_mv3857",
+			GeomColumn:                   "geom_3857",
+			SRID:                         3857,
+			VectorMaterializedViewTarget: true,
 		},
 	})
 	if err != nil {
@@ -2093,7 +2280,7 @@ func TestQuickViewCapabilityIncludesOptimizationDiagnostic(t *testing.T) {
 	execID := "execution-qvo"
 	taskID := uint(3)
 	extentSRID := 4326
-	if err := db.Create(&models.QuickViewOptimization{
+	if err := db.Create(&models.VectorMaterializedView{
 		TenantID:                  1,
 		ItemFingerprint:           fingerprint,
 		Locator:                   tableLocator(11, "public", "roads"),
@@ -2105,17 +2292,17 @@ func TestQuickViewCapabilityIncludesOptimizationDiagnostic(t *testing.T) {
 		SourceGeometryColumn:      "shape",
 		SourceSRID:                4326,
 		TargetSRID:                3857,
-		TargetKind:                models.QuickViewOptimizationTargetKindSourceSchemaMaterializedView,
+		TargetKind:                models.VectorMaterializedViewTargetKindSourceSchemaMaterializedView,
 		TargetSchema:              "public",
-		TargetTable:               "addp_qvo_ready",
-		TargetGeometryColumn:      models.QuickViewOptimizationTargetGeometryColumn,
-		Status:                    models.QuickViewOptimizationStatusReady,
+		TargetTable:               "addp_vmv_ready",
+		TargetGeometryColumn:      models.VectorMaterializedViewTargetGeometryColumn,
+		Status:                    models.VectorMaterializedViewStatusReady,
 		RenderExtent:              datatypes.JSON([]byte(`[100.1,20.2,101.3,21.4]`)),
 		RenderExtentSRID:          &extentSRID,
 		SourceFingerprintSnapshot: commonModels.JSONMap{},
-		Metadata:                  commonModels.JSONMap{"index_name": "idx_addp_qvo_ready_geom_3857_gist"},
+		Metadata:                  commonModels.JSONMap{"index_name": "idx_addp_vmv_ready_geom_3857_gist"},
 	}).Error; err != nil {
-		t.Fatalf("create quick view optimization result: %v", err)
+		t.Fatalf("create vector materialized view result: %v", err)
 	}
 
 	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
@@ -2137,11 +2324,11 @@ func TestQuickViewCapabilityIncludesOptimizationDiagnostic(t *testing.T) {
 		},
 		CanTile: true,
 		RealtimeTileTarget: &RealtimeTileTarget{
-			Schema:                      "public",
-			Table:                       "addp_qvo_ready",
-			GeomColumn:                  "geom_3857",
-			SRID:                        3857,
-			QuickViewOptimizationTarget: true,
+			Schema:                       "public",
+			Table:                        "addp_vmv_ready",
+			GeomColumn:                   "geom_3857",
+			SRID:                         3857,
+			VectorMaterializedViewTarget: true,
 		},
 	})
 	if err != nil {
@@ -2150,7 +2337,7 @@ func TestQuickViewCapabilityIncludesOptimizationDiagnostic(t *testing.T) {
 	if capability.Optimization == nil || !capability.Optimization.Available {
 		t.Fatalf("optimization diagnostic = %#v, want available", capability.Optimization)
 	}
-	if capability.Optimization.TargetTable != "addp_qvo_ready" {
+	if capability.Optimization.TargetTable != "addp_vmv_ready" {
 		t.Fatalf("optimization target table = %s", capability.Optimization.TargetTable)
 	}
 	if capability.Optimization.RenderExtentSRID != 4326 ||
@@ -2163,7 +2350,7 @@ func TestQuickViewCapabilityOptimizationDiagnosticUsesSelectedGeometryColumn(t *
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	fingerprint := spatialItemFingerprint(11, "public", "roads")
-	if err := db.Create(&models.QuickViewOptimization{
+	if err := db.Create(&models.VectorMaterializedView{
 		TenantID:                  1,
 		ItemFingerprint:           fingerprint,
 		Locator:                   tableLocator(11, "public", "roads"),
@@ -2173,15 +2360,15 @@ func TestQuickViewCapabilityOptimizationDiagnosticUsesSelectedGeometryColumn(t *
 		SourceGeometryColumn:      "shape_a",
 		SourceSRID:                4326,
 		TargetSRID:                3857,
-		TargetKind:                models.QuickViewOptimizationTargetKindSourceSchemaMaterializedView,
+		TargetKind:                models.VectorMaterializedViewTargetKindSourceSchemaMaterializedView,
 		TargetSchema:              "public",
-		TargetTable:               "addp_qvo_shape_a",
-		TargetGeometryColumn:      models.QuickViewOptimizationTargetGeometryColumn,
-		Status:                    models.QuickViewOptimizationStatusReady,
+		TargetTable:               "addp_vmv_shape_a",
+		TargetGeometryColumn:      models.VectorMaterializedViewTargetGeometryColumn,
+		Status:                    models.VectorMaterializedViewStatusReady,
 		SourceFingerprintSnapshot: commonModels.JSONMap{},
 		Metadata:                  commonModels.JSONMap{},
 	}).Error; err != nil {
-		t.Fatalf("create quick view optimization result: %v", err)
+		t.Fatalf("create vector materialized view result: %v", err)
 	}
 
 	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
@@ -2203,11 +2390,11 @@ func TestQuickViewCapabilityOptimizationDiagnosticUsesSelectedGeometryColumn(t *
 		},
 		CanTile: true,
 		RealtimeTileTarget: &RealtimeTileTarget{
-			Schema:                      "public",
-			Table:                       "roads",
-			GeomColumn:                  "shape_b",
-			SRID:                        4326,
-			QuickViewOptimizationTarget: false,
+			Schema:                       "public",
+			Table:                        "roads",
+			GeomColumn:                   "shape_b",
+			SRID:                         4326,
+			VectorMaterializedViewTarget: false,
 		},
 	})
 	if err != nil {
@@ -2225,7 +2412,7 @@ func TestQuickViewCapabilityReportsStaleOptimizationWhenSourceSRIDChanged(t *tes
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	fingerprint := spatialItemFingerprint(11, "public", "roads")
-	if err := db.Create(&models.QuickViewOptimization{
+	if err := db.Create(&models.VectorMaterializedView{
 		TenantID:                  1,
 		ItemFingerprint:           fingerprint,
 		Locator:                   tableLocator(11, "public", "roads"),
@@ -2235,15 +2422,15 @@ func TestQuickViewCapabilityReportsStaleOptimizationWhenSourceSRIDChanged(t *tes
 		SourceGeometryColumn:      "shape",
 		SourceSRID:                4326,
 		TargetSRID:                3857,
-		TargetKind:                models.QuickViewOptimizationTargetKindSourceSchemaMaterializedView,
+		TargetKind:                models.VectorMaterializedViewTargetKindSourceSchemaMaterializedView,
 		TargetSchema:              "public",
-		TargetTable:               "addp_qvo_roads",
-		TargetGeometryColumn:      models.QuickViewOptimizationTargetGeometryColumn,
-		Status:                    models.QuickViewOptimizationStatusReady,
+		TargetTable:               "addp_vmv_roads",
+		TargetGeometryColumn:      models.VectorMaterializedViewTargetGeometryColumn,
+		Status:                    models.VectorMaterializedViewStatusReady,
 		SourceFingerprintSnapshot: commonModels.JSONMap{},
 		Metadata:                  commonModels.JSONMap{},
 	}).Error; err != nil {
-		t.Fatalf("create quick view optimization result: %v", err)
+		t.Fatalf("create vector materialized view result: %v", err)
 	}
 
 	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
@@ -2271,7 +2458,7 @@ func TestQuickViewCapabilityReportsStaleOptimizationWhenSourceSRIDChanged(t *tes
 			SRID:                       4490,
 			PerformanceMode:            RealtimeTilePerformanceSourceTransform,
 			OptimizationRecommended:    true,
-			OptimizationRecommendation: RealtimeTileRecommendationQuickViewOptimization,
+			OptimizationRecommendation: RealtimeTileRecommendationVectorMaterializedView,
 		},
 	})
 	if err != nil {
@@ -2281,16 +2468,16 @@ func TestQuickViewCapabilityReportsStaleOptimizationWhenSourceSRIDChanged(t *tes
 		t.Fatal("optimization diagnostic is nil")
 	}
 	if capability.Optimization.Available ||
-		capability.Optimization.Status != models.QuickViewOptimizationStatusStale ||
-		capability.Optimization.Reason != models.QuickViewOptimizationStaleReasonSourceFactsChanged {
+		capability.Optimization.Status != models.VectorMaterializedViewStatusStale ||
+		capability.Optimization.Reason != models.VectorMaterializedViewStaleReasonSourceFactsChanged {
 		t.Fatalf("optimization diagnostic = %#v, want stale source facts changed", capability.Optimization)
 	}
-	var stored models.QuickViewOptimization
+	var stored models.VectorMaterializedView
 	if err := db.First(&stored, "id = ?", *capability.Optimization.ResultID).Error; err != nil {
 		t.Fatalf("load stored optimization result: %v", err)
 	}
-	if stored.Status != models.QuickViewOptimizationStatusStale ||
-		stored.ErrorMessage != models.QuickViewOptimizationStaleReasonSourceFactsChanged {
+	if stored.Status != models.VectorMaterializedViewStatusStale ||
+		stored.ErrorMessage != models.VectorMaterializedViewStaleReasonSourceFactsChanged {
 		t.Fatalf("stored optimization status=%s error=%q, want stale source facts changed", stored.Status, stored.ErrorMessage)
 	}
 }
@@ -2318,12 +2505,12 @@ func TestQuickViewCapabilityReportsExternal3857MaterializedViewOptimization(t *t
 		},
 		CanTile: true,
 		RealtimeTileTarget: &RealtimeTileTarget{
-			Schema:                      "public",
-			Table:                       "dltb_3857",
-			GeomColumn:                  "geom_3857",
-			SRID:                        3857,
-			QuickViewOptimizationTarget: true,
-			PerformanceMode:             RealtimeTilePerformanceReady3857Target,
+			Schema:                       "public",
+			Table:                        "dltb_3857",
+			GeomColumn:                   "geom_3857",
+			SRID:                         3857,
+			VectorMaterializedViewTarget: true,
+			PerformanceMode:              RealtimeTilePerformanceReady3857Target,
 		},
 	})
 	if err != nil {
@@ -2335,8 +2522,8 @@ func TestQuickViewCapabilityReportsExternal3857MaterializedViewOptimization(t *t
 	if capability.Optimization.ResultID != nil {
 		t.Fatalf("result_id = %#v, want nil for external readonly target", capability.Optimization.ResultID)
 	}
-	if capability.Optimization.TargetKind != QuickViewOptimizationTargetKindExternal3857MaterializedView {
-		t.Fatalf("target_kind = %s, want %s", capability.Optimization.TargetKind, QuickViewOptimizationTargetKindExternal3857MaterializedView)
+	if capability.Optimization.TargetKind != VectorMaterializedViewTargetKindExternal3857MaterializedView {
+		t.Fatalf("target_kind = %s, want %s", capability.Optimization.TargetKind, VectorMaterializedViewTargetKindExternal3857MaterializedView)
 	}
 	if capability.Optimization.TargetTable != "dltb_3857" ||
 		capability.Optimization.TargetGeometryColumn != "geom_3857" ||
@@ -2438,5 +2625,32 @@ func TestGaussianSplatProgressiveOrder(t *testing.T) {
 	})
 	if sourceOrder != "source_order" {
 		t.Fatalf("progressive order = %q, want source_order", sourceOrder)
+	}
+}
+
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func assertActions(t *testing.T, actions []string, expected ...string) {
+	t.Helper()
+	for _, action := range expected {
+		if !containsString(actions, action) {
+			t.Fatalf("available_actions = %#v, want %q", actions, action)
+		}
+	}
+}
+
+func assertNoActions(t *testing.T, actions []string, unexpected ...string) {
+	t.Helper()
+	for _, action := range unexpected {
+		if containsString(actions, action) {
+			t.Fatalf("available_actions = %#v, did not want %q", actions, action)
+		}
 	}
 }

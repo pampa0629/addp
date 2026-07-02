@@ -332,7 +332,18 @@ func buildModel3DContentHandler(cfg ObjectContentPluginConfig) ObjectContentHand
 		baseContentHandler: baseContentHandler{
 			name:     cfg.Name,
 			priority: cfg.priorityOr(defaultBuiltinContentPriority(models.ObjectPreviewKindModel3D)),
-			matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatGLB, []commonformat.FormatType{commonformat.Format3DTiles}, nil),
+			matcher: descriptorObjectContentMatcher(
+				cfg.Match,
+				commonformat.FormatGLB,
+				[]commonformat.FormatType{
+					commonformat.FormatFBX,
+					commonformat.FormatOBJ,
+					commonformat.FormatPLY,
+					commonformat.FormatSTL,
+					commonformat.Format3DTiles,
+				},
+				nil,
+			),
 		},
 	}
 }

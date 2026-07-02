@@ -64,10 +64,10 @@ func TestRunBuildsSourceTransformAnd3857TargetQueries(t *testing.T) {
 				Tiles:          []TileCoord{{Z: 1, X: 0, Y: 0}},
 			},
 			{
-				Name:           "quick view optimization target",
+				Name:           "vector materialized view target",
 				TargetKind:     "source_schema_materialized_view",
 				Schema:         "public",
-				Table:          "addp_qvo_roads_3857",
+				Table:          "addp_vmv_roads_3857",
 				GeometryColumn: "geom_3857",
 				SRID:           3857,
 				Tiles:          []TileCoord{{Z: 1, X: 0, Y: 0}},
@@ -102,9 +102,9 @@ func TestRunBuildsSourceTransformAnd3857TargetQueries(t *testing.T) {
 		t.Fatalf("recommendation count = %d, want 2", len(report.Recommendations.RenderPaths))
 	}
 	sourceRecommendation := recommendationByRenderPath(report, "source_transform_path")
-	if sourceRecommendation.RecommendedAction != "vector_quick_view_target_generation" ||
+	if sourceRecommendation.RecommendedAction != "vector_materialized_view_generation" ||
 		sourceRecommendation.RetryPolicy != "suppress_tile" {
-		t.Fatalf("source recommendation = %#v, want quick view optimization with suppress_tile", sourceRecommendation)
+		t.Fatalf("source recommendation = %#v, want vector materialized view with suppress_tile", sourceRecommendation)
 	}
 	targetRecommendation := recommendationByRenderPath(report, "ready_3857_target")
 	if targetRecommendation.RecommendedAction != "vector_tile_cache_generation" ||
@@ -212,7 +212,7 @@ func TestRunRecordsMultiScaleCandidateForLowZoomLarge3857Tile(t *testing.T) {
 		candidate.TargetKind != "external_3857_materialized_view" ||
 		candidate.Trigger != "low_zoom_large_mvt" ||
 		candidate.CurrentUserAction != "vector_tile_cache_generation" ||
-		candidate.FollowUpTopic != "multi_scale_vector_quick_view_target_generation" {
+		candidate.FollowUpTopic != "multi_scale_vector_materialized_view_generation" {
 		t.Fatalf("candidate = %#v, want ready 3857 low zoom large MVT candidate", candidate)
 	}
 	if candidate.Tile.Z != 6 || candidate.Tile.X != 51 || candidate.Tile.Y != 27 {

@@ -242,7 +242,7 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 		}, nil
 	})
 	taskSvc.SetQuickViewService(quickViewSvc)
-	setQuickViewOptimizationTargetResolver(taskSvc, "public", "roads")
+	setVectorMaterializedViewTargetResolver(taskSvc, "public", "roads")
 	cleaner := &fakeTileCacheCleaner{}
 	invalidator := &fakeTileCacheRuntimeInvalidator{}
 	taskSvc.SetTileCacheCleaner(cleaner)
@@ -490,7 +490,7 @@ func TestTileCacheGenerationWithNoNonEmptyTilesMarksResultFailed(t *testing.T) {
 		}, nil
 	})
 	taskSvc.SetQuickViewService(quickViewSvc)
-	setQuickViewOptimizationTargetResolver(taskSvc, "public", "roads")
+	setVectorMaterializedViewTargetResolver(taskSvc, "public", "roads")
 	taskSvc.SetTileGenerator(&fakeTileCacheGenerator{
 		result: &mvt.GenerateResult{
 			ActualMaxZoom: 1,
@@ -566,7 +566,7 @@ func TestTileCacheGenerationFailureKeepsLastTileProgress(t *testing.T) {
 		}, nil
 	})
 	taskSvc.SetQuickViewService(quickViewSvc)
-	setQuickViewOptimizationTargetResolver(taskSvc, "public", "roads")
+	setVectorMaterializedViewTargetResolver(taskSvc, "public", "roads")
 	taskSvc.SetTileGenerator(&fakeTileCacheGenerator{
 		progress: &mvt.QuickViewProgress{
 			Status:             "running",
@@ -633,7 +633,7 @@ func TestTileCacheGenerationPersistsRenderableWGS84Extent(t *testing.T) {
 		}, nil
 	})
 	taskSvc.SetQuickViewService(quickViewSvc)
-	setQuickViewOptimizationTargetResolver(taskSvc, "public", "roads")
+	setVectorMaterializedViewTargetResolver(taskSvc, "public", "roads")
 	taskSvc.SetTileGenerator(&fakeTileCacheGenerator{
 		result: &mvt.GenerateResult{
 			ActualMaxZoom: 12,
@@ -717,12 +717,12 @@ func TestTileCacheGenerationUsesIndexed3857Target(t *testing.T) {
 	taskSvc.SetQuickViewService(quickViewSvc)
 	taskSvc.SetRealtimeTileTargetResolver(fakeRealtimeTileTargetResolver{
 		target: &RealtimeTileTarget{
-			Schema:                      "public",
-			Table:                       "dltb_mv3857",
-			GeomColumn:                  "geom_3857",
-			SRID:                        3857,
-			QuickViewOptimizationTarget: true,
-			TargetKind:                  QuickViewOptimizationTargetKindExternal3857MaterializedView,
+			Schema:                       "public",
+			Table:                        "dltb_mv3857",
+			GeomColumn:                   "geom_3857",
+			SRID:                         3857,
+			VectorMaterializedViewTarget: true,
+			TargetKind:                   VectorMaterializedViewTargetKindExternal3857MaterializedView,
 		},
 	})
 	generator := &fakeTileCacheGenerator{
@@ -772,7 +772,7 @@ func TestTileCacheGenerationUsesIndexed3857Target(t *testing.T) {
 			generator.lastConfig.Schema, generator.lastConfig.Table, generator.lastConfig.GeomColumn, generator.lastConfig.SRID)
 	}
 	if generator.lastConfig.PrimaryKey != "" {
-		t.Fatalf("generator primary_key = %q, want empty for quick view optimization target", generator.lastConfig.PrimaryKey)
+		t.Fatalf("generator primary_key = %q, want empty for vector materialized view target", generator.lastConfig.PrimaryKey)
 	}
 	if generator.lastConfig.OptimizationConfig == nil {
 		t.Fatal("generator optimization config is nil, want default cache optimization config")
@@ -792,7 +792,7 @@ func TestTileCacheGenerationUsesIndexed3857Target(t *testing.T) {
 	if targetMeta["table"] != "dltb_mv3857" || targetMeta["geom_column"] != "geom_3857" {
 		t.Fatalf("tile_generation_target = %#v, want dltb_mv3857 target", targetMeta)
 	}
-	if targetMeta["target_kind"] != QuickViewOptimizationTargetKindExternal3857MaterializedView {
+	if targetMeta["target_kind"] != VectorMaterializedViewTargetKindExternal3857MaterializedView {
 		t.Fatalf("tile_generation_target = %#v, want external 3857 materialized view metadata", targetMeta)
 	}
 	optimizationMeta, ok := asJSONMap(exec.Metadata["optimization"])
@@ -946,8 +946,8 @@ func TestTileCacheGenerationFallsBackToSourceWhenOptimizationTargetMissing(t *te
 	if targetMeta["optimization_recommended"] != true {
 		t.Fatalf("optimization_recommended = %v, want true", targetMeta["optimization_recommended"])
 	}
-	if !strings.Contains(stringFromConfig(targetMeta["optimization_recommendation"]), "vector_quick_view_target_generation") {
-		t.Fatalf("optimization_recommendation = %#v, want vector_quick_view_target_generation recommendation", targetMeta["optimization_recommendation"])
+	if !strings.Contains(stringFromConfig(targetMeta["optimization_recommendation"]), "vector_materialized_view_generation") {
+		t.Fatalf("optimization_recommendation = %#v, want vector_materialized_view_generation recommendation", targetMeta["optimization_recommendation"])
 	}
 }
 
@@ -1015,14 +1015,14 @@ func (i *fakeTileCacheRuntimeInvalidator) InvalidateTileCacheRuntimeCache(_ cont
 	return i.err
 }
 
-func setQuickViewOptimizationTargetResolver(taskSvc *TileCacheTaskService, schema, table string) {
+func setVectorMaterializedViewTargetResolver(taskSvc *TileCacheTaskService, schema, table string) {
 	taskSvc.SetRealtimeTileTargetResolver(fakeRealtimeTileTargetResolver{
 		target: &RealtimeTileTarget{
-			Schema:                      schema,
-			Table:                       table + "_mv3857",
-			GeomColumn:                  "geom_3857",
-			SRID:                        3857,
-			QuickViewOptimizationTarget: true,
+			Schema:                       schema,
+			Table:                        table + "_mv3857",
+			GeomColumn:                   "geom_3857",
+			SRID:                         3857,
+			VectorMaterializedViewTarget: true,
 		},
 	})
 }
@@ -1155,7 +1155,7 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create preview_state table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.vector_quick_view_target_tasks (
+	if err := db.Exec(`CREATE TABLE manager.vector_materialized_view_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		name TEXT NOT NULL,
@@ -1172,9 +1172,9 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create vector_quick_view_target_tasks table: %v", err)
+		t.Fatalf("create vector_materialized_view_tasks table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.vector_quick_view_targets (
+	if err := db.Exec(`CREATE TABLE manager.vector_materialized_view (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 			item_fingerprint TEXT NOT NULL,
@@ -1204,7 +1204,7 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create vector_quick_view_targets table: %v", err)
+		t.Fatalf("create vector_materialized_view table: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE manager.raster_cog (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

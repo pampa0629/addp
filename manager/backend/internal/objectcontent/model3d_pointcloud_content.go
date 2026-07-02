@@ -24,6 +24,16 @@ type model3DContentHandler struct {
 	baseContentHandler
 }
 
+func (h *model3DContentHandler) Matches(req *ObjectContentRequest) bool {
+	if req == nil || !h.baseContentHandler.Matches(req) {
+		return false
+	}
+	if format.NormalizeFormat(req.Format) != format.FormatPLY {
+		return true
+	}
+	return strings.EqualFold(commonJSON.String(req.Attributes, "item", "data_type"), string(datatype.Model3D))
+}
+
 func (h *model3DContentHandler) Handle(_ context.Context, req *ObjectContentRequest, _ ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
 	metadata := buildPreviewMetadata(req, 0)
 	if req != nil && strings.TrimSpace(req.PreviewURL) != "" {
@@ -66,14 +76,14 @@ func (h *gaussianSplatContentHandler) Matches(req *ObjectContentRequest) bool {
 
 func (h *gaussianSplatContentHandler) Handle(_ context.Context, req *ObjectContentRequest, _ ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
 	metadata := buildPreviewMetadata(req, 0)
-	metadata["quick_view_status"] = "ready"
-	metadata["quick_view_task_type"] = ""
+	metadata["preview_artifact_status"] = "ready"
+	metadata["preview_artifact_task_type"] = ""
 	previewURL := ""
 	if req != nil {
 		previewURL = strings.TrimSpace(req.PreviewURL)
 	}
 	if previewURL == "" {
-		metadata["quick_view_status"] = "preview_url_missing"
+		metadata["preview_artifact_status"] = "preview_url_missing"
 		return decoratePreviewContent(&models.ObjectPreviewContent{
 			Kind:             models.ObjectPreviewKindGaussianSplat,
 			PreviewMaterial:  models.PreviewMaterialUnsupported,

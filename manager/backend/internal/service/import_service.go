@@ -33,10 +33,10 @@ var (
 // ImportService 数据导入服务
 // 职责：接收上传文件 → 存储到 MinIO temp 前缀 → 调用 Transfer API 创建并触发任务
 type ImportService struct {
-	minioClient                  *minio.Client
-	minioBucket                  string
-	transferClient               importTransferClient
-	quickViewOptimizationCleaner importQuickViewOptimizationCleaner
+	minioClient                   *minio.Client
+	minioBucket                   string
+	transferClient                importTransferClient
+	vectorMaterializedViewCleaner importVectorMaterializedViewCleaner
 }
 
 type importTransferClient interface {
@@ -44,7 +44,7 @@ type importTransferClient interface {
 	TriggerTask(taskID, tenantID uint) (*client.TriggerTaskResponse, error)
 }
 
-type importQuickViewOptimizationCleaner interface {
+type importVectorMaterializedViewCleaner interface {
 	DeleteResultsForSourceTable(ctx context.Context, tenantID uint, engineID uint, schema string, table string) error
 }
 
@@ -53,13 +53,13 @@ func NewImportService(
 	minioClient *minio.Client,
 	minioBucket string,
 	transferClient importTransferClient,
-	quickViewOptimizationCleaner importQuickViewOptimizationCleaner,
+	vectorMaterializedViewCleaner importVectorMaterializedViewCleaner,
 ) *ImportService {
 	return &ImportService{
-		minioClient:                  minioClient,
-		minioBucket:                  minioBucket,
-		transferClient:               transferClient,
-		quickViewOptimizationCleaner: quickViewOptimizationCleaner,
+		minioClient:                   minioClient,
+		minioBucket:                   minioBucket,
+		transferClient:                transferClient,
+		vectorMaterializedViewCleaner: vectorMaterializedViewCleaner,
 	}
 }
 
@@ -117,9 +117,9 @@ func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefil
 	if err != nil {
 		return nil, err
 	}
-	if s.quickViewOptimizationCleaner != nil {
-		if err := s.quickViewOptimizationCleaner.DeleteResultsForSourceTable(ctx, req.TenantID, req.TargetEngineID, targetSchema, tableName); err != nil {
-			return nil, fmt.Errorf("failed to cleanup manager quick view optimization before import: %w", err)
+	if s.vectorMaterializedViewCleaner != nil {
+		if err := s.vectorMaterializedViewCleaner.DeleteResultsForSourceTable(ctx, req.TenantID, req.TargetEngineID, targetSchema, tableName); err != nil {
+			return nil, fmt.Errorf("failed to cleanup manager vector materialized view before import: %w", err)
 		}
 	}
 

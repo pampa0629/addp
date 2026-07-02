@@ -1,6 +1,6 @@
 # preview_state 表结构和 API 说明
 
-> 状态：当前实现说明。`manager.preview_state` 是预览模式偏好和预览交互状态表，不保存快显能力快照、快显性能优化结果、瓦片缓存结果事实、生成任务定义或执行历史。快显性能优化结果见 `manager.vector_quick_view_targets`，瓦片缓存结果见 `manager.vector_tile_cache`，任务定义见对应任务表。
+> 状态：当前实现说明。`manager.preview_state` 是预览模式偏好和预览交互状态表，不保存快显能力快照、矢量物化视图结果、瓦片缓存结果事实、生成任务定义或执行历史。矢量物化视图结果见 `manager.vector_materialized_view`，瓦片缓存结果见 `manager.vector_tile_cache`，任务定义见对应任务表。
 
 ## 一、表定位
 
@@ -24,8 +24,8 @@
 | 对象 | 职责 |
 | --- | --- |
 | `manager.preview_state` | 用户预览模式偏好和预览交互状态 |
-| `manager.vector_quick_view_targets` | Manager 创建并拥有生命周期的 3857 快显性能优化结果状态 |
-| `manager.vector_quick_view_target_tasks` | 快显性能优化任务定义 |
+| `manager.vector_materialized_view` | Manager 创建并拥有生命周期的 3857 矢量物化视图结果状态 |
+| `manager.vector_materialized_view_tasks` | 矢量物化视图任务定义 |
 | `manager.vector_tile_cache` | 瓦片缓存结果状态 |
 | `manager.vector_tile_cache_tasks` | 瓦片缓存生成任务定义 |
 | `common.task_executions` | 某一次实际执行记录 |
@@ -69,16 +69,16 @@
 | 条件 | UI 行为 |
 | --- | --- |
 | `can_use_quick_view=true` 且 `render_source=cached_tile/direct_geojson` | 展示“切换快显”，不展示“生成瓦片缓存”按钮 |
-| `can_use_quick_view=true` 且 `render_source=realtime_tile` | 展示“切换快显”；当 `optimization.status=stale`、`realtime_tile.performance_mode=source_transform_path` 或瓦片返回 `X-ADDP-Tile-Recommendation=vector_quick_view_target_generation` 时展示“执行快显优化”；当瓦片返回 `X-ADDP-Tile-Recommendation=vector_tile_cache_generation` 时使用节流消息提示生成瓦片缓存；需要稳定低层级浏览时保留“生成瓦片缓存”入口 |
-| `can_use_quick_view=false` 且 `can_generate_vector_tile_cache=true` | 展示“生成瓦片缓存”；如果 capability 或瓦片响应提示快显性能优化，优先展示“执行快显优化”入口 |
+| `can_use_quick_view=true` 且 `render_source=realtime_tile` | 展示“切换快显”；当 `optimization.status=stale`、`realtime_tile.performance_mode=source_transform_path` 或瓦片返回 `X-ADDP-Tile-Recommendation=vector_materialized_view_generation` 时展示“执行矢量物化视图”；当瓦片返回 `X-ADDP-Tile-Recommendation=vector_tile_cache_generation` 时使用节流消息提示生成瓦片缓存；需要稳定低层级浏览时保留“生成瓦片缓存”入口 |
+| `can_use_quick_view=false` 且 `can_generate_vector_tile_cache=true` | 展示“生成瓦片缓存”；如果 capability 或瓦片响应提示矢量物化视图，优先展示“执行矢量物化视图”入口 |
 | `can_use_quick_view=false` 且 `can_generate_vector_tile_cache=false` | 不展示生成按钮，只展示不可用原因 |
 
-从预览页跳转时，快显性能优化页面或瓦片缓存页面应自动带入当前 item 上下文。快显性能优化页面创建 `manager.vector_quick_view_target_tasks`；瓦片缓存页面在“任务”tab 创建 `manager.vector_tile_cache_tasks`。
+从预览页跳转时，矢量物化视图页面或瓦片缓存页面应自动带入当前 item 上下文。矢量物化视图页面创建 `manager.vector_materialized_view_tasks`；瓦片缓存页面在“任务”tab 创建 `manager.vector_tile_cache_tasks`。
 
-预览页和 Explorer 内嵌预览都必须按同一规则展示快显性能优化诊断：
+预览页和 Explorer 内嵌预览都必须按同一规则展示矢量物化视图诊断：
 
-1. `optimization.target_kind=external_3857_materialized_view` 时展示“已识别外部 3857 优化目标”，不展示“执行快显优化”入口。
-2. `optimization.status=stale` 时展示“快显优化结果需刷新”，并提供“执行快显优化”入口。
+1. `optimization.target_kind=external_3857_materialized_view` 时展示“已识别外部 3857 物化视图目标”，不展示“执行矢量物化视图”入口。
+2. `optimization.status=stale` 时展示“矢量物化视图结果需刷新”，并提供“执行矢量物化视图”入口。
 3. 有可索引 3857 目标但动态 MVT 仍超时时，节流提示“生成瓦片缓存”，不把高层级放大误判为慢路径。
 
 ## 六、与瓦片缓存结果的关系
@@ -88,8 +88,8 @@
 推荐结果选择规则：
 
 1. 选择 `status=ready` 且适用于快显的最新产物。
-2. 如果没有可用产物但可优化，预览页优先跳转快显性能优化页面创建任务。
-3. 如果需要稳定低层级或大范围浏览，预览页或快显性能优化结果列表跳转瓦片缓存页面创建任务。
+2. 如果没有可用产物但可优化，预览页优先跳转矢量物化视图页面创建任务。
+3. 如果需要稳定低层级或大范围浏览，预览页或矢量物化视图结果列表跳转瓦片缓存页面创建任务。
 
 ## 七、与任务和 execution 的关系
 
@@ -148,7 +148,7 @@
 | 产物范围、层级、格式、存储引用 | `manager.vector_tile_cache` |
 | 生成配置 | `manager.vector_tile_cache_tasks.config` |
 | 执行进度、耗时、错误详情、统计摘要 | `common.task_executions.metadata` / `error_details` |
-| 快显性能优化目标状态 | `manager.vector_quick_view_targets` |
+| 矢量物化视图目标状态 | `manager.vector_materialized_view` |
 
 ## 十、相关文档
 

@@ -14,7 +14,7 @@ const tileStatAvailabilityKeys = [
 
 const generationTargetKindLabelKeys = {
   source_table: 'manager.tileCache.generationTargetSourceTable',
-  source_schema_materialized_view: 'manager.tileCache.generationTargetQuickViewOptimization',
+  source_schema_materialized_view: 'manager.tileCache.generationTargetVectorMaterializedView',
   external_3857_materialized_view: 'manager.tileCache.generationTargetExternal3857'
 }
 

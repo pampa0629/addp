@@ -77,11 +77,11 @@ func main() {
 	metadataRepo := repository.NewMetadataRepository(db)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
-	quickViewOptimizationRepo := repository.NewQuickViewOptimizationRepository(db)
+	vectorMaterializedViewRepo := repository.NewVectorMaterializedViewRepository(db)
 	rasterCOGRepo := repository.NewRasterCOGRepository(db)
 	rasterMosaicRepo := repository.NewRasterMosaicRepository(db)
-	model3DQuickViewRepo := repository.NewModel3DQuickViewRepository(db)
-	gaussianSplatQuickViewRepo := repository.NewGaussianSplatQuickViewRepository(db)
+	model3DGLBRepo := repository.NewModel3DGLBRepository(db)
+	gaussianSplatKSplatRepo := repository.NewGaussianSplatKSplatRepository(db)
 	model3DTilesRepo := repository.NewModel3DTilesRepository(db)
 	exportSessionRepo := repository.NewExportSessionRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
@@ -145,7 +145,7 @@ func main() {
 
 	previewRegistry := preview.NewPreviewRegistry()
 
-	preview.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.MetaServiceURL, buildPluginDirSpec(pluginDirs), model3DQuickViewRepo)
+	preview.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.MetaServiceURL, buildPluginDirSpec(pluginDirs))
 	logger.L().Info("数据预览: 已激活预览插件", "providers", previewRegistry.Providers())
 
 	// 初始化 services（注意：Manager 不负责引擎管理，引擎信息通过 SystemClient 获取）
@@ -161,7 +161,7 @@ func main() {
 	// 创建统一 MVT 服务（整合实时生成 + 缓存访问，对前端隐藏 fingerprint）
 	// ✅ 传入连接池配置，实时生成瓦片使用较小的连接数（默认5，避免峰值压力）
 	mvtService := service.NewMVTService(metadataRepo, systemClient, 5)
-	mvtService.SetQuickViewOptimizationRepository(quickViewOptimizationRepo)
+	mvtService.SetVectorMaterializedViewRepository(vectorMaterializedViewRepo)
 	spatialPreviewService := service.NewSpatialPreviewService(redisClient)
 	unifiedMVTService := service.NewUnifiedMVTService(
 		spatialPreviewService,
@@ -215,19 +215,19 @@ func main() {
 	// 初始化任务定义服务
 	embeddingTaskSvc := service.NewEmbeddingTaskService(embeddingRepo, embeddingService, taskExecRepo, cfg)
 	tileCacheTaskSvc := service.NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
-	quickViewOptimizationTaskSvc := service.NewQuickViewOptimizationTaskService(quickViewOptimizationRepo, taskExecRepo)
+	vectorMaterializedViewTaskSvc := service.NewVectorMaterializedViewTaskService(vectorMaterializedViewRepo, taskExecRepo)
 	rasterCOGTaskSvc := service.NewRasterCOGTaskService(rasterCOGRepo, taskExecRepo)
 	rasterMosaicTaskSvc := service.NewRasterMosaicTaskService(rasterMosaicRepo, taskExecRepo)
-	model3DQuickViewTaskSvc := service.NewModel3DQuickViewTaskService(model3DQuickViewRepo, taskExecRepo)
-	gaussianSplatQuickViewTaskSvc := service.NewGaussianSplatQuickViewTaskService(gaussianSplatQuickViewRepo, taskExecRepo)
+	model3DGLBTaskSvc := service.NewModel3DGLBTaskService(model3DGLBRepo, taskExecRepo)
+	gaussianSplatKSplatTaskSvc := service.NewGaussianSplatKSplatTaskService(gaussianSplatKSplatRepo, taskExecRepo)
 	model3DTilesTaskSvc := service.NewModel3DTilesTaskService(model3DTilesRepo, taskExecRepo)
 	rasterCOGTaskSvc.SetBucket(minioBucket)
 	rasterCOGTaskSvc.SetCleaner(service.NewMinIORasterCOGCleaner(minioClient, minioBucket))
-	model3DQuickViewTaskSvc.SetBucket(minioBucket)
-	model3DQuickViewTaskSvc.SetCleaner(service.NewMinIOModel3DQuickViewCleaner(minioClient, minioBucket))
-	gaussianSplatQuickViewTaskSvc.SetBucket(minioBucket)
-	gaussianSplatQuickViewTaskSvc.SetCleaner(service.NewMinIOGaussianSplatQuickViewCleaner(minioClient, minioBucket))
-	gaussianSplatQuickViewTaskSvc.SetMetaClient(metaClient)
+	model3DGLBTaskSvc.SetBucket(minioBucket)
+	model3DGLBTaskSvc.SetCleaner(service.NewMinIOModel3DGLBCleaner(minioClient, minioBucket))
+	gaussianSplatKSplatTaskSvc.SetBucket(minioBucket)
+	gaussianSplatKSplatTaskSvc.SetCleaner(service.NewMinIOGaussianSplatKSplatCleaner(minioClient, minioBucket))
+	gaussianSplatKSplatTaskSvc.SetMetaClient(metaClient)
 	if systemClient != nil {
 		rasterCOGTaskSvc.SetExecutor(service.NewManagerRasterCOGExecutor(
 			systemClient,
@@ -240,8 +240,8 @@ func main() {
 			minioBucket,
 		))
 	}
-	quickViewOptimizationTaskSvc.SetDBProvider(mvtService)
-	quickViewOptimizationTaskSvc.SetPreviewStateRepository(quickViewService.Repository())
+	vectorMaterializedViewTaskSvc.SetDBProvider(mvtService)
+	vectorMaterializedViewTaskSvc.SetPreviewStateRepository(quickViewService.Repository())
 	tileCacheTaskSvc.SetQuickViewService(quickViewService)
 	tileCacheTaskSvc.SetRealtimeTileTargetResolver(mvtService)
 	tileCacheTaskSvc.SetTileCacheRuntimeCacheInvalidator(spatialPreviewService)
@@ -264,7 +264,7 @@ func main() {
 		quickViewService.Repository(),
 		tileCacheTaskSvc,
 		embeddingRepo,
-		quickViewOptimizationTaskSvc,
+		vectorMaterializedViewTaskSvc,
 		exportSessionRepo,
 		minioClient,
 		minioBucket,
@@ -280,9 +280,9 @@ func main() {
 	}
 
 	// 初始化 TaskProvider Handler
-	taskProviderHandler := api.NewTaskProviderHandler(embeddingTaskSvc, tileCacheTaskSvc, quickViewOptimizationTaskSvc, rasterCOGTaskSvc, taskExecRepo, rasterMosaicTaskSvc)
-	taskProviderHandler.SetModel3DQuickViewTaskService(model3DQuickViewTaskSvc)
-	taskProviderHandler.SetGaussianSplatQuickViewTaskService(gaussianSplatQuickViewTaskSvc)
+	taskProviderHandler := api.NewTaskProviderHandler(embeddingTaskSvc, tileCacheTaskSvc, vectorMaterializedViewTaskSvc, rasterCOGTaskSvc, taskExecRepo, rasterMosaicTaskSvc)
+	taskProviderHandler.SetModel3DGLBTaskService(model3DGLBTaskSvc)
+	taskProviderHandler.SetGaussianSplatKSplatTaskService(gaussianSplatKSplatTaskSvc)
 	taskProviderHandler.SetModel3DTilesTaskService(model3DTilesTaskSvc)
 
 	// 设置 UnifiedMVTService 的 QuickViewService（延迟注入避免循环依赖）
@@ -295,7 +295,7 @@ func main() {
 		minioClient,
 		minioBucket,
 		transferClient,
-		quickViewOptimizationTaskSvc,
+		vectorMaterializedViewTaskSvc,
 	)
 	importHandler := api.NewImportHandler(importService)
 	uploadService := service.NewUploadService(systemClient, metaClient)
@@ -322,11 +322,11 @@ func main() {
 		cfg.RasterMosaicRuntime.TileSize,
 	)
 	rasterMosaicTileHandler := api.NewRasterMosaicTileHandler(rasterMosaicTileService)
-	model3DQuickViewHandler := api.NewModel3DQuickViewHandler(model3DQuickViewRepo, minioClient, minioBucket)
-	gaussianSplatQuickViewHandler := api.NewGaussianSplatQuickViewHandler(gaussianSplatQuickViewRepo, minioClient, minioBucket)
+	model3DGLBHandler := api.NewModel3DGLBHandler(model3DGLBRepo, minioClient, minioBucket)
+	gaussianSplatKSplatHandler := api.NewGaussianSplatKSplatHandler(gaussianSplatKSplatRepo, minioClient, minioBucket)
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DQuickViewHandler, gaussianSplatQuickViewHandler)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("manager")
@@ -344,7 +344,7 @@ func main() {
 			systemClient,
 			cfg.RasterMosaicGeneration.Timeout,
 		))
-		model3DQuickViewTaskSvc.SetExecutor(service.NewManagerModel3DQuickViewExecutor(
+		model3DGLBTaskSvc.SetExecutor(service.NewManagerModel3DGLBExecutor(
 			systemClient,
 			systemClient,
 			minioClient,
@@ -355,7 +355,7 @@ func main() {
 			minioBucket,
 			cfg.RasterMosaicGeneration.Timeout,
 		))
-		gaussianSplatQuickViewTaskSvc.SetExecutor(service.NewManagerGaussianSplatQuickViewExecutor(
+		gaussianSplatKSplatTaskSvc.SetExecutor(service.NewManagerGaussianSplatKSplatExecutor(
 			systemClient,
 			systemClient,
 			minioClient,

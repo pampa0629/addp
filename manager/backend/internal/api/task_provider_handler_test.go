@@ -211,11 +211,11 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	db := newTaskProviderHandlerTestDB(t)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
-	qvoRepo := repository.NewQuickViewOptimizationRepository(db)
+	qvoRepo := repository.NewVectorMaterializedViewRepository(db)
 	cogRepo := repository.NewRasterCOGRepository(db)
 	model3DTilesRepo := repository.NewModel3DTilesRepository(db)
-	model3DQuickViewRepo := repository.NewModel3DQuickViewRepository(db)
-	gaussianSplatQuickViewRepo := repository.NewGaussianSplatQuickViewRepository(db)
+	model3DGLBRepo := repository.NewModel3DGLBRepository(db)
+	gaussianSplatKSplatRepo := repository.NewGaussianSplatKSplatRepository(db)
 
 	if err := tileCacheRepo.CreateTask(context.Background(), &models.TileCacheTask{
 		TenantID: 1,
@@ -250,9 +250,9 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create embedding task: %v", err)
 	}
-	if err := qvoRepo.CreateTask(context.Background(), &models.QuickViewOptimizationTask{
+	if err := qvoRepo.CreateTask(context.Background(), &models.VectorMaterializedViewTask{
 		TenantID: 1,
-		Name:     "quick view optimization task",
+		Name:     "vector materialized view task",
 		Enabled:  true,
 		Config: commonModels.JSONMap{
 			"target": commonModels.JSONMap{
@@ -267,7 +267,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 			},
 		},
 	}); err != nil {
-		t.Fatalf("create quick view optimization task: %v", err)
+		t.Fatalf("create vector materialized view task: %v", err)
 	}
 	if err := cogRepo.CreateTask(context.Background(), &models.RasterCOGTask{
 		TenantID: 1,
@@ -304,9 +304,9 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create model 3d tiles generation task: %v", err)
 	}
-	if err := model3DQuickViewRepo.CreateTask(context.Background(), &models.Model3DQuickViewTask{
+	if err := model3DGLBRepo.CreateTask(context.Background(), &models.Model3DGLBTask{
 		TenantID: 1,
-		Name:     "model 3d quick view generation task",
+		Name:     "model 3d GLB generation task",
 		Enabled:  true,
 		Config: commonModels.JSONMap{
 			"source": commonModels.JSONMap{
@@ -319,11 +319,11 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 			},
 		},
 	}); err != nil {
-		t.Fatalf("create model 3d quick view generation task: %v", err)
+		t.Fatalf("create model 3d GLB generation task: %v", err)
 	}
-	if err := gaussianSplatQuickViewRepo.CreateTask(context.Background(), &models.GaussianSplatQuickViewTask{
+	if err := gaussianSplatKSplatRepo.CreateTask(context.Background(), &models.GaussianSplatKSplatTask{
 		TenantID: 1,
-		Name:     "gaussian splat quick view generation task",
+		Name:     "gaussian splat KSplat generation task",
 		Enabled:  true,
 		Config: commonModels.JSONMap{
 			"source": commonModels.JSONMap{
@@ -336,19 +336,19 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 			},
 		},
 	}); err != nil {
-		t.Fatalf("create gaussian splat quick view generation task: %v", err)
+		t.Fatalf("create gaussian splat KSplat generation task: %v", err)
 	}
 
 	handler := NewTaskProviderHandler(
 		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
 		service.NewTileCacheTaskService(tileCacheRepo, nil),
-		service.NewQuickViewOptimizationTaskService(qvoRepo, nil),
+		service.NewVectorMaterializedViewTaskService(qvoRepo, nil),
 		service.NewRasterCOGTaskService(cogRepo, nil),
 		nil,
 	)
 	handler.SetModel3DTilesTaskService(service.NewModel3DTilesTaskService(model3DTilesRepo, nil))
-	handler.SetModel3DQuickViewTaskService(service.NewModel3DQuickViewTaskService(model3DQuickViewRepo, nil))
-	handler.SetGaussianSplatQuickViewTaskService(service.NewGaussianSplatQuickViewTaskService(gaussianSplatQuickViewRepo, nil))
+	handler.SetModel3DGLBTaskService(service.NewModel3DGLBTaskService(model3DGLBRepo, nil))
+	handler.SetGaussianSplatKSplatTaskService(service.NewGaussianSplatKSplatTaskService(gaussianSplatKSplatRepo, nil))
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -357,19 +357,19 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	})
 	router.GET("/vector_tile_cache_tasks", handler.ListTileCacheTasks)
 	router.GET("/embedding_tasks", handler.ListEmbeddingTasks)
-	router.GET("/vector_quick_view_target_tasks", handler.ListQuickViewOptimizationTasks)
+	router.GET("/vector_materialized_view_tasks", handler.ListVectorMaterializedViewTasks)
 	router.GET("/raster_cog_tasks", handler.ListRasterCOGTasks)
 	router.GET("/model_3d_tiles_tasks", handler.ListModel3DTilesTasks)
-	router.GET("/model_3d_quick_view_tasks", handler.ListModel3DQuickViewTasks)
-	router.GET("/gaussian_splat_quick_view_tasks", handler.ListGaussianSplatQuickViewTasks)
+	router.GET("/model_3d_glb_tasks", handler.ListModel3DGLBTasks)
+	router.GET("/gaussian_splat_ksplat_tasks", handler.ListGaussianSplatKSplatTasks)
 
 	assertListedTaskTypeValues(t, router, "/vector_tile_cache_tasks", []string{commonExecution.TaskTypeVectorTileCacheGeneration})
 	assertListedTaskTypeValues(t, router, "/embedding_tasks", []string{commonExecution.TaskTypeEmbedding})
-	assertListedTaskTypeValues(t, router, "/vector_quick_view_target_tasks", []string{commonExecution.TaskTypeVectorQuickViewTargetGeneration})
+	assertListedTaskTypeValues(t, router, "/vector_materialized_view_tasks", []string{commonExecution.TaskTypeVectorMaterializedViewGeneration})
 	assertListedTaskTypeValues(t, router, "/raster_cog_tasks", []string{commonExecution.TaskTypeRasterCOGGeneration})
 	assertListedTaskTypeValues(t, router, "/model_3d_tiles_tasks", []string{commonExecution.TaskTypeModel3DTilesGeneration})
-	assertListedTaskTypeValues(t, router, "/model_3d_quick_view_tasks", []string{commonExecution.TaskTypeModel3DQuickViewGeneration})
-	assertListedTaskTypeValues(t, router, "/gaussian_splat_quick_view_tasks", []string{commonExecution.TaskTypeGaussianSplatQuickViewGeneration})
+	assertListedTaskTypeValues(t, router, "/model_3d_glb_tasks", []string{commonExecution.TaskTypeModel3DGLBGeneration})
+	assertListedTaskTypeValues(t, router, "/gaussian_splat_ksplat_tasks", []string{commonExecution.TaskTypeGaussianSplatKSplatGeneration})
 }
 
 func TestCreateEmbeddingTaskRejectsLegacyTopLevelFields(t *testing.T) {
@@ -635,7 +635,7 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create embedding_tasks table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.vector_quick_view_target_tasks (
+	if err := db.Exec(`CREATE TABLE manager.vector_materialized_view_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		name TEXT NOT NULL,
@@ -652,7 +652,7 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create vector_quick_view_target_tasks table: %v", err)
+		t.Fatalf("create vector_materialized_view_tasks table: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE manager.raster_cog_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -692,7 +692,7 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create model_3d_tiles_tasks table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.model_3d_quick_view_tasks (
+	if err := db.Exec(`CREATE TABLE manager.model_3d_glb_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		name TEXT NOT NULL,
@@ -709,9 +709,9 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create model_3d_quick_view_tasks table: %v", err)
+		t.Fatalf("create model_3d_glb_tasks table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.gaussian_splat_quick_view_tasks (
+	if err := db.Exec(`CREATE TABLE manager.gaussian_splat_ksplat_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		name TEXT NOT NULL,
@@ -728,9 +728,9 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create gaussian_splat_quick_view_tasks table: %v", err)
+		t.Fatalf("create gaussian_splat_ksplat_tasks table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.model_3d_quick_view (
+	if err := db.Exec(`CREATE TABLE manager.model_3d_glb (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		item_fingerprint TEXT NOT NULL,
@@ -753,9 +753,9 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create model_3d_quick_view table: %v", err)
+		t.Fatalf("create model_3d_glb table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.gaussian_splat_quick_view (
+	if err := db.Exec(`CREATE TABLE manager.gaussian_splat_ksplat (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		item_fingerprint TEXT NOT NULL,
@@ -778,7 +778,7 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create gaussian_splat_quick_view table: %v", err)
+		t.Fatalf("create gaussian_splat_ksplat table: %v", err)
 	}
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
 		t.Fatalf("attach common schema: %v", err)
