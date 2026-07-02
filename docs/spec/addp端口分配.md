@@ -111,6 +111,7 @@ make ports-validate
 | Spark Workflow Engine | 8098     | 8098        | Spark 分布式工作流引擎     |
 | Python Workflow Engine     | 8099     | 8099        | 空间计算引擎 (Python)      |
 | Model3D Workflow Engine    | 8101     | 8101        | 三维模型转换工作流引擎     |
+| PointCloud Workflow Engine | 8102     | 8102        | 点云处理工作流引擎         |
 | PostgreSQL (System)   | 15432    | 15432       | ADDP 系统元数据            |
 | Redis                 | 16379    | 16379       | 缓存和队列                 |
 | MinIO System API      | 19000    | 19000       | 系统文件存储               |
@@ -143,6 +144,7 @@ make ports-validate
   - 8098: Spark Workflow Engine
   - 8099: Python Workflow Engine
   - 8101: Model3D Workflow Engine
+  - 8102: PointCloud Workflow Engine
 
 ### 前端开发端口规则
 - **Console**：5170（控制台入口）

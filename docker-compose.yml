@@ -1074,7 +1074,7 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-info}
-      - POINTCLOUD_PDAL_BIN=/usr/bin/pdal
+      - POINTCLOUD_PDAL_BIN=/opt/conda/bin/pdal
     ports:
       - "8102:8102"
     volumes:

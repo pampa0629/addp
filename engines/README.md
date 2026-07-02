@@ -1,6 +1,6 @@
 # ADDP 计算引擎开发指南
 
-本目录集中管理 ADDP 工作流和 Notebook 运行时。Python Workflow、Spark Workflow、Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时。
+本目录集中管理 ADDP 工作流和 Notebook 运行时。Python Workflow、Spark Workflow、Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理专用运行时。
 
 ## 目录结构
 
@@ -10,6 +10,7 @@ engines/
 ├── spark-workflow/     # Spark Workflow 分布式工作流引擎，默认端口 8098
 ├── math-workflow/      # Math Workflow 数学工作流参考实现，默认端口 8089
 ├── model3d-workflow/   # Model3D Workflow 三维模型转换运行时，默认端口 8101
+├── pointcloud-workflow/ # PointCloud Workflow 点云处理运行时，默认端口 8102
 ├── jupyter/            # Jupyter Notebook / Lab 运行时，API 默认端口 8097
 └── docs/               # 引擎 API 与设计文档
 ```
@@ -25,7 +26,7 @@ engines/
 - `spark_workflow` - Spark Workflow 引擎，适合分布式计算。
 - `math_workflow` - Math Workflow 参考实现，开发环境可自动启动服务但不会自动注册；需要使用时在 System 引擎管理中按扩展引擎手动注册。
 - `model3d_workflow` - Model3D Workflow 三维模型转换运行时，提供 `osgb_to_glb` 和 `osgb_scene_to_3dtiles` direct 算子；开发环境启动时会自注册到 System，实际转换需通过 `MODEL3D_CONVERTER_BIN` 配置引擎部署内的 `_3dtile` 或等价转换器可执行文件路径。
-- `pointcloud_workflow` - PointCloud Workflow 点云处理运行时，提供 `las_to_copc`、`laz_to_copc` 和 `e57_to_copc` direct 算子；开发环境启动时会自注册到 System，实际转换需通过 `POINTCLOUD_PDAL_BIN` 配置引擎部署内的 PDAL 可执行文件路径。
+- `pointcloud_workflow` - PointCloud Workflow 点云处理运行时，提供 `las_to_copc`、`laz_to_copc` 和 `e57_to_copc` direct 算子；绑定 engine runtime 内部 PDAL 后会自注册到 System，实际转换通过 `POINTCLOUD_PDAL_BIN` 指向引擎部署内的 PDAL 可执行文件路径，不依赖宿主机全局 PDAL。
 
 ### 脚本 / Notebook 运行时
 

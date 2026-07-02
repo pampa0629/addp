@@ -184,7 +184,7 @@ DuckDB 当前不是用户在 System 中注册的外部 Engine Instance，也不�
 | 图数据库 | Neo4j |
 | 对象存储 | MinIO、S3 |
 | 文件系统 | NFS |
-| 工作流运行时 | Python Workflow / Spark Workflow、自动启动服务但手动注册的 Math Workflow 参考实现，及用户自研扩展工作流运行时 |
+| 工作流运行时 | Python Workflow / Spark Workflow、自动启动服务但手动注册的 Math Workflow 参考实现、Model3D Workflow、PointCloud Workflow，及用户自研扩展工作流运行时 |
 | 脚本/Notebook | Jupyter |
 
 ---
