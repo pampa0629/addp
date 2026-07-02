@@ -42,6 +42,7 @@ func SetupRouter(
 	rasterMosaicTileHandler *RasterMosaicTileHandler,
 	model3DGLBHandler *Model3DGLBHandler,
 	gaussianSplatKSplatHandler *GaussianSplatKSplatHandler,
+	pointCloudCOPCHandler *PointCloudCOPCHandler,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -164,6 +165,14 @@ func SetupRouter(
 			gaussianSplatKSplatTasksGroup.PUT("/:id", taskProviderHandler.UpdateGaussianSplatKSplatTask)
 			gaussianSplatKSplatTasksGroup.DELETE("/:id", taskProviderHandler.DeleteGaussianSplatKSplatTask)
 		}
+		pointCloudCOPCTasksGroup := api.Group("/point_cloud_copc_tasks")
+		{
+			pointCloudCOPCTasksGroup.GET("", taskProviderHandler.ListPointCloudCOPCTasks)
+			pointCloudCOPCTasksGroup.POST("", taskProviderHandler.CreatePointCloudCOPCTask)
+			pointCloudCOPCTasksGroup.GET("/:id", taskProviderHandler.GetPointCloudCOPCTask)
+			pointCloudCOPCTasksGroup.PUT("/:id", taskProviderHandler.UpdatePointCloudCOPCTask)
+			pointCloudCOPCTasksGroup.DELETE("/:id", taskProviderHandler.DeletePointCloudCOPCTask)
+		}
 		if rasterMosaicTileHandler != nil {
 			rasterMosaicTilesGroup := api.Group("/raster_mosaic/tiles")
 			{
@@ -194,6 +203,15 @@ func SetupRouter(
 			if gaussianSplatKSplatHandler != nil {
 				gaussianSplatKSplatsGroup.GET("/:id/inspect", gaussianSplatKSplatHandler.InspectGaussianSplatKSplat)
 				gaussianSplatKSplatsGroup.GET("/:id/content", gaussianSplatKSplatHandler.GetGaussianSplatKSplatContent)
+			}
+		}
+		pointCloudCOPCsGroup := api.Group("/point_cloud_copc")
+		{
+			pointCloudCOPCsGroup.GET("", taskProviderHandler.ListPointCloudCOPCs)
+			pointCloudCOPCsGroup.GET("/:id", taskProviderHandler.GetPointCloudCOPC)
+			pointCloudCOPCsGroup.DELETE("/:id", taskProviderHandler.DeletePointCloudCOPC)
+			if pointCloudCOPCHandler != nil {
+				pointCloudCOPCsGroup.GET("/:id/content", pointCloudCOPCHandler.GetPointCloudCOPCContent)
 			}
 		}
 		vectorMaterializedViewTasksGroup := api.Group("/vector_materialized_view_tasks")
@@ -277,7 +295,7 @@ func SetupRouter(
 		// Quick View API：统一 ResourceLocator 入口
 		quickViewHandler := NewQuickViewHandler(quickViewService, previewResolver, unifiedMVTService, redisClient)
 		if taskProviderHandler != nil {
-			quickViewHandler.SetArtifactTaskServices(taskProviderHandler.rasterCOGTaskSvc, taskProviderHandler.model3DGLBTaskSvc, taskProviderHandler.gaussianSplatKSplatTaskSvc)
+			quickViewHandler.SetArtifactTaskServices(taskProviderHandler.rasterCOGTaskSvc, taskProviderHandler.model3DGLBTaskSvc, taskProviderHandler.gaussianSplatKSplatTaskSvc, taskProviderHandler.pointCloudCOPCTaskSvc)
 		}
 		api.GET("/quick-view/capability", quickViewHandler.GetQuickViewCapabilityByLocator)
 		api.POST("/quick-view/actions", quickViewHandler.ExecuteQuickViewAction)

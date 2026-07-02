@@ -26,6 +26,7 @@ func TestAllPluginsRegistered(t *testing.T) {
 		"mysql",
 		"neo4j",
 		"nfs",
+		"pointcloud_workflow",
 		"postgresql",
 		"python_workflow",
 		"s3",
@@ -54,8 +55,8 @@ func TestAllPluginsRegistered(t *testing.T) {
 func TestGetAllPlugins(t *testing.T) {
 	plugins := plugin.GetAll()
 
-	if len(plugins) != 15 {
-		t.Errorf("Expected 15 plugins, got %d", len(plugins))
+	if len(plugins) != 16 {
+		t.Errorf("Expected 16 plugins, got %d", len(plugins))
 	}
 
 	// 验证每个插件的基本信息
@@ -71,6 +72,7 @@ func TestGetAllPlugins(t *testing.T) {
 		{"jupyter", "Jupyter Engine"},
 		{"math_workflow", "Math Workflow"},
 		{"model3d_workflow", "Model3D Workflow"},
+		{"pointcloud_workflow", "PointCloud Workflow"},
 		{"mongodb", "MongoDB"},
 		{"neo4j", "Neo4j"},
 		{"nfs", "NFS 文件系统"},
@@ -113,6 +115,7 @@ func TestPluginCapabilities(t *testing.T) {
 		{"spark_workflow", "extension"},
 		{"math_workflow", "extension"},
 		{"model3d_workflow", "extension"},
+		{"pointcloud_workflow", "extension"},
 		{"jupyter", "extension"},
 	}
 
@@ -159,6 +162,7 @@ func TestPluginDefaultPorts(t *testing.T) {
 		{"spark_workflow", 8098},
 		{"math_workflow", 8089},
 		{"model3d_workflow", 8101},
+		{"pointcloud_workflow", 8102},
 		{"jupyter", 8097},
 	}
 
@@ -195,6 +199,7 @@ func TestPluginRequiredFields(t *testing.T) {
 		{"spark_workflow", "port"},
 		{"math_workflow", "host"},
 		{"model3d_workflow", "host"},
+		{"pointcloud_workflow", "host"},
 		{"jupyter", "port"},
 	}
 
@@ -271,8 +276,14 @@ func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
 		"jupyter":          {origin: "extension", family: "script", script: true, scriptModes: []string{"notebook", "lab"}, scriptLanguages: []string{"python"}},
 		"math_workflow":    {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
 		"model3d_workflow": {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
-		"python_workflow":  {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
-		"spark_workflow":   {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
+		"pointcloud_workflow": {
+			origin:          "extension",
+			family:          "workflow",
+			workflow:        true,
+			workflowRuntime: "addp.workflow/v1",
+		},
+		"python_workflow": {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
+		"spark_workflow":  {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
 	}
 
 	allPlugins := plugin.GetAll()
@@ -370,6 +381,15 @@ func TestExtensionRuntimeRegistrationOmitsCapabilities(t *testing.T) {
 			path: "engines/model3d-workflow/api_server.py",
 			required: []string{
 				`"engine_type": "model3d_workflow"`,
+				`"is_builtin": True`,
+			},
+			forbidden: []string{`"capabilities"`, `"schema_version"`, `"engine_family"`, `"compute"`, `"extensions"`, `"workflow_runtime"`},
+		},
+		{
+			name: "pointcloud_workflow",
+			path: "engines/pointcloud-workflow/api_server.py",
+			required: []string{
+				`"engine_type": "pointcloud_workflow"`,
 				`"is_builtin": True`,
 			},
 			forbidden: []string{`"capabilities"`, `"schema_version"`, `"engine_family"`, `"compute"`, `"extensions"`, `"workflow_runtime"`},

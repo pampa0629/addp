@@ -241,6 +241,49 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_addp_manager_internal_models.PointCloudCOPC:
+    properties:
+      content_url:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      error_message:
+        type: string
+      file_name:
+        type: string
+      id:
+        type: integer
+      item_fingerprint:
+        type: string
+      item_id:
+        type: integer
+      last_execution_id:
+        type: string
+      locator:
+        type: string
+      metadata:
+        $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+      size_bytes:
+        type: integer
+      source_engine_id:
+        type: integer
+      source_format:
+        type: string
+      source_size_bytes:
+        type: integer
+      status:
+        type: string
+      storage_ref:
+        type: string
+      task_id:
+        type: integer
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
   github_com_addp_manager_internal_models.RasterCOG:
     properties:
       band_count:
@@ -517,6 +560,8 @@ definitions:
         $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewModel3DInfo'
       optimization:
         $ref: '#/definitions/github_com_addp_manager_internal_service.VectorMaterializedViewInfo'
+      point_cloud:
+        $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewPointCloudInfo'
       preferred_mode:
         type: string
       quick_view:
@@ -621,6 +666,35 @@ definitions:
         type: integer
       task_id:
         type: integer
+    type: object
+  github_com_addp_manager_internal_service.QuickViewPointCloudInfo:
+    properties:
+      bounds_3d:
+        $ref: '#/definitions/datatype.Bounds3D'
+      file_name:
+        type: string
+      format:
+        type: string
+      last_execution_id:
+        type: string
+      layout:
+        type: string
+      point_cloud_kind:
+        type: string
+      point_count:
+        type: integer
+      preview_url:
+        type: string
+      recommended_action:
+        type: string
+      result_id:
+        type: integer
+      size_bytes:
+        type: integer
+      task_id:
+        type: integer
+      unavailable_reason:
+        type: string
     type: object
   github_com_addp_manager_internal_service.QuickViewRasterInfo:
     properties:
@@ -1402,6 +1476,80 @@ definitions:
     properties:
       format:
         type: string
+    type: object
+  internal_api.PointCloudCOPCTaskRequest:
+    properties:
+      config:
+        $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+      description:
+        type: string
+      enabled:
+        type: boolean
+      name:
+        type: string
+      next_run_at:
+        type: string
+      schedule:
+        type: string
+    type: object
+  internal_api.PointCloudCOPCTaskResponse:
+    properties:
+      config:
+        $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      next_run_at:
+        type: string
+      result:
+        $ref: '#/definitions/internal_api.PointCloudCOPCTaskResultResponse'
+      schedule:
+        type: string
+      source:
+        $ref: '#/definitions/internal_api.PointCloudCOPCTaskSourceResponse'
+      task_type:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  internal_api.PointCloudCOPCTaskResultResponse:
+    properties:
+      file_name:
+        type: string
+      storage_ref:
+        type: string
+    type: object
+  internal_api.PointCloudCOPCTaskSourceResponse:
+    properties:
+      format:
+        type: string
+      item_fingerprint:
+        type: string
+      item_id:
+        type: integer
+      item_locator:
+        type: string
+      source_engine_id:
+        type: integer
+      source_size_bytes:
+        type: integer
     type: object
   internal_api.RasterCOGTaskCOGResponse:
     properties:
@@ -3309,6 +3457,294 @@ paths:
       summary: 更新三维模型 3D Tiles 任务配置 | Update model 3D Tiles generation task configuration
       tags:
       - Manager
+  /point_cloud_copc:
+    get:
+      parameters:
+      - description: 数据项ID | Item ID
+        in: query
+        name: item_id
+        type: integer
+      - description: 数据项指纹 | Item fingerprint
+        in: query
+        name: item_fingerprint
+        type: string
+      - description: 任务ID | Task ID
+        in: query
+        name: task_id
+        type: integer
+      - description: 状态 | Status
+        in: query
+        name: status
+        type: string
+      - description: 关键词 | Keyword
+        in: query
+        name: q
+        type: string
+      - description: 页码，默认1 | Page number, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认20 | Page size, default 20
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 结果列表 | Result list
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出点云 COPC 快显结果 | List point cloud COPC quick view results
+      tags:
+      - Manager
+  /point_cloud_copc/{id}:
+    delete:
+      parameters:
+      - description: 结果ID | Result ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功 | Deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除点云 COPC 快显 | Delete point cloud COPC quick view
+      tags:
+      - Manager
+    get:
+      parameters:
+      - description: 结果ID | Result ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 结果详情 | Result detail
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_models.PointCloudCOPC'
+      security:
+      - BearerAuth: []
+      summary: 获取点云 COPC 快显详情 | Get point cloud COPC quick view detail
+      tags:
+      - Manager
+  /point_cloud_copc/{id}/content:
+    get:
+      description: 按 point cloud COPC id 返回 Manager infra MinIO 中的 COPC 内容，支持 HTTP
+        Range。该接口只读取 Manager 拥有生命周期且状态为 ready 的 COPC 快显结果。 | Return COPC content from
+        Manager infra MinIO by result id with HTTP Range support. Only ready Manager-owned
+        results are readable.
+      parameters:
+      - description: point cloud COPC ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: COPC 内容流 | COPC content stream
+        "206":
+          description: 部分 COPC 内容流 | Partial COPC content stream
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: COPC 不存在或未就绪 | COPC not found or not ready
+          schema:
+            additionalProperties: true
+            type: object
+        "416":
+          description: Range 不可满足 | Range not satisfiable
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 读取点云 COPC 快显 | Read point cloud COPC quick view result
+      tags:
+      - Manager
+  /point_cloud_copc_tasks:
+    get:
+      description: 列出 Manager 模块的点云 COPC 快显任务配置。该私有入口固定返回 task_type=point_cloud_copc_generation；编排模块应使用标准
+        /tasks 入口。| List Manager point cloud COPC quick view generation task configurations.
+      parameters:
+      - description: 页码，默认1 | Page number, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认20 | Page size, default 20
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 任务列表 | Task list
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出点云 COPC 快显任务配置 | List point cloud COPC quick view generation task
+        configurations
+      tags:
+      - Manager
+    post:
+      consumes:
+      - application/json
+      description: 创建新的点云 COPC 快显任务配置。源必须是 format=las、laz 或 e57 的 point_cloud item，并转换为
+        COPC artifact 写入 Manager infra MinIO；format=copc 的源文件直接基础预览，不创建快显任务。| Create
+        a point cloud COPC quick view task from a format=las, laz, or e57 point_cloud
+        item into Manager infra MinIO. format=copc sources are previewed directly
+        and do not create quick view tasks.
+      parameters:
+      - description: point cloud COPC generation task configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.PointCloudCOPCTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 创建的任务配置 | Created task configuration
+          schema:
+            $ref: '#/definitions/internal_api.PointCloudCOPCTaskResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建点云 COPC 快显任务配置 | Create point cloud COPC quick view generation task
+        configuration
+      tags:
+      - Manager
+  /point_cloud_copc_tasks/{id}:
+    delete:
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功 | Deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除点云 COPC 快显任务配置 | Delete point cloud COPC quick view generation task
+        configuration
+      tags:
+      - Manager
+    get:
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 任务配置 | Task configuration
+          schema:
+            $ref: '#/definitions/internal_api.PointCloudCOPCTaskResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 任务不存在 | Task not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取点云 COPC 快显任务配置 | Get point cloud COPC quick view generation task
+        configuration
+      tags:
+      - Manager
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: point cloud COPC generation task configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.PointCloudCOPCTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的任务配置 | Updated task configuration
+          schema:
+            $ref: '#/definitions/internal_api.PointCloudCOPCTaskResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 任务不存在 | Task not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新点云 COPC 快显任务配置 | Update point cloud COPC quick view generation task
+        configuration
+      tags:
+      - Manager
   /preview:
     get:
       description: 根据资源定位符预览数据内容，支持表格、文件等多种格式 | Preview data content by resource locator,
@@ -3468,9 +3904,9 @@ paths:
       consumes:
       - application/json
       description: 前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，目前支持生成栅格
-        COG、三维模型 GLB 快显和 3DGS KSplat 快显。 | Execute a backend-declared quick view action
-        by Resource Locator. The backend creates and executes the corresponding task
-        from capability facts.
+        COG、三维模型 GLB 快显、3DGS KSplat 快显和点云 COPC 快显。 | Execute a backend-declared quick
+        view action by Resource Locator. The backend creates and executes the corresponding
+        task from capability facts.
       parameters:
       - description: 快显动作请求 | Quick view action request
         in: body
@@ -4385,7 +4821,7 @@ paths:
       description: 列出 Manager 模块的任务（矢量瓦片缓存生成、矢量物化视图、栅格快显 COG 生成、栅格 mosaic 生成、三维模型
         GLB 快显生成、三维模型 3D Tiles 生成和向量化任务）| List Manager module tasks
       parameters:
-      - description: 任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|embedding
+      - description: 任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding
           | Task type filter
         in: query
         name: task_type
@@ -4425,7 +4861,7 @@ paths:
       description: 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and
         ID
       parameters:
-      - description: 任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|embedding
+      - description: 任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding
           | Task type
         in: path
         name: task_type
@@ -4465,7 +4901,7 @@ paths:
       - application/json
       description: 触发指定任务立即执行 | Trigger immediate execution of a specific task
       parameters:
-      - description: 任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|embedding
+      - description: 任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding
           | Task type
         in: path
         name: task_type

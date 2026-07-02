@@ -1061,6 +1061,38 @@ services:
       retries: 30
       start_period: 60s
 
+  # ==================== PointCloud Workflow Engine（点云处理工作流引擎） ====================
+
+  pointcloud-workflow-engine:
+    build:
+      context: ./engines/pointcloud-workflow
+      dockerfile: Dockerfile
+    image: ${REGISTRY:-localhost:5001}/addp-pointcloud-workflow-engine:${IMAGE_TAG:-latest}
+    container_name: pointcloud-workflow-engine
+    environment:
+      - PORT=8102
+      - SYSTEM_URL=http://system-backend:8180
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - POINTCLOUD_PDAL_BIN=/usr/bin/pdal
+    ports:
+      - "8102:8102"
+    volumes:
+      - ./logs:/app/logs
+      - ${POINTCLOUD_DATA_HOST_PATH:-./business/nfs/data}:${POINTCLOUD_DATA_CONTAINER_PATH:-/Users/pampa/code/addp/business/nfs/data}:ro
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8102/health', timeout=3)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
   spark-workflow-engine:
     build:
       context: ./engines/spark-workflow

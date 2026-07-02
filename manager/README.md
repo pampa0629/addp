@@ -16,6 +16,7 @@
 - **数据探查**: 浏览 8 种存储引擎中的数据（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Apache Spark、MinIO、S3）
 - **数据预览**: 插件化架构，支持多种格式（CSV、JSON、Parquet、Shapefile、图片等）
 - **空间数据可视化**: 基础预览 + 快显模式 + 瓦片缓存结果 + TIFF/COG 栅格快显，当前矢量主路径以 PostGIS + MVT 为核心实现
+- **三维与点云快显**: GLB、3D Tiles、KSplat 和 COPC 受管 artifact 预览，源点云 COPC 直接基础预览
 - **数据检索**: 基于 Meilisearch + 向量数据库的混合检索（全文检索 + 语义检索）
 - **向量化**: 对可支持的数据项生成向量表示，支持资源树一次性执行、可调度向量化任务和语义检索消费
 - **元数据展示**: 与 Meta 模块集成，展示资源树 node / item facts
@@ -71,6 +72,9 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 栅格快显 COG内容:  GET  /api/v1/manager/raster_cog/{id}/content
 栅格快显 COG生成任务: GET  /api/v1/manager/raster_cog_tasks
 栅格快显 COG结果:  GET  /api/v1/manager/raster_cog
+点云 COPC 内容:     GET  /api/v1/manager/point_cloud_copc/{id}/content
+点云 COPC 任务:     GET  /api/v1/manager/point_cloud_copc_tasks
+点云 COPC 结果:     GET  /api/v1/manager/point_cloud_copc
 瓦片缓存任务: GET  /api/v1/manager/vector_tile_cache_tasks
 瓦片缓存结果: GET  /api/v1/manager/vector_tile_cache
 数据检索:     GET  /api/v1/manager/search
@@ -105,8 +109,9 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 7. `vector_tile_cache_tasks` - 瓦片缓存生成任务定义，TaskProvider `task_type=vector_tile_cache_generation`。
 8. `model_3d_glb` / `model_3d_glb_tasks` - 单体三维模型 GLB 快显结果和任务定义，TaskProvider `task_type=model_3d_glb_generation`。
 9. `gaussian_splat_ksplat` / `gaussian_splat_ksplat_tasks` - 3DGS - KSplat 快显结果和任务定义，TaskProvider `task_type=gaussian_splat_ksplat_generation`。
-10. MVT 是瓦片格式，进入 `config.tile.format=mvt`，不是任务类型；COG 是 TIFF profile 或 Manager COG 生成结果，不是新的基础 format。
-11. 当前 `vector_tile_cache_generation`、`vector_materialized_view_generation` 和 `raster_cog_generation` 由 Manager Backend 内部执行；COG 生成使用 Manager 预处理 GDAL `source_uri` / `target_uri` / `gdal_env`，再通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 Python Workflow，并直接写入 infra MinIO 的单一路线。
+10. `point_cloud_copc` / `point_cloud_copc_tasks` - 点云 COPC 快显结果和任务定义，TaskProvider `task_type=point_cloud_copc_generation`；源 `format=copc` 直接基础预览。
+11. MVT 是瓦片格式，进入 `config.tile.format=mvt`，不是任务类型；COG 是 TIFF profile 或 Manager COG 生成结果，不是新的基础 format。
+12. 当前 `vector_tile_cache_generation`、`vector_materialized_view_generation` 和 `raster_cog_generation` 由 Manager Backend 内部执行；COG 生成使用 Manager 预处理 GDAL `source_uri` / `target_uri` / `gdal_env`，再通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 Python Workflow，并直接写入 infra MinIO 的单一路线。点云 COPC 生成通过 `pointcloud_workflow` direct operator 写入 Manager infra MinIO。
 
 COG 生成运行要求：
 
@@ -114,7 +119,7 @@ COG 生成运行要求：
 - MinIO / S3 源：Manager 为源对象生成 presigned URL，Python 通过 GDAL `/vsicurl/` 读取。
 - 目标 COG：Python 通过 GDAL `/vsis3/` 写入 Manager infra MinIO，Manager 负责登记 `raster_cog`。
 
-三维模型、3D Tiles 和高斯泼溅的预览路线请查看 [三维模型与高斯泼溅预览说明](./docs/三维模型与高斯泼溅预览说明.md)。详细架构请查看 [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md)。
+三维模型、3D Tiles、高斯泼溅和点云 COPC 的预览路线请查看 [三维模型与高斯泼溅预览说明](./docs/三维模型与高斯泼溅预览说明.md)。详细架构请查看 [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md)。
 
 ## 🐛 常见问题
 

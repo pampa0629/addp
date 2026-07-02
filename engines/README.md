@@ -25,6 +25,7 @@ engines/
 - `spark_workflow` - Spark Workflow 引擎，适合分布式计算。
 - `math_workflow` - Math Workflow 参考实现，开发环境可自动启动服务但不会自动注册；需要使用时在 System 引擎管理中按扩展引擎手动注册。
 - `model3d_workflow` - Model3D Workflow 三维模型转换运行时，提供 `osgb_to_glb` 和 `osgb_scene_to_3dtiles` direct 算子；开发环境启动时会自注册到 System，实际转换需通过 `MODEL3D_CONVERTER_BIN` 配置引擎部署内的 `_3dtile` 或等价转换器可执行文件路径。
+- `pointcloud_workflow` - PointCloud Workflow 点云处理运行时，提供 `las_to_copc`、`laz_to_copc` 和 `e57_to_copc` direct 算子；开发环境启动时会自注册到 System，实际转换需通过 `POINTCLOUD_PDAL_BIN` 配置引擎部署内的 PDAL 可执行文件路径。
 
 ### 脚本 / Notebook 运行时
 
@@ -164,6 +165,7 @@ Math Workflow 是参考实现，随 `scripts/dev/start.sh -all` / `-develop` 启
 - **Python Workflow Engine**: [python-workflow](./python-workflow/) - Python 数据处理工作流实现。
 - **Spark Workflow Engine**: [spark-workflow](./spark-workflow/) - Spark / Sedona 工作流实现。
 - **Model3D Workflow Engine**: [model3d-workflow](./model3d-workflow/) - OSGB 快显和 OSGB Scene 转 3D Tiles 三维模型转换运行时。
+- **PointCloud Workflow Engine**: [pointcloud-workflow](./pointcloud-workflow/) - LAS / LAZ / E57 转 COPC 点云快显转换运行时。
 
 ## 相关文档
 

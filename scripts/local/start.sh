@@ -71,6 +71,7 @@ check_images() {
         "${REGISTRY}/addp-copilot-backend:${IMAGE_TAG}"
         "${REGISTRY}/addp-python-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-model3d-workflow-engine:${IMAGE_TAG}"
+        "${REGISTRY}/addp-pointcloud-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-spark-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-jupyter-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-gateway:${IMAGE_TAG}"
@@ -204,6 +205,11 @@ if docker compose -f docker-compose.yml ps model3d-workflow-engine | grep -q "Up
     wait_for_health "http://localhost:8101/health" "Model3D Workflow Engine" 60
 fi
 
+# Wait for PointCloud Workflow Engine
+if docker compose -f docker-compose.yml ps pointcloud-workflow-engine | grep -q "Up"; then
+    wait_for_health "http://localhost:8102/health" "PointCloud Workflow Engine" 60
+fi
+
 # =============================================================================
 # Summary
 # =============================================================================
@@ -230,6 +236,7 @@ echo ""
 echo -e "${GREEN}Engines:${NC}"
 echo -e "  ${CYAN}Python Workflow Engine:${NC}     http://localhost:8099"
 echo -e "  ${CYAN}Model3D Workflow Engine:${NC}    http://localhost:8101"
+echo -e "  ${CYAN}PointCloud Workflow Engine:${NC} http://localhost:8102"
 echo ""
 
 echo -e "${GREEN}Management Commands:${NC}"

@@ -48,6 +48,7 @@ const (
 	QuickViewSourceKindRasterMosaic  = "raster_mosaic"
 	QuickViewSourceKindModel3D       = "model_3d"
 	QuickViewSourceKindGaussianSplat = "gaussian_splat"
+	QuickViewSourceKindPointCloud    = "point_cloud"
 
 	QuickViewActionSwitchQuickView             = "switch_quick_view"
 	QuickViewActionBackToBasicPreview          = "back_to_basic_preview"
@@ -56,6 +57,7 @@ const (
 	QuickViewActionGenerateVectorMaterialized  = "generate_vector_materialized_view"
 	QuickViewActionGenerateModel3DGLB          = "generate_model_3d_glb"
 	QuickViewActionGenerateGaussianSplatKSplat = "generate_gaussian_splat_ksplat"
+	QuickViewActionGeneratePointCloudCOPC      = "generate_point_cloud_copc"
 
 	QuickViewRenderSourceCachedTile          = "cached_tile"
 	QuickViewRenderSourceClientCOG           = "client_cog_render"
@@ -65,6 +67,7 @@ const (
 	QuickViewRenderSourceRealtimeTile        = "realtime_tile"
 	QuickViewRenderSourceModel3DGLB          = "model_3d_glb"
 	QuickViewRenderSourceGaussianSplatKSplat = "gaussian_splat_ksplat"
+	QuickViewRenderSourcePointCloudCOPC      = "point_cloud_copc"
 
 	RealtimeTilePerformanceReady3857Target = "ready_3857_target"
 	RealtimeTilePerformanceSource3857Index = "source_3857_indexed"
@@ -96,6 +99,7 @@ type QuickViewService struct {
 	rasterCOGRepo     *repository.RasterCOGRepository
 	model3DRepo       *repository.Model3DGLBRepository
 	gaussianSplatRepo *repository.GaussianSplatKSplatRepository
+	pointCloudRepo    *repository.PointCloudCOPCRepository
 	metaClient        *commonClient.MetaClient
 	options           QuickViewCapabilityOptions
 	spatialLoader     func(ctx context.Context, tenantID, engineID uint, schema, table string) (*SpatialMetadataResult, error)
@@ -112,6 +116,7 @@ func NewQuickViewService(
 		rasterCOGRepo:     repository.NewRasterCOGRepository(db),
 		model3DRepo:       repository.NewModel3DGLBRepository(db),
 		gaussianSplatRepo: repository.NewGaussianSplatKSplatRepository(db),
+		pointCloudRepo:    repository.NewPointCloudCOPCRepository(db),
 		metaClient:        metaClient,
 	}
 }
@@ -180,6 +185,7 @@ type QuickViewSource struct {
 	RasterMosaic       *RasterMosaicQuickViewSource
 	Model3D            *Model3DGLBSource
 	GaussianSplat      *GaussianSplatKSplatSource
+	PointCloud         *PointCloudCOPCSource
 	DirectGeoJSON      bool
 	GeoJSONURL         string
 	CanTile            bool
@@ -259,6 +265,16 @@ type GaussianSplatKSplatSource struct {
 	SampledBoundsSampleCount *int64
 }
 
+type PointCloudCOPCSource struct {
+	Format          string
+	Layout          string
+	PointCloudKind  string
+	PointCount      int64
+	SourceSizeBytes int64
+	PreviewURL      string
+	Bounds3D        *datatype.Bounds3D
+}
+
 type RealtimeTileTarget struct {
 	Schema                       string
 	Table                        string
@@ -296,6 +312,7 @@ type QuickViewCapability struct {
 	RasterMosaic         *QuickViewRasterMosaicInfo  `json:"raster_mosaic,omitempty"`
 	Model3D              *QuickViewModel3DInfo       `json:"model_3d,omitempty"`
 	GaussianSplat        *QuickViewGaussianSplatInfo `json:"gaussian_splat,omitempty"`
+	PointCloud           *QuickViewPointCloudInfo    `json:"point_cloud,omitempty"`
 	Optimization         *VectorMaterializedViewInfo `json:"optimization,omitempty"`
 	RealtimeTile         *QuickViewRealtimeTileInfo  `json:"realtime_tile,omitempty"`
 	TileCacheGeneration  TileCacheGeneration         `json:"vector_tile_cache_generation"`
@@ -424,6 +441,22 @@ type QuickViewGaussianSplatInfo struct {
 	SampledBoundsSampleCount *int64             `json:"sampled_bounds_sample_count,omitempty"`
 	UnavailableReason        string             `json:"unavailable_reason,omitempty"`
 	RecommendedAction        string             `json:"recommended_action,omitempty"`
+}
+
+type QuickViewPointCloudInfo struct {
+	Format            string             `json:"format,omitempty"`
+	Layout            string             `json:"layout,omitempty"`
+	PointCloudKind    string             `json:"point_cloud_kind,omitempty"`
+	ResultID          *uint              `json:"result_id,omitempty"`
+	TaskID            *uint              `json:"task_id,omitempty"`
+	LastExecutionID   *string            `json:"last_execution_id,omitempty"`
+	FileName          string             `json:"file_name,omitempty"`
+	PointCount        int64              `json:"point_count,omitempty"`
+	SizeBytes         int64              `json:"size_bytes,omitempty"`
+	PreviewURL        string             `json:"preview_url,omitempty"`
+	Bounds3D          *datatype.Bounds3D `json:"bounds_3d,omitempty"`
+	UnavailableReason string             `json:"unavailable_reason,omitempty"`
+	RecommendedAction string             `json:"recommended_action,omitempty"`
 }
 
 type QuickViewRenderFacts struct {
@@ -610,10 +643,11 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	if existing != nil && existing.ViewState != nil {
 		viewState = existing.ViewState
 	}
-	if (source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil || source.GaussianSplat != nil) &&
+	if (source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil || source.GaussianSplat != nil || source.PointCloud != nil) &&
 		!hasExistingPreference &&
 		!isSourceKSplat(source.GaussianSplat) &&
-		!isSourceModel3DDirectPreview(source.Model3D) {
+		!isSourceModel3DDirectPreview(source.Model3D) &&
+		!isSourcePointCloudDirectPreview(source.PointCloud) {
 		preferredMode = models.PreviewModeMapQuickView
 	}
 
@@ -659,6 +693,10 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		}
 	} else if source.GaussianSplat != nil {
 		if err := s.applyGaussianSplatCapability(ctx, capability, identity, source.GaussianSplat, source.EngineID); err != nil {
+			return nil, err
+		}
+	} else if source.PointCloud != nil {
+		if err := s.applyPointCloudCapability(ctx, capability, identity, source.PointCloud, source.EngineID); err != nil {
 			return nil, err
 		}
 	} else if source.Model3D != nil {
@@ -707,7 +745,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	if !capability.TileCacheGeneration.Available {
 		capability.CanGenerateTileCache = false
 	}
-	if source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil || source.GaussianSplat != nil {
+	if source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil || source.GaussianSplat != nil || source.PointCloud != nil {
 		capability.CanGenerateTileCache = false
 		capability.TileCacheGeneration = TileCacheGeneration{
 			Available: false,
@@ -765,6 +803,11 @@ func applyAvailableActions(capability *QuickViewCapability) {
 		capability.GaussianSplat.RecommendedAction == commonExecution.TaskTypeGaussianSplatKSplatGeneration {
 		add(QuickViewActionGenerateGaussianSplatKSplat)
 	}
+	if capability.SourceKind == QuickViewSourceKindPointCloud && !capability.CanUseQuickView &&
+		capability.PointCloud != nil &&
+		capability.PointCloud.RecommendedAction == commonExecution.TaskTypePointCloudCOPCGeneration {
+		add(QuickViewActionGeneratePointCloudCOPC)
+	}
 	capability.AvailableActions = actions
 }
 
@@ -812,6 +855,8 @@ func quickViewSourceKind(source QuickViewSource) string {
 		return QuickViewSourceKindModel3D
 	case source.GaussianSplat != nil:
 		return QuickViewSourceKindGaussianSplat
+	case source.PointCloud != nil:
+		return QuickViewSourceKindPointCloud
 	case source.SpatialMeta != nil || source.CanTile || source.DirectGeoJSON || source.RealtimeTileTarget != nil:
 		return QuickViewSourceKindVector
 	default:
@@ -1023,8 +1068,76 @@ func (s *QuickViewService) applyGaussianSplatCapability(ctx context.Context, cap
 	return nil
 }
 
+func (s *QuickViewService) applyPointCloudCapability(ctx context.Context, capability *QuickViewCapability, identity QuickViewIdentity, pointCloud *PointCloudCOPCSource, engineID uint) error {
+	if capability == nil || pointCloud == nil {
+		return nil
+	}
+	capability.PointCloud = pointCloudInfoFromSource(pointCloud)
+	capability.Raster = nil
+	capability.RasterMosaic = nil
+	capability.Model3D = nil
+	capability.GaussianSplat = nil
+	capability.Optimization = nil
+	capability.RealtimeTile = nil
+	capability.DefaultTileCacheID = nil
+	capability.CanUseQuickView = false
+	capability.Status = QuickViewStatusUnavailable
+	capability.UnavailableReason = "requires_copc_generation"
+	capability.RenderSource = ""
+	capability.RecommendedMode = models.PreviewModeBasicPreview
+	capability.QuickView = QuickViewRenderInfo{}
+	capability.CanGenerateTileCache = false
+	capability.TileCacheGeneration = TileCacheGeneration{
+		Available: false,
+		Reason:    "point cloud COPC does not use vector tile cache generation",
+	}
+
+	if isSourcePointCloudDirectPreview(pointCloud) {
+		capability.CanUseQuickView = true
+		capability.Status = QuickViewStatusAvailable
+		capability.UnavailableReason = ""
+		capability.RenderSource = QuickViewRenderSourcePointCloudCOPC
+		capability.RecommendedMode = models.PreviewModeMapQuickView
+		capability.QuickView = renderInfoFromPointCloudSource(pointCloud)
+		if capability.PointCloud != nil {
+			capability.PointCloud.PreviewURL = strings.TrimSpace(pointCloud.PreviewURL)
+			capability.PointCloud.UnavailableReason = ""
+			capability.PointCloud.RecommendedAction = ""
+		}
+		return nil
+	}
+
+	readyCOPC, err := s.readyPointCloudCOPC(ctx, identity, engineID)
+	if err != nil {
+		return err
+	}
+	if readyCOPC != nil {
+		capability.CanUseQuickView = true
+		capability.Status = QuickViewStatusAvailable
+		capability.UnavailableReason = ""
+		capability.RenderSource = QuickViewRenderSourcePointCloudCOPC
+		capability.RecommendedMode = models.PreviewModeMapQuickView
+		capability.QuickView = renderInfoFromPointCloudCOPC(readyCOPC)
+		capability.PointCloud = pointCloudInfoFromQuickView(readyCOPC, pointCloud)
+		return nil
+	}
+
+	reason := "requires_copc_generation"
+	capability.UnavailableReason = reason
+	if capability.PointCloud != nil {
+		capability.PointCloud.UnavailableReason = reason
+		capability.PointCloud.RecommendedAction = commonExecution.TaskTypePointCloudCOPCGeneration
+	}
+	return nil
+}
+
 func isSourceKSplat(gaussian *GaussianSplatKSplatSource) bool {
 	return gaussian != nil && strings.EqualFold(strings.TrimSpace(gaussian.Format), string(format.FormatKSplat))
+}
+
+func isSourcePointCloudDirectPreview(pointCloud *PointCloudCOPCSource) bool {
+	return pointCloud != nil && strings.EqualFold(strings.TrimSpace(pointCloud.Format), string(format.FormatCOPC)) &&
+		strings.TrimSpace(pointCloud.PreviewURL) != ""
 }
 
 func isSourceModel3DDirectPreview(model3D *Model3DGLBSource) bool {
@@ -1314,6 +1427,20 @@ func (s *QuickViewService) readyGaussianSplatKSplat(ctx context.Context, identit
 	return nil, nil
 }
 
+func (s *QuickViewService) readyPointCloudCOPC(ctx context.Context, identity QuickViewIdentity, engineID uint) (*models.PointCloudCOPC, error) {
+	if s.pointCloudRepo == nil || strings.TrimSpace(identity.ItemFingerprint) == "" {
+		return nil, nil
+	}
+	result, err := s.pointCloudRepo.GetLatestReadyByFingerprint(ctx, identity.TenantID, identity.ItemFingerprint)
+	if err != nil || result == nil {
+		return nil, err
+	}
+	if pointCloudCOPCFactsMatch(result, identity, engineID) {
+		return result, nil
+	}
+	return nil, nil
+}
+
 func model3DGLBFactsMatch(result *models.Model3DGLB, identity QuickViewIdentity, engineID uint) bool {
 	if result == nil || result.Status != models.Model3DGLBStatusReady {
 		return false
@@ -1338,6 +1465,19 @@ func gaussianSplatKSplatFactsMatch(result *models.GaussianSplatKSplat, identity 
 		return false
 	}
 	return isGaussianSplatKSplatTaskSourceFormat(result.SourceFormat)
+}
+
+func pointCloudCOPCFactsMatch(result *models.PointCloudCOPC, identity QuickViewIdentity, engineID uint) bool {
+	if result == nil || result.Status != models.PointCloudCOPCStatusReady {
+		return false
+	}
+	if engineID > 0 && result.SourceEngineID > 0 && result.SourceEngineID != engineID {
+		return false
+	}
+	if locator := strings.TrimSpace(identity.Locator); locator != "" && strings.TrimSpace(result.Locator) != "" && result.Locator != locator {
+		return false
+	}
+	return isPointCloudCOPCTaskSourceFormat(result.SourceFormat)
 }
 
 func rasterCOGFactsMatch(result *models.RasterCOG, identity QuickViewIdentity, raster *RasterQuickViewSource, engineID uint) bool {
@@ -1742,6 +1882,25 @@ func renderInfoFromGaussianSplatKSplat(result *models.GaussianSplatKSplat) Quick
 	}
 }
 
+func renderInfoFromPointCloudCOPC(result *models.PointCloudCOPC) QuickViewRenderInfo {
+	id := uint(0)
+	if result != nil {
+		id = result.ID
+	}
+	return QuickViewRenderInfo{
+		RenderSource: QuickViewRenderSourcePointCloudCOPC,
+		PreviewURL:   pointCloudCOPCContentURL(id),
+	}
+}
+
+func renderInfoFromPointCloudSource(source *PointCloudCOPCSource) QuickViewRenderInfo {
+	info := QuickViewRenderInfo{RenderSource: QuickViewRenderSourcePointCloudCOPC}
+	if source != nil {
+		info.PreviewURL = strings.TrimSpace(source.PreviewURL)
+	}
+	return info
+}
+
 func rasterInfoFromSource(raster *RasterQuickViewSource) *QuickViewRasterInfo {
 	if raster == nil {
 		return nil
@@ -1876,6 +2035,21 @@ func gaussianSplatInfoFromSource(gaussian *GaussianSplatKSplatSource) *QuickView
 	}
 }
 
+func pointCloudInfoFromSource(pointCloud *PointCloudCOPCSource) *QuickViewPointCloudInfo {
+	if pointCloud == nil {
+		return nil
+	}
+	return &QuickViewPointCloudInfo{
+		Format:         strings.TrimSpace(pointCloud.Format),
+		Layout:         strings.TrimSpace(pointCloud.Layout),
+		PointCloudKind: strings.TrimSpace(pointCloud.PointCloudKind),
+		PointCount:     pointCloud.PointCount,
+		SizeBytes:      pointCloud.SourceSizeBytes,
+		PreviewURL:     strings.TrimSpace(pointCloud.PreviewURL),
+		Bounds3D:       datatype.NormalizeBounds3D(pointCloud.Bounds3D),
+	}
+}
+
 func gaussianSplatInfoFromQuickView(result *models.GaussianSplatKSplat, source *GaussianSplatKSplatSource) *QuickViewGaussianSplatInfo {
 	info := gaussianSplatInfoFromSource(source)
 	if info == nil {
@@ -1898,6 +2072,32 @@ func gaussianSplatInfoFromQuickView(result *models.GaussianSplatKSplat, source *
 	}
 	info.ProgressiveOrder = gaussianSplatProgressiveOrder(result.Metadata)
 	info.PreviewURL = gaussianSplatKSplatContentURL(result.ID)
+	info.UnavailableReason = ""
+	info.RecommendedAction = ""
+	return info
+}
+
+func pointCloudInfoFromQuickView(result *models.PointCloudCOPC, source *PointCloudCOPCSource) *QuickViewPointCloudInfo {
+	info := pointCloudInfoFromSource(source)
+	if info == nil {
+		info = &QuickViewPointCloudInfo{Format: string(format.FormatCOPC)}
+	}
+	if result == nil {
+		return info
+	}
+	info.Format = strings.TrimSpace(result.SourceFormat)
+	if info.Format == "" {
+		info.Format = string(format.FormatCOPC)
+	}
+	resultID := result.ID
+	info.ResultID = &resultID
+	info.TaskID = result.TaskID
+	info.LastExecutionID = result.LastExecutionID
+	info.FileName = strings.TrimSpace(result.FileName)
+	if result.SizeBytes > 0 {
+		info.SizeBytes = result.SizeBytes
+	}
+	info.PreviewURL = pointCloudCOPCContentURL(result.ID)
 	info.UnavailableReason = ""
 	info.RecommendedAction = ""
 	return info
@@ -2240,6 +2440,37 @@ func GaussianSplatKSplatSourceFromAttributes(attrs map[string]interface{}) *Gaus
 		source.Representation = datatype.GaussianSplatRepresentation3DGS
 	}
 	return source
+}
+
+func PointCloudCOPCSourceFromAttributes(attrs map[string]interface{}) *PointCloudCOPCSource {
+	if len(attrs) == 0 {
+		return nil
+	}
+	if !strings.EqualFold(commonJSON.String(attrs, "item", "data_type"), string(datatype.PointCloud)) {
+		return nil
+	}
+	itemFormat := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "format")))
+	if itemFormat != string(format.FormatLAS) &&
+		itemFormat != string(format.FormatLAZ) &&
+		itemFormat != string(format.FormatE57) &&
+		itemFormat != string(format.FormatCOPC) {
+		return nil
+	}
+	itemLayout := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "layout")))
+	typeInfo := commonJSON.Section(attrs, "type_info.point_cloud")
+	storageInfo := commonJSON.Section(attrs, "storage")
+	sourceSizeBytes := commonJSON.InterfaceInt64(storageInfo["total_size"])
+	if sourceSizeBytes <= 0 {
+		sourceSizeBytes = commonJSON.InterfaceInt64(typeInfo["size_bytes"])
+	}
+	return &PointCloudCOPCSource{
+		Format:          itemFormat,
+		Layout:          itemLayout,
+		PointCloudKind:  strings.TrimSpace(commonJSON.InterfaceString(typeInfo["point_cloud_kind"])),
+		PointCount:      commonJSON.InterfaceInt64(typeInfo["point_count"]),
+		SourceSizeBytes: sourceSizeBytes,
+		Bounds3D:        bounds3DFromPayload(commonJSON.Section(typeInfo, "bounds_3d")),
+	}
 }
 
 func optionalBoolPtr(values map[string]interface{}, key string) *bool {

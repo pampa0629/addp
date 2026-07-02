@@ -61,6 +61,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := ensureGaussianSplatKSplatSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure gaussian splat KSplat schema: %w", err)
 	}
+	if err := ensurePointCloudCOPCSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure point cloud COPC schema: %w", err)
+	}
 	if err := ensureModel3DTilesSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure model 3d tiles schema: %w", err)
 	}
@@ -830,6 +833,77 @@ func ensureGaussianSplatKSplatSchema(db *gorm.DB) error {
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_gaussian_splat_ksplat_current_unique
 		ON manager.gaussian_splat_ksplat (tenant_id, item_fingerprint)
+		WHERE deleted_at IS NULL AND status <> 'deleted'
+	`).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensurePointCloudCOPCSchema(db *gorm.DB) error {
+	if err := db.AutoMigrate(&models.PointCloudCOPCTask{}, &models.PointCloudCOPC{}); err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		UPDATE manager.point_cloud_copc_tasks
+		SET enabled = false
+		WHERE enabled IS NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		ALTER TABLE manager.point_cloud_copc_tasks
+			ALTER COLUMN id TYPE BIGINT,
+			ALTER COLUMN tenant_id TYPE BIGINT,
+			ALTER COLUMN created_by TYPE BIGINT,
+			ALTER COLUMN enabled SET NOT NULL,
+			ALTER COLUMN created_at SET NOT NULL,
+			ALTER COLUMN updated_at SET NOT NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		ALTER TABLE manager.point_cloud_copc
+			ALTER COLUMN id TYPE BIGINT,
+			ALTER COLUMN tenant_id TYPE BIGINT,
+			ALTER COLUMN item_id TYPE BIGINT,
+			ALTER COLUMN task_id TYPE BIGINT,
+			ALTER COLUMN source_engine_id TYPE BIGINT,
+			ALTER COLUMN created_by TYPE BIGINT,
+			ALTER COLUMN created_at SET NOT NULL,
+			ALTER COLUMN updated_at SET NOT NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		WITH ranked AS (
+			SELECT
+				id,
+				ROW_NUMBER() OVER (
+					PARTITION BY tenant_id, config->'source'->>'item_fingerprint'
+					ORDER BY updated_at DESC, id DESC
+				) AS rn
+			FROM manager.point_cloud_copc_tasks
+			WHERE deleted_at IS NULL
+				AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
+		)
+		UPDATE manager.point_cloud_copc_tasks AS tasks
+		SET deleted_at = NOW(), updated_at = NOW(), enabled = false
+		FROM ranked
+		WHERE tasks.id = ranked.id AND ranked.rn > 1
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_point_cloud_copc_tasks_source_unique
+		ON manager.point_cloud_copc_tasks (tenant_id, ((config->'source'->>'item_fingerprint')))
+		WHERE deleted_at IS NULL AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_point_cloud_copc_current_unique
+		ON manager.point_cloud_copc (tenant_id, item_fingerprint)
 		WHERE deleted_at IS NULL AND status <> 'deleted'
 	`).Error; err != nil {
 		return err

@@ -3,7 +3,7 @@ set -e
 
 # 使用说明
 show_usage() {
-  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-asset] [-portal] [-python-workflow] [-math-workflow] [-model3d-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter]"
+  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-asset] [-portal] [-python-workflow] [-math-workflow] [-model3d-workflow] [-pointcloud-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter]"
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
@@ -26,6 +26,7 @@ show_usage() {
   echo "  -python-workflow   重启 Python Workflow Engine (Python 服务)"
   echo "  -math-workflow     重启 Math Workflow Engine (Python 服务)"
   echo "  -model3d-workflow  重启 Model3D Workflow Engine (Python 服务)"
+  echo "  -pointcloud-workflow 重启 PointCloud Workflow Engine (Python 服务)"
   echo "  -copilot     重启 Copilot Backend (Python 服务)"
   echo "  -agent       重启 Agent Backend (Python 服务)"
   echo "  -spark-workflow 重启 Spark 工作流 Engine (Python 服务)"
@@ -71,6 +72,7 @@ if [ -f ".env.local" ]; then
 fi
 
 export MODEL3D_WORKFLOW_PORT="${MODEL3D_WORKFLOW_PORT:-8101}"
+export POINTCLOUD_WORKFLOW_PORT="${POINTCLOUD_WORKFLOW_PORT:-8102}"
 
 # 自动生成服务 URL（与 start.sh 保持一致）
 generate_service_urls() {
@@ -85,6 +87,7 @@ generate_service_urls() {
     done
     [ -n "$MEILISEARCH_PORT" ] && export MEILISEARCH_URL="http://${SERVICE_HOST}:${MEILISEARCH_PORT}"
     [ -n "$MODEL3D_WORKFLOW_PORT" ] && export MODEL3D_WORKFLOW_URL="http://${SERVICE_HOST}:${MODEL3D_WORKFLOW_PORT}"
+    [ -n "$POINTCLOUD_WORKFLOW_PORT" ] && export POINTCLOUD_WORKFLOW_URL="http://${SERVICE_HOST}:${POINTCLOUD_WORKFLOW_PORT}"
 }
 
 generate_service_urls
@@ -129,7 +132,7 @@ for arg in "$@"; do
     -all)
       FORCE_BUILD_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-model3d-workflow|-copilot|-agent|-spark-workflow|-jupyter)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-copilot|-agent|-spark-workflow|-jupyter)
       module="${arg#-}"  # 移除前导的 -
       FORCE_BUILD_MODULES+=("$module")
       ;;
@@ -151,6 +154,7 @@ has_go_module_params() {
         if [[ "$module" != "python-workflow" &&
               "$module" != "math-workflow" &&
               "$module" != "model3d-workflow" &&
+              "$module" != "pointcloud-workflow" &&
               "$module" != "copilot" &&
               "$module" != "agent" &&
               "$module" != "spark-workflow" &&
@@ -163,7 +167,7 @@ has_go_module_params() {
 
 is_python_service_module() {
     case "$1" in
-        python-workflow|math-workflow|model3d-workflow|spark-workflow|jupyter|copilot|agent)
+        python-workflow|math-workflow|model3d-workflow|pointcloud-workflow|spark-workflow|jupyter|copilot|agent)
             return 0
             ;;
         *)
@@ -368,6 +372,22 @@ restart_model3d_workflow_service() {
     verify_pidfile_process_alive ".dev-pids/model3d-workflow-engine.pid" "Model3D Workflow Engine" "logs/model3d-workflow-engine.log" "logs/model3d-workflow-engine-stderr.log"
 }
 
+restart_pointcloud_workflow_service() {
+    local port="${POINTCLOUD_WORKFLOW_PORT:-8102}"
+    stop_pidfile_process ".dev-pids/pointcloud-workflow-engine.pid" "PointCloud Workflow Engine"
+    stop_matching_port_process "$port" "PointCloud Workflow Engine" "python.*api_server\\.py|engines/pointcloud-workflow"
+    require_service_python "engines/pointcloud-workflow" "PointCloud Workflow Engine" "pointcloud-workflow"
+    echo "  启动 PointCloud Workflow Engine..."
+    (
+        cd engines/pointcloud-workflow
+        export PORT="$port"
+        export INTERNAL_API_KEY="${INTERNAL_API_KEY:-}"
+        start_background_process "." ".dev-pids/pointcloud-workflow-engine.pid" "logs/pointcloud-workflow-engine.log" "logs/pointcloud-workflow-engine-stderr.log" ./venv/bin/python api_server.py
+    )
+    wait_http_ready "PointCloud Workflow Engine" "http://localhost:${port}/health"
+    verify_pidfile_process_alive ".dev-pids/pointcloud-workflow-engine.pid" "PointCloud Workflow Engine" "logs/pointcloud-workflow-engine.log" "logs/pointcloud-workflow-engine-stderr.log"
+}
+
 restart_spark_workflow_service() {
     local port="${SPARK_WORKFLOW_PORT:-8098}"
     stop_pidfile_process ".dev-pids/spark-workflow-engine.pid" "Spark Workflow Engine"
@@ -458,6 +478,9 @@ restart_scoped_python_services() {
             model3d-workflow)
                 restart_model3d_workflow_service
                 ;;
+            pointcloud-workflow)
+                restart_pointcloud_workflow_service
+                ;;
             spark-workflow)
                 restart_spark_workflow_service
                 ;;
@@ -526,6 +549,7 @@ echo "🐍 强制终止 Python 服务..."
 pkill -9 -f "engines/python-workflow/api_server.py" 2>/dev/null || true
 pkill -9 -f "engines/math-workflow/api_server.py" 2>/dev/null || true
 pkill -9 -f "engines/model3d-workflow/api_server.py" 2>/dev/null || true
+pkill -9 -f "engines/pointcloud-workflow/api_server.py" 2>/dev/null || true
 pkill -9 -f "engines/spark-workflow/api_server.py" 2>/dev/null || true
 pkill -9 -f "engines/jupyter/api_server.py" 2>/dev/null || true
 pkill -9 -f "jupyter.*lab" 2>/dev/null || true
@@ -598,6 +622,9 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     elif [ "$module" = "model3d-workflow" ]; then
       # Model3D Workflow Engine 是 Python 服务，不需要编译
       echo "  标记 Model3D Workflow Engine 需要重启（无需编译）"
+    elif [ "$module" = "pointcloud-workflow" ]; then
+      # PointCloud Workflow Engine 是 Python 服务，不需要编译
+      echo "  标记 PointCloud Workflow Engine 需要重启（无需编译）"
     elif [ "$module" = "spark-workflow" ]; then
       # Spark 工作流 Engine 是 Python 服务，不需要编译
       echo "  标记 Spark 工作流 Engine 需要重启（无需编译）"
@@ -630,6 +657,9 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
       # Python 服务无二进制文件
       :
     elif [ "$module" = "model3d-workflow" ]; then
+      # Python 服务无二进制文件
+      :
+    elif [ "$module" = "pointcloud-workflow" ]; then
       # Python 服务无二进制文件
       :
     elif [ "$module" = "spark-workflow" ]; then
@@ -665,6 +695,9 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
       # Python 服务无需清理 Go 缓存
       :
     elif [ "$module" = "model3d-workflow" ]; then
+      # Python 服务无需清理 Go 缓存
+      :
+    elif [ "$module" = "pointcloud-workflow" ]; then
       # Python 服务无需清理 Go 缓存
       :
     elif [ "$module" = "spark-workflow" ]; then

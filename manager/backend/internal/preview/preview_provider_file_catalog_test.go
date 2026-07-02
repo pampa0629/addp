@@ -453,7 +453,7 @@ func TestFileCatalog3DTilesPreviewUsesManifestStorageStreamURL(t *testing.T) {
 	}
 }
 
-func TestFileCatalogLASPreviewReturnsPointCloudJSON(t *testing.T) {
+func TestFileCatalogLASPreviewRequiresCOPCGeneration(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingFileCatalogPreviewPlugin{
 		engineType:   "nfs",
@@ -493,19 +493,22 @@ func TestFileCatalogLASPreviewReturnsPointCloudJSON(t *testing.T) {
 		t.Fatalf("object content missing: %#v", preview)
 	}
 	content := preview.Object.Content
-	if content.Kind != models.ObjectPreviewKindPointCloud || content.PreviewMaterial != "json" || content.FrontendRenderer != models.ObjectPreviewKindPointCloud {
-		t.Fatalf("content = %#v, want point_cloud JSON preview", content)
+	if content.Kind != models.ObjectPreviewKindPointCloud ||
+		content.PreviewMaterial != models.PreviewMaterialUnsupported ||
+		content.FrontendRenderer != models.ObjectPreviewKindUnsupported {
+		t.Fatalf("content = %#v, want point_cloud unsupported preview metadata", content)
 	}
-	payload, ok := content.JSON.(map[string]interface{})
-	if !ok {
-		t.Fatalf("content.JSON = %#v, want map", content.JSON)
+	if content.Metadata["preview_reason"] != "requires_copc_generation" {
+		t.Fatalf("preview_reason = %#v, want requires_copc_generation", content.Metadata["preview_reason"])
 	}
-	points, ok := payload["points"].([]map[string]interface{})
-	if !ok || len(points) != 3 {
-		t.Fatalf("points = %#v, want 3 sampled points", payload["points"])
+	if content.Metadata["preview_artifact_task_type"] != commonExecution.TaskTypePointCloudCOPCGeneration {
+		t.Fatalf("preview_artifact_task_type = %#v, want point_cloud_copc_generation", content.Metadata["preview_artifact_task_type"])
 	}
-	if enginePlugin.openContentCalls == 0 {
-		t.Fatal("OpenContent calls = 0, want stream read for LAS preview")
+	if content.JSON != nil {
+		t.Fatalf("content.JSON = %#v, want nil", content.JSON)
+	}
+	if enginePlugin.openContentCalls != 0 {
+		t.Fatalf("OpenContent calls = %d, want 0 when LAS preview requires COPC generation", enginePlugin.openContentCalls)
 	}
 }
 

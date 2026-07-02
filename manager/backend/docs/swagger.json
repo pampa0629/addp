@@ -2228,6 +2228,436 @@
                 }
             }
         },
+        "/point_cloud_copc": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "列出点云 COPC 快显结果 | List point cloud COPC quick view results",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "数据项ID | Item ID",
+                        "name": "item_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据项指纹 | Item fingerprint",
+                        "name": "item_fingerprint",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "task_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态 | Status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关键词 | Keyword",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "结果列表 | Result list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/point_cloud_copc/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取点云 COPC 快显详情 | Get point cloud COPC quick view detail",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "结果ID | Result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "结果详情 | Result detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.PointCloudCOPC"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除点云 COPC 快显 | Delete point cloud COPC quick view",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "结果ID | Result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/point_cloud_copc/{id}/content": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按 point cloud COPC id 返回 Manager infra MinIO 中的 COPC 内容，支持 HTTP Range。该接口只读取 Manager 拥有生命周期且状态为 ready 的 COPC 快显结果。 | Return COPC content from Manager infra MinIO by result id with HTTP Range support. Only ready Manager-owned results are readable.",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "读取点云 COPC 快显 | Read point cloud COPC quick view result",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "point cloud COPC ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "COPC 内容流 | COPC content stream"
+                    },
+                    "206": {
+                        "description": "部分 COPC 内容流 | Partial COPC content stream"
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "COPC 不存在或未就绪 | COPC not found or not ready",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "416": {
+                        "description": "Range 不可满足 | Range not satisfiable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/point_cloud_copc_tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "列出 Manager 模块的点云 COPC 快显任务配置。该私有入口固定返回 task_type=point_cloud_copc_generation；编排模块应使用标准 /tasks 入口。| List Manager point cloud COPC quick view generation task configurations.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "列出点云 COPC 快显任务配置 | List point cloud COPC quick view generation task configurations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务列表 | Task list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "创建新的点云 COPC 快显任务配置。源必须是 format=las、laz 或 e57 的 point_cloud item，并转换为 COPC artifact 写入 Manager infra MinIO；format=copc 的源文件直接基础预览，不创建快显任务。| Create a point cloud COPC quick view task from a format=las, laz, or e57 point_cloud item into Manager infra MinIO. format=copc sources are previewed directly and do not create quick view tasks.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "创建点云 COPC 快显任务配置 | Create point cloud COPC quick view generation task configuration",
+                "parameters": [
+                    {
+                        "description": "point cloud COPC generation task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PointCloudCOPCTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "创建的任务配置 | Created task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PointCloudCOPCTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/point_cloud_copc_tasks/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取点云 COPC 快显任务配置 | Get point cloud COPC quick view generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务配置 | Task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PointCloudCOPCTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "更新点云 COPC 快显任务配置 | Update point cloud COPC quick view generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "point cloud COPC generation task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PointCloudCOPCTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的任务配置 | Updated task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PointCloudCOPCTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除点云 COPC 快显任务配置 | Delete point cloud COPC quick view generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/preview": {
             "get": {
                 "security": [
@@ -2459,7 +2889,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，目前支持生成栅格 COG、三维模型 GLB 快显和 3DGS KSplat 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts.",
+                "description": "前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，目前支持生成栅格 COG、三维模型 GLB 快显、3DGS KSplat 快显和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3825,7 +4255,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|embedding | Task type filter",
+                        "description": "任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding | Task type filter",
                         "name": "task_type",
                         "in": "query"
                     },
@@ -3884,7 +4314,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|embedding | Task type",
+                        "description": "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -3942,7 +4372,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|embedding | Task type",
+                        "description": "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -5107,6 +5537,71 @@
                 }
             }
         },
+        "github_com_addp_manager_internal_models.PointCloudCOPC": {
+            "type": "object",
+            "properties": {
+                "content_url": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "source_engine_id": {
+                    "type": "integer"
+                },
+                "source_format": {
+                    "type": "string"
+                },
+                "source_size_bytes": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "storage_ref": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_manager_internal_models.RasterCOG": {
             "type": "object",
             "properties": {
@@ -5524,6 +6019,9 @@
                 "optimization": {
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.VectorMaterializedViewInfo"
                 },
+                "point_cloud": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewPointCloudInfo"
+                },
                 "preferred_mode": {
                     "type": "string"
                 },
@@ -5680,6 +6178,50 @@
                 },
                 "task_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.QuickViewPointCloudInfo": {
+            "type": "object",
+            "properties": {
+                "bounds_3d": {
+                    "$ref": "#/definitions/datatype.Bounds3D"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "layout": {
+                    "type": "string"
+                },
+                "point_cloud_kind": {
+                    "type": "string"
+                },
+                "point_count": {
+                    "type": "integer"
+                },
+                "preview_url": {
+                    "type": "string"
+                },
+                "recommended_action": {
+                    "type": "string"
+                },
+                "result_id": {
+                    "type": "integer"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "unavailable_reason": {
+                    "type": "string"
                 }
             }
         },
@@ -6864,6 +7406,119 @@
             "properties": {
                 "format": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.PointCloudCOPCTaskRequest": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "schedule": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.PointCloudCOPCTaskResponse": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "result": {
+                    "$ref": "#/definitions/internal_api.PointCloudCOPCTaskResultResponse"
+                },
+                "schedule": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/internal_api.PointCloudCOPCTaskSourceResponse"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.PointCloudCOPCTaskResultResponse": {
+            "type": "object",
+            "properties": {
+                "file_name": {
+                    "type": "string"
+                },
+                "storage_ref": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.PointCloudCOPCTaskSourceResponse": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "item_locator": {
+                    "type": "string"
+                },
+                "source_engine_id": {
+                    "type": "integer"
+                },
+                "source_size_bytes": {
+                    "type": "integer"
                 }
             }
         },

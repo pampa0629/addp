@@ -472,7 +472,7 @@ func TestModel3DContentHandlerRoutes3DTilesRenderer(t *testing.T) {
 	}
 }
 
-func TestPointCloudContentHandlerSamplesLASPoints(t *testing.T) {
+func TestPointCloudContentHandlerRequiresCOPCGenerationForLAS(t *testing.T) {
 	t.Parallel()
 	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "pointcloud", Builtin: models.ObjectPreviewKindPointCloud})
 	if err != nil {
@@ -493,34 +493,35 @@ func TestPointCloudContentHandlerSamplesLASPoints(t *testing.T) {
 		t.Fatalf("HandleStream() error = %v", err)
 	}
 	if truncated {
-		t.Fatalf("truncated = true, want false for tiny point cloud")
+		t.Fatalf("truncated = true, want false")
 	}
-	if content.Kind != models.ObjectPreviewKindPointCloud || content.PreviewMaterial != models.PreviewMaterialJSON || content.FrontendRenderer != models.ObjectPreviewKindPointCloud {
-		t.Fatalf("content = %#v, want point_cloud json preview", content)
+	if content.Kind != models.ObjectPreviewKindPointCloud ||
+		content.PreviewMaterial != models.PreviewMaterialUnsupported ||
+		content.FrontendRenderer != models.ObjectPreviewKindUnsupported {
+		t.Fatalf("content = %#v, want unsupported point_cloud metadata preview", content)
 	}
-	payload, ok := content.JSON.(map[string]interface{})
-	if !ok {
-		t.Fatalf("content.JSON = %#v, want map", content.JSON)
+	if content.Metadata["preview_reason"] != "requires_copc_generation" {
+		t.Fatalf("preview_reason = %#v, want requires_copc_generation", content.Metadata["preview_reason"])
 	}
-	points, ok := payload["points"].([]map[string]interface{})
-	if !ok || len(points) != 3 {
-		t.Fatalf("points = %#v, want 3 sampled points", payload["points"])
+	if content.Metadata["preview_artifact_task_type"] != "point_cloud_copc_generation" {
+		t.Fatalf("preview_artifact_task_type = %#v, want point_cloud_copc_generation", content.Metadata["preview_artifact_task_type"])
 	}
-	if points[0]["x"] != 1.0 || points[0]["y"] != 2.0 || points[0]["z"] != 3.0 {
-		t.Fatalf("first point = %#v, want scaled coordinates 1/2/3", points[0])
+	if content.JSON != nil {
+		t.Fatalf("content.JSON = %#v, want nil", content.JSON)
 	}
 }
 
-func TestPointCloudContentHandlerReturnsUnsupportedForNonLASFormats(t *testing.T) {
+func TestPointCloudContentHandlerReturnsCOPCURLPreview(t *testing.T) {
 	t.Parallel()
 	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "pointcloud", Builtin: models.ObjectPreviewKindPointCloud})
 	if err != nil {
 		t.Fatalf("build pointcloud handler: %v", err)
 	}
 	req := &ObjectContentRequest{
-		Format:    string(format.FormatCOPC),
-		Extension: ".copc",
-		Size:      4096,
+		Format:     string(format.FormatCOPC),
+		Extension:  ".copc",
+		Size:       4096,
+		PreviewURL: "/api/v1/manager/storage-stream?engine_id=26&storage_ref=pointcloud%2Fsample.copc.laz",
 		Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
 				"data_type": "point_cloud",
@@ -546,19 +547,25 @@ func TestPointCloudContentHandlerReturnsUnsupportedForNonLASFormats(t *testing.T
 		t.Fatalf("Handle() error = %v", err)
 	}
 	if called {
-		t.Fatal("fetcher was called for unsupported COPC sampling")
+		t.Fatal("fetcher was called for COPC URL preview")
 	}
 	if truncated {
 		t.Fatal("truncated = true, want false")
 	}
 	if content.Kind != models.ObjectPreviewKindPointCloud ||
-		content.PreviewMaterial != models.PreviewMaterialUnsupported ||
-		content.FrontendRenderer != models.ObjectPreviewKindUnsupported {
-		t.Fatalf("content = %#v, want unsupported point_cloud metadata preview", content)
+		content.PreviewMaterial != models.PreviewMaterialURL ||
+		content.FrontendRenderer != models.ObjectPreviewKindPointCloud {
+		t.Fatalf("content = %#v, want point_cloud URL preview", content)
+	}
+	if content.URL != req.PreviewURL {
+		t.Fatalf("content.URL = %q, want %q", content.URL, req.PreviewURL)
 	}
 	pointCloud := commonJSON.Section(content.Metadata, "point_cloud")
 	if commonJSON.InterfaceInt64(pointCloud["point_count"]) != 1234 {
 		t.Fatalf("metadata.point_cloud = %#v, want point_count 1234", pointCloud)
+	}
+	if content.Metadata["preview_artifact_status"] != "ready" {
+		t.Fatalf("preview_artifact_status = %#v, want ready", content.Metadata["preview_artifact_status"])
 	}
 }
 

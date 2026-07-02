@@ -389,7 +389,7 @@ check_service_changed() {
             fi
             ;;
 
-        python-workflow-engine|spark-workflow-engine|jupyter-engine|raster-mosaic-runtime)
+        python-workflow-engine|pointcloud-workflow-engine|spark-workflow-engine|jupyter-engine|raster-mosaic-runtime)
             # Python service: compare source file time (Dockerfile + Python source files)
             comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
                 -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
@@ -572,7 +572,7 @@ build_service() {
             fi
             ;;
 
-        spark-workflow-engine|jupyter-engine)
+        pointcloud-workflow-engine|spark-workflow-engine|jupyter-engine)
             # Python Engine: Python service built from source
             build_context="${service_dir}"
             dockerfile_path="${service_dir}/Dockerfile"
@@ -798,6 +798,7 @@ main() {
         "python-workflow-engine:engines/python-workflow"
         "raster-mosaic-runtime:manager/raster-mosaic-runtime"
         "model3d-workflow-engine:engines/model3d-workflow"
+        "pointcloud-workflow-engine:engines/pointcloud-workflow"
         "spark-workflow-engine:engines/spark-workflow"
         "jupyter-engine:engines/jupyter"
         "transfer-worker:transfer/backend"

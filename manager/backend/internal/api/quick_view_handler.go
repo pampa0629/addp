@@ -55,16 +55,18 @@ type QuickViewHandler struct {
 	rasterCOGTaskSvc           *service.RasterCOGTaskService
 	model3DGLBTaskSvc          *service.Model3DGLBTaskService
 	gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService
+	pointCloudCOPCTaskSvc      *service.PointCloudCOPCTaskService
 }
 
 func NewQuickViewHandler(service *service.QuickViewService, previewResolver *preview.PreviewResolver, mvtService *service.UnifiedMVTService, _ *redis.Client) *QuickViewHandler {
 	return &QuickViewHandler{service: service, previewResolver: previewResolver, mvtService: mvtService}
 }
 
-func (h *QuickViewHandler) SetArtifactTaskServices(rasterCOGTaskSvc *service.RasterCOGTaskService, model3DGLBTaskSvc *service.Model3DGLBTaskService, gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService) {
+func (h *QuickViewHandler) SetArtifactTaskServices(rasterCOGTaskSvc *service.RasterCOGTaskService, model3DGLBTaskSvc *service.Model3DGLBTaskService, gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService, pointCloudCOPCTaskSvc *service.PointCloudCOPCTaskService) {
 	h.rasterCOGTaskSvc = rasterCOGTaskSvc
 	h.model3DGLBTaskSvc = model3DGLBTaskSvc
 	h.gaussianSplatKSplatTaskSvc = gaussianSplatKSplatTaskSvc
+	h.pointCloudCOPCTaskSvc = pointCloudCOPCTaskSvc
 }
 
 type UpdatePreferredModeRequest struct {
@@ -119,7 +121,7 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 
 // ExecuteQuickViewAction 执行 locator 快显动作
 // @Summary 执行 locator 快显动作 | Execute locator quick view action
-// @Description 前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，目前支持生成栅格 COG、三维模型 GLB 快显和 3DGS KSplat 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts.
+// @Description 前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，目前支持生成栅格 COG、三维模型 GLB 快显、3DGS KSplat 快显和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts.
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -178,6 +180,9 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 	case service.QuickViewActionGenerateGaussianSplatKSplat:
 		taskType = commonExecution.TaskTypeGaussianSplatKSplatGeneration
 		taskID, executionID, err = h.createAndExecuteGaussianSplatKSplatTask(c.Request.Context(), userID, capability, source)
+	case service.QuickViewActionGeneratePointCloudCOPC:
+		taskType = commonExecution.TaskTypePointCloudCOPCGeneration
+		taskID, executionID, err = h.createAndExecutePointCloudCOPCTask(c.Request.Context(), userID, capability, source)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported quick view action: " + action})
 		return
@@ -640,6 +645,31 @@ func (h *QuickViewHandler) createAndExecuteGaussianSplatKSplatTask(ctx context.C
 	return task.ID, executionID, nil
 }
 
+func (h *QuickViewHandler) createAndExecutePointCloudCOPCTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource) (uint, string, error) {
+	if h.pointCloudCOPCTaskSvc == nil {
+		return 0, "", errors.New("point cloud COPC task service is not initialized")
+	}
+	config, err := pointCloudCOPCTaskConfigFromQuickView(capability, source)
+	if err != nil {
+		return 0, "", err
+	}
+	task := models.PointCloudCOPCTask{
+		TenantID:  capability.TenantID,
+		Name:      quickViewActionTaskName("点云 COPC 快显", capability),
+		Enabled:   true,
+		Config:    config,
+		CreatedBy: &userID,
+	}
+	if err := h.pointCloudCOPCTaskSvc.Create(ctx, &task); err != nil {
+		return 0, "", err
+	}
+	executionID, err := h.pointCloudCOPCTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	if err != nil {
+		return task.ID, "", err
+	}
+	return task.ID, executionID, nil
+}
+
 func rasterCOGTaskConfigFromQuickView(capability *service.QuickViewCapability, source service.QuickViewSource) (commonModels.JSONMap, error) {
 	if capability == nil || capability.SourceKind != service.QuickViewSourceKindRaster || source.Raster == nil {
 		return nil, errors.New("quick view source is not a raster COG generation source")
@@ -698,6 +728,20 @@ func gaussianSplatKSplatTaskConfigFromQuickView(capability *service.QuickViewCap
 		return nil, errors.New("quick view source is not a gaussian_splat KSplat generation source")
 	}
 	sourceMap, err := quickViewArtifactSourceConfig(capability, source.EngineID, source.GaussianSplat.Format, source.GaussianSplat.SourceSizeBytes)
+	if err != nil {
+		return nil, err
+	}
+	return commonModels.JSONMap{
+		"source": sourceMap,
+		"result": commonModels.JSONMap{},
+	}, nil
+}
+
+func pointCloudCOPCTaskConfigFromQuickView(capability *service.QuickViewCapability, source service.QuickViewSource) (commonModels.JSONMap, error) {
+	if capability == nil || capability.SourceKind != service.QuickViewSourceKindPointCloud || source.PointCloud == nil {
+		return nil, errors.New("quick view source is not a point_cloud COPC generation source")
+	}
+	sourceMap, err := quickViewArtifactSourceConfig(capability, source.EngineID, source.PointCloud.Format, source.PointCloud.SourceSizeBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -814,6 +858,21 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 		source.GeoJSONURL = locatorQuickViewGeoJSONURL(source.Identity.Locator, tablePreview)
 	}
 	if tablePreview.Object != nil {
+		pointCloud := service.PointCloudCOPCSourceFromAttributes(tablePreview.Object.Attributes)
+		if pointCloud != nil {
+			source.EngineID = tablePreview.Object.EngineID
+			if tablePreview.Object.Content != nil {
+				pointCloud.PreviewURL = strings.TrimSpace(tablePreview.Object.Content.URL)
+			}
+			if pointCloud.PreviewURL == "" {
+				pointCloud.PreviewURL = strings.TrimSpace(tablePreview.Object.URL)
+			}
+			source.PointCloud = pointCloud
+			source.DirectGeoJSON = false
+			source.GeoJSONURL = ""
+			source.CanTile = false
+			return source
+		}
 		gaussianSplat := service.GaussianSplatKSplatSourceFromAttributes(tablePreview.Object.Attributes)
 		if gaussianSplat != nil {
 			source.EngineID = tablePreview.Object.EngineID

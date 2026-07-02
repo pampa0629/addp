@@ -12,11 +12,12 @@ engines/
 ├── spark-workflow/   # Spark 工作流引擎，默认端口 8098
 ├── math-workflow/    # 数学工作流参考实现，默认端口 8089，开发环境自动启动服务但需手动注册
 ├── model3d-workflow/ # 三维模型转换运行时，默认端口 8101，开发环境自动启动并自注册，需配置 MODEL3D_CONVERTER_BIN 指向可执行文件路径
+├── pointcloud-workflow/ # 点云处理运行时，默认端口 8102，开发环境自动启动并自注册，需配置 POINTCLOUD_PDAL_BIN 指向 PDAL 可执行文件路径
 ├── jupyter/          # Jupyter API 8097，Lab 8088
 └── docs/             # 引擎 API 与设计文档
 ```
 
-端口以 `.env` 和 `scripts/dev/start.sh` 为准：`PYTHON_WORKFLOW_PORT`、`SPARK_WORKFLOW_PORT`、`MATH_WORKFLOW_PORT`、`MODEL3D_WORKFLOW_PORT`、`JUPYTER_API_PORT`、`JUPYTER_LAB_PORT`。
+端口以 `.env` 和 `scripts/dev/start.sh` 为准：`PYTHON_WORKFLOW_PORT`、`SPARK_WORKFLOW_PORT`、`MATH_WORKFLOW_PORT`、`MODEL3D_WORKFLOW_PORT`、`POINTCLOUD_WORKFLOW_PORT`、`JUPYTER_API_PORT`、`JUPYTER_LAB_PORT`。
 
 ## 开发规则
 
@@ -32,6 +33,7 @@ bash scripts/dev/start.sh -python-workflow
 bash scripts/dev/start.sh -spark-workflow
 bash scripts/dev/start.sh -math-workflow
 bash scripts/dev/start.sh -model3d-workflow
+bash scripts/dev/start.sh -pointcloud-workflow
 bash scripts/dev/start.sh -jupyter
 ```
 
@@ -42,6 +44,7 @@ curl http://localhost:8099/health
 curl http://localhost:8098/health
 curl http://localhost:8089/health
 curl http://localhost:8101/health
+curl http://localhost:8102/health
 curl http://localhost:8097/health
 ```
 

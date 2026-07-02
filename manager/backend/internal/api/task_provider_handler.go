@@ -31,6 +31,7 @@ type TaskProviderHandler struct {
 	model3DGLBTaskSvc             *service.Model3DGLBTaskService
 	model3DTilesTaskSvc           *service.Model3DTilesTaskService
 	gaussianSplatKSplatTaskSvc    *service.GaussianSplatKSplatTaskService
+	pointCloudCOPCTaskSvc         *service.PointCloudCOPCTaskService
 	taskExecRepo                  *commonExecution.TaskExecutionRepository
 }
 
@@ -66,6 +67,10 @@ func (h *TaskProviderHandler) SetModel3DGLBTaskService(model3DGLBTaskSvc *servic
 
 func (h *TaskProviderHandler) SetGaussianSplatKSplatTaskService(gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService) {
 	h.gaussianSplatKSplatTaskSvc = gaussianSplatKSplatTaskSvc
+}
+
+func (h *TaskProviderHandler) SetPointCloudCOPCTaskService(pointCloudCOPCTaskSvc *service.PointCloudCOPCTaskService) {
+	h.pointCloudCOPCTaskSvc = pointCloudCOPCTaskSvc
 }
 
 // TaskListResponse 任务列表响应（统一包装 Manager provider 声明的任务类型）
@@ -452,13 +457,56 @@ type GaussianSplatKSplatTaskResponse struct {
 	UpdatedAt           time.Time                              `json:"updated_at"`
 }
 
+type PointCloudCOPCTaskRequest struct {
+	Name        string               `json:"name"`
+	Description string               `json:"description,omitempty"`
+	Enabled     *bool                `json:"enabled,omitempty"`
+	Schedule    string               `json:"schedule,omitempty"`
+	NextRunAt   *time.Time           `json:"next_run_at,omitempty"`
+	Config      commonModels.JSONMap `json:"config"`
+}
+
+type PointCloudCOPCTaskSourceResponse struct {
+	ItemLocator     string `json:"item_locator,omitempty"`
+	SourceEngineID  uint   `json:"source_engine_id,omitempty"`
+	ItemFingerprint string `json:"item_fingerprint,omitempty"`
+	ItemID          uint   `json:"item_id,omitempty"`
+	Format          string `json:"format,omitempty"`
+	SourceSizeBytes int64  `json:"source_size_bytes,omitempty"`
+}
+
+type PointCloudCOPCTaskResultResponse struct {
+	StorageRef string `json:"storage_ref,omitempty"`
+	FileName   string `json:"file_name,omitempty"`
+}
+
+type PointCloudCOPCTaskResponse struct {
+	ID                  uint                              `json:"id"`
+	TenantID            uint                              `json:"tenant_id"`
+	TaskType            string                            `json:"task_type"`
+	Name                string                            `json:"name"`
+	Description         string                            `json:"description,omitempty"`
+	Enabled             bool                              `json:"enabled"`
+	Schedule            string                            `json:"schedule,omitempty"`
+	NextRunAt           *time.Time                        `json:"next_run_at,omitempty"`
+	LastRunAt           *time.Time                        `json:"last_run_at,omitempty"`
+	LastExecutionID     *string                           `json:"last_execution_id,omitempty"`
+	LastExecutionStatus *string                           `json:"last_execution_status,omitempty"`
+	CreatedBy           *uint                             `json:"created_by,omitempty"`
+	Config              commonModels.JSONMap              `json:"config"`
+	Source              *PointCloudCOPCTaskSourceResponse `json:"source,omitempty"`
+	Result              *PointCloudCOPCTaskResultResponse `json:"result,omitempty"`
+	CreatedAt           time.Time                         `json:"created_at"`
+	UpdatedAt           time.Time                         `json:"updated_at"`
+}
+
 // ListTasks GET /api/v1/manager/tasks
-// 查询参数：?task_type=vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|embedding
+// 查询参数：?task_type=vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding
 // @Summary 列出任务 | List tasks
 // @Description 列出 Manager 模块的任务（矢量瓦片缓存生成、矢量物化视图、栅格快显 COG 生成、栅格 mosaic 生成、三维模型 GLB 快显生成、三维模型 3D Tiles 生成和向量化任务）| List Manager module tasks
 // @Tags Manager
 // @Produce json
-// @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|embedding | Task type filter"
+// @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding | Task type filter"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} TaskListResponse "任务列表 | Task list"
@@ -613,6 +661,24 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
 		}
+	case commonExecution.TaskTypePointCloudCOPCGeneration:
+		if h.pointCloudCOPCTaskSvc == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "point cloud COPC generation task service is unavailable"})
+			return
+		}
+		tasks, t, err := h.pointCloudCOPCTaskSvc.List(ctx, tenantID, page, pageSize)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		total = t
+		for _, task := range tasks {
+			items = append(items, TaskListItem{
+				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypePointCloudCOPCGeneration,
+				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
+				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
+			})
+		}
 	case commonExecution.TaskTypeEmbedding:
 		if h.embeddingTaskSvc == nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "embedding task service is unavailable"})
@@ -708,6 +774,17 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 			total += t
 			for _, task := range tasks {
 				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeGaussianSplatKSplatGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
+			}
+		}
+		if h.pointCloudCOPCTaskSvc != nil {
+			tasks, t, err := h.pointCloudCOPCTaskSvc.List(ctx, tenantID, page, pageSize)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			total += t
+			for _, task := range tasks {
+				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypePointCloudCOPCGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
 			}
 		}
 		if h.embeddingTaskSvc != nil {
@@ -820,7 +897,7 @@ func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
 // @Description 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and ID
 // @Tags Manager
 // @Produce json
-// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|embedding | Task type"
+// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding | Task type"
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} object "任务详情，按 task_type 返回矢量瓦片缓存、矢量物化视图、栅格 COG 生成或向量化任务详情 | Task detail by task_type"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -916,6 +993,17 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, gaussianSplatKSplatTaskResponse(task))
+	case commonExecution.TaskTypePointCloudCOPCGeneration:
+		task, err := h.pointCloudCOPCTaskSvc.GetByID(ctx, uint(id), tenantID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if task == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+			return
+		}
+		c.JSON(http.StatusOK, pointCloudCOPCTaskResponse(task))
 	case commonExecution.TaskTypeEmbedding:
 		task, err := h.embeddingTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -981,7 +1069,7 @@ type TaskExecuteResponse struct {
 // @Tags Manager
 // @Accept json
 // @Produce json
-// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|embedding | Task type"
+// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding | Task type"
 // @Param id path int true "任务ID | Task ID"
 // @Param body body TaskExecuteRequest false "执行配置 | Execution configuration"
 // @Success 202 {object} TaskExecuteResponse "执行ID | Execution ID"
@@ -1039,6 +1127,8 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 		executionID, err = h.model3DGLBTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	case commonExecution.TaskTypeGaussianSplatKSplatGeneration:
 		executionID, err = h.gaussianSplatKSplatTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+	case commonExecution.TaskTypePointCloudCOPCGeneration:
+		executionID, err = h.pointCloudCOPCTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	case commonExecution.TaskTypeEmbedding:
 		executionID, err = h.embeddingTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	default:
@@ -2331,6 +2421,159 @@ func (h *TaskProviderHandler) DeleteGaussianSplatKSplatTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }
 
+// ListPointCloudCOPCTasks GET /api/v1/manager/point_cloud_copc_tasks
+// @Summary 列出点云 COPC 快显任务配置 | List point cloud COPC quick view generation task configurations
+// @Description 列出 Manager 模块的点云 COPC 快显任务配置。该私有入口固定返回 task_type=point_cloud_copc_generation；编排模块应使用标准 /tasks 入口。| List Manager point cloud COPC quick view generation task configurations.
+// @Tags Manager
+// @Produce json
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /point_cloud_copc_tasks [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListPointCloudCOPCTasks(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	tasks, total, err := h.pointCloudCOPCTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	items := make([]PointCloudCOPCTaskResponse, 0, len(tasks))
+	for _, task := range tasks {
+		items = append(items, pointCloudCOPCTaskResponse(task))
+	}
+	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize})
+}
+
+// CreatePointCloudCOPCTask POST /api/v1/manager/point_cloud_copc_tasks
+// @Summary 创建点云 COPC 快显任务配置 | Create point cloud COPC quick view generation task configuration
+// @Description 创建新的点云 COPC 快显任务配置。源必须是 format=las、laz 或 e57 的 point_cloud item，并转换为 COPC artifact 写入 Manager infra MinIO；format=copc 的源文件直接基础预览，不创建快显任务。| Create a point cloud COPC quick view task from a format=las, laz, or e57 point_cloud item into Manager infra MinIO. format=copc sources are previewed directly and do not create quick view tasks.
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param body body PointCloudCOPCTaskRequest true "point cloud COPC generation task configuration"
+// @Success 201 {object} PointCloudCOPCTaskResponse "创建的任务配置 | Created task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /point_cloud_copc_tasks [post]
+// @Security BearerAuth
+func (h *TaskProviderHandler) CreatePointCloudCOPCTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	userID := c.GetUint("user_id")
+	req, err := decodePointCloudCOPCTaskRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	task := models.PointCloudCOPCTask{
+		TenantID:    tenantID,
+		Name:        strings.TrimSpace(req.Name),
+		Description: strings.TrimSpace(req.Description),
+		Enabled:     enabled,
+		Schedule:    strings.TrimSpace(req.Schedule),
+		NextRunAt:   req.NextRunAt,
+		Config:      req.Config,
+		CreatedBy:   &userID,
+	}
+	if err := h.pointCloudCOPCTaskSvc.Create(c.Request.Context(), &task); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, pointCloudCOPCTaskResponse(&task))
+}
+
+// GetPointCloudCOPCTask GET /api/v1/manager/point_cloud_copc_tasks/:id
+// @Summary 获取点云 COPC 快显任务配置 | Get point cloud COPC quick view generation task configuration
+// @Tags Manager
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} PointCloudCOPCTaskResponse "任务配置 | Task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Router /point_cloud_copc_tasks/{id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) GetPointCloudCOPCTask(c *gin.Context) {
+	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypePointCloudCOPCGeneration})
+	h.TaskDetail(c)
+}
+
+// UpdatePointCloudCOPCTask PUT /api/v1/manager/point_cloud_copc_tasks/:id
+// @Summary 更新点云 COPC 快显任务配置 | Update point cloud COPC quick view generation task configuration
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Param body body PointCloudCOPCTaskRequest true "point cloud COPC generation task configuration"
+// @Success 200 {object} PointCloudCOPCTaskResponse "更新后的任务配置 | Updated task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Router /point_cloud_copc_tasks/{id} [put]
+// @Security BearerAuth
+func (h *TaskProviderHandler) UpdatePointCloudCOPCTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	existing, err := h.pointCloudCOPCTaskSvc.GetByID(c.Request.Context(), uint(id), tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existing == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+		return
+	}
+	req, err := decodePointCloudCOPCTaskRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	existing.Name = strings.TrimSpace(req.Name)
+	existing.Description = strings.TrimSpace(req.Description)
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
+	existing.Schedule = strings.TrimSpace(req.Schedule)
+	existing.NextRunAt = req.NextRunAt
+	existing.Config = req.Config
+	if err := h.pointCloudCOPCTaskSvc.Update(c.Request.Context(), existing); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, pointCloudCOPCTaskResponse(existing))
+}
+
+// DeletePointCloudCOPCTask DELETE /api/v1/manager/point_cloud_copc_tasks/:id
+// @Summary 删除点云 COPC 快显任务配置 | Delete point cloud COPC quick view generation task configuration
+// @Tags Manager
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Router /point_cloud_copc_tasks/{id} [delete]
+// @Security BearerAuth
+func (h *TaskProviderHandler) DeletePointCloudCOPCTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	if err := h.pointCloudCOPCTaskSvc.Delete(c.Request.Context(), uint(id), tenantID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
 // ListRasterCOGs GET /api/v1/manager/raster_cog
 // @Summary 列出栅格快显 COG | List raster COG results
 // @Tags Manager
@@ -2583,6 +2826,92 @@ func (h *TaskProviderHandler) DeleteGaussianSplatKSplat(c *gin.Context) {
 		return
 	}
 	if err := h.gaussianSplatKSplatTaskSvc.DeleteResult(c.Request.Context(), uint(id), tenantID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+// ListPointCloudCOPCs GET /api/v1/manager/point_cloud_copc
+// @Summary 列出点云 COPC 快显结果 | List point cloud COPC quick view results
+// @Tags Manager
+// @Produce json
+// @Param item_id query int false "数据项ID | Item ID"
+// @Param item_fingerprint query string false "数据项指纹 | Item fingerprint"
+// @Param task_id query int false "任务ID | Task ID"
+// @Param status query string false "状态 | Status"
+// @Param q query string false "关键词 | Keyword"
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "结果列表 | Result list"
+// @Router /point_cloud_copc [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListPointCloudCOPCs(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	itemID64, _ := strconv.ParseUint(c.Query("item_id"), 10, 32)
+	taskID64, _ := strconv.ParseUint(c.Query("task_id"), 10, 32)
+	results, total, err := h.pointCloudCOPCTaskSvc.ListResults(c.Request.Context(), repository.PointCloudCOPCFilter{
+		TenantID:        tenantID,
+		ItemID:          uint(itemID64),
+		ItemFingerprint: c.Query("item_fingerprint"),
+		TaskID:          uint(taskID64),
+		Status:          c.Query("status"),
+		Q:               c.Query("q"),
+		Page:            page,
+		PageSize:        pageSize,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": results, "total": total, "page": page, "page_size": pageSize})
+}
+
+// GetPointCloudCOPC GET /api/v1/manager/point_cloud_copc/:id
+// @Summary 获取点云 COPC 快显详情 | Get point cloud COPC quick view detail
+// @Tags Manager
+// @Produce json
+// @Param id path int true "结果ID | Result ID"
+// @Success 200 {object} models.PointCloudCOPC "结果详情 | Result detail"
+// @Router /point_cloud_copc/{id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) GetPointCloudCOPC(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
+		return
+	}
+	result, err := h.pointCloudCOPCTaskSvc.GetResult(c.Request.Context(), uint(id), tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if result == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "结果不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// DeletePointCloudCOPC DELETE /api/v1/manager/point_cloud_copc/:id
+// @Summary 删除点云 COPC 快显 | Delete point cloud COPC quick view
+// @Tags Manager
+// @Produce json
+// @Param id path int true "结果ID | Result ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Router /point_cloud_copc/{id} [delete]
+// @Security BearerAuth
+func (h *TaskProviderHandler) DeletePointCloudCOPC(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
+		return
+	}
+	if err := h.pointCloudCOPCTaskSvc.DeleteResult(c.Request.Context(), uint(id), tenantID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -2883,6 +3212,22 @@ func decodeGaussianSplatKSplatTaskRequest(c *gin.Context) (GaussianSplatKSplatTa
 	return req, nil
 }
 
+func decodePointCloudCOPCTaskRequest(c *gin.Context) (PointCloudCOPCTaskRequest, error) {
+	var req PointCloudCOPCTaskRequest
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		return req, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return req, errors.New("request body must contain a single JSON object")
+	}
+	if req.Config == nil {
+		req.Config = commonModels.JSONMap{}
+	}
+	return req, nil
+}
+
 func tileCacheTaskResponse(task *models.TileCacheTask) TileCacheTaskResponse {
 	resp := TileCacheTaskResponse{}
 	if task == nil {
@@ -3149,6 +3494,47 @@ func gaussianSplatKSplatTaskResponse(task *models.GaussianSplatKSplatTask) Gauss
 	}
 	if result, ok := asJSONMap(task.Config["result"]); ok {
 		resp.Result = &GaussianSplatKSplatTaskResultResponse{
+			StorageRef: stringFromConfig(result["storage_ref"]),
+			FileName:   stringFromConfig(result["file_name"]),
+		}
+	}
+	return resp
+}
+
+func pointCloudCOPCTaskResponse(task *models.PointCloudCOPCTask) PointCloudCOPCTaskResponse {
+	resp := PointCloudCOPCTaskResponse{}
+	if task == nil {
+		return resp
+	}
+	resp = PointCloudCOPCTaskResponse{
+		ID:                  task.ID,
+		TenantID:            task.TenantID,
+		TaskType:            commonExecution.TaskTypePointCloudCOPCGeneration,
+		Name:                task.Name,
+		Description:         task.Description,
+		Enabled:             task.Enabled,
+		Schedule:            task.Schedule,
+		NextRunAt:           task.NextRunAt,
+		LastRunAt:           task.LastRunAt,
+		LastExecutionID:     task.LastExecutionID,
+		LastExecutionStatus: task.LastExecutionStatus,
+		CreatedBy:           task.CreatedBy,
+		Config:              task.Config,
+		CreatedAt:           task.CreatedAt,
+		UpdatedAt:           task.UpdatedAt,
+	}
+	if source, ok := asJSONMap(task.Config["source"]); ok {
+		resp.Source = &PointCloudCOPCTaskSourceResponse{
+			ItemLocator:     stringFromConfig(source["item_locator"]),
+			SourceEngineID:  uintFromConfig(source["source_engine_id"]),
+			ItemFingerprint: stringFromConfig(source["item_fingerprint"]),
+			ItemID:          uintFromConfig(source["item_id"]),
+			Format:          stringFromConfig(source["format"]),
+			SourceSizeBytes: int64FromAPIConfig(source["source_size_bytes"], 0),
+		}
+	}
+	if result, ok := asJSONMap(task.Config["result"]); ok {
+		resp.Result = &PointCloudCOPCTaskResultResponse{
 			StorageRef: stringFromConfig(result["storage_ref"]),
 			FileName:   stringFromConfig(result["file_name"]),
 		}

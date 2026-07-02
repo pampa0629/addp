@@ -97,6 +97,16 @@
             {{ gaussianSplatKSplatActionText }}
           </el-button>
           <el-button
+            v-if="showPointCloudCOPCGenerationAction"
+            size="small"
+            type="primary"
+            :loading="pointCloudCOPCGenerationLoading"
+            @click="handleGeneratePointCloudCOPC"
+          >
+            <el-icon><MagicStick /></el-icon>
+            {{ t('manager.explorer.generatePointCloudCOPC') }}
+          </el-button>
+          <el-button
             v-if="showModel3DTilesGenerationAction"
             size="small"
             type="primary"
@@ -428,6 +438,7 @@ import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import RasterTIFFQuickView from '@/components/map/RasterTIFFQuickView.vue'
 import Model3DPreview from '@/components/explorer/Model3DPreview.vue'
 import GaussianSplatPreview from '@/components/explorer/GaussianSplatPreview.vue'
+import PointCloudPreview from '@/components/explorer/PointCloudPreview.vue'
 import { useExplorerStore } from '@/stores/explorer'
 import { dataFormatDisplayName } from '@/utils/formatDisplay'
 import {
@@ -503,6 +514,7 @@ const quickViewTileLastNotice = ref({ key: '', at: 0 })
 const rasterCOGGenerationLoading = ref(false)
 const model3DGLBGenerationLoading = ref(false)
 const gaussianSplatKSplatGenerationLoading = ref(false)
+const pointCloudCOPCGenerationLoading = ref(false)
 const activePreviewMode = ref('basic_preview')
 const mvtGridVisible = ref(false)
 const resourceActions = ref(null)
@@ -1349,6 +1361,28 @@ const isGaussianSplatKSplatSourceNode = computed(() => {
   return dataType === 'gaussian_splat' && ['ply', 'splat', 'ksplat'].includes(format)
 })
 
+const isPointCloudCOPCSourceNode = computed(() => {
+  const node = props.selectedNode || {}
+  const object = props.previewData?.object || {}
+  const attrs = object.attributes || {}
+  const item = attrs.item || {}
+  const contentMetadata = object.content?.metadata || {}
+  const metadata = props.previewData?.metadata || {}
+  const dataType = String(item.data_type || metadata.data_type || contentMetadata.data_type || '').trim().toLowerCase()
+  const format = String(
+    item.format ||
+    metadata.source_format ||
+    metadata.format ||
+    contentMetadata.source_format ||
+    contentMetadata.format ||
+    node.format ||
+    node.file_format ||
+    ''
+  ).trim().toLowerCase()
+  if (dataType === 'point_cloud' && ['las', 'laz', 'e57', 'copc'].includes(format)) return true
+  return /\.(las|laz|e57|copc)$/i.test(selectedNodePath.value)
+})
+
 const spatialInfoTooltip = computed(() => {
   if (!hasGeometry.value) return ''
 
@@ -1381,7 +1415,7 @@ const spatialInfoTooltip = computed(() => {
 })
 
 const spatialPreviewTarget = computed(() => {
-  if ((!hasGeometry.value && !isTIFFNode.value && !isRasterMosaicNode.value && !isModel3DGLBSourceNode.value && !isGaussianSplatKSplatSourceNode.value) || !props.selectedNode) return null
+  if ((!hasGeometry.value && !isTIFFNode.value && !isRasterMosaicNode.value && !isModel3DGLBSourceNode.value && !isGaussianSplatKSplatSourceNode.value && !isPointCloudCOPCSourceNode.value) || !props.selectedNode) return null
   const node = props.selectedNode
   const locator = String(node.locator || node.id || '').trim()
   let parsedLocator = null
@@ -1456,6 +1490,7 @@ const quickViewRenderer = computed(() => {
   if (isRasterQuickView.value) return RasterTIFFQuickView
   if (quickViewRenderSource.value === 'model_3d_glb') return Model3DPreview
   if (quickViewRenderSource.value === 'gaussian_splat_ksplat') return GaussianSplatPreview
+  if (quickViewRenderSource.value === 'point_cloud_copc') return PointCloudPreview
   if (isTileQuickViewRenderSource(quickViewRenderSource.value)) return VectorTilePreview
   return null
 })
@@ -1528,6 +1563,7 @@ const quickViewState = computed(() => {
 const quickViewRendererStateKey = computed(() => {
   if (quickViewRenderSource.value === 'model_3d_glb') return 'scene_3d'
   if (quickViewRenderSource.value === 'gaussian_splat_ksplat') return 'scene_3d'
+  if (quickViewRenderSource.value === 'point_cloud_copc') return 'scene_3d'
   if (quickViewRenderSource.value === 'model_3d_tiles') return 'scene_3d'
   if (quickViewRenderSource.value === 'direct_geojson' || isTileQuickViewRenderSource(quickViewRenderSource.value)) return 'map'
   if (isRasterQuickView.value) return 'map'
@@ -1669,6 +1705,33 @@ const quickViewRendererProps = computed(() => {
       viewState: activeQuickViewState.value
     }
   }
+  if (quickViewRenderSource.value === 'point_cloud_copc') {
+    const previewURL = quickViewStatus.value?.quick_view?.preview_url || quickViewStatus.value?.point_cloud?.preview_url || ''
+    return {
+      data: {
+        mode: 'object',
+        object: {
+          content_type: 'application/vnd.laszip+copc',
+          url: previewURL,
+          content: {
+            kind: 'point_cloud',
+            frontend_renderer: 'point_cloud',
+            url: previewURL,
+            metadata: {
+              format: 'copc',
+              render_source: 'point_cloud_copc',
+              preview_artifact_status: 'ready',
+              point_cloud: {
+                ...(quickViewStatus.value?.point_cloud || {}),
+                format: 'copc'
+              }
+            }
+          }
+        }
+      },
+      viewState: activeQuickViewState.value
+    }
+  }
   const source = quickViewSourceContext.value
   return {
     locator: target.locator,
@@ -1707,7 +1770,8 @@ const quickViewRenderKey = computed(() => {
     quickViewStatus.value?.quick_view?.geojson_url || '',
     quickViewStatus.value?.quick_view?.preview_url || '',
     quickViewStatus.value?.model_3d?.result_id || '',
-    quickViewStatus.value?.gaussian_splat?.result_id || ''
+    quickViewStatus.value?.gaussian_splat?.result_id || '',
+    quickViewStatus.value?.point_cloud?.result_id || ''
   ].join('-')
 })
 
@@ -1915,6 +1979,43 @@ const handleGenerateGaussianSplatKSplat = async () => {
   }
 }
 
+const handleGeneratePointCloudCOPC = async () => {
+  const locator = String(props.selectedNode?.locator || props.selectedNode?.id || '').trim()
+  if (!locator) {
+    ElMessage.warning(t('manager.explorer.pointCloudCOPCMissingIdentity'))
+    return
+  }
+  pointCloudCOPCGenerationLoading.value = true
+  try {
+    const execution = await quickViewAPI.executeQuickViewAction(locator, 'generate_point_cloud_copc')
+    const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
+    ElMessage.success(t('manager.explorer.generatePointCloudCOPCSubmitted'))
+    if (executionID) {
+      const result = await waitForRasterCOGExecution(
+        executionID,
+        (id) => quickViewAPI.getExecutionStatus(id),
+        { maxAttempts: 60, intervalMs: 2000 }
+      )
+      if (result.success) {
+        ElMessage.success(t('manager.explorer.generatePointCloudCOPCReady'))
+      } else if (result.failed) {
+        ElMessage.error(t('manager.explorer.generatePointCloudCOPCExecutionFailed'))
+      } else if (!result.completed) {
+        ElMessage.warning(t('manager.explorer.generatePointCloudCOPCTimeout'))
+      }
+    }
+    await refreshPreviewAfterArtifactReady('point_cloud_copc')
+    if (quickViewStatus.value?.can_use_quick_view && quickViewRenderSource.value === 'point_cloud_copc') {
+      activePreviewMode.value = 'map_quick_view'
+    }
+  } catch (error) {
+    console.error('提交点云 COPC 快显生成失败:', error)
+    ElMessage.error(t('manager.explorer.generatePointCloudCOPCFailed'))
+  } finally {
+    pointCloudCOPCGenerationLoading.value = false
+  }
+}
+
 const handleGenerateModel3DTiles = () => {
   const source = model3DTilesSourcePayload.value
   if (!source) {
@@ -2055,6 +2156,10 @@ const showGaussianSplatKSplatGenerationAction = computed(() => {
 })
 const gaussianSplatKSplatActionText = computed(() => {
   return t('manager.explorer.generateGaussianSplatKSplat')
+})
+
+const showPointCloudCOPCGenerationAction = computed(() => {
+  return canUseQuickViewAction('generate_point_cloud_copc')
 })
 
 const showModel3DTilesGenerationAction = computed(() => Boolean(model3DTilesSourcePayload.value))

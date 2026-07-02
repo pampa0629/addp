@@ -71,6 +71,20 @@ else
   echo -e "${RED}✗ python-workflow-engine${NC}"
 fi
 
+# Model3D Workflow Engine
+if curl -f http://localhost:8101/health > /dev/null 2>&1; then
+  echo -e "${GREEN}✓ model3d-workflow-engine${NC}"
+else
+  echo -e "${RED}✗ model3d-workflow-engine${NC}"
+fi
+
+# PointCloud Workflow Engine
+if curl -f http://localhost:8102/health > /dev/null 2>&1; then
+  echo -e "${GREEN}✓ pointcloud-workflow-engine${NC}"
+else
+  echo -e "${RED}✗ pointcloud-workflow-engine${NC}"
+fi
+
 # Gateway
 if curl -f http://localhost:8000/health > /dev/null 2>&1; then
   echo -e "${GREEN}✓ gateway${NC}"

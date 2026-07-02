@@ -1,7 +1,20 @@
 <template>
   <div class="three-preview point-cloud-preview">
     <div ref="viewportRef" class="three-viewport" />
-    <div v-if="!points.length" class="three-status">{{ emptyText }}</div>
+    <div v-if="!points.length" class="three-status">
+      <div class="point-cloud-status">
+        <div>{{ emptyText }}</div>
+        <a
+          v-if="previewURL"
+          class="point-cloud-link"
+          :href="previewURL"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {{ previewURLText }}
+        </a>
+      </div>
+    </div>
     <div v-if="summaryItems.length" class="three-summary">
       <span v-for="item in summaryItems" :key="item.label">{{ item.label }}: {{ item.value }}</span>
     </div>
@@ -25,7 +38,6 @@ const props = defineProps({
 })
 
 const viewportRef = ref(null)
-const emptyText = computed(() => props.loading ? '正在加载点云...' : '没有可展示的点云样本')
 
 let renderer = null
 let scene = null
@@ -39,6 +51,15 @@ const objectData = computed(() => props.data?.object || {})
 const content = computed(() => objectData.value?.content || {})
 const payload = computed(() => content.value?.json || content.value?.JSON || {})
 const metadata = computed(() => content.value?.metadata || {})
+const previewURL = computed(() => String(content.value?.url || objectData.value?.url || '').trim())
+const contentFormat = computed(() => String(payload.value?.format || metadata.value?.format || metadata.value?.point_cloud?.format || '').toUpperCase())
+const isURLMaterial = computed(() => String(content.value?.preview_material || content.value?.previewMaterial || '').toLowerCase() === 'url' || Boolean(previewURL.value))
+const previewURLText = computed(() => contentFormat.value === 'COPC' ? '打开 COPC 快显文件' : '打开点云文件')
+const emptyText = computed(() => {
+  if (props.loading) return '正在加载点云...'
+  if (isURLMaterial.value) return 'COPC 快显文件已就绪'
+  return '没有可展示的点云样本'
+})
 
 const points = computed(() => {
   const items = Array.isArray(payload.value?.points) ? payload.value.points : []
@@ -60,7 +81,7 @@ const summaryItems = computed(() => {
   const items = []
   if (pointCount.value) items.push({ label: 'Points', value: pointCount.value.toLocaleString() })
   if (sampleCount.value) items.push({ label: 'Sample', value: sampleCount.value.toLocaleString() })
-  const format = String(payload.value?.format || metadata.value?.format || '').toUpperCase()
+  const format = contentFormat.value
   if (format) items.push({ label: 'Format', value: format })
   return items
 })
@@ -261,6 +282,22 @@ onBeforeUnmount(disposeScene)
   padding: 24px;
   color: var(--addp-text-secondary);
   background: color-mix(in srgb, var(--addp-bg-primary) 70%, transparent);
+}
+
+.point-cloud-status {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  text-align: center;
+}
+
+.point-cloud-link {
+  color: var(--addp-color-primary);
+  text-decoration: none;
+}
+
+.point-cloud-link:hover {
+  text-decoration: underline;
 }
 
 .three-summary {

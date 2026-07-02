@@ -112,6 +112,9 @@ func (h *gaussianSplatContentHandler) Handle(_ context.Context, req *ObjectConte
 }
 
 func (h *pointCloudContentHandler) HandleStream(ctx context.Context, req *ObjectContentRequest, streamer ObjectStreamProvider) (*models.ObjectPreviewContent, bool, error) {
+	if pointCloudRequestFormat(req) == format.FormatCOPC {
+		return pointCloudCOPCURLContent(req), false, nil
+	}
 	if !pointCloudSupportsDirectSampling(req) {
 		return unsupportedPointCloudContent(req), false, nil
 	}
@@ -150,6 +153,9 @@ func (h *pointCloudContentHandler) HandleStream(ctx context.Context, req *Object
 }
 
 func (h *pointCloudContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
+	if pointCloudRequestFormat(req) == format.FormatCOPC {
+		return pointCloudCOPCURLContent(req), false, nil
+	}
 	if !pointCloudSupportsDirectSampling(req) {
 		return unsupportedPointCloudContent(req), false, nil
 	}
@@ -177,7 +183,7 @@ func pointCloudSupportsDirectSampling(req *ObjectContentRequest) bool {
 	if req == nil {
 		return false
 	}
-	return pointCloudRequestFormat(req) == format.FormatLAS
+	return false
 }
 
 func pointCloudRequestFormat(req *ObjectContentRequest) format.FormatType {
@@ -203,11 +209,47 @@ func pointCloudRequestFormat(req *ObjectContentRequest) format.FormatType {
 
 func unsupportedPointCloudContent(req *ObjectContentRequest) *models.ObjectPreviewContent {
 	metadata := buildPreviewMetadata(req, 0)
-	metadata["preview_reason"] = "point_cloud_sampling_unavailable"
+	sourceFormat := strings.ToLower(strings.TrimSpace(string(pointCloudRequestFormat(req))))
+	metadata["source_format"] = sourceFormat
+	switch format.NormalizeFormat(sourceFormat) {
+	case format.FormatLAS, format.FormatLAZ, format.FormatE57:
+		metadata["preview_reason"] = "requires_copc_generation"
+		metadata["preview_artifact_status"] = "missing"
+		metadata["preview_artifact_task_type"] = "point_cloud_copc_generation"
+	default:
+		metadata["preview_reason"] = "point_cloud_preview_unavailable"
+	}
 	return decoratePreviewContent(&models.ObjectPreviewContent{
 		Kind:             models.ObjectPreviewKindPointCloud,
 		PreviewMaterial:  models.PreviewMaterialUnsupported,
 		FrontendRenderer: models.ObjectPreviewKindUnsupported,
+		Metadata:         metadata,
+	})
+}
+
+func pointCloudCOPCURLContent(req *ObjectContentRequest) *models.ObjectPreviewContent {
+	metadata := buildPreviewMetadata(req, 0)
+	metadata["source_format"] = string(format.FormatCOPC)
+	metadata["preview_artifact_status"] = "ready"
+	metadata["preview_artifact_task_type"] = ""
+	previewURL := ""
+	if req != nil {
+		previewURL = strings.TrimSpace(req.PreviewURL)
+	}
+	if previewURL == "" {
+		metadata["preview_artifact_status"] = "preview_url_missing"
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind:             models.ObjectPreviewKindPointCloud,
+			PreviewMaterial:  models.PreviewMaterialUnsupported,
+			FrontendRenderer: models.ObjectPreviewKindPointCloud,
+			Metadata:         metadata,
+		})
+	}
+	return decoratePreviewContent(&models.ObjectPreviewContent{
+		Kind:             models.ObjectPreviewKindPointCloud,
+		PreviewMaterial:  models.PreviewMaterialURL,
+		FrontendRenderer: models.ObjectPreviewKindPointCloud,
+		URL:              previewURL,
 		Metadata:         metadata,
 	})
 }
