@@ -610,7 +610,10 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	if existing != nil && existing.ViewState != nil {
 		viewState = existing.ViewState
 	}
-	if (source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil || source.GaussianSplat != nil) && !hasExistingPreference && !isSourceKSplat(source.GaussianSplat) {
+	if (source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil || source.GaussianSplat != nil) &&
+		!hasExistingPreference &&
+		!isSourceKSplat(source.GaussianSplat) &&
+		!isSourceModel3DDirectPreview(source.Model3D) {
 		preferredMode = models.PreviewModeMapQuickView
 	}
 
@@ -925,6 +928,20 @@ func (s *QuickViewService) applyModel3DCapability(ctx context.Context, capabilit
 		Reason:    "model 3d GLB does not use vector tile cache generation",
 	}
 
+	if isSourceModel3DDirectPreview(model3D) {
+		reason := "source_format_direct_preview"
+		capability.CanUseQuickView = false
+		capability.Status = QuickViewStatusUnavailable
+		capability.UnavailableReason = reason
+		capability.RenderSource = ""
+		capability.RecommendedMode = models.PreviewModeBasicPreview
+		capability.QuickView = QuickViewRenderInfo{}
+		if capability.Model3D != nil {
+			capability.Model3D.PreviewURL = strings.TrimSpace(model3D.PreviewURL)
+		}
+		return nil
+	}
+
 	readyGLB, err := s.readyModel3DGLB(ctx, identity, engineID)
 	if err != nil {
 		return err
@@ -1008,6 +1025,22 @@ func (s *QuickViewService) applyGaussianSplatCapability(ctx context.Context, cap
 
 func isSourceKSplat(gaussian *GaussianSplatKSplatSource) bool {
 	return gaussian != nil && strings.EqualFold(strings.TrimSpace(gaussian.Format), string(format.FormatKSplat))
+}
+
+func isSourceModel3DDirectPreview(model3D *Model3DGLBSource) bool {
+	if model3D == nil {
+		return false
+	}
+	itemFormat := strings.ToLower(strings.TrimSpace(model3D.Format))
+	itemLayout := strings.ToLower(strings.TrimSpace(model3D.Layout))
+	switch itemFormat {
+	case string(format.FormatGLB), string(format.FormatPLY):
+		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
+	case string(format.Format3DTiles):
+		return itemLayout == "" || itemLayout == string(format.LayoutWhole)
+	default:
+		return false
+	}
 }
 
 func (s *QuickViewService) GetDefaultTileCache(
@@ -2155,7 +2188,7 @@ func Model3DGLBSourceFromAttributes(attrs map[string]interface{}) *Model3DGLBSou
 	}
 	itemFormat := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "format")))
 	itemLayout := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "layout")))
-	if !isModel3DGLBSourceFormat(itemFormat, itemLayout) {
+	if !isModel3DQuickViewSourceFormat(itemFormat, itemLayout) {
 		return nil
 	}
 	storageInfo := commonJSON.Section(attrs, "storage")
@@ -2297,8 +2330,12 @@ func cloneInt64Ptr(value *int64) *int64 {
 	return &cloned
 }
 
-func isModel3DGLBSourceFormat(itemFormat, itemLayout string) bool {
+func isModel3DQuickViewSourceFormat(itemFormat, itemLayout string) bool {
 	switch itemFormat {
+	case string(format.FormatGLB), string(format.FormatPLY):
+		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
+	case string(format.Format3DTiles):
+		return itemLayout == "" || itemLayout == string(format.LayoutWhole)
 	case string(format.FormatOSGB):
 		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
 	case string(format.FormatGLTF):

@@ -832,6 +832,12 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 		model3D := service.Model3DGLBSourceFromAttributes(tablePreview.Object.Attributes)
 		if model3D != nil {
 			source.EngineID = tablePreview.Object.EngineID
+			if tablePreview.Object.Content != nil {
+				model3D.PreviewURL = strings.TrimSpace(tablePreview.Object.Content.URL)
+			}
+			if model3D.PreviewURL == "" {
+				model3D.PreviewURL = strings.TrimSpace(tablePreview.Object.URL)
+			}
 			source.Model3D = model3D
 			source.DirectGeoJSON = false
 			source.GeoJSONURL = ""

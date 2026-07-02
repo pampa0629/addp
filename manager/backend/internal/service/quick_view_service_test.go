@@ -637,6 +637,87 @@ func TestModel3DGLBSourceFromAttributesSupportsIFCSingleItem(t *testing.T) {
 	}
 }
 
+func TestModel3DDirectPreviewSourceFromAttributes(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		format string
+		layout string
+	}{
+		{name: "glb", format: "glb", layout: "single"},
+		{name: "ply", format: "ply", layout: "single"},
+		{name: "3dtiles", format: "3dtiles", layout: "whole"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := Model3DGLBSourceFromAttributes(map[string]interface{}{
+				"item": map[string]interface{}{
+					"data_type": "model_3d",
+					"format":    tc.format,
+					"layout":    tc.layout,
+				},
+				"storage": map[string]interface{}{
+					"total_size": int64(8192),
+				},
+			})
+			if source == nil {
+				t.Fatalf("source is nil, want %s direct preview model source", tc.format)
+			}
+			if source.Format != tc.format || source.Layout != tc.layout || source.SourceSizeBytes != 8192 {
+				t.Fatalf("source = %#v, want %s/%s facts", source, tc.format, tc.layout)
+			}
+		})
+	}
+}
+
+func TestModel3DDirectPreviewCapabilityDoesNotRecommendGLBGeneration(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		format     string
+		layout     string
+		previewURL string
+	}{
+		{name: "glb", format: "glb", layout: "single", previewURL: "/api/v1/manager/storage-stream?engine_id=26&storage_ref=3d%2Fglb%2Fscene.glb"},
+		{name: "ply", format: "ply", layout: "single", previewURL: "/api/v1/manager/storage-stream?engine_id=26&storage_ref=3d%2Fply%2Fmesh.ply"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newTileCacheTaskServiceTestDB(t)
+			createModel3DGLBTableForTest(t, db)
+			svc := NewQuickViewService(db, nil)
+			capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+				Identity: QuickViewIdentity{
+					TenantID:        7,
+					ItemFingerprint: "fp-direct-" + tc.format,
+					Locator:         fmt.Sprintf("addp://engine/26/path/3d/%s/scene.%s?type=file&item_id=100", tc.format, tc.format),
+				},
+				EngineID: 26,
+				Model3D: &Model3DGLBSource{
+					Format:          tc.format,
+					Layout:          tc.layout,
+					SourceSizeBytes: 4096,
+					PreviewURL:      tc.previewURL,
+				},
+			})
+			if err != nil {
+				t.Fatalf("build direct model3d capability: %v", err)
+			}
+			if capability.SourceKind != QuickViewSourceKindModel3D {
+				t.Fatalf("source_kind = %q, want %q", capability.SourceKind, QuickViewSourceKindModel3D)
+			}
+			if capability.CanUseQuickView || capability.UnavailableReason != "source_format_direct_preview" {
+				t.Fatalf("capability quick view = can:%v reason:%q, want direct preview reason", capability.CanUseQuickView, capability.UnavailableReason)
+			}
+			if capability.ActiveMode != models.PreviewModeBasicPreview || capability.PreferredMode != models.PreviewModeBasicPreview {
+				t.Fatalf("preview mode = active:%s preferred:%s, want basic preview for direct model source", capability.ActiveMode, capability.PreferredMode)
+			}
+			if containsString(capability.AvailableActions, QuickViewActionGenerateModel3DGLB) {
+				t.Fatalf("available_actions = %#v, want no GLB generation action for direct preview source", capability.AvailableActions)
+			}
+			if capability.Model3D == nil || capability.Model3D.PreviewURL != tc.previewURL {
+				t.Fatalf("model3d info = %#v, want direct preview URL", capability.Model3D)
+			}
+		})
+	}
+}
+
 func TestModel3DGLBCapabilityRecommendsGLBGenerationWhenMissing(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	createModel3DGLBTableForTest(t, db)

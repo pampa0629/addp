@@ -287,6 +287,53 @@ func TestQuickViewSourceFromPreviewDetectsSingleOBJObject(t *testing.T) {
 	}
 }
 
+func TestQuickViewSourceFromPreviewDetectsDirectGLBObject(t *testing.T) {
+	locator := "addp://engine/26/path/3d/glb/ABeautifulGame.glb?type=file&item_id=10320"
+	previewURL := "/api/v1/manager/storage-stream?engine_id=26&storage_ref=3d%2Fglb%2FABeautifulGame.glb"
+	tablePreview := &models.TablePreview{
+		EngineID:   26,
+		EngineType: "nfs",
+		Object: &models.ObjectPreview{
+			EngineID: 26,
+			URL:      previewURL,
+			Content: &models.ObjectPreviewContent{
+				URL: previewURL,
+			},
+			Attributes: map[string]interface{}{
+				"item": map[string]interface{}{
+					"data_type": "model_3d",
+					"format":    "glb",
+					"layout":    "single",
+				},
+				"storage": map[string]interface{}{
+					"total_size": int64(53670500),
+				},
+			},
+		},
+	}
+	result := &preview.PreviewResult{
+		Metadata: &preview.PreviewMetadata{
+			Locator:         locator,
+			ItemFingerprint: "fp-glb",
+		},
+	}
+
+	source := quickViewSourceFromPreview(locator, nil, result, tablePreview)
+
+	if source.Model3D == nil {
+		t.Fatal("Model3D is nil, want direct GLB model3d source")
+	}
+	if source.Raster != nil || source.DirectGeoJSON || source.GeoJSONURL != "" || source.CanTile {
+		t.Fatalf("source routing = raster:%v direct_geojson:%v geojson_url:%q can_tile:%v, want model3d-only", source.Raster != nil, source.DirectGeoJSON, source.GeoJSONURL, source.CanTile)
+	}
+	if source.Model3D.Format != "glb" || source.Model3D.Layout != "single" || source.Model3D.SourceSizeBytes != 53670500 {
+		t.Fatalf("model3d facts = %#v, want direct glb facts", source.Model3D)
+	}
+	if source.Model3D.PreviewURL != previewURL {
+		t.Fatalf("preview_url = %q, want %q", source.Model3D.PreviewURL, previewURL)
+	}
+}
+
 func TestQuickViewSourceFromPreviewDetectsSingleIFCObject(t *testing.T) {
 	locator := "addp://engine/26/path/3d/ifc/building.ifc?type=file&item_id=10988"
 	tablePreview := &models.TablePreview{
