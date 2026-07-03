@@ -7,7 +7,7 @@ show_usage() {
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
-  echo "  -all         强制重新编译所有 Go 模块 + 重启 Python 服务"
+  echo "  -all         强制重新编译所有 Go 模块 + 重启 Python/容器运行时服务"
   echo "  -system      强制重新编译 System 模块"
   echo "  -manager     强制重新编译 Manager 模块"
   echo "  -meta        强制重新编译 Meta 模块"
@@ -26,7 +26,7 @@ show_usage() {
   echo "  -python-workflow   重启 Python Workflow Engine (Python 服务)"
   echo "  -math-workflow     重启 Math Workflow Engine (Python 服务)"
   echo "  -model3d-workflow  重启 Model3D Workflow Engine (Python 服务)"
-  echo "  -pointcloud-workflow 重启 PointCloud Workflow Engine (Python 服务)"
+  echo "  -pointcloud-workflow 重启 PointCloud Workflow Engine (Docker runtime)"
   echo "  -copilot     重启 Copilot Backend (Python 服务)"
   echo "  -agent       重启 Agent Backend (Python 服务)"
   echo "  -spark-workflow 重启 Spark 工作流 Engine (Python 服务)"
@@ -39,7 +39,7 @@ show_usage() {
   echo "  - 只指定 Python/扩展服务参数时,仅重启对应服务,不停止整套环境"
   echo ""
   echo "注意:"
-  echo "  - Python Workflow Engine、Math Workflow Engine、Spark 工作流 Engine、Jupyter Engine、Copilot 和 Agent 支持局部重启"
+  echo "  - Python Workflow Engine、Math Workflow Engine、Spark 工作流 Engine、PointCloud Workflow Engine、Jupyter Engine、Copilot 和 Agent 支持局部重启"
   echo "  - 只有 Go 后端模块支持选择性编译"
   echo ""
   echo "示例:"
@@ -374,18 +374,57 @@ restart_model3d_workflow_service() {
 
 restart_pointcloud_workflow_service() {
     local port="${POINTCLOUD_WORKFLOW_PORT:-8102}"
-    stop_pidfile_process ".dev-pids/pointcloud-workflow-engine.pid" "PointCloud Workflow Engine"
+    local image="${POINTCLOUD_WORKFLOW_IMAGE:-addp-pointcloud-workflow-engine:dev}"
+    local source_dir="${POINTCLOUD_DATA_HOST_PATH:-${ROOT_DIR}/business/nfs/data}"
+    local container_source_dir="${POINTCLOUD_DATA_CONTAINER_PATH:-${ROOT_DIR}/business/nfs/data}"
+    local work_dir="${POINTCLOUD_WORK_HOST_PATH:-${ROOT_DIR}/data/pointcloud-work}"
+    local system_port="${SYSTEM_BACKEND_PORT:-8180}"
+    local minio_port="${MINIO_API_PORT:-19000}"
+
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "❌ PointCloud Workflow Engine 需要 Docker runtime 承载 PDAL"
+        return 1
+    fi
+
     stop_matching_port_process "$port" "PointCloud Workflow Engine" "python.*api_server\\.py|engines/pointcloud-workflow"
-    require_service_python "engines/pointcloud-workflow" "PointCloud Workflow Engine" "pointcloud-workflow"
-    echo "  启动 PointCloud Workflow Engine..."
-    (
-        cd engines/pointcloud-workflow
-        export PORT="$port"
-        export INTERNAL_API_KEY="${INTERNAL_API_KEY:-}"
-        start_background_process "." ".dev-pids/pointcloud-workflow-engine.pid" "logs/pointcloud-workflow-engine.log" "logs/pointcloud-workflow-engine-stderr.log" ./venv/bin/python api_server.py
-    )
+    docker rm -f pointcloud-workflow-engine >/dev/null 2>&1 || true
+
+    echo "  构建 PointCloud Workflow Engine 镜像..."
+    docker build -t "$image" engines/pointcloud-workflow
+
+    echo "  启动 PointCloud Workflow Engine Docker runtime..."
+    mkdir -p "${work_dir}"
+    mkdir -p .dev-pids
+    docker run -d \
+        --name pointcloud-workflow-engine \
+        --add-host=host.docker.internal:host-gateway \
+        -p "${port}:8102" \
+        -e PORT=8102 \
+        -e SYSTEM_URL="http://host.docker.internal:${system_port}" \
+        -e INTERNAL_API_KEY="${INTERNAL_API_KEY:-}" \
+        -e POINTCLOUD_PDAL_BIN=/opt/conda/bin/pdal \
+        -e POINTCLOUD_WORK_DIR=/work/pointcloud \
+        -e CPL_TMPDIR=/work/pointcloud \
+        -e RUNTIME_HOST=localhost \
+        -e POINTCLOUD_OBJECT_STORE_LOCALHOST_ENDPOINT="host.docker.internal:${minio_port}" \
+        -v "${ROOT_DIR}/logs:/app/logs" \
+        -v "${work_dir}:/work/pointcloud" \
+        -v "${ROOT_DIR}/engines/pointcloud-workflow/api_server.py:/app/api_server.py:ro" \
+        -v "${ROOT_DIR}/engines/pointcloud-workflow/operators.py:/app/operators.py:ro" \
+        -v "${source_dir}:${container_source_dir}:ro" \
+        "$image" > .dev-pids/pointcloud-workflow-engine.pid
     wait_http_ready "PointCloud Workflow Engine" "http://localhost:${port}/health"
-    verify_pidfile_process_alive ".dev-pids/pointcloud-workflow-engine.pid" "PointCloud Workflow Engine" "logs/pointcloud-workflow-engine.log" "logs/pointcloud-workflow-engine-stderr.log"
+    if ! curl -s "http://localhost:${port}/health" | grep -q '"status":"healthy"'; then
+        echo "❌ PointCloud Workflow Engine 未进入 healthy 状态"
+        echo "   查看日志: docker logs pointcloud-workflow-engine"
+        return 1
+    fi
+    if ! docker ps --filter "name=^/pointcloud-workflow-engine$" --format '{{.Names}}' | grep -qx "pointcloud-workflow-engine"; then
+        echo "❌ PointCloud Workflow Engine 容器启动后不存在"
+        echo "   查看日志: docker logs pointcloud-workflow-engine"
+        return 1
+    fi
+    echo "  ✓ PointCloud Workflow Engine Docker runtime 已启动"
 }
 
 restart_spark_workflow_service() {
@@ -623,8 +662,8 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
       # Model3D Workflow Engine 是 Python 服务，不需要编译
       echo "  标记 Model3D Workflow Engine 需要重启（无需编译）"
     elif [ "$module" = "pointcloud-workflow" ]; then
-      # PointCloud Workflow Engine 是 Python 服务，不需要编译
-      echo "  标记 PointCloud Workflow Engine 需要重启（无需编译）"
+      # PointCloud Workflow Engine 是 Docker runtime，不需要 Go 编译
+      echo "  标记 PointCloud Workflow Engine 需要重启（无需 Go 编译）"
     elif [ "$module" = "spark-workflow" ]; then
       # Spark 工作流 Engine 是 Python 服务，不需要编译
       echo "  标记 Spark 工作流 Engine 需要重启（无需编译）"
@@ -660,7 +699,7 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
       # Python 服务无二进制文件
       :
     elif [ "$module" = "pointcloud-workflow" ]; then
-      # Python 服务无二进制文件
+      # Docker runtime 无 Go 二进制文件
       :
     elif [ "$module" = "spark-workflow" ]; then
       # Python 服务无二进制文件
@@ -698,7 +737,7 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
       # Python 服务无需清理 Go 缓存
       :
     elif [ "$module" = "pointcloud-workflow" ]; then
-      # Python 服务无需清理 Go 缓存
+      # Docker runtime 无需清理 Go 缓存
       :
     elif [ "$module" = "spark-workflow" ]; then
       # Python 服务无需清理 Go 缓存

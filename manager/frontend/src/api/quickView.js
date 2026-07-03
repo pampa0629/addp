@@ -217,6 +217,46 @@ export const quickViewAPI = {
     return request.delete(`/manager/gaussian_splat_ksplat/${id}`)
   },
 
+  createPointCloudCOPCTask(payload) {
+    return request.post('/manager/point_cloud_copc_tasks', payload)
+  },
+
+  listPointCloudCOPCTasks(params = {}) {
+    return request.get('/manager/point_cloud_copc_tasks', { params })
+  },
+
+  getPointCloudCOPCTask(id) {
+    return request.get(`/manager/point_cloud_copc_tasks/${id}`)
+  },
+
+  updatePointCloudCOPCTask(id, payload) {
+    return request.put(`/manager/point_cloud_copc_tasks/${id}`, payload)
+  },
+
+  deletePointCloudCOPCTask(id) {
+    return request.delete(`/manager/point_cloud_copc_tasks/${id}`)
+  },
+
+  executePointCloudCOPCTask(id, payload = {}) {
+    return request.post(`/manager/tasks/point_cloud_copc_generation/${id}/execute`, {
+      trigger_type: 'manual',
+      source: 'manager',
+      ...payload
+    })
+  },
+
+  listPointCloudCOPCs(params = {}) {
+    return request.get('/manager/point_cloud_copc', { params })
+  },
+
+  getPointCloudCOPC(id) {
+    return request.get(`/manager/point_cloud_copc/${id}`)
+  },
+
+  deletePointCloudCOPC(id) {
+    return request.delete(`/manager/point_cloud_copc/${id}`)
+  },
+
   createModel3DTilesTask(payload) {
     return request.post('/manager/model_3d_tiles_tasks', payload)
   },

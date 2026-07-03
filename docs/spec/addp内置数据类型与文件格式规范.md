@@ -497,7 +497,7 @@ LAZ 是 LAS 的压缩形态。它使用 LAS-family header，但在 ADDP 中必�
 
 ### 消费要求
 
-Manager 不得把 LAZ 源文件伪装成 LAS 抽样预览。第一阶段先消费已入库 `data_type=point_cloud + format=laz` 和轻量 attributes，返回不支持在线点样本预览的基础预览结果；需要可视化抽样时应使用支持 LAZ 解压的点云 reader，或通过后续派生 COPC / 点云瓦片产物实现。
+Manager 不得把 LAZ 源文件伪装成 LAS 抽样预览。普通预览先消费已入库 `data_type=point_cloud + format=laz` 和轻量 attributes；需要可视化时，通过 `point_cloud_copc_generation` 生成 Manager 私有 COPC artifact，再走 COPC 受控 URL 和 HTTP Range 动态 LOD 预览。
 
 ### 格式约束
 
@@ -516,7 +516,7 @@ Manager 不得把 LAZ 源文件伪装成 LAS 抽样预览。第一阶段先消�
 | `format` | `copc` |
 | 主资源 | `meta_item.full_name` 指向 `.copc.laz` 或 `.copc` 文件资源 |
 
-COPC 是 Cloud Optimized Point Cloud 文件格式，是点云大数据量浏览的优先目标格式。第一阶段按单文件点云 item 接入，读取 LAS-family header、COPC Info VLR 和预算内 hierarchy page 形成轻量摘要；range 分块读取和前端流式预览后续单独补齐。
+COPC 是 Cloud Optimized Point Cloud 文件格式，是点云大数据量浏览的优先目标格式。按单文件点云 item 接入时，Meta 读取 LAS-family header、COPC Info VLR 和预算内 hierarchy page 形成轻量摘要；Manager 可通过受控内容 URL 支持前端 HTTP Range 读取 COPC hierarchy 和点数据块，并在前端完成动态 LOD 预览。
 
 ### attributes 写入
 
@@ -529,7 +529,7 @@ COPC 是 Cloud Optimized Point Cloud 文件格式，是点云大数据量浏览�
 
 ### 消费要求
 
-Manager 应把 COPC 作为点云浏览增强目标。第一阶段可展示 Meta 已入库摘要，返回不支持在线点样本预览的基础预览结果；大文件浏览应后续通过 range 分块读取、后端代理读取或点云专用 workflow runtime 实现，不得走 `model_3d` 的 GLB 快显路线。
+Manager 应把 COPC 作为点云浏览增强目标。源 `format=copc` item 可直接通过受控内容 URL 和 HTTP Range 进行动态 LOD 预览；LAS / LAZ / E57 / PCD / XYZ 等原始点云格式可先生成 Manager 私有 COPC artifact，再按同一 COPC 前端路线预览。点云浏览不得走 `model_3d` 的 GLB 快显路线。
 
 ### 格式约束
 
@@ -561,7 +561,7 @@ E57 是扫描仪点云和多站扫描集合常见的单文件格式。第一阶�
 
 ### 消费要求
 
-Manager 第一阶段应基于已入库 `data_type=point_cloud + format=e57` 展示点云数据项身份、基础存储事实和轻量摘要，返回不支持在线点样本预览的基础预览结果；抽样预览、完整站点列表和 E57 -> COPC 派生路线后续实现。
+Manager 应基于已入库 `data_type=point_cloud + format=e57` 展示点云数据项身份、基础存储事实和轻量摘要；需要可视化时，通过 `point_cloud_copc_generation` 生成 Manager 私有 COPC artifact，再走 COPC 受控 URL 和 HTTP Range 动态 LOD 预览。完整站点列表和站点级交互不属于第一版预览路线。
 
 ### 格式约束
 
@@ -593,7 +593,7 @@ PCD 是 Point Cloud Library 使用的单文件点云格式。第一阶段只读�
 
 ### 消费要求
 
-Manager 第一阶段应展示点云身份和 PCD header 摘要，返回不支持在线点样本预览的基础预览结果；点样本和前端渲染协议不得写入 attributes。PCD 抽样预览需要独立 reader 支持字段布局后再实现。
+Manager 应展示点云身份和 PCD header 摘要；需要可视化时，通过 `point_cloud_copc_generation` 生成 Manager 私有 COPC artifact，再走 COPC 受控 URL 和 HTTP Range 动态 LOD 预览。点样本和前端渲染协议不得写入 attributes。
 
 ### 格式约束
 
@@ -625,7 +625,7 @@ XYZ 表示无标准 header 的文本点云，每行至少包含 x、y、z 三个
 
 ### 消费要求
 
-Manager 第一阶段应把 XYZ 作为点云 item 展示和后续点云抽样预览候选，并在未实现点云抽样 reader 前返回不支持在线点样本预览的基础预览结果；不得因为它是文本数字列就走表格预览主线。
+Manager 应把 XYZ 作为点云 item 展示；需要可视化时，通过 `point_cloud_copc_generation` 生成 Manager 私有 COPC artifact，再走 COPC 受控 URL 和 HTTP Range 动态 LOD 预览。不得因为它是文本数字列就走表格预览主线。
 
 ### 格式约束
 

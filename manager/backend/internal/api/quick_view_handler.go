@@ -830,6 +830,9 @@ func quickViewActionTaskName(prefix string, capability *service.QuickViewCapabil
 	if locator == "" {
 		return prefix
 	}
+	if parsed, err := resourcetree.ParseURI(locator); err == nil && len(parsed.Path) > 0 {
+		return prefix + " - " + parsed.Path[len(parsed.Path)-1]
+	}
 	return prefix + " - " + locator
 }
 

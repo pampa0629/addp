@@ -1075,10 +1075,14 @@ services:
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - POINTCLOUD_PDAL_BIN=/opt/conda/bin/pdal
+      - POINTCLOUD_WORK_DIR=/work/pointcloud
+      - CPL_TMPDIR=/work/pointcloud
+      - RUNTIME_HOST=pointcloud-workflow-engine
     ports:
       - "8102:8102"
     volumes:
       - ./logs:/app/logs
+      - ${POINTCLOUD_WORK_HOST_PATH:-./data/pointcloud-work}:/work/pointcloud
       - ${POINTCLOUD_DATA_HOST_PATH:-./business/nfs/data}:${POINTCLOUD_DATA_CONTAINER_PATH:-/Users/pampa/code/addp/business/nfs/data}:ro
     networks:
       - addp-network

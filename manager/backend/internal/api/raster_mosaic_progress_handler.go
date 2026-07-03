@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	commonapi "github.com/addp/common/api"
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -31,8 +32,12 @@ type RasterMosaicProgressEventResponse struct {
 }
 
 func (h *TaskProviderHandler) RecordRasterMosaicExecutionProgressEvent(c *gin.Context) {
-	if h == nil || h.rasterMosaicTaskSvc == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "raster mosaic generation task service is unavailable"})
+	h.RecordManagerExecutionProgressEvent(c)
+}
+
+func (h *TaskProviderHandler) RecordManagerExecutionProgressEvent(c *gin.Context) {
+	if h == nil || h.taskExecRepo == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "task execution repository is unavailable"})
 		return
 	}
 	req, err := decodeRasterMosaicProgressEventRequest(c)
@@ -42,6 +47,30 @@ func (h *TaskProviderHandler) RecordRasterMosaicExecutionProgressEvent(c *gin.Co
 	}
 	executionID := c.Param("execution_id")
 	tenantID := c.GetUint("tenant_id")
+	exec, err := h.taskExecRepo.GetByExecutionID(c.Request.Context(), executionID, int(tenantID))
+	if err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "执行记录不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	switch exec.TaskType {
+	case commonExecution.TaskTypeRasterMosaicGeneration:
+		h.recordRasterMosaicProgressEvent(c, tenantID, executionID, req)
+	case commonExecution.TaskTypePointCloudCOPCGeneration:
+		h.recordPointCloudCOPCProgressEvent(c, tenantID, executionID, req)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "execution task_type does not accept progress events"})
+	}
+}
+
+func (h *TaskProviderHandler) recordRasterMosaicProgressEvent(c *gin.Context, tenantID uint, executionID string, req RasterMosaicProgressEventRequest) {
+	if h.rasterMosaicTaskSvc == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "raster mosaic generation task service is unavailable"})
+		return
+	}
 	event := service.RasterMosaicProgressEvent{
 		Phase:           req.Phase,
 		Event:           req.Event,
@@ -61,6 +90,37 @@ func (h *TaskProviderHandler) RecordRasterMosaicExecutionProgressEvent(c *gin.Co
 		case errors.Is(err, service.ErrRasterMosaicProgressTargetMismatch):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case errors.Is(err, service.ErrRasterMosaicExecutionCompleted):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusAccepted, RasterMosaicProgressEventResponse{
+		ExecutionID: executionID,
+		Status:      "accepted",
+	})
+}
+
+func (h *TaskProviderHandler) recordPointCloudCOPCProgressEvent(c *gin.Context, tenantID uint, executionID string, req RasterMosaicProgressEventRequest) {
+	if h.pointCloudCOPCTaskSvc == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "point cloud COPC generation task service is unavailable"})
+		return
+	}
+	event := service.PointCloudCOPCProgressEvent{
+		Phase:           req.Phase,
+		Event:           req.Event,
+		Message:         req.Message,
+		OverallProgress: req.OverallProgress,
+		Metadata:        req.Metadata,
+	}
+	if err := h.pointCloudCOPCTaskSvc.RecordProgressEvent(c.Request.Context(), tenantID, executionID, event); err != nil {
+		switch {
+		case errors.Is(err, commonapi.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "执行记录不存在"})
+		case errors.Is(err, service.ErrPointCloudCOPCProgressTargetMismatch):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		case errors.Is(err, service.ErrPointCloudCOPCExecutionCompleted):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

@@ -212,7 +212,7 @@ func unsupportedPointCloudContent(req *ObjectContentRequest) *models.ObjectPrevi
 	sourceFormat := strings.ToLower(strings.TrimSpace(string(pointCloudRequestFormat(req))))
 	metadata["source_format"] = sourceFormat
 	switch format.NormalizeFormat(sourceFormat) {
-	case format.FormatLAS, format.FormatLAZ, format.FormatE57:
+	case format.FormatLAS, format.FormatLAZ, format.FormatE57, format.FormatPCD, format.FormatXYZ:
 		metadata["preview_reason"] = "requires_copc_generation"
 		metadata["preview_artifact_status"] = "missing"
 		metadata["preview_artifact_task_type"] = "point_cloud_copc_generation"

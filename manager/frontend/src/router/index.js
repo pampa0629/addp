@@ -72,6 +72,12 @@ const routes = [
         meta: { requiresAuth: true, title: '3DGS KSplats-addp' }
       },
       {
+        path: 'point-cloud-copc',
+        name: 'PointCloudCOPC',
+        component: () => import('../views/PointCloudCOPC.vue'),
+        meta: { requiresAuth: true, title: '点云快显 - COPC-addp' }
+      },
+      {
         path: 'model-3d-tiles',
         name: 'Model3DTiles',
         component: () => import('../views/Model3DTiles.vue'),

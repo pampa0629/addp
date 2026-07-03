@@ -214,6 +214,7 @@
         "rasterMosaic": "Raster Quick View - Mosaic",
         "model3DQuickView": "3D Quick View - GLB",
         "gaussianSplatQuickView": "Gaussian Quick View - KSplat",
+        "pointCloudCOPC": "Point Cloud Quick View - COPC",
         "model3DTiles": "3D Quick View - 3D Tiles"
       },
       "standard": {

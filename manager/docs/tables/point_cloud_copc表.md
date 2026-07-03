@@ -6,7 +6,7 @@
 
 `manager.point_cloud_copc` 回答：
 
-> 当前 LAS / LAZ / E57 点云 item 是否存在可复用的 COPC 快显 artifact，该 artifact 存在哪里、是否可用、由哪次任务执行生成。
+> 当前 LAS / LAZ / E57 / PCD / XYZ 点云 item 是否存在可复用的 COPC 快显 artifact，该 artifact 存在哪里、是否可用、由哪次任务执行生成。
 
 它不替代：
 
@@ -29,7 +29,7 @@
 | `task_id` | bigint | 产生或最近刷新该结果的 `manager.point_cloud_copc_tasks.id` |
 | `last_execution_id` | varchar | 最近一次 COPC 生成 execution |
 | `source_engine_id` | integer | 源存储引擎 ID |
-| `source_format` | varchar | 源格式，当前为 `las`、`laz` 或 `e57` |
+| `source_format` | varchar | 源格式，当前为 `las`、`laz`、`e57`、`pcd` 或 `xyz` |
 | `source_size_bytes` | bigint | 源文件大小 |
 | `storage_ref` | text | Manager infra MinIO 对象引用，前端不得拼接消费 |
 | `file_name` | varchar | COPC artifact 文件名 |

@@ -58,6 +58,53 @@ func TestRasterMosaicProgressEndpointRecordsEvent(t *testing.T) {
 	}
 }
 
+func TestManagerProgressEndpointRecordsPointCloudCOPCEvent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newTaskProviderHandlerTestDB(t)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	if err := taskExecRepo.Create(context.Background(), &commonExecution.TaskExecution{
+		TenantID:    7,
+		ExecutionID: "point-cloud-progress-http-1",
+		Module:      commonExecution.ModuleManager,
+		TaskType:    commonExecution.TaskTypePointCloudCOPCGeneration,
+		Source:      commonExecution.ModuleManager,
+		Status:      commonExecution.ExecutionStatusRunning,
+		TriggerType: commonExecution.TriggerTypeManual,
+	}); err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	handler := NewTaskProviderHandler(nil, nil, nil, nil, taskExecRepo)
+	handler.SetPointCloudCOPCTaskService(service.NewPointCloudCOPCTaskService(repository.NewPointCloudCOPCRepository(db), taskExecRepo))
+
+	cfg := &config.Config{}
+	cfg.InternalAPIKey = "secret"
+	router := gin.New()
+	router.Use(managerInternalAPIKeyMiddleware(cfg))
+	router.POST("/internal/executions/:execution_id/events", handler.RecordManagerExecutionProgressEvent)
+
+	body := `{"phase":"convert","event":"progress","message":"生成点云 COPC 文件","overall_progress":48,"metadata":{"output_size_bytes":4096}}`
+	req := httptest.NewRequest(http.MethodPost, "/internal/executions/point-cloud-progress-http-1/events", strings.NewReader(body))
+	req.Header.Set("X-Internal-API-Key", "secret")
+	req.Header.Set("X-Tenant-ID", "7")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+	got, err := taskExecRepo.GetByExecutionID(context.Background(), "point-cloud-progress-http-1", 7)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if got.Progress != 48 {
+		t.Fatalf("progress = %d, want 48", got.Progress)
+	}
+	if got.CurrentStep == nil || *got.CurrentStep != "生成点云 COPC 文件" {
+		t.Fatalf("current_step = %#v, want point cloud progress message", got.CurrentStep)
+	}
+}
+
 func TestRasterMosaicProgressEndpointRequiresInternalTenant(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{}

@@ -6,6 +6,8 @@ ENV PORT=8102
 ENV MAMBA_ROOT_PREFIX=/opt/conda
 ENV PATH=/opt/conda/bin:$PATH
 ENV POINTCLOUD_PDAL_BIN=/opt/conda/bin/pdal
+ENV POINTCLOUD_WORK_DIR=/work/pointcloud
+ENV CPL_TMPDIR=/work/pointcloud
 
 WORKDIR /app
 

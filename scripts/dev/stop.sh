@@ -115,6 +115,7 @@ stop_services_concurrent() {
   pkill -9 -f "python.*main.py.*copilot" 2>/dev/null || true
   pkill -9 -f "agent/backend/main.py" 2>/dev/null || true
   pkill -9 -f "uvicorn main:app.*8087" 2>/dev/null || true
+  docker rm -f pointcloud-workflow-engine >/dev/null 2>&1 || true
 
   # Phase 6: 按端口清理残留进程（处理手动启动的进程）
   echo -e "${YELLOW}检查端口占用...${NC}"

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import subprocess
 import tempfile
+import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
+from urllib import error as urlerror
 from urllib.parse import urlparse
+from urllib import request as urlrequest
 
 from minio import Minio
 
@@ -17,6 +22,12 @@ ENGINE_ROOT = Path(__file__).resolve().parent
 DEFAULT_PDAL_BIN = str(ENGINE_ROOT / "bin" / "pdal")
 PDAL_ENV = "POINTCLOUD_PDAL_BIN"
 COPC_CONTENT_TYPE = "application/vnd.laszip+copc"
+OBJECT_STORE_LOCALHOST_ENDPOINT_ENV = "POINTCLOUD_OBJECT_STORE_LOCALHOST_ENDPOINT"
+WORK_DIR_ENV = "POINTCLOUD_WORK_DIR"
+PROGRESS_INTERVAL_ENV = "POINTCLOUD_PROGRESS_INTERVAL_SECONDS"
+COPC_THREADS_ENV = "POINTCLOUD_COPC_THREADS"
+DEFAULT_COPC_THREADS = 4
+MAX_COPC_THREADS = 8
 
 
 class ConverterError(Exception):
@@ -64,6 +75,8 @@ def list_operators() -> list[dict[str, Any]]:
         _copc_operator("las_to_copc", "LAS 转 COPC", "将 LAS 点云转换为 Manager 受管 COPC 快显 artifact。", "las"),
         _copc_operator("laz_to_copc", "LAZ 转 COPC", "将 LAZ 点云转换为 Manager 受管 COPC 快显 artifact。", "laz"),
         _copc_operator("e57_to_copc", "E57 转 COPC", "将 E57 扫描点云转换为 Manager 受管 COPC 快显 artifact。", "e57"),
+        _copc_operator("pcd_to_copc", "PCD 转 COPC", "将 PCD 点云转换为 Manager 受管 COPC 快显 artifact。", "pcd"),
+        _copc_operator("xyz_to_copc", "XYZ 转 COPC", "将简单文本 XYZ 点云转换为 Manager 受管 COPC 快显 artifact。", "xyz"),
     ]
 
 
@@ -120,6 +133,8 @@ def invoke_operator(
         "las_to_copc": "las",
         "laz_to_copc": "laz",
         "e57_to_copc": "e57",
+        "pcd_to_copc": "pcd",
+        "xyz_to_copc": "xyz",
     }[name]
     return point_cloud_to_copc(params, source_format=source_format, runner=runner, env=env, timeout_seconds=timeout_seconds)
 
@@ -136,35 +151,54 @@ def point_cloud_to_copc(
     source = _required_object(access_plan, "source")
     target = _required_object(access_plan, "target")
     options = _optional_object(params, "options")
-    source_path = _first_text(source, "local_path", "root_uri")
+    source_uri = _required_text(source, "root_uri")
     source_plan_format = _text(source.get("format")).lower()
     publish = _required_object(target, "publish")
     file_name = _required_text(target, "file_name")
 
-    if not source_path:
-        raise ConverterError("INVALID_PARAMS", "access_plan.source.local_path or root_uri is required")
     if source_plan_format and source_plan_format != source_format:
         raise ConverterError(
             "INVALID_PARAMS",
             f"access_plan.source.format must be {source_format}",
             details=f"source format: {source_plan_format}",
         )
-    if _text(publish.get("method")) != "object_store":
-        raise ConverterError("INVALID_PARAMS", "access_plan.target.publish.method must be object_store")
     if not file_name.lower().endswith(".copc.laz"):
         raise ConverterError("INVALID_PARAMS", "access_plan.target.file_name must end with .copc.laz")
+    if _text(publish.get("method")) != "object_store":
+        raise ConverterError("INVALID_PARAMS", "access_plan.target.publish.method must be object_store")
 
-    source_file = Path(source_path)
-    if not source_file.is_file():
-        raise ConverterError("SOURCE_NOT_FOUND", "Point cloud source file was not found", details=str(source_file), http_status=404)
+    if not _is_virtual_path(source_uri) and not Path(source_uri).is_file():
+        raise ConverterError("SOURCE_NOT_FOUND", "Point cloud source file was not found", details=source_uri, http_status=404)
 
-    temp_dir = Path(tempfile.mkdtemp(prefix="addp-pointcloud-copc-"))
+    temp_dir = _make_work_dir(env)
     target_file = temp_dir / file_name
+    started_at = time.time()
+    reporter = _ProgressReporter(access_plan.get("progress_callback"), env)
     try:
+        reporter.emit("prepare", "started", "准备点云 COPC 转换", overall_progress=1, force=True)
         pdal = _pdal_bin(env)
-        command = [pdal, "translate", str(source_file), str(target_file), "--writers.copc.forward=all"]
-        command.extend(_pdal_copc_option_args(options))
-        result = _run_executable(command, runner=runner, env_name=PDAL_ENV, timeout_seconds=timeout_seconds)
+        pdal_source_uri = _prepare_pdal_source_uri(source_uri, source_format, temp_dir)
+        command = [pdal, "translate", pdal_source_uri, str(target_file)]
+        command.extend(_pdal_reader_args(source_format))
+        command.append("--writers.copc.forward=all")
+        command.extend(_pdal_copc_option_args(options, env))
+        runtime_env = _runtime_env(access_plan, temp_dir, env)
+        reporter.emit("convert", "started", "生成点云 COPC 文件", overall_progress=5, force=True)
+        result = _run_executable(
+            command,
+            runner=runner,
+            env_name=PDAL_ENV,
+            timeout_seconds=timeout_seconds,
+            extra_env=runtime_env,
+            work_dir=temp_dir,
+            progress_callback=lambda: reporter.emit(
+                "convert",
+                "progress",
+                "生成点云 COPC 文件",
+                overall_progress=_estimate_convert_progress(target_file, source),
+                metadata={"output_size_bytes": _file_size(target_file)},
+            ),
+        )
         if not target_file.is_file():
             raise ConverterError(
                 "OUTPUT_NOT_FOUND",
@@ -172,7 +206,24 @@ def point_cloud_to_copc(
                 details=str(target_file),
                 http_status=500,
             )
+        reporter.emit(
+            "publish",
+            "started",
+            "发布点云 COPC artifact",
+            overall_progress=90,
+            metadata={"output_size_bytes": target_file.stat().st_size},
+            force=True,
+        )
         publish_result = publish_object_store_file(target_file, publish)
+        reporter.emit(
+            "publish",
+            "completed",
+            "点云 COPC artifact 发布完成",
+            overall_progress=95,
+            metadata={"uploaded_bytes": publish_result["uploaded_bytes"]},
+            force=True,
+        )
+        elapsed_ms = int((time.time() - started_at) * 1000)
         return {
             "copc_uri": publish_result["object_uri"],
             "copc_ref": publish_result["object_name"],
@@ -184,13 +235,15 @@ def point_cloud_to_copc(
             "command": _redact_command(command),
             "stdout": result.stdout,
             "stderr": result.stderr,
+            "work_dir": str(temp_dir),
+            "elapsed_ms": elapsed_ms,
         }
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def publish_object_store_file(path: Path, publish: dict[str, Any]) -> dict[str, Any]:
-    endpoint = _normal_endpoint(_required_text(publish, "endpoint"))
+    endpoint = _publish_endpoint(_required_text(publish, "endpoint"))
     bucket = _required_text(publish, "bucket")
     object_name = _required_text(publish, "object").strip("/")
     access_key = _required_text(publish, "access_key")
@@ -218,14 +271,75 @@ def publish_object_store_file(path: Path, publish: dict[str, Any]) -> dict[str, 
     }
 
 
-def _pdal_copc_option_args(options: dict[str, Any]) -> list[str]:
+def _pdal_copc_option_args(options: dict[str, Any], env: dict[str, str] | None = None) -> list[str]:
     args: list[str] = []
-    for key in ["compression", "chunk_size", "scale_x", "scale_y", "scale_z", "offset_x", "offset_y", "offset_z"]:
-        value = options.get(key)
+    normalized = dict(options)
+    if normalized.get("threads") in (None, ""):
+        normalized["threads"] = _default_copc_threads(env)
+    for key in [
+        "scale_x",
+        "scale_y",
+        "scale_z",
+        "offset_x",
+        "offset_y",
+        "offset_z",
+        "a_srs",
+        "threads",
+        "extra_dims",
+        "fixed_seed",
+        "enhanced_srs_vlrs",
+    ]:
+        value = normalized.get(key)
         if value is None or value == "":
             continue
         args.append(f"--writers.copc.{key}={value}")
     return args
+
+
+def _default_copc_threads(env: dict[str, str] | None = None) -> int:
+    values = env if env is not None else os.environ
+    raw = _text(values.get(COPC_THREADS_ENV))
+    try:
+        threads = int(raw) if raw else DEFAULT_COPC_THREADS
+    except ValueError:
+        threads = DEFAULT_COPC_THREADS
+    if threads < 1:
+        return 1
+    if threads > MAX_COPC_THREADS:
+        return MAX_COPC_THREADS
+    return threads
+
+
+def _pdal_reader_args(source_format: str) -> list[str]:
+    if source_format == "xyz":
+        return ["--reader", "readers.text", "--readers.text.header=X Y Z", "--readers.text.skip=0"]
+    return []
+
+
+def _prepare_pdal_source_uri(source_uri: str, source_format: str, temp_dir: Path) -> str:
+    if source_format != "pcd":
+        return source_uri
+    if _is_virtual_path(source_uri):
+        return source_uri
+    source_file = Path(source_uri)
+    normalized = _normalize_legacy_pcd_header(source_file)
+    if normalized is None:
+        return source_uri
+    normalized_path = temp_dir / source_file.name
+    normalized_path.write_bytes(normalized)
+    return str(normalized_path)
+
+
+def _normalize_legacy_pcd_header(source_file: Path) -> bytes | None:
+    data = source_file.read_bytes()
+    marker = re.search(rb"(?m)^VERSION\s+(?:\.\d+|0\.[0-6])\s*$", data)
+    if marker is None:
+        return None
+    line_end = data.find(b"\n", marker.start())
+    if line_end < 0:
+        line_end = len(data)
+    newline = b"\n" if line_end < len(data) else b""
+    return data[: marker.start()] + b"VERSION 0.7" + newline + data[line_end + len(newline) :]
 
 
 def _pdal_bin(env: dict[str, str] | None = None) -> str:
@@ -254,6 +368,9 @@ def _run_executable(
     runner: CommandRunner | None,
     env_name: str,
     timeout_seconds: int | None,
+    extra_env: dict[str, str] | None = None,
+    work_dir: Path | None = None,
+    progress_callback: Callable[[], None] | None = None,
 ) -> CommandResult:
     executable = command[0] if command else ""
     if not _executable_available(executable):
@@ -264,18 +381,223 @@ def _run_executable(
             http_status=503,
         )
     if runner is not None:
+        if progress_callback is not None:
+            progress_callback()
         result = runner(command, timeout_seconds)
+        if progress_callback is not None:
+            progress_callback()
     else:
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout_seconds, check=False)
-        result = CommandResult(returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr)
+        merged_env = os.environ.copy()
+        if extra_env:
+            merged_env.update({str(key): str(value) for key, value in extra_env.items() if key and value is not None})
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=merged_env,
+            cwd=str(work_dir) if work_dir else None,
+        )
+        deadline = time.monotonic() + timeout_seconds if timeout_seconds and timeout_seconds > 0 else None
+        while process.poll() is None:
+            if deadline is not None and time.monotonic() > deadline:
+                process.kill()
+                stdout, stderr = process.communicate()
+                raise ConverterError(
+                    "CONVERSION_TIMEOUT",
+                    "pointcloud conversion command timed out",
+                    details=_command_failure_details(command, CommandResult(returncode=-1, stdout=stdout, stderr=stderr), work_dir),
+                    http_status=504,
+                )
+            if progress_callback is not None:
+                progress_callback()
+            time.sleep(1)
+        stdout, stderr = process.communicate()
+        result = CommandResult(returncode=process.returncode or 0, stdout=stdout, stderr=stderr)
     if result.returncode != 0:
         raise ConverterError(
             "CONVERSION_FAILED",
             "pointcloud conversion command failed",
-            details=(result.stderr or result.stdout or "").strip(),
+            details=_command_failure_details(command, result, work_dir),
             http_status=500,
         )
     return result
+
+
+class _ProgressReporter:
+    def __init__(self, callback: Any, env: dict[str, str] | None = None) -> None:
+        self.callback = callback if isinstance(callback, dict) else {}
+        self.interval_seconds = _progress_interval_seconds(env)
+        self.last_emit_at = 0.0
+        self.last_progress = 0
+
+    def emit(
+        self,
+        phase: str,
+        event: str,
+        message: str = "",
+        *,
+        overall_progress: int | None = None,
+        metadata: dict[str, Any] | None = None,
+        force: bool = False,
+    ) -> None:
+        if not self.callback:
+            return
+        now = time.monotonic()
+        if not force and now - self.last_emit_at < self.interval_seconds:
+            return
+        progress = self.last_progress if overall_progress is None else _clamp_progress(overall_progress)
+        if progress < self.last_progress:
+            progress = self.last_progress
+        self.last_progress = progress
+        self.last_emit_at = now
+        payload: dict[str, Any] = {
+            "phase": phase,
+            "event": event,
+            "message": message,
+            "overall_progress": progress,
+        }
+        if metadata:
+            payload["metadata"] = metadata
+        _post_progress(self.callback, payload)
+
+
+def _post_progress(callback: dict[str, Any], payload: dict[str, Any]) -> None:
+    endpoint = _text(callback.get("endpoint"))
+    if not endpoint:
+        return
+    body = json.dumps(payload).encode("utf-8")
+    req = urlrequest.Request(endpoint, data=body, method="POST")
+    req.add_header("Content-Type", "application/json")
+    internal_api_key = _text(callback.get("internal_api_key"))
+    if internal_api_key:
+        req.add_header("X-Internal-API-Key", internal_api_key)
+    tenant_id = _text(callback.get("tenant_id"))
+    if tenant_id:
+        req.add_header("X-Tenant-ID", tenant_id)
+    try:
+        with urlrequest.urlopen(req, timeout=5) as response:
+            response.read()
+    except (OSError, urlerror.URLError, urlerror.HTTPError):
+        return
+
+
+def _progress_interval_seconds(env: dict[str, str] | None = None) -> float:
+    values = env if env is not None else os.environ
+    raw = _text(values.get(PROGRESS_INTERVAL_ENV))
+    try:
+        seconds = float(raw) if raw else 5.0
+    except ValueError:
+        seconds = 5.0
+    if seconds < 1:
+        return 1.0
+    if seconds > 60:
+        return 60.0
+    return seconds
+
+
+def _estimate_convert_progress(target_file: Path, source: dict[str, Any]) -> int:
+    output_size = _file_size(target_file)
+    source_size = _source_size_bytes(source)
+    if source_size <= 0 or output_size <= 0:
+        return 10
+    estimated = 10 + int((min(output_size, source_size) * 75) / source_size)
+    if estimated > 85:
+        return 85
+    return estimated
+
+
+def _source_size_bytes(source: dict[str, Any]) -> int:
+    metadata = source.get("metadata")
+    if isinstance(metadata, dict):
+        value = metadata.get("source_size_bytes")
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
+def _file_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def _clamp_progress(value: int) -> int:
+    if value < 0:
+        return 0
+    if value > 99:
+        return 99
+    return value
+
+
+def _runtime_env(access_plan: dict[str, Any], temp_dir: Path, env: dict[str, str] | None) -> dict[str, str]:
+    values: dict[str, str] = {}
+    source = _required_object(access_plan, "source")
+    plan_env = source.get("env")
+    if isinstance(plan_env, dict):
+        values.update(_clean_env(plan_env))
+    if "CPL_TMPDIR" not in values:
+        values["CPL_TMPDIR"] = str(temp_dir)
+    if "TMPDIR" not in values:
+        values["TMPDIR"] = str(temp_dir)
+    _rewrite_localhost_endpoint(values, env)
+    return values
+
+
+def _clean_env(data: dict[str, Any]) -> dict[str, str]:
+    return {
+        str(key): str(value)
+        for key, value in data.items()
+        if key and value is not None and str(value).strip() != ""
+    }
+
+
+def _rewrite_localhost_endpoint(values: dict[str, str], env: dict[str, str] | None = None) -> None:
+    endpoint = values.get("AWS_S3_ENDPOINT")
+    if not endpoint:
+        return
+    rewritten = _publish_endpoint(endpoint, env)
+    if rewritten:
+        values["AWS_S3_ENDPOINT"] = rewritten
+
+
+def _command_failure_details(command: list[str], result: CommandResult, work_dir: Path | None) -> str:
+    parts = [
+        f"exit_code={result.returncode}",
+        "command=" + " ".join(_redact_command(command)),
+    ]
+    if work_dir is not None:
+        parts.append(f"work_dir={work_dir}")
+    stderr = _tail(result.stderr)
+    stdout = _tail(result.stdout)
+    if stderr:
+        parts.append(f"stderr_tail={stderr}")
+    if stdout:
+        parts.append(f"stdout_tail={stdout}")
+    return "; ".join(parts)
+
+
+def _tail(value: str, limit: int = 4000) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[-limit:]
+
+
+def _make_work_dir(env: dict[str, str] | None = None) -> Path:
+    values = env if env is not None else os.environ
+    base_dir = _text(values.get(WORK_DIR_ENV))
+    if base_dir:
+        Path(base_dir).mkdir(parents=True, exist_ok=True)
+        return Path(tempfile.mkdtemp(prefix="addp-pointcloud-copc-", dir=base_dir))
+    return Path(tempfile.mkdtemp(prefix="addp-pointcloud-copc-"))
+
+
+def _is_virtual_path(path: str) -> bool:
+    return str(path or "").startswith("/vsi")
 
 
 def _required_object(data: dict[str, Any], key: str) -> dict[str, Any]:
@@ -318,13 +640,38 @@ def _normal_endpoint(endpoint: str) -> str:
     return endpoint
 
 
+def _publish_endpoint(endpoint: str, env: dict[str, str] | None = None) -> str:
+    normalized = _normal_endpoint(endpoint)
+    values = env if env is not None else os.environ
+    override = _text(values.get(OBJECT_STORE_LOCALHOST_ENDPOINT_ENV))
+    if not override or _endpoint_host(normalized) not in {"localhost", "127.0.0.1", "::1"}:
+        return normalized
+    return _normal_endpoint(override)
+
+
+def _endpoint_host(endpoint: str) -> str:
+    parsed = urlparse(endpoint if "://" in endpoint else f"//{endpoint}")
+    return parsed.hostname or endpoint.split(":", 1)[0]
+
+
 def _redact_command(command: list[str]) -> list[str]:
     redacted: list[str] = []
     for part in command:
         text = str(part)
         lowered = text.lower()
-        if "secret" in lowered or "access_key" in lowered or "password" in lowered:
+        if text.startswith("/vsicurl/"):
+            redacted.append(_redact_vsicurl(text))
+        elif "secret" in lowered or "access_key" in lowered or "password" in lowered:
             redacted.append("<redacted>")
         else:
             redacted.append(text)
     return redacted
+
+
+def _redact_vsicurl(value: str) -> str:
+    prefix = "/vsicurl/"
+    raw = value[len(prefix) :]
+    parsed = urlparse(raw)
+    if not parsed.scheme or not parsed.netloc:
+        return prefix + "<redacted-url>"
+    return prefix + parsed._replace(query="<redacted>", fragment="").geturl()

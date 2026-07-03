@@ -6,7 +6,7 @@
 
 `manager.point_cloud_copc_tasks` 回答：
 
-> 以后按什么配置为哪个 LAS / LAZ / E57 点云 item 生成或刷新 Manager 受管 COPC 快显 artifact。
+> 以后按什么配置为哪个 LAS / LAZ / E57 / PCD / XYZ 点云 item 生成或刷新 Manager 受管 COPC 快显 artifact。
 
 它不替代：
 
@@ -59,7 +59,7 @@
 }
 ```
 
-服务端会从 ResourceLocator 和 Meta item facts 归一化 `item_fingerprint`、源格式、源大小和默认 artifact 路径。执行器按 `source.format` 选择 `las_to_copc`、`laz_to_copc` 或 `e57_to_copc` direct operator。调用方不应传入或消费底层 `storage_ref`。
+服务端会从 ResourceLocator 和 Meta item facts 归一化 `item_fingerprint`、源格式、源大小和默认 artifact 路径。执行器按 `source.format` 选择 `las_to_copc`、`laz_to_copc`、`e57_to_copc`、`pcd_to_copc` 或 `xyz_to_copc` direct operator。调用方不应传入或消费底层 `storage_ref`。
 
 ## 四、TaskProvider 入口
 

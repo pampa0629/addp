@@ -35,6 +35,14 @@ type PointCloudCOPCExecutionResult struct {
 	Metadata   commonModels.JSONMap
 }
 
+type PointCloudCOPCProgressEvent struct {
+	Phase           string
+	Event           string
+	Message         string
+	OverallProgress *int
+	Metadata        commonModels.JSONMap
+}
+
 type PointCloudCOPCExecutionConfig struct {
 	Source  PointCloudCOPCSourceConfig
 	Result  PointCloudCOPCResultConfig
@@ -58,6 +66,11 @@ type PointCloudCOPCResultConfig struct {
 type PointCloudCOPCCleaner interface {
 	DeleteByStorageRef(ctx context.Context, storageRef string) error
 }
+
+var (
+	ErrPointCloudCOPCProgressTargetMismatch = errors.New("point cloud COPC progress event target mismatch")
+	ErrPointCloudCOPCExecutionCompleted     = errors.New("point cloud COPC execution is already completed")
+)
 
 type PointCloudCOPCTaskService struct {
 	repo         *repository.PointCloudCOPCRepository
@@ -225,6 +238,59 @@ func (s *PointCloudCOPCTaskService) Execute(ctx context.Context, taskID uint, te
 
 	go s.runPointCloudCOPCGeneration(context.Background(), task, executionID, now)
 	return executionID, nil
+}
+
+func (s *PointCloudCOPCTaskService) RecordProgressEvent(ctx context.Context, tenantID uint, executionID string, event PointCloudCOPCProgressEvent) error {
+	if s.taskExecRepo == nil {
+		return errors.New("task execution repository is required")
+	}
+	executionID = strings.TrimSpace(executionID)
+	if executionID == "" {
+		return errors.New("execution_id is required")
+	}
+	if tenantID == 0 {
+		return errors.New("tenant_id is required")
+	}
+	event.Phase = strings.TrimSpace(event.Phase)
+	event.Event = strings.TrimSpace(event.Event)
+	event.Message = strings.TrimSpace(event.Message)
+	if event.Phase == "" {
+		return errors.New("phase is required")
+	}
+	if event.Event == "" {
+		return errors.New("event is required")
+	}
+
+	exec, err := s.taskExecRepo.GetByExecutionID(ctx, executionID, int(tenantID))
+	if err != nil {
+		return err
+	}
+	if exec.Module != commonExecution.ModuleManager || exec.TaskType != commonExecution.TaskTypePointCloudCOPCGeneration {
+		return ErrPointCloudCOPCProgressTargetMismatch
+	}
+	if exec.IsCompleted() {
+		return ErrPointCloudCOPCExecutionCompleted
+	}
+
+	now := time.Now()
+	nextProgress := pointCloudCOPCProgressPercent(event, exec.Progress)
+	currentStep := pointCloudCOPCProgressStep(event)
+	metadata := pointCloudCOPCProgressMetadata(exec.Metadata, event)
+	elapsedMs := int64(0)
+	if exec.StartedAt != nil {
+		elapsedMs = now.Sub(*exec.StartedAt).Milliseconds()
+	}
+
+	fields := map[string]interface{}{
+		"progress":     nextProgress,
+		"current_step": currentStep,
+		"metadata":     metadata,
+		"updated_at":   now,
+	}
+	if elapsedMs >= 0 {
+		fields["execution_time_ms"] = elapsedMs
+	}
+	return s.taskExecRepo.UpdateFields(ctx, executionID, int(tenantID), fields)
 }
 
 func (s *PointCloudCOPCTaskService) runPointCloudCOPCGeneration(ctx context.Context, task *models.PointCloudCOPCTask, executionID string, startedAt time.Time) {
@@ -408,7 +474,7 @@ func normalizePointCloudCOPCSource(config commonModels.JSONMap) (PointCloudCOPCS
 		return PointCloudCOPCSourceConfig{}, errors.New("point cloud COPC config.source requires item_locator, source_engine_id and item_fingerprint")
 	}
 	if !isPointCloudCOPCTaskSourceFormat(source.Format) {
-		return PointCloudCOPCSourceConfig{}, errors.New("point cloud COPC config.source.format must be las, laz or e57")
+		return PointCloudCOPCSourceConfig{}, errors.New("point cloud COPC config.source.format must be las, laz, e57, pcd or xyz")
 	}
 	loc, err := resourcetree.ParseURI(source.ItemLocator)
 	if err != nil {
@@ -430,7 +496,7 @@ func normalizePointCloudCOPCSource(config commonModels.JSONMap) (PointCloudCOPCS
 
 func isPointCloudCOPCTaskSourceFormat(sourceFormat string) bool {
 	switch format.NormalizeFormat(sourceFormat) {
-	case format.FormatLAS, format.FormatLAZ, format.FormatE57:
+	case format.FormatLAS, format.FormatLAZ, format.FormatE57, format.FormatPCD, format.FormatXYZ:
 		return true
 	default:
 		return false
@@ -512,4 +578,67 @@ func applyPointCloudCOPCResultFields(fields map[string]interface{}, result *Poin
 	if result.Metadata != nil {
 		fields["metadata"] = result.Metadata
 	}
+}
+
+func pointCloudCOPCProgressPercent(event PointCloudCOPCProgressEvent, current int) int {
+	next := current
+	if event.OverallProgress != nil {
+		next = *event.OverallProgress
+	} else {
+		switch event.Phase {
+		case "prepare":
+			next = 1
+		case "convert":
+			next = 10
+		case "publish":
+			next = 90
+		default:
+			next = current
+		}
+	}
+	next = clampPointCloudCOPCProgress(next)
+	if next < current {
+		return clampPointCloudCOPCProgress(current)
+	}
+	return next
+}
+
+func pointCloudCOPCProgressStep(event PointCloudCOPCProgressEvent) string {
+	if event.Message != "" {
+		return event.Message
+	}
+	return fmt.Sprintf("生成点云 COPC：%s", event.Phase)
+}
+
+func pointCloudCOPCProgressMetadata(existing commonModels.JSONMap, event PointCloudCOPCProgressEvent) commonModels.JSONMap {
+	metadata := commonModels.JSONMap{}
+	if existing != nil {
+		metadata = existing.Clone()
+		if metadata == nil {
+			metadata = commonModels.JSONMap{}
+		}
+	}
+	progress := commonModels.JSONMap{
+		"phase":   event.Phase,
+		"event":   event.Event,
+		"message": event.Message,
+	}
+	if event.OverallProgress != nil {
+		progress["overall_progress"] = clampPointCloudCOPCProgress(*event.OverallProgress)
+	}
+	if event.Metadata != nil {
+		progress["metadata"] = event.Metadata.Clone()
+	}
+	metadata["progress_event"] = progress
+	return metadata
+}
+
+func clampPointCloudCOPCProgress(value int) int {
+	if value < 0 {
+		return 0
+	}
+	if value > 99 {
+		return 99
+	}
+	return value
 }

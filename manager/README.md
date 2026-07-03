@@ -111,13 +111,20 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 9. `gaussian_splat_ksplat` / `gaussian_splat_ksplat_tasks` - 3DGS - KSplat 快显结果和任务定义，TaskProvider `task_type=gaussian_splat_ksplat_generation`。
 10. `point_cloud_copc` / `point_cloud_copc_tasks` - 点云 COPC 快显结果和任务定义，TaskProvider `task_type=point_cloud_copc_generation`；源 `format=copc` 直接基础预览。
 11. MVT 是瓦片格式，进入 `config.tile.format=mvt`，不是任务类型；COG 是 TIFF profile 或 Manager COG 生成结果，不是新的基础 format。
-12. 当前 `vector_tile_cache_generation`、`vector_materialized_view_generation` 和 `raster_cog_generation` 由 Manager Backend 内部执行；COG 生成使用 Manager 预处理 GDAL `source_uri` / `target_uri` / `gdal_env`，再通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 Python Workflow，并直接写入 infra MinIO 的单一路线。点云 COPC 生成通过 `pointcloud_workflow` direct operator 写入 Manager infra MinIO。
+12. 当前 `vector_tile_cache_generation`、`vector_materialized_view_generation` 和 `raster_cog_generation` 由 Manager Backend 内部执行；COG 生成使用 Manager 预处理 GDAL `source_uri` / `target_uri` / `gdal_env`，再通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 Python Workflow，并直接写入 infra MinIO 的单一路线。点云 COPC 生成使用 Manager 预处理 PDAL `source.root_uri` 和 Manager infra MinIO 发布计划，再通过 `pointcloud_workflow` direct operator 读取源 URI、写入受控工作目录并发布为 Manager 私有 COPC artifact。
 
 COG 生成运行要求：
 
 - NFS / NAS 源：Python Workflow 运行环境必须能访问 Manager 根据 engine `mount_path` / `export_path` 派生出的挂载路径。
 - MinIO / S3 源：Manager 为源对象生成 presigned URL，Python 通过 GDAL `/vsicurl/` 读取。
 - 目标 COG：Python 通过 GDAL `/vsis3/` 写入 Manager infra MinIO，Manager 负责登记 `raster_cog`。
+
+点云 COPC 生成运行要求：
+
+- NFS / NAS 源：PointCloud Workflow 容器必须能访问 Manager 根据 engine `mount_path` / `export_path` 派生出的挂载路径。
+- MinIO / S3 源：Manager 为源对象生成 presigned URL，PointCloud Workflow 通过 PDAL/GDAL `/vsicurl/` 读取。
+- 目标 COPC：PointCloud Workflow 先通过 PDAL 写入 `POINTCLOUD_WORK_DIR` 下的本地工作文件，再通过 Manager infra MinIO 发布计划上传 artifact，Manager 负责登记 `point_cloud_copc`。
+- COPC 写入不是纯流式写，容器必须配置可用的 `POINTCLOUD_WORK_DIR` / `CPL_TMPDIR` 工作目录。当前 PDAL 2.10.2 实测 `writers.copc` 不能可靠直接写 `/vsis3/` 目标，不能把 `/vsis3/` 直写作为当前单一路线。
 
 三维模型、3D Tiles、高斯泼溅和点云 COPC 的预览路线请查看 [三维模型与高斯泼溅预览说明](./docs/三维模型与高斯泼溅预览说明.md)。详细架构请查看 [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md)。
 

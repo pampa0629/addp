@@ -2453,6 +2453,8 @@ func PointCloudCOPCSourceFromAttributes(attrs map[string]interface{}) *PointClou
 	if itemFormat != string(format.FormatLAS) &&
 		itemFormat != string(format.FormatLAZ) &&
 		itemFormat != string(format.FormatE57) &&
+		itemFormat != string(format.FormatPCD) &&
+		itemFormat != string(format.FormatXYZ) &&
 		itemFormat != string(format.FormatCOPC) {
 		return nil
 	}

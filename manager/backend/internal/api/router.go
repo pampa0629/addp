@@ -74,7 +74,7 @@ func SetupRouter(
 	internal.Use(managerInternalAPIKeyMiddleware(cfg))
 	{
 		if taskProviderHandler != nil {
-			internal.POST("/executions/:execution_id/events", taskProviderHandler.RecordRasterMosaicExecutionProgressEvent)
+			internal.POST("/executions/:execution_id/events", taskProviderHandler.RecordManagerExecutionProgressEvent)
 		}
 	}
 

@@ -376,6 +376,8 @@ func main() {
 			systemClient,
 			systemClient,
 			minioClient,
+			serviceURL,
+			cfg.InternalAPIKey,
 			cfg.MinioEndpoint,
 			cfg.MinioAccessKey,
 			cfg.MinioSecretKey,

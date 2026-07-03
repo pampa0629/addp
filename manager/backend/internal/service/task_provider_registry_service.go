@@ -154,7 +154,7 @@ func (s *TaskProviderRegistryService) Register() error {
 			{
 				"type":                      "point_cloud_copc_generation",
 				"display_name":              "点云 COPC 快显生成",
-				"description":               "将 LAS、LAZ 或 E57 点云转换为 Manager 受管的 COPC 快显 artifact",
+				"description":               "将 LAS、LAZ、E57、PCD 或 XYZ 点云转换为 Manager 受管的 COPC 快显 artifact",
 				"definition_schema":         map[string]interface{}{"type": "object"},
 				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
 				"supports_schedule":         false,

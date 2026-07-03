@@ -214,6 +214,7 @@
         "rasterMosaic": "栅格快显 - Mosaic",
         "model3DQuickView": "三维快显 - GLB",
         "gaussianSplatQuickView": "高斯快显 - KSplat",
+        "pointCloudCOPC": "点云快显 - COPC",
         "model3DTiles": "三维快显 - 3D Tiles"
       },
       "standard": {

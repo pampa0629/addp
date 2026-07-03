@@ -472,7 +472,7 @@ func TestModel3DContentHandlerRoutes3DTilesRenderer(t *testing.T) {
 	}
 }
 
-func TestPointCloudContentHandlerRequiresCOPCGenerationForLAS(t *testing.T) {
+func TestPointCloudContentHandlerRequiresCOPCGeneration(t *testing.T) {
 	t.Parallel()
 	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "pointcloud", Builtin: models.ObjectPreviewKindPointCloud})
 	if err != nil {
@@ -482,32 +482,45 @@ func TestPointCloudContentHandlerRequiresCOPCGenerationForLAS(t *testing.T) {
 	if !ok {
 		t.Fatal("point cloud handler must support stream")
 	}
-	content, truncated, err := streamHandler.HandleStream(context.Background(), &ObjectContentRequest{
-		Format:    string(format.FormatLAS),
-		Extension: ".las",
-		Size:      1024,
-	}, func() (io.ReadCloser, error) {
-		return io.NopCloser(bytes.NewReader(objectPreviewTestLASWithPoints())), nil
-	})
-	if err != nil {
-		t.Fatalf("HandleStream() error = %v", err)
+
+	tests := []struct {
+		formatType format.FormatType
+		extension  string
+	}{
+		{formatType: format.FormatLAS, extension: ".las"},
+		{formatType: format.FormatPCD, extension: ".pcd"},
+		{formatType: format.FormatXYZ, extension: ".xyz"},
 	}
-	if truncated {
-		t.Fatalf("truncated = true, want false")
-	}
-	if content.Kind != models.ObjectPreviewKindPointCloud ||
-		content.PreviewMaterial != models.PreviewMaterialUnsupported ||
-		content.FrontendRenderer != models.ObjectPreviewKindUnsupported {
-		t.Fatalf("content = %#v, want unsupported point_cloud metadata preview", content)
-	}
-	if content.Metadata["preview_reason"] != "requires_copc_generation" {
-		t.Fatalf("preview_reason = %#v, want requires_copc_generation", content.Metadata["preview_reason"])
-	}
-	if content.Metadata["preview_artifact_task_type"] != "point_cloud_copc_generation" {
-		t.Fatalf("preview_artifact_task_type = %#v, want point_cloud_copc_generation", content.Metadata["preview_artifact_task_type"])
-	}
-	if content.JSON != nil {
-		t.Fatalf("content.JSON = %#v, want nil", content.JSON)
+	for _, tt := range tests {
+		t.Run(string(tt.formatType), func(t *testing.T) {
+			content, truncated, err := streamHandler.HandleStream(context.Background(), &ObjectContentRequest{
+				Format:    string(tt.formatType),
+				Extension: tt.extension,
+				Size:      1024,
+			}, func() (io.ReadCloser, error) {
+				return io.NopCloser(bytes.NewReader([]byte("pointcloud"))), nil
+			})
+			if err != nil {
+				t.Fatalf("HandleStream() error = %v", err)
+			}
+			if truncated {
+				t.Fatalf("truncated = true, want false")
+			}
+			if content.Kind != models.ObjectPreviewKindPointCloud ||
+				content.PreviewMaterial != models.PreviewMaterialUnsupported ||
+				content.FrontendRenderer != models.ObjectPreviewKindUnsupported {
+				t.Fatalf("content = %#v, want unsupported point_cloud metadata preview", content)
+			}
+			if content.Metadata["preview_reason"] != "requires_copc_generation" {
+				t.Fatalf("preview_reason = %#v, want requires_copc_generation", content.Metadata["preview_reason"])
+			}
+			if content.Metadata["preview_artifact_task_type"] != "point_cloud_copc_generation" {
+				t.Fatalf("preview_artifact_task_type = %#v, want point_cloud_copc_generation", content.Metadata["preview_artifact_task_type"])
+			}
+			if content.JSON != nil {
+				t.Fatalf("content.JSON = %#v, want nil", content.JSON)
+			}
+		})
 	}
 }
 

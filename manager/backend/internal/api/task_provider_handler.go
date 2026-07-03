@@ -2450,7 +2450,7 @@ func (h *TaskProviderHandler) ListPointCloudCOPCTasks(c *gin.Context) {
 
 // CreatePointCloudCOPCTask POST /api/v1/manager/point_cloud_copc_tasks
 // @Summary 创建点云 COPC 快显任务配置 | Create point cloud COPC quick view generation task configuration
-// @Description 创建新的点云 COPC 快显任务配置。源必须是 format=las、laz 或 e57 的 point_cloud item，并转换为 COPC artifact 写入 Manager infra MinIO；format=copc 的源文件直接基础预览，不创建快显任务。| Create a point cloud COPC quick view task from a format=las, laz, or e57 point_cloud item into Manager infra MinIO. format=copc sources are previewed directly and do not create quick view tasks.
+// @Description 创建新的点云 COPC 快显任务配置。源必须是 format=las、laz、e57、pcd 或 xyz 的 point_cloud item，并转换为 COPC artifact 写入 Manager infra MinIO；format=copc 的源文件直接基础预览，不创建快显任务。| Create a point cloud COPC quick view task from a format=las, laz, e57, pcd, or xyz point_cloud item into Manager infra MinIO. format=copc sources are previewed directly and do not create quick view tasks.
 // @Tags Manager
 // @Accept json
 // @Produce json

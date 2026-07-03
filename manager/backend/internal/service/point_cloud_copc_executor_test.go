@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
@@ -37,7 +39,7 @@ func TestManagerPointCloudCOPCExecutorInvokesDirectWorkflowAndPublishesArtifact(
 					t.Fatalf("decode workflow request: %v", err)
 				}
 				capturedParams = payload.Params
-				_, _ = w.Write([]byte(`{"status":"success","execution_id":"pc-1","execution_time_ms":78.5,"result":{"copc_uri":"s3://manager/tenant_7/point-cloud-copc/fp/source.copc.laz","copc_ref":"tenant_7/point-cloud-copc/fp/source.copc.laz","size_bytes":13598,"source_format":"laz","target_format":"copc","converter":"/opt/conda/bin/pdal","publish":{"uploaded_files":1,"uploaded_bytes":13598}}}`))
+				_, _ = w.Write([]byte(`{"status":"success","execution_id":"pc-1","execution_time_ms":78.5,"result":{"copc_uri":"s3://manager/tenant_7/point-cloud-copc/fp/source.copc.laz","copc_ref":"tenant_7/point-cloud-copc/fp/source.copc.laz","size_bytes":13598,"source_format":"laz","target_format":"copc","converter":"/opt/conda/bin/pdal","elapsed_ms":1234,"publish":{"uploaded_files":1,"uploaded_bytes":13598}}}`))
 			default:
 				t.Fatalf("unexpected workflow path: %s", r.URL.Path)
 			}
@@ -85,6 +87,8 @@ func TestManagerPointCloudCOPCExecutorInvokesDirectWorkflowAndPublishesArtifact(
 			Capabilities: testRasterWorkflowCapabilities(t, testPointCloudWorkflowEngineType),
 		}}},
 		&recordingPointCloudCOPCObjectStore{size: 24680},
+		"http://manager:8081",
+		"manager-internal-key",
 		"http://minio:9000",
 		"minioadmin",
 		"minioadmin",
@@ -94,7 +98,8 @@ func TestManagerPointCloudCOPCExecutorInvokesDirectWorkflowAndPublishesArtifact(
 	)
 
 	result, err := executor.BuildPointCloudCOPC(context.Background(), PointCloudCOPCExecutionRequest{
-		Task: &models.PointCloudCOPCTask{TenantID: 7, Name: "生成 COPC"},
+		Task:        &models.PointCloudCOPCTask{TenantID: 7, Name: "生成 COPC"},
+		ExecutionID: "point-cloud-exec-1",
 		Config: PointCloudCOPCExecutionConfig{
 			Source: PointCloudCOPCSourceConfig{
 				ItemLocator:     "addp://engine/26/path/pointcloud/source.laz?type=file&item_id=77",
@@ -108,7 +113,7 @@ func TestManagerPointCloudCOPCExecutorInvokesDirectWorkflowAndPublishesArtifact(
 				StorageRef: `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/point-cloud-copc/fp/source.copc.laz"}`,
 				FileName:   "source.copc.laz",
 			},
-			Options: commonModels.JSONMap{"chunk_size": 50000},
+			Options: commonModels.JSONMap{"scale_x": 0.01},
 		},
 	})
 	if err != nil {
@@ -143,13 +148,19 @@ func TestManagerPointCloudCOPCExecutorInvokesDirectWorkflowAndPublishesArtifact(
 	accessPlan := capturedParams["access_plan"].(map[string]interface{})
 	sourcePlan := accessPlan["source"].(map[string]interface{})
 	targetPlan := accessPlan["target"].(map[string]interface{})
+	progress := accessPlan["progress_callback"].(map[string]interface{})
 	publish := targetPlan["publish"].(map[string]interface{})
 	options := capturedParams["options"].(map[string]interface{})
-	if sourcePlan["local_path"] != "/mnt/addp-nfs/pointcloud/source.laz" || sourcePlan["format"] != "laz" {
+	if sourcePlan["root_uri"] != "/mnt/addp-nfs/pointcloud/source.laz" || sourcePlan["format"] != "laz" {
 		t.Fatalf("source plan = %#v, want mounted source path and format", sourcePlan)
 	}
 	if publish["method"] != "object_store" || publish["bucket"] != "manager" || publish["object"] != "tenant_7/point-cloud-copc/fp/source.copc.laz" {
 		t.Fatalf("publish = %#v, want Manager infra MinIO target", publish)
+	}
+	if progress["endpoint"] != "http://manager:8081/api/v1/manager/internal/executions/point-cloud-exec-1/events" ||
+		progress["tenant_id"] != float64(7) || progress["execution_id"] != "point-cloud-exec-1" ||
+		progress["internal_api_key"] != "manager-internal-key" {
+		t.Fatalf("progress callback = %#v, want Manager internal execution event callback", progress)
 	}
 	if publish["endpoint"] != "http://minio:9000" || publish["access_key"] != "minioadmin" || publish["secret_key"] != "minioadmin" {
 		t.Fatalf("publish credentials not passed correctly: %#v", publish)
@@ -157,8 +168,8 @@ func TestManagerPointCloudCOPCExecutorInvokesDirectWorkflowAndPublishesArtifact(
 	if targetPlan["file_name"] != "source.copc.laz" || publish["content_type"] != pointCloudCOPCContentType {
 		t.Fatalf("target plan = %#v, want COPC file name and content type", targetPlan)
 	}
-	if options["chunk_size"] != float64(50000) {
-		t.Fatalf("options = %#v, want chunk_size forwarded", options)
+	if options["scale_x"] != float64(0.01) {
+		t.Fatalf("options = %#v, want scale_x forwarded", options)
 	}
 }
 
@@ -214,6 +225,8 @@ func TestManagerPointCloudCOPCExecutorRejectsOperatorWithoutDirectMode(t *testin
 			Capabilities: testRasterWorkflowCapabilities(t, testPointCloudWorkflowEngineType),
 		}}},
 		&recordingPointCloudCOPCObjectStore{size: 24680},
+		"http://manager:8081",
+		"manager-internal-key",
 		"http://minio:9000",
 		"minioadmin",
 		"minioadmin",
@@ -223,7 +236,8 @@ func TestManagerPointCloudCOPCExecutorRejectsOperatorWithoutDirectMode(t *testin
 	)
 
 	_, err = executor.BuildPointCloudCOPC(context.Background(), PointCloudCOPCExecutionRequest{
-		Task: &models.PointCloudCOPCTask{TenantID: 7, Name: "生成 COPC"},
+		Task:        &models.PointCloudCOPCTask{TenantID: 7, Name: "生成 COPC"},
+		ExecutionID: "point-cloud-exec-2",
 		Config: PointCloudCOPCExecutionConfig{
 			Source: PointCloudCOPCSourceConfig{
 				ItemLocator:     "addp://engine/26/path/pointcloud/source.las?type=file&item_id=77",
@@ -242,6 +256,31 @@ func TestManagerPointCloudCOPCExecutorRejectsOperatorWithoutDirectMode(t *testin
 	}
 	if !strings.Contains(err.Error(), "direct workflow operator") || !strings.Contains(err.Error(), "does not support direct invocation") {
 		t.Fatalf("error = %q, want direct mode rejection", err.Error())
+	}
+}
+
+func TestPointCloudCOPCOperatorForFormat(t *testing.T) {
+	tests := []struct {
+		sourceFormat string
+		operatorName string
+		normalized   string
+	}{
+		{sourceFormat: string(format.FormatLAS), operatorName: "las_to_copc", normalized: string(format.FormatLAS)},
+		{sourceFormat: string(format.FormatLAZ), operatorName: "laz_to_copc", normalized: string(format.FormatLAZ)},
+		{sourceFormat: string(format.FormatE57), operatorName: "e57_to_copc", normalized: string(format.FormatE57)},
+		{sourceFormat: string(format.FormatPCD), operatorName: "pcd_to_copc", normalized: string(format.FormatPCD)},
+		{sourceFormat: string(format.FormatXYZ), operatorName: "xyz_to_copc", normalized: string(format.FormatXYZ)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.sourceFormat, func(t *testing.T) {
+			operatorName, normalized, err := pointCloudCOPCOperatorForFormat(tt.sourceFormat)
+			if err != nil {
+				t.Fatalf("pointCloudCOPCOperatorForFormat() error = %v", err)
+			}
+			if operatorName != tt.operatorName || normalized != tt.normalized {
+				t.Fatalf("operator=%q normalized=%q, want %q %q", operatorName, normalized, tt.operatorName, tt.normalized)
+			}
+		})
 	}
 }
 
@@ -325,6 +364,77 @@ func TestPointCloudCOPCTaskExecutionMarksResultReady(t *testing.T) {
 	}
 }
 
+func TestPointCloudCOPCRecordProgressEventUpdatesExecution(t *testing.T) {
+	db := newPointCloudCOPCTaskServiceTestDB(t)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewPointCloudCOPCTaskService(repository.NewPointCloudCOPCRepository(db), taskExecRepo)
+	startedAt := time.Now().Add(-2 * time.Second)
+	if err := taskExecRepo.Create(context.Background(), &commonExecution.TaskExecution{
+		TenantID:    7,
+		ExecutionID: "point-cloud-progress-1",
+		Module:      commonExecution.ModuleManager,
+		TaskType:    commonExecution.TaskTypePointCloudCOPCGeneration,
+		Source:      commonExecution.ModuleManager,
+		Status:      commonExecution.ExecutionStatusRunning,
+		Progress:    0,
+		TriggerType: commonExecution.TriggerTypeManual,
+		StartedAt:   &startedAt,
+	}); err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	overall := 42
+	if err := taskSvc.RecordProgressEvent(context.Background(), 7, "point-cloud-progress-1", PointCloudCOPCProgressEvent{
+		Phase:           "convert",
+		Event:           "progress",
+		Message:         "生成点云 COPC 文件",
+		OverallProgress: &overall,
+		Metadata:        commonModels.JSONMap{"output_size_bytes": int64(2048)},
+	}); err != nil {
+		t.Fatalf("RecordProgressEvent: %v", err)
+	}
+	exec, err := taskExecRepo.GetByExecutionID(context.Background(), "point-cloud-progress-1", 7)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if exec.Progress != 42 {
+		t.Fatalf("progress = %d, want 42", exec.Progress)
+	}
+	if exec.CurrentStep == nil || *exec.CurrentStep != "生成点云 COPC 文件" {
+		t.Fatalf("current_step = %#v, want progress message", exec.CurrentStep)
+	}
+	progressEvent, ok := asJSONMap(exec.Metadata["progress_event"])
+	if !ok {
+		t.Fatalf("metadata progress_event = %#v, want object", exec.Metadata["progress_event"])
+	}
+	if progressEvent["phase"] != "convert" || progressEvent["event"] != "progress" {
+		t.Fatalf("metadata progress_event = %#v, want convert/progress", progressEvent)
+	}
+}
+
+func TestPointCloudCOPCRecordProgressEventRejectsWrongExecution(t *testing.T) {
+	db := newPointCloudCOPCTaskServiceTestDB(t)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewPointCloudCOPCTaskService(repository.NewPointCloudCOPCRepository(db), taskExecRepo)
+	if err := taskExecRepo.Create(context.Background(), &commonExecution.TaskExecution{
+		TenantID:    7,
+		ExecutionID: "point-cloud-progress-wrong",
+		Module:      commonExecution.ModuleManager,
+		TaskType:    commonExecution.TaskTypeRasterCOGGeneration,
+		Source:      commonExecution.ModuleManager,
+		Status:      commonExecution.ExecutionStatusRunning,
+		TriggerType: commonExecution.TriggerTypeManual,
+	}); err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	err := taskSvc.RecordProgressEvent(context.Background(), 7, "point-cloud-progress-wrong", PointCloudCOPCProgressEvent{
+		Phase: "convert",
+		Event: "progress",
+	})
+	if !errors.Is(err, ErrPointCloudCOPCProgressTargetMismatch) {
+		t.Fatalf("RecordProgressEvent error = %v, want ErrPointCloudCOPCProgressTargetMismatch", err)
+	}
+}
+
 func writePointCloudOperatorList(w http.ResponseWriter, engineType string, executionModes []string) {
 	w.Header().Set("Content-Type", "application/json")
 	payload := map[string]interface{}{
@@ -378,8 +488,40 @@ func writePointCloudOperatorList(w http.ResponseWriter, engineType string, execu
 					{"name": "result", "type": "object", "description": "COPC 生成结果", "is_default": true},
 				},
 			},
+			{
+				"id":              "pcd_to_copc",
+				"name":            "pcd_to_copc",
+				"display_name":    "PCD 转 COPC",
+				"engine_type":     engineType,
+				"category":        "点云转换",
+				"category_path":   []string{"点云转换", "快显"},
+				"description":     "生成 COPC",
+				"execution_modes": executionModes,
+				"parameters": []map[string]interface{}{
+					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
+				},
+				"output_ports": []map[string]interface{}{
+					{"name": "result", "type": "object", "description": "COPC 生成结果", "is_default": true},
+				},
+			},
+			{
+				"id":              "xyz_to_copc",
+				"name":            "xyz_to_copc",
+				"display_name":    "XYZ 转 COPC",
+				"engine_type":     engineType,
+				"category":        "点云转换",
+				"category_path":   []string{"点云转换", "快显"},
+				"description":     "生成 COPC",
+				"execution_modes": executionModes,
+				"parameters": []map[string]interface{}{
+					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
+				},
+				"output_ports": []map[string]interface{}{
+					{"name": "result", "type": "object", "description": "COPC 生成结果", "is_default": true},
+				},
+			},
 		},
-		"count": 3,
+		"count": 5,
 	}
 	_ = json.NewEncoder(w).Encode(payload)
 }

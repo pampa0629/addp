@@ -1379,8 +1379,8 @@ const isPointCloudCOPCSourceNode = computed(() => {
     node.file_format ||
     ''
   ).trim().toLowerCase()
-  if (dataType === 'point_cloud' && ['las', 'laz', 'e57', 'copc'].includes(format)) return true
-  return /\.(las|laz|e57|copc)$/i.test(selectedNodePath.value)
+  if (dataType === 'point_cloud' && ['las', 'laz', 'e57', 'pcd', 'xyz', 'copc'].includes(format)) return true
+  return /\.(las|laz|e57|pcd|xyz|copc)$/i.test(selectedNodePath.value)
 })
 
 const spatialInfoTooltip = computed(() => {

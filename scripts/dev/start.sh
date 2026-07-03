@@ -1619,80 +1619,70 @@ else
 fi
 
 # ============================================================
-# Step 4.4: Start PointCloud Workflow Engine (Python service)
+# Step 4.4: Start PointCloud Workflow Engine (Docker runtime)
 # ============================================================
 
 if [ "$START_POINTCLOUD_WORKFLOW" = true ]; then
   echo -e "${BLUE}Step 4.4/5: 启动 PointCloud Workflow Engine${NC}"
 
-NEED_INSTALL=false
-if [ ! -d "engines/pointcloud-workflow/venv" ]; then
-    echo "首次启动，创建 Python 虚拟环境..."
-    cd engines/pointcloud-workflow
-    SELECTED_PYTHON=$(select_python)
-    PYTHON_VER=$($SELECTED_PYTHON --version)
-    echo "  使用 $PYTHON_VER"
-    $SELECTED_PYTHON -m venv venv
-    NEED_INSTALL=true
-else
-    if ! ./engines/pointcloud-workflow/venv/bin/python -c "import flask, minio" &> /dev/null; then
-        echo "检测到虚拟环境缺少依赖，重新安装..."
-        cd engines/pointcloud-workflow
-        NEED_INSTALL=true
-    else
-        echo "虚拟环境已存在且依赖完整，跳过安装"
-    fi
-fi
-
-if [ "$NEED_INSTALL" = true ]; then
-    echo "使用 pip 安装依赖..."
-    PIP_CMD="./venv/bin/python -m pip install"
-    if [ -n "$PIP_INDEX_URL" ]; then
-        echo "  使用镜像源: $PIP_INDEX_URL"
-        PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
-        if [ -n "$PIP_TRUSTED_HOST" ]; then
-            PIP_CMD="$PIP_CMD --trusted-host $PIP_TRUSTED_HOST"
-        fi
-    fi
-
-    $PIP_CMD --upgrade pip
-    $PIP_CMD -r requirements.txt
-
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
-    else
-        echo -e "${RED}✗ Python 依赖安装失败${NC}"
-        exit 1
-    fi
-    cd ../..
-fi
-
 start_pointcloud_workflow_engine_process() {
-  echo "启动 PointCloud Workflow Engine..."
-  cd engines/pointcloud-workflow
+  if ! command -v docker >/dev/null 2>&1; then
+    echo -e "${RED}✗ PointCloud Workflow Engine 需要 Docker runtime 承载 PDAL${NC}"
+    exit 1
+  fi
 
-  export PORT=$POINTCLOUD_WORKFLOW_PORT
-  export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
+  local image="${POINTCLOUD_WORKFLOW_IMAGE:-addp-pointcloud-workflow-engine:dev}"
+  local source_dir="${POINTCLOUD_DATA_HOST_PATH:-${ROOT_DIR}/business/nfs/data}"
+  local container_source_dir="${POINTCLOUD_DATA_CONTAINER_PATH:-${ROOT_DIR}/business/nfs/data}"
+  local work_dir="${POINTCLOUD_WORK_HOST_PATH:-${ROOT_DIR}/data/pointcloud-work}"
+  local system_port="${SYSTEM_BACKEND_PORT:-8180}"
+  local minio_port="${MINIO_API_PORT:-19000}"
 
-  ./venv/bin/python api_server.py > ../../logs/pointcloud-workflow-engine.log 2> ../../logs/pointcloud-workflow-engine-stderr.log &
-  POINTCLOUD_WORKFLOW_PID=$!
-  echo $POINTCLOUD_WORKFLOW_PID > ../../.dev-pids/pointcloud-workflow-engine.pid
-  cd ../..
+  if ! docker image inspect "$image" >/dev/null 2>&1 || [ "${FORCE_POINTCLOUD_WORKFLOW_IMAGE_BUILD:-0}" = "1" ]; then
+    echo "构建 PointCloud Workflow Engine 镜像..."
+    docker build -t "$image" engines/pointcloud-workflow
+  fi
 
-  echo -e "${GREEN}✓ PointCloud Workflow Engine 已启动 (PID: $POINTCLOUD_WORKFLOW_PID)${NC}"
+  echo "启动 PointCloud Workflow Engine Docker runtime..."
+  docker rm -f pointcloud-workflow-engine >/dev/null 2>&1 || true
+  pkill -9 -f "engines/pointcloud-workflow/api_server.py" 2>/dev/null || true
+  mkdir -p "${work_dir}"
+  mkdir -p .dev-pids
+  POINTCLOUD_WORKFLOW_PID=$(
+    docker run -d \
+      --name pointcloud-workflow-engine \
+      --add-host=host.docker.internal:host-gateway \
+      -p "${POINTCLOUD_WORKFLOW_PORT}:8102" \
+      -e PORT=8102 \
+      -e SYSTEM_URL="http://host.docker.internal:${system_port}" \
+      -e INTERNAL_API_KEY="${INTERNAL_API_KEY:-}" \
+      -e POINTCLOUD_PDAL_BIN=/opt/conda/bin/pdal \
+      -e POINTCLOUD_WORK_DIR=/work/pointcloud \
+      -e CPL_TMPDIR=/work/pointcloud \
+      -e RUNTIME_HOST=localhost \
+      -e POINTCLOUD_OBJECT_STORE_LOCALHOST_ENDPOINT="host.docker.internal:${minio_port}" \
+      -v "${ROOT_DIR}/logs:/app/logs" \
+      -v "${work_dir}:/work/pointcloud" \
+      -v "${ROOT_DIR}/engines/pointcloud-workflow/api_server.py:/app/api_server.py:ro" \
+      -v "${ROOT_DIR}/engines/pointcloud-workflow/operators.py:/app/operators.py:ro" \
+      -v "${source_dir}:${container_source_dir}:ro" \
+      "$image"
+  )
+  echo "$POINTCLOUD_WORKFLOW_PID" > .dev-pids/pointcloud-workflow-engine.pid
+
+  echo -e "${GREEN}✓ PointCloud Workflow Engine 容器已启动 (${POINTCLOUD_WORKFLOW_PID})${NC}"
 
   echo -n "  等待服务就绪"
   MAX_WAIT=60
   WAIT_COUNT=0
-  while ! curl -s http://localhost:${POINTCLOUD_WORKFLOW_PORT}/health > /dev/null 2>&1; do
+  while ! curl -s "http://localhost:${POINTCLOUD_WORKFLOW_PORT}/health" | grep -q '"status":"healthy"'; do
     sleep 1
     echo -n "."
     WAIT_COUNT=$((WAIT_COUNT + 1))
     if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
       echo -e " ${RED}✗${NC}"
       echo -e "${RED}✗ PointCloud Workflow Engine 启动超时（60秒）${NC}"
-      echo -e "${YELLOW}查看日志: tail -f logs/pointcloud-workflow-engine.log${NC}"
-      echo -e "${YELLOW}或检查错误: tail -f logs/pointcloud-workflow-engine-stderr.log${NC}"
+      echo -e "${YELLOW}查看日志: docker logs pointcloud-workflow-engine${NC}"
       exit 1
     fi
   done
@@ -1702,24 +1692,30 @@ start_pointcloud_workflow_engine_process() {
 
 if curl -s "http://localhost:${POINTCLOUD_WORKFLOW_PORT}/health" 2>/dev/null | grep -q '"service":"pointcloud-workflow-engine"'; then
   POINTCLOUD_WORKFLOW_PID=$(cat .dev-pids/pointcloud-workflow-engine.pid 2>/dev/null || true)
-  if [ -n "$POINTCLOUD_WORKFLOW_PID" ] && ps -p "$POINTCLOUD_WORKFLOW_PID" > /dev/null 2>&1; then
-    echo -e "${GREEN}✓ PointCloud Workflow Engine 已在运行 (PID: $POINTCLOUD_WORKFLOW_PID)${NC}"
-  elif docker ps --filter "name=^/pointcloud-workflow-engine$" --format '{{.Names}}' 2>/dev/null | grep -qx "pointcloud-workflow-engine"; then
-    echo -e "${YELLOW}⚠️  检测到 Docker 版 PointCloud Workflow Engine 正占用 ${POINTCLOUD_WORKFLOW_PORT}${NC}"
-    echo -e "${YELLOW}   dev 模式需要宿主机 Python runtime，以便与 Manager 统一访问 infra MinIO localhost:${MINIO_API_PORT:-19000}${NC}"
-    echo "  停止 Docker 版 PointCloud Workflow Engine..."
-    docker rm -f pointcloud-workflow-engine >/dev/null
-    rm -f .dev-pids/pointcloud-workflow-engine.pid
-    echo -e "${GREEN}✓ Docker 版 PointCloud Workflow Engine 已停止，继续启动宿主机 runtime${NC}"
-    start_pointcloud_workflow_engine_process
+  if docker ps --filter "name=^/pointcloud-workflow-engine$" --format '{{.Names}}' 2>/dev/null | grep -qx "pointcloud-workflow-engine"; then
+    if curl -s "http://localhost:${POINTCLOUD_WORKFLOW_PORT}/health" | grep -q '"status":"healthy"'; then
+      echo -e "${GREEN}✓ PointCloud Workflow Engine Docker runtime 已在运行 (${POINTCLOUD_WORKFLOW_PID:-pointcloud-workflow-engine})${NC}"
+    else
+      echo -e "${YELLOW}⚠️  PointCloud Workflow Engine 当前不是 healthy，重建 Docker runtime${NC}"
+      start_pointcloud_workflow_engine_process
+    fi
   else
-    echo -e "${GREEN}✓ PointCloud Workflow Engine 已在运行 (http://localhost:${POINTCLOUD_WORKFLOW_PORT})${NC}"
+    echo -e "${YELLOW}⚠️  检测到非容器 PointCloud Workflow Engine 正占用 ${POINTCLOUD_WORKFLOW_PORT}，切换到 Docker runtime${NC}"
+    start_pointcloud_workflow_engine_process
   fi
 elif check_service_running "pointcloud-workflow-engine" "$POINTCLOUD_WORKFLOW_PORT"; then
   start_pointcloud_workflow_engine_process
 else
-  POINTCLOUD_WORKFLOW_PID=$(cat .dev-pids/pointcloud-workflow-engine.pid 2>/dev/null)
-  echo -e "${GREEN}✓ PointCloud Workflow Engine 已在运行 (PID: $POINTCLOUD_WORKFLOW_PID)${NC}"
+  occupying_pid=$(lsof -ti :${POINTCLOUD_WORKFLOW_PORT} -sTCP:LISTEN 2>/dev/null || true)
+  occupying_cmd=$(ps -p "$occupying_pid" -o command= 2>/dev/null || true)
+  if echo "$occupying_cmd" | grep -qE "engines/pointcloud-workflow|api_server\\.py"; then
+    echo -e "${YELLOW}⚠️  清理旧 PointCloud Workflow Engine 进程并切换到 Docker runtime${NC}"
+    start_pointcloud_workflow_engine_process
+  else
+    echo -e "${RED}✗ PointCloud Workflow Engine 端口 ${POINTCLOUD_WORKFLOW_PORT} 被占用，无法启动 Docker runtime${NC}"
+    echo -e "${YELLOW}  进程: $(echo "$occupying_cmd" | cut -c1-80)${NC}"
+    exit 1
+  fi
 fi
   echo ""
 else
@@ -2560,7 +2556,7 @@ echo "  Quality:  logs/quality-backend.log"
 echo "  Python Workflow Engine: logs/python-workflow-engine.log"
 echo "  Math Workflow Engine: logs/math-workflow-engine.log (显式 -math-workflow 启动时)"
 echo "  Model3D Workflow Engine: logs/model3d-workflow-engine.log"
-echo "  PointCloud Workflow Engine: logs/pointcloud-workflow-engine.log"
+echo "  PointCloud Workflow Engine: docker logs pointcloud-workflow-engine"
 echo "  Spark 工作流引擎: logs/spark-workflow-engine.log"
 echo "  Jupyter Engine: logs/jupyter-engine.log"
 echo "  Gateway:  logs/gateway.log"

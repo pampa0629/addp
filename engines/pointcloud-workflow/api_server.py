@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 from datetime import datetime
@@ -164,15 +165,19 @@ def register_to_system() -> bool:
     api_key = os.getenv("INTERNAL_API_KEY", "")
     port = int(os.getenv("PORT", 8102))
     protocol = os.getenv("PROTOCOL", "http")
+    runtime_host = os.getenv("RUNTIME_HOST", "").strip()
+    connection_info = {
+        "protocol": protocol,
+        "port": port,
+    }
+    if runtime_host:
+        connection_info["host"] = runtime_host
 
     payload = {
         "engine_type": "pointcloud_workflow",
         "name": "PointCloud 工作流引擎",
-        "description": "点云处理专用工作流运行时，提供 LAS / LAZ / E57 转 COPC 快显 direct 算子",
-        "connection_info": {
-            "protocol": protocol,
-            "port": port,
-        },
+        "description": "点云处理专用工作流运行时，提供 LAS / LAZ / E57 / PCD / XYZ 转 COPC 快显 direct 算子",
+        "connection_info": connection_info,
         "is_builtin": True,
     }
     headers = {
@@ -201,18 +206,23 @@ def register_to_system() -> bool:
 
 
 def register_to_system_with_retry() -> None:
-    import threading
+    converter = converter_status()
+    if not converter.get("available"):
+        logger.warning("skip pointcloud_workflow registration because PDAL is not bound: %s", converter.get("details"))
+        return
 
-    max_retries = 5
-    retry_interval = 10
-    for attempt in range(1, max_retries + 1):
-        logger.info("attempting to register pointcloud_workflow to System (%s/%s)", attempt, max_retries)
+    try:
+        retry_interval = max(1, int(os.getenv("REGISTRATION_RETRY_INTERVAL_SECONDS", "10")))
+    except ValueError:
+        retry_interval = 10
+    attempt = 1
+    while True:
+        logger.info("attempting to register pointcloud_workflow to System (attempt %s)", attempt)
         if register_to_system():
             logger.info("pointcloud_workflow registration succeeded on attempt %s", attempt)
             return
-        if attempt < max_retries:
-            threading.Event().wait(retry_interval)
-    logger.error("pointcloud_workflow registration failed after %s attempts", max_retries)
+        attempt += 1
+        threading.Event().wait(retry_interval)
 
 
 def _execution_record(status: str, *, response: dict[str, Any]) -> dict[str, Any]:

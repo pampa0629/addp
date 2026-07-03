@@ -84,6 +84,10 @@
               <el-icon><Aim /></el-icon>
               <span>{{ t('manager.layout.gaussianSplatKSplat') }}</span>
             </el-menu-item>
+            <el-menu-item index="/point-cloud-copc">
+              <el-icon><Grid /></el-icon>
+              <span>{{ t('manager.layout.pointCloudCOPC') }}</span>
+            </el-menu-item>
           </el-sub-menu>
         </el-menu>
       </el-aside>
