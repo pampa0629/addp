@@ -952,7 +952,7 @@ cd engines/math-workflow && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests/test_a
 
 ### 现象
 
-LAS / LAZ / E57 数据项在 Manager 数据探查中点击“生成 COPC 快显”后失败，Manager 日志中可能出现：
+LAS / LAZ / E57 / PCD / XYZ 数据项在 Manager 数据探查中点击“生成 COPC 快显”后失败，Manager 日志中可能出现：
 
 ```text
 direct workflow operator laz_to_copc is unavailable
@@ -966,7 +966,7 @@ skip pointcloud_workflow registration because PDAL is not bound
 
 ### 根因
 
-点云 COPC 转换依赖 `pointcloud_workflow` 运行时内置的 PDAL。开发环境不要求、也不应要求宿主机全局安装 PDAL；如果 `pointcloud-workflow` 被按宿主机 Python 服务启动，默认找不到 engine runtime 内部 PDAL，`/health` 会返回 `degraded`，并跳过向 System 自注册。此时 Manager 无法通过 `WorkflowRuntimeProvider` 找到 `las_to_copc` / `laz_to_copc` / `e57_to_copc` direct operator。
+点云 COPC 转换依赖 `pointcloud_workflow` 运行时内置的 PDAL。开发环境不要求、也不应要求宿主机全局安装 PDAL；如果 `pointcloud-workflow` 被按宿主机 Python 服务启动，默认找不到 engine runtime 内部 PDAL，`/health` 会返回 `degraded`，并跳过向 System 自注册。此时 Manager 无法通过 `WorkflowRuntimeProvider` 找到 `las_to_copc` / `laz_to_copc` / `e57_to_copc` / `pcd_to_copc` / `xyz_to_copc` direct operator。
 
 ### 正确处理
 

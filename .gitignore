@@ -5,6 +5,10 @@
 # Build outputs
 **/dist/
 **/build/
+!scripts/build/
+scripts/build/*
+!scripts/build/*.sh
+!scripts/build/README.md
 **/bin/
 
 # Environment files

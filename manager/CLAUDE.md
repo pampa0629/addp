@@ -41,7 +41,7 @@ manager/
 │   ├── 快显实现规范.md
 │   ├── 数据预览与资源树实现规范.md
 │   ├── 数据预览语义协议.md
-│   ├── 三维模型与高斯泼溅预览说明.md
+│   ├── 三维模型、点云与高斯泼溅预览说明.md
 │   ├── 存储流与原始下载语义.md
 │   ├── 向量化概念说明.md
 │   ├── 向量化能力说明.md
@@ -111,7 +111,7 @@ curl http://localhost:8081/health
 - `manager/docs/向量化能力说明.md`
 - `manager/docs/数据预览与资源树实现规范.md`
 - `manager/docs/数据预览语义协议.md`
-- `manager/docs/三维模型与高斯泼溅预览说明.md`
+- `manager/docs/三维模型、点云与高斯泼溅预览说明.md`
 - `manager/docs/存储流与原始下载语义.md`
 - `manager/docs/tables/preview_state表.md`
 - `manager/docs/tables/vector_materialized_view表.md`

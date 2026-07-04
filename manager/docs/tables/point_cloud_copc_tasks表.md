@@ -86,7 +86,7 @@ DELETE /api/v1/manager/point_cloud_copc_tasks/{id}
 
 ## 五、相关文档
 
-- [三维模型与高斯泼溅预览说明](../三维模型与高斯泼溅预览说明.md)
+- [三维模型、点云与高斯泼溅预览说明](../三维模型、点云与高斯泼溅预览说明.md)
 - [数据预览语义协议](../数据预览语义协议.md)
 - [point_cloud_copc 表结构说明](./point_cloud_copc表.md)
 - [数据库架构](../数据库架构.md)

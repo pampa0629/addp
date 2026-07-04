@@ -80,7 +80,7 @@ bash scripts/dev/modtidy.sh
 
 **功能**: 启动完整开发环境
 
-指定单个模块启动时，脚本仍会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。模块自己的前端和额外依赖在此基础上按需启动，例如 `-manager` 会额外启动 Transfer Backend / Worker，`-develop` 会额外启动工作流引擎。
+指定单个模块启动时，脚本仍会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。模块自己的前端和额外依赖在此基础上按需启动，例如 `-manager` 会额外启动 Transfer Backend / Worker、Model3D Workflow Engine 和 PointCloud Workflow Engine，`-develop` 会额外启动 Python/Math/Spark Workflow Engine 和 Jupyter。
 
 **执行步骤**:
 1. **Step 0**: Go 依赖检查(`go mod tidy`,可跳过)
@@ -145,6 +145,8 @@ bash scripts/dev/restart.sh -manager
 # 局部重启扩展服务
 bash scripts/dev/restart.sh -python-workflow
 bash scripts/dev/restart.sh -math-workflow
+bash scripts/dev/restart.sh -model3d-workflow
+bash scripts/dev/restart.sh -pointcloud-workflow
 bash scripts/dev/restart.sh -spark-workflow
 bash scripts/dev/restart.sh -jupyter
 bash scripts/dev/restart.sh -copilot
@@ -155,6 +157,7 @@ bash scripts/dev/restart.sh -agent
 - 修改代码后需要重启
 - 服务异常需要重置
 - 只调整 Python/扩展服务时，避免影响正在运行的 Go 后端服务
+- PointCloud Workflow 使用 Docker runtime 承载 PDAL，局部重启会重建并替换该 runtime 容器
 
 **重要**: `restart.sh` 不会重启基础设施容器(PostgreSQL, Redis, MinIO, Meilisearch)
 - 原因: 避免 pgvector 等扩展需要重新编译安装
@@ -217,6 +220,8 @@ Manager Backend (8081) + Meta Backend (8082) (并行启动)
 Transfer Backend (8083) + Transfer Worker + Meta Worker
   ↓
 Orchestrator Backend (8084)
+  ↓
+Model3D / PointCloud / Python Workflow Engines (按模块需要启动)
   ↓
 Gateway (8000) - API 路由
   ↓

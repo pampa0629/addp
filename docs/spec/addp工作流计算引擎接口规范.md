@@ -38,7 +38,7 @@ ADDP 工作流计算引擎采用 `EnginePlugin + WorkflowRuntimeProvider + HTTP 
 | **Python Workflow** | 8099 | Python + Pandas + GeoPandas | 中小规模空间和数据处理 | 42+ |
 | **Spark Workflow** | 8098 | PySpark + Sedona | 大规模分布式计算 | 35+ |
 | **Model3D Workflow** | 8101 | Python wrapper + 三维转换 CLI | 三维模型、BIM 和高斯泼溅快显转换 | direct 转换算子 |
-| **PointCloud Workflow** | 8102 | Python wrapper + PDAL | LAS / LAZ / E57 转 Manager 私有 COPC 快显 artifact | 3 |
+| **PointCloud Workflow** | 8102 | Python wrapper + PDAL | LAS / LAZ / E57 / PCD / XYZ 转 Manager 私有 COPC 快显 artifact | direct 转换算子 |
 
 ### 1.3 引擎目录结构
 

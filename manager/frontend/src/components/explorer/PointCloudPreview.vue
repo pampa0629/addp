@@ -14,6 +14,7 @@
 
 <script setup>
 import { computed, markRaw, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import GiroInstance from '@giro3d/giro3d/core/Instance.js'
@@ -37,6 +38,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['view-state-change'])
+const { t } = useI18n()
 
 const wasmBaseURL = new URL(`${import.meta.env.BASE_URL}wasm`, window.location.origin).toString().replace(/\/$/, '')
 setLazPerfPath(wasmBaseURL)
@@ -105,24 +107,29 @@ const hasVisibleContent = computed(() => shouldLoadCOPC.value ? giroDisplayedPoi
 const showStatusOverlay = computed(() => props.loading || giroLoading.value || Boolean(giroError.value) || !hasVisibleContent.value)
 
 const emptyText = computed(() => {
-  if (props.loading) return '正在加载点云...'
-  if (giroLoading.value) return `正在加载 COPC 点云... ${giroProgress.value}%`
+  if (props.loading) return t('manager.explorer.pointCloudPreview.loading')
+  if (giroLoading.value) return t('manager.explorer.pointCloudPreview.loadingCOPC', { progress: giroProgress.value })
   if (giroError.value) return giroError.value
-  if (shouldLoadCOPC.value || isURLMaterial.value) return 'COPC 快显文件已就绪'
-  return '没有可展示的点云样本'
+  if (shouldLoadCOPC.value || isURLMaterial.value) return t('manager.explorer.pointCloudPreview.copcReady')
+  return t('manager.explorer.pointCloudPreview.empty')
 })
 
 const summaryItems = computed(() => {
   const items = []
-  if (pointCount.value) items.push({ label: 'Points', value: pointCount.value.toLocaleString() })
-  if (sampleCount.value) items.push({ label: shouldLoadCOPC.value ? 'Displayed' : 'Sample', value: sampleCount.value.toLocaleString() })
-  if (shouldLoadCOPC.value) {
-    items.push({ label: 'Progress', value: `${giroProgress.value}%` })
-    items.push({ label: 'Requests', value: giroRequestCount.value.toLocaleString() })
-    items.push({ label: 'Decimation', value: String(giroDecimation.value) })
+  if (pointCount.value) items.push({ label: t('manager.explorer.pointCloudPreview.points'), value: pointCount.value.toLocaleString() })
+  if (sampleCount.value) {
+    items.push({
+      label: shouldLoadCOPC.value ? t('manager.explorer.pointCloudPreview.displayed') : t('manager.explorer.pointCloudPreview.sample'),
+      value: sampleCount.value.toLocaleString()
+    })
   }
-  if (renderFPS.value) items.push({ label: 'FPS', value: renderFPS.value.toString() })
-  if (contentFormat.value) items.push({ label: 'Format', value: contentFormat.value })
+  if (shouldLoadCOPC.value) {
+    items.push({ label: t('manager.explorer.pointCloudPreview.progress'), value: `${giroProgress.value}%` })
+    items.push({ label: t('manager.explorer.pointCloudPreview.requests'), value: giroRequestCount.value.toLocaleString() })
+    items.push({ label: t('manager.explorer.pointCloudPreview.decimation'), value: String(giroDecimation.value) })
+  }
+  if (renderFPS.value) items.push({ label: t('manager.explorer.pointCloudPreview.fps'), value: renderFPS.value.toString() })
+  if (contentFormat.value) items.push({ label: t('manager.explorer.pointCloudPreview.format'), value: contentFormat.value })
   return items
 })
 
@@ -167,7 +174,7 @@ async function waitEntityReady(entity, timeoutMs = 15000) {
   await new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       entity.removeEventListener('initialized', onReady)
-      reject(new Error('Giro3D entity 初始化超时'))
+      reject(new Error(t('manager.explorer.pointCloudPreview.giroInitTimeout')))
     }, timeoutMs)
     function onReady() {
       window.clearTimeout(timeout)
@@ -272,7 +279,7 @@ async function loadGiroCOPC(url) {
     instance.notifyChange(cloud, { needsRedraw: true, immediate: true })
   } catch (error) {
     if (token === giroLoadToken && error?.message !== 'aborted') {
-      giroError.value = error?.message || 'COPC 点云加载失败'
+      giroError.value = error?.message || t('manager.explorer.pointCloudPreview.loadCOPCFailed')
       console.error(error)
     }
   } finally {

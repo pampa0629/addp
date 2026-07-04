@@ -178,8 +178,11 @@ IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
 - `meta-worker` - Meta Worker
 - `transfer-worker` - Transfer Worker
 
-**Engine 服务** (3 个):
+**Engine/Runtime 服务** (6 个):
 - `python-workflow-engine` - Python Workflow Engine
+- `raster-mosaic-runtime` - Raster Mosaic Runtime
+- `model3d-workflow-engine` - Model3D Workflow Engine
+- `pointcloud-workflow-engine` - PointCloud Workflow Engine
 - `spark-workflow-engine` - Spark Workflow Engine
 - `jupyter-engine` - Jupyter Engine
 
@@ -304,7 +307,7 @@ docker push harbor.example.com:5001/addp-system-backend:v1.2.0
 |------|------|------|
 | `--registry` | URL | **必填**，目标 Registry 地址（如 `docker.io/USERNAME`、`registry.com/namespace`） |
 | `--tag` | 版本号 | 镜像标签（默认：`latest`） |
-| `--services` | 服务列表 | 逗号分隔的服务名（默认：`all`，推送所有 41 个镜像，包含 postgres） |
+| `--services` | 服务列表 | 逗号分隔的服务名（默认：`all`，推送所有 43 个镜像，包含 postgres） |
 | `--dry-run` | - | 干运行模式，仅显示将推送的镜像，不实际推送 |
 | `--source-registry` | URL | 源 Registry 地址（默认：`localhost:5001`） |
 
@@ -349,7 +352,7 @@ harbor.example.com:5001/project/addp-manager-backend:latest
 
 ### 推送的镜像列表
 
-脚本会推送以下 41 个镜像（当使用 `--services all` 或不指定时，包含 postgres）：
+脚本会推送以下 43 个镜像（当使用 `--services all` 或不指定时，包含 postgres）：
 
 **后端服务** (17 个):
 - `addp-system-backend`
@@ -374,8 +377,11 @@ harbor.example.com:5001/project/addp-manager-backend:latest
 - `addp-meta-worker`
 - `addp-transfer-worker`
 
-**Engine 服务** (3 个):
+**Engine/Runtime 服务** (6 个):
 - `addp-python-workflow-engine`
+- `addp-raster-mosaic-runtime`
+- `addp-model3d-workflow-engine`
+- `addp-pointcloud-workflow-engine`
 - `addp-spark-workflow-engine`
 - `addp-jupyter-engine`
 
@@ -470,7 +476,7 @@ docker login harbor.example.com:5001
 | **Harbor** | `harbor.example.com:5001/PROJECT` | 企业级私有镜像仓库 |
 | **私有 Registry** | `registry.company.com:5000` | 自建 Docker Registry |
 | **GitHub Container Registry** | `ghcr.io/USERNAME` | GitHub 提供的容器镜像服务 |
-| **阿里云 ACR 个人版** | `crpi-xxx.cn-region.personal.cr.aliyuncs.com/NAMESPACE` | 个人版限制 300 个仓库，ADDP 41 个镜像仓库完全够用 |
+| **阿里云 ACR 个人版** | `crpi-xxx.cn-region.personal.cr.aliyuncs.com/NAMESPACE` | 个人版限制 300 个仓库，ADDP 43 个镜像仓库完全够用 |
 | **阿里云 ACR 企业版** | `registry.cn-hangzhou.aliyuncs.com/NAMESPACE` | 企业版无仓库数量限制 |
 
 **说明**:
@@ -535,17 +541,17 @@ Next steps:
 ./scripts/build/push-images.sh \
   --registry crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp
 
-# 结果：41 个独立仓库
+# 结果：43 个独立仓库
 # crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-system-backend:latest
 # crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-manager-backend:latest
 # crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-meta-backend:latest
-# ... (共 41 个仓库)
+# ... (共 43 个仓库)
 ```
 
 ### 注意事项
 
 1. **登录验证**: 推送前必须登录目标 Registry（`docker login`）
-2. **网络依赖**: 推送所有 41 个镜像需要稳定的网络（总大小约 5-10GB）
+2. **网络依赖**: 推送所有 43 个镜像需要稳定的网络（总大小约 5-10GB）
 3. **权限要求**: 确保 Docker Hub 或 Registry 账号有推送权限
 4. **命名规范**: 镜像名称保持 `addp-` 前缀不变
 5. **版本管理**: 生产环境建议使用明确的版本标签（如 `v1.0.0`），避免 `latest`

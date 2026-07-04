@@ -39,7 +39,7 @@ bash scripts/dev/start.sh
 
 自动启动以下内容:
 1. 基础设施 (如未运行)
-2. 所有后端服务 (System、Manager、Meta、Transfer、Orchestrator、Develop、Python Workflow Engine、Model3D Workflow Engine)
+2. 所有后端服务 (System、Manager、Meta、Transfer、Orchestrator、Develop、Python Workflow Engine、Model3D Workflow Engine、PointCloud Workflow Engine)
 3. Gateway 服务
 4. 所有前端服务 (可选,提示用户)
 
@@ -60,7 +60,7 @@ bash scripts/dev/start.sh -manager
 bash scripts/dev/restart.sh -transfer
 ```
 
-单模块开发时，脚本会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。Meta 用于资源树、元数据扫描和跨模块通用元数据能力。模块自身如有额外依赖，例如 Manager 依赖 Transfer、Develop 依赖 Python Workflow Engine，会在此基础上继续启动。
+单模块开发时，脚本会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。Meta 用于资源树、元数据扫描和跨模块通用元数据能力。模块自身如有额外依赖，例如 Manager 依赖 Transfer、Model3D Workflow Engine 和 PointCloud Workflow Engine，Develop 依赖 Python/Math/Spark Workflow Engine 和 Jupyter，会在此基础上继续启动。
 
 ### 第三步: 构建模式 (用于 Docker 镜像构建)
 
@@ -73,6 +73,9 @@ bash scripts/build/build-images.sh
 
 # 只构建三维模型转换运行时镜像（Apple Silicon 默认为 linux/arm64）
 bash scripts/build/build-images.sh --services model3d-workflow-engine --force
+
+# 只构建点云转换运行时镜像（内置 PDAL）
+bash scripts/build/build-images.sh --services pointcloud-workflow-engine --force
 
 # 打包并推送镜像 (如需要)
 bash scripts/build/package.sh
@@ -88,6 +91,16 @@ MODEL3D_DATA_CONTAINER_PATH=/Users/pampa/code/addp/business/nfs/data
 ```
 
 单 OSGB 快显生成的 GLB artifact 统一使用 ADDP infra MinIO 配置，不单独配置 `model3d_workflow` 专用 MinIO endpoint。Docker Compose 部署时，Manager 与 `model3d-workflow-engine` 同在 Compose 网络内，统一使用 infra MinIO 的 `minio:9000`；macOS 本机开发时，推荐使用宿主机 Python runtime 加 Docker `_3dtile` wrapper，Manager 与 runtime 统一访问 `localhost:19000`。
+
+`pointcloud-workflow-engine` 使用 Docker runtime 承载 PDAL，不依赖宿主机安装 PDAL。开发模式下 `start.sh -manager` 或 `start.sh -pointcloud-workflow` 会自动构建并启动 `addp-pointcloud-workflow-engine:dev`，默认把 `business/nfs/data` 作为只读点云源目录挂入容器，并把 `data/pointcloud-work` 作为容器内工作目录。可通过以下变量覆盖：
+
+```bash
+POINTCLOUD_DATA_HOST_PATH=./business/nfs/data
+POINTCLOUD_DATA_CONTAINER_PATH=/Users/pampa/code/addp/business/nfs/data
+POINTCLOUD_WORK_HOST_PATH=./data/pointcloud-work
+```
+
+点云 COPC artifact 统一使用 ADDP infra MinIO 配置，不单独配置 `pointcloud_workflow` 专用 MinIO endpoint。Docker Compose 部署时，Manager 与 `pointcloud-workflow-engine` 同在 Compose 网络内，统一使用 infra MinIO 的 `minio:9000`；macOS 本机开发时，PointCloud Workflow 容器通过 `host.docker.internal:${MINIO_API_PORT:-19000}` 访问宿主机 infra MinIO。
 
 ### 第四步: 本地 Docker Compose 模式
 
@@ -115,7 +128,7 @@ bash scripts/prod/start.sh
 
 1. **启动基础设施** (PostgreSQL、Redis、MinIO、Meilisearch)
 2. **启动 System Backend** (其他服务依赖它)
-3. **启动业务后端** (Manager、Meta、Transfer、Orchestrator、Develop、Python Workflow Engine、Model3D Workflow Engine、Gateway)
+3. **启动业务后端** (Manager、Meta、Transfer、Orchestrator、Develop、Python Workflow Engine、Model3D Workflow Engine、PointCloud Workflow Engine、Gateway)
 4. **启动前端服务** (所有模块前端 + Console + Nginx)
 5. **健康检查** (验证所有服务就绪)
 

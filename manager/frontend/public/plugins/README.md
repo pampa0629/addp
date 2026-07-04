@@ -1,6 +1,6 @@
 # 自定义预览插件开发指南
 
-本目录用于存放用户自定义的预览插件。官方内置的预览实现同样拆分为多个脚本 (`table-preview.js`、`container-preview.js`、`object-catalog-preview.js`、`map-preview.js`、`image-preview.js`、`json-preview.js`、`pdf-preview.js`、`docx-preview.js`、`wps-preview.js`、`pptx-preview.js`、`text-preview.js`)，方便第三方直接阅读与扩展。
+本目录用于存放用户自定义的预览插件。官方内置的预览实现同样拆分为多个脚本，包括表格、容器、地图、3D Tiles、三维模型、点云、高斯泼溅、图片、视频、JSON、PDF、Office 文档、Markdown 和文本等预览脚本，方便第三方直接阅读与扩展。
 
 ## 快速开始
 
@@ -14,12 +14,20 @@
     "/plugins/table-preview.js",
     "/plugins/container-preview.js",
     "/plugins/object-catalog-preview.js",
+    "/plugins/unsupported-preview.js",
     "/plugins/map-preview.js",
+    "/plugins/tiles-3d-preview.js",
+    "/plugins/gaussian-splat-preview.js",
+    "/plugins/model-3d-preview.js",
+    "/plugins/point-cloud-preview.js",
     "/plugins/image-preview.js",
+    "/plugins/video-preview.js",
     "/plugins/json-preview.js",
     "/plugins/pdf-preview.js",
     "/plugins/docx-preview.js",
+    "/plugins/wps-preview.js",
     "/plugins/pptx-preview.js",
+    "/plugins/markdown-preview.js",
     "/plugins/text-preview.js"
   ]
 }

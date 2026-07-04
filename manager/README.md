@@ -8,7 +8,7 @@
 - **[CLAUDE.md](./CLAUDE.md)** - 模块定位、核心 API、开发规则和文档导航
 - **[manager/docs/数据预览与资源树实现规范.md](./docs/数据预览与资源树实现规范.md)** - 数据探查、资源树、预览 API、PreviewResolver 和 PreviewProvider 当前实现规范
 - **[manager/docs/数据预览语义协议.md](./docs/数据预览语义协议.md)** - `content.kind`、`preview_material`、`frontend_renderer` 等预览响应语义
-- **[manager/docs/三维模型与高斯泼溅预览说明.md](./docs/三维模型与高斯泼溅预览说明.md)** - 三维模型、3D Tiles 和 3DGS 预览、快显任务与状态说明
+- **[manager/docs/三维模型、点云与高斯泼溅预览说明.md](./docs/三维模型、点云与高斯泼溅预览说明.md)** - 三维模型、3D Tiles、点云和 3DGS 预览、快显任务与状态说明
 - **[manager/docs/存储流与原始下载语义.md](./docs/存储流与原始下载语义.md)** - `storage-stream`、`downloads/file` 与 DownloadPlan 语义
 
 ## 🎯 核心功能
@@ -126,7 +126,7 @@ COG 生成运行要求：
 - 目标 COPC：PointCloud Workflow 先通过 PDAL 写入 `POINTCLOUD_WORK_DIR` 下的本地工作文件，再通过 Manager infra MinIO 发布计划上传 artifact，Manager 负责登记 `point_cloud_copc`。
 - COPC 写入不是纯流式写，容器必须配置可用的 `POINTCLOUD_WORK_DIR` / `CPL_TMPDIR` 工作目录。当前 PDAL 2.10.2 实测 `writers.copc` 不能可靠直接写 `/vsis3/` 目标，不能把 `/vsis3/` 直写作为当前单一路线。
 
-三维模型、3D Tiles、高斯泼溅和点云 COPC 的预览路线请查看 [三维模型与高斯泼溅预览说明](./docs/三维模型与高斯泼溅预览说明.md)。详细架构请查看 [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md)。
+三维模型、3D Tiles、点云 COPC 和高斯泼溅的预览路线请查看 [三维模型、点云与高斯泼溅预览说明](./docs/三维模型、点云与高斯泼溅预览说明.md)。详细架构请查看 [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md)。
 
 ## 🐛 常见问题
 

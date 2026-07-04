@@ -90,7 +90,7 @@ DELETE /api/v1/manager/gaussian_splat_ksplat_tasks/{id}
 
 ## 五、相关文档
 
-- [三维模型与高斯泼溅预览说明](../三维模型与高斯泼溅预览说明.md)
+- [三维模型、点云与高斯泼溅预览说明](../三维模型、点云与高斯泼溅预览说明.md)
 - [快显实现规范](../快显实现规范.md)
 - [gaussian_splat_ksplat 表结构说明](./gaussian_splat_ksplat表.md)
 - [数据库架构](../数据库架构.md)

@@ -10,6 +10,7 @@
     "/plugins/model-3d-preview.js",
     "/plugins/point-cloud-preview.js",
     "/plugins/image-preview.js",
+    "/plugins/video-preview.js",
     "/plugins/json-preview.js",
     "/plugins/pdf-preview.js",
     "/plugins/docx-preview.js",

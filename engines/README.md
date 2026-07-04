@@ -166,7 +166,7 @@ Math Workflow 是参考实现，随 `scripts/dev/start.sh -all` / `-develop` 启
 - **Python Workflow Engine**: [python-workflow](./python-workflow/) - Python 数据处理工作流实现。
 - **Spark Workflow Engine**: [spark-workflow](./spark-workflow/) - Spark / Sedona 工作流实现。
 - **Model3D Workflow Engine**: [model3d-workflow](./model3d-workflow/) - OSGB 快显和 OSGB Scene 转 3D Tiles 三维模型转换运行时。
-- **PointCloud Workflow Engine**: [pointcloud-workflow](./pointcloud-workflow/) - LAS / LAZ / E57 转 COPC 点云快显转换运行时。
+- **PointCloud Workflow Engine**: [pointcloud-workflow](./pointcloud-workflow/) - LAS / LAZ / E57 / PCD / XYZ 转 COPC 点云快显转换运行时。
 
 ## 相关文档
 

@@ -67,7 +67,7 @@
 | 3D Tiles | `whole` | `model_3d` | `3dtiles` | 由 `tileset.json` manifest 声明的分块三维场景 |
 | OSGB | `single` | `model_3d` | `osgb` | 单个 `.osgb` 三维模型文件；快显通过 GLB artifact 实现 |
 | OSGB Scene | `whole` | `model_3d` | `osgb_scene` | 由 `metadata.xml` manifest 声明的一套 OSGB 倾斜摄影三维模型场景 |
-| LAS | `single` | `point_cloud` | `las` | 第一阶段点云代表格式；deep scan 读取 header 和轻量摘要，预览走抽样点集 |
+| LAS | `single` | `point_cloud` | `las` | LAS 原始点云格式；deep scan 读取 header 和轻量摘要，预算内可做 JSON 小样本基础预览，可视化主线转 COPC |
 | LAZ | `single` | `point_cloud` | `laz` | LAS 压缩点云格式；deep scan 读取 LAS-family header 和轻量摘要，不复用 `format=las` |
 | COPC | `single` | `point_cloud` | `copc` | Cloud Optimized Point Cloud；第一阶段读取 LAS-family header 摘要，作为分块点云主线格式接入 |
 | E57 | `single` | `point_cloud` | `e57` | ASTM E57 单文件扫描点云；deep scan 读取 header 和预算内 XML 轻量摘要 |
@@ -450,7 +450,7 @@ Manager 第一阶段不直接预览 OSGB Scene 源数据。OSGB Scene 源 item �
 | `format` | `las` |
 | 主资源 | `meta_item.full_name` 指向 `.las` 文件资源 |
 
-LAS 是单资源点云格式。第一阶段 LAS 作为 `point_cloud` 的代表格式接入，用于走通点云 header 解析、Meta attributes 写入和 Manager 抽样预览主链路。LAZ / COPC、EPT、Potree、E57、PCD、点云型 PLY 等格式不借用 `format=las`，应分别建立自己的 format descriptor 和规则。
+LAS 是单资源原始点云格式，用于承载点云 header 解析、Meta attributes 写入和必要的预算内小样本基础预览。ADDP 的点云可视化主线是 COPC：LAS 需要高效浏览时通过 `point_cloud_copc_generation` 生成 Manager 私有 COPC artifact，再按 COPC 受控 URL 和 HTTP Range 动态 LOD 预览。LAZ / COPC、EPT、Potree、E57、PCD、点云型 PLY 等格式不借用 `format=las`，应分别建立自己的 format descriptor 和规则。
 
 ### attributes 写入
 
@@ -464,7 +464,7 @@ LAS 是单资源点云格式。第一阶段 LAS 作为 `point_cloud` 的代表�
 
 ### 消费要求
 
-Manager 点云预览应基于已入库 `data_type=point_cloud + format=las` 和标准内容通道读取抽样点集，不得把完整 LAS 内容或点样本塞入 attributes。大文件预览应通过抽样、分块或后续派生 LOD 产物实现；前端渲染协议属于 Manager preview DTO，不是 Meta attributes。
+Manager 可基于已入库 `data_type=point_cloud + format=las` 和标准内容通道读取预算内点样本作为轻量基础预览，但不得把完整 LAS 内容或点样本塞入 attributes。需要高效可视化时应生成 Manager 私有 COPC artifact；前端渲染协议属于 Manager preview DTO，不是 Meta attributes。
 
 ### 格式约束
 
@@ -1274,7 +1274,7 @@ GeoJSON 虽然是 `data_type=table`，但对象内容预览应优先生成 GeoJS
 | PDF / DOCX / PPTX / WPS URL 预览 | 对应格式名 | `url` | 对应格式名 |
 | GLB 三维模型 URL 预览 | `model_3d` | `url` | `model_3d` |
 | 3D Tiles 分块三维场景 URL 预览 | `model_3d` | `url` | `3dtiles` |
-| LAS 点云抽样预览 | `point_cloud` | `json` | `point_cloud` |
+| LAS 点云小样本基础预览 | `point_cloud` | `json` | `point_cloud` |
 | 高斯泼溅 URL 预览 | `gaussian_splat` | `url` | `gaussian_splat` |
 | 小体积原始二进制兜底 | 对应格式名 | `raw_binary` | 对应格式名 |
 | 表格材料 | `table` | `table` | `table` |

@@ -83,9 +83,10 @@
 2. [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)：确认 GLB、3D Tiles、OSGB、OSGB Scene、IFC、LAS 和 PLY 的稳定规则。
 3. [数据项探测器规范](spec/addp数据项探测器规范.md)：确认 whole-scope 场景、manifest、refs 和 claims 规则。
 4. [元数据 attributes 规范](spec/addp元数据attributes规范.md)：确认 `type_info.model_3d`、`type_info.point_cloud`、`type_info.gaussian_splat` 和 `format_info.<format>` 的字段归属。
-5. [Manager 三维模型与高斯泼溅预览说明](../manager/docs/三维模型与高斯泼溅预览说明.md)：确认三维模型、3D Tiles、3DGS 基础预览、快显任务、结果状态和视角保存边界。
+5. [Manager 三维模型、点云与高斯泼溅预览说明](../manager/docs/三维模型、点云与高斯泼溅预览说明.md)：确认三维模型、3D Tiles、点云、3DGS 基础预览、快显任务、结果状态和视角保存边界。
 6. [Model3D Workflow](../engines/model3d-workflow/README.md)：处理 OSGB、glTF、FBX、OBJ、OSGB Scene 和 3DGS 转换运行时、对象存储 staging / publish 或 Docker 部署时阅读。
-7. [三维与点云后续路线](next/三维与点云后续路线.md)：处理 IFC 转换验证、3MX / SLPK / LAZ / COPC / E57 / SPZ 等尚未落地能力时阅读。
+7. [PointCloud Workflow](../engines/pointcloud-workflow/README.md)：处理 LAS / LAZ / E57 / PCD / XYZ 转 COPC、PDAL 运行时绑定和点云工作目录配置时阅读。
+8. [三维与点云后续路线](next/三维与点云后续路线.md)：处理 IFC 转换验证、3MX / SLPK / EPT / Potree / SPZ 等尚未落地能力时阅读。
 
 ## 数据类型与格式主题
 
