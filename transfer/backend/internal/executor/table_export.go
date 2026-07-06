@@ -149,6 +149,11 @@ func spatialInfoForWriteOptions(opts *format.WriteOptions, info *datatype.TableI
 	if geometryType == "" && spatialInfo != nil {
 		geometryType = spatialInfo.PrimaryGeometryType()
 	}
+	if datatype.ParseGeometryType(geometryType) == datatype.GeometryTypeGeometry && spatialInfo != nil {
+		if fallbackGeometryType := strings.TrimSpace(spatialInfo.PrimaryGeometryType()); fallbackGeometryType != "" && datatype.ParseGeometryType(fallbackGeometryType) != datatype.GeometryTypeGeometry {
+			geometryType = fallbackGeometryType
+		}
+	}
 	if geometryField == "" && geometryType == "" {
 		return spatialInfo
 	}

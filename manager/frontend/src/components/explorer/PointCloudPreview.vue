@@ -67,6 +67,7 @@ let giroStatsTimer = 0
 let giroRenderTimer = 0
 let giroFrameCount = 0
 let giroLoadToken = 0
+let giroPointerCanvasCoords = null
 let sampleFrameCount = 0
 let sampleLastSampleAt = 0
 
@@ -76,6 +77,7 @@ const GIRO_POINT_SIZE = 2
 const GIRO_CLEANUP_DELAY_MS = 30000
 const MIN_CAMERA_DISTANCE = 0.01
 const GIRO_UP = Object.freeze([0, 0, 1])
+const GIRO_PICK_RADIUS_PX = 28
 
 const objectData = computed(() => props.data?.object || {})
 const content = computed(() => objectData.value?.content || {})
@@ -222,6 +224,10 @@ function ensureGiroInstance() {
   if ('zoomToCursor' in controls) {
     controls.zoomToCursor = true
   }
+  instance.domElement.addEventListener('pointerdown', updateGiroPointerCanvasCoords)
+  instance.domElement.addEventListener('pointermove', updateGiroPointerCanvasCoords)
+  instance.domElement.addEventListener('wheel', updateGiroPointerCanvasCoords, { passive: true })
+  controls.addEventListener('start', stabilizeGiroInteractionTarget)
   controls.addEventListener('change', () => instance.notifyChange(instance.view.camera))
   controls.addEventListener('end', emitGiroCameraViewState)
   instance.view.setControls(controls)
@@ -273,8 +279,9 @@ async function loadGiroCOPC(url) {
     cloud.pointSize = GIRO_POINT_SIZE
     cloud.depthTest = true
 
-    if (!applyGiroCameraViewState(props.viewState)) {
-      fitGiroCamera()
+    const bounds = getGiroCloudBounds()
+    if (!applyGiroCameraViewState(props.viewState, bounds)) {
+      fitGiroCamera(bounds)
     }
     instance.notifyChange(cloud, { needsRedraw: true, immediate: true })
   } catch (error) {
@@ -289,13 +296,20 @@ async function loadGiroCOPC(url) {
   }
 }
 
-function fitGiroCamera() {
-  const instance = giroInstance.value
+function getGiroCloudBounds() {
   const cloud = giroPointCloud.value
-  const controls = giroControls.value
-  if (!instance || !cloud || !controls) return
+  if (!cloud) return null
   const bounds = safeRead(() => cloud.getBoundingBox(), null)
-  if (!bounds || bounds.isEmpty()) return
+  if (!bounds || bounds.isEmpty()) return null
+  return bounds
+}
+
+function fitGiroCamera(boundsOverride = null) {
+  const instance = giroInstance.value
+  const controls = giroControls.value
+  if (!instance || !controls) return
+  const bounds = boundsOverride || getGiroCloudBounds()
+  if (!bounds) return
 
   const sphere = bounds.getBoundingSphere(new THREE.Sphere())
   const radius = Math.max(sphere.radius, 1)
@@ -317,6 +331,7 @@ function fitGiroCamera() {
   instance.view.near = camera.near
   instance.view.far = camera.far
   instance.notifyChange(camera, { needsRedraw: true, immediate: true })
+  emitGiroCameraViewState()
 }
 
 function finiteVector(values) {
@@ -325,13 +340,161 @@ function finiteVector(values) {
   return vector.every(Number.isFinite) ? vector : null
 }
 
-function applyGiroCameraViewState(state) {
+function cameraViewStateMatchesBounds(position, target, bounds) {
+  if (!bounds || bounds.isEmpty()) return true
+  const sphere = bounds.getBoundingSphere(new THREE.Sphere())
+  const radius = Math.max(sphere.radius, 1)
+  const targetVector = new THREE.Vector3(target[0], target[1], target[2])
+  const positionVector = new THREE.Vector3(position[0], position[1], position[2])
+  const distanceToTarget = positionVector.distanceTo(targetVector)
+  const targetDistanceToBounds = bounds.distanceToPoint(targetVector)
+  if (targetDistanceToBounds > radius * 2) return false
+  if (distanceToTarget > radius * 200) return false
+  return true
+}
+
+function pickGiroPointAt(canvasX, canvasY) {
+  const instance = giroInstance.value
+  const cloud = giroPointCloud.value
+  const controls = giroControls.value
+  if (!instance || !cloud?.ready || !controls) return null
+
+  const raycaster = new THREE.Raycaster()
+  const camera = instance.view.camera
+  const targetDistance = Math.max(camera.position.distanceTo(controls.target), 1)
+  raycaster.params.Points = {
+    threshold: Math.max(targetDistance / 1200, 0.05)
+  }
+
+  const picked = safeRead(() => cloud.pick(new THREE.Vector2(canvasX, canvasY), {
+    radius: GIRO_PICK_RADIUS_PX,
+    limit: 1,
+    gpuPicking: false,
+    raycaster
+  }), [])
+  const first = Array.isArray(picked) ? picked[0] : null
+  if (first?.point) return first.point.clone()
+  if (first?.coord) {
+    return new THREE.Vector3(Number(first.coord.x), Number(first.coord.y), Number(first.coord.z))
+  }
+  return null
+}
+
+function currentGiroCanvasCoords() {
+  const instance = giroInstance.value
+  const element = instance?.domElement
+  if (!element) return null
+  const rect = element.getBoundingClientRect()
+  if (!rect.width || !rect.height) return null
+  if (
+    giroPointerCanvasCoords &&
+    giroPointerCanvasCoords.x >= 0 &&
+    giroPointerCanvasCoords.y >= 0 &&
+    giroPointerCanvasCoords.x <= rect.width &&
+    giroPointerCanvasCoords.y <= rect.height
+  ) {
+    return giroPointerCanvasCoords.clone()
+  }
+  return new THREE.Vector2(rect.width / 2, rect.height / 2)
+}
+
+function updateGiroPointerCanvasCoords(event) {
+  const element = giroInstance.value?.domElement
+  if (!element || !event) return
+  const rect = element.getBoundingClientRect()
+  const x = Number(event.clientX) - rect.left
+  const y = Number(event.clientY) - rect.top
+  if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > rect.width || y > rect.height) return
+  giroPointerCanvasCoords = new THREE.Vector2(x, y)
+}
+
+function currentGiroPickPoint() {
+  const coords = currentGiroCanvasCoords()
+  if (!coords) return null
+  if (giroPointerCanvasCoords) {
+    const pointerPick = pickGiroPointAt(coords.x, coords.y)
+    if (pointerPick) return pointerPick
+  }
+  const instance = giroInstance.value
+  const rect = instance?.domElement?.getBoundingClientRect()
+  if (!rect?.width || !rect?.height) return null
+  return pickGiroPointAt(rect.width / 2, rect.height / 2)
+}
+
+function raycasterFromGiroCanvasCoords(coords) {
+  const instance = giroInstance.value
+  if (!instance || !coords) return null
+  const normalized = instance.canvasToNormalizedCoords(coords, new THREE.Vector2())
+  const raycaster = new THREE.Raycaster()
+  raycaster.setFromCamera(normalized, instance.view.camera)
+  return raycaster
+}
+
+function pointerReferencePlaneTarget() {
+  const instance = giroInstance.value
+  const controls = giroControls.value
+  const bounds = getGiroCloudBounds()
+  const coords = currentGiroCanvasCoords()
+  if (!instance || !controls || !bounds || !coords) return null
+
+  const sphere = bounds.getBoundingSphere(new THREE.Sphere())
+  const radius = Math.max(sphere.radius, 1)
+  const clampedTarget = bounds.clampPoint(controls.target, new THREE.Vector3())
+  const targetDistanceToBounds = bounds.distanceToPoint(controls.target)
+  const planePoint = targetDistanceToBounds <= radius ? clampedTarget : sphere.center
+  const planeNormal = new THREE.Vector3(GIRO_UP[0], GIRO_UP[1], GIRO_UP[2]).normalize()
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(planeNormal, planePoint)
+  const raycaster = raycasterFromGiroCanvasCoords(coords)
+  if (!raycaster) return null
+  const target = raycaster.ray.intersectPlane(plane, new THREE.Vector3())
+  if (!target) return null
+  if (bounds.distanceToPoint(target) > radius * 1.5) return null
+  return target
+}
+
+function fallbackGiroViewTarget() {
+  const instance = giroInstance.value
+  const bounds = getGiroCloudBounds()
+  if (!instance || !bounds) return null
+
+  const raycaster = raycasterFromGiroCanvasCoords(currentGiroCanvasCoords() || new THREE.Vector2(0, 0))
+  if (!raycaster) return bounds.getCenter(new THREE.Vector3())
+  const hit = raycaster.ray.intersectBox(bounds, new THREE.Vector3())
+  if (hit) return hit
+
+  const current = giroControls.value?.target
+  if (current) return bounds.clampPoint(current, new THREE.Vector3())
+  return bounds.getCenter(new THREE.Vector3())
+}
+
+function stabilizeGiroInteractionTarget() {
+  const instance = giroInstance.value
+  const controls = giroControls.value
+  if (!instance || !controls || !giroPointCloud.value?.ready) return
+
+  const pickedTarget = currentGiroPickPoint() || pointerReferencePlaneTarget() || fallbackGiroViewTarget()
+  if (!pickedTarget) return
+
+  const camera = instance.view.camera
+  const currentTarget = controls.target
+  const currentDistance = Math.max(camera.position.distanceTo(currentTarget), MIN_CAMERA_DISTANCE)
+  const pickedDistance = Math.max(camera.position.distanceTo(pickedTarget), MIN_CAMERA_DISTANCE)
+  const targetShift = currentTarget.distanceTo(pickedTarget)
+  if (currentDistance <= pickedDistance * 2.5 && targetShift <= pickedDistance * 0.8) return
+
+  controls.target.copy(pickedTarget)
+  controls.update()
+  instance.notifyChange(camera, { needsRedraw: true, immediate: true })
+}
+
+function applyGiroCameraViewState(state, bounds = null) {
   const instance = giroInstance.value
   const controls = giroControls.value
   if (!instance || !controls || !state || typeof state !== 'object') return false
   const position = finiteVector(state.position)
   const target = finiteVector(state.target)
   if (!position || !target) return false
+  if (!cameraViewStateMatchesBounds(position, target, bounds)) return false
   const camera = instance.view.camera
   camera.position.set(position[0], position[1], position[2])
   camera.up.set(GIRO_UP[0], GIRO_UP[1], GIRO_UP[2])
@@ -402,11 +565,17 @@ function disposeGiro() {
     window.clearTimeout(giroRenderTimer)
     giroRenderTimer = 0
   }
+  const element = giroInstance.value?.domElement
+  element?.removeEventListener?.('pointerdown', updateGiroPointerCanvasCoords)
+  element?.removeEventListener?.('pointermove', updateGiroPointerCanvasCoords)
+  element?.removeEventListener?.('wheel', updateGiroPointerCanvasCoords)
+  giroControls.value?.removeEventListener?.('start', stabilizeGiroInteractionTarget)
   giroControls.value?.dispose()
   giroInstance.value?.dispose()
   giroControls.value = null
   giroInstance.value = null
   giroFrameCount = 0
+  giroPointerCanvasCoords = null
 }
 
 function ensureSampleScene() {

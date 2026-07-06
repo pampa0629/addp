@@ -208,3 +208,67 @@ func (r *recordingObjectContentReader) OpenContent(_ context.Context, _ plugin.C
 	r.openedPaths = append(r.openedPaths, path.StringPath())
 	return io.NopCloser(strings.NewReader(r.content)), nil
 }
+
+type objectRefGroupScanTestProvider struct {
+	content     string
+	buckets     []string
+	openedPaths []string
+}
+
+func (p *objectRefGroupScanTestProvider) Type() string         { return "object-ref-group-scan-test" }
+func (p *objectRefGroupScanTestProvider) DisplayName() string  { return "object ref group scan test" }
+func (p *objectRefGroupScanTestProvider) EngineOrigin() string { return "general" }
+func (p *objectRefGroupScanTestProvider) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *objectRefGroupScanTestProvider) ValidateConnectionInfo(plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *objectRefGroupScanTestProvider) DefaultPort() int          { return 0 }
+func (p *objectRefGroupScanTestProvider) RequiredFields() []string  { return nil }
+func (p *objectRefGroupScanTestProvider) SensitiveFields() []string { return nil }
+func (p *objectRefGroupScanTestProvider) Capabilities() plugin.EngineCapabilities {
+	return plugin.NewObjectCapabilities(p.Type())
+}
+func (p *objectRefGroupScanTestProvider) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.ObjectCatalogModel()
+}
+func (p *objectRefGroupScanTestProvider) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemantics{}
+}
+func (p *objectRefGroupScanTestProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, parent plugin.CatalogPath, _ plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+	if !plugin.IsCatalogRootPath(parent) {
+		return nil, nil
+	}
+	root := plugin.ObjectRootPath(parent.EngineID)
+	entries := make([]plugin.CatalogEntry, 0, len(p.buckets))
+	for _, bucket := range p.buckets {
+		entries = append(entries, plugin.ObjectBucketCatalogEntry(root, bucket))
+	}
+	return entries, nil
+}
+func (p *objectRefGroupScanTestProvider) ResolvePath(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+	if !isObjectBucketCatalogPath(path) {
+		return nil, nil
+	}
+	bucket := path.Segments[len(path.Segments)-1].Name
+	for _, knownBucket := range p.buckets {
+		if bucket == knownBucket {
+			entry := plugin.ObjectBucketCatalogEntry(plugin.ObjectRootPath(path.EngineID), bucket)
+			return &entry, nil
+		}
+	}
+	return nil, nil
+}
+func (p *objectRefGroupScanTestProvider) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+	p.openedPaths = append(p.openedPaths, path.StringPath())
+	return io.NopCloser(strings.NewReader(p.content)), nil
+}
+
+func isObjectBucketCatalogPath(path plugin.CatalogPath) bool {
+	if len(path.Segments) != 2 || !plugin.IsCatalogRootSegment(path.Segments[0]) {
+		return false
+	}
+	segment := path.Segments[1]
+	return segment.Term == plugin.CatalogTermBucket && segment.Kind == plugin.CatalogKindBucket && segment.Name != ""
+}

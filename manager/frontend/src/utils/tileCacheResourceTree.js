@@ -134,6 +134,8 @@ export function tableSelectionFromResourceNode(node, parseLocator) {
     item_id: Number(loc?.itemId || node.metadata?.item_id || 0) || undefined,
     item_fingerprint: String(node.metadata?.item_fingerprint || '').trim(),
     locator,
+    source_kind: type,
+    full_name: path.join('/'),
     schema,
     table
   }

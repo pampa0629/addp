@@ -68,7 +68,7 @@
 
 | 条件 | UI 行为 |
 | --- | --- |
-| `can_use_quick_view=true` 且 `render_source=cached_tile/direct_geojson` | 展示“切换快显”，不展示“生成瓦片缓存”按钮 |
+| `can_use_quick_view=true` 且 `render_source=cached_tile/direct_flatgeobuf` | 展示“切换快显”，不展示“生成瓦片缓存”按钮 |
 | `can_use_quick_view=true` 且 `render_source=realtime_tile` | 展示“切换快显”；当 `optimization.status=stale`、`realtime_tile.performance_mode=source_transform_path` 或瓦片返回 `X-ADDP-Tile-Recommendation=vector_materialized_view_generation` 时展示“执行矢量物化视图”；当瓦片返回 `X-ADDP-Tile-Recommendation=vector_tile_cache_generation` 时使用节流消息提示生成瓦片缓存；需要稳定低层级浏览时保留“生成瓦片缓存”入口 |
 | `can_use_quick_view=false` 且 `can_generate_vector_tile_cache=true` | 展示“生成瓦片缓存”；如果 capability 或瓦片响应提示矢量物化视图，优先展示“执行矢量物化视图”入口 |
 | `can_use_quick_view=false` 且 `can_generate_vector_tile_cache=false` | 不展示生成按钮，只展示不可用原因 |

@@ -151,6 +151,40 @@ describe('preview CRS registry', () => {
     expect(geometry.coordinates[1]).toBeCloseTo(0, 6)
   })
 
+  it('normalizes ESRI Gauss_Kruger PRJ definitions for preview transform', () => {
+    const transform = getPreviewCRSTransform({
+      source_crs: 'ADDP:CRS:40b162f1edfea6d14f33f5033278ebe7f2a456f90291eb4e48fbd3858490bb66',
+      source_crs_definition: {
+        id: 'ADDP:CRS:40b162f1edfea6d14f33f5033278ebe7f2a456f90291eb4e48fbd3858490bb66',
+        definition_encoding: 'esri_wkt',
+        definition: [
+          'PROJCS["CGCS2000_3_Degree_GK_CM_120E"',
+          'GEOGCS["GCS_China_Geodetic_Coordinate_System_2000"',
+          'DATUM["D_China_2000"',
+          'SPHEROID["CGCS2000",6378137.0,298.257222101]]',
+          'PRIMEM["Greenwich",0.0]',
+          'UNIT["Degree",0.0174532925199433]]',
+          'PROJECTION["Gauss_Kruger"]',
+          'PARAMETER["False_Easting",500000.0]',
+          'PARAMETER["False_Northing",0.0]',
+          'PARAMETER["Central_Meridian",120.0]',
+          'PARAMETER["Scale_Factor",1.0]',
+          'PARAMETER["Latitude_Of_Origin",0.0]',
+          'UNIT["Meter",1.0]]'
+        ].join(','),
+        source: 'sidecar_prj'
+      }
+    })
+    const geometry = transformGeoJSONGeometryToWGS84({
+      type: 'Point',
+      coordinates: [585544.4115, 3409643.8241]
+    }, transform)
+
+    expect(transform.status).toBe('transformable')
+    expect(geometry.coordinates[0]).toBeCloseTo(120.893877, 6)
+    expect(geometry.coordinates[1]).toBeCloseTo(30.804522, 6)
+  })
+
   it('registers a PostGIS WKT definition for preview transform', () => {
     const transform = getPreviewCRSTransform({
       source_srid: 32650,

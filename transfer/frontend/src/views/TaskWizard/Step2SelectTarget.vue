@@ -44,7 +44,7 @@
           :initial-locator="targetPickerInitialLocator"
           :show-engine-selector="false"
           :selectable-filter="isTargetParentSelectable"
-          mode="any"
+          mode="node"
           tree-height="320px"
           :disabled-label="t('transfer.taskWizard.unsupportedTargetParentLabel')"
           :show-selection-summary="false"
@@ -125,8 +125,9 @@
           v-model="outputFileName"
           :placeholder="outputFileNamePlaceholder"
           :class="{ 'is-extension-error': !!outputFileNameError }"
+          @focus="handleOutputFileNameFocus"
           @input="syncTarget"
-          @blur="applyOutputFileExtension"
+          @blur="handleOutputFileNameBlur"
         />
         <div v-if="outputFileNameError" class="field-hint error-hint">{{ outputFileNameError }}</div>
         <div v-else-if="finalOutputPath" class="field-hint">
@@ -168,6 +169,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ResourceTreePicker, buildLocator as buildResourceLocator } from '@addp/common-frontend'
 import { capabilitiesAPI } from '@/api/capabilities'
+import { getNodeByCatalogPath } from '@/api/meta'
 import { systemEnginesAPI } from '@/api/systemEngines'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import {
@@ -201,7 +203,9 @@ const outputFileName = ref('')
 const csvHeaders = ref(true)
 const csvDelimiter = ref(',')
 const targetParentSelection = ref(null)
+const normalizedTargetParentLocator = ref('')
 const restoredParentLocator = ref('')
+const outputFileNameFocused = ref(false)
 const targetSchema = ref('')
 const targetTable = ref('')
 const tableWriteMode = ref('overwrite')
@@ -228,6 +232,7 @@ const outputFormatGroups = computed(() => {
 
 const outputFormats = computed(() => outputFormatGroups.value.flatMap(group => group.formats))
 const geometryTypes = ['Geometry', 'Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon', 'GeometryCollection']
+const shapefileGeometryTypes = ['Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon']
 
 const selectedEngine = computed(() => {
   const currentEngineID = normalizeEngineID(formData.engineID)
@@ -291,10 +296,8 @@ const canProceed = computed(() => {
 
 const targetParentLocator = computed(() => {
   const selection = targetParentSelection.value
+  if (normalizedTargetParentLocator.value) return normalizedTargetParentLocator.value
   if (!selection?.identity?.locator) return restoredParentLocator.value || ''
-  if (selection.resource?.kind === 'item') {
-    return parentLocatorForSelection(selection)
-  }
   return selection.identity.locator
 })
 
@@ -363,7 +366,11 @@ const primaryGeometryFieldName = computed(() => {
 })
 
 const primaryGeometryType = computed(() => {
-  return inferGeometryType(primaryGeometryField.value)
+  const geometryType = inferGeometryType(primaryGeometryField.value)
+  if (outputFormat.value === 'shapefile' && !shapefileGeometryTypes.includes(geometryType)) {
+    return ''
+  }
+  return geometryType
 })
 
 const spatialTargetHint = computed(() => {
@@ -436,7 +443,7 @@ function syncTarget() {
         backendFormat: selectedOutputFormat.value.backendType,
         parentLocator: targetParentLocator.value,
         resourcePath: outputPath.value,
-        resourceFile: isRawCopySource.value ? normalizeFileCatalogPath(outputFileName.value) : normalizedOutputFileName.value,
+        resourceFile: targetResourceFile({ finalize: !outputFileNameFocused.value }),
         includeHeader: !isRawCopySource.value && csvHeaders.value,
         delimiter: isRawCopySource.value ? '' : (outputFormat.value === 'tsv' ? '\t' : csvDelimiter.value),
         geometryField: isRawCopySource.value ? '' : primaryGeometryFieldName.value,
@@ -492,7 +499,7 @@ function buildTargetDraftExtra() {
       backendFormat: selectedOutputFormat.value.backendType,
       parentLocator: targetParentLocator.value,
       resourcePath: outputPath.value,
-      resourceFile: isRawCopySource.value ? normalizeFileCatalogPath(outputFileName.value) : normalizedOutputFileName.value,
+      resourceFile: targetResourceFile({ finalize: false }),
       includeHeader: !isRawCopySource.value && csvHeaders.value,
       delimiter: isRawCopySource.value ? '' : (outputFormat.value === 'tsv' ? '\t' : csvDelimiter.value),
       geometryField: isRawCopySource.value ? '' : primaryGeometryFieldName.value,
@@ -513,37 +520,63 @@ function handleOutputFormatChange() {
   syncTarget()
 }
 
+function handleOutputFileNameFocus() {
+  outputFileNameFocused.value = true
+}
+
+function handleOutputFileNameBlur() {
+  outputFileNameFocused.value = false
+  applyOutputFileExtension()
+}
+
 async function handleTargetEngineChange() {
   formData.engineID = normalizeEngineID(formData.engineID)
   outputPath.value = ''
   outputFileName.value = ''
   targetParentSelection.value = null
+  normalizedTargetParentLocator.value = ''
   restoredParentLocator.value = ''
   targetSchema.value = ''
   targetTable.value = ''
   syncTarget()
 }
 
-function handleTargetParentSelect(selection) {
-  targetParentSelection.value = selection
+async function handleTargetParentSelect(selection) {
   if (isNativeTableTarget.value) {
+    targetParentSelection.value = selection
+    normalizedTargetParentLocator.value = ''
     targetSchema.value = targetParentNameFromSelection(selection)
-    targetTable.value = selection.resource?.kind === 'item' ? targetNameFromSelection(selection) : ''
+    targetTable.value = ''
   } else if (isContentTarget.value) {
-    outputPath.value = targetParentPathFromSelection(selection)
     if (selection.resource?.kind === 'item') {
-      outputFileName.value = targetNameFromSelection(selection)
+      const normalized = await normalizeExistingTargetSelection(selection)
+      if (!normalized) {
+        syncTarget()
+        return
+      }
+      targetParentSelection.value = normalized.selection
+      normalizedTargetParentLocator.value = normalized.parentLocator
+      outputPath.value = normalized.parentPath
+      outputFileName.value = normalized.fileName
+      applyOutputFormatFromFileName(normalized.fileName)
+    } else {
+      targetParentSelection.value = selection
+      normalizedTargetParentLocator.value = await normalizeNodeSelectionLocator(selection)
+      outputPath.value = targetParentPathFromSelection(selection)
     }
   }
   syncTarget()
 }
 
-function isTargetParentSelectable(node) {
+function isTargetParentSelectable(node, context = {}) {
   const type = String(node?.type || '').toLowerCase()
   if (isNativeTableTarget.value) {
-    return ['schema', 'database', 'table'].includes(type)
+    return ['schema', 'database'].includes(type)
   }
-  return ['root', 'directory', 'dir', 'bucket', 'prefix', 'service', 'object', 'file'].includes(type)
+  if (['object', 'file'].includes(type)) {
+    return !!context.locator?.itemId
+  }
+  return ['root', 'directory', 'dir', 'bucket', 'prefix', 'service'].includes(type) && !!context.locator?.nodeId
 }
 
 function targetParentNameFromSelection(selection) {
@@ -556,9 +589,6 @@ function targetParentNameFromSelection(selection) {
 
 function targetParentPathFromSelection(selection) {
   const path = parseTransferLocator(selection?.identity?.locator || '').path
-  if (selection?.resource?.kind === 'item') {
-    return path.slice(0, -1).join('/')
-  }
   return path.join('/')
 }
 
@@ -567,29 +597,84 @@ function targetNameFromSelection(selection) {
   return path[path.length - 1] || selection?.display?.label || selection?.raw?.node?.label || ''
 }
 
-function parentLocatorForSelection(selection) {
+async function normalizeExistingTargetSelection(selection) {
   const loc = parseTransferLocator(selection?.identity?.locator || '')
-  if (!loc.engineID || loc.path.length === 0) return ''
-  const parentType = parentLocatorTypeForSelection(selection, loc)
+  if (!loc.engineID || loc.path.length === 0) return null
   const parentPath = loc.path.slice(0, -1)
-  if (!parentType) return ''
+  const parentPathText = parentPath.join('/')
+  const parentNode = await getNodeByCatalogPath(loc.engineID, parentPathText)
+  if (!parentNode?.id) return null
+  const parentType = String(parentNode.node_type || parentNode.type || parentLocatorTypeForPath(parentPath)).toLowerCase()
+  const parentLocator = buildParentNodeLocator(loc.engineID, parentType, parentPath, parentNode.id)
+  return {
+    parentLocator,
+    parentPath: parentPathText,
+    fileName: targetNameFromSelection(selection),
+    selection: {
+      identity: {
+        locator: parentLocator,
+        engine_id: loc.engineID,
+        node_id: parentNode.id
+      },
+      display: {
+        label: parentPath[parentPath.length - 1] || selection?.raw?.engine?.name || '',
+        path: parentPathText
+      },
+      resource: {
+        kind: 'node',
+        type: parentType
+      },
+      raw: {
+        engine: selection?.raw?.engine,
+        node: parentNode
+      }
+    }
+  }
+}
+
+async function normalizeNodeSelectionLocator(selection) {
+  const loc = parseTransferLocator(selection?.identity?.locator || '')
+  if (!loc.engineID || !loc.type) return ''
+  const nodeID = Number(selection?.identity?.node_id || selection?.raw?.node?.metadata?.node_id || 0)
+  if (nodeID > 0) {
+    return buildParentNodeLocator(loc.engineID, loc.type, loc.path, nodeID)
+  }
+  if (locatorHasNodeID(selection?.identity?.locator || '')) {
+    return selection.identity.locator
+  }
+  const node = await getNodeByCatalogPath(loc.engineID, loc.path.join('/'))
+  if (node?.id) {
+    return buildParentNodeLocator(loc.engineID, node.node_type || loc.type, loc.path, node.id)
+  }
+  return selection?.identity?.locator || ''
+}
+
+function buildParentNodeLocator(engineID, type, path, nodeID) {
   return buildResourceLocator({
-    engineId: loc.engineID,
-    type: parentType,
-    path: parentPath
+    engineId: engineID,
+    type,
+    path,
+    nodeId: nodeID
   })
 }
 
-function parentLocatorTypeForSelection(selection, loc) {
-  if (isNativeTableTarget.value) {
-    return loc.path.length > 1 ? 'schema' : 'database'
-  }
-  const nodeType = String(selection?.raw?.node?.metadata?.parent_type || '').toLowerCase()
-  if (nodeType) return nodeType
-  if (loc.path.length <= 1) {
+function parentLocatorTypeForPath(path) {
+  if ((path || []).length <= 1) {
     return isObjectStorageEngine(selectedEngine.value?.engine_type) ? 'bucket' : 'root'
   }
   return isObjectStorageEngine(selectedEngine.value?.engine_type) ? 'prefix' : 'directory'
+}
+
+function applyOutputFormatFromFileName(fileName) {
+  if (isRawCopySource.value) return
+  const extension = currentFileExtension(fileName)
+  if (!extension) return
+  const matchedFormat = outputFormats.value.find(format => normalizeExtension(format.extension) === extension)
+  if (!matchedFormat || matchedFormat.value === outputFormat.value) return
+  outputFormat.value = matchedFormat.value
+  if (isSpatialFormat.value) {
+    applyDefaultGeometryConfig()
+  }
 }
 
 async function loadEngines() {
@@ -682,14 +767,15 @@ async function restoreState() {
     targetSchema.value = config.schema || state.targetSchema?.value || ''
     targetTable.value = config.table || state.targetTable?.value || ''
     tableWriteMode.value = normalizeTableWriteMode(config.writeMode)
-    restoredParentLocator.value = config.parentLocator || ''
-    if (config.parentLocator) {
+    restoredParentLocator.value = await normalizeRestoredParentLocator(config.parentLocator || '')
+    normalizedTargetParentLocator.value = restoredParentLocator.value
+    if (restoredParentLocator.value) {
       const label = isNativeTableTarget.value
         ? targetSchema.value
         : (normalizeFileCatalogPath(config.resourcePath || '') || '/')
       targetParentSelection.value = {
         identity: {
-          locator: config.parentLocator,
+          locator: restoredParentLocator.value,
           engine_id: formData.engineID
         },
         display: {
@@ -709,11 +795,42 @@ async function restoreState() {
   }
 }
 
+async function normalizeRestoredParentLocator(locator) {
+  const parsed = parseTransferLocator(locator)
+  if (!parsed.engineID || !parsed.type) return locator
+  if (locatorHasNodeID(locator)) return locator
+
+  const catalogPath = parsed.path.join('/')
+  try {
+    const node = await getNodeByCatalogPath(parsed.engineID, catalogPath)
+    if (!node?.id) return locator
+    return buildResourceLocator({
+      engineId: parsed.engineID,
+      type: node.node_type || parsed.type,
+      path: parsed.path,
+      nodeId: node.id
+    })
+  } catch {
+    return ''
+  }
+}
+
+function locatorHasNodeID(locator) {
+  try {
+    const url = new URL(locator)
+    const nodeID = Number(url.searchParams.get('node_id') || 0)
+    return nodeID > 0
+  } catch {
+    return false
+  }
+}
+
 function resetLocalTargetForm() {
   formData.engineID = null
   outputPath.value = ''
   outputFileName.value = ''
   targetParentSelection.value = null
+  normalizedTargetParentLocator.value = ''
   restoredParentLocator.value = ''
   targetSchema.value = ''
   targetTable.value = ''
@@ -726,11 +843,18 @@ function targetStateMatchesLocal() {
   return normalizeEngineID(formData.engineID) === normalizeEngineID(state.targetEngineID.value) &&
     outputFormat.value === (isRawCopySource.value ? sourceFormat.value : (config.format || '')) &&
     outputPath.value === normalizeFileCatalogPath(config.resourcePath || '') &&
-    outputFileName.value === (config.resourceFile || (isRawCopySource.value ? sourceFileName.value : '')) &&
+    outputFileName.value === targetConfigResourceFileForLocalCompare(config) &&
     targetSchema.value === (config.schema || state.targetSchema?.value || '') &&
     targetTable.value === (config.table || state.targetTable?.value || '') &&
-    (targetParentSelection.value?.identity?.locator || '') === (config.parentLocator || '') &&
+    targetParentLocator.value === (config.parentLocator || '') &&
     tableWriteMode.value === normalizeTableWriteMode(config.writeMode)
+}
+
+function targetConfigResourceFileForLocalCompare(config) {
+  const fallback = isRawCopySource.value ? sourceFileName.value : ''
+  const resourceFile = config.resourceFile || fallback
+  if (isRawCopySource.value || !outputFileNameFocused.value) return resourceFile
+  return normalizeFileCatalogPath(resourceFile)
 }
 
 function targetConfigSignature(config) {
@@ -779,6 +903,13 @@ function outputFileNameWithExtension(value, options = {}) {
     return parts.join('/')
   }
   return current
+}
+
+function targetResourceFile(options = {}) {
+  if (isRawCopySource.value) {
+    return normalizeFileCatalogPath(outputFileName.value)
+  }
+  return options.finalize ? normalizedOutputFileName.value : normalizeFileCatalogPath(outputFileName.value)
 }
 
 function currentFileExtension(value) {

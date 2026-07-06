@@ -7,8 +7,8 @@ describe('quickViewReasonText', () => {
   it('maps backend quick view reason codes to i18n keys', () => {
     expect(quickViewReasonText(t, 'tile generation requires numeric SRID'))
       .toBe('translated:manager.spatialPreview.tileGenerationRequiresNumericSRID')
-    expect(quickViewReasonText(t, 'direct GeoJSON quick view exceeds row limit'))
-      .toBe('translated:manager.spatialPreview.directGeoJSONRowLimitExceeded')
+    expect(quickViewReasonText(t, 'direct FlatGeobuf quick view exceeds row limit'))
+      .toBe('translated:manager.spatialPreview.directFlatGeobufRowLimitExceeded')
     expect(quickViewReasonText(t, 'requires_ksplat_generation'))
       .toBe('translated:manager.spatialPreview.requiresKSplatGeneration')
   })

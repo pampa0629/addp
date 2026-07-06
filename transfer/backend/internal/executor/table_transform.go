@@ -431,6 +431,11 @@ func cloneSpatialInfoForColumn(source *datatype.SpatialInfo, columnName string) 
 		source.PrimarySRIDValue(),
 		source.PrimaryDimensionValue(),
 	)
+	spatial.CRSRef = source.CRSRef
+	spatial.CRSDefinitions = append([]datatype.CRSDefinition(nil), source.CRSDefinitions...)
+	if primary := source.PrimaryGeometry(); primary != nil && len(spatial.GeometryColumns) > 0 {
+		spatial.GeometryColumns[0].CRSRef = strings.TrimSpace(primary.CRSRef)
+	}
 	if source.Extent != nil {
 		extent := *source.Extent
 		spatial.Extent = &extent

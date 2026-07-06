@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -43,6 +44,8 @@ func quickViewLocatorError(c *gin.Context, err error) {
 		accessDeniedToEngine(c)
 	case errors.Is(err, preview.ErrPreviewRequiresScannedMeta):
 		managerError(c, http.StatusNotFound, manageri18n.MsgMetaScanRequired)
+	case errors.Is(err, preview.ErrFlatGeobufGeometryColumnRequired):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewGeometryMissing)
 	default:
 		quickViewError(c, err)
 	}
@@ -52,6 +55,7 @@ type QuickViewHandler struct {
 	service                    *service.QuickViewService
 	previewResolver            *preview.PreviewResolver
 	mvtService                 *service.UnifiedMVTService
+	tileCacheTaskSvc           *service.TileCacheTaskService
 	rasterCOGTaskSvc           *service.RasterCOGTaskService
 	model3DGLBTaskSvc          *service.Model3DGLBTaskService
 	gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService
@@ -60,6 +64,10 @@ type QuickViewHandler struct {
 
 func NewQuickViewHandler(service *service.QuickViewService, previewResolver *preview.PreviewResolver, mvtService *service.UnifiedMVTService, _ *redis.Client) *QuickViewHandler {
 	return &QuickViewHandler{service: service, previewResolver: previewResolver, mvtService: mvtService}
+}
+
+func (h *QuickViewHandler) SetTileCacheTaskService(tileCacheTaskSvc *service.TileCacheTaskService) {
+	h.tileCacheTaskSvc = tileCacheTaskSvc
 }
 
 func (h *QuickViewHandler) SetArtifactTaskServices(rasterCOGTaskSvc *service.RasterCOGTaskService, model3DGLBTaskSvc *service.Model3DGLBTaskService, gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService, pointCloudCOPCTaskSvc *service.PointCloudCOPCTaskService) {
@@ -121,7 +129,7 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 
 // ExecuteQuickViewAction 执行 locator 快显动作
 // @Summary 执行 locator 快显动作 | Execute locator quick view action
-// @Description 前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，目前支持生成栅格 COG、三维模型 GLB 快显、3DGS KSplat 快显和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts.
+// @Description 前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB 快显、3DGS KSplat 快显和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts.
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -171,6 +179,9 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 	var taskID uint
 	var executionID string
 	switch action {
+	case service.QuickViewActionGenerateTileCache:
+		taskType = commonExecution.TaskTypeVectorTileCacheGeneration
+		taskID, executionID, err = h.createAndExecuteTileCacheTask(c.Request.Context(), userID, capability, source)
 	case service.QuickViewActionGenerateRasterCOG:
 		taskType = commonExecution.TaskTypeRasterCOGGeneration
 		taskID, executionID, err = h.createAndExecuteRasterCOGTask(c.Request.Context(), userID, capability, source)
@@ -332,6 +343,45 @@ func (h *QuickViewHandler) GetQuickViewGeoJSONByLocator(c *gin.Context) {
 	c.JSON(http.StatusOK, geojson)
 }
 
+// GetQuickViewFlatGeobufByLocator 获取统一 FlatGeobuf 快显数据
+// @Summary 获取统一 FlatGeobuf 快显数据 | Get unified quick-view FlatGeobuf
+// @Description 以 Resource Locator 为身份返回 FlatGeobuf 二进制快显材料。该出口服务 direct_flatgeobuf 渲染源，不是通用导出 API。 | Return FlatGeobuf binary quick-view material by Resource Locator. This endpoint serves direct_flatgeobuf render source and is not a general export API.
+// @Tags Manager
+// @Produce application/vnd.fgb
+// @Param locator query string true "资源定位符URI | Resource locator URI"
+// @Param page_size query int false "读取数量，默认1000，最大2000 | Read size, default 1000, max 2000"
+// @Param geometry_column query string false "几何列名 | Geometry column"
+// @Success 200 "FlatGeobuf 二进制数据 | FlatGeobuf binary data"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
+// @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /quick-view/flatgeobuf [get]
+// @Security BearerAuth
+func (h *QuickViewHandler) GetQuickViewFlatGeobufByLocator(c *gin.Context) {
+	locator := strings.TrimSpace(c.Query("locator"))
+	if locator == "" {
+		missingLocator(c)
+		return
+	}
+	pageSize := positiveIntQuery(c, "page_size", 1000, 1, 2000)
+	result, err := h.previewResolver.OpenFlatGeobufFeatureReaderFromURI(c.Request.Context(), locator, strings.TrimSpace(c.Query("geometry_column")), pageSize, tenantIDFromContext(c))
+	if err != nil {
+		quickViewLocatorError(c, err)
+		return
+	}
+	defer result.Close(c.Request.Context())
+	var output bytes.Buffer
+	err = commonSpatial.WriteFlatGeobuf(c.Request.Context(), &output, result.Reader, result.Options)
+	if err != nil {
+		quickViewLocatorError(c, err)
+		return
+	}
+	c.Header("Content-Disposition", `inline; filename="quick-view.fgb"`)
+	c.Header("X-ADDP-Render-Source", service.QuickViewRenderSourceDirectFlatGeobuf)
+	c.Data(http.StatusOK, "application/vnd.fgb", output.Bytes())
+}
+
 // GetQuickViewTileByLocator 获取统一 MVT 快显瓦片
 // @Summary 获取统一 MVT 快显瓦片 | Get unified quick-view MVT tile
 // @Description 以 Resource Locator 为身份返回 MVT 瓦片。实时 MVT 由 PostGIS 空间 item 提供，其他空间 item 通过瓦片缓存结果提供快显。 | Return an MVT tile by Resource Locator. Realtime MVT is provided by PostGIS spatial items; other spatial items use tile cache results for quick view.
@@ -373,10 +423,6 @@ func (h *QuickViewHandler) GetQuickViewTileByLocator(c *gin.Context) {
 		quickViewLocatorError(c, err)
 		return
 	}
-	if !source.CanTile || source.EngineID == 0 || source.Schema == "" || source.Table == "" || source.SpatialMeta == nil {
-		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewGeometryMissing)
-		return
-	}
 	z := positivePathInt(c, "z", 0, 22)
 	x := positivePathInt(c, "x", 0, 0)
 	y := positivePathInt(c, "y", 0, 0)
@@ -386,6 +432,25 @@ func (h *QuickViewHandler) GetQuickViewTileByLocator(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 	if tenantID == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "tenant_id is required for MVT tile access"})
+		return
+	}
+	readyTileCache, err := h.service.GetDefaultTileCacheByIdentity(c.Request.Context(), source.Identity)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if readyTileCache != nil {
+		response, err := h.mvtService.GetCachedTileCacheTile(c.Request.Context(), *tenantID, readyTileCache, z, x, y)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		applyTileResponseHeaders(c, response)
+		c.Data(http.StatusOK, "application/vnd.mapbox-vector-tile", response.Data)
+		return
+	}
+	if !source.CanTile || source.EngineID == 0 || source.Schema == "" || source.Table == "" || source.SpatialMeta == nil {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewGeometryMissing)
 		return
 	}
 	geomCol := strings.TrimSpace(c.Query("geometry_column"))
@@ -670,6 +735,111 @@ func (h *QuickViewHandler) createAndExecutePointCloudCOPCTask(ctx context.Contex
 	return task.ID, executionID, nil
 }
 
+func (h *QuickViewHandler) createAndExecuteTileCacheTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource) (uint, string, error) {
+	if h.tileCacheTaskSvc == nil {
+		return 0, "", errors.New("vector tile cache task service is not initialized")
+	}
+	config, err := vectorTileCacheTaskConfigFromQuickView(capability, source)
+	if err != nil {
+		return 0, "", err
+	}
+	task := models.TileCacheTask{
+		TenantID:  capability.TenantID,
+		Name:      quickViewActionTaskName("矢量瓦片缓存", capability),
+		Enabled:   true,
+		Config:    config,
+		CreatedBy: &userID,
+	}
+	if err := h.tileCacheTaskSvc.Create(ctx, &task); err != nil {
+		return 0, "", err
+	}
+	executionID, err := h.tileCacheTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	if err != nil {
+		return task.ID, "", err
+	}
+	return task.ID, executionID, nil
+}
+
+func vectorTileCacheTaskConfigFromQuickView(capability *service.QuickViewCapability, source service.QuickViewSource) (commonModels.JSONMap, error) {
+	if capability == nil || !capability.CanGenerateTileCache || source.SpatialMeta == nil {
+		return nil, errors.New("quick view source is not a vector tile cache generation source")
+	}
+	if source.EngineID == 0 || strings.TrimSpace(capability.Locator) == "" || strings.TrimSpace(capability.ItemFingerprint) == "" {
+		return nil, errors.New("quick view capability missing vector tile cache source identity")
+	}
+	parsed, err := resourcetree.ParseURI(capability.Locator)
+	if err != nil {
+		return nil, fmt.Errorf("quick view locator is invalid: %w", err)
+	}
+	itemID := uint(0)
+	if parsed.ItemID != nil {
+		itemID = *parsed.ItemID
+	}
+	target := commonModels.JSONMap{
+		"source_engine_id": source.EngineID,
+		"locator":          capability.Locator,
+		"item_fingerprint": capability.ItemFingerprint,
+		"source_kind":      string(parsed.Type),
+		"full_name":        parsed.FullName(),
+	}
+	if itemID > 0 {
+		target["item_id"] = itemID
+	}
+	if strings.TrimSpace(source.Schema) != "" {
+		target["schema"] = strings.TrimSpace(source.Schema)
+	}
+	if strings.TrimSpace(source.Table) != "" {
+		target["table"] = strings.TrimSpace(source.Table)
+	}
+
+	minZoom, maxZoom := 0, 12
+	if capability.RenderFacts != nil && capability.RenderFacts.ZoomRecommendation != nil {
+		minZoom = capability.RenderFacts.ZoomRecommendation.MinZoom
+		maxZoom = capability.RenderFacts.ZoomRecommendation.MaxZoom
+	}
+	tile := commonModels.JSONMap{
+		"format":          "mvt",
+		"tile_matrix_set": "WebMercatorQuad",
+		"min_zoom":        minZoom,
+		"max_zoom":        maxZoom,
+		"target_srid":     commonSpatial.SRIDWebMercator,
+		"source_srid":     source.SpatialMeta.SRID,
+	}
+	extent, extentSRID := quickViewTileCacheExtent(source.SpatialMeta)
+	if len(extent) == 4 {
+		tile["extent"] = extent
+	}
+	if extentSRID > 0 {
+		tile["extent_srid"] = extentSRID
+	}
+	options := commonModels.JSONMap{
+		"geometry_column": strings.TrimSpace(source.SpatialMeta.GeomColumn),
+		"attributes":      []string{},
+	}
+	if strings.TrimSpace(source.SpatialMeta.PrimaryKey) != "" {
+		options["primary_key"] = strings.TrimSpace(source.SpatialMeta.PrimaryKey)
+	}
+	return commonModels.JSONMap{
+		"target":  target,
+		"tile":    tile,
+		"storage": commonModels.JSONMap{},
+		"options": options,
+	}, nil
+}
+
+func quickViewTileCacheExtent(meta *service.SpatialMetadataResult) ([]float64, int) {
+	if meta == nil {
+		return nil, 0
+	}
+	if len(meta.RenderExtent) == 4 && meta.RenderExtentSRID > 0 {
+		return append([]float64(nil), meta.RenderExtent...), meta.RenderExtentSRID
+	}
+	if len(meta.Extent) == 4 && meta.ExtentSRID > 0 {
+		return append([]float64(nil), meta.Extent...), meta.ExtentSRID
+	}
+	return nil, 0
+}
+
 func rasterCOGTaskConfigFromQuickView(capability *service.QuickViewCapability, source service.QuickViewSource) (commonModels.JSONMap, error) {
 	if capability == nil || capability.SourceKind != service.QuickViewSourceKindRaster || source.Raster == nil {
 		return nil, errors.New("quick view source is not a raster COG generation source")
@@ -846,19 +1016,27 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 			TenantID: storageTenantID,
 			Locator:  locator,
 		},
-		DirectGeoJSON: true,
-		GeoJSONURL:    locatorQuickViewGeoJSONURL(locator, tablePreview),
+		EngineID:         quickViewEngineIDFromLocator(locator),
+		DirectFlatGeobuf: true,
+		FlatGeobufURL:    locatorQuickViewFlatGeobufURL(locator, tablePreview),
 	}
 	if tablePreview == nil {
 		return source
 	}
-	source.EngineID = tablePreview.EngineID
+	if tablePreview.EngineID > 0 {
+		source.EngineID = tablePreview.EngineID
+	}
 	source.Schema = tablePreview.Schema
 	source.Table = tablePreview.Table
 	if result != nil && result.Metadata != nil {
-		source.Identity.Locator = result.Metadata.Locator
+		if metadataLocator := strings.TrimSpace(result.Metadata.Locator); metadataLocator != "" {
+			source.Identity.Locator = metadataLocator
+		}
 		source.Identity.ItemFingerprint = strings.TrimSpace(result.Metadata.ItemFingerprint)
-		source.GeoJSONURL = locatorQuickViewGeoJSONURL(source.Identity.Locator, tablePreview)
+		if source.EngineID == 0 {
+			source.EngineID = quickViewEngineIDFromLocator(source.Identity.Locator)
+		}
+		source.FlatGeobufURL = locatorQuickViewFlatGeobufURL(source.Identity.Locator, tablePreview)
 	}
 	if tablePreview.Object != nil {
 		pointCloud := service.PointCloudCOPCSourceFromAttributes(tablePreview.Object.Attributes)
@@ -871,8 +1049,8 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 				pointCloud.PreviewURL = strings.TrimSpace(tablePreview.Object.URL)
 			}
 			source.PointCloud = pointCloud
-			source.DirectGeoJSON = false
-			source.GeoJSONURL = ""
+			source.DirectFlatGeobuf = false
+			source.FlatGeobufURL = ""
 			source.CanTile = false
 			return source
 		}
@@ -886,8 +1064,8 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 				gaussianSplat.PreviewURL = strings.TrimSpace(tablePreview.Object.URL)
 			}
 			source.GaussianSplat = gaussianSplat
-			source.DirectGeoJSON = false
-			source.GeoJSONURL = ""
+			source.DirectFlatGeobuf = false
+			source.FlatGeobufURL = ""
 			source.CanTile = false
 			return source
 		}
@@ -901,8 +1079,8 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 				model3D.PreviewURL = strings.TrimSpace(tablePreview.Object.URL)
 			}
 			source.Model3D = model3D
-			source.DirectGeoJSON = false
-			source.GeoJSONURL = ""
+			source.DirectFlatGeobuf = false
+			source.FlatGeobufURL = ""
 			source.CanTile = false
 			return source
 		}
@@ -910,15 +1088,12 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 		if raster != nil {
 			source.EngineID = tablePreview.Object.EngineID
 			source.Raster = raster
-			source.DirectGeoJSON = false
-			source.GeoJSONURL = ""
+			source.DirectFlatGeobuf = false
+			source.FlatGeobufURL = ""
 			source.CanTile = false
 			return source
 		}
 	}
-	source.CanTile = strings.EqualFold(strings.TrimSpace(tablePreview.EngineType), "postgresql") &&
-		strings.TrimSpace(tablePreview.Schema) != "" &&
-		strings.TrimSpace(tablePreview.Table) != ""
 	geometryColumn := strings.TrimSpace(tablePreview.GeometryColumn)
 	if geometryColumn == "" && len(tablePreview.GeometryColumns) > 0 {
 		geometryColumn = strings.TrimSpace(tablePreview.GeometryColumns[0])
@@ -941,13 +1116,36 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 		Extent:              tablePreview.Extent,
 		RecordCount:         int64(tablePreview.Total),
 	}
+	source.CanTile = quickViewSourceCanGenerateVectorTileCache(source, tablePreview)
 	return source
 }
 
-func locatorQuickViewGeoJSONURL(locator string, tablePreview *models.TablePreview) string {
+func quickViewEngineIDFromLocator(locator string) uint {
+	parsed, err := resourcetree.ParseURI(strings.TrimSpace(locator))
+	if err != nil {
+		return 0
+	}
+	return parsed.EngineID
+}
+
+func quickViewSourceCanGenerateVectorTileCache(source service.QuickViewSource, tablePreview *models.TablePreview) bool {
+	if tablePreview == nil || source.SpatialMeta == nil {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(tablePreview.EngineType), "postgresql") &&
+		strings.TrimSpace(tablePreview.Schema) != "" &&
+		strings.TrimSpace(tablePreview.Table) != "" {
+		return true
+	}
+	return source.DirectFlatGeobuf &&
+		strings.TrimSpace(source.SpatialMeta.GeomColumn) != "" &&
+		source.SpatialMeta.SRID > 0 &&
+		len(source.SpatialMeta.Extent) == 4
+}
+
+func locatorQuickViewFlatGeobufURL(locator string, tablePreview *models.TablePreview) string {
 	values := url.Values{}
 	values.Set("locator", strings.TrimSpace(locator))
-	values.Set("page", "1")
 	pageSize := 1
 	if tablePreview != nil && tablePreview.Total > 0 {
 		pageSize = tablePreview.Total
@@ -956,7 +1154,7 @@ func locatorQuickViewGeoJSONURL(locator string, tablePreview *models.TablePrevie
 	if tablePreview != nil && strings.TrimSpace(tablePreview.GeometryColumn) != "" {
 		values.Set("geometry_column", strings.TrimSpace(tablePreview.GeometryColumn))
 	}
-	return "/api/v1/manager/quick-view/geojson?" + values.Encode()
+	return "/api/v1/manager/quick-view/flatgeobuf?" + values.Encode()
 }
 
 func locatorQuickViewTileURL(locator string) string {
@@ -977,9 +1175,9 @@ func applyLocatorQuickViewURLs(capability *service.QuickViewCapability) {
 		return
 	}
 	switch capability.RenderSource {
-	case service.QuickViewRenderSourceDirectGeoJSON:
-		if capability.QuickView.GeoJSONURL == "" {
-			capability.QuickView.GeoJSONURL = locatorQuickViewGeoJSONURL(capability.Locator, nil)
+	case service.QuickViewRenderSourceDirectFlatGeobuf:
+		if capability.QuickView.FlatGeobufURL == "" {
+			capability.QuickView.FlatGeobufURL = locatorQuickViewFlatGeobufURL(capability.Locator, nil)
 		}
 	case service.QuickViewRenderSourceRealtimeTile, service.QuickViewRenderSourceCachedTile:
 		capability.QuickView.TileURLTemplate = locatorQuickViewTileURL(capability.Locator)
@@ -989,13 +1187,7 @@ func applyLocatorQuickViewURLs(capability *service.QuickViewCapability) {
 }
 
 func quickViewFeatureCollection(result *preview.PreviewResult, tablePreview *models.TablePreview, requestedGeometryColumn string) (gin.H, error) {
-	geometryColumn := strings.TrimSpace(requestedGeometryColumn)
-	if geometryColumn == "" {
-		geometryColumn = strings.TrimSpace(tablePreview.GeometryColumn)
-	}
-	if geometryColumn == "" && len(tablePreview.GeometryColumns) > 0 {
-		geometryColumn = strings.TrimSpace(tablePreview.GeometryColumns[0])
-	}
+	geometryColumn := quickViewGeometryColumn(tablePreview, requestedGeometryColumn)
 	if geometryColumn == "" {
 		return nil, service.ErrQuickViewGeometryColumnNotFound
 	}
@@ -1046,6 +1238,17 @@ func quickViewFeatureCollection(result *preview.PreviewResult, tablePreview *mod
 			"total":     tablePreview.Total,
 		},
 	}, nil
+}
+
+func quickViewGeometryColumn(tablePreview *models.TablePreview, requestedGeometryColumn string) string {
+	geometryColumn := strings.TrimSpace(requestedGeometryColumn)
+	if geometryColumn == "" && tablePreview != nil {
+		geometryColumn = strings.TrimSpace(tablePreview.GeometryColumn)
+	}
+	if geometryColumn == "" && tablePreview != nil && len(tablePreview.GeometryColumns) > 0 {
+		geometryColumn = strings.TrimSpace(tablePreview.GeometryColumns[0])
+	}
+	return geometryColumn
 }
 
 func quickViewGeoJSONGeometry(value interface{}) (gin.H, bool) {

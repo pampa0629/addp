@@ -1543,6 +1543,9 @@ func TestFileTablePreviewProviderRestoresSpatialInfoFromMetaAttributes(t *testin
 	if preview.SRID != 4326 {
 		t.Fatalf("SRID = %d, want 4326", preview.SRID)
 	}
+	if !reflect.DeepEqual(preview.Extent, []float64{1, 2, 3, 4}) {
+		t.Fatalf("Extent = %#v, want meta spatial extent", preview.Extent)
+	}
 	if len(preview.GeometryColumns) != 1 || preview.GeometryColumns[0] != "geometry" {
 		t.Fatalf("GeometryColumns = %#v", preview.GeometryColumns)
 	}
@@ -1605,7 +1608,19 @@ func TestFileTablePreviewProviderPreviewShapefileReturnsTableModeAndFirstPage(t 
 	t.Parallel()
 
 	provider := &FileTablePreviewProvider{}
-	refProvider := &recordingMultiTableProvider{}
+	extent := datatype.NewBoundingBox(120.1, 30.2, 121.3, 31.4)
+	srid := 4326
+	refProvider := &recordingMultiTableProvider{
+		spatialInfo: &datatype.SpatialInfo{
+			SRID:                  &srid,
+			PrimaryGeometryColumn: "geometry",
+			GeometryColumns: []datatype.GeometryColumnInfo{{
+				Name: "geometry",
+				SRID: &srid,
+			}},
+			Extent: &extent,
+		},
+	}
 	req := &PreviewRequest{
 		Page:     1,
 		PageSize: 2,
@@ -1635,6 +1650,9 @@ func TestFileTablePreviewProviderPreviewShapefileReturnsTableModeAndFirstPage(t 
 	}
 	if preview.Page != 1 {
 		t.Fatalf("Page = %d, want 1", preview.Page)
+	}
+	if preview.GeometryColumn != "geometry" || preview.SourceSRID != 4326 || !reflect.DeepEqual(preview.Extent, []float64{120.1, 30.2, 121.3, 31.4}) {
+		t.Fatalf("spatial facts = column:%q srid:%d extent:%#v, want shapefile spatial facts", preview.GeometryColumn, preview.SourceSRID, preview.Extent)
 	}
 }
 
@@ -1742,6 +1760,81 @@ func TestFileTablePreviewProviderPreviewRefsRestoresProjectionDefinition(t *test
 	}
 	if preview.TransformStatus != "not_transformed" || preview.PreviewHint != "frontend_transform_required" {
 		t.Fatalf("transform contract = %q/%q, want not_transformed/frontend_transform_required", preview.TransformStatus, preview.PreviewHint)
+	}
+}
+
+func TestFileTablePreviewProviderPreviewRefsUpgradesCustomProjectionDefinitionToEPSG(t *testing.T) {
+	provider := &FileTablePreviewProvider{}
+	refProvider := &recordingMultiTableProvider{}
+	prj := `PROJCS["CGCS2000_3_Degree_GK_CM_120E",GEOGCS["GCS_China_Geodetic_Coordinate_System_2000",DATUM["D_China_2000",SPHEROID["CGCS2000",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Gauss_Kruger"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",120.0],PARAMETER["Scale_Factor",1.0],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]`
+	customCRS := datatype.CustomCRSRef(prj)
+	req := &PreviewRequest{
+		Page:     1,
+		PageSize: 2,
+		Table:    "gis/规划用地.shp",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"refs": []interface{}{
+					map[string]interface{}{"path": "gis/规划用地.dbf", "role": "attributes", "required": true, "extension": ".dbf"},
+					map[string]interface{}{"path": "gis/规划用地.prj", "role": "projection", "extension": ".prj"},
+					map[string]interface{}{"path": "gis/规划用地.shp", "role": "main", "required": true, "primary": true, "extension": ".shp"},
+					map[string]interface{}{"path": "gis/规划用地.shx", "role": "index", "required": true, "extension": ".shx"},
+				},
+			},
+			"type_info": map[string]interface{}{
+				"table": map[string]interface{}{
+					"row_count": float64(73090),
+					"fields": []interface{}{
+						map[string]interface{}{"name": "geometry", "type": string(datatype.FieldTypeGeometry), "nullable": false},
+					},
+				},
+			},
+			"capabilities": map[string]interface{}{
+				"spatial": map[string]interface{}{
+					"primary_geometry_column": "geometry",
+					"geometry_columns": []interface{}{
+						map[string]interface{}{"name": "geometry", "geometry_type": "Polygon", "crs_ref": customCRS},
+					},
+					"crs_definitions": []interface{}{
+						map[string]interface{}{
+							"id":                  customCRS,
+							"definition_encoding": datatype.CRSDefinitionEncodingESRIWKT,
+							"definition":          prj,
+							"source":              datatype.CRSDefinitionSourceSidecarPRJ,
+						},
+					},
+					"extent": []interface{}{570841.0277, 3404864.0397, 598936.5143, 3434951.8803},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.previewRefs(
+		context.Background(),
+		staticContentReader{content: []byte(prj)},
+		refsForPreview("gis/规划用地.shp", format.FormatShapefile, req.Attributes),
+		"gis/规划用地.shp",
+		"bucket",
+		format.FormatShapefile,
+		refProvider,
+		refProvider,
+		nil,
+		req,
+	)
+	if err != nil {
+		t.Fatalf("previewRefs() error = %v", err)
+	}
+	if preview.SourceSRID != 4549 || preview.SRID != 4549 || preview.SourceCRS != "EPSG:4549" {
+		t.Fatalf("CRS facts = source_srid:%d srid:%d source_crs:%q, want EPSG:4549", preview.SourceSRID, preview.SRID, preview.SourceCRS)
+	}
+	if preview.SourceCRSDefinition == nil ||
+		preview.SourceCRSDefinition.ID != "EPSG:4549" ||
+		preview.SourceCRSDefinition.Definition != prj ||
+		preview.SourceCRSDefinition.Source != datatype.CRSDefinitionSourceSidecarPRJ {
+		t.Fatalf("SourceCRSDefinition = %#v, want EPSG:4549 sidecar PRJ", preview.SourceCRSDefinition)
+	}
+	if !reflect.DeepEqual(preview.Extent, []float64{570841.0277, 3404864.0397, 598936.5143, 3434951.8803}) {
+		t.Fatalf("Extent = %#v, want source extent", preview.Extent)
 	}
 }
 
@@ -2070,6 +2163,7 @@ type recordingMultiTableProvider struct {
 	sampleOffset  int64
 	describeCalls int
 	lastRefs      []format.RelatedRef
+	spatialInfo   *datatype.SpatialInfo
 }
 
 func (p *recordingMultiTableProvider) Format() format.FormatType {
@@ -2084,6 +2178,7 @@ func (p *recordingMultiTableProvider) RelatedRefSpecs() []format.RelatedRefSpec 
 		{Extension: ".shp", Role: "main", Required: true, Primary: true},
 		{Extension: ".shx", Role: "index", Required: true},
 		{Extension: ".dbf", Role: "attributes", Required: true},
+		{Extension: ".prj", Role: "projection", Required: false},
 	}
 }
 
@@ -2091,10 +2186,22 @@ func (p *recordingMultiTableProvider) DescribeMultiTable(_ context.Context, _ co
 	p.describeCalls++
 	p.lastRefs = append([]format.RelatedRef(nil), refs...)
 	rowCount := int64(1)
-	return format.TableDescribeResultFromTableInfo(&datatype.TableInfo{
-		Fields:   []datatype.FieldInfo{{Name: "name", Type: datatype.FieldTypeString}},
+	fields := []datatype.FieldInfo{{Name: "name", Type: datatype.FieldTypeString}}
+	if p.spatialInfo != nil {
+		geometryName := p.spatialInfo.PrimaryGeometryName()
+		if geometryName == "" {
+			geometryName = "geometry"
+		}
+		fields = append([]datatype.FieldInfo{{Name: geometryName, Type: datatype.FieldTypeGeometry}}, fields...)
+	}
+	result := format.TableDescribeResultFromTableInfo(&datatype.TableInfo{
+		Fields:   fields,
 		RowCount: &rowCount,
-	}), nil
+	})
+	if p.spatialInfo != nil {
+		result.Spatial = p.spatialInfo.Clone()
+	}
+	return result, nil
 }
 
 func (p *recordingMultiTableProvider) SampleMultiTable(_ context.Context, _ contentio.Reader, _ []format.RelatedRef, offset, _ int64, _ *format.ParseOptions) ([]map[string]interface{}, error) {

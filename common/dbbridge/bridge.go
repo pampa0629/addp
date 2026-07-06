@@ -63,6 +63,14 @@ func GenerateCapabilities(engineType string) (string, error) {
 	return plugin.GenerateCapabilities(engineType)
 }
 
+// GenerateResolvedCapabilities 使用插件系统生成具体引擎实例的结构化能力声明 JSON。
+func GenerateResolvedCapabilities(ctx context.Context, engine *models.Engine) (string, error) {
+	if engine == nil {
+		return "", fmt.Errorf("engine cannot be nil")
+	}
+	return plugin.GenerateResolvedCapabilities(ctx, toPluginEngine(engine))
+}
+
 // GetSensitiveFields 获取敏感字段列表
 func GetSensitiveFields(engineType string) ([]string, error) {
 	return plugin.GetSensitiveFields(engineType)

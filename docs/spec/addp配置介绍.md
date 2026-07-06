@@ -135,8 +135,8 @@ MANAGER_VECTOR_BATCH_CONCURRENCY=5
 Manager 快显中的动态 MVT 是交互式预览能力，单瓦片查询必须受响应时间预算保护。以下配置同时影响能力接口返回的 `realtime_tile.timeout_budget_ms`、动态 MVT 查询的实际超时控制，以及超时响应头中的诊断信息。
 
 ```bash
-# 小数据量直接 GeoJSON 快显推荐阈值。PG 空间表超过该阈值仍可使用动态 MVT。
-QUICK_VIEW_DIRECT_GEOJSON_MAX_ROWS=2000
+# 中小数据量直接 FlatGeobuf 快显推荐阈值。PG 空间表超过该阈值仍可使用动态 MVT。
+QUICK_VIEW_DIRECT_FLATGEOBUF_MAX_ROWS=2000
 
 # 动态 MVT 单瓦片交互超时预算，单位毫秒。
 QUICK_VIEW_REALTIME_TILE_TIMEOUT_MS=5000

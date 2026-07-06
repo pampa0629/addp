@@ -72,6 +72,47 @@ func TestSpatialReprojectTransformBatchInvokesProviderAndKeepsEWKBBytes(t *testi
 	}
 }
 
+func TestFieldMappingTransformPreservesCRSDefinitionForMappedGeometryColumn(t *testing.T) {
+	transform, err := newFieldMappingTransform(FieldMappingTransformPlan{
+		Mode: FieldMappingModeProject,
+		Fields: []FieldMappingFieldPlan{
+			{Source: "SmID", Target: "SmID", TargetType: string(datatype.FieldTypeInt)},
+			{Source: "SmGeometry", Target: "SmGeometry", TargetType: string(datatype.FieldTypeGeometry)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("newFieldMappingTransform failed: %v", err)
+	}
+	sourceSpatial := datatype.NewSingleGeometrySpatialInfo("SmGeometry", "MultiPolygon", 4549, 2)
+	sourceSpatial.GeometryColumns[0].CRSRef = datatype.EPSGCRSRef(4549)
+	sourceSpatial.CRSDefinitions = []datatype.CRSDefinition{{
+		ID:                 datatype.EPSGCRSRef(4549),
+		DefinitionEncoding: datatype.CRSDefinitionEncodingWKT,
+		Definition:         `PROJCS["CGCS2000 / 3-degree Gauss-Kruger CM 120E"]`,
+		Source:             datatype.CRSDefinitionSourcePostGISSpatialRefSys,
+	}}
+
+	nextInfo, nextSpatial, err := transform.TransformTableInfo(&datatype.TableInfo{Fields: []datatype.FieldInfo{
+		{Name: "SmID", Type: datatype.FieldTypeInt},
+		{Name: "SmGeometry", Type: datatype.FieldTypeGeometry},
+	}}, sourceSpatial)
+	if err != nil {
+		t.Fatalf("TransformTableInfo failed: %v", err)
+	}
+	if nextInfo.GetField("SmGeometry") == nil {
+		t.Fatalf("table info fields = %#v, want mapped geometry field", nextInfo.Fields)
+	}
+	if nextSpatial == nil || nextSpatial.PrimaryGeometryName() != "SmGeometry" || nextSpatial.PrimaryGeometryType() != "MultiPolygon" {
+		t.Fatalf("spatial info = %#v, want mapped MultiPolygon geometry", nextSpatial)
+	}
+	if nextSpatial.PrimaryCRSRef() != datatype.EPSGCRSRef(4549) {
+		t.Fatalf("primary CRS = %q, want EPSG:4549", nextSpatial.PrimaryCRSRef())
+	}
+	if definition := nextSpatial.CRSDefinitionByID(datatype.EPSGCRSRef(4549)); definition == nil || definition.Definition == "" {
+		t.Fatalf("CRS definitions = %#v, want EPSG:4549 WKT definition", nextSpatial.CRSDefinitions)
+	}
+}
+
 type fakeGeometryBatchReprojecter struct {
 	calls          int
 	sourceCRS      string

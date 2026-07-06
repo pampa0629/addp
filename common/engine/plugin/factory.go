@@ -65,6 +65,26 @@ func GenerateCapabilities(engineType string) (string, error) {
 	return MarshalEngineCapabilities(plugin.Capabilities())
 }
 
+// GenerateResolvedCapabilities 统一入口：基于插件静态能力模板和具体连接信息生成实例能力声明 JSON。
+func GenerateResolvedCapabilities(ctx context.Context, engine *Engine) (string, error) {
+	if engine == nil {
+		return "", fmt.Errorf("engine cannot be nil")
+	}
+	enginePlugin, err := Get(engine.EngineType)
+	if err != nil {
+		return "", err
+	}
+
+	capabilities := enginePlugin.Capabilities()
+	if resolver, ok := enginePlugin.(InstanceCapabilitiesResolver); ok {
+		capabilities, err = resolver.ResolveCapabilities(ctx, engine.ConnectionInfo, capabilities)
+		if err != nil {
+			return "", err
+		}
+	}
+	return MarshalEngineCapabilities(capabilities)
+}
+
 // GetRequiredFields 获取指定类型的必填字段列表
 func GetRequiredFields(engineType string) ([]string, error) {
 	plugin, err := Get(engineType)

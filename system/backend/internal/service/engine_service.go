@@ -769,7 +769,7 @@ func (s *EngineService) ValidateSystemEngineType(engineType string) error {
 	return s.validateSystemEngineType(engineType, nil)
 }
 
-// RefreshAllEngineCapabilities 将空能力、旧能力声明或内置引擎能力刷新为当前插件体系结构。
+// RefreshAllEngineCapabilities 将空能力、旧能力声明或内置引擎能力刷新为当前实例能力结构。
 func (s *EngineService) RefreshAllEngineCapabilities() error {
 	engines, err := s.repo.ListAll()
 	if err != nil {
@@ -781,7 +781,7 @@ func (s *EngineService) RefreshAllEngineCapabilities() error {
 		if !s.usesPluginCapabilities(engine.EngineType) && !s.shouldRefreshCapabilities(engine.Capabilities) {
 			continue
 		}
-		capabilities, err := s.ensureCapabilitiesForEngine(engine.EngineType, engine.Capabilities)
+		capabilities, err := s.resolveCapabilitiesForEngine(&engine)
 		if err != nil {
 			return fmt.Errorf("生成引擎 %d(%s) 能力声明失败: %w", engine.ID, engine.EngineType, err)
 		}
@@ -971,7 +971,7 @@ func (s *EngineService) prepareEngineCapabilities(engine *models.Engine) error {
 	if engine == nil {
 		return errors.New("无效的引擎数据")
 	}
-	capabilities, err := s.ensureCapabilitiesForEngine(engine.EngineType, engine.Capabilities)
+	capabilities, err := s.resolveCapabilitiesForEngine(engine)
 	if err != nil {
 		return err
 	}
@@ -980,6 +980,33 @@ func (s *EngineService) prepareEngineCapabilities(engine *models.Engine) error {
 		return fmt.Errorf("能力声明验证失败: %w", err)
 	}
 	return nil
+}
+
+func (s *EngineService) resolveCapabilitiesForEngine(engine *models.Engine) (string, error) {
+	if engine == nil {
+		return "", errors.New("无效的引擎数据")
+	}
+	engineTypeLower := strings.ToLower(strings.TrimSpace(engine.EngineType))
+	if _, disallowed := disallowedSystemEngineTypes[engineTypeLower]; disallowed {
+		return "", fmt.Errorf("%w: %s 是 Transfer 本地文件连接器，不能注册到 System 统一引擎表", ErrUnsupportedEngineType, engineTypeLower)
+	}
+
+	if s.usesPluginCapabilities(engineTypeLower) {
+		probeEngine := *engine
+		decryptedConnInfo, err := s.decryptSensitiveFields(engine.ConnectionInfo)
+		if err != nil {
+			return "", fmt.Errorf("解密连接信息失败: %w", err)
+		}
+		probeEngine.EngineType = engineTypeLower
+		probeEngine.ConnectionInfo = decryptedConnInfo
+		capabilities, err := dbbridge.GenerateResolvedCapabilities(context.Background(), &probeEngine)
+		if err != nil {
+			return "", err
+		}
+		return capabilities, nil
+	}
+
+	return s.ensureCapabilitiesForEngine(engineTypeLower, engine.Capabilities)
 }
 
 func (s *EngineService) ensureCapabilitiesForEngine(engineType string, submitted *models.JSONString) (string, error) {

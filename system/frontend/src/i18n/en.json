@@ -314,6 +314,8 @@
         "status": {
           "available": "Available",
           "engine_unavailable": "Not native to engine",
+          "installed": "Installed",
+          "not_installed": "Not installed",
           "unknown": "Unknown"
         },
         "summary": {
@@ -328,10 +330,12 @@
         "sections": {
           "storage": "Storage Capabilities",
           "compute": "Compute Capabilities",
-          "extensions": "Extensions"
+          "extensions": "Extensions",
+          "extensionStatus": "Extension Status"
         },
         "items": {
           "catalog": "Catalog browsing",
+          "facts": "Facts",
           "metadata": "Metadata collection",
           "contentRead": "Content read",
           "contentWrite": "Content write",
@@ -375,6 +379,18 @@
           "spatialWriteTransform": "Write-side CRS transform",
           "nativeSpatialFunctions": "Native spatial functions",
           "defaultLanguage": "Default language",
+          "serverVersionNum": "Server version number",
+          "schema": "Schema",
+          "installed": "Installed",
+          "installedFalse": "Not installed",
+          "notInstalled": "Not installed",
+          "available": "Extension package available",
+          "availableFalse": "Not available",
+          "typeAvailable": "Type available",
+          "stExtent": "Spatial extent function",
+          "stTransform": "CRS transform function",
+          "postgisTopology": "PostGIS Topology",
+          "postgisTigerGeocoder": "PostGIS Tiger Geocoder",
           "readOnly": "Read-only",
           "queryPlan": "Query plan",
           "cancel": "Cancelable",
@@ -387,6 +403,29 @@
           "maxRows": "Max rows",
           "maxBytes": "Max bytes",
           "directPreview": "Direct preview"
+        },
+        "extensions": {
+          "postgresqlServer": "PostgreSQL instance",
+          "postgis": "PostGIS spatial extension",
+          "postgisTopology": "PostGIS topology extension",
+          "postgisTigerGeocoder": "PostGIS Tiger geocoder",
+          "postgresqlExtraExtensions": "Other installed extensions",
+          "pgvector": "pgvector vector extension"
+        },
+        "language": {
+          "sql": "SQL"
+        },
+        "resultKind": {
+          "table": "Table",
+          "scalar": "Scalar"
+        },
+        "geometryReadEncoding": {
+          "ewkb": "EWKB",
+          "geojson": "GeoJSON"
+        },
+        "geometryWriteEncoding": {
+          "ewkb": "EWKB",
+          "geojson": "GeoJSON"
         },
         "engineFamily": {
           "tabular": "Tabular",

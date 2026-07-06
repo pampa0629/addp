@@ -144,6 +144,8 @@ type TileCacheTaskTargetResponse struct {
 	ItemFingerprint string `json:"item_fingerprint,omitempty"`
 	Locator         string `json:"locator,omitempty"`
 	SourceEngineID  uint   `json:"source_engine_id,omitempty"`
+	SourceKind      string `json:"source_kind,omitempty"`
+	FullName        string `json:"full_name,omitempty"`
 	Schema          string `json:"schema,omitempty"`
 	Table           string `json:"table,omitempty"`
 }
@@ -3256,6 +3258,8 @@ func tileCacheTaskResponse(task *models.TileCacheTask) TileCacheTaskResponse {
 			ItemFingerprint: stringFromConfig(target["item_fingerprint"]),
 			Locator:         stringFromConfig(target["locator"]),
 			SourceEngineID:  uintFromConfig(target["source_engine_id"]),
+			SourceKind:      stringFromConfig(target["source_kind"]),
+			FullName:        stringFromConfig(target["full_name"]),
 			Schema:          stringFromConfig(target["schema"]),
 			Table:           stringFromConfig(target["table"]),
 		}

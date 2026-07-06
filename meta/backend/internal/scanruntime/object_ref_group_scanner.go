@@ -30,6 +30,10 @@ func scanObjectRefGroups(
 	if !ok {
 		return scanflow.DispatchResult{}, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
 	}
+	catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
+	if !ok {
+		return scanflow.DispatchResult{}, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+	}
 	itemTerm := scanflow.CatalogLeafTermForPlugin(enginePlugin, plugin.CatalogTermObject)
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 
@@ -50,6 +54,9 @@ func scanObjectRefGroups(
 		}
 		bucket, objectPath, err := plugin.SplitObjectRefPath(primary)
 		if err != nil {
+			return result, err
+		}
+		if err := ensureObjectRefGroupBucket(ctx, catalogProvider, connInfo, resource.ID, bucket); err != nil {
 			return result, err
 		}
 		if reporter != nil {
@@ -101,4 +108,21 @@ func scanObjectRefGroups(
 		}
 	}
 	return result, nil
+}
+
+func ensureObjectRefGroupBucket(ctx context.Context, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket string) error {
+	if catalogProvider == nil {
+		return fmt.Errorf("object ref group scan requires CatalogProvider")
+	}
+	entry, err := catalogProvider.ResolvePath(ctx, connInfo, plugin.ObjectDirectoryPath(engineID, bucket, ""))
+	if err != nil {
+		return fmt.Errorf("resolve object ref group bucket %q: %w", bucket, err)
+	}
+	if entry == nil {
+		return fmt.Errorf("object ref group bucket %q does not exist", bucket)
+	}
+	if entry.Kind != plugin.CatalogKindBucket && entry.Term != plugin.CatalogTermBucket {
+		return fmt.Errorf("object ref group bucket %q resolved to %s/%s", bucket, entry.Term, entry.Kind)
+	}
+	return nil
 }

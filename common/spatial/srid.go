@@ -1,6 +1,7 @@
 package spatial
 
 import (
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,9 +13,10 @@ const (
 )
 
 var (
-	explicitEPSGPattern  = regexp.MustCompile(`(?i)^\s*(?:EPSG:|URN:OGC:DEF:CRS:EPSG::)(\d+)\s*$`)
-	epsgAuthorityPattern = regexp.MustCompile(`(?i)AUTHORITY\s*\[\s*"EPSG"\s*,\s*"(\d+)"\s*\]`)
-	wgs84UTMZonePattern  = regexp.MustCompile(`(?i)WGS(?:[_\s]+1984|\s+84)[_/\s-]*UTM[_\s-]*ZONE[_\s-]*(\d{1,2})([NS])\b`)
+	explicitEPSGPattern    = regexp.MustCompile(`(?i)^\s*(?:EPSG:|URN:OGC:DEF:CRS:EPSG::)(\d+)\s*$`)
+	epsgAuthorityPattern   = regexp.MustCompile(`(?i)AUTHORITY\s*\[\s*"EPSG"\s*,\s*"(\d+)"\s*\]`)
+	wgs84UTMZonePattern    = regexp.MustCompile(`(?i)WGS(?:[_\s]+1984|\s+84)[_/\s-]*UTM[_\s-]*ZONE[_\s-]*(\d{1,2})([NS])\b`)
+	centralMeridianPattern = regexp.MustCompile(`(?i)PARAMETER\s*\[\s*"CENTRAL_MERIDIAN"\s*,\s*([-+]?\d+(?:\.\d+)?)\s*\]`)
 )
 
 var (
@@ -62,6 +64,9 @@ func ParseSRID(crsText string) int {
 	if srid := parseWGS84UTMSRID(trimmed); srid > 0 {
 		return srid
 	}
+	if srid := parseCGCS20003DegreeGaussKrugerCMSRID(trimmed); srid > 0 {
+		return srid
+	}
 
 	authorities := extractEPSGAuthorities(trimmed)
 	if looksProjectedCRS(upper) {
@@ -83,6 +88,43 @@ func ParseSRID(crsText string) int {
 	}
 
 	return 0
+}
+
+func parseCGCS20003DegreeGaussKrugerCMSRID(text string) int {
+	upper := strings.ToUpper(text)
+	if !strings.Contains(upper, "CGCS2000") &&
+		!strings.Contains(upper, "CHINA_GEODETIC_COORDINATE_SYSTEM_2000") &&
+		!strings.Contains(upper, "CHINA GEODETIC COORDINATE SYSTEM 2000") {
+		return 0
+	}
+	if !strings.Contains(upper, "GAUSS") && !strings.Contains(upper, "TRANSVERSE_MERCATOR") {
+		return 0
+	}
+	cm, ok := parseCentralMeridian(text)
+	if !ok {
+		return 0
+	}
+	if cm < 75 || cm > 135 {
+		return 0
+	}
+	zoneOffset := (cm - 75) / 3
+	rounded := math.Round(zoneOffset)
+	if math.Abs(zoneOffset-rounded) > 1e-9 {
+		return 0
+	}
+	return 4534 + int(rounded)
+}
+
+func parseCentralMeridian(text string) (float64, bool) {
+	matches := centralMeridianPattern.FindStringSubmatch(strings.TrimSpace(text))
+	if len(matches) != 2 {
+		return 0, false
+	}
+	value, err := strconv.ParseFloat(matches[1], 64)
+	if err != nil {
+		return 0, false
+	}
+	return value, true
 }
 
 func parseExplicitEPSG(text string) int {

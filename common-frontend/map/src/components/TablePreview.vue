@@ -37,7 +37,7 @@
           @view-state-change="handleViewStateChange"
         />
         <div v-else class="map-placeholder">
-          <el-empty :description="suppressedMapMessage || t('map.noGeometryData')" :image-size="60" />
+          <el-empty :description="mapEmptyMessage" :image-size="60" />
         </div>
       </div>
 
@@ -431,6 +431,17 @@ const suppressedMapMessage = computed(() => {
   if (status === 'unsupported_crs') return t('map.mapSuppressedUnsupportedCRS')
   return ''
 })
+const mapEmptyMessage = computed(() => {
+  if (suppressedMapMessage.value) return suppressedMapMessage.value
+  if (!tableData.value.length) return t('map.noData')
+  if (!activeGeometryColumn.value) return t('map.noGeometryData')
+
+  const state = geometryPreviewState.value
+  if (state.rawCount === 0) return t('map.noGeometryValueInPage')
+  if (state.parsedCount === 0) return t('map.geometryParseFailed')
+  if (state.features.length === 0) return t('map.geometryTransformFailed')
+  return t('map.noGeometryData')
+})
 
 const buildFeatureProperties = (row) => {
   const properties = { ...row }
@@ -560,31 +571,40 @@ const tableData = computed(() => {
   }))
 })
 
-// 转换为 GeoJSON Features
-const geoFeatures = computed(() => {
-  if (!hasGeometry.value || !activeGeometryColumn.value) return []
-  if (shouldSuppressRawGeometryMap.value) return []
+const geometryPreviewState = computed(() => {
+  const state = {
+    features: [],
+    rawCount: 0,
+    parsedCount: 0
+  }
+  if (!hasGeometry.value || !activeGeometryColumn.value) return state
+  if (shouldSuppressRawGeometryMap.value) return state
   const column = activeGeometryColumn.value
-  return tableData.value
-    .map((row) => {
-      const rawGeometry = row[column]
-      if (rawGeometry === null || rawGeometry === undefined) return null
-      try {
-        const sourceGeometry = parseGeometry(rawGeometry)
-        const geometry = transformGeoJSONGeometryToWGS84(sourceGeometry, crsTransform.value)
-        if (!geometry) return null
-        return {
-          type: 'Feature',
-          geometry,
-          properties: buildFeatureProperties(row)
-        }
-      } catch (error) {
-        console.warn('解析几何数据失败', error)
-        return null
-      }
-    })
-    .filter(Boolean)
+
+  tableData.value.forEach((row) => {
+    const rawGeometry = row[column]
+    if (rawGeometry === null || rawGeometry === undefined) return
+    state.rawCount += 1
+    try {
+      const sourceGeometry = parseGeometry(rawGeometry)
+      if (!sourceGeometry) return
+      state.parsedCount += 1
+      const geometry = transformGeoJSONGeometryToWGS84(sourceGeometry, crsTransform.value)
+      if (!geometry) return
+      state.features.push({
+        type: 'Feature',
+        geometry,
+        properties: buildFeatureProperties(row)
+      })
+    } catch (error) {
+      console.warn('解析几何数据失败', error)
+    }
+  })
+  return state
 })
+
+// 转换为 GeoJSON Features
+const geoFeatures = computed(() => geometryPreviewState.value.features)
 
 const focusRowOnMap = (row, options = {}) => {
   const rowKey = row?.__rowKey

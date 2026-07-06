@@ -389,8 +389,11 @@ export function useTaskWizardState() {
     }
   }
 
-  function loadSourceFields(fields) {
-    sourceFields.value = Array.isArray(fields) ? fields : []
+  function loadSourceFields(fields, attributes = null) {
+    sourceFields.value = enrichSourceFieldsWithSpatialInfo(
+      Array.isArray(fields) ? fields : [],
+      attributes || sourceConfig.value?.sourceItem?.attributes || sourceConfig.value?.attributes || {}
+    )
     // 自动初始化字段映射
     if (sourceFields.value.length === 0) {
       fieldMappings.value = []
@@ -399,6 +402,51 @@ export function useTaskWizardState() {
     if (fieldMappings.value.length === 0) {
       autoGenerateFieldMappings()
     }
+  }
+
+  function enrichSourceFieldsWithSpatialInfo(fields, attributes) {
+    const geometryColumns = sourceGeometryColumns(attributes)
+    if (geometryColumns.length === 0) {
+      return fields
+    }
+    return fields.map(field => {
+      const column = geometryColumns.find(item => sameFieldName(item.name, field?.name))
+      if (!column) return field
+      const next = { ...field }
+      if (shouldUseSpatialGeometryType(next.geometry_type || next.geometryType, column.geometry_type || column.geometryType)) {
+        next.geometry_type = column.geometry_type || column.geometryType
+      }
+      if ((next.srid === undefined || next.srid === null || next.srid === '') && column.srid) {
+        next.srid = column.srid
+      }
+      if ((next.dimension === undefined || next.dimension === null || next.dimension === '') && column.dimension) {
+        next.dimension = column.dimension
+      }
+      if (!next.crs_ref && column.crs_ref) {
+        next.crs_ref = column.crs_ref
+      }
+      return next
+    })
+  }
+
+  function sourceGeometryColumns(attributes) {
+    const spatial = attributes?.capabilities?.spatial || {}
+    return Array.isArray(spatial.geometry_columns) ? spatial.geometry_columns : []
+  }
+
+  function sameFieldName(left, right) {
+    return String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase()
+  }
+
+  function shouldUseSpatialGeometryType(current, spatial) {
+    const nextType = String(spatial || '').trim()
+    if (!nextType || isGenericGeometryType(nextType)) return false
+    const currentType = String(current || '').trim()
+    return !currentType || isGenericGeometryType(currentType)
+  }
+
+  function isGenericGeometryType(value) {
+    return String(value || '').trim().toLowerCase().replace(/[_\s-]/g, '') === 'geometry'
   }
 
   // Target 配置

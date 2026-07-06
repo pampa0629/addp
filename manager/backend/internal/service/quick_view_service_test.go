@@ -28,12 +28,12 @@ func buildQuickViewStatusForTest(t *testing.T, svc *QuickViewService, tenantID, 
 	}, engineID, schema, table)
 }
 
-func TestQuickViewCapabilityUsesDirectGeoJSONForSmallSpatialTable(t *testing.T) {
+func TestQuickViewCapabilityUsesDirectFlatGeobufForSmallSpatialTable(t *testing.T) {
 	for _, recordCount := range []int64{100, 127} {
 		t.Run(fmt.Sprintf("record_count_%d", recordCount), func(t *testing.T) {
 			db := newTileCacheTaskServiceTestDB(t)
 			svc := NewQuickViewService(db, nil)
-			svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+			svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
 			svc.SetSpatialMetadataLoader(func(context.Context, uint, uint, string, string) (*SpatialMetadataResult, error) {
 				return &SpatialMetadataResult{
 					GeomColumn:      "shape",
@@ -54,17 +54,17 @@ func TestQuickViewCapabilityUsesDirectGeoJSONForSmallSpatialTable(t *testing.T) 
 			if !capability.CanUseQuickView {
 				t.Fatalf("can_use_quick_view = false, want true; reason = %s", capability.UnavailableReason)
 			}
-			if capability.RenderSource != QuickViewRenderSourceDirectGeoJSON {
-				t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectGeoJSON)
+			if capability.RenderSource != QuickViewRenderSourceDirectFlatGeobuf {
+				t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectFlatGeobuf)
 			}
 			if capability.DefaultTileCacheID != nil {
-				t.Fatalf("default_vector_tile_cache_id = %#v, want nil for direct GeoJSON", capability.DefaultTileCacheID)
+				t.Fatalf("default_vector_tile_cache_id = %#v, want nil for direct FlatGeobuf", capability.DefaultTileCacheID)
 			}
-			if !strings.Contains(capability.QuickView.GeoJSONURL, fmt.Sprintf("page_size=%d", recordCount)) {
-				t.Fatalf("geojson_url = %s, want page_size=%d", capability.QuickView.GeoJSONURL, recordCount)
+			if !strings.Contains(capability.QuickView.FlatGeobufURL, fmt.Sprintf("page_size=%d", recordCount)) {
+				t.Fatalf("flatgeobuf_url = %s, want page_size=%d", capability.QuickView.FlatGeobufURL, recordCount)
 			}
-			if !strings.Contains(capability.QuickView.GeoJSONURL, "geometry_column=shape") {
-				t.Fatalf("geojson_url = %s, want geometry_column=shape", capability.QuickView.GeoJSONURL)
+			if !strings.Contains(capability.QuickView.FlatGeobufURL, "geometry_column=shape") {
+				t.Fatalf("flatgeobuf_url = %s, want geometry_column=shape", capability.QuickView.FlatGeobufURL)
 			}
 
 			var preferenceCount int64
@@ -78,10 +78,10 @@ func TestQuickViewCapabilityUsesDirectGeoJSONForSmallSpatialTable(t *testing.T) 
 	}
 }
 
-func TestQuickViewCapabilityUsesLocatorDirectGeoJSONForSmallSpatialItem(t *testing.T) {
+func TestQuickViewCapabilityUsesLocatorDirectFlatGeobufForSmallSpatialItem(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
-	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
 	locator := "addp://engine/26/path/shp/farmland.shp?type=file&item_id=99"
 	itemFingerprint := commonModels.GenerateItemFingerprint(26, "shp/farmland.shp")
 
@@ -91,9 +91,9 @@ func TestQuickViewCapabilityUsesLocatorDirectGeoJSONForSmallSpatialItem(t *testi
 			ItemFingerprint: itemFingerprint,
 			Locator:         locator,
 		},
-		EngineID:      26,
-		DirectGeoJSON: true,
-		GeoJSONURL:    "/api/v1/manager/quick-view/geojson?locator=addp%3A%2F%2Fengine%2F26%2Fpath%2Fshp%2Ffarmland.shp%3Ftype%3Dfile%26item_id%3D99&page=1&page_size=127&geometry_column=geometry",
+		EngineID:         26,
+		DirectFlatGeobuf: true,
+		FlatGeobufURL:    "/api/v1/manager/quick-view/flatgeobuf?locator=addp%3A%2F%2Fengine%2F26%2Fpath%2Fshp%2Ffarmland.shp%3Ftype%3Dfile%26item_id%3D99&page=1&page_size=127&geometry_column=geometry",
 		SpatialMeta: &SpatialMetadataResult{
 			GeomColumn:      "geometry",
 			GeometryColumns: []string{"geometry"},
@@ -110,19 +110,22 @@ func TestQuickViewCapabilityUsesLocatorDirectGeoJSONForSmallSpatialItem(t *testi
 		t.Fatalf("can_use_quick_view = false, want true; reason=%s", capability.UnavailableReason)
 	}
 	if capability.CanGenerateTileCache {
-		t.Fatal("can_generate_vector_tile_cache = true, want false for non-tile locator direct GeoJSON source")
+		t.Fatal("can_generate_vector_tile_cache = true, want false for non-tile locator direct FlatGeobuf source")
 	}
-	if capability.RenderSource != QuickViewRenderSourceDirectGeoJSON {
-		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectGeoJSON)
+	if capability.RenderSource != QuickViewRenderSourceDirectFlatGeobuf {
+		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectFlatGeobuf)
 	}
 	if capability.Locator != locator {
 		t.Fatalf("locator = %s, want %s", capability.Locator, locator)
 	}
-	if !strings.Contains(capability.QuickView.GeoJSONURL, "/manager/quick-view/geojson?") {
-		t.Fatalf("geojson_url = %s, want manager quick-view geojson URL", capability.QuickView.GeoJSONURL)
+	if !strings.Contains(capability.QuickView.FlatGeobufURL, "/manager/quick-view/flatgeobuf?") {
+		t.Fatalf("flatgeobuf_url = %s, want manager quick-view flatgeobuf URL", capability.QuickView.FlatGeobufURL)
 	}
-	if !strings.Contains(capability.QuickView.GeoJSONURL, "page_size=127") {
-		t.Fatalf("geojson_url = %s, want full page_size=127", capability.QuickView.GeoJSONURL)
+	if !strings.Contains(capability.QuickView.FlatGeobufURL, "page_size=127") {
+		t.Fatalf("flatgeobuf_url = %s, want full page_size=127", capability.QuickView.FlatGeobufURL)
+	}
+	if capability.QuickView.SourceCRS != "EPSG:4326" || capability.QuickView.TransformStatus != "not_transformed" || capability.QuickView.PreviewHint != "direct_renderable" {
+		t.Fatalf("quick_view CRS contract = %q/%q/%q, want EPSG:4326/not_transformed/direct_renderable", capability.QuickView.SourceCRS, capability.QuickView.TransformStatus, capability.QuickView.PreviewHint)
 	}
 }
 
@@ -316,10 +319,10 @@ func TestQuickViewCapabilityUsesRasterMosaicTileForMosaicItem(t *testing.T) {
 			ItemFingerprint: itemFingerprint,
 			Locator:         locator,
 		},
-		EngineID:      26,
-		RasterMosaic:  source,
-		DirectGeoJSON: false,
-		CanTile:       false,
+		EngineID:         26,
+		RasterMosaic:     source,
+		DirectFlatGeobuf: false,
+		CanTile:          false,
 	})
 	if err != nil {
 		t.Fatalf("build raster mosaic quick view capability: %v", err)
@@ -753,7 +756,7 @@ func TestQuickViewCapabilityAvailableActions(t *testing.T) {
 	t.Run("switch quick view when quick view is ready but inactive", func(t *testing.T) {
 		db := newTileCacheTaskServiceTestDB(t)
 		svc := NewQuickViewService(db, nil)
-		svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+		svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
 		fingerprint := commonModels.GenerateItemFingerprint(26, "shp/farmland.shp")
 		locator := "addp://engine/26/path/shp/farmland.shp?type=file"
 		if err := svc.repo.UpdatePreferredMode(7, fingerprint, locator, models.PreviewModeBasicPreview); err != nil {
@@ -766,9 +769,9 @@ func TestQuickViewCapabilityAvailableActions(t *testing.T) {
 				ItemFingerprint: fingerprint,
 				Locator:         locator,
 			},
-			EngineID:      26,
-			DirectGeoJSON: true,
-			GeoJSONURL:    "/api/v1/manager/quick-view/geojson",
+			EngineID:         26,
+			DirectFlatGeobuf: true,
+			FlatGeobufURL:    "/api/v1/manager/quick-view/flatgeobuf",
 			SpatialMeta: &SpatialMetadataResult{
 				GeomColumn:  "geometry",
 				SRID:        4326,
@@ -787,7 +790,7 @@ func TestQuickViewCapabilityAvailableActions(t *testing.T) {
 	t.Run("back to basic preview when quick view is active", func(t *testing.T) {
 		db := newTileCacheTaskServiceTestDB(t)
 		svc := NewQuickViewService(db, nil)
-		svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+		svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
 		fingerprint := commonModels.GenerateItemFingerprint(26, "shp/farmland.shp")
 		locator := "addp://engine/26/path/shp/farmland.shp?type=file"
 		if err := svc.repo.UpdatePreferredMode(7, fingerprint, locator, models.PreviewModeMapQuickView); err != nil {
@@ -800,9 +803,9 @@ func TestQuickViewCapabilityAvailableActions(t *testing.T) {
 				ItemFingerprint: fingerprint,
 				Locator:         locator,
 			},
-			EngineID:      26,
-			DirectGeoJSON: true,
-			GeoJSONURL:    "/api/v1/manager/quick-view/geojson",
+			EngineID:         26,
+			DirectFlatGeobuf: true,
+			FlatGeobufURL:    "/api/v1/manager/quick-view/flatgeobuf",
 			SpatialMeta: &SpatialMetadataResult{
 				GeomColumn:  "geometry",
 				SRID:        4326,
@@ -1323,10 +1326,10 @@ func TestRasterQuickViewSourceFromObjectLocatorUsesStorageStream(t *testing.T) {
 	}
 }
 
-func TestQuickViewCapabilityUsesDirectGeoJSONWithCRSDefinitionWithoutNumericSRID(t *testing.T) {
+func TestQuickViewCapabilityUsesDirectFlatGeobufWithCRSDefinitionWithoutNumericSRID(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
-	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
 	locator := "addp://engine/26/path/shp/custom-crs.shp?type=file&item_id=99"
 	itemFingerprint := commonModels.GenerateItemFingerprint(26, "shp/custom-crs.shp")
 	crsDefinition := &datatype.CRSDefinition{
@@ -1342,9 +1345,9 @@ func TestQuickViewCapabilityUsesDirectGeoJSONWithCRSDefinitionWithoutNumericSRID
 			ItemFingerprint: itemFingerprint,
 			Locator:         locator,
 		},
-		EngineID:      26,
-		DirectGeoJSON: true,
-		GeoJSONURL:    "/api/v1/manager/quick-view/geojson?locator=custom&page=1&page_size=127&geometry_column=geometry",
+		EngineID:         26,
+		DirectFlatGeobuf: true,
+		FlatGeobufURL:    "/api/v1/manager/quick-view/flatgeobuf?locator=custom&page=1&page_size=127&geometry_column=geometry",
 		SpatialMeta: &SpatialMetadataResult{
 			GeomColumn:          "geometry",
 			GeometryColumns:     []string{"geometry"},
@@ -1358,20 +1361,26 @@ func TestQuickViewCapabilityUsesDirectGeoJSONWithCRSDefinitionWithoutNumericSRID
 		t.Fatalf("build locator quick view capability: %v", err)
 	}
 	if !capability.CanUseQuickView {
-		t.Fatalf("can_use_quick_view = false, want CRS-definition direct GeoJSON; reason=%s", capability.UnavailableReason)
+		t.Fatalf("can_use_quick_view = false, want CRS-definition direct FlatGeobuf; reason=%s", capability.UnavailableReason)
 	}
-	if capability.RenderSource != QuickViewRenderSourceDirectGeoJSON {
-		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectGeoJSON)
+	if capability.RenderSource != QuickViewRenderSourceDirectFlatGeobuf {
+		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectFlatGeobuf)
 	}
 	if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
 		t.Fatalf("tile generation = can:%v available:%v, want unavailable without numeric SRID", capability.CanGenerateTileCache, capability.TileCacheGeneration.Available)
 	}
+	if capability.QuickView.SourceCRS != crsDefinition.ID || capability.QuickView.SourceCRSDefinition != crsDefinition {
+		t.Fatalf("quick_view CRS = %q/%#v, want %q/%#v", capability.QuickView.SourceCRS, capability.QuickView.SourceCRSDefinition, crsDefinition.ID, crsDefinition)
+	}
+	if capability.QuickView.TransformStatus != "not_transformed" || capability.QuickView.PreviewHint != "frontend_transform_required" {
+		t.Fatalf("quick_view transform contract = %q/%q, want not_transformed/frontend_transform_required", capability.QuickView.TransformStatus, capability.QuickView.PreviewHint)
+	}
 }
 
-func TestQuickViewCapabilityReportsDirectGeoJSONRowLimitBeforeTileSRIDRequirement(t *testing.T) {
+func TestQuickViewCapabilityReportsDirectFlatGeobufRowLimitBeforeTileSRIDRequirement(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
-	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
 	crsDefinition := &datatype.CRSDefinition{
 		ID:                 "ADDP:CRS:custom",
 		DefinitionEncoding: datatype.CRSDefinitionEncodingESRIWKT,
@@ -1385,9 +1394,9 @@ func TestQuickViewCapabilityReportsDirectGeoJSONRowLimitBeforeTileSRIDRequiremen
 			ItemFingerprint: commonModels.GenerateItemFingerprint(26, "shp/large-custom-crs.shp"),
 			Locator:         "addp://engine/26/path/shp/large-custom-crs.shp?type=file&item_id=100",
 		},
-		EngineID:      26,
-		DirectGeoJSON: true,
-		GeoJSONURL:    "/api/v1/manager/quick-view/geojson?locator=custom&page=1&page_size=73090&geometry_column=geometry",
+		EngineID:         26,
+		DirectFlatGeobuf: true,
+		FlatGeobufURL:    "/api/v1/manager/quick-view/flatgeobuf?locator=custom&page=1&page_size=73090&geometry_column=geometry",
 		SpatialMeta: &SpatialMetadataResult{
 			GeomColumn:          "geometry",
 			GeometryColumns:     []string{"geometry"},
@@ -1401,9 +1410,9 @@ func TestQuickViewCapabilityReportsDirectGeoJSONRowLimitBeforeTileSRIDRequiremen
 		t.Fatalf("build locator quick view capability: %v", err)
 	}
 	if capability.CanUseQuickView {
-		t.Fatal("can_use_quick_view = true, want direct GeoJSON row limit unavailable")
+		t.Fatal("can_use_quick_view = true, want direct FlatGeobuf row limit unavailable")
 	}
-	if capability.UnavailableReason != "direct GeoJSON quick view exceeds row limit" {
+	if capability.UnavailableReason != "direct FlatGeobuf quick view exceeds row limit" {
 		t.Fatalf("unavailable_reason = %q, want row limit reason", capability.UnavailableReason)
 	}
 	if capability.TileCacheGeneration.Reason != "tile generation requires numeric SRID" {
@@ -1411,10 +1420,10 @@ func TestQuickViewCapabilityReportsDirectGeoJSONRowLimitBeforeTileSRIDRequiremen
 	}
 }
 
-func TestQuickViewCapabilityKeepsTileGenerationAvailableWhenOnlyDirectGeoJSONExceedsLimit(t *testing.T) {
+func TestQuickViewCapabilityKeepsTileGenerationAvailableWhenOnlyDirectFlatGeobufExceedsLimit(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
-	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
 
 	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
 		Identity: QuickViewIdentity{
@@ -1422,11 +1431,11 @@ func TestQuickViewCapabilityKeepsTileGenerationAvailableWhenOnlyDirectGeoJSONExc
 			ItemFingerprint: spatialItemFingerprint(11, "public", "large_points"),
 			Locator:         tableLocator(11, "public", "large_points"),
 		},
-		EngineID:      11,
-		Schema:        "public",
-		Table:         "large_points",
-		DirectGeoJSON: true,
-		CanTile:       true,
+		EngineID:         11,
+		Schema:           "public",
+		Table:            "large_points",
+		DirectFlatGeobuf: true,
+		CanTile:          true,
 		SpatialMeta: &SpatialMetadataResult{
 			GeomColumn:      "geom",
 			GeometryColumns: []string{"geom"},
@@ -1442,7 +1451,7 @@ func TestQuickViewCapabilityKeepsTileGenerationAvailableWhenOnlyDirectGeoJSONExc
 	if capability.CanUseQuickView {
 		t.Fatal("can_use_quick_view = true, want unavailable without realtime target")
 	}
-	if capability.UnavailableReason != "direct GeoJSON quick view exceeds row limit" {
+	if capability.UnavailableReason != "direct FlatGeobuf quick view exceeds row limit" {
 		t.Fatalf("unavailable_reason = %q, want row limit reason", capability.UnavailableReason)
 	}
 	if !capability.TileCacheGeneration.Available || !capability.CanGenerateTileCache {
@@ -1450,6 +1459,46 @@ func TestQuickViewCapabilityKeepsTileGenerationAvailableWhenOnlyDirectGeoJSONExc
 	}
 	if capability.TileCacheGeneration.Reason != "" {
 		t.Fatalf("tile reason = %q, want empty", capability.TileCacheGeneration.Reason)
+	}
+}
+
+func TestQuickViewCapabilityRecommendsZoomFromCGCS20003DegreeGaussKrugerExtent(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: commonModels.GenerateItemFingerprint(26, "shp/landuse.shp"),
+			Locator:         "addp://engine/26/path/shp/landuse.shp?type=file&item_id=100",
+		},
+		EngineID:         26,
+		DirectFlatGeobuf: true,
+		CanTile:          true,
+		SpatialMeta: &SpatialMetadataResult{
+			GeomColumn:      "geometry",
+			GeometryColumns: []string{"geometry"},
+			SRID:            4549,
+			ExtentSRID:      4549,
+			Extent:          []float64{570841.0277000004, 3404864.0396999996, 598936.5142999999, 3434951.8803000003},
+			RecordCount:     73090,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build quick view capability: %v", err)
+	}
+	if !capability.CanGenerateTileCache || !capability.TileCacheGeneration.Available {
+		t.Fatalf("tile generation = available:%v can:%v, want available", capability.TileCacheGeneration.Available, capability.CanGenerateTileCache)
+	}
+	if capability.RenderFacts == nil || capability.RenderFacts.ZoomRecommendation == nil {
+		t.Fatalf("render_facts = %#v, want zoom recommendation", capability.RenderFacts)
+	}
+	if capability.RenderFacts.ZoomRecommendation.MinZoom != 9 || capability.RenderFacts.ZoomRecommendation.MaxZoom != 18 {
+		t.Fatalf("zoom recommendation = %#v, want 9-18", capability.RenderFacts.ZoomRecommendation)
+	}
+	if capability.RenderFacts.ZoomRecommendation.Status != "estimated" {
+		t.Fatalf("zoom status = %q, want estimated", capability.RenderFacts.ZoomRecommendation.Status)
 	}
 }
 
@@ -1528,10 +1577,10 @@ func TestQuickViewCapabilityTileCacheCreateURLCarriesSpatialContext(t *testing.T
 	}
 }
 
-func TestQuickViewCapabilityUsesDirectGeoJSONForSmallPGTableAndKeepsRealtimeAlternative(t *testing.T) {
+func TestQuickViewCapabilityUsesDirectFlatGeobufForSmallPGTableAndKeepsRealtimeAlternative(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
-	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
 
 	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
 		Identity: QuickViewIdentity{
@@ -1539,12 +1588,12 @@ func TestQuickViewCapabilityUsesDirectGeoJSONForSmallPGTableAndKeepsRealtimeAlte
 			ItemFingerprint: spatialItemFingerprint(11, "public", "small_points"),
 			Locator:         tableLocator(11, "public", "small_points"),
 		},
-		EngineID:      11,
-		Schema:        "public",
-		Table:         "small_points",
-		DirectGeoJSON: true,
-		GeoJSONURL:    "/api/v1/manager/quick-view/geojson?locator=small_points&page=1&page_size=1000&geometry_column=geom",
-		CanTile:       true,
+		EngineID:         11,
+		Schema:           "public",
+		Table:            "small_points",
+		DirectFlatGeobuf: true,
+		FlatGeobufURL:    "/api/v1/manager/quick-view/flatgeobuf?locator=small_points&page=1&page_size=1000&geometry_column=geom",
+		CanTile:          true,
 		SpatialMeta: &SpatialMetadataResult{
 			GeomColumn:      "geom",
 			GeometryColumns: []string{"geom"},
@@ -1566,8 +1615,8 @@ func TestQuickViewCapabilityUsesDirectGeoJSONForSmallPGTableAndKeepsRealtimeAlte
 	if err != nil {
 		t.Fatalf("build capability: %v", err)
 	}
-	if capability.RenderSource != QuickViewRenderSourceDirectGeoJSON {
-		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectGeoJSON)
+	if capability.RenderSource != QuickViewRenderSourceDirectFlatGeobuf {
+		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectFlatGeobuf)
 	}
 	if capability.SourceEngineID != 11 || capability.SourceSchema != "public" || capability.SourceTable != "small_points" {
 		t.Fatalf("source identity = %d/%s/%s, want 11/public/small_points", capability.SourceEngineID, capability.SourceSchema, capability.SourceTable)
@@ -1627,7 +1676,7 @@ func TestPreviewStateRejectsLocatorWithoutItemFingerprint(t *testing.T) {
 	}
 }
 
-func TestQuickViewCapabilityPrefersReadyTileCacheResultOverDirectGeoJSON(t *testing.T) {
+func TestQuickViewCapabilityPrefersReadyTileCacheResultOverDirectFlatGeobuf(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	svc.SetSpatialMetadataLoader(func(context.Context, uint, uint, string, string) (*SpatialMetadataResult, error) {
@@ -1660,7 +1709,7 @@ func TestQuickViewCapabilityPrefersReadyTileCacheResultOverDirectGeoJSON(t *test
 func TestQuickViewCapabilityUsesSourceTransformRealtimeTileForLargePGTableWithoutVectorMaterializedViewTarget(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
-	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
 
 	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
 		Identity: QuickViewIdentity{
@@ -1668,11 +1717,11 @@ func TestQuickViewCapabilityUsesSourceTransformRealtimeTileForLargePGTableWithou
 			ItemFingerprint: spatialItemFingerprint(11, "public", "farmland"),
 			Locator:         tableLocator(11, "public", "farmland"),
 		},
-		EngineID:      11,
-		Schema:        "public",
-		Table:         "farmland",
-		DirectGeoJSON: true,
-		CanTile:       true,
+		EngineID:         11,
+		Schema:           "public",
+		Table:            "farmland",
+		DirectFlatGeobuf: true,
+		CanTile:          true,
 		SpatialMeta: &SpatialMetadataResult{
 			GeomColumn:      "shape",
 			GeometryColumns: []string{"shape"},
@@ -1722,8 +1771,8 @@ func TestQuickViewCapabilityUsesSource3857RealtimeTileWhenResolved(t *testing.T)
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	svc.SetCapabilityOptions(QuickViewCapabilityOptions{
-		DirectGeoJSONMaxRows:  2000,
-		RealtimeTileTimeoutMS: 2500,
+		DirectFlatGeobufMaxRows: 2000,
+		RealtimeTileTimeoutMS:   2500,
 	})
 
 	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
@@ -1732,11 +1781,11 @@ func TestQuickViewCapabilityUsesSource3857RealtimeTileWhenResolved(t *testing.T)
 			ItemFingerprint: spatialItemFingerprint(11, "public", "farmland"),
 			Locator:         tableLocator(11, "public", "farmland"),
 		},
-		EngineID:      11,
-		Schema:        "public",
-		Table:         "farmland",
-		DirectGeoJSON: true,
-		CanTile:       true,
+		EngineID:         11,
+		Schema:           "public",
+		Table:            "farmland",
+		DirectFlatGeobuf: true,
+		CanTile:          true,
 		SpatialMeta: &SpatialMetadataResult{
 			GeomColumn:      "shape",
 			GeometryColumns: []string{"shape"},
@@ -1841,7 +1890,7 @@ func TestQuickViewCapabilitySource3857UnindexedDoesNotRecommendOptimizationTask(
 func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithVectorMaterializedViewTarget(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
-	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
 
 	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
 		Identity: QuickViewIdentity{
@@ -1849,11 +1898,11 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithVectorMateri
 			ItemFingerprint: spatialItemFingerprint(11, "public", "farmland"),
 			Locator:         tableLocator(11, "public", "farmland"),
 		},
-		EngineID:      11,
-		Schema:        "public",
-		Table:         "farmland",
-		DirectGeoJSON: true,
-		CanTile:       true,
+		EngineID:         11,
+		Schema:           "public",
+		Table:            "farmland",
+		DirectFlatGeobuf: true,
+		CanTile:          true,
 		SpatialMeta: &SpatialMetadataResult{
 			GeomColumn:      "shape",
 			GeometryColumns: []string{"shape"},
@@ -1899,7 +1948,7 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithVectorMateri
 func TestQuickViewCapabilityUsesRealtimeTileForLargePGTableWithoutVectorMaterializedViewTarget(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
-	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
 
 	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
 		Identity: QuickViewIdentity{
@@ -1907,11 +1956,11 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargePGTableWithoutVectorMaterial
 			ItemFingerprint: spatialItemFingerprint(11, "public", "a2"),
 			Locator:         tableLocator(11, "public", "a2"),
 		},
-		EngineID:      11,
-		Schema:        "public",
-		Table:         "a2",
-		DirectGeoJSON: true,
-		CanTile:       true,
+		EngineID:         11,
+		Schema:           "public",
+		Table:            "a2",
+		DirectFlatGeobuf: true,
+		CanTile:          true,
 		SpatialMeta: &SpatialMetadataResult{
 			GeomColumn:      "SmGeometry",
 			GeometryColumns: []string{"SmGeometry"},
@@ -1956,7 +2005,7 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargePGTableWithoutVectorMaterial
 func TestQuickViewCapabilityReady3857RealtimeTimeoutRecommendsTileCache(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
-	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
 
 	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
 		Identity: QuickViewIdentity{
@@ -1964,11 +2013,11 @@ func TestQuickViewCapabilityReady3857RealtimeTimeoutRecommendsTileCache(t *testi
 			ItemFingerprint: spatialItemFingerprint(11, "public", "a2"),
 			Locator:         tableLocator(11, "public", "a2"),
 		},
-		EngineID:      11,
-		Schema:        "public",
-		Table:         "a2",
-		DirectGeoJSON: true,
-		CanTile:       true,
+		EngineID:         11,
+		Schema:           "public",
+		Table:            "a2",
+		DirectFlatGeobuf: true,
+		CanTile:          true,
 		SpatialMeta: &SpatialMetadataResult{
 			GeomColumn:      "SmGeometry",
 			GeometryColumns: []string{"SmGeometry"},
@@ -2004,7 +2053,7 @@ func TestQuickViewCapabilityReady3857RealtimeTimeoutRecommendsTileCache(t *testi
 func TestQuickViewCapabilityUsesRenderExtentForNonWGS84SpatialTable(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
-	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
 	renderExtent := []float64{104.39407266464883, 20.860819209527108, 112.12280883568947, 26.419285005545643}
 
 	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
@@ -2013,11 +2062,11 @@ func TestQuickViewCapabilityUsesRenderExtentForNonWGS84SpatialTable(t *testing.T
 			ItemFingerprint: spatialItemFingerprint(11, "public", "dltb"),
 			Locator:         tableLocator(11, "public", "dltb"),
 		},
-		EngineID:      11,
-		Schema:        "public",
-		Table:         "dltb",
-		DirectGeoJSON: true,
-		CanTile:       true,
+		EngineID:         11,
+		Schema:           "public",
+		Table:            "dltb",
+		DirectFlatGeobuf: true,
+		CanTile:          true,
 		SpatialMeta: &SpatialMetadataResult{
 			GeomColumn:         "SmGeometry",
 			GeometryColumns:    []string{"SmGeometry"},
@@ -2167,6 +2216,64 @@ func TestQuickViewCapabilityFindsReadyTileCacheResultByItemFingerprint(t *testin
 	}
 }
 
+func TestQuickViewCapabilityReadyTileCacheDisablesGenerationActionForFileSource(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	locator := "addp://engine/26/path/shp/farmland.shp?type=file&item_id=99"
+	itemFingerprint := commonModels.GenerateItemFingerprint(26, "shp/farmland.shp")
+	repo := repository.NewTileCacheRepository(db)
+	extentSRID := 4326
+	minZoom := 3
+	maxZoom := 12
+	ready := &models.TileCache{
+		TenantID:        7,
+		ItemFingerprint: itemFingerprint,
+		Locator:         locator,
+		TileFormat:      "mvt",
+		StorageRef:      "minio://manager/tile-cache/shp/farmland",
+		Extent:          datatypes.JSON([]byte(`[110,20,120,30]`)),
+		ExtentSRID:      &extentSRID,
+		MinZoom:         &minZoom,
+		MaxZoom:         &maxZoom,
+		Status:          models.TileCacheStatusReady,
+	}
+	if err := repo.CreateTileCache(context.Background(), ready); err != nil {
+		t.Fatalf("create ready tile cache: %v", err)
+	}
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: itemFingerprint,
+			Locator:         locator,
+		},
+		EngineID:         26,
+		DirectFlatGeobuf: true,
+		CanTile:          true,
+		SpatialMeta: &SpatialMetadataResult{
+			GeomColumn:      "geometry",
+			GeometryColumns: []string{"geometry"},
+			SRID:            4326,
+			ExtentSRID:      4326,
+			Extent:          []float64{110, 20, 120, 30},
+			RecordCount:     73090,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build locator quick view capability: %v", err)
+	}
+	if capability.RenderSource != QuickViewRenderSourceCachedTile {
+		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceCachedTile)
+	}
+	if capability.DefaultTileCacheID == nil || *capability.DefaultTileCacheID != ready.ID {
+		t.Fatalf("default_vector_tile_cache_id = %#v, want %d", capability.DefaultTileCacheID, ready.ID)
+	}
+	if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
+		t.Fatalf("tile generation = can:%v available:%v, want false after ready tile cache", capability.CanGenerateTileCache, capability.TileCacheGeneration.Available)
+	}
+	assertNoActions(t, capability.AvailableActions, QuickViewActionGenerateTileCache)
+}
+
 func TestQuickViewCapabilityUsesRenderExtentWhenReadyTileCacheExtentIsNotWGS84(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
@@ -2220,7 +2327,7 @@ func TestQuickViewCapabilityUsesRenderExtentWhenReadyTileCacheExtentIsNotWGS84(t
 	}
 }
 
-func TestQuickViewCapabilityFallsBackToDirectGeoJSONAfterDefaultTileCacheResultDeleted(t *testing.T) {
+func TestQuickViewCapabilityFallsBackToDirectFlatGeobufAfterDefaultTileCacheResultDeleted(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	svc.SetSpatialMetadataLoader(func(context.Context, uint, uint, string, string) (*SpatialMetadataResult, error) {
@@ -2252,10 +2359,10 @@ func TestQuickViewCapabilityFallsBackToDirectGeoJSONAfterDefaultTileCacheResultD
 		t.Fatalf("get quick view status after delete: %v", err)
 	}
 	if !capability.CanUseQuickView {
-		t.Fatalf("can_use_quick_view = false after delete, want direct GeoJSON fallback; reason=%s", capability.UnavailableReason)
+		t.Fatalf("can_use_quick_view = false after delete, want direct FlatGeobuf fallback; reason=%s", capability.UnavailableReason)
 	}
-	if capability.RenderSource != QuickViewRenderSourceDirectGeoJSON {
-		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectGeoJSON)
+	if capability.RenderSource != QuickViewRenderSourceDirectFlatGeobuf {
+		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectFlatGeobuf)
 	}
 	if capability.DefaultTileCacheID != nil {
 		t.Fatalf("default_vector_tile_cache_id = %#v, want nil after deleted tile cache result fallback", capability.DefaultTileCacheID)

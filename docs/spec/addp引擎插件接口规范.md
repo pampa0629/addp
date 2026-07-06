@@ -42,7 +42,14 @@ type EnginePlugin interface {
 - `connection_info` 是所有引擎连接信息的统一事实源，保持 key-value map；字段 key 使用稳定英文机器名，不承载 i18n。
 - `RequiredFields()`、`SensitiveFields()`、`ValidateConnectionInfo()` 和 `TestConnection()` 共同构成 System 引擎管理层的统一连接信息能力。
 - `TestConnection()` 必须执行需要认证的最小只读真实操作，不能只做网络连通检查，也不得创建、更新、删除外部资源。
-- `Capabilities()` 必须返回结构化 `engine.capabilities/v1` 能力声明。
+- `Capabilities()` 必须返回结构化 `engine.capabilities/v1` 能力模板。该方法不得连接具体实例，不做运行时探测，只表达插件和 Provider 实现的能力上限。
+- 需要按实例探测扩展、版本或函数可用性的插件，应额外实现 `InstanceCapabilitiesResolver`，由 System 在保存或刷新具体引擎记录时调用并生成落库能力声明。
+
+```go
+type InstanceCapabilitiesResolver interface {
+    ResolveCapabilities(context.Context, ConnectionInfo, EngineCapabilities) (EngineCapabilities, error)
+}
+```
 
 `EngineOrigin()` 取值：
 

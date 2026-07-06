@@ -2,10 +2,24 @@ package spatial
 
 import "math"
 
+// CanEstimateZoomFromExtentSRID reports whether extent coordinates can be used
+// for deterministic zoom recommendation without a full CRS transform.
+func CanEstimateZoomFromExtentSRID(srid int) bool {
+	if srid == SRIDWGS84 || srid == SRIDWebMercator {
+		return true
+	}
+	if srid >= 2360 && srid <= 2370 {
+		return true
+	}
+	return srid >= 4534 && srid <= 4554
+}
+
 // CalculateMinZoomFromExtent 根据地理范围计算最小可见 zoom 层级
 // extent: [minX, minY, maxX, maxY]
 // extentSRID: extent 的坐标系 SRID（如 4326, 3857, 2360 等）
-//             如果为 0，默认为 4326（WGS84）
+//
+//	如果为 0，默认为 4326（WGS84）
+//
 // 返回合适的最小 zoom 层级，使得整个范围能在单个视口内显示
 //
 // 算法说明：
@@ -99,6 +113,14 @@ func transformToGeographic(minX, minY, maxX, maxY float64, srid int) (float64, f
 		return minLon, minLat, maxLon, maxLat
 
 	default:
+		if srid >= 4534 && srid <= 4554 {
+			const metersPerDegree = 111000.0
+			minLon := minX / metersPerDegree
+			maxLon := maxX / metersPerDegree
+			minLat := minY / metersPerDegree
+			maxLat := maxY / metersPerDegree
+			return minLon, minLat, maxLon, maxLat
+		}
 		// 未知坐标系，假设单位是度（可能不准确，但不会崩溃）
 		return minX, minY, maxX, maxY
 	}

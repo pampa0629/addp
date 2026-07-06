@@ -26,6 +26,11 @@ func TestParseSRID(t *testing.T) {
 			want: 32650,
 		},
 		{
+			name: "cgcs2000 3 degree gauss kruger central meridian",
+			crs:  `PROJCS["CGCS2000_3_Degree_GK_CM_120E",GEOGCS["GCS_China_Geodetic_Coordinate_System_2000",DATUM["D_China_2000",SPHEROID["CGCS2000",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Gauss_Kruger"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",120.0],PARAMETER["Scale_Factor",1.0],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]`,
+			want: 4549,
+		},
+		{
 			name: "projected wgs84 without explicit mapping should not guess 4326",
 			crs:  `PROJCS["Custom WGS 84 Projected",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["central_meridian",117],UNIT["metre",1]]`,
 			want: 0,

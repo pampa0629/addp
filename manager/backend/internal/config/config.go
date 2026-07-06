@@ -87,7 +87,7 @@ type TileCacheConfig struct {
 	MaxDBConns  int // 数据库最大连接数（默认等于 Concurrency）
 
 	// 快显能力判定
-	DirectGeoJSONMaxRows      int // 小数据量直接 GeoJSON 快显的最大行数
+	DirectFlatGeobufMaxRows   int // 中小数据量直接 FlatGeobuf 快显的最大行数
 	RealtimeTileTimeoutMS     int // 动态 MVT 单瓦片交互超时预算
 	RealtimeTileRetryAfterSec int // 动态 MVT 可重试降级的 Retry-After 秒数
 }
@@ -221,7 +221,7 @@ func Load() *Config {
 		MaxZoom:                   commonConfig.GetEnvInt("TILE_CACHE_MAX_ZOOM", 18),
 		Concurrency:               concurrency,
 		MaxDBConns:                maxDBConns,
-		DirectGeoJSONMaxRows:      commonConfig.GetEnvInt("QUICK_VIEW_DIRECT_GEOJSON_MAX_ROWS", 2000),
+		DirectFlatGeobufMaxRows:   commonConfig.GetEnvInt("QUICK_VIEW_DIRECT_FLATGEOBUF_MAX_ROWS", 2000),
 		RealtimeTileTimeoutMS:     realtimeTileTimeoutMS,
 		RealtimeTileRetryAfterSec: realtimeTileRetryAfterSec,
 	}
@@ -243,7 +243,7 @@ func Load() *Config {
 	log.Printf("   TILE_CACHE_MAX_DB_CONNS (数据库连接池): %d", cfg.TileCache.MaxDBConns)
 	log.Printf("   TILE_CACHE_MAX_ZOOM: %d", cfg.TileCache.MaxZoom)
 	log.Printf("   TILE_CACHE_TARGET_RECORDS: %d", cfg.TileCache.TargetRecordsPerTile)
-	log.Printf("   QUICK_VIEW_DIRECT_GEOJSON_MAX_ROWS: %d", cfg.TileCache.DirectGeoJSONMaxRows)
+	log.Printf("   QUICK_VIEW_DIRECT_FLATGEOBUF_MAX_ROWS: %d", cfg.TileCache.DirectFlatGeobufMaxRows)
 	log.Printf("   QUICK_VIEW_REALTIME_TILE_TIMEOUT_MS: %d", cfg.TileCache.RealtimeTileTimeoutMS)
 	log.Printf("   QUICK_VIEW_REALTIME_TILE_RETRY_AFTER_SEC: %d", cfg.TileCache.RealtimeTileRetryAfterSec)
 

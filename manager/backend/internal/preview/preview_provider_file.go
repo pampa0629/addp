@@ -255,6 +255,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 		sourceCRSDefinition = spatialInfo.CRSDefinitionByID(sourceCRS)
 	}
 	spatialContract := tablePreviewSpatialCRSContract(geometryColumns, srid, sourceCRS, sourceCRSDefinition)
+	extent := tablePreviewSpatialExtent(spatialInfo)
 
 	preview := &models.TablePreview{
 		Mode:                PreviewModeTable,
@@ -271,6 +272,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 		TransformStatus:     spatialContract.TransformStatus,
 		PreviewHint:         spatialContract.PreviewHint,
 		SRID:                srid,
+		Extent:              extent,
 		Object: &models.ObjectPreview{
 			Bucket:      bucket,
 			Path:        fullPath,
@@ -561,6 +563,7 @@ func (p *FileTablePreviewProvider) previewRefs(
 		sourceCRSDefinition = spatialInfo.CRSDefinitionByID(sourceCRS)
 	}
 	spatialContract := tablePreviewSpatialCRSContract(geometryColumns, srid, sourceCRS, sourceCRSDefinition)
+	extent := tablePreviewSpatialExtent(spatialInfo)
 
 	objectPath := strings.Trim(fullPath, "/")
 	if objectPath == "" {
@@ -583,6 +586,7 @@ func (p *FileTablePreviewProvider) previewRefs(
 		TransformStatus:     spatialContract.TransformStatus,
 		PreviewHint:         spatialContract.PreviewHint,
 		SRID:                srid,
+		Extent:              extent,
 		Object: &models.ObjectPreview{
 			Bucket:      bucket,
 			Path:        objectPath,
@@ -602,7 +606,7 @@ func enrichSpatialInfoFromProjectionRef(ctx context.Context, reader contentio.Re
 		return spatialInfo
 	}
 	sourceCRS := strings.TrimSpace(spatialInfo.PrimaryCRSRef())
-	if sourceCRS != "" && spatialInfo.CRSDefinitionByID(sourceCRS) != nil {
+	if strings.HasPrefix(strings.ToUpper(sourceCRS), "EPSG:") && spatialInfo.CRSDefinitionByID(sourceCRS) != nil {
 		return spatialInfo
 	}
 	var projectionRef *format.RelatedRef
@@ -629,21 +633,26 @@ func enrichSpatialInfoFromProjectionRef(ctx context.Context, reader contentio.Re
 	if definition == "" {
 		return spatialInfo
 	}
-	if sourceCRS == "" {
-		if srid := commonSpatial.ParseSRID(definition); srid > 0 {
-			sourceCRS = datatype.EPSGCRSRef(srid)
-		} else {
-			sourceCRS = datatype.CustomCRSRef(definition)
-		}
+	srid := commonSpatial.ParseSRID(definition)
+	if srid > 0 {
+		sourceCRS = datatype.EPSGCRSRef(srid)
+	} else if sourceCRS == "" {
+		sourceCRS = datatype.CustomCRSRef(definition)
 	}
 	if sourceCRS == "" {
 		return spatialInfo
 	}
 	enriched := spatialInfo.Clone()
-	if enriched.CRSRef == "" {
+	if srid > 0 {
+		enriched.SRID = &srid
+	}
+	if enriched.CRSRef == "" || srid > 0 {
 		enriched.CRSRef = sourceCRS
 	}
-	if len(enriched.GeometryColumns) > 0 && strings.TrimSpace(enriched.GeometryColumns[0].CRSRef) == "" {
+	if len(enriched.GeometryColumns) > 0 && srid > 0 {
+		enriched.GeometryColumns[0].SRID = &srid
+	}
+	if len(enriched.GeometryColumns) > 0 && (strings.TrimSpace(enriched.GeometryColumns[0].CRSRef) == "" || srid > 0) {
 		enriched.GeometryColumns[0].CRSRef = sourceCRS
 	}
 	enriched.CRSDefinitions = append(enriched.CRSDefinitions, datatype.CRSDefinition{
@@ -653,6 +662,14 @@ func enrichSpatialInfoFromProjectionRef(ctx context.Context, reader contentio.Re
 		Source:             datatype.CRSDefinitionSourceSidecarPRJ,
 	})
 	return enriched
+}
+
+func tablePreviewSpatialExtent(spatialInfo *datatype.SpatialInfo) []float64 {
+	if spatialInfo == nil || spatialInfo.Extent == nil {
+		return nil
+	}
+	extent := *spatialInfo.Extent
+	return []float64{extent[0], extent[1], extent[2], extent[3]}
 }
 
 func attachMultiRefPreview(preview *models.TablePreview, formatType format.FormatType, refs []format.RelatedRef) {

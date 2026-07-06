@@ -2896,7 +2896,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，目前支持生成栅格 COG、三维模型 GLB 快显、3DGS KSplat 快显和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts.",
+                "description": "前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB 快显、3DGS KSplat 快显和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2986,6 +2986,77 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewCapability"
                         }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Resource not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/quick-view/flatgeobuf": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "以 Resource Locator 为身份返回 FlatGeobuf 二进制快显材料。该出口服务 direct_flatgeobuf 渲染源，不是通用导出 API。 | Return FlatGeobuf binary quick-view material by Resource Locator. This endpoint serves direct_flatgeobuf render source and is not a general export API.",
+                "produces": [
+                    "application/vnd.fgb"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取统一 FlatGeobuf 快显数据 | Get unified quick-view FlatGeobuf",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "资源定位符URI | Resource locator URI",
+                        "name": "locator",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "读取数量，默认1000，最大2000 | Read size, default 1000, max 2000",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "几何列名 | Geometry column",
+                        "name": "geometry_column",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "FlatGeobuf 二进制数据 | FlatGeobuf binary data"
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
@@ -5206,6 +5277,23 @@ const docTemplate = `{
                 }
             }
         },
+        "datatype.CRSDefinition": {
+            "type": "object",
+            "properties": {
+                "definition": {
+                    "type": "string"
+                },
+                "definition_encoding": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
         "execution.TaskExecution": {
             "type": "object",
             "properties": {
@@ -6432,7 +6520,7 @@ const docTemplate = `{
                 "extent_srid": {
                     "type": "integer"
                 },
-                "geojson_url": {
+                "flatgeobuf_url": {
                     "type": "string"
                 },
                 "geometry_column": {
@@ -6444,6 +6532,9 @@ const docTemplate = `{
                 "min_zoom": {
                     "type": "integer"
                 },
+                "preview_hint": {
+                    "type": "string"
+                },
                 "preview_url": {
                     "type": "string"
                 },
@@ -6453,6 +6544,12 @@ const docTemplate = `{
                 "render_source": {
                     "type": "string"
                 },
+                "source_crs": {
+                    "type": "string"
+                },
+                "source_crs_definition": {
+                    "$ref": "#/definitions/datatype.CRSDefinition"
+                },
                 "source_srid": {
                     "type": "integer"
                 },
@@ -6460,6 +6557,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tile_url_template": {
+                    "type": "string"
+                },
+                "transform_status": {
                     "type": "string"
                 }
             }
@@ -7968,6 +8068,9 @@ const docTemplate = `{
         "internal_api.TileCacheTaskTargetResponse": {
             "type": "object",
             "properties": {
+                "full_name": {
+                    "type": "string"
+                },
                 "item_fingerprint": {
                     "type": "string"
                 },
@@ -7982,6 +8085,9 @@ const docTemplate = `{
                 },
                 "source_engine_id": {
                     "type": "integer"
+                },
+                "source_kind": {
+                    "type": "string"
                 },
                 "table": {
                     "type": "string"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/addp/common/contentio"
@@ -910,13 +911,17 @@ func (t *encodedContentTableTarget) contentWriter() contentio.Writer {
 func (t *encodedContentTableTarget) refWriter(specs []format.RelatedRefSpec) (*trackingContentWriter, []format.RelatedRef) {
 	refBasePath := t.relatedRefBasePath()
 	refs := format.SameBasenameRelatedRefs(refBasePath, specs)
+	reportedRefs := refs
+	if reportedBasePath := strings.Trim(t.path.StringPath(), "/"); reportedBasePath != "" && reportedBasePath != refBasePath {
+		reportedRefs = format.SameBasenameRelatedRefs(reportedBasePath, specs)
+	}
 	delegate := contentadapter.NewWriter(t.writer, t.connInfo, t.path, t.writeOptions)
 	if t.refPathMapper != nil {
 		delegate = contentadapter.NewMappedWriter(t.writer, t.connInfo, t.refPathMapper, t.writeOptions)
 	}
 	writer := &trackingContentWriter{
 		delegate:    delegate,
-		plannedRefs: relatedRefsByPath(refs),
+		plannedRefs: reportedRefsByCreatedPath(refs, reportedRefs),
 	}
 	return writer, refs
 }
@@ -960,16 +965,28 @@ func (w *trackingContentWriter) TargetRefs() []format.RelatedRef {
 	return append([]format.RelatedRef(nil), w.refs...)
 }
 
-func relatedRefsByPath(refs []format.RelatedRef) map[string]format.RelatedRef {
-	result := make(map[string]format.RelatedRef, len(refs))
-	for _, ref := range refs {
-		path := normalizedRelatedRefPath(ref.Ref.Path)
+func reportedRefsByCreatedPath(createdRefs, reportedRefs []format.RelatedRef) map[string]format.RelatedRef {
+	result := make(map[string]format.RelatedRef, len(createdRefs))
+	reportedByRoleAndExt := make(map[string]format.RelatedRef, len(reportedRefs))
+	for _, ref := range reportedRefs {
+		reportedByRoleAndExt[relatedRefRoleExtKey(ref)] = ref
+	}
+	for _, created := range createdRefs {
+		path := normalizedRelatedRefPath(created.Ref.Path)
 		if path == "" {
 			continue
 		}
-		result[path] = ref
+		reported, ok := reportedByRoleAndExt[relatedRefRoleExtKey(created)]
+		if !ok {
+			reported = created
+		}
+		result[path] = reported
 	}
 	return result
+}
+
+func relatedRefRoleExtKey(ref format.RelatedRef) string {
+	return strings.TrimSpace(ref.Ref.Role) + "\x00" + strings.ToLower(strings.TrimSpace(filepath.Ext(ref.Ref.Path)))
 }
 
 func normalizedRelatedRefPath(path string) string {

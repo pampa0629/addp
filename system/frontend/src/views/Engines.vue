@@ -888,7 +888,9 @@ const humanizeCapabilityValue = (value) => {
 const getCapabilityStatusTagType = (status) => {
   const typeMap = {
     available: 'success',
-    engine_unavailable: 'info'
+    engine_unavailable: 'info',
+    installed: 'success',
+    not_installed: 'info'
   }
   return typeMap[status] || 'info'
 }
@@ -924,16 +926,42 @@ const getCapabilityItemValue = (item) => {
   return item.value || ''
 }
 
+const translateCapabilityTagValue = (tag) => {
+  if (!tag?.value || !tag?.id) return tag?.value || ''
+  const prefix = String(tag.id).endsWith(`_${tag.value}`)
+    ? String(tag.id).slice(0, -String(tag.value).length - 1)
+    : ''
+  if (prefix) {
+    const key = `system.engine.capabilityView.${capabilityKeyNamespace(prefix)}.${capabilityKeySegment(tag.value)}`
+    const translated = t(key)
+    if (translated && translated !== key) return translated
+  }
+  if (String(tag.id) === 'default_language') {
+    const key = `system.engine.capabilityView.language.${capabilityKeySegment(tag.value)}`
+    const translated = t(key)
+    if (translated && translated !== key) return translated
+  }
+  return tag.value
+}
+
+const capabilityKeyNamespace = (prefix) => {
+  return String(prefix).replace(/_([a-z])/g, (_, char) => char.toUpperCase())
+}
+
+const capabilityKeySegment = (value) => {
+  return String(value).replace(/[_-]+([a-zA-Z0-9])/g, (_, char) => char.toUpperCase())
+}
+
 const getCapabilityTagText = (tag) => {
   if (!tag) return '-'
   if (tag.label_key) {
     const label = translateCapabilityKey(tag.label_key, tag.value || tag.id)
-    if (tag.value && label !== tag.value && !tag.label_key.includes(tag.value.replaceAll('_', '.'))) {
-      return `${label}: ${tag.value}`
+    if (tag.value && tag.label_key.includes('.values.')) {
+      return `${label}: ${translateCapabilityTagValue(tag)}`
     }
     return label
   }
-  return tag.value || humanizeCapabilityValue(tag.id)
+  return translateCapabilityTagValue(tag) || humanizeCapabilityValue(tag.id)
 }
 
 // 获取连接状态标签

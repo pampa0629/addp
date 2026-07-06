@@ -63,8 +63,8 @@
       </div>
     </div>
     <div class="map-wrap">
-      <GeoJSONQuickView
-        v-if="ready && isQuickViewActive && quickViewRenderSource === 'direct_geojson'"
+      <FlatGeobufQuickView
+        v-if="ready && isQuickViewActive && quickViewRenderSource === 'direct_flatgeobuf'"
         :status="quickViewStatus"
         class="preview-main"
       />
@@ -113,7 +113,7 @@ import { ElMessage } from 'element-plus'
 import { InfoFilled, Select } from '@element-plus/icons-vue'
 import { formatLocatorDisplayPath } from '@addp/common-frontend'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
-import GeoJSONQuickView from '@/components/map/GeoJSONQuickView.vue'
+import FlatGeobufQuickView from '@/components/map/FlatGeobufQuickView.vue'
 import RasterTIFFQuickView from '@/components/map/RasterTIFFQuickView.vue'
 import { quickViewAPI } from '@/api/quickView'
 import client from '@/api/client'
@@ -134,8 +134,10 @@ import {
   hasQuickViewAction,
   isRasterQuickViewRenderSource,
   isTileQuickViewRenderSource,
+  resolveQuickViewRenderSource,
   shouldShowQuickViewUnavailableNotice as shouldShowQuickViewUnavailableNoticeForStatus,
-  shouldLoadBasicPreview
+  shouldLoadBasicPreview,
+  shouldUseBackendQuickViewRenderer
 } from '@/utils/quickViewRenderSource'
 import { TablePreview } from '@common-ui-map'
 
@@ -158,9 +160,7 @@ const activePreviewMode = ref('basic_preview')
 const quickViewTileAdvisory = ref(null)
 const quickViewTileLastNotice = ref({ key: '', at: 0 })
 const rasterCOGGenerationLoading = ref(false)
-const quickViewRenderSource = computed(() => String(
-  quickViewStatus.value?.render_source || quickViewStatus.value?.quick_view?.render_source || ''
-).trim())
+const quickViewRenderSource = computed(() => resolveQuickViewRenderSource(quickViewStatus.value))
 const isRasterQuickView = computed(() => isRasterQuickViewRenderSource(quickViewRenderSource.value))
 const isTileQuickView = computed(() => isTileQuickViewRenderSource(quickViewRenderSource.value))
 const sourceGeometryColumn = computed(() => String(
@@ -176,7 +176,7 @@ const sourceLabel = computed(() => {
   return formatLocatorDisplayPath(parsed) || locator.value
 })
 const isQuickViewActive = computed(() => {
-  return activePreviewMode.value === 'map_quick_view' && !!quickViewStatus.value?.can_use_quick_view
+  return shouldUseBackendQuickViewRenderer(activePreviewMode.value, quickViewStatus.value)
 })
 const canUseQuickViewAction = (action) => hasQuickViewAction(quickViewStatus.value, action)
 const showBackToBasicPreviewAction = computed(() => {

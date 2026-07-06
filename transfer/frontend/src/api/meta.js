@@ -33,3 +33,13 @@ export const getItemFieldsByID = async (itemId) => {
   })
   return response.data
 }
+
+export const getNodeByCatalogPath = async (engineId, catalogPath) => {
+  const response = await apiRequest('get', '/meta/nodes/by-catalog-path', {
+    params: {
+      engine_id: engineId,
+      catalog_path: catalogPath
+    }
+  })
+  return response.data?.data || response.data
+}

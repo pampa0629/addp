@@ -302,7 +302,73 @@ item 刷新原先复用了 catalog scan 的入口，把 `item_id` 先转换为 c
 
 ## 后端问题
 
-### 1. 历史问题归档：MVT 物化视图准备失败 - column "id" does not exist
+### 1. Transfer 写出 Shapefile 后资源树看不到 `.prj`
+
+#### 问题现象
+
+- Transfer 空间表导出到对象存储 Shapefile 后，执行记录显示任务成功。
+- 对象存储目标实际包含 `.shp/.shx/.dbf/.prj/.cpg` 等组件，或 `common.task_executions.metadata.target_refs` 已包含 `.prj`。
+- 但 Manager / Meta 资源树或 item 属性中 `attributes.item.refs` 缺少 `.prj`，`format_info.shapefile.has_prj=false`。
+- Meta worker 日志可能出现类似 `bucket=gis path=a2.shp`、`The specified bucket does not exist` 的错误。
+
+#### 根本原因
+
+对象存储存在两种路径语义：
+
+1. 外部 content path / `full_name` / `ref_groups.path`：必须是 `bucket/object_key`，例如 `addp/gis/a2.prj`。
+2. 对象存储内部 object key：不含 bucket，例如 `gis/a2.prj`。
+
+Transfer 写 Shapefile sidecar 时可以在 executor 内部使用 bucket 内 object key，再由 content adapter 映射到正确 bucket；但写入 execution metadata 或提交 Meta `ref_groups` 时，必须使用外部完整 content path。如果把 `gis/a2.prj` 直接提交给 Meta，Meta 会按规范把 `gis` 拆成 bucket，把 `a2.prj` 拆成 object key，最终扫描错误 bucket，资源树就看不到 `.prj`。
+
+另一类常见原因是字段映射 transform 只复制了几何列类型和 SRID，没有保留 `SpatialInfo.CRSRef/CRSDefinitions`。这种情况下 Shapefile writer 没有 CRS WKT 文本，也不会生成 `.prj`。
+
+#### 排查顺序
+
+1. 查 Transfer execution：
+   ```sql
+   select id, execution_id, status, metadata->'target_refs'
+   from common.task_executions
+   where module='transfer' and source_task_id='<task_id>'
+   order by id desc limit 5;
+   ```
+   对象存储 Shapefile 的 refs 应为 `bucket/object_key`，例如 `addp/gis/a2.prj`，不能是 `gis/a2.prj`。
+
+2. 查 Meta item：
+   ```sql
+   select id, full_name,
+          attributes->'item'->'refs' as refs,
+          attributes->'format_info'->'shapefile' as shapefile_info
+   from meta.meta_item
+   where engine_id=<engine_id> and full_name='<bucket/object.shp>' and deleted_at is null;
+   ```
+
+3. 查日志：
+   - `logs/transfer-worker.log`：确认 `target_refs` 是否包含 `.prj`。
+   - `logs/meta-worker.log`：如果看到把 object key 第一段当 bucket 的错误，优先检查 Transfer 提交的 `ref_groups.path`。
+
+4. 不要用 MinIO 容器内 `/data/...` 文件系统形态判断对象是否存在。MinIO 后端存储布局可能把对象表现为目录；应通过项目 content reader、MinIO API 或 Meta/Transfer 执行元数据确认。
+
+#### 修复原则
+
+- Transfer executor 对外上报的 `TargetRefs` 必须是完整 content path；对象存储目标必须带 bucket。
+- Transfer 写后 Meta 扫描只提交本次实际生成的 refs，不补不存在的 optional sidecar。
+- 字段映射 transform 必须保留空间 CRS 事实，尤其是 primary geometry column 的 `CRSRef` 和 `SpatialInfo.CRSDefinitions`。
+- Meta 不兼容 bucketless 对象存储 `ref_groups.path`；错误路径应在 Transfer 边界修正。
+
+#### 验证命令
+
+```bash
+cd transfer/backend && go test ./internal/executor ./internal/service
+cd meta/backend && go test ./internal/scanflow ./internal/scanruntime
+```
+
+运行时验证重新执行任务后，应同时满足：
+
+- `common.task_executions.metadata->'target_refs'` 包含 `bucket/.../*.prj`。
+- `meta.meta_item.attributes.item.refs` 包含同一个 `.prj`。
+- `meta.meta_item.attributes.format_info.shapefile.has_prj=true`。
+
+### 2. 历史问题归档：MVT 物化视图准备失败 - column "id" does not exist
 
 #### 问题现象
 

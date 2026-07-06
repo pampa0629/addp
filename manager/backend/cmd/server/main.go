@@ -188,8 +188,8 @@ func main() {
 	// 初始化快显状态服务（依赖数据库与 Meta 空间元数据）
 	quickViewService := service.NewQuickViewService(db, metaClient)
 	quickViewService.SetCapabilityOptions(service.QuickViewCapabilityOptions{
-		DirectGeoJSONMaxRows:  cfg.TileCache.DirectGeoJSONMaxRows,
-		RealtimeTileTimeoutMS: cfg.TileCache.RealtimeTileTimeoutMS,
+		DirectFlatGeobufMaxRows: cfg.TileCache.DirectFlatGeobufMaxRows,
+		RealtimeTileTimeoutMS:   cfg.TileCache.RealtimeTileTimeoutMS,
 	})
 
 	tileGenerator := mvt.NewTileGenerator(systemClient, cfg.TileCache.MaxDBConns)
@@ -373,6 +373,19 @@ func main() {
 			cfg.RasterMosaicGeneration.Timeout,
 		))
 		pointCloudCOPCTaskSvc.SetExecutor(service.NewManagerPointCloudCOPCExecutor(
+			systemClient,
+			systemClient,
+			minioClient,
+			serviceURL,
+			cfg.InternalAPIKey,
+			cfg.MinioEndpoint,
+			cfg.MinioAccessKey,
+			cfg.MinioSecretKey,
+			cfg.MinioUseSSL,
+			minioBucket,
+			cfg.RasterMosaicGeneration.Timeout,
+		))
+		tileCacheTaskSvc.SetWorkflowTileGenerator(service.NewManagerVectorTileCacheWorkflowExecutor(
 			systemClient,
 			systemClient,
 			minioClient,

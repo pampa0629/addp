@@ -502,9 +502,7 @@ const showResourcePicker = computed(() => {
 
 const formTitle = computed(() => editingId.value ? t('manager.tileCache.editTitle') : t('manager.tileCache.createTitle'))
 const sourceResourceText = computed(() => {
-  const schema = String(form.config.target.schema || '').trim()
-  const table = String(form.config.target.table || '').trim()
-  return schema && table ? `${schema}.${table}` : '-'
+  return tileCacheTargetResourceText(form.config.target)
 })
 const selectedResourceSummary = computed(() => {
   const parts = []
@@ -754,6 +752,30 @@ const parseExtent = (value) => {
   return values.length === 4 && values.every((item) => Number.isFinite(item)) ? values : []
 }
 
+const applyLocatorFactsToTarget = (target, locator) => {
+  const parsed = safeParseLocator(locator)
+  if (!parsed?.engineId) return
+  target.source_engine_id = Number(target.source_engine_id || parsed.engineId)
+  if (parsed.itemId && !target.item_id) {
+    target.item_id = parsed.itemId
+  }
+  target.source_kind = String(parsed.type || '').trim()
+  target.full_name = Array.isArray(parsed.path) ? parsed.path.join('/') : ''
+  if (target.source_kind === 'table' && Array.isArray(parsed.path) && parsed.path.length >= 2) {
+    target.schema = target.schema || parsed.path[parsed.path.length - 2]
+    target.table = target.table || parsed.path[parsed.path.length - 1]
+  }
+}
+
+const tileCacheTargetResourceText = (target = {}) => {
+  const schema = String(target.schema || '').trim()
+  const table = String(target.table || '').trim()
+  if (schema && table) return `${schema}.${table}`
+  const fullName = String(target.full_name || '').trim()
+  if (fullName) return fullName
+  return resourceTextFromLocator(target.locator) || '-'
+}
+
 const setGeometryOptions = (columns, selected = '') => {
   const options = []
   for (const column of columns || []) {
@@ -778,7 +800,10 @@ const applyRouteSourceContext = () => {
     form.config.target.item_fingerprint = String(route.query.item_fingerprint)
     resultFilters.item_fingerprint = String(route.query.item_fingerprint)
   }
-  if (route.query.locator) form.config.target.locator = String(route.query.locator)
+  if (route.query.locator) {
+    form.config.target.locator = String(route.query.locator)
+    applyLocatorFactsToTarget(form.config.target, form.config.target.locator)
+  }
   if (route.query.geom) form.config.options.geometry_column = String(route.query.geom)
   form.config.tile.source_srid = parseQueryNumber(route.query.source_srid, form.config.tile.source_srid)
   form.config.tile.extent_srid = parseQueryNumber(route.query.extent_srid, form.config.tile.extent_srid)
@@ -803,8 +828,13 @@ const applyQuickViewCapabilityToForm = (config, fallbackGeometryColumns = []) =>
   if (config.source_engine_id) form.config.target.source_engine_id = Number(config.source_engine_id)
   if (config.source_schema) form.config.target.schema = String(config.source_schema)
   if (config.source_table) form.config.target.table = String(config.source_table)
-  if (config.locator) form.config.target.locator = String(config.locator)
+  if (config.locator) {
+    form.config.target.locator = String(config.locator)
+    applyLocatorFactsToTarget(form.config.target, form.config.target.locator)
+  }
   if (config.item_fingerprint) form.config.target.item_fingerprint = String(config.item_fingerprint)
+  if (config.source_kind) form.config.target.source_kind = String(config.source_kind)
+  if (config.full_name) form.config.target.full_name = String(config.full_name)
   form.config.tile.min_zoom = Number(config.min_zoom ?? form.config.tile.min_zoom)
   form.config.tile.max_zoom = Number(config.max_zoom ?? form.config.tile.max_zoom)
   form.config.tile.target_srid = Number(config.target_srid || 3857)
@@ -841,11 +871,17 @@ const tileCacheFormConfigFromCapability = (capability) => {
   const realtime = capability?.realtime_tile || {}
   const optimization = capability?.optimization || {}
   const zoom = renderFacts.zoom_recommendation || {}
+  const parsedLocator = safeParseLocator(capability?.locator || '')
+  const sourceKind = String(parsedLocator.type || '').trim()
+  const fullName = Array.isArray(parsedLocator.path) ? parsedLocator.path.join('/') : ''
+  const tableOptimizationSource = sourceKind === 'table'
   return {
     ...quickView,
-    source_engine_id: capability?.source_engine_id,
+    source_engine_id: capability?.source_engine_id || parsedLocator.engineId,
     source_schema: capability?.source_schema,
     source_table: capability?.source_table,
+    source_kind: sourceKind,
+    full_name: fullName,
     locator: capability?.locator,
     item_fingerprint: capability?.item_fingerprint,
     min_zoom: zoom.min_zoom ?? quickView.min_zoom,
@@ -860,10 +896,12 @@ const tileCacheFormConfigFromCapability = (capability) => {
     optimization_target_kind: optimization.target_kind || '',
     optimization_reason: optimization.reason || '',
     performance_mode: realtime.performance_mode || '',
-    optimization_recommended: realtime.optimization_recommended === true ||
+    optimization_recommended: tableOptimizationSource && (
+      realtime.optimization_recommended === true ||
       optimization.status === 'stale' ||
       realtime.performance_mode === 'source_transform_path' ||
-      (optimization.available !== true && Number(renderFacts.source_srid || quickView.source_srid || 0) !== 3857),
+      (optimization.available !== true && Number(renderFacts.source_srid || quickView.source_srid || 0) !== 3857)
+    ),
     optimization_message: realtime.optimization_recommendation || ''
   }
 }
@@ -879,6 +917,9 @@ const applyRouteOptimizationAdvice = () => {
 
 const openVectorMaterializedViewCreate = () => {
   const target = form.config.target
+  if (String(target.source_kind || '').toLowerCase() !== 'table') {
+    return
+  }
   router.push({
     name: 'VectorMaterializedView',
     query: buildVectorMaterializedViewCreateQuery({
@@ -1014,7 +1055,7 @@ const handleResourceNodeClick = async (node) => {
   selectedSourceNode.value = node
   resourceCurrentKey.value = selection.locator
   if (!form.name) {
-    form.name = t('manager.tileCache.defaultTaskName', { resource: `${selection.schema}.${selection.table}` })
+    form.name = t('manager.tileCache.defaultTaskName', { resource: tileCacheTargetResourceText(form.config.target) })
   }
   await formRef.value?.validateField('config.target.locator').catch(() => {})
 }
@@ -1030,8 +1071,9 @@ const openCreateDialog = async () => {
   if (form.config.target.locator && showResourcePicker.value) {
     await revealSelectedResource()
   }
-  if (!form.name && form.config.target.schema && form.config.target.table) {
-    form.name = t('manager.tileCache.defaultTaskName', { resource: `${form.config.target.schema}.${form.config.target.table}` })
+  const resourceText = tileCacheTargetResourceText(form.config.target)
+  if (!form.name && resourceText !== '-') {
+    form.name = t('manager.tileCache.defaultTaskName', { resource: resourceText })
   }
 }
 

@@ -1,4 +1,7 @@
 export function tileCacheOptimizationAdvice(config = {}) {
+  if (!isVectorMaterializedViewSource(config)) {
+    return emptyAdvice()
+  }
   if (config.optimization_available) {
     const external = config.optimization_target_kind === 'external_3857_materialized_view'
     return {
@@ -32,6 +35,18 @@ export function tileCacheOptimizationAdvice(config = {}) {
       messageKey: 'manager.tileCache.optimizationRecommended'
     }
   }
+  return {
+    ...emptyAdvice()
+  }
+}
+
+function isVectorMaterializedViewSource(config = {}) {
+  const sourceKind = String(config.source_kind || '').trim().toLowerCase()
+  if (sourceKind) return sourceKind === 'table'
+  return Boolean(String(config.source_schema || '').trim() && String(config.source_table || '').trim())
+}
+
+function emptyAdvice() {
   return {
     visible: false,
     titleKey: '',

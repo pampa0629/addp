@@ -1,0 +1,612 @@
+"""
+向量瓦片算子模块
+
+Manager 负责把 ADDP locator、engine、源路径和目标对象存储解析为 GDAL
+可访问的 access_plan；Python Workflow 只负责读取物理源、生成 MVT、
+按 ADDP 瓦片缓存目录约定发布对象，并上报进度。
+"""
+
+import json
+import logging
+import math
+import os
+import posixpath
+import shutil
+import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
+from pathlib import Path
+from time import perf_counter
+from typing import Any, Dict
+
+from pyproj import Transformer
+
+from .base import (
+    OperatorType,
+    OperatorMetadata,
+    OperatorParam,
+    OperatorCategory,
+    register_operator,
+)
+from .raster_operators import (
+    _import_gdal,
+    _prepare_target_path,
+    _ensure_gdal_dir,
+    _gdal_config_env,
+    _is_gdal_virtual_path,
+    _path_parent,
+    _progress_reporter,
+    _run_command,
+    _set_path_specific_gdal_options,
+)
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_MVT_EXTENT = 8192
+DEFAULT_MVT_MAX_SIZE_BYTES = 5_000_000
+DEFAULT_MVT_MAX_FEATURES = 1_000_000
+DEFAULT_MVT_PUBLISH_CONCURRENCY = 8
+DEFAULT_MVT_GDAL_NUM_THREADS = "ALL_CPUS"
+
+
+def _tile_bounds(extent: list[float], zoom: int) -> tuple[int, int, int, int]:
+    min_lon, min_lat, max_lon, max_lat = extent
+    min_lon = max(-180.0, min(180.0, min_lon))
+    max_lon = max(-180.0, min(180.0, max_lon))
+    min_lat = max(-85.05112878, min(85.05112878, min_lat))
+    max_lat = max(-85.05112878, min(85.05112878, max_lat))
+
+    def lon_to_x(lon: float) -> int:
+        return int(math.floor((lon + 180.0) / 360.0 * (1 << zoom)))
+
+    def lat_to_y(lat: float) -> int:
+        lat_rad = math.radians(lat)
+        return int(math.floor((1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi) / 2.0 * (1 << zoom)))
+
+    max_index = (1 << zoom) - 1
+    min_x = max(0, min(max_index, lon_to_x(min_lon)))
+    max_x = max(0, min(max_index, lon_to_x(max_lon)))
+    min_y = max(0, min(max_index, lat_to_y(max_lat)))
+    max_y = max(0, min(max_index, lat_to_y(min_lat)))
+    if max_x < min_x:
+        min_x, max_x = max_x, min_x
+    if max_y < min_y:
+        min_y, max_y = max_y, min_y
+    return min_x, min_y, max_x, max_y
+
+
+def _normalize_extent(value: Any) -> list[float]:
+    if not isinstance(value, list) or len(value) != 4:
+        raise ValueError("tile.extent must be [minLon, minLat, maxLon, maxLat]")
+    extent = [float(v) for v in value]
+    if extent[0] >= extent[2] or extent[1] >= extent[3]:
+        raise ValueError("tile.extent is invalid")
+    return extent
+
+
+def _extent_to_wgs84(extent: list[float], extent_srid: int, source_srs: str = "") -> list[float]:
+    if extent_srid == 4326:
+        return list(extent)
+    source_crs = f"EPSG:{extent_srid}" if extent_srid > 0 else str(source_srs or "").strip()
+    if not source_crs:
+        raise ValueError("tile.extent_srid or tile.source_srs is required for non-WGS84 extent")
+
+    transformer = Transformer.from_crs(source_crs, "EPSG:4326", always_xy=True)
+    min_x, min_y, max_x, max_y = extent
+    points = [
+        transformer.transform(min_x, min_y),
+        transformer.transform(min_x, max_y),
+        transformer.transform(max_x, min_y),
+        transformer.transform(max_x, max_y),
+    ]
+    lon_values = [float(point[0]) for point in points if math.isfinite(point[0]) and math.isfinite(point[1])]
+    lat_values = [float(point[1]) for point in points if math.isfinite(point[0]) and math.isfinite(point[1])]
+    if not lon_values or not lat_values:
+        raise ValueError("tile.extent cannot be transformed to EPSG:4326")
+    return [min(lon_values), min(lat_values), max(lon_values), max(lat_values)]
+
+
+def _copy_tile_payload(source_tile: Path, target_uri: str, target_env: Dict[str, Any], use_configured_path_options: bool = False) -> int:
+    data = source_tile.read_bytes()
+    if use_configured_path_options:
+        _write_binary_with_configured_path_options(target_uri, data)
+    else:
+        _write_binary(target_uri, data, target_env)
+    return len(data)
+
+
+def _write_binary(target_uri: str, data: bytes, target_env: Dict[str, Any]) -> None:
+    if _is_gdal_virtual_path(target_uri):
+        with _gdal_config_env(target_env) as gdal:
+            handle = gdal.VSIFOpenL(target_uri, "wb")
+            if handle is None:
+                raise RuntimeError(f"GDAL cannot open target for writing: {target_uri}")
+            try:
+                written = gdal.VSIFWriteL(data, 1, len(data), handle)
+            finally:
+                close_result = gdal.VSIFCloseL(handle)
+            if written != len(data):
+                raise RuntimeError(f"GDAL wrote incomplete payload to {target_uri}: {written}/{len(data)} bytes")
+            if close_result != 0:
+                raise RuntimeError(f"GDAL failed to close target after writing: {target_uri}")
+        return
+    target_path = Path(target_uri)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_bytes(data)
+
+
+def _write_binary_with_configured_path_options(target_uri: str, data: bytes) -> None:
+    if _is_gdal_virtual_path(target_uri):
+        gdal = _import_gdal()
+        handle = gdal.VSIFOpenL(target_uri, "wb")
+        if handle is None:
+            raise RuntimeError(f"GDAL cannot open target for writing: {target_uri}")
+        try:
+            written = gdal.VSIFWriteL(data, 1, len(data), handle)
+        finally:
+            close_result = gdal.VSIFCloseL(handle)
+        if written != len(data):
+            raise RuntimeError(f"GDAL wrote incomplete payload to {target_uri}: {written}/{len(data)} bytes")
+        if close_result != 0:
+            raise RuntimeError(f"GDAL failed to close target after writing: {target_uri}")
+        return
+    target_path = Path(target_uri)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_bytes(data)
+
+
+def _positive_int(value: Any, default: int, minimum: int = 1, maximum: int | None = None) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = int(default)
+    if parsed < minimum:
+        parsed = minimum
+    if maximum is not None and parsed > maximum:
+        parsed = maximum
+    return parsed
+
+
+def _optional_float(value: Any, default: float | None = None) -> float | None:
+    if value is None:
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(parsed):
+        return default
+    return parsed
+
+
+def _mvt_quality_options(tile: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
+    extent_units = _positive_int(
+        options.get("mvt_extent", tile.get("mvt_extent", DEFAULT_MVT_EXTENT)),
+        DEFAULT_MVT_EXTENT,
+        minimum=256,
+        maximum=65536,
+    )
+    default_buffer = max(1, int(round(extent_units * 80.0 / 4096.0)))
+    buffer_units = _positive_int(
+        options.get("mvt_buffer", tile.get("mvt_buffer", default_buffer)),
+        default_buffer,
+        minimum=0,
+        maximum=extent_units,
+    )
+    return {
+        "extent": extent_units,
+        "buffer": buffer_units,
+        "max_size": _positive_int(
+            options.get("max_tile_size_bytes", tile.get("max_tile_size_bytes", DEFAULT_MVT_MAX_SIZE_BYTES)),
+            DEFAULT_MVT_MAX_SIZE_BYTES,
+            minimum=100,
+        ),
+        "max_features": _positive_int(
+            options.get("max_features", tile.get("max_features", DEFAULT_MVT_MAX_FEATURES)),
+            DEFAULT_MVT_MAX_FEATURES,
+            minimum=1,
+        ),
+        "simplification": _optional_float(options.get("simplification", tile.get("simplification")), 0.0),
+        "simplification_max_zoom": _optional_float(
+            options.get("simplification_max_zoom", tile.get("simplification_max_zoom")),
+            0.0,
+        ),
+        "num_threads": str(options.get("num_threads") or tile.get("num_threads") or DEFAULT_MVT_GDAL_NUM_THREADS).strip(),
+        "publish_concurrency": _positive_int(
+            options.get("publish_concurrency", tile.get("publish_concurrency", DEFAULT_MVT_PUBLISH_CONCURRENCY)),
+            DEFAULT_MVT_PUBLISH_CONCURRENCY,
+            minimum=1,
+            maximum=64,
+        ),
+    }
+
+
+def _publish_tile_jobs(tile_jobs: list[Dict[str, Any]], target_env: Dict[str, Any], publish_concurrency: int) -> list[Dict[str, Any]]:
+    if not tile_jobs:
+        return []
+
+    def publish(job: Dict[str, Any]) -> Dict[str, Any]:
+        size = _copy_tile_payload(Path(job["source"]), str(job["target_uri"]), target_env, use_configured_path_options=True)
+        return {"zoom": int(job["zoom"]), "size": int(size)}
+
+    if publish_concurrency <= 1 or len(tile_jobs) == 1:
+        return [publish(job) for job in tile_jobs]
+
+    results: list[Dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=min(publish_concurrency, len(tile_jobs))) as executor:
+        futures = [executor.submit(publish, job) for job in tile_jobs]
+        for future in as_completed(futures):
+            results.append(future.result())
+    return results
+
+
+def _write_json(target_uri: str, payload: Dict[str, Any], target_env: Dict[str, Any]) -> None:
+    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    _write_binary(target_uri, data, target_env)
+
+
+def _find_generated_tile(tile_root: Path, z: int, x: int, y: int) -> Path | None:
+    candidates = [
+        tile_root / str(z) / str(x) / f"{y}.pbf",
+        tile_root / str(z) / str(x) / f"{y}.mvt",
+        tile_root / str(z) / f"{x}" / f"{y}.pbf",
+        tile_root / str(z) / f"{x}" / f"{y}.mvt",
+    ]
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    for suffix in ("*.pbf", "*.mvt"):
+        for candidate in tile_root.glob(f"**/{suffix}"):
+            parts = candidate.relative_to(tile_root).parts
+            if len(parts) >= 3 and parts[-3] == str(z) and parts[-2] == str(x) and Path(parts[-1]).stem == str(y):
+                return candidate
+    return None
+
+
+def _index_generated_tiles(tile_root: Path) -> Dict[tuple[int, int, int], Path]:
+    tiles: Dict[tuple[int, int, int], Path] = {}
+    if not tile_root.exists():
+        return tiles
+    for candidate in tile_root.rglob("*"):
+        if not candidate.is_file() or candidate.suffix.lower() not in (".pbf", ".mvt"):
+            continue
+        parts = candidate.relative_to(tile_root).parts
+        if len(parts) < 3:
+            continue
+        try:
+            z = int(parts[-3])
+            x = int(parts[-2])
+            y = int(candidate.stem)
+        except ValueError:
+            continue
+        tiles.setdefault((z, x, y), candidate)
+    return tiles
+
+
+def _emit_progress(emit, phase: str, processed: int, total: int, current_zoom: int, max_zoom: int) -> None:
+    percent = float(processed) / float(total) * 100.0 if total > 0 else 0.0
+    emit({
+        "phase": phase,
+        "event": "progress",
+        "message": "生成矢量瓦片缓存",
+        "current_zoom": current_zoom,
+        "max_zoom": max_zoom,
+        "tiles_processed": processed,
+        "tiles_total_estimate": total,
+        "progress_percent": percent,
+        "overall_progress": percent,
+    })
+
+
+def vector_to_mvt_tiles(
+    access_plan: Dict[str, Any],
+    tile: Dict[str, Any],
+    options: Dict[str, Any] | None = None,
+    **kwargs,
+) -> Dict[str, Any]:
+    """
+    生成 ADDP 矢量瓦片缓存。
+
+    access_plan 只包含物理 URI 和对象存储发布信息；本算子不识别 ADDP locator。
+    """
+    if not isinstance(access_plan, dict):
+        raise ValueError("access_plan is required and must be an object")
+    if not isinstance(tile, dict):
+        raise ValueError("tile is required and must be an object")
+    options = dict(options or {})
+    source_plan = access_plan.get("source")
+    target_plan = access_plan.get("target")
+    if not isinstance(source_plan, dict):
+        raise ValueError("access_plan.source is required and must be an object")
+    if not isinstance(target_plan, dict):
+        raise ValueError("access_plan.target is required and must be an object")
+
+    source_uri = str(source_plan.get("root_uri") or "").strip()
+    if not source_uri:
+        raise ValueError("access_plan.source.root_uri is required")
+    target_root = str(target_plan.get("object_prefix_uri") or "").rstrip("/")
+    if not target_root:
+        raise ValueError("access_plan.target.object_prefix_uri is required")
+    target_env = target_plan.get("gdal_env") if isinstance(target_plan.get("gdal_env"), dict) else {}
+    source_env = source_plan.get("gdal_env") if isinstance(source_plan.get("gdal_env"), dict) else {}
+    layer_name = str(options.get("layer_name") or options.get("geometry_column") or "layer").strip() or "layer"
+    geometry_column = str(options.get("geometry_column") or "").strip()
+    min_zoom = int(tile.get("min_zoom") or 0)
+    max_zoom = int(tile.get("max_zoom") or min_zoom)
+    if max_zoom < min_zoom:
+        raise ValueError("tile.max_zoom must be greater than or equal to tile.min_zoom")
+    extent = _normalize_extent(tile.get("extent"))
+    extent_srid = int(tile.get("extent_srid") or 0)
+    source_srs = str(tile.get("source_srs") or "").strip()
+    render_extent = _extent_to_wgs84(extent, extent_srid, source_srs)
+    quality_options = _mvt_quality_options(tile, options)
+
+    progress_plan = access_plan.get("progress_callback") if isinstance(access_plan.get("progress_callback"), dict) else {}
+    emit = _progress_reporter(progress_plan)
+    cleanup_path_options = _set_path_specific_gdal_options([
+        (source_uri, source_env),
+        (target_root, target_env),
+    ])
+    started_at = perf_counter()
+    work_dir = Path(tempfile.mkdtemp(prefix="addp-mvt-"))
+    tile_dir = work_dir / "tiles"
+    try:
+        _emit_progress(emit, "prepare", 0, 1, min_zoom, max_zoom)
+        ogr_cmd = [
+            "ogr2ogr",
+            "-f",
+            "MVT",
+            str(tile_dir),
+            source_uri,
+            "-dsco",
+            f"MINZOOM={min_zoom}",
+            "-dsco",
+            f"MAXZOOM={max_zoom}",
+            "-dsco",
+            f"NAME={layer_name}",
+            "-dsco",
+            "COMPRESS=YES",
+            "-dsco",
+            f"EXTENT={quality_options['extent']}",
+            "-dsco",
+            f"BUFFER={quality_options['buffer']}",
+            "-dsco",
+            f"MAX_SIZE={quality_options['max_size']}",
+            "-dsco",
+            f"MAX_FEATURES={quality_options['max_features']}",
+        ]
+        if quality_options["simplification"] is not None:
+            ogr_cmd.extend(["-dsco", f"SIMPLIFICATION={quality_options['simplification']}"])
+        if quality_options["simplification_max_zoom"] is not None:
+            ogr_cmd.extend(["-dsco", f"SIMPLIFICATION_MAX_ZOOM={quality_options['simplification_max_zoom']}"])
+        if geometry_column:
+            ogr_cmd.extend(["-geomfield", geometry_column])
+        if source_srs:
+            ogr_cmd.extend(["-s_srs", source_srs])
+        ogr_cmd.extend(["-t_srs", "EPSG:3857"])
+        ogr_env = dict(source_env or {})
+        if quality_options["num_threads"] and "GDAL_NUM_THREADS" not in ogr_env:
+            ogr_env["GDAL_NUM_THREADS"] = quality_options["num_threads"]
+        _run_command(ogr_cmd, ogr_env)
+        generated_tile_index = _index_generated_tiles(tile_dir)
+
+        tile_ranges = []
+        total_estimate = 0
+        for z in range(min_zoom, max_zoom + 1):
+            min_x, min_y, max_x, max_y = _tile_bounds(render_extent, z)
+            count = (max_x - min_x + 1) * (max_y - min_y + 1)
+            tile_ranges.append((z, min_x, min_y, max_x, max_y, count))
+            total_estimate += count
+
+        processed = 0
+        generated = 0
+        empty = 0
+        total_size = 0
+        max_size = 0
+        min_size = 0
+        zoom_levels: Dict[str, Any] = {}
+        tile_jobs = []
+        for z, min_x, min_y, max_x, max_y, total_tiles in tile_ranges:
+            zoom_generated = 0
+            zoom_empty = 0
+            for x in range(min_x, max_x + 1):
+                for y in range(min_y, max_y + 1):
+                    source_tile = generated_tile_index.get((z, x, y))
+                    if source_tile is None:
+                        empty += 1
+                        zoom_empty += 1
+                    else:
+                        target_uri = f"{target_root}/tiles/z{z}/{x}_{y}.mvt.gz"
+                        generated += 1
+                        zoom_generated += 1
+                        tile_jobs.append({"source": source_tile, "target_uri": target_uri, "zoom": z})
+                    processed += 1
+            zoom_levels[str(z)] = {
+                "zoom": z,
+                "total_tiles": total_tiles,
+                "generated_tiles": zoom_generated,
+                "empty_tiles": zoom_empty,
+                "skipped_tiles": 0,
+                "oversized_tiles": 0,
+                "failed_tiles": 0,
+                "avg_gen_time_ms": 0,
+                "avg_size_kb": 0.0,
+                "total_size_bytes": 0,
+                "max_size_bytes": 0,
+                "min_size_bytes": 0,
+            }
+        processed = empty
+        if total_estimate > 0:
+            _emit_progress(emit, "publish", processed, total_estimate, min_zoom, max_zoom)
+        publish_results = _publish_tile_jobs(tile_jobs, target_env, quality_options["publish_concurrency"])
+        progress_stride = max(1, total_estimate // 100) if total_estimate > 0 else 1
+        last_progress_emit = processed
+        for publish_result in publish_results:
+            z = str(publish_result["zoom"])
+            size = int(publish_result["size"])
+            zoom_stats = zoom_levels[z]
+            zoom_stats["total_size_bytes"] += size
+            zoom_stats["max_size_bytes"] = max(int(zoom_stats["max_size_bytes"]), size)
+            if int(zoom_stats["min_size_bytes"]) == 0 or size < int(zoom_stats["min_size_bytes"]):
+                zoom_stats["min_size_bytes"] = size
+            total_size += size
+            max_size = max(max_size, size)
+            if min_size == 0 or size < min_size:
+                min_size = size
+            processed += 1
+            if processed == total_estimate or processed - last_progress_emit >= progress_stride:
+                _emit_progress(emit, "publish", processed, total_estimate, int(z), max_zoom)
+                last_progress_emit = processed
+        for zoom_stats in zoom_levels.values():
+            generated_count = int(zoom_stats["generated_tiles"])
+            if generated_count > 0:
+                zoom_stats["avg_size_kb"] = float(zoom_stats["total_size_bytes"]) / float(generated_count) / 1024.0
+
+        duration = perf_counter() - started_at
+        actual_max_zoom = max((int(z) for z, stats in zoom_levels.items() if stats["generated_tiles"] > 0), default=min_zoom)
+        result = {
+            "tile_format": "mvt",
+            "extent": render_extent,
+            "extent_srid": 4326,
+            "min_zoom": min_zoom,
+            "max_zoom": max_zoom,
+            "actual_max_zoom": actual_max_zoom,
+            "tiles_total_estimate": total_estimate,
+            "tiles_processed": processed,
+            "total_tiles": processed,
+            "cached_tiles": generated,
+            "generated_tiles": generated,
+            "empty_tiles": empty,
+            "skipped_tiles": 0,
+            "oversized_skipped_tiles": 0,
+            "failed_tiles": 0,
+            "total_size_bytes": total_size,
+            "max_tile_size_bytes": max_size,
+            "min_tile_size_bytes": min_size,
+            "zoom_levels": zoom_levels,
+            "stop_reason": "workflow_ogr2ogr_mvt",
+            "generation_seconds": duration,
+            "mvt_options": {
+                "extent": quality_options["extent"],
+                "buffer": quality_options["buffer"],
+                "max_size": quality_options["max_size"],
+                "max_features": quality_options["max_features"],
+                "simplification": quality_options["simplification"],
+                "simplification_max_zoom": quality_options["simplification_max_zoom"],
+                "num_threads": quality_options["num_threads"],
+                "publish_concurrency": quality_options["publish_concurrency"],
+            },
+        }
+        metadata = {
+            "engine_id": int(source_plan.get("engine_id") or 0),
+            "fingerprint": str(source_plan.get("item_fingerprint") or ""),
+            "tile_format": "mvt",
+            "storage_ref": str(target_plan.get("storage_ref") or ""),
+            "object_prefix": str(target_plan.get("object_prefix") or ""),
+            "table_name": str(source_plan.get("full_name") or ""),
+            "schema": "",
+            "extent": render_extent,
+            "srid": 4326,
+            "min_zoom": min_zoom,
+            "row_count": int(source_plan.get("row_count") or 0),
+            "geometry_types": [],
+            "zoom_levels": zoom_levels,
+            "max_zoom_generated": actual_max_zoom,
+            "stop_reason": "workflow_ogr2ogr_mvt",
+            "total_tiles": generated,
+            "total_size_bytes": total_size,
+            "mvt_options": result["mvt_options"],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "generation_duration_seconds": duration,
+        }
+        _write_json(f"{target_root}/metadata.json", metadata, target_env)
+        _emit_progress(emit, "complete", processed, total_estimate, actual_max_zoom, max_zoom)
+        return result
+    finally:
+        cleanup_path_options()
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+VECTOR_TO_MVT_TILES_METADATA = OperatorMetadata(
+    name="vector_to_mvt_tiles",
+    type=OperatorType.GENERAL,
+    category=OperatorCategory.FORMAT_CONVERSION,
+    description="向量 MVT 瓦片缓存生成",
+    brief_description="从文件或对象空间数据生成 ADDP MVT 瓦片缓存",
+    execution_modes=["workflow", "direct"],
+    overview="面向 Manager vector_tile_cache_generation 任务的非数据库空间数据 MVT 生成算子。Manager 负责 locator 解析、源访问计划、目标对象存储和任务状态；Python Workflow 只负责内容级 MVT 生成和对象发布。",
+    params=[
+        OperatorParam(
+            name="access_plan",
+            type="param",
+            data_type="object",
+            required=True,
+            description="Manager 解析后的向量瓦片访问计划",
+            notes="包含 source.root_uri/source.gdal_env、target.object_prefix_uri/target.gdal_env、progress_callback 等技术访问参数。原始 ADDP locator 不由 Python 解析。",
+        ),
+        OperatorParam(
+            name="tile",
+            type="param",
+            data_type="object",
+            required=True,
+            description="瓦片生成配置",
+            notes="包含 min_zoom、max_zoom、extent、extent_srid、source_srs 等。",
+        ),
+        OperatorParam(
+            name="options",
+            type="param",
+            data_type="object",
+            required=False,
+            description="生成选项",
+            notes="包含 geometry_column、layer_name 等。",
+        ),
+    ],
+    use_cases=[
+        "Shapefile 文件超过 direct FlatGeobuf 快显阈值，需要生成 MVT 缓存。",
+        "对象存储中的 GeoPackage 或 FlatGeobuf 生成统一快显瓦片缓存。",
+        "非 PostGIS 空间数据通过 Manager 任务进入统一 vector_tile_cache 结果表。",
+        "前端仍通过 /quick-view/tiles/{z}/{x}/{y}.mvt?locator=... 读取缓存瓦片。",
+    ],
+    notes=[
+        "该算子不识别 ADDP locator，只处理 Manager 传入的物理访问计划。",
+        "输出对象路径必须符合 tiles/z{z}/{x}_{y}.mvt.gz 和 metadata.json 约定。",
+        "MVT 生成依赖 GDAL/OGR 的 MVT driver。",
+        "tile.extent 可使用源 CRS；算子按 tile.extent_srid/source_srs 转为 EPSG:4326 后计算瓦片范围。",
+    ],
+    workflow_example={
+        "id": "vector_to_mvt_tiles",
+        "operator": "vector_to_mvt_tiles",
+        "params": {
+            "access_plan": {
+                "source": {
+                    "root_uri": "/mnt/data/shp/farmland.shp",
+                    "gdal_env": {},
+                    "metadata": {"full_name": "shp/farmland.shp"},
+                },
+                "target": {
+                    "object_prefix_uri": "/vsis3/manager/tenant_7/mvt-tiles/fp",
+                    "object_prefix": "tenant_7/mvt-tiles/fp",
+                    "gdal_env": {},
+                },
+                "progress_callback": {
+                    "endpoint": "http://manager:8081/api/v1/manager/internal/executions/{execution_id}/events",
+                    "tenant_id": 7,
+                    "execution_id": "execution-uuid",
+                },
+            },
+            "tile": {
+                "min_zoom": 0,
+                "max_zoom": 12,
+                "extent": [110.0, 20.0, 120.0, 30.0],
+                "extent_srid": 4326,
+                "source_srs": "EPSG:4326",
+            },
+            "options": {"geometry_column": "geometry", "layer_name": "geometry"},
+        },
+    },
+)
+
+
+OPERATORS = dict([
+    register_operator(VECTOR_TO_MVT_TILES_METADATA, vector_to_mvt_tiles),
+])

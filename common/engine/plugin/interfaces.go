@@ -64,6 +64,12 @@ type EnginePlugin interface {
 	Capabilities() EngineCapabilities
 }
 
+// InstanceCapabilitiesResolver 是插件可选实现，用于把静态 Provider 能力模板
+// 收敛为某个已注册引擎实例当前真实具备的能力。
+type InstanceCapabilitiesResolver interface {
+	ResolveCapabilities(ctx context.Context, connInfo ConnectionInfo, base EngineCapabilities) (EngineCapabilities, error)
+}
+
 // DSNProvider 是需要底层 driver DSN 的引擎可选实现。
 // connection_info 仍是统一事实源；DSN 不进入 System 持久化，也不作为能力判断依据。
 type DSNProvider interface {

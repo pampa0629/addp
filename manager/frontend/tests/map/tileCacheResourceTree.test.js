@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { catalogRootTypeForEngine } from '@addp/common-frontend'
 import {
   createResourceRootNode,
-  mergeAncestorChainIntoResourceTree
+  mergeAncestorChainIntoResourceTree,
+  tableSelectionFromResourceNode
 } from '../../src/utils/tileCacheResourceTree'
 
 const parseLocator = (locator) => {
@@ -10,6 +11,7 @@ const parseLocator = (locator) => {
   const params = new URLSearchParams(match?.[3] || '')
   return {
     engineId: Number(match?.[1] || 0),
+    path: String(match?.[2] || '').split('/').filter(Boolean),
     type: params.get('type') || '',
     nodeId: Number(params.get('node_id') || 0) || undefined,
     itemId: Number(params.get('item_id') || 0) || undefined
@@ -77,5 +79,24 @@ describe('tileCacheResourceTree', () => {
     ])
     expect(merged.target).toMatchObject({ label: 'buildings', type: 'table' })
     expect(merged.nodes[0].children[0].children.map((node) => node.label)).toEqual(['roads', 'buildings'])
+  })
+
+  it('keeps locator source identity when selecting a table resource', () => {
+    const locator = 'addp://engine/7/path/public/roads?type=table&item_id=21'
+
+    expect(tableSelectionFromResourceNode({
+      locator,
+      type: 'table',
+      metadata: { item_fingerprint: 'fp-roads' }
+    }, parseLocator)).toMatchObject({
+      source_engine_id: 7,
+      item_id: 21,
+      item_fingerprint: 'fp-roads',
+      locator,
+      source_kind: 'table',
+      full_name: 'public/roads',
+      schema: 'public',
+      table: 'roads'
+    })
   })
 })

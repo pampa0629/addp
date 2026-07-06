@@ -562,6 +562,13 @@ func TestTableTransferExecutorCopiesShapefileRefsAcrossStoragePathModels(t *test
 			if metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 || metrics.Batches != 1 {
 				t.Fatalf("metrics = %#v, want 1 read/written and 1 batch", metrics)
 			}
+			targetRefPaths := make([]string, 0, len(metrics.TargetRefs))
+			for _, ref := range metrics.TargetRefs {
+				targetRefPaths = append(targetRefPaths, ref.Ref.Path)
+			}
+			if !containsString(targetRefPaths, tt.targetPath.StringPath()) {
+				t.Fatalf("target refs = %#v, want primary ref %s", targetRefPaths, tt.targetPath.StringPath())
+			}
 
 			targetRefs := format.SameBasenameRelatedRefs(tt.targetPath.StringPath(), shapefilePlugin.RelatedRefSpecs())
 			for _, ref := range targetRefs {

@@ -15,6 +15,8 @@ import (
 const (
 	capabilityStatusAvailable         = "available"
 	capabilityStatusEngineUnavailable = "engine_unavailable"
+	capabilityStatusInstalled         = "installed"
+	capabilityStatusNotInstalled      = "not_installed"
 )
 
 func BuildCapabilitiesView(capabilitiesJSON *models.JSONString, engineType string) *models.CapabilitiesView {
@@ -288,27 +290,151 @@ func buildExtensionsSection(caps *engineplugin.EngineCapabilities) *models.Capab
 	if len(caps.Extensions) == 0 {
 		return nil
 	}
+	items := extensionItems(caps.Extensions)
+	if len(items) == 0 {
+		return nil
+	}
 	return &models.CapabilityViewSection{
 		ID:       "extensions",
-		TitleKey: "system.engine.capabilityView.sections.extensions",
-		Status:   capabilityStatusAvailable,
-		Items:    extensionItems(caps.Extensions),
+		TitleKey: "system.engine.capabilityView.sections.extensionStatus",
+		Status:   deriveSectionStatus(items),
+		Items:    items,
 	}
 }
 
 func extensionItems(extensions map[string]interface{}) []models.CapabilityViewItem {
 	keys := sortedMapKeys(extensions)
-	items := make([]models.CapabilityViewItem, 0, len(keys))
+	items := make([]models.CapabilityViewItem, 0, len(keys)*2)
 	for _, key := range keys {
+		if key == "postgresql" {
+			if postgresqlItems := postgresqlExtensionItems(extensions[key]); len(postgresqlItems) > 0 {
+				items = append(items, postgresqlItems...)
+				continue
+			}
+		}
 		items = append(items, models.CapabilityViewItem{
 			ID:       key,
 			LabelKey: capabilityValueKey("extensions", key),
-			Value:    primitiveString(extensions[key]),
 			Status:   capabilityStatusAvailable,
 			Tags:     extensionTags(extensions[key]),
 		})
 	}
 	return items
+}
+
+func postgresqlExtensionItems(value interface{}) []models.CapabilityViewItem {
+	obj, ok := asMap(value)
+	if !ok {
+		return nil
+	}
+
+	items := make([]models.CapabilityViewItem, 0, 4)
+	server := capabilityItem("postgresql_server", capabilityValueKey("extensions", "postgresql_server"), capabilityStatusAvailable)
+	if version := stringValue(obj["server_version"]); version != "" {
+		server.Value = version
+	}
+	if versionNum := primitiveString(obj["server_version_num"]); versionNum != "" && versionNum != "0" {
+		server.Tags = append(server.Tags, models.CapabilityViewTag{
+			ID:       "server_version_num",
+			LabelKey: capabilityValueKey("values", "server_version_num"),
+			Value:    versionNum,
+		})
+	}
+	items = append(items, server)
+
+	if postgis, ok := asMap(obj["postgis"]); ok {
+		item := capabilityItem("postgis", capabilityValueKey("extensions", "postgis"), extensionStatus(postgis))
+		if version := stringValue(postgis["version"]); version != "" {
+			item.Value = version
+		}
+		item.Tags = extensionStateTags(postgis)
+		items = append(items, item)
+	}
+
+	if pgvector, ok := asMap(obj["pgvector"]); ok {
+		item := capabilityItem("pgvector", capabilityValueKey("extensions", "pgvector"), extensionStatus(pgvector))
+		if version := stringValue(pgvector["version"]); version != "" {
+			item.Value = version
+		}
+		item.Tags = extensionStateTags(pgvector)
+		items = append(items, item)
+	}
+
+	extraExtensions := postgresqlExtraExtensionTags(obj)
+	if len(extraExtensions) > 0 {
+		items = append(items, models.CapabilityViewItem{
+			ID:       "postgresql_extra_extensions",
+			LabelKey: capabilityValueKey("extensions", "postgresql_extra_extensions"),
+			Status:   capabilityStatusInstalled,
+			Tags:     extraExtensions,
+		})
+	}
+
+	return items
+}
+
+func postgresqlExtraExtensionTags(obj map[string]interface{}) []models.CapabilityViewTag {
+	extensionLabels := map[string]string{
+		"postgis_topology":       "PostGIS Topology",
+		"postgis_tiger_geocoder": "PostGIS Tiger Geocoder",
+	}
+	extensionIDs := []string{"postgis_topology", "postgis_tiger_geocoder"}
+	tags := make([]models.CapabilityViewTag, 0, len(extensionIDs))
+	for _, extensionID := range extensionIDs {
+		extension, ok := asMap(obj[extensionID])
+		if !ok || !boolValue(extension["installed"]) {
+			continue
+		}
+		value := extensionLabels[extensionID]
+		if version := stringValue(extension["version"]); version != "" {
+			value = fmt.Sprintf("%s %s", value, version)
+		}
+		tags = append(tags, models.CapabilityViewTag{
+			ID:    extensionID,
+			Value: value,
+		})
+	}
+	return tags
+}
+
+func extensionStatus(extension map[string]interface{}) string {
+	if boolValue(extension["installed"]) || boolValue(extension["type_available"]) {
+		return capabilityStatusAvailable
+	}
+	return capabilityStatusNotInstalled
+}
+
+func extensionStateTags(extension map[string]interface{}) []models.CapabilityViewTag {
+	tags := make([]models.CapabilityViewTag, 0, 6)
+	if !boolValue(extension["installed"]) && !boolValue(extension["type_available"]) {
+		return nil
+	}
+	if boolValue(extension["installed"]) {
+		tags = append(tags, capabilityValueTag("installed", capabilityValueKey("values", "installed")))
+	}
+	if _, exists := extension["available"]; exists {
+		tags = append(tags, boolStateTag("available", extension["available"]))
+	}
+	if schema := stringValue(extension["schema"]); schema != "" {
+		tags = append(tags, models.CapabilityViewTag{ID: "schema", LabelKey: capabilityValueKey("values", "schema"), Value: schema})
+	}
+	if boolValue(extension["type_available"]) {
+		tags = append(tags, capabilityValueTag("type_available", capabilityValueKey("values", "type_available")))
+	}
+	if boolValue(extension["st_extent"]) {
+		tags = append(tags, capabilityValueTag("st_extent", capabilityValueKey("values", "st_extent")))
+	}
+	if boolValue(extension["st_transform"]) {
+		tags = append(tags, capabilityValueTag("st_transform", capabilityValueKey("values", "st_transform")))
+	}
+	return tags
+}
+
+func boolStateTag(id string, value interface{}) models.CapabilityViewTag {
+	if boolValue(value) {
+		return capabilityValueTag(id, capabilityValueKey("values", id))
+	}
+	return capabilityValueTag(id+"_false", capabilityValueKey("values", id+"_false"))
 }
 
 func extensionTags(value interface{}) []models.CapabilityViewTag {
@@ -319,9 +445,34 @@ func extensionTags(value interface{}) []models.CapabilityViewTag {
 	keys := sortedMapKeys(obj)
 	tags := make([]models.CapabilityViewTag, 0, len(keys))
 	for _, key := range keys {
-		tags = append(tags, models.CapabilityViewTag{ID: key, Value: fmt.Sprintf("%s: %s", key, primitiveString(obj[key]))})
+		if _, nested := asMap(obj[key]); nested {
+			continue
+		}
+		tags = append(tags, models.CapabilityViewTag{
+			ID:       key,
+			LabelKey: capabilityValueKey("values", key),
+			Value:    primitiveString(obj[key]),
+		})
 	}
 	return tags
+}
+
+func asMap(value interface{}) (map[string]interface{}, bool) {
+	obj, ok := value.(map[string]interface{})
+	return obj, ok
+}
+
+func boolValue(value interface{}) bool {
+	typed, ok := value.(bool)
+	return ok && typed
+}
+
+func stringValue(value interface{}) string {
+	typed, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(typed)
 }
 
 func buildCapabilitiesJSONView(capabilitiesJSON models.JSONString) []models.CapabilityJSONNode {
@@ -438,11 +589,17 @@ func capabilityKeySegment(value string) string {
 }
 
 func deriveSectionStatus(items []models.CapabilityViewItem) string {
+	hasInstalled := false
 	for _, item := range items {
 		switch item.Status {
 		case capabilityStatusAvailable:
 			return capabilityStatusAvailable
+		case capabilityStatusInstalled:
+			hasInstalled = true
 		}
+	}
+	if hasInstalled {
+		return capabilityStatusInstalled
 	}
 	return capabilityStatusEngineUnavailable
 }

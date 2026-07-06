@@ -295,10 +295,12 @@ func SetupRouter(
 		// Quick View API：统一 ResourceLocator 入口
 		quickViewHandler := NewQuickViewHandler(quickViewService, previewResolver, unifiedMVTService, redisClient)
 		if taskProviderHandler != nil {
+			quickViewHandler.SetTileCacheTaskService(taskProviderHandler.tileCacheTaskSvc)
 			quickViewHandler.SetArtifactTaskServices(taskProviderHandler.rasterCOGTaskSvc, taskProviderHandler.model3DGLBTaskSvc, taskProviderHandler.gaussianSplatKSplatTaskSvc, taskProviderHandler.pointCloudCOPCTaskSvc)
 		}
 		api.GET("/quick-view/capability", quickViewHandler.GetQuickViewCapabilityByLocator)
 		api.POST("/quick-view/actions", quickViewHandler.ExecuteQuickViewAction)
+		api.GET("/quick-view/flatgeobuf", quickViewHandler.GetQuickViewFlatGeobufByLocator)
 		api.GET("/quick-view/geojson", quickViewHandler.GetQuickViewGeoJSONByLocator)
 		api.GET("/quick-view/tiles/:z/:x/:y.mvt", quickViewHandler.GetQuickViewTileByLocator)
 		api.PATCH("/preview-state/preferred-mode", quickViewHandler.UpdatePreferredModeByLocator)

@@ -242,7 +242,7 @@
     </div>
 
     <!-- 无预览数据 -->
-    <div v-else-if="!previewData" class="empty-state">
+    <div v-else-if="!previewData && !showQuickViewRenderer && !showModel3DTaskPrompt" class="empty-state">
       <el-empty :description="emptyDescription" />
     </div>
 
@@ -433,7 +433,7 @@ import client from '@/api/client'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import { quickViewAPI } from '@/api/quickView'
 import ExportDialog from '@/components/explorer/ExportDialog.vue'
-import GeoJSONQuickView from '@/components/map/GeoJSONQuickView.vue'
+import FlatGeobufQuickView from '@/components/map/FlatGeobufQuickView.vue'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import RasterTIFFQuickView from '@/components/map/RasterTIFFQuickView.vue'
 import Model3DPreview from '@/components/explorer/Model3DPreview.vue'
@@ -458,7 +458,9 @@ import {
   hasQuickViewAction,
   isRasterQuickViewRenderSource,
   isTileQuickViewRenderSource,
-  shouldShowQuickViewUnavailableNotice as shouldShowQuickViewUnavailableNoticeForStatus
+  resolveQuickViewRenderSource,
+  shouldShowQuickViewUnavailableNotice as shouldShowQuickViewUnavailableNoticeForStatus,
+  shouldUseBackendQuickViewRenderer
 } from '@/utils/quickViewRenderSource'
 import {
   waitForQuickViewArtifactReady
@@ -524,8 +526,6 @@ let exportPollTimer = null
 let quickViewRequestSeq = 0
 let quickViewStateSaveTimer = 0
 let quickViewStatusLocator = ''
-
-const DIRECT_GEOJSON_MAX_ROWS = 2000
 
 const withAuthToken = (url) => {
   if (!url || typeof url !== 'string') return ''
@@ -689,7 +689,7 @@ const selectedRefRasterQuickViewStatus = computed(() => {
   }
 })
 const showMultiRefToolbar = computed(() => {
-  return multiRefOptions.value.length > 0 && (!isQuickViewActive.value || isRasterMosaicPreview.value)
+  return multiRefOptions.value.length > 0 && (isSelectedChildPreviewActive.value || !isQuickViewActive.value || isRasterMosaicPreview.value)
 })
 
 watch(
@@ -1471,22 +1471,24 @@ const showQuickViewActions = computed(() => {
   return !!spatialPreviewTarget.value && (!!quickViewStatus.value || !!quickViewLoadError.value)
 })
 
-const isQuickViewActive = computed(() => {
-  return activePreviewMode.value === 'map_quick_view' &&
-    !!quickViewStatus.value?.can_use_quick_view &&
-    !store.selectedRefPath &&
-    !store.selectedChildName
+const isSelectedChildPreviewActive = computed(() => {
+  if (!store.selectedRefPath && !store.selectedChildName && !store.selectedNestedChildPath) return false
+  return multiRefOptions.value.length > 0 || previewPluginName.value === 'container-preview'
 })
 
-const quickViewRenderSource = computed(() => String(
-  quickViewStatus.value?.render_source || quickViewStatus.value?.quick_view?.render_source || ''
-).trim())
+const isQuickViewActive = computed(() => {
+  return shouldUseBackendQuickViewRenderer(activePreviewMode.value, quickViewStatus.value, {
+    selectedChildPreview: isSelectedChildPreviewActive.value
+  })
+})
+
+const quickViewRenderSource = computed(() => resolveQuickViewRenderSource(quickViewStatus.value))
 const isRasterQuickView = computed(() => isRasterQuickViewRenderSource(quickViewRenderSource.value))
 
 const quickViewRenderer = computed(() => {
   if (selectedRefRasterQuickViewStatus.value) return RasterTIFFQuickView
   if (!isQuickViewActive.value) return null
-  if (quickViewRenderSource.value === 'direct_geojson') return GeoJSONQuickView
+  if (quickViewRenderSource.value === 'direct_flatgeobuf') return FlatGeobufQuickView
   if (isRasterQuickView.value) return RasterTIFFQuickView
   if (quickViewRenderSource.value === 'model_3d_glb') return Model3DPreview
   if (quickViewRenderSource.value === 'gaussian_splat_ksplat') return GaussianSplatPreview
@@ -1565,7 +1567,7 @@ const quickViewRendererStateKey = computed(() => {
   if (quickViewRenderSource.value === 'gaussian_splat_ksplat') return 'scene_3d'
   if (quickViewRenderSource.value === 'point_cloud_copc') return 'scene_3d'
   if (quickViewRenderSource.value === 'model_3d_tiles') return 'scene_3d'
-  if (quickViewRenderSource.value === 'direct_geojson' || isTileQuickViewRenderSource(quickViewRenderSource.value)) return 'map'
+  if (quickViewRenderSource.value === 'direct_flatgeobuf' || isTileQuickViewRenderSource(quickViewRenderSource.value)) return 'map'
   if (isRasterQuickView.value) return 'map'
   return ''
 })
@@ -1640,7 +1642,7 @@ const quickViewRendererProps = computed(() => {
   }
   const target = spatialPreviewTarget.value
   if (!target || !quickViewStatus.value) return {}
-  if (quickViewRenderSource.value === 'direct_geojson') {
+  if (quickViewRenderSource.value === 'direct_flatgeobuf') {
     return {
       status: quickViewStatus.value,
       viewState: activeQuickViewState.value
@@ -1767,7 +1769,7 @@ const quickViewRenderKey = computed(() => {
     quickViewSourceContext.value.table || target.locatorType,
     quickViewRenderSource.value,
     quickViewStatus.value?.default_vector_tile_cache_id || '',
-    quickViewStatus.value?.quick_view?.geojson_url || '',
+    quickViewStatus.value?.quick_view?.flatgeobuf_url || '',
     quickViewStatus.value?.quick_view?.preview_url || '',
     quickViewStatus.value?.model_3d?.result_id || '',
     quickViewStatus.value?.gaussian_splat?.result_id || '',
@@ -1820,6 +1822,7 @@ const handleSwitchQuickView = async () => {
   quickViewActionLoading.value = true
   try {
     await quickViewAPI.updatePreferredModeByLocator(target.locator, 'map_quick_view')
+    clearSelectedChildPreview()
     ElMessage.success(t('manager.spatialPreview.switchQuickViewSuccess'))
     await loadQuickViewStatus()
     if (quickViewStatus.value?.can_use_quick_view) {
@@ -1831,6 +1834,15 @@ const handleSwitchQuickView = async () => {
   } finally {
     quickViewActionLoading.value = false
   }
+}
+
+const clearSelectedChildPreview = () => {
+  store.selectedChildName = ''
+  store.selectedChildKey = ''
+  store.selectedRefPath = ''
+  store.selectedNestedChildPath = ''
+  store.activeChildPreviewData = null
+  store.childPreviewLoading = false
 }
 
 const handleQuickViewStateChange = (state) => {

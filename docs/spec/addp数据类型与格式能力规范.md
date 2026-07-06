@@ -312,9 +312,12 @@ media 已使用同一原则：`MediaDescribeResult.Media` 写入 `type_info.medi
 - `datatype.SpatialInfo` 是空间事实入口，负责表达主空间字段、几何类型、SRID / CRS、extent、dimension 和空间索引等信息；它不属于 `datatype.TableInfo`。
 - `SpatialInfo.GeometryColumns[].GeometryType` 必须写入标准 `GeometryType` canonical 字符串。format plugin 和 engine type mapper 应先把 native 几何类型归一为 `datatype.GeometryType`，不能把 PostGIS typmod、Shapefile shape type、GeoJSON geometry 字符串等 native 值直接写入该字段。
 - table sample 的默认 geometry 行值编码由对应 format 的 `SpatialEncodingCapabilities.DefaultReadEncoding` 声明；Shapefile 当前默认为 `wkt`，GeoJSON 当前默认为 `geojson`。默认值主要服务 Manager 预览、日志和调试，不作为 Transfer 的跨端协议。
-- continuous table reader 可以通过 `ParseOptions.GeometryEncoding` 请求 format 声明支持的编码。跨 format / engine 的批处理链路优先使用 `ewkb`；涉及 CRS 转换的 `vector_reproject` 第一阶段只接受 Arrow + EWKB。
+- continuous table reader 可以通过 `ParseOptions.GeometryEncoding` 请求 format 声明支持的编码。跨 format / engine / workflow / Manager 快显材料生成的空间表行值协议优先使用 `ewkb`；涉及 CRS 转换的 `vector_reproject` 第一阶段只接受 Arrow + EWKB。
 - `wkb` / `ewkb` 行值使用 `[]byte` 表达，供 Transfer 等批处理链路在目标 writer 明确支持时使用；调用方不得假定所有 engine writer 都能直接接收二进制几何参数。
 - SRID 优先由 `SpatialInfo.SRID` 表达；`ewkb` 可以携带 SRID，但不能替代 schema 级空间事实。
+- `common/spatial` 内部可以使用 `geom.T` 作为标准几何编码之间转换的临时对象模型；`geom.T` 不得进入 format / engine 的公共 row value 协议，不得进入 Manager DTO、API 响应、任务配置、数据库字段或跨进程 payload。
+- FlatGeobuf 是 Manager 中小规模矢量快显的默认渲染材料编码，不是 geometry row encoding；不得把 `flatgeobuf` 加入 `ParseOptions.GeometryEncoding`。生成 FlatGeobuf 快显材料时，上层应读取 EWKB geometry row，再调用 `common/spatial` 的标准 FlatGeobuf 编码能力。
+- Manager 不直接调用 FlatGeobuf format plugin。若后续新增 `format=flatgeobuf` 作为普通 data item 文件格式，该 format plugin 也应复用 `common/spatial` 的 FlatGeobuf 编码能力，但 Manager 快显主路径不得依赖该 plugin。
 - 各格式 native 几何类型默认应在对应 format plugin 内转换为 ADDP 通用几何值；确有格式语义价值且能稳定跨 Transfer 执行边界表达时，必须通过显式 `GeometryEncoding` 暴露，例如 Shapefile 的 `shapefile_shape`。不得绕过编码协议把 `shp.Shape` 等 native 类型隐式泄漏到 format 根接口或 engine 层。
 - Shapefile format 的 native encoding 是 `shapefile_shape`，当前 sample / preview 默认读写编码仍为 `wkt`；Transfer 只有在源和目标都声明支持且不需要 CRS 转换或中间几何算子时，才可选择 `shapefile_shape` 直通。
 - GeoJSON format 的 native encoding 是 `geojson`。GeoJSON writer 不执行 CRS 转换、不写旧版 `crs` 字段；当上游明确传入非 EPSG:4326 的 `SpatialInfo` 时，writer 必须失败，不能隐式改写坐标或静默输出非标准 CRS GeoJSON。

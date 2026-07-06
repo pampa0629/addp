@@ -85,7 +85,7 @@ const canRegisterCRSDefinition = (code, crsDefinition) => {
   if (!code || !crsDefinition || typeof crsDefinition !== 'object') return false
 
   const encoding = String(crsDefinition.definition_encoding || '').trim().toLowerCase()
-  const definition = String(crsDefinition.definition || '').trim()
+  const definition = normalizeCRSDefinition(String(crsDefinition.definition || '').trim(), encoding)
   if (!SUPPORTED_DEFINITION_ENCODINGS.has(encoding) || !definition) return false
   if (/^EPSG:\d+$/i.test(definition)) return false
 
@@ -96,6 +96,11 @@ const canRegisterCRSDefinition = (code, crsDefinition) => {
   } catch (_error) {
     return false
   }
+}
+
+const normalizeCRSDefinition = (definition, encoding) => {
+  if (encoding !== 'esri_wkt' || !definition) return definition
+  return definition.replace(/PROJECTION\s*\[\s*"Gauss_Kruger"\s*\]/gi, 'PROJECTION["Transverse_Mercator"]')
 }
 
 const ensureProjection = (code, crsDefinition) => {

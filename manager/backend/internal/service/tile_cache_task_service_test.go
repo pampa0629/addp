@@ -97,7 +97,6 @@ func TestTileCacheTaskCreateNormalizesTargetIdentity(t *testing.T) {
 
 	task := newTileCacheTaskDefinition()
 	target, _ := asJSONMap(task.Config["target"])
-	delete(target, "locator")
 	target["source_ref"] = commonModels.JSONMap{"ignored": true}
 	task.Config["target"] = target
 
@@ -118,6 +117,46 @@ func TestTileCacheTaskCreateNormalizesTargetIdentity(t *testing.T) {
 	}
 	if _, ok := normalized["engine_id"]; ok {
 		t.Fatalf("target.engine_id is still present: %#v", normalized)
+	}
+}
+
+func TestTileCacheTaskCreateNormalizesFileTargetIdentity(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
+	taskSvc := NewTileCacheTaskService(tileCacheRepo, nil)
+
+	itemID := uint(100)
+	locator := "addp://engine/26/path/shp/farmland.shp?type=file&item_id=100"
+	task := newTileCacheTaskDefinition()
+	task.Config["target"] = commonModels.JSONMap{
+		"source_engine_id": float64(26),
+		"locator":          locator,
+		"item_id":          float64(itemID),
+	}
+
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("create file tile cache task: %v", err)
+	}
+
+	normalized, _ := asJSONMap(task.Config["target"])
+	expectedFingerprint := commonModels.GenerateItemFingerprint(26, "shp/farmland.shp")
+	if normalized["item_fingerprint"] != expectedFingerprint {
+		t.Fatalf("item_fingerprint = %v, want %s", normalized["item_fingerprint"], expectedFingerprint)
+	}
+	if normalized["locator"] != locator {
+		t.Fatalf("locator = %v, want %s", normalized["locator"], locator)
+	}
+	if normalized["source_kind"] != "file" {
+		t.Fatalf("source_kind = %v, want file", normalized["source_kind"])
+	}
+	if normalized["full_name"] != "shp/farmland.shp" {
+		t.Fatalf("full_name = %v, want shp/farmland.shp", normalized["full_name"])
+	}
+	if _, ok := normalized["schema"]; ok {
+		t.Fatalf("schema is present for file target: %#v", normalized)
+	}
+	if _, ok := normalized["table"]; ok {
+		t.Fatalf("table is present for file target: %#v", normalized)
 	}
 }
 
@@ -154,7 +193,7 @@ func TestTileCacheTaskCreateRejectsLegacyTargetFields(t *testing.T) {
 	}
 
 	err := taskSvc.Create(context.Background(), task)
-	if err == nil || !strings.Contains(err.Error(), "source_engine_id, schema and table") {
+	if err == nil || !strings.Contains(err.Error(), "source_engine_id and locator") {
 		t.Fatalf("create error = %v, want missing standard target fields", err)
 	}
 }
@@ -221,6 +260,247 @@ func TestTileCacheExecutionRejectsUnnormalizedTarget(t *testing.T) {
 	}
 	if !strings.Contains(stringFromConfig(exec.ErrorDetails["message"]), "item_fingerprint is required") {
 		t.Fatalf("execution error_details = %#v, want item_fingerprint required", exec.ErrorDetails)
+	}
+}
+
+func TestTileCacheExecutionRejectsFileTargetWithoutWorkflowGenerator(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
+
+	task := newTileCacheTaskDefinition()
+	task.Config["target"] = commonModels.JSONMap{
+		"source_engine_id": float64(26),
+		"locator":          "addp://engine/26/path/shp/farmland.shp?type=file&item_id=100",
+	}
+	tile, _ := asJSONMap(task.Config["tile"])
+	tile["source_srid"] = float64(4326)
+	tile["extent"] = []interface{}{110.0, 20.0, 120.0, 30.0}
+	tile["extent_srid"] = float64(4326)
+	task.Config["tile"] = tile
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("create file tile cache task: %v", err)
+	}
+
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	if err != nil {
+		t.Fatalf("execute tile cache task: %v", err)
+	}
+	exec := waitForTileCacheTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
+	if exec.Status != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("execution status = %s, want failed", exec.Status)
+	}
+	if !strings.Contains(stringFromConfig(exec.ErrorDetails["message"]), "workflow tile cache generation executor is not connected") {
+		t.Fatalf("execution error_details = %#v, want workflow generator boundary", exec.ErrorDetails)
+	}
+}
+
+func TestTileCacheGenerationUsesWorkflowGeneratorForFileTarget(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
+	workflowGenerator := &fakeWorkflowTileCacheGenerator{
+		result: &mvt.GenerateResult{
+			TotalTiles:         4,
+			CachedTiles:        2,
+			TilesTotalEstimate: 4,
+			TilesProcessed:     4,
+			GeneratedTiles:     2,
+			EmptyTiles:         2,
+			TotalSizeBytes:     128,
+			MaxTileSizeBytes:   80,
+			MinTileSizeBytes:   48,
+			ActualMaxZoom:      1,
+			StopReason:         "workflow_ogr2ogr_mvt",
+			GenerationSec:      0.5,
+			ExtentWGS84:        []float64{110, 20, 120, 30},
+		},
+		metadata: commonModels.JSONMap{
+			"operator": "vector_to_mvt_tiles",
+			"mode":     "direct",
+		},
+	}
+	taskSvc.SetWorkflowTileGenerator(workflowGenerator)
+	quickViewSvc := NewQuickViewService(db, nil)
+	quickViewSvc.SetSpatialMetadataLoader(func(context.Context, uint, uint, string, string) (*SpatialMetadataResult, error) {
+		return nil, errors.New("file target must not load table spatial metadata")
+	})
+	taskSvc.SetQuickViewService(quickViewSvc)
+
+	task := newTileCacheTaskDefinition()
+	task.Config["target"] = commonModels.JSONMap{
+		"source_engine_id": float64(26),
+		"locator":          "addp://engine/26/path/shp/farmland.shp?type=file&item_id=100",
+	}
+	tile, _ := asJSONMap(task.Config["tile"])
+	tile["source_srid"] = float64(4326)
+	tile["extent"] = []interface{}{110.0, 20.0, 120.0, 30.0}
+	tile["extent_srid"] = float64(4326)
+	task.Config["tile"] = tile
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("create file tile cache task: %v", err)
+	}
+
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	if err != nil {
+		t.Fatalf("execute tile cache task: %v", err)
+	}
+	exec := waitForTileCacheTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
+	if exec.Status != commonExecution.ExecutionStatusSuccess {
+		t.Fatalf("execution status = %s, want success; error=%#v", exec.Status, exec.ErrorDetails)
+	}
+	if workflowGenerator.lastReq.Identity.SourceKind != "file" || workflowGenerator.lastReq.Identity.FullName != "shp/farmland.shp" {
+		t.Fatalf("workflow identity = %#v, want file farmland", workflowGenerator.lastReq.Identity)
+	}
+	if workflowGenerator.lastReq.ProgressSink == nil {
+		t.Fatal("workflow progress sink is nil")
+	}
+	artifact, err := tileCacheRepo.GetTileCacheByFingerprintAndFormat(context.Background(), task.TenantID, commonModels.GenerateItemFingerprint(26, "shp/farmland.shp"), "mvt")
+	if err != nil {
+		t.Fatalf("load tile cache artifact: %v", err)
+	}
+	if artifact == nil || artifact.Status != models.TileCacheStatusReady {
+		t.Fatalf("artifact = %#v, want ready", artifact)
+	}
+	if exec.Metadata["workflow_runtime"] == nil {
+		t.Fatalf("execution metadata = %#v, want workflow_runtime", exec.Metadata)
+	}
+}
+
+func TestTileCacheRecordProgressEventUpdatesExecution(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewTileCacheTaskService(repository.NewTileCacheRepository(db), taskExecRepo)
+	startedAt := time.Now().Add(-30 * time.Second)
+	if err := taskExecRepo.Create(context.Background(), &commonExecution.TaskExecution{
+		TenantID:    7,
+		ExecutionID: "tile-cache-progress-1",
+		Module:      commonExecution.ModuleManager,
+		TaskType:    commonExecution.TaskTypeVectorTileCacheGeneration,
+		Source:      commonExecution.ModuleManager,
+		Status:      commonExecution.ExecutionStatusRunning,
+		Progress:    10,
+		TriggerType: commonExecution.TriggerTypeManual,
+		StartedAt:   &startedAt,
+		Metadata: commonModels.JSONMap{
+			"keep": "value",
+		},
+	}); err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+
+	overallProgress := 36.7
+	progressPercent := 36.7
+	elapsedSeconds := 12.5
+	remainingSeconds := 31.2
+	if err := taskSvc.RecordProgressEvent(context.Background(), 7, "tile-cache-progress-1", TileCacheProgressEvent{
+		Phase:              "generate",
+		Event:              "progress",
+		Message:            "生成矢量瓦片缓存",
+		CurrentZoom:        10,
+		MaxZoom:            18,
+		TilesProcessed:     367,
+		TilesTotalEstimate: 1000,
+		OverallProgress:    &overallProgress,
+		ProgressPercent:    &progressPercent,
+		ElapsedSeconds:     &elapsedSeconds,
+		RemainingSeconds:   &remainingSeconds,
+		Metadata: commonModels.JSONMap{
+			"worker": "python-workflow",
+		},
+	}); err != nil {
+		t.Fatalf("RecordProgressEvent: %v", err)
+	}
+
+	got, err := taskExecRepo.GetByExecutionID(context.Background(), "tile-cache-progress-1", 7)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if got.Progress != 37 {
+		t.Fatalf("progress = %d, want 37", got.Progress)
+	}
+	if got.CurrentStep == nil || *got.CurrentStep != "生成矢量瓦片缓存" {
+		t.Fatalf("current_step = %#v, want vector tile message", got.CurrentStep)
+	}
+	if got.Metadata["keep"] != "value" {
+		t.Fatalf("metadata.keep = %#v, want value", got.Metadata["keep"])
+	}
+	progressEvent, ok := asJSONMap(got.Metadata["progress_event"])
+	if !ok {
+		t.Fatalf("metadata.progress_event = %#v, want object", got.Metadata["progress_event"])
+	}
+	if progressEvent["phase"] != "generate" || progressEvent["event"] != "progress" {
+		t.Fatalf("progress_event = %#v, want generate/progress", progressEvent)
+	}
+	if progressEvent["overall_progress"] != 36.7 || progressEvent["progress_percent"] != 36.7 {
+		t.Fatalf("progress_event percentages = %#v", progressEvent)
+	}
+	if intFromTileCacheConfig(got.Metadata["tiles_processed"], 0) != 367 ||
+		intFromTileCacheConfig(got.Metadata["tiles_total_estimate"], 0) != 1000 ||
+		intFromTileCacheConfig(got.Metadata["current_zoom"], 0) != 10 {
+		t.Fatalf("metadata = %#v, want tile progress facts", got.Metadata)
+	}
+}
+
+func TestTileCacheRecordProgressEventDoesNotMoveProgressBackwards(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewTileCacheTaskService(repository.NewTileCacheRepository(db), taskExecRepo)
+	if err := taskExecRepo.Create(context.Background(), &commonExecution.TaskExecution{
+		TenantID:    7,
+		ExecutionID: "tile-cache-progress-2",
+		Module:      commonExecution.ModuleManager,
+		TaskType:    commonExecution.TaskTypeVectorTileCacheGeneration,
+		Source:      commonExecution.ModuleManager,
+		Status:      commonExecution.ExecutionStatusRunning,
+		Progress:    45,
+		TriggerType: commonExecution.TriggerTypeManual,
+	}); err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+
+	overallProgress := 12.2
+	if err := taskSvc.RecordProgressEvent(context.Background(), 7, "tile-cache-progress-2", TileCacheProgressEvent{
+		Phase:              "generate",
+		Event:              "progress",
+		TilesProcessed:     122,
+		TilesTotalEstimate: 1000,
+		OverallProgress:    &overallProgress,
+	}); err != nil {
+		t.Fatalf("RecordProgressEvent: %v", err)
+	}
+	got, err := taskExecRepo.GetByExecutionID(context.Background(), "tile-cache-progress-2", 7)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if got.Progress != 45 {
+		t.Fatalf("progress = %d, want 45", got.Progress)
+	}
+}
+
+func TestTileCacheRecordProgressEventRejectsWrongExecution(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewTileCacheTaskService(repository.NewTileCacheRepository(db), taskExecRepo)
+	if err := taskExecRepo.Create(context.Background(), &commonExecution.TaskExecution{
+		TenantID:    7,
+		ExecutionID: "tile-cache-progress-wrong",
+		Module:      commonExecution.ModuleManager,
+		TaskType:    commonExecution.TaskTypeRasterCOGGeneration,
+		Source:      commonExecution.ModuleManager,
+		Status:      commonExecution.ExecutionStatusRunning,
+		TriggerType: commonExecution.TriggerTypeManual,
+	}); err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	err := taskSvc.RecordProgressEvent(context.Background(), 7, "tile-cache-progress-wrong", TileCacheProgressEvent{
+		Phase: "generate",
+		Event: "progress",
+	})
+	if !errors.Is(err, ErrTileCacheProgressTargetMismatch) {
+		t.Fatalf("RecordProgressEvent error = %v, want ErrTileCacheProgressTargetMismatch", err)
 	}
 }
 
@@ -976,6 +1256,24 @@ func (g *fakeTileCacheGenerator) GenerateMixed(ctx context.Context, cfg mvt.Quic
 		return g.result, nil
 	}
 	return nil, errors.New("fake tile cache result is required")
+}
+
+type fakeWorkflowTileCacheGenerator struct {
+	result   *mvt.GenerateResult
+	metadata commonModels.JSONMap
+	err      error
+	lastReq  WorkflowTileCacheRequest
+}
+
+func (g *fakeWorkflowTileCacheGenerator) GenerateVectorTileCache(_ context.Context, req WorkflowTileCacheRequest) (*mvt.GenerateResult, commonModels.JSONMap, error) {
+	g.lastReq = req
+	if g.err != nil {
+		return nil, nil, g.err
+	}
+	if g.result == nil {
+		return nil, nil, errors.New("fake workflow tile cache result is required")
+	}
+	return g.result, g.metadata, nil
 }
 
 type fakeRealtimeTileTargetResolver struct {

@@ -297,7 +297,7 @@ async function loadFieldsForNode(node) {
     }
     const response = await getItemFieldsByID(itemID)
     const fieldList = Array.isArray(response?.data) ? response.data : (response || [])
-    props.wizardState.loadSourceFields(fieldList)
+    props.wizardState.loadSourceFields(fieldList, node.attributes || {})
   } catch (error) {
     props.wizardState.loadSourceFields([])
     ElMessage.warning(t('transfer.taskWizard.loadSourceFieldsWarning', { error: error.response?.data?.error || error.message }))

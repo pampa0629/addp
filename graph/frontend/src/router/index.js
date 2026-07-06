@@ -50,7 +50,7 @@ const routes = [
         path: 'graphs/:id/browse',
         name: 'GraphBrowser',
         component: () => import('../views/GraphBrowser.vue'),
-        meta: { requiresAuth: true, title: '图谱浏览器' }
+        meta: { requiresAuth: true, title: '图谱浏览器', fullPage: true }
       },
       {
         path: 'graphs/:id/build',

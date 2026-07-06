@@ -39,6 +39,92 @@ func TestBuildCapabilitiesViewIncludesTableSpatialEncoding(t *testing.T) {
 	assertCapabilityTag(t, *item, "native_spatial_functions")
 }
 
+func TestBuildCapabilitiesViewFormatsPostgreSQLExtensions(t *testing.T) {
+	caps := engineplugin.NewTabularCapabilities("postgresql", "schema", engineplugin.TabularCapabilityOptions{})
+	caps.Extensions = map[string]interface{}{
+		"postgresql": map[string]interface{}{
+			"server_version":     "15.8 (Debian 15.8-1.pgdg120+1)",
+			"server_version_num": 150008,
+			"postgis": map[string]interface{}{
+				"installed":    true,
+				"available":    true,
+				"schema":       "public",
+				"version":      "3.4.3",
+				"st_extent":    true,
+				"st_transform": true,
+			},
+			"postgis_topology": map[string]interface{}{
+				"installed": true,
+				"available": true,
+				"schema":    "topology",
+				"version":   "3.4.3",
+			},
+			"postgis_tiger_geocoder": map[string]interface{}{
+				"installed": true,
+				"available": true,
+				"schema":    "tiger",
+				"version":   "3.4.3",
+			},
+			"pgvector": map[string]interface{}{
+				"installed":      false,
+				"available":      false,
+				"type_available": false,
+			},
+		},
+	}
+	payload, err := engineplugin.MarshalEngineCapabilities(caps)
+	if err != nil {
+		t.Fatalf("MarshalEngineCapabilities failed: %v", err)
+	}
+	jsonValue := systemModels.JSONString(payload)
+
+	view := BuildCapabilitiesView(&jsonValue, "postgresql")
+	if view == nil {
+		t.Fatal("BuildCapabilitiesView returned nil")
+	}
+	server := findCapabilityItem(view, "extensions", "postgresql_server")
+	if server == nil {
+		t.Fatalf("postgresql_server item not found in view: %#v", view.Sections)
+	}
+	if server.Value != "15.8 (Debian 15.8-1.pgdg120+1)" {
+		t.Fatalf("postgresql_server value = %q", server.Value)
+	}
+	postgis := findCapabilityItem(view, "extensions", "postgis")
+	if postgis == nil {
+		t.Fatalf("postgis item not found in view: %#v", view.Sections)
+	}
+	if postgis.Value != "3.4.3" {
+		t.Fatalf("postgis value = %q", postgis.Value)
+	}
+	assertCapabilityTag(t, *postgis, "installed")
+	assertCapabilityTag(t, *postgis, "schema")
+	if findCapabilityItem(view, "extensions", "postgis_topology") != nil {
+		t.Fatalf("postgis_topology should be grouped into postgresql_extra_extensions")
+	}
+	if findCapabilityItem(view, "extensions", "postgis_tiger_geocoder") != nil {
+		t.Fatalf("postgis_tiger_geocoder should be grouped into postgresql_extra_extensions")
+	}
+	extraExtensions := findCapabilityItem(view, "extensions", "postgresql_extra_extensions")
+	if extraExtensions == nil {
+		t.Fatalf("postgresql_extra_extensions item not found in view: %#v", view.Sections)
+	}
+	assertCapabilityTag(t, *extraExtensions, "postgis_topology")
+	assertCapabilityTag(t, *extraExtensions, "postgis_tiger_geocoder")
+	pgvector := findCapabilityItem(view, "extensions", "pgvector")
+	if pgvector == nil {
+		t.Fatalf("pgvector item not found in view: %#v", view.Sections)
+	}
+	if pgvector.Value != "" {
+		t.Fatalf("pgvector value = %q, want empty instead of raw JSON", pgvector.Value)
+	}
+	if pgvector.Status != capabilityStatusNotInstalled {
+		t.Fatalf("pgvector status = %q, want %q", pgvector.Status, capabilityStatusNotInstalled)
+	}
+	if len(pgvector.Tags) != 0 {
+		t.Fatalf("pgvector tags = %#v, want no duplicated not-installed tag", pgvector.Tags)
+	}
+}
+
 func findCapabilityItem(view *commonModels.CapabilitiesView, sectionID, itemID string) *commonModels.CapabilityViewItem {
 	for _, section := range view.Sections {
 		if section.ID != sectionID {

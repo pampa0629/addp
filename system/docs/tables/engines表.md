@@ -176,7 +176,7 @@
 **类型**：JSONB
 **作用**：声明引擎自身具备、且可由 ADDP 统一消费的 native / provider 能力。
 
-`system.engines.capabilities` 使用 `engine.capabilities/v1` 结构。已注册插件引擎的事实来源是引擎插件的 `Capabilities()` 方法；System 服务启动时会基于当前插件体系刷新已注册插件引擎能力。Engine API 创建或更新插件引擎时，即使调用方提交 `capabilities`，System 也会忽略请求值并按 `engine_type` 使用插件生成当前结构。Registry 能力注册接口中，非插件引擎必须提交标准 `engine.capabilities/v1`；插件引擎即使提交 `capabilities` 也会被 System 忽略，并改用插件 `Capabilities()` 生成落库能力。内置扩展引擎通过 `/api/v1/internal/engines/register` 自注册时不提交 `capabilities`。
+`system.engines.capabilities` 使用 `engine.capabilities/v1` 结构。已注册插件引擎的插件 `Capabilities()` 方法只提供 Provider 能力模板；System 服务启动、Engine API 创建或更新插件引擎时，会忽略调用方提交的插件引擎 `capabilities`，并按 `engine_type` 使用插件模板和可选实例能力解析结果生成落库能力。实例能力解析只允许做只读探测，例如检查数据库扩展、版本或函数是否可用。Registry 能力注册接口中，非插件引擎必须提交标准 `engine.capabilities/v1`；插件引擎即使提交 `capabilities` 也会被 System 忽略，并改用插件模板和实例解析结果生成落库能力。内置扩展引擎通过 `/api/v1/internal/engines/register` 自注册时不提交 `capabilities`。
 
 **边界**：
 - 该字段只表达引擎自身能力，例如 catalog、facts、store、query、workflow、script。

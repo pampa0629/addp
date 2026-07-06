@@ -15,6 +15,114 @@ import (
 	"github.com/twpayne/go-geom/encoding/wkt"
 )
 
+// GeometryEncoding names standard single-geometry row encodings handled by this
+// package. It intentionally excludes file/feature-stream formats such as
+// FlatGeobuf.
+type GeometryEncoding string
+
+const (
+	GeometryEncodingWKT     GeometryEncoding = "wkt"
+	GeometryEncodingWKB     GeometryEncoding = "wkb"
+	GeometryEncodingEWKB    GeometryEncoding = "ewkb"
+	GeometryEncodingGeoJSON GeometryEncoding = "geojson"
+)
+
+// NormalizeGeometryEncoding returns the canonical name for a supported standard
+// geometry row encoding. Unsupported or native encodings return an empty string.
+func NormalizeGeometryEncoding(encoding string) GeometryEncoding {
+	switch strings.ToLower(strings.TrimSpace(encoding)) {
+	case string(GeometryEncodingWKT):
+		return GeometryEncodingWKT
+	case string(GeometryEncodingWKB):
+		return GeometryEncodingWKB
+	case string(GeometryEncodingEWKB):
+		return GeometryEncodingEWKB
+	case string(GeometryEncodingGeoJSON), "geojson_geometry":
+		return GeometryEncodingGeoJSON
+	default:
+		return ""
+	}
+}
+
+// DecodeGeometryValue decodes a standard geometry row value into the internal
+// geometry object model. The srid argument only annotates geometry metadata when
+// positive; it never reprojects coordinates.
+func DecodeGeometryValue(value interface{}, encoding string, srid int) (geom.T, error) {
+	normalized := NormalizeGeometryEncoding(encoding)
+	if normalized == "" {
+		return nil, fmt.Errorf("unsupported geometry encoding %q", encoding)
+	}
+
+	var (
+		geometry geom.T
+		err      error
+	)
+	switch normalized {
+	case GeometryEncodingWKT:
+		text, ok := geometryTextValue(value)
+		if !ok {
+			return nil, fmt.Errorf("WKT geometry value must be string or []byte, got %T", value)
+		}
+		geometry, err = wkt.Unmarshal(text)
+	case GeometryEncodingWKB:
+		var data []byte
+		data, err = geometryBinaryValue(value)
+		if err == nil {
+			geometry, err = wkb.Unmarshal(data)
+			if err != nil {
+				if standard, standardErr := ConvertToStandardWKB(data); standardErr == nil && string(standard) != string(data) {
+					geometry, err = wkb.Unmarshal(standard)
+				}
+			}
+		}
+	case GeometryEncodingEWKB:
+		var data []byte
+		data, err = geometryBinaryValue(value)
+		if err == nil {
+			geometry, err = ewkb.Unmarshal(data)
+		}
+	case GeometryEncodingGeoJSON:
+		var geojson map[string]interface{}
+		geojson, err = geoJSONGeometryMap(value)
+		if err == nil {
+			geometry, err = GeoJSONGeometryToGeom(geojson, 0)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported geometry encoding %q", encoding)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("decode %s geometry: %w", normalized, err)
+	}
+	return setGeometrySRID(geometry, srid)
+}
+
+// EncodeGeometryValue encodes a geometry object as a standard geometry row
+// value. WKB and EWKB return []byte, WKT returns string, and GeoJSON returns a
+// GeoJSON geometry object map. The srid argument only controls encoded metadata
+// for encodings that can carry it; it never reprojects coordinates.
+func EncodeGeometryValue(geometry geom.T, encoding string, srid int) (interface{}, error) {
+	normalized := NormalizeGeometryEncoding(encoding)
+	if normalized == "" {
+		return nil, fmt.Errorf("unsupported geometry encoding %q", encoding)
+	}
+	if geometry == nil {
+		return nil, fmt.Errorf("geometry is nil")
+	}
+
+	switch normalized {
+	case GeometryEncodingWKT:
+		return GeomToWKT(geometry)
+	case GeometryEncodingWKB:
+		return GeomToWKB(geometry)
+	case GeometryEncodingEWKB:
+		return GeomToEWKB(geometry, srid)
+	case GeometryEncodingGeoJSON:
+		return GeomToGeoJSONGeometry(geometry)
+	default:
+		return nil, fmt.Errorf("unsupported geometry encoding %q", encoding)
+	}
+}
+
 // GeomToWKT encodes a geometry as WKT text.
 func GeomToWKT(geometry geom.T) (string, error) {
 	if geometry == nil {
@@ -186,6 +294,83 @@ func ParseGeometryBytes(data []byte) (geom.T, error) {
 	}
 
 	return nil, err
+}
+
+func geometryTextValue(value interface{}) (string, bool) {
+	switch v := value.(type) {
+	case string:
+		text := strings.TrimSpace(v)
+		return text, text != ""
+	case []byte:
+		text := strings.TrimSpace(string(v))
+		return text, text != ""
+	default:
+		return "", false
+	}
+}
+
+func geometryBinaryValue(value interface{}) ([]byte, error) {
+	switch v := value.(type) {
+	case []byte:
+		if len(v) == 0 {
+			return nil, fmt.Errorf("geometry bytes are empty")
+		}
+		return v, nil
+	case string:
+		text := strings.TrimSpace(v)
+		if text == "" {
+			return nil, fmt.Errorf("geometry text is empty")
+		}
+		if strings.HasPrefix(text, "0x") || strings.HasPrefix(text, "0X") {
+			text = text[2:]
+		} else if strings.HasPrefix(text, "\\x") || strings.HasPrefix(text, "\\X") {
+			text = text[2:]
+		}
+		decoded, err := hex.DecodeString(text)
+		if err != nil {
+			return nil, fmt.Errorf("decode hex geometry: %w", err)
+		}
+		if len(decoded) == 0 {
+			return nil, fmt.Errorf("geometry bytes are empty")
+		}
+		return decoded, nil
+	default:
+		return nil, fmt.Errorf("geometry binary value must be []byte or hex string, got %T", value)
+	}
+}
+
+func geoJSONGeometryMap(value interface{}) (map[string]interface{}, error) {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		return v, nil
+	case []byte:
+		return decodeGeoJSONGeometryBytes(v)
+	case string:
+		return decodeGeoJSONGeometryBytes([]byte(v))
+	default:
+		return nil, fmt.Errorf("GeoJSON geometry value must be object, string, or []byte, got %T", value)
+	}
+}
+
+func decodeGeoJSONGeometryBytes(data []byte) (map[string]interface{}, error) {
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return nil, fmt.Errorf("GeoJSON geometry is empty")
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("parse GeoJSON geometry JSON: %w", err)
+	}
+	return result, nil
+}
+
+func setGeometrySRID(geometry geom.T, srid int) (geom.T, error) {
+	if geometry == nil {
+		return nil, fmt.Errorf("geometry is nil")
+	}
+	if srid <= 0 || geometry.SRID() == srid {
+		return geometry, nil
+	}
+	return geom.SetSRID(geometry, srid)
 }
 
 func shouldParseAsEWKB(err error) bool {

@@ -42,7 +42,9 @@ export function parseTileCacheStorageRef(storageRef) {
 export function resourceTextFromLocator(locator, parseLocator) {
   const parsed = parseLocator?.(String(locator || '').trim())
   if (!parsed?.path?.length) return ''
-  return parsed.path.join('.')
+  const type = String(parsed.type || '').toLowerCase()
+  const separator = ['object', 'file', 'directory', 'prefix', 'bucket'].includes(type) ? '/' : '.'
+  return parsed.path.join(separator)
 }
 
 export function taskResource(task, parseLocator) {

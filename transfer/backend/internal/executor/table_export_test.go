@@ -499,6 +499,145 @@ func TestTableTransferExecutorWritesShapefileUsingNativeSourceSpatialInfo(t *tes
 	}
 }
 
+func TestTableTransferExecutorDoesNotOverrideConcreteSourceGeometryWithGenericTargetOption(t *testing.T) {
+	reader := &fakeBatchReader{
+		batches: []*engineplugin.BatchData{
+			{
+				Fields: []datatype.FieldInfo{
+					{Name: "id", Type: "int"},
+					{Name: "SmGeometry", Type: "geometry"},
+				},
+				Rows: []map[string]interface{}{
+					{"id": 1, "SmGeometry": "MULTIPOLYGON (((120 30, 121 30, 121 31, 120 31, 120 30)))"},
+				},
+			},
+		},
+	}
+	writer := &fakeContentWriter{files: map[string][]byte{}}
+	exec := &TableTransferExecutor{
+		SourceNativeReader:         &fakeBatchReader{},
+		SourceTableSessionProvider: reader,
+		TargetContentWriter:        writer,
+		TargetMultiProvider:        shapefileformat.NewPlugin(nil),
+	}
+	sourceSpatialInfo := datatype.NewSingleGeometrySpatialInfo("SmGeometry", "MultiPolygon", 4549, 0)
+
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{
+			Kind: TableEndpointNative,
+			TableInfo: &datatype.TableInfo{Fields: []datatype.FieldInfo{
+				{Name: "id", Type: "int"},
+				{Name: "SmGeometry", Type: "geometry"},
+			}},
+			SpatialInfo: sourceSpatialInfo,
+		},
+		Target: TableTargetPlan{
+			Kind:         TableEndpointEncoded,
+			Path:         engineplugin.FileItemPath(2, "exports/a5.shp"),
+			ContentWrite: engineplugin.WriteOptions{Overwrite: true},
+			Format:       format.FormatShapefile,
+			FormatOptions: &format.WriteOptions{
+				Encoding: "utf-8",
+				ExtraParams: map[string]interface{}{
+					"geometry_field": "SmGeometry",
+					"geometry_type":  "Geometry",
+				},
+			},
+		},
+		BatchSize: 100,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 {
+		t.Fatalf("metrics = %#v, want 1 read/written", metrics)
+	}
+	if len(writer.files["exports/a5.shp"]) == 0 {
+		t.Fatal("shapefile was not written")
+	}
+}
+
+func TestTableTransferExecutorWritesShapefilePRJAfterFieldMappingTransform(t *testing.T) {
+	reader := &fakeBatchReader{
+		batches: []*engineplugin.BatchData{
+			{
+				Fields: []datatype.FieldInfo{
+					{Name: "SmID", Type: datatype.FieldTypeInt},
+					{Name: "SmGeometry", Type: datatype.FieldTypeGeometry},
+				},
+				Rows: []map[string]interface{}{
+					{"SmID": 1, "SmGeometry": "MULTIPOLYGON (((120 30, 121 30, 121 31, 120 31, 120 30)))"},
+				},
+			},
+		},
+	}
+	writer := &fakeContentWriter{files: map[string][]byte{}}
+	exec := &TableTransferExecutor{
+		SourceNativeReader:         &fakeBatchReader{},
+		SourceTableSessionProvider: reader,
+		TargetContentWriter:        writer,
+		TargetMultiProvider:        shapefileformat.NewPlugin(nil),
+	}
+	sourceSpatialInfo := datatype.NewSingleGeometrySpatialInfo("SmGeometry", "MultiPolygon", 4549, 2)
+	sourceSpatialInfo.GeometryColumns[0].CRSRef = datatype.EPSGCRSRef(4549)
+	sourceSpatialInfo.CRSDefinitions = []datatype.CRSDefinition{{
+		ID:                 datatype.EPSGCRSRef(4549),
+		DefinitionEncoding: datatype.CRSDefinitionEncodingWKT,
+		Definition:         `PROJCS["CGCS2000 / 3-degree Gauss-Kruger CM 120E"]`,
+		Source:             datatype.CRSDefinitionSourcePostGISSpatialRefSys,
+	}}
+
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{
+			Kind: TableEndpointNative,
+			TableInfo: &datatype.TableInfo{Fields: []datatype.FieldInfo{
+				{Name: "SmID", Type: datatype.FieldTypeInt},
+				{Name: "SmGeometry", Type: datatype.FieldTypeGeometry},
+			}},
+			SpatialInfo: sourceSpatialInfo,
+		},
+		Target: TableTargetPlan{
+			Kind:         TableEndpointEncoded,
+			Path:         engineplugin.ObjectItemPath(2, "addp", "exports/a6.shp"),
+			ContentWrite: engineplugin.WriteOptions{Overwrite: true},
+			Format:       format.FormatShapefile,
+			FormatOptions: &format.WriteOptions{
+				Encoding: "utf-8",
+				ExtraParams: map[string]interface{}{
+					"geometry_field": "SmGeometry",
+					"geometry_type":  "Geometry",
+				},
+			},
+		},
+		Transforms: []TableTransformPlan{{
+			Type: "field_mapping",
+			FieldMapping: &FieldMappingTransformPlan{
+				Mode: FieldMappingModeProject,
+				Fields: []FieldMappingFieldPlan{
+					{Source: "SmID", Target: "SmID", TargetType: string(datatype.FieldTypeInt)},
+					{Source: "SmGeometry", Target: "SmGeometry", TargetType: string(datatype.FieldTypeGeometry)},
+				},
+			},
+		}},
+		BatchSize: 100,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 {
+		t.Fatalf("metrics = %#v, want 1 read/written", metrics)
+	}
+	if got := string(writer.files["addp/exports/a6.prj"]); got != sourceSpatialInfo.CRSDefinitions[0].Definition {
+		t.Fatalf("prj = %q, want source CRS definition", got)
+	}
+	targetRefPaths := relatedRefPaths(metrics.TargetRefs)
+	for _, path := range []string{"addp/exports/a6.shp", "addp/exports/a6.shx", "addp/exports/a6.dbf", "addp/exports/a6.prj"} {
+		if !containsString(targetRefPaths, path) {
+			t.Fatalf("target refs = %#v, want %s", targetRefPaths, path)
+		}
+	}
+}
+
 func TestTableTransferExecutorWritesShapefileZFromNativeSpatialDimension(t *testing.T) {
 	reader := &fakeBatchReader{
 		batches: []*engineplugin.BatchData{

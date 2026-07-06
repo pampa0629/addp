@@ -314,6 +314,8 @@
         "status": {
           "available": "可用",
           "engine_unavailable": "引擎不具备",
+          "installed": "已安装",
+          "not_installed": "未安装",
           "unknown": "未知"
         },
         "summary": {
@@ -328,10 +330,12 @@
         "sections": {
           "storage": "存储能力",
           "compute": "计算能力",
-          "extensions": "扩展能力"
+          "extensions": "扩展能力",
+          "extensionStatus": "扩展状态"
         },
         "items": {
           "catalog": "目录浏览",
+          "facts": "事实描述",
           "metadata": "元数据采集",
           "contentRead": "内容读取",
           "contentWrite": "内容写入",
@@ -375,6 +379,18 @@
           "spatialWriteTransform": "写入侧 CRS 转换",
           "nativeSpatialFunctions": "原生空间函数",
           "defaultLanguage": "默认语言",
+          "serverVersionNum": "内部版本号",
+          "schema": "Schema",
+          "installed": "已安装",
+          "installedFalse": "未安装",
+          "notInstalled": "未安装",
+          "available": "扩展包可用",
+          "availableFalse": "不可用",
+          "typeAvailable": "类型可用",
+          "stExtent": "空间范围函数",
+          "stTransform": "坐标转换函数",
+          "postgisTopology": "PostGIS Topology",
+          "postgisTigerGeocoder": "PostGIS Tiger Geocoder",
           "readOnly": "只读",
           "queryPlan": "查询计划",
           "cancel": "可取消",
@@ -387,6 +403,29 @@
           "maxRows": "最多行数",
           "maxBytes": "最大读取",
           "directPreview": "引擎直接预览"
+        },
+        "extensions": {
+          "postgresqlServer": "PostgreSQL 实例",
+          "postgis": "PostGIS 空间扩展",
+          "postgisTopology": "PostGIS 拓扑扩展",
+          "postgisTigerGeocoder": "PostGIS Tiger 地理编码",
+          "postgresqlExtraExtensions": "其他已安装扩展",
+          "pgvector": "pgvector 向量扩展"
+        },
+        "language": {
+          "sql": "SQL"
+        },
+        "resultKind": {
+          "table": "表格",
+          "scalar": "单值"
+        },
+        "geometryReadEncoding": {
+          "ewkb": "EWKB",
+          "geojson": "GeoJSON"
+        },
+        "geometryWriteEncoding": {
+          "ewkb": "EWKB",
+          "geojson": "GeoJSON"
         },
         "engineFamily": {
           "tabular": "表格数据",

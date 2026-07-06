@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
+	commonSpatial "github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/service"
@@ -189,8 +190,8 @@ func TestQuickViewSourceFromPreviewDetectsRasterTIFFObject(t *testing.T) {
 	if source.Raster == nil {
 		t.Fatal("Raster is nil, want TIFF raster source")
 	}
-	if source.DirectGeoJSON || source.GeoJSONURL != "" || source.CanTile {
-		t.Fatalf("source routing = direct_geojson:%v geojson_url:%q can_tile:%v, want raster-only", source.DirectGeoJSON, source.GeoJSONURL, source.CanTile)
+	if source.DirectFlatGeobuf || source.FlatGeobufURL != "" || source.CanTile {
+		t.Fatalf("source routing = direct_flatgeobuf:%v flatgeobuf_url:%q can_tile:%v, want raster-only", source.DirectFlatGeobuf, source.FlatGeobufURL, source.CanTile)
 	}
 	if source.EngineID != 26 || source.Identity.Locator != locator || source.Identity.ItemFingerprint != "fp-small-tiff" {
 		t.Fatalf("source identity = engine:%d locator:%q fingerprint:%q", source.EngineID, source.Identity.Locator, source.Identity.ItemFingerprint)
@@ -237,8 +238,8 @@ func TestQuickViewSourceFromPreviewDetectsSingleOSGBObject(t *testing.T) {
 	if source.Model3D == nil {
 		t.Fatal("Model3D is nil, want single OSGB quick view source")
 	}
-	if source.Raster != nil || source.DirectGeoJSON || source.GeoJSONURL != "" || source.CanTile {
-		t.Fatalf("source routing = raster:%v direct_geojson:%v geojson_url:%q can_tile:%v, want model3d-only", source.Raster != nil, source.DirectGeoJSON, source.GeoJSONURL, source.CanTile)
+	if source.Raster != nil || source.DirectFlatGeobuf || source.FlatGeobufURL != "" || source.CanTile {
+		t.Fatalf("source routing = raster:%v direct_flatgeobuf:%v flatgeobuf_url:%q can_tile:%v, want model3d-only", source.Raster != nil, source.DirectFlatGeobuf, source.FlatGeobufURL, source.CanTile)
 	}
 	if source.EngineID != 26 || source.Identity.Locator != locator || source.Identity.ItemFingerprint != "fp-single-osgb" {
 		t.Fatalf("source identity = engine:%d locator:%q fingerprint:%q", source.EngineID, source.Identity.Locator, source.Identity.ItemFingerprint)
@@ -279,8 +280,8 @@ func TestQuickViewSourceFromPreviewDetectsSingleOBJObject(t *testing.T) {
 	if source.Model3D == nil {
 		t.Fatal("Model3D is nil, want single OBJ quick view source")
 	}
-	if source.Raster != nil || source.DirectGeoJSON || source.GeoJSONURL != "" || source.CanTile {
-		t.Fatalf("source routing = raster:%v direct_geojson:%v geojson_url:%q can_tile:%v, want model3d-only", source.Raster != nil, source.DirectGeoJSON, source.GeoJSONURL, source.CanTile)
+	if source.Raster != nil || source.DirectFlatGeobuf || source.FlatGeobufURL != "" || source.CanTile {
+		t.Fatalf("source routing = raster:%v direct_flatgeobuf:%v flatgeobuf_url:%q can_tile:%v, want model3d-only", source.Raster != nil, source.DirectFlatGeobuf, source.FlatGeobufURL, source.CanTile)
 	}
 	if source.Model3D.Format != "obj" || source.Model3D.Layout != "single" || source.Model3D.SourceSizeBytes != 2048 {
 		t.Fatalf("model3d facts = %#v, want single obj facts", source.Model3D)
@@ -323,8 +324,8 @@ func TestQuickViewSourceFromPreviewDetectsDirectGLBObject(t *testing.T) {
 	if source.Model3D == nil {
 		t.Fatal("Model3D is nil, want direct GLB model3d source")
 	}
-	if source.Raster != nil || source.DirectGeoJSON || source.GeoJSONURL != "" || source.CanTile {
-		t.Fatalf("source routing = raster:%v direct_geojson:%v geojson_url:%q can_tile:%v, want model3d-only", source.Raster != nil, source.DirectGeoJSON, source.GeoJSONURL, source.CanTile)
+	if source.Raster != nil || source.DirectFlatGeobuf || source.FlatGeobufURL != "" || source.CanTile {
+		t.Fatalf("source routing = raster:%v direct_flatgeobuf:%v flatgeobuf_url:%q can_tile:%v, want model3d-only", source.Raster != nil, source.DirectFlatGeobuf, source.FlatGeobufURL, source.CanTile)
 	}
 	if source.Model3D.Format != "glb" || source.Model3D.Layout != "single" || source.Model3D.SourceSizeBytes != 53670500 {
 		t.Fatalf("model3d facts = %#v, want direct glb facts", source.Model3D)
@@ -365,8 +366,8 @@ func TestQuickViewSourceFromPreviewDetectsSingleIFCObject(t *testing.T) {
 	if source.Model3D == nil {
 		t.Fatal("Model3D is nil, want single IFC quick view source")
 	}
-	if source.Raster != nil || source.DirectGeoJSON || source.GeoJSONURL != "" || source.CanTile {
-		t.Fatalf("source routing = raster:%v direct_geojson:%v geojson_url:%q can_tile:%v, want model3d-only", source.Raster != nil, source.DirectGeoJSON, source.GeoJSONURL, source.CanTile)
+	if source.Raster != nil || source.DirectFlatGeobuf || source.FlatGeobufURL != "" || source.CanTile {
+		t.Fatalf("source routing = raster:%v direct_flatgeobuf:%v flatgeobuf_url:%q can_tile:%v, want model3d-only", source.Raster != nil, source.DirectFlatGeobuf, source.FlatGeobufURL, source.CanTile)
 	}
 	if source.Model3D.Format != "ifc" || source.Model3D.Layout != "single" || source.Model3D.SourceSizeBytes != 4096 {
 		t.Fatalf("model3d facts = %#v, want single ifc facts", source.Model3D)
@@ -413,8 +414,8 @@ func TestQuickViewSourceFromPreviewDetectsGaussianSplatPLYObject(t *testing.T) {
 	if source.GaussianSplat == nil {
 		t.Fatal("GaussianSplat is nil, want gaussian splat KSplat source")
 	}
-	if source.Model3D != nil || source.Raster != nil || source.DirectGeoJSON || source.GeoJSONURL != "" || source.CanTile {
-		t.Fatalf("source routing = model3d:%v raster:%v direct_geojson:%v geojson_url:%q can_tile:%v, want gaussian-only", source.Model3D != nil, source.Raster != nil, source.DirectGeoJSON, source.GeoJSONURL, source.CanTile)
+	if source.Model3D != nil || source.Raster != nil || source.DirectFlatGeobuf || source.FlatGeobufURL != "" || source.CanTile {
+		t.Fatalf("source routing = model3d:%v raster:%v direct_flatgeobuf:%v flatgeobuf_url:%q can_tile:%v, want gaussian-only", source.Model3D != nil, source.Raster != nil, source.DirectFlatGeobuf, source.FlatGeobufURL, source.CanTile)
 	}
 	if source.GaussianSplat.Format != "ply" || source.GaussianSplat.SplatCount != 256 || source.GaussianSplat.SourceSizeBytes != 8192 {
 		t.Fatalf("gaussian facts = %#v, want ply gaussian facts", source.GaussianSplat)
@@ -733,8 +734,8 @@ func TestQuickViewSourceFromPreviewDetectsRasterTIFFObjectCatalogItem(t *testing
 	if source.Raster == nil {
 		t.Fatal("Raster is nil, want object catalog TIFF raster source")
 	}
-	if source.DirectGeoJSON || source.CanTile {
-		t.Fatalf("source routing = direct_geojson:%v can_tile:%v, want raster-only", source.DirectGeoJSON, source.CanTile)
+	if source.DirectFlatGeobuf || source.CanTile {
+		t.Fatalf("source routing = direct_flatgeobuf:%v can_tile:%v, want raster-only", source.DirectFlatGeobuf, source.CanTile)
 	}
 	if source.EngineID != 9 || source.Identity.Locator != locator || source.Identity.ItemFingerprint != "fp-object-tiff" {
 		t.Fatalf("source identity = engine:%d locator:%q fingerprint:%q", source.EngineID, source.Identity.Locator, source.Identity.ItemFingerprint)
@@ -747,6 +748,96 @@ func TestQuickViewSourceFromPreviewDetectsRasterTIFFObjectCatalogItem(t *testing
 	}
 	if !strings.Contains(source.Raster.PreviewURL, "engine_id=9") || !strings.Contains(source.Raster.PreviewURL, "storage_ref=addp%2Fimage%2Fsrtm_40_01.tif") {
 		t.Fatalf("preview_url = %q, want object bucket/path storage_ref", source.Raster.PreviewURL)
+	}
+}
+
+func TestQuickViewSourceFromPreviewAllowsTileCacheGenerationForSpatialFile(t *testing.T) {
+	locator := "addp://engine/26/path/shp/farmland.shp?type=file&item_id=100"
+	tablePreview := &models.TablePreview{
+		EngineType:      "nfs",
+		Total:           73090,
+		GeometryColumn:  "geometry",
+		GeometryColumns: []string{"geometry"},
+		SourceSRID:      4326,
+		SRID:            4326,
+		Extent:          []float64{110, 20, 120, 30},
+	}
+	result := &preview.PreviewResult{
+		Metadata: &preview.PreviewMetadata{
+			Locator:         locator,
+			ItemFingerprint: "fp-farmland",
+		},
+	}
+
+	source := quickViewSourceFromPreview(locator, nil, result, tablePreview)
+
+	if !source.DirectFlatGeobuf {
+		t.Fatal("direct_flatgeobuf = false, want true for vector spatial file")
+	}
+	if !source.CanTile {
+		t.Fatal("can_tile = false, want true for spatial file with numeric SRID and extent")
+	}
+	if source.Schema != "" || source.Table != "" {
+		t.Fatalf("schema/table = %q/%q, want empty for file source", source.Schema, source.Table)
+	}
+	if source.EngineID != 26 {
+		t.Fatalf("engine_id = %d, want locator engine id 26", source.EngineID)
+	}
+	if source.SpatialMeta == nil || source.SpatialMeta.GeomColumn != "geometry" || source.SpatialMeta.SRID != 4326 {
+		t.Fatalf("spatial_meta = %#v, want geometry column and numeric SRID", source.SpatialMeta)
+	}
+}
+
+func TestVectorTileCacheTaskConfigFromQuickViewUsesLocatorIdentityForFile(t *testing.T) {
+	locator := "addp://engine/26/path/shp/farmland.shp?type=file&item_id=100"
+	capability := &service.QuickViewCapability{
+		TenantID:             7,
+		ItemFingerprint:      "fp-farmland",
+		Locator:              locator,
+		CanGenerateTileCache: true,
+		RenderFacts: &service.QuickViewRenderFacts{
+			ZoomRecommendation: &service.ZoomRecommendation{
+				MinZoom: 2,
+				MaxZoom: 10,
+			},
+		},
+	}
+	source := service.QuickViewSource{
+		EngineID:         26,
+		DirectFlatGeobuf: true,
+		SpatialMeta: &service.SpatialMetadataResult{
+			GeomColumn:  "geometry",
+			SRID:        4326,
+			Extent:      []float64{110, 20, 120, 30},
+			ExtentSRID:  4326,
+			RecordCount: 73090,
+		},
+	}
+
+	config, err := vectorTileCacheTaskConfigFromQuickView(capability, source)
+	if err != nil {
+		t.Fatalf("build vector tile cache config: %v", err)
+	}
+	target, _ := asJSONMap(config["target"])
+	if target["source_engine_id"] != uint(26) || target["locator"] != locator || target["item_fingerprint"] != "fp-farmland" {
+		t.Fatalf("target identity = %#v, want locator identity", target)
+	}
+	if target["source_kind"] != "file" || target["full_name"] != "shp/farmland.shp" {
+		t.Fatalf("target locator facts = %#v, want file/full_name", target)
+	}
+	if _, ok := target["schema"]; ok {
+		t.Fatalf("schema is present for file target: %#v", target)
+	}
+	if _, ok := target["table"]; ok {
+		t.Fatalf("table is present for file target: %#v", target)
+	}
+	tile, _ := asJSONMap(config["tile"])
+	if tile["format"] != "mvt" || tile["target_srid"] != commonSpatial.SRIDWebMercator || tile["source_srid"] != 4326 {
+		t.Fatalf("tile config = %#v, want mvt 4326->3857", tile)
+	}
+	options, _ := asJSONMap(config["options"])
+	if options["geometry_column"] != "geometry" {
+		t.Fatalf("geometry_column = %v, want geometry", options["geometry_column"])
 	}
 }
 

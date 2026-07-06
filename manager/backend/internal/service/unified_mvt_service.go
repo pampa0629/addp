@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/spatial"
+	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"golang.org/x/sync/singleflight"
 )
@@ -136,6 +137,43 @@ const (
 	TileStatusTimeout  = "timeout"
 	TileStatusDegraded = "degraded"
 )
+
+func (s *UnifiedMVTService) GetCachedTileCacheTile(ctx context.Context, tenantID uint, tileCache *models.TileCache, z, x, y int) (*TileResponse, error) {
+	startTime := time.Now()
+	if tileCache == nil || strings.TrimSpace(tileCache.StorageRef) == "" {
+		return &TileResponse{
+			Data:         []byte{},
+			FromCache:    true,
+			Duration:     time.Since(startTime),
+			RenderSource: QuickViewRenderSourceCachedTile,
+			Status:       TileStatusEmpty,
+		}, nil
+	}
+	cacheScope := fmt.Sprintf("vector_tile_cache:%d", tileCache.ID)
+	tileCacheID := tileCache.ID
+	tileData, err := s.spatialPreviewService.GetTileByStorageRef(ctx, tenantID, cacheScope, tileCache.StorageRef, z, x, y)
+	if err != nil || len(tileData) == 0 {
+		if err != nil {
+			logger.L().Debug("缓存瓦片对象未命中，返回空瓦片", "tile_cache_id", tileCache.ID, "z", z, "x", x, "y", y, "error", err)
+		}
+		return &TileResponse{
+			Data:         []byte{},
+			FromCache:    true,
+			Duration:     time.Since(startTime),
+			RenderSource: QuickViewRenderSourceCachedTile,
+			TileCacheID:  &tileCacheID,
+			Status:       TileStatusEmpty,
+		}, nil
+	}
+	return &TileResponse{
+		Data:         tileData,
+		FromCache:    true,
+		Duration:     time.Since(startTime),
+		RenderSource: QuickViewRenderSourceCachedTile,
+		TileCacheID:  &tileCacheID,
+		Status:       TileStatusOK,
+	}, nil
+}
 
 // GetTile 获取 MVT 瓦片（统一入口）。
 // 流程：按 storage_ref 查询已有瓦片对象 → 实时 PG 生成 → 按当前 storage_ref 回填对象存储。

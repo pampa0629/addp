@@ -20,6 +20,7 @@ from .properties_operators import get_area, get_length, get_bounds
 from .format_operators import load_from_wkt, export_to_wkt
 from .spatial_transform_operators import vector_reproject
 from .raster_operators import build_raster_mosaic, tiff_to_cog
+from .vector_tile_operators import vector_to_mvt_tiles
 from .data_operations import (
     clip, voronoi, split_by_area,
     batch_buffer, batch_centroid
@@ -43,6 +44,7 @@ from .properties_operators import OPERATORS as PROPERTIES_OPERATORS
 from .format_operators import OPERATORS as FORMAT_OPERATORS
 from .spatial_transform_operators import OPERATORS as SPATIAL_TRANSFORM_OPERATORS
 from .raster_operators import OPERATORS as RASTER_OPERATORS
+from .vector_tile_operators import OPERATORS as VECTOR_TILE_OPERATORS
 from .data_operations import OPERATORS as DATA_OPERATORS
 from .attribute_operators import OPERATORS as ATTRIBUTE_OPERATORS
 from .filter_operators import OPERATORS as FILTER_OPERATORS
@@ -59,6 +61,7 @@ for ops_dict in [
     FORMAT_OPERATORS,
     SPATIAL_TRANSFORM_OPERATORS,
     RASTER_OPERATORS,
+    VECTOR_TILE_OPERATORS,
     DATA_OPERATORS,
     ATTRIBUTE_OPERATORS,
     FILTER_OPERATORS

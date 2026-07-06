@@ -14,7 +14,8 @@ engine.capabilities/v1
 
 ## 一、基本原则
 
-- capabilities 是引擎自身能力与 Provider 实现承诺的事实来源。
+- capabilities 是引擎实例自身能力与 Provider 实现承诺共同收敛后的事实来源。
+- 插件 `Capabilities()` 只返回不连接实例的静态能力模板；实现了实例能力解析接口的插件，必须由 System 在保存或刷新具体引擎记录时执行只读探测，并将解析后的实例能力写入 `system.engines.capabilities`。
 - 声明了可调用能力，就必须有对应 Provider 或明确的模块执行面。
 - Catalog、Facts、Store、Query、Workflow、Script 是不同能力面，不能混用。
 - 核心结构只表达引擎自身原生能力与对应 Provider 能力，不承载模块适配状态。
@@ -360,6 +361,8 @@ type CapabilitiesView struct {
 - 不展示空分组、空数组和 false 字段，除非该“不支持”会影响用户操作。
 - 不把 `schema_version`、`path_version`、`i18n_key`、`supported` 放在主信息区。
 - `extensions` 只要存在就展示；未知结构按 key-value 陈列。
+- `extensions` 在展示模型中表达当前实例的扩展状态，不等同于核心能力开关；实例未安装的扩展应使用 `not_installed` 状态，而不是 `engine_unavailable`。
+- 对 PostgreSQL 这类存在核心扩展和附属扩展的引擎，主展示应突出影响 ADDP 能力面的核心扩展，如 PostGIS、pgvector；Topology、Tiger Geocoder 等附属扩展可合并为“其他已安装扩展”类信息。
 - 完整能力声明通过“查看 JSON”入口以 key-value 树形方式查看，不在主页面展示原始 JSON 文本。
 
 ---
@@ -384,8 +387,8 @@ type CapabilitiesView struct {
 - 声明 `compute.workflow.supported=true` 的插件必须实现 `WorkflowRuntimeProvider`。若 `dynamic_operators=true`，则其 `ListOperators()` 必须可调用，并返回符合工作流计算引擎接口规范的算子描述。
 - 声明 `compute.script.supported=true` 的插件必须实现 `ScriptRuntimeProvider`。
 - 反向也必须成立：插件实现 `CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`DynamicSchemaSamplingProvider`、具体 Store Provider、`QueryRuntimeProvider`、`GraphQueryProvider`、`WorkflowRuntimeProvider` 或 `ScriptRuntimeProvider` 时，`Capabilities()` 必须声明对应能力。`StoreProvider` 本身只是 marker，不单独触发能力声明；以具体读写 Provider 为准。
-- capabilities 由插件返回结构体，System 统一序列化为 JSONB。
-- 已注册插件引擎的能力事实源只能是对应插件 `Capabilities()`。普通 Engine API、内部自注册接口和 Registry 能力注册接口收到插件引擎提交的 `capabilities` 时都必须忽略，并改用插件能力生成落库声明。内置扩展引擎自注册 payload 不提交 `capabilities`；自注册脚本不得额外声明 `workflow_runtime`、`script_runtime` 等平行运行时能力。
+- capabilities 由插件返回结构体，System 统一序列化为 JSONB。插件 `Capabilities()` 是 Provider 能力模板，不得做实例连接或运行时探测。
+- 已注册插件引擎的落库能力事实源是插件 `Capabilities()` 与可选实例能力解析结果。普通 Engine API、内部自注册接口和 Registry 能力注册接口收到插件引擎提交的 `capabilities` 时都必须忽略，并改用插件模板和实例解析结果生成落库声明。内置扩展引擎自注册 payload 不提交 `capabilities`；自注册脚本不得额外声明 `workflow_runtime`、`script_runtime` 等平行运行时能力。
 - 旧 capabilities 结构不再兼容，发现旧结构可直接刷新或清空。
 
 ---

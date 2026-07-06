@@ -462,6 +462,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   background: var(--addp-bg-primary);
 }
 
@@ -506,12 +507,14 @@ onMounted(async () => {
 .main-area {
   display: flex;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
 .filter-panel {
   width: 180px;
   flex-shrink: 0;
+  min-height: 0;
   border-right: 1px solid var(--addp-border-color);
   padding: 12px;
   overflow-y: auto;
@@ -554,6 +557,7 @@ onMounted(async () => {
 
 .canvas-area {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   position: relative;
 }
@@ -561,6 +565,7 @@ onMounted(async () => {
 .detail-panel {
   width: 240px;
   flex-shrink: 0;
+  min-height: 0;
   border-left: 1px solid var(--addp-border-color);
   overflow: hidden;
   background: var(--addp-bg-primary);

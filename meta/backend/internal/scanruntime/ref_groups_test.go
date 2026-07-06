@@ -3,6 +3,7 @@ package scanruntime
 import (
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/datatype"
@@ -13,13 +14,13 @@ import (
 )
 
 func TestObjectScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
-	reader := staticObjectContentReader{content: ""}
-	pluginRegisterForTest(t, reader)
+	provider := &objectRefGroupScanTestProvider{content: "", buckets: []string{"manager"}}
+	pluginRegisterForTest(t, provider)
 
 	db := openObjectCatalogScanTestDB(t)
 	repo := metaRepo.NewScanRepository(db)
 	svc := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
-	resource := &commonModels.Engine{ID: 9, Name: "Object Store", EngineType: reader.Type()}
+	resource := &commonModels.Engine{ID: 9, Name: "Object Store", EngineType: provider.Type()}
 
 	result, err := svc.ScanRefGroups(resource, 1, []models.ScanRefGroup{
 		{
@@ -60,13 +61,13 @@ func TestObjectScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
 }
 
 func TestObjectScanRefGroupsPersistsSingleUploadedObjectItem(t *testing.T) {
-	reader := staticObjectContentReader{content: "hello"}
-	pluginRegisterForTest(t, reader)
+	provider := &objectRefGroupScanTestProvider{content: "hello", buckets: []string{"manager"}}
+	pluginRegisterForTest(t, provider)
 
 	db := openObjectCatalogScanTestDB(t)
 	repo := metaRepo.NewScanRepository(db)
 	svc := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
-	resource := &commonModels.Engine{ID: 19, Name: "Object Store", EngineType: reader.Type()}
+	resource := &commonModels.Engine{ID: 19, Name: "Object Store", EngineType: provider.Type()}
 
 	result, err := svc.ScanRefGroups(resource, 1, []models.ScanRefGroup{
 		{
@@ -100,19 +101,19 @@ func TestObjectScanRefGroupsPersistsSingleUploadedObjectItem(t *testing.T) {
 }
 
 func TestObjectScanRefGroupsDeepScansSingleGeoJSONWithoutRepeatingBucket(t *testing.T) {
-	reader := &recordingObjectContentReader{content: `{
+	provider := &objectRefGroupScanTestProvider{content: `{
 		"type": "FeatureCollection",
 		"bbox": [1, 2, 3, 4],
 		"features": [
 			{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"A"}}
 		]
-	}`}
-	pluginRegisterForTest(t, reader)
+	}`, buckets: []string{"manager"}}
+	pluginRegisterForTest(t, provider)
 
 	db := openObjectCatalogScanTestDB(t)
 	repo := metaRepo.NewScanRepository(db)
 	svc := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
-	resource := &commonModels.Engine{ID: 29, Name: "Object Store", EngineType: reader.Type()}
+	resource := &commonModels.Engine{ID: 29, Name: "Object Store", EngineType: provider.Type()}
 
 	result, err := svc.ScanRefGroups(resource, 1, []models.ScanRefGroup{
 		{
@@ -129,13 +130,13 @@ func TestObjectScanRefGroupsDeepScansSingleGeoJSONWithoutRepeatingBucket(t *test
 		t.Fatalf("items = %d, want one GeoJSON item", result.Items)
 	}
 
-	for _, got := range reader.openedPaths {
+	for _, got := range provider.openedPaths {
 		if got == "manager/manager/farmland.geojson" {
-			t.Fatalf("OpenContent used repeated bucket path: %#v", reader.openedPaths)
+			t.Fatalf("OpenContent used repeated bucket path: %#v", provider.openedPaths)
 		}
 	}
-	if !containsString(reader.openedPaths, "manager/farmland.geojson") {
-		t.Fatalf("OpenContent paths = %#v, want manager/farmland.geojson", reader.openedPaths)
+	if !containsString(provider.openedPaths, "manager/farmland.geojson") {
+		t.Fatalf("OpenContent paths = %#v, want manager/farmland.geojson", provider.openedPaths)
 	}
 
 	item, ok, err := repo.FindItemByFullName(1, 29, "manager/farmland.geojson")
@@ -154,6 +155,47 @@ func TestObjectScanRefGroupsDeepScansSingleGeoJSONWithoutRepeatingBucket(t *test
 	spatial := commonJSON.Section(item.Attributes, "capabilities.spatial")
 	if spatial["primary_geometry_column"] != "geometry" {
 		t.Fatalf("capabilities.spatial = %#v, want geometry primary column", spatial)
+	}
+}
+
+func TestObjectScanRefGroupsRejectsUnknownBucketWithoutPersistingItem(t *testing.T) {
+	provider := &objectRefGroupScanTestProvider{content: "", buckets: []string{"addp"}}
+	pluginRegisterForTest(t, provider)
+
+	db := openObjectCatalogScanTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	svc := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
+	resource := &commonModels.Engine{ID: 39, Name: "Object Store", EngineType: provider.Type()}
+
+	_, err := svc.ScanRefGroups(resource, 1, []models.ScanRefGroup{
+		{
+			Primary: "gis/a2.shp",
+			Refs: []models.ScanRef{
+				{Path: "gis/a2.shp", Role: "main", Required: true},
+				{Path: "gis/a2.shx", Role: "sidecar", Required: true},
+				{Path: "gis/a2.dbf", Role: "sidecar", Required: true},
+				{Path: "gis/a2.prj", Role: "sidecar"},
+			},
+		},
+	}, models.ScannedDepthDeep, true, nil)
+	if err == nil {
+		t.Fatal("ScanRefGroups() error = nil, want unknown bucket error")
+	}
+	if !strings.Contains(err.Error(), `object ref group bucket "gis" does not exist`) {
+		t.Fatalf("ScanRefGroups() error = %v, want unknown bucket error", err)
+	}
+
+	if _, ok, err := repo.FindItemByFullName(1, 39, "gis/a2.shp"); err != nil {
+		t.Fatalf("FindItemByFullName() error = %v", err)
+	} else if ok {
+		t.Fatal("unexpected item persisted for unknown bucket")
+	}
+	var bucketNodeCount int64
+	if err := db.Model(&models.MetaNode{}).Where("tenant_id = ? AND engine_id = ? AND node_type = ? AND full_name = ? AND deleted_at IS NULL", 1, 39, "bucket", "gis").Count(&bucketNodeCount).Error; err != nil {
+		t.Fatalf("count bucket node error = %v", err)
+	}
+	if bucketNodeCount != 0 {
+		t.Fatalf("unknown bucket nodes = %d, want 0", bucketNodeCount)
 	}
 }
 

@@ -5,7 +5,7 @@ export function createDefaultTileCacheTaskForm() {
     enabled: true,
     schedule: '',
     config: {
-      target: { item_id: undefined, item_fingerprint: '', locator: '', source_engine_id: undefined, schema: '', table: '' },
+      target: { item_id: undefined, item_fingerprint: '', locator: '', source_engine_id: undefined, source_kind: '', full_name: '', schema: '', table: '' },
       tile: {
         format: 'mvt',
         tile_matrix_set: 'WebMercatorQuad',
@@ -59,6 +59,12 @@ export function createTileCacheTaskPayload(form) {
   }
   delete payload.config.target.label
   delete payload.config.target.engine_name
+  if (!payload.config.target.source_kind) {
+    delete payload.config.target.source_kind
+  }
+  if (!payload.config.target.full_name) {
+    delete payload.config.target.full_name
+  }
   if (!payload.config.options.geometry_column) {
     delete payload.config.options.geometry_column
   }

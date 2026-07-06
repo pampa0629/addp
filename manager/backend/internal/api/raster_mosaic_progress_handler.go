@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 
 	commonapi "github.com/addp/common/api"
@@ -22,7 +23,14 @@ type RasterMosaicProgressEventRequest struct {
 	FailedFiles     int64                `json:"failed_files,omitempty"`
 	CurrentFile     string               `json:"current_file,omitempty"`
 	FileProgress    *int                 `json:"file_progress,omitempty"`
-	OverallProgress *int                 `json:"overall_progress,omitempty"`
+	OverallProgress *float64             `json:"overall_progress,omitempty"`
+	CurrentZoom     int                  `json:"current_zoom,omitempty"`
+	MaxZoom         int                  `json:"max_zoom,omitempty"`
+	TilesProcessed  int                  `json:"tiles_processed,omitempty"`
+	TilesTotal      int                  `json:"tiles_total_estimate,omitempty"`
+	ProgressPercent *float64             `json:"progress_percent,omitempty"`
+	ElapsedSeconds  *float64             `json:"elapsed_seconds,omitempty"`
+	RemainingSec    *float64             `json:"estimated_remaining_seconds,omitempty"`
 	Metadata        commonModels.JSONMap `json:"metadata,omitempty"`
 }
 
@@ -57,6 +65,8 @@ func (h *TaskProviderHandler) RecordManagerExecutionProgressEvent(c *gin.Context
 		return
 	}
 	switch exec.TaskType {
+	case commonExecution.TaskTypeVectorTileCacheGeneration:
+		h.recordTileCacheProgressEvent(c, tenantID, executionID, req)
 	case commonExecution.TaskTypeRasterMosaicGeneration:
 		h.recordRasterMosaicProgressEvent(c, tenantID, executionID, req)
 	case commonExecution.TaskTypePointCloudCOPCGeneration:
@@ -80,7 +90,7 @@ func (h *TaskProviderHandler) recordRasterMosaicProgressEvent(c *gin.Context, te
 		FailedFiles:     req.FailedFiles,
 		CurrentFile:     req.CurrentFile,
 		FileProgress:    req.FileProgress,
-		OverallProgress: req.OverallProgress,
+		OverallProgress: progressIntPointer(req.OverallProgress),
 		Metadata:        req.Metadata,
 	}
 	if err := h.rasterMosaicTaskSvc.RecordProgressEvent(c.Request.Context(), tenantID, executionID, event); err != nil {
@@ -102,6 +112,44 @@ func (h *TaskProviderHandler) recordRasterMosaicProgressEvent(c *gin.Context, te
 	})
 }
 
+func (h *TaskProviderHandler) recordTileCacheProgressEvent(c *gin.Context, tenantID uint, executionID string, req RasterMosaicProgressEventRequest) {
+	if h.tileCacheTaskSvc == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "vector tile cache generation task service is unavailable"})
+		return
+	}
+	event := service.TileCacheProgressEvent{
+		Phase:              req.Phase,
+		Event:              req.Event,
+		Message:            req.Message,
+		CurrentZoom:        req.CurrentZoom,
+		MaxZoom:            req.MaxZoom,
+		TilesProcessed:     req.TilesProcessed,
+		TilesTotalEstimate: req.TilesTotal,
+		ProgressPercent:    req.ProgressPercent,
+		OverallProgress:    req.OverallProgress,
+		ElapsedSeconds:     req.ElapsedSeconds,
+		RemainingSeconds:   req.RemainingSec,
+		Metadata:           req.Metadata,
+	}
+	if err := h.tileCacheTaskSvc.RecordProgressEvent(c.Request.Context(), tenantID, executionID, event); err != nil {
+		switch {
+		case errors.Is(err, commonapi.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "执行记录不存在"})
+		case errors.Is(err, service.ErrTileCacheProgressTargetMismatch):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		case errors.Is(err, service.ErrTileCacheExecutionCompleted):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusAccepted, RasterMosaicProgressEventResponse{
+		ExecutionID: executionID,
+		Status:      "accepted",
+	})
+}
+
 func (h *TaskProviderHandler) recordPointCloudCOPCProgressEvent(c *gin.Context, tenantID uint, executionID string, req RasterMosaicProgressEventRequest) {
 	if h.pointCloudCOPCTaskSvc == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "point cloud COPC generation task service is unavailable"})
@@ -111,7 +159,7 @@ func (h *TaskProviderHandler) recordPointCloudCOPCProgressEvent(c *gin.Context, 
 		Phase:           req.Phase,
 		Event:           req.Event,
 		Message:         req.Message,
-		OverallProgress: req.OverallProgress,
+		OverallProgress: progressIntPointer(req.OverallProgress),
 		Metadata:        req.Metadata,
 	}
 	if err := h.pointCloudCOPCTaskSvc.RecordProgressEvent(c.Request.Context(), tenantID, executionID, event); err != nil {
@@ -147,4 +195,18 @@ func decodeRasterMosaicProgressEventRequest(c *gin.Context) (RasterMosaicProgres
 		req.Metadata = commonModels.JSONMap{}
 	}
 	return req, nil
+}
+
+func progressIntPointer(value *float64) *int {
+	if value == nil {
+		return nil
+	}
+	rounded := int(math.Round(*value))
+	if rounded < 0 {
+		rounded = 0
+	}
+	if rounded > 100 {
+		rounded = 100
+	}
+	return &rounded
 }

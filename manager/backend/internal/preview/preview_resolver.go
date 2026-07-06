@@ -173,6 +173,14 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 }
 
 func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locatorURI string, page, pageSize int, childName, refPath, nestedChildPath string, graphSample plugin.GraphSampleFilter, tenantID *uint) (*PreviewResult, error) {
+	req, err := r.ResolveRequestFromURIWithSelection(ctx, locatorURI, page, pageSize, childName, refPath, nestedChildPath, graphSample, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return r.Preview(ctx, req)
+}
+
+func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context, locatorURI string, page, pageSize int, childName, refPath, nestedChildPath string, graphSample plugin.GraphSampleFilter, tenantID *uint) (*PreviewResolverRequest, error) {
 	// 1. 解析 Locator
 	loc, err := resourcetree.ParseURI(locatorURI)
 	if err != nil {
@@ -342,8 +350,7 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 		req.PhysicalPath, req.ScopePath = previewResourcePaths(attrs)
 	}
 
-	// 5. 执行预览
-	return r.Preview(ctx, req)
+	return req, nil
 }
 
 func cloneMetaAttributes(attrs map[string]interface{}) map[string]interface{} {

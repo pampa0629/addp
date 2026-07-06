@@ -18,6 +18,7 @@ for parent in Path(__file__).resolve().parents:
 from workflow_operator_contract import assert_operator_metadata_contract
 from operators import list_operators
 import operators.raster_operators as raster_operators
+from operators.vector_tile_operators import _extent_to_wgs84, _index_generated_tiles, vector_to_mvt_tiles
 from operators.spatial_transform_operators import vector_reproject
 from operators.raster_operators import _authority_code_from_wkt, _translate_to_cog, _write_json, build_raster_mosaic, tiff_to_cog
 import pyarrow as pa
@@ -96,6 +97,30 @@ def test_tiff_to_cog_metadata_public_contract():
     assert "assign_srs" in example
     assert not runtime_only & set(example)
     assert "direct" in operators["tiff_to_cog"]["execution_modes"]
+
+
+def test_vector_to_mvt_tiles_metadata_uses_access_plan_contract():
+    operators = {operator["name"]: operator for operator in list_operators()}
+
+    assert "vector_to_mvt_tiles" in operators
+    operator = operators["vector_to_mvt_tiles"]
+    assert "direct" in operator["execution_modes"]
+    params = {param["name"] for param in operator["parameters"]}
+    assert {"access_plan", "tile", "options"} <= params
+    assert "locator" not in params
+    notes = " ".join(operator["detailed_description"]["notes"])
+    assert "extent_srid=4326" not in notes
+
+
+def test_vector_to_mvt_tiles_transforms_source_extent_to_wgs84():
+    extent = [570841.0277000004, 3404864.0396999996, 598936.5142999999, 3434951.8803000003]
+
+    transformed = _extent_to_wgs84(extent, 4549, "EPSG:4549")
+
+    assert transformed[0] == pytest.approx(120.73, abs=0.02)
+    assert transformed[1] == pytest.approx(30.76, abs=0.02)
+    assert transformed[2] == pytest.approx(121.02, abs=0.02)
+    assert transformed[3] == pytest.approx(31.03, abs=0.02)
 
 
 def test_build_raster_mosaic_metadata_public_contract():
@@ -770,3 +795,114 @@ def test_tiff_to_cog_passes_assign_srs_to_gdal_translate():
     assert result["status"] == "success"
     assert "-a_srs" in calls[0]
     assert calls[0][calls[0].index("-a_srs") + 1] == "+proj=longlat +datum=WGS84 +no_defs"
+
+
+def test_vector_to_mvt_tiles_uses_source_env_for_ogr_and_target_env_for_publish():
+    import operators.vector_tile_operators as vector_tile_operators
+
+    command_envs = []
+    written = []
+    tile_payloads = []
+
+    def fake_run_command(args, extra_env=None):
+        command_envs.append(dict(extra_env or {}))
+        assert "COMPRESS=YES" in args
+        assert "EXTENT=8192" in args
+        assert "BUFFER=160" in args
+        assert "MAX_SIZE=5000000" in args
+        assert "MAX_FEATURES=1000000" in args
+        assert "SIMPLIFICATION=0.0" in args
+        assert "SIMPLIFICATION_MAX_ZOOM=0.0" in args
+        output_dir = Path(args[args.index("-f") + 2])
+        assert not output_dir.exists()
+        min_x, min_y, _, _ = vector_tile_operators._tile_bounds([110.0, 20.0, 110.1, 20.1], 9)
+        tile_dir = output_dir / "9" / str(min_x)
+        tile_dir.mkdir(parents=True, exist_ok=True)
+        (tile_dir / f"{min_y}.mvt").write_bytes(b"tile")
+
+        class Completed:
+            stdout = "{}"
+
+        return Completed()
+
+    def fake_write_binary(target_uri, data, target_env):
+        written.append((target_uri, dict(target_env or {}), data))
+
+    def fake_write_tile_payload(target_uri, data):
+        tile_payloads.append((target_uri, data))
+
+    original_run_command = vector_tile_operators._run_command
+    original_write_binary = vector_tile_operators._write_binary
+    original_write_tile_payload = vector_tile_operators._write_binary_with_configured_path_options
+    vector_tile_operators._run_command = fake_run_command
+    vector_tile_operators._write_binary = fake_write_binary
+    vector_tile_operators._write_binary_with_configured_path_options = fake_write_tile_payload
+    try:
+        result = vector_to_mvt_tiles(
+            access_plan={
+                "source": {
+                    "root_uri": "/vsis3/addp/gis/规划用地.shp",
+                    "gdal_env": {
+                        "AWS_S3_ENDPOINT": "source-minio:9000",
+                        "AWS_ACCESS_KEY_ID": "source-ak",
+                        "AWS_SECRET_ACCESS_KEY": "source-sk",
+                        "AWS_HTTPS": "NO",
+                    },
+                    "item_fingerprint": "fp",
+                },
+                "target": {
+                    "object_prefix_uri": "/vsis3/manager/tenant_7/mvt-tiles/fp",
+                    "gdal_env": {
+                        "AWS_S3_ENDPOINT": "target-minio:9000",
+                        "AWS_ACCESS_KEY_ID": "target-ak",
+                        "AWS_SECRET_ACCESS_KEY": "target-sk",
+                        "AWS_HTTPS": "NO",
+                    },
+                    "storage_ref": "{}",
+                },
+            },
+            tile={
+                "min_zoom": 9,
+                "max_zoom": 9,
+                "extent": [110.0, 20.0, 110.1, 20.1],
+                "extent_srid": 4326,
+                "source_srs": "EPSG:4326",
+            },
+            options={"geometry_column": "geometry"},
+        )
+    finally:
+        vector_tile_operators._run_command = original_run_command
+        vector_tile_operators._write_binary = original_write_binary
+        vector_tile_operators._write_binary_with_configured_path_options = original_write_tile_payload
+
+    assert result["stop_reason"] == "workflow_ogr2ogr_mvt"
+    assert command_envs
+    assert command_envs[0]["AWS_S3_ENDPOINT"] == "source-minio:9000"
+    assert command_envs[0]["AWS_ACCESS_KEY_ID"] == "source-ak"
+    assert command_envs[0]["AWS_SECRET_ACCESS_KEY"] == "source-sk"
+    assert command_envs[0]["GDAL_NUM_THREADS"] == "ALL_CPUS"
+    assert all(env["AWS_S3_ENDPOINT"] == "target-minio:9000" for _, env, _ in written)
+    assert any(uri.endswith("/metadata.json") for uri, _, _ in written)
+    min_x, min_y, _, _ = vector_tile_operators._tile_bounds([110.0, 20.0, 110.1, 20.1], 9)
+    assert tile_payloads == [(f"/vsis3/manager/tenant_7/mvt-tiles/fp/tiles/z9/{min_x}_{min_y}.mvt.gz", b"tile")]
+    assert result["mvt_options"] == {
+        "extent": 8192,
+        "buffer": 160,
+        "max_size": 5000000,
+        "max_features": 1000000,
+        "simplification": 0.0,
+        "simplification_max_zoom": 0.0,
+        "num_threads": "ALL_CPUS",
+        "publish_concurrency": 8,
+    }
+
+
+def test_vector_to_mvt_tiles_indexes_gdal_pbf_output(tmp_path):
+    tile_path = tmp_path / "18" / "219155" / "107332.pbf"
+    tile_path.parent.mkdir(parents=True)
+    tile_path.write_bytes(b"tile")
+    (tmp_path / "metadata.json").write_text("{}", encoding="utf-8")
+
+    indexed = _index_generated_tiles(tmp_path)
+
+    assert indexed[(18, 219155, 107332)] == tile_path

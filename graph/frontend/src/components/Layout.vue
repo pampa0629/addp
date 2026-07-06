@@ -1,6 +1,6 @@
 <template>
   <!-- Console 嵌入模式：只显示内容 -->
-  <div v-if="isInIframe" class="content-only">
+  <div v-if="isInIframe" class="content-only" :class="{ 'content-only-full': isFullPageRoute }">
     <router-view />
   </div>
 
@@ -81,6 +81,8 @@ const activeMenu = computed(() => {
   return path
 })
 
+const isFullPageRoute = computed(() => route.meta?.fullPage === true)
+
 const handleCommand = (command) => {
   if (command === 'logout') {
     authStore.logout()
@@ -154,5 +156,10 @@ const handleCommand = (command) => {
   height: auto;
   min-height: 0;
   overflow: visible;
+}
+
+.content-only-full {
+  height: 100vh;
+  overflow: hidden;
 }
 </style>
