@@ -680,6 +680,7 @@ func toModelParameters(parameters []plugin.ParameterDescriptor) []models.Paramet
 		result = append(result, models.ParameterDescriptor{
 			Name:        param.Name,
 			Type:        param.Type,
+			ParamType:   param.ParamType,
 			Required:    param.Required,
 			Default:     param.Default,
 			Description: param.Description,
@@ -708,6 +709,7 @@ func toModelParameterMap(parameters map[string]plugin.ParameterDescriptor) map[s
 		result[name] = models.ParameterDescriptor{
 			Name:        param.Name,
 			Type:        param.Type,
+			ParamType:   param.ParamType,
 			Required:    param.Required,
 			Default:     param.Default,
 			Description: param.Description,

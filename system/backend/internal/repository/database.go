@@ -58,6 +58,9 @@ func AutoMigrate(db *gorm.DB) error {
 	if err := migrateEngineOrigin(db); err != nil {
 		return err
 	}
+	if err := renameGeoPythonWorkflowEngineType(db); err != nil {
+		return err
+	}
 	if err := dropEngineScanConfig(db); err != nil {
 		return err
 	}
@@ -81,6 +84,31 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.ModuleRegistry{},
 	)
 }
+
+func renameGeoPythonWorkflowEngineType(db *gorm.DB) error {
+	return db.Exec(renameGeoPythonWorkflowEngineTypeSQL).Error
+}
+
+const renameGeoPythonWorkflowEngineTypeSQL = `
+		DO $$
+		BEGIN
+			IF to_regclass('system.engines') IS NOT NULL THEN
+				IF EXISTS (
+					SELECT 1 FROM system.engines WHERE lower(engine_type) = 'python_workflow'
+				) AND EXISTS (
+					SELECT 1 FROM system.engines WHERE lower(engine_type) = 'geopython_workflow'
+				) THEN
+					RAISE EXCEPTION 'cannot rename python_workflow: geopython_workflow already exists';
+				END IF;
+
+				UPDATE system.engines
+				SET engine_type = 'geopython_workflow',
+					name = 'GeoPython 工作流引擎',
+					description = '基于 Python 地理计算生态的工作流引擎，支持 Pandas、GeoPandas、GDAL/OGR 等能力'
+				WHERE lower(engine_type) = 'python_workflow';
+			END IF;
+		END $$;
+	`
 
 func dropUsersIsSuperuser(db *gorm.DB) error {
 	return db.Exec(`

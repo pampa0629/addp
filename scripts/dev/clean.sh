@@ -32,7 +32,7 @@ echo "🗑️  清理 Python 虚拟环境..."
 cleaned_py=0
 if [ -d "engines/python-workflow/venv" ]; then
   rm -rf engines/python-workflow/venv
-  echo "✓ Python Workflow Engine venv 已清理"
+  echo "✓ GeoPython Workflow Engine venv 已清理"
   ((cleaned_py++))
 fi
 if [ -d "engines/spark-workflow/venv" ]; then

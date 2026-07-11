@@ -299,8 +299,8 @@
       </div>
     </template>
 
-    <!-- Python Workflow / Spark Workflow -->
-    <template v-else-if="formState.engine_type === 'python_workflow' || formState.engine_type === 'spark_workflow'">
+    <!-- GeoPython Workflow / Spark Workflow -->
+    <template v-else-if="formState.engine_type === 'geopython_workflow' || formState.engine_type === 'spark_workflow'">
       <el-form-item :label="t('storageEngine.protocol')">
         <el-select v-model="formState.connection_info.protocol">
           <el-option label="HTTP" value="http" />
@@ -594,11 +594,11 @@ const ensureConnectionDefaults = (form) => {
       username: original.username ?? '',
       password: original.password ?? ''
     }
-  } else if (form.engine_type === 'python_workflow' || form.engine_type === 'spark_workflow') {
+  } else if (form.engine_type === 'geopython_workflow' || form.engine_type === 'spark_workflow') {
     form.connection_info = {
       protocol: original.protocol ?? 'http',
       host: original.host ?? 'localhost',
-      port: original.port ?? (form.engine_type === 'python_workflow' ? 8099 : 8100)
+      port: original.port ?? (form.engine_type === 'geopython_workflow' ? 8099 : 8100)
     }
   } else {
     form.connection_info = { ...original }

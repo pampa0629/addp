@@ -1,5 +1,5 @@
 """
-Python Workflow 工作流引擎
+GeoPython 工作流引擎
 核心优化：全程使用 GeoDataFrame 内存传递，避免中间序列化
 """
 
@@ -80,7 +80,7 @@ def _collect_workflow_refs(value: Any) -> List[str]:
 
 class PythonWorkflowEngine:
     """
-    Python Workflow 工作流引擎
+    GeoPython 工作流引擎
     核心功能：DAG 拓扑排序 + GeoDataFrame 内存传递
     """
 

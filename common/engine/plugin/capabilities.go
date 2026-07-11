@@ -5,6 +5,18 @@ import "encoding/json"
 const (
 	CapabilitiesSchemaVersion = "engine.capabilities/v1"
 	CatalogPathVersion        = "catalog.path/v1"
+
+	EngineExtensionSpatialWorkspaces = "spatial_workspaces"
+
+	SpatialWorkspaceStateNotDetected      = "not_detected"
+	SpatialWorkspaceStateDetected         = "detected"
+	SpatialWorkspaceStateEnabled          = "enabled"
+	SpatialWorkspaceStateUnavailable      = "unavailable"
+	SpatialWorkspaceStatePermissionDenied = "permission_denied"
+
+	SpatialWorkspaceRiskLow    = "low"
+	SpatialWorkspaceRiskMedium = "medium"
+	SpatialWorkspaceRiskHigh   = "high"
 )
 
 type EngineCapabilities struct {
@@ -15,6 +27,51 @@ type EngineCapabilities struct {
 	Compute       *ComputeCapabilities   `json:"compute,omitempty"`
 	Limits        map[string]interface{} `json:"limits,omitempty"`
 	Extensions    map[string]interface{} `json:"extensions,omitempty"`
+}
+
+// SpatialWorkspaceFact describes a vendor/ecosystem-specific spatial workspace
+// detected inside a general storage engine instance, such as SuperMap SDX+ or
+// ArcGIS SDE on PostgreSQL. It lives under capabilities.extensions because it
+// is an instance fact, not a core ADDP provider capability.
+type SpatialWorkspaceFact struct {
+	Ecosystem            string                 `json:"ecosystem"`
+	Kind                 string                 `json:"kind"`
+	State                string                 `json:"state"`
+	BackendEngineType    string                 `json:"backend_engine_type,omitempty"`
+	RuntimeEngineType    string                 `json:"runtime_engine_type,omitempty"`
+	BoundRuntimeEngineID *uint                  `json:"bound_runtime_engine_id,omitempty"`
+	CanEnable            bool                   `json:"can_enable,omitempty"`
+	RiskLevel            string                 `json:"risk_level,omitempty"`
+	Evidence             map[string]interface{} `json:"evidence,omitempty"`
+}
+
+func SetSpatialWorkspacesExtension(capabilities *EngineCapabilities, workspaces []SpatialWorkspaceFact) {
+	if capabilities == nil || len(workspaces) == 0 {
+		return
+	}
+	if capabilities.Extensions == nil {
+		capabilities.Extensions = map[string]interface{}{}
+	}
+	capabilities.Extensions[EngineExtensionSpatialWorkspaces] = workspaces
+}
+
+func SpatialWorkspacesFromExtensions(extensions map[string]interface{}) ([]SpatialWorkspaceFact, error) {
+	if len(extensions) == 0 {
+		return nil, nil
+	}
+	raw, ok := extensions[EngineExtensionSpatialWorkspaces]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return nil, err
+	}
+	var workspaces []SpatialWorkspaceFact
+	if err := json.Unmarshal(data, &workspaces); err != nil {
+		return nil, err
+	}
+	return workspaces, nil
 }
 
 type StorageCapabilities struct {

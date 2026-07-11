@@ -8,18 +8,28 @@
       <el-form :model="formData" label-width="120px" label-position="top">
         <!-- 节点基本信息 -->
         <section class="section">
-          <h4 class="section-title">{{ t('develop.operatorParams.nodeInfo') }}</h4>
-          <el-form-item :label="t('develop.operatorParams.operator')">
-            <el-input :value="operator" disabled />
-          </el-form-item>
-          <el-form-item :label="t('develop.operatorParams.nodeId')">
-            <el-input :value="nodeId" disabled />
-          </el-form-item>
+          <div class="section-heading">
+            <h4 class="section-title">{{ t('develop.operatorParams.nodeInfo') }}</h4>
+            <el-tag size="small" type="info">{{ t('develop.operatorParams.readOnly') }}</el-tag>
+          </div>
+          <dl class="node-summary">
+            <div class="node-summary-row">
+              <dt>{{ t('develop.operatorParams.operator') }}</dt>
+              <dd>{{ operator }}</dd>
+            </div>
+            <div class="node-summary-row">
+              <dt>{{ t('develop.operatorParams.nodeId') }}</dt>
+              <dd>{{ nodeId }}</dd>
+            </div>
+          </dl>
         </section>
 
         <!-- 参数配置 -->
         <section class="section">
-          <h4 class="section-title">{{ t('develop.operatorParams.paramsConfig') }}</h4>
+          <div class="section-heading">
+            <h4 class="section-title">{{ t('develop.operatorParams.paramsConfig') }}</h4>
+            <el-tag size="small" type="primary">{{ t('develop.operatorParams.editable') }}</el-tag>
+          </div>
 
           <el-alert
             v-if="effectiveParameters.length === 0"
@@ -40,22 +50,40 @@
                     {{ param.description }}
                   </p>
 
-                  <ResourceTreePicker
-                    :api-base-url="param.ui_config?.api_base_url || '/api/v1/meta'"
-                    :engine-families="resourcePickerEngineFamilies(param)"
-                    :engine-id="resourcePickerEngineId(param)"
-                    :mode="resourcePickerMode(param)"
-                    :node-filter="node => isResourcePickerVisibleNode(node, param)"
-                    :selectable-filter="node => isResourcePickerNodeSelectable(node, param)"
-                    :show-selection-summary="true"
-                    :engine-multiple="!isTargetResourcePicker(param)"
-                    :select-all-engines-by-default="!isTargetResourcePicker(param)"
-                    :search-selectable-only="true"
-                    :show-disabled-label="false"
-                    :show-count="false"
-                    :initial-locator="resourcePickerInitialLocator(param)"
-                    @update:model-value="selection => handleResourceSelection(selection, param)"
-                  />
+                  <div class="resource-selection-card">
+                    <div class="resource-selection-content">
+                      <span class="resource-selection-label">{{ t('develop.operatorParams.selectedResource') }}</span>
+                      <span class="resource-selection-value" :title="resourcePickerCurrentLocator(param)">
+                        {{ resourcePickerCurrentLabel(param) || t('develop.operatorParams.noResourceSelected') }}
+                      </span>
+                    </div>
+                    <el-button type="primary" plain @click="openResourcePicker(param)">
+                      {{ resourcePickerCurrentLocator(param) ? t('develop.operatorParams.changeResource') : t('develop.operatorParams.selectResource') }}
+                    </el-button>
+                  </div>
+
+                  <el-form-item
+                    v-if="resourceGeometryColumns(param).length > 0"
+                    :label="t('develop.operatorParams.geometryColumn')"
+                    class="geometry-column-field"
+                  >
+                    <el-select
+                      v-model="formData[resourceBindingGeometryColumnParam(param)]"
+                      :disabled="resourceGeometryColumns(param).length === 1"
+                    >
+                      <el-option
+                        v-for="column in resourceGeometryColumns(param)"
+                        :key="column"
+                        :label="column"
+                        :value="column"
+                      />
+                    </el-select>
+                    <div class="field-hint">
+                      {{ resourceGeometryColumns(param).length === 1
+                        ? t('develop.operatorParams.geometryColumnDetected')
+                        : t('develop.operatorParams.geometryColumnMultiple') }}
+                    </div>
+                  </el-form-item>
 
                   <el-form-item
                     v-if="isTargetResourcePicker(param)"
@@ -63,7 +91,7 @@
                     class="target-name-field"
                   >
                     <el-input
-                      v-model="formData.target_name"
+                      v-model="formData[resourceBindingNameParam(param)]"
                       :placeholder="t('develop.operatorParams.targetTableNamePlaceholder')"
                     />
                   </el-form-item>
@@ -121,6 +149,40 @@
         </el-form-item>
       </el-form>
     </div>
+
+    <el-dialog
+      v-model="resourcePickerDialogVisible"
+      :title="resourcePickerDialogParam?.name || t('develop.operatorParams.dataSourceSelect')"
+      width="min(760px, 92vw)"
+      append-to-body
+      destroy-on-close
+      class="workflow-resource-picker-dialog"
+    >
+      <ResourceTreePicker
+        v-if="resourcePickerDialogParam"
+        :api-base-url="resourcePickerDialogParam.ui_config?.api_base_url || '/api/v1/meta'"
+        :engine-families="resourcePickerEngineFamilies(resourcePickerDialogParam)"
+        :engine-id="resourcePickerEngineId(resourcePickerDialogParam)"
+        :mode="resourcePickerMode(resourcePickerDialogParam)"
+        :node-filter="node => isResourcePickerVisibleNode(node, resourcePickerDialogParam)"
+        :selectable-filter="node => isResourcePickerNodeSelectable(node, resourcePickerDialogParam)"
+        :show-selection-summary="true"
+        :engine-multiple="!isTargetResourcePicker(resourcePickerDialogParam)"
+        :select-all-engines-by-default="!isTargetResourcePicker(resourcePickerDialogParam)"
+        :search-selectable-only="true"
+        :show-disabled-label="false"
+        :show-count="false"
+        tree-height="52vh"
+        :initial-locator="resourcePickerInitialLocator(resourcePickerDialogParam)"
+        @update:model-value="selection => resourcePickerDraftSelection = selection"
+      />
+      <template #footer>
+        <el-button @click="resourcePickerDialogVisible = false">{{ t('develop.operatorParams.cancel') }}</el-button>
+        <el-button type="primary" :disabled="!resourcePickerDraftSelection" @click="confirmResourceSelection">
+          {{ t('develop.operatorParams.confirm') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -131,6 +193,18 @@ import { QuestionFilled, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { parseLocatorSafe, ResourceTreePicker } from '@addp/common-frontend'
 import { isWorkflowInputParameter } from '@/utils/workflowInputBindings'
+import {
+  applyResourceBindingSelection,
+  clearResourceBindingSelection,
+  collectResourceBindingParams,
+  geometryColumnFactsFromSelection,
+  isResourceFormatSupported,
+  isTargetResourceBinding,
+  missingResourceBindingParams,
+  resourceBindingInitialLocator,
+  resourceBindingGeometryColumnParam,
+  resourceBindingNameParam
+} from '@/utils/workflowResourceBindings'
 
 const { t } = useI18n()
 
@@ -143,7 +217,7 @@ const props = defineProps({
     type: String,
     default: ''
   },
-  parameters: {
+  publicParameters: {
     type: Array,
     default: () => []
   },
@@ -156,13 +230,24 @@ const props = defineProps({
 const emit = defineEmits(['save'])
 
 const formData = ref({})
+const resourcePickerDialogVisible = ref(false)
+const resourcePickerDialogParam = ref(null)
+const resourcePickerDraftSelection = ref(null)
+const resourceGeometryColumnsByParam = ref({})
 
 // 使用工作流引擎返回的结构化参数定义。
 const effectiveParameters = computed(() => {
-  let params = props.parameters
+  let params = props.publicParameters
 
   // 过滤掉由工作流连线自动传递的输入参数。
   params = params.filter(p => !isWorkflowInputParameter(p))
+  // ResourceLocator 身份字段由资源选择器维护，不渲染为普通文本框。
+  params = params.filter(p => p.param_type !== 'resource')
+  const managedParams = new Set(props.publicParameters
+    .filter(p => p.ui_type === 'resource_tree_picker')
+    .map(resourceBindingGeometryColumnParam)
+    .filter(Boolean))
+  params = params.filter(p => !managedParams.has(p.name))
 
   // 根据 show_when 条件过滤参数
   params = params.filter(p => {
@@ -188,14 +273,6 @@ const effectiveParameters = computed(() => {
 
     return true
   })
-
-  // 检查过滤后的参数列表中是否有可见的 resource_tree_picker
-  const hasVisibleResourceTreePicker = params.some(p => p.ui_type === 'resource_tree_picker')
-  if (hasVisibleResourceTreePicker) {
-    // 隐藏被资源树选择器自动填充的参数
-    const autoFilledParams = ['locator', 'target_parent_locator', 'target_name', 'engine_id', 'schema', 'table', 'path', 'connection_info']
-    params = params.filter(p => !autoFilledParams.includes(p.name))
-  }
 
   return params
 })
@@ -301,13 +378,11 @@ const resourcePickerEngineFamilies = (param) => {
 }
 
 const isTargetResourcePicker = (param) => {
-  return props.operator === 'save' || param.ui_config?.allow_create_table === true
+  return isTargetResourceBinding(param)
 }
 
 const resourcePickerInitialLocator = (param) => {
-  return isTargetResourcePicker(param)
-    ? (formData.value.target_parent_locator || '')
-    : (formData.value.locator || '')
+  return resourceBindingInitialLocator(param, formData.value)
 }
 
 const resourcePickerEngineId = (param) => {
@@ -320,50 +395,61 @@ const isResourcePickerNodeSelectable = (node, param) => {
     return selectableTypes.includes(node?.type)
   }
   const selectableTypes = param.ui_config?.selectable_node_types || ['table']
-  return selectableTypes.includes(node?.type)
+  return selectableTypes.includes(node?.type) && isResourceFormatSupported(param, node)
 }
 
 const isResourcePickerVisibleNode = (node, param) => {
   if (isTargetResourcePicker(param)) {
     return ['engine', 'schema', 'database', 'bucket', 'directory', 'dir', 'prefix', 'root', 'service', 'server', 'table', 'object', 'file'].includes(String(node?.type || '').toLowerCase())
   }
-  return ['engine', 'schema', 'database', 'bucket', 'directory', 'dir', 'prefix', 'root', 'service', 'server', 'table'].includes(String(node?.type || '').toLowerCase())
+  const nodeType = String(node?.type || '').toLowerCase()
+  const visible = ['engine', 'schema', 'database', 'bucket', 'directory', 'dir', 'prefix', 'root', 'service', 'server', 'table', 'collection', 'object', 'file'].includes(nodeType)
+  return visible && isResourceFormatSupported(param, node)
+}
+
+const resourcePickerCurrentLocator = (param) => resourcePickerInitialLocator(param)
+
+const resourcePickerCurrentLabel = (param) => resourceLabelFromLocator(resourcePickerCurrentLocator(param))
+
+const resourceGeometryColumns = (param) => {
+  const detected = resourceGeometryColumnsByParam.value[param.name] || []
+  if (detected.length > 0) return detected
+  const geometryParam = resourceBindingGeometryColumnParam(param)
+  const savedValue = geometryParam ? formData.value[geometryParam] : ''
+  return savedValue ? [savedValue] : []
+}
+
+const openResourcePicker = (param) => {
+  resourcePickerDialogParam.value = param
+  resourcePickerDraftSelection.value = null
+  resourcePickerDialogVisible.value = true
+}
+
+const confirmResourceSelection = () => {
+  if (!resourcePickerDialogParam.value || !resourcePickerDraftSelection.value) return
+  const geometryParam = resourceBindingGeometryColumnParam(resourcePickerDialogParam.value)
+  if (geometryParam) {
+    const facts = geometryColumnFactsFromSelection(resourcePickerDraftSelection.value)
+    resourceGeometryColumnsByParam.value = {
+      ...resourceGeometryColumnsByParam.value,
+      [resourcePickerDialogParam.value.name]: facts.columns
+    }
+    formData.value[geometryParam] = facts.selected || null
+  }
+  handleResourceSelection(resourcePickerDraftSelection.value, resourcePickerDialogParam.value)
+  resourcePickerDialogVisible.value = false
 }
 
 // 处理资源树选择器的选择结果
 const handleResourceSelection = (selection, param) => {
   if (!selection) {
-    // 清空数据源相关参数
-    formData.value.source_type = null
-    formData.value.target_type = null
-    formData.value.locator = null
-    formData.value.target_parent_locator = null
-    formData.value.target_name = null
+    formData.value = clearResourceBindingSelection(param, formData.value)
     return
   }
 
   const locator = selection.identity?.locator
-
-  // 根据算子类型设置不同的字段
-  // load 算子使用 source_type，save 算子使用 target_type
-  if (isTargetResourcePicker(param)) {
-    formData.value.target_type = targetTypeFromLocator(locator)
-    formData.value.target_parent_locator = locator
-    formData.value.locator = null
-    if (!formData.value.target_name) {
-      formData.value.target_name = ''
-    }
-    // 设置默认的 mode
-    if (!formData.value.mode) {
-      formData.value.mode = 'replace'
-    }
-  } else {
-    // 默认情况（load 算子）
-    formData.value.source_type = sourceTypeFromLocator(locator)
-    formData.value.locator = locator
-    formData.value.target_parent_locator = null
-    formData.value.target_name = null
-  }
+  const resourceType = parseLocatorSafe(locator).type || selection.type
+  formData.value = applyResourceBindingSelection(param, formData.value, locator, resourceType)
 
   console.log('[OperatorParamsPanel] 数据源选择:', selection)
   ElMessage.success(t('develop.operatorParams.dataSourceSelected', { name: selection.display?.label || resourceLabelFromLocator(locator) }))
@@ -372,18 +458,6 @@ const handleResourceSelection = (selection, param) => {
 const resourceLabelFromLocator = (locator) => {
   const parsed = parseLocatorSafe(locator)
   return parsed.path?.[parsed.path.length - 1] || locator || ''
-}
-
-const sourceTypeFromLocator = (locator) => {
-  const type = String(parseLocatorSafe(locator).type || '').toLowerCase()
-  if (['file', 'object'].includes(type)) return 'file'
-  return 'table'
-}
-
-const targetTypeFromLocator = (locator) => {
-  const type = String(parseLocatorSafe(locator).type || '').toLowerCase()
-  if (['root', 'directory', 'dir', 'bucket', 'prefix'].includes(type)) return 'file'
-  return 'table'
 }
 
 // 保存参数
@@ -396,31 +470,22 @@ const saveParams = () => {
     }
   }
 
-  const allParams = props.parameters && props.parameters.length > 0 ? props.parameters : []
-  if (allParams.some(p => p.ui_type === 'resource_tree_picker')) {
-    if (formData.value.target_type === 'table') {
-      if (!formData.value.target_parent_locator) {
-        ElMessage.warning(t('develop.operatorParams.requiredParam', { name: 'target_parent_locator' }))
-        return
-      }
-      if (!formData.value.target_name) {
-        ElMessage.warning(t('develop.operatorParams.requiredParam', { name: 'target_name' }))
-        return
-      }
-    } else if (['table', 'file'].includes(formData.value.source_type) && !formData.value.locator) {
-      ElMessage.warning(t('develop.operatorParams.requiredParam', { name: 'locator' }))
-      return
-    }
+  const allParams = props.publicParameters && props.publicParameters.length > 0 ? props.publicParameters : []
+  const visibleResourceParameters = effectiveParameters.value.filter(param => param.ui_type === 'resource_tree_picker')
+  const missingResourceParams = missingResourceBindingParams(visibleResourceParameters, formData.value)
+  if (missingResourceParams.length > 0) {
+    ElMessage.warning(t('develop.operatorParams.requiredParam', { name: missingResourceParams[0] }))
+    return
   }
 
   // 过滤参数：只保存当前条件下应该显示的参数（已经过 show_when 过滤的）
   const cleanedParams = {}
 
-  // 使用 effectiveParameters 而不是 props.parameters
+  // 使用 Public Operator Spec 过滤后的 effectiveParameters。
   // effectiveParameters 已经根据 show_when 条件过滤了不应该显示的参数
   effectiveParameters.value.forEach(param => {
     // 跳过 UI 类型参数（这些参数已经在 effectiveParameters 中被隐藏了，但以防万一）
-    if (param.type === 'ui' || param.type === 'input' || param.param_type === 'input') {
+    if (param.type === 'ui' || param.type === 'input' || param.param_type === 'input' || param.param_type === 'resource') {
       return
     }
 
@@ -435,16 +500,7 @@ const saveParams = () => {
     }
   })
 
-  // 补充被 effectiveParameters 过滤掉的特殊 UI 组件自动填充字段
-  if (allParams.some(p => p.ui_type === 'resource_tree_picker')) {
-    if (['table', 'file'].includes(formData.value.source_type) && formData.value.locator) {
-      cleanedParams.locator = formData.value.locator
-    }
-    if (['table', 'file'].includes(formData.value.target_type)) {
-      if (formData.value.target_parent_locator) cleanedParams.target_parent_locator = formData.value.target_parent_locator
-      if (formData.value.target_name) cleanedParams.target_name = formData.value.target_name
-    }
-  }
+  Object.assign(cleanedParams, collectResourceBindingParams(visibleResourceParameters, formData.value))
 
   emit('save', {
     nodeId: props.nodeId,
@@ -493,9 +549,62 @@ const resetParams = () => {
   font-size: 14px;
   font-weight: 600;
   color: var(--addp-text-primary);
-  margin: 0 0 16px 0;
+  margin: 0;
   display: flex;
   align-items: center;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.node-summary {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 6px;
+  background: var(--addp-bg-secondary);
+}
+
+.node-summary-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.node-summary-row dt {
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+}
+
+.node-summary-row dd {
+  margin: 0;
+  overflow: hidden;
+  color: var(--addp-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geometry-column-field {
+  margin-top: 16px;
+}
+
+.geometry-column-field :deep(.el-select) {
+  width: 100%;
+}
+
+.field-hint {
+  margin-top: 6px;
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .section-title::before {
@@ -529,6 +638,37 @@ const resetParams = () => {
   padding: 16px;
   background: var(--addp-bg-secondary);
   border-radius: 8px;
+}
+
+.resource-selection-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 6px;
+  background: var(--addp-bg-primary);
+}
+
+.resource-selection-content {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.resource-selection-label {
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+}
+
+.resource-selection-value {
+  overflow: hidden;
+  color: var(--addp-text-primary);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .subsection-title {

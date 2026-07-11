@@ -23,6 +23,7 @@ var (
 	ErrResourceForbidden        = errors.New("没有权限访问该资源")
 	ErrBuiltinResourceImmutable = errors.New("内置资源不可删除或修改")
 	ErrUnsupportedEngineType    = errors.New("不支持的系统引擎类型")
+	ErrSpatialWorkspaceNotFound = errors.New("未找到可启用的空间工作区")
 )
 
 var disallowedSystemEngineTypes = map[string]struct{}{
@@ -36,6 +37,13 @@ type EngineService struct {
 	encryptionKey  []byte
 	eventPublisher *events.EngineEventPublisher
 	cleanup        *CleanupOrchestratorService
+}
+
+type EngineListFilter struct {
+	EngineType       string
+	CapabilityGroups []string
+	EngineOrigins    []string
+	IncludeBuiltin   bool
 }
 
 func NewEngineService(repo *repository.EngineRepository, userRepo *repository.UserRepository, encryptionKey []byte, redisClient *redis.Client) *EngineService {
@@ -177,9 +185,7 @@ func (s *EngineService) GetByID(id uint, currentUserID uint) (*models.Engine, er
 	return s.sanitizeResource(engine), nil
 }
 
-func (s *EngineService) List(page, pageSize int, engineType string, currentUserID uint) ([]models.Engine, int64, error) {
-	offset := (page - 1) * pageSize
-
+func (s *EngineService) List(page, pageSize int, filter EngineListFilter, currentUserID uint) ([]models.Engine, int64, error) {
 	// 获取当前用户信息
 	currentUser, err := s.getCurrentUser(currentUserID)
 	if err != nil {
@@ -187,29 +193,90 @@ func (s *EngineService) List(page, pageSize int, engineType string, currentUserI
 	}
 
 	var engines []models.Engine
-	var total int64
-
 	// SuperAdmin可以查看所有资源
 	if currentUser.UserType == models.UserTypeSuperAdmin {
-		engines, total, err = s.repo.List(offset, pageSize, engineType)
+		engines, err = s.repo.ListVisible(filter.EngineType)
 	} else {
 		if currentUser.TenantID == nil {
 			return nil, 0, errors.New("当前用户未关联租户，无法访问资源")
 		}
-		engines, total, err = s.repo.ListByTenant(*currentUser.TenantID, offset, pageSize, engineType)
+		engines, err = s.repo.ListVisibleByTenant(*currentUser.TenantID, filter.EngineType)
 	}
 
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// 脱敏敏感字段
-	sanitized := make([]models.Engine, 0, len(engines))
-	for i := range engines {
-		sanitized = append(sanitized, *s.sanitizeResource(&engines[i]))
+	filtered := filterEngines(engines, filter)
+	total := int64(len(filtered))
+	start := (page - 1) * pageSize
+	if start > len(filtered) {
+		start = len(filtered)
+	}
+	end := start + pageSize
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+
+	// 只对过滤后的当前页数据脱敏。
+	pageEngines := filtered[start:end]
+	sanitized := make([]models.Engine, 0, len(pageEngines))
+	for i := range pageEngines {
+		sanitized = append(sanitized, *s.sanitizeResource(&pageEngines[i]))
 	}
 
 	return sanitized, total, nil
+}
+
+func filterEngines(engines []models.Engine, filter EngineListFilter) []models.Engine {
+	capabilityGroups := stringSet(filter.CapabilityGroups)
+	engineOrigins := stringSet(filter.EngineOrigins)
+	filtered := make([]models.Engine, 0, len(engines))
+
+	for _, engine := range engines {
+		if !filter.IncludeBuiltin && engine.IsBuiltin {
+			continue
+		}
+		if len(engineOrigins) > 0 {
+			if _, ok := engineOrigins[engine.EngineOrigin]; !ok {
+				continue
+			}
+		}
+		if len(capabilityGroups) > 0 && !matchesCapabilityGroup(engine.Capabilities, capabilityGroups) {
+			continue
+		}
+		filtered = append(filtered, engine)
+	}
+
+	return filtered
+}
+
+func matchesCapabilityGroup(capabilitiesJSON *models.JSONString, groups map[string]struct{}) bool {
+	if capabilitiesJSON == nil || *capabilitiesJSON == "" {
+		return false
+	}
+	capabilities, err := engineplugin.ParseEngineCapabilities(string(*capabilitiesJSON))
+	if err != nil || capabilities == nil {
+		return false
+	}
+	if _, ok := groups["storage"]; ok && capabilities.Storage != nil {
+		return true
+	}
+	if _, ok := groups["compute"]; ok && capabilities.Compute != nil {
+		return true
+	}
+	return false
+}
+
+func stringSet(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			set[value] = struct{}{}
+		}
+	}
+	return set
 }
 
 func (s *EngineService) Update(id uint, req *models.EngineUpdateRequest, currentUserID uint) (*models.Engine, error) {
@@ -1003,6 +1070,10 @@ func (s *EngineService) resolveCapabilitiesForEngine(engine *models.Engine) (str
 		if err != nil {
 			return "", err
 		}
+		capabilities, err = s.enrichInstanceCapabilities(engine, capabilities)
+		if err != nil {
+			return "", err
+		}
 		return capabilities, nil
 	}
 
@@ -1026,6 +1097,182 @@ func (s *EngineService) ensureCapabilitiesForEngine(engineType string, submitted
 		return "", fmt.Errorf("能力声明验证失败: %w", err)
 	}
 	return string(*submitted), nil
+}
+
+func (s *EngineService) enrichInstanceCapabilities(engine *models.Engine, capabilitiesJSON string) (string, error) {
+	if s.repo == nil || engine == nil || strings.TrimSpace(capabilitiesJSON) == "" {
+		return capabilitiesJSON, nil
+	}
+
+	caps, err := engineplugin.ParseEngineCapabilities(capabilitiesJSON)
+	if err != nil || caps == nil || caps.Extensions == nil {
+		return capabilitiesJSON, nil
+	}
+
+	workspaces, err := engineplugin.SpatialWorkspacesFromExtensions(caps.Extensions)
+	if err != nil || len(workspaces) == 0 {
+		return capabilitiesJSON, nil
+	}
+
+	boundRuntimeID, hasRuntime := s.firstAvailableWorkflowEngine(engine.TenantID, "supermap_workflow")
+	changed := false
+	for i := range workspaces {
+		ws := &workspaces[i]
+		if strings.ToLower(strings.TrimSpace(ws.Ecosystem)) != "supermap" {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(ws.Kind)) != "sdx+" {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(ws.RuntimeEngineType)) != "supermap_workflow" {
+			continue
+		}
+		if ws.State == engineplugin.SpatialWorkspaceStateDetected {
+			ws.CanEnable = false
+		} else {
+			ws.CanEnable = ws.CanEnable && hasRuntime
+		}
+		if hasRuntime {
+			ws.BoundRuntimeEngineID = &boundRuntimeID
+		}
+		changed = true
+		break
+	}
+
+	if !changed {
+		return capabilitiesJSON, nil
+	}
+
+	engineplugin.SetSpatialWorkspacesExtension(caps, workspaces)
+	return engineplugin.MarshalEngineCapabilities(*caps)
+}
+
+func (s *EngineService) EnableSpatialWorkspace(ctx context.Context, id uint, ecosystem, kind string, currentUserID uint) (*models.Engine, error) {
+	currentUser, err := s.getCurrentUser(currentUserID)
+	if err != nil {
+		return nil, err
+	}
+
+	engine, err := s.repo.GetByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrResourceNotFound
+		}
+		return nil, err
+	}
+
+	if err := s.authorizeResourceAccess(engine, currentUser); err != nil {
+		return nil, err
+	}
+	if err := s.ensureResourceManagementPermission(currentUser); err != nil {
+		return nil, err
+	}
+
+	caps, err := s.parseCapabilities(engine.Capabilities)
+	if err != nil || caps == nil {
+		return nil, ErrSpatialWorkspaceNotFound
+	}
+
+	workspaces, err := engineplugin.SpatialWorkspacesFromExtensions(caps.Extensions)
+	if err != nil || len(workspaces) == 0 {
+		return nil, ErrSpatialWorkspaceNotFound
+	}
+
+	targetIndex := -1
+	for i := range workspaces {
+		ws := workspaces[i]
+		if !spatialWorkspaceMatches(ws, ecosystem, kind) {
+			continue
+		}
+		targetIndex = i
+		break
+	}
+	if targetIndex == -1 {
+		return nil, ErrSpatialWorkspaceNotFound
+	}
+
+	target := workspaces[targetIndex]
+	if !target.CanEnable || strings.EqualFold(strings.TrimSpace(target.State), engineplugin.SpatialWorkspaceStateDetected) {
+		return nil, errors.New("当前空间工作区暂不可启用")
+	}
+	runtimeID, hasRuntime := uint(0), false
+	if target.BoundRuntimeEngineID != nil && *target.BoundRuntimeEngineID > 0 {
+		runtimeID = *target.BoundRuntimeEngineID
+		hasRuntime = true
+	} else if boundRuntimeID, ok := s.firstAvailableWorkflowEngine(engine.TenantID, "supermap_workflow"); ok {
+		runtimeID = boundRuntimeID
+		hasRuntime = true
+	}
+	if !hasRuntime {
+		return nil, errors.New("没有可用的 supermap_workflow 运行时")
+	}
+
+	runtimeEngine, err := s.repo.GetByID(runtimeID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("绑定的 supermap_workflow 运行时不存在")
+		}
+		return nil, err
+	}
+	if strings.ToLower(strings.TrimSpace(runtimeEngine.EngineType)) != "supermap_workflow" {
+		return nil, errors.New("绑定的运行时不是 supermap_workflow")
+	}
+
+	decryptedConnInfo, err := s.decryptSensitiveFields(engine.ConnectionInfo)
+	if err != nil {
+		return nil, fmt.Errorf("解密连接信息失败: %w", err)
+	}
+
+	invokeResult, err := dbbridge.InvokeOperator(ctx, runtimeEngine, "datasource.enable_postgis", engineplugin.OperatorInvokeRequest{
+		Params: map[string]interface{}{
+			"connection_info": decryptedConnInfo,
+			"alias":           engine.Name,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if invokeResult != nil && invokeResult.Status != "" && invokeResult.Status != "success" {
+		return nil, fmt.Errorf("SuperMap 空间工作区启用失败: %s", invokeResult.Error)
+	}
+
+	if err := s.prepareEngineCapabilities(engine); err != nil {
+		return nil, err
+	}
+	if err := s.repo.Update(engine); err != nil {
+		return nil, err
+	}
+
+	if s.eventPublisher != nil {
+		_ = s.eventPublisher.PublishEngineChange(ctx, engine.ID, events.ActionUpdate)
+	}
+
+	return s.sanitizeResource(engine), nil
+}
+
+func spatialWorkspaceMatches(workspace engineplugin.SpatialWorkspaceFact, ecosystem, kind string) bool {
+	return strings.EqualFold(strings.TrimSpace(workspace.Ecosystem), ecosystem) &&
+		strings.EqualFold(strings.TrimSpace(workspace.Kind), kind)
+}
+
+func (s *EngineService) firstAvailableWorkflowEngine(tenantID *uint, engineType string) (uint, bool) {
+	if s.repo == nil {
+		return 0, false
+	}
+
+	var (
+		engines []models.Engine
+		err     error
+	)
+	if tenantID != nil {
+		engines, _, err = s.repo.ListByTenant(*tenantID, 0, 1000, engineType)
+	} else {
+		engines, _, err = s.repo.List(0, 1000, engineType)
+	}
+	if err != nil || len(engines) == 0 {
+		return 0, false
+	}
+	return engines[0].ID, true
 }
 
 func (s *EngineService) usesPluginCapabilities(engineType string) bool {

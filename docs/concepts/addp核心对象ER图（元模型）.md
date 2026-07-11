@@ -39,7 +39,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 
 **关于 Engine**：
 - `engine_origin = 'general'`：用户手动注册的数据引擎（PostgreSQL/MySQL/MinIO 等）
-- `engine_origin = 'extension'`：按 ADDP 扩展规范注册的运行时（Python Workflow、Spark Workflow、Jupyter、用户自研 Workflow 等）
+- `engine_origin = 'extension'`：按 ADDP 扩展规范注册的运行时（GeoPython Workflow、Spark Workflow、Jupyter、用户自研 Workflow 等）
 - `is_builtin = true`：内置引擎，tenant_id = null，全局可见
 - `capabilities` JSONB 字段声明引擎的存储/计算能力，各模块按需使用
 

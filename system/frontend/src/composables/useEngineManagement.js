@@ -57,7 +57,7 @@ export function useEngineManagement() {
   const loadEngines = async (page, pageSize, engineType = '') => {
     loading.value = true
     try {
-      const response = await enginesAPI.list(page, pageSize, engineType)
+      const response = await enginesAPI.list(page, pageSize, { engineType })
       engines.value = response?.data || []
       return { success: true, data: response }
     } catch (error) {

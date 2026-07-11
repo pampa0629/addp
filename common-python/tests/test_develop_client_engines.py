@@ -71,8 +71,8 @@ async def _test_list_workflow_engines_decodes_array_response():
         assert request.url.path == "/api/v1/develop/workflow-engines"
         return httpx.Response(200, json=[{
             "id": 12,
-            "name": "Python Workflow",
-            "engine_type": "python_workflow",
+            "name": "GeoPython Workflow",
+            "engine_type": "geopython_workflow",
         }])
 
     client = DevelopClient("http://develop")
@@ -100,7 +100,7 @@ async def _test_list_operators_uses_workflow_engine_route():
             "workflow_engine_id": 12,
             "operators": [{
                 "name": "tiff_to_cog",
-                "engine_type": "python_workflow",
+                "engine_type": "geopython_workflow",
                 "category_path": ["格式转换"],
                 "execution_modes": ["workflow", "direct"],
             }]

@@ -275,7 +275,7 @@ function handleDrop(event) {
     ElMessage.error(t('develop.workflowCanvas.invalidOperatorMetadata', { name: operatorData.name }))
     return
   }
-  if (!Array.isArray(operatorData.parameters)) {
+  if (!Array.isArray(operatorData.publicParameters)) {
     ElMessage.error(t('develop.workflowCanvas.invalidOperatorMetadata', { name: operatorData.name }))
     return
   }
@@ -290,7 +290,7 @@ function handleDrop(event) {
     operator: operatorData.name,
     params: {},
     depends_on: [],
-    parameters: operatorData.parameters,
+    publicParameters: operatorData.publicParameters,
     outputPorts
   })
 
@@ -401,7 +401,7 @@ function buildWorkflowFromGraph() {
     const model = node.getModel()
     const inEdges = edgePortMap[model.id] || []
     let params
-    if (!Array.isArray(model.parameters) && inEdges.length > 0) {
+    if (!Array.isArray(model.publicParameters) && inEdges.length > 0) {
       if (!paramsContainRefsForEdges(model.params, inEdges)) {
         throw new Error(`operator ${model.operator} is missing parameter metadata`)
       }
@@ -409,7 +409,7 @@ function buildWorkflowFromGraph() {
     } else {
       params = applyWorkflowInputRefs({
         params: model.params,
-        parameters: model.parameters,
+        parameters: model.publicParameters,
         inputEdges: inEdges
       })
     }
@@ -443,12 +443,12 @@ function paramsContainRefsForEdges(params, inEdges) {
   })
 }
 
-function updateNodeParams(nodeId, params, parameters = null) {
+function updateNodeParams(nodeId, params, publicParameters = null) {
   const node = graph.value.findById(nodeId)
   if (node) {
     const nextModel = { ...node.getModel(), params: { ...params } }
-    if (Array.isArray(parameters)) {
-      nextModel.parameters = parameters
+    if (Array.isArray(publicParameters)) {
+      nextModel.publicParameters = publicParameters
     }
     graph.value.updateItem(node, nextModel)
     emitWorkflow()

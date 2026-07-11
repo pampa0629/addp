@@ -251,6 +251,7 @@
       "createSuccess": "瓦片缓存任务已创建",
       "updateSuccess": "瓦片缓存任务已更新",
       "deleteSuccess": "已删除",
+      "deleteFailed": "删除失败",
       "deleteTaskConfirm": "确认删除该瓦片缓存任务？",
       "deleteResultConfirm": "确认删除该瓦片缓存结果？",
       "executeSubmitted": "已提交执行，正在打开监控",

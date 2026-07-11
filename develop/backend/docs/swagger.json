@@ -1572,8 +1572,7 @@
                     "200": {
                         "description": "算子列表 | Operator list",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.OperatorListResponse"
                         }
                     }
                 }
@@ -2307,6 +2306,94 @@
                 }
             }
         },
+        "github_com_addp_develop_backend_internal_service.PublicOperatorDescriptor": {
+            "type": "object",
+            "properties": {
+                "attributes": {
+                    "description": "引擎自定义扩展属性",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "brief_description": {
+                    "description": "简要描述（用于 AI 算子选择）",
+                    "type": "string"
+                },
+                "category": {
+                    "description": "算子分类/分组 (格式转换/空间分析)",
+                    "type": "string"
+                },
+                "category_path": {
+                    "description": "多级分组目录；无多级目录时必须显式为 [category]",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "description": {
+                    "description": "功能描述",
+                    "type": "string"
+                },
+                "detailed_description": {
+                    "description": "详细描述（含 notes、workflow_example 等，用于 AI 工作流生成）",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "display_name": {
+                    "description": "中文显示名 (如 \"深度扫描\")",
+                    "type": "string"
+                },
+                "engine_type": {
+                    "description": "所属扩展引擎类型 (如 acme_geo_workflow)",
+                    "type": "string"
+                },
+                "execution_modes": {
+                    "description": "workflow/direct",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "description": "算子唯一标识 (如 \"scan_deep\")",
+                    "type": "string"
+                },
+                "inputs": {
+                    "description": "输入类型列表",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "description": "算子名称 (同ID)",
+                    "type": "string"
+                },
+                "output_ports": {
+                    "description": "标准输出端口定义",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.OutputPortDescriptor"
+                    }
+                },
+                "parameters": {
+                    "description": "参数定义",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ParameterDescriptor"
+                    }
+                },
+                "public_parameters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ParameterDescriptor"
+                    }
+                },
+                "type": {
+                    "description": "算子类型 (scan/transfer/spatial等)",
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_develop_backend_internal_service.TableRef": {
             "type": "object",
             "properties": {
@@ -2475,6 +2562,26 @@
                     "items": {
                         "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.KernelInfo"
                     }
+                }
+            }
+        },
+        "internal_api.OperatorListResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "operators": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.PublicOperatorDescriptor"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "workflow_engine_id": {
+                    "type": "integer"
                 }
             }
         },
@@ -2753,6 +2860,107 @@
                     "type": "integer"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.OutputPortDescriptor": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "description": "端口语义说明",
+                    "type": "string"
+                },
+                "is_default": {
+                    "description": "是否为默认端口 (单输出时为true)",
+                    "type": "boolean"
+                },
+                "name": {
+                    "description": "端口名称 (如 \"default\", \"large\", \"small\")",
+                    "type": "string"
+                },
+                "type": {
+                    "description": "数据类型 (geodataframe, string, array等)",
+                    "type": "string"
+                }
+            }
+        },
+        "models.ParameterDescriptor": {
+            "type": "object",
+            "properties": {
+                "default": {
+                    "description": "默认值"
+                },
+                "depends_on": {
+                    "description": "依赖的参数名 (动态显示)",
+                    "type": "string"
+                },
+                "description": {
+                    "description": "参数说明",
+                    "type": "string"
+                },
+                "enum": {
+                    "description": "枚举值 (用于下拉选择)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "item_type": {
+                    "description": "数组元素类型",
+                    "type": "string"
+                },
+                "max": {
+                    "description": "最大值 (数值类型)",
+                    "type": "number"
+                },
+                "min": {
+                    "description": "最小值 (数值类型)",
+                    "type": "number"
+                },
+                "name": {
+                    "description": "参数名",
+                    "type": "string"
+                },
+                "notes": {
+                    "description": "注意事项/额外说明",
+                    "type": "string"
+                },
+                "param_type": {
+                    "description": "参数角色 (input/output/param/ui)",
+                    "type": "string"
+                },
+                "pattern": {
+                    "description": "正则校验 (字符串类型)",
+                    "type": "string"
+                },
+                "properties": {
+                    "description": "对象属性定义",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/models.ParameterDescriptor"
+                    }
+                },
+                "required": {
+                    "description": "是否必填",
+                    "type": "boolean"
+                },
+                "show_when": {
+                    "description": "显示条件 (格式: {param_name: value_or_list})",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "type": {
+                    "description": "类型 (string/integer/float/boolean/array/object)",
+                    "type": "string"
+                },
+                "ui_config": {
+                    "description": "UI 组件配置参数",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "ui_type": {
+                    "description": "UI 组件类型 (resource_tree_picker 等)",
                     "type": "string"
                 }
             }

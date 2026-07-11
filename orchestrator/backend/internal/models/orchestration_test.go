@@ -15,7 +15,7 @@ func TestStepRejectsLegacyEngineIdentifierField(t *testing.T) {
 		{
 			"id":"legacy",
 			"name":"Legacy",
-			"engine_identifier":"python_workflow",
+			"engine_identifier":"geopython_workflow",
 			"parameters":{},
 			"depends_on":[],
 			"timeout":300

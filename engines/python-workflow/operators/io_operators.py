@@ -84,31 +84,27 @@ def _spatial_driver(fmt: str) -> str:
 
 
 def load(
-    source_type: str,
     connection_info: Dict[str, Any] = None,
     schema: str = None,
     table: str = None,
     path: str = None,
-    format: str = None,
-    geojson: Dict[str, Any] = None,
-    geom_column: str = None,
-    **kwargs
+    geom_column: str = None
 ):
     """
     通用数据加载算子
 
     参数由 Develop Backend 预处理：
     - connection_info: 数据库连接信息（已解密），包含 engine_type、host、port、user、password、database 等
-    - source_type: "table" | "file" | "geojson" | "reference"
-    - 其他参数: table/path、schema/format 等
+    - schema + table: 数据库表
+    - path: 文件或对象路径，格式从扩展名推断
 
     返回: DataFrame（普通表）或 GeoDataFrame（空间表）
 
     注意：此算子不再依赖 System API，所有连接信息由 Develop Backend 预处理后传入
     """
-    if source_type == 'table':
+    if table:
         if not connection_info:
-            raise ValueError("source_type=table 时必须提供 connection_info")
+            raise ValueError("加载数据库表时必须提供 connection_info")
 
         # 从 connection_info 中提取信息（已由 Develop Backend 从 System API 获取并解密）
         engine_type = connection_info.get('engine_type')
@@ -189,32 +185,21 @@ def load(
 
         return gdf
 
-    elif source_type == 'file':
+    if path:
         if not connection_info:
-            raise ValueError("source_type=file 时必须提供 connection_info")
+            raise ValueError("加载文件时必须提供 connection_info")
         base_path = connection_info.get('mount_path') or connection_info.get('export_path')
         if not base_path:
             raise ValueError("file connection_info 缺少 export_path 字段")
         if not path:
-            raise ValueError("source_type=file 时必须提供 path 参数")
+            raise ValueError("加载文件时必须提供 path 参数")
         full_path = os.path.join(base_path, _strip_nfs_root_prefix(base_path, path))
-        fmt = (format or os.path.splitext(path)[1].lstrip('.')).lower()
+        fmt = os.path.splitext(path)[1].lstrip('.').lower()
+        if not fmt:
+            raise ValueError("无法从文件路径推断格式")
         return _read_file(full_path, fmt, geom_column)
 
-    elif source_type == 'geojson':
-        # 直接解析 GeoJSON 对象
-        if not geojson:
-            raise ValueError("source_type=geojson 时必须提供 geojson 参数")
-        gdf = gpd.GeoDataFrame.from_features(geojson['features'])
-        return gdf
-
-    elif source_type == 'reference':
-        # 引用其他任务的输出（已在内存中的 GeoDataFrame）
-        # 这种情况下不需要加载，直接返回引用
-        raise NotImplementedError("Reference type should be handled by workflow engine")
-
-    else:
-        raise ValueError(f"Unsupported source_type: {source_type}")
+    raise ValueError("load 必须接收 schema + table 或 path")
 
 
 def save(
@@ -330,88 +315,39 @@ LOAD_METADATA = OperatorMetadata(
     type=OperatorType.GENERAL,
     category=OperatorCategory.DATA_IO,
     description="数据加载",
-    brief_description="从数据库表、文件或GeoJSON对象加载数据,支持多种数据源",
+    brief_description="从数据库表或文件资源加载数据",
     execution_modes=["workflow"],
 
-    overview="通用数据加载算子,支持从数据库表(PostgreSQL/MySQL/Doris)、文件系统或内存GeoJSON对象加载数据。根据 source_type 参数自动选择加载方式。文件系统支持 pandas/geopandas 所有常见格式。",
+    overview="通用数据加载算子，按 Develop Adapter 派生的 schema/table 或 path 自动选择数据库表或文件读取方式。文件格式从路径扩展名推断。",
 
     params=[
         OperatorParam(
-            name="source_type",
-            type="param",
-            data_type="string",
-            required=True,
-            description="数据来源类型",
-            notes="可选值: table(数据库表), file(文件), geojson(GeoJSON对象)",
-            enum=["table", "file", "geojson"],
-            default="table"
-        ),
-        # 特殊参数：资源树选择器（仅在 source_type=table 时显示）
-        OperatorParam(
-            name="数据源",
-            type="ui",
-            data_type="object",
-            required=False,
-            description="选择数据表（推荐使用此方式）",
-            notes="使用资源树选择数据表，保存 ResourceLocator；Develop Backend 会在执行前派生连接信息与表路径",
-            ui_type="resource_tree_picker",
-            ui_config={
-                "api_base_url": "/api/v1/meta",
-                "engine_families": ["tabular", "dynamic_schema"],
-                "selectable_node_types": ["table"],
-                "enable_geometry_detection": True,
-                "require_geometry": False
-            },
-            depends_on="source_type",
-            show_when={"source_type": "table"}
-        ),
-        OperatorParam(
-            name="locator",
-            type="param",
-            data_type="string",
-            required=False,
-            description="源表 ResourceLocator",
-            notes="source_type=table 时指向 table/collection；source_type=file 时指向 file。执行前由 Develop Backend 派生 connection_info 和运行时路径",
-            depends_on="source_type",
-            show_when={"source_type": ["table", "file"]}
-        ),
-        OperatorParam(
-            name="文件",
-            type="ui",
-            data_type="object",
-            required=False,
-            description="选择文件资源",
-            notes="从资源树中选择文件，保存 ResourceLocator",
-            ui_type="resource_tree_picker",
-            ui_config={
-                "api_base_url": "/api/v1/meta",
-                "engine_families": ["file", "object"],
-                "selectable_node_types": ["file", "object"],
-                "auto_fill_params": ["locator"]
-            },
-            depends_on="source_type",
-            show_when={"source_type": "file"}
-        ),
-        OperatorParam(
-            name="format",
-            type="param",
-            data_type="string",
-            required=False,
-            description="文件格式（可选，默认从扩展名推断）",
-            notes="支持: csv, parquet, xlsx, json, feather, shp, geojson, gpkg, kml, gml, fgb",
-            enum=["csv", "parquet", "xlsx", "json", "feather", "shp", "geojson", "gpkg", "kml", "gml", "fgb"],
-            depends_on="source_type",
-            show_when={"source_type": "file"}
-        ),
-        OperatorParam(
-            name="geojson",
+            name="connection_info",
             type="param",
             data_type="object",
             required=False,
-            description="GeoJSON对象",
-            notes="仅 source_type=geojson 时必填,必须是有效的 GeoJSON FeatureCollection",
-            depends_on="source_type",
-            show_when={"source_type": "geojson"}
+            description="Develop Adapter 派生的数据源连接信息"
+        ),
+        OperatorParam(
+            name="schema",
+            type="param",
+            data_type="string",
+            required=False,
+            description="数据库 schema"
+        ),
+        OperatorParam(
+            name="table",
+            type="param",
+            data_type="string",
+            required=False,
+            description="数据库表名"
+        ),
+        OperatorParam(
+            name="path",
+            type="param",
+            data_type="string",
+            required=False,
+            description="文件或对象路径"
         ),
         OperatorParam(
             name="geom_column",
@@ -420,33 +356,32 @@ LOAD_METADATA = OperatorMetadata(
             required=False,
             description="几何列名",
             notes="空间数据的几何列名。如果不指定，geopandas会自动检测几何列（推荐）。仅在自动检测失败或需要指定特定列时使用",
-            default=None,
-            depends_on="source_type",
-            show_when={"source_type": "table"}
+            default=None
         )
     ],
 
     use_cases=[
-        "从业务数据库加载河流数据: source_type=table, locator=addp://engine/1/path/public/rivers?type=table&item_id=10",
-        "从文件引擎加载CSV文件: source_type=file, locator=addp://engine/3/path/data/points.csv?type=file&item_id=20",
-        "从文件引擎加载Shapefile: source_type=file, locator=addp://engine/3/path/gis/roads.shp?type=file&item_id=21",
-        "从内存GeoJSON加载临时数据: source_type=geojson, geojson={...}",
+        "从业务数据库加载河流数据: schema=public, table=rivers",
+        "从文件引擎加载CSV文件: path=data/points.csv",
+        "从文件引擎加载Shapefile: path=gis/roads.shp",
     ],
 
     notes=[
-        "file source_type 使用 locator 作为公开参数，connection_info 和 path 由 Develop Backend 派生，格式从扩展名自动推断",
+        "数据库表和文件资源使用同一个 locator 公开参数，访问方式由 Adapter 派生结果决定",
+        "文件格式从扩展名自动推断",
         "文件引擎支持空间格式(shp/gpkg/geojson等)和非空间格式(csv/parquet/xlsx等)",
         "支持自动检测几何列,无需手动指定 geom_column (推荐)",
         "如果表中有多个几何列或自动检测失败,可通过 geom_column 参数指定",
-        "locator 由 Develop Backend 在执行前转换为 connection_info、schema/table 或 path，工作流引擎无需依赖 System 或 Meta API"
+        "connection_info、schema/table 或 path 由 Develop Adapter 注入，工作流引擎无需依赖 System 或 Meta API"
     ],
 
     workflow_example={
         'id': 'load_rivers',
         'operator': 'load',
         'params': {
-            'source_type': 'table',
-            'locator': 'addp://engine/1/path/public/rivers?type=table&item_id=10'
+            'connection_info': {'engine_type': 'postgresql'},
+            'schema': 'public',
+            'table': 'rivers'
         },
         'depends_on': []
     }
@@ -482,56 +417,36 @@ SAVE_METADATA = OperatorMetadata(
             notes="table(数据库表) 或 file(文件系统)"
         ),
         OperatorParam(
-            name="保存目标",
-            type="ui",
+            name="connection_info",
+            type="param",
             data_type="object",
             required=False,
-            description="选择保存的数据库和表",
-            ui_type="resource_tree_picker",
-            ui_config={
-                "placeholder": "选择目标父节点",
-                "selectable_parent_node_types": ["schema", "database"],
-                "auto_fill_params": ["target_parent_locator", "target_name"],
-                "allow_create_table": True  # 允许创建新表
-            },
+            description="Develop Adapter 派生的目标连接信息"
+        ),
+        OperatorParam(
+            name="schema",
+            type="param",
+            data_type="string",
+            required=False,
+            description="目标 schema",
             depends_on="target_type",
             show_when={"target_type": "table"}
         ),
         OperatorParam(
-            name="target_parent_locator",
+            name="table",
             type="param",
             data_type="string",
             required=False,
-            description="目标父节点 ResourceLocator",
-            notes="target_type=table 时指向 schema/database；target_type=file 时指向 root/directory/dir。执行前由 Develop Backend 派生运行时路径",
+            description="目标表名",
             depends_on="target_type",
-            show_when={"target_type": ["table", "file"]}
+            show_when={"target_type": "table"}
         ),
         OperatorParam(
-            name="target_name",
+            name="path",
             type="param",
             data_type="string",
             required=False,
-            description="目标名称",
-            notes="target_type=table 时为目标表名；target_type=file 时为目标文件名。执行前由 Develop Backend 派生 connection_info 和运行时路径",
-            depends_on="target_type",
-            show_when={"target_type": ["table", "file"]}
-        ),
-        # 文件目标父节点选择器（仅在 target_type=file 时显示）
-        OperatorParam(
-            name="文件目标",
-            type="ui",
-            data_type="object",
-            required=False,
-            description="选择文件保存父路径",
-            notes="从资源树中选择目标父目录，再填写目标文件名",
-            ui_type="resource_tree_picker",
-            ui_config={
-                "api_base_url": "/api/v1/meta",
-                "engine_families": ["file", "object"],
-                "selectable_parent_node_types": ["root", "directory", "dir", "bucket", "prefix"],
-                "auto_fill_params": ["target_parent_locator", "target_name"]
-            },
+            description="目标文件路径",
             depends_on="target_type",
             show_when={"target_type": "file"}
         ),
@@ -551,41 +466,27 @@ SAVE_METADATA = OperatorMetadata(
             type="param",
             data_type="string",
             required=False,
-            description="文件已存在时的处理方式",
-            enum=["replace", "fail"],
-            default="replace",
-            notes="replace(覆盖), fail(抛出错误)。file 不支持 append 模式",
-            depends_on="target_type",
-            show_when={"target_type": "file"}
-        ),
-        OperatorParam(
-            name="mode",
-            type="param",
-            data_type="string",
-            required=False,
-            description="表已存在时的处理方式（必须从枚举值中选择）",
+            description="目标已存在时的处理方式",
             enum=["replace", "append", "fail"],
             default="replace",
-            notes="可选值: replace(替换表), append(追加数据), fail(抛出错误)。**重要**：只能使用这三个值之一，不能使用 overwrite 等其他值！",
-            depends_on="target_type",
-            show_when={"target_type": "table"}
+            notes="replace(替换)、append(追加)、fail(失败)；append 仅支持 table 目标"
         )
     ],
 
     use_cases=[
-        "保存分析结果到数据库: target_type=table, target_parent_locator=addp://engine/1/path/public?type=schema&node_id=8, target_name=result, mode=replace",
-        "保存结果到文件 CSV: target_type=file, target_parent_locator=addp://engine/3/path/output?type=directory&node_id=9, target_name=result.csv",
-        "保存空间数据到文件 GeoPackage: target_type=file, target_parent_locator=addp://engine/3/path/gis?type=directory&node_id=10, target_name=result.gpkg",
+        "保存分析结果到数据库: target_type=table, schema=public, table=result, mode=replace",
+        "保存结果到文件 CSV: target_type=file, path=output/result.csv",
+        "保存空间数据到文件 GeoPackage: target_type=file, path=gis/result.gpkg",
         "工作流结束节点: 作为数据输出的最后一步"
     ],
 
     notes=[
         "自动识别输入数据类型（DataFrame 或 GeoDataFrame）",
-        "文件保存公开参数使用 target_parent_locator 和 target_name，运行时 path 由 Develop Backend 派生",
+        "文件保存运行时参数使用 connection_info 和 path",
         "文件空间格式(shp/gpkg等)需要 GeoDataFrame 输入",
         "保存空间数据到 PostgreSQL 时使用 PostGIS，自动创建几何索引",
         "mode=append 仅 table 模式支持，file 模式不支持追加",
-        "target_parent_locator 和 target_name 由 Develop Backend 在执行前转换为 connection_info、schema/table 或 path，工作流引擎无需依赖 System 或 Meta API"
+        "connection_info、schema/table 或 path 由 Develop Adapter 注入，工作流引擎无需依赖 System 或 Meta API"
     ],
 
     workflow_example={
@@ -594,8 +495,9 @@ SAVE_METADATA = OperatorMetadata(
         'params': {
             'input_df': {'$ref': 'task1'},  # 引用前一个任务的输出
             'target_type': 'table',
-            'target_parent_locator': 'addp://engine/1/path/public?type=schema&node_id=8',
-            'target_name': 'result_table',
+            'connection_info': {'engine_type': 'postgresql'},
+            'schema': 'public',
+            'table': 'result_table',
             'mode': 'replace'
         },
         'depends_on': ['task1']

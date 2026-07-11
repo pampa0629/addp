@@ -172,19 +172,30 @@ func (p *PostgreSQLPlugin) GetDialect() string {
 func (p *PostgreSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
 	var rows []postgresNamespaceRow
 
+	superMapSDXDetected, err := p.hasSuperMapSDXSystemTables(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
+	superMapLeafFilter := ""
+	if superMapSDXDetected {
+		superMapLeafFilter = "AND lower(table_name) NOT LIKE 'sm%'"
+	}
+
 	query := `
 		SELECT
 			schema_name as name,
 			(SELECT COUNT(*)
 			 FROM information_schema.tables
 			 WHERE table_schema = s.schema_name
-			   AND table_type = 'BASE TABLE') as leaf_count
+			   AND table_type = 'BASE TABLE'
+			   ` + superMapLeafFilter + `) as leaf_count
 		FROM information_schema.schemata s
 		WHERE schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
 		ORDER BY schema_name
 	`
 
-	err := db.WithContext(ctx).Raw(query).Scan(&rows).Error
+	err = db.WithContext(ctx).Raw(query).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list namespaces: %w", err)
 	}
@@ -204,6 +215,11 @@ type postgresNamespaceRow struct {
 // ListTables 列出指定Schema下的所有表
 func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
 	var rows []postgresTableRow
+
+	superMapSDXDetected, err := p.hasSuperMapSDXSystemTables(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 
 	query := `
 		SELECT
@@ -233,7 +249,7 @@ func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 		ORDER BY t.table_name
 	`
 
-	err := db.WithContext(ctx).Raw(query, schema).Scan(&rows).Error
+	err = db.WithContext(ctx).Raw(query, schema).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tables: %w", err)
 	}
@@ -250,7 +266,7 @@ func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 		})
 	}
 
-	return tables, nil
+	return filterPostgreSQLSystemTables(tables, superMapSDXDetected), nil
 }
 
 type postgresTableRow struct {
@@ -357,4 +373,37 @@ func (p *PostgreSQLPlugin) isSystemSchema(schemaName string) bool {
 
 	// 检查是否以 pg_toast_ 或 pg_temp_ 开头
 	return strings.HasPrefix(normalized, "pg_toast_") || strings.HasPrefix(normalized, "pg_temp_")
+}
+
+func (p *PostgreSQLPlugin) hasSuperMapSDXSystemTables(ctx context.Context, db *gorm.DB) (bool, error) {
+	var count int64
+	err := db.WithContext(ctx).Raw(`
+		SELECT COUNT(*)
+		FROM information_schema.tables
+		WHERE table_schema NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+		  AND lower(table_name) LIKE 'sm%'
+	`).Scan(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("failed to detect SuperMap SDX+ system tables: %w", err)
+	}
+	return count >= superMapSDXSystemTableThreshold, nil
+}
+
+func filterPostgreSQLSystemTables(tables []datatype.TableInfo, superMapSDXDetected bool) []datatype.TableInfo {
+	if !superMapSDXDetected {
+		return tables
+	}
+
+	filtered := make([]datatype.TableInfo, 0, len(tables))
+	for _, table := range tables {
+		if isSuperMapSDXSystemTableName(table.Name) {
+			continue
+		}
+		filtered = append(filtered, table)
+	}
+	return filtered
+}
+
+func isSuperMapSDXSystemTableName(tableName string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(tableName)), "sm")
 }

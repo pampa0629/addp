@@ -11,7 +11,7 @@ import CircleStyle from 'ol/style/Circle.js'
  * @returns {Function} OpenLayers 样式函数
  */
 export function createDefaultStyleFunction() {
-  return (feature) => {
+  return (feature, resolution) => {
     const geomType = feature.getGeometry()?.getType?.() || ''
 
     if (geomType.includes('Point')) {
@@ -27,10 +27,13 @@ export function createDefaultStyleFunction() {
       })
     }
 
+    const polygonStrokeWidth = resolution > 40 ? 0.65 : (resolution > 10 ? 1 : 1.5)
+    const polygonStrokeColor = resolution > 40 ? 'rgba(230, 81, 0, 0.72)' : '#E65100'
+
     // 面要素: 显示边框 + 透明填充（透明填充使点击检测可以覆盖整个面）
     return new Style({
       fill: new Fill({ color: 'rgba(0, 0, 0, 0.01)' }),  // 几乎透明的填充，用于点击检测
-      stroke: new Stroke({ color: '#E65100', width: 1.5 })
+      stroke: new Stroke({ color: polygonStrokeColor, width: polygonStrokeWidth })
     })
   }
 }

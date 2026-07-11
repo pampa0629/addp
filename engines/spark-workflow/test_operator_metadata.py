@@ -35,54 +35,57 @@ import api_server
 
 
 class OperatorMetadataTest(unittest.TestCase):
-    def test_runtime_engine_id_is_not_public_operator_parameter(self):
+    def test_runtime_metadata_exposes_task_runtime_parameters(self):
         operators = {operator["name"]: operator for operator in get_operator_metadata()}
 
-        runtime_only_names = {"engine_id", "connection_info", "schema", "table", "path"}
-
-        for operator_name in ("load", "save", "sql"):
+        for operator_name in ("load", "save"):
             operator = operators[operator_name]
             parameter_names = {param["name"] for param in operator["parameters"]}
-            detailed_names = {
-                param["name"]
-                for param in operator["detailed_description"]["parameters"]
-            }
-            workflow_params = operator["detailed_description"]["workflow_example"]["params"]
-
-            self.assertFalse(runtime_only_names & parameter_names)
-            self.assertFalse(runtime_only_names & detailed_names)
-            self.assertFalse(runtime_only_names & set(workflow_params))
+            self.assertIn("connection_info", parameter_names)
+            self.assertTrue({"schema", "table", "path"} <= parameter_names)
+            self.assertNotIn("engine_id", parameter_names)
 
         self.assertIn("source_type", {param["name"] for param in operators["load"]["parameters"]})
         self.assertIn("target_type", {param["name"] for param in operators["save"]["parameters"]})
         self.assertIn("query", {param["name"] for param in operators["sql"]["parameters"]})
 
-    def test_table_io_uses_resource_locator_public_contract(self):
+    def test_table_io_exposes_runtime_contract_only(self):
         operators = {operator["name"]: operator for operator in get_operator_metadata()}
 
         load_params = {param["name"] for param in operators["load"]["parameters"]}
         save_params = {param["name"] for param in operators["save"]["parameters"]}
 
-        self.assertIn("locator", load_params)
-        self.assertIn("target_parent_locator", save_params)
-        self.assertIn("target_name", save_params)
-        self.assertFalse({"connection_info", "schema", "table", "path"} & load_params)
-        self.assertFalse({"connection_info", "schema", "table", "path"} & save_params)
+        self.assertTrue({"connection_info", "schema", "table", "path"} <= load_params)
+        self.assertTrue({"connection_info", "schema", "table", "path"} <= save_params)
+        self.assertFalse({"locator", "target_parent_locator", "target_name"} & load_params)
+        self.assertFalse({"locator", "target_parent_locator", "target_name"} & save_params)
 
         load_example = operators["load"]["detailed_description"]["workflow_example"]["params"]
         save_example = operators["save"]["detailed_description"]["workflow_example"]["params"]
 
-        self.assertIn("locator", load_example)
-        self.assertNotIn("schema", load_example)
-        self.assertNotIn("table", load_example)
-        self.assertIn("target_parent_locator", save_example)
-        self.assertIn("target_name", save_example)
+        self.assertIn("connection_info", load_example)
+        self.assertIn("schema", load_example)
+        self.assertIn("table", load_example)
+        self.assertNotIn("locator", load_example)
+        self.assertIn("connection_info", save_example)
+        self.assertIn("schema", save_example)
+        self.assertIn("table", save_example)
+        self.assertNotIn("target_parent_locator", save_example)
 
     def test_all_operators_declare_execution_modes(self):
         assert_operator_metadata_contract(
             get_operator_metadata(),
             expected_engine_type="spark_workflow",
         )
+
+    def test_parameter_types_use_standard_contract_names(self):
+        operators = {operator["name"]: operator for operator in get_operator_metadata()}
+
+        load_params = {param["name"]: param["type"] for param in operators["load"]["parameters"]}
+        preview_params = {param["name"]: param["type"] for param in operators["preview"]["parameters"]}
+
+        self.assertEqual("string", load_params["source_type"])
+        self.assertEqual("integer", preview_params["limit"])
 
     def test_builtin_operator_metadata_has_no_quality_warnings(self):
         validator = MetadataValidator()

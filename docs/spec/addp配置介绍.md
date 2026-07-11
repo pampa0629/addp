@@ -103,13 +103,13 @@ MINIO_SYSTEM_SECRET_KEY=minioadmin
 
 ### Manager 栅格 mosaic 生成配置
 
-栅格 mosaic 生成是离线任务，Manager 通过 Python Workflow 的 `build_raster_mosaic` 算子执行 GDAL 处理。该调用不同于在线瓦片渲染，允许更长的执行预算：
+栅格 mosaic 生成是离线任务，Manager 通过 GeoPython Workflow 的 `build_raster_mosaic` 算子执行 GDAL 处理。该调用不同于在线瓦片渲染，允许更长的执行预算：
 
 ```bash
 # 栅格 mosaic 生成算子调用超时。默认 2 小时。
 RASTER_MOSAIC_GENERATION_TIMEOUT=2h
 
-# 容器版 Python Workflow 的 gunicorn worker 超时。默认 7200 秒。
+# 容器版 GeoPython Workflow 的 gunicorn worker 超时。默认 7200 秒。
 PYTHON_WORKFLOW_GUNICORN_TIMEOUT=7200
 ```
 

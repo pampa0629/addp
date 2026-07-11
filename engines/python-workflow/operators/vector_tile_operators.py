@@ -2,7 +2,7 @@
 向量瓦片算子模块
 
 Manager 负责把 ADDP locator、engine、源路径和目标对象存储解析为 GDAL
-可访问的 access_plan；Python Workflow 只负责读取物理源、生成 MVT、
+可访问的 access_plan；GeoPython Workflow 只负责读取物理源、生成 MVT、
 按 ADDP 瓦片缓存目录约定发布对象，并上报进度。
 """
 
@@ -11,13 +11,15 @@ import logging
 import math
 import os
 import posixpath
+import re
 import shutil
+import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 from pyproj import Transformer
 
@@ -36,7 +38,6 @@ from .raster_operators import (
     _is_gdal_virtual_path,
     _path_parent,
     _progress_reporter,
-    _run_command,
     _set_path_specific_gdal_options,
 )
 
@@ -47,6 +48,10 @@ DEFAULT_MVT_MAX_SIZE_BYTES = 5_000_000
 DEFAULT_MVT_MAX_FEATURES = 1_000_000
 DEFAULT_MVT_PUBLISH_CONCURRENCY = 8
 DEFAULT_MVT_GDAL_NUM_THREADS = "ALL_CPUS"
+MVT_GENERATE_PROGRESS_START = 1.0
+MVT_GENERATE_PROGRESS_SPAN = 39.0
+MVT_PUBLISH_PROGRESS_START = 40.0
+MVT_PUBLISH_PROGRESS_SPAN = 59.0
 
 
 def _tile_bounds(extent: list[float], zoom: int) -> tuple[int, int, int, int]:
@@ -179,6 +184,37 @@ def _optional_float(value: Any, default: float | None = None) -> float | None:
     return parsed
 
 
+def _ogr_sql_identifier(value: str) -> str:
+    return '"' + str(value or "").replace('"', '""') + '"'
+
+
+def _source_layer_name(source_plan: Dict[str, Any], source_uri: str) -> str:
+    metadata = source_plan.get("metadata") if isinstance(source_plan.get("metadata"), dict) else {}
+    candidates = [
+        source_plan.get("layer_name"),
+        metadata.get("layer_name"),
+        source_plan.get("full_name"),
+        source_uri,
+    ]
+    for candidate in candidates:
+        text = str(candidate or "").strip().rstrip("/")
+        if not text:
+            continue
+        text = text.split("?", 1)[0]
+        name = Path(text).stem
+        if name:
+            return name
+    return "layer"
+
+
+def _build_quick_view_ogr_sql(source_layer: str, primary_key: str = "") -> str:
+    fields = ["OGR_GEOMETRY"]
+    primary_key = str(primary_key or "").strip()
+    if primary_key:
+        fields.append(_ogr_sql_identifier(primary_key))
+    return f"SELECT {', '.join(fields)} FROM {_ogr_sql_identifier(source_layer)}"
+
+
 def _mvt_quality_options(tile: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
     extent_units = _positive_int(
         options.get("mvt_extent", tile.get("mvt_extent", DEFAULT_MVT_EXTENT)),
@@ -283,8 +319,98 @@ def _index_generated_tiles(tile_root: Path) -> Dict[tuple[int, int, int], Path]:
     return tiles
 
 
-def _emit_progress(emit, phase: str, processed: int, total: int, current_zoom: int, max_zoom: int) -> None:
+def _weighted_progress(start: float, span: float, percent: float) -> float:
+    percent = max(0.0, min(100.0, float(percent)))
+    return max(0.0, min(100.0, start + span * percent / 100.0))
+
+
+def _extract_gdal_progress_values(text: str) -> list[int]:
+    values: list[int] = []
+    for match in re.finditer(r"(?<!\d)(100|[1-9]?\d)(?=(?:\.\.\.| - done|%))", text or ""):
+        value = int(match.group(1))
+        if 0 <= value <= 100:
+            values.append(value)
+    return values
+
+
+def _run_command_with_gdal_progress(
+    args: list[str],
+    extra_env: Dict[str, Any] | None,
+    emit: Callable[[Dict[str, Any]], None],
+    min_zoom: int,
+    max_zoom: int,
+) -> subprocess.CompletedProcess:
+    logger.info("执行 MVT 命令: %s", " ".join(args))
+    env = os.environ.copy()
+    for key in ("PROJ_LIB", "PROJ_DATA"):
+        if not extra_env or key not in extra_env:
+            env.pop(key, None)
+    if extra_env:
+        for key, value in extra_env.items():
+            if key and value is not None:
+                env[str(key)] = str(value)
+
+    process = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=env,
+        bufsize=0,
+    )
+    output_parts: list[str] = []
+    scan_text = ""
+    last_progress = -1
+    if process.stdout is not None:
+        while True:
+            chunk = process.stdout.read(1)
+            if chunk == "" and process.poll() is not None:
+                break
+            if not chunk:
+                continue
+            output_parts.append(chunk)
+            scan_text += chunk
+            if len(scan_text) > 256:
+                scan_text = scan_text[-256:]
+            for progress in _extract_gdal_progress_values(scan_text):
+                if progress <= last_progress:
+                    continue
+                last_progress = progress
+                _emit_progress(
+                    emit,
+                    "generate",
+                    progress,
+                    100,
+                    min_zoom,
+                    max_zoom,
+                    overall_progress=_weighted_progress(
+                        MVT_GENERATE_PROGRESS_START,
+                        MVT_GENERATE_PROGRESS_SPAN,
+                        progress,
+                    ),
+                )
+
+    returncode = process.wait()
+    output = "".join(output_parts)
+    if returncode != 0:
+        message = f"command failed with exit code {returncode}: {' '.join(args)}"
+        if output.strip():
+            message = f"{message}; output: {output.strip()}"
+        raise RuntimeError(message)
+    return subprocess.CompletedProcess(args=args, returncode=returncode, stdout=output, stderr="")
+
+
+def _emit_progress(
+    emit,
+    phase: str,
+    processed: int,
+    total: int,
+    current_zoom: int,
+    max_zoom: int,
+    overall_progress: float | None = None,
+) -> None:
     percent = float(processed) / float(total) * 100.0 if total > 0 else 0.0
+    overall = percent if overall_progress is None else float(overall_progress)
     emit({
         "phase": phase,
         "event": "progress",
@@ -294,7 +420,7 @@ def _emit_progress(emit, phase: str, processed: int, total: int, current_zoom: i
         "tiles_processed": processed,
         "tiles_total_estimate": total,
         "progress_percent": percent,
-        "overall_progress": percent,
+        "overall_progress": overall,
     })
 
 
@@ -329,8 +455,9 @@ def vector_to_mvt_tiles(
         raise ValueError("access_plan.target.object_prefix_uri is required")
     target_env = target_plan.get("gdal_env") if isinstance(target_plan.get("gdal_env"), dict) else {}
     source_env = source_plan.get("gdal_env") if isinstance(source_plan.get("gdal_env"), dict) else {}
-    layer_name = str(options.get("layer_name") or options.get("geometry_column") or "layer").strip() or "layer"
-    geometry_column = str(options.get("geometry_column") or "").strip()
+    primary_key = str(options.get("primary_key") or "").strip()
+    source_layer = _source_layer_name(source_plan, source_uri)
+    layer_name = str(options.get("layer_name") or source_layer or "layer").strip() or "layer"
     min_zoom = int(tile.get("min_zoom") or 0)
     max_zoom = int(tile.get("max_zoom") or min_zoom)
     if max_zoom < min_zoom:
@@ -354,6 +481,7 @@ def vector_to_mvt_tiles(
         _emit_progress(emit, "prepare", 0, 1, min_zoom, max_zoom)
         ogr_cmd = [
             "ogr2ogr",
+            "-progress",
             "-f",
             "MVT",
             str(tile_dir),
@@ -374,20 +502,22 @@ def vector_to_mvt_tiles(
             f"MAX_SIZE={quality_options['max_size']}",
             "-dsco",
             f"MAX_FEATURES={quality_options['max_features']}",
+            "-sql",
+            _build_quick_view_ogr_sql(source_layer, primary_key),
+            "-dialect",
+            "OGRSQL",
         ]
         if quality_options["simplification"] is not None:
             ogr_cmd.extend(["-dsco", f"SIMPLIFICATION={quality_options['simplification']}"])
         if quality_options["simplification_max_zoom"] is not None:
             ogr_cmd.extend(["-dsco", f"SIMPLIFICATION_MAX_ZOOM={quality_options['simplification_max_zoom']}"])
-        if geometry_column:
-            ogr_cmd.extend(["-geomfield", geometry_column])
         if source_srs:
             ogr_cmd.extend(["-s_srs", source_srs])
         ogr_cmd.extend(["-t_srs", "EPSG:3857"])
         ogr_env = dict(source_env or {})
         if quality_options["num_threads"] and "GDAL_NUM_THREADS" not in ogr_env:
             ogr_env["GDAL_NUM_THREADS"] = quality_options["num_threads"]
-        _run_command(ogr_cmd, ogr_env)
+        _run_command_with_gdal_progress(ogr_cmd, ogr_env, emit, min_zoom, max_zoom)
         generated_tile_index = _index_generated_tiles(tile_dir)
 
         tile_ranges = []
@@ -437,7 +567,20 @@ def vector_to_mvt_tiles(
             }
         processed = empty
         if total_estimate > 0:
-            _emit_progress(emit, "publish", processed, total_estimate, min_zoom, max_zoom)
+            publish_percent = float(processed) / float(total_estimate) * 100.0
+            _emit_progress(
+                emit,
+                "publish",
+                processed,
+                total_estimate,
+                min_zoom,
+                max_zoom,
+                overall_progress=_weighted_progress(
+                    MVT_PUBLISH_PROGRESS_START,
+                    MVT_PUBLISH_PROGRESS_SPAN,
+                    publish_percent,
+                ),
+            )
         publish_results = _publish_tile_jobs(tile_jobs, target_env, quality_options["publish_concurrency"])
         progress_stride = max(1, total_estimate // 100) if total_estimate > 0 else 1
         last_progress_emit = processed
@@ -455,7 +598,20 @@ def vector_to_mvt_tiles(
                 min_size = size
             processed += 1
             if processed == total_estimate or processed - last_progress_emit >= progress_stride:
-                _emit_progress(emit, "publish", processed, total_estimate, int(z), max_zoom)
+                publish_percent = float(processed) / float(total_estimate) * 100.0
+                _emit_progress(
+                    emit,
+                    "publish",
+                    processed,
+                    total_estimate,
+                    int(z),
+                    max_zoom,
+                    overall_progress=_weighted_progress(
+                        MVT_PUBLISH_PROGRESS_START,
+                        MVT_PUBLISH_PROGRESS_SPAN,
+                        publish_percent,
+                    ),
+                )
                 last_progress_emit = processed
         for zoom_stats in zoom_levels.values():
             generated_count = int(zoom_stats["generated_tiles"])
@@ -520,7 +676,7 @@ def vector_to_mvt_tiles(
             "generation_duration_seconds": duration,
         }
         _write_json(f"{target_root}/metadata.json", metadata, target_env)
-        _emit_progress(emit, "complete", processed, total_estimate, actual_max_zoom, max_zoom)
+        _emit_progress(emit, "complete", processed, total_estimate, actual_max_zoom, max_zoom, overall_progress=100)
         return result
     finally:
         cleanup_path_options()
@@ -534,7 +690,7 @@ VECTOR_TO_MVT_TILES_METADATA = OperatorMetadata(
     description="向量 MVT 瓦片缓存生成",
     brief_description="从文件或对象空间数据生成 ADDP MVT 瓦片缓存",
     execution_modes=["workflow", "direct"],
-    overview="面向 Manager vector_tile_cache_generation 任务的非数据库空间数据 MVT 生成算子。Manager 负责 locator 解析、源访问计划、目标对象存储和任务状态；Python Workflow 只负责内容级 MVT 生成和对象发布。",
+    overview="面向 Manager vector_tile_cache_generation 任务的非数据库空间数据 MVT 生成算子。Manager 负责 locator 解析、源访问计划、目标对象存储和任务状态；GeoPython Workflow 只负责内容级 MVT 生成和对象发布。",
     params=[
         OperatorParam(
             name="access_plan",

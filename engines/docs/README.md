@@ -2,7 +2,7 @@
 
 ## 📋 概述
 
-本目录包含 ADDP 平台工作流计算引擎的 `addp.workflow/v1` HTTP 运行时规范。所有工作流引擎（Python Workflow、Spark Workflow、Math Workflow 等）都必须先通过 `EnginePlugin` 和 `engine.capabilities/v1` 纳入 System 统一引擎体系，再由 Common Engine 的 `WorkflowRuntimeProvider` 消费这些运行时接口。
+本目录包含 ADDP 平台工作流计算引擎的 `addp.workflow/v1` HTTP 运行时规范。所有工作流引擎（GeoPython Workflow、Spark Workflow、Math Workflow 等）都必须先通过 `EnginePlugin` 和 `engine.capabilities/v1` 纳入 System 统一引擎体系，再由 Common Engine 的 `WorkflowRuntimeProvider` 消费这些运行时接口。
 
 ## 📂 文件结构
 
@@ -78,7 +78,7 @@ engines/docs/
 
 参考示例引擎实现：
 - **Math Workflow**: `/Users/pampa/code/addp/engines/math-workflow/` - 最简参考实现（约350行核心代码）
-- **Python Workflow**: `/Users/pampa/code/addp/engines/python-workflow/` - 完整空间计算引擎
+- **GeoPython Workflow**: `/Users/pampa/code/addp/engines/python-workflow/` - 完整空间计算引擎
 - **Spark Workflow**: `/Users/pampa/code/addp/engines/spark-workflow/` - 分布式计算引擎
 
 Math Workflow 是参考实现，ADDP 开发环境可随 `-all` / `-develop` 自动启动服务，但启动时不自动注册到 System；需要使用时在 System 引擎管理中按扩展引擎手动注册。
@@ -100,7 +100,7 @@ Math Workflow 是参考实现，ADDP 开发环境可随 `-all` / `-develop` 自�
 python engines/docs/workflow_operator_contract.py engines/docs/examples/operator-list-response.json
 ```
 
-校验某个具体引擎实例导出的算子列表时，可额外传入 `--engine-type python_workflow` 等参数，要求所有算子都属于同一扩展引擎类型。
+校验某个具体引擎实例导出的算子列表时，可额外传入 `--engine-type geopython_workflow` 等参数，要求所有算子都属于同一扩展引擎类型。
 
 ## 🔗 相关文档
 

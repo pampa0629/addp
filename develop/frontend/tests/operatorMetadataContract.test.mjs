@@ -11,7 +11,8 @@ const validOperator = {
   display_name: '缓冲区分析',
   description: '生成缓冲区',
   category_path: ['空间分析'],
-  parameters: [],
+  parameters: [{ name: 'connection_info', type: 'object' }],
+  public_parameters: [],
   output_ports: [
     {
       name: 'default',
@@ -23,7 +24,7 @@ const validOperator = {
 
 assert.equal(mod.isStandardOperatorMetadata(validOperator), true)
 assert.equal(mod.isStandardOperatorMetadata({ ...validOperator, category_path: [] }), false)
-assert.equal(mod.isStandardOperatorMetadata({ ...validOperator, parameters: undefined }), false)
+assert.equal(mod.isStandardOperatorMetadata({ ...validOperator, public_parameters: undefined }), false)
 assert.equal(mod.isStandardOperatorMetadata({ ...validOperator, output_ports: [] }), false)
 assert.equal(mod.findInvalidOperatorMetadata([validOperator]), null)
 assert.equal(

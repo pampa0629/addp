@@ -7,7 +7,7 @@ export function isStandardOperatorMetadata(operator) {
     || operator.category_path.length === 0
     || operator.category_path.some(item => typeof item !== 'string' || item.trim() === '')
   ) return false
-  if (!Array.isArray(operator.parameters)) return false
+  if (!Array.isArray(operator.public_parameters)) return false
   if (!Array.isArray(operator.output_ports) || operator.output_ports.length === 0) return false
   return true
 }

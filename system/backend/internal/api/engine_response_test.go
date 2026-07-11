@@ -9,7 +9,7 @@ import (
 func TestEngineListResponseIncludesCapabilitiesView(t *testing.T) {
 	capabilities := models.JSONString(`{
 		"schema_version":"engine.capabilities/v1",
-		"engine_type":"python_workflow",
+		"engine_type":"geopython_workflow",
 		"engine_family":"workflow",
 		"compute":{
 			"workflow":{
@@ -21,8 +21,8 @@ func TestEngineListResponseIncludesCapabilitiesView(t *testing.T) {
 	}`)
 	engine := models.Engine{
 		ID:           1,
-		Name:         "Python Workflow",
-		EngineType:   "python_workflow",
+		Name:         "GeoPython Workflow",
+		EngineType:   "geopython_workflow",
 		Capabilities: &capabilities,
 	}
 
@@ -65,7 +65,7 @@ func TestEngineListResponseSkipsCapabilitiesViewForLegacyCapabilities(t *testing
 func TestEngineListResponseSkipsCapabilitiesViewForUnsupportedSchemaVersion(t *testing.T) {
 	unsupported := models.JSONString(`{
 		"schema_version":"engine.capabilities/v0",
-		"engine_type":"python_workflow",
+		"engine_type":"geopython_workflow",
 		"engine_family":"workflow",
 		"compute":{
 			"workflow":{
@@ -78,7 +78,7 @@ func TestEngineListResponseSkipsCapabilitiesViewForUnsupportedSchemaVersion(t *t
 	engine := models.Engine{
 		ID:           1,
 		Name:         "Unsupported Workflow",
-		EngineType:   "python_workflow",
+		EngineType:   "geopython_workflow",
 		Capabilities: &unsupported,
 	}
 

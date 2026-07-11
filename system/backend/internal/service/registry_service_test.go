@@ -13,12 +13,12 @@ func TestPrepareRegistrationCapabilitiesUsesPluginSchemaForBuiltin(t *testing.T)
 	service := NewRegistryService(&repository.EngineRepository{})
 	submitted := &engineplugin.EngineCapabilities{
 		SchemaVersion: engineplugin.CapabilitiesSchemaVersion,
-		EngineType:    "python_workflow",
+		EngineType:    "geopython_workflow",
 		EngineFamily:  "workflow",
 		Extensions:    map[string]interface{}{"runtime": true},
 	}
 	req := &models.CapabilityRegistrationRequest{
-		EngineType:   "Python_Workflow",
+		EngineType:   "GeoPython_Workflow",
 		IsBuiltin:    true,
 		Capabilities: submitted,
 	}
@@ -35,10 +35,10 @@ func TestPrepareRegistrationCapabilitiesUsesPluginSchemaForBuiltin(t *testing.T)
 	if err != nil {
 		t.Fatalf("parse capabilities: %v", err)
 	}
-	if capabilities.EngineType != "python_workflow" || capabilities.EngineFamily != "workflow" {
+	if capabilities.EngineType != "geopython_workflow" || capabilities.EngineFamily != "workflow" {
 		t.Fatalf("unexpected builtin capabilities identity: %#v", capabilities)
 	}
-	if req.EngineType != "python_workflow" {
+	if req.EngineType != "geopython_workflow" {
 		t.Fatalf("engine_type was not canonicalized: %q", req.EngineType)
 	}
 	if capabilities.Extensions != nil {
@@ -104,7 +104,7 @@ func TestPrepareRegistrationCapabilitiesRejectsMissingOrMismatchedNonBuiltinCapa
 func TestFilterComputeEnginesUsesStructuredSupportedEntrypoints(t *testing.T) {
 	workflow := models.JSONString(`{
 		"schema_version":"engine.capabilities/v1",
-		"engine_type":"python_workflow",
+		"engine_type":"geopython_workflow",
 		"engine_family":"workflow",
 		"compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1"}}
 	}`)
@@ -123,7 +123,7 @@ func TestFilterComputeEnginesUsesStructuredSupportedEntrypoints(t *testing.T) {
 	legacy := models.JSONString(`{"compute":[{"dev_modes":["workflow"]}]}`)
 
 	engines := []*models.Engine{
-		{EngineType: "python_workflow", Capabilities: &workflow},
+		{EngineType: "geopython_workflow", Capabilities: &workflow},
 		{EngineType: "empty_compute", Capabilities: &emptyCompute},
 		{EngineType: "unsupported", Capabilities: &unsupported},
 		{EngineType: "legacy", Capabilities: &legacy},
@@ -134,7 +134,7 @@ func TestFilterComputeEnginesUsesStructuredSupportedEntrypoints(t *testing.T) {
 	if len(filtered) != 1 {
 		t.Fatalf("filtered engines = %#v, want only workflow engine", filtered)
 	}
-	if filtered[0].EngineType != "python_workflow" {
-		t.Fatalf("filtered engine_type = %q, want python_workflow", filtered[0].EngineType)
+	if filtered[0].EngineType != "geopython_workflow" {
+		t.Fatalf("filtered engine_type = %q, want geopython_workflow", filtered[0].EngineType)
 	}
 }

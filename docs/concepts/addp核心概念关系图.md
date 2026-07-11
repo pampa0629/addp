@@ -36,7 +36,7 @@ mindmap
         common 后端
         common-frontend 前端
       扩展运行时
-        内置示例 python_workflow / spark_workflow / jupyter
+        内置与专用运行时 geopython_workflow / spark_workflow / model3d_workflow / pointcloud_workflow / supermap_workflow / jupyter
         用户自研扩展运行时
     引擎体系
       Provider 化引擎插件接口
@@ -135,7 +135,7 @@ mindmap
 - 模块总览图 (Console、Gateway、System、Manager、Meta、Transfer、Orchestrator、Develop、Service、Monitor)
 - 模块分层架构 (前端层、网关层、服务层、数据层)
 - 共享模块 (common、common-frontend)
-- 扩展运行时 (内置示例 python_workflow、spark_workflow、jupyter，以及用户自研扩展运行时)
+- 扩展运行时 (内置与专用运行时 geopython_workflow、spark_workflow、model3d_workflow、pointcloud_workflow、supermap_workflow、jupyter，以及用户自研扩展运行时)
 - 基础设施 (PostgreSQL、Redis、MinIO、Meilisearch)
 
 📄 **[阅读完整文档 →](addp模块架构图.md)**

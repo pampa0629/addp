@@ -519,6 +519,70 @@ definitions:
       name:
         type: string
     type: object
+  github_com_addp_develop_backend_internal_service.PublicOperatorDescriptor:
+    properties:
+      attributes:
+        additionalProperties: true
+        description: 引擎自定义扩展属性
+        type: object
+      brief_description:
+        description: 简要描述（用于 AI 算子选择）
+        type: string
+      category:
+        description: 算子分类/分组 (格式转换/空间分析)
+        type: string
+      category_path:
+        description: 多级分组目录；无多级目录时必须显式为 [category]
+        items:
+          type: string
+        type: array
+      description:
+        description: 功能描述
+        type: string
+      detailed_description:
+        additionalProperties: true
+        description: 详细描述（含 notes、workflow_example 等，用于 AI 工作流生成）
+        type: object
+      display_name:
+        description: 中文显示名 (如 "深度扫描")
+        type: string
+      engine_type:
+        description: 所属扩展引擎类型 (如 acme_geo_workflow)
+        type: string
+      execution_modes:
+        description: workflow/direct
+        items:
+          type: string
+        type: array
+      id:
+        description: 算子唯一标识 (如 "scan_deep")
+        type: string
+      inputs:
+        description: 输入类型列表
+        items:
+          type: string
+        type: array
+      name:
+        description: 算子名称 (同ID)
+        type: string
+      output_ports:
+        description: 标准输出端口定义
+        items:
+          $ref: '#/definitions/models.OutputPortDescriptor'
+        type: array
+      parameters:
+        description: 参数定义
+        items:
+          $ref: '#/definitions/models.ParameterDescriptor'
+        type: array
+      public_parameters:
+        items:
+          $ref: '#/definitions/models.ParameterDescriptor'
+        type: array
+      type:
+        description: 算子类型 (scan/transfer/spatial等)
+        type: string
+    type: object
   github_com_addp_develop_backend_internal_service.TableRef:
     properties:
       engine_name:
@@ -632,6 +696,19 @@ definitions:
         items:
           $ref: '#/definitions/github_com_addp_develop_backend_internal_service.KernelInfo'
         type: array
+    type: object
+  internal_api.OperatorListResponse:
+    properties:
+      count:
+        type: integer
+      operators:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_service.PublicOperatorDescriptor'
+        type: array
+      status:
+        type: string
+      workflow_engine_id:
+        type: integer
     type: object
   internal_api.QueryMode:
     properties:
@@ -816,6 +893,80 @@ definitions:
         description: 租户ID，SuperAdmin创建的引擎为null
         type: integer
       updated_at:
+        type: string
+    type: object
+  models.OutputPortDescriptor:
+    properties:
+      description:
+        description: 端口语义说明
+        type: string
+      is_default:
+        description: 是否为默认端口 (单输出时为true)
+        type: boolean
+      name:
+        description: 端口名称 (如 "default", "large", "small")
+        type: string
+      type:
+        description: 数据类型 (geodataframe, string, array等)
+        type: string
+    type: object
+  models.ParameterDescriptor:
+    properties:
+      default:
+        description: 默认值
+      depends_on:
+        description: 依赖的参数名 (动态显示)
+        type: string
+      description:
+        description: 参数说明
+        type: string
+      enum:
+        description: 枚举值 (用于下拉选择)
+        items:
+          type: string
+        type: array
+      item_type:
+        description: 数组元素类型
+        type: string
+      max:
+        description: 最大值 (数值类型)
+        type: number
+      min:
+        description: 最小值 (数值类型)
+        type: number
+      name:
+        description: 参数名
+        type: string
+      notes:
+        description: 注意事项/额外说明
+        type: string
+      param_type:
+        description: 参数角色 (input/output/param/ui)
+        type: string
+      pattern:
+        description: 正则校验 (字符串类型)
+        type: string
+      properties:
+        additionalProperties:
+          $ref: '#/definitions/models.ParameterDescriptor'
+        description: 对象属性定义
+        type: object
+      required:
+        description: 是否必填
+        type: boolean
+      show_when:
+        additionalProperties: true
+        description: '显示条件 (格式: {param_name: value_or_list})'
+        type: object
+      type:
+        description: 类型 (string/integer/float/boolean/array/object)
+        type: string
+      ui_config:
+        additionalProperties: true
+        description: UI 组件配置参数
+        type: object
+      ui_type:
+        description: UI 组件类型 (resource_tree_picker 等)
         type: string
     type: object
   plugin.GraphData:
@@ -1886,8 +2037,7 @@ paths:
         "200":
           description: 算子列表 | Operator list
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.OperatorListResponse'
       summary: 根据工作流引擎实例获取算子列表 | List operators by workflow engine instance
       tags:
       - Operator

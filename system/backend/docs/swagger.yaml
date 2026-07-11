@@ -1295,7 +1295,8 @@ paths:
     get:
       consumes:
       - application/json
-      description: 分页获取引擎列表（支持按类型过滤）| Get paginated engine list with type filtering
+      description: 先按引擎类型、能力分组、来源和内置状态过滤，再返回分页结果 | Filter by engine type, capability
+        group, origin, and builtin state before pagination
       parameters:
       - default: 1
         description: 页码 | Page number
@@ -1311,6 +1312,21 @@ paths:
         in: query
         name: engine_type
         type: string
+      - description: '能力分组，逗号分隔：storage,compute | Comma-separated capability groups:
+          storage,compute'
+        in: query
+        name: capability_groups
+        type: string
+      - description: '引擎来源，逗号分隔：general,extension | Comma-separated engine origins:
+          general,extension'
+        in: query
+        name: engine_origins
+        type: string
+      - default: true
+        description: 是否包含内置引擎 | Whether to include builtin engines
+        in: query
+        name: include_builtin
+        type: boolean
       produces:
       - application/json
       responses:
@@ -1503,6 +1519,54 @@ paths:
       security:
       - BearerAuth: []
       summary: 列出实时 catalog 子节点 | List live catalog children
+      tags:
+      - 引擎管理 | Engine Management
+  /engines/{id}/spatial-workspaces/{ecosystem}/{kind}/enable:
+    post:
+      consumes:
+      - application/json
+      description: 通过已绑定的 SuperMap 工作流运行时对已有 PostgreSQL/PostGIS 引擎执行高危启用动作，初始化 SuperMap
+        SDX+ 空间工作区。| Trigger the bound SuperMap workflow runtime to perform the high-risk
+        enable action for an existing PostgreSQL/PostGIS engine and initialize the
+        SuperMap SDX+ spatial workspace.
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 空间工作区生态 | Spatial workspace ecosystem
+        in: path
+        name: ecosystem
+        required: true
+        type: string
+      - description: 空间工作区类型 | Spatial workspace kind
+        in: path
+        name: kind
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.EngineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 启用空间工作区 | Enable spatial workspace
       tags:
       - 引擎管理 | Engine Management
   /engines/{id}/test:

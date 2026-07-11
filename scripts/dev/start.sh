@@ -23,10 +23,11 @@ show_usage() {
   echo "  -asset        启动 Asset 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -portal       启动 Portal 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Asset)"
   echo "  -graph        启动 Graph 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
-  echo "  -python-workflow    启动 Python Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -python-workflow    启动 GeoPython Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -math-workflow      启动 Math Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -model3d-workflow   启动 Model3D Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -pointcloud-workflow 启动 PointCloud Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -supermap-workflow  启动 SuperMap Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console，需配置 SDK 挂载路径)"
   echo "  -spark-workflow     启动 Spark 工作流引擎 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -jupyter      启动 Jupyter Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -gateway      启动 Gateway (依赖: 所有后端模块)"
@@ -42,10 +43,11 @@ show_usage() {
   echo "  $0 -system        # 启动 System Backend/Frontend + Meta Backend/Worker + Gateway + Console"
   echo "  $0 -manager       # 启动 Manager + 公共依赖 + Transfer + 三维/点云工作流"
   echo "  $0 -develop       # 启动 Develop + 公共依赖 + 工作流引擎"
-  echo "  $0 -python-workflow     # 启动 Python Workflow Engine + 公共依赖"
+  echo "  $0 -python-workflow     # 启动 GeoPython Workflow Engine + 公共依赖"
   echo "  $0 -math-workflow       # 启动 Math Workflow Engine + 公共依赖"
   echo "  $0 -model3d-workflow    # 启动 Model3D Workflow Engine + 公共依赖"
   echo "  $0 -pointcloud-workflow # 启动 PointCloud Workflow Engine + 公共依赖"
+  echo "  $0 -supermap-workflow  # 启动 SuperMap Workflow Engine + 公共依赖"
   echo "  $0 -spark-workflow      # 启动 Spark 工作流引擎 + 公共依赖"
   echo "  $0 -jupyter       # 启动 Jupyter Engine + 公共依赖"
   exit 1
@@ -75,6 +77,7 @@ fi
 
 export MODEL3D_WORKFLOW_PORT="${MODEL3D_WORKFLOW_PORT:-8101}"
 export POINTCLOUD_WORKFLOW_PORT="${POINTCLOUD_WORKFLOW_PORT:-8102}"
+export SUPERMAP_WORKFLOW_PORT="${SUPERMAP_WORKFLOW_PORT:-8103}"
 
 ensure_model3d_node_dependencies() {
   local dir="engines/model3d-workflow"
@@ -115,6 +118,7 @@ generate_service_urls() {
     [ -n "$PYTHON_WORKFLOW_PORT" ] && export PYTHON_WORKFLOW_URL="http://${SERVICE_HOST}:${PYTHON_WORKFLOW_PORT}"
     [ -n "$MODEL3D_WORKFLOW_PORT" ] && export MODEL3D_WORKFLOW_URL="http://${SERVICE_HOST}:${MODEL3D_WORKFLOW_PORT}"
     [ -n "$POINTCLOUD_WORKFLOW_PORT" ] && export POINTCLOUD_WORKFLOW_URL="http://${SERVICE_HOST}:${POINTCLOUD_WORKFLOW_PORT}"
+    [ -n "$SUPERMAP_WORKFLOW_PORT" ] && export SUPERMAP_WORKFLOW_URL="http://${SERVICE_HOST}:${SUPERMAP_WORKFLOW_PORT}"
     [ -n "$SPARK_WORKFLOW_PORT" ] && export SPARK_WORKFLOW_URL="http://${SERVICE_HOST}:${SPARK_WORKFLOW_PORT}"
     [ -n "$JUPYTER_API_PORT" ] && export JUPYTER_URL="http://${SERVICE_HOST}:${JUPYTER_API_PORT}"
 }
@@ -195,7 +199,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-spark-workflow|-jupyter|-gateway|-console)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-spark-workflow|-jupyter|-gateway|-console)
       SELECTED_MODULE="${arg#-}"
       START_ALL=false
       ;;
@@ -246,6 +250,7 @@ START_PYTHON_WORKFLOW=false
 START_MATH_WORKFLOW=false
 START_MODEL3D_WORKFLOW=false
 START_POINTCLOUD_WORKFLOW=false
+START_SUPERMAP_WORKFLOW=false
 START_SPARK_WORKFLOW=false
 START_JUPYTER=false
 
@@ -299,6 +304,7 @@ if [ "$START_ALL" = true ]; then
   START_MATH_WORKFLOW=true
   START_MODEL3D_WORKFLOW=true
   START_POINTCLOUD_WORKFLOW=true
+  START_SUPERMAP_WORKFLOW=true
   START_SPARK_WORKFLOW=true
   START_JUPYTER=true
 else
@@ -392,6 +398,9 @@ else
       ;;
     pointcloud-workflow)
       START_POINTCLOUD_WORKFLOW=true
+      ;;
+    supermap-workflow)
+      START_SUPERMAP_WORKFLOW=true
       ;;
     spark-workflow)
       START_SPARK_WORKFLOW=true
@@ -1256,10 +1265,10 @@ echo "  Transfer Worker:    PID $TRANSFER_WORKER_PID"
 echo ""
 
 # ============================================================
-# Step 4: Start Python Workflow Engine (Python service)
+# Step 4: Start GeoPython Workflow Engine (Python service)
 # ============================================================
 if [ "$START_PYTHON_WORKFLOW" = true ]; then
-  echo -e "${YELLOW}Step 4/5: 启动 Python Workflow Engine...${NC}"
+  echo -e "${YELLOW}Step 4/5: 启动 GeoPython Workflow Engine...${NC}"
 
   # 检查 Python 3 是否安装
   if ! command -v python3 &> /dev/null; then
@@ -1298,7 +1307,7 @@ PY
     then
         SELECTED_PYTHON=$(select_python)
         if "$SELECTED_PYTHON" -c "from osgeo import gdal" &> /dev/null; then
-            echo "Python Workflow venv 缺少匹配的 GDAL/NumPy，重建为可继承系统 GDAL 的虚拟环境..."
+            echo "GeoPython Workflow venv 缺少匹配的 GDAL/NumPy，重建为可继承系统 GDAL 的虚拟环境..."
             rm -rf engines/python-workflow/venv
             cd engines/python-workflow
             PYTHON_VER=$($SELECTED_PYTHON --version)
@@ -1342,8 +1351,8 @@ if [ "$NEED_INSTALL" = true ]; then
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
         if ! ./venv/bin/python -c "from osgeo import gdal" &> /dev/null; then
-            echo -e "${YELLOW}⚠️  Python Workflow 缺少 GDAL Python 绑定(osgeo.gdal)，栅格 mosaic 生成算子将不可用。${NC}"
-            echo -e "${YELLOW}   提示：macOS 可先执行 brew install gdal，或使用 Python Workflow 容器镜像。${NC}"
+            echo -e "${YELLOW}⚠️  GeoPython Workflow 缺少 GDAL Python 绑定(osgeo.gdal)，栅格 mosaic 生成算子将不可用。${NC}"
+            echo -e "${YELLOW}   提示：macOS 可先执行 brew install gdal，或使用 GeoPython Workflow 容器镜像。${NC}"
         fi
     else
         echo -e "${RED}✗ Python 依赖安装失败，请检查错误信息${NC}"
@@ -1356,9 +1365,9 @@ if [ "$NEED_INSTALL" = true ]; then
     cd ..
 fi
 
-# 启动 Python Workflow Engine
+# 启动 GeoPython Workflow Engine
 if check_service_running "python-workflow-engine" "$PYTHON_WORKFLOW_PORT"; then
-  echo "启动 Python Workflow Engine..."
+  echo "启动 GeoPython Workflow Engine..."
   cd engines/python-workflow
 
   # 设置环境变量
@@ -1378,10 +1387,10 @@ if check_service_running "python-workflow-engine" "$PYTHON_WORKFLOW_PORT"; then
   echo $PYTHON_WORKFLOW_PID > ../../.dev-pids/python-workflow-engine.pid
   cd ../..
 
-  echo -e "${GREEN}✓ Python Workflow Engine 已启动 (PID: $PYTHON_WORKFLOW_PID)${NC}"
+  echo -e "${GREEN}✓ GeoPython Workflow Engine 已启动 (PID: $PYTHON_WORKFLOW_PID)${NC}"
 
   # 等待健康检查通过
-  echo -n "等待 Python Workflow Engine 就绪..."
+  echo -n "等待 GeoPython Workflow Engine 就绪..."
   WAIT_COUNT=0
   MAX_WAIT=60
   until curl -f http://localhost:${PYTHON_WORKFLOW_PORT}/health > /dev/null 2>&1; do
@@ -1390,21 +1399,21 @@ if check_service_running "python-workflow-engine" "$PYTHON_WORKFLOW_PORT"; then
     WAIT_COUNT=$((WAIT_COUNT + 1))
     if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
       echo -e " ${RED}✗${NC}"
-      echo -e "${RED}✗ Python Workflow Engine 启动超时（60秒）${NC}"
+      echo -e "${RED}✗ GeoPython Workflow Engine 启动超时（60秒）${NC}"
       echo -e "${YELLOW}查看日志: tail -f logs/python-workflow-engine.log${NC}"
       echo -e "${YELLOW}或检查错误: tail -f logs/python-workflow-engine-stderr.log${NC}"
       exit 1
     fi
   done
   echo -e " ${GREEN}✓${NC}"
-  echo -e "${GREEN}✓ Python Workflow Engine 就绪 (http://localhost:${PYTHON_WORKFLOW_PORT})${NC}"
+  echo -e "${GREEN}✓ GeoPython Workflow Engine 就绪 (http://localhost:${PYTHON_WORKFLOW_PORT})${NC}"
 else
   PYTHON_WORKFLOW_PID=$(cat .dev-pids/python-workflow-engine.pid 2>/dev/null)
-  echo -e "${GREEN}✓ Python Workflow Engine 已在运行 (PID: $PYTHON_WORKFLOW_PID)${NC}"
+  echo -e "${GREEN}✓ GeoPython Workflow Engine 已在运行 (PID: $PYTHON_WORKFLOW_PID)${NC}"
 fi
   echo ""
 else
-  echo -e "${YELLOW}Step 4/5: 跳过 Python Workflow Engine${NC}"
+  echo -e "${YELLOW}Step 4/5: 跳过 GeoPython Workflow Engine${NC}"
   echo ""
 fi
 
@@ -1651,6 +1660,9 @@ start_pointcloud_workflow_engine_process() {
   POINTCLOUD_WORKFLOW_PID=$(
     docker run -d \
       --name pointcloud-workflow-engine \
+      --label com.docker.compose.project=addp-app \
+      --label com.docker.compose.service=pointcloud-workflow-engine \
+      --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
       --add-host=host.docker.internal:host-gateway \
       -p "${POINTCLOUD_WORKFLOW_PORT}:8102" \
       -e PORT=8102 \
@@ -1720,6 +1732,185 @@ fi
   echo ""
 else
   echo -e "${YELLOW}Step 4.4/5: 跳过 PointCloud Workflow Engine${NC}"
+  echo ""
+fi
+
+# ============================================================
+# Step 4.45: Start SuperMap Workflow Engine (Docker runtime)
+# ============================================================
+
+if [ "$START_SUPERMAP_WORKFLOW" = true ]; then
+  echo -e "${BLUE}Step 4.45/5: 启动 SuperMap Workflow Engine${NC}"
+
+start_supermap_workflow_engine_process() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo -e "${RED}✗ SuperMap Workflow Engine 需要 Docker runtime 承载 Linux arm64 SuperMap SDK${NC}"
+    exit 1
+  fi
+
+  local image="${SUPERMAP_WORKFLOW_IMAGE:-addp-supermap-workflow-engine:dev}"
+  local objectsjava_host="${SUPERMAP_OBJECTSJAVA_BIN_HOST:-${SUPERMAP_OBJECTSJAVA_BIN_HOST_PATH:-}}"
+  local gpa_lib_host="${SUPERMAP_GPA_LIB_DIR_HOST:-${SUPERMAP_GPA_LIB_DIR_HOST_PATH:-}}"
+  local output_dir="${SUPERMAP_OUTPUT_HOST_PATH:-/tmp/supermap-out}"
+  local data_dir="${SUPERMAP_DATA_HOST_PATH:-}"
+  local platform="${SUPERMAP_WORKFLOW_PLATFORM:-linux/arm64}"
+  local rebuild_image="${SUPERMAP_WORKFLOW_REBUILD:-${FORCE_SUPERMAP_WORKFLOW_IMAGE_BUILD:-0}}"
+  local source_dir="${SUPERMAP_WORKFLOW_SOURCE_HOST:-${ROOT_DIR}/engines/supermap-workflow/src}"
+  local mount_source="${SUPERMAP_WORKFLOW_MOUNT_SOURCE:-1}"
+  local container_objectsjava="/opt/supermap/objectsjava/bin_linux_arm64"
+  local container_gpa_lib="/opt/supermap/gpa/libs"
+  local image_exists=false
+  local bundled_image=false
+
+  if docker image inspect "$image" >/dev/null 2>&1; then
+    image_exists=true
+    if [ "$(docker image inspect -f '{{ index .Config.Labels "addp.supermap.bundled" }}' "$image" 2>/dev/null || true)" = "true" ]; then
+      bundled_image=true
+    fi
+  fi
+
+  if [ "$rebuild_image" = "1" ] && [ "$bundled_image" = true ]; then
+    echo -e "${RED}✗ ${image} 是 SuperMap bundled 镜像，不能用 SUPERMAP_WORKFLOW_REBUILD=1 覆盖为瘦镜像${NC}"
+    echo -e "${YELLOW}  请使用: scripts/build/build-supermap-workflow-image.sh --image ${image}${NC}"
+    exit 1
+  fi
+
+  if [ -z "$objectsjava_host" ] && [ -n "${SUPERMAP_OBJECTSJAVA_BIN:-}" ] && [ -d "${SUPERMAP_OBJECTSJAVA_BIN}" ]; then
+    objectsjava_host="${SUPERMAP_OBJECTSJAVA_BIN}"
+  fi
+  if [ -z "$gpa_lib_host" ] && [ -n "${SUPERMAP_GPA_LIB_DIR:-}" ] && [ -d "${SUPERMAP_GPA_LIB_DIR}" ]; then
+    gpa_lib_host="${SUPERMAP_GPA_LIB_DIR}"
+  fi
+
+  if [ "$bundled_image" != true ] && { [ -z "$objectsjava_host" ] || [ ! -d "$objectsjava_host" ]; }; then
+    echo -e "${RED}✗ 请设置 SUPERMAP_OBJECTSJAVA_BIN_HOST 指向宿主机完整 iObjects Java Bin 目录${NC}"
+    echo -e "${YELLOW}  例如: SUPERMAP_OBJECTSJAVA_BIN_HOST=/path/to/sup_iobjectsjava/Bin bash scripts/dev/start.sh -supermap-workflow${NC}"
+    echo -e "${YELLOW}  或先构建 bundled 镜像: scripts/build/build-supermap-workflow-image.sh${NC}"
+    exit 1
+  fi
+  if [ "$bundled_image" != true ] && { [ -z "$gpa_lib_host" ] || [ ! -d "$gpa_lib_host" ]; }; then
+    echo -e "${RED}✗ 请设置 SUPERMAP_GPA_LIB_DIR_HOST 指向宿主机 GPA/SPS libs 目录${NC}"
+    exit 1
+  fi
+
+  if [ "$image_exists" = false ] || [ "$rebuild_image" = "1" ]; then
+    echo "构建 SuperMap Workflow Engine 镜像..."
+    docker build -t "$image" engines/supermap-workflow
+    bundled_image=false
+  fi
+
+  echo "启动 SuperMap Workflow Engine Docker runtime..."
+  docker rm -f supermap-workflow-engine >/dev/null 2>&1 || true
+  mkdir -p "${output_dir}" .dev-pids
+
+  local mount_args=(
+    -v "${output_dir}:/tmp/supermap-out"
+  )
+  if [ "$bundled_image" != true ]; then
+    mount_args+=(
+      -v "${objectsjava_host}:${container_objectsjava}:ro"
+      -v "${gpa_lib_host}:${container_gpa_lib}:ro"
+    )
+  fi
+  if [ "$mount_source" = "1" ] && [ -d "$source_dir" ]; then
+    mount_args+=(-v "${source_dir}:/app/src:ro")
+  fi
+  if [ -n "$data_dir" ]; then
+    if [ ! -d "$data_dir" ]; then
+      echo -e "${RED}✗ SUPERMAP_DATA_HOST_PATH 不是有效目录: $data_dir${NC}"
+      exit 1
+    fi
+    mount_args+=(-v "${data_dir}:/mnt/supermap/data:ro")
+  fi
+
+  docker run -d \
+    --name supermap-workflow-engine \
+    --label com.docker.compose.project=addp-app \
+    --label com.docker.compose.service=supermap-workflow-engine \
+    --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
+    --platform "$platform" \
+    --add-host=host.docker.internal:host-gateway \
+    -p "${SUPERMAP_WORKFLOW_PORT}:8103" \
+    -e PORT=8103 \
+    -e SUPERMAP_OBJECTSJAVA_BIN="${container_objectsjava}" \
+    -e SUPERMAP_GPA_LIB_DIR="${container_gpa_lib}" \
+    -e SUPERMAP_RESOURCE_LOCALHOST_ALIAS="${SUPERMAP_RESOURCE_LOCALHOST_ALIAS:-host.docker.internal}" \
+    "${mount_args[@]}" \
+    "$image" > .dev-pids/supermap-workflow-engine.pid
+  SUPERMAP_WORKFLOW_PID=$(cat .dev-pids/supermap-workflow-engine.pid)
+
+  echo -e "${GREEN}✓ SuperMap Workflow Engine 容器已启动 (${SUPERMAP_WORKFLOW_PID})${NC}"
+
+  echo -n "  等待服务就绪"
+  MAX_WAIT=90
+  WAIT_COUNT=0
+  while ! curl -s "http://localhost:${SUPERMAP_WORKFLOW_PORT}/health" | grep -q '"status":"healthy"'; do
+    sleep 1
+    echo -n "."
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+      echo -e " ${RED}✗${NC}"
+      echo -e "${RED}✗ SuperMap Workflow Engine 未进入 healthy 状态（${MAX_WAIT}秒）${NC}"
+      echo -e "${YELLOW}查看日志: docker logs supermap-workflow-engine${NC}"
+      echo -e "${YELLOW}确认 objectsjava Bin 目录内已放置许可文件，并且 GPA/SPS libs 完整${NC}"
+      exit 1
+    fi
+  done
+  echo -e " ${GREEN}✓${NC}"
+  echo -e "${GREEN}✓ SuperMap Workflow Engine 就绪 (http://localhost:${SUPERMAP_WORKFLOW_PORT})${NC}"
+
+  if [ -n "${INTERNAL_API_KEY:-}" ]; then
+    local system_url="${SYSTEM_URL:-http://localhost:${SYSTEM_BACKEND_PORT:-8180}}"
+    local response_file
+    response_file=$(mktemp)
+    local register_payload
+    register_payload=$(cat <<JSON
+{"engine_type":"supermap_workflow","name":"SuperMap 工作流引擎","description":"面向超图 iObjects Java / SPS 的工作流运行时","connection_info":{"protocol":"http","port":${SUPERMAP_WORKFLOW_PORT}},"is_builtin":true}
+JSON
+)
+    local http_code
+    http_code=$(curl -s -o "$response_file" -w "%{http_code}" \
+      -H "X-Internal-API-Key: ${INTERNAL_API_KEY}" \
+      -H "Content-Type: application/json" \
+      -d "$register_payload" \
+      "${system_url%/}/api/v1/internal/engines/register" || true)
+    if [ "$http_code" = "202" ] || [ "$http_code" = "200" ]; then
+      echo -e "${GREEN}✓ SuperMap Workflow Engine 已注册到 System${NC}"
+    else
+      echo -e "${YELLOW}⚠️  SuperMap Workflow Engine 自动注册到 System 失败（HTTP ${http_code:-000}）${NC}"
+      echo -e "${YELLOW}   $(head -c 200 "$response_file")${NC}"
+    fi
+    rm -f "$response_file"
+  else
+    echo -e "${YELLOW}⚠️  INTERNAL_API_KEY 未设置，跳过 SuperMap Workflow Engine 自动注册${NC}"
+  fi
+}
+
+if curl -s "http://localhost:${SUPERMAP_WORKFLOW_PORT}/health" 2>/dev/null | grep -q '"service":"supermap-workflow-engine"'; then
+  if docker ps --filter "name=^/supermap-workflow-engine$" --format '{{.Names}}' 2>/dev/null | grep -qx "supermap-workflow-engine"; then
+    if curl -s "http://localhost:${SUPERMAP_WORKFLOW_PORT}/health" | grep -q '"status":"healthy"'; then
+      SUPERMAP_WORKFLOW_PID=$(cat .dev-pids/supermap-workflow-engine.pid 2>/dev/null || echo supermap-workflow-engine)
+      echo -e "${GREEN}✓ SuperMap Workflow Engine Docker runtime 已在运行 (${SUPERMAP_WORKFLOW_PID})${NC}"
+    else
+      echo -e "${YELLOW}⚠️  SuperMap Workflow Engine 当前不是 healthy，重建 Docker runtime${NC}"
+      start_supermap_workflow_engine_process
+    fi
+  else
+    echo -e "${YELLOW}⚠️  检测到非容器 SuperMap Workflow Engine 正占用 ${SUPERMAP_WORKFLOW_PORT}，切换到 Docker runtime${NC}"
+    start_supermap_workflow_engine_process
+  fi
+elif check_service_running "supermap-workflow-engine" "$SUPERMAP_WORKFLOW_PORT"; then
+  start_supermap_workflow_engine_process
+else
+  occupying_pid=$(lsof -ti :${SUPERMAP_WORKFLOW_PORT} -sTCP:LISTEN 2>/dev/null || true)
+  occupying_cmd=$(ps -p "$occupying_pid" -o command= 2>/dev/null || true)
+  echo -e "${RED}✗ SuperMap Workflow Engine 端口 ${SUPERMAP_WORKFLOW_PORT} 被占用，无法启动 Docker runtime${NC}"
+  echo -e "${YELLOW}  进程: $(echo "$occupying_cmd" | cut -c1-80)${NC}"
+  exit 1
+fi
+  echo ""
+else
+  echo -e "${YELLOW}Step 4.45/5: 跳过 SuperMap Workflow Engine${NC}"
   echo ""
 fi
 
@@ -2496,9 +2687,10 @@ echo "  Quality:  http://localhost:${QUALITY_BACKEND_PORT}"
   echo "  Portal:   http://localhost:${PORTAL_BACKEND_PORT}"
 echo "  Jupyter Engine:      http://localhost:${JUPYTER_API_PORT} (API) / http://localhost:${JUPYTER_LAB_PORT} (Lab UI)"
 echo "  Spark 工作流引擎: http://localhost:${SPARK_WORKFLOW_PORT}"
-echo "  Python Workflow Engine:    http://localhost:${PYTHON_WORKFLOW_PORT}"
+echo "  GeoPython Workflow Engine:    http://localhost:${PYTHON_WORKFLOW_PORT}"
 echo "  Model3D Workflow Engine:   http://localhost:${MODEL3D_WORKFLOW_PORT}"
 echo "  PointCloud Workflow Engine: http://localhost:${POINTCLOUD_WORKFLOW_PORT}"
+echo "  SuperMap Workflow Engine:  http://localhost:${SUPERMAP_WORKFLOW_PORT}"
 echo "  Raster Mosaic Runtime:     http://localhost:${RASTER_MOSAIC_RUNTIME_PORT}"
 echo "  System FE:    http://localhost:${SYSTEM_FE_PORT}"
 echo "  Manager FE:   http://localhost:${MANAGER_FE_PORT}"
@@ -2523,9 +2715,10 @@ echo "  Orchestrator Backend: $ORCHESTRATOR_PID"
 echo "  Develop Backend:      $DEVELOP_PID"
 echo "  Service Backend:      $SERVICE_PID"
 echo "  Raster Mosaic Runtime:      $RASTER_MOSAIC_RUNTIME_PID"
-echo "  Python Workflow Engine:     $PYTHON_WORKFLOW_PID"
+echo "  GeoPython Workflow Engine:     $PYTHON_WORKFLOW_PID"
 echo "  Model3D Workflow Engine:    $MODEL3D_WORKFLOW_PID"
 echo "  PointCloud Workflow Engine: $POINTCLOUD_WORKFLOW_PID"
+echo "  SuperMap Workflow Engine:  $SUPERMAP_WORKFLOW_PID"
 echo "  Spark 工作流引擎:  $SPARK_WORKFLOW_PID"
 echo "  Jupyter Engine:       $JUPYTER_PID"
 echo "  Copilot Backend:      $COPILOT_PID"
@@ -2553,10 +2746,11 @@ echo "  Monitor:  logs/monitor-backend.log"
 echo "  Standard: logs/standard-backend.log"
 echo "  Model:    logs/model-backend.log"
 echo "  Quality:  logs/quality-backend.log"
-echo "  Python Workflow Engine: logs/python-workflow-engine.log"
+echo "  GeoPython Workflow Engine: logs/python-workflow-engine.log"
 echo "  Math Workflow Engine: logs/math-workflow-engine.log (显式 -math-workflow 启动时)"
 echo "  Model3D Workflow Engine: logs/model3d-workflow-engine.log"
 echo "  PointCloud Workflow Engine: docker logs pointcloud-workflow-engine"
+echo "  SuperMap Workflow Engine: docker logs supermap-workflow-engine"
 echo "  Spark 工作流引擎: logs/spark-workflow-engine.log"
 echo "  Jupyter Engine: logs/jupyter-engine.log"
 echo "  Gateway:  logs/gateway.log"

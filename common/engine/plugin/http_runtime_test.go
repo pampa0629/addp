@@ -82,6 +82,67 @@ func TestHTTPExecuteWorkflowIncludesRuntimeFields(t *testing.T) {
 	}
 }
 
+func TestHTTPListOperatorsPreservesParameterType(t *testing.T) {
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/operators" {
+				t.Fatalf("unexpected path: %s", r.URL.Path)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"status": "success",
+				"operators": [{
+					"id": "dataset.select",
+					"name": "dataset.select",
+					"display_name": "选择矢量数据集",
+					"engine_type": "supermap_workflow",
+					"category": "数据集",
+					"category_path": ["数据集"],
+					"description": "从 Datasource 中选择 DatasetVector。",
+					"execution_modes": ["workflow"],
+					"parameters": [
+						{"name": "datasource", "type": "object", "param_type": "input", "required": true, "description": "上游 Datasource 引用。"},
+						{"name": "dataset_name", "type": "string", "param_type": "param", "required": true, "description": "数据集名称。"}
+					],
+					"output_ports": [{"name": "dataset", "type": "object", "is_default": true}]
+				}]
+			}`))
+		}),
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	go func() {
+		_ = server.Serve(listener)
+	}()
+
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	operators, err := HTTPListOperators(context.Background(), ConnectionInfo{
+		"protocol": "http",
+		"host":     "127.0.0.1",
+		"port":     port,
+	})
+	if err != nil {
+		t.Fatalf("HTTPListOperators returned error: %v", err)
+	}
+	if len(operators) != 1 || len(operators[0].Parameters) != 2 {
+		t.Fatalf("unexpected operators: %+v", operators)
+	}
+	if operators[0].Parameters[0].ParamType != "input" {
+		t.Fatalf("param_type was not preserved: %+v", operators[0].Parameters[0])
+	}
+	if operators[0].Parameters[1].ParamType != "param" {
+		t.Fatalf("param_type was not preserved: %+v", operators[0].Parameters[1])
+	}
+}
+
 func TestHTTPExecuteWorkflowReturnsErrorForFailedStatusWithOKHTTPStatus(t *testing.T) {
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

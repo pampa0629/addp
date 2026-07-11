@@ -17,6 +17,7 @@ const (
 	capabilityStatusEngineUnavailable = "engine_unavailable"
 	capabilityStatusInstalled         = "installed"
 	capabilityStatusNotInstalled      = "not_installed"
+	capabilityStatusUnknown           = "unknown"
 )
 
 func BuildCapabilitiesView(capabilitiesJSON *models.JSONString, engineType string) *models.CapabilitiesView {
@@ -312,6 +313,12 @@ func extensionItems(extensions map[string]interface{}) []models.CapabilityViewIt
 				continue
 			}
 		}
+		if key == engineplugin.EngineExtensionSpatialWorkspaces {
+			if workspaceItems := spatialWorkspaceItems(extensions[key]); len(workspaceItems) > 0 {
+				items = append(items, workspaceItems...)
+				continue
+			}
+		}
 		items = append(items, models.CapabilityViewItem{
 			ID:       key,
 			LabelKey: capabilityValueKey("extensions", key),
@@ -320,6 +327,137 @@ func extensionItems(extensions map[string]interface{}) []models.CapabilityViewIt
 		})
 	}
 	return items
+}
+
+func spatialWorkspaceItems(value interface{}) []models.CapabilityViewItem {
+	workspaces, ok := value.([]interface{})
+	if !ok {
+		if typed, ok := value.([]engineplugin.SpatialWorkspaceFact); ok {
+			workspaces = make([]interface{}, 0, len(typed))
+			for _, workspace := range typed {
+				workspaces = append(workspaces, workspace)
+			}
+		} else {
+			return nil
+		}
+	}
+
+	items := make([]models.CapabilityViewItem, 0, len(workspaces))
+	for i, raw := range workspaces {
+		workspace, ok := spatialWorkspaceMap(raw)
+		if !ok {
+			continue
+		}
+		item := models.CapabilityViewItem{
+			ID:       spatialWorkspaceItemID(workspace, i),
+			LabelKey: capabilityValueKey("extensions", "spatial_workspace"),
+			Status:   spatialWorkspaceStatus(stringValue(workspace["state"])),
+		}
+		if ecosystem := stringValue(workspace["ecosystem"]); ecosystem != "" {
+			item.Tags = append(item.Tags, models.CapabilityViewTag{
+				ID:       "ecosystem_" + capabilityKeySegment(ecosystem),
+				LabelKey: capabilityValueKey("values", "ecosystem"),
+				Value:    ecosystem,
+			})
+		}
+		if kind := stringValue(workspace["kind"]); kind != "" {
+			item.Tags = append(item.Tags, models.CapabilityViewTag{
+				ID:       "kind_" + capabilityKeySegment(kind),
+				LabelKey: capabilityValueKey("values", "kind"),
+				Value:    kind,
+			})
+		}
+		if state := stringValue(workspace["state"]); state != "" {
+			item.Tags = append(item.Tags, models.CapabilityViewTag{
+				ID:       "state_" + capabilityKeySegment(state),
+				LabelKey: capabilityValueKey("values", "state"),
+				Value:    state,
+			})
+		}
+		if backend := stringValue(workspace["backend_engine_type"]); backend != "" {
+			item.Tags = append(item.Tags, models.CapabilityViewTag{
+				ID:       "backend_engine_type",
+				LabelKey: capabilityValueKey("values", "backend_engine_type"),
+				Value:    backend,
+			})
+		}
+		if runtimeType := stringValue(workspace["runtime_engine_type"]); runtimeType != "" {
+			item.Tags = append(item.Tags, models.CapabilityViewTag{
+				ID:       "runtime_engine_type",
+				LabelKey: capabilityValueKey("values", "runtime_engine_type"),
+				Value:    runtimeType,
+			})
+		}
+		if boundID := primitiveString(workspace["bound_runtime_engine_id"]); boundID != "" && boundID != "0" {
+			item.Tags = append(item.Tags, models.CapabilityViewTag{
+				ID:       "bound_runtime_engine_id",
+				LabelKey: capabilityValueKey("values", "bound_runtime_engine_id"),
+				Value:    boundID,
+			})
+		}
+		if risk := stringValue(workspace["risk_level"]); risk != "" {
+			item.Tags = append(item.Tags, models.CapabilityViewTag{
+				ID:       "risk_level_" + capabilityKeySegment(risk),
+				LabelKey: capabilityValueKey("values", "risk_level"),
+				Value:    risk,
+			})
+		}
+		if canEnable, exists := workspace["can_enable"]; exists {
+			item.Tags = append(item.Tags, boolStateTag("can_enable", canEnable))
+		}
+		if evidence, ok := asMap(workspace["evidence"]); ok {
+			item.Tags = append(item.Tags, capabilityValueTag("evidence", capabilityValueKey("values", "evidence")))
+			for _, key := range sortedMapKeys(evidence) {
+				item.Tags = append(item.Tags, models.CapabilityViewTag{
+					ID:       "evidence_" + capabilityKeySegment(key),
+					LabelKey: capabilityValueKey("values", key),
+					Value:    primitiveString(evidence[key]),
+				})
+			}
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+func spatialWorkspaceMap(value interface{}) (map[string]interface{}, bool) {
+	if obj, ok := asMap(value); ok {
+		return obj, true
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, false
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return nil, false
+	}
+	return obj, true
+}
+
+func spatialWorkspaceItemID(workspace map[string]interface{}, index int) string {
+	ecosystem := capabilityKeySegment(stringValue(workspace["ecosystem"]))
+	kind := capabilityKeySegment(stringValue(workspace["kind"]))
+	if ecosystem == "" {
+		ecosystem = "workspace"
+	}
+	if kind == "" {
+		kind = "item"
+	}
+	return "spatial_workspace_" + ecosystem + "_" + kind + "_" + strconv.Itoa(index)
+}
+
+func spatialWorkspaceStatus(state string) string {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "detected", "enabled":
+		return capabilityStatusAvailable
+	case "not_detected":
+		return capabilityStatusNotInstalled
+	case "permission_denied":
+		return capabilityStatusEngineUnavailable
+	default:
+		return capabilityStatusUnknown
+	}
 }
 
 func postgresqlExtensionItems(value interface{}) []models.CapabilityViewItem {
@@ -570,7 +708,7 @@ func capabilityValueKey(namespace, value string) string {
 
 func capabilityKeySegment(value string) string {
 	parts := strings.FieldsFunc(value, func(r rune) bool {
-		return r == '_' || r == '-' || r == '.'
+		return r == '_' || r == '-' || r == '.' || r == '+'
 	})
 	if len(parts) == 0 {
 		return value

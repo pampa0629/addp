@@ -1,7 +1,7 @@
-# Python Workflow Engine Dockerfile
+# GeoPython Workflow Engine Dockerfile
 FROM localhost:5001/python:3.11-slim
 
-# Install system dependencies for Python Workflow Engine (including build tools)
+# Install system dependencies for GeoPython Workflow Engine (including build tools)
 RUN apt-get update && apt-get install -y \
     build-essential \
     g++ \

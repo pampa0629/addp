@@ -1,23 +1,23 @@
-# Python Workflow 运行说明
+# GeoPython Workflow 运行说明
 
-本文档说明当前 `python_workflow` 扩展引擎的运行入口。历史空间专用实现已废弃，不再作为兼容路径保留。
+本文档说明当前 `geopython_workflow` 扩展引擎的运行入口。历史空间专用实现已废弃，不再作为兼容路径保留。
 
 ## 引擎定位
 
-Python Workflow 是 ADDP 的工作流运行时扩展引擎：
+GeoPython Workflow 是 ADDP 的工作流运行时扩展引擎：
 
-- 插件类型：`python_workflow`
+- 插件类型：`geopython_workflow`
 - 引擎来源：`extension`
 - Provider：`WorkflowRuntimeProvider`
 - 运行时协议：`addp.workflow/v1`
 - 默认端口：`8099`
 - 代码目录：`engines/python-workflow`
 
-业务模块不直接拼接 Python Workflow 的 HTTP URL。Develop 等调用方通过 Common Engine 获取 `WorkflowRuntimeProvider`，由 provider 按统一协议调用运行时接口。
+业务模块不直接拼接 GeoPython Workflow 的 HTTP URL。Develop 等调用方通过 Common Engine 获取 `WorkflowRuntimeProvider`，由 provider 按统一协议调用运行时接口。
 
 ## 标准接口
 
-Python Workflow 必须实现以下入口：
+GeoPython Workflow 必须实现以下入口：
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -68,11 +68,11 @@ bash scripts/build/build-images.sh --services python-workflow-engine
 
 ## System 自注册
 
-引擎启动时向 System 自注册身份和连接信息。作为内置运行时，Python Workflow 不在自注册 payload 中提交 `capabilities`；System 按 `python_workflow` 插件的 `Capabilities()` 生成 `engine.capabilities/v1` 落库能力声明。
+引擎启动时向 System 自注册身份和连接信息。作为内置运行时，GeoPython Workflow 不在自注册 payload 中提交 `capabilities`；System 按 `geopython_workflow` 插件的 `Capabilities()` 生成 `engine.capabilities/v1` 落库能力声明。
 
 ```json
 {
-  "engine_type": "python_workflow",
+  "engine_type": "geopython_workflow",
   "connection_info": {
     "protocol": "http",
     "port": 8099

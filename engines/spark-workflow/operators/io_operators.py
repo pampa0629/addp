@@ -32,7 +32,7 @@ def load(engine_id: int, **params) -> DataFrame:
             - schema: 数据库schema (table类型)
             - table: 表名 (table类型)
             - geom_column: 几何列名 (默认"geom")
-            - path: 文件路径 (file类型,由 locator 派生)
+            - path: 文件路径 (file类型,由 Develop Adapter 注入)
             - format: 文件格式 (file类型)
             - sql: SQL查询 (sql类型)
             - catalog_name: catalog名称 (catalog类型)
@@ -80,7 +80,7 @@ def save(input_df: DataFrame, engine_id: int, **params) -> Dict[str, Any]:
             - schema: 数据库schema (table类型)
             - table: 表名 (table类型)
             - mode: 保存模式 ("overwrite" | "append")
-            - path: 文件路径 (file类型,由 target_parent_locator + target_name 派生)
+            - path: 文件路径 (file类型,由 Develop Adapter 注入)
             - format: 文件格式 (file类型)
 
     Returns:
@@ -194,32 +194,31 @@ LOAD_METADATA = OperatorMetadata(
             notes="不同类型需要不同的参数组合"
         ),
         OperatorParam(
-            name="locator",
-            type="str",
+            name="connection_info",
+            type="object",
             required=False,
-            description="源资源 ResourceLocator",
-            notes="source_type=table 时指向 table/collection；source_type=file 时指向 file/object。Develop Backend 执行前派生 connection_info 和运行时路径"
+            description="Develop Adapter 派生的数据源连接信息"
         ),
         OperatorParam(
             name="schema",
             type="str",
             required=False,
             description="数据库schema名称(运行时派生)",
-            notes="运行时派生参数: table 类型由 locator 派生；catalog 类型可显式填写 database"
+            notes="table 类型由 Develop Adapter 注入；catalog 类型可显式填写 database"
         ),
         OperatorParam(
             name="table",
             type="str",
             required=False,
             description="表名(运行时派生或catalog类型)",
-            notes="运行时派生参数: table 类型由 locator 派生；catalog 类型需显式填写"
+            notes="table 类型由 Develop Adapter 注入；catalog 类型需显式填写"
         ),
         OperatorParam(
             name="path",
             type="str",
             required=False,
             description="文件路径(file类型,运行时派生)",
-            notes="source_type=file 时由 locator 派生；对象存储在 Develop Backend 转换为 s3a://bucket/key"
+            notes="source_type=file 时由 Develop Adapter 注入；对象存储使用 s3a://bucket/key"
         ),
         OperatorParam(
             name="format",
@@ -237,7 +236,7 @@ LOAD_METADATA = OperatorMetadata(
         )
     ],
     use_cases=[
-        "POI 数据分析: 通过 locator 从 PostgreSQL 加载 100万条 POI 点位数据,进行空间聚类分析",
+        "POI 数据分析: 从 PostgreSQL schema/table 加载 100万条 POI 点位数据,进行空间聚类分析",
         "遥感影像处理: 从 S3 加载 10GB GeoParquet 格式的遥感数据,进行波段运算",
         "实时数据接入: 通过 SQL 查询从业务库加载最近24小时的车辆轨迹,用于热力图生成",
         "历史数据分析: 从 Delta Lake 加载 2020-2024年城市边界变化数据,进行时序分析"
@@ -247,7 +246,7 @@ LOAD_METADATA = OperatorMetadata(
         "Shapefile 会自动解析 .shp/.shx/.dbf/.prj 文件组",
         "首次加载大文件建议使用 cache 算子缓存结果",
         "SQL 查询类型支持 JOIN 和 WHERE,但复杂查询建议在数据库端完成",
-        "表和文件类型数据源使用 locator 作为公开参数,connection_info、schema/table 或 path 由 Develop Backend 在执行前派生"
+        "connection_info、schema/table 或 path 由 Develop Adapter 在执行前注入"
     ],
     input_desc="无(起始算子)",
     output_desc="DataFrame (包含加载的数据)",
@@ -256,7 +255,9 @@ LOAD_METADATA = OperatorMetadata(
         "operator": "load",
         "params": {
             "source_type": "table",
-            "locator": "addp://engine/12/path/public/poi?type=table&item_id=99",
+            "connection_info": {"engine_type": "postgresql"},
+            "schema": "public",
+            "table": "poi",
             "geom_column": "geom"
         },
         "depends_on": []
@@ -288,18 +289,10 @@ SAVE_METADATA = OperatorMetadata(
             notes="table写数据库,file写文件系统"
         ),
         OperatorParam(
-            name="target_parent_locator",
-            type="str",
+            name="connection_info",
+            type="object",
             required=False,
-            description="目标父节点 ResourceLocator",
-            notes="target_type=table 时指向 schema/database；target_type=file 时指向 bucket/prefix/directory/root 等真实父节点"
-        ),
-        OperatorParam(
-            name="target_name",
-            type="str",
-            required=False,
-            description="目标名称",
-            notes="target_type=table 时为目标表名；target_type=file 时为目标文件名或相对文件路径"
+            description="Develop Adapter 派生的目标连接信息"
         ),
         OperatorParam(
             name="mode",
@@ -313,21 +306,21 @@ SAVE_METADATA = OperatorMetadata(
             type="str",
             required=False,
             description="schema名称(table类型,运行时派生)",
-            notes="由 target_parent_locator 和 target_name 派生"
+            notes="由 Develop Adapter 注入"
         ),
         OperatorParam(
             name="table",
             type="str",
             required=False,
             description="表名(table类型)",
-            notes="由 target_parent_locator 和 target_name 派生"
+            notes="由 Develop Adapter 注入"
         ),
         OperatorParam(
             name="path",
             type="str",
             required=False,
             description="文件路径(file类型,运行时派生)",
-            notes="由 target_parent_locator 和 target_name 派生；对象存储在 Develop Backend 转换为 s3a://bucket/key"
+            notes="由 Develop Adapter 注入；对象存储使用 s3a://bucket/key"
         ),
         OperatorParam(
             name="format",
@@ -348,7 +341,7 @@ SAVE_METADATA = OperatorMetadata(
         "保存到 PostgreSQL 时,几何列自动转换为 PostGIS geometry 类型",
         "大数据量保存建议使用 Parquet 格式,压缩比高且查询快",
         "append 模式不检查重复,需自行去重",
-        "表和文件类型保存使用 target_parent_locator 和 target_name 作为公开参数,connection_info、schema/table 或 path 由 Develop Backend 在执行前派生"
+        "connection_info、schema/table 或 path 由 Develop Adapter 在执行前注入"
     ],
     input_desc="DataFrame (待保存的数据)",
     output_desc="Dict (执行结果: status, rows, target)",
@@ -358,8 +351,9 @@ SAVE_METADATA = OperatorMetadata(
         "params": {
             "input_df": {"$ref": "buffer_analysis"},
             "target_type": "table",
-            "target_parent_locator": "addp://engine/12/path/public?type=schema&node_id=23",
-            "target_name": "buffer_result",
+            "connection_info": {"engine_type": "postgresql"},
+            "schema": "public",
+            "table": "buffer_result",
             "mode": "overwrite"
         },
         "depends_on": ["buffer_analysis"]

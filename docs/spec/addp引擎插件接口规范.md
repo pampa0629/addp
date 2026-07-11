@@ -56,7 +56,7 @@ type InstanceCapabilitiesResolver interface {
 | 值 | 含义 |
 | --- | --- |
 | `general` | 用户熟悉的通用现成技术或主流引擎，如 PostgreSQL、MySQL、MinIO、Neo4j。 |
-| `extension` | 按 ADDP 扩展规范实现的引擎或运行时，如 Python Workflow、Math Workflow。 |
+| `extension` | 按 ADDP 扩展规范实现的引擎或运行时，如 GeoPython Workflow、Math Workflow。 |
 
 ### 内置插件加载入口
 
@@ -171,9 +171,9 @@ SQL catalog facts provider 的实现边界：
 
 SQL catalog facts provider 差异矩阵：
 
-| 引擎 | namespace 术语 | catalog facts 来源 | 表类型映射 | 字段信息来源 | row count 策略 | 系统 namespace 过滤 | 当前复用边界 |
+| 引擎 | namespace 术语 | catalog facts 来源 | 表类型映射 | 字段信息来源 | row count 策略 | 系统 namespace / leaf 过滤 | 当前复用边界 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| PostgreSQL | schema | `information_schema.schemata/tables/columns` + `pg_class` + `pg_stat_user_tables` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自约束表，注释来自 `col_description` | 列表和单表 catalog facts 均使用 `pg_class.reltuples` 统计估算，不主动 `ANALYZE`，不做真实 count | `pg_catalog`、`information_schema`、`pg_toast`、`pg_temp_*`、`pg_toast_*` | 暂留插件内；PostgreSQL 原生 catalog 语义较强，不与 MySQL/Doris 合并 |
+| PostgreSQL | schema | `information_schema.schemata/tables/columns` + `pg_class` + `pg_stat_user_tables` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自约束表，注释来自 `col_description` | 列表和单表 catalog facts 均使用 `pg_class.reltuples` 统计估算，不主动 `ANALYZE`，不做真实 count | `pg_catalog`、`information_schema`、`pg_toast`、`pg_temp_*`、`pg_toast_*`；当实例检测到 SuperMap SDX+ 时过滤 `sm*` 系统 leaf | 暂留插件内；PostgreSQL 原生 catalog 语义较强，不与 MySQL/Doris 合并 |
 | MySQL | database | `information_schema.schemata/tables/columns` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment` | 使用 `information_schema.tables.table_rows` 统计值 | `information_schema`、`mysql`、`performance_schema`、`sys` | 与 Doris 共享 `MySQLCompatibleCatalogFactsDialect`；可启用表级 `Native.engine` |
 | Doris | database | MySQL 兼容 `information_schema.schemata/tables/columns` | 同 MySQL 兼容逻辑 | 同 MySQL 兼容逻辑，注释能力按引擎实际返回 | 使用 `information_schema.tables.table_rows` 统计值 | MySQL 系统库 + `__internal_schema` | 与 MySQL 共享 `MySQLCompatibleCatalogFactsDialect`；`Native.engine` 待确认 `information_schema.tables.engine` 稳定性后再启用 |
 | ClickHouse | database | `system.databases`、`system.tables`、`system.columns` | `MaterializedView` -> `materialized_view`，`View`/其他包含 `View` 的 engine -> `view`，其他 -> `table` | `system.columns`，nullable 从类型字符串推断，`DEFAULT` / `MATERIALIZED` / `ALIAS` 映射到通用默认值和生成列字段，当前不表达主键 | 使用 `system.tables.total_rows` 统计值 | `system`、`information_schema`、`INFORMATION_SCHEMA` | 暂留插件内；ClickHouse `system.*` 语义独立 |

@@ -401,6 +401,17 @@ check_service_changed() {
             fi
             ;;
 
+        supermap-workflow-engine)
+            comparison_time=$(find "$service_dir" -type f '(' -name "*.java" -o -name "Dockerfile" -o -name "Dockerfile.bundled" -o -name "run.sh" -o -name "*.lic12" ')' \
+                -not -path "*/target/*" 2>/dev/null | \
+                xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+
+            if [ -z "$comparison_time" ] || [ "$comparison_time" = "0" ]; then
+                echo -e "${YELLOW}Cannot determine source modification time, rebuilding...${NC}"
+                return 1
+            fi
+            ;;
+
         *-backend|gateway|*-worker)
             # Backend/Worker services: compare binary file time
             local arch=$(echo "$BUILD_PLATFORMS" | sed 's|linux/||' | cut -d',' -f1)
@@ -521,6 +532,30 @@ build_service() {
         return 1
     fi
 
+    if [ "$service" = "supermap-workflow-engine" ]; then
+        if [[ "$BUILD_PLATFORMS" == *,* ]]; then
+            echo -e "${RED}Error: supermap-workflow-engine currently supports one Linux platform per build${NC}"
+            echo -e "${YELLOW}Hint: build linux/arm64 with SuperMap Linux arm64 SDK${NC}"
+            return 1
+        fi
+        if [[ "$BUILD_PLATFORMS" != "linux/arm64" ]]; then
+            echo -e "${RED}Error: supermap-workflow-engine requires linux/arm64, got ${BUILD_PLATFORMS}${NC}"
+            return 1
+        fi
+
+        if SUPERMAP_WORKFLOW_IMAGE="${image_name}" \
+            SUPERMAP_WORKFLOW_PLATFORM="${BUILD_PLATFORMS}" \
+            "${PROJECT_ROOT}/scripts/build/build-supermap-workflow-image.sh" --push; then
+            mkdir -p ".build-cache"
+            date +%s > ".build-cache/${service}-${IMAGE_TAG}.timestamp"
+            echo -e "${GREEN}✓ Successfully built and pushed ${service}${NC}"
+            return 0
+        fi
+
+        echo -e "${RED}✗ Failed to build ${service}${NC}"
+        return 1
+    fi
+
     # Determine build context and Dockerfile based on service type
     local build_context="."
     local dockerfile_path=""
@@ -562,7 +597,7 @@ build_service() {
             ;;
 
         python-workflow-engine|raster-mosaic-runtime)
-            # Python Workflow 依赖 common-python，共享 schema/client 需要仓库根作为构建上下文
+            # GeoPython Workflow 依赖 common-python，共享 schema/client 需要仓库根作为构建上下文
             build_context="."
             dockerfile_path="${service_dir}/Dockerfile"
 
@@ -799,6 +834,7 @@ main() {
         "raster-mosaic-runtime:manager/raster-mosaic-runtime"
         "model3d-workflow-engine:engines/model3d-workflow"
         "pointcloud-workflow-engine:engines/pointcloud-workflow"
+        "supermap-workflow-engine:engines/supermap-workflow"
         "spark-workflow-engine:engines/spark-workflow"
         "jupyter-engine:engines/jupyter"
         "transfer-worker:transfer/backend"

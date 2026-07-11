@@ -86,6 +86,21 @@
 | ad-hoc execution | 一次性执行 | 不依赖持久任务定义、直接按本次配置创建的 execution。 | 可以没有 `source_task_id`，但必须在 `execution_config` 保存完整执行配置。 |
 | artifact state | 产物状态 | 描述派生产物当前是否可用、在哪里、由什么配置生成的状态对象。 | 例如瓦片缓存产物、embedding vectors；不是 execution。 |
 
+## 工作流与算子
+
+| 英文术语 | 中文术语 | 定义 | 备注 |
+|---|---|---|---|
+| ADDP Operator | ADDP 算子 | ADDP 平台统一的可编排能力定义，包含稳定 ID、参数、输入输出端口、执行模式和展示元数据。 | 面向 Develop 前端、工作流定义、参数校验、执行历史和血缘；不承载具体引擎私有类名。 |
+| Workflow Runtime | 工作流运行时 | 按 `addp.workflow/v1` 协议接收算子列表查询和 workflow_def 执行请求的独立执行服务。 | 例如 GeoPython Workflow、Spark Workflow、Model3D Workflow、PointCloud Workflow、SuperMap Workflow。 |
+| Public Operator Spec | 公开算子规范 | 面向用户、前端、AI 和 Develop 任务定义的算子公开契约，声明公开参数、资源选择方式和校验规则。 | 资源身份使用 `locator` 或 `target_parent_locator + target_name`；不得暴露 `connection_info` 等内部连接参数。 |
+| Develop Adapter Spec | Develop 适配规范 | Develop Backend 按工作流引擎类型和算子 ID 选择的显式执行前转换契约，声明公开资源参数如何派生为运行时参数。 | 负责查询 System Engine Instance、派生 `connection_info/schema/table/path` 并移除公开资源参数；不得按参数名隐式触发。 |
+| Runtime Operator Spec | 运行时算子规范 | Workflow Runtime 实际执行算子时消费的内部契约，只声明运行时真实需要的参数、输入输出端口和执行行为。 | 不解析 ADDP `ResourceLocator`，不承载资源树 UI 配置；`connection_info/schema/table/path` 属于适配层到运行时的内部参数。 |
+| workflow_def | 工作流定义 | ADDP 工作流运行时协议中的 DAG 定义结构。 | 由 ADDP 前端和后端消费；不得直接等同于某个引擎的私有 DAG JSON。 |
+| SuperMap SPS | SuperMap SPS | SuperMap GPA / 处理自动化模型的 Java 扩展与执行框架。 | 当前按 `sps-core`、`IWorkflow`、`IProcess`、`IDataItem`、`WorkflowExecutor` 等已验证能力使用；不在 ADDP 文档中硬展开 SPS 缩写。 |
+| SPS Process | SPS 处理节点 | SuperMap SPS 工作流中的可执行节点，实现或等价实现 SPS `IProcess`，声明 input / output 并由 `WorkflowExecutor` 调度。 | 在 `supermap_workflow` runtime 内部使用；不是独立 OS 进程、独立 HTTP 服务或独立容器。 |
+| SuperMap Algorithm | SuperMap 算法 | SuperMap iObjects Java / native / iObjectSpy 等实际完成空间分析、数据处理或格式转换的底层能力。 | 通常由 SPS Process 的 `execute()` 调用；不直接暴露给 ADDP 前端。 |
+| supermap_workflow | SuperMap 工作流运行时 | ADDP 工作流运行时类型，对外实现 `addp.workflow/v1`，对内使用 Java SuperMap SPS 执行 DAG。 | 设计与验证记录见 `docs/next/SuperMap工作流运行时设计.md`。 |
+
 ## Cleanup 与生命周期
 
 | 英文术语 | 中文术语 | 定义 | 备注 |

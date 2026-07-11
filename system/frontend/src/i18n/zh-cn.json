@@ -281,11 +281,23 @@
         "port": "端口",
         "capabilities": "能力声明",
         "capabilitiesPlaceholder": "可留空，系统将按 addp.workflow/v1 生成标准 workflow 能力声明；如需高级配置，可填写完整 engine.capabilities/v1 JSON",
-        "exampleHint": "Math Workflow 是扩展引擎规范示例，开发环境会启动服务但不会自动注册，可填入示例值后测试注册",
+        "exampleHint": "可填入内置扩展运行时示例值后测试注册，也可直接输入自研 addp.workflow/v1 运行时",
+        "useSuperMapExample": "填入 SuperMap 示例",
         "useMathExample": "填入 Math 示例",
         "checkRuntime": "检查服务",
         "runtimeChecking": "正在检查服务状态",
         "runtimeOffline": "服务不可用：{error}"
+      },
+      "spatialWorkspace": {
+        "title": "SuperMap SDX+ for PostGIS",
+        "supermapWarning": "该操作会通过 SuperMap 工作流引擎在当前 PostgreSQL/PostGIS 数据库中注册 SuperMap SDX+，可能创建 SuperMap 系统表。",
+        "runtime": "运行时 ID：{id}",
+        "risk": "风险：{level}",
+        "enableSuperMap": "注册 SuperMap SDX+ for PostGIS",
+        "confirmTitle": "确认注册 SuperMap SDX+ for PostGIS",
+        "confirmMessage": "该操作可能在当前 PostgreSQL 数据库中创建 SuperMap SDX+ 系统表。确认继续？",
+        "enableSuccess": "SuperMap SDX+ for PostGIS 注册完成",
+        "unavailable": "当前数据库暂不能注册 SuperMap SDX+ for PostGIS"
       },
       "msg": {
         "loadFailed": "加载引擎列表失败",
@@ -389,8 +401,28 @@
           "typeAvailable": "类型可用",
           "stExtent": "空间范围函数",
           "stTransform": "坐标转换函数",
+          "ecosystem": "生态",
+          "kind": "类型",
+          "state": "状态",
+          "backendEngineType": "后端引擎类型",
+          "runtimeEngineType": "运行时引擎类型",
+          "boundRuntimeEngineId": "绑定运行时引擎 ID",
+          "riskLevel": "风险等级",
+          "canEnable": "可启用",
           "postgisTopology": "PostGIS Topology",
           "postgisTigerGeocoder": "PostGIS Tiger Geocoder",
+          "supermap": "SuperMap",
+          "arcgis": "ArcGIS",
+          "sdx": "SDX+",
+          "sde": "SDE",
+          "detected": "已检测",
+          "enabled": "已启用",
+          "notDetected": "尚未注册 SDX+",
+          "unavailable": "不可用",
+          "permissionDenied": "权限不足",
+          "low": "低",
+          "medium": "中",
+          "high": "高",
           "readOnly": "只读",
           "queryPlan": "查询计划",
           "cancel": "可取消",
@@ -402,18 +434,29 @@
           "bulkWrite": "批量写入",
           "maxRows": "最多行数",
           "maxBytes": "最大读取",
-          "directPreview": "引擎直接预览"
+          "directPreview": "引擎直接预览",
+          "canEnableFalse": "不可启用",
+          "evidence": "证据",
+          "postgisReady": "PostGIS 已就绪",
+          "supermapSystemTableCount": "SuperMap 系统表数量",
+          "sdeSchemaCount": "SDE Schema 数量",
+          "sdeTableCount": "SDE 表数量"
         },
         "extensions": {
           "postgresqlServer": "PostgreSQL 实例",
           "postgis": "PostGIS 空间扩展",
           "postgisTopology": "PostGIS 拓扑扩展",
           "postgisTigerGeocoder": "PostGIS Tiger 地理编码",
+          "spatialWorkspace": "SuperMap SDX+ for PostGIS",
           "postgresqlExtraExtensions": "其他已安装扩展",
           "pgvector": "pgvector 向量扩展"
         },
         "language": {
-          "sql": "SQL"
+          "sql": "SQL",
+          "mql": "MQL",
+          "cypher": "Cypher",
+          "python": "Python",
+          "searchDsl": "搜索 DSL"
         },
         "resultKind": {
           "table": "表格",
@@ -488,13 +531,6 @@
         "not_supported": {
           "rangeWrite": "范围写入",
           "realDirectory": "真实目录"
-        },
-        "language": {
-          "sql": "SQL",
-          "mql": "MQL",
-          "cypher": "Cypher",
-          "python": "Python",
-          "searchDsl": "搜索 DSL"
         },
         "result_kind": {
           "table": "表格",

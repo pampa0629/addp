@@ -27,7 +27,7 @@ type EnginePlugin interface {
 	Type() string
 
 	// DisplayName 返回用户友好的显示名称
-	// 例如: "PostgreSQL", "MySQL", "Apache Doris", "Python Workflow"
+	// 例如: "PostgreSQL", "MySQL", "Apache Doris", "GeoPython Workflow"
 	DisplayName() string
 
 	// EngineOrigin 返回引擎来源。

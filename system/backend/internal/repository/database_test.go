@@ -36,3 +36,19 @@ func TestRemoveBuiltinMathWorkflowExampleSQLDeletesOnlyBuiltinMathWorkflow(t *te
 		}
 	}
 }
+
+func TestRenameGeoPythonWorkflowEngineTypeSQLUsesSingleNewIdentity(t *testing.T) {
+	requiredFragments := []string{
+		"lower(engine_type) = 'python_workflow'",
+		"lower(engine_type) = 'geopython_workflow'",
+		"RAISE EXCEPTION",
+		"engine_type = 'geopython_workflow'",
+		"name = 'GeoPython 工作流引擎'",
+	}
+
+	for _, fragment := range requiredFragments {
+		if !strings.Contains(renameGeoPythonWorkflowEngineTypeSQL, fragment) {
+			t.Fatalf("renameGeoPythonWorkflowEngineTypeSQL missing %q", fragment)
+		}
+	}
+}

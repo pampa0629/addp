@@ -10,29 +10,13 @@ from copy import deepcopy
 from typing import List, Dict, Any
 from operators import OPERATORS
 
-RUNTIME_INJECTED_PARAMS = {"engine_id", "connection_info", "schema", "table", "path"}
 
-
-def _public_parameters(parameters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """过滤运行时注入参数，避免把 runtime binding 暴露成算子业务参数。"""
-    return [
-        deepcopy(param)
-        for param in parameters
-        if param.get('name') not in RUNTIME_INJECTED_PARAMS
-    ]
-
-
-def _public_detailed_description(detailed_desc: Dict[str, Any]) -> Dict[str, Any]:
-    public_desc = deepcopy(detailed_desc)
-    public_desc['parameters'] = _public_parameters(public_desc.get('parameters', []))
-
-    workflow_example = public_desc.get('workflow_example')
-    if isinstance(workflow_example, dict) and isinstance(workflow_example.get('params'), dict):
-        for param_name in RUNTIME_INJECTED_PARAMS:
-            workflow_example['params'].pop(param_name, None)
-
-    return public_desc
-
+PARAMETER_TYPE_MAPPING = {
+    "str": "string",
+    "int": "integer",
+    "bool": "boolean",
+    "dict": "object",
+}
 
 def get_operator_metadata() -> List[Dict[str, Any]]:
     """
@@ -45,13 +29,13 @@ def get_operator_metadata() -> List[Dict[str, Any]]:
 
     for op_name, op_meta in OPERATORS.items():
         # 从 detailed_description.parameters 提取参数信息
-        detailed_desc = _public_detailed_description(op_meta.get('detailed_description', {}))
+        detailed_desc = deepcopy(op_meta.get('detailed_description', {}))
         parameters = []
 
         for param in detailed_desc.get('parameters', []):
             param_def = {
                 "name": param['name'],
-                "type": param['type'],
+                "type": PARAMETER_TYPE_MAPPING.get(param['type'], param['type']),
                 "required": param.get('required', True),
                 "description": param.get('description', ''),
             }

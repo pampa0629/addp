@@ -585,7 +585,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "分页获取引擎列表（支持按类型过滤）| Get paginated engine list with type filtering",
+                "description": "先按引擎类型、能力分组、来源和内置状态过滤，再返回分页结果 | Filter by engine type, capability group, origin, and builtin state before pagination",
                 "consumes": [
                     "application/json"
                 ],
@@ -615,6 +615,25 @@ const docTemplate = `{
                         "type": "string",
                         "description": "引擎类型 | Engine type",
                         "name": "engine_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "能力分组，逗号分隔：storage,compute | Comma-separated capability groups: storage,compute",
+                        "name": "capability_groups",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "引擎来源，逗号分隔：general,extension | Comma-separated engine origins: general,extension",
+                        "name": "engine_origins",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "是否包含内置引擎 | Whether to include builtin engines",
+                        "name": "include_builtin",
                         "in": "query"
                     }
                 ],
@@ -944,6 +963,75 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/engines/{id}/spatial-workspaces/{ecosystem}/{kind}/enable": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "通过已绑定的 SuperMap 工作流运行时对已有 PostgreSQL/PostGIS 引擎执行高危启用动作，初始化 SuperMap SDX+ 空间工作区。| Trigger the bound SuperMap workflow runtime to perform the high-risk enable action for an existing PostgreSQL/PostGIS engine and initialize the SuperMap SDX+ spatial workspace.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "引擎管理 | Engine Management"
+                ],
+                "summary": "启用空间工作区 | Enable spatial workspace",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "空间工作区生态 | Spatial workspace ecosystem",
+                        "name": "ecosystem",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "空间工作区类型 | Spatial workspace kind",
+                        "name": "kind",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }

@@ -1,7 +1,7 @@
 """
 Math Workflow Engine - 简化版 DAG 工作流引擎
 
-参考 Python Workflow 的实现，但去掉 GeoDataFrame 相关逻辑。
+参考 GeoPython Workflow 的实现，但去掉 GeoDataFrame 相关逻辑。
 支持：
 - DAG 工作流定义（tasks 数组，depends_on 依赖）
 - Kahn 算法拓扑排序

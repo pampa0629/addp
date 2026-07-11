@@ -35,6 +35,8 @@
 - 历史 `unique_identifier`、`extension_api_config` 和 `health_check_config` 字段已废弃，并由 System 启动迁移删除。
 - 工作流和脚本运行时通过 `common/engine` Provider 调用，System 不保存运行时端点配置
 - API 响应中的 `capabilities_view` 是 System 后端根据 `capabilities` 派生的展示模型，定义在 `common/models` 供各模块客户端复用；它不是 `system.engines` 表字段，也不写入数据库。
+- `capabilities.extensions.spatial_workspaces` 用于承载数据库实例中可识别的厂商空间工作区事实，例如 SuperMap `sdx+` 或 ArcGIS `sde`；System 应自动探测并在详情页展示，高危启用入口应基于这一事实自动收口。
+- System 提供显性的高危操作入口 `POST /api/v1/system/engines/{id}/spatial-workspaces/{ecosystem}/{kind}/enable`，当前第一版对 `supermap/sdx+` 由已绑定的 `supermap_workflow` 运行时执行 direct-only 启用算子，后续可扩展到其他厂商空间工作区。
 
 ### 2.3 连接状态缓存字段
 
@@ -99,11 +101,11 @@
 - API 端点由对应 `WorkflowRuntimeProvider` / `ScriptRuntimeProvider` 实现消费
 
 **典型类型**：
-- 工作流运行时：`python_workflow`、`spark_workflow`，以及手动注册的参考实现 `math_workflow`
+- 工作流运行时：`geopython_workflow`、`spark_workflow`、`model3d_workflow`、`pointcloud_workflow`、`supermap_workflow`，以及手动注册的参考实现 `math_workflow`
 - 内置 Notebook 运行时示例：`jupyter`
 - 用户也可以按 ADDP 扩展引擎规范实现自研 `engine_type`，例如 `acme_geo_workflow`
 
-**注册入口**：System 前端“注册扩展引擎”表单用于手动注册 `addp.workflow/v1` 工作流运行时。表单会按 `engine_type` 生成默认 `engine.capabilities/v1`，支持填入 Math Workflow 示例值，并提供“检查服务”只读探测：System 后端会访问 `/health` 和 `/api/operators`，确认运行时服务可达且算子 `engine_type` 与注册值一致。Math Workflow 在开发环境中可自动启动服务，但不会自动写入本表。
+**注册入口**：System 前端“注册扩展引擎”表单用于手动注册 `addp.workflow/v1` 工作流运行时。表单会按 `engine_type` 生成默认 `engine.capabilities/v1`，支持填入 SuperMap Workflow 和 Math Workflow 示例值，并提供“检查服务”只读探测：System 后端会访问 `/health` 和 `/api/operators`，确认运行时服务可达且算子 `engine_type` 与注册值一致。内置插件类型保存时以插件能力声明为准，前端提交的默认 capabilities 不作为最终事实源。Math Workflow 在开发环境中可自动启动服务，但不会自动写入本表；SuperMap Workflow 需要先按 `engines/supermap-workflow/README.md` 绑定 SuperMap SDK、GPA/SPS libs 和许可并启动运行时。
 
 **示例**：
 ```json
@@ -283,7 +285,7 @@ type ComputeCapabilities struct {
 
 **新方案**：运行时端点不作为 System 表字段或独立配置事实源。工作流引擎通过 `WorkflowRuntimeProvider` 调用，当前 `addp.workflow/v1` HTTP 协议入口由 `common/engine/plugin/http_runtime.go` 封装。
 
-**标准调用入口**（已注册的工作流运行时，例如 Python Workflow / Spark Workflow / Math Workflow）：
+**标准调用入口**（已注册的工作流运行时，例如 GeoPython Workflow / Spark Workflow / SuperMap Workflow / Math Workflow）：
 ```go
 WorkflowRuntimeProvider.ListOperators()     // HTTP GET  /api/operators
 WorkflowRuntimeProvider.ExecuteWorkflow()  // HTTP POST /api/workflow
@@ -312,17 +314,22 @@ System engine 表不保存元数据扫描策略。注册引擎时的扫描计划
 
 #### 列表查询
 ```
-GET /api/v1/system/engines?engine_type={type}&is_active={true|false}
+GET /api/v1/system/engines?page=1&page_size=10&capability_groups=storage,compute&engine_origins=general,extension&include_builtin=true
 ```
 
 **查询参数**：
+- `page`（可选，默认 `1`）- 页码
+- `page_size`（可选，默认 `10`）- 每页数量
 - `engine_type`（可选）- 按类型过滤
-- `is_active`（可选）- 按激活状态过滤
+- `capability_groups`（可选）- 按能力分组过滤，支持 `storage`、`compute`，多个值以逗号分隔
+- `engine_origins`（可选）- 按来源过滤，支持 `general`、`extension`，多个值以逗号分隔
+- `include_builtin`（可选，默认 `true`）- 是否包含内置引擎
+
+过滤在分页前执行，响应中的 `data`、`total` 和 `total_pages` 均以过滤后的结果集为准。
 
 **响应示例**：
 ```json
 {
-  "code": 200,
   "data": [
     {
       "id": 1,
@@ -341,7 +348,11 @@ GET /api/v1/system/engines?engine_type={type}&is_active={true|false}
       "connection_status": "online",
       "last_check_at": "2026-01-01T10:00:00Z"
     }
-  ]
+  ],
+  "total": 1,
+  "page": 1,
+  "page_size": 10,
+  "total_pages": 1
 }
 ```
 

@@ -32,7 +32,7 @@ graph TB
 
     QueryUI --> QueryEngine[支持引擎:<br/>PostgreSQL, MySQL<br/>Doris, ClickHouse<br/>MongoDB, Spark SQL]
 
-    WorkflowUI --> WorkflowEngine[支持引擎:<br/>Python Workflow<br/>Spark Workflow]
+    WorkflowUI --> WorkflowEngine[支持引擎:<br/>GeoPython Workflow<br/>Spark Workflow]
 
     NotebookUI --> NotebookEngine[支持引擎:<br/>Jupyter]
 
@@ -118,7 +118,7 @@ graph TB
     subgraph "1. 引擎选择"
         EngineSelect[选择执行引擎]
 
-        EngineSelect --> PyWF[Python Workflow<br/>< 100万行<br/>内存计算]
+        EngineSelect --> PyWF[GeoPython Workflow<br/>< 100万行<br/>内存计算]
         EngineSelect --> SparkWF[Spark Workflow<br/>> 100万行<br/>分布式计算]
         EngineSelect --> MathWF[Math Workflow<br/>数学计算（示范用）]
     end
@@ -199,14 +199,14 @@ Spark 通用引擎资源 (运行时)
 结果返回
 ```
 
-相比之下，**Python Workflow** 和手动注册后的 **Math Workflow** 自身就是可执行运行时，无需额外绑定 Spark 通用引擎资源。
+相比之下，**GeoPython Workflow** 和手动注册后的 **Math Workflow** 自身就是可执行运行时，无需额外绑定 Spark 通用引擎资源。
 
 ### 算子工作流特点
 
 **节点粒度**: 细粒度算子 (buffer、intersection、centroid)
 **DAG 层级**: 算子级别的有向无环图
 **数据传递**: GeoDataFrame 在内存中传递
-**执行运行时**: Python Workflow (单节点内存计算) 或 Spark Workflow (分布式计算)
+**执行运行时**: GeoPython Workflow (单节点内存计算) 或 Spark Workflow (分布式计算)
 **适用场景**: 数据分析、地理计算
 
 ### 典型算子
@@ -298,7 +298,7 @@ sequenceDiagram
     end
 
     alt 选择了工作流编辑器
-        Develop-->>User: 7. 显示支持 "workflow" 的引擎列表<br/>(Python Workflow, Spark Workflow等)
+        Develop-->>User: 7. 显示支持 "workflow" 的引擎列表<br/>(GeoPython Workflow, Spark Workflow等)
     end
 
     alt 选择了 Notebook 编辑器
@@ -314,7 +314,7 @@ sequenceDiagram
 | 用户选择的界面 | 需要的能力 | 筛选后的引擎示例 | 编辑器组件 |
 |--------------|----------------|----------------|-----------|
 | 查询工作台 | `compute.query.supported=true` | PostgreSQL, MySQL, MongoDB, Neo4j, ClickHouse, Doris, Spark SQL | Monaco Editor |
-| 工作流编辑器 | `compute.workflow.supported=true` | Python Workflow, Spark Workflow, Math Workflow（自动启动服务、手动注册示例） | 算子拖拽 + DAG Canvas |
+| 工作流编辑器 | `compute.workflow.supported=true` | GeoPython Workflow, Spark Workflow, Model3D Workflow, PointCloud Workflow, SuperMap Workflow, Math Workflow（自动启动服务、手动注册示例） | 算子拖拽 + DAG Canvas |
 | Notebook 编辑器 | `compute.script.supported=true` | Jupyter | Jupyter Notebook |
 
 ### 引擎能力声明示例
@@ -334,7 +334,7 @@ sequenceDiagram
 ```
 → 当用户选择**查询工作台**时，PostgreSQL 会出现在可用引擎列表中
 
-**Python Workflow 引擎**:
+**GeoPython Workflow 引擎**:
 ```json
 {
   "schema_version": "engine.capabilities/v1",
@@ -347,7 +347,7 @@ sequenceDiagram
   }
 }
 ```
-→ 当用户选择**工作流编辑器**时，Python Workflow 会出现在可用引擎列表中
+→ 当用户选择**工作流编辑器**时，GeoPython Workflow 会出现在可用引擎列表中
 
 **Jupyter 引擎**:
 ```json

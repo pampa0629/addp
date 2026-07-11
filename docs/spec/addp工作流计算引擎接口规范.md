@@ -4,7 +4,7 @@
 
 **版本**: v1.0.0
 **最后更新**: 2026-01-09
-**适用引擎**: Math Workflow、Python Workflow、Spark Workflow、Model3D Workflow、PointCloud Workflow
+**适用引擎**: Math Workflow、GeoPython Workflow、Spark Workflow、Model3D Workflow、PointCloud Workflow、SuperMap Workflow
 
 本文档定义 ADDP 工作流运行时的 `addp.workflow/v1` HTTP 协议。该协议由 Common Engine 的 `WorkflowRuntimeProvider` 消费；工作流引擎仍必须先通过 `EnginePlugin` 和 `engine.capabilities/v1` 纳入 System 统一引擎体系。
 
@@ -35,10 +35,11 @@ ADDP 工作流计算引擎采用 `EnginePlugin + WorkflowRuntimeProvider + HTTP 
 | 引擎名称 | 端口 | 技术栈 | 适用场景 | 算子数量 |
 |---------|------|--------|---------|---------|
 | **Math Workflow** | 8089 | Python + 基础数学库 | 数学运算、学习示例 | 5 |
-| **Python Workflow** | 8099 | Python + Pandas + GeoPandas | 中小规模空间和数据处理 | 42+ |
+| **GeoPython Workflow** | 8099 | Python + Pandas + GeoPandas | 中小规模空间和数据处理 | 42+ |
 | **Spark Workflow** | 8098 | PySpark + Sedona | 大规模分布式计算 | 35+ |
 | **Model3D Workflow** | 8101 | Python wrapper + 三维转换 CLI | 三维模型、BIM 和高斯泼溅快显转换 | direct 转换算子 |
 | **PointCloud Workflow** | 8102 | Python wrapper + PDAL | LAS / LAZ / E57 / PCD / XYZ 转 Manager 私有 COPC 快显 artifact | direct 转换算子 |
+| **SuperMap Workflow** | 8103 | Java + SuperMap iObjects Java / SPS | 超图数据格式、空间分析与 SPS DAG 内存对象传递 | 20 个真实算子（19 个 workflow + 1 个 direct） |
 
 ### 1.3 引擎目录结构
 
@@ -97,6 +98,26 @@ engines/<engine-name>/
 ---
 
 ## 2. API 统一规范
+
+### 2.0 算子契约分层
+
+工作流算子契约必须拆分为以下三层，三层职责不得混入同一个 `parameters[]`：
+
+1. **Public Operator Spec**：面向用户、前端、AI 和 Develop 任务定义，声明公开参数、资源选择方式和校验规则。读取已有资源使用 `locator`，创建目标使用 `target_parent_locator + target_name`。
+2. **Develop Adapter Spec**：由 Develop Backend 按当前 workflow engine type 和 operator id 显式选择，声明公开资源参数如何转换为运行时参数，并负责权限校验、System Engine Instance 查询和连接信息派生。
+3. **Runtime Operator Spec**：由 Workflow Runtime 暴露和消费，只声明运行时真实需要的参数、输入输出端口和执行行为。
+
+`ResourceLocator` 只属于 Public Operator Spec。GeoPython Workflow、Spark Workflow、SuperMap Workflow 等运行时不得解析 `addp://` locator。
+
+`connection_info`、`engine_id` 以及由资源身份派生的 `schema/table/path` 属于 Develop Adapter Spec 到 Runtime Operator Spec 的内部参数。用户、前端和 AI 不得直接提交这些内部参数；只有在对应 Public Operator Spec 明确将同名字段定义为公开业务参数时才可例外。
+
+Develop Backend 不得仅因任意算子的参数中出现 `locator`、`target_parent_locator` 等固定名称就触发派生。每个需要资源适配的算子都必须存在显式 Develop Adapter Spec；未声明的算子携带公开资源参数时必须拒绝执行，不得回退到隐式派生路径。
+
+Develop 的算子发现 API 必须为前端提供独立的 `public_parameters`。前端工作流编辑器、参数面板、输入连线和任务保存只允许消费 `public_parameters`，不得读取 Workflow Runtime 返回的 `parameters`。`parameters` 保留为 Runtime Operator Spec；在 Runtime 元数据完成净化前，即使其中仍存在历史 UI 或公开资源字段，也不得再作为前端契约使用。
+
+Public Operator Spec 由 Develop Adapter Spec registry 统一维护。Workflow Runtime 的 `parameters[]` 禁止出现 `ui_type=resource_tree_picker`，禁止出现 `locator`、`target_parent_locator`、`target_name` 等 ADDP 公开资源身份参数；runtime 必须直接声明自身真实消费的 `connection_info/schema/table/path` 等执行参数。
+
+Develop 聚合算子时必须校验 Runtime Operator Spec：发现 UI 参数或公开资源身份参数时拒绝该运行时算子目录；存在 Develop Adapter Spec 时，runtime `parameters[]` 必须完整声明 adapter spec 所需的运行时参数。不得在参数缺失时继续展示算子并等待执行阶段失败。
 
 ### 2.1 标准接口清单
 
@@ -341,7 +362,7 @@ class OperatorDescriptor:
     id: str                  # 唯一标识
     name: str                # 算子名称（API 调用时使用）
     display_name: str        # 显示名称（UI 显示）
-    engine_type: str         # 所属扩展引擎类型，如 math_workflow、python_workflow
+    engine_type: str         # 所属扩展引擎类型，如 math_workflow、geopython_workflow
     type: str                # 可选，算子类型，如 spatial、non_spatial、general；不得用作 ADDP 业务模块
     category: str            # 算子分类/分组（数学运算、空间分析等）
     category_path: List[str] # 必填，多级分组目录；不需要多级目录时显式提供 [category]
@@ -366,7 +387,8 @@ Develop/Common 不为算子元数据合成默认值。扩展工作流引擎通�
 ```python
 class ParameterDescriptor:
     name: str
-    type: str                 # string、integer、float、boolean、array、object、geodataframe、dataframe
+    type: str                 # string、integer、float、boolean、array、object、geodataframe、dataframe，或引擎私有点分类型
+    param_type: str           # 可选，input、output、param、ui；input 表示由工作流连线自动传入
     required: bool
     description: str
     default: Any              # 可选
@@ -413,7 +435,7 @@ class ParameterDescriptor:
 
 #### 输入参数命名规则
 
-工作流画布通过 `parameters[]` 和上游 `output_ports[]` 生成标准参数引用：
+工作流画布通过 `parameters[]` 和上游 `output_ports[]` 生成标准参数引用。运行时应优先用 `param_type="input"` 标识由连线传入的参数；上游 `output_ports[].type` 与下游 `parameters[].type` 应尽量使用精确类型匹配。对于运行时内部内存对象句柄，可以使用引擎私有点分类型，例如 `supermap.datasource`、`supermap.dataset`，避免多个 `object` 输入只能按连线顺序猜测。`param_type` 缺失时，Develop 仅可按下述历史命名约定识别输入参数：
 
 ```json
 {
@@ -600,7 +622,7 @@ operators := provider.ListOperators(ctx, engine.ConnectionInfo)
 resp := provider.ExecuteWorkflow(ctx, engine.ConnectionInfo, workflowRequest)
 ```
 
-Develop 对前端暴露的算子发现主路径必须是 `GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators`。`workflow_engine_id` 是 System 中已注册的具体工作流运行时实例 ID；API 路径不得包含 `python_workflow`、`spark_workflow`、`math_workflow` 等具体 `engine_type`，也不得使用 `module` 表达算子来源或分组。这样用户动态注册的新扩展工作流引擎只要具备 `compute.workflow` 能力，就能通过同一条路径被 Develop 发现和消费。
+Develop 对前端暴露的算子发现主路径必须是 `GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators`。`workflow_engine_id` 是 System 中已注册的具体工作流运行时实例 ID；API 路径不得包含 `geopython_workflow`、`spark_workflow`、`math_workflow` 等具体 `engine_type`，也不得使用 `module` 表达算子来源或分组。这样用户动态注册的新扩展工作流引擎只要具备 `compute.workflow` 能力，就能通过同一条路径被 Develop 发现和消费。
 
 Develop 不提供按 `engine_type`、`module` 或全局汇总查询算子的公开 API；所有上层调用方必须先选择具体工作流引擎实例，再通过实例 ID 路径获取算子。这样可以避免同一 `engine_type` 多实例、用户扩展引擎或同名算子场景下发生混淆。
 
@@ -612,7 +634,7 @@ Copilot 等上层智能生成链路也必须沿用同一实例 ID 契约：生�
 
 工作流运行时注册后才成为 ADDP 可用运行时。生产内置运行时可以在启动时向 System Backend 自注册；参考示例运行时可以只作为扩展规范样例存在，由用户在 System 引擎管理中按扩展引擎手动注册。
 
-Python Workflow / Spark Workflow 等生产内置运行时自注册示例：
+GeoPython Workflow / Spark Workflow 等生产内置运行时自注册示例；需要外部 SDK 或许可绑定的运行时（例如 SuperMap Workflow）也可以启动后由 System 扩展引擎表单手动注册：
 
 ```python
 # api_server.py
@@ -620,8 +642,8 @@ Python Workflow / Spark Workflow 等生产内置运行时自注册示例：
 def register_to_system():
     """向 System Backend 自注册"""
     payload = {
-        "engine_type": "python_workflow",
-        "name": "Python Workflow 计算引擎",
+        "engine_type": "geopython_workflow",
+        "name": "GeoPython 工作流引擎",
         "connection_info": {
             "protocol": "http",
             "port": 8099
@@ -636,14 +658,14 @@ def register_to_system():
 
 Math Workflow 是 `addp.workflow/v1` 参考实现，可以随 ADDP 开发环境启动服务，但不随启动自动注册。需要使用时，在 System 引擎管理中选择“注册扩展引擎”，填入 `engine_type=math_workflow`、默认端口 `8089`，可先通过表单“检查服务”确认 `/health` 与 `/api/operators` 可达，再测试连接并保存。
 
-内置扩展引擎和用户自研扩展引擎在 System 中待遇一致：业务模块不得假设 `python_workflow`、`spark_workflow`、`math_workflow`、`model3d_workflow`、`pointcloud_workflow` 等内置工作流引擎一定存在；只有已注册、启用且声明 `compute.workflow.supported=true` 的 Engine Instance 才能被发现和调用。生产内置工作流引擎自注册 payload 可以不提交 `capabilities`，由 System 按内置声明生成 `engine.capabilities/v1`；用户自研扩展引擎和参考示例引擎必须提交或由注册表单生成符合 `engine.capabilities/v1` 的 workflow 能力声明。算子列表、参数、分类、执行模式和输出端口通过 `GET /api/operators` 动态获取，不写入能力声明。
+内置扩展引擎和用户自研扩展引擎在 System 中待遇一致：业务模块不得假设 `geopython_workflow`、`spark_workflow`、`math_workflow`、`model3d_workflow`、`pointcloud_workflow` 等内置工作流引擎一定存在；只有已注册、启用且声明 `compute.workflow.supported=true` 的 Engine Instance 才能被发现和调用。生产内置工作流引擎自注册 payload 可以不提交 `capabilities`，由 System 按内置声明生成 `engine.capabilities/v1`；用户自研扩展引擎和参考示例引擎必须提交或由注册表单生成符合 `engine.capabilities/v1` 的 workflow 能力声明。算子列表、参数、分类、执行模式和输出端口通过 `GET /api/operators` 动态获取，不写入能力声明。
 
 System 在保存声明 `compute.workflow.supported=true` 且 `compute.workflow.runtime_api="addp.workflow/v1"` 的手动注册扩展运行时前，必须执行一次只读协议探测：
 
 - 校验 `engine.capabilities/v1` 的 `engine_type` 与注册请求中的 `engine_type` 完全一致。
 - 调用该运行时实例的 `GET /health`，HTTP 状态必须为 `200`。
 - 调用同一运行时实例的 `GET /api/operators`，响应必须是 `addp.workflow/v1` 算子列表结构。
-- 若 `operators` 非空，必须对每个算子执行完整元数据契约校验；其中算子 `engine_type` 必须等于注册请求中的 `engine_type`，不得返回 `python_workflow`、`spark_workflow` 等其他运行时类型作为兼容值。
+- 若 `operators` 非空，必须对每个算子执行完整元数据契约校验；其中算子 `engine_type` 必须等于注册请求中的 `engine_type`，不得返回 `geopython_workflow`、`spark_workflow` 等其他运行时类型作为兼容值。
 - 探测阶段只验证协议面、必填字段、分类、执行模式和输出端口结构；不做算子参数枚举、范围、正则、业务语义等深度校验。
 
 System 管理界面可以在用户保存前提供手动“测试连接/协议探测”入口，便于用户先确认运行时可达和算子契约有效。该入口只能复用创建前测试 API，不能在前端或 System 后端另写一套按具体 `engine_type` 判断的探测逻辑。
@@ -664,15 +686,17 @@ Common Engine 同时必须校验工作流定义本身：
 
 工作流运行时仍必须保留同等或更细的校验防线，但不能把 Common Engine 的前置校验缺失作为运行时私有行为处理。
 
-若某类工作流引擎需要绑定外部运行时资源，例如 `spark_workflow` 需要实际 Spark 资源 ID，应作为执行期运行时参数传入标准请求顶层字段（当前为 `engine_id`），而不是写入 `capabilities`，也不是由 Develop 等业务模块直接拼接引擎私有 HTTP 契约。对 `spark_workflow`，Develop 执行配置必须提供 `engine_specific.spark_cluster_id`；后端在调用 Provider 前必须校验该 ID 指向已启用的 `engine_type=spark` 通用引擎资源，并将其映射为标准请求顶层 `engine_id`。Python Workflow、Math Workflow、Model3D Workflow、PointCloud Workflow 不需要也不得携带该 Spark 绑定。
+若某类工作流引擎需要绑定外部运行时资源，例如 `spark_workflow` 需要实际 Spark 资源 ID，应作为执行期运行时参数传入标准请求顶层字段（当前为 `engine_id`），而不是写入 `capabilities`，也不是由 Develop 等业务模块直接拼接引擎私有 HTTP 契约。对 `spark_workflow`，Develop 执行配置必须提供 `engine_specific.spark_cluster_id`；后端在调用 Provider 前必须校验该 ID 指向已启用的 `engine_type=spark` 通用引擎资源，并将其映射为标准请求顶层 `engine_id`。GeoPython Workflow、Math Workflow、Model3D Workflow、PointCloud Workflow、SuperMap Workflow 不需要也不得携带该 Spark 绑定。
 
 Model3D Workflow 是三维模型转换专用运行时，`engine_type=model3d_workflow`，默认端口 `8101`。第一版暴露 direct operators：`osgb_to_glb` 用于单 OSGB 快显 GLB artifact 生成，`gltf_to_glb` 用于 glTF 多资源模型打包为 GLB 快显 artifact，`fbx_to_glb` 用于 FBX 单体网格模型生成 GLB 快显 artifact，`obj_to_glb` 用于 OBJ 单体网格模型生成 GLB 快显 artifact，`stl_to_glb` 用于 STL 单体网格模型生成 GLB 快显 artifact，`ifc_to_glb` 用于 IFC BIM 模型生成 GLB 快显 artifact，`osgb_scene_to_3dtiles` 用于 OSGB Scene 到业务存储 3D Tiles 数据集生成，`gaussian_splat_to_ksplat` 用于高斯泼溅 KSplat 受管 artifact 生成。运行时内部可以通过外部专业 CLI 或运行时绑定脚本执行转换，其中 `_3dtile` 负责 OSGB 单文件快显和 OSGB Scene 到 3D Tiles 相关路线，`assimp` 负责 glTF / FBX / OBJ / STL 这类 mesh 模型到自包含 GLB 的打包转换，`ifc_to_glb` 负责通过运行时绑定的 `IfcConvert` 生成 GLB，不复用 `assimp` mesh converter；`gaussian_splat_to_ksplat` 使用运行时内置 Node 脚本将 PLY / SPLAT 转为 `.ksplat`，源已经是 `.ksplat` 时由 Manager 基础预览直接读取，不进入该转换任务。生成的 GLB artifact 不应保留对源目录贴图的外部相对引用；对 ADDP 只暴露 `addp.workflow/v1` 的 operator、参数、进度和结果事实；Manager 不得直接调用转换 CLI 或转换脚本。
 
 PointCloud Workflow 是点云处理专用运行时，`engine_type=pointcloud_workflow`，默认端口 `8102`。第一版暴露 direct operators：`las_to_copc`、`laz_to_copc`、`e57_to_copc`、`pcd_to_copc` 和 `xyz_to_copc`，用于将 LAS / LAZ / E57 / PCD / XYZ 源点云转换为 Manager 受管 COPC 快显 artifact。PDAL 是该 engine runtime 的内部依赖，应随容器镜像或 engine 运行时一同分发；Manager、System 和宿主机全局环境不得成为 PDAL 依赖来源。运行时未绑定 PDAL 时 `/health` 应返回 `degraded`，且不应自注册到 System。Manager 负责把源 item locator 派生为本地挂载路径或 `/vsicurl/` URI，并派生 Manager infra MinIO 发布计划；PointCloud Workflow 不解析 ADDP locator，不使用宿主机 PDAL。COPC 写入不是纯流式写，运行时必须配置可用的 `POINTCLOUD_WORK_DIR` / `CPL_TMPDIR` 工作目录承载 PDAL 输出和临时随机写；当前 PDAL 2.10.2 实测 `writers.copc` 不能可靠直接写 `/vsis3/` 目标，因此当前单一路线是 PDAL 写入受控工作目录，再由运行时按 Manager infra MinIO 发布计划上传 artifact。生成的 COPC artifact 存放在 Manager infra MinIO 中，不自动升格为业务 data item；源数据本身已经是 `format=copc` 时由 Manager 基础预览直接读取，不进入该转换任务。
 
+SuperMap Workflow 是超图数据格式和空间算法专用运行时，`engine_type=supermap_workflow`，默认端口 `8103`。第一版运行时由 Java 实现，对外提供 `addp.workflow/v1`，对内绑定 SuperMap iObjects Java `Bin`、GPA/SPS libs 和许可文件，并把 ADDP `workflow_def` 编译为 SPS workflow 后一次性执行 DAG。同一 JVM / SPS DAG 内优先通过 `IDataItem` 或等价内存对象传递中间结果，只有用户显式保存数据集或跨 HTTP 边界返回结果摘要时才落盘。当前真实算子覆盖 datasource open/open_postgis/create、dataset select/info/project/save、vector filter/spatial_filter/buffer/dissolve/merge/feature_envelope/inner_point/query、overlay intersect/clip/erase/union；`datasource.enable_postgis` 是 direct-only 高危算子，只允许由 System 引擎管理入口显式触发，用于初始化 SuperMap SDX+ 空间工作区。`datasource.open_postgis` 只打开已有 PostGIS 空间表所在数据源，不得调用 SuperMap `create` 或默认创建 SuperMap `sm*` 系统表；`datasource.enable_postgis` 则可能在目标 PostgreSQL 数据库中创建 SuperMap `sm*` 系统表，必须经过 System 显式确认。ADDP `locator` 只属于 Develop/UI 的资源选择契约，Develop Backend 在调用 runtime 前必须把它派生为 `connection_info`、`schema` 和 `table` 并移除，SuperMap runtime 不解析 ADDP locator。SuperMap SDK、native `.so`、GPA libs 和许可文件属于 engine runtime 部署依赖，不进入 ADDP 代码仓库；运行时未绑定 objectsjava 或 GPA/SPS libs 时 `/health` 应返回不可用依赖，System 连接测试必须失败并提示具体缺失项。
+
 单算子调用由 Common Engine 的 `WorkflowRuntimeProvider.InvokeOperator()` 统一调用，只允许调用 `execution_modes` 包含 `direct` 的算子。`InvokeOperator()` 是模块受控能力调用，不是任务执行入口；它不创建 Develop 任务，不进入 Orchestrator，也不进入 Monitor 通用执行监控。调用方模块必须持有明确业务目的并管理自身领域状态，例如 Manager 触发 `tiff_to_cog` 后负责记录 COG 生成结果状态、源 item fingerprint、目标 `storage_ref` 和失败原因。凡是需要任务编排、调度、重试、跨模块依赖或统一监控的执行，必须建模为工作流任务并走 `ExecuteWorkflow()`。
 
-业务模块需要 direct 算子能力时，不得按内置 `engine_type` 硬编码查找运行时，例如不得要求 `python_workflow` 必须存在。调用方应声明自己需要的算子名和调用模式，例如 `operator=tiff_to_cog`、`execution_mode=direct`；Common Engine 或调用方模块应在当前租户可见的已启用 workflow 引擎中，通过 `ListOperators()` 查找实际提供该 direct 算子的运行时实例。有可用运行时则调用；没有任何运行时提供该算子时，该业务功能应进入“能力暂不可用”状态或产生明确失败原因，而不是回退到私有 HTTP、单节点 workflow 或固定内置引擎假设。
+业务模块需要 direct 算子能力时，不得按内置 `engine_type` 硬编码查找运行时，例如不得要求 `geopython_workflow` 必须存在。调用方应声明自己需要的算子名和调用模式，例如 `operator=tiff_to_cog`、`execution_mode=direct`；Common Engine 或调用方模块应在当前租户可见的已启用 workflow 引擎中，通过 `ListOperators()` 查找实际提供该 direct 算子的运行时实例。有可用运行时则调用；没有任何运行时提供该算子时，该业务功能应进入“能力暂不可用”状态或产生明确失败原因，而不是回退到私有 HTTP、单节点 workflow 或固定内置引擎假设。
 
 调用方模块在 direct 调用前必须通过同一个工作流运行时实例的 `ListOperators()` / `GET /api/operators` 获取算子元数据，并确认目标算子的 `execution_modes` 显式包含 `direct`；不得只依赖运行时 `/api/operators/{name}/invoke` 返回 403 作为权限判断。运行时仍必须保留 `DIRECT_NOT_SUPPORTED` 防线，调用方前置校验和运行时校验共同构成单一路径的能力边界。
 
@@ -706,7 +730,13 @@ Develop Backend 在调用 `WorkflowRuntimeProvider.ExecuteWorkflow()` 前负责�
 
 算子 `source_type` / `target_type` 表达访问形态，统一使用 `table`、`file`、`geojson` 等值；不得使用 `nfs`、`minio`、`s3` 等存储引擎类型作为算子数据源类型。具体存储引擎类型只来自 locator 对应的 System engine 及派生后的 `connection_info.engine_type`。
 
-若算子元数据为前端资源选择器提供 `ui_config`，过滤资源来源必须使用 `engine_families` / 能力族，例如表格资源使用 `tabular`、`dynamic_schema`，文件或对象资源使用 `file`、`object`。不得使用 `engine_types`，也不得把 `postgresql`、`mysql`、`nfs`、`minio` 等具体 `engine_type` 写成白名单，否则用户动态注册的同能力引擎无法被工作流画布发现和选择。
+Develop Adapter Spec registry 为 Public Operator Spec 提供资源选择器 `ui_config`。过滤资源来源必须使用 `engine_families` / 能力族，例如表格资源使用 `tabular`、`dynamic_schema`，文件或对象资源使用 `file`、`object`。不得使用 `engine_types`，也不得把 `postgresql`、`mysql`、`nfs`、`minio` 等具体 `engine_type` 写成白名单，否则用户动态注册的同能力引擎无法被工作流画布发现和选择。Workflow Runtime 的 `parameters[]` 不得包含 `ui_config` 或任何资源树 UI 参数。
+
+资源选择器必须通过 `ui_config.resource_binding` 显式声明参数绑定，前端不得按算子 ID 或固定参数名猜测。读取已有资源使用 `mode=existing + locator_param`；创建目标使用 `mode=target + parent_locator_param + name_param`。需要同步公开访问形态时声明 `type_param + type_values`，需要选择后填充默认公开参数时声明 `default_params`。
+
+资源选择后需要绑定标准元数据事实时，也必须由 `resource_binding` 显式声明目标参数。例如 `geometry_column_param` 表示从所选 item 的 `capabilities.spatial.geometry_columns[]` 读取可用几何列：单列自动选择；多列默认第一列并允许用户改选；无几何列时不得显示手工文本输入框。前端不得猜测 `geom`、`geometry` 等固定字段名。
+
+同一算子能够读取多类资源时，应使用一个资源选择参数并由 locator 对应的资源事实决定运行时访问方式，不得要求用户预先选择 `source_type`。文件格式应优先由所选资源的格式事实或路径扩展名确定；支持格式列表属于资源选择器过滤条件，不应作为必选算子参数。内存对象输入应通过算子输入端口传递，不得在资源加载算子中另设 `geojson` 等旁路参数。
 
 `connection_info`、`schema`、`table`、`path` 和用于派生连接的存储引擎 `engine_id` 都是 Develop 到运行时之间的内部参数，不应作为算子公开填写项；Develop 不接受工作流任务参数直接提交存储引擎 `engine_id` 作为旧式资源身份。Spark Workflow 顶层 `engine_id` 只绑定实际 `spark` 通用引擎资源，与数据源 locator 中的存储引擎 ID 不是同一概念。
 
@@ -876,8 +906,11 @@ curl -X POST http://localhost:8100/api/workflow \
 ### A. 参考实现
 
 - **Math Workflow**: `engines/math-workflow/` - 简单示例，适合学习
-- **Python Workflow**: `engines/python-workflow/` - 生产级 Python 实现，包含 Pandas / GeoPandas 等运行库
+- **GeoPython Workflow**: `engines/python-workflow/` - 生产级 Python 实现，包含 Pandas / GeoPandas 等运行库
 - **Spark Workflow**: `engines/spark-workflow/` - 分布式计算示例
+- **Model3D Workflow**: `engines/model3d-workflow/` - 三维模型和 BIM 快显转换运行时
+- **PointCloud Workflow**: `engines/pointcloud-workflow/` - 点云 COPC 快显转换运行时
+- **SuperMap Workflow**: `engines/supermap-workflow/` - 超图 iObjects Java / SPS 工作流运行时
 
 ### B. 相关文档
 

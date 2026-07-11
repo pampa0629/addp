@@ -1,5 +1,5 @@
 """
-Python Workflow 算子模块
+GeoPython Workflow 算子模块
 
 提供 43 个算子（25 个空间算子 + 18 个非空间算子）,支持：
 - 数据 I/O、几何处理、空间关系分析
@@ -49,8 +49,6 @@ from .data_operations import OPERATORS as DATA_OPERATORS
 from .attribute_operators import OPERATORS as ATTRIBUTE_OPERATORS
 from .filter_operators import OPERATORS as FILTER_OPERATORS
 
-RUNTIME_DERIVED_PARAMS = {"engine_id", "connection_info", "schema", "table", "path"}
-
 # 合并所有算子元数据
 OPERATORS = {}
 for ops_dict in [
@@ -88,6 +86,11 @@ def list_operators():
         'int': 'integer',
         'bool': 'boolean',
         'str': 'string',
+        'string': 'string',
+        'object': 'object',
+        'dict': 'object',
+        'DataFrame': 'object',
+        'dataframe': 'object',
         'geodataframe': 'object',
         'GeoDataFrame': 'object',
         'list[float]': 'array',
@@ -99,12 +102,11 @@ def list_operators():
         parameters = []
         if 'param_schema' in meta:
             for param in meta['param_schema']:
-                if param.get('name') in RUNTIME_DERIVED_PARAMS:
-                    continue
                 # param 已经是字典（来自 to_runtime_dict()），直接使用
                 param_meta = {
                     "name": param['name'],
                     "type": type_mapping.get(param['type'], 'string'),
+                    "param_type": param.get('param_type', 'param'),
                     "required": param.get('required', True),
                     "description": param.get('description', '')
                 }
@@ -113,11 +115,6 @@ def list_operators():
                 if param['type'] in ['list[float]', 'list[str]']:
                     param_meta["item_type"] = "float" if param['type'] == 'list[float]' else "string"
 
-                # 添加 UI 相关字段（如果存在）
-                if param.get('ui_type'):
-                    param_meta["ui_type"] = param['ui_type']
-                if param.get('ui_config'):
-                    param_meta["ui_config"] = param['ui_config']
                 if param.get('enum'):
                     param_meta["enum"] = param['enum']
                 if param.get('default') is not None:
@@ -152,7 +149,7 @@ def list_operators():
             "name": name,
             "display_name": meta['description'],
             "type": meta.get('type', 'general'),  # 从元数据读取类型，默认为 general
-            "engine_type": "python_workflow",
+            "engine_type": "geopython_workflow",
             "category": meta['category'],
             "category_path": meta.get('category_path') or [meta['category']],
             "description": meta['description'],
@@ -169,19 +166,9 @@ def list_operators():
         # 添加详细描述 (如果存在)
         if 'detailed_description' in meta:
             detailed_description = dict(meta['detailed_description'])
-            detailed_description['parameters'] = [
-                param
-                for param in detailed_description.get('parameters', [])
-                if param.get('name') not in RUNTIME_DERIVED_PARAMS
-            ]
             workflow_example = detailed_description.get('workflow_example')
             if isinstance(workflow_example, dict) and isinstance(workflow_example.get('params'), dict):
                 workflow_example = dict(workflow_example)
-                workflow_example['params'] = {
-                    key: value
-                    for key, value in workflow_example['params'].items()
-                    if key not in RUNTIME_DERIVED_PARAMS
-                }
                 detailed_description['workflow_example'] = workflow_example
             operator['detailed_description'] = detailed_description
 

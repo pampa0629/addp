@@ -1,0 +1,3 @@
+target/
+license/*
+!license/.gitignore

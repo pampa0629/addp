@@ -31,6 +31,7 @@ type OperatorDescriptor struct {
 type ParameterDescriptor struct {
 	Name        string                         `json:"name"`                 // 参数名
 	Type        string                         `json:"type"`                 // 类型 (string/integer/float/boolean/array/object)
+	ParamType   string                         `json:"param_type,omitempty"` // 参数角色 (input/output/param/ui)
 	Required    bool                           `json:"required"`             // 是否必填
 	Default     interface{}                    `json:"default,omitempty"`    // 默认值
 	Description string                         `json:"description"`          // 参数说明

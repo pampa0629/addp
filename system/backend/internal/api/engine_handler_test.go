@@ -115,7 +115,7 @@ func TestProbeWorkflowRuntimeBeforeSaveRejectsMismatchedOperatorEngineType(t *te
 						"id":              "tiff_to_cog",
 						"name":            "tiff_to_cog",
 						"display_name":    "TIFF to COG",
-						"engine_type":     "python_workflow",
+						"engine_type":     "geopython_workflow",
 						"type":            "raster",
 						"category":        "Raster",
 						"category_path":   []string{"Raster"},
@@ -151,7 +151,7 @@ func TestProbeWorkflowRuntimeBeforeSaveRejectsMismatchedOperatorEngineType(t *te
 	if err == nil {
 		t.Fatal("probeWorkflowRuntimeBeforeSave() error = nil, want engine_type mismatch")
 	}
-	if !strings.Contains(err.Error(), "engine_type=python_workflow") || !strings.Contains(err.Error(), "runtime engine_type=acme_geo_workflow") {
+	if !strings.Contains(err.Error(), "engine_type=geopython_workflow") || !strings.Contains(err.Error(), "runtime engine_type=acme_geo_workflow") {
 		t.Fatalf("error = %v, want operator/runtime engine_type mismatch", err)
 	}
 }

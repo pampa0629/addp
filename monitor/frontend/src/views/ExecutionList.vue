@@ -760,7 +760,7 @@ async function refreshRunningExecutions() {
 
 function startAutoRefresh() {
   stopAutoRefresh()
-  autoRefreshTimer = window.setInterval(refreshRunningExecutions, 3000)
+  autoRefreshTimer = window.setInterval(refreshRunningExecutions, 1000)
 }
 
 function stopAutoRefresh() {

@@ -68,7 +68,7 @@ func (h *EngineHandler) Create(c *gin.Context) {
 
 // List godoc
 // @Summary      获取引擎列表 | List engines
-// @Description  分页获取引擎列表（支持按类型过滤）| Get paginated engine list with type filtering
+// @Description  先按引擎类型、能力分组、来源和内置状态过滤，再返回分页结果 | Filter by engine type, capability group, origin, and builtin state before pagination
 // @Tags         引擎管理 | Engine Management
 // @Accept       json
 // @Produce      json
@@ -76,20 +76,42 @@ func (h *EngineHandler) Create(c *gin.Context) {
 // @Param        page query int false "页码 | Page number" default(1)
 // @Param        page_size query int false "每页数量 | Page size" default(10)
 // @Param        engine_type query string false "引擎类型 | Engine type"
+// @Param        capability_groups query string false "能力分组，逗号分隔：storage,compute | Comma-separated capability groups: storage,compute"
+// @Param        engine_origins query string false "引擎来源，逗号分隔：general,extension | Comma-separated engine origins: general,extension"
+// @Param        include_builtin query bool false "是否包含内置引擎 | Whether to include builtin engines" default(true)
 // @Success      200 {object} object{data=[]models.Engine,total=int,page=int,page_size=int}
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /engines [get]
 func (h *EngineHandler) List(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
-	engineType := c.Query("engine_type")
+	filter := service.EngineListFilter{
+		EngineType:       c.Query("engine_type"),
+		CapabilityGroups: splitCommaSeparatedQuery(c.Query("capability_groups")),
+		EngineOrigins:    splitCommaSeparatedQuery(c.Query("engine_origins")),
+		IncludeBuiltin:   c.DefaultQuery("include_builtin", "true") == "true",
+	}
 
 	userID, _ := commonapi.GetCurrentUserID(c)
-	engines, total, err := h.engineService.List(page, pageSize, engineType, userID)
+	engines, total, err := h.engineService.List(page, pageSize, filter, userID)
 	if err != nil {
 		commonapi.RespondError(c, 500, err.Error())
 		return
 	}
 	commonapi.RespondPaginated(c, toEngineResponses(engines), total, page, pageSize)
+}
+
+func splitCommaSeparatedQuery(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if value := strings.TrimSpace(part); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 // GetByID godoc
@@ -152,6 +174,44 @@ func (h *EngineHandler) Update(c *gin.Context) {
 	commonapi.RespondSuccess(c, toEngineResponse(engine))
 }
 
+// EnableSpatialWorkspace godoc
+// @Summary      启用空间工作区 | Enable spatial workspace
+// @Description  通过已绑定的 SuperMap 工作流运行时对已有 PostgreSQL/PostGIS 引擎执行高危启用动作，初始化 SuperMap SDX+ 空间工作区。| Trigger the bound SuperMap workflow runtime to perform the high-risk enable action for an existing PostgreSQL/PostGIS engine and initialize the SuperMap SDX+ spatial workspace.
+// @Tags         引擎管理 | Engine Management
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "引擎ID | Engine ID"
+// @Param        ecosystem path string true "空间工作区生态 | Spatial workspace ecosystem"
+// @Param        kind path string true "空间工作区类型 | Spatial workspace kind"
+// @Success      200 {object} models.EngineResponse
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Router       /engines/{id}/spatial-workspaces/{ecosystem}/{kind}/enable [post]
+func (h *EngineHandler) EnableSpatialWorkspace(c *gin.Context) {
+	id, err := commonapi.BindIDParam(c, "id")
+	if err != nil {
+		return
+	}
+
+	ecosystem := strings.ToLower(strings.TrimSpace(c.Param("ecosystem")))
+	kind := strings.ToLower(strings.TrimSpace(c.Param("kind")))
+	if ecosystem == "" || kind == "" {
+		commonapi.RespondError(c, http.StatusBadRequest, "空间工作区生态和类型不能为空")
+		return
+	}
+
+	userID, _ := commonapi.GetCurrentUserID(c)
+	engine, err := h.engineService.EnableSpatialWorkspace(c.Request.Context(), id, ecosystem, kind, userID)
+	if err != nil {
+		h.respondWithResourceError(c, err)
+		return
+	}
+
+	commonapi.RespondSuccess(c, toEngineResponse(engine))
+}
+
 // Delete godoc
 // @Summary      删除引擎 | Delete engine
 // @Tags         引擎管理 | Engine Management
@@ -187,6 +247,8 @@ func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 	case errors.Is(err, service.ErrUnsupportedEngineType):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrSpatialWorkspaceNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}

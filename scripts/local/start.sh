@@ -72,6 +72,7 @@ check_images() {
         "${REGISTRY}/addp-python-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-model3d-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-pointcloud-workflow-engine:${IMAGE_TAG}"
+        "${REGISTRY}/addp-supermap-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-spark-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-jupyter-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-gateway:${IMAGE_TAG}"
@@ -195,9 +196,9 @@ if docker compose -f docker-compose.yml ps nginx | grep -q "Up"; then
     wait_for_health "http://localhost:80/health" "Nginx" 30
 fi
 
-# Wait for Python Workflow Engine
+# Wait for GeoPython Workflow Engine
 if docker compose -f docker-compose.yml ps python-workflow-engine | grep -q "Up"; then
-    wait_for_health "http://localhost:8099/health" "Python Workflow Engine" 60
+    wait_for_health "http://localhost:8099/health" "GeoPython Workflow Engine" 60
 fi
 
 # Wait for Model3D Workflow Engine
@@ -208,6 +209,11 @@ fi
 # Wait for PointCloud Workflow Engine
 if docker compose -f docker-compose.yml ps pointcloud-workflow-engine | grep -q "Up"; then
     wait_for_health "http://localhost:8102/health" "PointCloud Workflow Engine" 60
+fi
+
+# Wait for SuperMap Workflow Engine
+if docker compose -f docker-compose.yml ps supermap-workflow-engine | grep -q "Up"; then
+    wait_for_health "http://localhost:8103/health" "SuperMap Workflow Engine" 90
 fi
 
 # =============================================================================
@@ -234,7 +240,7 @@ echo -e "  ${CYAN}Meilisearch:${NC}          http://localhost:7700"
 echo ""
 
 echo -e "${GREEN}Engines:${NC}"
-echo -e "  ${CYAN}Python Workflow Engine:${NC}     http://localhost:8099"
+echo -e "  ${CYAN}GeoPython Workflow Engine:${NC}     http://localhost:8099"
 echo -e "  ${CYAN}Model3D Workflow Engine:${NC}    http://localhost:8101"
 echo -e "  ${CYAN}PointCloud Workflow Engine:${NC} http://localhost:8102"
 echo ""

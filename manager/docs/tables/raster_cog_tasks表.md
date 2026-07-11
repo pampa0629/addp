@@ -64,6 +64,6 @@
 1. 不进入 `vector_tile_cache_tasks` 或 `vector_materialized_view_tasks`。
 2. 不覆盖源 TIFF，也不创建新的源 item。
 3. 前端不得读取目标 `storage_ref` 拼接 URL，只能消费 `/api/v1/manager/raster_cog/{id}/content`。
-4. 第一阶段任务执行器已采用单一路线：Manager 将源 ResourceLocator 和目标 COG `storage_ref` 派生为 GDAL `source_uri` / `target_uri` / `gdal_env`，通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 Python Workflow，并直接写入 infra MinIO。NFS / NAS 源要求 Python Workflow 运行环境可访问对应挂载路径；对象存储源由 Manager 生成 presigned URL 后交给 GDAL `/vsicurl/` 读取。
+4. 第一阶段任务执行器已采用单一路线：Manager 将源 ResourceLocator 和目标 COG `storage_ref` 派生为 GDAL `source_uri` / `target_uri` / `gdal_env`，通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 GeoPython Workflow，并直接写入 infra MinIO。NFS / NAS 源要求 GeoPython Workflow 运行环境可访问对应挂载路径；对象存储源由 Manager 生成 presigned URL 后交给 GDAL `/vsicurl/` 读取。
 5. Manager 调用 `tiff_to_cog` 时必须显式传入目标 CRS 写入参数。`source_srid=4326` 时写入 WGS84 经纬度定义；其他正数 SRID 写入对应 EPSG 定义；只有缺少 SRID 时才使用可信 `source_crs`。Python 算子只负责把该 CRS 写入目标 COG，不在第一阶段做通用重投影。
 6. CRS 解析必须以数据集顶层 CRS authority 为准，不得从 WKT 子节点中提取单位、椭球或其他 authority 作为源 SRID。典型错误是把 `ANGLEUNIT ID["EPSG",9122]` 当作源 CRS，导致 COG GeoKey 写成 `User-Defined` 并在前端快显中不可见。

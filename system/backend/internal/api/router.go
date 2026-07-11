@@ -156,6 +156,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 				engines.POST("/:id/test", engineHandler.TestConnection)                    // 测试已有引擎连接
 				engines.POST("/test-connection", engineHandler.TestConnectionBeforeCreate) // 创建前测试连接
 				engines.POST("/:id/catalog/children", engineHandler.ListCatalogChildren)   // 列出实时 catalog 子节点
+				engines.POST("/:id/spatial-workspaces/:ecosystem/:kind/enable", engineHandler.EnableSpatialWorkspace)
 			}
 
 			// 租户管理

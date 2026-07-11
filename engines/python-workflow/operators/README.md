@@ -1,6 +1,6 @@
-# Python Workflow 算子模块
+# GeoPython Workflow 算子模块
 
-Python Workflow 的空间算子模块，采用模块化架构设计，底层使用 GeoPandas / Shapely 等库提供空间分析能力。
+GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层使用 GeoPandas / Shapely 等库提供空间分析能力。
 
 ## 目录结构
 
@@ -19,7 +19,7 @@ operators/
 ## 算子列表
 
 ### 数据 I/O (2个)
-- `load` - 数据加载（支持 table/file/geojson）
+- `load` - 数据加载（按 `schema/table` 或 `path` 自动读取数据库表或受支持文件）
 - `save` - 数据保存（支持 table/file）
 
 ### 几何处理 (8个)
@@ -82,8 +82,8 @@ workflow = {
             "id": "load_data",
             "operator": "load",
             "params": {
-                "source_type": "table",
-                "engine_id": 1,
+                "connection_info": {"engine_type": "postgresql"},
+                "schema": "public",
                 "table": "cities"
             }
         },

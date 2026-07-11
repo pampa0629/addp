@@ -137,7 +137,7 @@
             <OperatorParamsPanel
               :node-id="selectedNode.id"
               :operator="selectedNode.operator"
-              :parameters="selectedNode.parameters"
+              :public-parameters="selectedNode.publicParameters"
               :initial-params="selectedNode.params"
               @save="handleParamsSave"
             />
@@ -410,7 +410,7 @@ const handleNodeClick = async (node) => {
       id: node.id,
       operator: node.operator,
       params: node.params,
-      parameters: operator.parameters
+      publicParameters: operator.public_parameters
     }
 
     console.log('[WorkflowEditor] 加载节点参数:', node.id, node.params)
@@ -432,7 +432,7 @@ const handleOperatorClick = (operator) => {
 // 参数保存处理
 const handleParamsSave = (data) => {
   if (canvasRef.value) {
-    canvasRef.value.updateNodeParams(data.nodeId, data.params, selectedNode.value?.parameters)
+    canvasRef.value.updateNodeParams(data.nodeId, data.params, selectedNode.value?.publicParameters)
     // 成功消息已经在 OperatorParamsPanel 中显示，这里不需要重复
   }
 }

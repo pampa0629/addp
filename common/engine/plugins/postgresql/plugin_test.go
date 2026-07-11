@@ -1,6 +1,10 @@
 package postgresql
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/addp/common/datatype"
+)
 
 func TestPostgreSQLIsSystemSchema(t *testing.T) {
 	plugin := &PostgreSQLPlugin{}
@@ -13,6 +17,25 @@ func TestPostgreSQLIsSystemSchema(t *testing.T) {
 
 	if plugin.isSystemSchema("public") {
 		t.Fatal("isSystemSchema(\"public\") = true, want false")
+	}
+}
+
+func TestFilterPostgreSQLSystemTablesRequiresDetectedSuperMapSDX(t *testing.T) {
+	tables := []datatype.TableInfo{
+		{Name: "roads"},
+		{Name: "smdatasourceinfo"},
+		{Name: "SMFIELDINFO"},
+		{Name: "sm_business_table"},
+	}
+
+	withoutSDX := filterPostgreSQLSystemTables(tables, false)
+	if len(withoutSDX) != len(tables) {
+		t.Fatalf("filterPostgreSQLSystemTables without SDX returned %d tables, want %d", len(withoutSDX), len(tables))
+	}
+
+	withSDX := filterPostgreSQLSystemTables(tables, true)
+	if len(withSDX) != 1 || withSDX[0].Name != "roads" {
+		t.Fatalf("filterPostgreSQLSystemTables with SDX = %#v, want only roads", withSDX)
 	}
 }
 

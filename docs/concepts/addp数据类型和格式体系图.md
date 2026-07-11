@@ -39,7 +39,7 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 
 本表按当前内置实现汇总数据类型、引擎和文件格式的关系。引擎侧事实来自内置 engine plugin 的能力声明；格式侧事实来自 `common/format/builtin` 加载的内置 `FormatDescriptor` 和已接入的容器 child 解析能力。
 
-表中的“引擎支持”分两类：数据库、动态 schema 和图引擎可以产生原生 data item；对象存储和文件存储引擎只提供文件 / 对象内容承载，最终 data type 仍由格式识别、格式 provider 和扫描结果决定。Python Workflow、Spark Workflow、Math Workflow、Jupyter 等计算 / 脚本引擎不作为 data item 的原生存储来源列入本表。
+表中的“引擎支持”分两类：数据库、动态 schema 和图引擎可以产生原生 data item；对象存储和文件存储引擎只提供文件 / 对象内容承载，最终 data type 仍由格式识别、格式 provider 和扫描结果决定。GeoPython Workflow、Spark Workflow、Math Workflow、Jupyter 等计算 / 脚本引擎不作为 data item 的原生存储来源列入本表。
 
 | 数据类型 | 当前支持的原生 / 承载引擎 | 当前内置文件格式或容器子格式 | 说明 |
 |---|---|---|---|

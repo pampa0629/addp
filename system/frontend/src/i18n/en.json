@@ -281,11 +281,23 @@
         "port": "Port",
         "capabilities": "Capabilities",
         "capabilitiesPlaceholder": "Leave empty to generate standard addp.workflow/v1 workflow capabilities; provide full engine.capabilities/v1 JSON only for advanced configuration",
-        "exampleHint": "Math Workflow is a workflow extension example. The dev environment starts the service but does not register it automatically; fill the sample values, then test and register it.",
+        "exampleHint": "Fill a built-in extension runtime example, or enter your own addp.workflow/v1 runtime.",
+        "useSuperMapExample": "Use SuperMap Example",
         "useMathExample": "Use Math Example",
         "checkRuntime": "Check Service",
         "runtimeChecking": "Checking service status",
         "runtimeOffline": "Service unavailable: {error}"
+      },
+      "spatialWorkspace": {
+        "title": "SuperMap SDX+ for PostGIS",
+        "supermapWarning": "This action uses the SuperMap workflow engine to register SuperMap SDX+ in the current PostgreSQL/PostGIS database and may create SuperMap system tables.",
+        "runtime": "Runtime ID: {id}",
+        "risk": "Risk: {level}",
+        "enableSuperMap": "Register SuperMap SDX+ for PostGIS",
+        "confirmTitle": "Register SuperMap SDX+ for PostGIS",
+        "confirmMessage": "This action may create SuperMap SDX+ system tables in the current PostgreSQL database. Continue?",
+        "enableSuccess": "SuperMap SDX+ for PostGIS registered",
+        "unavailable": "The current database cannot register SuperMap SDX+ for PostGIS yet."
       },
       "msg": {
         "loadFailed": "Failed to load engine list",
@@ -389,8 +401,28 @@
           "typeAvailable": "Type available",
           "stExtent": "Spatial extent function",
           "stTransform": "CRS transform function",
+          "ecosystem": "Ecosystem",
+          "kind": "Kind",
+          "state": "State",
+          "backendEngineType": "Backend engine type",
+          "runtimeEngineType": "Runtime engine type",
+          "boundRuntimeEngineId": "Bound runtime engine ID",
+          "riskLevel": "Risk level",
+          "canEnable": "Can enable",
           "postgisTopology": "PostGIS Topology",
           "postgisTigerGeocoder": "PostGIS Tiger Geocoder",
+          "supermap": "SuperMap",
+          "arcgis": "ArcGIS",
+          "sdx": "SDX+",
+          "sde": "SDE",
+          "detected": "Detected",
+          "enabled": "Enabled",
+          "notDetected": "SDX+ not registered",
+          "unavailable": "Unavailable",
+          "permissionDenied": "Permission denied",
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High",
           "readOnly": "Read-only",
           "queryPlan": "Query plan",
           "cancel": "Cancelable",
@@ -402,18 +434,29 @@
           "bulkWrite": "Bulk write",
           "maxRows": "Max rows",
           "maxBytes": "Max bytes",
-          "directPreview": "Direct preview"
+          "directPreview": "Direct preview",
+          "canEnableFalse": "Cannot enable",
+          "evidence": "Evidence",
+          "postgisReady": "PostGIS ready",
+          "supermapSystemTableCount": "SuperMap system table count",
+          "sdeSchemaCount": "SDE schema count",
+          "sdeTableCount": "SDE table count"
         },
         "extensions": {
           "postgresqlServer": "PostgreSQL instance",
           "postgis": "PostGIS spatial extension",
           "postgisTopology": "PostGIS topology extension",
           "postgisTigerGeocoder": "PostGIS Tiger geocoder",
+          "spatialWorkspace": "SuperMap SDX+ for PostGIS",
           "postgresqlExtraExtensions": "Other installed extensions",
           "pgvector": "pgvector vector extension"
         },
         "language": {
-          "sql": "SQL"
+          "sql": "SQL",
+          "mql": "MQL",
+          "cypher": "Cypher",
+          "python": "Python",
+          "searchDsl": "Search DSL"
         },
         "resultKind": {
           "table": "Table",
@@ -488,13 +531,6 @@
         "not_supported": {
           "rangeWrite": "Range write",
           "realDirectory": "Real directory"
-        },
-        "language": {
-          "sql": "SQL",
-          "mql": "MQL",
-          "cypher": "Cypher",
-          "python": "Python",
-          "searchDsl": "Search DSL"
         },
         "result_kind": {
           "table": "Table",

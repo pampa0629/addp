@@ -62,7 +62,7 @@ graph TB
     end
 
     subgraph "扩展运行时"
-        PyWorkflow[python_workflow<br/>内置 Workflow 示例]
+        PyWorkflow[geopython_workflow<br/>内置 Workflow 示例]
         SparkWorkflow[spark_workflow<br/>内置 Workflow 示例]
         CustomWorkflow[用户自研 Workflow<br/>addp.workflow/v1]
         Jupyter[jupyter<br/>Notebook 脚本运行时]
@@ -621,8 +621,9 @@ graph TB
 ```mermaid
 graph TB
     subgraph "engines 目录"
-        PyWorkflow[python_workflow<br/>内置 Workflow 示例]
+        PyWorkflow[geopython_workflow<br/>内置 Workflow 示例]
         SparkWorkflow[spark_workflow<br/>内置 Workflow 示例]
+        DomainWorkflow[专用 Workflow 运行时<br/>Model3D / PointCloud / SuperMap]
         CustomWorkflow[用户自研 Workflow<br/>addp.workflow/v1]
         Jupyter[jupyter<br/>Notebook 脚本运行时]
     end
@@ -630,12 +631,14 @@ graph TB
     subgraph "特性"
         PyWorkflow --> PyFeature[单节点内存计算<br/>适合中小规模数据<br/>空间与非空间算子]
         SparkWorkflow --> SparkFeature[分布式计算<br/>大规模数据处理<br/>空间与非空间算子]
+        DomainWorkflow --> DomainFeature[领域专用处理<br/>三维 / 点云 / 超图空间算法]
         Jupyter --> JupyterFeature[交互式开发<br/>Python Notebook<br/>变量传递]
     end
 
     subgraph "系统注册"
         PyWorkflow -.内置引擎.-> System[System 模块]
         SparkWorkflow -.内置引擎.-> System
+        DomainWorkflow -.按运行时部署注册.-> System
         Jupyter -.内置引擎.-> System
         CustomWorkflow -.用户注册.-> System
     end
@@ -643,6 +646,7 @@ graph TB
     Develop[Develop 模块] --> Provider[Common Engine / Provider]
     Provider --> PyWorkflow
     Provider --> SparkWorkflow
+    Provider --> DomainWorkflow
     Provider --> CustomWorkflow
     Provider --> Jupyter
 
@@ -650,8 +654,8 @@ graph TB
     classDef feature fill:#fff3e0,stroke:#e65100
     classDef module fill:#f3e5f5,stroke:#4a148c
 
-    class PyWorkflow,SparkWorkflow,CustomWorkflow,Jupyter engine
-    class PyFeature,SparkFeature,JupyterFeature feature
+    class PyWorkflow,SparkWorkflow,DomainWorkflow,CustomWorkflow,Jupyter engine
+    class PyFeature,SparkFeature,DomainFeature,JupyterFeature feature
     class Develop,System,Provider module
 ```
 
@@ -659,14 +663,17 @@ graph TB
 
 | 引擎 | 类型 | 适用场景 | 主要能力 |
 |------|------|---------|---------|
-| **python_workflow** | 工作流运行时 | 数据量 < 100 万行 | 快速执行，空间与非空间算子 |
+| **geopython_workflow** | 工作流运行时 | 数据量 < 100 万行 | 快速执行，空间与非空间算子 |
 | **spark_workflow** | 工作流运行时 | 数据量 > 100 万行 | 大规模数据处理，空间与非空间算子；执行时绑定 `engine_type=spark` 的通用引擎资源 |
+| **model3d_workflow** | 工作流运行时 | 三维模型、BIM 和 3DGS 快显 | GLB、3D Tiles、KSplat 等领域转换算子 |
+| **pointcloud_workflow** | 工作流运行时 | 点云快显 | LAS / LAZ / E57 / PCD / XYZ 到 COPC 转换算子 |
+| **supermap_workflow** | 工作流运行时 | 超图数据格式与空间分析 | SuperMap iObjects Java / SPS 算子和 DAG 内存对象传递 |
 | **math_workflow** | 工作流运行时参考实现 | 学习与扩展规范示例 | 基础数学算子；开发环境自动启动服务，手动注册后可用 |
 | **jupyter** | 脚本运行时 | Notebook 开发 | Python Notebook，变量传递 |
 
 **注册机制**：
-- 内置运行时启动时自动注册为**内置引擎** (`is_builtin = true`)，全局可见，不属于任何租户 (`tenant_id = null`)。
-- 用户自研扩展运行时按同一张 System 引擎注册表管理，不要求内置 `python_workflow`、`spark_workflow`、`math_workflow` 必然存在。
+- 生产内置运行时可以启动时自注册为**内置引擎** (`is_builtin = true`)；参考实现或需要外部 SDK 绑定的运行时可以通过 System 扩展引擎表单手动注册。
+- 用户自研扩展运行时按同一张 System 引擎注册表管理，不要求某个内置工作流运行时必然存在。
 - 调用方只发现已注册、启用且声明对应能力的运行时实例；工作流算子通过 `addp.workflow/v1` 动态发现。
 
 ---
@@ -681,7 +688,7 @@ System 是扩展运行时的**注册中心**。Develop 负责编排和执行工�
 graph LR
     subgraph System["System（注册中心）"]
         EngineDB[(引擎注册表)]
-        BuiltIn["内置引擎声明<br/>python_workflow<br/>spark_workflow<br/>jupyter"]
+        BuiltIn["内置引擎声明<br/>geopython_workflow<br/>spark_workflow<br/>jupyter"]
         External["外部引擎注册<br/>（用户通过 UI 添加）"]
         BuiltIn --> EngineDB
         External --> EngineDB
@@ -694,14 +701,16 @@ graph LR
     end
 
     subgraph Engines["扩展运行时（执行层）"]
-        PyWF["python_workflow<br/>内置示例"]
+        PyWF["geopython_workflow<br/>内置示例"]
         SparkWF["spark_workflow<br/>内置示例，执行时绑定 spark 通用引擎"]
+        DomainWF["领域 workflow<br/>Model3D / PointCloud / SuperMap"]
         CustomWF["用户自研 workflow<br/>addp.workflow/v1"]
         Jupyter["jupyter<br/>交互式 Notebook"]
     end
 
     EngineRouter -->|"HTTP / gRPC"| PyWF
     EngineRouter -->|"HTTP / gRPC"| SparkWF
+    EngineRouter -->|"HTTP"| DomainWF
     EngineRouter -->|"HTTP / gRPC"| CustomWF
     EngineRouter -->|"WebSocket"| Jupyter
 
@@ -711,7 +720,7 @@ graph LR
 
     class System,EngineDB,BuiltIn,External system
     class Develop,DevAPI,EngineRouter develop
-    class PyWF,SparkWF,CustomWF,Jupyter engine
+    class PyWF,SparkWF,DomainWF,CustomWF,Jupyter engine
 ```
 
 **要点**：
@@ -843,7 +852,7 @@ ADDP 平台各模块存在依赖关系，必须按以下顺序启动：
    └─ Monitor Backend
 
 4. 扩展运行时层（可并行启动）
-   ├─ Python Workflow 运行时
+   ├─ GeoPython Workflow 运行时
    ├─ Math Workflow 参考运行时（自动启动服务、手动注册）
    ├─ Spark Workflow 运行时
    └─ Jupyter 脚本运行时

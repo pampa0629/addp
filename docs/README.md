@@ -75,6 +75,16 @@
 6. [Manager raster_cog 表](../manager/docs/tables/raster_cog表.md) 与 [raster_cog_tasks 表](../manager/docs/tables/raster_cog_tasks表.md)：确认 COG 结果和任务定义的字段、状态和生命周期。
 7. [栅格算子体系后续专题](next/栅格算子体系后续专题.md)：查看 `raster_reproject`、`raster_clip`、`raster_statistics`、`raster_to_tiles` 等第一阶段之外的后续算子规划。
 
+## SuperMap 工作流运行时主题
+
+处理 SuperMap 数据格式、空间算法、SPS / GPA、`supermap_workflow` 工作流运行时、SuperMap 算子接入或后续血缘设计时，建议按以下顺序阅读：
+
+1. [术语表](concepts/addp术语表.md)：确认 ADDP Operator、Workflow Runtime、SuperMap SPS、SPS Process、SuperMap Algorithm 和 `supermap_workflow` 的术语边界。
+2. [引擎体系图](concepts/addp引擎体系图.md)：确认 `EnginePlugin + WorkflowRuntimeProvider + HTTP runtime` 的模块边界。
+3. [ADDP 工作流计算引擎接口规范](spec/addp工作流计算引擎接口规范.md)：确认工作流运行时必须实现的统一 HTTP 协议。
+4. [SuperMap 工作流运行时设计](next/SuperMap工作流运行时设计.md)：查看 `supermap_workflow` 的 SPS 主路径、内存对象传递、算子适配和血缘事件设计。
+5. [Meta 模块血缘扩展设计](plan/meta模块血缘扩展设计.md)：处理 SuperMap runtime 血缘事件落库和资产级血缘关系时阅读。
+
 ## 三维模型、倾斜摄影与点云主题
 
 处理 GLB / glTF、OSGB、OSGB Scene、3D Tiles、BIM、普通三维网格、点云或高斯泼溅格式时，建议按以下顺序阅读：

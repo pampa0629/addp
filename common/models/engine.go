@@ -85,11 +85,16 @@ func (c ConnectionInfo) Value() (driver.Value, error) {
 
 // Scan 实现 sql.Scanner 接口，用于 GORM 从数据库读取
 func (c *ConnectionInfo) Scan(value interface{}) error {
-	bytes, ok := value.([]byte)
-	if !ok {
+	switch v := value.(type) {
+	case []byte:
+		return json.Unmarshal(v, c)
+	case string:
+		return json.Unmarshal([]byte(v), c)
+	case nil:
 		return nil
+	default:
+		return fmt.Errorf("unsupported ConnectionInfo scan type: %T", value)
 	}
-	return json.Unmarshal(bytes, c)
 }
 
 // Engine 引擎信息（对应 system.engines 表）

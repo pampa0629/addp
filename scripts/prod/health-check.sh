@@ -64,7 +64,7 @@ else
   echo -e "${RED}✗ spark-workflow-engine${NC}"
 fi
 
-# Python Workflow Engine
+# GeoPython Workflow Engine
 if curl -f http://localhost:8099/health > /dev/null 2>&1; then
   echo -e "${GREEN}✓ python-workflow-engine${NC}"
 else
@@ -83,6 +83,13 @@ if curl -f http://localhost:8102/health > /dev/null 2>&1; then
   echo -e "${GREEN}✓ pointcloud-workflow-engine${NC}"
 else
   echo -e "${RED}✗ pointcloud-workflow-engine${NC}"
+fi
+
+# SuperMap Workflow Engine
+if curl -f http://localhost:8103/health > /dev/null 2>&1; then
+  echo -e "${GREEN}✓ supermap-workflow-engine${NC}"
+else
+  echo -e "${RED}✗ supermap-workflow-engine${NC}"
 fi
 
 # Gateway

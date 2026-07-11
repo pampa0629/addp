@@ -1,5 +1,7 @@
 export const isSparkWorkflowEngine = (engine) => engine?.engine_type === 'spark_workflow'
 
+const PLATFORM_INTERNAL_PARAMETER_NAMES = new Set(['engine_id', 'connection_info'])
+
 export const isStandardWorkflowDefinition = (workflow) => {
   if (!workflow || !Array.isArray(workflow.tasks) || workflow.tasks.length === 0) {
     return false
@@ -13,6 +15,7 @@ export const isStandardWorkflowDefinition = (workflow) => {
     task.params &&
     typeof task.params === 'object' &&
     !Array.isArray(task.params) &&
+    Object.keys(task.params).every((name) => !PLATFORM_INTERNAL_PARAMETER_NAMES.has(name)) &&
     Array.isArray(task.depends_on) &&
     task.depends_on.every((dep) => typeof dep === 'string')
   ))

@@ -18,15 +18,20 @@ type postgresExtensionFact struct {
 }
 
 type postgresInstanceCapabilityFacts struct {
-	ServerVersion       string
-	ServerVersionNum    int
-	InstalledExtensions map[string]postgresExtensionFact
-	AvailableExtensions map[string]string
-	HasPostGISVersion   bool
-	HasSTExtent         bool
-	HasSTTransform      bool
-	HasVectorType       bool
+	ServerVersion            string
+	ServerVersionNum         int
+	InstalledExtensions      map[string]postgresExtensionFact
+	AvailableExtensions      map[string]string
+	HasPostGISVersion        bool
+	HasSTExtent              bool
+	HasSTTransform           bool
+	HasVectorType            bool
+	SuperMapSystemTableCount int
+	ArcGISSdeSchemaCount     int
+	ArcGISSdeTableCount      int
 }
+
+const superMapSDXSystemTableThreshold = 3
 
 func (p *PostgreSQLPlugin) ResolveCapabilities(ctx context.Context, connInfo plugin.ConnectionInfo, base plugin.EngineCapabilities) (plugin.EngineCapabilities, error) {
 	dsn, err := p.BuildDSN(connInfo)
@@ -112,8 +117,41 @@ func queryPostgresInstanceCapabilityFacts(ctx context.Context, db *sql.DB) (post
 			EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'postgis_version'),
 			EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'st_extent'),
 			EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'st_transform'),
-			EXISTS(SELECT 1 FROM pg_type WHERE typname = 'vector')
-	`).Scan(&facts.HasPostGISVersion, &facts.HasSTExtent, &facts.HasSTTransform, &facts.HasVectorType); err != nil {
+			EXISTS(SELECT 1 FROM pg_type WHERE typname = 'vector'),
+			COALESCE((
+				SELECT COUNT(*)
+				FROM information_schema.tables
+				WHERE table_schema NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+				  AND lower(table_name) LIKE 'sm%%'
+			), 0),
+			COALESCE((
+				SELECT COUNT(*)
+				FROM information_schema.schemata
+				WHERE lower(schema_name) = 'sde'
+			), 0),
+			COALESCE((
+				SELECT COUNT(*)
+				FROM information_schema.tables
+				WHERE lower(table_schema) = 'sde'
+				   OR lower(table_name) IN (
+						'sde_table_registry',
+						'sde_layer_registry',
+						'sde_layers',
+						'sde_states',
+						'gdb_items',
+						'gdb_itemtypes',
+						'gdb_itemrelationships'
+				   )
+			), 0)
+		`).Scan(
+		&facts.HasPostGISVersion,
+		&facts.HasSTExtent,
+		&facts.HasSTTransform,
+		&facts.HasVectorType,
+		&facts.SuperMapSystemTableCount,
+		&facts.ArcGISSdeSchemaCount,
+		&facts.ArcGISSdeTableCount,
+	); err != nil {
 		return facts, fmt.Errorf("query postgresql extension functions: %w", err)
 	}
 
@@ -145,7 +183,7 @@ func applyPostgresInstanceCapabilities(base plugin.EngineCapabilities, facts pos
 		}
 	}
 
-	base.Extensions = map[string]interface{}{
+	extensions := map[string]interface{}{
 		"postgresql": map[string]interface{}{
 			"server_version":     facts.ServerVersion,
 			"server_version_num": facts.ServerVersionNum,
@@ -163,7 +201,7 @@ func applyPostgresInstanceCapabilities(base plugin.EngineCapabilities, facts pos
 	}
 
 	if tiger, ok := facts.InstalledExtensions["postgis_tiger_geocoder"]; ok {
-		base.Extensions["postgresql"].(map[string]interface{})["postgis_tiger_geocoder"] = map[string]interface{}{
+		extensions["postgresql"].(map[string]interface{})["postgis_tiger_geocoder"] = map[string]interface{}{
 			"installed": true,
 			"available": extensionAvailable(facts, "postgis_tiger_geocoder"),
 			"version":   tiger.Version,
@@ -171,7 +209,49 @@ func applyPostgresInstanceCapabilities(base plugin.EngineCapabilities, facts pos
 		}
 	}
 
+	if postgisReady || facts.SuperMapSystemTableCount > 0 || facts.ArcGISSdeSchemaCount > 0 || facts.ArcGISSdeTableCount > 0 {
+		extensions[plugin.EngineExtensionSpatialWorkspaces] = []plugin.SpatialWorkspaceFact{
+			{
+				Ecosystem:         "supermap",
+				Kind:              "sdx+",
+				State:             spatialWorkspaceState(postgisReady, facts.SuperMapSystemTableCount, superMapSDXSystemTableThreshold),
+				BackendEngineType: "postgresql",
+				RuntimeEngineType: "supermap_workflow",
+				CanEnable:         postgisReady && facts.SuperMapSystemTableCount < superMapSDXSystemTableThreshold,
+				RiskLevel:         plugin.SpatialWorkspaceRiskHigh,
+				Evidence: map[string]interface{}{
+					"postgis_ready":               postgisReady,
+					"supermap_system_table_count": facts.SuperMapSystemTableCount,
+				},
+			},
+			{
+				Ecosystem:         "arcgis",
+				Kind:              "sde",
+				State:             spatialWorkspaceState(false, facts.ArcGISSdeSchemaCount+facts.ArcGISSdeTableCount, 1),
+				BackendEngineType: "postgresql",
+				CanEnable:         false,
+				RiskLevel:         plugin.SpatialWorkspaceRiskHigh,
+				Evidence: map[string]interface{}{
+					"sde_schema_count": facts.ArcGISSdeSchemaCount,
+					"sde_table_count":  facts.ArcGISSdeTableCount,
+				},
+			},
+		}
+	}
+
+	base.Extensions = extensions
+
 	return base
+}
+
+func spatialWorkspaceState(postgisReady bool, evidenceCount int, threshold int) string {
+	if evidenceCount >= threshold {
+		return plugin.SpatialWorkspaceStateDetected
+	}
+	if !postgisReady {
+		return plugin.SpatialWorkspaceStateUnavailable
+	}
+	return plugin.SpatialWorkspaceStateNotDetected
 }
 
 func extensionAvailable(facts postgresInstanceCapabilityFacts, name string) bool {

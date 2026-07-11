@@ -62,6 +62,29 @@ assert.deepEqual(
 
 assert.deepEqual(
   mod.applyWorkflowInputRefs({
+    params: { output_dataset_name: 'OverlayOutput' },
+    parameters: [
+      { name: 'input_dataset', type: 'supermap.dataset', param_type: 'input', required: true },
+      { name: 'overlay_dataset', type: 'supermap.dataset', param_type: 'input', required: true },
+      { name: 'output_datasource', type: 'supermap.datasource', param_type: 'input', required: true },
+      { name: 'output_dataset_name', type: 'string', param_type: 'param', required: true }
+    ],
+    inputEdges: [
+      { sourceId: 'select_landuse', sourcePort: 'dataset', sourceType: 'supermap.dataset' },
+      { sourceId: 'select_geomor', sourcePort: 'dataset', sourceType: 'supermap.dataset' },
+      { sourceId: 'create_output', sourcePort: 'datasource', sourceType: 'supermap.datasource' }
+    ]
+  }),
+  {
+    input_dataset: { $ref: 'select_landuse', port: 'dataset' },
+    overlay_dataset: { $ref: 'select_geomor', port: 'dataset' },
+    output_datasource: { $ref: 'create_output', port: 'datasource' },
+    output_dataset_name: 'OverlayOutput'
+  }
+)
+
+assert.deepEqual(
+  mod.applyWorkflowInputRefs({
     params: { source_type: 'table' },
     parameters: null,
     inputEdges: []
@@ -80,6 +103,10 @@ assert.throws(
 
 assert.equal(mod.isWorkflowInputParameter({ name: 'left_df', type: 'dataframe' }), true)
 assert.equal(mod.isWorkflowInputParameter({ name: 'mask_gdf', type: 'object' }), true)
+assert.equal(mod.isWorkflowInputParameter({ name: 'output_datasource', type: 'object', param_type: 'input' }), true)
 assert.equal(mod.isWorkflowInputParameter({ name: 'target_geom', type: 'object' }), false)
+assert.equal(mod.isPublicWorkflowParameter({ name: 'locator', type: 'string' }), true)
+assert.equal(mod.isPublicWorkflowParameter({ name: 'schema', type: 'string' }), true)
+assert.equal(mod.isPublicWorkflowParameter({ name: '数据源', type: 'ui', ui_type: 'resource_tree_picker' }), false)
 
 console.log('workflowInputBindings tests passed')

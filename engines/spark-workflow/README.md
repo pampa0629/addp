@@ -9,7 +9,7 @@ Spark 工作流 Engine 是 ADDP 平台的分布式空间计算引擎,基于 Apac
 - **统一存储访问**: 支持数据库 (PostgreSQL/MySQL/Doris)、对象存储 (S3/MinIO/HDFS)、湖仓 (Iceberg/Delta/Hudi)
 - **动态 Spark 资源**: 用户注册多个 Spark 集群,工作流执行时选择
 - **DAG 工作流**: 拓扑排序 + DataFrame 内存传递,最小化序列化开销
-- **与 Python Workflow 互补**: 快速原型用 Python Workflow,生产大规模用 Spark
+- **与 GeoPython Workflow 互补**: 快速原型用 GeoPython Workflow,生产大规模用 Spark
 
 ## 目录结构
 
@@ -288,9 +288,9 @@ engine.load_workflow(workflow_def)
 result = engine.run()
 ```
 
-## 与 Python Workflow Engine 的对比
+## 与 GeoPython Workflow Engine 的对比
 
-| 特性 | Python Workflow Engine | Spark 工作流 Engine |
+| 特性 | GeoPython Workflow Engine | Spark 工作流 Engine |
 |------|------------------|---------------------|
 | **适用场景** | 快速原型、探索分析 | 生产环境、大规模处理 |
 | **数据规模** | < 10 GB | > 100 GB (TB 级) |
@@ -301,7 +301,7 @@ result = engine.run()
 | **存储支持** | 数据库 + S3 | 数据库 + S3 + 湖仓 (Iceberg/Delta) |
 
 **使用建议**:
-- **原型开发**: 使用 Python Workflow (快速迭代)
+- **原型开发**: 使用 GeoPython Workflow (快速迭代)
 - **生产部署**: 使用 Spark (大规模稳定)
 - **混合使用**: 在 Orchestrator 中跨引擎编排
 

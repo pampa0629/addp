@@ -56,6 +56,7 @@
 | 目录 | 职责 |
 | --- | --- |
 | `plugins/` | 内置文件格式插件。descriptor-only 阶段也必须有独立格式目录。 |
+| `plugins/shared/` | 多个格式插件共同使用的格式族解析逻辑或受控 helper，只服务 format plugin 层。 |
 | `mappers/` | PostgreSQL、MySQL、SpatiaLite 等原生类型映射。 |
 | `builtin/` | 内置 descriptor、provider / reader 和 type mapper 统一注册入口。 |
 | `integration_test/` | 跨包集成验证。 |

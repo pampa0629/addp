@@ -1131,7 +1131,7 @@ whole item 不应把全部 leaf COG 展开写入 `item.refs`。leaf COG、overvi
 
 ### 消费要求
 
-Manager 预览应消费已入库的 `format=raster_mosaic` item，读取业务存储中的 manifest、index、overview COG 和 leaf COG window。常规在线预览不得重新调用 Python Workflow；重建 overview、重建 leaf COG、重算 stats 或重建 tile cache 应进入任务体系。
+Manager 预览应消费已入库的 `format=raster_mosaic` item，读取业务存储中的 manifest、index、overview COG 和 leaf COG window。常规在线预览不得重新调用 GeoPython Workflow；重建 overview、重建 leaf COG、重算 stats 或重建 tile cache 应进入任务体系。
 
 ## 视频
 

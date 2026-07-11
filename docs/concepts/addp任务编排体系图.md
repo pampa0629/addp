@@ -143,8 +143,8 @@ graph TB
         OpNode1 --> OpNode2
         OpNode2 --> OpNode3
 
-        OpWF --> OpEngine[执行引擎:<br/>Python Workflow / Spark Workflow]
-        OpWF --> OpData[数据传递:<br/>GeoDataFrame 内存]
+        OpWF --> OpEngine[执行引擎:<br/>已注册 Workflow Runtime]
+        OpWF --> OpData[数据传递:<br/>运行时内部对象 / 参数引用]
     end
 
     subgraph "任务编排流 (Orchestrator 模块)"
@@ -174,8 +174,8 @@ graph TB
 |------|---------------------|-------------------------|
 | **节点粒度** | 细粒度算子 (buffer, centroid) | 粗粒度业务任务 (扫描元数据, Transfer 任务) |
 | **DAG 层级** | 算子级别 DAG | 任务级别 DAG |
-| **执行引擎/方式** | Python Workflow / Spark Workflow | 跨模块 TaskProvider API 调用 |
-| **数据传递** | GeoDataFrame 内存传递 | 已保存任务执行时可使用参数模板 `{{step_id.field.path}}` 或 `{{step_id}}` 传递本次执行参数 |
+| **执行引擎/方式** | 已注册 Workflow Runtime，例如 GeoPython Workflow、Spark Workflow、SuperMap Workflow | 跨模块 TaskProvider API 调用 |
+| **数据传递** | 运行时内部对象或参数引用；例如 Python GeoDataFrame、SuperMap SPS `IDataItem` | 已保存任务执行时可使用参数模板 `{{step_id.field.path}}` 或 `{{step_id}}` 传递本次执行参数 |
 | **适用场景** | 空间数据分析、地理计算 | 跨模块数据流水线、ETL 作业 |
 | **存储表** | `develop.dev_tasks` | `orchestrator.orchestrations` |
 | **执行记录** | `common.task_executions`（`module=develop`） | `common.task_executions`（`module=orchestrator`） |

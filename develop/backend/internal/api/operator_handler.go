@@ -13,6 +13,13 @@ type OperatorHandler struct {
 	operatorDiscovery *service.OperatorDiscoveryService
 }
 
+type OperatorListResponse struct {
+	Status           string                             `json:"status"`
+	WorkflowEngineID uint64                             `json:"workflow_engine_id"`
+	Operators        []service.PublicOperatorDescriptor `json:"operators"`
+	Count            int                                `json:"count"`
+}
+
 // NewOperatorHandler 创建算子处理器
 func NewOperatorHandler(operatorDiscovery *service.OperatorDiscoveryService) *OperatorHandler {
 	return &OperatorHandler{
@@ -25,7 +32,7 @@ func NewOperatorHandler(operatorDiscovery *service.OperatorDiscoveryService) *Op
 // @Tags Operator
 // @Produce json
 // @Param id path int true "工作流引擎实例ID | Workflow engine instance ID"
-// @Success 200 {object} map[string]interface{} "算子列表 | Operator list"
+// @Success 200 {object} OperatorListResponse "算子列表 | Operator list"
 // @Router /workflow-engines/{id}/operators [get]
 func (h *OperatorHandler) ListOperatorsByWorkflowEngine(c *gin.Context) {
 	workflowEngineID64, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -40,10 +47,10 @@ func (h *OperatorHandler) ListOperatorsByWorkflowEngine(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":             "success",
-		"workflow_engine_id": workflowEngineID64,
-		"operators":          operators,
-		"count":              len(operators),
+	c.JSON(http.StatusOK, OperatorListResponse{
+		Status:           "success",
+		WorkflowEngineID: workflowEngineID64,
+		Operators:        operators,
+		Count:            len(operators),
 	})
 }

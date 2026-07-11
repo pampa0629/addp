@@ -29,7 +29,7 @@ raster COG 的生成任务定义写入 `manager.raster_cog_tasks`，TaskProvider
 
 ## metadata 审计结构
 
-`raster_cog` 通过 Python Workflow 的 `tiff_to_cog` direct 算子生成。Direct 调用不进入 Orchestrator，也不由 Monitor 统一监控，因此 Manager 必须在 COG 结果状态中保存最小审计信息：
+`raster_cog` 通过 GeoPython Workflow 的 `tiff_to_cog` direct 算子生成。Direct 调用不进入 Orchestrator，也不由 Monitor 统一监控，因此 Manager 必须在 COG 结果状态中保存最小审计信息：
 
 ```json
 {
@@ -39,9 +39,9 @@ raster COG 的生成任务定义写入 `manager.raster_cog_tasks`，TaskProvider
       "access_method": "mounted_path"
     }
   },
-  "python_workflow": {
+  "geopython_workflow": {
     "engine_id": 99,
-    "engine_name": "Python Workflow",
+    "engine_name": "GeoPython Workflow",
     "execution_id": "py-1",
     "operator": "tiff_to_cog",
     "mode": "direct",

@@ -1,4 +1,4 @@
-# Python Workflow Engine - Prebuilt from local venv
+# GeoPython Workflow Engine - Prebuilt from local venv
 # This Dockerfile creates an image using locally installed dependencies
 FROM python:3.11-slim
 

@@ -55,7 +55,7 @@ func (h *RegistryHandler) RegisterCapability(c *gin.Context) {
 }
 
 // ListCapabilities 查询能力列表
-// GET /api/v1/internal/registry/capabilities?engine_type=python_workflow&is_builtin=true
+// GET /api/v1/internal/registry/capabilities?engine_type=geopython_workflow&is_builtin=true
 func (h *RegistryHandler) ListCapabilities(c *gin.Context) {
 	filters := make(map[string]interface{})
 

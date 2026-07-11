@@ -6,6 +6,7 @@
 
 - [compile.sh](#compilesh) - 二进制编译器
 - [build-images.sh](#build-imagessh) - Docker 镜像构建器
+- [build-supermap-workflow-image.sh](#build-supermap-workflow-imagesh) - SuperMap Workflow 私有胖镜像构建器
 - [push-images.sh](#push-imagessh) - 镜像推送工具
 - [package.sh](#packagesh) - 部署包生成器
 
@@ -179,7 +180,7 @@ IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
 - `transfer-worker` - Transfer Worker
 
 **Engine/Runtime 服务** (6 个):
-- `python-workflow-engine` - Python Workflow Engine
+- `python-workflow-engine` - GeoPython Workflow Engine
 - `raster-mosaic-runtime` - Raster Mosaic Runtime
 - `model3d-workflow-engine` - Model3D Workflow Engine
 - `pointcloud-workflow-engine` - PointCloud Workflow Engine
@@ -269,6 +270,40 @@ IMAGE_TAG=v1.2.0 ./scripts/build/build-images.sh \
   --registry harbor.example.com:5001
 docker push harbor.example.com:5001/addp-system-backend:v1.2.0
 ```
+
+---
+
+## build-supermap-workflow-image.sh
+
+**用途**: 构建私有 SuperMap Workflow Engine 胖镜像。该镜像已经是 `supermap_workflow` 工作流引擎，不是单纯的 SuperMap SDK 基础镜像；镜像内包含 ADDP Java runtime、SuperMap iObjects Java Bin、GPA/SPS libs 和可选许可文件。
+
+SuperMap SDK、GPA/SPS libs 和 license 不进入 Git 仓库。构建脚本通过 Docker named build context 从本机路径读取这些私有依赖。
+
+### 使用方法
+
+```bash
+./scripts/build/build-supermap-workflow-image.sh \
+  --objectsjava-bin /tmp/addp-supermap-iobjectjava-bin \
+  --gpa-libs /Users/pampa/Documents/supermap-pdt-docker-v3.0.0-arm/02-scp-datacenter/scp-dc-scheduler/scheduler/gpa/libs \
+  --license /Users/pampa/Downloads/SuperMap资料/supermap_any_2026.lic12
+```
+
+也可以把许可文件放入 `engines/supermap-workflow/license/`。该目录已被 Git 忽略，脚本会自动使用其中第一个 `.lic12` 文件：
+
+```bash
+cp /path/to/supermap_any_2026.lic12 engines/supermap-workflow/license/
+./scripts/build/build-supermap-workflow-image.sh \
+  --objectsjava-bin /tmp/addp-supermap-iobjectjava-bin \
+  --gpa-libs /path/to/gpa/libs
+```
+
+构建成功后，`scripts/dev/start.sh` 和 `scripts/dev/restart.sh` 会识别镜像 label `addp.supermap.bundled=true`，此时启动 SuperMap Workflow Engine 不再要求 `SUPERMAP_OBJECTSJAVA_BIN_HOST` 和 `SUPERMAP_GPA_LIB_DIR_HOST`。
+
+### 本地快速开发
+
+开发脚本默认把本地 `engines/supermap-workflow/src` 挂载到容器 `/app/src`。修改 Java 算子代码后，直接重启 SuperMap runtime 即可由 `run.sh` 在容器内重新 `javac`，无需每次重建包含 3GB SuperMap SDK 的胖镜像。
+
+修改 Dockerfile、系统依赖、SDK/GPA libs 或 `run.sh` 时，再重新运行 `build-supermap-workflow-image.sh`。
 
 ---
 

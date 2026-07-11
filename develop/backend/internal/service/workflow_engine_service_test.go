@@ -34,7 +34,7 @@ func TestPreprocessWorkflowParamsDerivesTableSourceFromLocator(t *testing.T) {
 		},
 	}
 
-	got, err := svc.preprocessWorkflowParams(context.Background(), workflow)
+	got, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParams() error = %v", err)
 	}
@@ -45,6 +45,44 @@ func TestPreprocessWorkflowParamsDerivesTableSourceFromLocator(t *testing.T) {
 	}
 	if params["schema"] != "public" || params["table"] != "roads" {
 		t.Fatalf("schema/table = %v/%v, want public/roads", params["schema"], params["table"])
+	}
+	assertConnectionInfo(t, params, "postgresql")
+	originalParams := firstTaskParams(t, workflow)
+	if originalParams["locator"] == nil || originalParams["connection_info"] != nil {
+		t.Fatalf("original workflow was mutated: %#v", originalParams)
+	}
+}
+
+func TestPreprocessWorkflowParamsDerivesSuperMapPostgisSourceFromLocator(t *testing.T) {
+	svc := newWorkflowEngineServiceForTest(t, 12, "postgresql")
+	workflow := map[string]interface{}{
+		"tasks": []interface{}{
+			map[string]interface{}{
+				"id":       "open_postgis",
+				"operator": "datasource.open_postgis",
+				"params": map[string]interface{}{
+					"locator":   "addp://engine/12/path/public/%E7%A4%BA%E4%BE%8B%E6%95%B0%E6%8D%AE?type=table&item_id=99",
+					"read_only": true,
+				},
+				"depends_on": []interface{}{},
+			},
+		},
+	}
+
+	got, err := svc.preprocessWorkflowParams(context.Background(), "supermap_workflow", workflow)
+	if err != nil {
+		t.Fatalf("preprocessWorkflowParams() error = %v", err)
+	}
+
+	params := firstTaskParams(t, got)
+	if _, ok := params["locator"]; ok {
+		t.Fatalf("locator should be removed before runtime params: %#v", params)
+	}
+	if params["schema"] != "public" || params["table"] != "示例数据" {
+		t.Fatalf("schema/table = %v/%v, want public/示例数据", params["schema"], params["table"])
+	}
+	if params["read_only"] != true {
+		t.Fatalf("read_only should be preserved: %#v", params)
 	}
 	assertConnectionInfo(t, params, "postgresql")
 }
@@ -66,7 +104,7 @@ func TestPreprocessWorkflowParamsDerivesTableTargetFromParentLocator(t *testing.
 		},
 	}
 
-	got, err := svc.preprocessWorkflowParams(context.Background(), workflow)
+	got, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParams() error = %v", err)
 	}
@@ -100,7 +138,7 @@ func TestPreprocessWorkflowParamsDerivesFileSourceFromLocator(t *testing.T) {
 		},
 	}
 
-	got, err := svc.preprocessWorkflowParams(context.Background(), workflow)
+	got, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParams() error = %v", err)
 	}
@@ -131,7 +169,7 @@ func TestPreprocessWorkflowParamsDerivesObjectSourceAsSparkPath(t *testing.T) {
 		},
 	}
 
-	got, err := svc.preprocessWorkflowParams(context.Background(), workflow)
+	got, err := svc.preprocessWorkflowParams(context.Background(), "spark_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParams() error = %v", err)
 	}
@@ -160,7 +198,7 @@ func TestPreprocessWorkflowParamsDerivesFileTargetFromParentLocator(t *testing.T
 		},
 	}
 
-	got, err := svc.preprocessWorkflowParams(context.Background(), workflow)
+	got, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParams() error = %v", err)
 	}
@@ -189,7 +227,7 @@ func TestPreprocessWorkflowParamsDerivesObjectTargetFromBucketLocator(t *testing
 		},
 	}
 
-	got, err := svc.preprocessWorkflowParams(context.Background(), workflow)
+	got, err := svc.preprocessWorkflowParams(context.Background(), "spark_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParams() error = %v", err)
 	}
@@ -217,7 +255,7 @@ func TestPreprocessWorkflowParamsRequiresTargetNameWithParentLocator(t *testing.
 		},
 	}
 
-	if _, err := svc.preprocessWorkflowParams(context.Background(), workflow); err == nil {
+	if _, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow); err == nil {
 		t.Fatal("preprocessWorkflowParams() error = nil, want target_name error")
 	}
 }
@@ -240,8 +278,50 @@ func TestPreprocessWorkflowParamsRejectsDirectEngineID(t *testing.T) {
 		},
 	}
 
-	if _, err := svc.preprocessWorkflowParams(context.Background(), workflow); err == nil {
+	if _, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow); err == nil {
 		t.Fatal("preprocessWorkflowParams() error = nil, want direct engine_id error")
+	}
+}
+
+func TestPreprocessWorkflowParamsRejectsLocatorForUndeclaredOperator(t *testing.T) {
+	svc := newWorkflowEngineServiceForTest(t, 12, "postgresql")
+	workflow := map[string]interface{}{
+		"tasks": []interface{}{
+			map[string]interface{}{
+				"id":       "buffer_roads",
+				"operator": "buffer",
+				"params": map[string]interface{}{
+					"locator": "addp://engine/12/path/public/roads?type=table&item_id=99",
+				},
+				"depends_on": []interface{}{},
+			},
+		},
+	}
+
+	_, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow)
+	if err == nil || !strings.Contains(err.Error(), "未声明 Develop Adapter Spec") {
+		t.Fatalf("preprocessWorkflowParams() error = %v, want undeclared adapter spec error", err)
+	}
+}
+
+func TestPreprocessWorkflowParamsRejectsOperatorAdapterFromDifferentRuntime(t *testing.T) {
+	svc := newWorkflowEngineServiceForTest(t, 12, "postgresql")
+	workflow := map[string]interface{}{
+		"tasks": []interface{}{
+			map[string]interface{}{
+				"id":       "open_postgis",
+				"operator": "datasource.open_postgis",
+				"params": map[string]interface{}{
+					"locator": "addp://engine/12/path/public/roads?type=table&item_id=99",
+				},
+				"depends_on": []interface{}{},
+			},
+		},
+	}
+
+	_, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow)
+	if err == nil || !strings.Contains(err.Error(), "未声明 Develop Adapter Spec") {
+		t.Fatalf("preprocessWorkflowParams() error = %v, want runtime-specific adapter spec error", err)
 	}
 }
 
@@ -254,7 +334,7 @@ func TestPreprocessWorkflowParamsRejectsMissingTasks(t *testing.T) {
 		},
 	}
 
-	if _, err := svc.preprocessWorkflowParams(context.Background(), workflow); err == nil {
+	if _, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow); err == nil {
 		t.Fatal("preprocessWorkflowParams() error = nil, want missing tasks error")
 	}
 }
@@ -265,7 +345,7 @@ func TestPreprocessWorkflowParamsRejectsEmptyTasks(t *testing.T) {
 		"tasks": []interface{}{},
 	}
 
-	if _, err := svc.preprocessWorkflowParams(context.Background(), workflow); err == nil {
+	if _, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow); err == nil {
 		t.Fatal("preprocessWorkflowParams() error = nil, want empty tasks error")
 	}
 }
@@ -325,7 +405,7 @@ func TestWorkflowRuntimeOptionsRejectsSparkClusterIDForNonSparkWorkflow(t *testi
 		},
 	}
 
-	if _, err := svc.workflowRuntimeOptions("python_workflow", cfg); err == nil {
+	if _, err := svc.workflowRuntimeOptions("geopython_workflow", cfg); err == nil {
 		t.Fatal("workflowRuntimeOptions() error = nil, want non-spark workflow error")
 	}
 }

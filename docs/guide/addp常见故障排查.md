@@ -507,7 +507,7 @@ def register_to_system():
    ```sql
    SELECT id, name, engine_type, connection_status
    FROM system.engines
-   WHERE engine_type IN ('python_workflow', 'spark_workflow');
+   WHERE engine_type IN ('geopython_workflow', 'spark_workflow');
    ```
 
    应该显示 `connection_status = 'online'`
@@ -578,7 +578,7 @@ def register_to_system():
 |------|------|---------|
 | 2025-12-18 | Manager 数据预览"暂无数据"（双重 .data 访问） | Claude Code |
 | 2026-01-03 | Workflow 引擎注册失败 502（系统代理拦截） | Claude Code |
-| 2026-01-27 | Python Workflow Engine 依赖安装失败（NumPy 版本冲突） | Claude Code |
+| 2026-01-27 | GeoPython Workflow Engine 依赖安装失败（NumPy 版本冲突） | Claude Code |
 | 2026-01-27 | 工作流引擎注册失败 404（缺少 /api 前缀） | Claude Code |
 | 2026-01-29 | MVT 物化视图创建失败（主键大小写问题） | Claude Code |
 
@@ -586,7 +586,7 @@ def register_to_system():
 
 ## 后端问题
 
-### 3. Python Workflow Engine 依赖安装失败（NumPy 版本冲突）
+### 3. GeoPython Workflow Engine 依赖安装失败（NumPy 版本冲突）
 
 #### 问题现象
 
@@ -681,7 +681,7 @@ python3 -m venv venv
 
 - **发现日期：** 2026-01-27
 - **修复版本：** v0.0.22+
-- **影响范围：** Python Workflow Engine（所有 Python 3.11+ 环境）
+- **影响范围：** GeoPython Workflow Engine（所有 Python 3.11+ 环境）
 - **验证命令：** `bash scripts/dev/restart.sh -python-workflow`
 
 ---
@@ -723,7 +723,7 @@ func RegisterEngine(c *gin.Context) {
 
 **受影响的引擎：**
 
-1. **Python Workflow Engine** (`engines/python-workflow/api_server.py`)
+1. **GeoPython Workflow Engine** (`engines/python-workflow/api_server.py`)
 2. **Spark Workflow Engine** (`engines/spark-workflow/api_server.py`)
 
 **说明**：Math Workflow 现在是扩展引擎规范参考实现。开发环境可自动启动 Math Workflow 服务，但它不会自动注册到 System；需要使用时，应在 System 引擎管理中按扩展引擎手动注册。
@@ -787,7 +787,7 @@ tail -f logs/python-workflow-engine-stderr.log
 curl -H "Authorization: Bearer YOUR_TOKEN" \
   http://localhost:8180/api/v1/system/engines
 
-# 应该能看到已启动并成功注册的 python_workflow、spark_workflow
+# 应该能看到已启动并成功注册的 geopython_workflow、spark_workflow
 # math_workflow 需要通过 System 引擎管理手动注册后才会出现
 ```
 

@@ -11,7 +11,7 @@ import (
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
-	"github.com/addp/common/format/plugins/internal/lasfamily"
+	"github.com/addp/common/format/plugins/shared/lasfamily"
 )
 
 func TestCOPCDescriptor(t *testing.T) {

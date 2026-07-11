@@ -19,8 +19,8 @@ func TestSystemClientListEnginesDecodesInternalCapabilitiesView(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[{
 			"id":1,
-			"name":"Python Workflow",
-			"engine_type":"python_workflow",
+			"name":"GeoPython Workflow",
+			"engine_type":"geopython_workflow",
 			"connection_info":{},
 			"capabilities_view":{
 				"summary":[{"id":"workflow","label_key":"system.engine.capabilityView.summary.workflow"}],
@@ -32,7 +32,7 @@ func TestSystemClientListEnginesDecodesInternalCapabilitiesView(t *testing.T) {
 	defer server.Close()
 
 	client := NewSystemClientWithInternalKey(server.URL, "internal-key")
-	engines, err := client.ListEngines("python_workflow", 7)
+	engines, err := client.ListEngines("geopython_workflow", 7)
 	if err != nil {
 		t.Fatalf("ListEngines() error = %v", err)
 	}
@@ -43,8 +43,8 @@ func TestSystemClientListEnginesDecodesInternalCapabilitiesView(t *testing.T) {
 	if gotHeader != "internal-key" {
 		t.Fatalf("internal key header = %q, want internal-key", gotHeader)
 	}
-	if gotQuery != "engine_type=python_workflow&tenant_id=7" {
-		t.Fatalf("query = %q, want engine_type=python_workflow&tenant_id=7", gotQuery)
+	if gotQuery != "engine_type=geopython_workflow&tenant_id=7" {
+		t.Fatalf("query = %q, want engine_type=geopython_workflow&tenant_id=7", gotQuery)
 	}
 	if len(engines) != 1 {
 		t.Fatalf("engines length = %d, want 1", len(engines))
@@ -75,8 +75,8 @@ func TestSystemClientListEnginesDecodesPaginatedCapabilitiesView(t *testing.T) {
 		_, _ = w.Write([]byte(`{
 			"data":[{
 				"id":1,
-				"name":"Python Workflow",
-				"engine_type":"python_workflow",
+				"name":"GeoPython Workflow",
+				"engine_type":"geopython_workflow",
 				"connection_info":{},
 				"capabilities_view":{
 					"summary":[{"id":"workflow","label_key":"system.engine.capabilityView.summary.workflow"}],
@@ -237,13 +237,13 @@ func TestSystemClientListWorkflowEnginesFiltersByV1WorkflowCapability(t *testing
 		_, _ = w.Write([]byte(`[
 			{
 				"id":1,
-				"name":"Python Workflow",
-				"engine_type":"python_workflow",
+				"name":"GeoPython Workflow",
+				"engine_type":"geopython_workflow",
 				"is_active":true,
 				"connection_info":{},
 				"capabilities":{
 					"schema_version":"engine.capabilities/v1",
-					"engine_type":"python_workflow",
+					"engine_type":"geopython_workflow",
 					"engine_family":"workflow",
 					"compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}}
 				}
@@ -304,8 +304,8 @@ func TestSystemClientListWorkflowEnginesFiltersByV1WorkflowCapability(t *testing
 	if len(engines) != 1 {
 		t.Fatalf("engines length = %d, want 1", len(engines))
 	}
-	if engines[0].EngineType != "python_workflow" {
-		t.Fatalf("engine_type = %q, want python_workflow", engines[0].EngineType)
+	if engines[0].EngineType != "geopython_workflow" {
+		t.Fatalf("engine_type = %q, want geopython_workflow", engines[0].EngineType)
 	}
 }
 

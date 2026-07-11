@@ -80,7 +80,7 @@ bash scripts/dev/modtidy.sh
 
 **功能**: 启动完整开发环境
 
-指定单个模块启动时，脚本仍会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。模块自己的前端和额外依赖在此基础上按需启动，例如 `-manager` 会额外启动 Transfer Backend / Worker、Model3D Workflow Engine 和 PointCloud Workflow Engine，`-develop` 会额外启动 Python/Math/Spark Workflow Engine 和 Jupyter。
+指定单个模块启动时，脚本仍会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。模块自己的前端和额外依赖在此基础上按需启动，例如 `-manager` 会额外启动 Transfer Backend / Worker、Model3D Workflow Engine 和 PointCloud Workflow Engine，`-develop` 会额外启动 Python/Math/Spark Workflow Engine 和 Jupyter。全量启动会启动 SuperMap Workflow Engine；单独验证超图算子时也可以通过 `-supermap-workflow` 显式启动。SuperMap Workflow Engine 依赖外部 SuperMap SDK / GPA libs 和许可文件，`INTERNAL_API_KEY` 可用时会自动注册到 System。
 
 **执行步骤**:
 1. **Step 0**: Go 依赖检查(`go mod tidy`,可跳过)
@@ -147,11 +147,16 @@ bash scripts/dev/restart.sh -python-workflow
 bash scripts/dev/restart.sh -math-workflow
 bash scripts/dev/restart.sh -model3d-workflow
 bash scripts/dev/restart.sh -pointcloud-workflow
+bash scripts/dev/restart.sh -supermap-workflow
 bash scripts/dev/restart.sh -spark-workflow
 bash scripts/dev/restart.sh -jupyter
 bash scripts/dev/restart.sh -copilot
 bash scripts/dev/restart.sh -agent
 ```
+
+修改 `engines/supermap-workflow` 源码后，使用 `SUPERMAP_WORKFLOW_REBUILD=1 bash scripts/dev/restart.sh -supermap-workflow` 强制重建 Docker 镜像；否则脚本会复用已有 `SUPERMAP_WORKFLOW_IMAGE`。
+
+如果已使用 `scripts/build/build-supermap-workflow-image.sh` 构建过 SuperMap bundled 胖镜像，脚本会识别镜像 label `addp.supermap.bundled=true`，启动时不再要求 `SUPERMAP_OBJECTSJAVA_BIN_HOST` 和 `SUPERMAP_GPA_LIB_DIR_HOST`。Java 源码默认从本机 `engines/supermap-workflow/src` 挂载进容器，重启 runtime 即可重新编译；修改 Dockerfile、SDK/GPA libs 或 `run.sh` 时再重建胖镜像。
 
 **使用场景**:
 - 修改代码后需要重启
@@ -221,7 +226,7 @@ Transfer Backend (8083) + Transfer Worker + Meta Worker
   ↓
 Orchestrator Backend (8084)
   ↓
-Model3D / PointCloud / Python Workflow Engines (按模块需要启动)
+Model3D / PointCloud / SuperMap / GeoPython Workflow Engines (按模块需要启动；全量启动包含 SuperMap)
   ↓
 Gateway (8000) - API 路由
   ↓

@@ -302,7 +302,7 @@
 
 ## 扩展运行时
 
-### Python Workflow 运行时
+### GeoPython Workflow 运行时
 
 **职责定位**：基于 Python 的单节点工作流运行时
 
@@ -311,7 +311,7 @@
 - DAG 内存计算（GeoDataFrame 全程内存传递，避免中间序列化）
 - 支持空间和非空间数据处理
 - 适用场景：中小规模数据（< 100 万行）
-- 执行引擎：Python Workflow（单节点内存计算，底层使用 GeoPandas 等库）
+- 执行引擎：GeoPython Workflow（单节点内存计算，底层使用 GeoPandas 等库）
 
 **端口**：8099
 

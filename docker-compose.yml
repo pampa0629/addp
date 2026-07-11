@@ -991,7 +991,7 @@ services:
           cpus: '0.5'
           memory: 512M
 
-  # ==================== Python Workflow Engine (Python 数据处理工作流引擎) ====================
+  # ==================== GeoPython Workflow Engine (Python 数据处理工作流引擎) ====================
 
   python-workflow-engine:
     build:
@@ -1096,6 +1096,38 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
+
+  # ==================== SuperMap Workflow Engine（超图工作流引擎） ====================
+
+  supermap-workflow-engine:
+    image: ${REGISTRY:-localhost:5001}/addp-supermap-workflow-engine:${IMAGE_TAG:-latest}
+    container_name: supermap-workflow-engine
+    platform: ${SUPERMAP_WORKFLOW_PLATFORM:-linux/arm64}
+    environment:
+      - PORT=8103
+      - SUPERMAP_OBJECTSJAVA_BIN=/opt/supermap/objectsjava/bin_linux_arm64
+      - SUPERMAP_GPA_LIB_DIR=/opt/supermap/gpa/libs
+      - SYSTEM_URL=http://system-backend:8180
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "8103:8103"
+    volumes:
+      - ./logs:/app/logs
+      - ${SUPERMAP_OUTPUT_HOST_PATH:-/tmp/supermap-out}:/tmp/supermap-out
+      - ${SUPERMAP_DATA_HOST_PATH:-./business/nfs/data}:/mnt/supermap/data:ro
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8103/health | grep -q '\"status\":\"healthy\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
 
   spark-workflow-engine:
     build:

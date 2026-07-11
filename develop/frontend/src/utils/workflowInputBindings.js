@@ -15,6 +15,10 @@ const WORKFLOW_INPUT_NAMES = new Set([
 ])
 
 const normalizeType = (value) => String(value || '').trim().toLowerCase()
+export function isPublicWorkflowParameter(parameter) {
+  if (!parameter || typeof parameter.name !== 'string') return false
+  return parameter.type !== 'ui' && parameter.param_type !== 'ui'
+}
 
 const isReferenceValue = (value) => (
   value &&
@@ -46,6 +50,7 @@ export function areWorkflowTypesCompatible(sourceType, parameterType) {
 
 function findInputParameter(parameters, sourceType, usedNames, currentParams) {
   const candidates = parameters.filter(param => (
+    isPublicWorkflowParameter(param) &&
     param &&
     typeof param.name === 'string' &&
     !usedNames.has(param.name) &&

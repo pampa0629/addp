@@ -33,7 +33,7 @@ servers:
     variables:
       port:
         default: '8089'
-        description: 引擎服务端口，例如 Math Workflow 8089、Spark Workflow 8098、Python Workflow 8099
+        description: 引擎服务端口，例如 Math Workflow 8089、Spark Workflow 8098、GeoPython Workflow 8099
   - url: http://{host}:{port}
     description: 自定义环境
     variables:
@@ -344,7 +344,7 @@ components:
         engine_type:
           type: string
           description: 工作流运行时引擎类型
-          example: python_workflow
+          example: geopython_workflow
         type:
           type: string
           description: 算子类型，可用于区分 spatial、non_spatial、general 等运行时内部类型；不得用作 ADDP 业务模块。

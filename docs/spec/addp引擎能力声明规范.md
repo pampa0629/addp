@@ -22,6 +22,8 @@ engine.capabilities/v1
 - `compute.query`、`compute.workflow`、`compute.script` 是计算能力事实源，取代旧版 `dev_modes` 字符串数组；开发界面可以由这些能力派生，但不得再把 `dev_modes` 作为能力声明事实源。
 - 没有明确模块消费价值的字段不进入核心声明；后续有真实调用方时再扩展。
 - `extensions` 只承载引擎特有补充信息，不得替代核心字段。
+- `extensions.spatial_workspaces` 只承载数据库实例中可识别的厂商空间工作区事实，如 SuperMap `sdx+` 或 ArcGIS `sde`；这一层用于 System 自动探测和高危启用收口，不是核心 Provider 能力。
+- `extensions.spatial_workspaces[].can_enable` 只表示实例在当前条件下具备被显性启用的可能性；是否真的执行启用动作，由 System 的高危操作入口统一触发，不由前端或业务模块直接改写能力 JSON。
 
 能力详情页不得直接平铺原始 JSON 字段。System 后端应生成 `capabilities_view` 供前端渲染；完整 JSON 仅作为技术查看入口保留。
 
@@ -153,7 +155,7 @@ type CatalogCapability struct {
 | `real_time` | 目录是否来自真实引擎实时查询，而不是平台扫描快照。 | 声明 catalog 时必须保留。 |
 | `supports_search` | catalog 浏览是否支持搜索。 | 可选，有 Provider 和调用方时声明。 |
 | `supports_filter` | catalog 浏览是否支持过滤。 | 可选，有 Provider 和调用方时声明。 |
-| `system_filtering` | 是否能过滤系统库、系统 schema 等噪声。 | 数据库类引擎建议声明。 |
+| `system_filtering` | 是否能过滤系统库、系统 schema、实例已识别的厂商系统表等噪声。 | 数据库类引擎建议声明。 |
 | `node_kinds` | catalog 可能返回的节点类型集合。 | 建议声明。 |
 
 ### 3.3 CatalogFactsCapability
@@ -316,7 +318,7 @@ type WorkflowCapability struct {
 
 `dynamic_operators=true` 表示调用方可以通过 Provider 动态发现算子。它不是“已有算子列表”的缓存，也不是某个模块对该引擎的适配状态。
 
-当手动注册的扩展运行时声明 `compute.workflow.supported=true` 且 `runtime_api="addp.workflow/v1"` 时，System 保存前必须按该协议做只读探测：`GET /health` 验证运行时可达，`GET /api/operators` 验证算子列表结构，并校验返回算子的 `engine_type` 与注册的引擎类型一致。该探测由能力声明触发，不得依赖 `python_workflow`、`spark_workflow`、`math_workflow` 等具体内置类型名称；Math Workflow 参考实现也走同一路径。
+当手动注册的扩展运行时声明 `compute.workflow.supported=true` 且 `runtime_api="addp.workflow/v1"` 时，System 保存前必须按该协议做只读探测：`GET /health` 验证运行时可达，`GET /api/operators` 验证算子列表结构，并校验返回算子的 `engine_type` 与注册的引擎类型一致。该探测由能力声明触发，不得依赖 `geopython_workflow`、`spark_workflow`、`math_workflow` 等具体内置类型名称；Math Workflow 参考实现也走同一路径。
 
 ### 4.3 ScriptCapability
 

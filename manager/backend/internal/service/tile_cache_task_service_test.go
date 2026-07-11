@@ -120,6 +120,32 @@ func TestTileCacheTaskCreateNormalizesTargetIdentity(t *testing.T) {
 	}
 }
 
+func TestTileCacheTaskCreateRejectsDuplicateTargetAndFormat(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
+	taskSvc := NewTileCacheTaskService(tileCacheRepo, nil)
+
+	first := newTileCacheTaskDefinition()
+	if err := taskSvc.Create(context.Background(), first); err != nil {
+		t.Fatalf("create first tile cache task: %v", err)
+	}
+
+	duplicate := newTileCacheTaskDefinition()
+	duplicate.Name = "重复瓦片缓存生成"
+	err := taskSvc.Create(context.Background(), duplicate)
+	if err == nil || !strings.Contains(err.Error(), "已存在 mvt 瓦片缓存任务") {
+		t.Fatalf("create duplicate error = %v, want duplicate target error", err)
+	}
+
+	if err := tileCacheRepo.DeleteTask(context.Background(), first.ID, first.TenantID); err != nil {
+		t.Fatalf("delete first tile cache task: %v", err)
+	}
+	recreated := newTileCacheTaskDefinition()
+	if err := taskSvc.Create(context.Background(), recreated); err != nil {
+		t.Fatalf("create tile cache task after deleting duplicate: %v", err)
+	}
+}
+
 func TestTileCacheTaskCreateNormalizesFileTargetIdentity(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	tileCacheRepo := repository.NewTileCacheRepository(db)

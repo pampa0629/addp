@@ -22,6 +22,8 @@ REQUIRED_OPERATOR_FIELDS = {
 }
 
 ALLOWED_EXECUTION_MODES = {"workflow", "direct"}
+ALLOWED_PARAM_TYPES = {"input", "output", "param"}
+PUBLIC_RESOURCE_PARAMETER_NAMES = {"locator", "target_parent_locator", "target_name"}
 
 
 def validate_operator_metadata_contract(
@@ -126,6 +128,7 @@ def _validate_operator(
 
 
 def _validate_parameters(label: str, parameters: list[Any], errors: list[str]) -> None:
+    seen_names: set[str] = set()
     for index, parameter in enumerate(parameters):
         prefix = f"{label}: parameters[{index}]"
         if not isinstance(parameter, dict):
@@ -135,8 +138,21 @@ def _validate_parameters(label: str, parameters: list[Any], errors: list[str]) -
         for field in ("name", "type", "description"):
             if not _text(parameter.get(field)):
                 errors.append(f"{prefix}.{field} must be a non-empty string")
+        parameter_name = _text(parameter.get("name"))
+        if parameter_name:
+            if parameter_name in seen_names:
+                errors.append(f"{prefix}: duplicate parameter name {parameter_name}")
+            seen_names.add(parameter_name)
+        if parameter.get("name") in PUBLIC_RESOURCE_PARAMETER_NAMES:
+            errors.append(f"{prefix}: public resource parameter is not allowed in Runtime Operator Spec")
+        if parameter.get("ui_type") == "resource_tree_picker":
+            errors.append(f"{prefix}: resource_tree_picker is not allowed in Runtime Operator Spec")
         if "required" not in parameter or not isinstance(parameter.get("required"), bool):
             errors.append(f"{prefix}.required must be boolean")
+        if "param_type" in parameter:
+            param_type = parameter.get("param_type")
+            if param_type not in ALLOWED_PARAM_TYPES:
+                errors.append(f"{prefix}.param_type must be one of {sorted(ALLOWED_PARAM_TYPES)}")
 
 
 def _validate_output_ports(label: str, output_ports: list[Any], errors: list[str]) -> None:
@@ -175,7 +191,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--engine-type",
-        help="Expected operator engine_type, such as python_workflow or spark_workflow.",
+        help="Expected operator engine_type, such as geopython_workflow or spark_workflow.",
     )
     args = parser.parse_args(argv)
 

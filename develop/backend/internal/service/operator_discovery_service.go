@@ -17,6 +17,11 @@ type OperatorDiscoveryService struct {
 	listWorkflowOperators func(context.Context, *commonModels.Engine) ([]commonModels.OperatorDescriptor, error)
 }
 
+type PublicOperatorDescriptor struct {
+	commonModels.OperatorDescriptor
+	PublicParameters []commonModels.ParameterDescriptor `json:"public_parameters"`
+}
+
 // NewOperatorDiscoveryService 创建算子发现服务
 func NewOperatorDiscoveryService(systemClient *commonClient.SystemClient) *OperatorDiscoveryService {
 	return &OperatorDiscoveryService{
@@ -26,7 +31,7 @@ func NewOperatorDiscoveryService(systemClient *commonClient.SystemClient) *Opera
 }
 
 // GetOperatorsByWorkflowEngineID 根据具体工作流运行时引擎实例获取算子。
-func (s *OperatorDiscoveryService) GetOperatorsByWorkflowEngineID(ctx context.Context, workflowEngineID uint) ([]commonModels.OperatorDescriptor, error) {
+func (s *OperatorDiscoveryService) GetOperatorsByWorkflowEngineID(ctx context.Context, workflowEngineID uint) ([]PublicOperatorDescriptor, error) {
 	if workflowEngineID == 0 {
 		return nil, fmt.Errorf("workflow_engine_id 必须大于 0")
 	}
@@ -50,7 +55,69 @@ func (s *OperatorDiscoveryService) GetOperatorsByWorkflowEngineID(ctx context.Co
 		return nil, fmt.Errorf("引擎 %s 获取算子失败: %w", engine.Name, err)
 	}
 
-	return workflowCapableOperators(operators), nil
+	workflowOperators := workflowCapableOperators(operators)
+	if err := validateWorkflowOperatorContracts(engine.EngineType, workflowOperators); err != nil {
+		return nil, err
+	}
+	return publicWorkflowOperators(engine.EngineType, workflowOperators), nil
+}
+
+func validateWorkflowOperatorContracts(engineType string, operators []commonModels.OperatorDescriptor) error {
+	for _, operator := range operators {
+		parameterNames := make(map[string]struct{}, len(operator.Parameters))
+		for _, parameter := range operator.Parameters {
+			if _, duplicated := parameterNames[parameter.Name]; duplicated {
+				return fmt.Errorf("workflow engine %s operator %s 的 Runtime Operator Spec 重复声明参数 %s", engineType, operator.ID, parameter.Name)
+			}
+			if parameter.UIType == "resource_tree_picker" || parameter.ParamType == "ui" {
+				return fmt.Errorf("workflow engine %s operator %s 的 Runtime Operator Spec 不允许包含 UI 参数 %s", engineType, operator.ID, parameter.Name)
+			}
+			switch parameter.Name {
+			case "locator", "target_parent_locator", "target_name":
+				return fmt.Errorf("workflow engine %s operator %s 的 Runtime Operator Spec 不允许包含公开资源参数 %s", engineType, operator.ID, parameter.Name)
+			}
+			parameterNames[parameter.Name] = struct{}{}
+		}
+
+		adapterSpec, hasAdapterSpec := workflowOperatorAdapterSpecFor(engineType, operator.ID)
+		if !hasAdapterSpec {
+			continue
+		}
+		for runtimeParam := range workflowAdapterRuntimeParams(adapterSpec) {
+			if runtimeParam == "engine_id" {
+				continue
+			}
+			if _, ok := parameterNames[runtimeParam]; !ok {
+				return fmt.Errorf("workflow engine %s operator %s 缺少 adapter spec 声明的运行时参数 %s", engineType, operator.ID, runtimeParam)
+			}
+		}
+	}
+	return nil
+}
+
+func publicWorkflowOperators(engineType string, operators []commonModels.OperatorDescriptor) []PublicOperatorDescriptor {
+	result := make([]PublicOperatorDescriptor, 0, len(operators))
+	for _, operator := range operators {
+		result = append(result, PublicOperatorDescriptor{
+			OperatorDescriptor: operator,
+			PublicParameters:   publicOperatorParameters(engineType, operator),
+		})
+	}
+	return result
+}
+
+func publicOperatorParameters(engineType string, operator commonModels.OperatorDescriptor) []commonModels.ParameterDescriptor {
+	adapterSpec, _ := workflowOperatorAdapterSpecFor(engineType, operator.ID)
+	runtimeParams := workflowAdapterRuntimeParams(adapterSpec)
+	result := make([]commonModels.ParameterDescriptor, 0, len(operator.Parameters)+len(adapterSpec.PublicParameters))
+	for _, parameter := range operator.Parameters {
+		if _, internal := runtimeParams[parameter.Name]; internal {
+			continue
+		}
+		result = append(result, parameter)
+	}
+	result = append(result, adapterSpec.PublicParameters...)
+	return result
 }
 
 func workflowCapableOperators(operators []commonModels.OperatorDescriptor) []commonModels.OperatorDescriptor {

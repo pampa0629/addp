@@ -39,7 +39,7 @@ bash scripts/dev/start.sh
 
 自动启动以下内容:
 1. 基础设施 (如未运行)
-2. 所有后端服务 (System、Manager、Meta、Transfer、Orchestrator、Develop、Python Workflow Engine、Model3D Workflow Engine、PointCloud Workflow Engine)
+2. 所有后端服务 (System、Manager、Meta、Transfer、Orchestrator、Develop、GeoPython Workflow Engine、Model3D Workflow Engine、PointCloud Workflow Engine)
 3. Gateway 服务
 4. 所有前端服务 (可选,提示用户)
 
@@ -61,6 +61,15 @@ bash scripts/dev/restart.sh -transfer
 ```
 
 单模块开发时，脚本会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。Meta 用于资源树、元数据扫描和跨模块通用元数据能力。模块自身如有额外依赖，例如 Manager 依赖 Transfer、Model3D Workflow Engine 和 PointCloud Workflow Engine，Develop 依赖 Python/Math/Spark Workflow Engine 和 Jupyter，会在此基础上继续启动。
+
+SuperMap Workflow Engine 依赖宿主机私有 SuperMap iObjects Java Bin、GPA/SPS libs 和许可文件，默认全量启动和 `restart.sh -all` 会一并启动。使用全量启动前需先把许可文件放入 SuperMap Bin 目录，并配置 SDK / GPA libs 挂载路径；单独验证超图算子时也可以显式启动：
+
+```bash
+SUPERMAP_OBJECTSJAVA_BIN_HOST=/path/to/sup_iobjectsjava/Bin \
+SUPERMAP_GPA_LIB_DIR_HOST=/path/to/scp-dc-scheduler/scheduler/gpa/libs \
+SUPERMAP_DATA_HOST_PATH=/path/to/supermap/data \
+bash scripts/dev/start.sh -supermap-workflow
+```
 
 ### 第三步: 构建模式 (用于 Docker 镜像构建)
 
@@ -102,6 +111,17 @@ POINTCLOUD_WORK_HOST_PATH=./data/pointcloud-work
 
 点云 COPC artifact 统一使用 ADDP infra MinIO 配置，不单独配置 `pointcloud_workflow` 专用 MinIO endpoint。Docker Compose 部署时，Manager 与 `pointcloud-workflow-engine` 同在 Compose 网络内，统一使用 infra MinIO 的 `minio:9000`；macOS 本机开发时，PointCloud Workflow 容器通过 `host.docker.internal:${MINIO_API_PORT:-19000}` 访问宿主机 infra MinIO。
 
+`supermap-workflow-engine` 使用 Docker runtime 承载 Linux arm64 SuperMap SDK，不依赖宿主机 Linux OS。开发脚本只负责挂载本机 SDK / GPA libs 并启动运行时，不复制 SDK、native `.so` 或许可到仓库。可选变量：
+
+```bash
+SUPERMAP_WORKFLOW_PORT=8103
+SUPERMAP_OBJECTSJAVA_BIN_HOST=/path/to/sup_iobjectsjava/Bin
+SUPERMAP_GPA_LIB_DIR_HOST=/path/to/gpa/libs
+SUPERMAP_DATA_HOST_PATH=/path/to/supermap/data
+SUPERMAP_OUTPUT_HOST_PATH=/tmp/supermap-out
+SUPERMAP_WORKFLOW_REBUILD=1  # 修改 engines/supermap-workflow 源码后强制重建镜像
+```
+
 ### 第四步: 本地 Docker Compose 模式
 
 ```bash
@@ -128,7 +148,7 @@ bash scripts/prod/start.sh
 
 1. **启动基础设施** (PostgreSQL、Redis、MinIO、Meilisearch)
 2. **启动 System Backend** (其他服务依赖它)
-3. **启动业务后端** (Manager、Meta、Transfer、Orchestrator、Develop、Python Workflow Engine、Model3D Workflow Engine、PointCloud Workflow Engine、Gateway)
+3. **启动业务后端** (Manager、Meta、Transfer、Orchestrator、Develop、GeoPython Workflow Engine、Model3D Workflow Engine、PointCloud Workflow Engine、SuperMap Workflow Engine、Gateway)
 4. **启动前端服务** (所有模块前端 + Console + Nginx)
 5. **健康检查** (验证所有服务就绪)
 

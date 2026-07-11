@@ -14,7 +14,7 @@ async def _test_list_engines_decodes_paginated_response():
         assert request.url.path == "/api/v1/system/engines"
         assert request.url.params["tenant_id"] == "7"
         return httpx.Response(200, json={
-            "data": [{"id": 1, "name": "Python Workflow"}],
+            "data": [{"id": 1, "name": "GeoPython Workflow"}],
             "total": 1,
             "page": 1,
             "page_size": 10,
@@ -32,7 +32,7 @@ async def _test_list_engines_decodes_paginated_response():
     finally:
         await client.close()
 
-    assert engines == [{"id": 1, "name": "Python Workflow"}]
+    assert engines == [{"id": 1, "name": "GeoPython Workflow"}]
 
 
 def test_list_engines_rejects_legacy_response_shape():
@@ -94,13 +94,13 @@ async def _test_get_workflow_engines_filters_active_v1_workflow_engines():
             "data": [
                 {
                     "id": 1,
-                    "name": "Python Workflow",
-                    "engine_type": "python_workflow",
+                    "name": "GeoPython Workflow",
+                    "engine_type": "geopython_workflow",
                     "is_active": True,
                     "connection_status": "online",
                     "capabilities": {
                         "schema_version": "engine.capabilities/v1",
-                        "engine_type": "python_workflow",
+                        "engine_type": "geopython_workflow",
                         "engine_family": "workflow",
                         "compute": {
                             "workflow": {
@@ -145,8 +145,8 @@ async def _test_get_workflow_engines_filters_active_v1_workflow_engines():
 
     assert engines == [{
         "id": 1,
-        "name": "Python Workflow",
-        "engine_type": "python_workflow",
+        "name": "GeoPython Workflow",
+        "engine_type": "geopython_workflow",
         "is_active": True,
         "connection_status": "online",
     }]
@@ -155,7 +155,7 @@ async def _test_get_workflow_engines_filters_active_v1_workflow_engines():
 def test_supports_workflow_uses_structured_compute_schema():
     capabilities = {
         "schema_version": "engine.capabilities/v1",
-        "engine_type": "python_workflow",
+        "engine_type": "geopython_workflow",
         "engine_family": "workflow",
         "compute": {
             "workflow": {

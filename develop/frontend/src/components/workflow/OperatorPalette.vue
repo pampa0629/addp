@@ -120,7 +120,7 @@ const categoryIcons = {
   '聚合分析': '📊',
   'SQL查询': '🔎',
 
-  // Python Workflow 特有分类
+  // GeoPython Workflow 特有分类
   '几何处理': '📐',
   '空间关系': '🔗',
   '几何属性': '📏',
@@ -188,9 +188,9 @@ const categorizedOperators = computed(() => {
       }
     }
 
-    // 将 parameters 数组转换为工具提示使用的参数说明。
+    // 工具提示和画布只消费 Develop 聚合的 Public Operator Spec。
     const params = {}
-    op.parameters.forEach(param => {
+    op.public_parameters.forEach(param => {
       params[param.name] = param.description || t('develop.operatorPalette.paramDesc', { name: param.name })
     })
 
@@ -201,7 +201,7 @@ const categorizedOperators = computed(() => {
       params: params,
       category: categoryName,
       categoryPath,
-      parameters: op.parameters,
+      publicParameters: op.public_parameters,
       outputPorts: op.output_ports
     })
   })
@@ -246,7 +246,7 @@ const handleDragStart = (event, operator) => {
     name: operator.name,
     description: operator.description,
     params: operator.params,
-    parameters: operator.parameters,
+    publicParameters: operator.publicParameters,
     output_ports: operator.outputPorts
   }))
   emit('operator-drag', operator)

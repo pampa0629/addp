@@ -1,16 +1,17 @@
 # ADDP 计算引擎开发指南
 
-本目录集中管理 ADDP 工作流和 Notebook 运行时。Python Workflow、Spark Workflow、Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理专用运行时。
+本目录集中管理 ADDP 工作流和 Notebook 运行时。GeoPython Workflow、Spark Workflow、Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理专用运行时；SuperMap Workflow 是面向超图 iObjects Java / SPS 的工作流运行时。
 
 ## 目录结构
 
 ```
 engines/
-├── python-workflow/    # Python Workflow 空间与数据处理工作流引擎，默认端口 8099
+├── python-workflow/    # GeoPython Workflow 空间与数据处理工作流引擎，默认端口 8099
 ├── spark-workflow/     # Spark Workflow 分布式工作流引擎，默认端口 8098
 ├── math-workflow/      # Math Workflow 数学工作流参考实现，默认端口 8089
 ├── model3d-workflow/   # Model3D Workflow 三维模型转换运行时，默认端口 8101
 ├── pointcloud-workflow/ # PointCloud Workflow 点云处理运行时，默认端口 8102
+├── supermap-workflow/  # SuperMap Workflow 超图 SPS 工作流运行时，默认端口 8103
 ├── jupyter/            # Jupyter Notebook / Lab 运行时，API 默认端口 8097
 └── docs/               # 引擎 API 与设计文档
 ```
@@ -22,11 +23,12 @@ engines/
 通过 `EnginePlugin + WorkflowRuntimeProvider` 纳入统一引擎体系，能力声明为 `compute.workflow.supported=true`。
 
 **已有引擎**：
-- `python_workflow` - Python Workflow 引擎，适合中小规模空间与数据处理。
+- `geopython_workflow` - GeoPython Workflow 引擎，适合中小规模空间与数据处理。
 - `spark_workflow` - Spark Workflow 引擎，适合分布式计算。
 - `math_workflow` - Math Workflow 参考实现，开发环境可自动启动服务但不会自动注册；需要使用时在 System 引擎管理中按扩展引擎手动注册。
 - `model3d_workflow` - Model3D Workflow 三维模型转换运行时，提供 `osgb_to_glb` 和 `osgb_scene_to_3dtiles` direct 算子；开发环境启动时会自注册到 System，实际转换需通过 `MODEL3D_CONVERTER_BIN` 配置引擎部署内的 `_3dtile` 或等价转换器可执行文件路径。
 - `pointcloud_workflow` - PointCloud Workflow 点云处理运行时，提供 `las_to_copc`、`laz_to_copc`、`e57_to_copc`、`pcd_to_copc` 和 `xyz_to_copc` direct 算子；绑定 engine runtime 内部 PDAL 后会自注册到 System，实际转换通过 `POINTCLOUD_PDAL_BIN` 指向引擎部署内的 PDAL 可执行文件路径，不依赖宿主机全局 PDAL。Manager 负责派生源 URI 和 Manager infra MinIO 发布计划，运行时通过 PDAL 读取源 URI，先写入受控工作目录，再发布为 Manager 私有 COPC artifact。
+- `supermap_workflow` - SuperMap Workflow 超图工作流运行时，通过 Docker 绑定 SuperMap iObjects Java / SPS 组件，把 ADDP `workflow_def` 编译为 SPS `IWorkflow` 后一次性执行 DAG；同一 JVM 内优先用 SPS `IDataItem` 传递 Java 内存对象，HTTP 边界只返回摘要、资产引用和血缘事件。SuperMap SDK 与许可不进入 ADDP 仓库。
 
 ### 脚本 / Notebook 运行时
 
@@ -53,7 +55,7 @@ GET /api/operators
       "id": "buffer",
       "name": "buffer",
       "display_name": "缓冲区分析",
-      "engine_type": "python_workflow",
+      "engine_type": "geopython_workflow",
       "category": "空间分析",
       "category_path": ["空间分析"],
       "description": "对几何对象生成缓冲区",
@@ -135,8 +137,8 @@ GET /health
 **注册数据格式**:
 ```json
 {
-  "engine_type": "python_workflow",
-  "name": "Python Workflow 工作流引擎",
+  "engine_type": "geopython_workflow",
+  "name": "GeoPython 工作流引擎",
   "description": "基于 Python 的工作流执行引擎",
   "connection_info": {
     "protocol": "http",
@@ -163,10 +165,11 @@ Math Workflow 是参考实现，随 `scripts/dev/start.sh -all` / `-develop` 启
 ## 参考实现
 
 - **Math Workflow Engine**: [math-workflow](./math-workflow/) - 最小工作流参考实现，手动注册示例。
-- **Python Workflow Engine**: [python-workflow](./python-workflow/) - Python 数据处理工作流实现。
+- **GeoPython Workflow Engine**: [python-workflow](./python-workflow/) - Python 数据处理工作流实现。
 - **Spark Workflow Engine**: [spark-workflow](./spark-workflow/) - Spark / Sedona 工作流实现。
 - **Model3D Workflow Engine**: [model3d-workflow](./model3d-workflow/) - OSGB 快显和 OSGB Scene 转 3D Tiles 三维模型转换运行时。
 - **PointCloud Workflow Engine**: [pointcloud-workflow](./pointcloud-workflow/) - LAS / LAZ / E57 / PCD / XYZ 转 COPC 点云快显转换运行时。
+- **SuperMap Workflow Engine**: [supermap-workflow](./supermap-workflow/) - 超图 iObjects Java / SPS 工作流运行时。
 
 ## 相关文档
 

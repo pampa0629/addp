@@ -186,7 +186,7 @@ sequenceDiagram
 
 ### 引擎实例与扩展性
 
-工作流引擎是 ADDP 扩展引擎的一种。内置的 Python Workflow、Spark Workflow、Math Workflow 与用户动态注册的工作流引擎都通过 System 引擎实例进入体系；只要实例具备 `compute.workflow` 能力，Develop 和 Copilot 就通过同一条 `workflow_engine_id` 路径消费它的算子。
+工作流引擎是 ADDP 扩展引擎的一种。内置的 GeoPython Workflow、Spark Workflow、Math Workflow 与用户动态注册的工作流引擎都通过 System 引擎实例进入体系；只要实例具备 `compute.workflow` 能力，Develop 和 Copilot 就通过同一条 `workflow_engine_id` 路径消费它的算子。
 
 ### 引擎选择与运行时绑定
 
@@ -224,7 +224,7 @@ Develop前端（用户选择引擎）
   "display_name": "缓冲区分析",
   "category": "空间分析",
   "category_path": ["空间分析"],
-  "engine_type": "python_workflow",
+  "engine_type": "geopython_workflow",
   "brief_description": "对几何对象生成指定距离的缓冲区",
   "detailed_description": "...",
   "parameters": [

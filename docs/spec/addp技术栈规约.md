@@ -9,7 +9,7 @@
 - **缓存/队列**: Redis 7
 - **对象存储**: MinIO (兼容 S3)
 - **任务队列**: Asynq (基于 Redis,用于 Transfer 模块), Cron (用于 Meta 模块调度)
-- **空间计算**: Python Workflow Engine (基于 Python 的空间工作流执行引擎,内存 GeoDataFrame 处理)
+- **空间计算**: GeoPython Workflow Engine (基于 Python 的空间工作流执行引擎,内存 GeoDataFrame 处理)
 
 ### Go 依赖版本规范
 

@@ -399,6 +399,9 @@ func (s *TileCacheTaskService) Create(ctx context.Context, task *models.TileCach
 	if err := normalizeTileCacheTask(task); err != nil {
 		return err
 	}
+	if err := s.ensureUniqueTileCacheTaskTarget(ctx, task, 0); err != nil {
+		return err
+	}
 	return s.tileCacheRepo.CreateTask(ctx, task)
 }
 
@@ -412,6 +415,9 @@ func (s *TileCacheTaskService) List(ctx context.Context, tenantID uint, page, pa
 
 func (s *TileCacheTaskService) Update(ctx context.Context, task *models.TileCacheTask) error {
 	if err := normalizeTileCacheTask(task); err != nil {
+		return err
+	}
+	if err := s.ensureUniqueTileCacheTaskTarget(ctx, task, task.ID); err != nil {
 		return err
 	}
 	return s.tileCacheRepo.UpdateTask(ctx, task)
@@ -1117,6 +1123,29 @@ func normalizeTileCacheTask(task *models.TileCacheTask) error {
 		return fmt.Errorf("calculate tile cache task next_run_at: %w", err)
 	}
 	task.NextRunAt = &nextRunAt
+	return nil
+}
+
+func (s *TileCacheTaskService) ensureUniqueTileCacheTaskTarget(ctx context.Context, task *models.TileCacheTask, excludeTaskID uint) error {
+	if s == nil || s.tileCacheRepo == nil || task == nil {
+		return nil
+	}
+	identity, err := readTileCacheTaskTargetIdentity(task.Config)
+	if err != nil {
+		return err
+	}
+	tile, _ := asJSONMap(task.Config["tile"])
+	format := strings.ToLower(stringFromConfig(tile["format"]))
+	if format == "" {
+		format = "mvt"
+	}
+	existing, err := s.tileCacheRepo.GetTaskByTargetFingerprintAndFormat(ctx, task.TenantID, identity.ItemFingerprint, format, excludeTaskID)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		return fmt.Errorf("该数据项已存在 %s 瓦片缓存任务：%s", format, existing.Name)
+	}
 	return nil
 }
 

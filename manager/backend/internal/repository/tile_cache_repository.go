@@ -47,6 +47,30 @@ func (r *TileCacheRepository) GetTileCacheTaskByID(ctx context.Context, id uint)
 	return &task, err
 }
 
+func (r *TileCacheRepository) GetTaskByTargetFingerprintAndFormat(ctx context.Context, tenantID uint, itemFingerprint, tileFormat string, excludeTaskID uint) (*models.TileCacheTask, error) {
+	itemFingerprint = strings.TrimSpace(itemFingerprint)
+	tileFormat = strings.TrimSpace(strings.ToLower(tileFormat))
+	if itemFingerprint == "" || tileFormat == "" {
+		return nil, nil
+	}
+	query := r.db.WithContext(ctx).
+		Where(
+			"tenant_id = ? AND config -> 'target' ->> 'item_fingerprint' = ? AND LOWER(COALESCE(config -> 'tile' ->> 'format', 'mvt')) = ?",
+			tenantID,
+			itemFingerprint,
+			tileFormat,
+		)
+	if excludeTaskID > 0 {
+		query = query.Where("id <> ?", excludeTaskID)
+	}
+	var task models.TileCacheTask
+	err := query.Order("updated_at DESC, id DESC").First(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &task, err
+}
+
 func (r *TileCacheRepository) ListTasks(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.TileCacheTask, int64, error) {
 	query := r.db.WithContext(ctx).Model(&models.TileCacheTask{}).Where("tenant_id = ?", tenantID)
 

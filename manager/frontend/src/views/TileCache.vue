@@ -60,7 +60,15 @@
                     {{ t('manager.tileCache.monitor') }}
                   </el-button>
                   <el-button size="small" @click="showTaskDetail(row)">{{ t('manager.tileCache.detail') }}</el-button>
-                  <el-button size="small" type="danger" @click="deleteTask(row)">{{ t('manager.tileCache.delete') }}</el-button>
+                  <el-button
+                    size="small"
+                    type="danger"
+                    :loading="isDeletingTask(row.id)"
+                    :disabled="isDeletingTask(row.id)"
+                    @click="deleteTask(row)"
+                  >
+                    {{ t('manager.tileCache.delete') }}
+                  </el-button>
                 </div>
               </template>
             </el-table-column>
@@ -127,7 +135,15 @@
                   <el-button size="small" :disabled="!row.last_execution_id" @click="openResultExecution(row)">
                     {{ t('manager.tileCache.monitor') }}
                   </el-button>
-                  <el-button size="small" type="danger" @click="deleteResult(row)">{{ t('manager.tileCache.delete') }}</el-button>
+                  <el-button
+                    size="small"
+                    type="danger"
+                    :loading="isDeletingResult(row.id)"
+                    :disabled="isDeletingResult(row.id)"
+                    @click="deleteResult(row)"
+                  >
+                    {{ t('manager.tileCache.delete') }}
+                  </el-button>
                 </div>
               </template>
             </el-table-column>
@@ -455,6 +471,7 @@ const tasksPage = ref(1)
 const tasksPageSize = ref(20)
 const tasksTotal = ref(0)
 const executingId = ref(null)
+const deletingTaskIds = ref(new Set())
 const engineOptions = ref([])
 const resourceTreeData = ref([])
 const resourceExpandedKeys = ref([])
@@ -466,6 +483,7 @@ const resultsLoading = ref(false)
 const resultsPage = ref(1)
 const resultsPageSize = ref(20)
 const resultsTotal = ref(0)
+const deletingResultIds = ref(new Set())
 const resultFilters = reactive({ item_id: undefined, item_fingerprint: '', task_id: undefined, status: '', q: '' })
 const resultStatuses = ['generating', 'ready', 'failed', 'cancelled', 'deleted']
 const selectedResultTask = ref(null)
@@ -491,7 +509,6 @@ const tileCacheOptimizationAdvice = reactive({
 })
 const geometryColumnOptions = ref([])
 const selectedSourceNode = ref(null)
-const databaseEngineTypes = new Set(['postgresql', 'postgres', 'postgis'])
 const routeSourceLocked = computed(() => !!route.query.locator)
 const sourceSelectionLocked = computed(() => {
   return !!editingId.value || routeSourceLocked.value
@@ -585,7 +602,7 @@ const loadEngines = async (force = false) => {
   }
   try {
     const response = await client.get('/manager/engines')
-    engineOptions.value = (response.data || []).filter((engine) => databaseEngineTypes.has(String(engine.engine_type || '').toLowerCase()))
+    engineOptions.value = (response.data || []).filter((engine) => engine?.is_active !== false)
     return engineOptions.value
   } catch (error) {
     console.error('加载引擎列表失败:', error)
@@ -1163,16 +1180,59 @@ const loadResultTaskFilterFromRoute = async () => {
 
 const deleteTask = async (task) => {
   await ElMessageBox.confirm(t('manager.tileCache.deleteTaskConfirm'), t('manager.tileCache.delete'), { type: 'warning' })
-  await client.delete(`/manager/vector_tile_cache_tasks/${task.id}`)
-  ElMessage.success(t('manager.tileCache.deleteSuccess'))
-  await loadTasks()
+  setDeletingTask(task.id, true)
+  try {
+    await client.delete(`/manager/vector_tile_cache_tasks/${task.id}`)
+    ElMessage.success(t('manager.tileCache.deleteSuccess'))
+    await loadTasks()
+  } catch (error) {
+    console.error('删除瓦片缓存任务失败:', error)
+    ElMessage.error(deleteErrorMessage(error))
+  } finally {
+    setDeletingTask(task.id, false)
+  }
 }
 
 const deleteResult = async (result) => {
   await ElMessageBox.confirm(t('manager.tileCache.deleteResultConfirm'), t('manager.tileCache.delete'), { type: 'warning' })
-  await client.delete(`/manager/vector_tile_cache/${result.id}`)
-  ElMessage.success(t('manager.tileCache.deleteSuccess'))
-  await loadResults()
+  setDeletingResult(result.id, true)
+  try {
+    await client.delete(`/manager/vector_tile_cache/${result.id}`)
+    ElMessage.success(t('manager.tileCache.deleteSuccess'))
+    await loadResults()
+  } catch (error) {
+    console.error('删除瓦片缓存结果失败:', error)
+    ElMessage.error(deleteErrorMessage(error))
+  } finally {
+    setDeletingResult(result.id, false)
+  }
+}
+
+const setDeletingTask = (id, deleting) => {
+  const next = new Set(deletingTaskIds.value)
+  if (deleting) {
+    next.add(id)
+  } else {
+    next.delete(id)
+  }
+  deletingTaskIds.value = next
+}
+
+const setDeletingResult = (id, deleting) => {
+  const next = new Set(deletingResultIds.value)
+  if (deleting) {
+    next.add(id)
+  } else {
+    next.delete(id)
+  }
+  deletingResultIds.value = next
+}
+
+const isDeletingTask = (id) => deletingTaskIds.value.has(id)
+const isDeletingResult = (id) => deletingResultIds.value.has(id)
+
+const deleteErrorMessage = (error) => {
+  return error?.response?.data?.error || error?.message || t('manager.tileCache.deleteFailed')
 }
 
 const loadTaskExecutionDetail = async (task) => {

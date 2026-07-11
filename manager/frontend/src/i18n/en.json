@@ -251,6 +251,7 @@
       "createSuccess": "Tile cache task created",
       "updateSuccess": "Tile cache task updated",
       "deleteSuccess": "Deleted",
+      "deleteFailed": "Delete failed",
       "deleteTaskConfirm": "Delete this tile cache task?",
       "deleteResultConfirm": "Delete this tile cache result?",
       "executeSubmitted": "Execution submitted, opening monitor",

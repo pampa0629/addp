@@ -698,7 +698,7 @@ func TestEngineIcon(t *testing.T) {
 		{engineType: "MongoDB", want: "DocumentText"},
 		{engineType: "minio", want: "FolderOpen"},
 		{engineType: "acme_geo_workflow", caps: &workflowCapabilities, want: "Grid"},
-		{engineType: "python_workflow", want: "Database"},
+		{engineType: "geopython_workflow", want: "Database"},
 		{engineType: "unknown", want: "Database"},
 	}
 

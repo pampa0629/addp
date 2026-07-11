@@ -32,15 +32,12 @@ class OperatorCategory(str, Enum):
 class OperatorParam(BaseModel):
     """算子参数定义模型"""
     name: str = Field(description="参数名称")
-    type: str = Field(description="参数类型：input/output/param/ui")
+    type: str = Field(description="参数类型：input/output/param")
     data_type: str = Field(description="数据类型：GeoDataFrame/str/float/int 等")
     required: bool = Field(default=True, description="是否必填")
     description: str = Field(description="参数说明")
     notes: Optional[str] = Field(None, description="注意事项")
 
-    # UI 配置（可选）
-    ui_type: Optional[str] = Field(None, description="UI组件类型：resource_tree_picker 等")
-    ui_config: Optional[Dict[str, Any]] = Field(None, description="UI组件配置")
     enum: Optional[List[str]] = Field(None, description="枚举值列表")
     default: Optional[Any] = Field(None, description="默认值")
 
@@ -96,18 +93,13 @@ class OperatorMetadata(BaseModel):
             param_dict = {
                 "name": param.name,
                 "type": param.data_type,  # 数据类型（用于类型校验）
-                "param_type": param.type,  # 参数类型：input/output/param/ui
+                "param_type": param.type,  # 参数类型：input/output/param
                 "required": param.required,
                 "description": param.description
             }
             if param.notes:
                 param_dict["notes"] = param.notes
 
-            # 添加 UI 相关字段（如果存在）
-            if param.ui_type:
-                param_dict["ui_type"] = param.ui_type
-            if param.ui_config:
-                param_dict["ui_config"] = param.ui_config
             if param.enum:
                 param_dict["enum"] = param.enum
             if param.default is not None:

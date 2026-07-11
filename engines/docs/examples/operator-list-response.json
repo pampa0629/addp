@@ -5,7 +5,7 @@
       "id": "buffer",
       "name": "buffer",
       "display_name": "缓冲区分析",
-      "engine_type": "python_workflow",
+      "engine_type": "geopython_workflow",
       "category": "几何处理",
       "category_path": ["几何处理"],
       "description": "对几何对象创建缓冲区",

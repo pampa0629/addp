@@ -5,9 +5,12 @@ export const enginesAPI = {
     return client.post('/system/engines', data)
   },
 
-  list: (page = 1, pageSize = 10, engineType = null) => {
+  list: (page = 1, pageSize = 10, filters = {}) => {
     const params = { page, page_size: pageSize }
-    if (engineType) params.engine_type = engineType
+    if (filters.engineType) params.engine_type = filters.engineType
+    if (filters.capabilityGroups?.length) params.capability_groups = filters.capabilityGroups.join(',')
+    if (filters.engineOrigins?.length) params.engine_origins = filters.engineOrigins.join(',')
+    if (filters.includeBuiltin === false) params.include_builtin = false
     return client.get('/system/engines', { params })
   },
 
@@ -36,5 +39,9 @@ export const enginesAPI = {
       return client.post(`/system/engines/${id}/test`, data)
     }
     return client.post(`/system/engines/${id}/test`)
+  },
+
+  enableSpatialWorkspace: (id, ecosystem, kind) => {
+    return client.post(`/system/engines/${id}/spatial-workspaces/${encodeURIComponent(ecosystem)}/${encodeURIComponent(kind)}/enable`)
   }
 }

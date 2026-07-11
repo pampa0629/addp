@@ -1,4 +1,4 @@
-# Python Workflow Engine - Multi-stage Dockerfile
+# GeoPython Workflow Engine - Multi-stage Dockerfile
 # Stage 1: Build dependencies
 FROM python:3.11-slim AS builder
 

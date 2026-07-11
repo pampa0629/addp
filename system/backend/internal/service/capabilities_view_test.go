@@ -125,6 +125,54 @@ func TestBuildCapabilitiesViewFormatsPostgreSQLExtensions(t *testing.T) {
 	}
 }
 
+func TestBuildCapabilitiesViewFormatsSpatialWorkspaces(t *testing.T) {
+	boundRuntimeID := uint(33)
+	caps := engineplugin.NewTabularCapabilities("postgresql", "schema", engineplugin.TabularCapabilityOptions{})
+	caps.Extensions = map[string]interface{}{
+		engineplugin.EngineExtensionSpatialWorkspaces: []engineplugin.SpatialWorkspaceFact{
+			{
+				Ecosystem:            "supermap",
+				Kind:                 "sdx+",
+				State:                engineplugin.SpatialWorkspaceStateNotDetected,
+				BackendEngineType:    "postgresql",
+				RuntimeEngineType:    "supermap_workflow",
+				BoundRuntimeEngineID: &boundRuntimeID,
+				CanEnable:            true,
+				RiskLevel:            engineplugin.SpatialWorkspaceRiskHigh,
+				Evidence: map[string]interface{}{
+					"postgis_ready":               true,
+					"supermap_system_table_count": 0,
+				},
+			},
+		},
+	}
+	payload, err := engineplugin.MarshalEngineCapabilities(caps)
+	if err != nil {
+		t.Fatalf("MarshalEngineCapabilities failed: %v", err)
+	}
+	jsonValue := systemModels.JSONString(payload)
+
+	view := BuildCapabilitiesView(&jsonValue, "postgresql")
+	if view == nil {
+		t.Fatal("BuildCapabilitiesView returned nil")
+	}
+	item := findCapabilityItem(view, "extensions", "spatial_workspace_supermap_sdx_0")
+	if item == nil {
+		t.Fatalf("spatial workspace item not found in view: %#v", view.Sections)
+	}
+	if item.Status != capabilityStatusNotInstalled {
+		t.Fatalf("spatial workspace status = %q, want %q", item.Status, capabilityStatusNotInstalled)
+	}
+	assertCapabilityTag(t, *item, "ecosystem_supermap")
+	assertCapabilityTag(t, *item, "kind_sdx")
+	assertCapabilityTag(t, *item, "state_notDetected")
+	assertCapabilityTag(t, *item, "runtime_engine_type")
+	assertCapabilityTag(t, *item, "bound_runtime_engine_id")
+	assertCapabilityTag(t, *item, "risk_level_high")
+	assertCapabilityTag(t, *item, "can_enable")
+	assertCapabilityTag(t, *item, "evidence_postgisReady")
+}
+
 func findCapabilityItem(view *commonModels.CapabilitiesView, sectionID, itemID string) *commonModels.CapabilityViewItem {
 	for _, section := range view.Sections {
 		if section.ID != sectionID {

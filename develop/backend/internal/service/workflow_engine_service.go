@@ -68,7 +68,7 @@ func (s *WorkflowEngineService) ExecuteWorkflow(
 
 	// 3. 预处理数据源参数：将 locator / target_parent_locator 派生为 connection_info 和运行时路径。
 	// Spark Workflow 的顶层运行时 engine_id 由 workflowRuntimeOptions 单独处理。
-	preprocessedWorkflowDef, err := s.preprocessWorkflowParams(ctx, workflowDef)
+	preprocessedWorkflowDef, err := s.preprocessWorkflowParams(ctx, engine.EngineType, workflowDef)
 	if err != nil {
 		return nil, fmt.Errorf("预处理工作流参数失败: %w", err)
 	}
@@ -348,12 +348,17 @@ func workflowRuntimeResultMap(values map[string]interface{}) map[string]string {
 // Spark Workflow 的 Spark 通用引擎资源绑定走请求顶层 runtime.engine_id，不与这里的数据源连接混用。
 func (s *WorkflowEngineService) preprocessWorkflowParams(
 	ctx context.Context,
+	workflowEngineType string,
 	workflowDef map[string]interface{},
 ) (map[string]interface{}, error) {
-	// 深拷贝 workflowDef，避免修改原始数据
+	// 深拷贝 workflowDef，避免派生运行时参数时修改已保存的公开工作流定义。
+	encodedWorkflow, err := json.Marshal(workflowDef)
+	if err != nil {
+		return nil, fmt.Errorf("序列化工作流定义失败: %w", err)
+	}
 	result := make(map[string]interface{})
-	for k, v := range workflowDef {
-		result[k] = v
+	if err := json.Unmarshal(encodedWorkflow, &result); err != nil {
+		return nil, fmt.Errorf("复制工作流定义失败: %w", err)
 	}
 
 	// 获取 tasks 数组
@@ -371,7 +376,11 @@ func (s *WorkflowEngineService) preprocessWorkflowParams(
 	for i, taskInterface := range tasks {
 		task, ok := taskInterface.(map[string]interface{})
 		if !ok {
-			continue
+			return nil, fmt.Errorf("任务 %d 必须是对象", i)
+		}
+		operatorID := strings.TrimSpace(stringParam(task, "operator"))
+		if operatorID == "" {
+			return nil, fmt.Errorf("任务 %d 缺少 operator", i)
 		}
 
 		paramsInterface, ok := task["params"]
@@ -381,10 +390,19 @@ func (s *WorkflowEngineService) preprocessWorkflowParams(
 
 		params, ok := paramsInterface.(map[string]interface{})
 		if !ok {
+			return nil, fmt.Errorf("任务 %d params 必须是对象", i)
+		}
+		adapterSpec, hasAdapterSpec := workflowOperatorAdapterSpecFor(workflowEngineType, operatorID)
+		if err := rejectDirectWorkflowRuntimeParams(params, adapterSpec); err != nil {
+			return nil, fmt.Errorf("任务 %d 运行时参数校验失败: %w", i, err)
+		}
+		if !hasAdapterSpec {
+			if err := rejectUndeclaredWorkflowResourceParams(workflowEngineType, operatorID, params); err != nil {
+				return nil, fmt.Errorf("任务 %d 资源参数校验失败: %w", i, err)
+			}
 			continue
 		}
-
-		if err := deriveWorkflowResourceParams(params); err != nil {
+		if err := deriveWorkflowResourceParams(params, adapterSpec); err != nil {
 			return nil, fmt.Errorf("任务 %d 资源参数派生失败: %w", i, err)
 		}
 
@@ -452,32 +470,40 @@ func (s *WorkflowEngineService) preprocessWorkflowParams(
 	return result, nil
 }
 
-func deriveWorkflowResourceParams(params map[string]interface{}) error {
-	if locator := stringParam(params, "locator"); locator != "" {
+func deriveWorkflowResourceParams(params map[string]interface{}, spec workflowOperatorAdapterSpec) error {
+	for _, inputSpec := range spec.ResourceInputs {
+		locator := stringParam(params, inputSpec.PublicParam)
+		if locator == "" {
+			continue
+		}
 		loc, err := resourcetree.ParseURI(locator)
 		if err != nil {
-			return fmt.Errorf("invalid locator: %w", err)
+			return fmt.Errorf("invalid %s: %w", inputSpec.PublicParam, err)
 		}
 		if err := deriveWorkflowSourceParams(params, loc); err != nil {
 			return err
 		}
-		delete(params, "locator")
+		delete(params, inputSpec.PublicParam)
 	}
 
-	if parentLocator := stringParam(params, "target_parent_locator"); parentLocator != "" {
+	for _, outputSpec := range spec.ResourceOutputs {
+		parentLocator := stringParam(params, outputSpec.ParentParam)
+		if parentLocator == "" {
+			continue
+		}
 		loc, err := resourcetree.ParseURI(parentLocator)
 		if err != nil {
-			return fmt.Errorf("invalid target_parent_locator: %w", err)
+			return fmt.Errorf("invalid %s: %w", outputSpec.ParentParam, err)
 		}
-		targetName := strings.TrimSpace(stringParam(params, "target_name"))
+		targetName := strings.TrimSpace(stringParam(params, outputSpec.NameParam))
 		if targetName == "" {
-			return fmt.Errorf("target_name is required when target_parent_locator is provided")
+			return fmt.Errorf("%s is required when %s is provided", outputSpec.NameParam, outputSpec.ParentParam)
 		}
 		if err := deriveWorkflowTargetParams(params, loc, targetName); err != nil {
 			return err
 		}
-		delete(params, "target_parent_locator")
-		delete(params, "target_name")
+		delete(params, outputSpec.ParentParam)
+		delete(params, outputSpec.NameParam)
 	}
 
 	return nil

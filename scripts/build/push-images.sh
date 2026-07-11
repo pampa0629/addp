@@ -112,7 +112,7 @@ ALL_SERVICES=(
     "system-backend" "manager-backend" "meta-backend"
     "transfer-backend" "orchestrator-backend" "develop-backend" "service-backend"
     "monitor-backend" "standard-backend" "copilot-backend" "agent-backend" "model-backend" "quality-backend" "asset-backend" "portal-backend" "graph-backend"
-    "python-workflow-engine" "raster-mosaic-runtime" "model3d-workflow-engine" "pointcloud-workflow-engine" "spark-workflow-engine" "jupyter-engine"
+    "python-workflow-engine" "raster-mosaic-runtime" "model3d-workflow-engine" "pointcloud-workflow-engine" "supermap-workflow-engine" "spark-workflow-engine" "jupyter-engine"
     "gateway"
     "meta-worker" "transfer-worker"
     "system-frontend" "manager-frontend" "meta-frontend"

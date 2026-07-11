@@ -23,7 +23,7 @@
         </el-checkbox-group>
       </div>
 
-      <el-table :data="filteredEngines" v-loading="loading" stripe :row-class-name="tableRowClassName">
+      <el-table :data="engines" v-loading="loading" stripe :row-class-name="tableRowClassName">
         <!-- ID -->
         <el-table-column prop="id" :label="t('system.engine.columns.id')" width="80" />
 
@@ -189,6 +189,62 @@
             :is-edit="isEdit"
             :show-type-selector="false"
           />
+
+          <el-collapse
+            v-if="showSpatialWorkspacePanel"
+            v-model="spatialWorkspaceCollapse"
+            class="spatial-workspace-collapse"
+          >
+            <el-collapse-item name="supermap">
+              <template #title>
+                <span class="spatial-workspace-title">
+                  {{ t('system.engine.spatialWorkspace.title') }}
+                  <el-tag size="small" effect="plain" :type="spatialWorkspaceStateTagType">
+                    {{ spatialWorkspaceStateText }}
+                  </el-tag>
+                </span>
+              </template>
+
+              <el-alert
+                class="spatial-workspace-alert"
+                :title="t('system.engine.spatialWorkspace.supermapWarning')"
+                type="warning"
+                show-icon
+                :closable="false"
+              />
+
+              <div class="spatial-workspace-body">
+                <div class="spatial-workspace-meta">
+                  <el-tag size="small" effect="plain">SuperMap</el-tag>
+                  <el-tag size="small" effect="plain">SDX+</el-tag>
+                  <el-tag
+                    v-if="currentSuperMapWorkspace?.bound_runtime_engine_id"
+                    size="small"
+                    effect="plain"
+                  >
+                    {{ t('system.engine.spatialWorkspace.runtime', { id: currentSuperMapWorkspace.bound_runtime_engine_id }) }}
+                  </el-tag>
+                  <el-tag
+                    v-if="currentSuperMapWorkspace?.risk_level"
+                    size="small"
+                    effect="plain"
+                    type="warning"
+                  >
+                    {{ t('system.engine.spatialWorkspace.risk', { level: spatialWorkspaceRiskText }) }}
+                  </el-tag>
+                </div>
+
+                <el-button
+                  type="danger"
+                  :loading="enablingSpatialWorkspace"
+                  :disabled="!canEnableSuperMapWorkspace"
+                  @click="enableSuperMapSpatialWorkspace"
+                >
+                  {{ t('system.engine.spatialWorkspace.enableSuperMap') }}
+                </el-button>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
         </section>
       </div>
 
@@ -231,6 +287,9 @@
             </el-tag>
           </div>
           <div class="extension-example-actions">
+            <el-button size="small" type="primary" plain @click="fillSuperMapWorkflowExample">
+              {{ t('system.engine.extensionForm.useSuperMapExample') }}
+            </el-button>
             <el-button size="small" type="info" plain @click="fillMathWorkflowExample">
               {{ t('system.engine.extensionForm.useMathExample') }}
             </el-button>
@@ -534,6 +593,9 @@ const testing = ref(false)
 const submitting = ref(false)
 const isEdit = ref(false)
 const editId = ref(null)
+const editingEngine = ref(null)
+const spatialWorkspaceCollapse = ref([])
+const enablingSpatialWorkspace = ref(false)
 
 // 扩展引擎注册对话框
 const extensionDialogVisible = ref(false)
@@ -562,6 +624,15 @@ const mathWorkflowExample = {
   protocol: 'http',
   host: 'localhost',
   port: 8089
+}
+
+const superMapWorkflowExample = {
+  engine_type: 'supermap_workflow',
+  name: 'SuperMap 工作流引擎',
+  description: '面向超图 iObjects Java / SPS 的工作流运行时',
+  protocol: 'http',
+  host: 'localhost',
+  port: 8103
 }
 
 const extensionRuntimeStatusTagType = computed(() => {
@@ -766,45 +837,39 @@ const hasSelectedCapabilitiesView = computed(() => {
   return view.summary.length > 0 || view.sections.length > 0 || view.json_view.length > 0
 })
 
-// 过滤后的引擎列表
-const filteredEngines = computed(() => {
-  if (selectedCategories.value.length === 0) {
-    return []
-  }
+const currentSuperMapWorkspace = computed(() => {
+  return findSuperMapSpatialWorkspace(editingEngine.value)
+})
 
-  return engines.value.filter(engine => {
-    const view = normalizeCapabilitiesView(engine.capabilities_view)
-    const hasStorage = view.sections.some(section => section.id === 'storage')
-    const hasCompute = view.sections.some(section => section.id === 'compute')
-    const isBuiltin = engine.is_builtin
-    const engineOrigin = engine.engine_origin
+const showSpatialWorkspacePanel = computed(() => {
+  const workspace = currentSuperMapWorkspace.value
+  return Boolean(
+    isEdit.value &&
+    form.value.engine_type === 'postgresql' &&
+    workspace?.bound_runtime_engine_id
+  )
+})
 
-    const matchesCapability =
-      (selectedCategories.value.includes('storage') && hasStorage) ||
-      (selectedCategories.value.includes('compute') && hasCompute)
+const canEnableSuperMapWorkspace = computed(() => {
+  const workspace = currentSuperMapWorkspace.value
+  return Boolean(workspace?.can_enable && workspace?.bound_runtime_engine_id)
+})
 
-    const matchesEngineOrigin =
-      (selectedCategories.value.includes('general') && engineOrigin === 'general') ||
-      (selectedCategories.value.includes('extension') && engineOrigin === 'extension')
+const spatialWorkspaceStateText = computed(() => {
+  const state = currentSuperMapWorkspace.value?.state || 'unknown'
+  return translateCapabilityKey(`system.engine.capabilityView.values.${capabilityKeySegment(state)}`, state)
+})
 
-    const matchesBuiltin = selectedCategories.value.includes('builtin') || !isBuiltin
+const spatialWorkspaceRiskText = computed(() => {
+  const risk = currentSuperMapWorkspace.value?.risk_level || 'unknown'
+  return translateCapabilityKey(`system.engine.capabilityView.values.${capabilityKeySegment(risk)}`, risk)
+})
 
-    const hasCapabilityFilter = selectedCategories.value.includes('storage') || selectedCategories.value.includes('compute')
-    const hasOriginFilter = selectedCategories.value.includes('general') || selectedCategories.value.includes('extension')
-
-    let matches = true
-    if (hasCapabilityFilter && hasOriginFilter) {
-      matches = matchesCapability && matchesEngineOrigin
-    } else if (hasCapabilityFilter) {
-      matches = matchesCapability
-    } else if (hasOriginFilter) {
-      matches = matchesEngineOrigin
-    } else {
-      matches = false
-    }
-
-    return matches && matchesBuiltin
-  })
+const spatialWorkspaceStateTagType = computed(() => {
+  const state = String(currentSuperMapWorkspace.value?.state || '').toLowerCase()
+  if (state === 'detected' || state === 'enabled') return 'success'
+  if (state === 'not_detected') return 'warning'
+  return 'warning'
 })
 
 // 对连接配置字段进行排序显示
@@ -843,6 +908,31 @@ const normalizeCapabilitiesView = (view) => {
   }
 }
 
+const normalizeCapabilitiesObject = (capabilities) => {
+  if (!capabilities) return null
+  if (typeof capabilities === 'string') {
+    try {
+      return JSON.parse(capabilities)
+    } catch {
+      return null
+    }
+  }
+  return typeof capabilities === 'object' ? capabilities : null
+}
+
+const spatialWorkspacesFromEngine = (engine) => {
+  const capabilities = normalizeCapabilitiesObject(engine?.capabilities)
+  const workspaces = capabilities?.extensions?.spatial_workspaces
+  return Array.isArray(workspaces) ? workspaces : []
+}
+
+const findSuperMapSpatialWorkspace = (engine) => {
+  return spatialWorkspacesFromEngine(engine).find(workspace => (
+    String(workspace?.ecosystem || '').toLowerCase() === 'supermap' &&
+    String(workspace?.kind || '').toLowerCase() === 'sdx+'
+  )) || null
+}
+
 const getCapabilitySummaryTags = (engine) => {
   const summary = normalizeCapabilitiesView(engine.capabilities_view).summary
   return summary.length > 0
@@ -850,7 +940,10 @@ const getCapabilitySummaryTags = (engine) => {
     : [{ id: 'none', label_key: 'system.engine.capabilities.none', status: 'unknown' }]
 }
 
-const handleFilterChange = () => {}
+const handleFilterChange = () => {
+  currentPage.value = 1
+  loadEngines()
+}
 
 const getEngineTypeLabel = (type, engine = null) => {
   if (engine?.name && engine.engine_type === type) {
@@ -1006,7 +1099,19 @@ const getConnectionTooltip = (row) => {
 const loadEngines = async () => {
   loading.value = true
   try {
-    const response = await enginesAPI.list(currentPage.value, pageSize.value)
+    const capabilityGroups = ['storage', 'compute'].filter(value => selectedCategories.value.includes(value))
+    const engineOrigins = ['general', 'extension'].filter(value => selectedCategories.value.includes(value))
+    if (capabilityGroups.length === 0 && engineOrigins.length === 0) {
+      engines.value = []
+      total.value = 0
+      return
+    }
+
+    const response = await enginesAPI.list(currentPage.value, pageSize.value, {
+      capabilityGroups,
+      engineOrigins,
+      includeBuiltin: selectedCategories.value.includes('builtin')
+    })
     engines.value = response?.data || []
     total.value = response?.total || 0
   } catch (error) {
@@ -1046,6 +1151,13 @@ const showAddExtensionDialog = () => {
 
 const fillMathWorkflowExample = () => {
   extensionForm.value = { ...mathWorkflowExample }
+  extensionCapabilitiesText.value = ''
+  extensionProbeResult.value = ''
+  resetExtensionRuntimeStatus()
+}
+
+const fillSuperMapWorkflowExample = () => {
+  extensionForm.value = { ...superMapWorkflowExample }
   extensionCapabilitiesText.value = ''
   extensionProbeResult.value = ''
   resetExtensionRuntimeStatus()
@@ -1211,6 +1323,8 @@ const editEngine = async (row) => {
 
   isEdit.value = true
   editId.value = row.id
+  editingEngine.value = row
+  spatialWorkspaceCollapse.value = []
 
   selectedEngineCapabilityGroup.value = 'storage'
 
@@ -1225,6 +1339,43 @@ const editEngine = async (row) => {
   }
 
   dialogVisible.value = true
+}
+
+const enableSuperMapSpatialWorkspace = async () => {
+  const workspace = currentSuperMapWorkspace.value
+  if (!canEnableSuperMapWorkspace.value || !workspace) {
+    ElMessage.warning(t('system.engine.spatialWorkspace.unavailable'))
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      t('system.engine.spatialWorkspace.confirmMessage'),
+      t('system.engine.spatialWorkspace.confirmTitle'),
+      {
+        confirmButtonText: t('system.engine.spatialWorkspace.enableSuperMap'),
+        cancelButtonText: t('system.engine.actions.cancel'),
+        type: 'error'
+      }
+    )
+  } catch {
+    return
+  }
+
+  enablingSpatialWorkspace.value = true
+  try {
+    const response = await enginesAPI.enableSpatialWorkspace(editId.value, workspace.ecosystem, workspace.kind)
+    const updatedEngine = engineFromResponse(response)
+    if (updatedEngine) {
+      editingEngine.value = updatedEngine
+    }
+    ElMessage.success(t('system.engine.spatialWorkspace.enableSuccess'))
+    await loadEngines()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.error || error.message || t('system.engine.msg.opFailed'))
+  } finally {
+    enablingSpatialWorkspace.value = false
+  }
 }
 
 const testBeforeCreate = async () => {
@@ -1357,6 +1508,9 @@ const resetForm = () => {
     is_active: true,
     connection_info: {}
   }
+  editingEngine.value = null
+  spatialWorkspaceCollapse.value = []
+  enablingSpatialWorkspace.value = false
   storageFormRef.value?.reset()
 }
 
@@ -1518,6 +1672,39 @@ onMounted(() => {
 .storage-form-panel {
   flex: 1;
   min-width: 0;
+}
+
+.spatial-workspace-collapse {
+  margin-top: 12px;
+  border: 1px solid var(--addp-border-color-light);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.spatial-workspace-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--addp-text-primary);
+}
+
+.spatial-workspace-alert {
+  margin-bottom: 12px;
+}
+
+.spatial-workspace-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.spatial-workspace-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .extension-form {

@@ -72,6 +72,7 @@ func (p *workflowOperatorProvider) ListOperators(ctx context.Context, connInfo p
 				{
 					Name:        "distance",
 					Type:        "float",
+					ParamType:   "input",
 					Required:    true,
 					Description: "缓冲距离",
 					Min:         &min,
@@ -79,6 +80,7 @@ func (p *workflowOperatorProvider) ListOperators(ctx context.Context, connInfo p
 						"unit": {
 							Name:        "unit",
 							Type:        "string",
+							ParamType:   "param",
 							Description: "距离单位",
 						},
 					},
@@ -154,7 +156,7 @@ func TestListWorkflowOperatorsPreservesOperatorDescriptor(t *testing.T) {
 	if op.BriefDescription == "" || op.DetailedDescription["overview"] != "缓冲区分析" {
 		t.Fatalf("operator descriptions were not preserved: %+v", op)
 	}
-	if len(op.Parameters) != 1 || op.Parameters[0].Min == nil || op.Parameters[0].Properties["unit"].Type != "string" {
+	if len(op.Parameters) != 1 || op.Parameters[0].ParamType != "input" || op.Parameters[0].Min == nil || op.Parameters[0].Properties["unit"].ParamType != "param" || op.Parameters[0].Properties["unit"].Type != "string" {
 		t.Fatalf("operator parameters were not preserved: %+v", op.Parameters)
 	}
 	if len(op.Inputs) != 2 || op.Inputs[0] != "geodataframe" || op.Inputs[1] != "dataframe" {
@@ -352,7 +354,7 @@ func TestProbeWorkflowRuntimeContractRejectsMismatchedOperatorEngineType(t *test
 		case r.Method == http.MethodGet && r.URL.Path == "/api/operators":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"operators": []map[string]interface{}{
-					testWorkflowOperatorPayload("python_workflow", "tiff_to_cog", []string{"direct"}),
+					testWorkflowOperatorPayload("geopython_workflow", "tiff_to_cog", []string{"direct"}),
 				},
 			})
 		default:
@@ -373,7 +375,7 @@ func TestProbeWorkflowRuntimeContractRejectsMismatchedOperatorEngineType(t *test
 	if err == nil {
 		t.Fatal("ProbeWorkflowRuntimeContract() error = nil, want engine_type mismatch")
 	}
-	if !strings.Contains(err.Error(), "engine_type=python_workflow") || !strings.Contains(err.Error(), "runtime engine_type=acme_geo_workflow") {
+	if !strings.Contains(err.Error(), "engine_type=geopython_workflow") || !strings.Contains(err.Error(), "runtime engine_type=acme_geo_workflow") {
 		t.Fatalf("error = %v, want operator/runtime engine_type mismatch", err)
 	}
 }
@@ -425,7 +427,7 @@ func TestResolveDirectWorkflowOperatorFindsCustomRuntimeByOperatorCapability(t *
 }
 
 func TestResolveDirectWorkflowOperatorDoesNotFallbackToBuiltinWorkflowRuntime(t *testing.T) {
-	engineType := "python_workflow"
+	engineType := "geopython_workflow"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/api/operators" {
 			http.NotFound(w, r)
@@ -442,7 +444,7 @@ func TestResolveDirectWorkflowOperatorDoesNotFallbackToBuiltinWorkflowRuntime(t 
 	engines := []models.Engine{
 		{
 			ID:             7,
-			Name:           "Builtin Python Workflow",
+			Name:           "Builtin GeoPython Workflow",
 			EngineType:     engineType,
 			EngineOrigin:   "extension",
 			IsBuiltin:      true,

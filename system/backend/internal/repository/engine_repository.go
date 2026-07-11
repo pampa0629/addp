@@ -46,8 +46,19 @@ func (r *EngineRepository) List(offset, limit int, engineType string) ([]models.
 	}
 
 	// 再获取分页数据
-	err := query.Offset(offset).Limit(limit).Find(&engines).Error
+	err := query.Order("id ASC").Offset(offset).Limit(limit).Find(&engines).Error
 	return engines, total, err
+}
+
+// ListVisible 返回 SuperAdmin 可见的全部激活引擎，由服务层在能力过滤后统一分页。
+func (r *EngineRepository) ListVisible(engineType string) ([]models.Engine, error) {
+	var engines []models.Engine
+	query := r.db.Where("is_active = ?", true)
+	if engineType != "" {
+		query = query.Where("engine_type = ?", engineType)
+	}
+	err := query.Order("id ASC").Find(&engines).Error
+	return engines, err
 }
 
 func (r *EngineRepository) ListAll() ([]models.Engine, error) {
@@ -79,8 +90,22 @@ func (r *EngineRepository) ListByTenant(tenantID uint, offset, limit int, engine
 	}
 
 	// 再获取分页数据
-	err := query.Offset(offset).Limit(limit).Find(&engines).Error
+	err := query.Order("id ASC").Offset(offset).Limit(limit).Find(&engines).Error
 	return engines, total, err
+}
+
+// ListVisibleByTenant 返回租户可见的全部激活引擎，由服务层在能力过滤后统一分页。
+func (r *EngineRepository) ListVisibleByTenant(tenantID uint, engineType string) ([]models.Engine, error) {
+	var engines []models.Engine
+	query := r.db.Where(
+		"(tenant_id = ? OR (is_builtin = ? AND tenant_id IS NULL)) AND is_active = ?",
+		tenantID, true, true,
+	)
+	if engineType != "" {
+		query = query.Where("engine_type = ?", engineType)
+	}
+	err := query.Order("id ASC").Find(&engines).Error
+	return engines, err
 }
 
 func (r *EngineRepository) Update(engine *models.Engine) error {

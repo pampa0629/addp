@@ -1,6 +1,10 @@
 package postgresql
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/addp/common/engine/plugin"
+)
 
 func TestApplyPostgresInstanceCapabilitiesKeepsSpatialCapabilitiesWhenPostGISIsReady(t *testing.T) {
 	base := (&PostgreSQLPlugin{}).Capabilities()
@@ -38,6 +42,54 @@ func TestApplyPostgresInstanceCapabilitiesKeepsSpatialCapabilitiesWhenPostGISIsR
 	postgis, ok := postgresqlExt["postgis"].(map[string]interface{})
 	if !ok || postgis["installed"] != true || postgis["version"] != "3.4.3" {
 		t.Fatalf("postgis extension facts = %#v", postgis)
+	}
+	workspaces, err := plugin.SpatialWorkspacesFromExtensions(resolved.Extensions)
+	if err != nil {
+		t.Fatalf("SpatialWorkspacesFromExtensions error = %v", err)
+	}
+	if len(workspaces) != 2 {
+		t.Fatalf("spatial workspaces = %#v, want supermap and arcgis facts", workspaces)
+	}
+	supermap := workspaces[0]
+	if supermap.Ecosystem != "supermap" || supermap.Kind != "sdx+" {
+		t.Fatalf("supermap workspace fact = %#v", supermap)
+	}
+	if supermap.State != plugin.SpatialWorkspaceStateNotDetected {
+		t.Fatalf("supermap state = %q, want not_detected", supermap.State)
+	}
+	if !supermap.CanEnable {
+		t.Fatalf("supermap can_enable = false, want true when PostGIS is ready: %#v", supermap)
+	}
+}
+
+func TestApplyPostgresInstanceCapabilitiesDetectsSpatialWorkspaceSignatures(t *testing.T) {
+	base := (&PostgreSQLPlugin{}).Capabilities()
+	facts := postgresInstanceCapabilityFacts{
+		ServerVersion:            "15.8",
+		ServerVersionNum:         150008,
+		InstalledExtensions:      map[string]postgresExtensionFact{},
+		AvailableExtensions:      map[string]string{},
+		SuperMapSystemTableCount: 3,
+		ArcGISSdeSchemaCount:     1,
+		ArcGISSdeTableCount:      2,
+	}
+
+	resolved := applyPostgresInstanceCapabilities(base, facts)
+	workspaces, err := plugin.SpatialWorkspacesFromExtensions(resolved.Extensions)
+	if err != nil {
+		t.Fatalf("SpatialWorkspacesFromExtensions error = %v", err)
+	}
+	if len(workspaces) != 2 {
+		t.Fatalf("spatial workspaces = %#v, want 2", workspaces)
+	}
+	if workspaces[0].State != plugin.SpatialWorkspaceStateDetected {
+		t.Fatalf("supermap state = %q, want detected", workspaces[0].State)
+	}
+	if workspaces[0].CanEnable {
+		t.Fatalf("supermap can_enable = true, want false when sdx+ is already detected")
+	}
+	if workspaces[1].Ecosystem != "arcgis" || workspaces[1].Kind != "sde" || workspaces[1].State != plugin.SpatialWorkspaceStateDetected {
+		t.Fatalf("arcgis workspace fact = %#v, want detected SDE", workspaces[1])
 	}
 }
 

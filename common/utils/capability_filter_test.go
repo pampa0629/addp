@@ -64,7 +64,7 @@ func TestCapabilityFilterRejectsLegacyCapabilities(t *testing.T) {
 func TestCapabilityFilterRejectsUnsupportedSchemaVersion(t *testing.T) {
 	capabilities := models.JSONString(`{
 		"schema_version":"engine.capabilities/v0",
-		"engine_type":"python_workflow",
+		"engine_type":"geopython_workflow",
 		"engine_family":"workflow",
 		"compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1"}}
 	}`)

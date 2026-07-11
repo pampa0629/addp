@@ -5,6 +5,7 @@ import (
 	_ "github.com/addp/common/engine/plugins/math_workflow"
 	_ "github.com/addp/common/engine/plugins/model3d_workflow"
 	_ "github.com/addp/common/engine/plugins/pointcloud_workflow"
-	_ "github.com/addp/common/engine/plugins/python_workflow"
+	_ "github.com/addp/common/engine/plugins/geopython_workflow"
 	_ "github.com/addp/common/engine/plugins/spark_workflow"
+	_ "github.com/addp/common/engine/plugins/supermap_workflow"
 )

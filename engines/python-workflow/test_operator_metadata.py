@@ -18,7 +18,14 @@ for parent in Path(__file__).resolve().parents:
 from workflow_operator_contract import assert_operator_metadata_contract
 from operators import list_operators
 import operators.raster_operators as raster_operators
-from operators.vector_tile_operators import _extent_to_wgs84, _index_generated_tiles, vector_to_mvt_tiles
+from operators.vector_tile_operators import (
+    _build_quick_view_ogr_sql,
+    _extent_to_wgs84,
+    _extract_gdal_progress_values,
+    _index_generated_tiles,
+    _run_command_with_gdal_progress,
+    vector_to_mvt_tiles,
+)
 from operators.spatial_transform_operators import vector_reproject
 from operators.raster_operators import _authority_code_from_wkt, _translate_to_cog, _write_json, build_raster_mosaic, tiff_to_cog
 import pyarrow as pa
@@ -27,48 +34,62 @@ from geometry_batches import decode_geometry_batch_arrow, encode_geometry_batch_
 import geopandas as gpd
 import pytest
 import shapely
+from operators.io_operators import load
 
 
-def test_io_metadata_uses_resource_locator_public_contract():
+def test_io_metadata_exposes_runtime_contract_only():
     operators = {operator["name"]: operator for operator in list_operators()}
 
     load_params = {param["name"] for param in operators["load"]["parameters"]}
     save_params = {param["name"] for param in operators["save"]["parameters"]}
-    runtime_only = {"engine_id", "connection_info", "schema", "table", "path"}
-
-    assert "locator" in load_params
-    assert "target_parent_locator" in save_params
-    assert "target_name" in save_params
-    assert not runtime_only & load_params
-    assert not runtime_only & save_params
+    assert {"connection_info", "schema", "table", "path"} <= load_params
+    assert {"connection_info", "schema", "table", "path"} <= save_params
+    assert not {"locator", "target_parent_locator", "target_name"} & load_params
+    assert not {"locator", "target_parent_locator", "target_name"} & save_params
+    assert not any(param.get("ui_type") == "resource_tree_picker" for param in operators["load"]["parameters"])
+    assert not any(param.get("ui_type") == "resource_tree_picker" for param in operators["save"]["parameters"])
 
     load_example = operators["load"]["detailed_description"]["workflow_example"]["params"]
     save_example = operators["save"]["detailed_description"]["workflow_example"]["params"]
 
-    assert "locator" in load_example
-    assert "target_parent_locator" in save_example
-    assert "target_name" in save_example
-    assert not runtime_only & set(load_example)
-    assert not runtime_only & set(save_example)
+    assert {"connection_info", "schema", "table"} <= set(load_example)
+    assert {"connection_info", "schema", "table"} <= set(save_example)
+    assert "locator" not in load_example
+    assert "target_parent_locator" not in save_example
 
-    load_source_type = next(param for param in operators["load"]["parameters"] if param["name"] == "source_type")
     save_target_type = next(param for param in operators["save"]["parameters"] if param["name"] == "target_type")
 
-    assert load_source_type["enum"] == ["table", "file", "geojson"]
+    assert not {"source_type", "format", "geojson"} & load_params
     assert save_target_type["enum"] == ["table", "file"]
-    assert "nfs" not in load_source_type["enum"]
     assert "nfs" not in save_target_type["enum"]
 
-    picker_configs = [
-        param["ui_config"]
-        for operator_name in ("load", "save")
-        for param in operators[operator_name]["parameters"]
-        if param.get("ui_type") == "resource_tree_picker"
-    ]
-    assert picker_configs
-    assert all("engine_types" not in config for config in picker_configs)
-    assert any(config.get("engine_families") == ["tabular", "dynamic_schema"] for config in picker_configs)
-    assert any(config.get("engine_families") == ["file", "object"] for config in picker_configs)
+
+def test_load_infers_file_format_from_selected_resource_path():
+    with tempfile.TemporaryDirectory() as directory:
+        source = Path(directory) / "points.csv"
+        source.write_text("name,value\na,1\n", encoding="utf-8")
+
+        result = load(
+            connection_info={"engine_type": "nfs", "mount_path": directory},
+            path="points.csv",
+        )
+
+    assert result.to_dict("records") == [{"name": "a", "value": 1}]
+
+
+def test_load_rejects_removed_source_type_parameter():
+    with pytest.raises(TypeError, match="source_type"):
+        load(source_type="file", connection_info={}, path="points.csv")
+
+def test_operator_metadata_preserves_param_type():
+    operators = {operator["name"]: operator for operator in list_operators()}
+
+    buffer_params = {param["name"]: param for param in operators["buffer"]["parameters"]}
+    load_params = {param["name"]: param for param in operators["load"]["parameters"]}
+
+    assert buffer_params["input_gdf"]["param_type"] == "input"
+    assert buffer_params["distance"]["param_type"] == "param"
+    assert load_params["connection_info"]["param_type"] == "param"
 
 
 def test_tiff_to_cog_metadata_public_contract():
@@ -121,6 +142,37 @@ def test_vector_to_mvt_tiles_transforms_source_extent_to_wgs84():
     assert transformed[1] == pytest.approx(30.76, abs=0.02)
     assert transformed[2] == pytest.approx(121.02, abs=0.02)
     assert transformed[3] == pytest.approx(31.03, abs=0.02)
+
+
+def test_vector_to_mvt_tiles_parses_gdal_progress_stream():
+    text = "0...10...20...50...100 - done."
+
+    assert _extract_gdal_progress_values(text) == [0, 10, 20, 50, 100]
+
+
+def test_vector_to_mvt_tiles_emits_progress_from_streaming_command():
+    events = []
+
+    _run_command_with_gdal_progress(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.stdout.write('0...10...50...100 - done.'); sys.stdout.flush()",
+        ],
+        {},
+        events.append,
+        9,
+        18,
+    )
+
+    overall = [round(event["overall_progress"]) for event in events]
+    assert overall == [1, 5, 20, 40]
+    assert all(event["phase"] == "generate" for event in events)
+
+
+def test_vector_to_mvt_tiles_builds_geometry_only_ogr_sql_with_optional_primary_key():
+    assert _build_quick_view_ogr_sql("规划用地") == 'SELECT OGR_GEOMETRY FROM "规划用地"'
+    assert _build_quick_view_ogr_sql('a"b', 'SmID') == 'SELECT OGR_GEOMETRY, "SmID" FROM "a""b"'
 
 
 def test_build_raster_mosaic_metadata_public_contract():
@@ -578,7 +630,7 @@ def test_raster_wkt_authority_reads_root_epsg_id():
 def test_all_operator_metadata_declares_execution_modes():
     assert_operator_metadata_contract(
         list_operators(),
-        expected_engine_type="python_workflow",
+        expected_engine_type="geopython_workflow",
     )
 
 
@@ -804,8 +856,9 @@ def test_vector_to_mvt_tiles_uses_source_env_for_ogr_and_target_env_for_publish(
     written = []
     tile_payloads = []
 
-    def fake_run_command(args, extra_env=None):
+    def fake_run_command(args, extra_env=None, emit=None, min_zoom=0, max_zoom=0):
         command_envs.append(dict(extra_env or {}))
+        assert "-progress" in args
         assert "COMPRESS=YES" in args
         assert "EXTENT=8192" in args
         assert "BUFFER=160" in args
@@ -813,6 +866,10 @@ def test_vector_to_mvt_tiles_uses_source_env_for_ogr_and_target_env_for_publish(
         assert "MAX_FEATURES=1000000" in args
         assert "SIMPLIFICATION=0.0" in args
         assert "SIMPLIFICATION_MAX_ZOOM=0.0" in args
+        assert "-sql" in args
+        assert args[args.index("-sql") + 1] == 'SELECT OGR_GEOMETRY FROM "规划用地"'
+        assert "-dialect" in args
+        assert args[args.index("-dialect") + 1] == "OGRSQL"
         output_dir = Path(args[args.index("-f") + 2])
         assert not output_dir.exists()
         min_x, min_y, _, _ = vector_tile_operators._tile_bounds([110.0, 20.0, 110.1, 20.1], 9)
@@ -831,10 +888,10 @@ def test_vector_to_mvt_tiles_uses_source_env_for_ogr_and_target_env_for_publish(
     def fake_write_tile_payload(target_uri, data):
         tile_payloads.append((target_uri, data))
 
-    original_run_command = vector_tile_operators._run_command
+    original_run_command = vector_tile_operators._run_command_with_gdal_progress
     original_write_binary = vector_tile_operators._write_binary
     original_write_tile_payload = vector_tile_operators._write_binary_with_configured_path_options
-    vector_tile_operators._run_command = fake_run_command
+    vector_tile_operators._run_command_with_gdal_progress = fake_run_command
     vector_tile_operators._write_binary = fake_write_binary
     vector_tile_operators._write_binary_with_configured_path_options = fake_write_tile_payload
     try:
@@ -849,6 +906,7 @@ def test_vector_to_mvt_tiles_uses_source_env_for_ogr_and_target_env_for_publish(
                         "AWS_HTTPS": "NO",
                     },
                     "item_fingerprint": "fp",
+                    "full_name": "addp/gis/规划用地.shp",
                 },
                 "target": {
                     "object_prefix_uri": "/vsis3/manager/tenant_7/mvt-tiles/fp",
@@ -871,7 +929,7 @@ def test_vector_to_mvt_tiles_uses_source_env_for_ogr_and_target_env_for_publish(
             options={"geometry_column": "geometry"},
         )
     finally:
-        vector_tile_operators._run_command = original_run_command
+        vector_tile_operators._run_command_with_gdal_progress = original_run_command
         vector_tile_operators._write_binary = original_write_binary
         vector_tile_operators._write_binary_with_configured_path_options = original_write_tile_payload
 

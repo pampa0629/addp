@@ -22,8 +22,8 @@ func TestOperatorRoutesUseWorkflowEngineInstancePathOnly(t *testing.T) {
 		"/api/v1/develop/operators",
 		"/api/v1/develop/operators/buffer",
 		"/api/v1/develop/operators/cache/info",
-		"/api/v1/develop/operators/modules/python_workflow",
-		"/api/v1/develop/operators/engine-types/python_workflow",
+		"/api/v1/develop/operators/modules/geopython_workflow",
+		"/api/v1/develop/operators/engine-types/geopython_workflow",
 	} {
 		assertRouteStatus(t, router, http.MethodGet, path, http.StatusNotFound)
 	}

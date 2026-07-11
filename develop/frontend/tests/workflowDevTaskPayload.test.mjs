@@ -7,7 +7,7 @@ const mod = await import(`data:text/javascript;charset=utf-8,${encodeURIComponen
 
 const validWorkflow = {
   tasks: [
-    { id: 'read', operator: 'read_table', params: { table: 'city' }, depends_on: [] },
+    { id: 'read', operator: 'load', params: { locator: 'addp://engine/12/path/public/city?type=table&item_id=1' }, depends_on: [] },
     { id: 'buffer', operator: 'buffer', params: { distance: 100 }, depends_on: ['read'] }
   ]
 }
@@ -22,6 +22,12 @@ assert.equal(
 assert.equal(
   mod.isStandardWorkflowDefinition({
     tasks: [{ id: 'read', operator: 'read_table', params: { table: 'city' }, depends_on: ['missing'] }]
+  }),
+  false
+)
+assert.equal(
+  mod.isStandardWorkflowDefinition({
+    tasks: [{ id: 'read', operator: 'load', params: { connection_info: {} }, depends_on: [] }]
   }),
   false
 )
