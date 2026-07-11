@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite --port 5178",
     "build": "vite build",
-    "test:workflow": "node tests/workflowDevTaskPayload.test.mjs && node tests/operatorMetadataContract.test.mjs && node tests/workflowInputBindings.test.mjs && node tests/workflowResourceBindings.test.mjs",
+    "test:workflow": "node tests/workflowDevTaskPayload.test.mjs && node tests/operatorMetadataContract.test.mjs && node tests/workflowInputBindings.test.mjs && node tests/workflowResourceBindings.test.mjs && node tests/workflowCanvasInteraction.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

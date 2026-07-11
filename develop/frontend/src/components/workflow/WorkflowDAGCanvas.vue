@@ -99,8 +99,7 @@ onMounted(() => {
       return
     }
     initSelectionListener()
-    graph.value.on('node:dblclick', handleNodeDoubleClick)
-    graph.value.on('node:click', handleNodeClickForEdge)
+    graph.value.on('node:click', handleNodeClick)
     graph.value.on('node:mouseenter', (e) => {
       const shape = e.shape
       if (shape && shape.cfg && shape.cfg.portType && shape.cfg.portName !== 'input') {
@@ -121,8 +120,11 @@ watch(() => props.initialWorkflow, (newWorkflow) => {
   }
 }, { deep: true })
 
-function handleNodeClickForEdge(e) {
-  if (!isAddEdgeMode.value) return
+function handleNodeClick(e) {
+  if (!isAddEdgeMode.value) {
+    emitNodeSelection(e)
+    return
+  }
 
   const clickedNode = e.item
   const model = clickedNode.getModel()
@@ -211,7 +213,7 @@ function handleNodeClickForEdge(e) {
   }
 }
 
-function handleNodeDoubleClick(e) {
+function emitNodeSelection(e) {
   const model = e.item.getModel()
   emit('node-click', {
     id: model.id,

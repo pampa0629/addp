@@ -27,7 +27,7 @@ type workflowOperatorAdapterSpec struct {
 var workflowOperatorAdapterSpecs = map[string]map[string]workflowOperatorAdapterSpec{
 	"geopython_workflow": {
 		"load": workflowPythonLoadAdapterSpec(),
-		"save": workflowSaveAdapterSpec("save"),
+		"save": workflowPythonSaveAdapterSpec(),
 	},
 	"spark_workflow": {
 		"load": workflowLoadAdapterSpec("load"),
@@ -64,6 +64,37 @@ var workflowOperatorAdapterSpecs = map[string]map[string]workflowOperatorAdapter
 			}},
 		},
 	},
+}
+
+func workflowPythonSaveAdapterSpec() workflowOperatorAdapterSpec {
+	return workflowOperatorAdapterSpec{
+		OperatorID: "save",
+		PublicParameters: []commonModels.ParameterDescriptor{
+			resourcePickerParameter(
+				"保存目标",
+				"选择目标 Schema、数据库、目录、Bucket 或 Prefix。",
+				nil,
+				map[string]interface{}{
+					"api_base_url":                 "/api/v1/meta",
+					"engine_families":              []string{"tabular", "dynamic_schema", "file", "object"},
+					"selectable_parent_node_types": []string{"schema", "database", "root", "directory", "dir", "bucket", "prefix"},
+					"resource_binding": map[string]interface{}{
+						"mode":                 "target",
+						"parent_locator_param": "target_parent_locator",
+						"name_param":           "target_name",
+						"default_params":       map[string]interface{}{"mode": "replace"},
+					},
+				},
+			),
+			resourceIdentityParameter("target_parent_locator", "目标父节点 ResourceLocator"),
+			resourceIdentityParameter("target_name", "目标名称"),
+		},
+		ResourceOutputs: []workflowResourceOutputSpec{{
+			ParentParam:   "target_parent_locator",
+			NameParam:     "target_name",
+			RuntimeParams: []string{"engine_id", "connection_info", "schema", "table", "path"},
+		}},
+	}
 }
 
 func workflowPythonLoadAdapterSpec() workflowOperatorAdapterSpec {

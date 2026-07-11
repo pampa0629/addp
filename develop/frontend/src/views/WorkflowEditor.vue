@@ -380,7 +380,7 @@ const handleWorkflowUpdate = (workflow) => {
   console.log('工作流已更新:', workflow)
 }
 
-// 节点点击处理(双击节点配置参数)
+// 节点单击后加载参数配置。
 const handleNodeClick = async (node) => {
   try {
     console.log('节点被点击:', node)

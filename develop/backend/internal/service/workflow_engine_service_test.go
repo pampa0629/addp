@@ -95,7 +95,6 @@ func TestPreprocessWorkflowParamsDerivesTableTargetFromParentLocator(t *testing.
 				"id":       "save_result",
 				"operator": "save",
 				"params": map[string]interface{}{
-					"target_type":           "table",
 					"target_parent_locator": "addp://engine/7/path/analytics?type=schema&node_id=23",
 					"target_name":           "result_table",
 				},
@@ -189,7 +188,6 @@ func TestPreprocessWorkflowParamsDerivesFileTargetFromParentLocator(t *testing.T
 				"id":       "save_file",
 				"operator": "save",
 				"params": map[string]interface{}{
-					"target_type":           "file",
 					"target_parent_locator": "addp://engine/3/path/output/reports?type=directory&node_id=31",
 					"target_name":           "result.csv",
 				},
@@ -218,7 +216,6 @@ func TestPreprocessWorkflowParamsDerivesObjectTargetFromBucketLocator(t *testing
 				"id":       "save_object",
 				"operator": "save",
 				"params": map[string]interface{}{
-					"target_type":           "file",
 					"target_parent_locator": "addp://engine/4/path/addp?type=bucket&node_id=32",
 					"target_name":           "result/output.parquet",
 				},
@@ -247,7 +244,6 @@ func TestPreprocessWorkflowParamsRequiresTargetNameWithParentLocator(t *testing.
 				"id":       "save_result",
 				"operator": "save",
 				"params": map[string]interface{}{
-					"target_type":           "table",
 					"target_parent_locator": "addp://engine/7/path/analytics?type=schema&node_id=23",
 				},
 				"depends_on": []interface{}{},

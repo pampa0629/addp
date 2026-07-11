@@ -204,14 +204,11 @@ def load(
 
 def save(
     input_df,  # 支持 pd.DataFrame 和 gpd.GeoDataFrame
-    target_type: str,
     connection_info: Dict[str, Any] = None,
     schema: str = None,
     table: str = None,
     mode: str = 'replace',
-    path: str = None,
-    format: str = None,
-    **kwargs
+    path: str = None
 ) -> Dict[str, Any]:
     """
     通用数据保存算子
@@ -219,11 +216,12 @@ def save(
     参数由 Develop Backend 预处理：
     - input_df: 要保存的数据（支持 DataFrame 和 GeoDataFrame）
     - connection_info: 数据库连接信息（已解密）
-    - target_type: "table" | "file"
+    - schema + table: 数据库表目标
+    - path: 文件目标，格式从扩展名推断
     """
-    if target_type == 'table':
+    if table:
         if not connection_info:
-            raise ValueError("target_type=table 时必须提供 connection_info")
+            raise ValueError("保存数据库表时必须提供 connection_info")
 
         # 从 connection_info 中提取信息
         engine_type = connection_info.get('engine_type')
@@ -291,21 +289,20 @@ def save(
 
         return input_df
 
-    elif target_type == 'file':
+    if path:
         if not connection_info:
-            raise ValueError("target_type=file 时必须提供 connection_info")
+            raise ValueError("保存文件时必须提供 connection_info")
         base_path = connection_info.get('mount_path') or connection_info.get('export_path')
         if not base_path:
             raise ValueError("file connection_info 缺少 export_path 字段")
-        if not path:
-            raise ValueError("target_type=file 时必须提供 path 参数")
         full_path = os.path.join(base_path, _strip_nfs_root_prefix(base_path, path))
-        fmt = (format or os.path.splitext(path)[1].lstrip('.')).lower()
+        fmt = os.path.splitext(path)[1].lstrip('.').lower()
+        if not fmt:
+            raise ValueError("无法从目标文件路径推断格式")
         _write_file(input_df, full_path, fmt, mode)
         return input_df
 
-    else:
-        raise ValueError(f"Unsupported target_type: {target_type}")
+    raise ValueError("save 必须接收 schema + table 或 path")
 
 
 # ==================== 元数据定义 ====================
@@ -396,7 +393,7 @@ SAVE_METADATA = OperatorMetadata(
     brief_description="将数据保存到数据库表或文件,支持普通表和空间表",
     execution_modes=["workflow"],
 
-    overview="通用数据保存算子,支持将 DataFrame 或 GeoDataFrame 保存到数据库表(PostgreSQL/MySQL/Doris)或文件系统。根据 target_type 参数自动选择保存方式。",
+    overview="通用数据保存算子，按 Develop Adapter 派生的 schema/table 或 path 自动选择数据库表或文件写入方式。文件格式从目标路径扩展名推断。",
 
     params=[
         OperatorParam(
@@ -405,16 +402,6 @@ SAVE_METADATA = OperatorMetadata(
             data_type="DataFrame",
             required=True,
             description="要保存的数据（支持 DataFrame 和 GeoDataFrame）"
-        ),
-        OperatorParam(
-            name="target_type",
-            type="param",
-            data_type="string",
-            required=True,
-            description="保存目标类型",
-            enum=["table", "file"],
-            default="table",
-            notes="table(数据库表) 或 file(文件系统)"
         ),
         OperatorParam(
             name="connection_info",
@@ -428,38 +415,21 @@ SAVE_METADATA = OperatorMetadata(
             type="param",
             data_type="string",
             required=False,
-            description="目标 schema",
-            depends_on="target_type",
-            show_when={"target_type": "table"}
+            description="目标 schema"
         ),
         OperatorParam(
             name="table",
             type="param",
             data_type="string",
             required=False,
-            description="目标表名",
-            depends_on="target_type",
-            show_when={"target_type": "table"}
+            description="目标表名"
         ),
         OperatorParam(
             name="path",
             type="param",
             data_type="string",
             required=False,
-            description="目标文件路径",
-            depends_on="target_type",
-            show_when={"target_type": "file"}
-        ),
-        OperatorParam(
-            name="format",
-            type="param",
-            data_type="string",
-            required=False,
-            description="文件格式（可选，默认从扩展名推断）",
-            notes="支持: csv, parquet, xlsx, json, feather, shp, geojson, gpkg, kml, gml, fgb",
-            enum=["csv", "parquet", "xlsx", "json", "feather", "shp", "geojson", "gpkg", "kml", "gml", "fgb"],
-            depends_on="target_type",
-            show_when={"target_type": "file"}
+            description="目标文件路径"
         ),
         OperatorParam(
             name="mode",
@@ -474,9 +444,9 @@ SAVE_METADATA = OperatorMetadata(
     ],
 
     use_cases=[
-        "保存分析结果到数据库: target_type=table, schema=public, table=result, mode=replace",
-        "保存结果到文件 CSV: target_type=file, path=output/result.csv",
-        "保存空间数据到文件 GeoPackage: target_type=file, path=gis/result.gpkg",
+        "保存分析结果到数据库: schema=public, table=result, mode=replace",
+        "保存结果到文件 CSV: path=output/result.csv",
+        "保存空间数据到文件 GeoPackage: path=gis/result.gpkg",
         "工作流结束节点: 作为数据输出的最后一步"
     ],
 
@@ -494,7 +464,6 @@ SAVE_METADATA = OperatorMetadata(
         'operator': 'save',
         'params': {
             'input_df': {'$ref': 'task1'},  # 引用前一个任务的输出
-            'target_type': 'table',
             'connection_info': {'engine_type': 'postgresql'},
             'schema': 'public',
             'table': 'result_table',

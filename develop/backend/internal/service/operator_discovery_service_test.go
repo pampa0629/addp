@@ -110,7 +110,6 @@ func TestOperatorDiscoveryPublishesTargetResourceBinding(t *testing.T) {
 	operators := []commonModels.OperatorDescriptor{{
 		ID: "save",
 		Parameters: []commonModels.ParameterDescriptor{
-			{Name: "target_type", Type: "string"},
 			{Name: "mode", Type: "string"},
 			{Name: "connection_info", Type: "object"},
 			{Name: "schema", Type: "string"},
@@ -128,6 +127,15 @@ func TestOperatorDiscoveryPublishesTargetResourceBinding(t *testing.T) {
 		"parent_locator_param": "target_parent_locator",
 		"name_param":           "target_name",
 	})
+	publicNames := map[string]bool{}
+	for _, parameter := range publicOperators[0].PublicParameters {
+		publicNames[parameter.Name] = true
+	}
+	for _, name := range []string{"target_type", "format", "文件目标"} {
+		if publicNames[name] {
+			t.Fatalf("save public parameters = %+v, obsolete param %s leaked", publicOperators[0].PublicParameters, name)
+		}
+	}
 }
 
 func assertResourceBinding(t *testing.T, parameters []commonModels.ParameterDescriptor, parameterName string, expected map[string]interface{}) {

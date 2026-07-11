@@ -83,7 +83,8 @@
 2. [引擎体系图](concepts/addp引擎体系图.md)：确认 `EnginePlugin + WorkflowRuntimeProvider + HTTP runtime` 的模块边界。
 3. [ADDP 工作流计算引擎接口规范](spec/addp工作流计算引擎接口规范.md)：确认工作流运行时必须实现的统一 HTTP 协议。
 4. [SuperMap 工作流运行时设计](next/SuperMap工作流运行时设计.md)：查看 `supermap_workflow` 的 SPS 主路径、内存对象传递、算子适配和血缘事件设计。
-5. [Meta 模块血缘扩展设计](plan/meta模块血缘扩展设计.md)：处理 SuperMap runtime 血缘事件落库和资产级血缘关系时阅读。
+5. [工作流运行时结果产物与血缘专题](next/工作流运行时结果产物与血缘专题.md)：处理 runtime 结果产物、`produced_assets`、`consumed_assets`、统一执行记录和血缘采集边界时阅读。
+6. [Meta 模块血缘扩展设计](plan/meta模块血缘扩展设计.md)：处理 SuperMap runtime 血缘事件落库和资产级血缘关系时阅读。
 
 ## 三维模型、倾斜摄影与点云主题
 

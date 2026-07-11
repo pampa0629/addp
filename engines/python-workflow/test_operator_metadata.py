@@ -34,7 +34,7 @@ from geometry_batches import decode_geometry_batch_arrow, encode_geometry_batch_
 import geopandas as gpd
 import pytest
 import shapely
-from operators.io_operators import load
+from operators.io_operators import load, save
 
 
 def test_io_metadata_exposes_runtime_contract_only():
@@ -57,11 +57,8 @@ def test_io_metadata_exposes_runtime_contract_only():
     assert "locator" not in load_example
     assert "target_parent_locator" not in save_example
 
-    save_target_type = next(param for param in operators["save"]["parameters"] if param["name"] == "target_type")
-
     assert not {"source_type", "format", "geojson"} & load_params
-    assert save_target_type["enum"] == ["table", "file"]
-    assert "nfs" not in save_target_type["enum"]
+    assert not {"target_type", "format"} & save_params
 
 
 def test_load_infers_file_format_from_selected_resource_path():
@@ -80,6 +77,11 @@ def test_load_infers_file_format_from_selected_resource_path():
 def test_load_rejects_removed_source_type_parameter():
     with pytest.raises(TypeError, match="source_type"):
         load(source_type="file", connection_info={}, path="points.csv")
+
+
+def test_save_rejects_removed_target_type_parameter():
+    with pytest.raises(TypeError, match="target_type"):
+        save(gpd.GeoDataFrame(), target_type="file", connection_info={}, path="result.gpkg")
 
 def test_operator_metadata_preserves_param_type():
     operators = {operator["name"]: operator for operator in list_operators()}

@@ -174,6 +174,37 @@ curl -s http://localhost:8103/api/workflow \
 
 期望 `status=success`，`all_results.intersect.kind=supermap_dataset`，并生成目标 UDBX 文件。
 
+执行已验证的示例分析 DAG：
+
+```bash
+SUPERMAP_DATA_HOST_PATH=/path/to/supermap-iobjectspy-2026-linux-arm64/data \
+SUPERMAP_OUTPUT_HOST_PATH=/tmp/supermap-out \
+./scripts/dev/restart.sh -supermap-workflow
+
+curl -s http://localhost:8103/api/workflow \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "workflow_def": {
+      "tasks": [
+        {"id":"open_input","operator":"datasource.open","params":{"path":"/mnt/supermap/data/example_data.udbx","alias":"example_data","read_only":true},"depends_on":[]},
+        {"id":"create_output","operator":"datasource.create","params":{"path":"/tmp/supermap-out/addp_supermap_analysis.udbx","alias":"addp_supermap_analysis","overwrite":true},"depends_on":[]},
+        {"id":"select_landuse","operator":"dataset.select","params":{"datasource":{"$ref":"open_input"},"dataset_name":"Landuse_R"},"depends_on":["open_input"]},
+        {"id":"filter_large","operator":"vector.filter","params":{"dataset":{"$ref":"select_landuse"},"output_datasource":{"$ref":"create_output"},"output_dataset_name":"LanduseLarge","attribute_filter":"Area > 1000","overwrite":true},"depends_on":["select_landuse","create_output"]},
+        {"id":"inner_point","operator":"vector.inner_point","params":{"input_dataset":{"$ref":"filter_large"},"output_datasource":{"$ref":"create_output"},"output_dataset_name":"LanduseLargePoint","overwrite":true},"depends_on":["filter_large","create_output"]},
+        {"id":"envelope","operator":"vector.feature_envelope","params":{"input_dataset":{"$ref":"filter_large"},"output_datasource":{"$ref":"create_output"},"output_dataset_name":"LanduseLargeEnvelope","overwrite":true},"depends_on":["filter_large","create_output"]},
+        {"id":"project","operator":"dataset.project","params":{"dataset":{"$ref":"filter_large"},"output_datasource":{"$ref":"create_output"},"output_dataset_name":"LanduseLarge3857","target_epsg":3857,"overwrite":true},"depends_on":["filter_large","create_output"]},
+        {"id":"dissolve","operator":"vector.dissolve","params":{"input_dataset":{"$ref":"filter_large"},"output_datasource":{"$ref":"create_output"},"output_dataset_name":"LanduseLargeDissolve","field_names":["Area_1"],"dissolve_type":"multipart","overwrite":true},"depends_on":["filter_large","create_output"]},
+        {"id":"final_info","operator":"dataset.info","params":{"dataset":{"$ref":"dissolve"}},"depends_on":["dissolve"]}
+      ]
+    },
+    "input_data": {}
+  }'
+```
+
+该示例已验证 `vector.filter`、`vector.inner_point`、`vector.feature_envelope`、`dataset.project`、`vector.dissolve` 可在同一 SuperMap SPS DAG 中连续执行，并在输出 UDBX 中生成 `LanduseLarge`、`LanduseLargePoint`、`LanduseLargeEnvelope`、`LanduseLarge3857`、`LanduseLargeDissolve`。
+
+Develop 任务管理验证可以通过标准开发任务 API 保存同一 `workflow_definition`，`execution_config.engine_id` 指向 System 中已注册的 `supermap_workflow` 引擎实例。统一执行记录只保存结果摘要和 runtime execution id；完整节点结果可在 runtime 本地状态中查询，后续资产登记和血缘应把需要长期保留的输出数据集引用结构化写入 ADDP 任务/血缘模型。
+
 ## 架构约定
 
 - Develop 前端只生成 ADDP `workflow_def`，不直接生成 SuperMap `processflow` JSON。
