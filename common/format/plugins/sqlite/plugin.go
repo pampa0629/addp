@@ -35,6 +35,13 @@ func NewGeoPackagePlugin(opts *format.ParseOptions) *Plugin {
 	return &Plugin{formatType: format.FormatGeoPackage, options: opts}
 }
 
+func NewUDBXPlugin(opts *format.ParseOptions) *Plugin {
+	if opts == nil {
+		opts = format.DefaultParseOptions()
+	}
+	return &Plugin{formatType: format.FormatUDBX, options: opts}
+}
+
 func (p *Plugin) Format() format.FormatType {
 	if p.formatType == "" {
 		return format.FormatSQLite
@@ -51,6 +58,16 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 			DataType:       datatype.Container,
 			Layouts:        []string{format.LayoutSingle},
 			Identification: format.FormatIdentification{Extensions: []string{".gpkg"}, MimeTypes: []string{"application/geopackage+sqlite3"}},
+		}
+	}
+	if p.Format() == format.FormatUDBX {
+		return format.FormatDescriptor{
+			ID:             "builtin-udbx",
+			Format:         format.FormatUDBX,
+			I18nKey:        "format.udbx",
+			DataType:       datatype.Container,
+			Layouts:        []string{format.LayoutSingle},
+			Identification: format.FormatIdentification{Extensions: []string{".udbx"}, MimeTypes: []string{"application/x-supermap-udbx"}},
 		}
 	}
 	return format.FormatDescriptor{
@@ -441,4 +458,5 @@ func (p *Plugin) saveToTempFile(input io.Reader) (string, func(), error) {
 func init() {
 	_ = format.RegisterFormatPlugin(NewPlugin(nil))
 	_ = format.RegisterFormatPlugin(NewGeoPackagePlugin(nil))
+	_ = format.RegisterFormatPlugin(NewUDBXPlugin(nil))
 }

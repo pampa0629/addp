@@ -113,6 +113,21 @@ func TestDescribeGeoPackageContainerReturnsLightweightLayers(t *testing.T) {
 	}
 }
 
+func TestUDBXDescriptorUsesSuperMapExtension(t *testing.T) {
+	t.Parallel()
+
+	descriptor := NewUDBXPlugin(nil).Descriptor()
+	if descriptor.Format != format.FormatUDBX {
+		t.Fatalf("Format = %q, want udbx", descriptor.Format)
+	}
+	if descriptor.DataType != datatype.Container {
+		t.Fatalf("DataType = %q, want container", descriptor.DataType)
+	}
+	if len(descriptor.Identification.Extensions) != 1 || descriptor.Identification.Extensions[0] != ".udbx" {
+		t.Fatalf("Extensions = %#v, want .udbx", descriptor.Identification.Extensions)
+	}
+}
+
 func TestDescribeGeoPackageTableCarriesChildSpatialInfo(t *testing.T) {
 	t.Parallel()
 

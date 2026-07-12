@@ -32,6 +32,7 @@ const (
 	FormatHEIC  FormatType = "heic"
 
 	FormatSQLite   FormatType = "sqlite"
+	FormatUDBX     FormatType = "udbx"
 	FormatPostgres FormatType = "postgres"
 	FormatMySQL    FormatType = "mysql"
 

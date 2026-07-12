@@ -13,7 +13,7 @@ USER root
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libminizip1 libblosc1 \
+  && apt-get install -y --no-install-recommends libminizip1 libblosc1 nfs-common netbase \
   && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /opt/supermap/objectsjava/bin_linux_arm64 /opt/supermap/gpa/libs /app/license

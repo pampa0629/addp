@@ -171,6 +171,12 @@ func TestDetectFormat(t *testing.T) {
 			want:     FormatSQLite,
 		},
 		{
+			name:     "SuperMap UDBX by extension",
+			filename: "analysis.udbx",
+			peek:     []byte("SQLite format 3"),
+			want:     FormatUDBX,
+		},
+		{
 			name:     "IFC by extension",
 			filename: "models/building.ifc",
 			peek:     nil,

@@ -138,6 +138,39 @@ func TestOperatorDiscoveryPublishesTargetResourceBinding(t *testing.T) {
 	}
 }
 
+func TestOperatorDiscoveryPublishesSuperMapUdbxNFSTargetOnly(t *testing.T) {
+	operators := []commonModels.OperatorDescriptor{{
+		ID: "datasource.create",
+		Parameters: []commonModels.ParameterDescriptor{
+			{Name: "connection_info", Type: "object"},
+			{Name: "path", Type: "string"},
+		},
+	}}
+
+	publicOperators := publicWorkflowOperators("supermap_workflow", operators)
+	if len(publicOperators) != 1 {
+		t.Fatalf("operators len = %d, want 1", len(publicOperators))
+	}
+	picker := parameterByName(t, publicOperators[0].PublicParameters, "UDBX 保存目录")
+	families, ok := picker.UIConfig["engine_families"].([]string)
+	if !ok || len(families) != 1 || families[0] != "file" {
+		t.Fatalf("engine_families = %#v, want file only", picker.UIConfig["engine_families"])
+	}
+	engineTypes, ok := picker.UIConfig["engine_types"].([]string)
+	if !ok || len(engineTypes) != 1 || engineTypes[0] != "nfs" {
+		t.Fatalf("engine_types = %#v, want nfs only", picker.UIConfig["engine_types"])
+	}
+	parentTypes, ok := picker.UIConfig["selectable_parent_node_types"].([]string)
+	if !ok {
+		t.Fatalf("selectable_parent_node_types = %#v, want string list", picker.UIConfig["selectable_parent_node_types"])
+	}
+	for _, parentType := range parentTypes {
+		if parentType == "bucket" || parentType == "prefix" {
+			t.Fatalf("SuperMap UDBX target should not expose object storage parent type: %#v", parentTypes)
+		}
+	}
+}
+
 func assertResourceBinding(t *testing.T, parameters []commonModels.ParameterDescriptor, parameterName string, expected map[string]interface{}) {
 	t.Helper()
 	parameter := parameterByName(t, parameters, parameterName)

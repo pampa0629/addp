@@ -1830,6 +1830,8 @@ start_supermap_workflow_engine_process() {
     --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
     --platform "$platform" \
     --add-host=host.docker.internal:host-gateway \
+    --cap-add SYS_ADMIN \
+    --security-opt apparmor=unconfined \
     -p "${SUPERMAP_WORKFLOW_PORT}:8103" \
     -e PORT=8103 \
     -e SUPERMAP_OBJECTSJAVA_BIN="${container_objectsjava}" \

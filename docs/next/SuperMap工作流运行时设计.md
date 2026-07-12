@@ -272,6 +272,30 @@ Asset lineage
 
 内存对象不妨碍血缘，因为血缘记录的是逻辑依赖和可识别资产，而不是必须记录每个对象的物理文件。
 
+### 7.4 持久化输出与自动 Meta Scan
+
+SuperMap 工作流的持久化输出只走两类主路径：
+
+1. **PostGIS / SDX+ 结果表**：`datasource.open_postgis` 使用 `target_parent_locator + target_name` 打开可写目标空间库，运行时以 `read_only=false` 生成 `output_datasource`，后续分析算子直接把结果 Dataset 写入已注册为 SuperMap SDX+ 的 PostGIS Schema。
+2. **NFS UDBX 成果文件**：`datasource.create` 使用 `target_parent_locator + target_name` 创建 UDBX 文件，目标只能来自 NFS / file storage 的 root、directory 或 dir 节点。Develop 在执行期根据用户选择的 NFS 存储引擎，把通用 NFS 连接事实（如 `server`、`export_path`、可选 `nfs_version`）和挂载根内相对 `path` 派生为 runtime 参数；`supermap_workflow` runtime 根据这些运行期参数动态挂载 NFS，并把 SuperMap Java 需要的本地文件路径传给 `EngineType.UDBX`。NFS 引擎自身不得声明任何工作流专用挂载字段，SuperMap runtime 也不得解析 ADDP `locator`。
+
+该路线不需要 Develop 先写临时文件再搬运。动态挂载成功后，SuperMap iObjects Java 直接写入用户选择的实际 NFS 路径；如果容器缺少 `nfs-common` 或 Linux mount 权限，任务应明确失败并提示运行时部署问题。
+
+暂不支持 SuperMap UDBX 直写 MinIO / S3。原因是 SuperMap Java `EngineType.UDBX` 消费的是文件系统路径，本地 SDK 未验证存在 MinIO/S3 datasource 直写能力。若后续需要对象存储发布，应采用“写入受控文件系统路径 -> ADDP storage provider 上传对象 -> 返回 produced asset”的单一路线，不能同时保留直写 MinIO 和本地上传两套路径。
+
+Develop Backend 在执行前把公开资源参数派生为 runtime 参数，并记录 `produced_targets`：
+
+```json
+{
+  "engine_id": 12,
+  "type": "table",
+  "path": ["analytics", "buffer_result"],
+  "locator": "addp://engine/12/path/analytics/buffer_result?type=table"
+}
+```
+
+工作流成功后，Develop 通过 Meta 的异步 `/scan/run/manual` 为这些 `produced_targets` 提交 deep scan。扫描由 Meta 负责，SuperMap runtime 不直接调用 ADDP API。这样可以保持运行时边界清晰，同时让 Manager 在扫描完成后直接看到结果表或 UDBX 文件。
+
 ## 八、容器与运行环境
 
 已验证的 Linux arm64 POC 条件：

@@ -83,6 +83,7 @@ bash scripts/dev/restart.sh -supermap-workflow
 - SuperMap iObjects Java Bin
 - SuperMap GPA/SPS libs
 - 可选 `.lic12` 许可文件
+- NFS 动态挂载依赖 `nfs-common`
 
 构建：
 
@@ -101,6 +102,8 @@ bash scripts/dev/restart.sh -supermap-workflow
 
 ```bash
 docker run --rm --platform linux/arm64 \
+  --cap-add SYS_ADMIN \
+  --security-opt apparmor=unconfined \
   -p 8103:8103 \
   -e PORT=8103 \
   -e SUPERMAP_OBJECTSJAVA_BIN=/opt/supermap/objectsjava/bin_linux_arm64 \
@@ -173,6 +176,8 @@ curl -s http://localhost:8103/api/workflow \
 ```
 
 期望 `status=success`，`all_results.intersect.kind=supermap_dataset`，并生成目标 UDBX 文件。
+
+上面的 `/tmp/supermap-out` 只用于 runtime 直接调试。Develop 正式任务中，`datasource.create` 应通过 `target_parent_locator + target_name` 选择 NFS 目录；Develop Backend 在执行期把 NFS 引擎的通用连接事实（`server`、`export_path`、可选 `nfs_version`）和挂载根内相对 `path` 传给 runtime，runtime 在容器内动态挂载该 NFS export 后由 SuperMap Java 直接写入 UDBX。NFS 引擎不需要、也不应配置工作流专用挂载路径。UDBX 暂不支持直接写入 MinIO / S3。
 
 执行已验证的示例分析 DAG：
 

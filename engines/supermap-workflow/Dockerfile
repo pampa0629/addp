@@ -13,7 +13,7 @@ USER root
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libminizip1 libblosc1 \
+  && apt-get install -y --no-install-recommends libminizip1 libblosc1 nfs-common netbase \
   && rm -rf /var/lib/apt/lists/*
 
 COPY src /app/src

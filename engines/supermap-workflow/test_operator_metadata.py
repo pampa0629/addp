@@ -52,6 +52,16 @@ def test_first_batch_spatial_operators_are_registered():
         assert f'result.put("{operator_id}"' in SOURCE
 
 
+def test_create_datasource_metadata_exposes_dynamic_storage_binding():
+    block = _operator_block("datasource.create")
+
+    assert 'param("connection_info", "object", false, true' in block
+    assert 'param("path", "string", false, true' in block
+    assert 'param("target_parent_locator"' not in block
+    assert 'param("target_name"' not in block
+    assert "resource_tree_picker" not in block
+
+
 def test_dataset_info_returns_lightweight_summary():
     block = _operator_block("dataset.info")
 

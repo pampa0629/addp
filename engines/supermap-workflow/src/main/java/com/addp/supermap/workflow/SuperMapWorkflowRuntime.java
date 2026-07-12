@@ -55,13 +55,18 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
+import java.nio.file.InvalidPathException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -549,6 +554,7 @@ public final class SuperMapWorkflowRuntime {
                 "创建 UDBX 输出数据源，供后续空间分析或保存算子写入。",
                 "数据源",
                 List.of(
+                        param("connection_info", "object", false, true, "运行时派生连接信息。"),
                         param("path", "string", false, true, "目标 UDBX 文件路径。"),
                         param("alias", "string", false, false, "数据源别名。"),
                         param("overwrite", "boolean", false, false, "目标文件存在时是否覆盖，默认 false。")
@@ -896,8 +902,131 @@ public final class SuperMapWorkflowRuntime {
         return text.isBlank() ? defaultValue : text.trim();
     }
 
+    private static String connectionEngineType(JsonNode connInfo) {
+        return optionalConnText(connInfo, "engine_type", "");
+    }
+
+    private static boolean isNfsConnection(JsonNode connInfo) {
+        return "nfs".equalsIgnoreCase(connectionEngineType(connInfo));
+    }
+
+    private static Path resolveCreateDatasourcePath(JsonNode connInfo, String outputPath) {
+        if (connInfo == null || !connInfo.isObject() || !isNfsConnection(connInfo)) {
+            return Path.of(outputPath);
+        }
+        String server = normalizeResourceHost(requireConnText(connInfo, "server"));
+        String exportPath = requireConnText(connInfo, "export_path");
+        String nfsVersion = optionalConnText(connInfo, "nfs_version", optionalConnText(connInfo, "version", ""));
+        Path relativePath = normalizeNfsRelativePath(outputPath);
+        Path mountRoot = dynamicNfsMountRoot(server, exportPath);
+        ensureNfsMounted(server, exportPath, nfsVersion, mountRoot);
+        return mountRoot.resolve(relativePath).normalize();
+    }
+
+    private static Path normalizeNfsRelativePath(String outputPath) {
+        if (outputPath == null || outputPath.isBlank()) {
+            throw new IllegalArgumentException("params.path is required for NFS UDBX output");
+        }
+        String normalizedText = outputPath.trim().replace('\\', '/');
+        if (normalizedText.startsWith("/") || normalizedText.contains("://")) {
+            throw new IllegalArgumentException("NFS UDBX output path must be relative to the selected ADDP NFS root: " + outputPath);
+        }
+        try {
+            Path normalized = Path.of(normalizedText).normalize();
+            if (normalized.isAbsolute() || normalized.toString().isBlank() || normalized.startsWith("..")) {
+                throw new IllegalArgumentException("NFS UDBX output path escapes the selected ADDP NFS root: " + outputPath);
+            }
+            return normalized;
+        } catch (InvalidPathException ex) {
+            throw new IllegalArgumentException("invalid NFS UDBX output path: " + outputPath, ex);
+        }
+    }
+
+    private static Path dynamicNfsMountRoot(String server, String exportPath) {
+        String baseDir = System.getenv().getOrDefault("SUPERMAP_DYNAMIC_NFS_MOUNT_BASE", "/mnt/addp-dynamic-nfs");
+        return Path.of(baseDir).resolve(sha256Hex(server + "|" + exportPath).substring(0, 16));
+    }
+
+    private static void ensureNfsMounted(String server, String exportPath, String nfsVersion, Path mountRoot) {
+        try {
+            Files.createDirectories(mountRoot);
+            if (isMountPoint(mountRoot)) {
+                return;
+            }
+            List<String> outputs = new ArrayList<>();
+            for (String options : nfsMountOptionCandidates(nfsVersion)) {
+                List<String> command = new ArrayList<>(Arrays.asList(
+                        "mount",
+                        "-t",
+                        "nfs",
+                        "-o",
+                        options,
+                        server + ":" + exportPath,
+                        mountRoot.toString()
+                ));
+                Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+                String output;
+                try (InputStream input = process.getInputStream()) {
+                    output = readAll(input);
+                }
+                int exit = process.waitFor();
+                outputs.add("options=" + options + ", exit=" + exit + ", output=" + output.trim());
+                if (exit == 0 || isMountPoint(mountRoot)) {
+                    return;
+                }
+            }
+            throw new IllegalStateException(
+                    "failed to dynamically mount NFS export " + server + ":" + exportPath
+                            + " to " + mountRoot + ". The SuperMap workflow container must include nfs-common "
+                            + "and run with mount permission. mount attempts: " + String.join(" | ", outputs)
+            );
+        } catch (IOException ex) {
+            throw new IllegalStateException(
+                    "failed to dynamically mount NFS export " + server + ":" + exportPath
+                            + ". The SuperMap workflow container must include nfs-common and run with mount permission.",
+                    ex
+            );
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while dynamically mounting NFS export " + server + ":" + exportPath, ex);
+        }
+    }
+
+    private static List<String> nfsMountOptionCandidates(String nfsVersion) {
+        String version = nfsVersion == null ? "" : nfsVersion.trim();
+        if (!version.isBlank()) {
+            return List.of(nfsMountOptions(version));
+        }
+        return List.of(nfsMountOptions("4"), nfsMountOptions("3"));
+    }
+
+    private static String nfsMountOptions(String nfsVersion) {
+        return "vers=" + nfsVersion + ",tcp,nolock,proto=tcp";
+    }
+
+    private static boolean isMountPoint(Path path) {
+        try {
+            Process process = new ProcessBuilder("mountpoint", "-q", path.toString()).start();
+            return process.waitFor() == 0;
+        } catch (IOException | InterruptedException ex) {
+            if (ex instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return false;
+        }
+    }
+
+    private static String sha256Hex(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 digest is unavailable", ex);
+        }
+    }
+
     private static String postgisServer(JsonNode connInfo) {
-        String host = normalizePostgisHost(requireConnText(connInfo, "host"));
+        String host = normalizeResourceHost(requireConnText(connInfo, "host"));
         String port = optionalConnText(connInfo, "port", "");
         if (port.isBlank()) {
             return host;
@@ -905,7 +1034,7 @@ public final class SuperMapWorkflowRuntime {
         return host + ":" + port;
     }
 
-    private static String normalizePostgisHost(String host) {
+    private static String normalizeResourceHost(String host) {
         if (!isLocalhost(host)) {
             return host;
         }
@@ -1230,7 +1359,9 @@ public final class SuperMapWorkflowRuntime {
         CreateDatasourceProcess(WorkflowExecutionContext context, JsonNode params) {
             super("datasource.create");
             this.context = context;
-            addStringInput("path", paramText(params, "path"));
+            JsonNode connInfo = requireObject(params, "connection_info");
+            Path resolvedPath = resolveCreateDatasourcePath(connInfo, paramText(params, "path"));
+            addStringInput("path", resolvedPath.toString());
             addStringInput("alias", optionalText(params, "alias", ""));
             addBooleanInput("overwrite", optionalBoolean(params, "overwrite", false));
             this.output = addObjectOutput("datasource", SuperMapDatasourceRef.class);
@@ -1320,6 +1451,7 @@ public final class SuperMapWorkflowRuntime {
                 if (result == null) {
                     throw new IllegalStateException("recordsetToDataset returned null: " + outputDatasetName);
                 }
+                inheritProjection(result, dataset.dataset);
                 output.setValue(new SuperMapDatasetRef(outputDatasource, result));
             } finally {
                 if (recordset != null) {
@@ -1419,6 +1551,7 @@ public final class SuperMapWorkflowRuntime {
                 if (result == null) {
                     throw new IllegalStateException("recordsetToDataset returned null: " + outputDatasetName);
                 }
+                inheritProjection(result, input.dataset);
                 output.setValue(new SuperMapDatasetRef(outputDatasource, result));
             } finally {
                 if (recordset != null) {
@@ -1460,7 +1593,7 @@ public final class SuperMapWorkflowRuntime {
             boolean keepAttributes = Boolean.TRUE.equals(parameters.getInput("keep_attributes").getValue());
             boolean overwrite = Boolean.TRUE.equals(parameters.getInput("overwrite").getValue());
 
-            DatasetVector outputDataset = createOutputDataset(outputDatasource.datasource, outputDatasetName, DatasetType.REGION, overwrite);
+            DatasetVector outputDataset = createOutputDataset(outputDatasource.datasource, outputDatasetName, DatasetType.REGION, overwrite, input.dataset);
             BufferAnalystParameter parameter = new BufferAnalystParameter();
             parameter.setLeftDistance(distance);
             parameter.setRightDistance(distance);
@@ -1652,7 +1785,7 @@ public final class SuperMapWorkflowRuntime {
             boolean overwrite = Boolean.TRUE.equals(parameters.getInput("overwrite").getValue());
             double tolerance = (Double) parameters.getInput("tolerance").getValue();
 
-            DatasetVector outputDataset = createOutputDataset(outputDatasource.datasource, outputDatasetName, input.dataset.getType(), overwrite);
+            DatasetVector outputDataset = createOutputDataset(outputDatasource.datasource, outputDatasetName, input.dataset.getType(), overwrite, input.dataset);
             OverlayAnalystParameter parameter = new OverlayAnalystParameter();
             parameter.setTolerance(tolerance);
             parameter.setPreprocess(true);
@@ -1728,6 +1861,10 @@ public final class SuperMapWorkflowRuntime {
     }
 
     private static DatasetVector createOutputDataset(Datasource datasource, String name, DatasetType type, boolean overwrite) {
+        return createOutputDataset(datasource, name, type, overwrite, null);
+    }
+
+    private static DatasetVector createOutputDataset(Datasource datasource, String name, DatasetType type, boolean overwrite, DatasetVector projectionSource) {
         ensureDatasetNameAvailable(datasource, name, overwrite);
         DatasetVectorInfo info = new DatasetVectorInfo(name, type);
         DatasetVector dataset = datasource.getDatasets().create(info);
@@ -1735,7 +1872,18 @@ public final class SuperMapWorkflowRuntime {
         if (dataset == null) {
             throw new IllegalStateException("failed to create output dataset: " + name);
         }
+        inheritProjection(dataset, projectionSource);
         return dataset;
+    }
+
+    private static void inheritProjection(DatasetVector target, DatasetVector source) {
+        if (target == null || source == null) {
+            return;
+        }
+        PrjCoordSys prjCoordSys = source.getPrjCoordSys();
+        if (prjCoordSys != null) {
+            target.setPrjCoordSys(prjCoordSys);
+        }
     }
 
     private static void ensureDatasetNameAvailable(Datasource datasource, String name, boolean overwrite) {
@@ -1827,7 +1975,7 @@ public final class SuperMapWorkflowRuntime {
             if (datasource == null || !datasource.isOpened()) {
                 throw new IllegalStateException("failed to open PostGIS datasource: " + server + "/" + database);
             }
-            if (table != null && !table.isBlank() && !datasource.getDatasets().contains(table)) {
+            if (readOnly && table != null && !table.isBlank() && !datasource.getDatasets().contains(table)) {
                 throw new IllegalArgumentException("PostGIS dataset not found: " + schema + "." + table);
             }
             return new SuperMapDatasourceRef("postgis://" + server + "/" + database, datasource);

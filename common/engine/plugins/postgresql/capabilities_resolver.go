@@ -122,7 +122,7 @@ func queryPostgresInstanceCapabilityFacts(ctx context.Context, db *sql.DB) (post
 				SELECT COUNT(*)
 				FROM information_schema.tables
 				WHERE table_schema NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
-				  AND lower(table_name) LIKE 'sm%%'
+				  AND lower(table_name) IN (`+superMapSDXSystemTableSQLList()+`)
 			), 0),
 			COALESCE((
 				SELECT COUNT(*)

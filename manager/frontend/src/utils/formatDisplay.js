@@ -14,7 +14,8 @@ const formatDisplayNames = {
   geotiff: 'GeoTIFF',
   tiff: 'TIFF',
   tif: 'TIFF',
-  raster_mosaic: 'Raster Mosaic'
+  raster_mosaic: 'Raster Mosaic',
+  udbx: 'SuperMap UDBX'
 }
 
 export function dataFormatDisplayName(value) {

@@ -87,6 +87,91 @@ func TestPreprocessWorkflowParamsDerivesSuperMapPostgisSourceFromLocator(t *test
 	assertConnectionInfo(t, params, "postgresql")
 }
 
+func TestPreprocessWorkflowParamsDerivesSuperMapPostgisTargetFromParentLocator(t *testing.T) {
+	svc := newWorkflowEngineServiceForTest(t, 12, "postgresql")
+	workflow := map[string]interface{}{
+		"tasks": []interface{}{
+			map[string]interface{}{
+				"id":       "open_postgis_output",
+				"operator": "datasource.open_postgis",
+				"params": map[string]interface{}{
+					"target_parent_locator": "addp://engine/12/path/analytics?type=schema&node_id=31",
+					"target_name":           "buffer_result",
+					"read_only":             false,
+				},
+				"depends_on": []interface{}{},
+			},
+		},
+	}
+
+	got, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), "supermap_workflow", workflow)
+	if err != nil {
+		t.Fatalf("preprocessWorkflowParamsWithTargets() error = %v", err)
+	}
+
+	params := firstTaskParams(t, got)
+	if _, ok := params["target_parent_locator"]; ok {
+		t.Fatalf("target_parent_locator should be removed before runtime params: %#v", params)
+	}
+	if params["schema"] != "analytics" || params["table"] != "buffer_result" {
+		t.Fatalf("schema/table = %v/%v, want analytics/buffer_result", params["schema"], params["table"])
+	}
+	if params["read_only"] != false {
+		t.Fatalf("read_only should be preserved: %#v", params)
+	}
+	assertConnectionInfo(t, params, "postgresql")
+	if len(targets) != 1 || targets[0].Locator != "addp://engine/12/path/analytics/buffer_result?type=table" {
+		t.Fatalf("targets = %#v, want table target locator", targets)
+	}
+}
+
+func TestPreprocessWorkflowParamsDerivesSuperMapUdbxTargetFromNFSDirectory(t *testing.T) {
+	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
+		3: {
+			ID:         3,
+			Name:       "test-nfs",
+			EngineType: "nfs",
+			IsActive:   true,
+			ConnectionInfo: commonModels.ConnectionInfo{
+				"server":      "nfs.local",
+				"export_path": "/exports/addp",
+			},
+		},
+	})
+	workflow := map[string]interface{}{
+		"tasks": []interface{}{
+			map[string]interface{}{
+				"id":       "create_udbx",
+				"operator": "datasource.create",
+				"params": map[string]interface{}{
+					"target_parent_locator": "addp://engine/3/path/project/supermap?type=directory&node_id=18",
+					"target_name":           "analysis.udbx",
+					"alias":                 "analysis",
+				},
+				"depends_on": []interface{}{},
+			},
+		},
+	}
+
+	got, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), "supermap_workflow", workflow)
+	if err != nil {
+		t.Fatalf("preprocessWorkflowParamsWithTargets() error = %v", err)
+	}
+
+	params := firstTaskParams(t, got)
+	if params["path"] != "project/supermap/analysis.udbx" {
+		t.Fatalf("path = %v, want project/supermap/analysis.udbx", params["path"])
+	}
+	assertConnectionInfo(t, params, "nfs")
+	conn := params["connection_info"].(map[string]interface{})
+	if conn["server"] != "nfs.local" || conn["export_path"] != "/exports/addp" {
+		t.Fatalf("connection_info = %#v, want dynamic NFS binding facts", conn)
+	}
+	if len(targets) != 1 || targets[0].Locator != "addp://engine/3/path/project/supermap/analysis.udbx?type=file" {
+		t.Fatalf("targets = %#v, want file target locator", targets)
+	}
+}
+
 func TestPreprocessWorkflowParamsDerivesTableTargetFromParentLocator(t *testing.T) {
 	svc := newWorkflowEngineServiceForTest(t, 7, "postgresql")
 	workflow := map[string]interface{}{

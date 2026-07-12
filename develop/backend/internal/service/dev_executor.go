@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	"log"
 	"strings"
@@ -22,6 +23,7 @@ type DevExecutor struct {
 	devTaskRepo              *repository.DevTaskRepository
 	taskExecutionRepo        *commonExecution.TaskExecutionRepository // 统一执行记录仓库
 	workflowEngine           *WorkflowEngineService
+	metaClient               *commonClient.MetaClient
 	sqlEngine                *SQLEngineService
 	duckdbService            federatedQueryExecutor
 	jupyterService           *JupyterService
@@ -37,6 +39,7 @@ func NewDevExecutor(
 	devTaskRepo *repository.DevTaskRepository,
 	taskExecutionRepo *commonExecution.TaskExecutionRepository, // 使用统一执行记录仓库
 	workflowEngine *WorkflowEngineService,
+	metaClient *commonClient.MetaClient,
 	sqlEngine *SQLEngineService,
 	duckdbService federatedQueryExecutor,
 	jupyterService *JupyterService,
@@ -46,6 +49,7 @@ func NewDevExecutor(
 		devTaskRepo:              devTaskRepo,
 		taskExecutionRepo:        taskExecutionRepo,
 		workflowEngine:           workflowEngine,
+		metaClient:               metaClient,
 		sqlEngine:                sqlEngine,
 		duckdbService:            duckdbService,
 		jupyterService:           jupyterService,
@@ -387,9 +391,63 @@ func (e *DevExecutor) executeWorkflow(ctx context.Context, devTask *models.DevTa
 	if resp.RuntimeStatus != nil {
 		result["runtime_status"] = resp.RuntimeStatus
 	}
+	if len(resp.ProducedTargets) > 0 {
+		result["produced_targets"] = resp.ProducedTargets
+		result["meta_scan_runs"] = e.createWorkflowProducedTargetScanRuns(ctx, uint(tenantID), resp.ProducedTargets)
+	}
 
 	log.Printf("🔵 [DevExecutor] executeWorkflow 结束: execution_id=%s", executionID)
 	return result, ""
+}
+
+func (e *DevExecutor) createWorkflowProducedTargetScanRuns(
+	ctx context.Context,
+	tenantID uint,
+	targets []WorkflowProducedTarget,
+) []map[string]interface{} {
+	if e.metaClient == nil || len(targets) == 0 {
+		return nil
+	}
+	scanRuns := make([]map[string]interface{}, 0, len(targets))
+	metaClient := e.metaClient.WithTenantID(tenantID)
+	for _, target := range targets {
+		if strings.TrimSpace(target.Locator) == "" || target.EngineID == 0 {
+			continue
+		}
+		run, err := metaClient.CreateManualScanRun(workflowProducedTargetScanOptions(target))
+		entry := map[string]interface{}{
+			"target_locator": target.Locator,
+			"engine_id":      target.EngineID,
+		}
+		if err != nil {
+			entry["status"] = "failed"
+			entry["error"] = err.Error()
+			log.Printf("⚠️  [DevExecutor] 工作流产物自动 Meta scan 提交失败 target=%s err=%v", target.Locator, err)
+		} else if run != nil {
+			entry["status"] = "submitted"
+			entry["execution_id"] = run.ExecutionID
+		}
+		scanRuns = append(scanRuns, entry)
+	}
+	return scanRuns
+}
+
+func workflowProducedTargetScanOptions(target WorkflowProducedTarget) commonClient.MetaScanOptions {
+	opts := commonClient.MetaScanOptions{
+		EngineID:    target.EngineID,
+		ScanDepth:   "deep",
+		Force:       true,
+		TriggerType: commonExecution.TriggerTypeManual,
+		Source:      "develop.workflow.produced_target",
+	}
+	if strings.EqualFold(target.Type, "file") && len(target.Path) > 0 {
+		opts.RefGroups = []commonClient.MetaScanRefGroup{{
+			Primary: strings.Join(target.Path, "/"),
+		}}
+		return opts
+	}
+	opts.Targets = []string{target.Locator}
+	return opts
 }
 
 // executeQuery 执行查询（根据query_type路由）

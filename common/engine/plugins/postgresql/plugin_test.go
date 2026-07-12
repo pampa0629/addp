@@ -34,8 +34,8 @@ func TestFilterPostgreSQLSystemTablesRequiresDetectedSuperMapSDX(t *testing.T) {
 	}
 
 	withSDX := filterPostgreSQLSystemTables(tables, true)
-	if len(withSDX) != 1 || withSDX[0].Name != "roads" {
-		t.Fatalf("filterPostgreSQLSystemTables with SDX = %#v, want only roads", withSDX)
+	if len(withSDX) != 2 || withSDX[0].Name != "roads" || withSDX[1].Name != "sm_business_table" {
+		t.Fatalf("filterPostgreSQLSystemTables with SDX = %#v, want roads and sm_business_table", withSDX)
 	}
 }
 

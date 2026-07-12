@@ -252,6 +252,7 @@
     "previewableChildren": "可预览子项",
     "filtered": "已过滤",
     "childSelector": "子项",
+    "udbxEmpty": "SuperMap UDBX 已识别为容器文件，当前暂不解析内部数据集，请下载后使用 SuperMap 工具查看。",
     "rowCount": "{count} 行",
     "components": "组件",
     "refs": "相关内容",

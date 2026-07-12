@@ -61,7 +61,7 @@ func TestObjectStorageResourceFromNodeKeepsUnknownForUnregisteredExtension(t *te
 	t.Parallel()
 
 	resource := ObjectStorageResourceFromNode("addp", plugin.CatalogEntry{
-		Name: "yanshi.udbx",
+		Name: "yanshi.addpunknownfmt",
 		Kind: plugin.CatalogKindObject,
 		Role: plugin.CatalogRoleLeaf,
 		Path: plugin.CatalogPath{
@@ -70,11 +70,11 @@ func TestObjectStorageResourceFromNodeKeepsUnknownForUnregisteredExtension(t *te
 			Segments: []plugin.CatalogSegment{
 				{Term: plugin.CatalogTermBucket, Kind: plugin.CatalogKindBucket, Name: "addp"},
 				{Term: plugin.CatalogTermPrefix, Kind: plugin.CatalogKindPrefix, Name: "raw"},
-				{Term: plugin.CatalogTermObject, Kind: plugin.CatalogKindObject, Name: "yanshi.udbx"},
+				{Term: plugin.CatalogTermObject, Kind: plugin.CatalogKindObject, Name: "yanshi.addpunknownfmt"},
 			},
 		},
 		Storage: &plugin.CatalogStorageFacts{
-			Path:        "raw/yanshi.udbx",
+			Path:        "raw/yanshi.addpunknownfmt",
 			ContentType: "application/octet-stream",
 		},
 	})

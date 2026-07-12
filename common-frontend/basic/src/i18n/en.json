@@ -252,6 +252,7 @@
     "previewableChildren": "Previewable children",
     "filtered": "Filtered",
     "childSelector": "Child",
+    "udbxEmpty": "SuperMap UDBX is recognized as a container file. Internal datasets are not parsed yet; download it and open it with SuperMap tools.",
     "rowCount": "{count} rows",
     "components": "Components",
     "refs": "Related Content",

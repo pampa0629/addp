@@ -10,4 +10,8 @@ describe('dataFormatDisplayName', () => {
     expect(dataFormatDisplayName('glb')).toBe('GLB')
     expect(dataFormatDisplayName('las')).toBe('LAS')
   })
+
+  it('formats SuperMap UDBX as a product format label', () => {
+    expect(dataFormatDisplayName('udbx')).toBe('SuperMap UDBX')
+  })
 })

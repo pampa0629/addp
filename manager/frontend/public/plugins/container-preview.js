@@ -104,6 +104,9 @@
         return '子项'
       },
       emptyText() {
+        if (this.formatName === 'udbx') {
+          return 'SuperMap UDBX 已识别为容器文件，当前暂不解析内部数据集，请下载后使用 SuperMap 工具查看。'
+        }
         return '暂无可预览的子项'
       },
       activeChildPreviewComponent() {

@@ -319,13 +319,16 @@ const containerTruncated = computed(() => {
 
 const contentComponentProps = computed(() => {
   if (isContainerMaterial.value) {
+    const formatName = String(contentJSON.value?.format || objectData.value.content?.metadata?.format || '').trim().toLowerCase()
     return {
       summaryItems: containerSummaryItems.value,
       children: containerChildren.value,
       defaultChildKey: containerDefaultChildKey.value,
       selectorLabel: t('containerPreview.childSelector'),
       truncated: containerTruncated.value,
-      emptyText: t('containerPreview.empty')
+      emptyText: formatName === 'udbx'
+        ? t('containerPreview.udbxEmpty')
+        : t('containerPreview.empty')
     }
   }
   return {}

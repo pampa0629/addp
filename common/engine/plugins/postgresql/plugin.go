@@ -16,6 +16,40 @@ import (
 // PostgreSQLPlugin PostgreSQL 数据库插件
 type PostgreSQLPlugin struct{}
 
+var superMapSDXSystemTableNames = []string{
+	"smadditionalinfo",
+	"smbandregister",
+	"smcodedomains",
+	"smdatasetlock",
+	"smdatasourceinfo",
+	"smdomainfield",
+	"smdomains",
+	"smentityrelation",
+	"smfieldinfo",
+	"smgroupitems",
+	"smhistoricalmoments",
+	"smimgregister",
+	"smpyramidcolumns",
+	"smrangedomains",
+	"smregister",
+	"smreplicas",
+	"smsequencemanage",
+	"smtoporelation",
+	"smtoporules",
+	"smuserinfo",
+	"smversionconflicts",
+	"smversiondtitems",
+	"smversions",
+}
+
+var superMapSDXSystemTableNameSet = func() map[string]struct{} {
+	result := make(map[string]struct{}, len(superMapSDXSystemTableNames))
+	for _, name := range superMapSDXSystemTableNames {
+		result[name] = struct{}{}
+	}
+	return result
+}()
+
 // init 函数在包被导入时自动注册插件
 func init() {
 	plugin.Register(&PostgreSQLPlugin{})
@@ -179,7 +213,7 @@ func (p *PostgreSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB, root
 
 	superMapLeafFilter := ""
 	if superMapSDXDetected {
-		superMapLeafFilter = "AND lower(table_name) NOT LIKE 'sm%'"
+		superMapLeafFilter = "AND lower(table_name) NOT IN (" + superMapSDXSystemTableSQLList() + ")"
 	}
 
 	query := `
@@ -381,7 +415,7 @@ func (p *PostgreSQLPlugin) hasSuperMapSDXSystemTables(ctx context.Context, db *g
 		SELECT COUNT(*)
 		FROM information_schema.tables
 		WHERE table_schema NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
-		  AND lower(table_name) LIKE 'sm%'
+		  AND lower(table_name) IN (` + superMapSDXSystemTableSQLList() + `)
 	`).Scan(&count).Error
 	if err != nil {
 		return false, fmt.Errorf("failed to detect SuperMap SDX+ system tables: %w", err)
@@ -405,5 +439,14 @@ func filterPostgreSQLSystemTables(tables []datatype.TableInfo, superMapSDXDetect
 }
 
 func isSuperMapSDXSystemTableName(tableName string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(tableName)), "sm")
+	_, ok := superMapSDXSystemTableNameSet[strings.ToLower(strings.TrimSpace(tableName))]
+	return ok
+}
+
+func superMapSDXSystemTableSQLList() string {
+	quoted := make([]string, 0, len(superMapSDXSystemTableNames))
+	for _, name := range superMapSDXSystemTableNames {
+		quoted = append(quoted, "'"+name+"'")
+	}
+	return strings.Join(quoted, ",")
 }

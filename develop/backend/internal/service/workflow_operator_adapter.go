@@ -34,36 +34,101 @@ var workflowOperatorAdapterSpecs = map[string]map[string]workflowOperatorAdapter
 		"save": workflowSaveAdapterSpec("save"),
 	},
 	"supermap_workflow": {
-		"datasource.open_postgis": {
-			OperatorID: "datasource.open_postgis",
-			PublicParameters: []commonModels.ParameterDescriptor{
-				resourcePickerParameter(
-					"数据源",
-					"选择已有 PostGIS 空间表。",
-					nil,
-					map[string]interface{}{
-						"api_base_url":              "/api/v1/meta",
-						"engine_families":           []string{"tabular"},
-						"selectable_node_types":     []string{"table"},
-						"enable_geometry_detection": true,
-						"require_geometry":          true,
-						"resource_binding": map[string]interface{}{
-							"mode":          "existing",
-							"locator_param": "locator",
-							"type_values": map[string]interface{}{
-								"table": "table", "collection": "table",
-							},
+		"datasource.open_postgis": workflowSuperMapOpenPostgisAdapterSpec(),
+		"datasource.create":       workflowSuperMapCreateUdbxAdapterSpec(),
+	},
+}
+
+func workflowSuperMapOpenPostgisAdapterSpec() workflowOperatorAdapterSpec {
+	return workflowOperatorAdapterSpec{
+		OperatorID: "datasource.open_postgis",
+		PublicParameters: []commonModels.ParameterDescriptor{
+			resourcePickerParameter(
+				"数据源",
+				"选择已有 PostGIS 空间表。",
+				nil,
+				map[string]interface{}{
+					"api_base_url":              "/api/v1/meta",
+					"engine_families":           []string{"tabular"},
+					"selectable_node_types":     []string{"table"},
+					"enable_geometry_detection": true,
+					"require_geometry":          true,
+					"resource_binding": map[string]interface{}{
+						"mode":          "existing",
+						"locator_param": "locator",
+						"type_values": map[string]interface{}{
+							"table": "table", "collection": "table",
 						},
 					},
-				),
-				resourceIdentityParameter("locator", "源表 ResourceLocator"),
-			},
-			ResourceInputs: []workflowResourceInputSpec{{
-				PublicParam:   "locator",
-				RuntimeParams: []string{"engine_id", "connection_info", "schema", "table"},
-			}},
+				},
+			),
+			resourceIdentityParameter("locator", "源表 ResourceLocator"),
+			resourcePickerParameter(
+				"输出位置",
+				"选择已注册为 SuperMap SDX+ 的 PostGIS Schema 或数据库。",
+				map[string]interface{}{"read_only": false},
+				map[string]interface{}{
+					"api_base_url":                 "/api/v1/meta",
+					"engine_families":              []string{"tabular"},
+					"selectable_parent_node_types": []string{"schema", "database"},
+					"allow_create_table":           true,
+					"require_spatial_workspace": map[string]interface{}{
+						"ecosystem": "supermap",
+						"kind":      "sdx+",
+					},
+					"resource_binding": map[string]interface{}{
+						"mode":                 "target",
+						"parent_locator_param": "target_parent_locator",
+						"name_param":           "target_name",
+						"default_params":       map[string]interface{}{"read_only": false},
+					},
+				},
+			),
+			resourceIdentityParameter("target_parent_locator", "目标父节点 ResourceLocator"),
+			resourceIdentityParameter("target_name", "目标 Dataset 名称"),
 		},
-	},
+		ResourceInputs: []workflowResourceInputSpec{{
+			PublicParam:   "locator",
+			RuntimeParams: []string{"engine_id", "connection_info", "schema", "table"},
+		}},
+		ResourceOutputs: []workflowResourceOutputSpec{{
+			ParentParam:   "target_parent_locator",
+			NameParam:     "target_name",
+			RuntimeParams: []string{"engine_id", "connection_info", "schema", "table"},
+		}},
+	}
+}
+
+func workflowSuperMapCreateUdbxAdapterSpec() workflowOperatorAdapterSpec {
+	return workflowOperatorAdapterSpec{
+		OperatorID: "datasource.create",
+		PublicParameters: []commonModels.ParameterDescriptor{
+			resourcePickerParameter(
+				"UDBX 保存目录",
+				"选择 NFS 目录保存 UDBX 成果文件。",
+				nil,
+				map[string]interface{}{
+					"api_base_url":                 "/api/v1/meta",
+					"engine_families":              []string{"file"},
+					"engine_types":                 []string{"nfs"},
+					"selectable_parent_node_types": []string{"root", "directory", "dir"},
+					"resource_binding": map[string]interface{}{
+						"mode":                 "target",
+						"parent_locator_param": "target_parent_locator",
+						"name_param":           "target_name",
+						"default_params":       map[string]interface{}{"overwrite": false},
+					},
+				},
+			),
+			resourceIdentityParameter("target_parent_locator", "目标父节点 ResourceLocator"),
+			resourceIdentityParameter("target_name", "UDBX 文件名"),
+		},
+		ResourceOutputs: []workflowResourceOutputSpec{{
+			ParentParam:   "target_parent_locator",
+			NameParam:     "target_name",
+			RuntimeParams: []string{"engine_id", "connection_info", "path"},
+		}},
+	}
 }
 
 func workflowPythonSaveAdapterSpec() workflowOperatorAdapterSpec {

@@ -122,6 +122,8 @@ SUPERMAP_OUTPUT_HOST_PATH=/tmp/supermap-out
 SUPERMAP_WORKFLOW_REBUILD=1  # 修改 engines/supermap-workflow 源码后强制重建镜像
 ```
 
+Develop 正式任务向 NFS 输出 UDBX 时，不需要预先为某个 NFS 存储引擎配置 SuperMap 专用挂载目录。Develop 会在执行期把用户选择的 NFS 引擎连接事实和相对输出路径传给 `supermap-workflow-engine`；容器需要包含 `nfs-common` 并具备 Linux mount 权限，开发脚本和 Compose 已为该容器启用 `SYS_ADMIN` capability。
+
 ### 第四步: 本地 Docker Compose 模式
 
 ```bash

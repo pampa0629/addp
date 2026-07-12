@@ -119,7 +119,7 @@ func main() {
 	log.Printf("✅ DuckDBService 初始化完成")
 
 	// 7. DevExecutor 统一执行器（使用统一执行表）
-	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, sqlEngine, duckdbService, jupyterService, notebookExecutionService)
+	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, metaClient, sqlEngine, duckdbService, jupyterService, notebookExecutionService)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
 
 	cleanupService := service.NewCleanupService(db, redisClient, taskExecutionRepo)

@@ -50,3 +50,27 @@ func TestMergeDatabaseTableInfoPreservesListFactsAndNormalizesFields(t *testing.
 		t.Fatalf("PrimaryKey = %#v", merged.PrimaryKey)
 	}
 }
+
+func TestMergeDatabaseTableInfoKeepsResolvedRowCountOverDescribedEstimate(t *testing.T) {
+	resolvedRowCount := int64(50)
+	describedEstimate := int64(0)
+	base := datatype.TableInfo{
+		Name:     "sm_buffer_demo",
+		Kind:     "table",
+		RowCount: &resolvedRowCount,
+	}
+	described := datatype.TableInfo{
+		Name:     "sm_buffer_demo",
+		Kind:     "table",
+		RowCount: &describedEstimate,
+		Fields: []datatype.FieldInfo{
+			{Name: "smgeometry", NativeType: "geometry"},
+		},
+	}
+
+	merged := mergeDatabaseTableInfo(base, described)
+
+	if merged.RowCount == nil || *merged.RowCount != resolvedRowCount {
+		t.Fatalf("RowCount = %#v, want resolved %d", merged.RowCount, resolvedRowCount)
+	}
+}

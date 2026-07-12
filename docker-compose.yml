@@ -1103,6 +1103,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-supermap-workflow-engine:${IMAGE_TAG:-latest}
     container_name: supermap-workflow-engine
     platform: ${SUPERMAP_WORKFLOW_PLATFORM:-linux/arm64}
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor=unconfined
     environment:
       - PORT=8103
       - SUPERMAP_OBJECTSJAVA_BIN=/opt/supermap/objectsjava/bin_linux_arm64
