@@ -85,6 +85,12 @@ bash scripts/dev/restart.sh -supermap-workflow
 - 可选 `.lic12` 许可文件
 - NFS 动态挂载依赖 `nfs-common`
 
+胖镜像使用多阶段构建：Notebook 镜像只参与编译，不进入最终镜像；最终系统层从 SuperMap 官方麒麟 ARM64 iObjects Java 镜像提取，删除其中旧版 SDK 后扁平化为兼容的 Java 17 运行环境，再加入当前 iObjects Java Bin 与 GPA/SPS libs。因此最终镜像不包含 Notebook、Conda、Python 或 Java 编译器，也不会叠加两套 SDK。当前 SuperMap 组件保持完整，不裁剪 CAD、三维或 BIM 能力。
+
+默认运行时基础镜像 `192.168.106.71/public/iobjectjava:12.0.0-kylin-aarch64` 可从 SuperMap PDT 离线安装包的 `install/images/192.168.106.71_public_iobjectjava_12.0.0-kylin-aarch64.tar` 导入。
+
+运行时默认使用 `SUPERMAP_JAVA_OPTS=-Xms128m -Xmx4g`，开发脚本和 Compose 默认把容器内存限制为 `SUPERMAP_WORKFLOW_MEMORY_LIMIT=8g`，为 SuperMap native 分析、文件映射和后续三维组件保留 JVM 堆外空间。部署时可通过这两个环境变量覆盖，但应保证容器上限明显大于 JVM 最大堆。
+
 构建：
 
 ```bash
@@ -96,7 +102,7 @@ bash scripts/dev/restart.sh -supermap-workflow
 
 也可以把许可文件放入 `engines/supermap-workflow/license/`，该目录已被 Git 忽略，构建脚本会自动读取其中第一个 `.lic12` 文件。构建成功后，开发脚本会通过镜像 label `addp.supermap.bundled=true` 识别胖镜像，启动时不再要求 `SUPERMAP_OBJECTSJAVA_BIN_HOST` 和 `SUPERMAP_GPA_LIB_DIR_HOST`。
 
-本地快速开发时，`start.sh` / `restart.sh` 默认把 `engines/supermap-workflow/src` 挂载到容器 `/app/src`。修改 Java 算子代码后只需重启 SuperMap runtime，`run.sh` 会在容器内重新编译；修改 Dockerfile、系统依赖、SDK/GPA libs 或 `run.sh` 时才需要重建胖镜像。
+本地挂载 SDK/GPA libs 的开发镜像默认把 `engines/supermap-workflow/src` 挂载到容器 `/app/src`，修改 Java 算子代码后重启 runtime 会在容器内重新编译。私有胖镜像只包含 JRE 和构建期生成的 class，默认不挂载源码；修改 Java 代码、Dockerfile、系统依赖、SDK/GPA libs 或 `run.sh` 后，需要重新运行 `scripts/build/build-supermap-workflow-image.sh`。
 
 也可以直接运行 Docker 容器：
 

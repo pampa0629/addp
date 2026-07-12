@@ -1754,9 +1754,11 @@ start_supermap_workflow_engine_process() {
   local output_dir="${SUPERMAP_OUTPUT_HOST_PATH:-/tmp/supermap-out}"
   local data_dir="${SUPERMAP_DATA_HOST_PATH:-}"
   local platform="${SUPERMAP_WORKFLOW_PLATFORM:-linux/arm64}"
+  local memory_limit="${SUPERMAP_WORKFLOW_MEMORY_LIMIT:-8g}"
+  local java_opts="${SUPERMAP_JAVA_OPTS:--Xms128m -Xmx4g}"
   local rebuild_image="${SUPERMAP_WORKFLOW_REBUILD:-${FORCE_SUPERMAP_WORKFLOW_IMAGE_BUILD:-0}}"
   local source_dir="${SUPERMAP_WORKFLOW_SOURCE_HOST:-${ROOT_DIR}/engines/supermap-workflow/src}"
-  local mount_source="${SUPERMAP_WORKFLOW_MOUNT_SOURCE:-1}"
+  local mount_source="${SUPERMAP_WORKFLOW_MOUNT_SOURCE:-}"
   local container_objectsjava="/opt/supermap/objectsjava/bin_linux_arm64"
   local container_gpa_lib="/opt/supermap/gpa/libs"
   local image_exists=false
@@ -1767,6 +1769,19 @@ start_supermap_workflow_engine_process() {
     if [ "$(docker image inspect -f '{{ index .Config.Labels "addp.supermap.bundled" }}' "$image" 2>/dev/null || true)" = "true" ]; then
       bundled_image=true
     fi
+  fi
+
+  if [ -z "$mount_source" ]; then
+    if [ "$bundled_image" = true ]; then
+      mount_source=0
+    else
+      mount_source=1
+    fi
+  fi
+  if [ "$bundled_image" = true ] && [ "$mount_source" = "1" ]; then
+    echo -e "${RED}✗ SuperMap bundled 镜像只包含 JRE，不能挂载源码后在容器内编译${NC}"
+    echo -e "${YELLOW}  请重新运行 scripts/build/build-supermap-workflow-image.sh 构建 Java 代码${NC}"
+    exit 1
   fi
 
   if [ "$rebuild_image" = "1" ] && [ "$bundled_image" = true ]; then
@@ -1832,10 +1847,12 @@ start_supermap_workflow_engine_process() {
     --add-host=host.docker.internal:host-gateway \
     --cap-add SYS_ADMIN \
     --security-opt apparmor=unconfined \
+    --memory "$memory_limit" \
     -p "${SUPERMAP_WORKFLOW_PORT}:8103" \
     -e PORT=8103 \
     -e SUPERMAP_OBJECTSJAVA_BIN="${container_objectsjava}" \
     -e SUPERMAP_GPA_LIB_DIR="${container_gpa_lib}" \
+    -e SUPERMAP_JAVA_OPTS="$java_opts" \
     -e SUPERMAP_RESOURCE_LOCALHOST_ALIAS="${SUPERMAP_RESOURCE_LOCALHOST_ALIAS:-host.docker.internal}" \
     "${mount_args[@]}" \
     "$image" > .dev-pids/supermap-workflow-engine.pid

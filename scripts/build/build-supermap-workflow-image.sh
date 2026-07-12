@@ -20,7 +20,8 @@ ENGINE_DIR="${PROJECT_ROOT}/engines/supermap-workflow"
 
 IMAGE="${SUPERMAP_WORKFLOW_IMAGE:-addp-supermap-workflow-engine:dev}"
 PLATFORM="${SUPERMAP_WORKFLOW_PLATFORM:-linux/arm64}"
-BASE_IMAGE="${SUPERMAP_WORKFLOW_BASE_IMAGE:-192.168.106.71/datacenter/runtime-notebook-python:v3.0.0-aarch64}"
+BUILD_IMAGE="${SUPERMAP_WORKFLOW_BUILD_IMAGE:-192.168.106.71/datacenter/runtime-notebook-python:v3.0.0-aarch64}"
+RUNTIME_IMAGE="${SUPERMAP_WORKFLOW_RUNTIME_IMAGE:-192.168.106.71/public/iobjectjava:12.0.0-kylin-aarch64}"
 OBJECTSJAVA_BIN="${SUPERMAP_OBJECTSJAVA_BIN_HOST:-${SUPERMAP_OBJECTSJAVA_BIN_HOST_PATH:-}}"
 GPA_LIB_DIR="${SUPERMAP_GPA_LIB_DIR_HOST:-${SUPERMAP_GPA_LIB_DIR_HOST_PATH:-}}"
 LICENSE_FILE="${SUPERMAP_LICENSE_HOST:-}"
@@ -34,7 +35,8 @@ Usage: $0 [OPTIONS]
 Options:
   --image IMAGE              Target image (default: ${IMAGE})
   --platform PLATFORM        Docker platform (default: ${PLATFORM})
-  --base-image IMAGE         Base image (default: ${BASE_IMAGE})
+  --build-image IMAGE        Java compilation image (default: ${BUILD_IMAGE})
+  --runtime-image IMAGE      SuperMap-compatible runtime image (default: ${RUNTIME_IMAGE})
   --objectsjava-bin PATH     SuperMap iObjects Java Bin directory
   --gpa-libs PATH            SuperMap GPA/SPS libs directory
   --license PATH             Optional .lic12 file to bake into the private image
@@ -45,7 +47,8 @@ Options:
 Environment variables:
   SUPERMAP_WORKFLOW_IMAGE
   SUPERMAP_WORKFLOW_PLATFORM
-  SUPERMAP_WORKFLOW_BASE_IMAGE
+  SUPERMAP_WORKFLOW_BUILD_IMAGE
+  SUPERMAP_WORKFLOW_RUNTIME_IMAGE
   SUPERMAP_OBJECTSJAVA_BIN_HOST
   SUPERMAP_GPA_LIB_DIR_HOST
   SUPERMAP_LICENSE_HOST
@@ -66,8 +69,12 @@ while [[ $# -gt 0 ]]; do
       PLATFORM="$2"
       shift 2
       ;;
-    --base-image)
-      BASE_IMAGE="$2"
+    --build-image)
+      BUILD_IMAGE="$2"
+      shift 2
+      ;;
+    --runtime-image)
+      RUNTIME_IMAGE="$2"
       shift 2
       ;;
     --objectsjava-bin)
@@ -131,7 +138,8 @@ fi
 
 BUILD_ARGS=(
   --platform "${PLATFORM}"
-  --build-arg "BASE_IMAGE=${BASE_IMAGE}"
+  --build-arg "BUILD_IMAGE=${BUILD_IMAGE}"
+  --build-arg "RUNTIME_IMAGE=${RUNTIME_IMAGE}"
   --build-context "objectsjava=${OBJECTSJAVA_BIN}"
   --build-context "gpa_libs=${GPA_LIB_DIR}"
   --build-context "license=${LICENSE_CONTEXT}"
@@ -147,7 +155,8 @@ echo -e "${BLUE}ADDP SuperMap Workflow Image Builder${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo -e "Image:          ${GREEN}${IMAGE}${NC}"
 echo -e "Platform:       ${GREEN}${PLATFORM}${NC}"
-echo -e "Base image:     ${GREEN}${BASE_IMAGE}${NC}"
+echo -e "Build image:    ${GREEN}${BUILD_IMAGE}${NC}"
+echo -e "Runtime image:  ${GREEN}${RUNTIME_IMAGE}${NC}"
 echo -e "ObjectsJava:    ${GREEN}${OBJECTSJAVA_BIN}${NC}"
 echo -e "GPA/SPS libs:   ${GREEN}${GPA_LIB_DIR}${NC}"
 if [ -n "${LICENSE_FILE}" ]; then

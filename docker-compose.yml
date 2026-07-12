@@ -1111,6 +1111,7 @@ services:
       - PORT=8103
       - SUPERMAP_OBJECTSJAVA_BIN=/opt/supermap/objectsjava/bin_linux_arm64
       - SUPERMAP_GPA_LIB_DIR=/opt/supermap/gpa/libs
+      - SUPERMAP_JAVA_OPTS=${SUPERMAP_JAVA_OPTS:--Xms128m -Xmx4g}
       - SYSTEM_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-info}
@@ -1126,6 +1127,7 @@ services:
       system-backend:
         condition: service_started
     restart: unless-stopped
+    mem_limit: ${SUPERMAP_WORKFLOW_MEMORY_LIMIT:-8g}
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8103/health | grep -q '\"status\":\"healthy\"'"]
       interval: 10s

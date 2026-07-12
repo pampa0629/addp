@@ -1,287 +1,1161 @@
-# Transfer 任务语义与同步模式设计草案
+# Transfer 任务语义、增量同步与持续运行时设计
 
-更新时间：2026-06-09
+更新时间：2026-07-12
 
-状态说明：本文中的 `task_type=import` 语义已被正式任务体系规范取代。当前实现和正式任务体系按 clean break 收敛为 Transfer 唯一任务类型 `task_type=sync`；稳定规则见 `docs/spec/addp任务体系规范.md` 和 `transfer/docs/transfer-基本概念及配置说明.md`，本文仅作为增量、CDC、水位、实时同步等后续专题的早期讨论记录保留。
+状态：设计专题，尚未升级为稳定规范。
 
-本文用于讨论 Transfer 后续任务语义，不以当前实现为约束。ADDP 当前处于积极开发阶段，本文默认 clean break：概念确认后可以推翻旧字段、旧任务类型和旧 UI 入口。
+本文整理 Transfer 后续全量、批增量、Kafka 流式源、数据库 CDC 和持续运行时的概念与推荐技术路线。本文中的“已确认”表示当前讨论已经形成一致方向，但涉及任务 JSON、数据库表、Provider 接口和基础设施的内容，在进入实现前仍应先升级对应正式规范。
 
-说明：本文只讨论 Transfer 的任务语义、同步模式、写入策略和执行边界；资源选择统一走 locator / ResourceTreePicker，不在本专题中重新定义选择入口。
+当前稳定实现仍以以下文档为准：
 
-当前任务体系阶段 1 只在 TaskProvider 和 `common.task_executions` 层声明 `task_type=sync`。本文下方讨论的 `intent=import/export/sync` 仅是早期业务标签草案，不进入当前 TaskProvider `task_type`，也不要求当前接口并行支持导入、导出等任务类型。
+- `docs/spec/addp任务体系规范.md`
+- `transfer/docs/transfer-基本概念及配置说明.md`
+- `transfer/docs/design.md`
 
-## 一、价值定位
+当前实现只支持有界 batch Transfer、`overwrite` / `append`、观测型 checkpoint 和 restartable retry。本文不声称增量、CDC、Kafka continuous runtime 已经实现。
 
-Transfer 的核心价值不是提供“导入 / 导出 / 同步”三个并列按钮，而是提供稳定的数据搬运与同步执行能力：
+## 一、本文要解决的问题
+
+本文集中回答：
+
+1. Transfer 的任务类型、执行边界、装载方式、触发方式和目标应用方式如何区分。
+2. 全量、watermark 批增量和 CDC 持续同步分别是什么。
+3. 增量状态与 execution checkpoint 有什么区别。
+4. 当前 Go batch 主链路是否需要被 Flink 等流批一体框架替换。
+5. 不使用 Flink 时能否支持 Oracle CDC。
+6. Kafka 作为用户数据源时如何接入。
+7. Kafka 作为 ADDP 内部 CDC 总线时是否属于 infra。
+8. 后续实现应按什么顺序推进。
+
+本文不重新定义 ResourceLocator、资源树、Meta data item、任务体系公共字段和 System Engine Instance 基础语义。
+
+## 二、设计结论摘要
+
+当前讨论形成以下方向：
+
+1. Transfer 对外只保留一个稳定任务类型：`task_type=sync`。
+2. 导入、导出是 Manager 等调用方的用户动作，不是 Transfer 执行类型。
+3. `manual` / `scheduled` 是触发方式；`realtime` 不是第三种触发方式。
+4. 执行边界分为 `bounded` 和 `continuous`。
+5. 装载方式分为 `snapshot` 和 `incremental`。
+6. 增量变化识别方式至少包括 `watermark`、`cdc` 和 `manifest`。
+7. 目标应用方式与源端装载方式正交，至少需要 `replace`、`append`、`upsert`、`upsert_delete`。
+8. 增量主状态由 Transfer 私有状态表保存；execution metadata 只保存本次执行快照和诊断信息。
+9. 第一阶段一致性基线是 `at-least-once + 目标幂等`，不宣称通用端到端 exactly-once。
+10. 保留当前 Go bounded batch runtime；后续增加独立 continuous runtime，不整体改写为 Flink。
+11. Oracle CDC 推荐使用 Debezium Oracle Connector 捕获 redo log，经 Infra Kafka 交给 Transfer。
+12. 用户 Kafka 数据源注册为 System Engine；Infra Kafka 不进入 System engines，也不出现在资源树。
+13. Infra Kafka 与业务 Kafka 可以在小型部署中物理共用集群，但必须保持不同身份、凭据、ACL、topic namespace 和生命周期。
+14. 当前 Asynq worker 继续作为 bounded worker；新增独立 continuous worker 进程角色，一个进程承载多个 runtime session，并通过 DB lease/fencing 支持多实例。
+15. Debezium 运行在独立 Kafka Connect distributed 集群中，由 Transfer capture supervisor 通过受控 API 管理，不嵌入 Transfer Go 进程。
+16. Schema 变化第一阶段默认严格阻塞，不静默忽略字段，也不默认自动执行目标 DDL。
+
+## 三、Transfer 的稳定定位
+
+Transfer 是 ADDP 的数据搬运与同步执行模块：
 
 ```text
 source
-  -> load strategy
+  -> change/load strategy
   -> transform
-  -> write strategy
+  -> target apply strategy
   -> target
 ```
 
-导入、导出更像 Manager 的用户操作入口：
+Transfer 负责：
 
-- 用户在 Manager 中选择数据项。
-- 用户选择导入或导出目标。
-- Manager 负责交互、预览、字段映射、格式选择和任务创建。
-- Transfer 在后台执行对应的数据搬运任务。
+- 任务定义与执行配置。
+- planner 和执行编排。
+- 批大小、分区并行和背压策略。
+- transform 编排。
+- 增量状态、位点和 checkpoint 协调。
+- 目标应用策略。
+- execution、日志、指标和运行状态。
+- 写后 Meta scan 或持续任务中的 Meta 刷新协调。
 
-因此，导入 / 导出不应成为 Transfer 执行主路径的核心分支。它们可以作为 Manager 的业务意图、任务来源或 UI 标签保留，但 Transfer planner 不应按 `import` / `export` 写分支。
+具体引擎连接、catalog、native table 读写和 change stream 读取能力属于 `common/engine` 插件；具体 encoded 格式读写属于 `common/format`。
 
-“同步”也不应继续作为和导入 / 导出并列的单一概念。同步应该拆到更明确的执行语义中：
+### 3.1 导入和导出为什么不是 Transfer 任务类型
 
-- 全量。
-- 增量。
-- 实时增量。
+用户在 Manager 中看到的“导入”“导出”表达交互意图：
 
-## 二、核心维度
-
-建议把 Transfer 任务语义拆成两个主维度：
-
-| 维度 | 取值 | 说明 |
-|---|---|---|
-| 装载策略 | `full` / `incremental` | 读全量数据，还是只读变化数据。 |
-| 触发形态 | `manual` / `scheduled` / `realtime` | 立即执行一次、按计划反复执行、持续监听变化。 |
-
-写入策略仍是第三个必要维度，但它不参与任务类型命名：
-
-| 写入策略 | 说明 |
+| 用户动作 | Transfer 执行语义 |
 |---|---|
-| `overwrite` | 清理 / 重建目标后写入。常用于全量。 |
-| `append` | 追加写入。只在源增量天然不会重复且目标允许重复或追加日志时使用。 |
-| `merge` / `upsert` | 按主键或唯一键合并。常用于增量同步。 |
-| `delete_aware_merge` | 能处理源端删除事件的合并。通常需要 CDC 或显式 tombstone。 |
+| 文件导入数据库表 | bounded snapshot，通常 replace |
+| 数据库表导出文件 | bounded snapshot，通常 replace |
+| 周期导出快照 | scheduled bounded snapshot |
+| 周期同步变化 | scheduled bounded incremental |
+| 数据库 CDC 同步 | continuous incremental |
 
-触发形态和装载策略组合后，产品上可以收敛为四类合法任务：
+Manager 负责资源选择、预览、字段映射和入口文案；Transfer 负责统一同步任务的执行。因此 Transfer planner 不应按 `import` / `export` 建立分支。
 
-| 任务形态 | 装载策略 | 触发形态 | 说明 |
-|---|---|---|---|
-| 手动全量 | `full` | `manual` | 立即执行一次全量搬运。常见于导入 / 导出。 |
-| 定时全量 | `full` | `scheduled` | 按计划反复跑全量。适合小表、快照文件、周期性覆盖。 |
-| 手动增量 | `incremental` | `manual` | 立即补跑一次增量。适合失败补偿、手动追数、从指定水位推进。 |
-| 定时增量 | `incremental` | `scheduled` | 按计划读取变化数据并推进水位。 |
-| 实时增量 | `incremental` | `realtime` | 持续消费 CDC / Kafka / stream change event。 |
+调用来源通过统一 execution 的 `source=manager|console|orchestrator|...` 表达。如果确实需要审计“导入”或“导出”动作，应由调用方审计上下文表达，不应重新引入 Transfer `intent` 事实字段。
 
-`realtime + full` 不作为合法任务形态。持续运行却反复读取全量，通常没有稳定业务价值，也会制造不可控成本。
+## 四、任务语义的正交维度
 
-## 三、关于手动增量
+Transfer 任务不能只用“全量、增量、实时”三个词描述。建议拆成以下维度。
 
-手动增量是有价值的，但它不是“手动等于定时”的简单替代。
-
-手动增量适合这些场景：
-
-- 定时增量失败后，人工触发补跑。
-- 上游修复了一段历史数据，需要从某个水位重新追一次。
-- 首次全量完成后，不想等下一次调度，立即跑一次增量。
-- 测试增量规则是否正确。
-
-手动增量必须具备明确水位语义，否则它会退化成“看起来增量、实际上不知道读什么”。
-
-手动增量至少需要回答：
-
-| 问题 | 说明 |
-|---|---|
-| 起点水位 | 从任务保存的上次水位开始，还是用户指定水位。 |
-| 终点水位 | 跑到当前可见上界，还是用户指定上界。 |
-| 水位提交 | 成功后是否推进任务水位。 |
-| 重跑语义 | 如果指定历史水位重跑，是否允许覆盖已提交水位。 |
-
-建议第一版支持两种手动增量：
-
-| 类型 | 语义 |
-|---|---|
-| `manual_incremental_resume` | 从任务当前保存的水位跑到当前上界，成功后推进水位。 |
-| `manual_incremental_replay` | 用户指定起止水位补跑，默认不推进主水位，除非显式确认。 |
-
-如果第一阶段想更简单，可以先只做 `manual_incremental_resume`，把 replay 留到后续。
-
-## 四、全量与增量的边界
-
-全量任务不需要记住上一次读到哪里。它每次都重新定义完整目标结果。
-
-全量通常搭配：
-
-- `write_mode=overwrite`。
-- 写后 Meta scan。
-- restartable retry。
-
-增量任务必须有增量状态。增量状态不是 checkpoint，也不是 append。
-
-增量状态至少包括：
-
-| 状态 | 说明 |
-|---|---|
-| `watermark` | 基于字段的水位，例如 `updated_at`、自增 ID。 |
-| `offset` | 基于日志或 stream 的位点，例如 Kafka offset、CDC LSN。 |
-| `snapshot_version` | 基于版本快照的增量边界。 |
-| `processed_manifest` | 基于文件清单、etag、mtime 的已处理集合。 |
-
-增量读取还需要定义变化识别方式：
-
-| 类型 | 示例 | 说明 |
-|---|---|---|
-| watermark | `updated_at > last_watermark` | 第一阶段最适合 batch incremental。 |
-| monotonic id | `id > last_id` | 只适合纯新增，不适合更新。 |
-| CDC offset | binlog / WAL / LSN | 实时增量和可靠删除同步的基础。 |
-| file fingerprint | etag / mtime / hash | 文件型源的增量扫描基础。 |
-
-## 五、实时增量
-
-实时增量是 stream / CDC 能力，不应该和当前 batch Transfer 混在一个实现里硬凑。
-
-实时增量至少需要：
-
-- change event 抽象。
-- partition / offset / LSN。
-- checkpoint 提交语义。
-- 目标写入幂等策略。
-- insert / update / delete 事件语义。
-- backfill 或 snapshot + incremental 衔接方式。
-
-因此实时增量可以晚于 batch incremental。当前概念上只保留位置，不急于实现。
-
-## 六、导入 / 导出与任务形态的关系
-
-导入 / 导出是业务入口，不是 Transfer 执行类型。
-
-| Manager 入口 | Transfer 任务形态 |
-|---|---|
-| 导入文件到表 | 手动全量，通常 `overwrite`。 |
-| 导出表为文件 | 手动全量，通常 `overwrite`。 |
-| 周期性导出快照 | 定时全量。 |
-| 周期性同步外部表变化 | 定时增量。 |
-| CDC 同步数据库变化 | 实时增量。 |
-
-这样设计后，Manager 可以继续提供用户熟悉的“导入 / 导出”入口；Transfer 则保持少量、稳定、可组合的执行语义。
-
-## 七、只给 Transfer 使用的 System engine
-
-引擎统一由 System 管理，不恢复 Transfer 私有引擎路线。
-
-但不应为了尚未出现的需求添加复杂 visibility / role / preview / query / ttl 组合。当前真实需求只有一个：
-
-```text
-这个 System engine 是否只允许 Transfer 使用。
-```
-
-因此第一版只需要一个最小策略：
-
-```json
-{
-  "usage_scope": "transfer_only"
-}
-```
-
-或等价表达：
-
-```json
-{
-  "allowed_modules": ["transfer"]
-}
-```
-
-二者取其一即可，不要同时存在。
-
-建议优先选择 `allowed_modules`，因为它表达更直接，也方便未来自然扩展到 `manager`、`meta`、`develop`，但第一版 UI 和校验只暴露“仅 Transfer 可用”一个开关。
-
-规则：
-
-- 引擎仍由 System 统一登记、加密、审计和测试连接。
-- `allowed_modules=["transfer"]` 的引擎不进入 Manager 普通资源树、不被 Meta 自动扫描、不出现在 Develop 查询入口。
-- Transfer 可以在任务中引用该 engine。
-- 如果未来需要临时连接、一次性凭据或过期时间，再基于真实需求扩展，不提前设计。
-
-## 八、建议的任务语义草案
-
-后续可以把 Transfer 任务配置逐步收敛成：
-
-```json
-{
-  "intent": "sync",
-  "load": {
-    "mode": "incremental",
-    "incremental": {
-      "type": "watermark",
-      "field": "updated_at",
-      "start": "last_committed",
-      "end": "now",
-      "commit_watermark": true
-    }
-  },
-  "trigger": {
-    "type": "scheduled",
-    "cron": "0 */10 * * * *"
-  },
-  "source": {},
-  "target": {
-    "policy": {
-      "write_mode": "merge",
-      "keys": ["id"]
-    }
-  }
-}
-```
-
-说明：
-
-- `intent` 可以保留为 `import` / `export` / `sync`，只做业务标签。
-- `load.mode` 决定全量 / 增量。
-- `trigger.type` 决定手动 / 定时 / 实时。
-- `target.policy.write_mode` 决定覆盖 / 追加 / 合并。
-- 具体 endpoint 结构仍沿用 source / target。
-
-## 九、需要继续讨论的问题
-
-1. `manual_incremental_replay` 是否第一版就需要，还是先只做 `manual_incremental_resume`。
-2. 增量水位状态保存在哪里：任务表、统一 execution metadata，还是单独的 transfer state 表。
-3. 第一版 batch incremental 只支持 watermark，还是也支持 monotonic id。
-4. `allowed_modules` 是否作为 System engine 的通用字段，还是先作为 connection metadata 中的受控策略。
-5. Manager 导入 / 导出创建 Transfer 任务时，是否保留 `intent=import/export` 作为审计和 UI 回显标签。
-
-## 十、任务体系接入遗留点
-
-任务体系阶段 1 只要求 Transfer 在接口层符合 TaskProvider 规范，并且对外只声明一个任务类型：
+### 4.1 任务类型
 
 ```text
 provider=transfer
 task_type=sync
 ```
 
-Transfer 内部任务语义、同步模式、取消、重试、进度和日志仍作为本专题后续处理，不在当前任务体系主线中展开。
+全量、增量、Kafka、CDC 都是 `sync` 内部配置，不扩展为新的 `task_type`。
 
-### 10.1 执行资源标识收敛记录
+### 4.2 执行边界
 
-已确认 Develop 和 Transfer 的执行资源 HTTP 入口统一使用 `execution_id`。Transfer 不再在 `/executions` 路径空间中保留按内部自增 ID 访问的私有执行管理入口；取消、重试、进度和日志入口也统一使用 `execution_id`：
+| 取值 | 含义 |
+|---|---|
+| `bounded` | 本次执行有确定结束条件，处理到冻结上界后结束。 |
+| `continuous` | 持续等待并处理新事件，直到被停止、失败或失联。 |
+
+`batch` 更适合描述执行实现或批大小，不足以准确表达是否有界。Kafka 消费也会按 batch poll，但它仍然是 continuous execution。
+
+### 4.3 装载方式
+
+| 取值 | 含义 |
+|---|---|
+| `snapshot` | 读取本次执行范围内的完整源快照。 |
+| `incremental` | 只读取某个已提交边界之后的变化。 |
+
+`snapshot` 只描述源端读取范围，不自动等于目标 `replace`。例如 snapshot + append 在技术上可能成立，但容易重复写入，应通过合法组合校验进行限制。
+
+### 4.4 变化识别方式
+
+| 取值 | 适用对象 | 能力边界 |
+|---|---|---|
+| `watermark` | 数据库表 | 适合 bounded batch incremental；通常无法可靠发现删除。 |
+| `cdc` | 数据库 redo/binlog/WAL 或 CDC topic | 可表达 insert/update/delete 和事务位点。 |
+| `manifest` | 文件、对象、快照集合 | 基于 fingerprint、etag、mtime 或版本清单识别变化。 |
+
+自增 ID 是 watermark 的一种受限形态，只适用于纯新增数据，不应再建立平行概念。
+
+### 4.5 触发方式
+
+统一任务体系规定 execution `trigger_type` 只有：
+
+| 取值 | 含义 |
+|---|---|
+| `manual` | 用户、API、Console、Orchestrator 或其他模块显式触发。 |
+| `scheduled` | owner scheduler 按计划触发。 |
+
+continuous 任务也可以被手动或定时启动。因此 `realtime` 不进入 `trigger_type`。
+
+### 4.6 目标应用方式
+
+建议后续把目标策略概念统一为 apply strategy：
+
+| 取值 | 含义 | 常见组合 |
+|---|---|---|
+| `replace` | 清理或重建目标，再写入本次结果。 | bounded snapshot |
+| `append` | 仅追加，不处理重复和更新。 | 事件日志、纯新增数据 |
+| `upsert` | 按稳定键新增或更新。 | watermark、无删除 CDC |
+| `upsert_delete` | 按稳定键新增、更新和删除。 | 完整 CDC |
+
+当前稳定字段仍是 `target.policy.write_mode=overwrite|append`。是否改名为 `apply_mode`，需要在实现前 clean break 确认；不得长期保留 `write_mode` 和 `apply_mode` 两套事实字段。
+
+Transfer 拥有应用策略，但目标引擎必须提供真实写入能力，并声明键要求、提交边界、删除能力和幂等语义。不能仅靠 Transfer 配置中的字符串推导目标支持 upsert。
+
+### 4.7 合法组合
+
+| 执行边界 | 装载方式 | 变化识别 | 推荐目标策略 | 示例 |
+|---|---|---|---|---|
+| bounded | snapshot | 无 | replace | 一次性导入、导出 |
+| bounded | incremental | watermark | upsert | 定时表增量同步 |
+| bounded | incremental | manifest | append/upsert | 周期文件发现 |
+| continuous | incremental | cdc | upsert_delete | 数据库 CDC |
+| continuous | incremental | Kafka record | append/upsert | 业务事件流 |
+
+`continuous + snapshot` 不作为普通稳定组合。数据库 CDC 的初始化 snapshot 是 CDC runtime 的 bootstrap 阶段，不是一个长期 continuous snapshot 模式。
+
+## 五、Bounded snapshot 与当前实现
+
+当前 Transfer 已有稳定的 bounded table/raw-copy 主路径：
 
 ```text
-GET  /executions/{execution_id}
-POST /executions/{execution_id}/cancel
-POST /executions/{execution_id}/retry
-GET  /executions/{execution_id}/progress
-GET  /executions/{execution_id}/logs
+task -> Asynq worker -> planner -> executor
+     -> common engine/format reader
+     -> table batch / byte stream
+     -> transform
+     -> common engine/format writer
 ```
 
-这里的统一只是执行资源标识收敛，不等于声明 TaskProvider 标准取消能力。`supports_cancel=false` 时，Orchestrator 和 Monitor 仍不得展示 Transfer 标准取消入口；取消接口是否纳入跨模块标准能力，仍必须先确认 worker 可中断、资源可清理、状态可一致落库。
+这条路线已经具备连续 read/write session、批处理、进度和 restartable retry。它适合继续承担：
 
-后续专题至少需要收敛以下问题：
+- 一次性全量搬运。
+- 周期性全量快照。
+- 后续 watermark bounded incremental。
+- 文件 manifest bounded incremental。
 
-1. 取消、重试、进度和日志入口已统一到 `execution_id`，但其能力语义仍属于 Transfer 专题：需要继续明确哪些可作为跨模块标准能力，哪些只是 Transfer 私有执行视图。
-2. 当前不声明标准取消能力，即 `supports_cancel=false`，因此 Orchestrator 和 Monitor 不应展示 Transfer 标准取消入口。只有在明确 worker 可中断、资源可清理、状态可一致落库后，才能开放 `POST /executions/{execution_id}/cancel`。
-3. `retry` 当前是 restartable retry，不是 checkpoint resumable。后续如果要支持从中断点续跑，需要先定义 checkpoint commit / resume marker / 写入幂等语义，不能只复用现有 retry 按钮。
-4. `progress` 和 `logs` 当前是 Transfer 私有执行视图。后续要决定哪些信息沉淀到 `common.task_executions.metadata/error_details`，哪些保留在 Transfer 私有观测表或日志中。
-5. `task_type=sync` 是 Transfer 阶段 1 的唯一对外任务类型。导入 / 导出是 Manager 等调用方入口语义，不进入 Transfer task_type。
-6. Manager 入口创建 Transfer 任务时，Manager 负责用户交互、字段映射和入口语义；Transfer 负责执行计划与搬运。后续需要明确 Manager 到 Transfer 的创建契约，避免把 Manager UI 概念反向写成 Transfer planner 分支。
-7. Transfer 写后触发 Meta scan 属于执行后派生动作。后续需要明确它在父子 execution 中如何表达：是 Transfer execution 的 metadata，还是单独的 Meta 子 execution，并与 Orchestrator 的 `parent_execution_id` 语义保持一致。
+不应为了未来 CDC 而推翻当前 planner、executor 和 common provider 边界。
 
-## 十一、任务体系后续边界
+### 5.1 当前 checkpoint 的真实含义
 
-以下内容作为 Transfer 专题继续推进，不进入任务体系主干文档：
+当前 checkpoint 是观测点：
 
-1. 是否扩展 `task_type` 必须先修订正式任务体系规范。阶段 1 对外只声明 `task_type=sync`，不得并行保留 `import`、`export`、`transfer` 等旧任务类型。
-2. 导入 / 导出应优先作为 Manager 或其他业务模块的入口 intent / UI 标签 / 审计标签，而不是 Transfer planner 主路径的执行类型分支。
-3. 全量、增量、实时增量的任务定义结构需要在本文中统一，包括 `load.mode`、`trigger.type`、水位状态、写入策略和 retry 语义。
-4. 当前 TaskProvider capabilities 对外只声明 `restartable_retry`，不得声明 checkpoint resumable。checkpoint 仍是观测和诊断信息，真正断点续跑需要 source seek、target 幂等提交和 provider marker 消费同时成立。
-5. Transfer 队列、进度、日志和私有执行管理 API 后续如进入 Monitor，必须先明确哪些属于统一 execution metadata，哪些仍属于 Transfer 私有观测视图。
+- 记录 batch index、累计行数和 source/target marker。
+- 用于进度展示和故障诊断。
+- retry 创建新 execution 并从头执行。
+- 不会消费旧 execution marker 从断点继续。
+
+它不等于增量主状态，也不等于 checkpoint resumable。
+
+## 六、Watermark 批增量
+
+Watermark 是最适合作为第一阶段实现的增量能力，但不能只实现：
+
+```sql
+WHERE updated_at > :last_watermark
+```
+
+多个记录可能拥有相同时间值，数据库时间精度也可能低于写入并发度。只保存单字段 watermark 会漏数。
+
+### 6.1 推荐复合游标
+
+使用稳定排序的复合游标：
+
+```text
+(watermark_field, tie_breaker_key)
+```
+
+例如：
+
+```text
+(updated_at, id)
+```
+
+读取边界应等价于：
+
+```sql
+WHERE
+  updated_at > :last_time
+  OR (updated_at = :last_time AND id > :last_id)
+ORDER BY updated_at, id
+```
+
+### 6.2 冻结执行上界
+
+每次 bounded incremental 开始时先获得稳定上界 `end_cursor`，然后读取：
+
+```text
+(last_committed_cursor, end_cursor]
+```
+
+这样本次 execution 有确定结束条件，执行期间新产生的数据留给下一次执行。
+
+需要继续明确：
+
+- watermark 的时区和精度。
+- `NULL` 值处理。
+- tie breaker 是否必须唯一且不可变。
+- 迟到、乱序和回写历史数据的处理。
+- 是否提供 lookback window，以及重复记录如何被目标幂等吸收。
+
+### 6.3 删除边界
+
+普通 `updated_at` watermark 无法发现物理删除。第一阶段必须明确：
+
+- watermark 只支持 insert/update；或者
+- 源表提供显式 tombstone / soft-delete 字段。
+
+不得把 watermark 同步宣传为完整数据库 CDC。
+
+### 6.4 源端契约与 lookback
+
+watermark 正确性依赖源字段本身可靠。Transfer 创建任务时应明确提示并校验以下前置条件：
+
+- 所有需要同步的 insert/update 都会更新 watermark 字段。
+- watermark 值不会因时钟回拨、业务修复或手工更新而倒退。
+- tie breaker 唯一、稳定且不可变。
+- 从只读副本读取时，复制延迟不会超过任务允许的迟到范围。
+- 源字段的时区、精度和事务内赋值时机已经明确。
+
+如果业务更新根本没有修改 watermark 字段，Transfer 无法通过读取策略自行发现该变化。数据库 trigger、生成列或业务代码统一赋值可以作为源系统治理方式，但 ADDP 不自动修改用户源表。
+
+可以提供显式 lookback window 作为迟到数据风险缓解措施：
+
+```text
+effective_start = committed_watermark - lookback_window
+```
+
+lookback 会重复读取已经处理的数据，因此只允许与幂等 upsert 目标组合。它只能覆盖窗口范围内的迟到或副本延迟，不能修复从未更新 watermark 的记录，也不能作为完整一致性保证。
+
+## 七、增量状态、execution checkpoint 与 replay
+
+### 7.1 三类状态不能混用
+
+| 状态 | Owner | 用途 |
+|---|---|---|
+| 任务定义 | `transfer.transfer_tasks` | 保存未来如何同步。 |
+| 增量主状态 | Transfer 私有状态表 | 保存下一次从哪里继续。 |
+| execution checkpoint | `common.task_executions.metadata` | 保存本次执行进度和诊断快照。 |
+
+增量状态需要独立的 Transfer 私有表，建议语义至少包括：
+
+```text
+task_id
+source_identity
+partition
+committed_position
+position_type
+position_version
+state_version
+updated_execution_id
+updated_at
+```
+
+`committed_position` 是 provider 可解释的结构化位置，可以表达复合 watermark、Kafka offset、Oracle SCN、PostgreSQL LSN 或 manifest version。
+
+### 7.2 提交规则
+
+只有目标批次提交成功后，才能推进源位置：
+
+```text
+read changes
+  -> transform
+  -> target commit
+  -> compare-and-set source position
+```
+
+状态更新必须携带 `state_version` 或 fencing token，防止旧 worker、重复 worker 或并发 execution 覆盖新位置。
+
+### 7.3 任务级并发
+
+同一增量任务的主状态默认只能由一个 active execution 推进。开始增量开发前，需要先把“检查任务不在运行”和“占用执行权”收敛为数据库原子 claim，不能依赖先查再改的非原子流程。
+
+分区型源可以由多个 worker 并行处理不同 partition，但同一 partition 同一时刻只能有一个合法 owner。
+
+### 7.4 Resume 与 replay
+
+resume 和 replay 是执行参数，不是新的 `task_type`：
+
+| 方式 | 起止边界 | 是否推进主状态 |
+|---|---|---|
+| resume | 从主 committed position 到本次上界 | 成功后推进 |
+| replay | 用户指定历史范围 | 永不推进主状态 |
+
+replay 默认必须满足以下条件之一：
+
+- 写入隔离目标；或者
+- 目标使用幂等 upsert/delete；或者
+- 业务明确接受追加重复。
+
+replay 不应提供“顺便覆盖主水位”的开关，否则会破坏单一状态事实源。
+
+## 八、持续同步与 ChangeEvent
+
+continuous runtime 处理的是无限事件流，不是把当前 batch executor 放进无限循环。
+
+### 8.1 统一变化事件
+
+不同 CDC 和消息系统进入 Transfer 后，应先归一化为内部 `ChangeEvent`。建议语义示例：
+
+```json
+{
+  "operation": "update",
+  "key": {"id": 1001},
+  "before": {"id": 1001, "name": "old"},
+  "after": {"id": 1001, "name": "new"},
+  "source": {
+    "system": "oracle",
+    "database": "ORCL",
+    "schema": "APP",
+    "table": "USERS",
+    "partition": "0",
+    "position": {
+      "kafka_offset": 98765,
+      "oracle_scn": "123456789"
+    }
+  },
+  "transaction": {"id": "..."},
+  "occurred_at": "2026-07-12T10:00:00Z"
+}
+```
+
+稳定操作语义建议为：
+
+- `snapshot`
+- `insert`
+- `update`
+- `delete`
+
+Debezium JSON、Kafka tombstone、Oracle SCN 等协议细节由 source adapter 解释，不能渗透到通用 planner、transform 和目标 writer。
+
+### 8.2 Change stream provider 边界
+
+后续可在 `common/engine` 设计专用能力，示意如下：
+
+```go
+type ChangeStreamReaderProvider interface {
+    OpenChangeStream(
+        ctx context.Context,
+        conn ConnectionInfo,
+        source ChangeStreamSource,
+        options ChangeStreamOptions,
+    ) (ChangeStreamReader, error)
+}
+
+type ChangeStreamReader interface {
+    Poll(ctx context.Context, maxEvents int) ([]ChangeEvent, error)
+    Positions() map[string]Position
+    Pause(ctx context.Context, partitions []string) error
+    Resume(ctx context.Context, partitions []string) error
+    Close(ctx context.Context) error
+}
+```
+
+这只是后续接口方向，正式实现前必须先修订引擎插件接口和能力声明规范。
+
+Kafka topic 和数据库 CDC 不能伪装成当前 `BatchReadableProvider`。Kafka poll 可以按批返回消息，但它的 offset、rebalance、持续生命周期和 checkpoint 语义与 bounded table batch 不同。
+
+### 8.3 交付保证
+
+第一阶段统一采用：
+
+```text
+at-least-once delivery + idempotent target apply
+```
+
+处理顺序：
+
+1. 拉取一批事件。
+2. 解码并归一化 ChangeEvent。
+3. transform。
+4. 目标批次提交。
+5. Transfer 持久化本分区 committed position。
+6. 继续处理下一批。
+
+任意外部数据库目标与 Kafka offset 之间通常不存在分布式原子事务。如果进程在步骤 4 和 5 之间崩溃，同一批事件会再次执行。因此：
+
+- upsert/delete 必须基于稳定键。
+- 重复事件的重复应用应得到相同结果。
+- 需要时目标可保存或比较 source position，防止旧事件覆盖新状态。
+- 第一阶段不得宣称通用端到端 exactly-once。
+
+### 8.4 Continuous execution 生命周期
+
+一个 continuous execution 表示一次 runtime session：
+
+- 每次启动创建新的 execution。
+- 正常停止、失败或失联后，本 execution 结束。
+- restart/resume 创建新 execution，从 committed position 恢复。
+- 已结束 execution 不得重新变回 running。
+
+continuous execution 不使用 0 到 100 的业务进度作为主要观测指标，应展示：
+
+- 每 partition 当前 position。
+- source latest position。
+- consumer lag。
+- events/second、bytes/second。
+- last event time。
+- last checkpoint time 和 checkpoint age。
+- rebalance、retry 和 dead-letter 摘要。
+- runtime heartbeat。
+
+### 8.5 取消、暂停与恢复
+
+持续运行时必须支持真实的 context cancel、停止 poll、完成或放弃当前批次、关闭 reader/writer、释放 partition ownership 并一致更新 execution。
+
+只修改数据库状态、不停止实际 worker 不是取消。当前 Transfer 在真正具备中断和资源清理能力前，应继续保持 TaskProvider `supports_cancel=false`。
+
+### 8.6 Meta scan
+
+bounded 任务可以在成功后触发一次 Meta deep scan。continuous 任务长期不结束，不能沿用“写完后扫描”：
+
+- 结构首次建立时扫描。
+- 目标 schema 发生变化时触发防抖扫描。
+- 必要时按低频周期刷新统计。
+- 不得逐事件或逐 batch 触发 Meta scan。
+
+### 8.7 Schema 变化策略
+
+CDC 或 Kafka 消息中的 schema 变化与 Meta scan 是两个不同问题：Meta scan 负责重新识别目标事实，不能代替目标 DDL 决策。
+
+第一阶段默认采用严格策略：
+
+```text
+schema change detected
+  -> 停止对应 task/partition
+  -> 保存 source/target schema diff
+  -> 当前 execution 以 failed 结束
+  -> error_details.code=schema_change_blocked
+  -> 用户确认或调整目标
+  -> 创建新 execution 从 committed position 恢复
+```
+
+不能在目标缺少字段时静默忽略该字段继续运行，否则 execution 表面成功，源目标数据已经不一致。
+
+后续可以显式提供：
+
+| 策略 | 行为 |
+|---|---|
+| `fail` | 默认；检测到不兼容变化立即阻塞。 |
+| `manual` | 生成 schema change request，由用户确认后执行目标变更。 |
+| `additive` | 仅在用户显式开启、目标插件声明支持且变更为安全新增 nullable 字段时自动执行。 |
+
+删除字段、修改主键、收窄长度、改变不可兼容类型等破坏性 DDL 不进入自动传播路线。目标 DDL 执行完成后再触发防抖 Meta scan，更新目标 data item 事实。
+
+## 九、为什么当前不整体引入 Flink
+
+Flink 擅长：
+
+- 事件时间和窗口。
+- 大规模有状态计算。
+- 流式 join、聚合和 CEP。
+- 流批统一 SQL/算子执行。
+- 大规模并行、状态快照和恢复。
+
+但 ADDP 当前首先需要解决的是：
+
+- 统一任务语义。
+- watermark/offset 状态。
+- 目标幂等。
+- Kafka partition ownership。
+- CDC envelope 归一化。
+- continuous execution 生命周期。
+- Oracle 日志捕获组件集成。
+
+Flink 不会替代 Oracle redo log 捕获，也不会自动让任意外部数据库目标获得 exactly-once。
+
+推荐架构是控制面和语义统一、执行面分开：
+
+```text
+              Transfer task/control plane
+         task / state / execution / observability
+                         |
+             +-----------+-----------+
+             |                       |
+    bounded batch runtime    continuous change runtime
+      Go + Asynq worker       long-running supervisor
+             |                       |
+      table/content batch       ChangeEvent batches
+```
+
+当前 Go planner/executor 和 common engine/format provider 继续承担 bounded runtime。continuous runtime 属于同一个 Transfer 模块，但使用适合长驻进程的 supervisor/worker，不把无限消费循环塞进当前一次性 Asynq task。
+
+### 9.1 Bounded worker 继续保留
+
+当前 `transfer/backend/cmd/worker` 继续承担 bounded execution：
+
+- 一次性 snapshot。
+- 定时 snapshot。
+- watermark bounded incremental。
+- manifest bounded incremental。
+- bounded replay。
+
+一个 bounded worker 进程通过 Asynq concurrency 并发处理多个有限任务；执行结束后 handler 返回并释放 slot。后续可以在部署和文档中称为 `transfer-bounded-worker`，但不为兼容旧命名保留两套启动入口。
+
+### 9.2 Continuous worker 进程模型
+
+新增独立进程角色 `transfer-continuous-worker`，但它仍属于 Transfer 模块：
+
+```text
+Continuous Worker Process
+  -> Supervisor
+    -> Runtime Session: task A
+      -> partition worker 0
+      -> partition worker 1
+    -> Runtime Session: task B
+      -> partition worker 0
+```
+
+一个 continuous task 对应一个 runtime session，不对应一个操作系统进程或容器。一个 continuous worker 进程可以承载多个 task session，每个 session 内部再按 partition 创建受限 goroutine。
+
+开发环境可以默认启动一个 continuous worker 实例，但架构不能依赖全局单例。生产环境允许多个实例，通过以下状态原子 claim runtime：
+
+```text
+owner_instance_id
+lease_until
+heartbeat_at
+fencing_token
+```
+
+同一 task 同一时刻只能有一个合法 owner。第一阶段同一 task 的全部 partition 归同一个 worker 实例；只有单任务吞吐达到明确瓶颈后，才讨论跨实例拆分 partition。
+
+continuous worker 必须设置容量上限，例如 active task 数、总 partition worker 数、内存缓冲和未提交事件数。容量耗尽时新 session 保持 pending，不无限创建 goroutine。
+
+### 9.3 Continuous 启动与恢复
+
+建议启动流程为：
+
+1. API 原子写入任务 desired state，并创建 pending execution。
+2. continuous supervisor claim pending execution 和 runtime lease。
+3. 建立 source/target session，从 committed position 恢复。
+4. 定期续租、写 heartbeat 和运行指标。
+5. 停止或失败时结束当前 execution 并释放 lease。
+6. 自动恢复需要创建新 execution，不复用旧 execution。
+
+不使用 Asynq 承载长期 continuous session；Asynq 仍只用于 bounded execution 和必要的短期控制任务。
+
+只有出现明确的事件时间窗口、流式 join、大规模状态计算、统一流式 SQL 或现有 runtime 无法承担的并行规模时，再把 Flink 作为可选 runtime 评估；Flink 不作为支持 Kafka 或 Oracle CDC 的前置条件。
+
+## 十、不使用 Flink 的 Oracle CDC
+
+### 10.1 推荐链路
+
+```text
+Oracle Redo / Archive Log
+          -> Debezium Oracle Connector
+          -> Infra Kafka
+          -> Transfer continuous runtime
+          -> target engine
+```
+
+职责：
+
+| 组件 | 职责 |
+|---|---|
+| Debezium | 解析 Oracle redo、维护 SCN、事务顺序和 snapshot/增量衔接。 |
+| Infra Kafka | 持久化变化事件、削峰、保留 replay 窗口、隔离捕获与目标写入。 |
+| Transfer | 消费事件、转换、目标应用、execution 和 committed position。 |
+| Target engine plugin | 批量 upsert/delete、提交边界和幂等实现。 |
+
+### 10.2 Oracle 捕获方案判断
+
+| 方案 | 定位 |
+|---|---|
+| Debezium + LogMiner | 推荐第一路线；无需 Flink，但需正确配置 Oracle 日志和权限。 |
+| Oracle GoldenGate | 商业能力强，成本和授权约束明显。 |
+| Oracle XStream | 需要按 Oracle 版本和许可单独核验。 |
+| OpenLogReplicator | 可研究，但兼容性、运维和长期维护风险更高。 |
+| ADDP 自己解析 redo | 不采用。 |
+| `updated_at` 轮询 | 只属于 watermark 批增量，不是完整 CDC。 |
+
+Oracle 接入前至少验证：
+
+- Oracle 版本与 Debezium 兼容矩阵。
+- ARCHIVELOG。
+- supplemental logging。
+- Connector 用户权限。
+- RAC、CDB/PDB。
+- LOB、DDL、表重建、长事务和归档日志保留。
+- XStream、GoldenGate 等相关 Oracle 许可。
+
+### 10.3 Snapshot 与 CDC 交接
+
+首次接入不能简单执行“先全量，完成后再开始 CDC”，否则两者之间可能出现数据空洞。正确路线需要：
+
+1. 建立或记录 CDC 日志起点。
+2. 执行一致性 snapshot。
+3. 捕获并缓冲 snapshot 期间产生的变化。
+4. snapshot 应用完成后继续消费积压变化。
+5. 进入稳定 continuous 消费。
+
+这一协调优先使用 Debezium 已验证的 snapshot 语义，不由 Transfer 自行拼接 Oracle 查询和 redo 日志。
+
+### 10.4 Debezium 托管模式
+
+推荐采用独立 Kafka Connect distributed 集群运行 Debezium：
+
+```text
+Transfer Capture Supervisor
+          -> Kafka Connect REST API
+          -> Debezium Connector
+          -> Infra Kafka
+```
+
+职责边界：
+
+| 组件 | 职责 |
+|---|---|
+| Kafka Connect | 运行 connector、worker 故障漂移、connector config/offset/status 内部 topic。 |
+| Debezium Connector | 捕获数据库日志、维护捕获位点和 snapshot 过程。 |
+| Transfer capture supervisor | 创建、更新、停止、删除和监控 connector；关联 Transfer task/execution。 |
+| Transfer continuous worker | 消费 Infra Kafka、应用目标并维护消费位点。 |
+
+Transfer 不在 Go 进程内嵌入 Debezium Java runtime。Kafka Connect distributed mode提高捕获服务可用性，但不单独构成“不丢数据”保证；仍需同时满足 Kafka 内部 topic/业务 topic 复制、Oracle archive log 保留、connector offset 持久化和 Infra Kafka retention 要求。
+
+### 10.5 捕获位点与消费位点
+
+需要同时存在两类位点，但不能混为一个状态：
+
+```text
+Oracle
+  -- Debezium capture position / SCN -->
+Infra Kafka
+  -- Transfer topic/partition/offset -->
+target
+```
+
+- Kafka Connect offset 回答“Oracle 日志已经捕获到哪里”，由 Kafka Connect 管理。
+- Transfer committed position 回答“目标已经可靠应用到哪个 Kafka offset”，由 Transfer 管理。
+- ChangeEvent 可以携带 Oracle SCN 供诊断、审计和目标防乱序使用。
+- Transfer 不复制维护 Kafka Connect 内部 offset，但不能因此省略自己的消费状态。
+
+## 十一、Kafka 作为用户数据源
+
+用户已有 Kafka，或者业务系统直接向 Kafka 写事件时，Kafka 是正常的外部数据引擎，应由用户在 System 注册 Engine Instance。
+
+### 11.1 Catalog
+
+Kafka catalog 可以建模为：
+
+```text
+service(cluster)
+  -> topic
+```
+
+用户选择的稳定资源是 topic，因此建议 `topic` 作为可选择 leaf。partition 数量、leader、副本和状态属于 topic facts/diagnostics，不作为资源树子节点或用户 locator。正式实现前需先把 `topic` 术语和 `type=topic` ResourceLocator 规则补入术语表、catalog model 和路径规范。
+
+### 11.2 Engine 配置
+
+用户注册的 Kafka Engine 至少涉及：
+
+- bootstrap servers。
+- TLS/SASL。
+- Schema Registry。
+- topic allowlist 或访问范围。
+- 只读/可写能力。
+- 连接测试与权限诊断。
+
+连接凭据由 System 统一加密、审计和按租户管理。
+
+### 11.3 Decoder
+
+Kafka record 必须先由 source adapter 解码：
+
+| decoder | 用途 |
+|---|---|
+| `record` | 普通 Kafka 消息，通常进入 append 或基于 key 的 upsert。 |
+| `debezium` | 解析 Debezium envelope、before/after/op/tombstone。 |
+
+JSON、Avro、Protobuf 和 Schema Registry 是消息编码能力；`debezium` 是变化事件 envelope。两者是不同维度，后续配置不能混成单一 `format` 枚举。
+
+### 11.4 Kafka offset
+
+Transfer 不依赖 consumer auto commit 作为唯一事实源：
+
+- 禁用自动提交。
+- Kafka consumer group 可用于分区分配。
+- Transfer 私有状态保存每 partition committed offset。
+- worker 启动时从 Transfer committed offset seek。
+- 目标提交后才推进 offset。
+- rebalance 前停止拉取并完成或放弃当前批次。
+- 状态推进使用 CAS/fencing。
+
+### 11.5 Backpressure 和异常消息
+
+continuous runtime 至少需要：
+
+- 按目标吞吐动态 pause/resume partition。
+- 限制 poll batch、内存和未提交事件数。
+- 区分可重试目标错误与不可解析消息。
+- 默认遇到不可解析消息停止对应 partition，避免静默丢数。
+- 如果未来支持 dead-letter，必须记录原 topic/partition/offset、错误和审计，并明确推进源 offset 的规则。
+
+## 十二、Infra Kafka 与业务 Kafka
+
+如果 ADDP 同时支持内部 CDC 链路和用户 Kafka 源，需要两个清晰角色。
+
+| 角色 | 管理方式 | 用途 |
+|---|---|---|
+| Infra Kafka | ADDP 部署配置，不进入 System engines | Debezium CDC 中转、内部变化事件、缓冲和 replay。 |
+| 业务 Kafka Engine | 用户在 System 注册 | 用户选择 topic 作为 Transfer 源或目标。 |
+
+这不是两条兼容路线，而是两个不同 owner 和生命周期的资源角色。
+
+### 12.1 Infra Kafka
+
+Infra Kafka：
+
+- 不写入 `system.engines`。
+- 不出现在资源树。
+- 不接受 Meta 自动扫描。
+- 用户创建 Oracle CDC 任务时不需要选择内部 topic。
+- broker、凭据、topic prefix、retention 和 cleanup 由 ADDP 管理。
+- 只承载 ADDP 内部 CDC 事件。
+
+Oracle CDC 任务的业务 source 仍然是用户注册的 Oracle Engine。Infra Kafka 是 runtime 实现细节，不进入公开任务 endpoint。
+
+### 12.2 业务 Kafka Engine
+
+业务 Kafka：
+
+- 进入 System engines。
+- 按租户授权和审计。
+- topic 可以成为 Transfer 任务显式 source/target。
+- ADDP 默认不负责创建、扩容和删除用户 topic。
+- 删除 Engine Instance 不删除 Kafka 业务数据。
+
+### 12.3 能否物理共用
+
+开发环境和小型部署可以共用一个物理 Kafka 集群，但逻辑身份必须分离：
+
+```text
+Kafka cluster
+  -> infra principal / __addp_cdc.* topics
+  -> business principal / user topics
+```
+
+必须使用：
+
+- 不同账号和 ACL。
+- 不同 topic namespace。
+- 不同 retention 策略。
+- 独立配置入口。
+- 明确 cleanup owner。
+
+业务 Engine 不能浏览 infra topic；infra consumer 也不能任意读取用户 topic。生产环境优先独立集群，至少必须做到凭据和 ACL 隔离。
+
+### 12.4 代码复用
+
+两种 Kafka 角色应复用同一套底层能力：
+
+```text
+Kafka common capability
+  -> client factory
+  -> TLS/SASL
+  -> topic/partition reader
+  -> offset seek
+  -> Schema Registry
+  -> event decoder
+```
+
+绑定来源不同：
+
+- 业务 Kafka 从 System Engine Instance 解析连接信息。
+- Infra Kafka 从 ADDP infra 配置解析连接信息。
+
+不能复制两套 Kafka consumer、decoder 或 offset 逻辑。
+
+### 12.5 Infra Kafka 容量与可恢复性治理
+
+Infra Kafka 用于缓冲和 replay，但不是无限存储。至少需要治理：
+
+- broker 磁盘使用率和磁盘高水位。
+- topic 写入速率、分区大小和副本状态。
+- Transfer consumer lag 条数和 lag 时间。
+- connector 捕获延迟。
+- Transfer checkpoint age。
+- under-replicated partition。
+- 按当前写入速率估算的 remaining retention horizon。
+
+retention 同时受时间与容量约束：
+
+```text
+允许的最小 replay 时间
+  + 最大下游故障恢复时间
+  + 峰值写入速率和安全余量
+  -> topic retention 与集群容量
+```
+
+`retention.bytes` 可以保护磁盘，但也可能提前删除尚未消费的数据，因此不能把它仅描述为防磁盘打满的安全开关。任务 lag 接近 retention horizon 时应进入 degraded/critical 告警，并明确提示可能失去连续恢复能力。
+
+ADDP 不自动暂停用户 Oracle 或其他上游业务写入。平台可以暂停新 replay、限制非关键任务、对目标应用背压并发出告警；是否干预上游业务由用户决定。自动暂停 Debezium connector 也必须谨慎，因为暂停期间数据库归档日志仍可能超出保留窗口。
+
+## 十三、建议配置形态
+
+以下 JSON 只表达后续语义方向，不是当前可提交 API。
+
+### 13.1 Watermark bounded incremental
+
+```json
+{
+  "runtime": {
+    "boundary": "bounded"
+  },
+  "load": {
+    "mode": "incremental",
+    "change_detection": {
+      "type": "watermark",
+      "field": "updated_at",
+      "tie_breaker": ["id"],
+      "start": "committed",
+      "end": "execution_upper_bound"
+    }
+  },
+  "source": {
+    "locator": "addp://engine/1/path/public/orders?type=table",
+    "data_type": "table",
+    "representation": "native"
+  },
+  "target": {
+    "parent_locator": "addp://engine/2/path/public?type=schema",
+    "name": "orders",
+    "data_type": "table",
+    "representation": "native",
+    "policy": {
+      "apply_mode": "upsert",
+      "keys": ["id"]
+    }
+  },
+  "transforms": []
+}
+```
+
+### 13.2 用户 Kafka continuous source
+
+```json
+{
+  "runtime": {
+    "boundary": "continuous"
+  },
+  "load": {
+    "mode": "incremental",
+    "change_detection": {
+      "type": "kafka"
+    }
+  },
+  "source": {
+    "locator": "addp://engine/30/path/orders.cdc?type=topic",
+    "representation": "native",
+    "change_stream": {
+      "envelope": "debezium",
+      "encoding": "json",
+      "start": "committed",
+      "poll_batch_size": 1000
+    }
+  },
+  "target": {
+    "parent_locator": "addp://engine/20/path/public?type=schema",
+    "name": "orders",
+    "data_type": "table",
+    "representation": "native",
+    "policy": {
+      "apply_mode": "upsert_delete",
+      "keys": ["id"]
+    }
+  },
+  "transforms": []
+}
+```
+
+### 13.3 Oracle CDC
+
+Oracle CDC 公开任务配置只引用 Oracle 和目标 Engine，不暴露 Infra Kafka topic：
+
+```json
+{
+  "runtime": {
+    "boundary": "continuous"
+  },
+  "load": {
+    "mode": "incremental",
+    "change_detection": {
+      "type": "cdc",
+      "bootstrap": "initial_snapshot"
+    }
+  },
+  "source": {
+    "locator": "addp://engine/12/path/APP/ORDERS?type=table",
+    "data_type": "table",
+    "representation": "native"
+  },
+  "target": {
+    "parent_locator": "addp://engine/20/path/public?type=schema",
+    "name": "orders",
+    "data_type": "table",
+    "representation": "native",
+    "policy": {
+      "apply_mode": "upsert_delete",
+      "keys": ["ID"]
+    }
+  }
+}
+```
+
+Debezium connector 名称、内部 topic、consumer group 和 connector runtime 参数属于 Transfer/infra 执行配置，不进入用户任务的通用 source endpoint。
+
+## 十四、推荐实施顺序
+
+### 阶段 0：文档和现有能力纠偏
+
+1. 将本文讨论结论确认后升级到相关规范。
+2. 移除当前 TaskProvider 对未实现 `stream` / `micro-batch` 的错误能力声明。
+3. 统一当前配置文档与 planner 对 `mode=batch` 是否必填的规则。
+4. 删除或真正实现伪取消路径；在具备真实中断前保持 `supports_cancel=false`。
+5. 把手动任务启动改为数据库原子 claim。
+
+### 阶段 1：Watermark bounded incremental
+
+1. 定义增量状态表和 position schema。
+2. 实现复合 watermark、冻结上界和稳定排序。
+3. 实现 target upsert 能力声明和目标键校验。
+4. 实现 CAS/fencing 状态提交。
+5. 支持 resume；replay 后置或只提供最小受控接口。
+6. 增加源库时间回拨、相同 timestamp 并发、watermark 未更新、只读副本延迟和目标重复应用等破坏性测试。
+
+### 阶段 2：Kafka continuous runtime
+
+1. 修订术语表、catalog、引擎 Provider 和 capability 规范。
+2. 增加用户可注册 Kafka Engine。
+3. 定义 ChangeEvent、ChangeStreamReader 和 ChangeApplyWriter。
+4. 实现专用 continuous runtime supervisor。
+5. 先完成普通 record -> append 最小闭环。
+6. 再完成 Debezium envelope -> upsert/delete。
+7. 实现 partition state、lag、heartbeat、真实暂停和停止。
+8. 增加目标提交后 offset 未提交崩溃、rebalance、worker lease 过期、目标锁表和 Kafka retention 临界等故障测试。
+
+### 阶段 3：数据库 CDC
+
+1. 先以 PostgreSQL/MySQL Debezium 验证通用 Kafka、ChangeEvent 和目标幂等链路。
+2. 增加 Infra Kafka 部署、ACL、retention 和 cleanup。
+3. 部署 Kafka Connect distributed 集群，并由 Transfer capture supervisor 管理 Debezium connector 生命周期。
+4. 最后接入 Oracle LogMiner，集中验证 Oracle 权限、日志、snapshot、LOB、DDL 和长事务。
+
+### 阶段 4：按真实需求评估 Flink
+
+只有前述单一路线已经稳定，并出现当前 continuous runtime 无法满足的有状态计算需求时，才评估 Flink runtime。引入时也应消费同一任务语义、ChangeEvent 和 execution/state 契约，不能建立第二套 Transfer 产品模型。
+
+## 十五、当前明确不采用的路线
+
+1. 不恢复 `task_type=import|export|transfer`。
+2. 不把 `realtime` 加入统一 execution `trigger_type`。
+3. 不把 Kafka change stream 伪装成当前 table batch reader。
+4. 不把 continuous consumer 直接塞进一次性 Asynq task 无限运行。
+5. 不由 ADDP 自己解析 Oracle redo log。
+6. 不把 watermark 轮询称为完整 CDC。
+7. 不依赖 Kafka auto commit 作为 Transfer 增量状态事实源。
+8. 不宣称任意外部目标的通用 exactly-once。
+9. 不让用户从资源树选择或访问 Infra Kafka topic。
+10. 不让同一 Kafka 配置同时承担 infra 和业务 Engine 身份。
+11. 不在当前阶段整体推翻 Go bounded batch runtime。
+12. 不并行保留旧配置与新语义字段；正式实施时 clean break。
+13. 不为每个 continuous task 启动独立操作系统进程，也不把 continuous worker 设计成不可扩展的全局单例。
+14. 不通过静默忽略未知字段处理 schema 变化。
+15. 不由 ADDP 自动暂停用户上游业务写入。
+
+## 十六、仍需确认的设计问题
+
+以下问题尚未升级为正式规范。每项给出当前分析和建议，便于后续逐项确认。
+
+### 16.1 任务配置采用嵌套结构还是扁平结构
+
+分析：执行边界、装载方式、变化识别和目标策略是正交维度。全部扁平化会快速产生 `mode`、`incremental_type`、`watermark_field`、`cdc_*` 等互相依赖字段，也容易把 task config 与统一 execution 对象混淆。
+
+建议：采用有限嵌套，但把 `execution.boundary` 改为更明确的 `runtime.boundary`：
+
+```text
+runtime.boundary
+load.mode
+load.change_detection
+source
+transforms
+target.policy.apply_mode
+```
+
+嵌套只用于稳定概念边界，不建立多层抽象。进入阶段 1 前应在 Transfer 配置规范中一次确认，并同步更新本文示例；不兼容旧 `mode=batch`。
+
+### 16.2 `write_mode` 是否改为 `apply_mode`
+
+分析：`overwrite/append` 主要描述写入方式，而 `upsert/upsert_delete` 描述变化如何应用到目标。继续扩展 `write_mode` 会让“删除事件”“冲突键”“幂等”语义变得含混。
+
+建议：增量主线开始时 clean break 为 `target.policy.apply_mode=replace|append|upsert|upsert_delete`，删除 `write_mode`，不保留字段别名。目标引擎通过强类型 Provider 和 capability 声明 prepare、upsert、delete、事务/批次提交和幂等能力；Transfer 负责组合校验和执行策略。
+
+### 16.3 增量状态表和 position JSON
+
+分析：watermark、Kafka offset、Oracle SCN 等位置结构不同，但都需要按 task/source/partition 唯一、CAS 更新和审计。runtime lease 与业务 committed position 生命周期不同，不宜放在同一 JSON 中。
+
+建议：至少分为两个 Transfer 私有事实：
+
+- `transfer.sync_states`：保存 committed position、position type/version、state version 和最近提交 execution。
+- `transfer.runtime_leases`：保存 owner instance、lease、heartbeat 和 fencing token。
+
+`position` 使用带 `type`、`version` 的 JSONB，由对应 source provider 解释；公共列只保存跨 provider 必需的身份、版本和审计字段。阶段 1 先只实现 watermark position v1，Kafka/CDC 后续增加新 position type，不修改旧 type 的字段含义。
+
+### 16.4 Watermark 第一版源与一致上界
+
+分析：不同数据库的事务快照、时间类型和复合游标查询能力不同。如果第一版同时覆盖过多数据库，会把增量语义验证与方言适配混在一起。
+
+建议：第一版只支持 PostgreSQL native table，使用复合游标和数据库一致性读获得本次上界；验证稳定后再接 MySQL。是否允许只读副本作为源需要单独声明最大复制延迟和 lookback 策略。进入实现前必须用真实并发写入测试证明不会漏掉相同 watermark 值的记录。
+
+### 16.5 Replay 是否进入第一版
+
+分析：replay 会引入历史范围选择、目标重复应用、与主任务并发、审计和资源限流，显著扩大第一版状态机。
+
+建议：阶段 1 只支持 resume。replay 在 watermark 主状态、幂等 upsert、原子 claim 和执行审计稳定后进入下一阶段；replay 永不推进主 committed position，也不提供覆盖主水位开关。
+
+### 16.6 Kafka catalog 与 ResourceLocator
+
+分析：用户选择的是 topic，而 partition 是 Kafka 的执行分片和观测事实。把 partition 暴露成资源树可选叶子，会使任务绑定固定分区，破坏 Kafka 扩分区和 consumer group 分配语义。
+
+建议：catalog 使用 `service(cluster) -> topic`，`topic` 是可选择 leaf；partition 数量、leader、副本和当前状态作为 topic facts/diagnostics，不作为资源树子节点和用户 locator。ResourceLocator 使用 `type=topic`。该结论需要先补术语表、catalog model 和路径规范。
+
+### 16.7 普通 Kafka record 的 schema/key 与 Schema Registry
+
+分析：普通 Kafka 消息的 key、value 编码和业务 schema 没有统一保证；一开始同时支持 JSON、Avro、Protobuf 和多种 Registry 会稀释 continuous runtime 主线验证。
+
+建议：第一版只支持 JSON value；append 可以没有 key，upsert 必须显式配置从 Kafka key 或 value 字段提取稳定目标键。第二步支持 Debezium JSON envelope。Schema Registry、Avro 和 Protobuf 后置，但配置中从一开始区分 `encoding` 与 `envelope`，避免未来重新拆字段。
+
+### 16.8 Continuous timeout、失联和自动恢复
+
+分析：continuous execution 正常情况下不会因运行时间过长而 timeout；需要判断的是 runtime heartbeat 丢失、source poll 卡死、checkpoint 长期不推进和目标持续失败。
+
+建议：
+
+- 不设置按总运行时长结束的 execution timeout。
+- 使用连续多次 heartbeat 失败判定 lost，阈值由部署配置而不是任务随意设置。
+- source poll、target apply 和 checkpoint 分别设置操作超时。
+- 自动恢复使用指数退避、最大连续失败次数和 circuit breaker。
+- 每次恢复创建新 execution，并从 committed position 开始。
+
+具体秒数应通过阶段 2 压测确定，不在概念规范中硬编码。
+
+### 16.9 Dead-letter 是否进入第一版
+
+分析：把坏消息写入 DLQ 后推进源 offset，实质上是经过审计的数据跳过；若 DLQ 写入或回放语义不完整，容易从“不中断任务”退化为静默丢数。
+
+建议：第一版不提供 DLQ，遇到不可解析或不可应用事件时严格阻塞对应 partition。第二阶段再设计 Transfer-owned Infra Kafka DLQ，必须保存原 topic/partition/offset、原始载荷引用、错误、task/execution 和回放状态；只有 DLQ 写入成功后才允许推进源 offset。
+
+### 16.10 Infra Kafka 发行版、部署与容量
+
+分析：这是部署与运维选择，依赖预期吞吐、最长下游故障、数据保留、节点数量和生产环境。过早选择多种兼容发行版会形成测试矩阵。
+
+建议：生产参考实现采用 Apache Kafka KRaft + Kafka Connect distributed，开发环境也优先使用相同协议实现，避免先维护另一套行为差异。第一版规范必须给出：
+
+- broker/replication 最小拓扑。
+- internal/config/offset/status 和 CDC topic 的复制因子。
+- topic namespace、ACL 和租户隔离。
+- retention time/bytes 与容量计算方法。
+- 磁盘高水位、lag、retention horizon 告警。
+- backup 不替代 Kafka replay，真正恢复依赖源日志和 connector offset 的边界。
+
+具体端口和镜像版本在进入阶段 3 前按 ADDP 端口与技术栈规范确定。
+
+### 16.11 Debezium connector 托管边界
+
+分析：将 Debezium 嵌入 Go continuous worker 会混合 JVM runtime、connector HA 和目标消费；让用户自己管理 connector 又会破坏 ADDP 任务的一致生命周期。
+
+建议：确认独立 Kafka Connect distributed + Transfer capture supervisor 单一路线。capture supervisor 通过 Kafka Connect API 管理 connector 和状态映射；continuous worker 只消费 Infra Kafka。Kafka Connect 管 capture offset，Transfer 管 target committed offset，两者不能互相替代。
+
+### 16.12 Oracle 第一版支持范围
+
+分析：Oracle RAC、CDB/PDB、LOB、DDL 和长事务会显著增加验证矩阵。第一版应先证明通用 CDC 链路，而不是承诺所有 Oracle 部署形态。
+
+建议：在 PostgreSQL/MySQL CDC 链路稳定后，Oracle 第一版优先限定为一个明确受支持版本和单实例部署、表级选择、insert/update/delete、稳定主键和基础标量类型；初始 snapshot + LogMiner continuous 必须闭环。RAC、复杂 LOB、自动 DDL 传播和无主键表后置。最终版本范围必须结合用户真实 Oracle 环境与 Debezium 兼容矩阵确认，不能仅凭文档猜测。
+
+### 16.13 Schema 变化与 Meta 协议
+
+分析：Schema change 决定目标是否能继续应用，Meta scan 只负责识别变化后的事实。二者不能互相替代，也不能通过忽略未知字段维持假成功。
+
+建议：第一版使用 `fail/manual` 路线：阻塞 partition、保存 schema diff、产生用户可见诊断，用户完成目标变更后创建新 execution 恢复。安全 additive 自动变更后置。目标 DDL 成功后触发一次防抖 Meta deep scan；Meta scan 失败不回滚已提交 DDL，但 execution/派生 scan 关系必须可观测。
+
+### 16.14 何时评估 Flink
+
+分析：不能按“项目发展到某阶段”或“数据量看起来很大”引入 Flink，应由现有 runtime 的可测瓶颈或新计算语义触发。
+
+建议：只有满足以下至少一个条件并有基准数据时才启动正式评估：
+
+- 需要事件时间窗口、stream join、CEP 等当前 Transfer 明确不承担的有状态计算。
+- 单 task 需要跨进程分布式 partition/state，现有 continuous worker 已经成为实测瓶颈。
+- checkpoint state 规模和恢复时间超出现有 DB lease/position 模型的目标。
+- 多级流式 DAG 需要统一状态快照和反压传播。
+
+普通 Kafka 搬运、数据库 CDC、字段映射或单目标 upsert 不构成引入 Flink 的理由。即使引入，也必须复用相同 Task、ChangeEvent、state 和 execution 契约。
+
+## 十七、与统一任务体系的边界
+
+本文不改变以下正式规则：
+
+- Transfer 对外只声明 `task_type=sync`。
+- 任务定义归 `transfer.transfer_tasks`。
+- 每次 bounded execution 或 continuous runtime session 都写入 `common.task_executions`。
+- retry/restart 创建新的 execution，不复用已结束 execution。
+- `trigger_type` 只允许 `manual` / `scheduled`。
+- Orchestrator 通过 `provider=transfer + task_type=sync + task_id` 引用任务。
+- continuous execution 后续如声明标准取消能力，必须真实中断 worker、释放资源并一致落库。
+- TaskProvider capability 只能声明已经真实实现并验证的能力。
+
+Transfer 内部 position、partition state、connector runtime 状态和 CDC 诊断信息属于 Transfer 私有执行状态；`common.task_executions` 保存跨模块可理解的状态、摘要和观测信息，不成为 Kafka/Oracle 私有状态数据库。

@@ -9,6 +9,7 @@ MAIN_CLASS="com.addp.supermap.workflow.SuperMapWorkflowRuntime"
 SUPERMAP_BIN="${SUPERMAP_OBJECTSJAVA_BIN:-/opt/supermap/objectsjava/bin_linux_arm64}"
 GPA_LIB_DIR="${SUPERMAP_GPA_LIB_DIR:-/opt/supermap/gpa/libs}"
 LICENSE_DIR="${SUPERMAP_LICENSE_DIR:-${APP_ROOT}/license}"
+JAVA_OPTS="${SUPERMAP_JAVA_OPTS:--Xms128m -Xmx4g}"
 
 if [ ! -d "${SUPERMAP_BIN}" ]; then
   echo "SUPERMAP_OBJECTSJAVA_BIN does not point to a directory: ${SUPERMAP_BIN}" >&2
@@ -43,7 +44,10 @@ if [ ! -f "${CLASS_DIR}/com/addp/supermap/workflow/SuperMapWorkflowRuntime.class
     "${SOURCE_FILE}"
 fi
 
+read -r -a java_opts <<< "${JAVA_OPTS}"
+
 exec java \
+  "${java_opts[@]}" \
   -Djava.library.path="${SUPERMAP_BIN}" \
   -cp "${CLASS_DIR}:${LIB_DIR}/*:${GPA_LIB_DIR}/*:${SUPERMAP_BIN}/*" \
   "${MAIN_CLASS}"
