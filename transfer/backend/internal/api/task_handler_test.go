@@ -17,6 +17,11 @@ import (
 	"gorm.io/gorm"
 )
 
+type taskHandlerQueue struct{}
+
+func (taskHandlerQueue) EnqueueExecuteTask(context.Context, uint, uint, uint) error { return nil }
+func (taskHandlerQueue) Close() error                                               { return nil }
+
 func TestTaskHandlerListTasksRejectsUnsupportedTaskType(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -36,7 +41,7 @@ func TestTaskHandlerListTasksRejectsUnsupportedTaskType(t *testing.T) {
 func TestTaskHandlerListTasksUsesStandardItemsShape(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newTransferTaskHandlerTestDB(t)
-	taskSvc := service.NewTaskService(db, nil, nil, nil)
+	taskSvc := service.NewTaskService(db, nil, nil, taskHandlerQueue{})
 	_, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
 		Name:     "sync task",
 		TaskType: commonExecution.TaskTypeSync,
@@ -106,7 +111,7 @@ func TestProviderExecuteTaskRejectsUnknownFields(t *testing.T) {
 func TestProviderExecuteTaskUsesStandardExecutionShape(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newTransferTaskHandlerTestDB(t)
-	taskSvc := service.NewTaskService(db, nil, nil, nil)
+	taskSvc := service.NewTaskService(db, nil, nil, taskHandlerQueue{})
 	executionSvc := service.NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
 	taskSvc.SetExecutionService(executionSvc)
 	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
@@ -235,7 +240,8 @@ func newTransferTaskHandlerTestDB(t *testing.T) *gorm.DB {
 
 func validTransferTaskHandlerConfig() map[string]interface{} {
 	return map[string]interface{}{
-		"mode": "batch",
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
 		"source": map[string]interface{}{
 			"locator":        "addp://engine/1/path/public/roads?type=table",
 			"data_type":      "table",
@@ -247,7 +253,7 @@ func validTransferTaskHandlerConfig() map[string]interface{} {
 			"data_type":      "table",
 			"representation": "encoded",
 			"format":         string(format.FormatCSV),
-			"policy":         map[string]interface{}{"write_mode": "overwrite"},
+			"policy":         map[string]interface{}{"apply_mode": "replace"},
 		},
 	}
 }

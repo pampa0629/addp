@@ -199,51 +199,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/executions/{execution_id}/cancel": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "执行管理 | Execution Management"
-                ],
-                "summary": "取消执行 | Cancel execution",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "执行ID | Execution ID",
-                        "name": "execution_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/executions/{execution_id}/logs": {
             "get": {
                 "security": [
@@ -465,7 +420,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建一个新的 Transfer 任务。config.source 使用 locator 指向已存在资源；config.target 使用 parent_locator + name 表达待写入资源。source locator 带 item_id 时，Transfer 后端会通过 MetaClient 读取标准 attributes。| Create a new Transfer task. config.source uses locator for existing resources; config.target uses parent_locator + name for the resource to write. When source locator carries item_id, Transfer backend loads standard attributes through MetaClient.",
+                "description": "创建 bounded Transfer 任务。配置必须使用 runtime.boundary、load.mode 和 target.policy.apply_mode；PostgreSQL watermark 增量需声明复合游标与目标 keys。旧 mode/write_mode 字段会被拒绝。| Create a bounded Transfer task using runtime.boundary, load.mode, and target.policy.apply_mode. PostgreSQL watermark incremental tasks must declare a composite cursor and target keys. Legacy mode/write_mode fields are rejected.",
                 "consumes": [
                     "application/json"
                 ],
@@ -807,6 +762,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "关闭任务自身定时调度，不中断当前 active execution | Disable the task-owned schedule without interrupting an active execution",
                 "produces": [
                     "application/json"
                 ],
@@ -852,6 +808,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "恢复任务自身定时调度；watermark execution resume 由新 execution 自动读取 committed position 完成 | Re-enable the task-owned schedule; watermark execution resume is handled by a new execution reading the committed position",
                 "produces": [
                     "application/json"
                 ],
@@ -926,64 +883,6 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "参数错误或任务已在运行 | Bad request or task already running",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "服务器错误 | Server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/task-definitions/{id}/stop": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "停止正在执行的任务 | Stop a running task",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "任务管理 | Task Management"
-                ],
-                "summary": "停止任务 | Stop task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "停止成功 | Stopped successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1379,9 +1278,11 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 1000
                 },
-                "mode": {
-                    "type": "string",
-                    "example": "batch"
+                "load": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferLoadDoc"
+                },
+                "runtime": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferRuntimeDoc"
                 },
                 "source": {
                     "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferSourceEndpointDoc"
@@ -1513,6 +1414,73 @@ const docTemplate = `{
                 "TaskStatusRunning"
             ]
         },
+        "github_com_addp_transfer_internal_models.TransferChangeDetectionDoc": {
+            "type": "object",
+            "properties": {
+                "end": {
+                    "type": "string",
+                    "enum": [
+                        "execution_upper_bound"
+                    ],
+                    "example": "execution_upper_bound"
+                },
+                "field": {
+                    "type": "string",
+                    "example": "updated_at"
+                },
+                "start": {
+                    "type": "string",
+                    "enum": [
+                        "committed"
+                    ],
+                    "example": "committed"
+                },
+                "tie_breaker": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "watermark"
+                    ],
+                    "example": "watermark"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.TransferLoadDoc": {
+            "type": "object",
+            "properties": {
+                "change_detection": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferChangeDetectionDoc"
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "snapshot",
+                        "incremental"
+                    ],
+                    "example": "snapshot"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.TransferRuntimeDoc": {
+            "type": "object",
+            "properties": {
+                "boundary": {
+                    "type": "string",
+                    "enum": [
+                        "bounded"
+                    ],
+                    "example": "bounded"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.TransferSourceEndpointDoc": {
             "type": "object",
             "properties": {
@@ -1570,8 +1538,7 @@ const docTemplate = `{
                     "example": "addp://engine/10/path/public?type=schema"
                 },
                 "policy": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferTargetPolicyDoc"
                 },
                 "representation": {
                     "type": "string",
@@ -1580,6 +1547,29 @@ const docTemplate = `{
                         "encoded"
                     ],
                     "example": "native"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.TransferTargetPolicyDoc": {
+            "type": "object",
+            "properties": {
+                "apply_mode": {
+                    "type": "string",
+                    "enum": [
+                        "replace",
+                        "append",
+                        "upsert"
+                    ],
+                    "example": "replace"
+                },
+                "keys": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
                 }
             }
         },

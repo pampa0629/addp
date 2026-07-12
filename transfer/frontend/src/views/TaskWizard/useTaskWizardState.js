@@ -96,7 +96,8 @@ export function useTaskWizardState() {
       description: taskDescription.value,
       task_type: 'sync',
       config: {
-        mode: 'batch',
+        runtime: { boundary: 'bounded' },
+        load: { mode: 'snapshot' },
         source: sourceEndpoint,
         target: targetEndpoint,
         transforms: buildTransformsConfig(),
@@ -241,7 +242,7 @@ export function useTaskWizardState() {
         data_type: 'table',
         representation: 'native',
         policy: {
-          write_mode: normalizeTableWriteMode(fileConfig.writeMode)
+          apply_mode: normalizeTableApplyMode(fileConfig.writeMode)
         }
       }
     }
@@ -255,7 +256,7 @@ export function useTaskWizardState() {
       representation: 'encoded',
       format,
       policy: {
-        write_mode: fileConfig.writeMode || 'overwrite'
+        apply_mode: 'replace'
       },
       options: targetBackendOptions(fileConfig)
     }
@@ -636,7 +637,7 @@ export function useTaskWizardState() {
         parentLocator: target.parent_locator || '',
         schema: loc.path.length >= 1 ? loc.path[loc.path.length - 1] : '',
         table: target.name || '',
-        writeMode: normalizeTableWriteMode(target.policy?.write_mode)
+        writeMode: normalizeTableWriteMode(target.policy?.apply_mode)
       }
     }
 
@@ -657,7 +658,7 @@ export function useTaskWizardState() {
       delimiter: target.options?.delimiter || ',',
       geometryField: options.geometry_field || '',
       geometryType: options.geometry_type || '',
-      writeMode: target.policy?.write_mode || 'overwrite'
+      writeMode: normalizeTableWriteMode(target.policy?.apply_mode)
     }
   }
 
@@ -761,6 +762,10 @@ export function useTaskWizardState() {
     const mode = String(value || '').toLowerCase()
     if (mode === 'append') return 'append'
     return 'overwrite'
+  }
+
+  function normalizeTableApplyMode(value) {
+    return normalizeTableWriteMode(value) === 'append' ? 'append' : 'replace'
   }
 
   function locatorDisplayPath(locator, representation = '') {

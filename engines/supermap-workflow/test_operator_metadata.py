@@ -40,6 +40,30 @@ def test_enable_postgis_metadata_is_direct_only_and_locator_free():
     assert 'param("locator"' not in block
 
 
+def test_upgrade_udbx_metadata_is_direct_only_and_explicit():
+    block = _operator_block("datasource.upgrade_udbx")
+
+    assert 'param("connection_info", "object", false, true' in block
+    assert 'param("path", "string", false, true' in block
+    assert 'param("alias", "string", false, false' in block
+    assert 'output("upgrade", "supermap.udbx_upgrade"' in block
+    assert 'List.of("direct")' in block
+    assert '"workflow"' not in block
+    assert 'param("locator"' not in block
+
+
+def test_upgrade_udbx_checks_schema_and_uses_writable_sdk_open():
+    assert '"SmAdditionalInfo"' in SOURCE
+    assert '"SmRelationship"' in SOURCE
+    assert "inspectUdbxSchema(path)" in SOURCE
+    assert "boolean readOnly = before.current();" in SOURCE
+    assert "context.openUdbx(path.toString(), alias, readOnly)" in SOURCE
+    assert 'dependencies.set("sqlite3"' in SOURCE
+    assert "sqliteCheck.available" in SOURCE
+    assert 'failed("INVALID_PARAMS", ex.getMessage())' in SOURCE
+    assert 'failed("EXECUTION_FAILED", "SuperMap direct operator execution failed")' in SOURCE
+
+
 def test_first_batch_spatial_operators_are_registered():
     for operator_id in (
         "dataset.info",

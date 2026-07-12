@@ -16,7 +16,7 @@
 本文不展开：
 
 - Manager 内部瓦片缓存生成、embedding、预览状态和快显结果的详细策略。
-- Transfer 内部全量、增量、实时同步的详细语义。
+- Transfer 各引擎方言和 continuous runtime 的实现细节。
 - Develop 算子工作流内部节点模型。
 - Meta scan 具体扫描范围和 detector 规则。
 
@@ -167,6 +167,25 @@ Common 不维护全量业务 `task_type` 编译期枚举。`task_type` 由 owner
 System 资源回收（cleanup）不纳入 TaskProvider，也不进入 Orchestrator 编排。cleanup 属于系统级运维资源回收流程，不属于用户数据处理任务；但 cleanup 必须进入 `common.task_executions` 和 System 审计体系。System 创建 `module=system`、`task_type=cleanup` 的父 execution，各模块资源回收执行方创建 `task_type=cleanup_executor` 的子 execution，并通过 `parent_execution_id` 关联。cleanup 不得声明为可编排业务任务，不得出现在 Orchestrator 的任务选择列表中。
 
 Transfer 的内部任务语义统一收敛为同步执行。阶段 1 对外只声明 `task_type=sync`，并通过 TaskProvider 和 `common.task_executions` 关联任务定义。Manager 的导入 / 导出入口通过 client 创建并触发 Transfer `sync`，不得在 Transfer 侧并行保留 `import`、`export`、`transfer` 等旧任务类型。
+
+Transfer `sync` 的稳定语义由以下正交维度表达：
+
+| 维度 | 字段 | 稳定取值 |
+| --- | --- | --- |
+| 执行边界 | `config.runtime.boundary` | `bounded` / `continuous` |
+| 装载方式 | `config.load.mode` | `snapshot` / `incremental` |
+| 变化识别 | `config.load.change_detection.type` | `watermark` / `manifest` / `cdc`（按已实现能力开放） |
+| 目标应用 | `config.target.policy.apply_mode` | `replace` / `append` / `upsert` / `upsert_delete`（按目标 Provider 能力开放） |
+
+约束：
+
+1. `manual` / `scheduled` 仍只表示 execution 触发方式；`realtime`、`stream`、`micro-batch` 不得进入 `trigger_type` 或伪装成已实现的 Transfer 执行能力。
+2. bounded execution 必须具有冻结上界；continuous execution 必须由专用长驻 runtime 承担，不能把无限循环塞入一次性队列任务。
+3. watermark 增量必须使用稳定复合游标 `(watermark_field, tie_breaker...)`，读取区间为 `(committed_position, execution_upper_bound]`；普通 watermark 只保证 insert/update，不支持物理删除，不得称为完整 CDC。
+4. 增量 committed position 归 Transfer 私有同步状态，不能写入任务定义或用 execution checkpoint 代替。只有目标批次成功提交后才能通过 CAS/fencing 推进同步状态。
+5. 同一增量任务默认只允许一个 active execution 推进主状态；任务 claim 与 pending execution 创建必须在同一数据库事务中完成。
+6. resume 创建新 execution 并从 committed position 继续；replay 是独立执行参数且永不推进主状态。第一版 PostgreSQL watermark 只支持 resume，不支持 replay。
+7. TaskProvider capability 只能声明已真实实现并验证的边界；不具备真实 worker 中断、资源释放和一致落库能力时必须 `supports_cancel=false`，也不得保留只改数据库状态的伪取消入口。
 
 Manager 的瓦片缓存生成、矢量物化视图、embedding、PreviewState、raster COG、raster mosaic、三维模型 GLB 快显、三维模型 3D Tiles 生成、3DGS - KSplat 快显和点云 COPC 快显细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。瓦片缓存生成任务类型为 `vector_tile_cache_generation`，任务定义表为 `manager.vector_tile_cache_tasks`；矢量物化视图任务类型为 `vector_materialized_view_generation`，任务定义表为 `manager.vector_materialized_view_tasks`，结果表为 `manager.vector_materialized_view`；单 TIFF 栅格 COG 生成任务类型为 `raster_cog_generation`，任务定义表为 `manager.raster_cog_tasks`；栅格镶嵌数据集生成任务类型为 `raster_mosaic_generation`，任务定义表为 `manager.raster_mosaic_tasks`，结果是业务存储中的 `format=raster_mosaic` data item，不是 Manager infra artifact；三维模型 GLB 快显任务类型为 `model_3d_glb_generation`，任务定义表为 `manager.model_3d_glb_tasks`，源 item 必须是 `format=osgb`、`layout=single`，`format=gltf`、`layout=multi`，`format=fbx|obj|stl`、`layout=single`，或 `format=ifc`、`layout=single`，结果表为 `manager.model_3d_glb`，结果是 Manager infra MinIO 中的 GLB artifact，不自动升格为业务 data item；IFC 通过 `model3d_workflow.ifc_to_glb` 专用 operator 生成 GLB，不复用 glTF / FBX / OBJ / STL 的 mesh converter；OSGB Scene 倾斜摄影转 3D Tiles 任务类型为 `model_3d_tiles_generation`，任务定义表为 `manager.model_3d_tiles_tasks`，源 item 必须是 `format=osgb_scene`、`layout=whole`，结果是业务存储中的 `format=3dtiles`、`layout=whole` data item，不是 Manager 私有 artifact；3DGS - KSplat 快显任务类型为 `gaussian_splat_ksplat_generation`，任务定义表为 `manager.gaussian_splat_ksplat_tasks`，源 item 必须是 `data_type=gaussian_splat + layout=single + format=ply|splat`，结果表为 `manager.gaussian_splat_ksplat`，结果是 Manager infra MinIO 中的 KSplat artifact，不自动升格为业务 data item；`format=ply|splat` 的高斯泼溅 item 会转换为 `.ksplat` 文件，`format=ksplat` 的源 item 直接基础预览，不创建 KSplat 快显任务；点云 COPC 快显任务类型为 `point_cloud_copc_generation`，任务定义表为 `manager.point_cloud_copc_tasks`，源 item 必须是 `data_type=point_cloud + layout=single + format=las|laz|e57|pcd|xyz`，结果表为 `manager.point_cloud_copc`，结果是 Manager infra MinIO 中的 COPC artifact，不自动升格为业务 data item；源 `format=copc` item 直接基础预览，不创建二次 COPC 快显任务。PreviewState 目标落点为 `manager.preview_state`，用于保存基础预览和快显预览的模式偏好与视角状态，不属于任务定义或快显结果表。MVT 是瓦片缓存格式，应进入任务配置，例如 `config.tile.format=mvt`，不作为任务类型。持久化 embedding 任务执行必须复用任务服务创建的主 execution；ad-hoc embedding 可以自行创建 execution，但不得产生 owner 任务定义，且没有 `source_task_id` 时必须写完整 `execution_config`。
 
@@ -534,5 +553,5 @@ cleanup execution 属于系统运维执行记录。Monitor 必须能展示 clean
 ## 与相关文档的关系
 
 - Meta 扫描任务细节见 [元数据扫描机制规范](addp元数据扫描机制规范.md)。
-- Transfer 内部任务语义后续以 [Transfer 任务语义与同步模式设计](../next/transfer任务语义与同步模式设计.md) 为准。
+- Transfer 稳定任务语义以本文和 [Transfer 模块基本概念及配置说明](../../transfer/docs/transfer-基本概念及配置说明.md) 为准；[Transfer 任务语义与同步模式设计](../next/transfer任务语义与同步模式设计.md) 只保留后续 continuous、Kafka 和 CDC 路线设计。
 - Manager 派生产物任务内部语义后续以 Manager 专题为准。

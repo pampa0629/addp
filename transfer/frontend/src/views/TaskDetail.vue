@@ -14,9 +14,6 @@
               <el-button type="primary" @click="handleExecute" :disabled="task.status === 'running'">
                 {{ t('transfer.taskDetail.execute') }}
               </el-button>
-              <el-button type="warning" @click="handleStop" :disabled="task.status !== 'running'">
-                {{ t('transfer.taskDetail.stop') }}
-              </el-button>
             </template>
             <template v-else>
               <el-button type="primary" @click="handleResume" :disabled="!canStartSchedule">
@@ -189,23 +186,6 @@ const handleExecute = async () => {
   await loadTask()
 }
 
-const handleStop = async () => {
-  try {
-    await ElMessageBox.confirm(t('transfer.taskDetail.stopConfirm'), t('transfer.taskDetail.hint'), {
-      confirmButtonText: t('transfer.taskDetail.confirm'),
-      cancelButtonText: t('transfer.taskDetail.cancel'),
-      type: 'warning'
-    })
-    await taskAPI.stop(route.params.id)
-    ElMessage.success(t('transfer.taskDetail.taskStopped'))
-    await loadTask()
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('停止任务失败:', error)
-    }
-  }
-}
-
 const handlePause = async () => {
   try {
     await ElMessageBox.confirm(t('transfer.taskDetail.pauseConfirm'), t('transfer.taskDetail.hint'), {
@@ -265,7 +245,7 @@ function buildEndpointDetails(endpoint, role) {
 
   if (role === 'target') {
     addItem(items, t('transfer.taskDetail.format'), endpoint.format)
-    addItem(items, t('transfer.taskDetail.writeMode'), endpoint.policy?.write_mode)
+    addItem(items, t('transfer.taskDetail.writeMode'), endpoint.policy?.apply_mode)
     addItem(items, t('transfer.taskDetail.options'), endpoint.options, 2)
   }
 

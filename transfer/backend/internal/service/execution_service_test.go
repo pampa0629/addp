@@ -155,8 +155,9 @@ func TestRetryExecutionRejectsAppendTask(t *testing.T) {
 	db := newExecutionServiceTestDB(t)
 	task := createExecutionServiceTestTask(t, db)
 	task.Config = models.JSONMap{
-		"mode":   "batch",
-		"target": map[string]interface{}{"policy": map[string]interface{}{"write_mode": "append"}},
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
+		"target":  map[string]interface{}{"policy": map[string]interface{}{"apply_mode": "append"}},
 	}
 	if err := db.Save(&task).Error; err != nil {
 		t.Fatalf("update task config: %v", err)
@@ -476,7 +477,7 @@ func createExecutionServiceTestTask(t *testing.T, db *gorm.DB) models.TransferTa
 		TenantID:  7,
 		Name:      "retry source",
 		TaskType:  commonExecution.TaskTypeSync,
-		Config:    models.JSONMap{"mode": "batch"},
+		Config:    models.JSONMap{"runtime": map[string]interface{}{"boundary": "bounded"}, "load": map[string]interface{}{"mode": "snapshot"}, "target": map[string]interface{}{"policy": map[string]interface{}{"apply_mode": "replace"}}},
 		BatchSize: 100,
 		Status:    models.TaskStatusIdle,
 		Progress:  88,

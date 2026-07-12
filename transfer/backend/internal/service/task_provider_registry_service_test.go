@@ -64,10 +64,12 @@ func TestTaskProviderRegistryRegistersStandardTransferContract(t *testing.T) {
 	}
 
 	var capabilities struct {
-		SchemaVersion    string                       `json:"schema_version"`
-		TaskCapabilities []taskProviderTaskCapability `json:"task_capabilities"`
-		XExecutionModes  []string                     `json:"x_execution_modes"`
-		XFeatures        []string                     `json:"x_features"`
+		SchemaVersion      string                       `json:"schema_version"`
+		TaskCapabilities   []taskProviderTaskCapability `json:"task_capabilities"`
+		XRuntimeBoundaries []string                     `json:"x_runtime_boundaries"`
+		XLoadModes         []string                     `json:"x_load_modes"`
+		XChangeDetection   []string                     `json:"x_change_detection"`
+		XFeatures          []string                     `json:"x_features"`
 	}
 	if captured.Capabilities == nil {
 		t.Fatal("capabilities is nil")
@@ -84,8 +86,11 @@ func TestTaskProviderRegistryRegistersStandardTransferContract(t *testing.T) {
 	if len(capabilities.TaskCapabilities) != 1 {
 		t.Fatalf("task_capabilities = %#v, want one entry", capabilities.TaskCapabilities)
 	}
-	if len(capabilities.XExecutionModes) == 0 || len(capabilities.XFeatures) == 0 {
+	if len(capabilities.XRuntimeBoundaries) != 1 || capabilities.XRuntimeBoundaries[0] != "bounded" || len(capabilities.XFeatures) == 0 {
 		t.Fatalf("x_ capability extensions should remain declared: %#v", capabilities)
+	}
+	if len(capabilities.XLoadModes) != 2 || len(capabilities.XChangeDetection) != 1 || capabilities.XChangeDetection[0] != "watermark" {
+		t.Fatalf("bounded sync capabilities are incomplete: %#v", capabilities)
 	}
 
 	sync := capabilities.TaskCapabilities[0]

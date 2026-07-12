@@ -71,6 +71,14 @@ func TestBuildPostgresInsertSQL(t *testing.T) {
 	}
 }
 
+func TestPostgresOnConflictClauseUpdatesNonKeyColumns(t *testing.T) {
+	got := postgresOnConflictClause([]string{"id", "name", "updated_at"}, []string{"id"})
+	want := ` ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "updated_at" = EXCLUDED."updated_at"`
+	if got != want {
+		t.Fatalf("postgresOnConflictClause() = %q, want %q", got, want)
+	}
+}
+
 func TestBuildPostgresInsertSQLNormalizesGeometryBytes(t *testing.T) {
 	rows := []map[string]interface{}{
 		{"id": 1, "geom": []byte{0x01, 0x02, 0x0f}},

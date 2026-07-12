@@ -92,9 +92,6 @@
               <el-button size="small" type="primary" @click="handleExecute(row)" :disabled="isRunning(row)">
                 {{ t('transfer.taskList.execute') }}
               </el-button>
-              <el-button size="small" type="warning" @click="handleStop(row)" :disabled="!isRunning(row)">
-                {{ t('transfer.taskList.stop') }}
-              </el-button>
               <el-button size="small" type="danger" @click="handleDelete(row)" :disabled="!canDeleteManual(row)">
                 {{ t('transfer.taskList.delete') }}
               </el-button>
@@ -269,24 +266,6 @@ const handleExecute = async (task) => {
     await loadPageData()
   } catch (error) {
     console.error('执行任务失败:', error)
-  }
-}
-
-// 停止手动任务
-const handleStop = async (task) => {
-  try {
-    await ElMessageBox.confirm(t('transfer.taskList.stopConfirm'), t('transfer.taskList.hint'), {
-      confirmButtonText: t('transfer.taskList.confirm'),
-      cancelButtonText: t('transfer.taskList.cancel'),
-      type: 'warning'
-    })
-    await taskAPI.stop(task.id)
-    ElMessage.success(t('transfer.taskList.stopped'))
-    await loadPageData()
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('停止任务失败:', error)
-    }
   }
 }
 

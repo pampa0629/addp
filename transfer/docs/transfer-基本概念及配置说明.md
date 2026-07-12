@@ -1,8 +1,8 @@
 # Transfer 模块基本概念及配置说明
 
-更新时间：2026-05-31
+更新时间：2026-07-12
 
-本文档定义 Transfer 当前任务配置、执行状态、table Transfer 主链路和 non-table raw copy 最小闭环规则。旧版 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
+本文档定义 Transfer 稳定任务配置、执行状态、bounded snapshot 主链路和 PostgreSQL watermark bounded incremental 第一版规则。旧版顶层 `mode`、`target.policy.write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
 
 ## 一、核心对象
 
@@ -39,7 +39,7 @@ Transfer 执行记录使用统一表 `common.task_executions`。Transfer API 会
 | `checkpoint_state` | 从 execution metadata 投影出来的 checkpoint JSON，包含 batch、进度和 provider marker。 |
 | `logs` | 从 error details 中投影出来的简短执行日志。 |
 
-checkpoint 当前用于 progress / diagnostics，不表示可从 checkpoint 自动续写。失败执行 retry 走 restartable：创建新 execution 并从头重新执行；append 任务 retry 会被拒绝。
+snapshot checkpoint 用于 progress / diagnostics，不表示可从 checkpoint 自动续写。watermark incremental 使用独立同步主状态 resume。失败 snapshot retry 走 restartable：创建新 execution 并从头重新执行；append 任务 retry 会被拒绝。
 
 ## 二、任务 Config JSON
 
@@ -47,7 +47,8 @@ checkpoint 当前用于 progress / diagnostics，不表示可从 checkpoint 自�
 
 ```json
 {
-  "mode": "batch",
+  "runtime": {"boundary": "bounded"},
+  "load": {"mode": "snapshot"},
   "source": {
     "locator": "addp://engine/1/path/public/roads?type=table",
     "data_type": "table",
@@ -60,7 +61,7 @@ checkpoint 当前用于 progress / diagnostics，不表示可从 checkpoint 自�
     "representation": "encoded",
     "format": "csv",
     "options": {"header": true},
-    "policy": {"write_mode": "overwrite"}
+    "policy": {"apply_mode": "replace"}
   },
   "transforms": [],
   "batch_size": 10000
@@ -71,7 +72,8 @@ checkpoint 当前用于 progress / diagnostics，不表示可从 checkpoint 自�
 
 | 字段 | 必填 | 说明 |
 |---|---:|---|
-| `mode` | 否 | 当前稳定值为 `batch`；为空时按 batch 处理。 |
+| `runtime` | 是 | 执行边界；当前 worker 只支持 `boundary=bounded`。 |
+| `load` | 是 | 装载方式；支持 `mode=snapshot` 和 PostgreSQL native table 的 `mode=incremental + change_detection.type=watermark`。 |
 | `source` | 是 | 源 endpoint。 |
 | `target` | 是 | 目标 endpoint。 |
 | `transforms` | 否 | table batch transform 列表。 |
@@ -88,7 +90,7 @@ checkpoint 当前用于 progress / diagnostics，不表示可从 checkpoint 自�
 | `representation` | 是 | `native` 或 `encoded`。 |
 | `format` | encoded 必填 | encoded endpoint 的格式，如 `csv`、`json`、`geojson`、`parquet`、`shapefile`。 |
 | `options` | 否 | 格式或读取写入选项。 |
-| `policy` | target 可选 | 目标写入策略。 |
+| `policy` | target 必填 | 目标应用策略；必须声明 `apply_mode`，upsert 还必须声明 `keys`。 |
 
 `locator` 示例：
 
@@ -163,13 +165,14 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 | source format layout | `single` |
 | target `data_type` / `format` | 可省略并继承 source；显式声明时必须一致 |
 | target path | 必须是完整 file / object 路径 |
-| target `policy.write_mode` | 只支持 `overwrite` |
+| target `policy.apply_mode` | 只支持 `replace` |
 
 配置示例：
 
 ```json
 {
-  "mode": "batch",
+  "runtime": {"boundary": "bounded"},
+  "load": {"mode": "snapshot"},
   "source": {
     "locator": "addp://engine/1/path/raw/docs/report.pdf?type=object",
     "data_type": "document",
@@ -182,7 +185,7 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
     "data_type": "document",
     "representation": "encoded",
     "format": "pdf",
-    "policy": {"write_mode": "overwrite"}
+    "policy": {"apply_mode": "replace"}
   },
   "transforms": [],
   "batch_size": 1
@@ -226,16 +229,33 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 
 ## 六、写入策略
 
-`policy.write_mode`：
+`policy.apply_mode`：
 
 | 值 | 说明 |
 |---|---|
-| `overwrite` | 默认策略。Transfer 写入前清理目标资源或让 prepare 重建目标。 |
+| `replace` | Transfer 写入前清理目标资源或让 prepare 重建目标。 |
 | `append` | 追加写入；失败 retry 当前拒绝 append，避免重复写入。 |
+| `upsert` | 按稳定键幂等新增或更新；第一版只支持 PostgreSQL native table 目标。 |
+| `upsert_delete` | 为后续完整 CDC 保留；当前拒绝。 |
 
-overwrite / append 是 Transfer policy，不进入 common engine。`TableWritePreparer` 只负责 ensure / create table / schema evolution。raw copy 第一版只支持 `overwrite`，并要求目标 engine 提供删除资源能力。
+apply mode 是 Transfer policy；真实 upsert/delete 能力必须由目标 engine Provider 和 capability 声明。raw copy 第一版只支持 `replace`，并要求目标 engine 提供删除资源能力。
 
-## 七、Checkpoint、进度和重试
+## 七、PostgreSQL watermark bounded incremental
+
+第一版唯一支持组合为：
+
+```text
+PostgreSQL native table -> PostgreSQL native table
+bounded + incremental + watermark + upsert
+```
+
+配置必须声明 `load.change_detection.field`、非空 `tie_breaker`、`start=committed`、`end=execution_upper_bound`，并在 `target.policy.keys` 声明稳定目标键。watermark 字段不得为 NULL；tie breaker 必须唯一、稳定且不可变。每次 execution 在 PostgreSQL 一致性只读事务内冻结复合上界，只读取 `(committed_position, execution_upper_bound]` 并稳定排序。
+
+同步主状态存储在 `transfer.sync_states`。position 使用 `type=watermark`、`version=v1` 的 JSON；目标批次提交成功后才允许携带 `state_version` 和本次 fencing token 做 CAS 更新。重复应用必须由 PostgreSQL `ON CONFLICT ... DO UPDATE` 幂等吸收。
+
+第一版只支持 resume：新 execution 从 committed position 继续并在成功后推进主状态。不提供 replay，不发现物理删除，也不支持只读副本 lookback。源表所有 insert/update 必须可靠更新 watermark；时间回拨或未更新 watermark 的变化不在保证范围内。
+
+## 八、Checkpoint、进度和重试
 
 当前 checkpoint 语义：
 
@@ -250,9 +270,9 @@ overwrite / append 是 Transfer policy，不进入 common engine。`TableWritePr
 |---|---|
 | observable | 已支持，用于进度展示和故障定位。 |
 | restartable | 已支持 retry 从头重跑；append 拒绝。 |
-| resumable | 尚未进入主链路。 |
+| resumable | PostgreSQL watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume；snapshot checkpoint 仍仅可观测。 |
 
-## 八、写后 Meta 扫描
+## 九、写后 Meta 扫描
 
 成功写入后，如果 `auto_scan_metadata=true`，Transfer 触发 Meta deep scan。
 

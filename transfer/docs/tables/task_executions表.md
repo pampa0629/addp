@@ -112,7 +112,6 @@ Transfer 当前恢复能力分三档：
 | `GET` | `/executions` | 查询租户下 Transfer 执行记录。 |
 | `GET` | `/executions/statistics` | 查询执行统计。 |
 | `GET` | `/executions/:execution_id` | TaskProvider 标准执行详情入口，按统一 `common.task_executions.execution_id` 查询。 |
-| `POST` | `/executions/:execution_id/cancel` | 按统一 `common.task_executions.execution_id` 取消执行；不等于声明 TaskProvider 标准取消能力。 |
 | `POST` | `/executions/:execution_id/retry` | 按统一 `common.task_executions.execution_id` 和 restartable 语义重试失败执行。 |
 | `GET` | `/executions/:execution_id/progress` | 按统一 `common.task_executions.execution_id` 查询执行进度。 |
 | `GET` | `/executions/:execution_id/logs` | 按统一 `common.task_executions.execution_id` 查询执行日志。 |

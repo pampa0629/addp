@@ -11,6 +11,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/dbbridge"
+	engineplugin "github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
@@ -26,6 +27,7 @@ import (
 // ExecutionEngineService executes Transfer tasks through common engine/format.
 type ExecutionEngineService struct {
 	taskRepo         *repository.TaskRepository
+	syncStateRepo    *repository.SyncStateRepository
 	executionService *ExecutionService
 	systemClient     *commonClient.SystemClient
 	metaClient       *commonClient.MetaClient
@@ -35,12 +37,14 @@ type ExecutionEngineService struct {
 
 func NewExecutionEngineService(
 	taskRepo *repository.TaskRepository,
+	syncStateRepo *repository.SyncStateRepository,
 	executionService *ExecutionService,
 	systemClient *commonClient.SystemClient,
 	metaClient *commonClient.MetaClient,
 ) *ExecutionEngineService {
 	return &ExecutionEngineService{
 		taskRepo:         taskRepo,
+		syncStateRepo:    syncStateRepo,
 		executionService: executionService,
 		systemClient:     systemClient,
 		metaClient:       metaClient,
@@ -99,7 +103,135 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 	}
 
 	resolver := planner.NewHybridEngineResolver(planner.NewSystemEngineResolver(s.systemClient), s.infraEngineResolver())
+	if planner.IsWatermarkIncrementalSpec(spec) {
+		return s.executeWatermarkIncrementalTask(ctx, task, executionID, spec, resolver)
+	}
 	return s.executeCommonTableTransferTask(ctx, task, executionID, spec, resolver)
+}
+
+func (s *ExecutionEngineService) executeWatermarkIncrementalTask(ctx context.Context, task *models.TransferTask, executionID uint, spec planner.TableExportTaskSpec, resolver planner.EngineResolver) error {
+	if s.syncStateRepo == nil {
+		err := fmt.Errorf("sync state repository is required for watermark incremental task")
+		s.updateExecutionError(task, executionID, err)
+		return err
+	}
+	execution, err := s.executionService.taskExecutionRepo.GetByID(ctx, int64(executionID), 0)
+	if err != nil {
+		return err
+	}
+	stateID := uint(metadataUint64(execution.Metadata, "sync_state_id"))
+	fencingToken := metadataUint64(execution.Metadata, "fencing_token")
+	if stateID == 0 || fencingToken == 0 {
+		err := fmt.Errorf("watermark execution is missing sync state fencing metadata")
+		s.updateExecutionError(task, executionID, err)
+		return err
+	}
+	state, err := s.syncStateRepo.GetByID(ctx, stateID)
+	if err != nil {
+		s.updateExecutionError(task, executionID, err)
+		return err
+	}
+	start, err := watermarkCursorFromPosition(state.Position)
+	if err != nil {
+		s.updateExecutionError(task, executionID, err)
+		return err
+	}
+	build, err := planner.BuildWatermarkIncrementalPlan(spec, resolver)
+	if err != nil {
+		wrapped := fmt.Errorf("build watermark incremental plan: %w", err)
+		s.updateExecutionError(task, executionID, wrapped)
+		return wrapped
+	}
+	build.Plan.Start = start
+	expectedVersion := state.StateVersion
+	build.Plan.BeforeApply = func(ctx context.Context) error {
+		return s.syncStateRepo.AssertFence(ctx, state.ID, fencingToken)
+	}
+	build.Plan.AfterApply = func(ctx context.Context, cursor *engineplugin.WatermarkCursor, recordsRead, recordsWritten int64) error {
+		position := models.JSONMap{
+			"type": "watermark", "version": "v1",
+			"cursor": map[string]interface{}{"values": append([]string(nil), cursor.Values...)},
+		}
+		if err := s.syncStateRepo.CommitPosition(ctx, state.ID, expectedVersion, fencingToken, position, execution.ExecutionID); err != nil {
+			return err
+		}
+		expectedVersion++
+		if err := s.executionService.UpdateMetrics(ctx, executionID, map[string]interface{}{"records_read": recordsRead, "records_written": recordsWritten}); err != nil {
+			return err
+		}
+		return s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{
+			"checkpoint_offset": recordsRead,
+			"checkpoint_state": map[string]interface{}{
+				"version": "watermark/v1", "committed_position": position,
+				"state_version": expectedVersion, "fencing_token": fencingToken, "target_committed": true,
+			},
+		})
+	}
+	incrementalExecutor, err := executor.NewWatermarkIncrementalExecutor(build.SourceEngineType, build.TargetEngineType)
+	if err != nil {
+		s.updateExecutionError(task, executionID, err)
+		return err
+	}
+	metrics, err := incrementalExecutor.Execute(ctx, build.Plan)
+	if err != nil {
+		wrapped := fmt.Errorf("execute watermark incremental plan: %w", err)
+		if metrics != nil {
+			s.updateTableTransferMetrics(executionID, metrics.RecordsRead, metrics.RecordsWritten)
+		}
+		s.updateExecutionError(task, executionID, wrapped)
+		return wrapped
+	}
+	s.updateTableTransferMetrics(executionID, metrics.RecordsRead, metrics.RecordsWritten)
+	if err := s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{"metadata": map[string]interface{}{"execution_upper_bound": metrics.UpperBound}}); err != nil {
+		s.logger.Warn("failed to persist watermark upper bound", "error", err, "execution_id", executionID)
+	}
+	if task.AutoScanMetadata && metrics.RecordsWritten > 0 {
+		s.triggerMetadataScan(task, executionID, spec, build.Plan.Target, nil)
+	}
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
+		return err
+	}
+	return s.taskRepo.UpdateFields(task.ID, map[string]interface{}{"status": models.TaskStatusIdle, "progress": 100.0})
+}
+
+func metadataUint64(metadata map[string]interface{}, key string) uint64 {
+	switch value := metadata[key].(type) {
+	case uint64:
+		return value
+	case uint:
+		return uint64(value)
+	case int64:
+		return uint64(value)
+	case float64:
+		return uint64(value)
+	default:
+		return 0
+	}
+}
+
+func watermarkCursorFromPosition(position models.JSONMap) (*engineplugin.WatermarkCursor, error) {
+	if len(position) == 0 {
+		return nil, nil
+	}
+	if position["type"] != "watermark" || position["version"] != "v1" {
+		return nil, fmt.Errorf("unsupported sync position type/version")
+	}
+	cursor, ok := position["cursor"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("watermark sync position cursor is invalid")
+	}
+	rawValues, ok := cursor["values"].([]interface{})
+	if !ok {
+		if values, ok := cursor["values"].([]string); ok {
+			return &engineplugin.WatermarkCursor{Values: values}, nil
+		}
+		return nil, fmt.Errorf("watermark sync position values are invalid")
+	}
+	values := make([]string, 0, len(rawValues))
+	for _, value := range rawValues {
+		values = append(values, fmt.Sprint(value))
+	}
+	return &engineplugin.WatermarkCursor{Values: values}, nil
 }
 
 func (s *ExecutionEngineService) infraEngineResolver() *planner.InfraEngineResolver {

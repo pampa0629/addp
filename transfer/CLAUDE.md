@@ -50,16 +50,16 @@ transfer/
 - 公共连通：`GET /ping`。
 - 资源选择与资源树：统一使用 Meta resource-tree / item API；Transfer 不保留私有数据源树、节点 children 或表 metadata 代理接口。
 - TaskProvider 标准任务：`GET /tasks`、`GET /tasks/:task_type/:id`、`POST /tasks/:task_type/:id/execute`，其中 `task_type` 固定为 `sync`。
-- 任务定义：`POST /task-definitions`、`GET /task-definitions/statistics`、`GET /task-definitions/:id`、`PUT /task-definitions/:id`、`DELETE /task-definitions/:id`、`POST /task-definitions/:id/start|stop|pause|resume`、`GET /task-definitions/:id/executions`。
+- 任务定义：`POST /task-definitions`、`GET /task-definitions/statistics`、`GET /task-definitions/:id`、`PUT /task-definitions/:id`、`DELETE /task-definitions/:id`、`POST /task-definitions/:id/start|pause|resume`、`GET /task-definitions/:id/executions`。`pause/resume` 只控制 owner schedule，不中断 active execution。
 - 字段映射：字段映射写入 `config.transforms[type=field_mapping]`，不提供独立 mappings 主路径。
 - 对象存储目录选择统一走 Meta resource-tree；Transfer 不再保留私有 object-storage 浏览 API。
 - 执行记录：`GET /executions`、`GET /executions/statistics`、`GET /executions/:execution_id`。
-- 执行管理：`POST /executions/:execution_id/cancel|retry`、`GET /executions/:execution_id/progress|logs` 按统一 `execution_id` 定位执行记录；TaskProvider 标准取消能力暂未声明，`supports_cancel=false` 时不得对 Orchestrator / Monitor 暴露跨模块取消入口。
+- 执行管理：`POST /executions/:execution_id/retry`、`GET /executions/:execution_id/progress|logs` 按统一 `execution_id` 定位执行记录；当前没有真实 worker 中断能力，因此不提供 cancel/stop API，TaskProvider 保持 `supports_cancel=false`。
 - 转换器：`GET /transforms`、`GET /transforms/stats`、`GET /transforms/:name`、`POST /transforms/:name/validate|test`。
 
 ## 执行规则
 
-- 新任务配置必须使用 source / target endpoint JSON，旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
+- 新任务配置必须使用 `runtime.boundary`、`load.mode`、source / target endpoint 和 `target.policy.apply_mode` JSON；旧顶层 `mode`、`write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
 - Transfer 任务类型固定为 `sync`；不得新增或兼容 `import`、`export`、`transfer` 等旧任务类型。
 - table transfer 统一走 `internal/planner` + `internal/executor`，按 data type / representation / layout 分叉，不按具体引擎组合分叉。
 - encoded file/object 读写必须通过 `common/engine` content provider + `common/engine/contentadapter` + `common/format` provider，不在 Transfer 中新增私有 reader / writer。

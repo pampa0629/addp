@@ -232,7 +232,17 @@ type StoreProvider interface {
 - `TableReadSessionProvider.OpenTableReadSession()`：打开表读取会话，连续读取批次；适合 PostgreSQL cursor、JDBC cursor、Parquet row group reader 等避免 offset 翻页退化的实现。
 - `BatchWritableProvider.WriteBatch()`：批量写入表或集合数据；图写入应由图模块或专用 graph provider 明确建模。
 - `TableWriteSessionProvider.OpenTableWriteSession()`：打开表写入会话，连续写入批次；适合 PostgreSQL COPY、JDBC bulk load 等避免每批重复建立写入会话的实现。
-- `TableWritePreparer.PrepareTableWrite()`：执行表级写入前准备动作，例如 ensure database / schema、create table、校验目标表结构和安全 schema evolution。该能力不写入数据行，也不承载 Transfer 的 overwrite / append policy。
+- `TableWritePreparer.PrepareTableWrite()`：执行表级写入前准备动作，例如 ensure database / schema、create table、校验目标表结构和安全 schema evolution。该能力不写入数据行，也不承载 Transfer 的 replace / append policy。
+- `BoundedWatermarkReadProvider.OpenBoundedWatermarkRead()`：在引擎一致性读边界内冻结复合 watermark 上界，按稳定顺序读取 `(start, upper_bound]`。session 必须返回上界，并能从已读取行生成 provider 可解释的复合位置；普通 batch reader 不得被推断为具备该语义。
+- `TableUpsertProvider.PrepareTableUpsert()` / `UpsertBatch()`：按显式稳定键准备目标并幂等应用 insert/update。Provider 必须校验键字段和唯一约束；普通 `BatchWritableProvider` 或 COPY session 不得被推断为 upsert。
+
+第一版 PostgreSQL watermark 契约：
+
+- `BoundedWatermarkReadOptions` 必须包含一个 watermark field、至少一个 tie breaker 和可选 committed start cursor。
+- Provider 在 PostgreSQL repeatable-read 只读事务中冻结上界；游标字段不得为 NULL，tie breaker 必须匹配非 partial unique/primary key。
+- `WatermarkCursor.Values` 使用 canonical string 保存，具体列类型转换由 source Provider 解释。
+- `TableUpsertProvider` 使用稳定 keys 和单批事务提交；重复应用同一批必须得到相同目标状态。
+- Transfer 只在目标批次提交成功后推进 `transfer.sync_states`，Provider 不直接维护任务状态。
 
 `BatchReadOptions.Hints`、`TableReadSessionOptions.Hints` 和 `BatchData.Hints` 只用于同一次运行时读写链路中的控制提示，例如字段选择、空间字段输出编码、批大小或写入方法。Hints 不是 catalog facts，不得写入 `CatalogFacts`，也不得作为 Meta item attributes 的兜底口袋。
 
@@ -302,7 +312,8 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 
 | 引擎 | 推荐接口组合 |
 | --- | --- |
-| PostgreSQL / MySQL / Doris / ClickHouse / Spark SQL | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
+| PostgreSQL | 通用 tabular 组合 + `BoundedWatermarkReadProvider` + `TableUpsertProvider` |
+| MySQL / Doris / ClickHouse / Spark SQL | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
 | MongoDB | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `DynamicSchemaSamplingProvider` + `QueryRuntimeProvider` |
 | Neo4j | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
 | MinIO / S3 | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `ContentReadableProvider` + `RangeReadableProvider` + `ContentWritableProvider` + `ResourceDeleteProvider` |
@@ -320,7 +331,7 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 - Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query；graph 预览优先消费 `type_info.graph` / `CatalogFactsProvider` 得到 schema 视图，并通过 `GraphSampleProvider` 或 `GraphQueryProvider` 获取轻量子图样本；对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
 - Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；图结构展示入口使用 `CatalogFactsProvider` / `GraphQueryProvider`。
 - Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。图查询服务的易用向导应消费 graph item 的 `type_info.graph.node_shapes`，不得再从 Meta 树读取 Neo4j label item。
-- Transfer：使用 source / target endpoint 生成执行计划。native table 读写消费 `TableReadSessionProvider`、`BatchReadableProvider`、`TableWritePreparer`、`TableWriteSessionProvider`、`BatchWritableProvider`；encoded file/object 读写先通过 engine content provider 和 `common/engine/contentadapter` 构造 `common/contentio` 抽象，再交给 `common/format` provider。高吞吐数据搬运优先消费 batch / table session / content stream 能力，而不是 query runtime。
+- Transfer：使用 source / target endpoint 生成执行计划。snapshot native table 读写消费 `TableReadSessionProvider`、`BatchReadableProvider`、`TableWritePreparer`、`TableWriteSessionProvider`、`BatchWritableProvider`；watermark bounded incremental 必须消费 `BoundedWatermarkReadProvider` 和幂等 `TableUpsertProvider`；encoded file/object 读写先通过 engine content provider 和 `common/engine/contentadapter` 构造 `common/contentio` 抽象，再交给 `common/format` provider。高吞吐数据搬运优先消费 batch / table session / content stream 能力，而不是 query runtime。
 
 ---
 

@@ -1,6 +1,6 @@
 # transfer.transfer_tasks 表说明
 
-更新时间：2026-05-30
+更新时间：2026-07-12
 
 `transfer.transfer_tasks` 存储 Transfer 任务定义。任务的执行历史不在本表中保存，统一写入 `common.task_executions`。
 
@@ -33,7 +33,8 @@
 
 ```json
 {
-  "mode": "batch",
+  "runtime": {"boundary": "bounded"},
+  "load": {"mode": "snapshot"},
   "source": {
     "locator": "addp://engine/1/path/public/source_roads?type=table",
     "data_type": "table",
@@ -45,7 +46,7 @@
     "data_type": "table",
     "representation": "encoded",
     "format": "parquet",
-    "policy": {"write_mode": "overwrite"}
+    "policy": {"apply_mode": "replace"}
   },
   "transforms": [
     {
@@ -70,6 +71,8 @@
 | `output_format` / `file_type` | encoded endpoint 的 `format`。 |
 | 旧 endpoint `engine_id` | endpoint `locator` 中的 engine id。 |
 | 任务外层 `mappings` | `config.transforms[type=field_mapping]`。 |
+| 顶层 `mode=batch` | `runtime.boundary=bounded` + `load.mode=snapshot`。 |
+| `target.policy.write_mode` | `target.policy.apply_mode`；`overwrite` 收敛为 `replace`。 |
 
 ## 三、endpoint 规则
 
@@ -82,7 +85,11 @@
 | `representation` | `native` 或 `encoded`。 |
 | `format` | encoded endpoint 必填。 |
 | `options` | 格式读写选项。 |
-| `policy.write_mode` | target 写入模式，支持 `overwrite` / `append`。 |
+| `runtime.boundary` | 执行边界；当前只支持 `bounded`。 |
+| `load.mode` | `snapshot` 或 PostgreSQL native table 的 `incremental`。 |
+| `load.change_detection` | incremental 第一版只支持复合 watermark。 |
+| `target.policy.apply_mode` | `replace` / `append` / `upsert`；按任务组合和目标 Provider 校验。 |
+| `target.policy.keys` | upsert 的稳定目标键。 |
 
 ## 四、任务状态
 
@@ -108,9 +115,8 @@
 | `PUT` | `/task-definitions/:id` | 更新任务定义。 |
 | `DELETE` | `/task-definitions/:id` | 删除任务定义。 |
 | `POST` | `/task-definitions/:id/start` | 创建 execution 并入队执行。 |
-| `POST` | `/task-definitions/:id/stop` | 停止任务。 |
-| `POST` | `/task-definitions/:id/pause` | 暂停任务或定时调度。 |
-| `POST` | `/task-definitions/:id/resume` | 恢复任务调度或任务状态，不表示 checkpoint resumable。 |
+| `POST` | `/task-definitions/:id/pause` | 关闭 owner schedule；不停止 active execution。 |
+| `POST` | `/task-definitions/:id/resume` | 恢复 owner schedule。 |
 | `GET` | `/task-definitions/:id/executions` | 查询任务执行记录。 |
 
-`/task-definitions/:id/resume` 的命名来自任务控制 API。当前 table Transfer 的 checkpoint resumable 尚未进入主链路，不能把该接口理解为“从 checkpoint 后继续写”。
+`/task-definitions/:id/resume` 是调度控制 API，不是 execution resume 参数。PostgreSQL watermark execution 的 resume 由新 execution 自动读取 `transfer.sync_states` 完成。

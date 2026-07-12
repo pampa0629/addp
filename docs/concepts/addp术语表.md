@@ -85,6 +85,13 @@
 | parent execution id | 父执行 ID | 当前 execution 的父级 execution UUID。 | 用于 Orchestrator 子步骤追踪父编排。 |
 | ad-hoc execution | 一次性执行 | 不依赖持久任务定义、直接按本次配置创建的 execution。 | 可以没有 `source_task_id`，但必须在 `execution_config` 保存完整执行配置。 |
 | artifact state | 产物状态 | 描述派生产物当前是否可用、在哪里、由什么配置生成的状态对象。 | 例如瓦片缓存产物、embedding vectors；不是 execution。 |
+| execution boundary | 执行边界 | 一次 execution 是否具有确定结束条件。 | `bounded` 表示处理到本次冻结上界后结束；`continuous` 表示持续等待变化直到被真实停止、失败或失联。 |
+| load mode | 装载方式 | Transfer 从源端读取完整范围还是已提交位置之后的变化。 | 只允许 `snapshot` / `incremental`；它与触发方式和目标应用方式正交。 |
+| watermark | 水位游标 | 以源表中可稳定排序的业务字段识别 insert/update 变化的批增量位置。 | 必须使用 `(watermark_field, tie_breaker...)` 复合游标并冻结每次 bounded execution 的上界；普通 watermark 不发现物理删除，不等同于 CDC。 |
+| apply mode | 目标应用方式 | Transfer 将本次读取结果应用到目标的策略。 | 稳定取值为 `replace`、`append`、`upsert`、`upsert_delete`；目标 Provider 必须声明并真实实现对应能力。 |
+| sync state | 同步主状态 | Transfer 为增量任务保存的已提交源位置。 | 存储于 `transfer.sync_states`；与任务定义、execution checkpoint 分离，只能在目标提交成功后通过 CAS/fencing 推进。 |
+| resume | 恢复执行 | 新 execution 从任务同步主状态的 committed position 继续处理。 | 第一版 watermark 增量仅支持 resume；已结束 execution 不复用。 |
+| replay | 历史重放 | 按显式历史范围重新应用变化且不推进同步主状态。 | 不属于第一版 watermark 增量范围，也不是新的 `task_type`。 |
 
 ## 工作流与算子
 

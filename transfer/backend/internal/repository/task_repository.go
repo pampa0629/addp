@@ -4,14 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+var ErrTaskAlreadyRunning = errors.New("transfer task is already running")
 
 // TaskRepository 任务数据访问层
 type TaskRepository struct {
@@ -26,6 +30,64 @@ func NewTaskRepository(db *gorm.DB) *TaskRepository {
 // Create 创建任务
 func (r *TaskRepository) Create(task *models.TransferTask) error {
 	return r.db.Create(task).Error
+}
+
+// ClaimExecution atomically claims one idle task and creates its pending execution.
+// For incremental tasks it also advances the source-state fencing token.
+func (r *TaskRepository) ClaimExecution(ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, sourceIdentity string) (*models.TransferTask, *models.SyncState, error) {
+	var claimedTask models.TransferTask
+	var claimedState *models.SyncState
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND tenant_id = ?", taskID, tenantID).
+			First(&claimedTask).Error; err != nil {
+			return commonrepo.WrapDBError(err)
+		}
+		if claimedTask.Status == models.TaskStatusRunning {
+			return ErrTaskAlreadyRunning
+		}
+		if strings.TrimSpace(sourceIdentity) != "" {
+			initial := models.SyncState{
+				TaskID: taskID, SourceIdentity: sourceIdentity, Partition: "default",
+				PositionType: "watermark", PositionVersion: "v1",
+			}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&initial).Error; err != nil {
+				return err
+			}
+			var state models.SyncState
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("task_id = ? AND source_identity = ? AND partition = ?", taskID, sourceIdentity, "default").
+				First(&state).Error; err != nil {
+				return err
+			}
+			state.FencingToken++
+			if err := tx.Model(&state).Update("fencing_token", state.FencingToken).Error; err != nil {
+				return err
+			}
+			if execution.Metadata == nil {
+				execution.Metadata = commonModels.JSONMap{}
+			}
+			execution.Metadata["sync_state_id"] = state.ID
+			execution.Metadata["sync_state_version"] = state.StateVersion
+			execution.Metadata["fencing_token"] = state.FencingToken
+			claimedState = &state
+		}
+		if err := tx.Create(execution).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&claimedTask).Updates(map[string]interface{}{
+			"status":                models.TaskStatusRunning,
+			"progress":              0,
+			"last_execution_id":     execution.ExecutionID,
+			"last_execution_status": commonExecution.ExecutionStatusPending,
+		}).Error; err != nil {
+			return err
+		}
+		claimedTask.Status = models.TaskStatusRunning
+		claimedTask.Progress = 0
+		return nil
+	})
+	return &claimedTask, claimedState, err
 }
 
 // GetByID 根据 ID 获取任务
@@ -148,8 +210,9 @@ func (r *TaskRepository) ListDueScheduledTaskIDs(ctx context.Context, now time.T
 	return taskIDs, err
 }
 
-func (r *TaskRepository) ClaimDueScheduledTask(ctx context.Context, taskID uint, schedule string, now time.Time, nextRunAt *time.Time) (*models.TransferTask, error) {
+func (r *TaskRepository) ClaimDueScheduledExecution(ctx context.Context, taskID uint, schedule string, now time.Time, nextRunAt *time.Time, execution *commonExecution.TaskExecution, sourceIdentity string) (*models.TransferTask, *models.SyncState, error) {
 	var claimed *models.TransferTask
+	var claimedState *models.SyncState
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var task models.TransferTask
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
@@ -161,10 +224,38 @@ func (r *TaskRepository) ClaimDueScheduledTask(ctx context.Context, taskID uint,
 			return err
 		}
 
+		if strings.TrimSpace(sourceIdentity) != "" {
+			initial := models.SyncState{TaskID: task.ID, SourceIdentity: sourceIdentity, Partition: "default", PositionType: "watermark", PositionVersion: "v1"}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&initial).Error; err != nil {
+				return err
+			}
+			var state models.SyncState
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("task_id = ? AND source_identity = ? AND partition = ?", task.ID, sourceIdentity, "default").First(&state).Error; err != nil {
+				return err
+			}
+			state.FencingToken++
+			if err := tx.Model(&state).Update("fencing_token", state.FencingToken).Error; err != nil {
+				return err
+			}
+			if execution.Metadata == nil {
+				execution.Metadata = commonModels.JSONMap{}
+			}
+			execution.Metadata["sync_state_id"] = state.ID
+			execution.Metadata["sync_state_version"] = state.StateVersion
+			execution.Metadata["fencing_token"] = state.FencingToken
+			claimedState = &state
+		}
+		if err := tx.Create(execution).Error; err != nil {
+			return err
+		}
 		if err := tx.Model(&models.TransferTask{}).
 			Where("id = ?", task.ID).
 			Updates(map[string]interface{}{
-				"next_run_at": nextRunAt,
+				"next_run_at":           nextRunAt,
+				"status":                models.TaskStatusRunning,
+				"progress":              0,
+				"last_execution_id":     execution.ExecutionID,
+				"last_execution_status": commonExecution.ExecutionStatusPending,
 			}).Error; err != nil {
 			return err
 		}
@@ -172,7 +263,7 @@ func (r *TaskRepository) ClaimDueScheduledTask(ctx context.Context, taskID uint,
 		claimed = &task
 		return nil
 	})
-	return claimed, err
+	return claimed, claimedState, err
 }
 
 // GetTaskWithLastExecution 获取任务及其最后一次执行记录

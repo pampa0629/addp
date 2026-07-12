@@ -334,6 +334,7 @@ type postgresColumnInfo struct {
 	DataType   string
 	UDTName    string
 	NativeType string
+	Nullable   bool
 }
 
 func (c postgresColumnInfo) IsSpatial() bool {
@@ -358,7 +359,8 @@ func postgresTableColumns(ctx context.Context, db *sql.DB, schema, table string)
 			c.column_name,
 			c.data_type,
 			c.udt_name,
-			format_type(a.atttypid, a.atttypmod) AS native_type
+			format_type(a.atttypid, a.atttypmod) AS native_type,
+			(c.is_nullable = 'YES') AS nullable
 		FROM information_schema.columns c
 		JOIN pg_catalog.pg_namespace n
 			ON n.nspname = c.table_schema
@@ -381,7 +383,7 @@ func postgresTableColumns(ctx context.Context, db *sql.DB, schema, table string)
 	columns := make([]postgresColumnInfo, 0)
 	for rows.Next() {
 		var column postgresColumnInfo
-		if err := rows.Scan(&column.Name, &column.DataType, &column.UDTName, &column.NativeType); err != nil {
+		if err := rows.Scan(&column.Name, &column.DataType, &column.UDTName, &column.NativeType, &column.Nullable); err != nil {
 			return nil, fmt.Errorf("scan postgresql table column: %w", err)
 		}
 		columns = append(columns, column)
@@ -398,6 +400,7 @@ func postgresFieldInfoFromColumn(column postgresColumnInfo) datatype.FieldInfo {
 		Name:       column.Name,
 		Type:       postgresCommonFieldType(column, nativeType),
 		NativeType: nativeType,
+		Nullable:   column.Nullable,
 	}
 }
 

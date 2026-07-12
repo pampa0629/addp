@@ -124,30 +124,6 @@ func (h *ExecutionHandler) GetTaskExecutions(c *gin.Context) {
 	commonAPI.SendPaginatedResponse(c, executions, total, page, pageSize)
 }
 
-// CancelExecution 取消执行
-// @Summary 取消执行 | Cancel execution
-// @Tags 执行管理 | Execution Management
-// @Produce json
-// @Param execution_id path string true "执行ID | Execution ID"
-// @Success 200 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router /executions/{execution_id}/cancel [post]
-// @Security BearerAuth
-func (h *ExecutionHandler) CancelExecution(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
-	execution, ok := h.getExecutionByExecutionID(c, tenantID)
-	if !ok {
-		return
-	}
-
-	if err := h.executionService.CancelExecution(c.Request.Context(), execution.ID, tenantID); err != nil {
-		commonAPI.InternalServerError(c, err.Error())
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Execution cancelled successfully"})
-}
-
 // RetryExecution 重试失败的执行
 // @Summary 重试执行 | Retry execution
 // @Description 为失败执行创建新的 retry 执行记录，并按 restartable 语义从头重新入队执行 | Create a new retry execution for a failed execution and enqueue it from the beginning with restartable semantics

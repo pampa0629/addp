@@ -197,6 +197,7 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// Initialize database with auto-migration
 	db, err := commonRepo.InitDatabase(dbConfig,
 		&models.TransferTask{},
+		&models.SyncState{},
 	)
 	if err != nil {
 		return nil, err

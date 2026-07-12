@@ -19,6 +19,7 @@ SuperMap SDK、GPA/SPS jar、native `.so` 和许可文件不进入 ADDP 代码�
 - `datasource.open`
 - `datasource.open_postgis`
 - `datasource.enable_postgis`
+- `datasource.upgrade_udbx`
 - `datasource.create`
 - `dataset.select`
 - `dataset.info`
@@ -41,7 +42,23 @@ SuperMap SDK、GPA/SPS jar、native `.so` 和许可文件不进入 ADDP 代码�
 
 算子元数据使用 `param_type=input` 标识由工作流连线传入的参数，并用 `supermap.datasource`、`supermap.dataset`、`supermap.query_result` 等细分类型描述 SPS DAG 内部对象，避免多个通用 `object` 输入只能按连线顺序推断。
 
-`datasource.open_postgis` 只打开已有 PostGIS 空间表所在数据源，不调用 SuperMap `create`，因此不会主动创建 SuperMap `sm*` 系统表。`datasource.enable_postgis` 是 direct-only 高危算子，用于 System 引擎管理入口显式启用 SuperMap SDX+ 空间工作区，可能在目标 PostgreSQL 数据库中创建 SuperMap 系统表，不进入 Develop 工作流画布。`locator` 只属于 Develop/UI 的资源选择契约；调用 runtime 前，Develop Backend 必须把它派生为 `connection_info`、`schema` 和 `table` 并移除，SuperMap runtime 不解析 ADDP locator。
+`datasource.open_postgis` 只打开已有 PostGIS 空间表所在数据源，不调用 SuperMap `create`，因此不会主动创建 SuperMap `sm*` 系统表。`datasource.enable_postgis` 是 direct-only 高危算子，用于 System 引擎管理入口显式启用 SuperMap SDX+ 空间工作区，可能在目标 PostgreSQL 数据库中创建 SuperMap 系统表，不进入 Develop 工作流画布。`datasource.upgrade_udbx` 同样是 direct-only 高危算子：它先以 SQLite 只读检查 UDBX 的 SuperMap 系统表与 `SmRegister` 关键字段，再以可写方式打开原文件，由当前 iObjects Java SDK 完成原位 schema 升级，关闭后再次检查并返回是否发生变更。它不得在 `datasource.open` 或其他普通读取链路中隐式执行；调用方必须先备份文件并记录审计信息。`locator` 只属于 Develop/UI 的资源选择契约；调用 runtime 前，Develop Backend 必须把它派生为 `connection_info`、`schema` 和 `table` 并移除，SuperMap runtime 不解析 ADDP locator。
+
+UDBX 升级调试示例：
+
+```bash
+curl -s http://localhost:8103/api/operators/datasource.upgrade_udbx/invoke \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "params": {
+      "connection_info": {},
+      "path": "/tmp/supermap-out/legacy.udbx",
+      "alias": "legacy_upgrade"
+    }
+  }'
+```
+
+NFS 正式调用时，`connection_info.engine_type` 必须为 `nfs`，`path` 必须是该 NFS export 内的相对路径。响应中 `schema_current=true` 表示当前 SDK 要求的系统表和关键字段齐备，`changed=true` 表示本次调用将旧 schema 升级到当前 schema。已是当前 schema 时算子保持幂等并返回 `changed=false`。
 
 本地开发时，如果 System 中的 PostgreSQL 引擎登记为 `localhost` 或 `127.0.0.1`，SuperMap runtime 容器会通过 `SUPERMAP_RESOURCE_LOCALHOST_ALIAS` 将其映射为容器可访问的宿主机地址。`scripts/dev/start.sh` 和 `scripts/dev/restart.sh` 默认传入 `host.docker.internal`；生产部署应登记容器网络或集群内可直接访问的主机名。
 
@@ -84,8 +101,9 @@ bash scripts/dev/restart.sh -supermap-workflow
 - SuperMap GPA/SPS libs
 - 可选 `.lic12` 许可文件
 - NFS 动态挂载依赖 `nfs-common`
+- UDBX schema 检查依赖 `sqlite3`
 
-胖镜像使用多阶段构建：Notebook 镜像只参与编译，不进入最终镜像；最终系统层从 SuperMap 官方麒麟 ARM64 iObjects Java 镜像提取，删除其中旧版 SDK 后扁平化为兼容的 Java 17 运行环境，再加入当前 iObjects Java Bin 与 GPA/SPS libs。因此最终镜像不包含 Notebook、Conda、Python 或 Java 编译器，也不会叠加两套 SDK。当前 SuperMap 组件保持完整，不裁剪 CAD、三维或 BIM 能力。
+胖镜像使用多阶段构建：Notebook 镜像只参与编译，不进入最终镜像；最终系统层从 SuperMap 官方麒麟 ARM64 iObjects Java 镜像提取，删除其中旧版 SDK 后扁平化为兼容的 Java 17 运行环境，再加入当前 iObjects Java Bin 与 GPA/SPS libs。因此最终镜像不包含 Notebook、Conda、Python 应用环境或 Java 编译器，也不会叠加两套 SDK；麒麟基础系统仍可保留 `/usr/bin/python3` 等系统工具。当前 SuperMap 组件保持完整，不裁剪 CAD、三维或 BIM 能力。
 
 默认运行时基础镜像 `192.168.106.71/public/iobjectjava:12.0.0-kylin-aarch64` 可从 SuperMap PDT 离线安装包的 `install/images/192.168.106.71_public_iobjectjava_12.0.0-kylin-aarch64.tar` 导入。
 

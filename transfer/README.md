@@ -38,7 +38,7 @@ endpoint 只决定 reader / writer 来源：
 
 当前已经接入的 table 格式包括 CSV / TSV、JSON / JSONL、Parquet、Shapefile。native table 写侧已经接入 PostgreSQL、MySQL、Doris、ClickHouse 第一版。
 
-non-table raw copy 已形成第一版最小闭环：`document`、`media`、`unknown` 的 encoded single file/object 可按原始字节复制。raw copy 不进入 `common/format` table reader / writer，不解析正文、不抽取媒体元数据，也不做格式转换；目标写入第一版只支持 `overwrite`。
+non-table raw copy 已形成第一版最小闭环：`document`、`media`、`unknown` 的 encoded single file/object 可按原始字节复制。raw copy 不进入 `common/format` table reader / writer，不解析正文、不抽取媒体元数据，也不做格式转换；目标应用只支持 `replace`。
 
 ## 任务配置
 
@@ -46,7 +46,8 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`unkn
 
 ```json
 {
-  "mode": "batch",
+  "runtime": {"boundary": "bounded"},
+  "load": {"mode": "snapshot"},
   "source": {
     "locator": "addp://engine/1/path/public/roads?type=table",
     "data_type": "table",
@@ -58,7 +59,7 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`unkn
     "data_type": "table",
     "representation": "encoded",
     "format": "parquet",
-    "policy": {"write_mode": "overwrite"}
+    "policy": {"apply_mode": "replace"}
   },
   "transforms": [
     {
@@ -75,7 +76,7 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`unkn
 }
 ```
 
-`policy.write_mode` 当前只保留 `overwrite` 和 `append`。overwrite 是 Transfer policy；删除指定资源由 `common/engine` 的 DeleteResource 能力提供。失败执行 retry 当前按 restartable 处理，从头重新入队执行；append 任务重试会被拒绝，避免重复写入。
+`target.policy.apply_mode` 支持 snapshot 的 `replace` / `append`，以及 PostgreSQL watermark incremental 的幂等 `upsert`。旧 `write_mode` 不兼容。snapshot replace 失败执行可按 restartable 从头 retry；watermark upsert 从 `transfer.sync_states` 的 committed position resume；append retry 被拒绝。
 
 ## API
 
@@ -95,18 +96,16 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`unkn
 - `PUT /task-definitions/:id`
 - `DELETE /task-definitions/:id`
 - `POST /task-definitions/:id/start`
-- `POST /task-definitions/:id/stop`
 - `POST /task-definitions/:id/pause`
 - `POST /task-definitions/:id/resume`
 - `GET /task-definitions/:id/executions`
 - `GET /executions`
 - `GET /executions/:execution_id`
-- `POST /executions/:execution_id/cancel`
 - `POST /executions/:execution_id/retry`
 - `GET /executions/:execution_id/progress`
 - `GET /executions/:execution_id/logs`
 
-`GET /executions/:execution_id` 是 TaskProvider 标准执行详情入口，按统一 `common.task_executions.execution_id` 查询。取消、重试、进度和日志入口也按 `execution_id` 定位执行记录；但这不等于声明 TaskProvider 标准取消能力，`supports_cancel=false` 时 Orchestrator 和 Monitor 不应展示跨模块取消入口。
+`GET /executions/:execution_id` 是 TaskProvider 标准执行详情入口，按统一 `common.task_executions.execution_id` 查询。重试、进度和日志入口也按 `execution_id` 定位执行记录。当前 bounded worker 不支持真实中断，不提供伪 cancel/stop 入口，TaskProvider 保持 `supports_cancel=false`。
 
 ## 启动与验证
 

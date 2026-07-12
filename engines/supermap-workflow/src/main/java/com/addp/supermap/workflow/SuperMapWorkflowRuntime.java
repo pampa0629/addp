@@ -72,13 +72,25 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 public final class SuperMapWorkflowRuntime {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String ENGINE_TYPE = "supermap_workflow";
     private static final String SERVICE_NAME = "supermap-workflow-engine";
-    private static final String VERSION = "0.2.0";
+    private static final String VERSION = "0.3.0";
     private static final String SPS_FACTORY = "addp_supermap_workflow";
+    private static final List<String> CURRENT_UDBX_TABLES = List.of(
+            "SmAdditionalInfo",
+            "SmAttributeRule",
+            "SmGroupItems",
+            "SmPyramidColumns"
+    );
+    private static final List<String> CURRENT_UDBX_REGISTER_COLUMNS = List.of(
+            "SmGroupID",
+            "SmRelationship",
+            "SmSubTypes"
+    );
     private static final Instant STARTED_AT = Instant.now();
     private static final Map<String, ExecutionRecord> EXECUTIONS = new ConcurrentHashMap<>();
 
@@ -125,13 +137,17 @@ public final class SuperMapWorkflowRuntime {
                         "log4j-core-*.jar"
                 )
         );
+        DependencyCheck sqliteCheck = Files.isExecutable(Path.of("/usr/bin/sqlite3"))
+                ? new DependencyCheck(true, List.of(), "")
+                : DependencyCheck.missing("executable does not exist: /usr/bin/sqlite3");
 
         ObjectNode dependencies = MAPPER.createObjectNode();
         dependencies.set("objectsjava", dependencyJson("SUPERMAP_OBJECTSJAVA_BIN", superMapBin, objectsJavaCheck));
         dependencies.set("gpa_libs", dependencyJson("SUPERMAP_GPA_LIB_DIR", gpaLibDir, gpaLibsCheck));
+        dependencies.set("sqlite3", dependencyJson("", "/usr/bin/sqlite3", sqliteCheck));
 
         ObjectNode response = MAPPER.createObjectNode();
-        response.put("status", objectsJavaCheck.available && gpaLibsCheck.available ? "healthy" : "degraded");
+        response.put("status", objectsJavaCheck.available && gpaLibsCheck.available && sqliteCheck.available ? "healthy" : "degraded");
         response.put("service", SERVICE_NAME);
         response.put("version", VERSION);
         response.put("uptime", Math.max(0, Instant.now().getEpochSecond() - STARTED_AT.getEpochSecond()));
@@ -142,7 +158,9 @@ public final class SuperMapWorkflowRuntime {
 
     private static ObjectNode dependencyJson(String env, String path, DependencyCheck check) {
         ObjectNode node = MAPPER.createObjectNode();
-        node.put("env", env);
+        if (env != null && !env.isBlank()) {
+            node.put("env", env);
+        }
         node.put("path", path);
         node.put("available", check.available);
         ArrayNode missing = node.putArray("missing");
@@ -274,11 +292,11 @@ public final class SuperMapWorkflowRuntime {
             response.put("execution_time_ms", elapsedMs(started));
             sendJson(exchange, 200, response);
         } catch (IllegalArgumentException ex) {
-            ObjectNode response = failed("OPERATOR_INVALID", ex.getMessage());
+            ObjectNode response = failed("INVALID_PARAMS", ex.getMessage());
             response.put("execution_time_ms", elapsedMs(started));
             sendJson(exchange, 400, response);
         } catch (Exception ex) {
-            ObjectNode response = failed("DIRECT_EXECUTION_FAILED", "SuperMap direct operator execution failed");
+            ObjectNode response = failed("EXECUTION_FAILED", "SuperMap direct operator execution failed");
             response.put("details", ex.toString());
             response.put("execution_time_ms", elapsedMs(started));
             ex.printStackTrace(System.err);
@@ -287,9 +305,14 @@ public final class SuperMapWorkflowRuntime {
     }
 
     private static ObjectNode invokeDirectOperator(String name, JsonNode params) {
-        if (!"datasource.enable_postgis".equals(name)) {
-            throw new IllegalArgumentException("operator does not support direct execution: " + name);
-        }
+        return switch (name) {
+            case "datasource.enable_postgis" -> enablePostgis(params);
+            case "datasource.upgrade_udbx" -> upgradeUdbx(params);
+            default -> throw new IllegalArgumentException("operator does not support direct execution: " + name);
+        };
+    }
+
+    private static ObjectNode enablePostgis(JsonNode params) {
         try (WorkflowExecutionContext context = new WorkflowExecutionContext()) {
             JsonNode connInfo = requireObject(params, "connection_info");
             String server = postgisServer(connInfo);
@@ -299,6 +322,40 @@ public final class SuperMapWorkflowRuntime {
             String alias = optionalText(params, "alias", "supermap_sdx");
             return context.enablePostgisWorkspace(server, database, user, password, alias).toJson();
         }
+    }
+
+    private static ObjectNode upgradeUdbx(JsonNode params) {
+        JsonNode connInfo = requireObject(params, "connection_info");
+        Path path = resolveUdbxPath(connInfo, paramText(params, "path"));
+        String alias = optionalText(params, "alias", path.getFileName().toString());
+        UdbxSchemaState before = inspectUdbxSchema(path);
+        if (!before.current() && !Files.isWritable(path)) {
+            throw new IllegalArgumentException("UDBX file is not writable: " + path);
+        }
+
+        int datasetCount;
+        boolean readOnly = before.current();
+        try (WorkflowExecutionContext context = new WorkflowExecutionContext()) {
+            SuperMapDatasourceRef datasource = context.openUdbx(path.toString(), alias, readOnly);
+            datasetCount = datasource.datasource.getDatasets().getCount();
+        }
+
+        UdbxSchemaState after = inspectUdbxSchema(path);
+        if (!after.current()) {
+            throw new IllegalStateException(
+                    "UDBX schema upgrade did not produce the current schema; missing tables="
+                            + after.missingTables() + ", missing SmRegister columns=" + after.missingRegisterColumns()
+            );
+        }
+
+        ObjectNode result = MAPPER.createObjectNode();
+        result.put("kind", "supermap_udbx_upgrade");
+        result.put("path", path.toString());
+        result.put("alias", alias);
+        result.put("dataset_count", datasetCount);
+        result.put("schema_current", true);
+        result.put("changed", !before.current());
+        return result;
     }
 
     private static boolean operatorSupportsMode(ObjectNode operator, String mode) {
@@ -546,6 +603,19 @@ public final class SuperMapWorkflowRuntime {
                         param("alias", "string", false, false, "数据源别名。")
                 ),
                 List.of(output("workspace", "supermap.spatial_workspace", "SuperMap SDX+ 空间工作区摘要。")),
+                List.of("direct")
+        ));
+        result.put("datasource.upgrade_udbx", operator(
+                "datasource.upgrade_udbx",
+                "升级 UDBX 数据源",
+                "显式检查并原位升级已有 UDBX 的 SuperMap schema；只在旧 schema 时以可写方式打开。",
+                "数据源",
+                List.of(
+                        param("connection_info", "object", false, true, "运行时派生连接信息。"),
+                        param("path", "string", false, true, "目标 UDBX 文件路径；NFS 调用使用 export 内相对路径。"),
+                        param("alias", "string", false, false, "数据源别名。")
+                ),
+                List.of(output("upgrade", "supermap.udbx_upgrade", "UDBX schema 升级结果摘要。")),
                 List.of("direct")
         ));
         result.put("datasource.create", operator(
@@ -910,7 +980,62 @@ public final class SuperMapWorkflowRuntime {
         return "nfs".equalsIgnoreCase(connectionEngineType(connInfo));
     }
 
-    private static Path resolveCreateDatasourcePath(JsonNode connInfo, String outputPath) {
+    private static UdbxSchemaState inspectUdbxSchema(Path path) {
+        if (!Files.isRegularFile(path)) {
+            throw new IllegalArgumentException("UDBX file does not exist: " + path);
+        }
+        String sql = "SELECT 'table|' || name FROM sqlite_master "
+                + "WHERE type='table' AND name IN ('SmAdditionalInfo','SmAttributeRule','SmGroupItems','SmPyramidColumns');"
+                + "SELECT 'column|' || name FROM pragma_table_info('SmRegister') "
+                + "WHERE name IN ('SmGroupID','SmRelationship','SmSubTypes');";
+        try {
+            Process process = new ProcessBuilder("sqlite3", "-readonly", path.toString(), sql)
+                    .redirectErrorStream(true)
+                    .start();
+            if (!process.waitFor(10, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new IllegalStateException("timed out while inspecting UDBX schema: " + path);
+            }
+            String output;
+            try (InputStream input = process.getInputStream()) {
+                output = readAll(input);
+            }
+            if (process.exitValue() != 0) {
+                throw new IllegalArgumentException("failed to inspect UDBX schema: " + output.trim());
+            }
+
+            List<String> tables = new ArrayList<>();
+            List<String> registerColumns = new ArrayList<>();
+            output.lines().forEach(line -> {
+                if (line.startsWith("table|")) {
+                    tables.add(line.substring("table|".length()));
+                } else if (line.startsWith("column|")) {
+                    registerColumns.add(line.substring("column|".length()));
+                }
+            });
+            return new UdbxSchemaState(
+                    missingValues(CURRENT_UDBX_TABLES, tables),
+                    missingValues(CURRENT_UDBX_REGISTER_COLUMNS, registerColumns)
+            );
+        } catch (IOException ex) {
+            throw new IllegalStateException("failed to run sqlite3 for UDBX schema inspection", ex);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while inspecting UDBX schema", ex);
+        }
+    }
+
+    private static List<String> missingValues(List<String> required, List<String> actual) {
+        List<String> missing = new ArrayList<>();
+        for (String value : required) {
+            if (!actual.contains(value)) {
+                missing.add(value);
+            }
+        }
+        return List.copyOf(missing);
+    }
+
+    private static Path resolveUdbxPath(JsonNode connInfo, String outputPath) {
         if (connInfo == null || !connInfo.isObject() || !isNfsConnection(connInfo)) {
             return Path.of(outputPath);
         }
@@ -1360,7 +1485,7 @@ public final class SuperMapWorkflowRuntime {
             super("datasource.create");
             this.context = context;
             JsonNode connInfo = requireObject(params, "connection_info");
-            Path resolvedPath = resolveCreateDatasourcePath(connInfo, paramText(params, "path"));
+            Path resolvedPath = resolveUdbxPath(connInfo, paramText(params, "path"));
             addStringInput("path", resolvedPath.toString());
             addStringInput("alias", optionalText(params, "alias", ""));
             addBooleanInput("overwrite", optionalBoolean(params, "overwrite", false));
@@ -2227,6 +2352,12 @@ public final class SuperMapWorkflowRuntime {
             node.put("attribute_filter", attributeFilter);
             node.put("record_count", recordCount);
             return node;
+        }
+    }
+
+    private record UdbxSchemaState(List<String> missingTables, List<String> missingRegisterColumns) {
+        boolean current() {
+            return missingTables.isEmpty() && missingRegisterColumns.isEmpty();
         }
     }
 

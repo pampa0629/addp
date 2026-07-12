@@ -497,35 +497,26 @@ func (s *ExecutionService) RetryExecution(ctx context.Context, id, tenantID, use
 	if err != nil {
 		return nil, fmt.Errorf("task not found: %w", err)
 	}
-	if mode := taskWriteMode(task); mode != "" && mode != "overwrite" {
-		return nil, fmt.Errorf("retry execution only supports restartable overwrite tasks; got write_mode %q", mode)
-	}
-
-	// 创建新的执行记录
-	newExecution, err := s.CreateExecution(ctx, oldExecution.TaskID, commonExecution.TriggerTypeManual, &userID)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.taskRepo.UpdateFields(oldExecution.TaskID, map[string]interface{}{
-		"status":   models.TaskStatusRunning,
-		"progress": 0,
-	}); err != nil {
-		return nil, fmt.Errorf("failed to update task state for retry: %w", err)
+	if mode := taskApplyMode(task); mode != "replace" && mode != "upsert" {
+		return nil, fmt.Errorf("retry execution only supports replace snapshot or resumable upsert tasks; got apply_mode %q", mode)
 	}
 
 	if s.taskQueue == nil {
-		if finishErr := s.FinishExecution(ctx, newExecution.ID, models.ExecutionStatusFailed, "task queue is not available"); finishErr != nil {
-			s.logger.Warn("failed to mark retry execution as failed after missing queue", "error", finishErr, "execution_id", newExecution.ID)
-		}
-		if updateErr := s.taskRepo.UpdateFields(oldExecution.TaskID, map[string]interface{}{
-			"status":   models.TaskStatusIdle,
-			"progress": 0,
-		}); updateErr != nil {
-			s.logger.Warn("failed to rollback task state after missing retry queue", "error", updateErr, "task_id", oldExecution.TaskID)
-		}
 		return nil, fmt.Errorf("task queue is not available")
 	}
+	now := time.Now()
+	triggeredBy := int(userID)
+	record := &commonExecution.TaskExecution{
+		TenantID: int(task.TenantID), ExecutionID: uuid.New().String(), Module: commonExecution.ModuleTransfer,
+		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
+		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), SourceTaskName: &task.Name,
+		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
+		TriggeredBy: &triggeredBy, ExecutionConfig: task.Config, StartedAt: &now, CreatedAt: now, UpdatedAt: now,
+	}
+	if _, _, err := s.taskRepo.ClaimExecution(ctx, task.ID, tenantID, record, incrementalSourceIdentity(task)); err != nil {
+		return nil, fmt.Errorf("claim retry execution: %w", err)
+	}
+	newExecution := s.convertToTransferExecution(record)
 
 	if err := s.taskQueue.EnqueueExecuteTask(ctx, oldExecution.TaskID, newExecution.ID, tenantID); err != nil {
 		if finishErr := s.FinishExecution(ctx, newExecution.ID, models.ExecutionStatusFailed, err.Error()); finishErr != nil {
@@ -544,7 +535,7 @@ func (s *ExecutionService) RetryExecution(ctx context.Context, id, tenantID, use
 	return newExecution, nil
 }
 
-func taskWriteMode(task *models.TransferTask) string {
+func taskApplyMode(task *models.TransferTask) string {
 	if task == nil {
 		return ""
 	}
@@ -556,36 +547,8 @@ func taskWriteMode(task *models.TransferTask) string {
 	if !ok {
 		return ""
 	}
-	mode, _ := policy["write_mode"].(string)
+	mode, _ := policy["apply_mode"].(string)
 	return strings.ToLower(strings.TrimSpace(mode))
-}
-
-// CancelExecution 取消正在运行的执行
-func (s *ExecutionService) CancelExecution(ctx context.Context, id, tenantID uint) error {
-	execution, err := s.GetExecution(ctx, id, tenantID)
-	if err != nil {
-		return err
-	}
-
-	if execution.Status != models.ExecutionStatusRunning {
-		return fmt.Errorf("only running executions can be cancelled")
-	}
-
-	// 更新执行状态
-	if err := s.FinishExecution(ctx, id, models.ExecutionStatusFailed, "cancelled by user"); err != nil {
-		return fmt.Errorf("failed to cancel execution: %w", err)
-	}
-
-	// 取消执行后，恢复任务为空闲状态
-	if err := s.taskRepo.UpdateFields(execution.TaskID, map[string]interface{}{
-		"status":   models.TaskStatusIdle,
-		"progress": 0,
-	}); err != nil {
-		return fmt.Errorf("failed to update task after cancellation: %w", err)
-	}
-
-	s.logger.Info("execution cancelled", "execution_id", id)
-	return nil
 }
 
 // GetExecutionProgress 获取执行进度（实时）

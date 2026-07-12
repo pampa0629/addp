@@ -16,7 +16,8 @@ import (
 
 func TestValidateNewTaskConfigAcceptsRawCopy(t *testing.T) {
 	err := validateNewTaskConfig(map[string]interface{}{
-		"mode": "batch",
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
 		"source": map[string]interface{}{
 			"locator":        "addp://engine/1/path/docs/a.pdf?type=object",
 			"data_type":      "document",
@@ -27,7 +28,7 @@ func TestValidateNewTaskConfigAcceptsRawCopy(t *testing.T) {
 			"parent_locator": "addp://engine/2/path/backup?type=directory",
 			"name":           "a.pdf",
 			"representation": "encoded",
-			"policy":         map[string]interface{}{"write_mode": "overwrite"},
+			"policy":         map[string]interface{}{"apply_mode": "replace"},
 		},
 	}, 1000)
 	if err != nil {
@@ -37,7 +38,8 @@ func TestValidateNewTaskConfigAcceptsRawCopy(t *testing.T) {
 
 func TestValidateNewTaskConfigStillAcceptsTableTransfer(t *testing.T) {
 	err := validateNewTaskConfig(map[string]interface{}{
-		"mode":       "batch",
+		"runtime":    map[string]interface{}{"boundary": "bounded"},
+		"load":       map[string]interface{}{"mode": "snapshot"},
 		"batch_size": 100,
 		"source": map[string]interface{}{
 			"locator":        "addp://engine/1/path/public/roads?type=table",
@@ -50,7 +52,7 @@ func TestValidateNewTaskConfigStillAcceptsTableTransfer(t *testing.T) {
 			"data_type":      "table",
 			"representation": "encoded",
 			"format":         string(format.FormatCSV),
-			"policy":         map[string]interface{}{"write_mode": "overwrite"},
+			"policy":         map[string]interface{}{"apply_mode": "replace"},
 		},
 	}, 1000)
 	if err != nil {
@@ -207,7 +209,8 @@ func strPtr(v string) *string { return &v }
 
 func validTableTransferTaskConfig() map[string]interface{} {
 	return map[string]interface{}{
-		"mode": "batch",
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
 		"source": map[string]interface{}{
 			"locator":        "addp://engine/1/path/public/roads?type=table",
 			"data_type":      "table",
@@ -219,7 +222,7 @@ func validTableTransferTaskConfig() map[string]interface{} {
 			"data_type":      "table",
 			"representation": "encoded",
 			"format":         string(format.FormatCSV),
-			"policy":         map[string]interface{}{"write_mode": "overwrite"},
+			"policy":         map[string]interface{}{"apply_mode": "replace"},
 		},
 	}
 }

@@ -126,6 +126,19 @@ func validateStoreCapabilities(p EnginePlugin, store *StoreCapability) error {
 			return fmt.Errorf("%s declares table_write_prepare but does not implement TableWritePreparer", p.Type())
 		}
 	}
+	if store.BoundedWatermarkRead {
+		if _, ok := p.(BoundedWatermarkReadProvider); !ok {
+			return fmt.Errorf("%s declares bounded_watermark_read but does not implement BoundedWatermarkReadProvider", p.Type())
+		}
+	}
+	if store.TableUpsert != nil && store.TableUpsert.Supported {
+		if !store.TableUpsert.Idempotent {
+			return fmt.Errorf("%s declares table_upsert without idempotent semantics", p.Type())
+		}
+		if _, ok := p.(TableUpsertProvider); !ok {
+			return fmt.Errorf("%s declares table_upsert but does not implement TableUpsertProvider", p.Type())
+		}
+	}
 	return nil
 }
 
@@ -246,6 +259,14 @@ func validateStoreProviderCapabilities(p EnginePlugin, storage *StorageCapabilit
 	}
 	if _, ok := p.(TableWritePreparer); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.TableWritePrepare }) {
 		return fmt.Errorf("%s implements TableWritePreparer but does not declare table_write_prepare", p.Type())
+	}
+	if _, ok := p.(BoundedWatermarkReadProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.BoundedWatermarkRead }) {
+		return fmt.Errorf("%s implements BoundedWatermarkReadProvider but does not declare bounded_watermark_read", p.Type())
+	}
+	if _, ok := p.(TableUpsertProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool {
+		return store.TableUpsert != nil && store.TableUpsert.Supported && store.TableUpsert.Idempotent
+	}) {
+		return fmt.Errorf("%s implements TableUpsertProvider but does not declare idempotent table_upsert", p.Type())
 	}
 	return nil
 }

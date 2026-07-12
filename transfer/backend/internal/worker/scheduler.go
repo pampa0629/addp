@@ -11,6 +11,7 @@ import (
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
+	"github.com/google/uuid"
 )
 
 const schedulePollInterval = time.Second
@@ -134,39 +135,35 @@ func (s *Scheduler) claimAndExecuteDueTask(ctx context.Context, taskID uint, now
 	if err != nil {
 		return err
 	}
-	claimed, err := s.taskRepo.ClaimDueScheduledTask(ctx, taskID, task.Schedule, now, next)
+	executionID := uuid.New().String()
+	taskName := task.Name
+	execution := &commonExecution.TaskExecution{
+		TenantID: int(task.TenantID), ExecutionID: executionID, Module: commonExecution.ModuleTransfer,
+		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
+		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), SourceTaskName: &taskName,
+		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeScheduled,
+		ExecutionConfig: task.Config, StartedAt: &now, CreatedAt: now, UpdatedAt: now,
+	}
+	claimed, _, err := s.taskRepo.ClaimDueScheduledExecution(ctx, taskID, task.Schedule, now, next, execution, service.IncrementalSourceIdentityForTask(task))
 	if err != nil || claimed == nil {
 		return err
 	}
 
-	s.executeScheduledTask(ctx, *claimed)
+	s.executeScheduledTask(ctx, *claimed, uint(execution.ID))
 	return nil
 }
 
-func (s *Scheduler) executeScheduledTask(ctx context.Context, task models.TransferTask) {
+func (s *Scheduler) executeScheduledTask(ctx context.Context, task models.TransferTask, executionID uint) {
 	log.Printf("⏰  触发定时任务 - TaskID: %d, Name: %s", task.ID, task.Name)
 	if task.TaskType != commonExecution.TaskTypeSync {
 		log.Printf("❌ 跳过非 sync Transfer 任务 - TaskID: %d, TaskType: %s", task.ID, task.TaskType)
 		return
 	}
 
-	execution, err := s.executionService.CreateExecution(ctx, task.ID, commonExecution.TriggerTypeScheduled, nil)
-	if err != nil {
-		log.Printf("❌ 创建执行记录失败 - TaskID: %d, Error: %v", task.ID, err)
-		return
-	}
-
-	if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{
-		"status":   models.TaskStatusRunning,
-		"progress": 0,
-	}); err != nil {
-		log.Printf("❌ 更新任务状态失败 - TaskID: %d, Error: %v", task.ID, err)
-	}
-
-	if err := s.taskQueue.EnqueueExecuteTask(ctx, task.ID, execution.ID, task.TenantID); err != nil {
+	if err := s.taskQueue.EnqueueExecuteTask(ctx, task.ID, executionID, task.TenantID); err != nil {
 		log.Printf("❌ 任务入队失败 - TaskID: %d, Error: %v", task.ID, err)
-		if err := s.executionService.FinishExecution(ctx, execution.ID, models.ExecutionStatusFailed, err.Error()); err != nil {
-			log.Printf("❌ 更新执行状态失败 - ExecutionID: %d, Error: %v", execution.ID, err)
+		if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusFailed, err.Error()); err != nil {
+			log.Printf("❌ 更新执行状态失败 - ExecutionID: %d, Error: %v", executionID, err)
 		}
 		if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{
 			"status":   models.TaskStatusIdle,
@@ -177,5 +174,5 @@ func (s *Scheduler) executeScheduledTask(ctx context.Context, task models.Transf
 		return
 	}
 
-	log.Printf("✅ 定时任务已入队 - TaskID: %d, ExecutionID: %d", task.ID, execution.ID)
+	log.Printf("✅ 定时任务已入队 - TaskID: %d, ExecutionID: %d", task.ID, executionID)
 }

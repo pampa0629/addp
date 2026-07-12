@@ -61,6 +61,12 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 	if opts.TableWritePrepare {
 		caps.Storage.Store.TableWritePrepare = true
 	}
+	if opts.BoundedWatermarkRead {
+		caps.Storage.Store.BoundedWatermarkRead = true
+	}
+	if opts.TableUpsert {
+		caps.Storage.Store.TableUpsert = &TableUpsertCapability{Supported: true, Idempotent: true}
+	}
 	if opts.Delete {
 		caps.Storage.Store.Delete = true
 	}
@@ -77,6 +83,8 @@ type TabularCapabilityOptions struct {
 	BatchWrite                bool
 	TableWriteSession         bool
 	TableWritePrepare         bool
+	BoundedWatermarkRead      bool
+	TableUpsert               bool
 	Delete                    bool
 	SpatialFacts              bool
 	SupportsExplain           bool
@@ -285,6 +293,12 @@ func storeCapabilitySemantics(store *StoreCapability) []string {
 	}
 	if store.TableWritePrepare {
 		semantics = append(semantics, "table_write_prepare")
+	}
+	if store.BoundedWatermarkRead {
+		semantics = append(semantics, "bounded_watermark_read")
+	}
+	if store.TableUpsert != nil && store.TableUpsert.Supported {
+		semantics = append(semantics, "table_upsert")
 	}
 	return semantics
 }

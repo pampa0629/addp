@@ -99,7 +99,7 @@ func TestBuildTableTransferPlanForNativeTableToInfraPrefix(t *testing.T) {
 func TestBuildTableTransferPlanForNativeTableToEncodedFile(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.BatchSize = 500
-	spec.Target.Policy = map[string]interface{}{"write_mode": "overwrite"}
+	spec.Target.Policy = map[string]interface{}{"apply_mode": "replace"}
 	resolver := StaticEngineResolver{
 		1: {Type: "postgresql", ConnInfo: engineplugin.ConnectionInfo{"database": "gis"}},
 		2: {Type: "nfs", ConnInfo: engineplugin.ConnectionInfo{"server": "127.0.0.1", "export_path": "/data"}},
@@ -794,7 +794,8 @@ func TestBuildTableTransferPlanAllowsShapefileMultiTableWriter(t *testing.T) {
 
 func TestBuildTableTransferPlanForEncodedFileToNativeTable(t *testing.T) {
 	spec := TableExportTaskSpec{
-		Mode: modeBatch,
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load:    LoadSpec{Mode: loadModeSnapshot},
 		Source: EndpointSpec{
 			Locator:        "addp://engine/1/path/imports/roads.csv?type=file",
 			DataType:       dataTypeTable,
@@ -807,7 +808,7 @@ func TestBuildTableTransferPlanForEncodedFileToNativeTable(t *testing.T) {
 			Name:           "roads",
 			DataType:       dataTypeTable,
 			Representation: representationNative,
-			Policy:         map[string]interface{}{"write_mode": "append"},
+			Policy:         map[string]interface{}{"apply_mode": "append"},
 		},
 		BatchSize: 500,
 	}
@@ -1112,7 +1113,8 @@ func TestBuildTableTransferPlanForEncodedObjectToEncodedObject(t *testing.T) {
 
 func TestBuildTableTransferPlanForNativeTableToNativeTable(t *testing.T) {
 	spec := TableExportTaskSpec{
-		Mode: modeBatch,
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load:    LoadSpec{Mode: loadModeSnapshot},
 		Source: EndpointSpec{
 			Locator:        tableLocator(1, "public", "roads"),
 			DataType:       dataTypeTable,
@@ -1123,7 +1125,7 @@ func TestBuildTableTransferPlanForNativeTableToNativeTable(t *testing.T) {
 			Name:           "roads_copy",
 			DataType:       dataTypeTable,
 			Representation: representationNative,
-			Policy:         map[string]interface{}{"write_mode": "overwrite"},
+			Policy:         map[string]interface{}{"apply_mode": "replace"},
 		},
 		BatchSize: 500,
 	}
@@ -1189,7 +1191,7 @@ func TestBuildTableTransferPlanRejectsInvalidShape(t *testing.T) {
 
 func TestBuildTableTransferPlanSplitsOverwritePolicy(t *testing.T) {
 	spec := minimalEncodedToNativeSpec()
-	spec.Target.Policy = map[string]interface{}{"write_mode": "overwrite"}
+	spec.Target.Policy = map[string]interface{}{"apply_mode": "replace"}
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "nfs"},
@@ -1205,7 +1207,7 @@ func TestBuildTableTransferPlanSplitsOverwritePolicy(t *testing.T) {
 
 func TestBuildTableTransferPlanKeepsAppendPolicy(t *testing.T) {
 	spec := minimalEncodedToNativeSpec()
-	spec.Target.Policy = map[string]interface{}{"write_mode": "append", "write_method": "insert"}
+	spec.Target.Policy = map[string]interface{}{"apply_mode": "append", "write_method": "insert"}
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "nfs"},
@@ -1237,7 +1239,8 @@ func TestParseTableExportTaskSpecRejectsLegacyConfig(t *testing.T) {
 
 func TestParseTableExportTaskSpecRejectsLegacyEngineField(t *testing.T) {
 	_, err := ParseTableExportTaskSpec(map[string]interface{}{
-		"mode": "batch",
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
 		"source": map[string]interface{}{
 			"engine":         map[string]interface{}{"id": 1},
 			"locator":        tableLocator(1, "public", "roads"),
@@ -1260,7 +1263,7 @@ func TestParseTableExportTaskSpecRejectsLegacyEngineField(t *testing.T) {
 	}
 }
 
-func TestParseTableExportTaskSpecRequiresMode(t *testing.T) {
+func TestParseTableExportTaskSpecRequiresRuntimeBoundary(t *testing.T) {
 	config := map[string]interface{}{
 		"source": map[string]interface{}{
 			"locator":        tableLocator(1, "public", "roads"),
@@ -1280,14 +1283,15 @@ func TestParseTableExportTaskSpecRequiresMode(t *testing.T) {
 	if err == nil {
 		t.Fatal("ParseTableExportTaskSpec succeeded, want mode error")
 	}
-	if !strings.Contains(err.Error(), "mode is required") {
-		t.Fatalf("error = %q, want mode error", err)
+	if !strings.Contains(err.Error(), "runtime.boundary") {
+		t.Fatalf("error = %q, want runtime boundary error", err)
 	}
 }
 
 func TestParseTableExportTaskSpecAppliesFallbackBatchSize(t *testing.T) {
 	spec, err := ParseTableExportTaskSpec(map[string]interface{}{
-		"mode": "batch",
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
 		"source": map[string]interface{}{
 			"locator":        tableLocator(1, "public", "roads"),
 			"data_type":      "table",
@@ -1299,6 +1303,7 @@ func TestParseTableExportTaskSpecAppliesFallbackBatchSize(t *testing.T) {
 			"data_type":      "table",
 			"representation": "encoded",
 			"format":         "csv",
+			"policy":         map[string]interface{}{"apply_mode": "replace"},
 		},
 	}, 2048)
 	if err != nil {
@@ -1311,7 +1316,8 @@ func TestParseTableExportTaskSpecAppliesFallbackBatchSize(t *testing.T) {
 
 func TestParseTableExportTaskSpecPreservesSourceLocatorItemID(t *testing.T) {
 	spec, err := ParseTableExportTaskSpec(map[string]interface{}{
-		"mode": "batch",
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
 		"source": map[string]interface{}{
 			"locator":        fileLocator(1, "imports/roads.shp") + "&item_id=12",
 			"data_type":      "table",
@@ -1322,6 +1328,7 @@ func TestParseTableExportTaskSpecPreservesSourceLocatorItemID(t *testing.T) {
 			"name":           "roads",
 			"data_type":      "table",
 			"representation": "native",
+			"policy":         map[string]interface{}{"apply_mode": "replace"},
 		},
 	}, 1000)
 	if err != nil {
@@ -1337,7 +1344,8 @@ func TestParseTableExportTaskSpecPreservesSourceLocatorItemID(t *testing.T) {
 
 func TestParseTableExportTaskSpecRejectsEndpointAttributes(t *testing.T) {
 	_, err := ParseTableExportTaskSpec(map[string]interface{}{
-		"mode": "batch",
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
 		"source": map[string]interface{}{
 			"locator":        fileLocator(1, "imports/roads.shp"),
 			"data_type":      "table",
@@ -1361,7 +1369,8 @@ func TestParseTableExportTaskSpecRejectsEndpointAttributes(t *testing.T) {
 
 func minimalNativeToEncodedSpec() TableExportTaskSpec {
 	return TableExportTaskSpec{
-		Mode: modeBatch,
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load:    LoadSpec{Mode: loadModeSnapshot},
 		Source: EndpointSpec{
 			Locator:        "addp://engine/1/path/public/roads?type=table",
 			DataType:       dataTypeTable,
@@ -1373,6 +1382,7 @@ func minimalNativeToEncodedSpec() TableExportTaskSpec {
 			DataType:       dataTypeTable,
 			Representation: representationEncoded,
 			Format:         format.FormatCSV,
+			Policy:         map[string]interface{}{"apply_mode": "replace"},
 		},
 	}
 }
@@ -1477,7 +1487,8 @@ func splitTestPath(fullPath string) (string, string) {
 
 func minimalEncodedToNativeSpec() TableExportTaskSpec {
 	return TableExportTaskSpec{
-		Mode: modeBatch,
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load:    LoadSpec{Mode: loadModeSnapshot},
 		Source: EndpointSpec{
 			Locator:        "addp://engine/1/path/imports/roads.csv?type=file",
 			DataType:       dataTypeTable,
@@ -1489,13 +1500,15 @@ func minimalEncodedToNativeSpec() TableExportTaskSpec {
 			Name:           "roads",
 			DataType:       dataTypeTable,
 			Representation: representationNative,
+			Policy:         map[string]interface{}{"apply_mode": "replace"},
 		},
 	}
 }
 
 func minimalEncodedToEncodedSpec() TableExportTaskSpec {
 	return TableExportTaskSpec{
-		Mode: modeBatch,
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load:    LoadSpec{Mode: loadModeSnapshot},
 		Source: EndpointSpec{
 			Locator:        "addp://engine/1/path/imports/roads.csv?type=object",
 			DataType:       dataTypeTable,
@@ -1508,6 +1521,7 @@ func minimalEncodedToEncodedSpec() TableExportTaskSpec {
 			DataType:       dataTypeTable,
 			Representation: representationEncoded,
 			Format:         format.FormatCSV,
+			Policy:         map[string]interface{}{"apply_mode": "replace"},
 		},
 	}
 }

@@ -19,11 +19,16 @@ import (
 )
 
 const (
-	modeBatch             = "batch"
-	dataTypeTable         = "table"
-	representationNative  = "native"
-	representationEncoded = "encoded"
-	defaultWriteMode      = "overwrite"
+	runtimeBoundaryBounded = "bounded"
+	loadModeSnapshot       = "snapshot"
+	loadModeIncremental    = "incremental"
+	changeTypeWatermark    = "watermark"
+	dataTypeTable          = "table"
+	representationNative   = "native"
+	representationEncoded  = "encoded"
+	applyModeReplace       = "replace"
+	applyModeAppend        = "append"
+	applyModeUpsert        = "upsert"
 )
 
 type EngineRef struct {
@@ -46,11 +51,29 @@ type EndpointSpec struct {
 }
 
 type TableExportTaskSpec struct {
-	Mode       string          `json:"mode"`
+	Runtime    RuntimeSpec     `json:"runtime"`
+	Load       LoadSpec        `json:"load"`
 	Source     EndpointSpec    `json:"source"`
 	Target     EndpointSpec    `json:"target"`
 	Transforms []TransformSpec `json:"transforms,omitempty"`
 	BatchSize  int             `json:"batch_size,omitempty"`
+}
+
+type RuntimeSpec struct {
+	Boundary string `json:"boundary"`
+}
+
+type LoadSpec struct {
+	Mode            string               `json:"mode"`
+	ChangeDetection *ChangeDetectionSpec `json:"change_detection,omitempty"`
+}
+
+type ChangeDetectionSpec struct {
+	Type       string   `json:"type"`
+	Field      string   `json:"field"`
+	TieBreaker []string `json:"tie_breaker"`
+	Start      string   `json:"start"`
+	End        string   `json:"end"`
 }
 
 type TransformSpec struct {
@@ -260,6 +283,9 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 	}
 	if err := validateTableTransferSpec(spec); err != nil {
 		return nil, err
+	}
+	if spec.Load.Mode != loadModeSnapshot {
+		return nil, fmt.Errorf("ordinary table transfer planner only supports snapshot load")
 	}
 
 	sourceRef, err := spec.Source.EngineRef()
@@ -818,7 +844,7 @@ func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor
 			Kind:              executor.TableEndpointNative,
 			ConnInfo:          engine.ConnInfo,
 			Path:              targetPath,
-			DeleteBeforeWrite: writeMode(endpoint.Policy) == defaultWriteMode,
+			DeleteBeforeWrite: applyMode(endpoint.Policy) == applyModeReplace,
 			TablePrepare:      engineplugin.TableWriteOptions{},
 			TableWrite: engineplugin.BatchWriteOptions{
 				Method: importWriteMethod(endpoint.Policy),
@@ -841,7 +867,7 @@ func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor
 			Kind:              executor.TableEndpointEncoded,
 			ConnInfo:          engine.ConnInfo,
 			Path:              targetPath,
-			DeleteBeforeWrite: writeMode(endpoint.Policy) == defaultWriteMode,
+			DeleteBeforeWrite: applyMode(endpoint.Policy) == applyModeReplace,
 			ContentWrite:      engineplugin.WriteOptions{Overwrite: false},
 			Format:            targetFormat,
 			FormatOptions:     writeOptions,
@@ -852,11 +878,32 @@ func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor
 }
 
 func validateTableTransferSpec(spec TableExportTaskSpec) error {
-	if spec.Mode == "" {
-		return fmt.Errorf("transfer task mode is required")
+	if spec.Runtime.Boundary != runtimeBoundaryBounded {
+		return fmt.Errorf("runtime.boundary must be %q, got %q", runtimeBoundaryBounded, spec.Runtime.Boundary)
 	}
-	if spec.Mode != modeBatch {
-		return fmt.Errorf("only batch mode is supported by table transfer planner, got %q", spec.Mode)
+	switch spec.Load.Mode {
+	case loadModeSnapshot:
+		if spec.Load.ChangeDetection != nil {
+			return fmt.Errorf("snapshot load must not declare change_detection")
+		}
+		if mode := applyMode(spec.Target.Policy); mode != applyModeReplace && mode != applyModeAppend {
+			return fmt.Errorf("snapshot target policy.apply_mode must be replace or append, got %q", mode)
+		}
+	case loadModeIncremental:
+		if err := validateWatermarkLoad(spec.Load); err != nil {
+			return err
+		}
+		if mode := applyMode(spec.Target.Policy); mode != applyModeUpsert {
+			return fmt.Errorf("watermark incremental target policy.apply_mode must be upsert, got %q", mode)
+		}
+		if spec.Source.Representation != representationNative || spec.Target.Representation != representationNative {
+			return fmt.Errorf("watermark incremental first version only supports native table endpoints")
+		}
+		if len(policyStrings(spec.Target.Policy, "keys")) == 0 {
+			return fmt.Errorf("watermark incremental target policy.keys is required")
+		}
+	default:
+		return fmt.Errorf("load.mode must be snapshot or incremental, got %q", spec.Load.Mode)
 	}
 	if err := validateEndpointCommon(spec.Source, "source", dataTypeTable); err != nil {
 		return err
@@ -873,6 +920,32 @@ func validateTableTransferSpec(spec TableExportTaskSpec) error {
 	return fmt.Errorf("unsupported table transfer shape: source %s/%s -> target %s/%s",
 		spec.Source.Representation, spec.Source.LocatorType(),
 		spec.Target.Representation, spec.Target.TargetResourceType())
+}
+
+func validateWatermarkLoad(load LoadSpec) error {
+	change := load.ChangeDetection
+	if change == nil || strings.TrimSpace(change.Type) != changeTypeWatermark {
+		return fmt.Errorf("incremental load.change_detection.type must be watermark")
+	}
+	if strings.TrimSpace(change.Field) == "" || len(change.TieBreaker) == 0 {
+		return fmt.Errorf("watermark change_detection requires field and tie_breaker")
+	}
+	if change.Start != "committed" || change.End != "execution_upper_bound" {
+		return fmt.Errorf("watermark first version requires start=committed and end=execution_upper_bound")
+	}
+	seen := map[string]bool{strings.TrimSpace(change.Field): true}
+	for _, key := range change.TieBreaker {
+		key = strings.TrimSpace(key)
+		if key == "" || seen[key] {
+			return fmt.Errorf("watermark tie_breaker fields must be non-empty and unique")
+		}
+		seen[key] = true
+	}
+	return nil
+}
+
+func IsWatermarkIncrementalSpec(spec TableExportTaskSpec) bool {
+	return spec.Runtime.Boundary == runtimeBoundaryBounded && spec.Load.Mode == loadModeIncremental && spec.Load.ChangeDetection != nil && spec.Load.ChangeDetection.Type == changeTypeWatermark
 }
 
 func validateTransformSpecs(transforms []TransformSpec) error {
@@ -1136,6 +1209,7 @@ func validateTargetEndpointIdentity(endpoint EndpointSpec, dataType string) erro
 
 func hasLegacyTaskConfigFields(config map[string]interface{}) bool {
 	legacyKeys := []string{
+		"mode",
 		"source_config",
 		"target_config",
 		"connector_type",
@@ -1417,12 +1491,25 @@ func normalizeTargetContentPathExtension(rawPath string, formatType format.Forma
 	return path, nil
 }
 
-func writeMode(policy map[string]interface{}) string {
-	value := stringValue(policy, "write_mode")
-	if value == "" {
-		return defaultWriteMode
+func applyMode(policy map[string]interface{}) string {
+	return strings.ToLower(strings.TrimSpace(stringValue(policy, "apply_mode")))
+}
+
+func policyStrings(policy map[string]interface{}, key string) []string {
+	raw, ok := policy[key].([]interface{})
+	if !ok {
+		if values, ok := policy[key].([]string); ok {
+			return values
+		}
+		return nil
 	}
-	return strings.ToLower(value)
+	values := make([]string, 0, len(raw))
+	for _, value := range raw {
+		if text := strings.TrimSpace(fmt.Sprint(value)); text != "" {
+			values = append(values, text)
+		}
+	}
+	return values
 }
 
 func validateTransferReadableTableFormat(formatType format.FormatType) error {

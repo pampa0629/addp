@@ -12,9 +12,10 @@ import (
 )
 
 type RawCopyTaskSpec struct {
-	Mode   string       `json:"mode"`
-	Source EndpointSpec `json:"source"`
-	Target EndpointSpec `json:"target"`
+	Runtime RuntimeSpec  `json:"runtime"`
+	Load    LoadSpec     `json:"load"`
+	Source  EndpointSpec `json:"source"`
+	Target  EndpointSpec `json:"target"`
 }
 
 type RawCopyBuildResult struct {
@@ -100,7 +101,7 @@ func BuildRawCopyPlan(spec RawCopyTaskSpec, resolver EngineResolver) (*RawCopyBu
 				ConnInfo:          targetEngine.ConnInfo,
 				Path:              targetPath,
 				ContentWrite:      engineWriteOptionsForRawCopy(spec.Target.Policy),
-				DeleteBeforeWrite: writeMode(spec.Target.Policy) == defaultWriteMode,
+				DeleteBeforeWrite: applyMode(spec.Target.Policy) == applyModeReplace,
 			},
 			DataType: spec.Source.DataType,
 			Format:   spec.Source.Format,
@@ -112,11 +113,8 @@ func validateRawCopySpec(spec *RawCopyTaskSpec) error {
 	if spec == nil {
 		return fmt.Errorf("raw copy spec is required")
 	}
-	if spec.Mode == "" {
-		return fmt.Errorf("transfer task mode is required")
-	}
-	if spec.Mode != modeBatch {
-		return fmt.Errorf("only batch mode is supported by raw copy planner, got %q", spec.Mode)
+	if spec.Runtime.Boundary != runtimeBoundaryBounded || spec.Load.Mode != loadModeSnapshot || spec.Load.ChangeDetection != nil {
+		return fmt.Errorf("raw copy requires runtime.boundary=bounded and load.mode=snapshot")
 	}
 	if err := validateRawCopyEndpoint(spec.Source, "source"); err != nil {
 		return err
@@ -131,8 +129,8 @@ func validateRawCopySpec(spec *RawCopyTaskSpec) error {
 	if spec.Source.Format != spec.Target.Format {
 		return fmt.Errorf("raw copy target format %q must match source format %q", spec.Target.Format, spec.Source.Format)
 	}
-	if writeMode(spec.Target.Policy) != defaultWriteMode {
-		return fmt.Errorf("raw copy only supports overwrite write mode")
+	if applyMode(spec.Target.Policy) != applyModeReplace {
+		return fmt.Errorf("raw copy only supports target policy.apply_mode=replace")
 	}
 	if len(spec.Source.Attributes) > 0 {
 		descriptor, ok := sourceItemDescriptorFromMetaAttributes(spec.Source.Attributes)

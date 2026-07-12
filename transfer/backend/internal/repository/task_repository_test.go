@@ -69,7 +69,8 @@ func TestClaimDueScheduledTaskAdvancesNextRunAt(t *testing.T) {
 		t.Fatalf("due ids = %#v, want [%d]", ids, task.ID)
 	}
 
-	claimed, err := repo.ClaimDueScheduledTask(context.Background(), task.ID, "0 */5 * * * *", time.Now(), &nextRunAt)
+	execution := claimTestExecution(task, "scheduled-claim")
+	claimed, _, err := repo.ClaimDueScheduledExecution(context.Background(), task.ID, "0 */5 * * * *", time.Now(), &nextRunAt, &execution, "")
 	if err != nil {
 		t.Fatalf("ClaimDueScheduledTask() error = %v", err)
 	}
@@ -83,6 +84,49 @@ func TestClaimDueScheduledTaskAdvancesNextRunAt(t *testing.T) {
 	}
 	if refreshed.NextRunAt == nil || !refreshed.NextRunAt.After(dueAt) {
 		t.Fatalf("next_run_at = %#v, want after %s", refreshed.NextRunAt, dueAt)
+	}
+}
+
+func TestClaimExecutionAtomicallyRejectsSecondActiveExecution(t *testing.T) {
+	db := newTaskRepositoryTestDB(t)
+	repo := NewTaskRepository(db)
+	task := createTaskRepositoryTestTask(t, db, 7, "atomic-claim")
+	first := claimTestExecution(task, "claim-first")
+	if _, _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, &first, ""); err != nil {
+		t.Fatalf("first ClaimExecution failed: %v", err)
+	}
+	second := claimTestExecution(task, "claim-second")
+	if _, _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, &second, ""); err != ErrTaskAlreadyRunning {
+		t.Fatalf("second ClaimExecution error = %v, want ErrTaskAlreadyRunning", err)
+	}
+	var count int64
+	if err := db.Model(&commonExecution.TaskExecution{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("execution count = %d, want 1", count)
+	}
+}
+
+func TestSyncStateCommitUsesStateVersionAndFencingToken(t *testing.T) {
+	db := newTaskRepositoryTestDB(t)
+	taskRepo := NewTaskRepository(db)
+	task := createTaskRepositoryTestTask(t, db, 7, "watermark-state")
+	execution := claimTestExecution(task, "watermark-claim")
+	_, state, err := taskRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, &execution, "addp://engine/1/path/public/orders?type=table")
+	if err != nil {
+		t.Fatalf("ClaimExecution failed: %v", err)
+	}
+	if state == nil || state.FencingToken != 1 {
+		t.Fatalf("state = %#v, want fencing token 1", state)
+	}
+	stateRepo := NewSyncStateRepository(db)
+	position := models.JSONMap{"type": "watermark", "version": "v1", "cursor": map[string]interface{}{"values": []string{"2026-07-12T00:00:00Z", "10"}}}
+	if err := stateRepo.CommitPosition(context.Background(), state.ID, 0, 1, position, execution.ExecutionID); err != nil {
+		t.Fatalf("CommitPosition failed: %v", err)
+	}
+	if err := stateRepo.CommitPosition(context.Background(), state.ID, 0, 1, position, execution.ExecutionID); err != ErrSyncStateFenced {
+		t.Fatalf("stale CommitPosition error = %v, want ErrSyncStateFenced", err)
 	}
 }
 
@@ -151,6 +195,21 @@ func newTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE transfer.sync_states (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			task_id INTEGER NOT NULL,
+			source_identity TEXT NOT NULL,
+			partition TEXT NOT NULL,
+			position JSON,
+			position_type TEXT NOT NULL,
+			position_version TEXT NOT NULL,
+			state_version INTEGER NOT NULL DEFAULT 0,
+			fencing_token INTEGER NOT NULL DEFAULT 0,
+			updated_execution_id TEXT,
+			created_at DATETIME,
+			updated_at DATETIME,
+			UNIQUE(task_id, source_identity, partition)
+		)`,
 	}
 	for _, stmt := range statements {
 		if err := db.Exec(stmt).Error; err != nil {
@@ -160,13 +219,23 @@ func newTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func claimTestExecution(task models.TransferTask, executionID string) commonExecution.TaskExecution {
+	now := time.Now()
+	return commonExecution.TaskExecution{
+		TenantID: int(task.TenantID), ExecutionID: executionID, Module: commonExecution.ModuleTransfer,
+		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
+		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), Status: commonExecution.ExecutionStatusPending,
+		TriggerType: commonExecution.TriggerTypeManual, StartedAt: &now, CreatedAt: now, UpdatedAt: now,
+	}
+}
+
 func createTaskRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint, name string) models.TransferTask {
 	t.Helper()
 	task := models.TransferTask{
 		TenantID:  tenantID,
 		Name:      name,
 		TaskType:  commonExecution.TaskTypeSync,
-		Config:    models.JSONMap{"mode": "batch"},
+		Config:    models.JSONMap{"runtime": map[string]interface{}{"boundary": "bounded"}, "load": map[string]interface{}{"mode": "snapshot"}},
 		BatchSize: 100,
 		Status:    models.TaskStatusIdle,
 		Progress:  0,

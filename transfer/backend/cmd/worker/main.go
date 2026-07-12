@@ -111,6 +111,7 @@ func main() {
 	// 1. 创建 ExecutionEngineService (负责任务执行)
 	executionEngineService := service.NewExecutionEngineService(
 		taskRepo,
+		repository.NewSyncStateRepository(db),
 		executionService,
 		systemClient,
 		metaClient,

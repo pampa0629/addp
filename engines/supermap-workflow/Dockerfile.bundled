@@ -20,7 +20,7 @@ FROM ${RUNTIME_IMAGE} AS runtime-root
 
 USER root
 
-RUN dnf install -y nfs-utils \
+RUN dnf install -y nfs-utils sqlite \
   && dnf clean all \
   && rm -rf \
     /opt/sup_iobjectsjava \

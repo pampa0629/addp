@@ -123,9 +123,10 @@ definitions:
       batch_size:
         example: 1000
         type: integer
-      mode:
-        example: batch
-        type: string
+      load:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferLoadDoc'
+      runtime:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferRuntimeDoc'
       source:
         $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferSourceEndpointDoc'
       target:
@@ -213,6 +214,52 @@ definitions:
     x-enum-varnames:
     - TaskStatusIdle
     - TaskStatusRunning
+  github_com_addp_transfer_internal_models.TransferChangeDetectionDoc:
+    properties:
+      end:
+        enum:
+        - execution_upper_bound
+        example: execution_upper_bound
+        type: string
+      field:
+        example: updated_at
+        type: string
+      start:
+        enum:
+        - committed
+        example: committed
+        type: string
+      tie_breaker:
+        example:
+        - id
+        items:
+          type: string
+        type: array
+      type:
+        enum:
+        - watermark
+        example: watermark
+        type: string
+    type: object
+  github_com_addp_transfer_internal_models.TransferLoadDoc:
+    properties:
+      change_detection:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferChangeDetectionDoc'
+      mode:
+        enum:
+        - snapshot
+        - incremental
+        example: snapshot
+        type: string
+    type: object
+  github_com_addp_transfer_internal_models.TransferRuntimeDoc:
+    properties:
+      boundary:
+        enum:
+        - bounded
+        example: bounded
+        type: string
+    type: object
   github_com_addp_transfer_internal_models.TransferSourceEndpointDoc:
     properties:
       data_type:
@@ -255,14 +302,29 @@ definitions:
         example: addp://engine/10/path/public?type=schema
         type: string
       policy:
-        additionalProperties: true
-        type: object
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferTargetPolicyDoc'
       representation:
         enum:
         - native
         - encoded
         example: native
         type: string
+    type: object
+  github_com_addp_transfer_internal_models.TransferTargetPolicyDoc:
+    properties:
+      apply_mode:
+        enum:
+        - replace
+        - append
+        - upsert
+        example: replace
+        type: string
+      keys:
+        example:
+        - id
+        items:
+          type: string
+        type: array
     type: object
   github_com_addp_transfer_internal_models.TransferTask:
     properties:
@@ -523,34 +585,6 @@ paths:
       summary: 获取执行详情 | Get execution detail
       tags:
       - 执行管理 | Execution Management
-  /executions/{execution_id}/cancel:
-    post:
-      parameters:
-      - description: 执行ID | Execution ID
-        in: path
-        name: execution_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 取消执行 | Cancel execution
-      tags:
-      - 执行管理 | Execution Management
   /executions/{execution_id}/logs:
     get:
       parameters:
@@ -727,12 +761,11 @@ paths:
     post:
       consumes:
       - application/json
-      description: 创建一个新的 Transfer 任务。config.source 使用 locator 指向已存在资源；config.target
-        使用 parent_locator + name 表达待写入资源。source locator 带 item_id 时，Transfer 后端会通过
-        MetaClient 读取标准 attributes。| Create a new Transfer task. config.source uses
-        locator for existing resources; config.target uses parent_locator + name for
-        the resource to write. When source locator carries item_id, Transfer backend
-        loads standard attributes through MetaClient.
+      description: 创建 bounded Transfer 任务。配置必须使用 runtime.boundary、load.mode 和 target.policy.apply_mode；PostgreSQL
+        watermark 增量需声明复合游标与目标 keys。旧 mode/write_mode 字段会被拒绝。| Create a bounded Transfer
+        task using runtime.boundary, load.mode, and target.policy.apply_mode. PostgreSQL
+        watermark incremental tasks must declare a composite cursor and target keys.
+        Legacy mode/write_mode fields are rejected.
       parameters:
       - description: 任务创建请求 | Task creation request
         in: body
@@ -929,6 +962,8 @@ paths:
       - 执行管理 | Execution Management
   /task-definitions/{id}/pause:
     post:
+      description: 关闭任务自身定时调度，不中断当前 active execution | Disable the task-owned schedule
+        without interrupting an active execution
       parameters:
       - description: 任务ID | Task ID
         in: path
@@ -957,6 +992,9 @@ paths:
       - 任务管理 | Task Management
   /task-definitions/{id}/resume:
     post:
+      description: 恢复任务自身定时调度；watermark execution resume 由新 execution 自动读取 committed
+        position 完成 | Re-enable the task-owned schedule; watermark execution resume
+        is handled by a new execution reading the committed position
       parameters:
       - description: 任务ID | Task ID
         in: path
@@ -1017,43 +1055,6 @@ paths:
       security:
       - BearerAuth: []
       summary: 启动任务 | Start task
-      tags:
-      - 任务管理 | Task Management
-  /task-definitions/{id}/stop:
-    post:
-      consumes:
-      - application/json
-      description: 停止正在执行的任务 | Stop a running task
-      parameters:
-      - description: 任务ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 停止成功 | Stopped successfully
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "400":
-          description: 参数错误 | Bad request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: 服务器错误 | Server error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 停止任务 | Stop task
       tags:
       - 任务管理 | Task Management
   /task-definitions/statistics:

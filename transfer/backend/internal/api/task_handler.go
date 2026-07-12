@@ -27,7 +27,7 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 
 // CreateTask 创建任务
 // @Summary 创建数据传输任务 | Create data transfer task
-// @Description 创建一个新的 Transfer 任务。config.source 使用 locator 指向已存在资源；config.target 使用 parent_locator + name 表达待写入资源。source locator 带 item_id 时，Transfer 后端会通过 MetaClient 读取标准 attributes。| Create a new Transfer task. config.source uses locator for existing resources; config.target uses parent_locator + name for the resource to write. When source locator carries item_id, Transfer backend loads standard attributes through MetaClient.
+// @Description 创建 bounded Transfer 任务。配置必须使用 runtime.boundary、load.mode 和 target.policy.apply_mode；PostgreSQL watermark 增量需声明复合游标与目标 keys。旧 mode/write_mode 字段会被拒绝。| Create a bounded Transfer task using runtime.boundary, load.mode, and target.policy.apply_mode. PostgreSQL watermark incremental tasks must declare a composite cursor and target keys. Legacy mode/write_mode fields are rejected.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
@@ -333,36 +333,9 @@ func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
 	})
 }
 
-// StopTask 停止任务
-// @Summary 停止任务 | Stop task
-// @Description 停止正在执行的任务 | Stop a running task
-// @Tags         任务管理 | Task Management
-// @Accept json
-// @Produce json
-// @Param id path int true "任务ID | Task ID"
-// @Success 200 {object} map[string]string "停止成功 | Stopped successfully"
-// @Failure 400 {object} map[string]string "参数错误 | Bad request"
-// @Failure 500 {object} map[string]string "服务器错误 | Server error"
-// @Router /task-definitions/{id}/stop [post]
-// @Security BearerAuth
-func (h *TaskHandler) StopTask(c *gin.Context) {
-	id, ok := commonAPI.ParseUintParam(c, "id")
-	if !ok {
-		return
-	}
-
-	tenantID := c.GetUint("tenant_id")
-
-	if err := h.taskService.StopTask(c.Request.Context(), id, tenantID); err != nil {
-		commonAPI.InternalServerError(c, err.Error())
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Task stopped successfully"})
-}
-
 // PauseTask 暂停任务
 // @Summary 暂停任务 | Pause task
+// @Description 关闭任务自身定时调度，不中断当前 active execution | Disable the task-owned schedule without interrupting an active execution
 // @Tags         任务管理 | Task Management
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
@@ -388,6 +361,7 @@ func (h *TaskHandler) PauseTask(c *gin.Context) {
 
 // ResumeTask 恢复任务
 // @Summary 恢复任务 | Resume task
+// @Description 恢复任务自身定时调度；watermark execution resume 由新 execution 自动读取 committed position 完成 | Re-enable the task-owned schedule; watermark execution resume is handled by a new execution reading the committed position
 // @Tags         任务管理 | Task Management
 // @Produce json
 // @Param id path int true "任务ID | Task ID"

@@ -112,7 +112,6 @@ func SetupRouter(
 		taskDefinitions.PUT("/:id", taskHandler.UpdateTask)                        // 更新任务
 		taskDefinitions.DELETE("/:id", taskHandler.DeleteTask)                     // 删除任务
 		taskDefinitions.POST("/:id/start", taskHandler.StartTask)                  // 启动任务
-		taskDefinitions.POST("/:id/stop", taskHandler.StopTask)                    // 停止任务
 		taskDefinitions.POST("/:id/pause", taskHandler.PauseTask)                  // 暂停任务
 		taskDefinitions.POST("/:id/resume", taskHandler.ResumeTask)                // 恢复任务
 		taskDefinitions.GET("/:id/executions", executionHandler.GetTaskExecutions) // 获取任务的执行记录
@@ -124,7 +123,6 @@ func SetupRouter(
 		executions.GET("", executionHandler.ListExecutions)                              // 获取执行记录列表
 		executions.GET("/statistics", executionHandler.GetExecutionStatistics)           // 获取执行统计
 		executions.GET("/:execution_id", executionHandler.GetExecution)                  // 获取执行详情
-		executions.POST("/:execution_id/cancel", executionHandler.CancelExecution)       // 取消执行
 		executions.POST("/:execution_id/retry", executionHandler.RetryExecution)         // 重试执行
 		executions.GET("/:execution_id/progress", executionHandler.GetExecutionProgress) // 获取执行进度
 		executions.GET("/:execution_id/logs", executionHandler.GetExecutionLogs)         // 获取执行日志

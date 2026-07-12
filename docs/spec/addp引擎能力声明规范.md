@@ -199,7 +199,14 @@ type StoreCapability struct {
     BatchWrite                bool                                  `json:"batch_write,omitempty"`
     TableWriteSession         bool                                  `json:"table_write_session,omitempty"`
     TableWritePrepare         bool                                  `json:"table_write_prepare,omitempty"`
+    BoundedWatermarkRead      bool                                  `json:"bounded_watermark_read,omitempty"`
+    TableUpsert               *TableUpsertCapability                `json:"table_upsert,omitempty"`
     TableSpatialEncoding      *NativeTableSpatialEncodingCapability `json:"table_spatial_encoding,omitempty"`
+}
+
+type TableUpsertCapability struct {
+    Supported  bool `json:"supported"`
+    Idempotent bool `json:"idempotent"`
 }
 
 type NativeTableSpatialEncodingCapability struct {
@@ -223,12 +230,16 @@ type NativeTableSpatialEncodingCapability struct {
 | `table_read_spatial_transform` | 读取表时是否可通过 read hints 执行空间 CRS 转换。该字段是早期布尔声明，后续优先使用 `table_spatial_encoding.read_transform`。 | `BatchReadableProvider` / `TableReadSessionProvider` |
 | `batch_write` | 按批次写入结构化 item。 | `BatchWritableProvider` |
 | `table_write_session` | 打开一次表写入会话并连续写入批次，避免每批重复建立 COPY / bulk load 会话。 | `TableWriteSessionProvider` |
-| `table_write_prepare` | 执行表级写入前准备动作，如 ensure database / schema、create table、目标表结构校验和安全 schema evolution。该能力不写入数据行，也不承载 overwrite / append 策略。 | `TableWritePreparer` |
+| `table_write_prepare` | 执行表级写入前准备动作，如 ensure database / schema、create table、目标表结构校验和安全 schema evolution。该能力不写入数据行，也不承载 replace / append 策略。 | `TableWritePreparer` |
+| `bounded_watermark_read` | 在一致性读边界内冻结复合 watermark 上界，并稳定读取 `(committed, upper_bound]`。 | `BoundedWatermarkReadProvider` |
+| `table_upsert` | 按稳定键批量新增或更新；`idempotent=true` 表示同一批重复应用得到相同目标状态。 | `TableUpsertProvider` |
 | `table_spatial_encoding` | native table provider 可与 ADDP table pipeline 交换的空间 geometry row encoding 能力。读侧能力对应 `BatchReadableProvider` / `TableReadSessionProvider`；写侧能力对应 `BatchWritableProvider` / `TableWriteSessionProvider`。 | 按读写子能力分别对应 native table read / write provider |
 
 `read` / `write` 总开关无独立调用价值，不进入 Store 能力声明。`delete` 只表达引擎能删除对应 catalog 资源，不表达上层业务删除策略、回收流程或级联清理。`atomic_rename`、`transactions`、`formats` 不作为 Store 顶层字段；如有真实调用方，应在对应 Provider 或更具体能力中声明。
 
 `table_spatial_encoding` 只表达跨出 native table provider 后的 row value 编码，不表达数据库内部类型。PostGIS `geometry` 这类 engine-internal type 不应作为 encoding 暴露；PostgreSQL / PostGIS 第一阶段声明 `geometry_read_encodings=["ewkb","geojson"]`、`geometry_write_encodings=["ewkb"]`、`read_transform=true`、`native_spatial_functions=true`。
+
+`bounded_watermark_read` 与普通 `batch_read` / `table_read_session` 不等价。前者必须冻结 execution 上界、使用稳定复合游标并能从读取行生成 committed position。`table_upsert` 也不能从 `batch_write` 推导；只有目标 Provider 能校验唯一键并以幂等冲突处理提交批次时才能声明。第一版仅 PostgreSQL 声明这两项能力。
 
 ### Checkpoint / Resume 能力
 
@@ -377,6 +388,8 @@ type CapabilitiesView struct {
 - `storage.catalog_model` 是对外 CatalogModel 事实源；如果插件同时实现 `CatalogModelProvider`，其返回值必须与 `storage.catalog_model` 完全一致。
 - 声明 `storage.store.stream_read=true` 的插件必须实现 `ContentReadableProvider`。
 - 声明 `storage.store.stream_write=true` 的插件必须实现 `ContentWritableProvider`。
+- 声明 `storage.store.bounded_watermark_read=true` 的插件必须实现 `BoundedWatermarkReadProvider`。
+- 声明 `storage.store.table_upsert.supported=true` 的插件必须实现 `TableUpsertProvider`，且当前必须同时声明 `idempotent=true`。
 - 声明 `storage.store.range_read=true` 的插件必须实现 `RangeReadableProvider`，或在 `ContentReadableProvider.OpenContent()` 中明确支持 offset / length。
 - 声明 `storage.store.range_write=true` 的插件必须实现 `RangeWritableProvider`。
 - 声明 `storage.store.delete=true` 的插件必须实现 `ResourceDeleteProvider`。

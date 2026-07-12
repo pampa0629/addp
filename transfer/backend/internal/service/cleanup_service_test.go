@@ -153,7 +153,8 @@ func createTransferCleanupTestTask(t *testing.T, db *gorm.DB, tenantID uint, nam
 
 func transferCleanupTestTaskConfig(sourceEngineID uint, targetEngineID uint) models.JSONMap {
 	return models.JSONMap{
-		"mode": "batch",
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
 		"source": map[string]interface{}{
 			"locator":        transferCleanupTableLocator(sourceEngineID, "public", "roads"),
 			"data_type":      "table",
@@ -165,7 +166,7 @@ func transferCleanupTestTaskConfig(sourceEngineID uint, targetEngineID uint) mod
 			"data_type":      "table",
 			"representation": "encoded",
 			"format":         "csv",
-			"policy":         map[string]interface{}{"write_mode": "overwrite"},
+			"policy":         map[string]interface{}{"apply_mode": "replace"},
 		},
 	}
 }

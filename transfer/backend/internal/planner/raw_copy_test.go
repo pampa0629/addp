@@ -59,9 +59,10 @@ func TestBuildRawCopyPlanRejectsTargetFormatConflict(t *testing.T) {
 	spec := minimalRawCopySpec()
 	spec.Target.Format = format.FormatDOCX
 	_, err := ParseRawCopyTaskSpec(map[string]interface{}{
-		"mode":   spec.Mode,
-		"source": spec.Source,
-		"target": spec.Target,
+		"runtime": spec.Runtime,
+		"load":    spec.Load,
+		"source":  spec.Source,
+		"target":  spec.Target,
 	})
 	if err == nil || !strings.Contains(err.Error(), "must match source format") {
 		t.Fatalf("ParseRawCopyTaskSpec error = %v, want format conflict", err)
@@ -71,7 +72,8 @@ func TestBuildRawCopyPlanRejectsTargetFormatConflict(t *testing.T) {
 func TestParseRawCopyTaskSpecRejectsLegacyEngineField(t *testing.T) {
 	spec := minimalRawCopySpec()
 	_, err := ParseRawCopyTaskSpec(map[string]interface{}{
-		"mode": spec.Mode,
+		"runtime": spec.Runtime,
+		"load":    spec.Load,
 		"source": map[string]interface{}{
 			"engine":         map[string]interface{}{"id": 1},
 			"locator":        spec.Source.Locator,
@@ -91,7 +93,8 @@ func TestParseRawCopyTaskSpecRejectsLegacyEngineField(t *testing.T) {
 
 func minimalRawCopySpec() RawCopyTaskSpec {
 	return RawCopyTaskSpec{
-		Mode: modeBatch,
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load:    LoadSpec{Mode: loadModeSnapshot},
 		Source: EndpointSpec{
 			Locator:        "addp://engine/1/path/docs/a.pdf?type=object",
 			DataType:       "document",
@@ -104,7 +107,7 @@ func minimalRawCopySpec() RawCopyTaskSpec {
 			DataType:       "document",
 			Representation: representationEncoded,
 			Format:         format.FormatPDF,
-			Policy:         map[string]interface{}{"write_mode": "overwrite"},
+			Policy:         map[string]interface{}{"apply_mode": "replace"},
 		},
 	}
 }

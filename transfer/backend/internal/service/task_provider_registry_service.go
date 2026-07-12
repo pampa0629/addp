@@ -61,8 +61,10 @@ func (s *TaskProviderRegistryService) Register() error {
 				"deprecated":                false,
 			},
 		},
-		"x_execution_modes": []string{"batch", "stream", "micro-batch"},
-		"x_features":        []string{"async", "restartable_retry", "field_mapping", "scheduled"},
+		"x_runtime_boundaries": []string{"bounded"},
+		"x_load_modes":         []string{"snapshot", "incremental"},
+		"x_change_detection":   []string{"watermark"},
+		"x_features":           []string{"async", "restartable_retry", "watermark_resume", "field_mapping", "scheduled"},
 	}
 
 	// 序列化为 JSON 字符串

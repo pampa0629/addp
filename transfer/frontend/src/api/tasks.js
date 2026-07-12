@@ -32,11 +32,6 @@ export const taskAPI = {
     return client.post(`/transfer/task-definitions/${id}/start`)
   },
 
-  // 停止任务
-  stop(id) {
-    return client.post(`/transfer/task-definitions/${id}/stop`)
-  },
-
   // 暂停任务
   pause(id) {
     return client.post(`/transfer/task-definitions/${id}/pause`)
@@ -70,11 +65,6 @@ export const executionAPI = {
   // 获取执行详情
   get(executionId) {
     return client.get(`/transfer/executions/${executionId}`)
-  },
-
-  // 取消执行
-  cancel(executionId) {
-    return client.post(`/transfer/executions/${executionId}/cancel`)
   },
 
   // 重试执行

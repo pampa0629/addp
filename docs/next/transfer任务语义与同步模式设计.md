@@ -2,9 +2,9 @@
 
 更新时间：2026-07-12
 
-状态：设计专题，尚未升级为稳定规范。
+状态：阶段 0/1 已升级并实现；continuous、Kafka、Debezium 和 CDC 部分仍为后续设计。
 
-本文整理 Transfer 后续全量、批增量、Kafka 流式源、数据库 CDC 和持续运行时的概念与推荐技术路线。本文中的“已确认”表示当前讨论已经形成一致方向，但涉及任务 JSON、数据库表、Provider 接口和基础设施的内容，在进入实现前仍应先升级对应正式规范。
+本文整理 Transfer 全量、批增量、Kafka 流式源、数据库 CDC 和持续运行时的概念与推荐技术路线。bounded/watermark/apply mode/sync state 结论已升级到正式规范并完成第一版实现；continuous、Kafka、Debezium、CDC 和 replay 内容在进入实现前仍需升级对应正式规范。
 
 当前稳定实现仍以以下文档为准：
 
@@ -12,7 +12,7 @@
 - `transfer/docs/transfer-基本概念及配置说明.md`
 - `transfer/docs/design.md`
 
-当前实现只支持有界 batch Transfer、`overwrite` / `append`、观测型 checkpoint 和 restartable retry。本文不声称增量、CDC、Kafka continuous runtime 已经实现。
+当前实现支持 bounded snapshot 的 `replace` / `append`，以及 PostgreSQL -> PostgreSQL 的 bounded watermark incremental + 幂等 `upsert` + `transfer.sync_states` resume。CDC、Kafka continuous runtime、replay 和物理删除尚未实现。
 
 ## 一、本文要解决的问题
 
@@ -154,7 +154,7 @@ continuous 任务也可以被手动或定时启动。因此 `realtime` 不进入
 | `upsert` | 按稳定键新增或更新。 | watermark、无删除 CDC |
 | `upsert_delete` | 按稳定键新增、更新和删除。 | 完整 CDC |
 
-当前稳定字段仍是 `target.policy.write_mode=overwrite|append`。是否改名为 `apply_mode`，需要在实现前 clean break 确认；不得长期保留 `write_mode` 和 `apply_mode` 两套事实字段。
+稳定字段已 clean break 为 `target.policy.apply_mode=replace|append|upsert|upsert_delete`；当前实现开放 `replace|append|upsert`，`upsert_delete` 留待 CDC。旧 `write_mode` 已拒绝，不保留字段别名。
 
 Transfer 拥有应用策略，但目标引擎必须提供真实写入能力，并声明键要求、提交边界、删除能力和幂等语义。不能仅靠 Transfer 配置中的字符串推导目标支持 upsert。
 
@@ -193,7 +193,7 @@ task -> Asynq worker -> planner -> executor
 
 ### 5.1 当前 checkpoint 的真实含义
 
-当前 checkpoint 是观测点：
+snapshot checkpoint 仍是观测点；watermark incremental 的 execution 间恢复使用独立 `transfer.sync_states`，不消费 snapshot checkpoint：
 
 - 记录 batch index、累计行数和 source/target marker。
 - 用于进度展示和故障诊断。
@@ -847,7 +847,7 @@ ADDP 不自动暂停用户 Oracle 或其他上游业务写入。平台可以暂�
 
 ## 十三、建议配置形态
 
-以下 JSON 只表达后续语义方向，不是当前可提交 API。
+13.1 的 PostgreSQL watermark JSON 已是当前可提交 API；13.2/13.3 仍只表达后续语义方向。
 
 ### 13.1 Watermark bounded incremental
 
@@ -1017,11 +1017,11 @@ Debezium connector 名称、内部 topic、consumer group 和 connector runtime 
 14. 不通过静默忽略未知字段处理 schema 变化。
 15. 不由 ADDP 自动暂停用户上游业务写入。
 
-## 十六、仍需确认的设计问题
+## 十六、设计确认状态与后续问题
 
-以下问题尚未升级为正式规范。每项给出当前分析和建议，便于后续逐项确认。
+16.1 至 16.5 已随阶段 0/1 升级为正式规范并实现；16.6 之后仍属于后续 continuous/Kafka/CDC 工作。
 
-### 16.1 任务配置采用嵌套结构还是扁平结构
+### 16.1 任务配置采用嵌套结构还是扁平结构（已确认）
 
 分析：执行边界、装载方式、变化识别和目标策略是正交维度。全部扁平化会快速产生 `mode`、`incremental_type`、`watermark_field`、`cdc_*` 等互相依赖字段，也容易把 task config 与统一 execution 对象混淆。
 
@@ -1038,13 +1038,13 @@ target.policy.apply_mode
 
 嵌套只用于稳定概念边界，不建立多层抽象。进入阶段 1 前应在 Transfer 配置规范中一次确认，并同步更新本文示例；不兼容旧 `mode=batch`。
 
-### 16.2 `write_mode` 是否改为 `apply_mode`
+### 16.2 `write_mode` 是否改为 `apply_mode`（已确认）
 
 分析：`overwrite/append` 主要描述写入方式，而 `upsert/upsert_delete` 描述变化如何应用到目标。继续扩展 `write_mode` 会让“删除事件”“冲突键”“幂等”语义变得含混。
 
 建议：增量主线开始时 clean break 为 `target.policy.apply_mode=replace|append|upsert|upsert_delete`，删除 `write_mode`，不保留字段别名。目标引擎通过强类型 Provider 和 capability 声明 prepare、upsert、delete、事务/批次提交和幂等能力；Transfer 负责组合校验和执行策略。
 
-### 16.3 增量状态表和 position JSON
+### 16.3 增量状态表和 position JSON（已确认）
 
 分析：watermark、Kafka offset、Oracle SCN 等位置结构不同，但都需要按 task/source/partition 唯一、CAS 更新和审计。runtime lease 与业务 committed position 生命周期不同，不宜放在同一 JSON 中。
 
@@ -1055,13 +1055,13 @@ target.policy.apply_mode
 
 `position` 使用带 `type`、`version` 的 JSONB，由对应 source provider 解释；公共列只保存跨 provider 必需的身份、版本和审计字段。阶段 1 先只实现 watermark position v1，Kafka/CDC 后续增加新 position type，不修改旧 type 的字段含义。
 
-### 16.4 Watermark 第一版源与一致上界
+### 16.4 Watermark 第一版源与一致上界（已确认）
 
 分析：不同数据库的事务快照、时间类型和复合游标查询能力不同。如果第一版同时覆盖过多数据库，会把增量语义验证与方言适配混在一起。
 
 建议：第一版只支持 PostgreSQL native table，使用复合游标和数据库一致性读获得本次上界；验证稳定后再接 MySQL。是否允许只读副本作为源需要单独声明最大复制延迟和 lookback 策略。进入实现前必须用真实并发写入测试证明不会漏掉相同 watermark 值的记录。
 
-### 16.5 Replay 是否进入第一版
+### 16.5 Replay 是否进入第一版（已确认）
 
 分析：replay 会引入历史范围选择、目标重复应用、与主任务并发、审计和资源限流，显著扩大第一版状态机。
 

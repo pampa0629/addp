@@ -182,7 +182,14 @@ type StoreCapability struct {
 	BatchWrite                bool                                  `json:"batch_write,omitempty"`
 	TableWriteSession         bool                                  `json:"table_write_session,omitempty"`
 	TableWritePrepare         bool                                  `json:"table_write_prepare,omitempty"`
+	BoundedWatermarkRead      bool                                  `json:"bounded_watermark_read,omitempty"`
+	TableUpsert               *TableUpsertCapability                `json:"table_upsert,omitempty"`
 	TableSpatialEncoding      *NativeTableSpatialEncodingCapability `json:"table_spatial_encoding,omitempty"`
+}
+
+type TableUpsertCapability struct {
+	Supported  bool `json:"supported"`
+	Idempotent bool `json:"idempotent"`
 }
 
 // NativeTableSpatialEncodingCapability describes geometry row encodings that a

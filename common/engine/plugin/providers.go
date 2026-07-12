@@ -94,6 +94,32 @@ type TableReadSession interface {
 	Close(ctx context.Context) error
 }
 
+// WatermarkCursor is a provider-owned composite position. Values are encoded as
+// canonical strings and interpreted using the source column types.
+type WatermarkCursor struct {
+	Values []string `json:"values"`
+}
+
+type BoundedWatermarkReadOptions struct {
+	WatermarkField string
+	TieBreakers    []string
+	Start          *WatermarkCursor
+}
+
+// BoundedWatermarkReadProvider opens a finite, consistently bounded table read.
+type BoundedWatermarkReadProvider interface {
+	StoreProvider
+	OpenBoundedWatermarkRead(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts BoundedWatermarkReadOptions) (BoundedWatermarkReadSession, error)
+}
+
+type BoundedWatermarkReadSession interface {
+	UpperBound() *WatermarkCursor
+	TableInfo() (*datatype.TableInfo, *datatype.SpatialInfo)
+	PositionForRow(row map[string]interface{}) (*WatermarkCursor, error)
+	ReadBatch(ctx context.Context, limit int) (*BatchData, error)
+	Close(ctx context.Context) error
+}
+
 // ResumeMarkerProvider is an optional capability implemented by read sessions
 // that can expose a stable read marker after successful reads.
 type ResumeMarkerProvider interface {
@@ -125,6 +151,19 @@ type CommitMarkerProvider interface {
 type TableWritePreparer interface {
 	StoreProvider
 	PrepareTableWrite(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts TableWriteOptions) error
+}
+
+type TableUpsertOptions struct {
+	Fields      []datatype.FieldInfo
+	SpatialInfo *datatype.SpatialInfo
+	Keys        []string
+}
+
+// TableUpsertProvider prepares and applies idempotent key-based table changes.
+type TableUpsertProvider interface {
+	StoreProvider
+	PrepareTableUpsert(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts TableUpsertOptions) error
+	UpsertBatch(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, batch *BatchData, opts TableUpsertOptions) error
 }
 
 type QueryRuntimeProvider interface {

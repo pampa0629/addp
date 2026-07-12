@@ -1,6 +1,6 @@
 # Transfer 当前架构设计
 
-更新时间：2026-05-31
+更新时间：2026-07-12
 
 本文记录 Transfer 模块当前稳定架构。旧的 Transfer 私有 Reader / Writer 插件体系、ConnectorRegistry、`pkg/pipeline` 和旧任务 JSON 不再作为主路径保留。
 
@@ -45,7 +45,8 @@ Transfer API / Frontend
 
 ```json
 {
-  "mode": "batch",
+  "runtime": {"boundary": "bounded"},
+  "load": {"mode": "snapshot"},
   "source": {
     "locator": "addp://engine/1/path/public/roads?type=table",
     "data_type": "table",
@@ -57,7 +58,7 @@ Transfer API / Frontend
     "data_type": "table",
     "representation": "encoded",
     "format": "shapefile",
-    "policy": {"write_mode": "overwrite"}
+    "policy": {"apply_mode": "replace"}
   },
   "transforms": [
     {
@@ -81,7 +82,7 @@ Transfer API / Frontend
 - `data_type` 稳定支持 `table`；`document`、`media`、`unknown` 已支持 encoded single raw copy。
 - `representation` 支持 `native` 和 `encoded`。
 - `format` 只用于 encoded endpoint。
-- `policy.write_mode` 在 table Transfer 支持 `overwrite` 和 `append`；raw copy 第一版只支持 `overwrite`。
+- `target.policy.apply_mode` 在 snapshot table Transfer 支持 `replace` 和 `append`；raw copy 只支持 `replace`；PostgreSQL watermark incremental 只支持幂等 `upsert`。
 - 旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
 
 ## 四、table Transfer 主路径
@@ -163,20 +164,21 @@ source encoded file/object
 | locator `type` | `file`、`object` |
 | target `data_type` / `format` | 可省略并继承 source；显式声明时必须和 source 一致 |
 | target path | 必须是完整 file / object 路径 |
-| `policy.write_mode` | 只支持 `overwrite` |
+| `target.policy.apply_mode` | 只支持 `replace` |
 
 raw copy 的覆盖语义由 Transfer 执行：目标引擎必须提供 `ResourceDeleteProvider`，先删除目标资源再创建写入，不依赖 create 的隐式覆盖行为。
 
 ## 七、写入策略
 
-overwrite / append 是 Transfer policy，不进入 common engine。
+replace / append / upsert 是 Transfer apply policy；upsert 必须由 common engine 的强类型 Provider 真实实现。
 
 | 模式 | 当前语义 |
 |---|---|
-| `overwrite` | 写入前由 Transfer 规划删除目标资源或重建目标，再执行写入。 |
+| `replace` | 写入前由 Transfer 规划删除目标资源或重建目标，再执行写入。 |
 | `append` | 追加写入；失败 retry 当前拒绝 append，避免重复写。 |
+| `upsert` | 按稳定键幂等新增或更新；第一版仅 PostgreSQL native table。 |
 
-`TableWritePreparer` 只做 ensure / create table / schema evolution，不承载 overwrite / append 策略。DeleteResource 是 common engine 提供的原子删除能力。
+`TableWritePreparer` 只做 ensure / create table / schema evolution，不承载 replace / append 策略。DeleteResource 是 common engine 提供的原子删除能力；watermark upsert 使用独立强类型 Provider。
 
 ## 八、Checkpoint 和重试
 
@@ -192,10 +194,10 @@ overwrite / append 是 Transfer policy，不进入 common engine。
 
 1. 创建新的 execution。
 2. 重新入队。
-3. overwrite / 默认写入模式从头执行。
+3. replace snapshot 从头执行；watermark upsert 从同步主状态 resume。
 4. append 写入模式拒绝 retry。
 
-真正的 checkpoint resumable 需要 source seek、target 幂等提交和 provider marker 消费同时满足，尚未进入主链路。
+snapshot checkpoint resumable 尚未进入主链路。PostgreSQL watermark incremental 的 resume 不消费 execution marker，而是读取 `transfer.sync_states` 的 committed position。
 
 ## 九、写后 Meta 扫描
 
@@ -218,7 +220,7 @@ table Transfer 主链路已经稳定。后续增强包括：
 
 - `row_filter` / predicate 统一语义。
 - 分区并行读取和多 worker 协调。
-- checkpoint resumable。
+- snapshot checkpoint resumable；watermark resume 已完成。
 - Doris Stream Load。
 - ClickHouse 排序键 / 分区键 / 原生批量接口。
 - raw copy 端到端样例任务和更完整的执行展示。

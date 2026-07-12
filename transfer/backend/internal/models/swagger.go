@@ -55,11 +55,29 @@ type UpdateTaskRequestDoc struct {
 // TableTransferTaskConfigDoc 描述新 Transfer table 任务配置。
 // 运行时代码仍使用 JSONMap 存储；该结构只用于 Swagger 展示 source / target endpoint 语义。
 type TableTransferTaskConfigDoc struct {
-	Mode       string                    `json:"mode" example:"batch"`
+	Runtime    TransferRuntimeDoc        `json:"runtime"`
+	Load       TransferLoadDoc           `json:"load"`
 	Source     TransferSourceEndpointDoc `json:"source"`
 	Target     TransferTargetEndpointDoc `json:"target"`
 	Transforms []TransferTransformDoc    `json:"transforms,omitempty"`
 	BatchSize  int                       `json:"batch_size,omitempty" example:"1000"`
+}
+
+type TransferRuntimeDoc struct {
+	Boundary string `json:"boundary" example:"bounded" enums:"bounded"`
+}
+
+type TransferLoadDoc struct {
+	Mode            string                      `json:"mode" example:"snapshot" enums:"snapshot,incremental"`
+	ChangeDetection *TransferChangeDetectionDoc `json:"change_detection,omitempty"`
+}
+
+type TransferChangeDetectionDoc struct {
+	Type       string   `json:"type" example:"watermark" enums:"watermark"`
+	Field      string   `json:"field" example:"updated_at"`
+	TieBreaker []string `json:"tie_breaker" example:"id"`
+	Start      string   `json:"start" example:"committed" enums:"committed"`
+	End        string   `json:"end" example:"execution_upper_bound" enums:"execution_upper_bound"`
 }
 
 // TransferSourceEndpointDoc 描述 Transfer source endpoint；source 必须指向已存在资源。
@@ -74,13 +92,18 @@ type TransferSourceEndpointDoc struct {
 
 // TransferTargetEndpointDoc 描述 Transfer target endpoint；target 表达待写入资源，使用父 node locator 和目标名。
 type TransferTargetEndpointDoc struct {
-	ParentLocator  string                 `json:"parent_locator" example:"addp://engine/10/path/public?type=schema" description:"目标父 node 的 ResourceLocator URI。"`
-	Name           string                 `json:"name" example:"roads_imported" description:"父 node 下待创建或待覆盖的目标资源名。"`
-	DataType       string                 `json:"data_type" example:"table"`
-	Representation string                 `json:"representation" example:"native" enums:"native,encoded"`
-	Format         string                 `json:"format,omitempty" example:"csv"`
-	Options        map[string]interface{} `json:"options,omitempty"`
-	Policy         map[string]interface{} `json:"policy,omitempty"`
+	ParentLocator  string                  `json:"parent_locator" example:"addp://engine/10/path/public?type=schema" description:"目标父 node 的 ResourceLocator URI。"`
+	Name           string                  `json:"name" example:"roads_imported" description:"父 node 下待创建或待覆盖的目标资源名。"`
+	DataType       string                  `json:"data_type" example:"table"`
+	Representation string                  `json:"representation" example:"native" enums:"native,encoded"`
+	Format         string                  `json:"format,omitempty" example:"csv"`
+	Options        map[string]interface{}  `json:"options,omitempty"`
+	Policy         TransferTargetPolicyDoc `json:"policy"`
+}
+
+type TransferTargetPolicyDoc struct {
+	ApplyMode string   `json:"apply_mode" example:"replace" enums:"replace,append,upsert"`
+	Keys      []string `json:"keys,omitempty" example:"id"`
 }
 
 type TransferTransformDoc struct {

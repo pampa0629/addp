@@ -14,6 +14,7 @@ import (
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -292,12 +293,7 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 		return nil, err
 	}
 
-	// 2. 检查任务状态
-	if task.Status == models.TaskStatusRunning {
-		return nil, fmt.Errorf("task is already running")
-	}
-
-	// 3. 启动前再次校验，阻止历史旧 JSON 任务进入 worker。
+	// 2. 启动前再次校验，阻止历史旧 JSON 任务进入 worker。
 	if err := normalizeTransferTaskType(&task.TaskType); err != nil {
 		return nil, err
 	}
@@ -305,84 +301,54 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 		return nil, err
 	}
 
-	// 4. 使用统一执行服务创建执行记录
-	execution, err := s.executionService.CreateExecutionWithContext(ctx, id, triggerType, source, parentExecutionID, &userID)
+	if s.taskQueue == nil {
+		return nil, fmt.Errorf("task queue is not available")
+	}
+	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
-		s.logger.Error("failed to create execution", "error", err, "task_id", id)
-		return nil, fmt.Errorf("failed to create execution: %w", err)
+		return nil, err
 	}
-
-	// 5. 更新任务状态为运行中
-	updates := map[string]interface{}{
-		"status":   models.TaskStatusRunning,
-		"progress": 0,
+	if strings.TrimSpace(source) == "" {
+		source = commonExecution.ModuleTransfer
 	}
-
-	if err := s.taskRepo.UpdateFields(id, updates); err != nil {
-		// 回滚：删除执行记录
-		// TODO: 实现执行记录删除方法
-		s.logger.Error("failed to update task state, execution record created but task not started",
-			"error", err, "task_id", id, "execution_id", execution.ID)
-		return nil, fmt.Errorf("failed to update task state: %w", err)
+	now := time.Now()
+	triggeredBy := int(userID)
+	executionRecord := &commonExecution.TaskExecution{
+		TenantID: int(task.TenantID), ExecutionID: uuid.New().String(), Module: commonExecution.ModuleTransfer,
+		TaskType: commonExecution.TaskTypeSync, Source: source, SourceTaskID: commonExecution.NewSourceTaskIDFromUint(id),
+		SourceTaskName: &task.Name, ParentExecutionID: parentExecutionID, Status: commonExecution.ExecutionStatusPending,
+		TriggerType: normalizedTriggerType, TriggeredBy: &triggeredBy, ExecutionConfig: task.Config,
+		StartedAt: &now, CreatedAt: now, UpdatedAt: now,
 	}
-
-	// 6. 将任务提交到队列（Asynq）
-	if s.taskQueue != nil {
-		if err := s.taskQueue.EnqueueExecuteTask(ctx, id, execution.ID, tenantID); err != nil {
-			s.logger.Error("failed to enqueue task", "error", err, "task_id", id)
-
-			// 回滚：标记执行失败
-			s.executionService.FinishExecution(ctx, execution.ID, models.ExecutionStatusFailed, err.Error())
-
-			// 回滚：恢复任务状态为空闲
-			if err := s.taskRepo.UpdateFields(id, map[string]interface{}{
-				"status":   models.TaskStatusIdle,
-				"progress": 0,
-			}); err != nil {
-				s.logger.Warn("failed to rollback task state after enqueue failure", "error", err, "task_id", id)
-			}
-
-			return nil, fmt.Errorf("failed to enqueue task: %w", err)
+	_, _, err = s.taskRepo.ClaimExecution(ctx, id, tenantID, executionRecord, incrementalSourceIdentity(task))
+	if err != nil {
+		if errors.Is(err, repository.ErrTaskAlreadyRunning) {
+			return nil, fmt.Errorf("task is already running")
 		}
-		s.logger.Info("task enqueued to worker", "task_id", id, "execution_id", execution.ID)
-	} else {
-		s.logger.Warn("task queue not available, task will not be executed", "task_id", id)
+		return nil, fmt.Errorf("claim task execution: %w", err)
 	}
+	execution := s.executionService.convertToTransferExecution(executionRecord)
+
+	if err := s.taskQueue.EnqueueExecuteTask(ctx, id, execution.ID, tenantID); err != nil {
+		s.logger.Error("failed to enqueue task", "error", err, "task_id", id)
+
+		// 回滚：标记执行失败
+		s.executionService.FinishExecution(ctx, execution.ID, models.ExecutionStatusFailed, err.Error())
+
+		// 回滚：恢复任务状态为空闲
+		if err := s.taskRepo.UpdateFields(id, map[string]interface{}{
+			"status":   models.TaskStatusIdle,
+			"progress": 0,
+		}); err != nil {
+			s.logger.Warn("failed to rollback task state after enqueue failure", "error", err, "task_id", id)
+		}
+
+		return nil, fmt.Errorf("failed to enqueue task: %w", err)
+	}
+	s.logger.Info("task enqueued to worker", "task_id", id, "execution_id", execution.ID)
 
 	s.logger.Info("task started", "task_id", id, "execution_id", execution.ID)
 	return execution, nil
-}
-
-// StopTask 停止任务
-func (s *TaskService) StopTask(ctx context.Context, id, tenantID uint) error {
-	task, err := s.GetTask(ctx, id, tenantID)
-	if err != nil {
-		return err
-	}
-
-	if task.Status != models.TaskStatusRunning {
-		return fmt.Errorf("task is not running")
-	}
-
-	// 查询最后一次执行记录
-	lastExecution, err := s.executionService.GetLatestExecution(ctx, id, tenantID)
-	if err == nil && lastExecution != nil && lastExecution.Status == models.ExecutionStatusRunning {
-		if err := s.executionService.FinishExecution(ctx, lastExecution.ID, models.ExecutionStatusFailed, "execution stopped by user"); err != nil {
-			s.logger.Warn("failed to finish execution when stopping task", "error", err, "task_id", id)
-		}
-	}
-
-	updates := map[string]interface{}{
-		"status":   models.TaskStatusIdle,
-		"progress": 0,
-	}
-
-	if err := s.taskRepo.UpdateFields(id, updates); err != nil {
-		return fmt.Errorf("failed to stop task: %w", err)
-	}
-
-	s.logger.Info("task stopped", "task_id", id)
-	return nil
 }
 
 // PauseTask 暂停任务（暂停定时调度）
@@ -401,25 +367,27 @@ func (s *TaskService) PauseTask(ctx context.Context, id, tenantID uint) error {
 		"next_run_at": nil,
 	}
 
-	// 如果任务正在运行，需要停止当前执行
-	if task.Status == models.TaskStatusRunning {
-		// 查询最后一次执行记录
-		lastExecution, err := s.executionService.GetLatestExecution(ctx, id, tenantID)
-		if err == nil && lastExecution != nil && lastExecution.Status == models.ExecutionStatusRunning {
-			if err := s.executionService.FinishExecution(ctx, lastExecution.ID, models.ExecutionStatusFailed, "task paused by user"); err != nil {
-				s.logger.Warn("failed to finish execution when pausing task", "error", err, "task_id", id)
-			}
-		}
-		updates["status"] = models.TaskStatusIdle
-		updates["progress"] = 0
-	}
-
 	if err := s.taskRepo.UpdateFields(id, updates); err != nil {
 		return fmt.Errorf("failed to pause task: %w", err)
 	}
 
 	s.logger.Info("task paused", "task_id", id)
 	return nil
+}
+
+func incrementalSourceIdentity(task *models.TransferTask) string {
+	if task == nil {
+		return ""
+	}
+	spec, err := planner.ParseTableExportTaskSpec(task.Config, task.BatchSize)
+	if err != nil || !planner.IsWatermarkIncrementalSpec(spec) {
+		return ""
+	}
+	return strings.TrimSpace(spec.Source.Locator)
+}
+
+func IncrementalSourceIdentityForTask(task *models.TransferTask) string {
+	return incrementalSourceIdentity(task)
 }
 
 // ResumeTask 恢复任务（恢复定时调度）
