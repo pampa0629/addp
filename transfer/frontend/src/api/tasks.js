@@ -42,6 +42,11 @@ export const taskAPI = {
     return client.post(`/transfer/task-definitions/${id}/resume`)
   },
 
+  // 停止持续同步任务
+  stop(id) {
+    return client.post(`/transfer/task-definitions/${id}/stop`)
+  },
+
   // 获取任务统计
   statistics() {
     return client.get('/transfer/task-definitions/statistics')

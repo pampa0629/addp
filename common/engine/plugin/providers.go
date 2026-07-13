@@ -166,6 +166,101 @@ type TableUpsertProvider interface {
 	UpsertBatch(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, batch *BatchData, opts TableUpsertOptions) error
 }
 
+const (
+	ChangeStreamPositionTypeKafkaOffset = "kafka_offset"
+	ChangeStreamPositionVersionV1       = "v1"
+	TableChangeOperationUpsert          = "upsert"
+	ChangeStreamInitialEarliest         = "earliest"
+	ChangeStreamInitialLatest           = "latest"
+)
+
+// ChangeStreamPosition is a provider-owned partition position. Values use
+// canonical strings so the provider can preserve exact native values.
+type ChangeStreamPosition struct {
+	Type      string            `json:"type"`
+	Version   string            `json:"version"`
+	Partition string            `json:"partition"`
+	Values    map[string]string `json:"values"`
+}
+
+type ChangeRecordHeader struct {
+	Key   string `json:"key"`
+	Value []byte `json:"value"`
+}
+
+// ChangeRecord is an undecoded native record returned by a change stream.
+type ChangeRecord struct {
+	Topic     string               `json:"topic"`
+	Partition string               `json:"partition"`
+	Offset    int64                `json:"offset"`
+	Timestamp time.Time            `json:"timestamp"`
+	Headers   []ChangeRecordHeader `json:"headers,omitempty"`
+	Key       []byte               `json:"key,omitempty"`
+	Value     []byte               `json:"value"`
+	Position  ChangeStreamPosition `json:"position"`
+}
+
+type ChangeRecordBatch struct {
+	Records      []ChangeRecord                  `json:"records"`
+	EndPositions map[string]ChangeStreamPosition `json:"end_positions"`
+}
+
+type ChangeStreamReadOptions struct {
+	ConsumerGroup      string
+	CommittedPositions map[string]ChangeStreamPosition
+	InitialPosition    string
+	PollTimeout        time.Duration
+	MaxBytes           int
+}
+
+type ChangeStreamReaderProvider interface {
+	StoreProvider
+	OpenChangeStream(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts ChangeStreamReadOptions) (ChangeStreamReader, error)
+}
+
+type ChangeStreamReader interface {
+	Poll(ctx context.Context, maxRecords int) (*ChangeRecordBatch, error)
+	Assignments() []string
+	Pause(ctx context.Context, partitions []string) error
+	Resume(ctx context.Context, partitions []string) error
+	Close(ctx context.Context) error
+}
+
+type PartitionedTableChange struct {
+	Operation string                 `json:"operation"`
+	Position  ChangeStreamPosition   `json:"position"`
+	Row       map[string]interface{} `json:"row"`
+}
+
+type PartitionedTableChangeBatch struct {
+	Partition     string                   `json:"partition"`
+	StartPosition ChangeStreamPosition     `json:"start_position"`
+	EndPosition   ChangeStreamPosition     `json:"end_position"`
+	Changes       []PartitionedTableChange `json:"changes"`
+}
+
+type PartitionedTableChangeApplyOptions struct {
+	ApplyIdentity  string
+	SourceIdentity string
+	Fields         []datatype.FieldInfo
+	SpatialInfo    *datatype.SpatialInfo
+	Keys           []string
+}
+
+type PartitionedTableChangeApplyResult struct {
+	AppliedRecords int                  `json:"applied_records"`
+	SkippedRecords int                  `json:"skipped_records"`
+	Position       ChangeStreamPosition `json:"position"`
+}
+
+// PartitionedTableChangeApplyProvider atomically applies mapped changes and a
+// monotonic target-side partition position in the target engine.
+type PartitionedTableChangeApplyProvider interface {
+	StoreProvider
+	PreparePartitionedTableChangeApply(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts PartitionedTableChangeApplyOptions) error
+	ApplyPartitionedTableChanges(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, batch *PartitionedTableChangeBatch, opts PartitionedTableChangeApplyOptions) (*PartitionedTableChangeApplyResult, error)
+}
+
 type QueryRuntimeProvider interface {
 	EnginePlugin
 	QueryLanguages() []string
@@ -303,10 +398,26 @@ type CatalogFacts struct {
 	Kind      string                `json:"kind"`
 	Table     *datatype.TableInfo   `json:"table,omitempty"`
 	Graph     *datatype.GraphInfo   `json:"graph,omitempty"`
+	Topic     *TopicFacts           `json:"topic,omitempty"`
 	Spatial   *datatype.SpatialInfo `json:"spatial,omitempty"`
 	Storage   *CatalogStorageFacts  `json:"storage,omitempty"`
 	Indexes   []IndexFacts          `json:"indexes,omitempty"`
 	UpdatedAt *time.Time            `json:"updated_at,omitempty"`
+}
+
+type TopicFacts struct {
+	PartitionCount    int                   `json:"partition_count"`
+	ReplicationFactor int                   `json:"replication_factor"`
+	Partitions        []TopicPartitionFacts `json:"partitions,omitempty"`
+}
+
+type TopicPartitionFacts struct {
+	Partition      int32   `json:"partition"`
+	Leader         int32   `json:"leader"`
+	Replicas       []int32 `json:"replicas,omitempty"`
+	ISR            []int32 `json:"isr,omitempty"`
+	EarliestOffset int64   `json:"earliest_offset"`
+	LatestOffset   int64   `json:"latest_offset"`
 }
 
 type CatalogStorageFacts struct {

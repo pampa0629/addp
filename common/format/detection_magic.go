@@ -8,7 +8,7 @@ import (
 
 func needMagicValidation(format FormatType) bool {
 	switch format {
-	case FormatPDF, FormatSQLite, FormatUDBX, FormatGeoPackage, FormatJPEG, FormatPNG, FormatGIF, FormatGLB, FormatLAS, FormatLAZ, FormatCOPC, FormatE57:
+	case FormatPDF, FormatSQLite, FormatUDBX, FormatGeoPackage, FormatJPEG, FormatPNG, FormatGIF, FormatGLB, FormatLAS, FormatLAZ, FormatCOPC, FormatE57, FormatDWG:
 		return true
 	default:
 		return false
@@ -18,6 +18,9 @@ func needMagicValidation(format FormatType) bool {
 func validateMagicBytes(format FormatType, peek []byte) bool {
 	if len(peek) == 0 {
 		return true
+	}
+	if format == FormatDWG {
+		return isDWGHeader(peek)
 	}
 	if descriptor, ok := GetFormatDescriptor(format); ok && len(descriptor.Identification.ContentSignatures) > 0 {
 		for _, signature := range descriptor.Identification.ContentSignatures {
@@ -55,6 +58,9 @@ func getMagicBytes(format FormatType) []byte {
 }
 
 func detectByMagic(peek []byte) FormatType {
+	if isDWGHeader(peek) {
+		return FormatDWG
+	}
 	lowerPeek := bytes.ToLower(bytes.TrimSpace(peek))
 	if bytes.HasPrefix(lowerPeek, []byte("<svg")) ||
 		(bytes.HasPrefix(lowerPeek, []byte("<?xml")) && bytes.Contains(lowerPeek[:minInt(len(lowerPeek), 4096)], []byte("<svg"))) {
@@ -109,6 +115,11 @@ func detectByMagic(peek []byte) FormatType {
 		}
 	}
 	return FormatUnknown
+}
+
+func isDWGHeader(peek []byte) bool {
+	return len(peek) >= 6 && bytes.HasPrefix(peek, []byte("AC10")) &&
+		peek[4] >= '0' && peek[4] <= '9' && peek[5] >= '0' && peek[5] <= '9'
 }
 
 func detectByDescriptorSignature(peek []byte) FormatType {

@@ -10,51 +10,11 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/models"
 	"github.com/minio/minio-go/v7"
 )
 
 const testModel3DWorkflowEngineType = "tenant_model3d_workflow"
-
-func TestModel3DTilesLocalRootUsesMountedFileEngine(t *testing.T) {
-	loc, err := resourcetree.ParseURI("addp://engine/26/path/models/osgb?type=item&item_id=77")
-	if err != nil {
-		t.Fatalf("parse locator: %v", err)
-	}
-	root, env, access, err := model3DTilesLocalRoot(&commonModels.Engine{
-		EngineType: "nfs",
-		ConnectionInfo: commonModels.ConnectionInfo{
-			"mount_path": "/mnt/addp-nfs",
-		},
-	}, loc, "white_tower_3dtiles")
-	if err != nil {
-		t.Fatalf("model3DTilesLocalRoot() error = %v", err)
-	}
-	if root != "/mnt/addp-nfs/models/osgb/white_tower_3dtiles" {
-		t.Fatalf("root = %q, want mounted dataset path", root)
-	}
-	if len(env) != 0 {
-		t.Fatalf("env = %#v, want empty local env", env)
-	}
-	if access["access_method"] != "mounted_path" || access["engine_type"] != "nfs" {
-		t.Fatalf("access = %#v, want mounted path facts", access)
-	}
-}
-
-func TestModel3DTilesLocalRootRejectsObjectStore(t *testing.T) {
-	loc, err := resourcetree.ParseURI("addp://engine/26/path/bucket/models/osgb?type=item&item_id=77")
-	if err != nil {
-		t.Fatalf("parse locator: %v", err)
-	}
-	_, _, _, err = model3DTilesLocalRoot(&commonModels.Engine{EngineType: "minio"}, loc, "")
-	if err == nil {
-		t.Fatal("model3DTilesLocalRoot() error is nil, want object store staging rejection")
-	}
-	if got := err.Error(); got != "model 3D conversion first phase supports nfs/localfs only; object store requires staging support" {
-		t.Fatalf("error = %q, want object store staging rejection", got)
-	}
-}
 
 func TestManagerModel3DTilesExecutorStagesObjectStoreSourceAndPublishesTarget(t *testing.T) {
 	var capturedParams map[string]interface{}
@@ -150,27 +110,30 @@ func TestManagerModel3DTilesExecutorStagesObjectStoreSourceAndPublishesTarget(t 
 		t.Fatalf("unexpected result: %+v", result)
 	}
 	accessPlan := capturedParams["access_plan"].(map[string]interface{})
+	if accessPlan["schema_version"] != "addp.workflow.access-plan/v1" {
+		t.Fatalf("schema_version = %#v", accessPlan["schema_version"])
+	}
 	sourcePlan := accessPlan["source"].(map[string]interface{})
 	targetPlan := accessPlan["target"].(map[string]interface{})
-	stage := sourcePlan["stage"].(map[string]interface{})
-	publish := targetPlan["publish"].(map[string]interface{})
-	if sourcePlan["root_uri"] != "" {
-		t.Fatalf("source root_uri = %#v, want empty for object store staging", sourcePlan["root_uri"])
+	sourceAccess := sourcePlan["access"].(map[string]interface{})
+	targetAccess := targetPlan["access"].(map[string]interface{})
+	if sourcePlan["kind"] != "directory" || sourcePlan["format"] != "osgb_scene" {
+		t.Fatalf("source plan = %#v, want OSGB scene directory", sourcePlan)
 	}
-	if stage["method"] != "object_store" || stage["bucket"] != "source-bucket" || stage["prefix"] != "models/site_a" {
-		t.Fatalf("stage = %#v, want object store source", stage)
+	if sourceAccess["method"] != "object_store" || sourceAccess["bucket"] != "source-bucket" || sourceAccess["prefix"] != "models/site_a" {
+		t.Fatalf("source access = %#v, want object store source", sourceAccess)
 	}
-	if stage["endpoint"] != "source-minio:9000" || stage["access_key"] != "source-ak" || stage["secret_key"] != "source-sk" {
-		t.Fatalf("stage credentials not passed correctly: %#v", stage)
+	if sourceAccess["endpoint"] != "source-minio:9000" || sourceAccess["access_key"] != "source-ak" || sourceAccess["secret_key"] != "source-sk" {
+		t.Fatalf("source credentials not passed correctly: %#v", sourceAccess)
 	}
-	if targetPlan["dataset_root_uri"] != "" {
-		t.Fatalf("target dataset_root_uri = %#v, want empty for object store publish", targetPlan["dataset_root_uri"])
+	if targetPlan["kind"] != "directory" || targetPlan["format"] != "3dtiles" || targetPlan["name"] != "site_a" || targetPlan["write_mode"] != "replace" {
+		t.Fatalf("target plan = %#v, want replace 3D Tiles dataset", targetPlan)
 	}
-	if publish["method"] != "object_store" || publish["bucket"] != "target-bucket" || publish["prefix"] != "tiles/site_a" {
-		t.Fatalf("publish = %#v, want object store target", publish)
+	if targetAccess["method"] != "object_store" || targetAccess["bucket"] != "target-bucket" || targetAccess["prefix"] != "tiles/site_a" {
+		t.Fatalf("target access = %#v, want object store target", targetAccess)
 	}
-	if publish["endpoint"] != "target-minio:9000" || publish["access_key"] != "target-ak" || publish["secret_key"] != "target-sk" {
-		t.Fatalf("publish credentials not passed correctly: %#v", publish)
+	if targetAccess["endpoint"] != "target-minio:9000" || targetAccess["access_key"] != "target-ak" || targetAccess["secret_key"] != "target-sk" {
+		t.Fatalf("target credentials not passed correctly: %#v", targetAccess)
 	}
 	metadataBytes, err := json.Marshal(result.Metadata)
 	if err != nil {
@@ -282,20 +245,18 @@ func TestManagerModel3DGLBExecutorPublishesGLBFromWorkflowRuntime(t *testing.T) 
 	accessPlan := capturedParams["access_plan"].(map[string]interface{})
 	sourcePlan := accessPlan["source"].(map[string]interface{})
 	targetPlan := accessPlan["target"].(map[string]interface{})
-	publish := targetPlan["publish"].(map[string]interface{})
-	if sourcePlan["local_path"] != "/mnt/addp-nfs/3d/single-osgb/tile.osgb" {
-		t.Fatalf("source local_path = %#v", sourcePlan["local_path"])
+	sourceAccess := sourcePlan["access"].(map[string]interface{})
+	targetAccess := targetPlan["access"].(map[string]interface{})
+	if sourceAccess["method"] != "mounted_path" || sourceAccess["path"] != "/mnt/addp-nfs/3d/single-osgb/tile.osgb" {
+		t.Fatalf("source access = %#v", sourceAccess)
 	}
-	if _, exists := targetPlan["local_path"]; exists {
-		t.Fatalf("target local_path should not be sent to remote model3d workflow: %#v", targetPlan)
+	if targetPlan["name"] != "preview.glb" || targetPlan["write_mode"] != "replace" || targetPlan["content_type"] != "model/gltf-binary" {
+		t.Fatalf("target plan = %#v", targetPlan)
 	}
-	if targetPlan["file_name"] != "preview.glb" {
-		t.Fatalf("target file_name = %#v", targetPlan["file_name"])
-	}
-	if publish["method"] != "object_store" || publish["endpoint"] != "minio:9000" ||
-		publish["bucket"] != "manager" || publish["object"] != "model3d/preview.glb" ||
-		publish["access_key"] != "minio-ak" || publish["secret_key"] != "minio-sk" {
-		t.Fatalf("publish = %#v, want Manager artifact MinIO publish plan", publish)
+	if targetAccess["method"] != "object_store" || targetAccess["endpoint"] != "minio:9000" ||
+		targetAccess["bucket"] != "manager" || targetAccess["object"] != "model3d/preview.glb" ||
+		targetAccess["access_key"] != "minio-ak" || targetAccess["secret_key"] != "minio-sk" {
+		t.Fatalf("target access = %#v, want Manager artifact MinIO plan", targetAccess)
 	}
 	if objectStore.statBucket != "manager" || objectStore.statObject != "model3d/preview.glb" {
 		t.Fatalf("object stat = %s/%s, want manager/model3d/preview.glb", objectStore.statBucket, objectStore.statObject)
@@ -320,8 +281,9 @@ func TestManagerModel3DGLBExecutorDispatchesGLTFToGLBOperator(t *testing.T) {
 				}
 				accessPlan := payload.Params["access_plan"].(map[string]interface{})
 				sourcePlan := accessPlan["source"].(map[string]interface{})
-				if sourcePlan["local_path"] != "/mnt/addp-nfs/models/scene.gltf" {
-					t.Fatalf("source local_path = %#v", sourcePlan["local_path"])
+				sourceAccess := sourcePlan["access"].(map[string]interface{})
+				if sourcePlan["kind"] != "directory" || sourcePlan["entrypoint"] != "scene.gltf" || sourceAccess["method"] != "mounted_path" || sourceAccess["path"] != "/mnt/addp-nfs/models" {
+					t.Fatalf("source access = %#v", sourceAccess)
 				}
 				_, _ = w.Write([]byte(`{"status":"success","execution_id":"model3d-glb-gltf","result":{"glb_uri":"s3://manager/model3d/scene.glb","glb_ref":"model3d/scene.glb","size_bytes":3}}`))
 			default:

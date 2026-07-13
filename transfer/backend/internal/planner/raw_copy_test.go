@@ -6,6 +6,7 @@ import (
 
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/plugins/docx"
+	_ "github.com/addp/common/format/plugins/dwg"
 	_ "github.com/addp/common/format/plugins/pdf"
 )
 
@@ -52,6 +53,23 @@ func TestBuildRawCopyPlanRejectsMultiLayoutSource(t *testing.T) {
 	_, err := BuildRawCopyPlan(spec, StaticEngineResolver{1: {Type: "minio"}, 2: {Type: "nfs"}})
 	if err == nil || !strings.Contains(err.Error(), "layout=\"single\"") {
 		t.Fatalf("BuildRawCopyPlan error = %v, want layout single error", err)
+	}
+}
+
+func TestBuildRawCopyPlanAcceptsCADWithoutConversion(t *testing.T) {
+	spec := minimalRawCopySpec()
+	spec.Source.Locator = "addp://engine/1/path/cad/a.dwg?type=object"
+	spec.Source.DataType = "cad"
+	spec.Source.Format = format.FormatDWG
+	spec.Target.Name = "a.dwg"
+	spec.Target.DataType = "cad"
+	spec.Target.Format = format.FormatDWG
+	result, err := BuildRawCopyPlan(spec, StaticEngineResolver{1: {Type: "minio"}, 2: {Type: "nfs"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Plan.DataType != "cad" || result.Plan.Format != format.FormatDWG {
+		t.Fatalf("plan identity = %s/%s", result.Plan.DataType, result.Plan.Format)
 	}
 }
 

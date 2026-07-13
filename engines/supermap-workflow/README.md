@@ -37,12 +37,17 @@ SuperMap SDK、GPA/SPS jar、native `.so` 和许可文件不进入 ADDP 代码�
 - `overlay.union`
 - `vector.query`
 - `dataset.save`
+- `osgb_scene_to_s3m`
+- `cad.inspect`（direct-only，读取 DWG Dataset 元数据、record count 与 bounds，不遍历 Geometry）
+- `cad.render_preview`（direct-only，使用 SuperMap Map/Layer 直接渲染 DWG Dataset，输出 WebP 瓦片）
 
 这些算子运行在同一个 JVM / 同一次 `WorkflowExecutor.execute()` 内，DAG 边上传递 `Datasource`、`DatasetVector` 等 Java 对象或轻量引用；输出到外部时再写入 UDBX 数据源。
 
 算子元数据使用 `param_type=input` 标识由工作流连线传入的参数，并用 `supermap.datasource`、`supermap.dataset`、`supermap.query_result` 等细分类型描述 SPS DAG 内部对象，避免多个通用 `object` 输入只能按连线顺序推断。
 
 `datasource.open_postgis` 只打开已有 PostGIS 空间表所在数据源，不调用 SuperMap `create`，因此不会主动创建 SuperMap `sm*` 系统表。`datasource.enable_postgis` 是 direct-only 高危算子，用于 System 引擎管理入口显式启用 SuperMap SDX+ 空间工作区，可能在目标 PostgreSQL 数据库中创建 SuperMap 系统表，不进入 Develop 工作流画布。`datasource.upgrade_udbx` 同样是 direct-only 高危算子：它先以 SQLite 只读检查 UDBX 的 SuperMap 系统表与 `SmRegister` 关键字段，再以可写方式打开原文件，由当前 iObjects Java SDK 完成原位 schema 升级，关闭后再次检查并返回是否发生变更。它不得在 `datasource.open` 或其他普通读取链路中隐式执行；调用方必须先备份文件并记录审计信息。`locator` 只属于 Develop/UI 的资源选择契约；调用 runtime 前，Develop Backend 必须把它派生为 `connection_info`、`schema` 和 `table` 并移除，SuperMap runtime 不解析 ADDP locator。
+
+`osgb_scene_to_s3m` 同时支持 workflow 和 direct 模式，输入输出统一使用 `addp.workflow.access-plan/v1`。当前只接受 NFS `mounted_path`，运行时按访问计划中的 `server + export_path + nfs_version` 动态挂载；源目录必须包含 `metadata.xml` 与 `Data/Tile_*/Tile_*.osgb`。算子依次调用 `OSGBCacheBuilder.generateConfigFile` 和 `CacheBuilderOSGBTool.osgb2s3m`，输出固定为 `config/scene.scp + Data/**/*.s3m`，纹理固定使用 DXT，便于 Manager 的 Cesium S3M 预览稳定解码。结果是业务存储中的 `format=s3m + layout=whole` 数据集，应由调用方触发 Meta scan。
 
 UDBX 升级调试示例：
 
@@ -62,84 +67,56 @@ NFS 正式调用时，`connection_info.engine_type` 必须为 `nfs`，`path` 必
 
 本地开发时，如果 System 中的 PostgreSQL 引擎登记为 `localhost` 或 `127.0.0.1`，SuperMap runtime 容器会通过 `SUPERMAP_RESOURCE_LOCALHOST_ALIAS` 将其映射为容器可访问的宿主机地址。`scripts/dev/start.sh` 和 `scripts/dev/restart.sh` 默认传入 `host.docker.internal`；生产部署应登记容器网络或集群内可直接访问的主机名。
 
-## Docker 运行
+## 本地依赖与两层镜像
 
-开发瘦镜像只包含 ADDP runtime 源码，不包含 SuperMap SDK / GPA libs：
+SuperMap Workflow 只保留一条本地开发路线：稳定基础镜像承载私有依赖，代码镜像承载 ADDP Java 源码。不得恢复胖镜像/瘦镜像判断、源码 bind mount、运行时编译或 `SUPERMAP_WORKFLOW_REBUILD` 等并行路径。
 
-```bash
-docker build -t addp-supermap-workflow-engine:dev engines/supermap-workflow
+本地目录固定为：
+
+```text
+engines/supermap-workflow/
+├── vendor/
+│   ├── objectsjava/
+│   ├── gpa-libs/
+│   └── license/
+├── Dockerfile.base
+├── Dockerfile
+├── src/
+└── run.sh
 ```
 
-使用本机已解压的 SuperMap Java 组件运行。`SUPERMAP_OBJECTSJAVA_BIN` 应指向完整 iObjects Java `Bin` 目录；该目录必须包含 SuperMap native 依赖，例如 `libgeos311.so.3.11.1`、`libminizip.so.1`、`libpng12.so.0`。仅挂载 iObjectSpy Python 包里的 `objectsjava/bin_linux_arm64` 可能缺少部分二级 native 依赖。
+`vendor/` 被仓库全局 `.gitignore` 忽略，并被本目录 `.dockerignore` 排除出日常代码镜像上下文。SuperMap SDK、native 库、GPA/SPS libs 和许可文件不得提交到 Git，也不得推送到公共镜像仓库。
 
-推荐通过 ADDP 开发脚本启动，脚本会构建镜像、挂载 SDK/GPA libs、等待 `/health` 就绪，并把 runtime 暴露在 `SUPERMAP_WORKFLOW_PORT`（默认 `8103`）。如果 `INTERNAL_API_KEY` 可用，脚本会同时把 `supermap_workflow` 作为平台级内置引擎注册到 System：
+首次安装或 SuperMap 组件升级时，把完整内容复制到上述三个目录，然后手动构建稳定基础镜像：
 
 ```bash
-SUPERMAP_OBJECTSJAVA_BIN_HOST=/path/to/supermap-iobjectsjava/Bin \
-SUPERMAP_GPA_LIB_DIR_HOST=/path/to/scheduler/gpa/libs \
-SUPERMAP_DATA_HOST_PATH=/path/to/supermap/data \
+bash scripts/build/build-supermap-workflow-base.sh
+```
+
+基础镜像默认名为 `addp-supermap-workflow-base:local`，包含 Java 17 JDK、完整 SuperMap 组件、GPA/SPS libs、许可和 NFS/SQLite 系统依赖。它不包含 ADDP `SuperMapWorkflowRuntime.java`，因此日常业务代码修改不需要重建基础镜像。
+
+日常启动和重启统一使用：
+
+```bash
 bash scripts/dev/start.sh -supermap-workflow
-```
-
-局部重启可使用：
-
-```bash
-SUPERMAP_OBJECTSJAVA_BIN_HOST=/path/to/supermap-iobjectsjava/Bin \
-SUPERMAP_GPA_LIB_DIR_HOST=/path/to/scheduler/gpa/libs \
-SUPERMAP_WORKFLOW_REBUILD=1 \
 bash scripts/dev/restart.sh -supermap-workflow
 ```
 
-`restart.sh -supermap-workflow` 默认复用已有 `SUPERMAP_WORKFLOW_IMAGE` 镜像；修改本目录 Java 源码或 `run.sh` 后，设置 `SUPERMAP_WORKFLOW_REBUILD=1` 强制重建。
+`restart.sh -supermap-workflow` 和 `restart.sh -all` 每次都会基于基础镜像执行无缓存代码镜像构建，在镜像构建阶段重新运行 `javac`，随后替换 8103 容器、等待 healthy 并向 System 注册。Java 编译失败会在旧容器被删除前终止，不会启动携带旧 class 的新容器。
 
-### 私有胖镜像
-
-推荐为日常全量启动构建私有胖镜像。胖镜像已经是完整 `supermap_workflow` engine，不是单纯 SuperMap SDK 基础镜像；它包含：
-
-- ADDP SuperMap Workflow Java runtime
-- SuperMap iObjects Java Bin
-- SuperMap GPA/SPS libs
-- 可选 `.lic12` 许可文件
-- NFS 动态挂载依赖 `nfs-common`
-- UDBX schema 检查依赖 `sqlite3`
-
-胖镜像使用多阶段构建：Notebook 镜像只参与编译，不进入最终镜像；最终系统层从 SuperMap 官方麒麟 ARM64 iObjects Java 镜像提取，删除其中旧版 SDK 后扁平化为兼容的 Java 17 运行环境，再加入当前 iObjects Java Bin 与 GPA/SPS libs。因此最终镜像不包含 Notebook、Conda、Python 应用环境或 Java 编译器，也不会叠加两套 SDK；麒麟基础系统仍可保留 `/usr/bin/python3` 等系统工具。当前 SuperMap 组件保持完整，不裁剪 CAD、三维或 BIM 能力。
-
-默认运行时基础镜像 `192.168.106.71/public/iobjectjava:12.0.0-kylin-aarch64` 可从 SuperMap PDT 离线安装包的 `install/images/192.168.106.71_public_iobjectjava_12.0.0-kylin-aarch64.tar` 导入。
-
-运行时默认使用 `SUPERMAP_JAVA_OPTS=-Xms128m -Xmx4g`，开发脚本和 Compose 默认把容器内存限制为 `SUPERMAP_WORKFLOW_MEMORY_LIMIT=8g`，为 SuperMap native 分析、文件映射和后续三维组件保留 JVM 堆外空间。部署时可通过这两个环境变量覆盖，但应保证容器上限明显大于 JVM 最大堆。
-
-构建：
+代码镜像默认名为 `addp-supermap-workflow-engine:dev`。可配置项只保留运行参数：
 
 ```bash
-./scripts/build/build-supermap-workflow-image.sh \
-  --objectsjava-bin /tmp/addp-supermap-iobjectjava-bin \
-  --gpa-libs /path/to/scp-dc-scheduler/scheduler/gpa/libs \
-  --license /path/to/supermap_any_2026.lic12
+SUPERMAP_WORKFLOW_BASE_IMAGE=addp-supermap-workflow-base:local
+SUPERMAP_WORKFLOW_IMAGE=addp-supermap-workflow-engine:dev
+SUPERMAP_WORKFLOW_PORT=8103
+SUPERMAP_DATA_HOST_PATH=/path/to/supermap/data
+SUPERMAP_OUTPUT_HOST_PATH=/tmp/supermap-out
+SUPERMAP_JAVA_OPTS=-Xms128m -Xmx4g
+SUPERMAP_WORKFLOW_MEMORY_LIMIT=8g
 ```
 
-也可以把许可文件放入 `engines/supermap-workflow/license/`，该目录已被 Git 忽略，构建脚本会自动读取其中第一个 `.lic12` 文件。构建成功后，开发脚本会通过镜像 label `addp.supermap.bundled=true` 识别胖镜像，启动时不再要求 `SUPERMAP_OBJECTSJAVA_BIN_HOST` 和 `SUPERMAP_GPA_LIB_DIR_HOST`。
-
-本地挂载 SDK/GPA libs 的开发镜像默认把 `engines/supermap-workflow/src` 挂载到容器 `/app/src`，修改 Java 算子代码后重启 runtime 会在容器内重新编译。私有胖镜像只包含 JRE 和构建期生成的 class，默认不挂载源码；修改 Java 代码、Dockerfile、系统依赖、SDK/GPA libs 或 `run.sh` 后，需要重新运行 `scripts/build/build-supermap-workflow-image.sh`。
-
-也可以直接运行 Docker 容器：
-
-```bash
-docker run --rm --platform linux/arm64 \
-  --cap-add SYS_ADMIN \
-  --security-opt apparmor=unconfined \
-  -p 8103:8103 \
-  -e PORT=8103 \
-  -e SUPERMAP_OBJECTSJAVA_BIN=/opt/supermap/objectsjava/bin_linux_arm64 \
-  -e SUPERMAP_GPA_LIB_DIR=/opt/supermap/gpa/libs \
-  -v "/path/to/supermap-iobjectsjava/Bin:/opt/supermap/objectsjava/bin_linux_arm64:ro" \
-  -v "/path/to/scheduler/gpa/libs:/opt/supermap/gpa/libs:ro" \
-  -v "/path/to/supermap/data:/mnt/supermap/data:ro" \
-  -v "/tmp/supermap-out:/tmp/supermap-out" \
-  addp-supermap-workflow-engine:dev
-```
-
-如果使用完整 Java 组件镜像或解压目录，应把 iObjects Java 的 native / jar bin 目录挂载到 `SUPERMAP_OBJECTSJAVA_BIN`，并把包含 `gpa-sps-core-*.jar`、Jackson、Hutool 等依赖的 GPA libs 目录挂载到 `SUPERMAP_GPA_LIB_DIR`。许可文件 `supermap_any_2026.lic12` 应位于 SuperMap bin 目录或由生产镜像按 SuperMap 授权要求放置。
+工作流算子由 Manager、Meta、Develop 等调用方实时从 `/api/operators` 发现。只修改 SuperMap Java 代码时，无需重启 System、Manager 或 Meta；局部重启 SuperMap Workflow 即可。
 
 ## 验证
 

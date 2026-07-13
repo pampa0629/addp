@@ -1,0 +1,66 @@
+package postgresql
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/addp/common/engine/plugin"
+)
+
+func TestFilterAndCoalescePostgresChangesSkipsReplayAndKeepsLatestKey(t *testing.T) {
+	batch := &plugin.PartitionedTableChangeBatch{
+		Partition: "0",
+		Changes: []plugin.PartitionedTableChange{
+			{Operation: plugin.TableChangeOperationUpsert, Position: kafkaOffsetPosition("0", 6), Row: map[string]interface{}{"id": int64(1), "name": "replayed"}},
+			{Operation: plugin.TableChangeOperationUpsert, Position: kafkaOffsetPosition("0", 7), Row: map[string]interface{}{"id": int64(2), "name": "first"}},
+			{Operation: plugin.TableChangeOperationUpsert, Position: kafkaOffsetPosition("0", 8), Row: map[string]interface{}{"id": int64(2), "name": "last"}},
+		},
+	}
+
+	rows, skipped, err := filterAndCoalescePostgresChanges(batch, []string{"id"}, 5, 6, 8)
+	if err != nil {
+		t.Fatalf("filterAndCoalescePostgresChanges() error = %v", err)
+	}
+	if skipped != 2 || len(rows) != 1 {
+		t.Fatalf("skipped=%d rows=%d, want skipped=2 rows=1", skipped, len(rows))
+	}
+	if rows[0].row["name"] != "last" || rows[0].nextOffset != 8 {
+		t.Fatalf("row=%#v offset=%d, want latest id=2 state", rows[0].row, rows[0].nextOffset)
+	}
+}
+
+func TestFilterAndCoalescePostgresChangesRejectsNonIncreasingPositions(t *testing.T) {
+	batch := &plugin.PartitionedTableChangeBatch{
+		Partition: "0",
+		Changes: []plugin.PartitionedTableChange{
+			{Operation: plugin.TableChangeOperationUpsert, Position: kafkaOffsetPosition("0", 8), Row: map[string]interface{}{"id": 1}},
+			{Operation: plugin.TableChangeOperationUpsert, Position: kafkaOffsetPosition("0", 7), Row: map[string]interface{}{"id": 2}},
+		},
+	}
+
+	_, _, err := filterAndCoalescePostgresChanges(batch, []string{"id"}, 0, 0, 8)
+	if err == nil || !strings.Contains(err.Error(), "strictly increasing") {
+		t.Fatalf("error=%v, want strictly increasing error", err)
+	}
+}
+
+func TestFilterAndCoalescePostgresChangesRejectsUnrepresentedEndPosition(t *testing.T) {
+	batch := &plugin.PartitionedTableChangeBatch{
+		Partition: "0",
+		Changes: []plugin.PartitionedTableChange{
+			{Operation: plugin.TableChangeOperationUpsert, Position: kafkaOffsetPosition("0", 7), Row: map[string]interface{}{"id": 1}},
+		},
+	}
+	_, _, err := filterAndCoalescePostgresChanges(batch, []string{"id"}, 6, 6, 8)
+	if err == nil || !strings.Contains(err.Error(), "does not match batch end") {
+		t.Fatalf("error=%v, want batch end mismatch", err)
+	}
+}
+
+func TestPostgresChangeKeyRejectsMissingOrNullKey(t *testing.T) {
+	for _, row := range []map[string]interface{}{{}, {"id": nil}} {
+		if _, err := postgresChangeKey(row, []string{"id"}); err == nil {
+			t.Fatalf("postgresChangeKey(%#v) succeeded, want error", row)
+		}
+	}
+}

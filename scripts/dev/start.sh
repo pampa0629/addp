@@ -221,6 +221,7 @@ START_META_WORKER=false
 START_TRANSFER_BACKEND=false
 START_TRANSFER_FRONTEND=false
 START_TRANSFER_WORKER=false
+START_TRANSFER_CONTINUOUS_WORKER=false
 START_ORCHESTRATOR_BACKEND=false
 START_ORCHESTRATOR_FRONTEND=false
 START_DEVELOP_BACKEND=false
@@ -275,6 +276,7 @@ if [ "$START_ALL" = true ]; then
   START_TRANSFER_BACKEND=true
   START_TRANSFER_FRONTEND=true
   START_TRANSFER_WORKER=true
+  START_TRANSFER_CONTINUOUS_WORKER=true
   START_ORCHESTRATOR_BACKEND=true
   START_ORCHESTRATOR_FRONTEND=true
   START_DEVELOP_BACKEND=true
@@ -318,6 +320,7 @@ else
       START_MANAGER_FRONTEND=true
       START_TRANSFER_BACKEND=true
       START_TRANSFER_WORKER=true
+      START_TRANSFER_CONTINUOUS_WORKER=true
       START_MODEL3D_WORKFLOW=true
       START_POINTCLOUD_WORKFLOW=true
       ;;
@@ -328,6 +331,7 @@ else
       START_TRANSFER_BACKEND=true
       START_TRANSFER_FRONTEND=true
       START_TRANSFER_WORKER=true
+      START_TRANSFER_CONTINUOUS_WORKER=true
       ;;
     orchestrator)
       START_ORCHESTRATOR_BACKEND=true
@@ -412,6 +416,7 @@ else
       START_MANAGER_BACKEND=true
       START_TRANSFER_BACKEND=true
       START_TRANSFER_WORKER=true
+      START_TRANSFER_CONTINUOUS_WORKER=true
       START_ORCHESTRATOR_BACKEND=true
       START_DEVELOP_BACKEND=true
       START_SERVICE_BACKEND=true
@@ -434,6 +439,7 @@ else
       START_TRANSFER_BACKEND=true
       START_TRANSFER_FRONTEND=true
       START_TRANSFER_WORKER=true
+      START_TRANSFER_CONTINUOUS_WORKER=true
       START_ORCHESTRATOR_BACKEND=true
       START_ORCHESTRATOR_FRONTEND=true
       START_DEVELOP_BACKEND=true
@@ -594,6 +600,23 @@ build_worker() {
     }
 
     echo "  ✓ ${binary_name} 编译完成"
+}
+
+build_transfer_continuous_worker() {
+    local binary_path=".dev-bins/addp-transfer-continuous-worker"
+    if [[ -f "$binary_path" ]]; then
+        local src_newer=$(find "transfer/backend" -type f -name "*.go" -newer "$binary_path" 2>/dev/null | wc -l | tr -d ' ')
+        if [[ $src_newer -eq 0 ]]; then
+            echo "  ✓ addp-transfer-continuous-worker 已是最新"
+            return 0
+        fi
+    fi
+    echo "  🔨 编译 addp-transfer-continuous-worker..."
+    (cd transfer/backend && go build -o "${PROJECT_ROOT}/${binary_path}" cmd/continuous-worker/main.go) || {
+        echo "  ✗ 编译失败: transfer continuous worker"
+        return 1
+    }
+    echo "  ✓ addp-transfer-continuous-worker 编译完成"
 }
 
 # 编译 Gateway 二进制
@@ -873,6 +896,11 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     BUILD_PIDS+=($!)
   fi
 
+  if [ "$START_TRANSFER_CONTINUOUS_WORKER" = true ]; then
+    build_transfer_continuous_worker &
+    BUILD_PIDS+=($!)
+  fi
+
   # 等待所有编译完成
   for pid in "${BUILD_PIDS[@]}"; do
     wait "$pid" || true
@@ -1050,6 +1078,16 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       echo $TRANSFER_WORKER_PID > .dev-pids/transfer-worker.pid
     else
       TRANSFER_WORKER_PID=$(cat .dev-pids/transfer-worker.pid 2>/dev/null)
+    fi
+  fi
+
+  if [ "$START_TRANSFER_CONTINUOUS_WORKER" = true ]; then
+    if check_service_running "transfer-continuous-worker" ""; then
+      .dev-bins/addp-transfer-continuous-worker > logs/transfer-continuous-worker.log 2>&1 &
+      TRANSFER_CONTINUOUS_WORKER_PID=$!
+      echo $TRANSFER_CONTINUOUS_WORKER_PID > .dev-pids/transfer-continuous-worker.pid
+    else
+      TRANSFER_CONTINUOUS_WORKER_PID=$(cat .dev-pids/transfer-continuous-worker.pid 2>/dev/null)
     fi
   fi
 
@@ -1262,6 +1300,7 @@ echo "  Develop Backend:    PID $DEVELOP_PID (http://localhost:${DEVELOP_BACKEND
 echo "  Service Backend:    PID $SERVICE_PID (http://localhost:${SERVICE_BACKEND_PORT})"
 echo "  Meta Worker:        PID $META_WORKER_PID"
 echo "  Transfer Worker:    PID $TRANSFER_WORKER_PID"
+echo "  Transfer Continuous Worker: PID $TRANSFER_CONTINUOUS_WORKER_PID"
 echo ""
 
 # ============================================================
@@ -1437,7 +1476,7 @@ if [ ! -d "engines/math-workflow/venv" ]; then
     NEED_INSTALL=true
 else
     # 检查关键依赖是否已安装
-    if ! ./engines/math-workflow/venv/bin/python -c "import flask" &> /dev/null; then
+    if ! ./engines/math-workflow/venv/bin/python -c "import flask, addp_common.workflow_runtime" &> /dev/null; then
         echo "检测到虚拟环境缺少依赖，重新安装..."
         cd engines/math-workflow
         NEED_INSTALL=true
@@ -1463,6 +1502,7 @@ if [ "$NEED_INSTALL" = true ]; then
     # 升级 pip 并安装依赖
     $PIP_CMD --upgrade pip
     $PIP_CMD -r requirements.txt
+    $PIP_CMD -e ../../common-python
 
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
@@ -1533,7 +1573,7 @@ if [ ! -d "engines/model3d-workflow/venv" ]; then
     $SELECTED_PYTHON -m venv venv
     NEED_INSTALL=true
 else
-    if ! ./engines/model3d-workflow/venv/bin/python -c "import flask" &> /dev/null; then
+    if ! ./engines/model3d-workflow/venv/bin/python -c "import flask, addp_common.workflow_runtime" &> /dev/null; then
         echo "检测到虚拟环境缺少依赖，重新安装..."
         cd engines/model3d-workflow
         NEED_INSTALL=true
@@ -1555,6 +1595,7 @@ if [ "$NEED_INSTALL" = true ]; then
 
     $PIP_CMD --upgrade pip
     $PIP_CMD -r requirements.txt
+    $PIP_CMD -e ../../common-python
 
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
@@ -1647,10 +1688,8 @@ start_pointcloud_workflow_engine_process() {
   local system_port="${SYSTEM_BACKEND_PORT:-8180}"
   local minio_port="${MINIO_API_PORT:-19000}"
 
-  if ! docker image inspect "$image" >/dev/null 2>&1 || [ "${FORCE_POINTCLOUD_WORKFLOW_IMAGE_BUILD:-0}" = "1" ]; then
-    echo "构建 PointCloud Workflow Engine 镜像..."
-    docker build -t "$image" engines/pointcloud-workflow
-  fi
+  echo "构建 PointCloud Workflow Engine 镜像..."
+  docker build -f engines/pointcloud-workflow/Dockerfile -t "$image" .
 
   echo "启动 PointCloud Workflow Engine Docker runtime..."
   docker rm -f pointcloud-workflow-engine >/dev/null 2>&1 || true
@@ -1688,6 +1727,12 @@ start_pointcloud_workflow_engine_process() {
   MAX_WAIT=60
   WAIT_COUNT=0
   while ! curl -s "http://localhost:${POINTCLOUD_WORKFLOW_PORT}/health" | grep -q '"status":"healthy"'; do
+    if ! docker ps --filter "name=^/pointcloud-workflow-engine$" --format '{{.Names}}' | grep -qx "pointcloud-workflow-engine"; then
+      echo -e " ${RED}✗${NC}"
+      echo -e "${RED}✗ PointCloud Workflow Engine 容器已退出${NC}"
+      docker logs --tail 100 pointcloud-workflow-engine 2>&1 || true
+      exit 1
+    fi
     sleep 1
     echo -n "."
     WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -1743,166 +1788,8 @@ if [ "$START_SUPERMAP_WORKFLOW" = true ]; then
   echo -e "${BLUE}Step 4.45/5: 启动 SuperMap Workflow Engine${NC}"
 
 start_supermap_workflow_engine_process() {
-  if ! command -v docker >/dev/null 2>&1; then
-    echo -e "${RED}✗ SuperMap Workflow Engine 需要 Docker runtime 承载 Linux arm64 SuperMap SDK${NC}"
-    exit 1
-  fi
-
-  local image="${SUPERMAP_WORKFLOW_IMAGE:-addp-supermap-workflow-engine:dev}"
-  local objectsjava_host="${SUPERMAP_OBJECTSJAVA_BIN_HOST:-${SUPERMAP_OBJECTSJAVA_BIN_HOST_PATH:-}}"
-  local gpa_lib_host="${SUPERMAP_GPA_LIB_DIR_HOST:-${SUPERMAP_GPA_LIB_DIR_HOST_PATH:-}}"
-  local output_dir="${SUPERMAP_OUTPUT_HOST_PATH:-/tmp/supermap-out}"
-  local data_dir="${SUPERMAP_DATA_HOST_PATH:-}"
-  local platform="${SUPERMAP_WORKFLOW_PLATFORM:-linux/arm64}"
-  local memory_limit="${SUPERMAP_WORKFLOW_MEMORY_LIMIT:-8g}"
-  local java_opts="${SUPERMAP_JAVA_OPTS:--Xms128m -Xmx4g}"
-  local rebuild_image="${SUPERMAP_WORKFLOW_REBUILD:-${FORCE_SUPERMAP_WORKFLOW_IMAGE_BUILD:-0}}"
-  local source_dir="${SUPERMAP_WORKFLOW_SOURCE_HOST:-${ROOT_DIR}/engines/supermap-workflow/src}"
-  local mount_source="${SUPERMAP_WORKFLOW_MOUNT_SOURCE:-}"
-  local container_objectsjava="/opt/supermap/objectsjava/bin_linux_arm64"
-  local container_gpa_lib="/opt/supermap/gpa/libs"
-  local image_exists=false
-  local bundled_image=false
-
-  if docker image inspect "$image" >/dev/null 2>&1; then
-    image_exists=true
-    if [ "$(docker image inspect -f '{{ index .Config.Labels "addp.supermap.bundled" }}' "$image" 2>/dev/null || true)" = "true" ]; then
-      bundled_image=true
-    fi
-  fi
-
-  if [ -z "$mount_source" ]; then
-    if [ "$bundled_image" = true ]; then
-      mount_source=0
-    else
-      mount_source=1
-    fi
-  fi
-  if [ "$bundled_image" = true ] && [ "$mount_source" = "1" ]; then
-    echo -e "${RED}✗ SuperMap bundled 镜像只包含 JRE，不能挂载源码后在容器内编译${NC}"
-    echo -e "${YELLOW}  请重新运行 scripts/build/build-supermap-workflow-image.sh 构建 Java 代码${NC}"
-    exit 1
-  fi
-
-  if [ "$rebuild_image" = "1" ] && [ "$bundled_image" = true ]; then
-    echo -e "${RED}✗ ${image} 是 SuperMap bundled 镜像，不能用 SUPERMAP_WORKFLOW_REBUILD=1 覆盖为瘦镜像${NC}"
-    echo -e "${YELLOW}  请使用: scripts/build/build-supermap-workflow-image.sh --image ${image}${NC}"
-    exit 1
-  fi
-
-  if [ -z "$objectsjava_host" ] && [ -n "${SUPERMAP_OBJECTSJAVA_BIN:-}" ] && [ -d "${SUPERMAP_OBJECTSJAVA_BIN}" ]; then
-    objectsjava_host="${SUPERMAP_OBJECTSJAVA_BIN}"
-  fi
-  if [ -z "$gpa_lib_host" ] && [ -n "${SUPERMAP_GPA_LIB_DIR:-}" ] && [ -d "${SUPERMAP_GPA_LIB_DIR}" ]; then
-    gpa_lib_host="${SUPERMAP_GPA_LIB_DIR}"
-  fi
-
-  if [ "$bundled_image" != true ] && { [ -z "$objectsjava_host" ] || [ ! -d "$objectsjava_host" ]; }; then
-    echo -e "${RED}✗ 请设置 SUPERMAP_OBJECTSJAVA_BIN_HOST 指向宿主机完整 iObjects Java Bin 目录${NC}"
-    echo -e "${YELLOW}  例如: SUPERMAP_OBJECTSJAVA_BIN_HOST=/path/to/sup_iobjectsjava/Bin bash scripts/dev/start.sh -supermap-workflow${NC}"
-    echo -e "${YELLOW}  或先构建 bundled 镜像: scripts/build/build-supermap-workflow-image.sh${NC}"
-    exit 1
-  fi
-  if [ "$bundled_image" != true ] && { [ -z "$gpa_lib_host" ] || [ ! -d "$gpa_lib_host" ]; }; then
-    echo -e "${RED}✗ 请设置 SUPERMAP_GPA_LIB_DIR_HOST 指向宿主机 GPA/SPS libs 目录${NC}"
-    exit 1
-  fi
-
-  if [ "$image_exists" = false ] || [ "$rebuild_image" = "1" ]; then
-    echo "构建 SuperMap Workflow Engine 镜像..."
-    docker build -t "$image" engines/supermap-workflow
-    bundled_image=false
-  fi
-
-  echo "启动 SuperMap Workflow Engine Docker runtime..."
-  docker rm -f supermap-workflow-engine >/dev/null 2>&1 || true
-  mkdir -p "${output_dir}" .dev-pids
-
-  local mount_args=(
-    -v "${output_dir}:/tmp/supermap-out"
-  )
-  if [ "$bundled_image" != true ]; then
-    mount_args+=(
-      -v "${objectsjava_host}:${container_objectsjava}:ro"
-      -v "${gpa_lib_host}:${container_gpa_lib}:ro"
-    )
-  fi
-  if [ "$mount_source" = "1" ] && [ -d "$source_dir" ]; then
-    mount_args+=(-v "${source_dir}:/app/src:ro")
-  fi
-  if [ -n "$data_dir" ]; then
-    if [ ! -d "$data_dir" ]; then
-      echo -e "${RED}✗ SUPERMAP_DATA_HOST_PATH 不是有效目录: $data_dir${NC}"
-      exit 1
-    fi
-    mount_args+=(-v "${data_dir}:/mnt/supermap/data:ro")
-  fi
-
-  docker run -d \
-    --name supermap-workflow-engine \
-    --label com.docker.compose.project=addp-app \
-    --label com.docker.compose.service=supermap-workflow-engine \
-    --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
-    --platform "$platform" \
-    --add-host=host.docker.internal:host-gateway \
-    --cap-add SYS_ADMIN \
-    --security-opt apparmor=unconfined \
-    --memory "$memory_limit" \
-    -p "${SUPERMAP_WORKFLOW_PORT}:8103" \
-    -e PORT=8103 \
-    -e SUPERMAP_OBJECTSJAVA_BIN="${container_objectsjava}" \
-    -e SUPERMAP_GPA_LIB_DIR="${container_gpa_lib}" \
-    -e SUPERMAP_JAVA_OPTS="$java_opts" \
-    -e SUPERMAP_RESOURCE_LOCALHOST_ALIAS="${SUPERMAP_RESOURCE_LOCALHOST_ALIAS:-host.docker.internal}" \
-    "${mount_args[@]}" \
-    "$image" > .dev-pids/supermap-workflow-engine.pid
-  SUPERMAP_WORKFLOW_PID=$(cat .dev-pids/supermap-workflow-engine.pid)
-
-  echo -e "${GREEN}✓ SuperMap Workflow Engine 容器已启动 (${SUPERMAP_WORKFLOW_PID})${NC}"
-
-  echo -n "  等待服务就绪"
-  MAX_WAIT=90
-  WAIT_COUNT=0
-  while ! curl -s "http://localhost:${SUPERMAP_WORKFLOW_PORT}/health" | grep -q '"status":"healthy"'; do
-    sleep 1
-    echo -n "."
-    WAIT_COUNT=$((WAIT_COUNT + 1))
-    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-      echo -e " ${RED}✗${NC}"
-      echo -e "${RED}✗ SuperMap Workflow Engine 未进入 healthy 状态（${MAX_WAIT}秒）${NC}"
-      echo -e "${YELLOW}查看日志: docker logs supermap-workflow-engine${NC}"
-      echo -e "${YELLOW}确认 objectsjava Bin 目录内已放置许可文件，并且 GPA/SPS libs 完整${NC}"
-      exit 1
-    fi
-  done
-  echo -e " ${GREEN}✓${NC}"
-  echo -e "${GREEN}✓ SuperMap Workflow Engine 就绪 (http://localhost:${SUPERMAP_WORKFLOW_PORT})${NC}"
-
-  if [ -n "${INTERNAL_API_KEY:-}" ]; then
-    local system_url="${SYSTEM_URL:-http://localhost:${SYSTEM_BACKEND_PORT:-8180}}"
-    local response_file
-    response_file=$(mktemp)
-    local register_payload
-    register_payload=$(cat <<JSON
-{"engine_type":"supermap_workflow","name":"SuperMap 工作流引擎","description":"面向超图 iObjects Java / SPS 的工作流运行时","connection_info":{"protocol":"http","port":${SUPERMAP_WORKFLOW_PORT}},"is_builtin":true}
-JSON
-)
-    local http_code
-    http_code=$(curl -s -o "$response_file" -w "%{http_code}" \
-      -H "X-Internal-API-Key: ${INTERNAL_API_KEY}" \
-      -H "Content-Type: application/json" \
-      -d "$register_payload" \
-      "${system_url%/}/api/v1/internal/engines/register" || true)
-    if [ "$http_code" = "202" ] || [ "$http_code" = "200" ]; then
-      echo -e "${GREEN}✓ SuperMap Workflow Engine 已注册到 System${NC}"
-    else
-      echo -e "${YELLOW}⚠️  SuperMap Workflow Engine 自动注册到 System 失败（HTTP ${http_code:-000}）${NC}"
-      echo -e "${YELLOW}   $(head -c 200 "$response_file")${NC}"
-    fi
-    rm -f "$response_file"
-  else
-    echo -e "${YELLOW}⚠️  INTERNAL_API_KEY 未设置，跳过 SuperMap Workflow Engine 自动注册${NC}"
-  fi
+  bash "${SCRIPT_DIR}/supermap-workflow.sh"
+  SUPERMAP_WORKFLOW_PID=$(cat .dev-pids/supermap-workflow-engine.pid 2>/dev/null || echo supermap-workflow-engine)
 }
 
 if curl -s "http://localhost:${SUPERMAP_WORKFLOW_PORT}/health" 2>/dev/null | grep -q '"service":"supermap-workflow-engine"'; then
@@ -2750,6 +2637,7 @@ echo ""
 echo "Workers PID:"
 echo "  Meta Worker:          $META_WORKER_PID"
 echo "  Transfer Worker:      $TRANSFER_WORKER_PID"
+echo "  Transfer Continuous Worker: $TRANSFER_CONTINUOUS_WORKER_PID"
 echo ""
 echo "日志文件:"
 echo "  System:   logs/system-backend.log"
@@ -2774,6 +2662,7 @@ echo "  Spark 工作流引擎: logs/spark-workflow-engine.log"
 echo "  Jupyter Engine: logs/jupyter-engine.log"
 echo "  Gateway:  logs/gateway.log"
 echo "  Transfer Worker: logs/transfer-worker.log"
+echo "  Transfer Continuous Worker: logs/transfer-continuous-worker.log"
 echo "  Meta Worker: logs/meta-worker.log"
 echo "  Meta FE:  logs/meta-frontend.log"
 echo "  Transfer FE:  logs/transfer-frontend.log"

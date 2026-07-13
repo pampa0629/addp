@@ -1,0 +1,26 @@
+ARG BASE_IMAGE=192.168.106.71/datacenter/runtime-notebook-python:v3.0.0-aarch64
+FROM ${BASE_IMAGE}
+
+LABEL addp.service="supermap-workflow-base"
+LABEL addp.supermap.base="true"
+
+ENV JAVA_HOME=/opt/java
+ENV PATH=/opt/java/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV SUPERMAP_OBJECTSJAVA_BIN=/opt/supermap/objectsjava/bin_linux_arm64
+ENV SUPERMAP_GPA_LIB_DIR=/opt/supermap/gpa/libs
+
+USER root
+WORKDIR /app
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libminizip1 libblosc1 nfs-common netbase sqlite3 \
+  && rm -rf /var/lib/apt/lists/* \
+  && mkdir -p /opt/supermap/objectsjava/bin_linux_arm64 /opt/supermap/gpa/libs /app/license
+
+COPY --from=objectsjava . /opt/supermap/objectsjava/bin_linux_arm64/
+COPY --from=gpa_libs . /opt/supermap/gpa/libs/
+COPY --from=license . /app/license/
+
+RUN javac -version \
+  && test -d /opt/supermap/objectsjava/bin_linux_arm64 \
+  && test -d /opt/supermap/gpa/libs

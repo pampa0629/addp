@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
+	commonModels "github.com/addp/common/models"
 	commonSpatial "github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
@@ -66,6 +67,29 @@ func TestQuickViewFeatureCollectionConvertsWKTToGeoJSON(t *testing.T) {
 	}
 	if metadata["item_fingerprint"] != result.Metadata.ItemFingerprint {
 		t.Fatalf("metadata.item_fingerprint = %v, want %s", metadata["item_fingerprint"], result.Metadata.ItemFingerprint)
+	}
+}
+
+func TestCADPreviewTaskConfigFromQuickView(t *testing.T) {
+	capability := &service.QuickViewCapability{
+		TenantID:        7,
+		ItemFingerprint: "cad-fingerprint",
+		Locator:         "addp://engine/26/path/cad/site.dwg?type=file&item_id=91",
+		SourceKind:      service.QuickViewSourceKindCAD,
+	}
+	config, err := cadPreviewTaskConfigFromQuickView(capability, service.QuickViewSource{
+		EngineID: 26,
+		CAD:      &service.CADPreviewSource{Format: "dwg", SourceSizeBytes: 4096},
+	})
+	if err != nil {
+		t.Fatalf("cadPreviewTaskConfigFromQuickView() error = %v", err)
+	}
+	source, ok := config["source"].(commonModels.JSONMap)
+	if !ok {
+		t.Fatalf("source config = %#v", config["source"])
+	}
+	if source["source_engine_id"] != uint(26) || source["item_id"] != uint(91) || source["format"] != "dwg" {
+		t.Fatalf("source config = %#v", source)
 	}
 }
 

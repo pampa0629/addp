@@ -57,6 +57,7 @@
 | DOCX | `single` | `document` | `docx` | 第一阶段以内置格式识别和 raw / range 预览为主 |
 | PPTX | `single` | `document` | `pptx` | 第一阶段以内置格式识别和 raw / range 预览为主 |
 | WPS | `single` | `document` | `wps` | 第一阶段以内置格式识别和 raw / range 预览为主 |
+| DWG | `single` | `cad` | `dwg` | 二维 CAD 图纸；basic scan 识别 header，deep scan 与预览使用 SuperMap iObjects |
 | GLB | `single` | `model_3d` | `glb` | 第一阶段三维模型代表格式；预览优先走 raw / range / storage stream + 前端 Three.js |
 | glTF | `multi` | `model_3d` | `gltf` | 由 `.gltf` manifest 声明的多资源三维模型，buffers / images 作为 related refs |
 | OBJ | `single` | `model_3d` | `obj` | Wavefront OBJ 单体网格模型；第一阶段支持识别和轻量摘要 |
@@ -74,6 +75,42 @@
 | PCD | `single` | `point_cloud` | `pcd` | Point Cloud Data 单文件点云；deep scan 读取 PCD header 轻量摘要 |
 | XYZ | `single` | `point_cloud` | `xyz` | 文本 XYZ 点云；deep scan 做预算内采样摘要 |
 | EPT | `whole` | `point_cloud` | `ept` | Entwine Point Tiles whole-scope 点云数据集；`ept.json` manifest 强命中 |
+
+## DWG
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | `cad` |
+| `format` | `dwg` |
+| 主资源 | `meta_item.full_name` 指向 `.dwg` 文件或对象 |
+
+Basic scan 通过六字节 `AC10xx` DWG 版本头、扩展名和 MIME 完成轻量识别，不依赖 SuperMap。`.dwg` 扩展名存在但 header 不合法时不得识别为 DWG。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=single`、`data_type=cad`、`format=dwg` |
+| `type_info.cad` | drawing kind、单位、entity/layer/layout/block/xref 数量、model/paper space 标记、二维/三维范围、文件大小 |
+| `format_info.dwg` | `format_version`、SuperMap provider/version、interpreted dataset/record count、normalized geometry 标记、scan complete 和 warnings |
+| `capabilities.spatial` | 仅在 DWG 已有明确 CRS / 空间定位事实时写入；本地 CAD 坐标不得伪造 EPSG |
+
+### 消费要求
+
+Meta deep scan 只通过 `supermap_workflow` direct operator `cad.inspect` 打开 DWG，读取 Datasource/Dataset 元数据、record count 和 bounds，不遍历 Geometry，不生成 UDBX，不使用第二解析器回退。
+
+Manager 通过 `cad.render_preview` 让 SuperMap `Map/Layer/MapPainter` 直接渲染 CAD Dataset，生成受管栅格瓦片；不得把 entity 转为 WKB/GeoJSON 后交给前端重画。Transfer 只允许 encoded raw copy。显式 `cad.import` 的 GIS 输出登记为新的 table item，不修改源 DWG item。
+
+### 格式约束
+
+- 第一阶段只承诺二维 DWG。
+- Xref 只允许同目录或同 object prefix 的相对引用；拒绝绝对路径、网络路径和越权引用。
+- SHX/TTF 只从平台受控目录加载。
+- entity-as-row 只是读取投影，不得把源 DWG 归为 `table`。
+- 预览任务、瓦片、缩略图和 CAD→GIS 转换报告不得写入 `type_info.cad` 或 `format_info.dwg`。
 
 ## GLB
 
@@ -370,6 +407,26 @@ Manager 预览应消费已入库 `data_type=model_3d + format=3dtiles`、`layout
 - OSGB 倾斜摄影目录、I3S、Cesium ion 资产等需要单独 format 规则；不得用 `format=3dtiles` 兼容所有目录型三维模型。
 - 3D Tiles 内嵌的 b3dm / i3dm / pnts / glTF 是 tileset 内容资源，不默认作为独立 data item 重复入库。
 - 3D Tiles 1.1 的 structured metadata、multiple contents、implicit tiling 等能力先作为 `format_info.3dtiles` 的格式私有事实扩展；只有形成跨格式模型事实时才提升到 `type_info.model_3d` 或 `capabilities`。
+
+## S3M
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `whole` |
+| `data_type` | `model_3d` |
+| `format` | `s3m` |
+| 主入口 | `config/scene.scp` |
+| 内容 | 旧版 XML SCP + `.s3m`，或新版 JSON SCP + `.s3mb` |
+
+ADDP 生成的 S3M 数据集统一使用 `config/scene.scp`，detector 通过 descriptor 的固定相对路径强命中并独占认领整个 scope。`item.refs` 只保留 SCP manifest；`Data/` 下的瓦片、LOD 和纹理内容不重复落为 data item。
+
+### attributes 与消费
+
+`format_info.s3m` 保存 `manifest_ref`、`manifest_encoding`、`version`、`file_type`、`root_tile_count`、`tile_extension` 和位置摘要；稳定的分块场景语义进入 `type_info.model_3d.model_kind=tiled_scene`。Manager 返回 `preview_material=url + frontend_renderer=s3m`，使用路径型受控资源 URL 保持 SCP 相对引用可访问；Cesium 和 S3M renderer 只在该预览组件挂载时动态加载。
+
+SuperMap Workflow 的 `osgb_scene_to_s3m` 固定使用 DXT 纹理压缩。前端必须在加载前检测 S3TC；浏览器未启用该能力时给出硬件加速提示，不得继续渲染为静默白模。不得把 renderer 状态、浏览器能力或受控 URL 写回 Meta attributes。
 
 ## OSGB
 

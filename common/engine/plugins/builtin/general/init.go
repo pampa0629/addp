@@ -3,6 +3,7 @@ package general
 import (
 	_ "github.com/addp/common/engine/plugins/clickhouse"
 	_ "github.com/addp/common/engine/plugins/doris"
+	_ "github.com/addp/common/engine/plugins/kafka"
 	_ "github.com/addp/common/engine/plugins/minio"
 	_ "github.com/addp/common/engine/plugins/mongodb"
 	_ "github.com/addp/common/engine/plugins/mysql"

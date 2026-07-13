@@ -28,6 +28,17 @@ assert.equal(mod.isResourceFormatSupported(formatFilteredPicker, { type: 'table'
 assert.equal(mod.isResourceFormatSupported(formatFilteredPicker, { type: 'file', label: 'roads.gpkg' }), true)
 assert.equal(mod.isResourceFormatSupported(formatFilteredPicker, { type: 'object', format: 'CSV' }), true)
 assert.equal(mod.isResourceFormatSupported(formatFilteredPicker, { type: 'file', label: 'notes.txt' }), false)
+const pointCloudPicker = {
+  ui_config: {
+    data_types: ['point_cloud'],
+    target_name_extension: '.copc.laz',
+    target_name_kind: 'file'
+  }
+}
+assert.equal(mod.isResourceDataTypeSupported(pointCloudPicker, { data_type: 'point_cloud' }), true)
+assert.equal(mod.isResourceDataTypeSupported(pointCloudPicker, { metadata: { data_type: 'model_3d' } }), false)
+assert.equal(mod.resourceBindingTargetExtension(pointCloudPicker), '.copc.laz')
+assert.equal(mod.resourceBindingTargetNameKind(pointCloudPicker), 'file')
 assert.deepEqual(
   mod.geometryColumnFactsFromSelection({
     raw: {

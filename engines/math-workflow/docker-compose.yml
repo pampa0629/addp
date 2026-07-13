@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   math-workflow-engine:
-    build: .
+    build:
+      context: ../..
+      dockerfile: engines/math-workflow/Dockerfile
     container_name: math-workflow-engine
     ports:
       - "8089:8089"

@@ -28,7 +28,7 @@ func (s *FilesystemCatalogRuntime) persistFileCatalogDetectedItem(
 	if !ok {
 		return false, "", scanflow.ExtractionCounts{}
 	}
-	result, err := scanprocessor.New(s.repo, s.indexer, s.log).Process(ctx, scanprocessor.FileDetectedInput(
+	result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithCADInspector(s.cadInspector).Process(ctx, scanprocessor.FileDetectedInput(
 		resource,
 		tenantID,
 		parentNode,

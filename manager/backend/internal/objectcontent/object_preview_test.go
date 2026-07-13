@@ -472,6 +472,29 @@ func TestModel3DContentHandlerRoutes3DTilesRenderer(t *testing.T) {
 	}
 }
 
+func TestModel3DContentHandlerRoutesS3MRenderer(t *testing.T) {
+	t.Parallel()
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "model3d", Builtin: models.ObjectPreviewKindModel3D})
+	if err != nil {
+		t.Fatalf("build model3d handler: %v", err)
+	}
+	request := &ObjectContentRequest{
+		Format: string(format.FormatS3M), Name: "city.scp",
+		ContentType: "application/vnd.supermap.s3m-config",
+		PreviewURL:  "/api/v1/manager/storage-assets/1/models/city/config/city.scp",
+	}
+	if !handler.Matches(request) {
+		t.Fatal("model3d handler should match s3m")
+	}
+	content, _, err := handler.Handle(context.Background(), request, nil)
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if content.FrontendRenderer != string(format.FormatS3M) || content.PreviewMaterial != models.PreviewMaterialURL {
+		t.Fatalf("content = %#v, want S3M URL preview", content)
+	}
+}
+
 func TestPointCloudContentHandlerRequiresCOPCGeneration(t *testing.T) {
 	t.Parallel()
 	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "pointcloud", Builtin: models.ObjectPreviewKindPointCloud})

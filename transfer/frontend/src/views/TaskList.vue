@@ -76,7 +76,7 @@
         </el-table-column>
         <el-table-column prop="schedule" :label="t('transfer.taskList.schedule')" min-width="200">
           <template #default="{ row }">
-            {{ formatSchedule(row.schedule) }}
+            {{ isContinuousTask(row) ? t('transfer.taskList.continuousRuntime') : formatSchedule(row.schedule) }}
           </template>
         </el-table-column>
         <el-table-column prop="created_at" :label="t('transfer.taskList.createdAt')" width="180">
@@ -84,11 +84,25 @@
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column :label="t('transfer.taskList.actions')" width="360" fixed="right">
+        <el-table-column :label="t('transfer.taskList.actions')" width="430" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="handleDetail(row.id)">{{ t('transfer.taskList.detail') }}</el-button>
             <el-button size="small" @click="handleEdit(row)" :disabled="isRunning(row)">{{ t('transfer.taskList.edit') }}</el-button>
-            <template v-if="isManualTask(row)">
+            <template v-if="isContinuousTask(row)">
+              <el-button size="small" type="primary" @click="handleStartContinuous(row)" :disabled="!canStartContinuous(row)">
+                {{ row.desired_state === 'paused' ? t('transfer.taskList.resume') : t('transfer.taskList.start') }}
+              </el-button>
+              <el-button size="small" type="warning" @click="handlePause(row)" :disabled="row.desired_state !== 'running'">
+                {{ t('transfer.taskList.pause') }}
+              </el-button>
+              <el-button size="small" @click="handleStop(row)" :disabled="row.desired_state === 'stopped'">
+                {{ t('transfer.taskList.stop') }}
+              </el-button>
+              <el-button size="small" type="danger" @click="handleDelete(row)" :disabled="row.desired_state !== 'stopped' || isRunning(row)">
+                {{ t('transfer.taskList.delete') }}
+              </el-button>
+            </template>
+            <template v-else-if="isManualTask(row)">
               <el-button size="small" type="primary" @click="handleExecute(row)" :disabled="isRunning(row)">
                 {{ t('transfer.taskList.execute') }}
               </el-button>
@@ -298,6 +312,37 @@ const handleResume = async (task) => {
   }
 }
 
+const handleStartContinuous = async (task) => {
+  try {
+    if (task.desired_state === 'paused') {
+      await taskAPI.resume(task.id)
+    } else {
+      await taskAPI.start(task.id)
+    }
+    ElMessage.success(task.desired_state === 'paused' ? t('transfer.taskList.resumed') : t('transfer.taskList.executeSubmitted'))
+    await loadPageData()
+  } catch (error) {
+    console.error('启动持续同步任务失败:', error)
+  }
+}
+
+const handleStop = async (task) => {
+  try {
+    await ElMessageBox.confirm(t('transfer.taskList.stopConfirm'), t('transfer.taskList.hint'), {
+      confirmButtonText: t('transfer.taskList.confirm'),
+      cancelButtonText: t('transfer.taskList.cancel'),
+      type: 'warning'
+    })
+    await taskAPI.stop(task.id)
+    ElMessage.success(t('transfer.taskList.stopped'))
+    await loadPageData()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('停止持续同步任务失败:', error)
+    }
+  }
+}
+
 // 删除任务
 const handleDelete = async (task) => {
   try {
@@ -318,7 +363,9 @@ const handleDelete = async (task) => {
 
 // 辅助函数
 const isManualTask = (task) => !task.schedule
-const isRunning = (task) => task.status === 'running'
+const isContinuousTask = (task) => task?.config?.runtime?.boundary === 'continuous'
+const isRunning = (task) => task.status === 'running' || (isContinuousTask(task) && task.desired_state === 'running')
+const canStartContinuous = (task) => ['paused', 'stopped'].includes(task.desired_state) && !isRunning(task)
 const canStartSchedule = (task) => !task.enabled
 const canPauseSchedule = (task) => task.enabled
 const canDeleteManual = (task) => !isRunning(task)

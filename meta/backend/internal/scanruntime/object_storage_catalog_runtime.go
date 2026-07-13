@@ -15,10 +15,11 @@ import (
 // ObjectStorageCatalogRuntime 对象存储 catalog 扫描运行时。
 // 职责：按插件 catalog model 扫描 bucket/prefix/object 层级。
 type ObjectStorageCatalogRuntime struct {
-	db      *gorm.DB
-	log     *slog.Logger
-	repo    *metaRepo.ScanRepository   // 数据访问层
-	indexer scanprocessor.AssetIndexer // 索引服务
+	db           *gorm.DB
+	log          *slog.Logger
+	repo         *metaRepo.ScanRepository   // 数据访问层
+	indexer      scanprocessor.AssetIndexer // 索引服务
+	cadInspector metaenrich.CADInspector
 }
 
 // NewObjectStorageCatalogRuntime 创建对象存储 catalog 扫描运行时。

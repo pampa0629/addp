@@ -11,7 +11,15 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
-from minio import Minio
+from addp_common.workflow_access import (
+    publish_target_directory,
+    publish_target_file,
+    require_access_plan,
+    source_format as plan_source_format,
+    stage_source_directory,
+    stage_source_file,
+    target_name,
+)
 
 
 ENGINE_TYPE = "model3d_workflow"
@@ -116,13 +124,13 @@ def list_operators() -> list[dict[str, Any]]:
             "category": "三维模型转换",
             "category_path": ["三维模型转换", "快显"],
             "description": "将单个 OSGB 文件转换为前端可快速预览的 GLB artifact。",
-            "execution_modes": ["direct"],
+            "execution_modes": ["workflow", "direct"],
             "parameters": [
                 {
                     "name": "access_plan",
                     "type": "object",
                     "required": True,
-                    "description": "源 OSGB 文件访问计划和 GLB artifact 对象存储发布计划。",
+                    "description": "源 OSGB 与目标 GLB 的 addp.workflow.access-plan/v1 访问计划。",
                 },
                 {
                     "name": "options",
@@ -148,13 +156,13 @@ def list_operators() -> list[dict[str, Any]]:
             "category": "三维模型转换",
             "category_path": ["三维模型转换", "快显"],
             "description": "将 glTF 多资源模型打包为前端可快速预览的 GLB artifact。",
-            "execution_modes": ["direct"],
+            "execution_modes": ["workflow", "direct"],
             "parameters": [
                 {
                     "name": "access_plan",
                     "type": "object",
                     "required": True,
-                    "description": "源 glTF manifest 访问计划和 GLB artifact 对象存储发布计划。",
+                    "description": "源 glTF 数据集与目标 GLB 的 addp.workflow.access-plan/v1 访问计划。",
                 },
                 {
                     "name": "options",
@@ -180,13 +188,13 @@ def list_operators() -> list[dict[str, Any]]:
             "category": "三维模型转换",
             "category_path": ["三维模型转换", "快显"],
             "description": "将 FBX 单体网格模型转换为前端可快速预览的 GLB artifact。",
-            "execution_modes": ["direct"],
+            "execution_modes": ["workflow", "direct"],
             "parameters": [
                 {
                     "name": "access_plan",
                     "type": "object",
                     "required": True,
-                    "description": "源 FBX 文件访问计划和 GLB artifact 对象存储发布计划。",
+                    "description": "源 FBX 与目标 GLB 的 addp.workflow.access-plan/v1 访问计划。",
                 },
                 {
                     "name": "options",
@@ -212,13 +220,13 @@ def list_operators() -> list[dict[str, Any]]:
             "category": "三维模型转换",
             "category_path": ["三维模型转换", "快显"],
             "description": "将 OBJ 单体网格模型转换为前端可快速预览的 GLB artifact。",
-            "execution_modes": ["direct"],
+            "execution_modes": ["workflow", "direct"],
             "parameters": [
                 {
                     "name": "access_plan",
                     "type": "object",
                     "required": True,
-                    "description": "源 OBJ 文件访问计划和 GLB artifact 对象存储发布计划。",
+                    "description": "源 OBJ 数据集与目标 GLB 的 addp.workflow.access-plan/v1 访问计划。",
                 },
                 {
                     "name": "options",
@@ -244,13 +252,13 @@ def list_operators() -> list[dict[str, Any]]:
             "category": "三维模型转换",
             "category_path": ["三维模型转换", "快显"],
             "description": "将 STL 单体网格模型转换为前端可快速预览的 GLB artifact。",
-            "execution_modes": ["direct"],
+            "execution_modes": ["workflow", "direct"],
             "parameters": [
                 {
                     "name": "access_plan",
                     "type": "object",
                     "required": True,
-                    "description": "源 STL 文件访问计划和 GLB artifact 对象存储发布计划。",
+                    "description": "源 STL 与目标 GLB 的 addp.workflow.access-plan/v1 访问计划。",
                 },
                 {
                     "name": "options",
@@ -276,13 +284,13 @@ def list_operators() -> list[dict[str, Any]]:
             "category": "三维模型转换",
             "category_path": ["三维模型转换", "快显"],
             "description": "将 IFC BIM 模型通过 IfcConvert 转换为前端可快速预览的 GLB artifact。",
-            "execution_modes": ["direct"],
+            "execution_modes": ["workflow", "direct"],
             "parameters": [
                 {
                     "name": "access_plan",
                     "type": "object",
                     "required": True,
-                    "description": "源 IFC 文件访问计划和 GLB artifact 对象存储发布计划。",
+                    "description": "源 IFC 与目标 GLB 的 addp.workflow.access-plan/v1 访问计划。",
                 },
                 {
                     "name": "options",
@@ -308,7 +316,7 @@ def list_operators() -> list[dict[str, Any]]:
             "category": "三维模型转换",
             "category_path": ["三维模型转换", "倾斜摄影"],
             "description": "将一套 OSGB 倾斜摄影数据集转换为前端高效预览的 3D Tiles 数据集。",
-            "execution_modes": ["direct"],
+            "execution_modes": ["workflow", "direct"],
             "parameters": [
                 {
                     "name": "access_plan",
@@ -345,14 +353,14 @@ def list_operators() -> list[dict[str, Any]]:
             "engine_type": ENGINE_TYPE,
             "category": "三维模型转换",
             "category_path": ["三维模型转换", "高斯泼溅"],
-            "description": "将 PLY / SPLAT 高斯泼溅源转换为 Manager 受管 KSplat 快显 artifact；源已经是 KSplat 时直接发布登记。",
-            "execution_modes": ["direct"],
+            "description": "将 Gaussian Splat PLY / SPLAT 转换并持久化为 KSplat。",
+            "execution_modes": ["workflow", "direct"],
             "parameters": [
                 {
                     "name": "access_plan",
                     "type": "object",
                     "required": True,
-                    "description": "高斯泼溅源文件访问计划和 KSplat artifact 对象存储发布计划。",
+                    "description": "高斯泼溅源与目标 KSplat 的 addp.workflow.access-plan/v1 访问计划。",
                 },
                 {
                     "name": "options",
@@ -413,50 +421,23 @@ def gaussian_splat_to_ksplat(
     env: dict[str, str] | None = None,
     timeout_seconds: int | None = None,
 ) -> dict[str, Any]:
-    access_plan = _required_object(params, "access_plan")
-    source = _required_object(access_plan, "source")
-    target = _required_object(access_plan, "target")
+    access_plan = require_access_plan(params)
     options = _optional_object(params, "options")
-    source_path = _first_text(source, "local_path", "root_uri")
-    source_format = _text(source.get("format")).lower()
-    publish = _required_object(target, "publish")
-    file_name = _required_text(target, "file_name")
-
-    if not source_path:
-        raise ConverterError("INVALID_PARAMS", "access_plan.source.local_path or root_uri is required")
-    if source_format not in {"ply", "splat", "ksplat"}:
+    source_format = plan_source_format(access_plan)
+    file_name = target_name(access_plan)
+    if source_format not in {"ply", "splat"}:
         raise ConverterError(
             "UNSUPPORTED_SOURCE_FORMAT",
-            "gaussian_splat_to_ksplat supports only PLY, SPLAT or KSplat sources",
+            "gaussian_splat_to_ksplat supports only PLY or SPLAT sources",
             details=f"source format: {source_format or '<empty>'}",
         )
-    if _text(publish.get("method")) != "object_store":
-        raise ConverterError("INVALID_PARAMS", "access_plan.target.publish.method must be object_store")
     if not file_name.lower().endswith(".ksplat"):
-        raise ConverterError("INVALID_PARAMS", "access_plan.target.file_name must end with .ksplat")
-
-    source_file = Path(source_path)
-    if not source_file.is_file():
-        raise ConverterError("SOURCE_NOT_FOUND", "Gaussian splat source file was not found", details=str(source_file))
-
-    if source_format == "ksplat":
-        publish_result = publish_object_store_file(source_file, publish)
-        return {
-            "ksplat_uri": publish_result["object_uri"],
-            "ksplat_ref": publish_result["object_name"],
-            "size_bytes": publish_result["uploaded_bytes"],
-            "publish": publish_result,
-            "source_format": source_format,
-            "target_format": "ksplat",
-            "converter": "copy",
-            "command": [],
-            "stdout": "",
-            "stderr": "",
-        }
+        raise ConverterError("INVALID_PARAMS", "access_plan.target.name must end with .ksplat")
 
     temp_dir = Path(tempfile.mkdtemp(prefix="addp-gaussian-ksplat-"))
     target_file = temp_dir / file_name
     try:
+        source_file = _stage_model_source(access_plan, temp_dir)
         node_bin = _gaussian_splat_node_bin(env)
         _ensure_gaussian_splat_converter_available(node_bin)
         conversion_options = _gaussian_splat_conversion_options(options)
@@ -483,10 +464,10 @@ def gaussian_splat_to_ksplat(
                 http_status=500,
             )
 
-        publish_result = publish_object_store_file(target_file, publish)
+        publish_result = publish_target_file(target_file, access_plan)
         return {
-            "ksplat_uri": publish_result["object_uri"],
-            "ksplat_ref": publish_result["object_name"],
+            "ksplat_uri": _published_uri(publish_result),
+            "ksplat_ref": _published_ref(publish_result),
             "size_bytes": publish_result["uploaded_bytes"],
             "publish": publish_result,
             "source_format": source_format,
@@ -532,22 +513,14 @@ def _single_model_to_glb(
     env: dict[str, str] | None,
     timeout_seconds: int | None,
 ) -> dict[str, Any]:
-    access_plan = _required_object(params, "access_plan")
-    source = _required_object(access_plan, "source")
-    target = _required_object(access_plan, "target")
-    source_path = _first_text(source, "local_path", "root_uri")
-    publish = _required_object(target, "publish")
-    file_name = _required_text(target, "file_name")
-
-    if not source_path:
-        raise ConverterError("INVALID_PARAMS", "access_plan.source.local_path or root_uri is required")
-    if _text(publish.get("method")) != "object_store":
-        raise ConverterError("INVALID_PARAMS", "access_plan.target.publish.method must be object_store")
+    access_plan = require_access_plan(params)
+    file_name = target_name(access_plan)
 
     temp_dir = Path(tempfile.mkdtemp(prefix="addp-model3d-glb-"))
     target_file = temp_dir / file_name
 
     try:
+        source_path = str(_stage_model_source(access_plan, temp_dir))
         converter = _converter_bin(env)
         command = [converter, "-f", converter_format, "-i", source_path, "-o", str(target_file)]
         result = _run_converter(command, runner=runner, env=env, timeout_seconds=timeout_seconds)
@@ -559,10 +532,10 @@ def _single_model_to_glb(
                 http_status=500,
             )
 
-        publish_result = publish_object_store_file(target_file, publish)
+        publish_result = publish_target_file(target_file, access_plan)
         return {
-            "glb_uri": publish_result["object_uri"],
-            "glb_ref": publish_result["object_name"],
+            "glb_uri": _published_uri(publish_result),
+            "glb_ref": _published_ref(publish_result),
             "size_bytes": publish_result["uploaded_bytes"],
             "publish": publish_result,
             "source_format": source_label.lower(),
@@ -646,21 +619,13 @@ def ifc_to_glb(
     env: dict[str, str] | None = None,
     timeout_seconds: int | None = None,
 ) -> dict[str, Any]:
-    access_plan = _required_object(params, "access_plan")
-    source = _required_object(access_plan, "source")
-    target = _required_object(access_plan, "target")
-    source_path = _first_text(source, "local_path", "root_uri")
-    publish = _required_object(target, "publish")
-    file_name = _required_text(target, "file_name")
-
-    if not source_path:
-        raise ConverterError("INVALID_PARAMS", "access_plan.source.local_path or root_uri is required")
-    if _text(publish.get("method")) != "object_store":
-        raise ConverterError("INVALID_PARAMS", "access_plan.target.publish.method must be object_store")
+    access_plan = require_access_plan(params)
+    file_name = target_name(access_plan)
 
     temp_dir = Path(tempfile.mkdtemp(prefix="addp-ifc-glb-"))
     target_file = temp_dir / file_name
     try:
+        source_path = str(_stage_model_source(access_plan, temp_dir))
         converter = _ifc_converter_bin(env)
         command = [converter]
         options = params.get("options")
@@ -677,10 +642,10 @@ def ifc_to_glb(
                 http_status=500,
             )
 
-        publish_result = publish_object_store_file(target_file, publish)
+        publish_result = publish_target_file(target_file, access_plan)
         return {
-            "glb_uri": publish_result["object_uri"],
-            "glb_ref": publish_result["object_name"],
+            "glb_uri": _published_uri(publish_result),
+            "glb_ref": _published_ref(publish_result),
             "size_bytes": publish_result["uploaded_bytes"],
             "publish": publish_result,
             "source_format": "ifc",
@@ -701,25 +666,16 @@ def _mesh_model_to_glb(
     env: dict[str, str] | None,
     timeout_seconds: int | None,
 ) -> dict[str, Any]:
-    access_plan = _required_object(params, "access_plan")
-    source = _required_object(access_plan, "source")
-    target = _required_object(access_plan, "target")
-    source_path = _first_text(source, "local_path", "root_uri")
-    publish = _required_object(target, "publish")
-    file_name = _required_text(target, "file_name")
-
-    if not source_path:
-        raise ConverterError("INVALID_PARAMS", "access_plan.source.local_path or root_uri is required")
-    if _text(publish.get("method")) != "object_store":
-        raise ConverterError("INVALID_PARAMS", "access_plan.target.publish.method must be object_store")
-
-    if source_label.lower() == "obj":
-        _validate_obj_material_libraries(Path(source_path))
+    access_plan = require_access_plan(params)
+    file_name = target_name(access_plan)
 
     temp_dir = Path(tempfile.mkdtemp(prefix="addp-model3d-glb-"))
     target_file = temp_dir / file_name
 
     try:
+        source_path = str(_stage_model_source(access_plan, temp_dir))
+        if source_label.lower() == "obj":
+            _validate_obj_material_libraries(Path(source_path))
         converter = _mesh_converter_bin(env)
         command = [converter, "export", source_path, str(target_file), "-embtex"]
         result = _run_executable(command, runner=runner, env_name=MESH_CONVERTER_ENV, timeout_seconds=timeout_seconds)
@@ -735,10 +691,10 @@ def _mesh_model_to_glb(
         if source_label.lower() == "obj":
             postprocess = _repair_obj_glb_fully_transparent_textured_materials(target_file)
 
-        publish_result = publish_object_store_file(target_file, publish)
+        publish_result = publish_target_file(target_file, access_plan)
         facts = {
-            "glb_uri": publish_result["object_uri"],
-            "glb_ref": publish_result["object_name"],
+            "glb_uri": _published_uri(publish_result),
+            "glb_ref": _published_ref(publish_result),
             "size_bytes": publish_result["uploaded_bytes"],
             "publish": publish_result,
             "source_format": source_label.lower(),
@@ -938,35 +894,15 @@ def osgb_scene_to_3dtiles(
     env: dict[str, str] | None = None,
     timeout_seconds: int | None = None,
 ) -> dict[str, Any]:
-    access_plan = _required_object(params, "access_plan")
-    source = _required_object(access_plan, "source")
-    target = _required_object(access_plan, "target")
-    source_root = _text(source.get("root_uri"))
-    stage = _optional_object(source, "stage")
-    target_root = _text(target.get("dataset_root_uri"))
-    publish = _optional_object(target, "publish")
-
-    if not source_root:
-        if _text(stage.get("method")) != "object_store":
-            raise ConverterError("INVALID_PARAMS", "access_plan.source.root_uri is required")
-        source_root = tempfile.mkdtemp(prefix="addp-model3d-source-")
-    if not target_root:
-        if _text(publish.get("method")) != "object_store":
-            raise ConverterError("INVALID_PARAMS", "access_plan.target.dataset_root_uri is required")
-        target_root = tempfile.mkdtemp(prefix="addp-model3d-tiles-")
-
-    source_dir = Path(source_root)
-    target_dir = Path(target_root)
-    cleanup_source = _text(stage.get("method")) == "object_store"
-    cleanup_target = _text(publish.get("method")) == "object_store"
+    access_plan = require_access_plan(params)
+    work_dir = Path(tempfile.mkdtemp(prefix="addp-model3d-scene-"))
+    source_dir = stage_source_directory(access_plan, work_dir)
+    target_dir = work_dir / "target"
     try:
-        stage_result: dict[str, Any] = {}
-        if _text(stage.get("method")) == "object_store":
-            stage_result = stage_object_store_directory(source_dir, stage)
         target_dir.mkdir(parents=True, exist_ok=True)
 
         converter = _converter_bin(env)
-        command = [converter, "-f", "osgb", "-i", source_root, "-o", str(target_dir)]
+        command = [converter, "-f", "osgb", "-i", str(source_dir), "-o", str(target_dir)]
         result = _run_converter(command, runner=runner, env=env, timeout_seconds=timeout_seconds)
 
         tileset_path = target_dir / TILESET_REF
@@ -978,153 +914,44 @@ def osgb_scene_to_3dtiles(
                 http_status=500,
             )
 
-        publish_result: dict[str, Any] = {}
-        if _text(publish.get("method")) == "object_store":
-            publish_result = publish_object_store_directory(target_dir, publish)
+        publish_result = publish_target_directory(target_dir, access_plan, completion_marker=TILESET_REF)
 
         tile_count = _count_tiles(target_dir)
         return {
-            "tileset_locator": publish_result.get("tileset_locator") or str(target_dir),
-            "tileset_ref": publish_result.get("tileset_ref") or TILESET_REF,
+            "tileset_locator": publish_result.get("target_root_uri") or publish_result.get("locator") or publish_result.get("path"),
+            "tileset_ref": TILESET_REF,
             "tile_count": tile_count,
-            "target_root_uri": publish_result.get("target_root_uri") or str(target_dir),
-            "stage": stage_result or None,
-            "publish": publish_result or None,
+            "target_root_uri": publish_result.get("target_root_uri") or publish_result.get("path"),
+            "publish": publish_result,
             "converter": converter,
             "command": _redact_command(command),
             "stdout": result.stdout,
             "stderr": result.stderr,
         }
     finally:
-        if cleanup_source:
-            shutil.rmtree(source_dir, ignore_errors=True)
-        if cleanup_target:
-            shutil.rmtree(target_dir, ignore_errors=True)
+        shutil.rmtree(work_dir, ignore_errors=True)
 
 
-def stage_object_store_directory(root: Path, stage: dict[str, Any]) -> dict[str, Any]:
-    endpoint = _normal_endpoint(_required_text(stage, "endpoint"))
-    bucket = _required_text(stage, "bucket")
-    prefix = _required_text(stage, "prefix").strip("/")
-    access_key = _required_text(stage, "access_key")
-    secret_key = _required_text(stage, "secret_key")
-    secure = bool(stage.get("use_ssl"))
-
-    client = Minio(endpoint, access_key=access_key, secret_key=secret_key, secure=secure)
-    objects = list(client.list_objects(bucket, prefix=prefix, recursive=True))
-    files = [obj for obj in objects if not getattr(obj, "is_dir", False)]
-    if not files:
-        raise ConverterError(
-            "SOURCE_NOT_FOUND",
-            "object store source prefix is empty",
-            details=f"{bucket}/{prefix}",
-            http_status=404,
-        )
-
-    downloaded_files = 0
-    downloaded_bytes = 0
-    prefix_with_slash = prefix.rstrip("/") + "/"
-    for obj in files:
-        key = getattr(obj, "object_name", "")
-        if not key or key.rstrip("/") == prefix.rstrip("/"):
-            continue
-        rel = key[len(prefix_with_slash) :] if key.startswith(prefix_with_slash) else Path(key).name
-        target_path = root / rel
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        client.fget_object(bucket, key, str(target_path))
-        downloaded_files += 1
-        downloaded_bytes += int(getattr(obj, "size", 0) or 0)
-
-    if downloaded_files == 0:
-        raise ConverterError(
-            "SOURCE_NOT_FOUND",
-            "object store source prefix has no downloadable files",
-            details=f"{bucket}/{prefix}",
-            http_status=404,
-        )
-    return {
-        "method": "object_store",
-        "bucket": bucket,
-        "prefix": prefix,
-        "downloaded_files": downloaded_files,
-        "downloaded_bytes": downloaded_bytes,
-    }
-
-
-def publish_object_store_directory(root: Path, publish: dict[str, Any]) -> dict[str, Any]:
-    endpoint = _normal_endpoint(_required_text(publish, "endpoint"))
-    bucket = _required_text(publish, "bucket")
-    prefix = _required_text(publish, "prefix").strip("/")
-    access_key = _required_text(publish, "access_key")
-    secret_key = _required_text(publish, "secret_key")
-    secure = bool(publish.get("use_ssl"))
-
-    client = Minio(endpoint, access_key=access_key, secret_key=secret_key, secure=secure)
-    if not client.bucket_exists(bucket):
-        client.make_bucket(bucket)
-
-    files = sorted(path for path in root.rglob("*") if path.is_file())
-    tileset = root / TILESET_REF
-    ordered = [path for path in files if path != tileset]
-    if tileset.exists():
-        ordered.append(tileset)
-
-    uploaded_files = 0
-    uploaded_bytes = 0
-    for path in ordered:
-        rel = path.relative_to(root).as_posix()
-        object_name = f"{prefix}/{rel}" if prefix else rel
-        size = path.stat().st_size
-        client.fput_object(bucket, object_name, str(path), content_type=_content_type_for_object(object_name))
-        uploaded_files += 1
-        uploaded_bytes += size
-
-    tileset_ref = f"{prefix}/{TILESET_REF}" if prefix else TILESET_REF
-    return {
-        "method": "object_store",
-        "bucket": bucket,
-        "prefix": prefix,
-        "tileset_ref": TILESET_REF,
-        "tileset_object": tileset_ref,
-        "tileset_locator": _text(publish.get("locator")) or f"s3://{bucket}/{prefix}",
-        "target_root_uri": f"s3://{bucket}/{prefix}",
-        "uploaded_files": uploaded_files,
-        "uploaded_bytes": uploaded_bytes,
-    }
-
-
-def publish_object_store_file(path: Path, publish: dict[str, Any]) -> dict[str, Any]:
-    endpoint = _normal_endpoint(_required_text(publish, "endpoint"))
-    bucket = _required_text(publish, "bucket")
-    object_name = _required_text(publish, "object").strip("/")
-    access_key = _required_text(publish, "access_key")
-    secret_key = _required_text(publish, "secret_key")
-    secure = bool(publish.get("use_ssl"))
-    content_type = _text(publish.get("content_type")) or _content_type_for_object(object_name)
-
+def _stage_model_source(access_plan: dict[str, Any], work_dir: Path) -> Path:
+    source = _required_object(access_plan, "source")
+    if source.get("kind") == "file":
+        return stage_source_file(access_plan, work_dir)
+    root = stage_source_directory(access_plan, work_dir)
+    entrypoint = _text(source.get("entrypoint"))
+    if not entrypoint:
+        raise ConverterError("INVALID_PARAMS", "directory source requires access_plan.source.entrypoint")
+    path = root / entrypoint
     if not path.is_file():
-        raise ConverterError(
-            "OUTPUT_NOT_FOUND",
-            "GLB output file was not generated",
-            details=str(path),
-            http_status=500,
-        )
+        raise ConverterError("SOURCE_NOT_FOUND", "model source entrypoint was not found", details=str(path), http_status=404)
+    return path
 
-    client = Minio(endpoint, access_key=access_key, secret_key=secret_key, secure=secure)
-    if not client.bucket_exists(bucket):
-        client.make_bucket(bucket)
 
-    size = path.stat().st_size
-    client.fput_object(bucket, object_name, str(path), content_type=content_type)
-    return {
-        "method": "object_store",
-        "bucket": bucket,
-        "object_name": object_name,
-        "object_uri": _text(publish.get("locator")) or f"s3://{bucket}/{object_name}",
-        "content_type": content_type,
-        "uploaded_files": 1,
-        "uploaded_bytes": size,
-    }
+def _published_uri(publish_result: dict[str, Any]) -> str:
+    return _text(publish_result.get("object_uri")) or _text(publish_result.get("locator")) or _text(publish_result.get("path"))
+
+
+def _published_ref(publish_result: dict[str, Any]) -> str:
+    return _text(publish_result.get("object_name")) or _text(publish_result.get("path"))
 
 
 def run_command(command: list[str], timeout_seconds: int | None) -> CommandResult:

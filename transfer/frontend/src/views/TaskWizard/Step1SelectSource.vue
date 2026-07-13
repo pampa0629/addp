@@ -284,6 +284,10 @@ async function selectNode(node) {
 }
 
 async function loadFieldsForNode(node) {
+  if (treeNodeType(node) === 'topic') {
+    props.wizardState.loadSourceFields([])
+    return
+  }
   if (nodeDataType(node) !== 'table') {
     props.wizardState.loadSourceFields([])
     return
@@ -366,6 +370,7 @@ function sourceLocatorForNode(node) {
 }
 
 function locatorTypeForNode(node) {
+  if (treeNodeType(node) === 'topic') return 'topic'
   if (representationForSelection(node) === 'native') return 'table'
   return isObjectStorageEngine(selectedEngine.value?.engine_type) ? 'object' : 'file'
 }
@@ -501,7 +506,9 @@ function buildSelectedSourceSummary(node) {
 
   return {
     path: selectedSourceLabel.value || node.name || '-',
-    dataType: dataTypeLabel(selectedDataType.value),
+    dataType: treeNodeType(node) === 'topic'
+      ? t('transfer.taskWizard.kafkaTopicLabel')
+      : dataTypeLabel(selectedDataType.value),
     format: format ? formatLabel(format) : '',
     spatial,
     spatialInfo: spatial
@@ -573,6 +580,9 @@ function catalogRoleFromTreeNode(node) {
 
 function isSelectableSourceItem(node) {
   if (node?.role !== 'leaf') return false
+  if (treeNodeType(node) === 'topic') {
+    return normalizeEngineType(selectedEngine.value?.engine_type) === 'kafka'
+  }
   return isSupportedSourceShape(nodeDataType(node), representationForSelection(node), nodeFormat(node))
 }
 
@@ -584,7 +594,7 @@ function isSupportedSourceShape(dataType, representation, sourceFormat) {
     return normalizedRepresentation === 'native' ||
       (normalizedRepresentation === 'encoded' && supportedEncodedSourceFormats.value.has(normalizedFormat))
   }
-  return ['document', 'media', 'unknown'].includes(normalizedDataType) &&
+  return ['document', 'media', 'cad', 'unknown'].includes(normalizedDataType) &&
     normalizedRepresentation === 'encoded' &&
     supportedRawCopyFormats.value.get(normalizedFormat) === normalizedDataType
 }

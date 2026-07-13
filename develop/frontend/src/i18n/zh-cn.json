@@ -272,7 +272,12 @@
       "confirm": "确定",
       "cancel": "取消",
       "targetTableName": "目标名称",
-      "targetTableNamePlaceholder": "请输入要创建或覆盖的表名、文件名或相对路径"
+      "targetTableNamePlaceholder": "请输入要创建或覆盖的表名、文件名或相对路径",
+      "targetFileName": "目标文件名",
+      "targetDatasetName": "目标数据集名称",
+      "targetFileNameWithExtensionPlaceholder": "请输入以 {extension} 结尾的文件名",
+      "targetDatasetNamePlaceholder": "请输入目标数据集名称",
+      "targetExtensionRequired": "目标文件名必须以 {extension} 结尾"
     },
     "notebook": {
       "listTitle": "Notebook 列表",

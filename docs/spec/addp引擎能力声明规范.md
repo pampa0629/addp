@@ -49,7 +49,7 @@ type EngineCapabilities struct {
 | --- | --- | --- |
 | `schema_version` | 能力声明结构版本，必须为 `engine.capabilities/v1`。 | 必须保留。 |
 | `engine_type` | 插件类型，如 `postgresql`、`minio`、`neo4j`。 | 必须保留。 |
-| `engine_family` | 主引擎族，如 `tabular`、`dynamic_schema`、`graph`、`object`、`file`、`workflow`、`script`。 | 必须保留，但只作为粗分类。 |
+| `engine_family` | 主引擎族，如 `tabular`、`dynamic_schema`、`graph`、`object`、`file`、`event_stream`、`workflow`、`script`。 | 必须保留，但只作为粗分类。 |
 | `storage` | 存储、目录、元数据、内容访问能力。 | 具备存储能力的引擎必须声明。 |
 | `compute` | 查询、工作流、脚本运行能力。 | 具备计算能力的引擎必须声明。 |
 | `limits` | 跨能力通用限制，如预览大小、超时建议。 | 可选，有真实调用方时声明。 |
@@ -123,6 +123,7 @@ type CatalogLevelSpec struct {
 | Neo4j | `server -> database -> graph` |
 | S3 / MinIO | `service -> bucket -> prefix -> object` |
 | NFS | `root -> directory -> file` |
+| Kafka | `service -> topic` |
 
 `root_term` 表达显性 catalog root；`levels` 只包含 root 下业务层级，不包含 root 本身。对外展示完整层次时可以把 `root_term` 作为前缀说明，但能力声明中的 `levels[0]` 必须是第一层业务 branch，例如 PostgreSQL 的 `schema`、MinIO 的 `bucket`、NFS 的 `directory`。
 
@@ -200,8 +201,26 @@ type StoreCapability struct {
     TableWriteSession         bool                                  `json:"table_write_session,omitempty"`
     TableWritePrepare         bool                                  `json:"table_write_prepare,omitempty"`
     BoundedWatermarkRead      bool                                  `json:"bounded_watermark_read,omitempty"`
+    ChangeStreamRead          *ChangeStreamReadCapability           `json:"change_stream_read,omitempty"`
     TableUpsert               *TableUpsertCapability                `json:"table_upsert,omitempty"`
+    PartitionedTableChangeApply *PartitionedTableChangeApplyCapability `json:"partitioned_table_change_apply,omitempty"`
     TableSpatialEncoding      *NativeTableSpatialEncodingCapability `json:"table_spatial_encoding,omitempty"`
+}
+
+type ChangeStreamReadCapability struct {
+    Supported     bool     `json:"supported"`
+    Partitioned   bool     `json:"partitioned"`
+    Seek          bool     `json:"seek"`
+    PauseResume   bool     `json:"pause_resume"`
+    PositionTypes []string `json:"position_types"`
+}
+
+type PartitionedTableChangeApplyCapability struct {
+    Supported            bool     `json:"supported"`
+    AtomicPositionCommit bool     `json:"atomic_position_commit"`
+    Monotonic            bool     `json:"monotonic"`
+    PositionTypes        []string `json:"position_types"`
+    Operations           []string `json:"operations"`
 }
 
 type TableUpsertCapability struct {
@@ -232,7 +251,9 @@ type NativeTableSpatialEncodingCapability struct {
 | `table_write_session` | 打开一次表写入会话并连续写入批次，避免每批重复建立 COPY / bulk load 会话。 | `TableWriteSessionProvider` |
 | `table_write_prepare` | 执行表级写入前准备动作，如 ensure database / schema、create table、目标表结构校验和安全 schema evolution。该能力不写入数据行，也不承载 replace / append 策略。 | `TableWritePreparer` |
 | `bounded_watermark_read` | 在一致性读边界内冻结复合 watermark 上界，并稳定读取 `(committed, upper_bound]`。 | `BoundedWatermarkReadProvider` |
+| `change_stream_read` | 按 partition position seek 并持续 poll 原始变化记录，支持受控 pause/resume/close。 | `ChangeStreamReaderProvider` |
 | `table_upsert` | 按稳定键批量新增或更新；`idempotent=true` 表示同一批重复应用得到相同目标状态。 | `TableUpsertProvider` |
+| `partitioned_table_change_apply` | 将单 partition 的 mapped table changes 与目标 apply ledger position 在同一数据库事务提交；必须声明支持的 position types 和 operations。 | `PartitionedTableChangeApplyProvider` |
 | `table_spatial_encoding` | native table provider 可与 ADDP table pipeline 交换的空间 geometry row encoding 能力。读侧能力对应 `BatchReadableProvider` / `TableReadSessionProvider`；写侧能力对应 `BatchWritableProvider` / `TableWriteSessionProvider`。 | 按读写子能力分别对应 native table read / write provider |
 
 `read` / `write` 总开关无独立调用价值，不进入 Store 能力声明。`delete` 只表达引擎能删除对应 catalog 资源，不表达上层业务删除策略、回收流程或级联清理。`atomic_rename`、`transactions`、`formats` 不作为 Store 顶层字段；如有真实调用方，应在对应 Provider 或更具体能力中声明。
@@ -240,6 +261,10 @@ type NativeTableSpatialEncodingCapability struct {
 `table_spatial_encoding` 只表达跨出 native table provider 后的 row value 编码，不表达数据库内部类型。PostGIS `geometry` 这类 engine-internal type 不应作为 encoding 暴露；PostgreSQL / PostGIS 第一阶段声明 `geometry_read_encodings=["ewkb","geojson"]`、`geometry_write_encodings=["ewkb"]`、`read_transform=true`、`native_spatial_functions=true`。
 
 `bounded_watermark_read` 与普通 `batch_read` / `table_read_session` 不等价。前者必须冻结 execution 上界、使用稳定复合游标并能从读取行生成 committed position。`table_upsert` 也不能从 `batch_write` 推导；只有目标 Provider 能校验唯一键并以幂等冲突处理提交批次时才能声明。第一版仅 PostgreSQL 声明这两项能力。
+
+`change_stream_read` 与 content `stream_read`、`batch_read` 都不等价。它必须声明 `partitioned=true`、`seek=true`、`pause_resume=true`，Kafka 第一版 `position_types` 只允许 `kafka_offset/v1`。该能力只表达原始 record 和 position 读取，不声明 JSON/Avro/Protobuf、Debezium envelope、Transfer target apply 或 exactly-once。第一版仅业务 Kafka Engine 声明该能力；Infra Kafka 不产生 System capabilities 记录。
+
+`partitioned_table_change_apply` 与普通 `table_upsert` 不等价。第一版 PostgreSQL 必须声明 `atomic_position_commit=true`、`monotonic=true`、`position_types=["kafka_offset/v1"]`、`operations=["upsert"]`；其位置账本位于业务目标 PostgreSQL，并与目标行写入同事务。该能力不表示 Kafka 与 Infra PostgreSQL 之间存在分布式 exactly-once。
 
 ### Checkpoint / Resume 能力
 
@@ -389,7 +414,9 @@ type CapabilitiesView struct {
 - 声明 `storage.store.stream_read=true` 的插件必须实现 `ContentReadableProvider`。
 - 声明 `storage.store.stream_write=true` 的插件必须实现 `ContentWritableProvider`。
 - 声明 `storage.store.bounded_watermark_read=true` 的插件必须实现 `BoundedWatermarkReadProvider`。
+- 声明 `storage.store.change_stream_read.supported=true` 的插件必须实现 `ChangeStreamReaderProvider`，且 `partitioned`、`seek`、`pause_resume` 必须为 true，`position_types` 必须非空。
 - 声明 `storage.store.table_upsert.supported=true` 的插件必须实现 `TableUpsertProvider`，且当前必须同时声明 `idempotent=true`。
+- 声明 `storage.store.partitioned_table_change_apply.supported=true` 的插件必须实现 `PartitionedTableChangeApplyProvider`，且 `atomic_position_commit`、`monotonic` 必须为 true，`position_types` 和 `operations` 必须非空。
 - 声明 `storage.store.range_read=true` 的插件必须实现 `RangeReadableProvider`，或在 `ContentReadableProvider.OpenContent()` 中明确支持 offset / length。
 - 声明 `storage.store.range_write=true` 的插件必须实现 `RangeWritableProvider`。
 - 声明 `storage.store.delete=true` 的插件必须实现 `ResourceDeleteProvider`。
@@ -401,7 +428,7 @@ type CapabilitiesView struct {
 - 声明 `compute.query.supported=true` 的插件必须实现对应 query runtime provider。
 - 声明 `compute.workflow.supported=true` 的插件必须实现 `WorkflowRuntimeProvider`。若 `dynamic_operators=true`，则其 `ListOperators()` 必须可调用，并返回符合工作流计算引擎接口规范的算子描述。
 - 声明 `compute.script.supported=true` 的插件必须实现 `ScriptRuntimeProvider`。
-- 反向也必须成立：插件实现 `CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`DynamicSchemaSamplingProvider`、具体 Store Provider、`QueryRuntimeProvider`、`GraphQueryProvider`、`WorkflowRuntimeProvider` 或 `ScriptRuntimeProvider` 时，`Capabilities()` 必须声明对应能力。`StoreProvider` 本身只是 marker，不单独触发能力声明；以具体读写 Provider 为准。
+- 反向也必须成立：插件实现 `CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`DynamicSchemaSamplingProvider`、具体 Store Provider、`ChangeStreamReaderProvider`、`QueryRuntimeProvider`、`GraphQueryProvider`、`WorkflowRuntimeProvider` 或 `ScriptRuntimeProvider` 时，`Capabilities()` 必须声明对应能力。`StoreProvider` 本身只是 marker，不单独触发能力声明；以具体读写 Provider 为准。
 - capabilities 由插件返回结构体，System 统一序列化为 JSONB。插件 `Capabilities()` 是 Provider 能力模板，不得做实例连接或运行时探测。
 - 已注册插件引擎的落库能力事实源是插件 `Capabilities()` 与可选实例能力解析结果。普通 Engine API、内部自注册接口和 Registry 能力注册接口收到插件引擎提交的 `capabilities` 时都必须忽略，并改用插件模板和实例解析结果生成落库声明。内置扩展引擎自注册 payload 不提交 `capabilities`；自注册脚本不得额外声明 `workflow_runtime`、`script_runtime` 等平行运行时能力。
 - 旧 capabilities 结构不再兼容，发现旧结构可直接刷新或清空。
@@ -458,6 +485,40 @@ MinIO 示例：
     "store": {"stream_read": true, "range_read": true},
     "semantics": ["bucket", "prefix_listing", "object", "stream_read", "range_read"],
     "not_supported": ["range_write", "real_directory"]
+  }
+}
+```
+
+Kafka 示例（插件实现完成后才允许落库声明）：
+
+```json
+{
+  "schema_version": "engine.capabilities/v1",
+  "engine_type": "kafka",
+  "engine_family": "event_stream",
+  "storage": {
+    "catalog_model": {
+      "path_version": "catalog.path/v1",
+      "root_term": "service",
+      "levels": [
+        {"term": "topic", "kinds": ["topic"], "role": "leaf", "i18n_key": "engine.term.topic"}
+      ]
+    },
+    "catalog": {
+      "supported": true,
+      "real_time": true,
+      "node_kinds": ["topic"]
+    },
+    "facts": {"supported": true, "native_facts": true},
+    "store": {
+      "change_stream_read": {
+        "supported": true,
+        "partitioned": true,
+        "seek": true,
+        "pause_resume": true,
+        "position_types": ["kafka_offset/v1"]
+      }
+    }
   }
 }
 ```

@@ -30,6 +30,7 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 | `media` | 图片、视频、音频等可感知媒体内容 | 媒体信息、原始内容、缩略图、播放、转码 |
 | `container` | 内部包含子对象或子资源的数据 | 内部对象枚举、默认入口、子对象读取 |
 | `graph` | 节点、边、关系结构的数据 | 图结构信息、关系查询、子图样本 |
+| `cad` | 保留 CAD 图层、块、布局、标注等设计图纸原生语义的数据 | 图纸结构摘要、专业渲染、原文件传输、显式 CAD→GIS 导入 |
 | `model_3d` | 三维空间对象、网格、场景、构件或倾斜摄影模型 | 模型结构信息、三维预览、空间定位、LOD 或构件摘要 |
 | `point_cloud` | 三维点集合及其点属性、空间范围和抽样结构 | 点云信息、抽样预览、空间定位、LOD / 分块读取 |
 | `gaussian_splat` | 三维高斯泼溅场景数据 | 高斯基元信息、高斯泼溅预览、压缩或派生 splat 产物 |
@@ -48,7 +49,8 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 | `media` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 media catalog 引擎。 | 图片：`image`、`jpeg`、`png`、`gif`、`tiff`、`webp`、`bmp`、`svg`、`avif`、`heic`。栅格数据集：`raster_mosaic`。视频：`video`、`mp4`、`mov`、`mkv`、`avi`、`webm`。音频：`audio`、`mp3`、`wav`、`flac`、`aac`、`ogg`。ZIP 内部媒体文件可作为 container child 被识别。 | `jpeg`、`png`、`gif`、`tiff`、`image` 当前有图片媒体信息 provider；`raster_mosaic` 表示由 manifest、index、leaf COG 和 overview COG 组成的 whole-scope 栅格镶嵌数据集；其他媒体格式当前主要提供格式身份、MIME / 扩展名识别和 raw / range / stream 内容承载。 |
 | `container` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 container catalog 引擎；目录、prefix、bucket 只是 catalog / storage 形态，不是 `container` data type。 | `excel`、`sqlite`、`geopackage`、`zip`。 | 容器 item 先记录轻量 children；进入某个 child 后，再按 child 自身格式归一为 `table`、`document`、`media`、`unknown` 等类型。JSON 作为 container 仍是概念可表达方向，当前内置 JSON plugin 未提供容器信息 provider。 |
 | `graph` | 原生图引擎：Neo4j。 | 当前没有内置 graph 文件格式 descriptor。 | RDF、GraphML、GEXF、图结构 JSON 仍是概念层典型来源；进入内置主线前需要先补 format descriptor、provider 和扫描规则。 |
-| `model_3d` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生三维模型 catalog 引擎。 | 当前内置：`glb`、`gltf`、`obj`、`stl`、`fbx`、`ifc`、网格型 `ply`、`osgb`、`osgb_scene`、`3dtiles`。后续扩展：`rvt`、`3mx`、`slpk`。 | GLB / glTF、OBJ / STL / FBX、PLY mesh、IFC BIM、单 OSGB、OSGB 倾斜摄影场景、3D Tiles、Revit BIM 都归入 `model_3d`；网格场景、倾斜摄影、BIM、分块场景等子形态由 `type_info.model_3d.model_kind` 表达，不新增平行 data type。OSGB scene 源 item 先做 Meta scan，预览通过转换后的 3D Tiles item 复用链路；OBJ / STL / FBX / IFC 可通过转换后的 GLB artifact 快显，其中 IFC 必须走专用 `ifc_to_glb`。 |
+| `cad` | 文件 / 对象承载：NFS、S3、MinIO；解析、渲染和导入使用 SuperMap iObjects。 | 当前内置：`dwg`。 | DWG 源 item 保留 CAD 语义，不因 entity 可投影为记录而归为 `table`。Meta deep scan 和 Manager 预览均通过 `supermap_workflow` direct operator；CAD→GIS 输出是新的 `table + capabilities.spatial` item。 |
+| `model_3d` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生三维模型 catalog 引擎。 | 当前内置：`glb`、`gltf`、`obj`、`stl`、`fbx`、`ifc`、网格型 `ply`、`osgb`、`osgb_scene`、`s3m`、`3dtiles`。后续扩展：`rvt`、`3mx`、`slpk`。 | GLB / glTF、OBJ / STL / FBX、PLY mesh、IFC BIM、单 OSGB、OSGB 倾斜摄影场景、S3M、3D Tiles、Revit BIM 都归入 `model_3d`；网格场景、倾斜摄影、BIM、分块场景等子形态由 `type_info.model_3d.model_kind` 表达，不新增平行 data type。SuperMap 路线中的 OSGB scene 经 `osgb_scene_to_s3m` 生成业务 S3M item 后直接预览；OBJ / STL / FBX / IFC 可通过转换后的 GLB artifact 快显，其中 IFC 必须走专用 `ifc_to_glb`。 |
 | `point_cloud` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生点云 catalog 引擎。 | 当前内置：`las`、`laz`、`copc`、`e57`、`pcd`、`xyz`、`ept`、点云型 `ply`。后续扩展：`potree`。 | 点云即使可被展开为 x/y/z 等列，也不默认归为 `table`；点数、点格式、维度、三维包围盒、scale / offset 等进入 `type_info.point_cloud`，空间参考进入 `capabilities.spatial`。 |
 | `gaussian_splat` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生高斯泼溅 catalog 引擎。 | 当前内置：3DGS 型 `ply`、`.splat`、`.ksplat`。后续扩展：`.spz`。 | 高斯泼溅虽然通常由 PLY vertex 或 splat record 承载，但每条记录表示可渲染高斯基元，不是普通点云采样点；尺度、旋转、不透明度、球谐颜色等进入 `type_info.gaussian_splat`，格式私有事实进入 `format_info.<format>`。 |
 | `unknown` | 文件 / 对象承载：NFS、S3、MinIO；其他存储扫描中无法判断内容语义的叶子也可落为 `unknown`。 | `unknown`。 | `unknown` 是识别失败或暂未接入时的兜底格式 / 数据类型组合；它保留 storage、item 等基础事实和 raw binary 读取能力，不引入 `file` data type。 |
@@ -134,6 +136,12 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 
 通用 graph 类型信息只描述结构摘要，例如节点形状、关系形状、连接模式、属性结构和计数。实际节点样本、路径探索结果、图算法结果和前端图组件数据属于读取、查询或 Graph 模块能力，不进入 graph 的通用类型信息。
 
+### cad
+
+`cad` 表示需要保留图层、块、布局、文字、标注、线型和外部引用等 CAD 原生组织语义的设计图纸。第一阶段内置 `format=dwg`，只承诺二维图纸。
+
+CAD entity 可在查询界面投影为行，也可经显式导入转换为 GIS Geometry，但源 DWG 仍是 `data_type=cad`。`cad.import` 的输出是新的 `data_type=table + capabilities.spatial` item，不覆盖或改写源 item。
+
 ### model_3d
 
 `model_3d` 是所有三维模型型 data item 的通用数据类型。
@@ -210,7 +218,7 @@ PLY 是内容敏感格式：同一个 `format=ply` 可以根据 header 分别落
 - `zip`、`rar`
 - `pdf`、`wps`
 - `jpeg`、`png`、`tiff`
-- `glb`、`gltf`、`obj`、`stl`、`fbx`、`ifc`、`osgb`、`osgb_scene`、`3dtiles`
+- `glb`、`gltf`、`obj`、`stl`、`fbx`、`ifc`、`osgb`、`osgb_scene`、`s3m`、`3dtiles`
 - `las`、`laz`、`copc`、`e57`、`pcd`、`xyz`、`ept`
 
 文件格式不等于数据类型，也不等于内容布局：
@@ -229,6 +237,7 @@ PLY 是内容敏感格式：同一个 `format=ply` 可以根据 header 分别落
 - PLY point cloud = `data_type=point_cloud` + `layout=single` + `format=ply`，没有 face 且不满足高斯泼溅字段组合。
 - PLY / SPLAT / KSPLAT Gaussian Splat = `data_type=gaussian_splat` + `layout=single` + `format=ply|splat|ksplat`，PLY 由 header 中的高斯基元属性判定，SPLAT / KSPLAT 由格式身份判定，均不转换为 GLB。
 - 3D Tiles = `data_type=model_3d` + `layout=whole` + `format=3dtiles`，`tileset.json` 作为 manifest ref，分块场景语义由 `model_kind=tiled_scene` 表达；1.0 / 1.1 版本差异写入 `format_info.3dtiles`，不拆分 data type。
+- S3M = `data_type=model_3d` + `layout=whole` + `format=s3m`，ADDP 产物统一以 `config/scene.scp` 作为 manifest ref；旧版 XML SCP + `.s3m` 与新版 JSON SCP + `.s3mb` 的差异写入 `format_info.s3m.manifest_encoding` 和 `tile_extension`，不拆分 data type。
 - OSGB = `data_type=model_3d` + `layout=single` + `format=osgb`，表示单个 `.osgb` 文件；浏览器快显通过转换后的 GLB artifact 实现。
 - OSGB Scene = `data_type=model_3d` + `layout=whole` + `format=osgb_scene`，表示由 `metadata.xml` 和 `Data/` 组织的一套倾斜摄影场景，倾斜摄影语义可由 `model_kind=photogrammetry_scene` 表达。
 - LAS / LAZ = `data_type=point_cloud` + `layout=single` + `format=las|laz`，CRS 和空间范围进入 `capabilities.spatial`。

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	commonModels "github.com/addp/common/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -73,25 +74,37 @@ const (
 	TaskStatusRunning TaskStatus = "running" // 执行中
 )
 
+// TaskDesiredState 是 continuous runtime 的用户期望状态。
+// bounded worker 不消费该字段；所有新任务都以 stopped 创建。
+type TaskDesiredState string
+
+const (
+	TaskDesiredStateRunning TaskDesiredState = "running"
+	TaskDesiredStatePaused  TaskDesiredState = "paused"
+	TaskDesiredStateStopped TaskDesiredState = "stopped"
+)
+
 // JSONMap is now imported from common/models
 // Use commonModels.JSONMap instead
 type JSONMap = commonModels.JSONMap
 
 // TransferTask 传输任务定义
 type TransferTask struct {
-	ID               uint       `gorm:"primaryKey" json:"id"`
-	TenantID         uint       `gorm:"not null;index" json:"tenant_id"`
-	Name             string     `gorm:"type:varchar(255);not null" json:"name"`
-	Description      string     `gorm:"type:text" json:"description"`
-	TaskType         string     `gorm:"type:varchar(20);not null;default:'sync';index" json:"task_type"` // Transfer 当前统一任务类型，固定为 sync
-	Config           JSONMap    `gorm:"type:jsonb;not null" json:"config"`                               // Reader-Transform-Writer 管道配置
-	Schedule         string     `gorm:"type:varchar(100)" json:"schedule"`                               // Cron 表达式
-	BatchSize        int        `gorm:"default:1000" json:"batch_size"`
-	Enabled          bool       `gorm:"default:false;index" json:"enabled"`
-	AutoScanMetadata bool       `json:"auto_scan_metadata"`
-	Status           TaskStatus `gorm:"type:varchar(20);default:'idle';index" json:"status"`
-	Progress         float64    `gorm:"type:numeric(5,2);default:0" json:"progress"`
-	CreatedBy        *uint      `json:"created_by,omitempty"`
+	ID               uint             `gorm:"primaryKey" json:"id"`
+	ApplyIdentity    string           `gorm:"type:uuid;not null;uniqueIndex" json:"-"`
+	TenantID         uint             `gorm:"not null;index" json:"tenant_id"`
+	Name             string           `gorm:"type:varchar(255);not null" json:"name"`
+	Description      string           `gorm:"type:text" json:"description"`
+	TaskType         string           `gorm:"type:varchar(20);not null;default:'sync';index" json:"task_type"` // Transfer 当前统一任务类型，固定为 sync
+	Config           JSONMap          `gorm:"type:jsonb;not null" json:"config"`                               // Reader-Transform-Writer 管道配置
+	Schedule         string           `gorm:"type:varchar(100)" json:"schedule"`                               // Cron 表达式
+	BatchSize        int              `gorm:"default:1000" json:"batch_size"`
+	Enabled          bool             `gorm:"default:false;index" json:"enabled"`
+	AutoScanMetadata bool             `json:"auto_scan_metadata"`
+	Status           TaskStatus       `gorm:"type:varchar(20);default:'idle';index" json:"status"`
+	DesiredState     TaskDesiredState `gorm:"type:varchar(20);not null;default:'stopped';index" json:"desired_state"`
+	Progress         float64          `gorm:"type:numeric(5,2);default:0" json:"progress"`
+	CreatedBy        *uint            `json:"created_by,omitempty"`
 	// BaseTask 基类字段
 	LastExecutionID     *string        `gorm:"size:36" json:"last_execution_id,omitempty"`
 	LastExecutionStatus *string        `gorm:"size:20" json:"last_execution_status,omitempty"`
@@ -120,19 +133,43 @@ type SyncState struct {
 
 func (SyncState) TableName() string { return "transfer.sync_states" }
 
+// RuntimeLease 是 continuous execution 在 Infra PostgreSQL 中的唯一运行所有权事实。
+type RuntimeLease struct {
+	ID              uint      `gorm:"primaryKey" json:"id"`
+	TaskID          uint      `gorm:"not null;uniqueIndex" json:"task_id"`
+	ExecutionID     string    `gorm:"type:varchar(255);not null;uniqueIndex" json:"execution_id"`
+	OwnerInstanceID string    `gorm:"type:varchar(255);not null;index" json:"owner_instance_id"`
+	LeaseUntil      time.Time `gorm:"not null;index" json:"lease_until"`
+	HeartbeatAt     time.Time `gorm:"not null" json:"heartbeat_at"`
+	FencingToken    uint64    `gorm:"not null" json:"fencing_token"`
+	ClaimedAt       time.Time `gorm:"not null" json:"claimed_at"`
+	CreatedAt       time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+func (RuntimeLease) TableName() string { return "transfer.runtime_leases" }
+
 // TableName 指定表名（带 schema 前缀）
 func (TransferTask) TableName() string {
 	return "transfer.transfer_tasks"
+}
+
+func (task *TransferTask) BeforeCreate(_ *gorm.DB) error {
+	if task.ApplyIdentity == "" {
+		task.ApplyIdentity = uuid.NewString()
+	}
+	return nil
 }
 
 // ExecutionStatus 执行状态
 type ExecutionStatus string
 
 const (
-	ExecutionStatusPending ExecutionStatus = "pending" // 待执行
-	ExecutionStatusRunning ExecutionStatus = "running" // 运行中
-	ExecutionStatusSuccess ExecutionStatus = "success" // 成功
-	ExecutionStatusFailed  ExecutionStatus = "failed"  // 失败
+	ExecutionStatusPending   ExecutionStatus = "pending"   // 待执行
+	ExecutionStatusRunning   ExecutionStatus = "running"   // 运行中
+	ExecutionStatusSuccess   ExecutionStatus = "success"   // 成功
+	ExecutionStatusFailed    ExecutionStatus = "failed"    // 失败
+	ExecutionStatusCancelled ExecutionStatus = "cancelled" // 已取消
 )
 
 // TaskExecution Transfer 执行记录 DTO（仅用于 API 响应，数据来自 common.task_executions）
@@ -190,10 +227,11 @@ type UpdateTaskRequest struct {
 
 // ListTasksRequest 查询任务列表请求
 type ListTasksRequest struct {
-	Status   *TaskStatus `form:"status"`
-	TaskType string      `form:"task_type"`
-	Page     int         `form:"page" binding:"min=1"`
-	PageSize int         `form:"page_size" binding:"min=1,max=100"`
+	Status          *TaskStatus `form:"status"`
+	TaskType        string      `form:"task_type"`
+	RuntimeBoundary string      `form:"runtime_boundary"`
+	Page            int         `form:"page" binding:"min=1"`
+	PageSize        int         `form:"page_size" binding:"min=1,max=100"`
 }
 
 // ListProviderTasksResponse 是 TaskProvider 标准任务列表响应。

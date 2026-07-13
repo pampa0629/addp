@@ -79,7 +79,7 @@ Transfer API / Frontend
 
 - `source.locator` 使用 common resource tree 的 ResourceLocator URI，指向已存在资源。
 - `target.parent_locator` 指向已存在父 node，`target.name` 表达待写入资源名；target 不提交待创建资源的虚拟 locator。
-- `data_type` 稳定支持 `table`；`document`、`media`、`unknown` 已支持 encoded single raw copy。
+- `data_type` 稳定支持 `table`；`document`、`media`、`cad`、`unknown` 已支持 encoded single raw copy。
 - `representation` 支持 `native` 和 `encoded`。
 - `format` 只用于 encoded endpoint。
 - `target.policy.apply_mode` 在 snapshot table Transfer 支持 `replace` 和 `append`；raw copy 只支持 `replace`；PostgreSQL watermark incremental 只支持幂等 `upsert`。
@@ -158,7 +158,7 @@ source encoded file/object
 
 | 维度 | 支持范围 |
 |---|---|
-| `data_type` | `document`、`media`、`unknown` |
+| `data_type` | `document`、`media`、`cad`、`unknown` |
 | `representation` | `encoded` |
 | `layout` | `single` |
 | locator `type` | `file`、`object` |
@@ -225,3 +225,17 @@ table Transfer 主链路已经稳定。后续增强包括：
 - ClickHouse 排序键 / 分区键 / 原生批量接口。
 - raw copy 端到端样例任务和更完整的执行展示。
 - container child table transfer。
+
+continuous/Kafka 工作包 2A 已完成正式契约冻结，代码实现属于工作包 2B。第一条实现路径固定为：
+
+```text
+Business Kafka topic
+  -> ChangeStreamReaderProvider
+  -> keyed JSON ChangeEvent(operation=upsert)
+  -> Transfer ChangeApplyWriter
+  -> PostgreSQL PartitionedTableChangeApplyProvider
+  -> business target addp_transfer.apply_positions + table upsert (one transaction)
+  -> per-partition kafka_offset/v1 next_offset CAS
+```
+
+continuous worker 是 Transfer 独立长驻进程角色，一个进程承载多个 runtime session；它通过 `transfer.runtime_leases` claim owner/lease/heartbeat/fencing，不使用 Asynq 承载无限循环。无 key append、Debezium、CDC、Kafka target、DLQ、Schema Registry、Avro、Protobuf、replay 和物理删除均不进入工作包 2B 第一版。

@@ -38,6 +38,12 @@ export const getTaskTypeLabel = (type) => {
 export const getTaskStatusLabel = (task) => {
   if (!task) return '未知'
 
+  if (task?.config?.runtime?.boundary === 'continuous') {
+    if (task.desired_state === 'paused') return '已暂停'
+    if (task.desired_state === 'stopped') return '已停止'
+    return '执行中'
+  }
+
   // 手动任务（无 schedule）
   if (!task.schedule) {
     return task.status === 'running' ? '执行中' : '空闲'
@@ -57,6 +63,8 @@ export const getTaskStatusTagType = (task) => {
     空闲: 'info',
     已启动: 'success',
     未启动: 'info',
+    已暂停: 'warning',
+    已停止: 'info',
     未知: 'info'
   }
   return types[label] || 'info'

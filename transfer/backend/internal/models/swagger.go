@@ -64,7 +64,7 @@ type TableTransferTaskConfigDoc struct {
 }
 
 type TransferRuntimeDoc struct {
-	Boundary string `json:"boundary" example:"bounded" enums:"bounded"`
+	Boundary string `json:"boundary" example:"bounded" enums:"bounded,continuous"`
 }
 
 type TransferLoadDoc struct {
@@ -73,7 +73,7 @@ type TransferLoadDoc struct {
 }
 
 type TransferChangeDetectionDoc struct {
-	Type       string   `json:"type" example:"watermark" enums:"watermark"`
+	Type       string   `json:"type" example:"watermark" enums:"watermark,kafka"`
 	Field      string   `json:"field" example:"updated_at"`
 	TieBreaker []string `json:"tie_breaker" example:"id"`
 	Start      string   `json:"start" example:"committed" enums:"committed"`
@@ -82,12 +82,31 @@ type TransferChangeDetectionDoc struct {
 
 // TransferSourceEndpointDoc 描述 Transfer source endpoint；source 必须指向已存在资源。
 type TransferSourceEndpointDoc struct {
-	Locator        string                 `json:"locator" example:"addp://engine/9/path/manager/a3.shp?type=object" description:"ResourceLocator URI；source 可通过 locator item_id 引用已入库 Meta item。"`
-	DataType       string                 `json:"data_type" example:"table"`
-	Representation string                 `json:"representation" example:"encoded" enums:"native,encoded"`
-	Format         string                 `json:"format,omitempty" example:"shapefile"`
-	Options        map[string]interface{} `json:"options,omitempty"`
-	Policy         map[string]interface{} `json:"policy,omitempty"`
+	Locator        string                   `json:"locator" example:"addp://engine/9/path/manager/a3.shp?type=object" description:"ResourceLocator URI；source 可通过 locator item_id 引用已入库 Meta item。"`
+	DataType       string                   `json:"data_type" example:"table"`
+	Representation string                   `json:"representation" example:"encoded" enums:"native,encoded"`
+	Format         string                   `json:"format,omitempty" example:"shapefile"`
+	Options        map[string]interface{}   `json:"options,omitempty"`
+	Policy         map[string]interface{}   `json:"policy,omitempty"`
+	ChangeStream   *TransferChangeStreamDoc `json:"change_stream,omitempty"`
+}
+
+type TransferChangeStreamDoc struct {
+	Envelope      string                       `json:"envelope" example:"record" enums:"record"`
+	Encoding      string                       `json:"encoding" example:"json" enums:"json"`
+	Key           TransferChangeStreamKeyDoc   `json:"key"`
+	Start         TransferChangeStreamStartDoc `json:"start"`
+	PollBatchSize int                          `json:"poll_batch_size" example:"1000"`
+}
+
+type TransferChangeStreamKeyDoc struct {
+	Source string   `json:"source" example:"value" enums:"value"`
+	Fields []string `json:"fields" example:"id"`
+}
+
+type TransferChangeStreamStartDoc struct {
+	Mode    string `json:"mode" example:"committed" enums:"committed"`
+	Initial string `json:"initial" example:"earliest" enums:"earliest,latest"`
 }
 
 // TransferTargetEndpointDoc 描述 Transfer target endpoint；target 表达待写入资源，使用父 node locator 和目标名。

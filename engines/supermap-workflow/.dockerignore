@@ -1,3 +1,2 @@
 target/
-license/*
-!license/.gitignore
+vendor/

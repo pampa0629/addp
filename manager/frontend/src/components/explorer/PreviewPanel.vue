@@ -107,6 +107,16 @@
             {{ t('manager.explorer.generatePointCloudCOPC') }}
           </el-button>
           <el-button
+            v-if="showCADPreviewGenerationAction"
+            size="small"
+            type="primary"
+            :loading="cadPreviewGenerationLoading"
+            @click="handleGenerateCADPreview"
+          >
+            <el-icon><MagicStick /></el-icon>
+            {{ t('manager.explorer.generateCADPreview') }}
+          </el-button>
+          <el-button
             v-if="showModel3DTilesGenerationAction"
             size="small"
             type="primary"
@@ -517,6 +527,7 @@ const rasterCOGGenerationLoading = ref(false)
 const model3DGLBGenerationLoading = ref(false)
 const gaussianSplatKSplatGenerationLoading = ref(false)
 const pointCloudCOPCGenerationLoading = ref(false)
+const cadPreviewGenerationLoading = ref(false)
 const activePreviewMode = ref('basic_preview')
 const mvtGridVisible = ref(false)
 const resourceActions = ref(null)
@@ -2028,6 +2039,41 @@ const handleGeneratePointCloudCOPC = async () => {
   }
 }
 
+const handleGenerateCADPreview = async () => {
+  const locator = String(props.selectedNode?.locator || props.selectedNode?.id || '').trim()
+  if (!locator) {
+    ElMessage.warning(t('manager.explorer.cadPreviewMissingIdentity'))
+    return
+  }
+  cadPreviewGenerationLoading.value = true
+  try {
+    const execution = await quickViewAPI.executeQuickViewAction(locator, 'generate_cad_preview')
+    const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
+    ElMessage.success(t('manager.explorer.generateCADPreviewSubmitted'))
+    if (executionID) {
+      const result = await waitForRasterCOGExecution(
+        executionID,
+        (id) => quickViewAPI.getExecutionStatus(id),
+        { maxAttempts: 90, intervalMs: 2000 }
+      )
+      if (result.success) {
+        ElMessage.success(t('manager.explorer.generateCADPreviewReady'))
+      } else if (result.failed) {
+        ElMessage.error(t('manager.explorer.generateCADPreviewExecutionFailed'))
+      } else if (!result.completed) {
+        ElMessage.warning(t('manager.explorer.generateCADPreviewTimeout'))
+      }
+    }
+    await refreshPreviewAfterArtifactReady('cad_preview')
+    activePreviewMode.value = 'basic_preview'
+  } catch (error) {
+    console.error('提交 CAD 栅格瓦片预览生成失败:', error)
+    ElMessage.error(t('manager.explorer.generateCADPreviewFailed'))
+  } finally {
+    cadPreviewGenerationLoading.value = false
+  }
+}
+
 const handleGenerateModel3DTiles = () => {
   const source = model3DTilesSourcePayload.value
   if (!source) {
@@ -2172,6 +2218,10 @@ const gaussianSplatKSplatActionText = computed(() => {
 
 const showPointCloudCOPCGenerationAction = computed(() => {
   return canUseQuickViewAction('generate_point_cloud_copc')
+})
+
+const showCADPreviewGenerationAction = computed(() => {
+  return canUseQuickViewAction('generate_cad_preview')
 })
 
 const showModel3DTilesGenerationAction = computed(() => Boolean(model3DTilesSourcePayload.value))

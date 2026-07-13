@@ -620,6 +620,7 @@ const restoreInitialLocator = async (locator) => {
 const loadExternalEngine = async (engineId) => {
   restoreRequestSeq += 1
   expandedKeys.value = []
+  searchResults.value = []
   const normalizedEngineIds = normalizeEngineIds(engineId)
   if (normalizedEngineIds.length === 0) {
     treeLoadRequestSeq += 1
@@ -631,14 +632,39 @@ const loadExternalEngine = async (engineId) => {
     emit('update:modelValue', null)
     return
   }
-  if (normalizedEngineIds.every(id => selectedEngineIds.value.includes(id)) && treeData.value.length > 0) {
+  const loadedEngineIds = new Set(
+    treeData.value
+      .map(node => parseLocatorSafe(node.locator || node.id).engineId)
+      .filter(Boolean)
+  )
+  const selectionUnchanged = normalizedEngineIds.length === selectedEngineIds.value.length &&
+    normalizedEngineIds.every(id => selectedEngineIds.value.includes(id))
+  const treeMatchesSelection = loadedEngineIds.size === normalizedEngineIds.length &&
+    normalizedEngineIds.every(id => loadedEngineIds.has(id))
+  if (selectionUnchanged && treeMatchesSelection) {
     return
   }
   selectedEngineValue.value = props.engineMultiple ? normalizedEngineIds : normalizedEngineIds[0]
+  treeData.value = []
   currentNodeKey.value = null
   currentSelection.value = null
   emit('update:modelValue', null)
   await loadSelectedTrees()
+  if (searchKeyword.value.trim()) {
+    runSearch()
+  }
+}
+
+const syncExternalSelection = async (engineId, initialLocator) => {
+  const externalEngineIds = normalizeEngineIds(engineId)
+  const locatorEngineId = parseLocatorSafe(initialLocator || '').engineId
+  const locatorMatchesEngine = locatorEngineId && externalEngineIds.includes(locatorEngineId)
+
+  if (initialLocator && (externalEngineIds.length === 0 || locatorMatchesEngine)) {
+    await restoreInitialLocator(initialLocator)
+    return
+  }
+  await loadExternalEngine(engineId)
 }
 
 const normalizeEngineId = (engineId) => {
@@ -802,16 +828,12 @@ watch(() => props.modelValue, value => {
   currentSelection.value = value
 })
 
-watch(() => props.initialLocator, locator => {
-  restoreInitialLocator(locator)
-})
-
-watch(() => props.engineId, engineId => {
-  if (props.initialLocator) {
-    return
+watch(
+  () => [props.engineId, props.initialLocator],
+  ([engineId, initialLocator]) => {
+    syncExternalSelection(engineId, initialLocator)
   }
-  loadExternalEngine(engineId)
-})
+)
 
 watch(searchKeyword, () => {
   scheduleSearch()
@@ -819,10 +841,8 @@ watch(searchKeyword, () => {
 
 onMounted(async () => {
   await loadEngines()
-  if (props.initialLocator) {
-    await restoreInitialLocator(props.initialLocator)
-  } else if (props.engineId) {
-    await loadExternalEngine(props.engineId)
+  if (props.initialLocator || normalizeEngineIds(props.engineId).length > 0) {
+    await syncExternalSelection(props.engineId, props.initialLocator)
   }
 })
 

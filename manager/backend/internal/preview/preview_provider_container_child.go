@@ -167,6 +167,15 @@ func previewContainerChildInfoMap(child datatype.ContainerChildInfo) map[string]
 	result["child_kind"] = child.ChildKind
 	result["data_type"] = child.DataType
 	result["format"] = child.Format
+	if child.RowCount != nil {
+		result["row_count"] = *child.RowCount
+	}
+	if child.ColumnCount != nil {
+		result["column_count"] = *child.ColumnCount
+	}
+	if child.HasHeader != nil {
+		result["has_header"] = *child.HasHeader
+	}
 	if len(child.Refs) > 0 || strings.EqualFold(child.ChildKind, "multi") {
 		result["layout"] = string(format.LayoutMulti)
 	}

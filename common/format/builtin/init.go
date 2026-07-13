@@ -30,6 +30,7 @@ import (
 	_ "github.com/addp/common/format/plugins/pcd"
 	_ "github.com/addp/common/format/plugins/ply"
 	_ "github.com/addp/common/format/plugins/rastermosaic"
+	_ "github.com/addp/common/format/plugins/s3m"
 	_ "github.com/addp/common/format/plugins/shapefile"
 	_ "github.com/addp/common/format/plugins/splat"
 	_ "github.com/addp/common/format/plugins/sqlite"
@@ -40,6 +41,7 @@ import (
 
 	// 导入内置文档 info provider / text reader，触发 init() 自动注册
 	_ "github.com/addp/common/format/plugins/docx"
+	_ "github.com/addp/common/format/plugins/dwg"
 	_ "github.com/addp/common/format/plugins/pdf"
 	_ "github.com/addp/common/format/plugins/pptx"
 	_ "github.com/addp/common/format/plugins/text"

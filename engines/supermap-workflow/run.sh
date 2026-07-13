@@ -2,7 +2,6 @@
 set -euo pipefail
 
 APP_ROOT="${APP_ROOT:-/app}"
-SRC_DIR="${APP_ROOT}/src/main/java"
 CLASS_DIR="${APP_ROOT}/target/classes"
 LIB_DIR="${APP_ROOT}/lib"
 MAIN_CLASS="com.addp.supermap.workflow.SuperMapWorkflowRuntime"
@@ -33,15 +32,9 @@ fi
 
 export LD_LIBRARY_PATH="${SUPERMAP_BIN}:${SUPERMAP_BIN}/systemlibs:${LD_LIBRARY_PATH:-}"
 
-mkdir -p "${CLASS_DIR}"
-
-SOURCE_FILE="${SRC_DIR}/com/addp/supermap/workflow/SuperMapWorkflowRuntime.java"
-if [ ! -f "${CLASS_DIR}/com/addp/supermap/workflow/SuperMapWorkflowRuntime.class" ] || [ "${SOURCE_FILE}" -nt "${CLASS_DIR}/com/addp/supermap/workflow/SuperMapWorkflowRuntime.class" ]; then
-  javac \
-    -encoding UTF-8 \
-    -cp "${LIB_DIR}/*:${GPA_LIB_DIR}/*:${SUPERMAP_BIN}/*" \
-    -d "${CLASS_DIR}" \
-    "${SOURCE_FILE}"
+if [ ! -f "${CLASS_DIR}/com/addp/supermap/workflow/SuperMapWorkflowRuntime.class" ]; then
+  echo "Compiled SuperMap Workflow runtime class is missing" >&2
+  exit 1
 fi
 
 read -r -a java_opts <<< "${JAVA_OPTS}"

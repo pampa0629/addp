@@ -75,14 +75,22 @@ func primaryRefPathFromMetaAttributes(attrs map[string]interface{}, role string)
 }
 
 func threeDTilesManifestObjectPath(bucket, objectPath string, attrs map[string]interface{}) string {
+	return sceneManifestObjectPath(bucket, objectPath, attrs, "format_info.3dtiles", "tileset.json")
+}
+
+func s3mManifestObjectPath(bucket, objectPath string, attrs map[string]interface{}) string {
+	return sceneManifestObjectPath(bucket, objectPath, attrs, "format_info.s3m", "")
+}
+
+func sceneManifestObjectPath(bucket, objectPath string, attrs map[string]interface{}, formatInfoPath, defaultManifest string) string {
 	objectPath = strings.Trim(objectPath, "/")
 	bucket = strings.Trim(bucket, "/")
 	manifestRef := primaryRefPathFromMetaAttributes(attrs, "manifest")
 	if manifestRef == "" {
-		manifestRef = commonJSON.InterfaceString(commonJSON.Section(attrs, "format_info.3dtiles")["manifest_ref"])
+		manifestRef = commonJSON.InterfaceString(commonJSON.Section(attrs, formatInfoPath)["manifest_ref"])
 	}
 	if manifestRef == "" {
-		manifestRef = "tileset.json"
+		manifestRef = defaultManifest
 	}
 	manifestRef = strings.Trim(manifestRef, "/")
 	if bucket != "" && strings.HasPrefix(manifestRef, bucket+"/") {

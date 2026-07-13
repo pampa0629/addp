@@ -16,6 +16,30 @@
         <el-descriptions-item :label="t('transfer.executionDetail.endTime')">{{ execution.end_time || '-' }}</el-descriptions-item>
       </el-descriptions>
 
+      <template v-if="isContinuousExecution">
+        <el-divider>{{ t('transfer.executionDetail.continuousProgress') }}</el-divider>
+        <el-descriptions :column="3" border>
+          <el-descriptions-item :label="t('transfer.executionDetail.partitionCount')">
+            {{ continuousPartitions.length }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.executionDetail.lastCommittedAt')">
+            {{ formatTimestamp(continuousMetadata.last_committed_at) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.executionDetail.checkpointAge')">
+            {{ checkpointAge }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="execution.metadata?.stop_reason" :label="t('transfer.executionDetail.stopReason')">
+            {{ execution.metadata.stop_reason }}
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <el-table :data="continuousPartitions" border size="small" class="partition-table">
+          <el-table-column prop="partition" :label="t('transfer.executionDetail.partition')" width="120" />
+          <el-table-column prop="nextOffset" :label="t('transfer.executionDetail.nextOffset')" min-width="160" />
+          <el-table-column prop="positionType" :label="t('transfer.executionDetail.positionType')" min-width="160" />
+        </el-table>
+      </template>
+
       <!-- ✅ 新增：后处理摘要卡片 -->
       <el-divider v-if="execution.status === 'success'">{{ t('transfer.executionDetail.postProcessSummary') }}</el-divider>
       <div v-if="execution.status === 'success'" class="post-process-summary">
@@ -134,6 +158,36 @@ const logs = ref('')
 const logLevel = ref('all')
 const autoRefreshInterval = ref(null)
 const executionId = computed(() => route.params.execution_id)
+
+const continuousMetadata = computed(() => execution.value?.metadata?.continuous || {})
+const isContinuousExecution = computed(() => {
+  return Object.keys(continuousMetadata.value).length > 0 || !!execution.value?.metadata?.stop_reason
+})
+const continuousPartitions = computed(() => {
+  const partitions = continuousMetadata.value?.partitions || {}
+  return Object.entries(partitions).map(([partition, position]) => ({
+    partition,
+    nextOffset: position?.values?.next_offset ?? '-',
+    positionType: [position?.type, position?.version].filter(Boolean).join('/') || '-'
+  })).sort((left, right) => String(left.partition).localeCompare(String(right.partition), undefined, { numeric: true }))
+})
+const checkpointAge = computed(() => {
+  const committedAt = continuousMetadata.value?.last_committed_at
+  if (!committedAt) return '-'
+  const milliseconds = Date.now() - new Date(committedAt).getTime()
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return '-'
+  const seconds = Math.floor(milliseconds / 1000)
+  if (seconds < 60) return t('transfer.executionDetail.secondsAgo', { count: seconds })
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return t('transfer.executionDetail.minutesAgo', { count: minutes })
+  return t('transfer.executionDetail.hoursAgo', { count: Math.floor(minutes / 60) })
+})
+
+function formatTimestamp(value) {
+  if (!value) return '-'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString()
+}
 
 const loadExecution = async () => {
   loading.value = true
@@ -363,6 +417,10 @@ onUnmounted(() => {
   padding: 10px;
   background: var(--addp-bg-secondary);
   border-radius: 4px;
+}
+
+.partition-table {
+  margin-top: 12px;
 }
 
 .log-actions {

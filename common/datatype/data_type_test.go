@@ -12,6 +12,7 @@ func TestParseDataType(t *testing.T) {
 		{name: "normalizes model 3d", in: " MODEL_3D ", want: Model3D},
 		{name: "normalizes point cloud", in: " Point_Cloud ", want: PointCloud},
 		{name: "normalizes gaussian splat", in: " Gaussian_Splat ", want: GaussianSplat},
+		{name: "normalizes cad", in: " CAD ", want: CAD},
 		{name: "file is no longer a data type", in: "file", want: Unknown},
 		{name: "unknown value", in: "dataset", want: Unknown},
 		{name: "empty", in: "", want: Unknown},

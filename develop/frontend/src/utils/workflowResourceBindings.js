@@ -18,6 +18,21 @@ export function isResourceFormatSupported(parameter, node) {
   return extension ? formats.includes(extension) : false
 }
 
+export function isResourceDataTypeSupported(parameter, node) {
+  const dataTypes = (parameter?.ui_config?.data_types || []).map(value => String(value).toLowerCase())
+  if (dataTypes.length === 0) return true
+  const dataType = String(node?.data_type || node?.metadata?.data_type || node?.attributes?.data_type || '').toLowerCase()
+  return dataType ? dataTypes.includes(dataType) : false
+}
+
+export function resourceBindingTargetExtension(parameter) {
+  return String(parameter?.ui_config?.target_name_extension || '')
+}
+
+export function resourceBindingTargetNameKind(parameter) {
+  return String(parameter?.ui_config?.target_name_kind || 'file')
+}
+
 export function resourceBindingNameParam(parameter) {
   return getResourceBinding(parameter)?.name_param || ''
 }

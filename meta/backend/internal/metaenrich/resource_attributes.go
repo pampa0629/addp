@@ -6,6 +6,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
@@ -20,6 +21,9 @@ type ResourceAttributesInput struct {
 	SizeBytes          int64
 	IncludeAccessIndex bool
 	CatalogPathFor     func(string) plugin.CatalogPath
+	CADInspector       CADInspector
+	SourceEngine       *commonModels.Engine
+	TenantID           uint
 }
 
 func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input ResourceAttributesInput) (*metaitem.DetectedItem, []datatype.FieldInfo, error) {
@@ -55,6 +59,9 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 	}
 	if len(item.Fields) > 0 {
 		metaattr.SetTableFields(attrs, item.Fields)
+	}
+	if err := EnrichSingleCADItem(ctx, attrs, input.CADInspector, input.SourceEngine, input.TenantID, item, input.PhysicalPath, input.SizeBytes); err != nil {
+		return item, item.Fields, err
 	}
 
 	if canReadContent && (item.Layout == format.LayoutSingle || item.Layout == format.LayoutMulti) {

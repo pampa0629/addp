@@ -496,7 +496,8 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 	}
 	allowedExts := ruleExtensionSet(rule.Entry.Extensions)
 	requiredNames := ruleFileNameSet(rule.WholeScope.RequiredFileNames)
-	if len(allowedExts) == 0 && len(requiredNames) == 0 {
+	requiredPaths := ruleRelativePathSet(rule.WholeScope.RequiredPaths)
+	if len(allowedExts) == 0 && len(requiredNames) == 0 && len(requiredPaths) == 0 {
 		return ResolvedItem{}, false
 	}
 
@@ -515,11 +516,12 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 		if claims[candidate.Path] {
 			continue
 		}
+		candidateRelativePath := strings.ToLower(strings.TrimPrefix(strings.Trim(candidate.Path, "/"), scopePath+"/"))
 		candidateName := strings.ToLower(strings.TrimSpace(filepath.Base(candidate.Name)))
 		if candidateName == "" {
 			candidateName = strings.ToLower(strings.TrimSpace(filepath.Base(candidate.Path)))
 		}
-		if requiredNames[candidateName] {
+		if requiredNames[candidateName] || requiredPaths[candidateRelativePath] {
 			requiredCandidates = append(requiredCandidates, candidate)
 			if candidate.SizeBytes != nil {
 				total += *candidate.SizeBytes
@@ -548,7 +550,7 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 		}
 		unmatchedCandidates = append(unmatchedCandidates, candidate)
 		if rule.WholeScope.RequiresStrongMatch {
-			if len(requiredNames) == 0 || !rule.WholeScope.ClaimAllOnStrongHit {
+			if (len(requiredNames) == 0 && len(requiredPaths) == 0) || !rule.WholeScope.ClaimAllOnStrongHit {
 				return ResolvedItem{}, false
 			}
 		}
@@ -557,7 +559,9 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 	if len(dataCandidates) == 0 && len(requiredCandidates) == 0 {
 		return ResolvedItem{}, false
 	}
-	requiredStrongHit := len(requiredNames) > 0 && requiredFileNamesSatisfied(requiredNames, requiredCandidates, scopePath)
+	requiredStrongHit := (len(requiredNames) > 0 || len(requiredPaths) > 0) &&
+		requiredFileNamesSatisfied(requiredNames, requiredCandidates, scopePath) &&
+		requiredPathsSatisfied(requiredPaths, requiredCandidates, scopePath)
 	strongHit := requiredStrongHit || partitionLikePath || (directDataCount == len(dataCandidates) && (len(dataCandidates) > 1 && partLikeDataCount == len(dataCandidates) || auxiliaryCount > 0))
 	if !strongHit && rule.WholeScope.RequiresStrongMatch {
 		return ResolvedItem{}, false
@@ -752,9 +756,20 @@ func ruleFileNameSet(fileNames []string) map[string]bool {
 	return result
 }
 
+func ruleRelativePathSet(paths []string) map[string]bool {
+	result := map[string]bool{}
+	for _, relativePath := range paths {
+		normalized := strings.ToLower(strings.Trim(strings.ReplaceAll(strings.TrimSpace(relativePath), "\\", "/"), "/"))
+		if normalized != "" {
+			result[normalized] = true
+		}
+	}
+	return result
+}
+
 func requiredFileNamesSatisfied(required map[string]bool, candidates []Candidate, scopePath string) bool {
 	if len(required) == 0 {
-		return false
+		return true
 	}
 	found := map[string]bool{}
 	for _, candidate := range candidates {
@@ -764,6 +779,20 @@ func requiredFileNamesSatisfied(required map[string]bool, candidates []Candidate
 		}
 		if required[name] && isDirectChildOfScope(scopePath, candidate.Path) {
 			found[name] = true
+		}
+	}
+	return len(found) == len(required)
+}
+
+func requiredPathsSatisfied(required map[string]bool, candidates []Candidate, scopePath string) bool {
+	if len(required) == 0 {
+		return true
+	}
+	found := map[string]bool{}
+	for _, candidate := range candidates {
+		relativePath := strings.ToLower(strings.TrimPrefix(strings.Trim(candidate.Path, "/"), strings.Trim(scopePath, "/")+"/"))
+		if required[relativePath] {
+			found[relativePath] = true
 		}
 	}
 	return len(found) == len(required)

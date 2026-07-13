@@ -10,7 +10,18 @@
         <div class="header">
           <span>{{ t('transfer.taskDetail.taskDetailTitle', { name: task.name }) }}</span>
           <div>
-            <template v-if="isManualTask">
+            <template v-if="isContinuousTask">
+              <el-button type="primary" @click="handleStartContinuous" :disabled="!canStartContinuous">
+                {{ task.desired_state === 'paused' ? t('transfer.taskDetail.resume') : t('transfer.taskDetail.start') }}
+              </el-button>
+              <el-button type="warning" @click="handlePause" :disabled="task.desired_state !== 'running'">
+                {{ t('transfer.taskDetail.pause') }}
+              </el-button>
+              <el-button @click="handleStop" :disabled="task.desired_state === 'stopped'">
+                {{ t('transfer.taskDetail.stop') }}
+              </el-button>
+            </template>
+            <template v-else-if="isManualTask">
               <el-button type="primary" @click="handleExecute" :disabled="task.status === 'running'">
                 {{ t('transfer.taskDetail.execute') }}
               </el-button>
@@ -39,7 +50,9 @@
           <el-tag :type="getTaskStatusTagType(task)">{{ getTaskStatusLabel(task) }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskDetail.batchSize')">{{ task.batch_size }}</el-descriptions-item>
-        <el-descriptions-item :label="t('transfer.taskDetail.schedule')">{{ formatSchedule(task.schedule) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.schedule')">
+          {{ isContinuousTask ? t('transfer.taskDetail.continuousRuntime') : formatSchedule(task.schedule) }}
+        </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskDetail.createdAt')">
           {{ formatDate(task.created_at) }}
         </el-descriptions-item>
@@ -137,14 +150,16 @@ const task = ref({})
 const executions = ref([])
 const jsonDialogVisible = ref(false)
 
-const isManualTask = computed(() => !task.value?.schedule)
+const isContinuousTask = computed(() => task.value?.config?.runtime?.boundary === 'continuous')
+const isManualTask = computed(() => !isContinuousTask.value && !task.value?.schedule)
 const canStartSchedule = computed(() => !task.value?.enabled)
 const canPauseSchedule = computed(() => task.value?.enabled)
-const canEditTask = computed(() => task.value?.status !== 'running')
+const canStartContinuous = computed(() => ['paused', 'stopped'].includes(task.value?.desired_state) && task.value?.status !== 'running')
+const canEditTask = computed(() => task.value?.status !== 'running' && (!isContinuousTask.value || task.value?.desired_state === 'stopped'))
 
 let refreshTimer = null
 
-const isTaskRunning = (taskData) => taskData?.status === 'running'
+const isTaskRunning = (taskData) => taskData?.status === 'running' || (taskData?.config?.runtime?.boundary === 'continuous' && taskData?.desired_state === 'running')
 
 const stopAutoRefresh = () => {
   if (refreshTimer) {
@@ -209,6 +224,34 @@ const handleResume = async () => {
   await loadTask()
 }
 
+const handleStartContinuous = async () => {
+  if (task.value?.desired_state === 'paused') {
+    await taskAPI.resume(route.params.id)
+    ElMessage.success(t('transfer.taskDetail.taskResumed'))
+  } else {
+    await taskAPI.start(route.params.id)
+    ElMessage.success(t('transfer.taskDetail.executeSubmitted'))
+  }
+  await loadTask()
+}
+
+const handleStop = async () => {
+  try {
+    await ElMessageBox.confirm(t('transfer.taskDetail.stopConfirm'), t('transfer.taskDetail.hint'), {
+      confirmButtonText: t('transfer.taskDetail.confirm'),
+      cancelButtonText: t('transfer.taskDetail.cancel'),
+      type: 'warning'
+    })
+    await taskAPI.stop(route.params.id)
+    ElMessage.success(t('transfer.taskDetail.taskStopped'))
+    await loadTask()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('停止持续同步任务失败:', error)
+    }
+  }
+}
+
 const handleEdit = () => {
   if (!canEditTask.value) {
     ElMessage.warning(t('transfer.taskDetail.taskRunning'))
@@ -242,6 +285,13 @@ function buildEndpointDetails(endpoint, role) {
   addItem(items, t('transfer.taskDetail.dataType'), endpoint.data_type)
   addItem(items, t('transfer.taskDetail.representation'), endpoint.representation)
   addItem(items, t('transfer.taskDetail.path'), formatEndpointPath(endpoint, role), 2)
+
+  if (role === 'source' && endpoint.change_stream) {
+    addItem(items, t('transfer.taskDetail.messageFormat'), `${endpoint.change_stream.envelope || '-'} / ${endpoint.change_stream.encoding || '-'}`)
+    addItem(items, t('transfer.taskDetail.keyFields'), endpoint.change_stream.key?.fields)
+    addItem(items, t('transfer.taskDetail.initialPosition'), endpoint.change_stream.start?.initial)
+    addItem(items, t('transfer.taskDetail.pollBatchSize'), endpoint.change_stream.poll_batch_size)
+  }
 
   if (role === 'target') {
     addItem(items, t('transfer.taskDetail.format'), endpoint.format)

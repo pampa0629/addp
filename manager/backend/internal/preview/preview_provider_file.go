@@ -116,7 +116,10 @@ func resolvePreviewContainerChild(ctx context.Context, parent contentio.Reader, 
 }
 
 func resolvePreviewContainerChildFromResource(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
-	child := containerChildInputForRequest(req.Attributes, req.ChildName)
+	child, err := resolvePreviewContainerChildInput(ctx, parent, parentRef, parentFormat, req)
+	if err != nil {
+		return nil, err
+	}
 	resolver, err := format.GetContainerChildResolver(parentFormat)
 	if err != nil {
 		return nil, fmt.Errorf("no container child resolver for format %s: %w", parentFormat, err)
@@ -137,6 +140,47 @@ func resolvePreviewContainerChildFromResource(ctx context.Context, parent conten
 		return nil, fmt.Errorf("container child %s has no reader", req.ChildName)
 	}
 	return resolved, nil
+}
+
+func resolvePreviewContainerChildInput(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, parentFormat format.FormatType, req *PreviewRequest) (map[string]interface{}, error) {
+	if req == nil {
+		return nil, fmt.Errorf("preview request is required")
+	}
+	childName := strings.TrimSpace(req.ChildName)
+	if childName == "" {
+		return nil, fmt.Errorf("container child name is required")
+	}
+
+	child := containerChildInputForRequest(req.Attributes, childName)
+	if datatype.IsConcreteDataType(datatype.ParseDataType(commonJSON.InterfaceString(child["data_type"]))) {
+		return child, nil
+	}
+
+	provider, err := format.GetContainerInfoProvider(parentFormat)
+	if err != nil {
+		return nil, fmt.Errorf("no container info provider for format %s: %w", parentFormat, err)
+	}
+	reader, err := parent.Open(ctx, parentRef)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open parent container for child discovery: %w", err)
+	}
+	defer reader.Close()
+
+	info, err := provider.DescribeContainer(ctx, reader, format.ContainerParseOptions(0, 0))
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe %s container children: %w", parentFormat, err)
+	}
+	info = objectcontent.ResolveContainerInfoForPreview(info)
+	if info != nil {
+		for _, describedChild := range info.Children {
+			candidate := previewContainerChildInfoMap(describedChild)
+			if containerChildNameMatches(candidate, childName) {
+				return candidate, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("container child %q not found in %s container", childName, parentFormat)
 }
 
 func (p *FileTablePreviewProvider) resolveContainerChild(ctx context.Context, parent contentio.Reader, parentPath string, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {

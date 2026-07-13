@@ -10,6 +10,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/workflowaccess"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -80,7 +81,7 @@ func (e *ManagerPointCloudCOPCExecutor) BuildPointCloudCOPC(ctx context.Context,
 	if strings.TrimSpace(req.ExecutionID) == "" {
 		return nil, errors.New("point cloud COPC execution_id is required")
 	}
-	sourceURI, sourceEnv, sourceFacts, err := e.prepareSourceURI(ctx, req.Task.TenantID, req.Config.Source)
+	sourceAccess, sourceFacts, err := e.prepareSourceAccess(ctx, req.Task.TenantID, req.Config.Source)
 	if err != nil {
 		return nil, err
 	}
@@ -96,42 +97,36 @@ func (e *ManagerPointCloudCOPCExecutor) BuildPointCloudCOPC(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+	targetAccess, err := workflowaccess.ResolveObjectStoreTarget(plugin.ConnectionInfo{
+		"endpoint": e.minioEndpoint, "access_key": e.minioAccessKey, "secret_key": e.minioSecretKey, "use_ssl": e.minioUseSSL,
+	}, bucket, objectName, workflowaccess.KindFile)
+	if err != nil {
+		return nil, fmt.Errorf("prepare point cloud COPC target access: %w", err)
+	}
+	accessPlan, err := workflowaccess.New(
+		workflowaccess.Source{
+			Kind: workflowaccess.KindFile, Format: sourceFormat, Access: sourceAccess, Metadata: pointCloudSourceMetadata(sourceFacts, req.Config.Source),
+		},
+		workflowaccess.Target{
+			Kind: workflowaccess.KindFile, Format: "copc", Name: safeCOPCFileName(req.Config.Result.FileName), WriteMode: workflowaccess.WriteModeReplace,
+			ContentType: pointCloudCOPCContentType, Access: targetAccess, Metadata: commonModels.JSONMap{"storage_ref": req.Config.Result.StorageRef},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build point cloud COPC access plan: %w", err)
+	}
 	workflowEngine, workflowOperator, err := e.selectDirectWorkflowRuntime(ctx, req.Task.TenantID, operatorName)
 	if err != nil {
 		return nil, err
 	}
 	invokeResult, err := dbbridge.InvokeOperator(ctx, &workflowEngine, workflowOperator.Name, plugin.OperatorInvokeRequest{
 		Params: map[string]interface{}{
-			"access_plan": commonModels.JSONMap{
-				"source": commonModels.JSONMap{
-					"root_uri": sourceURI,
-					"env":      sourceEnv,
-					"format":   sourceFormat,
-					"metadata": pointCloudSourceMetadata(sourceFacts, req.Config.Source),
-				},
-				"target": commonModels.JSONMap{
-					"file_name": safeCOPCFileName(req.Config.Result.FileName),
-					"metadata": commonModels.JSONMap{
-						"storage_ref": req.Config.Result.StorageRef,
-					},
-					"publish": commonModels.JSONMap{
-						"method":       "object_store",
-						"endpoint":     e.minioEndpoint,
-						"access_key":   e.minioAccessKey,
-						"secret_key":   e.minioSecretKey,
-						"use_ssl":      e.minioUseSSL,
-						"bucket":       bucket,
-						"object":       objectName,
-						"locator":      fmt.Sprintf("s3://%s/%s", bucket, objectName),
-						"content_type": pointCloudCOPCContentType,
-					},
-				},
-				"progress_callback": commonModels.JSONMap{
-					"endpoint":         e.managerBaseURL + "/api/v1/manager/internal/executions/" + strings.TrimSpace(req.ExecutionID) + "/events",
-					"tenant_id":        req.Task.TenantID,
-					"execution_id":     strings.TrimSpace(req.ExecutionID),
-					"internal_api_key": e.internalAPIKey,
-				},
+			"access_plan": accessPlan.JSONMap(),
+			"progress_callback": commonModels.JSONMap{
+				"endpoint":         e.managerBaseURL + "/api/v1/manager/internal/executions/" + strings.TrimSpace(req.ExecutionID) + "/events",
+				"tenant_id":        req.Task.TenantID,
+				"execution_id":     strings.TrimSpace(req.ExecutionID),
+				"internal_api_key": e.internalAPIKey,
 			},
 			"options": req.Config.Options.Clone(),
 		},
@@ -155,6 +150,7 @@ func (e *ManagerPointCloudCOPCExecutor) BuildPointCloudCOPC(ctx context.Context,
 		SizeBytes:  firstPositiveInt64(info.Size, jsonInt64(facts["size_bytes"]), req.Config.Source.SourceSizeBytes),
 		ContentURL: "",
 		Metadata: commonModels.JSONMap{
+			"access_plan": accessPlan.AuditJSONMap(),
 			"source": commonModels.JSONMap{
 				"access": sourceFacts,
 				"format": sourceFormat,
@@ -201,46 +197,31 @@ func pointCloudSourceMetadata(sourceFacts commonModels.JSONMap, source PointClou
 	return metadata
 }
 
-func (e *ManagerPointCloudCOPCExecutor) prepareSourceURI(ctx context.Context, tenantID uint, source PointCloudCOPCSourceConfig) (string, commonModels.JSONMap, commonModels.JSONMap, error) {
+func (e *ManagerPointCloudCOPCExecutor) prepareSourceAccess(ctx context.Context, tenantID uint, source PointCloudCOPCSourceConfig) (workflowaccess.Access, commonModels.JSONMap, error) {
 	loc, err := resourcetree.ParseURI(source.ItemLocator)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("parse point cloud COPC source locator: %w", err)
+		return workflowaccess.Access{}, nil, fmt.Errorf("parse point cloud COPC source locator: %w", err)
 	}
 	engine, err := e.systemClient.GetEngine(source.SourceEngineID)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("get source engine: %w", err)
+		return workflowaccess.Access{}, nil, fmt.Errorf("get source engine: %w", err)
 	}
 	if engine == nil || !engine.IsActive {
-		return "", nil, nil, errors.New("source engine is not active")
+		return workflowaccess.Access{}, nil, errors.New("source engine is not active")
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {
-		return "", nil, nil, ErrEngineAccessDenied
+		return workflowaccess.Access{}, nil, ErrEngineAccessDenied
 	}
-	engineType := strings.ToLower(strings.TrimSpace(engine.EngineType))
-	fullName := strings.Trim(strings.TrimSpace(loc.FullName()), "/")
-	connInfo := plugin.ConnectionInfo(engine.ConnectionInfo)
-	switch engineType {
-	case "nfs", "nas", "localfs", "filesystem":
-		basePath := firstNonEmptyConfig(plugin.GetString(connInfo, "mount_path"), plugin.GetString(connInfo, "export_path"), plugin.GetString(connInfo, "base_path"))
-		if basePath == "" {
-			return "", nil, nil, errors.New("file engine requires mount_path, export_path, or base_path for point cloud conversion")
-		}
-		return joinFilePath(basePath, fullName), commonModels.JSONMap{}, commonModels.JSONMap{
-			"engine_type":   engine.EngineType,
-			"access_method": "mounted_path",
-		}, nil
-	case "minio", "s3":
-		rawURL, err := presignObjectURL(ctx, engineType, connInfo, fullName)
-		if err != nil {
-			return "", nil, nil, err
-		}
-		return "/vsicurl/" + rawURL, commonModels.JSONMap{}, commonModels.JSONMap{
-			"engine_type":   engine.EngineType,
-			"access_method": "vsicurl_presigned_url",
-		}, nil
-	default:
-		return "", nil, nil, fmt.Errorf("engine %s is not supported by point cloud conversion runtime", engine.EngineType)
+	resolved, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{
+		Engine: engine, Locator: loc, Kind: workflowaccess.KindFile, Format: string(format.NormalizeFormat(source.Format)),
+	})
+	if err != nil {
+		return workflowaccess.Access{}, nil, fmt.Errorf("resolve point cloud source access: %w", err)
 	}
+	return resolved.Access, commonModels.JSONMap{
+		"engine_type":   engine.EngineType,
+		"access_method": resolved.Access.Method,
+	}, nil
 }
 
 func pointCloudCOPCOperatorForFormat(sourceFormat string) (operatorName string, normalizedFormat string, err error) {

@@ -27,6 +27,9 @@ func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JS
 		SizeBytes:          input.SizeBytes,
 		IncludeAccessIndex: input.IncludeAccessIndex,
 		CatalogPathFor:     input.CatalogPathFor,
+		CADInspector:       p.cadInspector,
+		SourceEngine:       input.Resource,
+		TenantID:           input.TenantID,
 	})
 	if err != nil {
 		if input.StrictDeepEnrich {

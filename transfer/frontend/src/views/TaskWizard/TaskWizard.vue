@@ -140,6 +140,11 @@ async function restoreSourceItemForEdit(task) {
 async function loadSourceFieldsForEdit(task) {
   if (!task.config?.source) return
 
+  if (task.config?.runtime?.boundary === 'continuous') {
+    wizardState.loadSourceFields([])
+    return
+  }
+
   const source = task.config.source
   if (source.data_type && source.data_type !== 'table') {
     wizardState.loadSourceFields([])

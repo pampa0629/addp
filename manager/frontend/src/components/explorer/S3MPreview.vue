@@ -1,0 +1,186 @@
+<template>
+  <div class="s3m-preview">
+    <div ref="viewportRef" class="s3m-viewport" />
+    <div v-if="loading" class="s3m-status">{{ t('manager.explorer.s3mLoading') }}</div>
+    <div v-else-if="errorMessage" class="s3m-status is-error">{{ errorMessage }}</div>
+  </div>
+</template>
+
+<script setup>
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import 'cesium/Build/Cesium/Widgets/widgets.css'
+
+const props = defineProps({
+  data: { type: Object, required: true },
+  viewState: { type: Object, default: () => ({}) }
+})
+const emit = defineEmits(['view-state-change'])
+const { t } = useI18n()
+
+const viewportRef = ref(null)
+const loading = ref(false)
+const errorMessage = ref('')
+const content = computed(() => props.data?.object?.content || {})
+const metadata = computed(() => content.value?.metadata || {})
+const sourceURL = computed(() => content.value?.url || props.data?.object?.url || '')
+
+let viewer = null
+let layer = null
+let loadSerial = 0
+
+function cesiumBaseURL() {
+  const base = import.meta.env.BASE_URL || '/'
+  return new URL(`${base.endsWith('/') ? base : `${base}/`}cesium/`, window.location.origin).href
+}
+
+function authenticatedResource(Cesium, url) {
+  const token = localStorage.getItem('token')
+  return new Cesium.Resource({
+    url,
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  })
+}
+
+function installCesiumGlobal(Cesium) {
+  const defaultValue = (value, fallback) => value === undefined || value === null ? fallback : value
+  defaultValue.EMPTY_OBJECT = Object.freeze({})
+  window.CESIUM_BASE_URL = cesiumBaseURL()
+  window.Cesium = { ...Cesium, defaultValue }
+}
+
+function applyViewState(Cesium) {
+  const state = props.viewState
+  if (!viewer || !state || typeof state !== 'object' || !Array.isArray(state.position)) return false
+  const position = state.position.map(Number)
+  if (position.length < 3 || !position.every(Number.isFinite)) return false
+  viewer.camera.setView({
+    destination: new Cesium.Cartesian3(position[0], position[1], position[2]),
+    orientation: {
+      heading: Number(state.heading) || 0,
+      pitch: Number(state.pitch) || -Math.PI / 2,
+      roll: Number(state.roll) || 0
+    }
+  })
+  return true
+}
+
+function emitViewState() {
+  if (!viewer) return
+  emit('view-state-change', {
+    position: viewer.camera.positionWC.toArray(),
+    heading: viewer.camera.heading,
+    pitch: viewer.camera.pitch,
+    roll: viewer.camera.roll
+  })
+}
+
+async function loadS3M(url) {
+  const currentLoad = ++loadSerial
+  loading.value = true
+  errorMessage.value = ''
+  await nextTick()
+  disposeViewer()
+  if (!url || !viewportRef.value) {
+    loading.value = false
+    errorMessage.value = t('manager.explorer.s3mMissingURL')
+    return
+  }
+  try {
+    const Cesium = await import('cesium')
+    installCesiumGlobal(Cesium)
+    const { default: S3MTilesLayer } = await import('@/vendor/supermap-s3m/S3MTiles/S3MTilesLayer.js')
+    if (currentLoad !== loadSerial) return
+    viewer = new Cesium.Viewer(viewportRef.value, {
+      animation: false,
+      baseLayer: false,
+      baseLayerPicker: false,
+      fullscreenButton: false,
+      geocoder: false,
+      homeButton: false,
+      infoBox: false,
+      navigationHelpButton: false,
+      sceneModePicker: false,
+      selectionIndicator: false,
+      timeline: false
+    })
+    viewer.scene.globe.show = false
+    viewer.scene.skyAtmosphere.show = false
+    viewer.scene.skyBox.show = false
+    const gl = viewer.scene._context?._gl
+    const supportsS3TC = gl?.getExtension('WEBGL_compressed_texture_s3tc') ||
+      gl?.getExtension('MOZ_WEBGL_compressed_texture_s3tc') ||
+      gl?.getExtension('WEBKIT_WEBGL_compressed_texture_s3tc')
+    if (!supportsS3TC) {
+      throw new Error(t('manager.explorer.s3mS3TCRequired'))
+    }
+    const encoding = String(metadata.value.manifest_encoding || '').toLowerCase()
+    const extension = String(metadata.value.tile_extension || '').toLowerCase()
+    layer = new S3MTilesLayer({
+      context: viewer.scene._context,
+      url: authenticatedResource(Cesium, url),
+      isS3MB: encoding === 'json' || extension === '.s3mb',
+      selectEnabled: false
+    })
+    viewer.scene.primitives.add(layer)
+    await layer.readyPromise
+    if (currentLoad !== loadSerial) return
+    if (!applyViewState(Cesium) && layer._rootTiles?.length) {
+      const bounds = Cesium.BoundingSphere.fromBoundingSpheres(
+        layer._rootTiles.map(tile => tile.boundingVolume.boundingVolume)
+      )
+      await viewer.camera.flyToBoundingSphere(bounds, { duration: 0 })
+    }
+    viewer.camera.moveEnd.addEventListener(emitViewState)
+    loading.value = false
+  } catch (error) {
+    if (currentLoad !== loadSerial) return
+    console.error('S3M preview failed:', error)
+    errorMessage.value = t('manager.explorer.s3mLoadFailed', { error: error?.message || error })
+    loading.value = false
+  }
+}
+
+function disposeViewer() {
+  if (viewer) {
+    viewer.camera?.moveEnd?.removeEventListener(emitViewState)
+    if (layer && !layer.isDestroyed?.()) layer.destroy()
+    viewer.destroy()
+  }
+  viewer = null
+  layer = null
+  if (viewportRef.value) viewportRef.value.replaceChildren()
+}
+
+watch(sourceURL, loadS3M, { immediate: true })
+onBeforeUnmount(() => {
+  loadSerial++
+  disposeViewer()
+})
+</script>
+
+<style scoped>
+.s3m-preview {
+  position: relative;
+  min-height: 460px;
+  height: min(68vh, 760px);
+  overflow: hidden;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--addp-bg-secondary) 82%, transparent), var(--addp-bg-primary));
+  border: 1px solid var(--addp-border-color-light);
+}
+.s3m-viewport { width: 100%; height: 100%; }
+.s3m-viewport :deep(.cesium-viewer),
+.s3m-viewport :deep(.cesium-viewer-cesiumWidgetContainer),
+.s3m-viewport :deep(.cesium-widget),
+.s3m-viewport :deep(canvas) { width: 100%; height: 100%; }
+.s3m-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--addp-text-secondary);
+  background: color-mix(in srgb, var(--addp-bg-primary) 70%, transparent);
+}
+.s3m-status.is-error { color: var(--el-color-danger); }
+</style>

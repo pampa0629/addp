@@ -20,12 +20,39 @@ func ProviderCatalogPathFromLocator(model plugin.CatalogModelSpec, loc *Resource
 	case plugin.CatalogTermServer:
 		return serverCatalogPathFromLocator(model, loc)
 	case plugin.CatalogTermService:
+		if len(model.Levels) == 1 {
+			return singleLevelServiceCatalogPathFromLocator(model, loc)
+		}
 		return objectCatalogPathFromLocator(loc)
 	case plugin.CatalogTermRoot:
 		return fileCatalogPathFromLocator(loc)
 	default:
 		return plugin.CatalogPath{}, fmt.Errorf("unsupported catalog root term: %s", model.RootTerm)
 	}
+}
+
+func singleLevelServiceCatalogPathFromLocator(model plugin.CatalogModelSpec, loc *ResourceLocator) (plugin.CatalogPath, error) {
+	if len(loc.Path) == 0 {
+		if !isRootLocatorType(loc.Type) {
+			return plugin.CatalogPath{}, fmt.Errorf("service catalog root locator requires root type, got %s", loc.Type)
+		}
+		return plugin.CatalogRootPath(model, loc.EngineID), nil
+	}
+	if len(loc.Path) != 1 {
+		return plugin.CatalogPath{}, fmt.Errorf("service catalog leaf requires exactly one business segment")
+	}
+	level := model.Levels[0]
+	kind, err := catalogKindForResourceType(loc.Type, level)
+	if err != nil {
+		return plugin.CatalogPath{}, err
+	}
+	name := strings.TrimSpace(loc.Path[0])
+	if name == "" {
+		return plugin.CatalogPath{}, fmt.Errorf("service catalog leaf name is required")
+	}
+	path := plugin.CatalogRootPath(model, loc.EngineID)
+	path.Segments = append(path.Segments, plugin.CatalogSegment{Term: level.Term, Kind: kind, Name: name})
+	return path, nil
 }
 
 func serverCatalogPathFromLocator(model plugin.CatalogModelSpec, loc *ResourceLocator) (plugin.CatalogPath, error) {

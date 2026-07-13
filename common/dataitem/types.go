@@ -63,6 +63,7 @@ type RefRule struct {
 type WholeScopeRule struct {
 	IgnoredFileNames     []string
 	RequiredFileNames    []string
+	RequiredPaths        []string
 	RequiresStrongMatch  bool
 	ExclusiveOnStrongHit bool
 	ClaimAllOnStrongHit  bool

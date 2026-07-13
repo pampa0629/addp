@@ -1,6 +1,8 @@
 # ADDP Common Python Module
 
-Python 共享模块,为 ADDP 平台的 Python 后端提供统一的客户端和工具函数。
+Python 共享模块，为 ADDP 平台的 Python 后端提供统一客户端、工具函数和 Workflow Runtime 协议执行核心。
+
+`addp_common.workflow_runtime` 负责 `addp.workflow/v1` 的 workflow definition 校验、拓扑排序、`$ref` 解析、异步 execution 状态和标准错误。它不是独立工作流引擎，不包含 GeoPandas、Spark、PDAL 或三维转换器领域逻辑。
 
 ## 安装
 

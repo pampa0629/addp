@@ -10,6 +10,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/workflowaccess"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -69,7 +70,8 @@ func (e *ManagerGaussianSplatKSplatExecutor) BuildGaussianSplatKSplat(ctx contex
 	if req.Task == nil {
 		return nil, errors.New("gaussian splat KSplat generation task is required")
 	}
-	sourcePath, sourceFacts, err := e.prepareSourcePath(ctx, req.Task.TenantID, req.Config.Source)
+	sourceFormat := string(format.NormalizeFormat(req.Config.Source.Format))
+	sourcePlan, sourceFacts, err := e.prepareSource(ctx, req.Task.TenantID, req.Config.Source, sourceFormat)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +83,22 @@ func (e *ManagerGaussianSplatKSplatExecutor) BuildGaussianSplatKSplat(ctx contex
 		return nil, err
 	}
 
-	sourceFormat := string(format.NormalizeFormat(req.Config.Source.Format))
+	targetAccess, err := workflowaccess.ResolveObjectStoreTarget(plugin.ConnectionInfo{
+		"endpoint": e.minioEndpoint, "access_key": e.minioAccessKey, "secret_key": e.minioSecretKey, "use_ssl": e.minioUseSSL,
+	}, bucket, objectName, workflowaccess.KindFile)
+	if err != nil {
+		return nil, fmt.Errorf("prepare gaussian splat KSplat target access: %w", err)
+	}
+	accessPlan, err := workflowaccess.New(
+		sourcePlan,
+		workflowaccess.Target{
+			Kind: workflowaccess.KindFile, Format: "ksplat", Name: safeKSplatFileName(req.Config.Result.FileName), WriteMode: workflowaccess.WriteModeReplace,
+			ContentType: "application/vnd.gaussian-ksplat", Access: targetAccess, Metadata: commonModels.JSONMap{"storage_ref": req.Config.Result.StorageRef},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build gaussian splat KSplat access plan: %w", err)
+	}
 	workflowEngine, workflowOperator, err := e.selectDirectWorkflowRuntime(ctx, req.Task.TenantID, "gaussian_splat_to_ksplat")
 	if err != nil {
 		return nil, err
@@ -93,31 +110,8 @@ func (e *ManagerGaussianSplatKSplatExecutor) BuildGaussianSplatKSplat(ctx contex
 	applyGaussianSplatBoundsOptions(options, req.Config.Source)
 	invokeResult, err := dbbridge.InvokeOperator(ctx, &workflowEngine, workflowOperator.Name, plugin.OperatorInvokeRequest{
 		Params: map[string]interface{}{
-			"access_plan": commonModels.JSONMap{
-				"source": commonModels.JSONMap{
-					"local_path": sourcePath,
-					"format":     sourceFormat,
-					"metadata":   sourceFacts,
-				},
-				"target": commonModels.JSONMap{
-					"file_name": safeKSplatFileName(req.Config.Result.FileName),
-					"metadata": commonModels.JSONMap{
-						"storage_ref": req.Config.Result.StorageRef,
-					},
-					"publish": commonModels.JSONMap{
-						"method":       "object_store",
-						"endpoint":     e.minioEndpoint,
-						"access_key":   e.minioAccessKey,
-						"secret_key":   e.minioSecretKey,
-						"use_ssl":      e.minioUseSSL,
-						"bucket":       bucket,
-						"object":       objectName,
-						"locator":      fmt.Sprintf("s3://%s/%s", bucket, objectName),
-						"content_type": "application/vnd.gaussian-ksplat",
-					},
-				},
-			},
-			"options": options,
+			"access_plan": accessPlan.JSONMap(),
+			"options":     options,
 		},
 		Timeout: e.invokeTimeout,
 	})
@@ -139,6 +133,7 @@ func (e *ManagerGaussianSplatKSplatExecutor) BuildGaussianSplatKSplat(ctx contex
 		SizeBytes:  firstPositiveInt64(info.Size, jsonInt64(facts["size_bytes"]), req.Config.Source.SourceSizeBytes),
 		ContentURL: "",
 		Metadata: commonModels.JSONMap{
+			"access_plan": accessPlan.AuditJSONMap(),
 			"source": commonModels.JSONMap{
 				"access": sourceFacts,
 				"format": sourceFormat,
@@ -185,26 +180,31 @@ func applyGaussianSplatBoundsOptions(options commonModels.JSONMap, source Gaussi
 	}
 }
 
-func (e *ManagerGaussianSplatKSplatExecutor) prepareSourcePath(ctx context.Context, tenantID uint, source GaussianSplatKSplatSourceConfig) (string, commonModels.JSONMap, error) {
+func (e *ManagerGaussianSplatKSplatExecutor) prepareSource(ctx context.Context, tenantID uint, source GaussianSplatKSplatSourceConfig, sourceFormat string) (workflowaccess.Source, commonModels.JSONMap, error) {
 	loc, err := resourcetree.ParseURI(source.ItemLocator)
 	if err != nil {
-		return "", nil, fmt.Errorf("parse gaussian splat KSplat source locator: %w", err)
+		return workflowaccess.Source{}, nil, fmt.Errorf("parse gaussian splat KSplat source locator: %w", err)
 	}
 	engine, err := e.systemClient.GetEngine(source.SourceEngineID)
 	if err != nil {
-		return "", nil, fmt.Errorf("get source engine: %w", err)
+		return workflowaccess.Source{}, nil, fmt.Errorf("get source engine: %w", err)
 	}
 	if engine == nil || !engine.IsActive {
-		return "", nil, errors.New("source engine is not active")
+		return workflowaccess.Source{}, nil, errors.New("source engine is not active")
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {
-		return "", nil, ErrEngineAccessDenied
+		return workflowaccess.Source{}, nil, ErrEngineAccessDenied
 	}
-	sourcePath, _, access, err := model3DTilesLocalRoot(engine, loc, "")
+	resolved, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{
+		Engine: engine, Locator: loc, Kind: workflowaccess.KindFile, Format: sourceFormat,
+		Metadata: commonModels.JSONMap{"item_locator": source.ItemLocator, "engine_id": source.SourceEngineID, "engine_type": engine.EngineType},
+	})
 	if err != nil {
-		return "", nil, fmt.Errorf("prepare gaussian splat KSplat source path: %w", err)
+		return workflowaccess.Source{}, nil, fmt.Errorf("prepare gaussian splat KSplat source access: %w", err)
 	}
-	return sourcePath, access, nil
+	return resolved, commonModels.JSONMap{
+		"engine_type": engine.EngineType, "access_method": resolved.Access.Method,
+	}, nil
 }
 
 func (e *ManagerGaussianSplatKSplatExecutor) ensureTargetBucket(ctx context.Context, bucket string) error {

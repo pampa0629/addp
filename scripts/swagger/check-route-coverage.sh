@@ -104,6 +104,7 @@ def swaggerize(path: str) -> str:
     path = clean_path(path)
     if path.endswith("/*yformat"):
         path = path.removesuffix("/*yformat") + "/{y}.{format}"
+    path = re.sub(r"/\*([A-Za-z_][A-Za-z0-9_]*)", r"/{\1}", path)
     return re.sub(r":([A-Za-z_][A-Za-z0-9_]*)", r"{\1}", path)
 
 def should_exclude(path: str) -> bool:

@@ -286,6 +286,29 @@ func (h *ExplorerHandler) StorageStream(c *gin.Context) {
 	}
 }
 
+// StorageAsset 传输多文件预览数据集中的单个受控资源，路径型 URL 用于解析 manifest 内的相对引用。
+// GET /api/v1/manager/storage-assets/1/path/to/file
+// @Summary 多文件预览资源传输 | Multi-file preview asset streaming
+// @Description 以路径型 URL 传输 S3M 等多文件预览数据集中的单个资源，支持 manifest 相对路径解析与 Range 请求；资源仍通过存储引擎和租户权限校验。 | Stream one asset from a multi-file preview dataset with path-relative URL resolution and Range support; storage-engine and tenant authorization still apply.
+// @Tags Manager
+// @Produce octet-stream
+// @Param engine_id path int true "存储引擎ID | Engine ID"
+// @Param storage_ref path string true "存储内容引用 | Storage content reference"
+// @Success 200 "存储内容流 | Storage content stream"
+// @Success 206 "部分存储内容流 | Partial storage content stream"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
+// @Failure 416 {object} map[string]interface{} "Range 不可满足 | Range not satisfiable"
+// @Router /storage-assets/{engine_id}/{storage_ref} [get]
+// @Security BearerAuth
+func (h *ExplorerHandler) StorageAsset(c *gin.Context) {
+	query := c.Request.URL.Query()
+	query.Set("engine_id", c.Param("engine_id"))
+	query.Set("storage_ref", strings.TrimPrefix(c.Param("storage_ref"), "/"))
+	c.Request.URL.RawQuery = query.Encode()
+	h.StorageStream(c)
+}
+
 func attachmentContentDisposition(fileName string) string {
 	fileName = strings.TrimSpace(fileName)
 	if fileName == "" || fileName == "." || fileName == "/" {

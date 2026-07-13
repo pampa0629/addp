@@ -95,6 +95,7 @@ func SetupRouter(
 
 	protected.GET("/system-engines", systemEngineHandler.List)
 	protected.GET("/capabilities", capabilityHandler.Get)
+	protected.GET("/provider-tasks", taskHandler.ProviderListTasks)
 
 	// 任务管理路由
 	tasks := protected.Group("/tasks")
@@ -114,6 +115,7 @@ func SetupRouter(
 		taskDefinitions.POST("/:id/start", taskHandler.StartTask)                  // 启动任务
 		taskDefinitions.POST("/:id/pause", taskHandler.PauseTask)                  // 暂停任务
 		taskDefinitions.POST("/:id/resume", taskHandler.ResumeTask)                // 恢复任务
+		taskDefinitions.POST("/:id/stop", taskHandler.StopTask)                    // 停止 continuous runtime
 		taskDefinitions.GET("/:id/executions", executionHandler.GetTaskExecutions) // 获取任务的执行记录
 	}
 

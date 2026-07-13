@@ -19,6 +19,8 @@
 
 ---
 
+Kafka common Engine 插件已实现 `service -> topic` 路径、Catalog、topic facts、ResourceLocator 契约和 ChangeStreamReaderProvider。System 后端可注册业务 Kafka Engine；Console 配置表单和 Transfer continuous runtime 尚未开放，不得据此宣称 continuous 任务已经可执行。
+
 ## 一、核心概念
 
 ### 引擎配置 vs 数据路径
@@ -33,6 +35,7 @@
 | PostgreSQL | host、port、user | `server`，标题使用引擎实例名称，`full_name=""` | schema |
 | MySQL/Doris/ClickHouse | host、port、user | `server`，标题使用引擎实例名称，`full_name=""` | database |
 | MongoDB/Neo4j | host、port | `server`，标题使用引擎实例名称，`full_name=""` | database |
+| Kafka | bootstrap servers、TLS/SASL | `service`，标题使用引擎实例名称，`full_name=""` | 无 branch；topic 直接作为 leaf |
 
 ### 引擎目录根与业务路径
 
@@ -59,6 +62,7 @@ bucket、schema、database、directory 是 root 下第一层业务 branch。它�
 | PostgreSQL / MySQL / Doris / ClickHouse | table / view | `table` / `view` | 通常 `data_type=table` |
 | MongoDB | collection | `collection` | 原生 JSON/BSON document 组成的动态 schema 记录集合，固定为 `data_type=table` |
 | Neo4j | graph | `graph` | `data_type=graph` |
+| Kafka | topic | `topic` | 第一版固定 `data_type=unknown`；消息结构由 Transfer 任务的 JSON mapping 定义，不通过 Meta 采样猜测。 |
 
 因此，同一个 `sales.csv` 在 MinIO 中是 `item_type=object`，在 NFS 中是 `item_type=file`；它们都可以同时拥有 `attributes.item.data_type=table`、`attributes.item.format=csv`。不得因为对象内容可按表格读取，就把对象存储中的 `item_type` 写成 `table`。
 
@@ -183,6 +187,15 @@ full_name 由 `database.item` 两段组成，使用 `.` 分隔：
 | MongoDB | collection 数据项 | `mydb.orders` | database + collection 名 |
 | Neo4j | database 节点 | `neo4j` | Neo4j database 名 |
 | Neo4j | graph 数据项 | `neo4j.graph` | database + graph item 名 |
+
+### 消息系统（Kafka）
+
+Kafka topic 直接位于 service root 下，`full_name` 等于 topic 原名。partition 不进入 full_name、CatalogPath、ResourceLocator 或 Meta 树。
+
+| 节点/数据项类型 | full_name 示例 | 说明 |
+|---|---|---|
+| service root | `""` | 结构入口，展示 Kafka Engine 实例名称。 |
+| topic 数据项 | `orders.events` | Kafka topic 原名；`.` 是 topic 名的一部分，不按数据库路径拆分。 |
 
 ---
 
@@ -332,6 +345,17 @@ Engine (Neo4j)
 
 server root 是结构入口，标题使用引擎实例名称。database 作为独立节点展示，用户可以按 database 触发扫描。
 
+### 消息系统（Kafka）
+
+```text
+Engine (Kafka)
+  └── service: Business Kafka   ← full_name=""
+        ├── item: orders.events ← full_name="orders.events" (topic)
+        └── item: audit.events  ← full_name="audit.events"  (topic)
+```
+
+topic 是可选择 leaf。partition 数量、leader、副本、ISR 和 offset 范围属于实时 topic facts / diagnostics，不创建 partition `meta_node` 或 `meta_item`。
+
 ---
 
 ## 四、ResourceLocator 路径规则
@@ -357,10 +381,12 @@ addp://engine/{engine_id}/path/{segments}?type={type}&node_id={node_id}&item_id=
 | 关系型数据库 | `public.users` | `["public","users"]` | `.../path/public/users?type=table&item_id=123` |
 | MongoDB collection | `mydb.orders` | `["mydb","orders"]` | `.../path/mydb/orders?type=collection&item_id=234` |
 | Neo4j graph | `neo4j.graph` | `["neo4j","graph"]` | `.../path/neo4j/graph?type=graph&item_id=578` |
+| Kafka topic | `orders.events` | `["orders.events"]` | `.../path/orders.events?type=topic&item_id=680` |
 
 数据库与 branch/leaf 型引擎的解析语义：`branch = path[0]`，`leaf = join(path[1:])`，具体数据项类型由 locator 的 `type` 决定。关系型数据库的 schema/database、MongoDB/Neo4j 的 database 都是 server root 下的第一层 branch。
 Neo4j 的 catalog leaf 必须使用 `type=graph`；节点 label、relationship type 和连接模式属于 `type_info.graph`，不得作为独立 catalog leaf。
 NFS 物理路径重建公式为 `"/" + join(path, "/")`。
+Kafka topic locator 的 path 必须且只能有一个业务 segment；topic 名中的 `.`、`_`、`-` 保持原样。partition 不得进入 path 或 query 参数。
 
 ### ADDP infra locator 与业务 ResourceLocator 的边界
 
@@ -397,6 +423,7 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 | NFS | 挂载根 `/` 或任意目录路径 | 可扫描整个挂载点，也可按目录路径扫描；扫描非根路径时必须先确保 root -> directory 节点链存在 |
 | 关系型数据库（PostgreSQL/MySQL/Doris/ClickHouse） | schema 或 database | 用户按引擎术语选择（PostgreSQL 选 schema；MySQL/Doris/ClickHouse 选 database） |
 | Branch/Leaf 型引擎（MongoDB/Neo4j） | database branch | 用户选择一个或多个 database 触发扫描 |
+| Kafka | service root | basic scan 只发现 topic leaf；第一版不读取消息、不采样 schema、不创建 partition 子节点。 |
 
 ### NFS 扫描流程
 
@@ -431,6 +458,13 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 3. 通过 `CatalogProvider.ListChildren(database branch)` 获取 collection/graph leaf，创建 `meta_item`
 4. `meta_item.full_name` 使用 `database.collection`（Neo4j 为 `database.graph`）
 5. Neo4j label、relationship type 和 endpoint pattern 写入 `attributes.type_info.graph`，不作为独立 `meta_item`
+
+### Kafka 扫描流程
+
+1. upsert service root `meta_node`，通过 `CatalogProvider.ListChildren(root)` 获取当前凭据可见的 topic。
+2. topic 创建 `meta_item`，`item_type=topic`、`full_name=topic name`、`attributes.item.data_type=unknown`。
+3. 第一版 scan 不读取 topic 消息、不推断 JSON schema，也不把 partition 创建为 node/item。
+4. partition count、leader、副本、ISR、earliest/latest offset 等事实由实时 `CatalogFactsProvider` 或 Transfer runtime diagnostics 返回；在正式定义持久化结构前不得塞入 Meta attributes 兜底字段。
 
 ---
 

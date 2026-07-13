@@ -1065,8 +1065,8 @@ services:
 
   pointcloud-workflow-engine:
     build:
-      context: ./engines/pointcloud-workflow
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: engines/pointcloud-workflow/Dockerfile
     image: ${REGISTRY:-localhost:5001}/addp-pointcloud-workflow-engine:${IMAGE_TAG:-latest}
     container_name: pointcloud-workflow-engine
     environment:

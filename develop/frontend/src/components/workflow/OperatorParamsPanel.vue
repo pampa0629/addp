@@ -87,12 +87,12 @@
 
                   <el-form-item
                     v-if="isTargetResourcePicker(param)"
-                    :label="t('develop.operatorParams.targetTableName')"
+                    :label="targetNameLabel(param)"
                     class="target-name-field"
                   >
                     <el-input
                       v-model="formData[resourceBindingNameParam(param)]"
-                      :placeholder="t('develop.operatorParams.targetTableNamePlaceholder')"
+                      :placeholder="targetNamePlaceholder(param)"
                     />
                   </el-form-item>
 
@@ -198,12 +198,15 @@ import {
   clearResourceBindingSelection,
   collectResourceBindingParams,
   geometryColumnFactsFromSelection,
+  isResourceDataTypeSupported,
   isResourceFormatSupported,
   isTargetResourceBinding,
   missingResourceBindingParams,
   resourceBindingInitialLocator,
   resourceBindingGeometryColumnParam,
-  resourceBindingNameParam
+  resourceBindingNameParam,
+  resourceBindingTargetExtension,
+  resourceBindingTargetNameKind
 } from '@/utils/workflowResourceBindings'
 
 const { t } = useI18n()
@@ -395,7 +398,7 @@ const isResourcePickerNodeSelectable = (node, param) => {
     return selectableTypes.includes(node?.type)
   }
   const selectableTypes = param.ui_config?.selectable_node_types || ['table']
-  return selectableTypes.includes(node?.type) && isResourceFormatSupported(param, node)
+  return selectableTypes.includes(node?.type) && isResourceFormatSupported(param, node) && isResourceDataTypeSupported(param, node)
 }
 
 const isResourcePickerVisibleNode = (node, param) => {
@@ -404,7 +407,18 @@ const isResourcePickerVisibleNode = (node, param) => {
   }
   const nodeType = String(node?.type || '').toLowerCase()
   const visible = ['engine', 'schema', 'database', 'bucket', 'directory', 'dir', 'prefix', 'root', 'service', 'server', 'table', 'collection', 'object', 'file'].includes(nodeType)
-  return visible && isResourceFormatSupported(param, node)
+  return visible && isResourceFormatSupported(param, node) && isResourceDataTypeSupported(param, node)
+}
+
+const targetNameLabel = (param) => resourceBindingTargetNameKind(param) === 'dataset'
+  ? t('develop.operatorParams.targetDatasetName')
+  : t('develop.operatorParams.targetFileName')
+
+const targetNamePlaceholder = (param) => {
+  const extension = resourceBindingTargetExtension(param)
+  return extension
+    ? t('develop.operatorParams.targetFileNameWithExtensionPlaceholder', { extension })
+    : t('develop.operatorParams.targetDatasetNamePlaceholder')
 }
 
 const resourcePickerCurrentLocator = (param) => resourcePickerInitialLocator(param)
@@ -476,6 +490,14 @@ const saveParams = () => {
   if (missingResourceParams.length > 0) {
     ElMessage.warning(t('develop.operatorParams.requiredParam', { name: missingResourceParams[0] }))
     return
+  }
+  for (const parameter of visibleResourceParameters.filter(isTargetResourcePicker)) {
+    const extension = resourceBindingTargetExtension(parameter)
+    const name = String(formData.value[resourceBindingNameParam(parameter)] || '')
+    if (extension && !name.toLowerCase().endsWith(extension.toLowerCase())) {
+      ElMessage.warning(t('develop.operatorParams.targetExtensionRequired', { extension }))
+      return
+    }
   }
 
   // 过滤参数：只保存当前条件下应该显示的参数（已经过 show_when 过滤的）

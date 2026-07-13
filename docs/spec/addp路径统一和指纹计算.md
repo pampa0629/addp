@@ -232,6 +232,7 @@ ResourceLocator 只表示已经存在并形成 Meta node / item 事实的资源�
 | 数据库表 | schema + table | `["schema", "table"]` |
 | 图数据库 graph | database + graph item | `["database", "graph"]` |
 | 文件系统 | path + name | `["path_segment", ..., "name"]` |
+| Kafka topic | topic name | `["topic.name"]` |
 
 ### 5.3 为什么 Path 包含 bucket/schema？
 
@@ -337,6 +338,23 @@ ResourceLocator{
 
 **URI**: `addp://engine/3/path/data/image/users.csv?type=file&item_id=789`
 
+#### Kafka Topic
+
+Kafka 使用 `service(root) -> topic`。topic 名是一个完整业务路径段；partition 是执行分片，不属于 ResourceLocator。
+
+```go
+ResourceLocator{
+    EngineID: 30,
+    Path:     []string{"orders.events"},
+    Type:     "topic",
+    ItemID:   &680,
+}
+```
+
+**URI**: `addp://engine/30/path/orders.events?type=topic&item_id=680`
+
+不得构造 `.../orders.events/0?type=partition`、`?partition=0` 或其他绑定固定 partition 的 locator。
+
 ### 5.5 Path 构建规则
 
 在 TreeBuilder 中，从 MetaNode 构建 ResourceLocator 时：
@@ -355,6 +373,7 @@ path := parsePath(fullName, "table")
 - 对象存储：使用 `/` 分隔
 - 数据库表：使用 `.` 分隔
 - 图数据库 graph：使用 `.` 分隔，ResourceLocator.Type 保持 `graph`
+- Kafka topic：保持完整 topic 名为单一 path segment，ResourceLocator.Type 固定为 `topic`
 
 ### 5.6 对比总结
 

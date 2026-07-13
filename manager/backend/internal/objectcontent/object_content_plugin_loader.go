@@ -84,6 +84,8 @@ func buildBuiltinContentHandler(cfg ObjectContentPluginConfig) (ObjectContentHan
 		return buildPointCloudContentHandler(cfg), nil
 	case models.ObjectPreviewKindGaussianSplat:
 		return buildGaussianSplatContentHandler(cfg), nil
+	case models.ObjectPreviewKindCAD:
+		return buildCADContentHandler(cfg), nil
 	case models.ObjectPreviewKindText:
 		return buildTextContentHandler(cfg, commonformat.FormatText, models.ObjectPreviewKindText), nil
 	case models.ObjectPreviewKindMarkdown:
@@ -145,6 +147,7 @@ func fallbackBuiltinContentPlugins() []ObjectContentPluginConfig {
 		ObjectContentPluginConfig{Name: "builtin:content-model-3d", Type: "builtin", Builtin: models.ObjectPreviewKindModel3D},
 		ObjectContentPluginConfig{Name: "builtin:content-point-cloud", Type: "builtin", Builtin: models.ObjectPreviewKindPointCloud},
 		ObjectContentPluginConfig{Name: "builtin:content-gaussian-splat", Type: "builtin", Builtin: models.ObjectPreviewKindGaussianSplat},
+		ObjectContentPluginConfig{Name: "builtin:content-cad", Type: "builtin", Builtin: models.ObjectPreviewKindCAD},
 		ObjectContentPluginConfig{Name: "builtin:content-json", Type: "builtin", Builtin: models.ObjectPreviewKindJSON},
 		ObjectContentPluginConfig{Name: "builtin:content-container", Type: "builtin", Builtin: models.ObjectPreviewKindContainer},
 		ObjectContentPluginConfig{Name: "builtin:content-markdown", Type: "builtin", Builtin: models.ObjectPreviewKindMarkdown},
@@ -314,6 +317,8 @@ func defaultBuiltinContentPriority(kind string) int {
 		return 61
 	case models.ObjectPreviewKindGaussianSplat:
 		return 61
+	case models.ObjectPreviewKindCAD:
+		return 61
 	case models.ObjectPreviewKindJSON:
 		return 60
 	case models.ObjectPreviewKindContainer:
@@ -341,6 +346,7 @@ func buildModel3DContentHandler(cfg ObjectContentPluginConfig) ObjectContentHand
 					commonformat.FormatPLY,
 					commonformat.FormatSTL,
 					commonformat.Format3DTiles,
+					commonformat.FormatS3M,
 				},
 				nil,
 			),
@@ -367,6 +373,16 @@ func buildPointCloudContentHandler(cfg ObjectContentPluginConfig) ObjectContentH
 				},
 				nil,
 			),
+		},
+	}
+}
+
+func buildCADContentHandler(cfg ObjectContentPluginConfig) ObjectContentHandler {
+	return &cadContentHandler{
+		baseContentHandler: baseContentHandler{
+			name:     cfg.Name,
+			priority: cfg.priorityOr(defaultBuiltinContentPriority(models.ObjectPreviewKindCAD)),
+			matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatDWG, nil, nil),
 		},
 	}
 }

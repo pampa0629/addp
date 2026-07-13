@@ -7,7 +7,7 @@ show_usage() {
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
-  echo "  -all         强制重新编译所有 Go 模块 + 重启 Python/容器运行时服务"
+  echo "  -all         强制重新编译所有 Go 模块，并重新编译 SuperMap Java 后重启全部运行时"
   echo "  -system      强制重新编译 System 模块"
   echo "  -manager     强制重新编译 Manager 模块"
   echo "  -meta        强制重新编译 Meta 模块"
@@ -248,6 +248,11 @@ require_service_python() {
         echo "   请先运行: bash scripts/dev/start.sh -$3"
         return 1
     fi
+    if ! "$service_dir/venv/bin/python" -c "import addp_common.workflow_runtime" >/dev/null 2>&1; then
+        echo "❌ $label 虚拟环境缺少 common-python workflow runtime"
+        echo "   请先运行: bash scripts/dev/start.sh -$3"
+        return 1
+    fi
 }
 
 ensure_model3d_node_dependencies() {
@@ -390,11 +395,11 @@ restart_pointcloud_workflow_service() {
         return 1
     fi
 
-    stop_matching_port_process "$port" "PointCloud Workflow Engine" "python.*api_server\\.py|engines/pointcloud-workflow"
     docker rm -f pointcloud-workflow-engine >/dev/null 2>&1 || true
+    stop_matching_port_process "$port" "PointCloud Workflow Engine" "python.*api_server\\.py|engines/pointcloud-workflow"
 
     echo "  构建 PointCloud Workflow Engine 镜像..."
-    docker build -t "$image" engines/pointcloud-workflow
+    docker build -f engines/pointcloud-workflow/Dockerfile -t "$image" .
 
     echo "  启动 PointCloud Workflow Engine Docker runtime..."
     mkdir -p "${work_dir}"
@@ -420,12 +425,26 @@ restart_pointcloud_workflow_service() {
         -v "${ROOT_DIR}/engines/pointcloud-workflow/operators.py:/app/operators.py:ro" \
         -v "${source_dir}:${container_source_dir}:ro" \
         "$image" > .dev-pids/pointcloud-workflow-engine.pid
-    wait_http_ready "PointCloud Workflow Engine" "http://localhost:${port}/health"
-    if ! curl -s "http://localhost:${port}/health" | grep -q '"status":"healthy"'; then
-        echo "❌ PointCloud Workflow Engine 未进入 healthy 状态"
-        echo "   查看日志: docker logs pointcloud-workflow-engine"
-        return 1
-    fi
+    local wait_count=0
+    echo -n "  等待 PointCloud Workflow Engine 就绪"
+    while ! curl -s "http://localhost:${port}/health" | grep -q '"status":"healthy"'; do
+        if ! docker ps --filter "name=^/pointcloud-workflow-engine$" --format '{{.Names}}' | grep -qx "pointcloud-workflow-engine"; then
+            echo " ✗"
+            echo "❌ PointCloud Workflow Engine 容器已退出"
+            docker logs --tail 100 pointcloud-workflow-engine 2>&1 || true
+            return 1
+        fi
+        sleep 1
+        echo -n "."
+        wait_count=$((wait_count + 1))
+        if [ "$wait_count" -ge 60 ]; then
+            echo " ✗"
+            echo "❌ PointCloud Workflow Engine 启动超时（60秒）"
+            echo "   查看日志: docker logs pointcloud-workflow-engine"
+            return 1
+        fi
+    done
+    echo " ✓"
     if ! docker ps --filter "name=^/pointcloud-workflow-engine$" --format '{{.Names}}' | grep -qx "pointcloud-workflow-engine"; then
         echo "❌ PointCloud Workflow Engine 容器启动后不存在"
         echo "   查看日志: docker logs pointcloud-workflow-engine"
@@ -435,157 +454,7 @@ restart_pointcloud_workflow_service() {
 }
 
 restart_supermap_workflow_service() {
-    local port="${SUPERMAP_WORKFLOW_PORT:-8103}"
-    local image="${SUPERMAP_WORKFLOW_IMAGE:-addp-supermap-workflow-engine:dev}"
-    local objectsjava_host="${SUPERMAP_OBJECTSJAVA_BIN_HOST:-${SUPERMAP_OBJECTSJAVA_BIN_HOST_PATH:-}}"
-    local gpa_lib_host="${SUPERMAP_GPA_LIB_DIR_HOST:-${SUPERMAP_GPA_LIB_DIR_HOST_PATH:-}}"
-    local output_dir="${SUPERMAP_OUTPUT_HOST_PATH:-/tmp/supermap-out}"
-    local data_dir="${SUPERMAP_DATA_HOST_PATH:-}"
-    local platform="${SUPERMAP_WORKFLOW_PLATFORM:-linux/arm64}"
-    local memory_limit="${SUPERMAP_WORKFLOW_MEMORY_LIMIT:-8g}"
-    local java_opts="${SUPERMAP_JAVA_OPTS:--Xms128m -Xmx4g}"
-    local rebuild_image="${SUPERMAP_WORKFLOW_REBUILD:-${FORCE_SUPERMAP_WORKFLOW_IMAGE_BUILD:-0}}"
-    local source_dir="${SUPERMAP_WORKFLOW_SOURCE_HOST:-${ROOT_DIR}/engines/supermap-workflow/src}"
-    local mount_source="${SUPERMAP_WORKFLOW_MOUNT_SOURCE:-}"
-    local container_objectsjava="/opt/supermap/objectsjava/bin_linux_arm64"
-    local container_gpa_lib="/opt/supermap/gpa/libs"
-    local image_exists=false
-    local bundled_image=false
-
-    if ! command -v docker >/dev/null 2>&1; then
-        echo "❌ SuperMap Workflow Engine 需要 Docker runtime 承载 Linux arm64 SuperMap SDK"
-        return 1
-    fi
-
-    if docker image inspect "$image" >/dev/null 2>&1; then
-        image_exists=true
-        if [ "$(docker image inspect -f '{{ index .Config.Labels "addp.supermap.bundled" }}' "$image" 2>/dev/null || true)" = "true" ]; then
-            bundled_image=true
-        fi
-    fi
-
-    if [ -z "$mount_source" ]; then
-        if [ "$bundled_image" = true ]; then
-            mount_source=0
-        else
-            mount_source=1
-        fi
-    fi
-    if [ "$bundled_image" = true ] && [ "$mount_source" = "1" ]; then
-        echo "❌ SuperMap bundled 镜像只包含 JRE，不能挂载源码后在容器内编译"
-        echo "   请重新运行 scripts/build/build-supermap-workflow-image.sh 构建 Java 代码"
-        return 1
-    fi
-
-    if [ "$rebuild_image" = "1" ] && [ "$bundled_image" = true ]; then
-        echo "❌ ${image} 是 SuperMap bundled 镜像，不能用 SUPERMAP_WORKFLOW_REBUILD=1 覆盖为瘦镜像"
-        echo "   请使用: scripts/build/build-supermap-workflow-image.sh --image ${image}"
-        return 1
-    fi
-
-    if [ -z "$objectsjava_host" ] && [ -n "${SUPERMAP_OBJECTSJAVA_BIN:-}" ] && [ -d "${SUPERMAP_OBJECTSJAVA_BIN}" ]; then
-        objectsjava_host="${SUPERMAP_OBJECTSJAVA_BIN}"
-    fi
-    if [ -z "$gpa_lib_host" ] && [ -n "${SUPERMAP_GPA_LIB_DIR:-}" ] && [ -d "${SUPERMAP_GPA_LIB_DIR}" ]; then
-        gpa_lib_host="${SUPERMAP_GPA_LIB_DIR}"
-    fi
-
-    if [ "$bundled_image" != true ] && { [ -z "$objectsjava_host" ] || [ ! -d "$objectsjava_host" ]; }; then
-        echo "❌ 请设置 SUPERMAP_OBJECTSJAVA_BIN_HOST 指向宿主机完整 iObjects Java Bin 目录"
-        echo "   或先构建 bundled 镜像: scripts/build/build-supermap-workflow-image.sh"
-        return 1
-    fi
-    if [ "$bundled_image" != true ] && { [ -z "$gpa_lib_host" ] || [ ! -d "$gpa_lib_host" ]; }; then
-        echo "❌ 请设置 SUPERMAP_GPA_LIB_DIR_HOST 指向宿主机 GPA/SPS libs 目录"
-        return 1
-    fi
-    if [ -n "$data_dir" ] && [ ! -d "$data_dir" ]; then
-        echo "❌ SUPERMAP_DATA_HOST_PATH 不是有效目录: $data_dir"
-        return 1
-    fi
-
-    docker rm -f supermap-workflow-engine >/dev/null 2>&1 || true
-    if [ "$image_exists" = false ] || [ "$rebuild_image" = "1" ]; then
-        echo "  构建 SuperMap Workflow Engine 镜像..."
-        docker build -t "$image" engines/supermap-workflow
-        bundled_image=false
-    fi
-
-    echo "  启动 SuperMap Workflow Engine Docker runtime..."
-    mkdir -p "${output_dir}" .dev-pids
-    local mount_args=(
-        -v "${output_dir}:/tmp/supermap-out"
-    )
-    if [ "$bundled_image" != true ]; then
-        mount_args+=(
-            -v "${objectsjava_host}:${container_objectsjava}:ro"
-            -v "${gpa_lib_host}:${container_gpa_lib}:ro"
-        )
-    fi
-    if [ "$mount_source" = "1" ] && [ -d "$source_dir" ]; then
-        mount_args+=(-v "${source_dir}:/app/src:ro")
-    fi
-    if [ -n "$data_dir" ]; then
-        mount_args+=(-v "${data_dir}:/mnt/supermap/data:ro")
-    fi
-
-    docker run -d \
-        --name supermap-workflow-engine \
-        --label com.docker.compose.project=addp-app \
-        --label com.docker.compose.service=supermap-workflow-engine \
-        --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
-        --platform "$platform" \
-        --add-host=host.docker.internal:host-gateway \
-        --cap-add SYS_ADMIN \
-        --security-opt apparmor=unconfined \
-        --memory "$memory_limit" \
-        -p "${port}:8103" \
-        -e PORT=8103 \
-        -e SUPERMAP_OBJECTSJAVA_BIN="${container_objectsjava}" \
-        -e SUPERMAP_GPA_LIB_DIR="${container_gpa_lib}" \
-        -e SUPERMAP_JAVA_OPTS="$java_opts" \
-        -e SUPERMAP_RESOURCE_LOCALHOST_ALIAS="${SUPERMAP_RESOURCE_LOCALHOST_ALIAS:-host.docker.internal}" \
-        "${mount_args[@]}" \
-        "$image" > .dev-pids/supermap-workflow-engine.pid
-
-    wait_http_ready "SuperMap Workflow Engine" "http://localhost:${port}/health" 90
-    if ! curl -s "http://localhost:${port}/health" | grep -q '"status":"healthy"'; then
-        echo "❌ SuperMap Workflow Engine 未进入 healthy 状态"
-        echo "   查看日志: docker logs supermap-workflow-engine"
-        echo "   确认 objectsjava Bin 目录内已放置许可文件，并且 GPA/SPS libs 完整"
-        return 1
-    fi
-    if ! docker ps --filter "name=^/supermap-workflow-engine$" --format '{{.Names}}' | grep -qx "supermap-workflow-engine"; then
-        echo "❌ SuperMap Workflow Engine 容器启动后不存在"
-        echo "   查看日志: docker logs supermap-workflow-engine"
-        return 1
-    fi
-    if [ -n "${INTERNAL_API_KEY:-}" ]; then
-        local system_url="${SYSTEM_URL:-http://localhost:${SYSTEM_BACKEND_PORT:-8180}}"
-        local response_file
-        response_file=$(mktemp)
-        local register_payload
-        register_payload=$(cat <<JSON
-{"engine_type":"supermap_workflow","name":"SuperMap 工作流引擎","description":"面向超图 iObjects Java / SPS 的工作流运行时","connection_info":{"protocol":"http","port":${port}},"is_builtin":true}
-JSON
-)
-        local http_code
-        http_code=$(curl -s -o "$response_file" -w "%{http_code}" \
-            -H "X-Internal-API-Key: ${INTERNAL_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d "$register_payload" \
-            "${system_url%/}/api/v1/internal/engines/register" || true)
-        if [ "$http_code" = "202" ] || [ "$http_code" = "200" ]; then
-            echo "  ✓ SuperMap Workflow Engine 已注册到 System"
-        else
-            echo "  ⚠️  SuperMap Workflow Engine 自动注册到 System 失败（HTTP ${http_code:-000}）"
-            echo "     $(head -c 200 "$response_file")"
-        fi
-        rm -f "$response_file"
-    else
-        echo "  ⚠️  INTERNAL_API_KEY 未设置，跳过 SuperMap Workflow Engine 自动注册"
-    fi
-    echo "  ✓ SuperMap Workflow Engine Docker runtime 已启动"
+    bash "${SCRIPT_DIR}/supermap-workflow.sh"
 }
 
 restart_spark_workflow_service() {
@@ -886,6 +755,9 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     else
       rm -f .dev-bins/addp-${module} 2>/dev/null || true
       rm -f .dev-bins/addp-${module}-worker 2>/dev/null || true
+      if [ "$module" = "transfer" ]; then
+        rm -f .dev-bins/addp-transfer-continuous-worker 2>/dev/null || true
+      fi
     fi
 
     # 清理指定模块的构建缓存

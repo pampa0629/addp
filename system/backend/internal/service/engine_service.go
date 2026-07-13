@@ -77,7 +77,7 @@ func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy uint) 
 	}
 
 	// 加密敏感字段
-	encryptedConnInfo, err := s.encryptSensitiveFields(req.ConnectionInfo)
+	encryptedConnInfo, err := s.encryptConnectionInfoForStorage(req.ConnectionInfo)
 	if err != nil {
 		return nil, fmt.Errorf("加密连接信息失败: %w", err)
 	}
@@ -124,7 +124,7 @@ func (s *EngineService) CreateInternal(req *models.EngineCreateRequest, tenantID
 		return nil, errors.New("无效的请求数据")
 	}
 
-	encryptedConnInfo, err := s.encryptSensitiveFields(req.ConnectionInfo)
+	encryptedConnInfo, err := s.encryptConnectionInfoForStorage(req.ConnectionInfo)
 	if err != nil {
 		return nil, fmt.Errorf("加密连接信息失败: %w", err)
 	}
@@ -313,14 +313,15 @@ func (s *EngineService) Update(id uint, req *models.EngineUpdateRequest, current
 		engine.Name = *req.Name
 	}
 	if req.ConnectionInfo != nil {
-		// 合并连接信息：如果新值是脱敏占位符，保留原值
-		mergedConnInfo, err := s.mergeConnectionInfo(engine.ConnectionInfo, *req.ConnectionInfo)
+		plainConnInfo, err := s.decryptStoredConnectionInfo(engine.ConnectionInfo)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("解密连接信息失败: %w", err)
 		}
+		// 合并明文连接信息：如果新值是脱敏占位符，保留原值。
+		mergedConnInfo := s.mergePlainConnectionInfo(plainConnInfo, *req.ConnectionInfo)
 
 		// 加密敏感字段
-		encryptedConnInfo, err := s.encryptSensitiveFields(mergedConnInfo)
+		encryptedConnInfo, err := s.encryptConnectionInfoForStorage(mergedConnInfo)
 		if err != nil {
 			return nil, fmt.Errorf("加密连接信息失败: %w", err)
 		}
@@ -422,7 +423,7 @@ func (s *EngineService) ListInternal(engineType string, tenantID uint) ([]models
 
 	// 解密所有资源的敏感字段
 	for i := range engines {
-		decryptedConnInfo, err := s.decryptSensitiveFields(engines[i].ConnectionInfo)
+		decryptedConnInfo, err := s.decryptStoredConnectionInfo(engines[i].ConnectionInfo)
 		if err != nil {
 			return nil, fmt.Errorf("解密资源 %d 连接信息失败: %w", engines[i].ID, err)
 		}
@@ -459,7 +460,7 @@ func (s *EngineService) GetByIDInternal(id uint) (*models.Engine, error) {
 		return nil, err
 	}
 
-	decryptedConnInfo, err := s.decryptSensitiveFields(engine.ConnectionInfo)
+	decryptedConnInfo, err := s.decryptStoredConnectionInfo(engine.ConnectionInfo)
 	if err != nil {
 		return nil, fmt.Errorf("解密连接信息失败: %w", err)
 	}
@@ -492,7 +493,7 @@ func (s *EngineService) GetForConnection(id uint, currentUserID uint) (*models.E
 		return nil, err
 	}
 
-	decryptedConnInfo, err := s.decryptSensitiveFields(engine.ConnectionInfo)
+	decryptedConnInfo, err := s.decryptStoredConnectionInfo(engine.ConnectionInfo)
 	if err != nil {
 		return nil, fmt.Errorf("解密连接信息失败: %w", err)
 	}
@@ -511,42 +512,24 @@ func (s *EngineService) BuildConnectionTestEngine(id uint, currentUserID uint, o
 	}
 
 	if override != nil {
-		mergedConnInfo, err := s.mergeConnectionInfo(engine.ConnectionInfo, *override)
-		if err != nil {
-			return nil, err
-		}
+		mergedConnInfo := s.mergePlainConnectionInfo(engine.ConnectionInfo, *override)
 		engine.ConnectionInfo = s.stripConnectionInfoMetaFields(mergedConnInfo)
 	}
 
 	return engine, nil
 }
 
-// mergeConnectionInfo 合并连接信息，识别前端掩码占位并保留原始敏感值
-func (s *EngineService) mergeConnectionInfo(original, updated models.ConnectionInfo) (models.ConnectionInfo, error) {
+// mergePlainConnectionInfo 合并两份明文连接信息，识别前端掩码占位并保留原始敏感值。
+// 调用方必须先把数据库中的连接信息解密，避免在合并阶段混用密文和明文。
+func (s *EngineService) mergePlainConnectionInfo(original, updated models.ConnectionInfo) models.ConnectionInfo {
 	merged := make(models.ConnectionInfo)
 
-	// 先复制原始字段，并对敏感字段做解密，得到可操作的明文值
+	// 先复制原始明文字段。
 	for k, v := range original {
 		if s.isConnectionInfoMetaField(k) {
 			continue
 		}
-
-		if !s.isSensitiveField(k) {
-			merged[k] = v
-			continue
-		}
-
-		strVal, ok := v.(string)
-		if !ok || strVal == "" {
-			merged[k] = v
-			continue
-		}
-
-		decrypted, err := commonutils.Decrypt(strVal, s.encryptionKey)
-		if err != nil {
-			return nil, fmt.Errorf("解密字段 %s 失败: %w", k, err)
-		}
-		merged[k] = decrypted
+		merged[k] = v
 	}
 
 	// 再合并更新字段，对于敏感字段，需要判断是否仍为掩码占位
@@ -575,7 +558,7 @@ func (s *EngineService) mergeConnectionInfo(original, updated models.ConnectionI
 		merged[k] = strVal
 	}
 
-	return merged, nil
+	return merged
 }
 
 func (s *EngineService) stripConnectionInfoMetaFields(connInfo models.ConnectionInfo) models.ConnectionInfo {
@@ -635,8 +618,8 @@ func maskWithAsterisks(plain string) string {
 	return plain[:4] + "****" + plain[len(plain)-4:]
 }
 
-// encryptSensitiveFields 加密连接信息中的敏感字段
-func (s *EngineService) encryptSensitiveFields(connInfo models.ConnectionInfo) (models.ConnectionInfo, error) {
+// encryptConnectionInfoForStorage 加密即将持久化的明文连接信息中的敏感字段。
+func (s *EngineService) encryptConnectionInfoForStorage(connInfo models.ConnectionInfo) (models.ConnectionInfo, error) {
 	encrypted := make(models.ConnectionInfo)
 	for k, v := range connInfo {
 		encrypted[k] = v
@@ -660,8 +643,8 @@ func (s *EngineService) encryptSensitiveFields(connInfo models.ConnectionInfo) (
 	return encrypted, nil
 }
 
-// decryptSensitiveFields 解密连接信息中的敏感字段
-func (s *EngineService) decryptSensitiveFields(connInfo models.ConnectionInfo) (models.ConnectionInfo, error) {
+// decryptStoredConnectionInfo 解密从数据库读取的连接信息中的敏感字段。
+func (s *EngineService) decryptStoredConnectionInfo(connInfo models.ConnectionInfo) (models.ConnectionInfo, error) {
 	decrypted := make(models.ConnectionInfo)
 	for k, v := range connInfo {
 		decrypted[k] = v
@@ -944,14 +927,14 @@ func (s *EngineService) CheckAndUpdateConnectionStatus(engineID uint) bool {
 	}
 
 	// 3. 解密连接信息
-	decryptedConnInfo, err := s.decryptSensitiveFields(engine.ConnectionInfo)
+	decryptedConnInfo, err := s.decryptStoredConnectionInfo(engine.ConnectionInfo)
 	if err != nil {
 		fmt.Printf("[ConnectionCheck] ❌ 解密连接信息失败: %v\n", err)
 		s.updateConnectionStatus(engineID, "unknown", fmt.Sprintf("解密连接信息失败: %v", err))
 		return false
 	}
 	engine.ConnectionInfo = decryptedConnInfo
-	fmt.Printf("[ConnectionCheck] 🔓 连接信息解密成功: %+v\n", engine.ConnectionInfo)
+	fmt.Printf("[ConnectionCheck] 连接信息解密成功\n")
 
 	// 4. 测试连接
 	fmt.Printf("[ConnectionCheck] ⏱️  开始连接测试 (超时: 3秒)...\n")
@@ -1060,7 +1043,7 @@ func (s *EngineService) resolveCapabilitiesForEngine(engine *models.Engine) (str
 
 	if s.usesPluginCapabilities(engineTypeLower) {
 		probeEngine := *engine
-		decryptedConnInfo, err := s.decryptSensitiveFields(engine.ConnectionInfo)
+		decryptedConnInfo, err := s.decryptStoredConnectionInfo(engine.ConnectionInfo)
 		if err != nil {
 			return "", fmt.Errorf("解密连接信息失败: %w", err)
 		}
@@ -1218,7 +1201,7 @@ func (s *EngineService) EnableSpatialWorkspace(ctx context.Context, id uint, eco
 		return nil, errors.New("绑定的运行时不是 supermap_workflow")
 	}
 
-	decryptedConnInfo, err := s.decryptSensitiveFields(engine.ConnectionInfo)
+	decryptedConnInfo, err := s.decryptStoredConnectionInfo(engine.ConnectionInfo)
 	if err != nil {
 		return nil, fmt.Errorf("解密连接信息失败: %w", err)
 	}

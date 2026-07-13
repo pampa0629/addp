@@ -256,6 +256,36 @@ func TestResolveItemsDetects3DTilesManifestWholeScope(t *testing.T) {
 	}
 }
 
+func TestResolveItemsDetectsS3MManifestWholeScope(t *testing.T) {
+	t.Parallel()
+	size := int64(10)
+	result, err := ResolveItems(ResolveInput{
+		ScopeKind: ScopeKindDirectory,
+		ScopePath: "models/city-s3m",
+		Candidates: []Candidate{
+			{Path: "models/city-s3m/config/scene.scp", Name: "scene.scp", SizeBytes: &size},
+			{Path: "models/city-s3m/Data/Tile_1/Tile_1.s3m", Name: "Tile_1.s3m", SizeBytes: &size},
+		},
+		Options: ResolveOptions{AllowWholeScope: true},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("items = %#v, want one S3M item", result.Items)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutWhole || item.Format != string(format.FormatS3M) || item.DataType != datatype.Model3D {
+		t.Fatalf("item = %#v, want model_3d s3m whole item", item)
+	}
+	if item.PrimaryContentPath != "models/city-s3m/config/scene.scp" || !result.Exclusive {
+		t.Fatalf("item = %#v exclusive=%v, want canonical S3M manifest", item, result.Exclusive)
+	}
+	if !result.Claims["models/city-s3m/config/scene.scp"] || !result.Claims["models/city-s3m/Data/Tile_1/Tile_1.s3m"] {
+		t.Fatalf("claims = %#v, want whole S3M scope claimed", result.Claims)
+	}
+}
+
 func TestResolveItemsDetectsEPTManifestWholeScope(t *testing.T) {
 	t.Parallel()
 

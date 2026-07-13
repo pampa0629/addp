@@ -2,15 +2,15 @@
 
 `pointcloud_workflow` 是 ADDP 点云处理专用工作流运行时，遵循 `addp.workflow/v1` HTTP 接口。
 
-第一版只提供 direct operator：
+以下转换算子同时支持 Develop workflow 和 Manager direct 调用：
 
-- `las_to_copc`：LAS 点云生成 Manager 受管 COPC 快显 artifact。
-- `laz_to_copc`：LAZ 点云生成 Manager 受管 COPC 快显 artifact。
-- `e57_to_copc`：E57 扫描点云生成 Manager 受管 COPC 快显 artifact。
-- `pcd_to_copc`：PCD 点云生成 Manager 受管 COPC 快显 artifact。
-- `xyz_to_copc`：简单文本 XYZ 点云生成 Manager 受管 COPC 快显 artifact。
+- `las_to_copc`：LAS 点云转换为持久化 COPC。
+- `laz_to_copc`：LAZ 点云转换为持久化 COPC。
+- `e57_to_copc`：E57 扫描点云转换为持久化 COPC。
+- `pcd_to_copc`：PCD 点云转换为持久化 COPC。
+- `xyz_to_copc`：简单文本 XYZ 点云转换为持久化 COPC。
 
-运行时通过 PDAL 执行实际转换。PDAL 是 `pointcloud_workflow` engine runtime 的内部依赖，不要求、也不建议安装为宿主机全局命令。Manager 负责把源数据派生为本地挂载路径或 `/vsicurl/` URI，并传入 Manager infra MinIO 发布计划；运行时不解析 ADDP locator。当前 PDAL 2.10.2 实测 `writers.copc` 不能可靠直接写 `/vsis3/` 目标，因此单一路线是 PDAL 先写入受控工作目录，再上传为 Manager 私有 COPC artifact。生成的 COPC 存放在 Manager infra MinIO 中，不自动升格为业务 data item。源数据本身已经是 `format=copc` 时由 Manager 基础预览直接读取，不进入该运行时。XYZ 第一阶段只支持简单确定性文本 XYZ，不引入列映射 UI 或通用文本 schema 配置。
+运行时通过 PDAL 执行实际转换。PDAL 是 `pointcloud_workflow` engine runtime 的内部依赖，不要求、也不建议安装为宿主机全局命令。Runtime Operator Spec 统一消费 `addp.workflow.access-plan/v1`，对象存储源由运行时生成受控读取方式；运行时不解析 ADDP locator。当前 PDAL 2.10.2 实测 `writers.copc` 不能可靠直接写 `/vsis3/` 目标，因此单一路线是 PDAL 先写入受控工作目录，再按目标计划发布。Manager direct 结果属于 infra 快显 artifact；Develop workflow 结果属于用户选择的业务存储并触发 Meta scan。源数据本身已经是 `format=copc` 时直接读取，不进入该运行时。XYZ 第一阶段只支持简单确定性文本 XYZ，不引入列映射 UI 或通用文本 schema 配置。
 
 PCD / XYZ 转换仍以 PDAL 为唯一执行路线。为覆盖 NFS 样例和常见轻量样本：
 

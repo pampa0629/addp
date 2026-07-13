@@ -1,5 +1,7 @@
 # ADDP 数据类型与文件格式扩展指南
 
+新增 CAD 格式时必须优先判断是否需要保留 CAD 原生图层、块、布局、标注等语义。DWG 使用既有 `data_type=cad`，不得因为 entity 可投影为行而归为 `table`；CAD→GIS 必须作为显式转换生成新的 table item。第一阶段 DWG deep scan 和预览统一使用 `supermap_workflow` 的 direct operator，不在 Meta 或 Manager 进程嵌入 SuperMap/ODA SDK，也不保留第二解析路线。
+
 本文是新增或修改数据类型、文件格式、容器格式、多组件格式、whole scope 数据集或引擎原生数据表示时的实施清单。概念解释不在本文重复，先读：
 
 - [ADDP 数据项体系图](../concepts/addp数据项体系图.md)
@@ -101,7 +103,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor
 | `Format` | 稳定 format ID，例如 `csv` |
 | `DataType` | 默认 data type |
 | `Layouts` | `single`、`multi`、`whole` |
-| `Identification` | 扩展名、确定性文件名、MIME、内容签名 |
+| `Identification` | 扩展名、确定性直接子文件名、确定性相对路径、MIME、内容签名；嵌套 manifest 使用 `RelativePaths`，不得把路径退化为任意文件名匹配 |
 
 `Descriptor()` 是格式身份、识别规则、默认 data type 和 layout 的静态事实源，不是某个 data item 的扫描结果，也不声明当前 Go 进程是否已有 provider / reader / writer。当前进程实际加载了哪些实现，只能由已注册 `FormatPlugin` 是否实现对应接口动态判断。
 

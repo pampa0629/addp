@@ -1,6 +1,8 @@
 # Dependencies
 **/node_modules/
 **/vendor/
+# SuperMap 私有 SDK、GPA/SPS libs 和许可只允许保存在本地基础镜像构建目录。
+engines/supermap-workflow/vendor/
 
 # Build outputs
 **/dist/

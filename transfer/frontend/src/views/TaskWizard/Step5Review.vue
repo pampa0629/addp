@@ -42,6 +42,53 @@
       </el-descriptions>
     </el-card>
 
+    <el-card class="config-card">
+      <template #header>
+        <div class="card-header">
+          <span>{{ t('transfer.taskWizard.reviewLoadConfig') }}</span>
+        </div>
+      </template>
+      <el-descriptions :column="2" border>
+        <el-descriptions-item :label="t('transfer.taskWizard.runtimeBoundaryLabel')">
+          {{ runtimeBoundaryLabel }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskWizard.loadModeLabel')">
+          {{ loadModeLabel }}
+        </el-descriptions-item>
+        <template v-if="wizardState.isContinuousTask.value">
+          <el-descriptions-item :label="t('transfer.taskWizard.continuousKeyFieldsLabel')">
+            {{ wizardState.continuousKeyFields.value.join(', ') }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.taskWizard.continuousTargetKeysLabel')">
+            {{ wizardState.continuousTargetKeys.value.join(', ') }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.taskWizard.continuousInitialPositionLabel')">
+            {{ continuousInitialPositionLabel }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.taskWizard.continuousPollBatchSizeLabel')">
+            {{ wizardState.continuousPollBatchSize.value }}
+          </el-descriptions-item>
+        </template>
+        <template v-if="wizardState.isWatermarkIncremental.value">
+          <el-descriptions-item :label="t('transfer.taskWizard.watermarkFieldLabel')">
+            {{ wizardState.watermarkField.value }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.taskWizard.tieBreakerLabel')">
+            {{ wizardState.watermarkTieBreakers.value.join(', ') }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.taskWizard.targetKeysLabel')">
+            {{ wizardState.targetKeys.value.join(', ') }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.taskWizard.incrementalRecoveryLabel')">
+            {{ t('transfer.taskWizard.incrementalRecoveryResume') }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.taskWizard.incrementalDeleteLabel')">
+            {{ t('transfer.taskWizard.incrementalDeleteUnsupported') }}
+          </el-descriptions-item>
+        </template>
+      </el-descriptions>
+    </el-card>
+
     <!-- 数据源配置 -->
     <el-card v-if="!wizardState.isRawCopyTask.value" class="config-card">
       <template #header>
@@ -54,7 +101,7 @@
           {{ wizardState.sourceEngineID.value }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskWizard.dataType')">
-          {{ dataTypeLabel(wizardState.sourceDataType.value) }}
+          {{ wizardState.isContinuousTask.value ? t('transfer.taskWizard.kafkaTopicLabel') : dataTypeLabel(wizardState.sourceDataType.value) }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskWizard.representation')">
           {{ representationLabel(wizardState.sourceRepresentation.value) }}
@@ -86,7 +133,7 @@
           {{ formatLabel(wizardState.targetConfig.value.format) }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskWizard.writeModeLabel')">
-          {{ writeModeLabel(wizardState.targetConfig.value.writeMode) }}
+          {{ targetApplyModeLabel }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskWizard.reviewResourcePath')" :span="2">
           {{ targetResourcePath }}
@@ -196,7 +243,7 @@ const warnings = computed(() => {
     warns.push(t('transfer.taskWizard.warningNoMapping'))
   }
 
-  if (!props.wizardState.schedule.value) {
+  if (!props.wizardState.schedule.value && !props.wizardState.isContinuousTask.value) {
     warns.push(t('transfer.taskWizard.warningNoSchedule'))
   }
 
@@ -204,6 +251,34 @@ const warnings = computed(() => {
 })
 
 const hasWarnings = computed(() => warnings.value.length > 0)
+
+const loadModeLabel = computed(() => {
+  if (props.wizardState.isContinuousTask.value) {
+    return t('transfer.taskWizard.continuousIncrementalLoad')
+  }
+  return props.wizardState.isWatermarkIncremental.value
+    ? t('transfer.taskWizard.watermarkIncrementalLoad')
+    : t('transfer.taskWizard.snapshotLoad')
+})
+
+const runtimeBoundaryLabel = computed(() => {
+  return props.wizardState.isContinuousTask.value
+    ? t('transfer.taskWizard.runtimeContinuous')
+    : t('transfer.taskWizard.runtimeBounded')
+})
+
+const continuousInitialPositionLabel = computed(() => {
+  return props.wizardState.continuousInitialPosition.value === 'latest'
+    ? t('transfer.taskWizard.continuousInitialLatest')
+    : t('transfer.taskWizard.continuousInitialEarliest')
+})
+
+const targetApplyModeLabel = computed(() => {
+  if (props.wizardState.isContinuousTask.value || props.wizardState.isWatermarkIncremental.value) {
+    return t('transfer.taskWizard.applyModeUpsert')
+  }
+  return writeModeLabel(props.wizardState.targetConfig.value.writeMode)
+})
 
 const sourceLocatorPath = computed(() => {
   const config = props.wizardState.sourceConfig.value || {}

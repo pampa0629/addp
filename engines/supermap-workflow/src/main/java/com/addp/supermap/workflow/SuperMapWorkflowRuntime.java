@@ -29,12 +29,17 @@ import com.supermap.data.EncodeType;
 import com.supermap.data.EngineType;
 import com.supermap.data.FieldInfo;
 import com.supermap.data.FieldInfos;
+import com.supermap.data.GeoStyle;
 import com.supermap.data.PrjCoordSys;
+import com.supermap.data.Point3D;
 import com.supermap.data.QueryParameter;
 import com.supermap.data.Rectangle2D;
 import com.supermap.data.Recordset;
 import com.supermap.data.SpatialRelationType;
 import com.supermap.data.Workspace;
+import com.supermap.data.processing.CacheBuilderOSGBTool;
+import com.supermap.data.processing.OSGBCacheBuilder;
+import com.supermap.data.processing.TextureCompressType;
 import com.supermap.sps.core.executor.IWorkflowExecutor;
 import com.supermap.sps.core.executor.WorkflowExecutors;
 import com.supermap.sps.core.parameters.ISingleDataDefinition;
@@ -49,17 +54,24 @@ import com.supermap.sps.core.workflow.IProcessItem;
 import com.supermap.sps.core.workflow.IWorkflow;
 import com.supermap.sps.core.workflow.impls.AbstractProcess;
 import com.supermap.sps.core.workflow.impls.WorkflowFactory;
+import io.minio.DownloadObjectArgs;
+import io.minio.MinioClient;
+import io.minio.UploadObjectArgs;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.awt.Dimension;
+import java.awt.Color;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.file.InvalidPathException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
@@ -73,6 +85,11 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.Comparator;
+import java.util.stream.Stream;
+import javax.xml.parsers.DocumentBuilderFactory;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 
 public final class SuperMapWorkflowRuntime {
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -308,6 +325,9 @@ public final class SuperMapWorkflowRuntime {
         return switch (name) {
             case "datasource.enable_postgis" -> enablePostgis(params);
             case "datasource.upgrade_udbx" -> upgradeUdbx(params);
+            case "cad.inspect" -> inspectCAD(params);
+            case "cad.render_preview" -> renderCADPreview(params);
+            case "osgb_scene_to_s3m" -> convertOSGBSceneToS3M(params);
             default -> throw new IllegalArgumentException("operator does not support direct execution: " + name);
         };
     }
@@ -357,6 +377,616 @@ public final class SuperMapWorkflowRuntime {
         result.put("changed", !before.current());
         return result;
     }
+
+    private static ObjectNode convertOSGBSceneToS3M(JsonNode params) {
+        JsonNode plan = requireObject(params, "access_plan");
+        if (!"addp.workflow.access-plan/v1".equals(plan.path("schema_version").asText())) {
+            throw new IllegalArgumentException("unsupported access_plan.schema_version");
+        }
+        JsonNode source = requireObject(plan, "source");
+        JsonNode target = requireObject(plan, "target");
+        if (!"directory".equals(source.path("kind").asText()) || !"osgb_scene".equals(source.path("format").asText())) {
+            throw new IllegalArgumentException("access_plan.source must be directory/osgb_scene");
+        }
+        if (!"directory".equals(target.path("kind").asText()) || !"s3m".equals(target.path("format").asText())) {
+            throw new IllegalArgumentException("access_plan.target must be directory/s3m");
+        }
+
+        Path sourceRoot = resolveWorkflowAccessPath(requireObject(source, "access"));
+        Path targetRoot = resolveWorkflowAccessPath(requireObject(target, "access"));
+        if (!Files.isDirectory(sourceRoot)) {
+            throw new IllegalArgumentException("OSGB scene directory does not exist: " + sourceRoot);
+        }
+        String writeMode = target.path("write_mode").asText("create");
+        if (Files.exists(targetRoot)) {
+            if ("create".equals(writeMode)) {
+                throw new IllegalArgumentException("S3M target already exists: " + targetRoot);
+            }
+            if (!"replace".equals(writeMode)) {
+                throw new IllegalArgumentException("target write_mode must be create or replace");
+            }
+            deleteRecursively(targetRoot);
+        }
+
+        OSGBSceneMetadata metadata = readOSGBSceneMetadata(sourceRoot.resolve("metadata.xml"));
+        List<String> rootTiles = findOSGBRootTiles(sourceRoot.resolve("Data"));
+        if (rootTiles.isEmpty()) {
+            throw new IllegalArgumentException("OSGB scene does not contain Data/Tile_*/Tile_*.osgb roots");
+        }
+
+        Path workRoot;
+        try {
+            workRoot = Files.createTempDirectory("addp-supermap-s3m-");
+			Files.createDirectories(targetRoot.resolve("config"));
+        } catch (IOException ex) {
+            throw new IllegalStateException("failed to prepare S3M conversion directories", ex);
+        }
+		Path sourceSCP = workRoot.resolve("scene.scp");
+        Workspace workspace = new Workspace();
+        PrjCoordSys prjCoordSys = PrjCoordSys.fromEPSG(metadata.epsg());
+		boolean conversionSucceeded = false;
+        try {
+            boolean configGenerated = OSGBCacheBuilder.generateConfigFile(
+                    sourceSCP.toString(),
+                    new Point3D(metadata.originX(), metadata.originY(), metadata.originZ()),
+                    prjCoordSys,
+                    rootTiles.toArray(new String[0])
+            );
+            if (!configGenerated) {
+                throw new IllegalStateException("SuperMap failed to generate OSGB scene SCP");
+            }
+			boolean converted = CacheBuilderOSGBTool.osgb2s3m(sourceSCP.toString(), targetRoot.resolve("config").toString(), TextureCompressType.TEXTURECOMPRESS_DXT);
+            if (!converted) {
+                throw new IllegalStateException("SuperMap OSGB to S3M conversion returned false");
+            }
+			conversionSucceeded = true;
+        } finally {
+            prjCoordSys.dispose();
+            workspace.dispose();
+            deleteRecursively(workRoot);
+			if (!conversionSucceeded) {
+				deleteRecursively(targetRoot);
+			}
+        }
+
+        Path manifest = findSingleSCP(targetRoot);
+        long fileCount;
+        long sizeBytes;
+        try (Stream<Path> files = Files.walk(targetRoot)) {
+            List<Path> outputs = files.filter(Files::isRegularFile).toList();
+            fileCount = outputs.size();
+            sizeBytes = outputs.stream().mapToLong(item -> {
+                try {
+                    return Files.size(item);
+                } catch (IOException ex) {
+                    throw new IllegalStateException(ex);
+                }
+            }).sum();
+        } catch (IOException ex) {
+            throw new IllegalStateException("failed to inspect S3M output", ex);
+        }
+        ObjectNode result = MAPPER.createObjectNode();
+        result.put("kind", "supermap_s3m_dataset");
+        result.put("target_format", "s3m");
+        result.put("target_path", targetRoot.toString());
+        result.put("manifest_ref", targetRoot.relativize(manifest).toString().replace('\\', '/'));
+        result.put("texture_compression", "dxt");
+        result.put("root_tile_count", rootTiles.size());
+        result.put("file_count", fileCount);
+        result.put("size_bytes", sizeBytes);
+        return result;
+    }
+
+    private static ObjectNode inspectCAD(JsonNode params) {
+        JsonNode plan = requireObject(params, "access_plan");
+        if (!"addp.workflow.access-plan/v1".equals(plan.path("schema_version").asText())) {
+            throw new IllegalArgumentException("unsupported access_plan.schema_version");
+        }
+        JsonNode source = requireObject(plan, "source");
+        if (!"file".equals(source.path("kind").asText()) || !"dwg".equals(source.path("format").asText())) {
+            throw new IllegalArgumentException("access_plan.source must be file/dwg");
+        }
+        WorkflowAccessFile sourceFile = resolveWorkflowAccessFile(requireObject(source, "access"));
+        Path sourcePath = sourceFile.path();
+        if (!Files.isRegularFile(sourcePath)) {
+            sourceFile.close();
+            throw new IllegalArgumentException("DWG file does not exist: " + sourcePath);
+        }
+        String formatVersion;
+        try {
+            formatVersion = readDWGVersion(sourcePath);
+        } catch (RuntimeException ex) {
+            sourceFile.close();
+            throw ex;
+        }
+
+        Workspace workspace = new Workspace();
+        DatasourceConnectionInfo connectionInfo = new DatasourceConnectionInfo();
+        try {
+            connectionInfo.setEngineType(EngineType.VECTORFILE);
+            connectionInfo.setServer(sourcePath.toString());
+            connectionInfo.setAlias("cad_inspect_" + UUID.randomUUID().toString().replace("-", ""));
+            connectionInfo.setReadOnly(true);
+            Datasource datasource = workspace.getDatasources().open(connectionInfo);
+            if (datasource == null || !datasource.isOpened()) {
+                throw new IllegalStateException("SuperMap failed to open DWG datasource: " + sourcePath);
+            }
+
+            int datasetCount = datasource.getDatasets().getCount();
+            long interpretedRecordCount = 0;
+            double minX = Double.POSITIVE_INFINITY;
+            double minY = Double.POSITIVE_INFINITY;
+            double maxX = Double.NEGATIVE_INFINITY;
+            double maxY = Double.NEGATIVE_INFINITY;
+            boolean hasBounds = false;
+            ArrayNode datasets = MAPPER.createArrayNode();
+            for (int index = 0; index < datasetCount; index++) {
+                Dataset dataset = datasource.getDatasets().get(index);
+                if (dataset == null) {
+                    continue;
+                }
+                ObjectNode datasetSummary = datasets.addObject();
+                datasetSummary.put("name", dataset.getName());
+                datasetSummary.put("dataset_type", String.valueOf(dataset.getType()));
+                if (dataset instanceof DatasetVector vector) {
+                    int recordCount = vector.getRecordCount();
+                    datasetSummary.put("record_count", recordCount);
+                    interpretedRecordCount += recordCount;
+                }
+                Rectangle2D bounds = dataset.getBounds();
+                if (bounds != null && !bounds.isEmpty()) {
+                    hasBounds = true;
+                    minX = Math.min(minX, bounds.getLeft());
+                    minY = Math.min(minY, bounds.getBottom());
+                    maxX = Math.max(maxX, bounds.getRight());
+                    maxY = Math.max(maxY, bounds.getTop());
+                }
+            }
+
+            ObjectNode result = MAPPER.createObjectNode();
+            result.put("schema_version", "addp.cad.inspect/v1");
+            result.put("format", "dwg");
+            result.put("format_version", formatVersion);
+            ObjectNode drawing = result.putObject("drawing");
+            drawing.put("drawing_kind", "2d");
+            drawing.put("has_model_space", datasetCount > 0);
+            drawing.put("layer_count", datasetCount);
+            if (hasBounds) {
+                ObjectNode bounds = drawing.putObject("bounds_2d");
+                bounds.put("min_x", minX);
+                bounds.put("min_y", minY);
+                bounds.put("max_x", maxX);
+                bounds.put("max_y", maxY);
+            }
+            ObjectNode interpretation = result.putObject("interpretation");
+            interpretation.put("dataset_count", datasetCount);
+            interpretation.put("interpreted_record_count", interpretedRecordCount);
+            interpretation.put("provider", "supermap_iobjects_java");
+            interpretation.put("provider_version", superMapProviderVersion());
+            interpretation.put("normalized_geometry", true);
+            interpretation.put("geometry_traversed", false);
+            interpretation.put("scan_complete", true);
+            interpretation.set("datasets", datasets);
+            interpretation.putArray("warnings");
+            return result;
+        } finally {
+            connectionInfo.dispose();
+            try {
+                workspace.close();
+            } finally {
+                workspace.dispose();
+                sourceFile.close();
+            }
+        }
+    }
+
+    private static ObjectNode renderCADPreview(JsonNode params) {
+        JsonNode plan = requireObject(params, "access_plan");
+        if (!"addp.workflow.access-plan/v1".equals(plan.path("schema_version").asText())) {
+            throw new IllegalArgumentException("unsupported access_plan.schema_version");
+        }
+        JsonNode source = requireObject(plan, "source");
+        JsonNode target = requireObject(plan, "target");
+        if (!"file".equals(source.path("kind").asText()) || !"dwg".equals(source.path("format").asText())) {
+            throw new IllegalArgumentException("access_plan.source must be file/dwg");
+        }
+        if (!"directory".equals(target.path("kind").asText()) || !"cad_preview".equals(target.path("format").asText())) {
+            throw new IllegalArgumentException("access_plan.target must be directory/cad_preview");
+        }
+        int tileSize = Math.max(128, Math.min(1024, optionalInt(params, "tile_size", 512)));
+        int maxZoom = Math.max(0, Math.min(8, optionalInt(params, "max_zoom", 4)));
+        WorkflowAccessFile sourceFile = resolveWorkflowAccessFile(requireObject(source, "access"));
+        Path renderRoot;
+        try {
+            renderRoot = Files.createTempDirectory("addp-supermap-cad-preview-");
+        } catch (IOException ex) {
+            sourceFile.close();
+            throw new IllegalStateException("failed to create CAD preview directory", ex);
+        }
+
+        Workspace workspace = new Workspace();
+        DatasourceConnectionInfo connectionInfo = new DatasourceConnectionInfo();
+        com.supermap.mapping.Map map = new com.supermap.mapping.Map(workspace);
+        GeoStyle backgroundStyle = new GeoStyle();
+        try {
+            Path sourcePath = sourceFile.path();
+            readDWGVersion(sourcePath);
+            connectionInfo.setEngineType(EngineType.VECTORFILE);
+            connectionInfo.setServer(sourcePath.toString());
+            connectionInfo.setAlias("cad_preview_" + UUID.randomUUID().toString().replace("-", ""));
+            connectionInfo.setReadOnly(true);
+            Datasource datasource = workspace.getDatasources().open(connectionInfo);
+            if (datasource == null || !datasource.isOpened()) {
+                throw new IllegalStateException("SuperMap failed to open DWG datasource: " + sourcePath);
+            }
+
+            Rectangle2D drawingBounds = null;
+            int datasetCount = datasource.getDatasets().getCount();
+            for (int index = 0; index < datasetCount; index++) {
+                Dataset dataset = datasource.getDatasets().get(index);
+                if (dataset == null) {
+                    continue;
+                }
+                map.getLayers().add(dataset, true);
+                Rectangle2D bounds = dataset.getBounds();
+                if (bounds == null || bounds.isEmpty()) {
+                    continue;
+                }
+                if (drawingBounds == null) {
+                    drawingBounds = new Rectangle2D(bounds.getLeft(), bounds.getBottom(), bounds.getRight(), bounds.getTop());
+                } else {
+                    drawingBounds.setLeft(Math.min(drawingBounds.getLeft(), bounds.getLeft()));
+                    drawingBounds.setBottom(Math.min(drawingBounds.getBottom(), bounds.getBottom()));
+                    drawingBounds.setRight(Math.max(drawingBounds.getRight(), bounds.getRight()));
+                    drawingBounds.setTop(Math.max(drawingBounds.getTop(), bounds.getTop()));
+                }
+            }
+            if (drawingBounds == null || drawingBounds.isEmpty() || drawingBounds.getWidth() <= 0 || drawingBounds.getHeight() <= 0) {
+                throw new IllegalStateException("DWG datasource has no renderable 2D bounds");
+            }
+            double renderSpan = Math.max(drawingBounds.getWidth(), drawingBounds.getHeight());
+            double centerX = (drawingBounds.getLeft() + drawingBounds.getRight()) / 2.0d;
+            double centerY = (drawingBounds.getBottom() + drawingBounds.getTop()) / 2.0d;
+            Rectangle2D renderBounds = new Rectangle2D(
+                centerX - renderSpan / 2.0d,
+                centerY - renderSpan / 2.0d,
+                centerX + renderSpan / 2.0d,
+                centerY + renderSpan / 2.0d
+            );
+            long expectedTileCount = 0;
+            for (int z = 0; z <= maxZoom; z++) {
+                long side = 1L << z;
+                expectedTileCount += side * side;
+            }
+            if (expectedTileCount > 25000L) {
+                throw new IllegalArgumentException("CAD preview max_zoom produces more than 25000 tiles");
+            }
+            map.setImageSize(new Dimension(tileSize, tileSize));
+            map.setInflateBounds(false);
+            backgroundStyle.setFillForeColor(new Color(30, 30, 30));
+            backgroundStyle.setFillBackColor(new Color(30, 30, 30));
+            backgroundStyle.setFillBackOpaque(true);
+            backgroundStyle.setFillOpaqueRate(100);
+            map.setPaintBackground(true);
+            map.setBackgroundStyle(backgroundStyle);
+            Files.createDirectories(renderRoot.resolve("model-space"));
+            Path thumbnail = renderRoot.resolve("thumbnail.webp");
+            if (!outputCADMapToWebP(map, thumbnail, renderBounds)) {
+                throw new IllegalStateException("SuperMap failed to render CAD thumbnail");
+            }
+
+            long tileCount = 0;
+            for (int z = 0; z <= maxZoom; z++) {
+                int side = 1 << z;
+                double tileWidth = renderBounds.getWidth() / side;
+                double tileHeight = renderBounds.getHeight() / side;
+                for (int x = 0; x < side; x++) {
+                    for (int y = 0; y < side; y++) {
+                        double left = renderBounds.getLeft() + x * tileWidth;
+                        double right = left + tileWidth;
+                        double top = renderBounds.getTop() - y * tileHeight;
+                        double bottom = top - tileHeight;
+                        Path tile = renderRoot.resolve("model-space").resolve(String.valueOf(z)).resolve(String.valueOf(x)).resolve(y + ".webp");
+                        Files.createDirectories(tile.getParent());
+                        Rectangle2D tileBounds = new Rectangle2D(left, bottom, right, top);
+                        if (!outputCADMapToWebP(map, tile, tileBounds)) {
+                            throw new IllegalStateException("SuperMap failed to render CAD tile " + z + "/" + x + "/" + y);
+                        }
+                        tileCount++;
+                    }
+                }
+            }
+
+            ObjectNode manifest = MAPPER.createObjectNode();
+            manifest.put("schema_version", "addp.cad.preview-manifest/v1");
+            manifest.put("tile_size", tileSize);
+            manifest.put("min_zoom", 0);
+            manifest.put("max_zoom", maxZoom);
+            manifest.put("tile_format", "webp");
+            manifest.put("tile_template", "model-space/{z}/{x}/{y}.webp");
+            ObjectNode bounds = manifest.putObject("bounds_2d");
+            bounds.put("min_x", renderBounds.getLeft());
+            bounds.put("min_y", renderBounds.getBottom());
+            bounds.put("max_x", renderBounds.getRight());
+            bounds.put("max_y", renderBounds.getTop());
+            ObjectNode drawing = manifest.putObject("drawing_bounds_2d");
+            drawing.put("min_x", drawingBounds.getLeft());
+            drawing.put("min_y", drawingBounds.getBottom());
+            drawing.put("max_x", drawingBounds.getRight());
+            drawing.put("max_y", drawingBounds.getTop());
+            manifest.putArray("spaces").addObject().put("id", "model-space").put("kind", "model_space").put("title", "Model Space");
+            Files.writeString(renderRoot.resolve("manifest.json"), MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(manifest), StandardCharsets.UTF_8);
+
+            JsonNode targetAccess = requireObject(target, "access");
+            publishCADPreview(renderRoot, targetAccess);
+            ObjectNode result = MAPPER.createObjectNode();
+            result.put("schema_version", "addp.cad.render-preview/v1");
+            result.put("manifest_ref", "manifest.json");
+            result.put("thumbnail_ref", "thumbnail.webp");
+            result.put("tile_count", tileCount);
+            result.put("dataset_count", datasetCount);
+            result.set("bounds_2d", bounds.deepCopy());
+            return result;
+        } catch (IOException ex) {
+            throw new IllegalStateException("failed to write CAD preview artifact", ex);
+        } finally {
+            try {
+                map.close();
+                map.dispose();
+            } finally {
+                backgroundStyle.dispose();
+                connectionInfo.dispose();
+                try {
+                    workspace.close();
+                    workspace.dispose();
+                } finally {
+                    sourceFile.close();
+                    deleteRecursively(renderRoot);
+                }
+            }
+        }
+    }
+
+    private static boolean outputCADMapToWebP(com.supermap.mapping.Map map, Path output, Rectangle2D bounds) {
+        map.setViewBounds(bounds);
+        return map.outputMapToWEBP(output.toString(), false);
+    }
+
+    private static void publishCADPreview(Path renderRoot, JsonNode access) {
+        String method = access.path("method").asText();
+        if ("mounted_path".equals(method)) {
+            Path targetRoot = resolveWorkflowAccessPath(access);
+            if (Files.exists(targetRoot)) {
+                deleteRecursively(targetRoot);
+            }
+            try (Stream<Path> paths = Files.walk(renderRoot)) {
+                for (Path source : paths.toList()) {
+                    Path target = targetRoot.resolve(renderRoot.relativize(source).toString());
+                    if (Files.isDirectory(source)) {
+                        Files.createDirectories(target);
+                    } else {
+                        Files.createDirectories(target.getParent());
+                        Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+            } catch (IOException ex) {
+                throw new IllegalStateException("failed to publish CAD preview to mounted path", ex);
+            }
+            return;
+        }
+        if (!"object_store".equals(method)) {
+            throw new IllegalArgumentException("CAD preview target access method must be mounted_path or object_store");
+        }
+        String prefix = access.path("prefix").asText("").replace('\\', '/').replaceAll("^/+|/+$", "");
+        try {
+            MinioClient client = buildObjectStoreClient(access);
+            try (Stream<Path> paths = Files.walk(renderRoot)) {
+                for (Path file : paths.filter(Files::isRegularFile).toList()) {
+                    String relative = renderRoot.relativize(file).toString().replace('\\', '/');
+                    String object = prefix.isBlank() ? relative : prefix + "/" + relative;
+                    client.uploadObject(UploadObjectArgs.builder()
+                            .bucket(paramText(access, "bucket"))
+                            .object(object)
+                            .filename(file.toString())
+                            .build());
+                }
+            }
+        } catch (Exception ex) {
+            throw new IllegalStateException("failed to publish CAD preview to object store", ex);
+        }
+    }
+
+    private static WorkflowAccessFile resolveWorkflowAccessFile(JsonNode access) {
+        String method = access.path("method").asText();
+        if ("mounted_path".equals(method)) {
+            return new WorkflowAccessFile(resolveWorkflowAccessPath(access), null);
+        }
+        if (!"object_store".equals(method)) {
+            throw new IllegalArgumentException("CAD source access method must be mounted_path or object_store");
+        }
+        String bucket = paramText(access, "bucket");
+        String object = paramText(access, "object");
+        String fileName = Path.of(object.replace('\\', '/')).getFileName().toString();
+        if (fileName.isBlank()) {
+            throw new IllegalArgumentException("object_store CAD source requires a file object");
+        }
+        Path tempRoot;
+        try {
+            tempRoot = Files.createTempDirectory("addp-supermap-cad-");
+        } catch (IOException ex) {
+            throw new IllegalStateException("failed to create CAD materialization directory", ex);
+        }
+        Path localFile = tempRoot.resolve(fileName);
+        try {
+            MinioClient client = buildObjectStoreClient(access);
+            client.downloadObject(DownloadObjectArgs.builder()
+                    .bucket(bucket)
+                    .object(object)
+                    .filename(localFile.toString())
+                    .build());
+            return new WorkflowAccessFile(localFile, tempRoot);
+        } catch (Exception ex) {
+            deleteRecursively(tempRoot);
+            throw new IllegalStateException("failed to materialize DWG object " + bucket + "/" + object, ex);
+        }
+    }
+
+    private record WorkflowAccessFile(Path path, Path tempRoot) implements AutoCloseable {
+        @Override
+        public void close() {
+            if (tempRoot != null) {
+                deleteRecursively(tempRoot);
+            }
+        }
+    }
+
+    private static MinioClient buildObjectStoreClient(JsonNode access) {
+        String endpoint = paramText(access, "endpoint");
+        boolean useSSL = access.path("use_ssl").asBoolean(false);
+        String candidate = endpoint.contains("://") ? endpoint : (useSSL ? "https://" : "http://") + endpoint;
+        URI uri;
+        try {
+            uri = URI.create(candidate);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("invalid object_store endpoint", ex);
+        }
+        String host = normalizeResourceHost(uri.getHost());
+        if (host == null || host.isBlank()) {
+            throw new IllegalArgumentException("invalid object_store endpoint host");
+        }
+        String scheme = uri.getScheme();
+        if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+            throw new IllegalArgumentException("object_store endpoint scheme must be http or https");
+        }
+        String hostForURL = host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
+        String normalizedEndpoint = scheme.toLowerCase() + "://" + hostForURL + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
+        return MinioClient.builder()
+                .endpoint(normalizedEndpoint)
+                .credentials(paramText(access, "access_key"), paramText(access, "secret_key"))
+                .build();
+    }
+
+    private static String readDWGVersion(Path sourcePath) {
+        try (InputStream input = Files.newInputStream(sourcePath)) {
+            byte[] header = input.readNBytes(6);
+            String version = new String(header, StandardCharsets.US_ASCII);
+            if (header.length != 6 || !version.matches("AC10[0-9]{2}")) {
+                throw new IllegalArgumentException("invalid DWG AC10xx header: " + sourcePath);
+            }
+            return version;
+        } catch (IOException ex) {
+            throw new IllegalStateException("failed to read DWG header: " + sourcePath, ex);
+        }
+    }
+
+    private static String superMapProviderVersion() {
+        Package providerPackage = Workspace.class.getPackage();
+        String version = providerPackage == null ? null : providerPackage.getImplementationVersion();
+        return version == null || version.isBlank() ? "12.1" : version;
+    }
+
+    private static Path resolveWorkflowAccessPath(JsonNode access) {
+        if (!"mounted_path".equals(access.path("method").asText())) {
+            throw new IllegalArgumentException("SuperMap S3M conversion currently requires mounted_path access");
+        }
+        Path configuredPath = Path.of(paramText(access, "path")).normalize();
+        String server = access.path("server").asText("").trim();
+        String exportPath = access.path("export_path").asText("").trim();
+        if (server.isBlank() || exportPath.isBlank()) {
+            return configuredPath;
+        }
+        Path exportRoot = Path.of(exportPath).normalize();
+        if (!configuredPath.startsWith(exportRoot)) {
+            throw new IllegalArgumentException("mounted_path is outside the declared NFS export: " + configuredPath);
+        }
+        Path mountRoot = dynamicNfsMountRoot(normalizeResourceHost(server), exportPath);
+        ensureNfsMounted(
+                normalizeResourceHost(server),
+                exportPath,
+                access.path("nfs_version").asText(""),
+                mountRoot
+        );
+        return mountRoot.resolve(exportRoot.relativize(configuredPath)).normalize();
+    }
+
+    private static OSGBSceneMetadata readOSGBSceneMetadata(Path metadataPath) {
+        if (!Files.isRegularFile(metadataPath)) {
+            throw new IllegalArgumentException("OSGB scene metadata.xml does not exist: " + metadataPath);
+        }
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setExpandEntityReferences(false);
+            Document document = factory.newDocumentBuilder().parse(metadataPath.toFile());
+            String srs = document.getElementsByTagName("SRS").item(0).getTextContent().trim();
+            String originText = document.getElementsByTagName("SRSOrigin").item(0).getTextContent().trim();
+            if (!srs.toUpperCase().startsWith("EPSG:")) {
+                throw new IllegalArgumentException("OSGB scene SRS must use EPSG:<code>: " + srs);
+            }
+            int epsg = Integer.parseInt(srs.substring(srs.indexOf(':') + 1).trim());
+            String[] origin = originText.split(",");
+            if (origin.length != 3) {
+                throw new IllegalArgumentException("OSGB scene SRSOrigin must contain x,y,z");
+            }
+            return new OSGBSceneMetadata(
+                    epsg,
+                    Double.parseDouble(origin[0].trim()),
+                    Double.parseDouble(origin[1].trim()),
+                    Double.parseDouble(origin[2].trim())
+            );
+        } catch (IllegalArgumentException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new IllegalArgumentException("failed to parse OSGB scene metadata.xml", ex);
+        }
+    }
+
+    private static List<String> findOSGBRootTiles(Path dataRoot) {
+        if (!Files.isDirectory(dataRoot)) {
+            return List.of();
+        }
+        try (Stream<Path> entries = Files.list(dataRoot)) {
+            return entries
+                    .filter(Files::isDirectory)
+                    .map(dir -> dir.resolve(dir.getFileName().toString() + ".osgb"))
+                    .filter(Files::isRegularFile)
+                    .sorted(Comparator.comparing(Path::toString))
+                    .map(Path::toString)
+                    .toList();
+        } catch (IOException ex) {
+            throw new IllegalStateException("failed to list OSGB root tiles", ex);
+        }
+    }
+
+    private static Path findSingleSCP(Path root) {
+        try (Stream<Path> files = Files.walk(root)) {
+            List<Path> manifests = files
+                    .filter(Files::isRegularFile)
+                    .filter(item -> item.getFileName().toString().toLowerCase().endsWith(".scp"))
+                    .toList();
+            if (manifests.size() != 1) {
+                throw new IllegalStateException("S3M output must contain exactly one SCP manifest, got " + manifests.size());
+            }
+            return manifests.get(0);
+        } catch (IOException ex) {
+            throw new IllegalStateException("failed to inspect S3M manifest", ex);
+        }
+    }
+
+    private static void deleteRecursively(Path root) {
+        if (root == null || !Files.exists(root)) {
+            return;
+        }
+        try (Stream<Path> paths = Files.walk(root)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+        } catch (IOException ex) {
+            throw new IllegalStateException("failed to remove path: " + root, ex);
+        }
+    }
+
+    private record OSGBSceneMetadata(int epsg, double originX, double originY, double originZ) {}
 
     private static boolean operatorSupportsMode(ObjectNode operator, String mode) {
         JsonNode modes = operator.path("execution_modes");
@@ -498,6 +1128,7 @@ public final class SuperMapWorkflowRuntime {
             case "overlay.intersect", "overlay.clip", "overlay.erase", "overlay.union" -> new OverlayBinaryProcess(operator, params);
             case "vector.query" -> new VectorQueryProcess(params);
             case "dataset.save" -> new SaveDatasetProcess(params);
+            case "osgb_scene_to_s3m" -> new OSGBSceneToS3MProcess(params);
             default -> throw new IllegalArgumentException("unsupported operator: " + operator);
         };
     }
@@ -516,6 +1147,9 @@ public final class SuperMapWorkflowRuntime {
         }
         if (value instanceof QueryResult queryResult) {
             return queryResult.toJson();
+        }
+        if (value instanceof ObjectNode objectNode) {
+            return objectNode.deepCopy();
         }
         ObjectNode summary = MAPPER.createObjectNode();
         summary.put("kind", "object");
@@ -549,7 +1183,7 @@ public final class SuperMapWorkflowRuntime {
                 || "overlay.erase".equals(operator) || "overlay.union".equals(operator) || "vector.filter".equals(operator)
                 || "vector.spatial_filter".equals(operator) || "vector.buffer".equals(operator) || "vector.dissolve".equals(operator)
                 || "vector.merge".equals(operator) || "vector.feature_envelope".equals(operator) || "vector.inner_point".equals(operator)
-                || "dataset.project".equals(operator) || "dataset.save".equals(operator)) {
+				|| "dataset.project".equals(operator) || "dataset.save".equals(operator) || "osgb_scene_to_s3m".equals(operator)) {
             return "datasource";
         }
         return "memory";
@@ -562,7 +1196,10 @@ public final class SuperMapWorkflowRuntime {
             return path;
         }
         String outputPath = params.path("output_path").asText("");
-        return outputPath == null ? "" : outputPath;
+		if (outputPath != null && !outputPath.isBlank()) {
+			return outputPath;
+		}
+		return params.path("access_plan").path("target").path("access").path("path").asText("");
     }
 
     private static Map<String, ObjectNode> operators() {
@@ -630,6 +1267,41 @@ public final class SuperMapWorkflowRuntime {
                         param("overwrite", "boolean", false, false, "目标文件存在时是否覆盖，默认 false。")
                 ),
                 List.of(output("datasource", "supermap.datasource", "运行时 Datasource 引用。"))
+        ));
+        result.put("osgb_scene_to_s3m", operator(
+                "osgb_scene_to_s3m",
+                "OSGB Scene 转 S3M",
+                "使用 SuperMap iObjects Java 把整套 OSGB 倾斜摄影场景转换为 S3M 数据集。",
+                "三维模型",
+                List.of(
+                        param("access_plan", "object", false, true, "ADDP 工作流资源访问计划。")
+                ),
+                List.of(output("s3m", "supermap.s3m_dataset", "S3M 数据集发布摘要。")),
+                List.of("workflow", "direct")
+        ));
+        result.put("cad.inspect", operator(
+                "cad.inspect",
+                "检查 CAD 图纸",
+                "只读打开 DWG 并返回 Dataset 元数据、记录数和范围；不遍历 Geometry。",
+                "CAD",
+                List.of(
+                        param("access_plan", "object", false, true, "ADDP 工作流资源访问计划。")
+                ),
+                List.of(output("inspection", "addp.cad.inspect/v1", "CAD 图纸轻量检查结果。")),
+                List.of("direct")
+        ));
+        result.put("cad.render_preview", operator(
+                "cad.render_preview",
+                "渲染 CAD 预览",
+                "使用 SuperMap Map/Layer 直接渲染 DWG Dataset，生成受管 WebP 瓦片。",
+                "CAD",
+                List.of(
+                        param("access_plan", "object", false, true, "ADDP 工作流源文件与目标 artifact 访问计划。"),
+                        param("tile_size", "integer", false, false, "瓦片边长，默认 512。"),
+                        param("max_zoom", "integer", false, false, "最大缩放级别，默认 4，最大 8。")
+                ),
+                List.of(output("preview", "addp.cad.render-preview/v1", "CAD 栅格瓦片预览产物摘要。")),
+                List.of("direct")
         ));
         result.put("dataset.select", operator(
                 "dataset.select",
@@ -918,6 +1590,7 @@ public final class SuperMapWorkflowRuntime {
                     "vector.inner_point" -> "result_dataset";
             case "vector.query" -> "query_result";
             case "dataset.save" -> "saved_dataset";
+            case "osgb_scene_to_s3m" -> "s3m";
             default -> "out";
         };
     }
@@ -1982,6 +2655,27 @@ public final class SuperMapWorkflowRuntime {
             }
             output.setValue(new SuperMapDatasetRef(targetDatasource, copiedVector));
             return true;
+        }
+    }
+
+    public static final class OSGBSceneToS3MProcess extends BaseProcess {
+        private final SingleOutputImpl<ObjectNode> output;
+
+        OSGBSceneToS3MProcess(JsonNode params) {
+            super("osgb_scene_to_s3m");
+            addStringInput("params_json", params.toString());
+            this.output = addObjectOutput("s3m", ObjectNode.class);
+        }
+
+        @Override
+        public boolean execute() {
+            try {
+                JsonNode params = MAPPER.readTree(String.valueOf(parameters.getInput("params_json").getValue()));
+                output.setValue(convertOSGBSceneToS3M(params));
+                return true;
+            } catch (IOException ex) {
+                throw new IllegalArgumentException("invalid osgb_scene_to_s3m params", ex);
+            }
         }
     }
 

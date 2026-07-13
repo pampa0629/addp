@@ -27,6 +27,7 @@ engines/
 - 算子元数据要包含输入、输出、参数、示例和开发模式，保证 Develop 工作流画布可动态消费。
 - `pointcloud-workflow` 的 PDAL 属于该 engine runtime 内部依赖；不得要求 Manager、System 或宿主机全局安装 PDAL。未绑定 PDAL 时健康检查应保持 `degraded`，且不自注册。
 - `supermap-workflow` 的 SuperMap iObjects Java / SPS 属于该 engine runtime 内部依赖；通过 Docker 镜像或只读 volume 绑定，不提交 SDK、native `.so` 或许可文件到仓库。
+- SuperMap Workflow 本地开发固定使用两层镜像：Git 忽略的 `engines/supermap-workflow/vendor/` 只用于构建稳定基础镜像，ADDP Java 源码只进入代码镜像。`restart.sh -supermap-workflow` 和 `restart.sh -all` 必须每次重新执行代码镜像的 `javac` 并替换容器；不得恢复胖/瘦镜像分支、源码挂载、运行时编译或可选 rebuild 开关。
 - 引擎目录中不要沉淀一次性实验脚本；临时验证放到操作系统临时目录。
 
 ## 启动与验证

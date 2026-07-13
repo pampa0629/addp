@@ -3,7 +3,7 @@
 ## 文档概览
 
 **版本**: v1.0.0
-**最后更新**: 2026-01-09
+**最后更新**: 2026-07-12
 **适用引擎**: Math Workflow、GeoPython Workflow、Spark Workflow、Model3D Workflow、PointCloud Workflow、SuperMap Workflow
 
 本文档定义 ADDP 工作流运行时的 `addp.workflow/v1` HTTP 协议。该协议由 Common Engine 的 `WorkflowRuntimeProvider` 消费；工作流引擎仍必须先通过 `EnginePlugin` 和 `engine.capabilities/v1` 纳入 System 统一引擎体系。
@@ -37,8 +37,8 @@ ADDP 工作流计算引擎采用 `EnginePlugin + WorkflowRuntimeProvider + HTTP 
 | **Math Workflow** | 8089 | Python + 基础数学库 | 数学运算、学习示例 | 5 |
 | **GeoPython Workflow** | 8099 | Python + Pandas + GeoPandas | 中小规模空间和数据处理 | 42+ |
 | **Spark Workflow** | 8098 | PySpark + Sedona | 大规模分布式计算 | 35+ |
-| **Model3D Workflow** | 8101 | Python wrapper + 三维转换 CLI | 三维模型、BIM 和高斯泼溅快显转换 | direct 转换算子 |
-| **PointCloud Workflow** | 8102 | Python wrapper + PDAL | LAS / LAZ / E57 / PCD / XYZ 转 Manager 私有 COPC 快显 artifact | direct 转换算子 |
+| **Model3D Workflow** | 8101 | Python wrapper + 三维转换 CLI | 三维模型、BIM、高斯泼溅与 3D Tiles 持久化转换 | workflow + direct 转换算子 |
+| **PointCloud Workflow** | 8102 | Python wrapper + PDAL | LAS / LAZ / E57 / PCD / XYZ 转持久化 COPC | workflow + direct 转换算子 |
 | **SuperMap Workflow** | 8103 | Java + SuperMap iObjects Java / SPS | 超图数据格式、空间分析与 SPS DAG 内存对象传递 | 21 个真实算子（19 个 workflow + 2 个 direct） |
 
 ### 1.3 引擎目录结构
@@ -48,7 +48,6 @@ ADDP 工作流计算引擎采用 `EnginePlugin + WorkflowRuntimeProvider + HTTP 
 ```
 engines/<engine-name>/
 ├── api_server.py              # Flask API 服务（必需）
-├── workflow_engine.py         # 工作流执行引擎（必需）
 ├── operators/                 # 算子模块（必需）
 │   ├── __init__.py           # 导出算子函数和元数据
 │   ├── base.py               # 算子元数据基类
@@ -63,7 +62,7 @@ engines/<engine-name>/
 **关键文件说明**：
 
 - **api_server.py**: 实现 5 个标准 API 接口，启动 Flask 服务
-- **workflow_engine.py**: DAG 工作流解析、拓扑排序和任务调度
+- **common-python/addp_common/workflow_runtime**: Python Runtime 共用的工作流定义校验、DAG 拓扑排序、引用解析和异步执行状态管理；Python 工作流运行时不得分别复制这些逻辑
 - **operators/**: 各类算子的具体实现和元数据定义
 
 ### 1.4 工作原理
@@ -82,8 +81,8 @@ engines/<engine-name>/
         │ 解析工作流定义
         ▼
 ┌───────────────┐
-│ Workflow      │  ← workflow_engine.py
-│ Engine        │
+│ Workflow      │  ← addp_common.workflow_runtime
+│ Runtime Core  │
 └───────┬───────┘
         │ 拓扑排序、依赖解析
         ▼
@@ -110,6 +109,8 @@ engines/<engine-name>/
 `ResourceLocator` 只属于 Public Operator Spec。GeoPython Workflow、Spark Workflow、SuperMap Workflow 等运行时不得解析 `addp://` locator。
 
 `connection_info`、`engine_id` 以及由资源身份派生的 `schema/table/path` 属于 Develop Adapter Spec 到 Runtime Operator Spec 的内部参数。用户、前端和 AI 不得直接提交这些内部参数；只有在对应 Public Operator Spec 明确将同名字段定义为公开业务参数时才可例外。
+
+需要同时读取源存储并写入目标存储的持久化转换算子，Runtime Operator Spec 使用 `addp.workflow.access-plan/v1` 工作流访问计划，不使用单个共享 `engine_id/connection_info` 表达两端资源。源与目标必须分别由调用方解析为执行期访问参数；运行时仍不得解析 ADDP `ResourceLocator`。
 
 Develop Backend 不得仅因任意算子的参数中出现 `locator`、`target_parent_locator` 等固定名称就触发派生。每个需要资源适配的算子都必须存在显式 Develop Adapter Spec；未声明的算子携带公开资源参数时必须拒绝执行，不得回退到隐式派生路径。
 
@@ -688,9 +689,11 @@ Common Engine 同时必须校验工作流定义本身：
 
 若某类工作流引擎需要绑定外部运行时资源，例如 `spark_workflow` 需要实际 Spark 资源 ID，应作为执行期运行时参数传入标准请求顶层字段（当前为 `engine_id`），而不是写入 `capabilities`，也不是由 Develop 等业务模块直接拼接引擎私有 HTTP 契约。对 `spark_workflow`，Develop 执行配置必须提供 `engine_specific.spark_cluster_id`；后端在调用 Provider 前必须校验该 ID 指向已启用的 `engine_type=spark` 通用引擎资源，并将其映射为标准请求顶层 `engine_id`。GeoPython Workflow、Math Workflow、Model3D Workflow、PointCloud Workflow、SuperMap Workflow 不需要也不得携带该 Spark 绑定。
 
-Model3D Workflow 是三维模型转换专用运行时，`engine_type=model3d_workflow`，默认端口 `8101`。第一版暴露 direct operators：`osgb_to_glb` 用于单 OSGB 快显 GLB artifact 生成，`gltf_to_glb` 用于 glTF 多资源模型打包为 GLB 快显 artifact，`fbx_to_glb` 用于 FBX 单体网格模型生成 GLB 快显 artifact，`obj_to_glb` 用于 OBJ 单体网格模型生成 GLB 快显 artifact，`stl_to_glb` 用于 STL 单体网格模型生成 GLB 快显 artifact，`ifc_to_glb` 用于 IFC BIM 模型生成 GLB 快显 artifact，`osgb_scene_to_3dtiles` 用于 OSGB Scene 到业务存储 3D Tiles 数据集生成，`gaussian_splat_to_ksplat` 用于高斯泼溅 KSplat 受管 artifact 生成。运行时内部可以通过外部专业 CLI 或运行时绑定脚本执行转换，其中 `_3dtile` 负责 OSGB 单文件快显和 OSGB Scene 到 3D Tiles 相关路线，`assimp` 负责 glTF / FBX / OBJ / STL 这类 mesh 模型到自包含 GLB 的打包转换，`ifc_to_glb` 负责通过运行时绑定的 `IfcConvert` 生成 GLB，不复用 `assimp` mesh converter；`gaussian_splat_to_ksplat` 使用运行时内置 Node 脚本将 PLY / SPLAT 转为 `.ksplat`，源已经是 `.ksplat` 时由 Manager 基础预览直接读取，不进入该转换任务。生成的 GLB artifact 不应保留对源目录贴图的外部相对引用；对 ADDP 只暴露 `addp.workflow/v1` 的 operator、参数、进度和结果事实；Manager 不得直接调用转换 CLI 或转换脚本。
+Model3D Workflow 是三维模型转换专用运行时，`engine_type=model3d_workflow`，默认端口 `8101`。`osgb_to_glb`、`gltf_to_glb`、`fbx_to_glb`、`obj_to_glb`、`stl_to_glb`、`ifc_to_glb`、`osgb_scene_to_3dtiles` 和 `gaussian_splat_to_ksplat` 同时支持 workflow 与 direct。算子只表达持久化格式转换，不把 Manager 快显归属写入 Runtime Operator Spec；Manager direct 调用选择 infra 目标并登记私有 artifact，Develop workflow 调用要求用户选择业务存储并触发 Meta scan。`_3dtile`、`assimp`、`IfcConvert` 和 KSplat 脚本仍是运行时内部依赖。PLY / SPLAT 高斯泼溅可以转 KSplat；源已经是 KSplat 时直接作为业务数据项或 Manager 基础预览读取，不进入转换算子。
 
-PointCloud Workflow 是点云处理专用运行时，`engine_type=pointcloud_workflow`，默认端口 `8102`。第一版暴露 direct operators：`las_to_copc`、`laz_to_copc`、`e57_to_copc`、`pcd_to_copc` 和 `xyz_to_copc`，用于将 LAS / LAZ / E57 / PCD / XYZ 源点云转换为 Manager 受管 COPC 快显 artifact。PDAL 是该 engine runtime 的内部依赖，应随容器镜像或 engine 运行时一同分发；Manager、System 和宿主机全局环境不得成为 PDAL 依赖来源。运行时未绑定 PDAL 时 `/health` 应返回 `degraded`，且不应自注册到 System。Manager 负责把源 item locator 派生为本地挂载路径或 `/vsicurl/` URI，并派生 Manager infra MinIO 发布计划；PointCloud Workflow 不解析 ADDP locator，不使用宿主机 PDAL。COPC 写入不是纯流式写，运行时必须配置可用的 `POINTCLOUD_WORK_DIR` / `CPL_TMPDIR` 工作目录承载 PDAL 输出和临时随机写；当前 PDAL 2.10.2 实测 `writers.copc` 不能可靠直接写 `/vsis3/` 目标，因此当前单一路线是 PDAL 写入受控工作目录，再由运行时按 Manager infra MinIO 发布计划上传 artifact。生成的 COPC artifact 存放在 Manager infra MinIO 中，不自动升格为业务 data item；源数据本身已经是 `format=copc` 时由 Manager 基础预览直接读取，不进入该转换任务。
+SuperMap Workflow 的 `osgb_scene_to_s3m` 同时支持 workflow 与 direct，使用 `addp.workflow.access-plan/v1` 读取和写入 NFS whole scope。运行时必须调用 iObjects Java `OSGBCacheBuilder.generateConfigFile` 与 `CacheBuilderOSGBTool.osgb2s3m`，产物统一为 `config/scene.scp + Data/**/*.s3m`，纹理压缩固定为 DXT。结果是业务存储中的 `format=s3m + layout=whole` item；Manager 只负责读取目标 item 并按需加载 Cesium S3M renderer，不在 Manager infra 中复制一套 S3M artifact。
+
+PointCloud Workflow 是点云处理专用运行时，`engine_type=pointcloud_workflow`，默认端口 `8102`。`las_to_copc`、`laz_to_copc`、`e57_to_copc`、`pcd_to_copc` 和 `xyz_to_copc` 同时支持 workflow 与 direct。PDAL 是运行时内部依赖；运行时未绑定 PDAL 时 `/health` 返回 `degraded` 且不自注册。源和目标由调用方按 `addp.workflow.access-plan/v1` 派生；PointCloud Runtime 不解析 ADDP locator。对象存储源由运行时按 `object_store` 访问参数生成受控读取方式，COPC 始终先写入 `POINTCLOUD_WORK_DIR` / `CPL_TMPDIR`，再按目标访问参数发布。Manager direct 结果仍是 infra 快显 artifact；Develop workflow 结果是用户选择的业务 COPC 数据项。源已经是 COPC 时直接读取，不进入转换算子。
 
 SuperMap Workflow 是超图数据格式和空间算法专用运行时，`engine_type=supermap_workflow`，默认端口 `8103`。第一版运行时由 Java 实现，对外提供 `addp.workflow/v1`，对内绑定 SuperMap iObjects Java `Bin`、GPA/SPS libs 和许可文件，并把 ADDP `workflow_def` 编译为 SPS workflow 后一次性执行 DAG。同一 JVM / SPS DAG 内优先通过 `IDataItem` 或等价内存对象传递中间结果，只有用户显式保存数据集或跨 HTTP 边界返回结果摘要时才落盘。当前真实算子覆盖 datasource open/open_postgis/create、dataset select/info/project/save、vector filter/spatial_filter/buffer/dissolve/merge/feature_envelope/inner_point/query、overlay intersect/clip/erase/union；`datasource.enable_postgis` 和 `datasource.upgrade_udbx` 是 direct-only 高危算子，不进入 Develop 工作流画布。`datasource.enable_postgis` 只允许由 System 引擎管理入口显式触发，用于初始化 SuperMap SDX+ 空间工作区。`datasource.upgrade_udbx` 对已有 UDBX 执行原位 schema 升级：运行时先以 SQLite 只读检查 SuperMap 系统表和 `SmRegister` 关键字段，再以可写方式打开数据源，由当前 iObjects Java SDK 完成官方 schema 迁移，关闭后重新检查并返回 `changed`、`schema_current` 和 `dataset_count`。该算子必须保持幂等；调用方负责权限确认、升级前备份和审计，不得在普通读取链路中隐式触发。`datasource.open_postgis` 只打开已有 PostGIS 空间表所在数据源，不得调用 SuperMap `create` 或默认创建 SuperMap `sm*` 系统表；`datasource.enable_postgis` 则可能在目标 PostgreSQL 数据库中创建 SuperMap `sm*` 系统表，必须经过 System 显式确认。ADDP `locator` 只属于 Develop/UI 的资源选择契约，Develop Backend 在调用 runtime 前必须把它派生为 `connection_info`、`schema` 和 `table` 并移除，SuperMap runtime 不解析 ADDP locator。SuperMap SDK、native `.so`、GPA libs 和许可文件属于 engine runtime 部署依赖，不进入 ADDP 代码仓库；运行时未绑定 objectsjava 或 GPA/SPS libs 时 `/health` 应返回不可用依赖，System 连接测试必须失败并提示具体缺失项。
 
@@ -731,6 +734,51 @@ Develop Backend 在调用 `WorkflowRuntimeProvider.ExecuteWorkflow()` 前负责�
 算子 `source_type` / `target_type` 表达访问形态，统一使用 `table`、`file`、`geojson` 等值；不得使用 `nfs`、`minio`、`s3` 等存储引擎类型作为算子数据源类型。具体存储引擎类型只来自 locator 对应的 System engine 及派生后的 `connection_info.engine_type`。
 
 Develop Adapter Spec registry 为 Public Operator Spec 提供资源选择器 `ui_config`。过滤资源来源必须使用 `engine_families` / 能力族，例如表格资源使用 `tabular`、`dynamic_schema`，文件或对象资源使用 `file`、`object`。不得使用 `engine_types`，也不得把 `postgresql`、`mysql`、`nfs`、`minio` 等具体 `engine_type` 写成白名单，否则用户动态注册的同能力引擎无法被工作流画布发现和选择。Workflow Runtime 的 `parameters[]` 不得包含 `ui_config` 或任何资源树 UI 参数。
+
+#### 持久化转换访问计划
+
+文件、对象和目录型持久化转换统一使用以下内部契约：
+
+```json
+{
+  "schema_version": "addp.workflow.access-plan/v1",
+  "source": {
+    "kind": "file",
+    "format": "las",
+    "entrypoint": "sample.las",
+    "access": {
+      "method": "mounted_path",
+      "path": "/mnt/business/sample.las"
+    }
+  },
+  "target": {
+    "kind": "file",
+    "format": "copc",
+    "name": "sample.copc.laz",
+    "write_mode": "create",
+    "access": {
+      "method": "object_store",
+      "endpoint": "minio:9000",
+      "bucket": "research",
+      "object": "pointcloud/sample.copc.laz",
+      "use_ssl": false
+    }
+  }
+}
+```
+
+稳定规则：
+
+1. `schema_version` 固定为 `addp.workflow.access-plan/v1`。
+2. `source.kind` / `target.kind` 只表达 `file` 或 `directory`；`format` 使用平台规范格式标识。
+3. `access.method` 第一版只允许 `mounted_path` / `object_store`。对象存储的下载、staging、presigned URL 或本地工作目录属于运行时实现，不扩展为 Public Operator 参数。
+4. `target.write_mode` 只允许 `create` / `replace`，默认 `create`；不得在 `create` 失败后隐式回退为覆盖。
+5. 访问计划只在执行期存在，可以携带临时连接信息；用户任务定义只保存 `locator`、`target_parent_locator + target_name` 和公开业务参数。
+6. 调用方必须同时生成不含密钥的 audit plan，用于领域结果或统一执行记录；不得把运行时访问计划原文长期保存。
+7. Manager infra 目标和 Develop 业务目标分别在调用方领域边界内解析，再进入同一个访问计划构造器。Develop 的源和目标存储必须是当前租户的业务 Engine Instance，不得选择 `tenant_id=nil` 的平台 infra 存储；Manager 可按私有 artifact 生命周期显式构造 infra 目标。访问计划不表达 owner module、artifact/data item 归属或 Meta 扫描策略。
+8. Runtime 完成写入后只返回转换结果事实。Manager 负责登记私有 artifact；Develop 负责记录 `produced_targets` 并触发 Meta scan。
+
+Python 实现的 Workflow Runtime 应共享 `common-python` 中的协议执行核心，包括 workflow definition 校验、DAG 拓扑排序、引用解析、异步 execution 状态和标准错误；GeoDataFrame、Spark DataFrame、PDAL、三维转换器等领域执行仍保留在各自运行时。该公共核心是库，不是新的 System Engine Instance 或独立服务。
 
 资源选择器必须通过 `ui_config.resource_binding` 显式声明参数绑定，前端不得按算子 ID 或固定参数名猜测。读取已有资源使用 `mode=existing + locator_param`；创建目标使用 `mode=target + parent_locator_param + name_param`。需要同步公开访问形态时声明 `type_param + type_values`，需要选择后填充默认公开参数时声明 `default_params`。
 
@@ -783,24 +831,20 @@ OPERATORS = {
 }
 ```
 
-#### 步骤 3：实现工作流引擎
+#### 步骤 3：接入 Python Workflow Runtime 公共核心
 
 ```python
-# workflow_engine.py
+from addp_common.workflow_runtime import ExecutionRegistry, WorkflowRunner
 
-class StatsWorkflowEngine:
-    def execute(self, workflow_def, input_data):
-        # 拓扑排序
-        task_order = self.topological_sort()
+operator_ids = set(OPERATORS)
+runner = WorkflowRunner(
+    operator_ids,
+    lambda operator, params: get_operator_function(operator)(**params),
+)
+executions = ExecutionRegistry()
 
-        # 执行任务
-        for task_id in task_order:
-            task = self.tasks[task_id]
-            operator = get_operator_function(task['operator'])
-            result = operator(**task['params'])
-            self.results[task_id] = result
-
-        return self.results
+# POST /api/workflow 校验请求后提交异步执行；GET /api/executions/<id> 读取状态。
+snapshot = executions.submit(runner, workflow_def, input_data)
 ```
 
 #### 步骤 4：实现 API 服务
@@ -893,13 +937,13 @@ curl -X POST http://localhost:8100/api/workflow \
 ### 5.3 常见问题
 
 **Q1: 如何支持分布式计算？**
-- 参考 Spark Workflow，在 `workflow_engine.py` 中集成 Spark 或 Dask
+- DAG 校验、依赖解析与状态管理继续复用 `common-python/addp_common/workflow_runtime`；Spark 或 Dask 只作为算子执行器或 Runtime 私有调度后端接入，不复制公共 DAG 核心。
 
 **Q2: 如何处理大文件输入？**
 - 使用标准对象存储 `ResourceLocator`，例如 `locator=addp://engine/4/path/bucket/path/data.parquet?type=object&item_id=46`；Develop Backend 会在执行前派生运行时所需的 `connection_info` 和 Spark 可读 `s3a://bucket/path/data.parquet`。
 
 **Q3: 如何支持异步执行？**
-- `/api/executions/<id>` 是必需接口。同步执行的引擎可以对已知本地 `execution_id` 返回已完成状态；未知 ID 必须返回 `EXECUTION_NOT_FOUND`。需要异步执行时可使用 Celery 或 Asynq 任务队列维护执行状态。
+- `/api/executions/<id>` 是必需接口。单进程 Python Runtime 使用公共 `ExecutionRegistry`；需要跨进程或分布式执行时，可以替换其状态持久化和调度后端，但对外状态契约保持一致。未知 ID 必须返回 `EXECUTION_NOT_FOUND`。
 
 ---
 

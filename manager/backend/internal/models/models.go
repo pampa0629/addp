@@ -295,6 +295,7 @@ const (
 	ObjectPreviewKindModel3D       = "model_3d"
 	ObjectPreviewKindPointCloud    = "point_cloud"
 	ObjectPreviewKindGaussianSplat = "gaussian_splat"
+	ObjectPreviewKindCAD           = "cad"
 	ObjectPreviewKindUnsupported   = "unsupported"
 )
 

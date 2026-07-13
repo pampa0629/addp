@@ -139,6 +139,23 @@ func validateStoreCapabilities(p EnginePlugin, store *StoreCapability) error {
 			return fmt.Errorf("%s declares table_upsert but does not implement TableUpsertProvider", p.Type())
 		}
 	}
+	if store.ChangeStreamRead != nil && store.ChangeStreamRead.Supported {
+		if !store.ChangeStreamRead.Partitioned || !store.ChangeStreamRead.Seek || !store.ChangeStreamRead.PauseResume || len(store.ChangeStreamRead.PositionTypes) == 0 {
+			return fmt.Errorf("%s declares invalid change_stream_read semantics", p.Type())
+		}
+		if _, ok := p.(ChangeStreamReaderProvider); !ok {
+			return fmt.Errorf("%s declares change_stream_read but does not implement ChangeStreamReaderProvider", p.Type())
+		}
+	}
+	if store.PartitionedTableChangeApply != nil && store.PartitionedTableChangeApply.Supported {
+		capability := store.PartitionedTableChangeApply
+		if !capability.AtomicPositionCommit || !capability.Monotonic || len(capability.PositionTypes) == 0 || len(capability.Operations) == 0 {
+			return fmt.Errorf("%s declares invalid partitioned_table_change_apply semantics", p.Type())
+		}
+		if _, ok := p.(PartitionedTableChangeApplyProvider); !ok {
+			return fmt.Errorf("%s declares partitioned_table_change_apply but does not implement PartitionedTableChangeApplyProvider", p.Type())
+		}
+	}
 	return nil
 }
 
@@ -267,6 +284,16 @@ func validateStoreProviderCapabilities(p EnginePlugin, storage *StorageCapabilit
 		return store.TableUpsert != nil && store.TableUpsert.Supported && store.TableUpsert.Idempotent
 	}) {
 		return fmt.Errorf("%s implements TableUpsertProvider but does not declare idempotent table_upsert", p.Type())
+	}
+	if _, ok := p.(ChangeStreamReaderProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool {
+		return store.ChangeStreamRead != nil && store.ChangeStreamRead.Supported
+	}) {
+		return fmt.Errorf("%s implements ChangeStreamReaderProvider but does not declare change_stream_read", p.Type())
+	}
+	if _, ok := p.(PartitionedTableChangeApplyProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool {
+		return store.PartitionedTableChangeApply != nil && store.PartitionedTableChangeApply.Supported
+	}) {
+		return fmt.Errorf("%s implements PartitionedTableChangeApplyProvider but does not declare partitioned_table_change_apply", p.Type())
 	}
 	return nil
 }

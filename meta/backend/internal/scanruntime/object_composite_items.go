@@ -44,7 +44,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 			return count, extractionStats, err
 		}
 
-		result, err := scanprocessor.New(s.repo, s.indexer, s.log).Process(context.Background(), scanprocessor.ObjectCompositeInput(
+		result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithCADInspector(s.cadInspector).Process(context.Background(), scanprocessor.ObjectCompositeInput(
 			resource,
 			tenantID,
 			engineID,

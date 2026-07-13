@@ -118,6 +118,10 @@ classDiagram
         +WriteBatch()
     }
 
+    class ChangeStreamReaderProvider {
+        +OpenChangeStream()
+    }
+
     class QueryRuntimeProvider {
         +QueryLanguages()
         +GenerateSampleQuery()
@@ -144,6 +148,7 @@ classDiagram
     StoreProvider <|-- RangeWritableProvider
     StoreProvider <|-- BatchReadableProvider
     StoreProvider <|-- BatchWritableProvider
+    StoreProvider <|-- ChangeStreamReaderProvider
     EnginePlugin <|-- QueryRuntimeProvider
     EnginePlugin <|-- WorkflowRuntimeProvider
     EnginePlugin <|-- ScriptRuntimeProvider
@@ -160,7 +165,7 @@ classDiagram
 | Manager | 使用 Meta 树展示探查目录；预览结构化数据优先使用 preview / batch read，预览对象或文件优先使用 preview / content read。 |
 | Develop | 根据 `capabilities.compute` 选择查询、工作流或 Notebook 引擎。 |
 | Service | 使用 query runtime 和 Meta item/spatial 元数据发布数据服务。 |
-| Transfer | 执行面仍由 Transfer Reader/Writer 承担，后续通过插件能力和 Transfer 模块适配层统一配置来源；高吞吐读写优先消费 batch / stream 能力。 |
+| Transfer | bounded table/content 路径消费 batch/session/content Provider；continuous source 消费 `ChangeStreamReaderProvider`，由 Transfer adapter 归一化 ChangeEvent 并组合目标 Provider。 |
 
 ### Develop / Service 内置 DuckDB 联邦查询边界
 
@@ -184,6 +189,7 @@ DuckDB 当前不是用户在 System 中注册的外部 Engine Instance，也不�
 | 图数据库 | Neo4j |
 | 对象存储 | MinIO、S3 |
 | 文件系统 | NFS |
+| 消息流 | Kafka（common 插件已实现 catalog/facts/change stream read；Transfer 已实现 keyed JSON -> PostgreSQL continuous v1，Console Wizard 配置尚未开放） |
 | 工作流运行时 | GeoPython Workflow / Spark Workflow、自动启动服务但手动注册的 Math Workflow 参考实现、Model3D Workflow、PointCloud Workflow、SuperMap Workflow，及用户自研扩展工作流运行时 |
 | 脚本/Notebook | Jupyter |
 
@@ -200,4 +206,6 @@ DuckDB 当前不是用户在 System 中注册的外部 Engine Instance，也不�
 - 旧 `ListSchemas/ListTables/ListColumns/ListBuckets/ListCollections` 只能作为插件内部 helper，不作为上层契约。
 - 引擎能力只表达引擎自身 native 能力与 common/engine provider 能力；Transfer、Manager 预览等模块适配状态不进入 `engine.capabilities/v1`。
 - 工作流算子发现和执行通过 `WorkflowRuntimeProvider`；算子列表、参数、端口等动态能力不写入 capabilities。
+- Kafka topic 通过 `service -> topic` Catalog 暴露；partition 只作为 ChangeStreamReader assignment、position 和 diagnostics，不进入资源树。
+- 业务 Kafka 是 System Engine；Infra Kafka 来自 ADDP 部署配置，不注册 Engine Instance，但复用相同 Kafka client/reader 底层实现。
 - SQL metadata 复用只允许在事实来源和语义一致的引擎家族内发生，例如 MySQL/Doris 共享 `information_schema` helper；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现保留在各自插件内。

@@ -13,6 +13,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/workflowaccess"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/common/utils"
@@ -49,15 +50,17 @@ type WorkflowResponse struct {
 }
 
 type WorkflowProducedTarget struct {
-	EngineID uint     `json:"engine_id"`
-	Type     string   `json:"type"`
-	Path     []string `json:"path"`
-	Locator  string   `json:"locator"`
+	EngineID   uint                 `json:"engine_id"`
+	Type       string               `json:"type"`
+	Path       []string             `json:"path"`
+	Locator    string               `json:"locator"`
+	AccessPlan commonModels.JSONMap `json:"access_plan,omitempty"`
 }
 
 // ExecuteWorkflow 执行工作流（支持 JSONB 配置）
 func (s *WorkflowEngineService) ExecuteWorkflow(
 	ctx context.Context,
+	tenantID uint,
 	workflowDef map[string]interface{},
 	inputData map[string]interface{},
 	executionConfig string,
@@ -73,15 +76,21 @@ func (s *WorkflowEngineService) ExecuteWorkflow(
 	if err != nil {
 		return nil, fmt.Errorf("查询工作流引擎失败: %w", err)
 	}
+	if engine == nil || !engine.IsActive {
+		return nil, fmt.Errorf("工作流引擎未启用")
+	}
+	if engine.TenantID != nil && *engine.TenantID != tenantID {
+		return nil, fmt.Errorf("工作流引擎不属于当前租户")
+	}
 
 	// 3. 预处理数据源参数：将 locator / target_parent_locator 派生为 connection_info 和运行时路径。
 	// Spark Workflow 的顶层运行时 engine_id 由 workflowRuntimeOptions 单独处理。
-	preprocessedWorkflowDef, producedTargets, err := s.preprocessWorkflowParamsWithTargets(ctx, engine.EngineType, workflowDef)
+	preprocessedWorkflowDef, producedTargets, err := s.preprocessWorkflowParamsWithTargets(ctx, tenantID, engine.EngineType, workflowDef)
 	if err != nil {
 		return nil, fmt.Errorf("预处理工作流参数失败: %w", err)
 	}
 
-	runtimeOptions, err := s.workflowRuntimeOptions(engine.EngineType, config)
+	runtimeOptions, err := s.workflowRuntimeOptions(tenantID, engine.EngineType, config)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +155,7 @@ func (s *WorkflowEngineService) waitWorkflowRuntimeTerminalStatus(
 	}
 }
 
-func (s *WorkflowEngineService) workflowRuntimeOptions(engineType string, config models.WorkflowExecutionConfig) (map[string]interface{}, error) {
+func (s *WorkflowEngineService) workflowRuntimeOptions(tenantID uint, engineType string, config models.WorkflowExecutionConfig) (map[string]interface{}, error) {
 	sparkClusterID, hasSparkClusterID := config.EngineSpecific["spark_cluster_id"]
 	if engineType != "spark_workflow" {
 		if hasSparkClusterID {
@@ -173,6 +182,9 @@ func (s *WorkflowEngineService) workflowRuntimeOptions(engineType string, config
 	}
 	if !sparkEngine.IsActive {
 		return nil, fmt.Errorf("spark_cluster_id 指向的 Spark 通用引擎资源未启用")
+	}
+	if err := requireTenantBusinessEngine(sparkEngine, tenantID, "Spark 通用引擎资源"); err != nil {
+		return nil, err
 	}
 
 	return map[string]interface{}{"engine_id": engineID}, nil
@@ -357,15 +369,17 @@ func workflowRuntimeResultMap(values map[string]interface{}) map[string]string {
 // Spark Workflow 的 Spark 通用引擎资源绑定走请求顶层 runtime.engine_id，不与这里的数据源连接混用。
 func (s *WorkflowEngineService) preprocessWorkflowParams(
 	ctx context.Context,
+	tenantID uint,
 	workflowEngineType string,
 	workflowDef map[string]interface{},
 ) (map[string]interface{}, error) {
-	result, _, err := s.preprocessWorkflowParamsWithTargets(ctx, workflowEngineType, workflowDef)
+	result, _, err := s.preprocessWorkflowParamsWithTargets(ctx, tenantID, workflowEngineType, workflowDef)
 	return result, err
 }
 
 func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 	ctx context.Context,
+	tenantID uint,
 	workflowEngineType string,
 	workflowDef map[string]interface{},
 ) (map[string]interface{}, []WorkflowProducedTarget, error) {
@@ -421,6 +435,14 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 			}
 			continue
 		}
+		if adapterSpec.AccessPlan != nil {
+			targets, err := s.deriveWorkflowAccessPlan(tenantID, params, adapterSpec)
+			if err != nil {
+				return nil, nil, fmt.Errorf("任务 %d 工作流访问计划派生失败: %w", i, err)
+			}
+			producedTargets = append(producedTargets, targets...)
+			continue
+		}
 		targets, err := deriveWorkflowResourceParams(params, adapterSpec)
 		if err != nil {
 			return nil, nil, fmt.Errorf("任务 %d 资源参数派生失败: %w", i, err)
@@ -465,6 +487,9 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 		if err != nil {
 			return nil, nil, fmt.Errorf("获取引擎 %d 信息失败: %w", engineID, err)
 		}
+		if err := requireTenantBusinessEngine(engine, tenantID, "工作流资源引擎"); err != nil {
+			return nil, nil, fmt.Errorf("任务 %d 资源访问失败: %w", i, err)
+		}
 
 		if err := normalizeDerivedWorkflowPath(params, engine.EngineType); err != nil {
 			return nil, nil, fmt.Errorf("任务 %d 资源路径规范化失败: %w", i, err)
@@ -489,6 +514,132 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 	}
 
 	return result, producedTargets, nil
+}
+
+func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
+	tenantID uint,
+	params map[string]interface{},
+	adapter workflowOperatorAdapterSpec,
+) ([]WorkflowProducedTarget, error) {
+	spec := adapter.AccessPlan
+	if spec == nil {
+		return nil, fmt.Errorf("access plan spec is required")
+	}
+	sourceURI := strings.TrimSpace(stringParam(params, "locator"))
+	targetParentURI := strings.TrimSpace(stringParam(params, "target_parent_locator"))
+	targetName := strings.TrimSpace(stringParam(params, "target_name"))
+	if sourceURI == "" || targetParentURI == "" || targetName == "" {
+		return nil, fmt.Errorf("locator, target_parent_locator and target_name are required")
+	}
+	if spec.TargetExtension != "" && !strings.HasSuffix(strings.ToLower(targetName), strings.ToLower(spec.TargetExtension)) {
+		return nil, fmt.Errorf("target_name must end with %s", spec.TargetExtension)
+	}
+	sourceLocator, err := resourcetree.ParseURI(sourceURI)
+	if err != nil {
+		return nil, fmt.Errorf("invalid locator: %w", err)
+	}
+	targetParent, err := resourcetree.ParseURI(targetParentURI)
+	if err != nil {
+		return nil, fmt.Errorf("invalid target_parent_locator: %w", err)
+	}
+	sourceEngine, err := s.systemClient.GetEngineByID(sourceLocator.EngineID)
+	if err != nil {
+		return nil, fmt.Errorf("get source engine %d: %w", sourceLocator.EngineID, err)
+	}
+	targetEngine, err := s.systemClient.GetEngineByID(targetParent.EngineID)
+	if err != nil {
+		return nil, fmt.Errorf("get target engine %d: %w", targetParent.EngineID, err)
+	}
+	if sourceEngine == nil || !sourceEngine.IsActive {
+		return nil, fmt.Errorf("source engine is not active")
+	}
+	if targetEngine == nil || !targetEngine.IsActive {
+		return nil, fmt.Errorf("target engine is not active")
+	}
+	if err := requireTenantBusinessEngine(sourceEngine, tenantID, "source engine"); err != nil {
+		return nil, err
+	}
+	if err := requireTenantBusinessEngine(targetEngine, tenantID, "target engine"); err != nil {
+		return nil, err
+	}
+
+	resolvedSourceLocator := sourceLocator.Clone()
+	entrypoint := ""
+	if spec.SourceScope == "parent" {
+		if len(resolvedSourceLocator.Path) < 2 {
+			return nil, fmt.Errorf("source locator must include a parent directory")
+		}
+		entrypoint = resolvedSourceLocator.Path[len(resolvedSourceLocator.Path)-1]
+		resolvedSourceLocator.Path = append([]string{}, resolvedSourceLocator.Path[:len(resolvedSourceLocator.Path)-1]...)
+		if isObjectStorageEngine(sourceEngine.EngineType) {
+			resolvedSourceLocator.Type = resourcetree.TypePrefix
+		} else {
+			resolvedSourceLocator.Type = resourcetree.TypeDirectory
+		}
+	}
+	sourceFormat := spec.SourceFormat
+	if adapter.OperatorID == "gaussian_splat_to_ksplat" {
+		name := strings.ToLower(lastPathSegment(sourceLocator.Path))
+		if strings.HasSuffix(name, ".splat") {
+			sourceFormat = "splat"
+		}
+	}
+	source, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{
+		Engine: sourceEngine, Locator: resolvedSourceLocator, Kind: spec.SourceKind, Format: sourceFormat, Entrypoint: entrypoint,
+		Metadata: commonModels.JSONMap{"locator": sourceURI, "engine_id": sourceLocator.EngineID},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("resolve source: %w", err)
+	}
+	target, targetLocator, err := workflowaccess.ResolveTarget(workflowaccess.ResourceSpec{
+		Engine: targetEngine, Locator: targetParent, Kind: spec.TargetKind, Format: spec.TargetFormat,
+		Name: targetName, WriteMode: stringParam(params, "write_mode"), ContentType: spec.TargetContentType,
+		Metadata: commonModels.JSONMap{"parent_locator": targetParentURI, "engine_id": targetParent.EngineID},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("resolve target: %w", err)
+	}
+	plan, err := workflowaccess.New(source, target)
+	if err != nil {
+		return nil, err
+	}
+	options := commonModels.JSONMap{}
+	for _, name := range spec.OptionParams {
+		if value, ok := params[name]; ok && value != nil {
+			options[name] = value
+		}
+		delete(params, name)
+	}
+	delete(params, "locator")
+	delete(params, "target_parent_locator")
+	delete(params, "target_name")
+	delete(params, "write_mode")
+	params["access_plan"] = plan.JSONMap()
+	if len(options) > 0 {
+		params["options"] = options
+	}
+	resourceType := resourcetree.TypeFile
+	if spec.TargetKind == workflowaccess.KindDirectory {
+		resourceType = resourcetree.TypeDirectory
+	} else if isObjectStorageEngine(targetEngine.EngineType) {
+		resourceType = resourcetree.TypeObject
+	}
+	producedTarget := workflowProducedTarget(targetLocator.EngineID, resourceType, targetLocator.Path)
+	producedTarget.AccessPlan = plan.AuditJSONMap()
+	return []WorkflowProducedTarget{producedTarget}, nil
+}
+
+func requireTenantBusinessEngine(engine *commonModels.Engine, tenantID uint, label string) error {
+	if engine == nil {
+		return fmt.Errorf("%s is required", label)
+	}
+	if engine.TenantID == nil {
+		return fmt.Errorf("%s must be a tenant business engine", label)
+	}
+	if *engine.TenantID != tenantID {
+		return fmt.Errorf("%s does not belong to current tenant", label)
+	}
+	return nil
 }
 
 func deriveWorkflowResourceParams(params map[string]interface{}, spec workflowOperatorAdapterSpec) ([]WorkflowProducedTarget, error) {

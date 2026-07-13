@@ -170,7 +170,7 @@ func validateRawCopyEndpoint(endpoint EndpointSpec, role string) error {
 		return fmt.Errorf("%s raw copy endpoint representation must be %q, got %q", role, representationEncoded, endpoint.Representation)
 	}
 	if !isRawCopyDataType(endpoint.DataType) {
-		return fmt.Errorf("%s raw copy data type must be document, media, or unknown, got %q", role, endpoint.DataType)
+		return fmt.Errorf("%s raw copy data type must be document, media, cad, or unknown, got %q", role, endpoint.DataType)
 	}
 	if endpoint.Format == "" {
 		return fmt.Errorf("%s raw copy format is required", role)
@@ -189,7 +189,7 @@ func validateRawCopyEndpoint(endpoint EndpointSpec, role string) error {
 
 func isRawCopyDataType(dataType string) bool {
 	switch strings.TrimSpace(dataType) {
-	case string(datatype.Document), string(datatype.Media), string(datatype.Unknown):
+	case string(datatype.Document), string(datatype.Media), string(datatype.CAD), string(datatype.Unknown):
 		return true
 	default:
 		return false

@@ -53,8 +53,13 @@ func (h *model3DContentHandler) Handle(_ context.Context, req *ObjectContentRequ
 }
 
 func model3DFrontendRenderer(req *ObjectContentRequest) string {
-	if req != nil && format.NormalizeFormat(req.Format) == format.Format3DTiles {
-		return string(format.Format3DTiles)
+	if req != nil {
+		switch format.NormalizeFormat(req.Format) {
+		case format.Format3DTiles:
+			return string(format.Format3DTiles)
+		case format.FormatS3M:
+			return string(format.FormatS3M)
+		}
 	}
 	return models.ObjectPreviewKindModel3D
 }

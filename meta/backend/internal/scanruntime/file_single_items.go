@@ -40,7 +40,7 @@ func (s *FilesystemCatalogRuntime) scanSingleFileItem(input fileSingleItemScanIn
 		return fullName, true, scanflow.ExtractionCounts{}
 	}
 
-	result, err := scanprocessor.New(s.repo, s.indexer, s.log).Process(input.ctx, scanprocessor.FileSingleInput(
+	result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithCADInspector(s.cadInspector).Process(input.ctx, scanprocessor.FileSingleInput(
 		input.resource,
 		input.tenantID,
 		input.parentNode,

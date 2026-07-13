@@ -10,6 +10,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/workflowaccess"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -69,7 +70,11 @@ func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Mod
 	if req.Task == nil {
 		return nil, errors.New("model 3d GLB generation task is required")
 	}
-	sourcePath, sourceFacts, err := e.prepareSourcePath(ctx, req.Task.TenantID, req.Config.Source)
+	operatorName, sourceFormat, err := model3DGLBOperatorForFormat(req.Config.Source.Format)
+	if err != nil {
+		return nil, err
+	}
+	sourcePlan, sourceFacts, err := e.prepareSource(ctx, req.Task.TenantID, req.Config.Source, sourceFormat)
 	if err != nil {
 		return nil, err
 	}
@@ -80,10 +85,21 @@ func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Mod
 	if err := e.ensureTargetBucket(ctx, bucket); err != nil {
 		return nil, err
 	}
-
-	operatorName, sourceFormat, err := model3DGLBOperatorForFormat(req.Config.Source.Format)
+	targetAccess, err := workflowaccess.ResolveObjectStoreTarget(plugin.ConnectionInfo{
+		"endpoint": e.minioEndpoint, "access_key": e.minioAccessKey, "secret_key": e.minioSecretKey, "use_ssl": e.minioUseSSL,
+	}, bucket, objectName, workflowaccess.KindFile)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("prepare model 3d GLB target access: %w", err)
+	}
+	accessPlan, err := workflowaccess.New(
+		sourcePlan,
+		workflowaccess.Target{
+			Kind: workflowaccess.KindFile, Format: "glb", Name: safeGLBFileName(req.Config.Result.FileName), WriteMode: workflowaccess.WriteModeReplace,
+			ContentType: "model/gltf-binary", Access: targetAccess, Metadata: commonModels.JSONMap{"storage_ref": req.Config.Result.StorageRef},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build model 3d GLB access plan: %w", err)
 	}
 	workflowEngine, workflowOperator, err := e.selectDirectWorkflowRuntime(ctx, req.Task.TenantID, operatorName)
 	if err != nil {
@@ -91,30 +107,8 @@ func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Mod
 	}
 	invokeResult, err := dbbridge.InvokeOperator(ctx, &workflowEngine, workflowOperator.Name, plugin.OperatorInvokeRequest{
 		Params: map[string]interface{}{
-			"access_plan": commonModels.JSONMap{
-				"source": commonModels.JSONMap{
-					"local_path": sourcePath,
-					"metadata":   sourceFacts,
-				},
-				"target": commonModels.JSONMap{
-					"file_name": safeGLBFileName(req.Config.Result.FileName),
-					"metadata": commonModels.JSONMap{
-						"storage_ref": req.Config.Result.StorageRef,
-					},
-					"publish": commonModels.JSONMap{
-						"method":       "object_store",
-						"endpoint":     e.minioEndpoint,
-						"access_key":   e.minioAccessKey,
-						"secret_key":   e.minioSecretKey,
-						"use_ssl":      e.minioUseSSL,
-						"bucket":       bucket,
-						"object":       objectName,
-						"locator":      fmt.Sprintf("s3://%s/%s", bucket, objectName),
-						"content_type": "model/gltf-binary",
-					},
-				},
-			},
-			"options": req.Config.Options.Clone(),
+			"access_plan": accessPlan.JSONMap(),
+			"options":     req.Config.Options.Clone(),
 		},
 		Timeout: e.invokeTimeout,
 	})
@@ -136,6 +130,7 @@ func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Mod
 		SizeBytes:  firstPositiveInt64(info.Size, jsonInt64(facts["size_bytes"]), req.Config.Source.SourceSizeBytes),
 		ContentURL: "",
 		Metadata: commonModels.JSONMap{
+			"access_plan": accessPlan.AuditJSONMap(),
 			"source": commonModels.JSONMap{
 				"access": sourceFacts,
 				"format": sourceFormat,
@@ -163,26 +158,52 @@ func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Mod
 	return result, nil
 }
 
-func (e *ManagerModel3DGLBExecutor) prepareSourcePath(ctx context.Context, tenantID uint, source Model3DGLBSourceConfig) (string, commonModels.JSONMap, error) {
+func (e *ManagerModel3DGLBExecutor) prepareSource(ctx context.Context, tenantID uint, source Model3DGLBSourceConfig, sourceFormat string) (workflowaccess.Source, commonModels.JSONMap, error) {
 	loc, err := resourcetree.ParseURI(source.ItemLocator)
 	if err != nil {
-		return "", nil, fmt.Errorf("parse model 3d GLB source locator: %w", err)
+		return workflowaccess.Source{}, nil, fmt.Errorf("parse model 3d GLB source locator: %w", err)
 	}
 	engine, err := e.systemClient.GetEngine(source.SourceEngineID)
 	if err != nil {
-		return "", nil, fmt.Errorf("get source engine: %w", err)
+		return workflowaccess.Source{}, nil, fmt.Errorf("get source engine: %w", err)
 	}
 	if engine == nil || !engine.IsActive {
-		return "", nil, errors.New("source engine is not active")
+		return workflowaccess.Source{}, nil, errors.New("source engine is not active")
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {
-		return "", nil, ErrEngineAccessDenied
+		return workflowaccess.Source{}, nil, ErrEngineAccessDenied
 	}
-	sourcePath, _, access, err := model3DTilesLocalRoot(engine, loc, "")
+	kind := workflowaccess.KindFile
+	entrypoint := ""
+	if model3DGLBUsesDirectorySource(sourceFormat) {
+		if len(loc.Path) == 0 {
+			return workflowaccess.Source{}, nil, errors.New("model 3d GLB source locator has no entrypoint")
+		}
+		entrypoint = loc.Path[len(loc.Path)-1]
+		loc = loc.Clone()
+		loc.Path = append([]string{}, loc.Path[:len(loc.Path)-1]...)
+		loc.Type = resourcetree.TypeDirectory
+		kind = workflowaccess.KindDirectory
+	}
+	resolved, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{
+		Engine: engine, Locator: loc, Kind: kind, Format: sourceFormat, Entrypoint: entrypoint,
+		Metadata: commonModels.JSONMap{"item_locator": source.ItemLocator, "engine_id": source.SourceEngineID, "engine_type": engine.EngineType},
+	})
 	if err != nil {
-		return "", nil, fmt.Errorf("prepare model 3d GLB source path: %w", err)
+		return workflowaccess.Source{}, nil, fmt.Errorf("prepare model 3d GLB source access: %w", err)
 	}
-	return sourcePath, access, nil
+	return resolved, commonModels.JSONMap{
+		"engine_type": engine.EngineType, "access_method": resolved.Access.Method,
+	}, nil
+}
+
+func model3DGLBUsesDirectorySource(sourceFormat string) bool {
+	switch format.NormalizeFormat(sourceFormat) {
+	case format.FormatGLTF, format.FormatFBX, format.FormatOBJ:
+		return true
+	default:
+		return false
+	}
 }
 
 func model3DGLBOperatorForFormat(sourceFormat string) (operatorName string, normalizedFormat string, err error) {

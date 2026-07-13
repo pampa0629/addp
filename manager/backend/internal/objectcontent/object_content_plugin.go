@@ -206,6 +206,9 @@ func appendAttributePreviewMetadata(metadata map[string]interface{}, attrs map[s
 	if gaussianSplatInfo := commonJSON.Section(attrs, "type_info.gaussian_splat"); len(gaussianSplatInfo) > 0 {
 		metadata["gaussian_splat"] = gaussianSplatInfo
 	}
+	if cadInfo := commonJSON.Section(attrs, "type_info.cad"); len(cadInfo) > 0 {
+		metadata["cad"] = cadInfo
+	}
 	if formatName != "" {
 		if formatAttrs := commonJSON.Section(attrs, "format_info."+formatName); len(formatAttrs) > 0 {
 			metadata["format_info"] = map[string]interface{}{

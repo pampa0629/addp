@@ -243,7 +243,7 @@ func buildRawCopyFormatCapabilities() []TransferRawCopyFormatSupport {
 
 func isRawCopyDataType(dataType datatype.DataType) bool {
 	switch dataType {
-	case datatype.Document, datatype.Media, datatype.Unknown:
+	case datatype.Document, datatype.Media, datatype.CAD, datatype.Unknown:
 		return true
 	default:
 		return false
@@ -266,8 +266,10 @@ func rawCopyDataTypeRank(dataType string) int {
 		return 10
 	case string(datatype.Media):
 		return 20
-	case string(datatype.Unknown):
+	case string(datatype.CAD):
 		return 30
+	case string(datatype.Unknown):
+		return 40
 	default:
 		return 1000
 	}
@@ -283,6 +285,8 @@ func rawCopyFormatLabel(value string) string {
 		return "PPTX"
 	case "wps":
 		return "WPS"
+	case "dwg":
+		return "DWG"
 	case "text":
 		return "Text"
 	case "markdown":

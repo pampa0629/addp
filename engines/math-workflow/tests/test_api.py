@@ -7,6 +7,7 @@ Math Workflow Engine - API 集成测试
 import pytest
 import json
 import sys
+import time
 from pathlib import Path
 
 for parent in Path(__file__).resolve().parents:
@@ -21,11 +22,23 @@ from workflow_operator_contract import assert_operator_metadata_contract
 @pytest.fixture
 def client():
     """创建 Flask 测试客户端"""
-    from api_server import app
+    from api_server import app, executions
     app.config['TESTING'] = True
+    executions.clear()
 
     with app.test_client() as client:
         yield client
+
+
+def wait_execution(client, execution_id, timeout=2):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        response = client.get(f'/api/executions/{execution_id}')
+        payload = response.get_json()
+        if payload['status'] in {'success', 'failed'}:
+            return payload
+        time.sleep(0.01)
+    raise AssertionError(f'execution {execution_id} did not finish')
 
 
 class TestHealthEndpoint:
@@ -254,15 +267,18 @@ class TestWorkflowExecution:
             content_type='application/json'
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
 
         data = response.get_json()
-        assert data['status'] == 'success'
+        assert data['status'] == 'pending'
         assert 'execution_id' in data
-        assert data['final_result'] == 60
-        assert data['all_results']['task1'] == 30
-        assert data['all_results']['task2'] == 60
         assert 'execution_time_ms' in data
+        status = wait_execution(client, data['execution_id'])
+        assert status['status'] == 'success'
+        assert status['result'] == 60
+        assert status['all_results']['task1'] == 30
+        assert status['all_results']['task2'] == 60
+        assert status['task_order'] == ['task1', 'task2']
 
     def test_complex_workflow(self, client):
         """测试复杂工作流：((10 + 20) × 2 - 5) / 5 = 11"""
@@ -281,11 +297,12 @@ class TestWorkflowExecution:
             content_type='application/json'
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
 
         data = response.get_json()
-        assert data['final_result'] == 11
-        assert len(data['all_results']) == 4
+        status = wait_execution(client, data['execution_id'])
+        assert status['result'] == 11
+        assert len(status['all_results']) == 4
 
     def test_parallel_tasks_workflow(self, client):
         """测试并行任务工作流"""
@@ -303,10 +320,11 @@ class TestWorkflowExecution:
             content_type='application/json'
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
 
         data = response.get_json()
-        assert data['final_result'] == 60  # (10+20) + (5*6) = 30 + 30 = 60
+        status = wait_execution(client, data['execution_id'])
+        assert status['result'] == 60  # (10+20) + (5*6) = 30 + 30 = 60
 
     def test_missing_workflow_def(self, client):
         """测试缺少 workflow_def"""
@@ -383,11 +401,7 @@ class TestExecutionStatusEndpoint:
         )
         execution_id = execute_response.get_json()['execution_id']
 
-        response = client.get(f'/api/executions/{execution_id}')
-
-        assert response.status_code == 200
-
-        data = response.get_json()
+        data = wait_execution(client, execution_id)
         assert data['status'] == 'success'
         assert data['execution_id'] == execution_id
         assert 'task_status' not in data
@@ -419,18 +433,10 @@ class TestExecutionStatusEndpoint:
         )
         assert execute_response.status_code == 400
 
-        execute_payload = execute_response.get_json()
-        execution_id = execute_payload['execution_id']
-
-        response = client.get(f'/api/executions/{execution_id}')
-        assert response.status_code == 200
-
-        data = response.get_json()
+        data = execute_response.get_json()
         assert data['status'] == 'failed'
-        assert data['execution_id'] == execution_id
         assert data['error_code'] == 'WORKFLOW_INVALID'
-        assert data['details']
-        assert data['progress'] == 100
+        assert 'execution_id' not in data
 
 
 if __name__ == '__main__':

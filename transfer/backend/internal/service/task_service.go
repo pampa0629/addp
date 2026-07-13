@@ -71,6 +71,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 	if err := validateNewTaskConfig(req.Config, batchSize); err != nil {
 		return nil, err
 	}
+	boundary, _ := planner.TaskRuntimeBoundary(req.Config)
 	schedule := strings.TrimSpace(req.Schedule)
 	enabled := false
 	if req.Enabled != nil {
@@ -79,6 +80,9 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 	if schedule == "" {
 		enabled = false
 	}
+	if boundary == planner.RuntimeBoundaryContinuous && (schedule != "" || enabled) {
+		return nil, fmt.Errorf("%w: continuous tasks do not support task-owned schedules", ErrInvalidTaskConfig)
+	}
 	nextRunAt, err := transferTaskNextRunAt(schedule, enabled, time.Now())
 	if err != nil {
 		return nil, err
@@ -86,18 +90,19 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 
 	// 构建任务对象
 	task := &models.TransferTask{
-		Name:        req.Name,
-		Description: req.Description,
-		TaskType:    req.TaskType,
-		Config:      req.Config,
-		Schedule:    schedule,
-		BatchSize:   batchSize,
-		Status:      models.TaskStatusIdle,
-		Progress:    0,
-		Enabled:     enabled,
-		NextRunAt:   nextRunAt,
-		TenantID:    tenantID,
-		CreatedBy:   &userID,
+		Name:         req.Name,
+		Description:  req.Description,
+		TaskType:     req.TaskType,
+		Config:       req.Config,
+		Schedule:     schedule,
+		BatchSize:    batchSize,
+		Status:       models.TaskStatusIdle,
+		DesiredState: models.TaskDesiredStateStopped,
+		Progress:     0,
+		Enabled:      enabled,
+		NextRunAt:    nextRunAt,
+		TenantID:     tenantID,
+		CreatedBy:    &userID,
 	}
 
 	// 处理 auto_scan_metadata 字段
@@ -159,6 +164,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 	if err := validateNewTaskConfig(effectiveConfig, effectiveBatchSize); err != nil {
 		return nil, err
 	}
+	effectiveBoundary, _ := planner.TaskRuntimeBoundary(effectiveConfig)
 
 	// 更新字段
 	if req.Name != nil {
@@ -187,6 +193,9 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 	}
 	if task.Schedule == "" {
 		task.Enabled = false
+	}
+	if effectiveBoundary == planner.RuntimeBoundaryContinuous && (task.Schedule != "" || task.Enabled) {
+		return nil, fmt.Errorf("%w: continuous tasks do not support task-owned schedules", ErrInvalidTaskConfig)
 	}
 	if req.AutoScanMetadata != nil {
 		task.AutoScanMetadata = *req.AutoScanMetadata
@@ -217,6 +226,16 @@ func normalizeTransferTaskType(taskType *string) error {
 }
 
 func validateNewTaskConfig(config map[string]interface{}, batchSize int) error {
+	boundary, boundaryErr := planner.TaskRuntimeBoundary(config)
+	if boundaryErr != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidTaskConfig, boundaryErr)
+	}
+	if boundary == planner.RuntimeBoundaryContinuous {
+		if _, err := planner.ParseContinuousTaskSpec(config); err != nil {
+			return fmt.Errorf("%w: continuous=%v", ErrInvalidTaskConfig, err)
+		}
+		return nil
+	}
 	if _, err := planner.ParseRawCopyTaskSpec(config); err == nil {
 		return nil
 	} else {
@@ -269,6 +288,12 @@ func (s *TaskService) ListTasks(ctx context.Context, tenantID uint, req *models.
 		}
 		filters["task_type"] = req.TaskType
 	}
+	if req.RuntimeBoundary != "" {
+		if req.RuntimeBoundary != "bounded" && req.RuntimeBoundary != planner.RuntimeBoundaryContinuous {
+			return nil, 0, fmt.Errorf("%w: unsupported runtime_boundary %q", ErrInvalidTaskConfig, req.RuntimeBoundary)
+		}
+		filters["runtime_boundary"] = req.RuntimeBoundary
+	}
 
 	return s.taskRepo.List(tenantID, filters, req.Page, req.PageSize)
 }
@@ -301,8 +326,9 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 		return nil, err
 	}
 
-	if s.taskQueue == nil {
-		return nil, fmt.Errorf("task queue is not available")
+	boundary, err := planner.TaskRuntimeBoundary(task.Config)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
 	}
 	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
@@ -319,6 +345,22 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 		SourceTaskName: &task.Name, ParentExecutionID: parentExecutionID, Status: commonExecution.ExecutionStatusPending,
 		TriggerType: normalizedTriggerType, TriggeredBy: &triggeredBy, ExecutionConfig: task.Config,
 		StartedAt: &now, CreatedAt: now, UpdatedAt: now,
+	}
+	if boundary == planner.RuntimeBoundaryContinuous {
+		if task.Schedule != "" || task.Enabled {
+			return nil, fmt.Errorf("continuous tasks do not support task-owned schedules")
+		}
+		_, err = s.taskRepo.StartContinuousExecution(ctx, id, tenantID, executionRecord)
+		if err != nil {
+			if errors.Is(err, repository.ErrContinuousTaskAlreadyRunning) {
+				return nil, fmt.Errorf("continuous task is already running")
+			}
+			return nil, fmt.Errorf("start continuous execution: %w", err)
+		}
+		return s.executionService.convertToTransferExecution(executionRecord), nil
+	}
+	if s.taskQueue == nil {
+		return nil, fmt.Errorf("task queue is not available")
 	}
 	_, _, err = s.taskRepo.ClaimExecution(ctx, id, tenantID, executionRecord, incrementalSourceIdentity(task))
 	if err != nil {
@@ -358,6 +400,17 @@ func (s *TaskService) PauseTask(ctx context.Context, id, tenantID uint) error {
 		return err
 	}
 
+	boundary, err := planner.TaskRuntimeBoundary(task.Config)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
+	}
+	if boundary == planner.RuntimeBoundaryContinuous {
+		if err := s.taskRepo.SetContinuousDesiredState(ctx, id, tenantID, models.TaskDesiredStatePaused, "paused"); err != nil {
+			return fmt.Errorf("failed to pause continuous task: %w", err)
+		}
+		s.logger.Info("continuous task pause requested", "task_id", id)
+		return nil
+	}
 	if task.Schedule == "" {
 		return fmt.Errorf("manual tasks cannot be paused")
 	}
@@ -391,23 +444,30 @@ func IncrementalSourceIdentityForTask(task *models.TransferTask) string {
 }
 
 // ResumeTask 恢复任务（恢复定时调度）
-func (s *TaskService) ResumeTask(ctx context.Context, id, tenantID uint) error {
+func (s *TaskService) ResumeTask(ctx context.Context, id, tenantID, userID uint) (*models.TaskExecution, error) {
 	task, err := s.GetTask(ctx, id, tenantID)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	boundary, err := planner.TaskRuntimeBoundary(task.Config)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
+	}
+	if boundary == planner.RuntimeBoundaryContinuous {
+		return s.StartTask(ctx, id, tenantID, userID)
 	}
 
 	if task.Schedule == "" {
-		return fmt.Errorf("manual tasks do not support resume")
+		return nil, fmt.Errorf("manual tasks do not support resume")
 	}
 
 	if task.Enabled {
-		return fmt.Errorf("task is already enabled")
+		return nil, fmt.Errorf("task is already enabled")
 	}
 
 	nextRunAt, err := transferTaskNextRunAt(task.Schedule, true, time.Now())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	updates := map[string]interface{}{
 		"enabled":     true,
@@ -415,10 +475,30 @@ func (s *TaskService) ResumeTask(ctx context.Context, id, tenantID uint) error {
 	}
 
 	if err := s.taskRepo.UpdateFields(id, updates); err != nil {
-		return fmt.Errorf("failed to resume task: %w", err)
+		return nil, fmt.Errorf("failed to resume task: %w", err)
 	}
 
 	s.logger.Info("task resumed", "task_id", id)
+	return nil, nil
+}
+
+// StopTask 将 continuous task 收敛到 stopped；bounded task 没有常驻 runtime，不能调用 stop。
+func (s *TaskService) StopTask(ctx context.Context, id, tenantID uint) error {
+	task, err := s.GetTask(ctx, id, tenantID)
+	if err != nil {
+		return err
+	}
+	boundary, err := planner.TaskRuntimeBoundary(task.Config)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
+	}
+	if boundary != planner.RuntimeBoundaryContinuous {
+		return fmt.Errorf("bounded tasks do not support stop; pause their schedule instead")
+	}
+	if err := s.taskRepo.SetContinuousDesiredState(ctx, id, tenantID, models.TaskDesiredStateStopped, "stopped"); err != nil {
+		return fmt.Errorf("failed to stop continuous task: %w", err)
+	}
+	s.logger.Info("continuous task stop requested", "task_id", id)
 	return nil
 }
 

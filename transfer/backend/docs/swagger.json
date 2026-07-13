@@ -352,6 +352,71 @@
                 }
             }
         },
+        "/provider-tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅返回 runtime.boundary=bounded 的任务，continuous task 不进入 Orchestrator v1 发现结果。| Return only runtime.boundary=bounded tasks; continuous tasks are excluded from Orchestrator v1 discovery.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "任务管理 | Task Management"
+                ],
+                "summary": "获取 TaskProvider bounded 任务列表 | List bounded TaskProvider tasks",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "每页大小 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "任务类型，固定为 sync | Task type, fixed to sync",
+                        "name": "task_type",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.ListProviderTasksResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/system-engines": {
             "get": {
                 "security": [
@@ -755,7 +820,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "关闭任务自身定时调度，不中断当前 active execution | Disable the task-owned schedule without interrupting an active execution",
+                "description": "bounded 任务关闭自身定时调度；continuous 任务将 desired_state 置为 paused 并通知 runtime 取消当前 execution。| Disable a bounded task schedule, or set a continuous task desired_state to paused and request runtime cancellation.",
                 "produces": [
                     "application/json"
                 ],
@@ -801,7 +866,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "恢复任务自身定时调度；watermark execution resume 由新 execution 自动读取 committed position 完成 | Re-enable the task-owned schedule; watermark execution resume is handled by a new execution reading the committed position",
+                "description": "bounded 任务恢复自身定时调度；continuous 任务创建新的 pending execution 并从 committed position 恢复。| Re-enable a bounded task schedule, or create a new pending continuous execution that resumes from committed position.",
                 "produces": [
                     "application/json"
                 ],
@@ -895,6 +960,61 @@
                 }
             }
         },
+        "/task-definitions/{id}/stop": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "将 continuous task 的 desired_state 置为 stopped，并通知 runtime 取消当前 execution；bounded 任务不支持此操作。| Set a continuous task desired_state to stopped and request runtime cancellation; bounded tasks do not support this operation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "任务管理 | Task Management"
+                ],
+                "summary": "停止连续任务 | Stop continuous task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tasks": {
             "get": {
                 "security": [
@@ -938,6 +1058,12 @@
                         "type": "string",
                         "description": "任务定义状态: idle, running | Task definition status",
                         "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "执行边界: bounded, continuous | Runtime boundary: bounded, continuous",
+                        "name": "runtime_boundary",
                         "in": "query"
                     }
                 ],
@@ -1139,9 +1265,11 @@
                 "pending",
                 "running",
                 "success",
-                "failed"
+                "failed",
+                "cancelled"
             ],
             "x-enum-comments": {
+                "ExecutionStatusCancelled": "已取消",
                 "ExecutionStatusFailed": "失败",
                 "ExecutionStatusPending": "待执行",
                 "ExecutionStatusRunning": "运行中",
@@ -1151,13 +1279,15 @@
                 "待执行",
                 "运行中",
                 "成功",
-                "失败"
+                "失败",
+                "已取消"
             ],
             "x-enum-varnames": [
                 "ExecutionStatusPending",
                 "ExecutionStatusRunning",
                 "ExecutionStatusSuccess",
-                "ExecutionStatusFailed"
+                "ExecutionStatusFailed",
+                "ExecutionStatusCancelled"
             ]
         },
         "github_com_addp_transfer_internal_models.FieldMappingSpecDoc": {
@@ -1290,6 +1420,19 @@
                     }
                 }
             }
+        },
+        "github_com_addp_transfer_internal_models.TaskDesiredState": {
+            "type": "string",
+            "enum": [
+                "running",
+                "paused",
+                "stopped"
+            ],
+            "x-enum-varnames": [
+                "TaskDesiredStateRunning",
+                "TaskDesiredStatePaused",
+                "TaskDesiredStateStopped"
+            ]
         },
         "github_com_addp_transfer_internal_models.TaskExecution": {
             "type": "object",
@@ -1440,9 +1583,80 @@
                 "type": {
                     "type": "string",
                     "enum": [
-                        "watermark"
+                        "watermark",
+                        "kafka"
                     ],
                     "example": "watermark"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.TransferChangeStreamDoc": {
+            "type": "object",
+            "properties": {
+                "encoding": {
+                    "type": "string",
+                    "enum": [
+                        "json"
+                    ],
+                    "example": "json"
+                },
+                "envelope": {
+                    "type": "string",
+                    "enum": [
+                        "record"
+                    ],
+                    "example": "record"
+                },
+                "key": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferChangeStreamKeyDoc"
+                },
+                "poll_batch_size": {
+                    "type": "integer",
+                    "example": 1000
+                },
+                "start": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferChangeStreamStartDoc"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.TransferChangeStreamKeyDoc": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "source": {
+                    "type": "string",
+                    "enum": [
+                        "value"
+                    ],
+                    "example": "value"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.TransferChangeStreamStartDoc": {
+            "type": "object",
+            "properties": {
+                "initial": {
+                    "type": "string",
+                    "enum": [
+                        "earliest",
+                        "latest"
+                    ],
+                    "example": "earliest"
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "committed"
+                    ],
+                    "example": "committed"
                 }
             }
         },
@@ -1468,7 +1682,8 @@
                 "boundary": {
                     "type": "string",
                     "enum": [
-                        "bounded"
+                        "bounded",
+                        "continuous"
                     ],
                     "example": "bounded"
                 }
@@ -1477,6 +1692,9 @@
         "github_com_addp_transfer_internal_models.TransferSourceEndpointDoc": {
             "type": "object",
             "properties": {
+                "change_stream": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferChangeStreamDoc"
+                },
                 "data_type": {
                     "type": "string",
                     "example": "table"
@@ -1594,6 +1812,9 @@
                 },
                 "description": {
                     "type": "string"
+                },
+                "desired_state": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TaskDesiredState"
                 },
                 "enabled": {
                     "type": "boolean"

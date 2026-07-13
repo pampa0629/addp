@@ -176,6 +176,7 @@ func newTransferTaskHandlerTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(`
 		CREATE TABLE transfer.transfer_tasks (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			apply_identity TEXT NOT NULL UNIQUE,
 			tenant_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
 			description TEXT,
@@ -186,6 +187,7 @@ func newTransferTaskHandlerTestDB(t *testing.T) *gorm.DB {
 			enabled BOOLEAN,
 			auto_scan_metadata BOOLEAN,
 			status TEXT,
+			desired_state TEXT NOT NULL DEFAULT 'stopped',
 			progress REAL,
 			created_by INTEGER,
 			last_execution_id TEXT,

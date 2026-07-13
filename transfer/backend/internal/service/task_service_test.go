@@ -10,6 +10,7 @@ import (
 	_ "github.com/addp/common/format/plugins/csv"
 	_ "github.com/addp/common/format/plugins/pdf"
 	"github.com/addp/transfer/internal/models"
+	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -76,6 +77,9 @@ func TestCreateTaskPersistsNextRunAtWhenEnabled(t *testing.T) {
 	}
 	if !task.Enabled || task.NextRunAt == nil {
 		t.Fatalf("task enabled/next_run_at = %v/%v, want true/non-nil", task.Enabled, task.NextRunAt)
+	}
+	if _, err := uuid.Parse(task.ApplyIdentity); err != nil {
+		t.Fatalf("task apply_identity = %q, want generated UUID", task.ApplyIdentity)
 	}
 }
 
@@ -165,6 +169,77 @@ func TestStartTaskRejectsPersistedNonSyncTaskType(t *testing.T) {
 	}
 }
 
+func TestContinuousTaskLifecycleIsAtomicWithoutAsynqQueue(t *testing.T) {
+	db := newTransferTaskServiceTestDB(t)
+	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc.SetExecutionService(NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db)))
+	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
+		Name: "continuous", TaskType: commonExecution.TaskTypeSync, Config: validContinuousTaskConfig(),
+	}, 7, 9)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if task.DesiredState != models.TaskDesiredStateStopped {
+		t.Fatalf("initial desired_state = %q", task.DesiredState)
+	}
+	first, err := taskSvc.StartTask(context.Background(), task.ID, 7, 9)
+	if err != nil {
+		t.Fatalf("StartTask() error = %v", err)
+	}
+	if first.Status != models.ExecutionStatusPending {
+		t.Fatalf("start execution status = %q", first.Status)
+	}
+	if err := taskSvc.PauseTask(context.Background(), task.ID, 7); err != nil {
+		t.Fatalf("PauseTask() error = %v", err)
+	}
+	var cancelled commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", first.ExecutionID).First(&cancelled).Error; err != nil {
+		t.Fatalf("load cancelled execution: %v", err)
+	}
+	if cancelled.Status != commonExecution.ExecutionStatusCancelled || cancelled.Metadata["stop_reason"] != "paused" {
+		t.Fatalf("cancelled execution = status=%q metadata=%#v", cancelled.Status, cancelled.Metadata)
+	}
+	second, err := taskSvc.ResumeTask(context.Background(), task.ID, 7, 9)
+	if err != nil {
+		t.Fatalf("ResumeTask() error = %v", err)
+	}
+	if second == nil || second.ExecutionID == first.ExecutionID {
+		t.Fatalf("resume execution = %#v, first=%s", second, first.ExecutionID)
+	}
+	if err := taskSvc.StopTask(context.Background(), task.ID, 7); err != nil {
+		t.Fatalf("StopTask() error = %v", err)
+	}
+	stored, err := taskSvc.GetTask(context.Background(), task.ID, 7)
+	if err != nil {
+		t.Fatalf("GetTask() error = %v", err)
+	}
+	if stored.DesiredState != models.TaskDesiredStateStopped {
+		t.Fatalf("final desired_state = %q", stored.DesiredState)
+	}
+}
+
+func TestListTasksCanRestrictProviderDiscoveryToBounded(t *testing.T) {
+	db := newTransferTaskServiceTestDB(t)
+	taskSvc := NewTaskService(db, nil, nil, nil)
+	for _, req := range []*models.CreateTaskRequest{
+		{Name: "bounded", TaskType: commonExecution.TaskTypeSync, Config: validTableTransferTaskConfig()},
+		{Name: "continuous", TaskType: commonExecution.TaskTypeSync, Config: validContinuousTaskConfig()},
+	} {
+		if _, err := taskSvc.CreateTask(context.Background(), req, 7, 9); err != nil {
+			t.Fatalf("CreateTask(%s) error = %v", req.Name, err)
+		}
+	}
+	tasks, total, err := taskSvc.ListTasks(context.Background(), 7, &models.ListTasksRequest{
+		RuntimeBoundary: "bounded", Page: 1, PageSize: 100,
+	})
+	if err != nil {
+		t.Fatalf("ListTasks() error = %v", err)
+	}
+	if total != 1 || len(tasks) != 1 || tasks[0].Name != "bounded" {
+		t.Fatalf("bounded tasks total=%d items=%#v", total, tasks)
+	}
+}
+
 func newTransferTaskServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
@@ -174,9 +249,13 @@ func newTransferTaskServiceTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS transfer").Error; err != nil {
 		t.Fatalf("attach transfer schema: %v", err)
 	}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
+		t.Fatalf("attach common schema: %v", err)
+	}
 	if err := db.Exec(`
 		CREATE TABLE transfer.transfer_tasks (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			apply_identity TEXT NOT NULL UNIQUE,
 			tenant_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
 			description TEXT,
@@ -187,6 +266,7 @@ func newTransferTaskServiceTestDB(t *testing.T) *gorm.DB {
 			enabled BOOLEAN,
 			auto_scan_metadata BOOLEAN,
 			status TEXT,
+			desired_state TEXT NOT NULL DEFAULT 'stopped',
 			progress REAL,
 			created_by INTEGER,
 			last_execution_id TEXT,
@@ -199,6 +279,39 @@ func newTransferTaskServiceTestDB(t *testing.T) *gorm.DB {
 		)
 	`).Error; err != nil {
 		t.Fatalf("create transfer_tasks table: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE common.task_executions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			tenant_id INTEGER NOT NULL,
+			execution_id TEXT NOT NULL UNIQUE,
+			module TEXT NOT NULL,
+			task_type TEXT NOT NULL,
+			source TEXT NOT NULL DEFAULT '',
+			source_task_id TEXT,
+			source_task_name TEXT,
+			parent_execution_id TEXT,
+			status TEXT NOT NULL,
+			progress INTEGER,
+			current_step TEXT,
+			trigger_type TEXT NOT NULL,
+			triggered_by INTEGER,
+			execution_config JSON,
+			error_details JSON,
+			metadata JSON,
+			execution_time_ms INTEGER,
+			rows_affected INTEGER,
+			records_read INTEGER,
+			records_written INTEGER,
+			bytes_read INTEGER,
+			bytes_written INTEGER,
+			started_at DATETIME,
+			completed_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)
+	`).Error; err != nil {
+		t.Fatalf("create task_executions table: %v", err)
 	}
 	return db
 }
@@ -224,5 +337,29 @@ func validTableTransferTaskConfig() map[string]interface{} {
 			"format":         string(format.FormatCSV),
 			"policy":         map[string]interface{}{"apply_mode": "replace"},
 		},
+	}
+}
+
+func validContinuousTaskConfig() map[string]interface{} {
+	return map[string]interface{}{
+		"runtime": map[string]interface{}{"boundary": "continuous"},
+		"load":    map[string]interface{}{"mode": "incremental", "change_detection": map[string]interface{}{"type": "kafka"}},
+		"source": map[string]interface{}{
+			"locator": "addp://engine/30/path/orders.events?type=topic", "representation": "native",
+			"change_stream": map[string]interface{}{
+				"envelope": "record", "encoding": "json", "key": map[string]interface{}{"source": "value", "fields": []interface{}{"id"}},
+				"start": map[string]interface{}{"mode": "committed", "initial": "earliest"}, "poll_batch_size": 1000,
+			},
+		},
+		"target": map[string]interface{}{
+			"parent_locator": "addp://engine/8/path/public?type=schema", "name": "orders", "data_type": "table", "representation": "native",
+			"policy": map[string]interface{}{"apply_mode": "upsert", "keys": []interface{}{"id"}},
+		},
+		"transforms": []interface{}{map[string]interface{}{
+			"type": "field_mapping", "version": "v1", "mode": "project",
+			"fields": []interface{}{map[string]interface{}{
+				"source": "id", "target": "id", "target_type": "int", "nullable": false,
+			}},
+		}},
 	}
 }

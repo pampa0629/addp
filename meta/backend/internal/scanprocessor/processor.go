@@ -12,6 +12,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metacatalog"
+	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
@@ -60,9 +61,15 @@ type documentExtractionResult struct {
 }
 
 type Processor struct {
-	repo    *metaRepo.ScanRepository
-	indexer AssetIndexer
-	log     *slog.Logger
+	repo         *metaRepo.ScanRepository
+	indexer      AssetIndexer
+	log          *slog.Logger
+	cadInspector metaenrich.CADInspector
+}
+
+func (p Processor) WithCADInspector(inspector metaenrich.CADInspector) Processor {
+	p.cadInspector = inspector
+	return p
 }
 
 func New(repo *metaRepo.ScanRepository, indexer AssetIndexer, log *slog.Logger) Processor {

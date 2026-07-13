@@ -171,25 +171,43 @@ type CatalogFactsCapability struct {
 }
 
 type StoreCapability struct {
-	StreamRead                bool                                  `json:"stream_read,omitempty"`
-	StreamWrite               bool                                  `json:"stream_write,omitempty"`
-	RangeRead                 bool                                  `json:"range_read,omitempty"`
-	RangeWrite                bool                                  `json:"range_write,omitempty"`
-	Delete                    bool                                  `json:"delete,omitempty"`
-	BatchRead                 bool                                  `json:"batch_read,omitempty"`
-	TableReadSession          bool                                  `json:"table_read_session,omitempty"`
-	TableReadSpatialTransform bool                                  `json:"table_read_spatial_transform,omitempty"`
-	BatchWrite                bool                                  `json:"batch_write,omitempty"`
-	TableWriteSession         bool                                  `json:"table_write_session,omitempty"`
-	TableWritePrepare         bool                                  `json:"table_write_prepare,omitempty"`
-	BoundedWatermarkRead      bool                                  `json:"bounded_watermark_read,omitempty"`
-	TableUpsert               *TableUpsertCapability                `json:"table_upsert,omitempty"`
-	TableSpatialEncoding      *NativeTableSpatialEncodingCapability `json:"table_spatial_encoding,omitempty"`
+	StreamRead                  bool                                   `json:"stream_read,omitempty"`
+	StreamWrite                 bool                                   `json:"stream_write,omitempty"`
+	RangeRead                   bool                                   `json:"range_read,omitempty"`
+	RangeWrite                  bool                                   `json:"range_write,omitempty"`
+	Delete                      bool                                   `json:"delete,omitempty"`
+	BatchRead                   bool                                   `json:"batch_read,omitempty"`
+	TableReadSession            bool                                   `json:"table_read_session,omitempty"`
+	TableReadSpatialTransform   bool                                   `json:"table_read_spatial_transform,omitempty"`
+	BatchWrite                  bool                                   `json:"batch_write,omitempty"`
+	TableWriteSession           bool                                   `json:"table_write_session,omitempty"`
+	TableWritePrepare           bool                                   `json:"table_write_prepare,omitempty"`
+	BoundedWatermarkRead        bool                                   `json:"bounded_watermark_read,omitempty"`
+	ChangeStreamRead            *ChangeStreamReadCapability            `json:"change_stream_read,omitempty"`
+	TableUpsert                 *TableUpsertCapability                 `json:"table_upsert,omitempty"`
+	PartitionedTableChangeApply *PartitionedTableChangeApplyCapability `json:"partitioned_table_change_apply,omitempty"`
+	TableSpatialEncoding        *NativeTableSpatialEncodingCapability  `json:"table_spatial_encoding,omitempty"`
+}
+
+type ChangeStreamReadCapability struct {
+	Supported     bool     `json:"supported"`
+	Partitioned   bool     `json:"partitioned"`
+	Seek          bool     `json:"seek"`
+	PauseResume   bool     `json:"pause_resume"`
+	PositionTypes []string `json:"position_types"`
 }
 
 type TableUpsertCapability struct {
 	Supported  bool `json:"supported"`
 	Idempotent bool `json:"idempotent"`
+}
+
+type PartitionedTableChangeApplyCapability struct {
+	Supported            bool     `json:"supported"`
+	AtomicPositionCommit bool     `json:"atomic_position_commit"`
+	Monotonic            bool     `json:"monotonic"`
+	PositionTypes        []string `json:"position_types"`
+	Operations           []string `json:"operations"`
 }
 
 // NativeTableSpatialEncodingCapability describes geometry row encodings that a

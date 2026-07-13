@@ -1,6 +1,10 @@
 package preview
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/addp/manager/internal/models"
+)
 
 func TestThreeDTilesManifestObjectPathUsesRelativeManifestRef(t *testing.T) {
 	t.Parallel()
@@ -55,5 +59,49 @@ func TestThreeDTilesManifestObjectPathStripsBucketPrefix(t *testing.T) {
 	got := threeDTilesManifestObjectPath("addp", "3d/city", attrs)
 	if got != "3d/city/tileset.json" {
 		t.Fatalf("manifest path = %q, want bucketless object path", got)
+	}
+}
+
+func TestS3MManifestObjectPathUsesNestedConfigRef(t *testing.T) {
+	t.Parallel()
+	attrs := map[string]interface{}{
+		"format_info": map[string]interface{}{
+			"s3m": map[string]interface{}{
+				"manifest_ref": "config/city.scp",
+			},
+		},
+	}
+	got := s3mManifestObjectPath("addp", "3d/city", attrs)
+	if got != "3d/city/config/city.scp" {
+		t.Fatalf("manifest path = %q, want nested S3M config path", got)
+	}
+}
+
+func TestBuildStorageAssetURLPreservesPathSegments(t *testing.T) {
+	t.Parallel()
+	got := buildStorageAssetURL(26, "addp/三维模型/config/city.scp")
+	want := "/api/v1/manager/storage-assets/26/addp/%E4%B8%89%E7%BB%B4%E6%A8%A1%E5%9E%8B/config/city.scp"
+	if got != want {
+		t.Fatalf("asset URL = %q, want %q", got, want)
+	}
+}
+
+func TestApplyS3MScenePreviewBuildsControlledManifestURL(t *testing.T) {
+	t.Parallel()
+	object := &models.ObjectPreview{}
+	attrs := map[string]interface{}{
+		"item": map[string]interface{}{"format": "s3m", "data_type": "model_3d", "layout": "whole"},
+		"format_info": map[string]interface{}{
+			"s3m": map[string]interface{}{
+				"manifest_ref": "config/scene.scp", "manifest_encoding": "xml", "tile_extension": ".s3m",
+			},
+		},
+	}
+	if !applyS3MScenePreview(attrs, object, 26, "addp", "3d/city") {
+		t.Fatal("applyS3MScenePreview() = false, want S3M preview")
+	}
+	wantURL := "/api/v1/manager/storage-assets/26/addp/3d/city/config/scene.scp"
+	if object.Content == nil || object.Content.FrontendRenderer != "s3m" || object.Content.URL != wantURL {
+		t.Fatalf("object = %#v, want controlled S3M URL", object)
 	}
 }

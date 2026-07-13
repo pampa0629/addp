@@ -13,6 +13,9 @@
 - `common/dataitem` - 候选内容集合到 data item 组织结果的通用解析能力，供 Meta 扫描和 Manager 容器动态预览复用；当前已落地 `ResolveItems()`、single / multi / whole 规则派生、related refs 还原 helper 和基础忽略策略
 - `common/resourcetree` - Meta 已落库 catalog / item 事实到跨模块资源树视图的投影层，提供 `TreeNode`、`TreeBuilder`、`ResourceLocator` 和 provider `CatalogPath` 纯转换能力；不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取
 - [client/meta.go](common/client/meta.go) - MetaClient 用于跨模块调用 Meta API，Manager 等模块不应保留私有 Meta API client
+- `common/engine/workflowaccess` - 把已解析的文件、对象或目录型存储资源转换为 `addp.workflow.access-plan/v1` 执行计划和脱敏审计计划；不保存任务定义、不决定产物归属，也不触发 Meta scan
+
+`common-python/addp_common/workflow_runtime` 提供 Python Workflow Runtime 的协议执行核心，包括 workflow definition 校验、DAG 拓扑排序、引用解析、异步 execution 状态和标准错误。它是共享库，不是独立工作流引擎；各运行时仍负责自己的算子注册、内存对象类型和专业执行依赖。
 
 ### 资源树与 locator 共享边界
 

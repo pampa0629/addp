@@ -16,6 +16,7 @@ type CompositeItemInfo struct {
 	Document           *datatype.DocumentInfo
 	Media              *datatype.MediaInfo
 	Container          *datatype.ContainerInfo
+	CAD                *datatype.CADInfo
 	Model3D            *datatype.Model3DInfo
 	PointCloud         *datatype.PointCloudInfo
 	GaussianSplat      *datatype.GaussianSplatInfo
@@ -71,6 +72,7 @@ type DetectedItem struct {
 	Document      *datatype.DocumentInfo
 	Media         *datatype.MediaInfo
 	Container     *datatype.ContainerInfo
+	CAD           *datatype.CADInfo
 	Model3D       *datatype.Model3DInfo
 	PointCloud    *datatype.PointCloudInfo
 	GaussianSplat *datatype.GaussianSplatInfo
@@ -120,6 +122,7 @@ func DetectedItemFromCompositeInfo(info *CompositeItemInfo, physicalPath string,
 		Document:      info.Document.Clone(),
 		Media:         info.Media.Clone(),
 		Container:     info.Container.Clone(),
+		CAD:           info.CAD.Clone(),
 		Model3D:       info.Model3D.Clone(),
 		PointCloud:    info.PointCloud.Clone(),
 		GaussianSplat: info.GaussianSplat.Clone(),

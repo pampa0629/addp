@@ -379,9 +379,14 @@ check_service_changed() {
 
         model3d-workflow-engine)
             # Model3D runtime packages Python source plus converter Dockerfiles/patches/scripts.
-            comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" -o -name "*.patch" -o -name "*.sh" ')' \
+            local model3d_time
+            model3d_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" -o -name "*.patch" -o -name "*.sh" ')' \
                 -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
                 xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+            local common_time
+            common_time=$(find "common-python" -type f '(' -name "*.py" -o -name "pyproject.toml" ')' \
+                -not -path "*/__pycache__/*" 2>/dev/null | xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+            comparison_time=$(( model3d_time > common_time ? model3d_time : common_time ))
 
             if [ -z "$comparison_time" ] || [ "$comparison_time" = "0" ]; then
                 echo -e "${YELLOW}Cannot determine source modification time, rebuilding...${NC}"
@@ -389,7 +394,17 @@ check_service_changed() {
             fi
             ;;
 
-        python-workflow-engine|pointcloud-workflow-engine|spark-workflow-engine|jupyter-engine|raster-mosaic-runtime)
+        pointcloud-workflow-engine)
+            local pointcloud_time
+            pointcloud_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
+                -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+            local common_time
+            common_time=$(find "common-python" -type f '(' -name "*.py" -o -name "pyproject.toml" ')' \
+                -not -path "*/__pycache__/*" 2>/dev/null | xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+            comparison_time=$(( pointcloud_time > common_time ? pointcloud_time : common_time ))
+            ;;
+
+        python-workflow-engine|spark-workflow-engine|jupyter-engine|raster-mosaic-runtime)
             # Python service: compare source file time (Dockerfile + Python source files)
             comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
                 -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
@@ -402,7 +417,7 @@ check_service_changed() {
             ;;
 
         supermap-workflow-engine)
-            comparison_time=$(find "$service_dir" -type f '(' -name "*.java" -o -name "Dockerfile" -o -name "Dockerfile.bundled" -o -name "run.sh" -o -name "*.lic12" ')' \
+            comparison_time=$(find "$service_dir" -type f '(' -name "*.java" -o -name "Dockerfile" -o -name "run.sh" ')' \
                 -not -path "*/target/*" 2>/dev/null | \
                 xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
 
@@ -543,9 +558,20 @@ build_service() {
             return 1
         fi
 
-        if SUPERMAP_WORKFLOW_IMAGE="${image_name}" \
-            SUPERMAP_WORKFLOW_PLATFORM="${BUILD_PLATFORMS}" \
-            "${PROJECT_ROOT}/scripts/build/build-supermap-workflow-image.sh" --push; then
+        local supermap_base_image="${SUPERMAP_WORKFLOW_BASE_IMAGE:-addp-supermap-workflow-base:local}"
+        if [ "$(docker image inspect -f '{{ index .Config.Labels "addp.supermap.base" }}' "${supermap_base_image}" 2>/dev/null || true)" != "true" ]; then
+            echo -e "${RED}Error: missing SuperMap Workflow base image ${supermap_base_image}${NC}"
+            echo -e "${YELLOW}Run: bash scripts/build/build-supermap-workflow-base.sh${NC}"
+            return 1
+        fi
+        if docker build \
+            --no-cache \
+            --platform "${BUILD_PLATFORMS}" \
+            --build-arg "BASE_IMAGE=${supermap_base_image}" \
+            -f "${PROJECT_ROOT}/engines/supermap-workflow/Dockerfile" \
+            -t "${image_name}" \
+            "${PROJECT_ROOT}/engines/supermap-workflow" \
+            && docker push "${image_name}"; then
             mkdir -p ".build-cache"
             date +%s > ".build-cache/${service}-${IMAGE_TAG}.timestamp"
             echo -e "${GREEN}✓ Successfully built and pushed ${service}${NC}"
@@ -607,7 +633,13 @@ build_service() {
             fi
             ;;
 
-        pointcloud-workflow-engine|spark-workflow-engine|jupyter-engine)
+        pointcloud-workflow-engine)
+            # PointCloud Workflow 依赖 common-python，使用仓库根作为构建上下文。
+            build_context="."
+            dockerfile_path="${service_dir}/Dockerfile"
+            ;;
+
+        spark-workflow-engine|jupyter-engine)
             # Python Engine: Python service built from source
             build_context="${service_dir}"
             dockerfile_path="${service_dir}/Dockerfile"

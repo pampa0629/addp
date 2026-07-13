@@ -12,6 +12,7 @@ const (
 	Media         DataType = "media"
 	Container     DataType = "container"
 	Graph         DataType = "graph"
+	CAD           DataType = "cad"
 	Model3D       DataType = "model_3d"
 	PointCloud    DataType = "point_cloud"
 	GaussianSplat DataType = "gaussian_splat"
@@ -24,6 +25,7 @@ var knownDataTypes = map[DataType]struct{}{
 	Media:         {},
 	Container:     {},
 	Graph:         {},
+	CAD:           {},
 	Model3D:       {},
 	PointCloud:    {},
 	GaussianSplat: {},

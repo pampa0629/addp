@@ -12,8 +12,16 @@
     />
 
     <template v-else>
+    <el-alert
+      v-if="wizardState.isContinuousTask.value"
+      type="info"
+      :closable="false"
+      :title="t('transfer.taskWizard.continuousMappingTitle')"
+      :description="t('transfer.taskWizard.continuousMappingDesc')"
+      class="continuous-mapping-alert"
+    />
     <div class="mapping-controls">
-      <el-button type="primary" @click="autoMap">{{ t('transfer.taskWizard.autoMap') }}</el-button>
+      <el-button v-if="!wizardState.isContinuousTask.value" type="primary" @click="autoMap">{{ t('transfer.taskWizard.autoMap') }}</el-button>
       <el-button @click="addMapping">{{ t('transfer.taskWizard.addMapping') }}</el-button>
       <el-button @click="clearMappings">{{ t('transfer.taskWizard.clearAll') }}</el-button>
     </div>
@@ -25,6 +33,8 @@
             v-model="row.source_field"
             :placeholder="t('transfer.taskWizard.selectSourceField')"
             filterable
+            :allow-create="wizardState.isContinuousTask.value"
+            :default-first-option="wizardState.isContinuousTask.value"
             @change="handleMappingChange($index)"
           >
             <el-option
@@ -69,17 +79,15 @@
         <template #default="{ row, $index }">
           <el-select
             v-model="row.target_type"
-            placeholder="类型"
+            :placeholder="t('transfer.taskWizard.selectTargetType')"
             @change="handleMappingChange($index)"
           >
-            <el-option :label="t('transfer.taskWizard.typeString')" value="string" />
-            <el-option :label="t('transfer.taskWizard.typeInteger')" value="integer" />
-            <el-option :label="t('transfer.taskWizard.typeFloat')" value="float" />
-            <el-option :label="t('transfer.taskWizard.typeDouble')" value="double" />
-            <el-option :label="t('transfer.taskWizard.typeBoolean')" value="boolean" />
-            <el-option :label="t('transfer.taskWizard.typeDate')" value="date" />
-            <el-option :label="t('transfer.taskWizard.typeTimestamp')" value="timestamp" />
-            <el-option :label="t('transfer.taskWizard.typeGeometry')" value="geometry" />
+            <el-option
+              v-for="option in targetTypeOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
           </el-select>
         </template>
       </el-table-column>
@@ -134,8 +142,10 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { CONTINUOUS_FIELD_TYPES } from './continuousTask.mjs'
 
 const { t } = useI18n()
 
@@ -144,6 +154,16 @@ const props = defineProps({
     type: Object,
     required: true
   }
+})
+
+const targetTypeOptions = computed(() => {
+  const types = props.wizardState.isContinuousTask.value
+    ? CONTINUOUS_FIELD_TYPES
+    : ['string', 'bool', 'int', 'bigint', 'float', 'double', 'decimal', 'date', 'time', 'timestamp', 'json', 'uuid', 'geometry']
+  return types.map(value => ({
+    value,
+    label: t(`transfer.taskWizard.fieldType.${value}`)
+  }))
 })
 
 function autoMap() {
@@ -217,6 +237,10 @@ function sourceFieldType(fieldName) {
 .mapping-controls {
   display: flex;
   gap: 12px;
+}
+
+.continuous-mapping-alert {
+  margin-bottom: 16px;
 }
 
 .empty-hint {

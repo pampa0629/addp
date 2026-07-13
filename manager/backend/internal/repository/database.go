@@ -64,6 +64,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := ensurePointCloudCOPCSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure point cloud COPC schema: %w", err)
 	}
+	if err := ensureCADPreviewSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure CAD preview schema: %w", err)
+	}
 	if err := ensureModel3DTilesSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure model 3d tiles schema: %w", err)
 	}
@@ -909,6 +912,24 @@ func ensurePointCloudCOPCSchema(db *gorm.DB) error {
 		return err
 	}
 	return nil
+}
+
+func ensureCADPreviewSchema(db *gorm.DB) error {
+	if err := db.AutoMigrate(&models.CADPreviewTask{}, &models.CADPreview{}); err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_cad_preview_tasks_source_unique
+		ON manager.cad_preview_tasks (tenant_id, ((config->'source'->>'item_fingerprint')))
+		WHERE deleted_at IS NULL AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
+	`).Error; err != nil {
+		return err
+	}
+	return db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_cad_previews_current_unique
+		ON manager.cad_previews (tenant_id, item_fingerprint)
+		WHERE deleted_at IS NULL AND status <> 'deleted'
+	`).Error
 }
 
 func ensureEmbeddingArtifactStateSchema(db *gorm.DB, vectorDimension int) error {

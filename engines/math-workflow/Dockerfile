@@ -6,11 +6,12 @@ LABEL description="Math Workflow Engine - 基础数学运算工作流引擎"
 WORKDIR /app
 
 # 安装依赖
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY common-python /common-python
+COPY engines/math-workflow/requirements.txt .
+RUN pip install --no-cache-dir /common-python -r requirements.txt
 
 # 复制应用代码
-COPY . .
+COPY engines/math-workflow/ .
 
 # 暴露端口
 EXPOSE 8089

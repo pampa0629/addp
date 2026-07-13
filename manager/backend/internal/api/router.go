@@ -43,6 +43,7 @@ func SetupRouter(
 	model3DGLBHandler *Model3DGLBHandler,
 	gaussianSplatKSplatHandler *GaussianSplatKSplatHandler,
 	pointCloudCOPCHandler *PointCloudCOPCHandler,
+	cadPreviewHandler *CADPreviewHandler,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -214,6 +215,24 @@ func SetupRouter(
 				pointCloudCOPCsGroup.GET("/:id/content", pointCloudCOPCHandler.GetPointCloudCOPCContent)
 			}
 		}
+		if cadPreviewHandler != nil {
+			cadPreviewTasks := api.Group("/cad-preview-tasks")
+			{
+				cadPreviewTasks.GET("", cadPreviewHandler.ListTasks)
+				cadPreviewTasks.POST("", cadPreviewHandler.CreateTask)
+				cadPreviewTasks.GET("/:id", cadPreviewHandler.GetTask)
+				cadPreviewTasks.PUT("/:id", cadPreviewHandler.UpdateTask)
+				cadPreviewTasks.DELETE("/:id", cadPreviewHandler.DeleteTask)
+			}
+			cadPreviews := api.Group("/cad-previews")
+			{
+				cadPreviews.GET("", cadPreviewHandler.ListResults)
+				cadPreviews.GET("/:id", cadPreviewHandler.GetResult)
+				cadPreviews.DELETE("/:id", cadPreviewHandler.DeleteResult)
+				cadPreviews.GET("/:id/manifest", cadPreviewHandler.GetManifest)
+				cadPreviews.GET("/:id/tiles/:z/:x/:y", cadPreviewHandler.GetTile)
+			}
+		}
 		vectorMaterializedViewTasksGroup := api.Group("/vector_materialized_view_tasks")
 		{
 			vectorMaterializedViewTasksGroup.GET("", taskProviderHandler.ListVectorMaterializedViewTasks)
@@ -269,6 +288,7 @@ func SetupRouter(
 		api.GET("/preview", explorerHandler.Preview)
 		api.GET("/downloads/file", downloadHandler.DownloadFile)
 		api.GET("/storage-stream", explorerHandler.StorageStream)
+		api.GET("/storage-assets/:engine_id/*storage_ref", explorerHandler.StorageAsset)
 
 		// ============================================================
 		// 空间数据服务路由组
@@ -296,7 +316,7 @@ func SetupRouter(
 		quickViewHandler := NewQuickViewHandler(quickViewService, previewResolver, unifiedMVTService, redisClient)
 		if taskProviderHandler != nil {
 			quickViewHandler.SetTileCacheTaskService(taskProviderHandler.tileCacheTaskSvc)
-			quickViewHandler.SetArtifactTaskServices(taskProviderHandler.rasterCOGTaskSvc, taskProviderHandler.model3DGLBTaskSvc, taskProviderHandler.gaussianSplatKSplatTaskSvc, taskProviderHandler.pointCloudCOPCTaskSvc)
+			quickViewHandler.SetArtifactTaskServices(taskProviderHandler.rasterCOGTaskSvc, taskProviderHandler.model3DGLBTaskSvc, taskProviderHandler.gaussianSplatKSplatTaskSvc, taskProviderHandler.pointCloudCOPCTaskSvc, taskProviderHandler.cadPreviewTaskSvc)
 		}
 		api.GET("/quick-view/capability", quickViewHandler.GetQuickViewCapabilityByLocator)
 		api.POST("/quick-view/actions", quickViewHandler.ExecuteQuickViewAction)

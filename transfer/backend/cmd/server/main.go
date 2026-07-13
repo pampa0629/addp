@@ -198,6 +198,7 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 	db, err := commonRepo.InitDatabase(dbConfig,
 		&models.TransferTask{},
 		&models.SyncState{},
+		&models.RuntimeLease{},
 	)
 	if err != nil {
 		return nil, err

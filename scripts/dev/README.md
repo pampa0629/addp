@@ -51,7 +51,7 @@ bash scripts/dev/start.sh
 # 自动执行:
 # 0. Go 依赖检查(go mod tidy,可跳过)
 # 1. 启动基础设施(PostgreSQL, Redis, MinIO, Meilisearch)
-# 2-7. 启动后端服务(System, Manager, Meta, Transfer, Workers, Orchestrator, Gateway)
+# 2-7. 启动后端服务(System, Manager, Meta, Transfer, bounded/continuous Workers, Orchestrator, Gateway)
 # 8. 启动前端服务(Console, System, Manager, Meta, Transfer, Orchestrator)
 
 # 停止所有服务
@@ -92,7 +92,7 @@ bash scripts/dev/modtidy.sh
    - Manager Backend (8081)
    - Meta Backend (8082)
    - Transfer Backend (8083)
-   - Transfer Worker + Meta Worker
+   - Transfer bounded Worker + Transfer continuous Worker + Meta Worker
    - Orchestrator Backend (8084)
    - Gateway (8000) - API 路由
 4. **健康检查**: 等待所有 /health 返回 200
@@ -107,7 +107,7 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 
 **日志位置**:
 - 所有日志: `logs/*.log`
-- 示例: `logs/system-backend.log`, `logs/manager-backend.log`
+- 示例: `logs/system-backend.log`, `logs/manager-backend.log`, `logs/transfer-worker.log`, `logs/transfer-continuous-worker.log`
 
 **PID 文件**:
 - 所有 PID: `.dev-pids/*.pid`
@@ -154,9 +154,7 @@ bash scripts/dev/restart.sh -copilot
 bash scripts/dev/restart.sh -agent
 ```
 
-修改 `engines/supermap-workflow` 源码后，使用 `SUPERMAP_WORKFLOW_REBUILD=1 bash scripts/dev/restart.sh -supermap-workflow` 强制重建 Docker 镜像；否则脚本会复用已有 `SUPERMAP_WORKFLOW_IMAGE`。
-
-如果已使用 `scripts/build/build-supermap-workflow-image.sh` 构建过 SuperMap bundled 胖镜像，脚本会识别镜像 label `addp.supermap.bundled=true`，启动时不再要求 `SUPERMAP_OBJECTSJAVA_BIN_HOST` 和 `SUPERMAP_GPA_LIB_DIR_HOST`。Java 源码默认从本机 `engines/supermap-workflow/src` 挂载进容器，重启 runtime 即可重新编译；修改 Dockerfile、SDK/GPA libs 或 `run.sh` 时再重建胖镜像。
+SuperMap Workflow 首次使用或升级私有组件时运行 `bash scripts/build/build-supermap-workflow-base.sh` 构建稳定基础镜像。之后 `restart.sh -supermap-workflow` 和 `restart.sh -all` 每次都会重新编译当前 Java 源码并替换 8103 容器，不需要 rebuild 开关，也不挂载宿主机源码或 SDK 目录。
 
 **使用场景**:
 - 修改代码后需要重启
@@ -222,7 +220,7 @@ System Backend (8180) - 配置中心,认证服务
   ↓
 Manager Backend (8081) + Meta Backend (8082) (并行启动)
   ↓
-Transfer Backend (8083) + Transfer Worker + Meta Worker
+Transfer Backend (8083) + Transfer bounded Worker + Transfer continuous Worker + Meta Worker
   ↓
 Orchestrator Backend (8084)
   ↓

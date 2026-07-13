@@ -15,10 +15,11 @@ import (
 // FilesystemCatalogRuntime 文件系统 catalog 扫描运行时。
 // 职责：通过 CatalogProvider 扫描文件系统语义存储，并使用 ContentReadableProvider 读取内容识别复合数据项。
 type FilesystemCatalogRuntime struct {
-	db      *gorm.DB
-	log     *slog.Logger
-	repo    *metaRepo.ScanRepository
-	indexer scanprocessor.AssetIndexer
+	db           *gorm.DB
+	log          *slog.Logger
+	repo         *metaRepo.ScanRepository
+	indexer      scanprocessor.AssetIndexer
+	cadInspector metaenrich.CADInspector
 }
 
 // NewFilesystemCatalogRuntime 创建文件系统 catalog 扫描运行时。

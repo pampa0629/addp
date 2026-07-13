@@ -2,7 +2,7 @@
 
 更新时间：2026-07-12
 
-本文档定义 Transfer 稳定任务配置、执行状态、bounded snapshot 主链路和 PostgreSQL watermark bounded incremental 第一版规则。旧版顶层 `mode`、`target.policy.write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
+本文档定义 Transfer 稳定任务配置、执行状态、bounded snapshot 主链路、PostgreSQL watermark bounded incremental 第一版规则，以及 continuous/Kafka 契约与当前实现边界。旧版顶层 `mode`、`target.policy.write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
 
 ## 一、核心对象
 
@@ -86,7 +86,7 @@ snapshot checkpoint 用于 progress / diagnostics，不表示可从 checkpoint �
 | `locator` | source 必填 | source 使用的 ResourceLocator URI，指向已存在资源。 |
 | `parent_locator` | target 必填 | target 父 node 的 ResourceLocator URI，指向已存在 schema / directory / bucket / prefix 等父节点。 |
 | `name` | target 必填 | 父 node 下待创建或待覆盖的目标资源名。 |
-| `data_type` | 是 | table Transfer 使用 `table`；raw copy 第一版支持 `document`、`media`、`unknown`。 |
+| `data_type` | 是 | table Transfer 使用 `table`；raw copy 第一版支持 `document`、`media`、`cad`、`unknown`。 |
 | `representation` | 是 | `native` 或 `encoded`。 |
 | `format` | encoded 必填 | encoded endpoint 的格式，如 `csv`、`json`、`geojson`、`parquet`、`shapefile`。 |
 | `options` | 否 | 格式或读取写入选项。 |
@@ -158,7 +158,7 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 
 | 维度 | 支持范围 |
 |---|---|
-| source / target `data_type` | `document`、`media`、`unknown` |
+| source / target `data_type` | `document`、`media`、`cad`、`unknown` |
 | source / target `representation` | `encoded` |
 | source locator `type` | `file`、`object` |
 | target `parent_locator` type | `directory`、`root`、`bucket`、`prefix`、`service` |
@@ -255,7 +255,19 @@ bounded + incremental + watermark + upsert
 
 第一版只支持 resume：新 execution 从 committed position 继续并在成功后推进主状态。不提供 replay，不发现物理删除，也不支持只读副本 lookback。源表所有 insert/update 必须可靠更新 watermark；时间回拨或未更新 watermark 的变化不在保证范围内。
 
-## 八、Checkpoint、进度和重试
+## 八、Continuous/Kafka v1 契约与当前实现边界
+
+第一条 continuous 实现路径固定为业务 Kafka keyed JSON record -> PostgreSQL native table upsert。业务 Kafka 作为 System Engine 暴露 `service -> topic` catalog；用户选择 `type=topic` locator，partition 不进入资源树或 locator。Infra Kafka 是后续 CDC 的内部实现，不进入公开任务配置。
+
+Kafka Provider 通过 `ChangeStreamReaderProvider` 返回原始 ChangeRecord 和 per-partition provider position；Transfer adapter 只接受 JSON object，从 value 的显式非空字段提取稳定 key，并归一化为 `operation=upsert` ChangeEvent。任务必须提供完整 `field_mapping` 固定目标 schema，source key 映射后必须与目标 keys 一一对应。
+
+目标只允许 PostgreSQL `PartitionedTableChangeApplyProvider`。每个 task 由服务端生成不可变 `apply_identity`；Provider 在业务目标库维护 `addp_transfer.apply_positions`，把单 partition 的目标 upsert 与 `next_offset` 在同一事务提交。poll batch 必须先按 partition 拆分；同一批中相同目标 key 的有效记录保留最高 offset 的最后状态。普通 `TableUpsertProvider`、Infra state CAS 和 runtime lease 都不能替代该目标侧原子应用契约。
+
+每个 partition 的主状态继续存储在 `transfer.sync_states`，position 固定为 `type=kafka_offset`、`version=v1`、`next_offset`。consumer auto commit 禁用；目标提交后才允许以 runtime fencing token + state version 做 CAS。首次无状态 partition 必须显式选择 `earliest|latest`。
+
+continuous worker 是 Transfer 独立进程角色，不使用 Asynq。`desired_state`、原子 start/pause/resume/stop、session owner/lease/heartbeat/fencing、supervisor 和 Kafka JSON -> PostgreSQL 生产数据循环已经实现；每次启动或恢复创建新 execution。pause/stop 会先取消 runtime，等待 source/target 关闭，再结束 execution 和释放 lease。consumer group 只负责 partition assignment，Kafka auto commit 禁用；交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。Console Wizard 尚未开放 continuous 配置。第一版不支持无 key append、Debezium、CDC、DLQ、Schema Registry、Avro、Protobuf、Kafka target、replay 和物理删除。
+
+## 九、Checkpoint、进度和重试
 
 当前 checkpoint 语义：
 
@@ -272,7 +284,7 @@ bounded + incremental + watermark + upsert
 | restartable | 已支持 retry 从头重跑；append 拒绝。 |
 | resumable | PostgreSQL watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume；snapshot checkpoint 仍仅可观测。 |
 
-## 九、写后 Meta 扫描
+## 十、写后 Meta 扫描
 
 成功写入后，如果 `auto_scan_metadata=true`，Transfer 触发 Meta deep scan。
 

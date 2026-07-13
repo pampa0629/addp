@@ -3,6 +3,7 @@ package scanruntime
 import (
 	"log/slog"
 
+	"github.com/addp/meta/internal/metaenrich"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanadapter"
 	"gorm.io/gorm"
@@ -15,6 +16,21 @@ type Runtimes struct {
 	FilesystemCatalog     *FilesystemCatalogRuntime
 	ItemRefresh           *ItemRefreshRuntime
 	ContentCatalogScanner *scanadapter.ContentCatalogScanner
+}
+
+func (r *Runtimes) SetCADInspector(inspector metaenrich.CADInspector) {
+	if r == nil {
+		return
+	}
+	if r.ObjectCatalog != nil {
+		r.ObjectCatalog.cadInspector = inspector
+	}
+	if r.FilesystemCatalog != nil {
+		r.FilesystemCatalog.cadInspector = inspector
+	}
+	if r.ItemRefresh != nil {
+		r.ItemRefresh.cadInspector = inspector
+	}
 }
 
 func NewRuntimes(

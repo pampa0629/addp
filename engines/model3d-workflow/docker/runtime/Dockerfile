@@ -21,14 +21,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates assimp-utils libgl1 libglu1-mesa libx11-6 libxrandr2 libxi6 libxxf86vm1 nodejs npm \
   && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /app/requirements.txt
+COPY common-python /common-python
+COPY engines/model3d-workflow/requirements.txt /app/requirements.txt
 RUN python -m pip install --no-cache-dir --upgrade pip \
-  && python -m pip install --no-cache-dir -r /app/requirements.txt
+	&& python -m pip install --no-cache-dir /common-python -r /app/requirements.txt
 
-COPY package.json package-lock.json /app/
+COPY engines/model3d-workflow/package.json engines/model3d-workflow/package-lock.json /app/
 RUN npm ci --omit=dev
 
-COPY api_server.py operators.py create_ksplat.mjs /app/
+COPY engines/model3d-workflow/api_server.py engines/model3d-workflow/operators.py engines/model3d-workflow/create_ksplat.mjs /app/
 COPY --from=converter /opt/addp/model3d-workflow/bin/ /opt/addp/model3d-workflow/bin/
 
 EXPOSE 8101

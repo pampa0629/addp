@@ -10,7 +10,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/engine/plugins/objectstore"
+	"github.com/addp/common/engine/workflowaccess"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -115,161 +115,26 @@ func (e *ManagerModel3DTilesExecutor) buildAccessPlan(ctx context.Context, tenan
 	if err != nil {
 		return nil, fmt.Errorf("get target engine: %w", err)
 	}
-	sourceRootURI, sourceEnv, sourceAccess, sourceStage, err := model3DTilesSourcePlan(sourceEngine, sourceLoc)
+	source, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{
+		Engine: sourceEngine, Locator: sourceLoc, Kind: workflowaccess.KindDirectory, Format: string(format.FormatOSGBScene),
+		Metadata: commonModels.JSONMap{"locator": cfg.Source.ItemLocator, "engine_id": cfg.Source.SourceEngineID, "engine_type": sourceEngine.EngineType},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("prepare source: %w", err)
 	}
-	targetRootURI, targetEnv, targetAccess, targetPublish, err := model3DTilesTargetPlan(targetEngine, targetLoc, cfg.Target.DatasetName)
+	target, _, err := workflowaccess.ResolveTarget(workflowaccess.ResourceSpec{
+		Engine: targetEngine, Locator: targetLoc, Kind: workflowaccess.KindDirectory, Format: "3dtiles",
+		Name: cfg.Target.DatasetName, WriteMode: workflowaccess.WriteModeReplace,
+		Metadata: commonModels.JSONMap{"locator": cfg.Target.StorageLocator, "engine_id": cfg.Target.TargetEngineID, "engine_type": targetEngine.EngineType},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("prepare target: %w", err)
 	}
-
-	targetPlan := commonModels.JSONMap{
-		"dataset_root_uri": targetRootURI,
-		"env":              targetEnv,
-		"dataset_name":     cfg.Target.DatasetName,
-		"metadata": commonModels.JSONMap{
-			"locator":       cfg.Target.StorageLocator,
-			"engine_id":     cfg.Target.TargetEngineID,
-			"engine_type":   targetEngine.EngineType,
-			"format":        "3dtiles",
-			"access_method": targetAccess["access_method"],
-		},
+	plan, err := workflowaccess.New(source, target)
+	if err != nil {
+		return nil, err
 	}
-	if targetPublish != nil {
-		targetPlan["publish"] = targetPublish
-	}
-
-	sourcePlan := commonModels.JSONMap{
-		"root_uri": sourceRootURI,
-		"env":      sourceEnv,
-		"metadata": commonModels.JSONMap{
-			"locator":       cfg.Source.ItemLocator,
-			"engine_id":     cfg.Source.SourceEngineID,
-			"engine_type":   sourceEngine.EngineType,
-			"format":        string(format.FormatOSGBScene),
-			"access_method": sourceAccess["access_method"],
-		},
-	}
-	if sourceStage != nil {
-		sourcePlan["stage"] = sourceStage
-	}
-
-	return commonModels.JSONMap{
-		"source": sourcePlan,
-		"target": targetPlan,
-	}, nil
-}
-
-func model3DTilesLocalRoot(engine *commonModels.Engine, loc *resourcetree.ResourceLocator, appendPath string) (string, commonModels.JSONMap, commonModels.JSONMap, error) {
-	if engine == nil || loc == nil {
-		return "", nil, nil, errors.New("engine and locator are required")
-	}
-	fullName := strings.Trim(strings.TrimSpace(loc.FullName()), "/")
-	if appendPath = strings.Trim(appendPath, "/"); appendPath != "" {
-		fullName = joinFilePath(fullName, appendPath)
-	}
-	engineType := strings.ToLower(strings.TrimSpace(engine.EngineType))
-	connInfo := plugin.ConnectionInfo(engine.ConnectionInfo)
-	switch engineType {
-	case "nfs", "nas", "localfs", "filesystem":
-		basePath := firstNonEmptyConfig(plugin.GetString(connInfo, "mount_path"), plugin.GetString(connInfo, "export_path"), plugin.GetString(connInfo, "base_path"))
-		if basePath == "" {
-			return "", nil, nil, errors.New("file engine requires mount_path, export_path, or base_path for model 3D conversion")
-		}
-		return joinFilePath(basePath, fullName), commonModels.JSONMap{}, commonModels.JSONMap{
-			"engine_type":   engine.EngineType,
-			"access_method": "mounted_path",
-		}, nil
-	case "minio", "s3":
-		return "", nil, nil, errors.New("model 3D conversion first phase supports nfs/localfs only; object store requires staging support")
-	default:
-		return "", nil, nil, fmt.Errorf("engine %s is not supported by model 3D conversion runtime", engine.EngineType)
-	}
-}
-
-func model3DTilesSourcePlan(engine *commonModels.Engine, loc *resourcetree.ResourceLocator) (string, commonModels.JSONMap, commonModels.JSONMap, commonModels.JSONMap, error) {
-	if engine == nil || loc == nil {
-		return "", nil, nil, nil, errors.New("engine and locator are required")
-	}
-	engineType := strings.ToLower(strings.TrimSpace(engine.EngineType))
-	switch engineType {
-	case "nfs", "nas", "localfs", "filesystem":
-		root, env, access, err := model3DTilesLocalRoot(engine, loc, "")
-		return root, env, access, nil, err
-	case "minio", "s3":
-		fullName := strings.Trim(strings.TrimSpace(loc.FullName()), "/")
-		bucket, prefix := objectstore.SplitBucketPrefix(fullName)
-		if strings.TrimSpace(bucket) == "" || strings.TrimSpace(prefix) == "" {
-			return "", nil, nil, nil, errors.New("object store source requires bucket/prefix scene path")
-		}
-		cfg, err := sourceObjectClientConfig(engineType, plugin.ConnectionInfo(engine.ConnectionInfo))
-		if err != nil {
-			return "", nil, nil, nil, fmt.Errorf("parse object store config: %w", err)
-		}
-		return "", commonModels.JSONMap{}, commonModels.JSONMap{
-				"engine_type":   engine.EngineType,
-				"access_method": "object_store_stage",
-			}, commonModels.JSONMap{
-				"method":      "object_store",
-				"engine_type": engine.EngineType,
-				"endpoint":    cfg.Endpoint,
-				"access_key":  cfg.AccessKey,
-				"secret_key":  cfg.SecretKey,
-				"use_ssl":     cfg.UseSSL,
-				"bucket":      bucket,
-				"prefix":      strings.Trim(prefix, "/"),
-				"locator":     loc.ToURI(),
-			}, nil
-	default:
-		return "", nil, nil, nil, fmt.Errorf("engine %s is not supported by model 3D conversion runtime", engine.EngineType)
-	}
-}
-
-func model3DTilesTargetPlan(engine *commonModels.Engine, loc *resourcetree.ResourceLocator, datasetName string) (string, commonModels.JSONMap, commonModels.JSONMap, commonModels.JSONMap, error) {
-	if engine == nil || loc == nil {
-		return "", nil, nil, nil, errors.New("engine and locator are required")
-	}
-	engineType := strings.ToLower(strings.TrimSpace(engine.EngineType))
-	switch engineType {
-	case "nfs", "nas", "localfs", "filesystem":
-		root, env, access, err := model3DTilesLocalRoot(engine, loc, datasetName)
-		return root, env, access, nil, err
-	case "minio", "s3":
-		fullName := strings.Trim(strings.TrimSpace(loc.FullName()), "/")
-		if datasetName = strings.Trim(datasetName, "/"); datasetName != "" {
-			fullName = joinFilePath(fullName, datasetName)
-		}
-		bucket, prefix := objectstore.SplitBucketPrefix(fullName)
-		if strings.TrimSpace(bucket) == "" || strings.TrimSpace(prefix) == "" {
-			return "", nil, nil, nil, errors.New("object store target requires bucket/prefix dataset path")
-		}
-		cfg, err := sourceObjectClientConfig(engineType, plugin.ConnectionInfo(engine.ConnectionInfo))
-		if err != nil {
-			return "", nil, nil, nil, fmt.Errorf("parse object store config: %w", err)
-		}
-		datasetLocator := loc.Clone()
-		if datasetName != "" {
-			datasetLocator.Path = append(append([]string{}, loc.Path...), datasetName)
-		}
-		datasetLocator.Type = resourcetree.TypeDirectory
-		return "", commonModels.JSONMap{}, commonModels.JSONMap{
-				"engine_type":   engine.EngineType,
-				"access_method": "object_store_publish",
-			}, commonModels.JSONMap{
-				"method":      "object_store",
-				"engine_type": engine.EngineType,
-				"endpoint":    cfg.Endpoint,
-				"access_key":  cfg.AccessKey,
-				"secret_key":  cfg.SecretKey,
-				"use_ssl":     cfg.UseSSL,
-				"bucket":      bucket,
-				"prefix":      strings.Trim(prefix, "/"),
-				"locator":     datasetLocator.ToURI(),
-			}, nil
-	default:
-		return "", nil, nil, nil, fmt.Errorf("engine %s is not supported by model 3D conversion runtime", engine.EngineType)
-	}
+	return plan.JSONMap(), nil
 }
 
 func (e *ManagerModel3DTilesExecutor) getModel3DTilesEngine(ctx context.Context, tenantID uint, engineID uint) (*commonModels.Engine, error) {

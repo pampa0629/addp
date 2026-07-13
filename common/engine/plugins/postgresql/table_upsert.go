@@ -94,6 +94,32 @@ func (p *PostgreSQLPlugin) UpsertBatch(ctx context.Context, connInfo plugin.Conn
 		return err
 	}
 	defer tx.Rollback()
+	if err := upsertPostgresRowsTx(ctx, tx, schema, table, batch, keys); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit postgresql upsert: %w", err)
+	}
+	return nil
+}
+
+func upsertPostgresRowsTx(ctx context.Context, tx *sql.Tx, schema, table string, batch *plugin.BatchData, keys []string) error {
+	if batch == nil || len(batch.Rows) == 0 {
+		return nil
+	}
+	columns := batchColumns(batch)
+	if len(columns) == 0 {
+		return fmt.Errorf("postgresql upsert requires batch columns")
+	}
+	columnSet := make(map[string]bool, len(columns))
+	for _, column := range columns {
+		columnSet[column] = true
+	}
+	for _, key := range keys {
+		if !columnSet[key] {
+			return fmt.Errorf("postgresql upsert batch is missing key field %q", key)
+		}
+	}
 	chunkSize := effectivePostgresInsertChunkSize(len(columns), postgresDefaultInsertChunkSize)
 	geometryColumns := postgresGeometryColumns(batch.Fields)
 	for start := 0; start < len(batch.Rows); start += chunkSize {
@@ -106,9 +132,6 @@ func (p *PostgreSQLPlugin) UpsertBatch(ctx context.Context, connInfo plugin.Conn
 		if _, err := tx.ExecContext(ctx, statement, args...); err != nil {
 			return fmt.Errorf("execute postgresql upsert rows %d-%d: %w", start, end, err)
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit postgresql upsert: %w", err)
 	}
 	return nil
 }

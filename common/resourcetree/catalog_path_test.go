@@ -87,6 +87,27 @@ func TestProviderCatalogPathFromLocatorObject(t *testing.T) {
 	})
 }
 
+func TestProviderCatalogPathFromLocatorSingleLevelServiceLeaf(t *testing.T) {
+	t.Parallel()
+	model := plugin.CatalogModelSpec{
+		PathVersion: plugin.CatalogPathVersion,
+		RootTerm:    plugin.CatalogTermService,
+		Levels: []plugin.CatalogLevelSpec{{
+			Term: "topic", Kinds: []string{"topic"}, Role: plugin.CatalogRoleLeaf,
+		}},
+	}
+	got, err := ProviderCatalogPathFromLocator(model, &ResourceLocator{
+		EngineID: 30, Path: []string{"orders.events"}, Type: ResourceType("topic"),
+	})
+	if err != nil {
+		t.Fatalf("ProviderCatalogPathFromLocator() error = %v", err)
+	}
+	assertCatalogSegments(t, got, []plugin.CatalogSegment{
+		{Term: plugin.CatalogTermService, Kind: plugin.CatalogTermService},
+		{Term: "topic", Kind: "topic", Name: "orders.events"},
+	})
+}
+
 func TestProviderCatalogPathFromLocatorFile(t *testing.T) {
 	t.Parallel()
 

@@ -29,8 +29,10 @@ definitions:
     - running
     - success
     - failed
+    - cancelled
     type: string
     x-enum-comments:
+      ExecutionStatusCancelled: 已取消
       ExecutionStatusFailed: 失败
       ExecutionStatusPending: 待执行
       ExecutionStatusRunning: 运行中
@@ -40,11 +42,13 @@ definitions:
     - 运行中
     - 成功
     - 失败
+    - 已取消
     x-enum-varnames:
     - ExecutionStatusPending
     - ExecutionStatusRunning
     - ExecutionStatusSuccess
     - ExecutionStatusFailed
+    - ExecutionStatusCancelled
   github_com_addp_transfer_internal_models.FieldMappingSpecDoc:
     properties:
       default: {}
@@ -136,6 +140,16 @@ definitions:
           $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferTransformDoc'
         type: array
     type: object
+  github_com_addp_transfer_internal_models.TaskDesiredState:
+    enum:
+    - running
+    - paused
+    - stopped
+    type: string
+    x-enum-varnames:
+    - TaskDesiredStateRunning
+    - TaskDesiredStatePaused
+    - TaskDesiredStateStopped
   github_com_addp_transfer_internal_models.TaskExecution:
     properties:
       bytes_read:
@@ -238,7 +252,56 @@ definitions:
       type:
         enum:
         - watermark
+        - kafka
         example: watermark
+        type: string
+    type: object
+  github_com_addp_transfer_internal_models.TransferChangeStreamDoc:
+    properties:
+      encoding:
+        enum:
+        - json
+        example: json
+        type: string
+      envelope:
+        enum:
+        - record
+        example: record
+        type: string
+      key:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferChangeStreamKeyDoc'
+      poll_batch_size:
+        example: 1000
+        type: integer
+      start:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferChangeStreamStartDoc'
+    type: object
+  github_com_addp_transfer_internal_models.TransferChangeStreamKeyDoc:
+    properties:
+      fields:
+        example:
+        - id
+        items:
+          type: string
+        type: array
+      source:
+        enum:
+        - value
+        example: value
+        type: string
+    type: object
+  github_com_addp_transfer_internal_models.TransferChangeStreamStartDoc:
+    properties:
+      initial:
+        enum:
+        - earliest
+        - latest
+        example: earliest
+        type: string
+      mode:
+        enum:
+        - committed
+        example: committed
         type: string
     type: object
   github_com_addp_transfer_internal_models.TransferLoadDoc:
@@ -257,11 +320,14 @@ definitions:
       boundary:
         enum:
         - bounded
+        - continuous
         example: bounded
         type: string
     type: object
   github_com_addp_transfer_internal_models.TransferSourceEndpointDoc:
     properties:
+      change_stream:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferChangeStreamDoc'
       data_type:
         example: table
         type: string
@@ -344,6 +410,8 @@ definitions:
         $ref: '#/definitions/gorm.DeletedAt'
       description:
         type: string
+      desired_state:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TaskDesiredState'
       enabled:
         type: boolean
       id:
@@ -722,6 +790,50 @@ paths:
       summary: Ping
       tags:
       - Transfer
+  /provider-tasks:
+    get:
+      description: 仅返回 runtime.boundary=bounded 的任务，continuous task 不进入 Orchestrator
+        v1 发现结果。| Return only runtime.boundary=bounded tasks; continuous tasks are
+        excluded from Orchestrator v1 discovery.
+      parameters:
+      - default: 1
+        description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - default: 100
+        description: 每页大小 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 任务类型，固定为 sync | Task type, fixed to sync
+        in: query
+        name: task_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_transfer_internal_models.ListProviderTasksResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 TaskProvider bounded 任务列表 | List bounded TaskProvider tasks
+      tags:
+      - 任务管理 | Task Management
   /system-engines:
     get:
       description: 返回当前租户可见且启用的 System 引擎，用于 Transfer 任务选择 | Returns active System
@@ -962,8 +1074,9 @@ paths:
       - 执行管理 | Execution Management
   /task-definitions/{id}/pause:
     post:
-      description: 关闭任务自身定时调度，不中断当前 active execution | Disable the task-owned schedule
-        without interrupting an active execution
+      description: bounded 任务关闭自身定时调度；continuous 任务将 desired_state 置为 paused 并通知 runtime
+        取消当前 execution。| Disable a bounded task schedule, or set a continuous task
+        desired_state to paused and request runtime cancellation.
       parameters:
       - description: 任务ID | Task ID
         in: path
@@ -992,9 +1105,9 @@ paths:
       - 任务管理 | Task Management
   /task-definitions/{id}/resume:
     post:
-      description: 恢复任务自身定时调度；watermark execution resume 由新 execution 自动读取 committed
-        position 完成 | Re-enable the task-owned schedule; watermark execution resume
-        is handled by a new execution reading the committed position
+      description: bounded 任务恢复自身定时调度；continuous 任务创建新的 pending execution 并从 committed
+        position 恢复。| Re-enable a bounded task schedule, or create a new pending continuous
+        execution that resumes from committed position.
       parameters:
       - description: 任务ID | Task ID
         in: path
@@ -1057,6 +1170,43 @@ paths:
       summary: 启动任务 | Start task
       tags:
       - 任务管理 | Task Management
+  /task-definitions/{id}/stop:
+    post:
+      description: 将 continuous task 的 desired_state 置为 stopped，并通知 runtime 取消当前 execution；bounded
+        任务不支持此操作。| Set a continuous task desired_state to stopped and request runtime
+        cancellation; bounded tasks do not support this operation.
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 停止连续任务 | Stop continuous task
+      tags:
+      - 任务管理 | Task Management
   /task-definitions/statistics:
     get:
       consumes:
@@ -1105,6 +1255,10 @@ paths:
       - description: '任务定义状态: idle, running | Task definition status'
         in: query
         name: status
+        type: string
+      - description: '执行边界: bounded, continuous | Runtime boundary: bounded, continuous'
+        in: query
+        name: runtime_boundary
         type: string
       produces:
       - application/json

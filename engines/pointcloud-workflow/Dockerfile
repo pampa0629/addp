@@ -24,11 +24,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
   && micromamba install -y -n base -c conda-forge python=3.12 pdal \
   && micromamba clean -a -y
 
-COPY requirements.txt /app/requirements.txt
+COPY common-python /common-python
+COPY engines/pointcloud-workflow/requirements.txt /app/requirements.txt
 RUN python -m pip install --no-cache-dir --upgrade pip \
-  && python -m pip install --no-cache-dir -r /app/requirements.txt
+	&& python -m pip install --no-cache-dir /common-python -r /app/requirements.txt
 
-COPY api_server.py operators.py /app/
+COPY engines/pointcloud-workflow/api_server.py engines/pointcloud-workflow/operators.py /app/
 
 EXPOSE 8102
 CMD ["python", "api_server.py"]

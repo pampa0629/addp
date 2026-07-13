@@ -73,6 +73,8 @@ var fallbackIdentifications = []fallbackIdentification{
 	{FormatPCD, ".pcd", "application/vnd.pointcloud.pcd", datatype.PointCloud},
 	{FormatXYZ, ".xyz", "text/plain", datatype.PointCloud},
 	{Format3DTiles, "", "application/vnd.ogc.3dtiles+json", datatype.Model3D},
+	{FormatDWG, ".dwg", "application/acad", datatype.CAD},
+	{FormatS3M, ".scp", "application/vnd.supermap.s3m-config", datatype.Model3D},
 	{FormatOSGB, ".osgb", "application/octet-stream", datatype.Model3D},
 }
 

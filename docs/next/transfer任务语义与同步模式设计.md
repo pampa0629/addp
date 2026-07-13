@@ -2,9 +2,9 @@
 
 更新时间：2026-07-12
 
-状态：阶段 0/1 已升级并实现；continuous、Kafka、Debezium 和 CDC 部分仍为后续设计。
+状态：阶段 0/1 已升级并实现；工作包 2A continuous/Kafka 正式契约已冻结；工作包 2B 已完成 Kafka common 插件、PostgreSQL 目标原子应用、continuous 控制面、runtime lease/fencing、supervisor 和 Kafka JSON -> PostgreSQL 数据循环。Debezium、CDC 与 Console Wizard 配置尚未实现。
 
-本文整理 Transfer 全量、批增量、Kafka 流式源、数据库 CDC 和持续运行时的概念与推荐技术路线。bounded/watermark/apply mode/sync state 结论已升级到正式规范并完成第一版实现；continuous、Kafka、Debezium、CDC 和 replay 内容在进入实现前仍需升级对应正式规范。
+本文整理 Transfer 全量、批增量、Kafka 流式源、数据库 CDC 和持续运行时的概念与推荐技术路线。bounded/watermark/apply mode/sync state 结论已升级到正式规范并完成第一版实现；continuous/Kafka v1 的 topic locator、ChangeStream Provider、keyed JSON upsert、partition position 和 runtime lease 契约已由工作包 2A 升级到正式规范；Debezium、CDC、replay 和 Infra Kafka 部署仍属后续设计。
 
 当前稳定实现仍以以下文档为准：
 
@@ -12,7 +12,7 @@
 - `transfer/docs/transfer-基本概念及配置说明.md`
 - `transfer/docs/design.md`
 
-当前实现支持 bounded snapshot 的 `replace` / `append`，以及 PostgreSQL -> PostgreSQL 的 bounded watermark incremental + 幂等 `upsert` + `transfer.sync_states` resume。CDC、Kafka continuous runtime、replay 和物理删除尚未实现。
+当前实现支持 bounded snapshot 的 `replace` / `append`、PostgreSQL -> PostgreSQL 的 bounded watermark incremental + 幂等 `upsert` + `transfer.sync_states` resume，以及业务 Kafka keyed JSON -> PostgreSQL 的 continuous v1。continuous 使用目标 monotonic apply、业务库 ledger、Infra state CAS 与 runtime fencing；CDC、replay 和物理删除尚未实现。
 
 ## 一、本文要解决的问题
 
@@ -38,7 +38,7 @@
 3. `manual` / `scheduled` 是触发方式；`realtime` 不是第三种触发方式。
 4. 执行边界分为 `bounded` 和 `continuous`。
 5. 装载方式分为 `snapshot` 和 `incremental`。
-6. 增量变化识别方式至少包括 `watermark`、`cdc` 和 `manifest`。
+6. 增量变化识别方式至少包括 `watermark`、`manifest`、`kafka` 和 `cdc`。
 7. 目标应用方式与源端装载方式正交，至少需要 `replace`、`append`、`upsert`、`upsert_delete`。
 8. 增量主状态由 Transfer 私有状态表保存；execution metadata 只保存本次执行快照和诊断信息。
 9. 第一阶段一致性基线是 `at-least-once + 目标幂等`，不宣称通用端到端 exactly-once。
@@ -49,6 +49,7 @@
 14. 当前 Asynq worker 继续作为 bounded worker；新增独立 continuous worker 进程角色，一个进程承载多个 runtime session，并通过 DB lease/fencing 支持多实例。
 15. Debezium 运行在独立 Kafka Connect distributed 集群中，由 Transfer capture supervisor 通过受控 API 管理，不嵌入 Transfer Go 进程。
 16. Schema 变化第一阶段默认严格阻塞，不静默忽略字段，也不默认自动执行目标 DDL。
+17. 业务 Kafka 第一版只支持 keyed JSON record -> PostgreSQL monotonic upsert；业务目标库通过 partition apply ledger 原子推进 `next_offset`，普通 append 不进入第一版。
 
 ## 三、Transfer 的稳定定位
 
@@ -166,7 +167,7 @@ Transfer 拥有应用策略，但目标引擎必须提供真实写入能力，�
 | bounded | incremental | watermark | upsert | 定时表增量同步 |
 | bounded | incremental | manifest | append/upsert | 周期文件发现 |
 | continuous | incremental | cdc | upsert_delete | 数据库 CDC |
-| continuous | incremental | Kafka record | append/upsert | 业务事件流 |
+| continuous | incremental | Kafka record | upsert | 第一版仅 keyed JSON 业务事件流；append 后置 |
 
 `continuous + snapshot` 不作为普通稳定组合。数据库 CDC 的初始化 snapshot 是 CDC runtime 的 bootstrap 阶段，不是一个长期 continuous snapshot 模式。
 
@@ -376,6 +377,7 @@ continuous runtime 处理的是无限事件流，不是把当前 batch executor 
 
 稳定操作语义建议为：
 
+- `upsert`
 - `snapshot`
 - `insert`
 - `update`
@@ -385,28 +387,29 @@ Debezium JSON、Kafka tombstone、Oracle SCN 等协议细节由 source adapter �
 
 ### 8.2 Change stream provider 边界
 
-后续可在 `common/engine` 设计专用能力，示意如下：
+工作包 2A 已将专用能力升级到正式 Engine Provider 规范。Provider 返回原始 ChangeRecord 和 provider position，不直接返回 ChangeEvent：
 
 ```go
 type ChangeStreamReaderProvider interface {
+    StoreProvider
     OpenChangeStream(
         ctx context.Context,
-        conn ConnectionInfo,
-        source ChangeStreamSource,
-        options ChangeStreamOptions,
+        connInfo ConnectionInfo,
+        topic CatalogPath,
+        opts ChangeStreamReadOptions,
     ) (ChangeStreamReader, error)
 }
 
 type ChangeStreamReader interface {
-    Poll(ctx context.Context, maxEvents int) ([]ChangeEvent, error)
-    Positions() map[string]Position
+    Poll(ctx context.Context, maxRecords int) (*ChangeRecordBatch, error)
+    Assignments() []string
     Pause(ctx context.Context, partitions []string) error
     Resume(ctx context.Context, partitions []string) error
     Close(ctx context.Context) error
 }
 ```
 
-这只是后续接口方向，正式实现前必须先修订引擎插件接口和能力声明规范。
+JSON 解码、ChangeEvent 归一化和 ChangeApplyWriter 属于 Transfer continuous runtime。第一版目标使用 PostgreSQL `PartitionedTableChangeApplyProvider`：Provider 不理解 ChangeEvent，只接收已映射表行、目标 keys、每条记录 position 和单 partition 批次边界，并把业务数据与目标 apply ledger 原子提交。
 
 Kafka topic 和数据库 CDC 不能伪装成当前 `BatchReadableProvider`。Kafka poll 可以按批返回消息，但它的 offset、rebalance、持续生命周期和 checkpoint 语义与 bounded table batch 不同。
 
@@ -423,15 +426,16 @@ at-least-once delivery + idempotent target apply
 1. 拉取一批事件。
 2. 解码并归一化 ChangeEvent。
 3. transform。
-4. 目标批次提交。
+4. PostgreSQL 在业务目标库同一事务提交目标批次与 partition apply ledger。
 5. Transfer 持久化本分区 committed position。
 6. 继续处理下一批。
 
 任意外部数据库目标与 Kafka offset 之间通常不存在分布式原子事务。如果进程在步骤 4 和 5 之间崩溃，同一批事件会再次执行。因此：
 
 - upsert/delete 必须基于稳定键。
-- 重复事件的重复应用应得到相同结果。
-- 需要时目标可保存或比较 source position，防止旧事件覆盖新状态。
+- 第一版每个 task 使用不可变 `apply_identity`，目标账本固定为业务目标 PostgreSQL 的 `addp_transfer.apply_positions`。
+- Transfer 按 partition 拆批；每条 mapped row 携带消费后的 position，同批同 key 保留最高 position 的最后状态。
+- Provider 必须跳过 ledger 已覆盖的记录，并在同一事务推进目标行与 `next_offset`，防止过期 runtime 写回旧状态。
 - 第一阶段不得宣称通用端到端 exactly-once。
 
 ### 8.4 Continuous execution 生命周期
@@ -458,7 +462,7 @@ continuous execution 不使用 0 到 100 的业务进度作为主要观测指标
 
 持续运行时必须支持真实的 context cancel、停止 poll、完成或放弃当前批次、关闭 reader/writer、释放 partition ownership 并一致更新 execution。
 
-只修改数据库状态、不停止实际 worker 不是取消。当前 Transfer 在真正具备中断和资源清理能力前，应继续保持 TaskProvider `supports_cancel=false`。
+只修改数据库状态、不停止实际 worker 不是取消。continuous task 的私有 pause/stop 已真实取消 runtime、关闭 source/target 并一致结束 execution；标准 TaskProvider execution cancel 仍未开放，因此 `supports_cancel=false` 保持不变。
 
 ### 8.6 Meta scan
 
@@ -718,7 +722,7 @@ Kafka record 必须先由 source adapter 解码：
 
 | decoder | 用途 |
 |---|---|
-| `record` | 普通 Kafka 消息，通常进入 append 或基于 key 的 upsert。 |
+| `record` | 普通 Kafka 消息；第一版要求从 JSON value 提取稳定 key 并进入 upsert。 |
 | `debezium` | 解析 Debezium envelope、before/after/op/tombstone。 |
 
 JSON、Avro、Protobuf 和 Schema Registry 是消息编码能力；`debezium` 是变化事件 envelope。两者是不同维度，后续配置不能混成单一 `format` 枚举。
@@ -847,7 +851,7 @@ ADDP 不自动暂停用户 Oracle 或其他上游业务写入。平台可以暂�
 
 ## 十三、建议配置形态
 
-13.1 的 PostgreSQL watermark JSON 已是当前可提交 API；13.2/13.3 仍只表达后续语义方向。
+13.1 的 PostgreSQL watermark JSON 已是当前可提交 API；13.2 是工作包 2A 已冻结、待 2B 实现后才能提交的正式目标配置；13.3 仍只表达 CDC 后续语义方向。
 
 ### 13.1 Watermark bounded incremental
 
@@ -899,12 +903,13 @@ ADDP 不自动暂停用户 Oracle 或其他上游业务写入。平台可以暂�
     }
   },
   "source": {
-    "locator": "addp://engine/30/path/orders.cdc?type=topic",
+    "locator": "addp://engine/30/path/orders.events?type=topic",
     "representation": "native",
     "change_stream": {
-      "envelope": "debezium",
+      "envelope": "record",
       "encoding": "json",
-      "start": "committed",
+      "key": {"source": "value", "fields": ["id"]},
+      "start": {"mode": "committed", "initial": "earliest"},
       "poll_batch_size": 1000
     }
   },
@@ -914,11 +919,20 @@ ADDP 不自动暂停用户 Oracle 或其他上游业务写入。平台可以暂�
     "data_type": "table",
     "representation": "native",
     "policy": {
-      "apply_mode": "upsert_delete",
+      "apply_mode": "upsert",
       "keys": ["id"]
     }
   },
-  "transforms": []
+  "transforms": [
+    {
+      "type": "field_mapping",
+      "version": "v1",
+      "mode": "project",
+      "fields": [
+        {"source": "id", "target": "id", "target_type": "int", "nullable": false}
+      ]
+    }
+  ]
 }
 ```
 
@@ -977,16 +991,22 @@ Debezium connector 名称、内部 topic、consumer group 和 connector runtime 
 5. 支持 resume；replay 后置或只提供最小受控接口。
 6. 增加源库时间回拨、相同 timestamp 并发、watermark 未更新、只读副本延迟和目标重复应用等破坏性测试。
 
-### 阶段 2：Kafka continuous runtime
+### 阶段 2A：Continuous/Kafka 契约冻结（已完成）
 
-1. 修订术语表、catalog、引擎 Provider 和 capability 规范。
-2. 增加用户可注册 Kafka Engine。
-3. 定义 ChangeEvent、ChangeStreamReader 和 ChangeApplyWriter。
-4. 实现专用 continuous runtime supervisor。
-5. 先完成普通 record -> append 最小闭环。
-6. 再完成 Debezium envelope -> upsert/delete。
-7. 实现 partition state、lag、heartbeat、真实暂停和停止。
-8. 增加目标提交后 offset 未提交崩溃、rebalance、worker lease 过期、目标锁表和 Kafka retention 临界等故障测试。
+1. 术语表、任务体系、catalog/path、Engine Provider 和 capability 规范已升级。
+2. 已确认业务 Kafka 与 Infra Kafka 的 owner/身份边界。
+3. 已确认 ChangeStreamReaderProvider 返回原始 ChangeRecord；ChangeEvent 和 ChangeApplyWriter 归 Transfer runtime。
+4. 已确认 `transfer.sync_states` 的 per-partition `kafka_offset/v1.next_offset` 与独立 `transfer.runtime_leases`。
+5. 已确认第一版只支持 keyed JSON record -> PostgreSQL partitioned monotonic upsert，不支持普通 append；目标表写入与业务库 apply ledger 必须同事务提交。
+
+### 阶段 2B：Kafka continuous runtime 实现（已完成第一版）
+
+1. 增加用户可注册 Kafka Engine、`service -> topic` catalog 和 ChangeStreamReaderProvider。
+2. 实现专用 continuous runtime supervisor、runtime lease 和容量限制。
+3. 实现 keyed JSON record -> ChangeEvent(operation=upsert) -> PostgreSQL `PartitionedTableChangeApplyProvider`，并原子提交业务表与目标 apply ledger。
+4. 实现 partition state、lag、heartbeat、真实暂停和停止。
+5. 已覆盖目标提交后 Infra position 可重复应用、rebalance、worker lease/fencing 失效、pause/resume/stop；目标锁表、Kafka retention 临界与运行期 schema drift 运维验收后续补强。
+6. Debezium envelope、upsert/delete、DLQ、Schema Registry、Avro 和 Protobuf 后置。
 
 ### 阶段 3：数据库 CDC
 
@@ -1008,18 +1028,19 @@ Debezium connector 名称、内部 topic、consumer group 和 connector runtime 
 5. 不由 ADDP 自己解析 Oracle redo log。
 6. 不把 watermark 轮询称为完整 CDC。
 7. 不依赖 Kafka auto commit 作为 Transfer 增量状态事实源。
-8. 不宣称任意外部目标的通用 exactly-once。
-9. 不让用户从资源树选择或访问 Infra Kafka topic。
-10. 不让同一 Kafka 配置同时承担 infra 和业务 Engine 身份。
-11. 不在当前阶段整体推翻 Go bounded batch runtime。
-12. 不并行保留旧配置与新语义字段；正式实施时 clean break。
-13. 不为每个 continuous task 启动独立操作系统进程，也不把 continuous worker 设计成不可扩展的全局单例。
-14. 不通过静默忽略未知字段处理 schema 变化。
-15. 不由 ADDP 自动暂停用户上游业务写入。
+8. 不在第一版以普通 append 消费 Kafka record；缺少稳定 key 的 topic 不进入 continuous v1。
+9. 不宣称任意外部目标的通用 exactly-once。
+10. 不让用户从资源树选择或访问 Infra Kafka topic。
+11. 不让同一 Kafka 配置同时承担 infra 和业务 Engine 身份。
+12. 不在当前阶段整体推翻 Go bounded batch runtime。
+13. 不并行保留旧配置与新语义字段；正式实施时 clean break。
+14. 不为每个 continuous task 启动独立操作系统进程，也不把 continuous worker 设计成不可扩展的全局单例。
+15. 不通过静默忽略未知字段处理 schema 变化。
+16. 不由 ADDP 自动暂停用户上游业务写入。
 
 ## 十六、设计确认状态与后续问题
 
-16.1 至 16.5 已随阶段 0/1 升级为正式规范并实现；16.6 之后仍属于后续 continuous/Kafka/CDC 工作。
+16.1 至 16.5 已随阶段 0/1 升级为正式规范并实现；16.6 至 16.9 已由工作包 2A 确认并升级为正式规范，工作包 2B 已完成 keyed JSON -> PostgreSQL continuous v1；16.10 之后仍属于 Infra Kafka/CDC 后续工作。
 
 ### 16.1 任务配置采用嵌套结构还是扁平结构（已确认）
 
@@ -1036,13 +1057,13 @@ transforms
 target.policy.apply_mode
 ```
 
-嵌套只用于稳定概念边界，不建立多层抽象。进入阶段 1 前应在 Transfer 配置规范中一次确认，并同步更新本文示例；不兼容旧 `mode=batch`。
+嵌套只用于稳定概念边界，不建立多层抽象。该结构已进入 Transfer 配置正式规范并同步本文示例；旧 `mode=batch` 不兼容。
 
 ### 16.2 `write_mode` 是否改为 `apply_mode`（已确认）
 
 分析：`overwrite/append` 主要描述写入方式，而 `upsert/upsert_delete` 描述变化如何应用到目标。继续扩展 `write_mode` 会让“删除事件”“冲突键”“幂等”语义变得含混。
 
-建议：增量主线开始时 clean break 为 `target.policy.apply_mode=replace|append|upsert|upsert_delete`，删除 `write_mode`，不保留字段别名。目标引擎通过强类型 Provider 和 capability 声明 prepare、upsert、delete、事务/批次提交和幂等能力；Transfer 负责组合校验和执行策略。
+结论：已 clean break 为 `target.policy.apply_mode=replace|append|upsert|upsert_delete`，删除 `write_mode`，不保留字段别名。目标引擎通过强类型 Provider 和 capability 声明 prepare、upsert、delete、事务/批次提交和幂等能力；Transfer 负责组合校验和执行策略。
 
 ### 16.3 增量状态表和 position JSON（已确认）
 
@@ -1053,37 +1074,37 @@ target.policy.apply_mode
 - `transfer.sync_states`：保存 committed position、position type/version、state version 和最近提交 execution。
 - `transfer.runtime_leases`：保存 owner instance、lease、heartbeat 和 fencing token。
 
-`position` 使用带 `type`、`version` 的 JSONB，由对应 source provider 解释；公共列只保存跨 provider 必需的身份、版本和审计字段。阶段 1 先只实现 watermark position v1，Kafka/CDC 后续增加新 position type，不修改旧 type 的字段含义。
+`position` 使用带 `type`、`version` 的 JSONB，由对应 source provider 解释；公共列只保存跨 provider 必需的身份、版本和审计字段。阶段 1 已实现 watermark position v1；工作包 2A 已冻结 Kafka position v1，待 2B 实现。CDC 后续增加新 position type，不修改已有 type 的字段含义。
 
 ### 16.4 Watermark 第一版源与一致上界（已确认）
 
 分析：不同数据库的事务快照、时间类型和复合游标查询能力不同。如果第一版同时覆盖过多数据库，会把增量语义验证与方言适配混在一起。
 
-建议：第一版只支持 PostgreSQL native table，使用复合游标和数据库一致性读获得本次上界；验证稳定后再接 MySQL。是否允许只读副本作为源需要单独声明最大复制延迟和 lookback 策略。进入实现前必须用真实并发写入测试证明不会漏掉相同 watermark 值的记录。
+结论：第一版只支持 PostgreSQL native table，使用复合游标和数据库一致性读获得本次上界，并已通过真实并发写入集成测试验证相同 watermark 值不会漏读；验证稳定后再接 MySQL。只读副本未进入第一版，后续开放前必须明确最大复制延迟和 lookback 策略。
 
 ### 16.5 Replay 是否进入第一版（已确认）
 
 分析：replay 会引入历史范围选择、目标重复应用、与主任务并发、审计和资源限流，显著扩大第一版状态机。
 
-建议：阶段 1 只支持 resume。replay 在 watermark 主状态、幂等 upsert、原子 claim 和执行审计稳定后进入下一阶段；replay 永不推进主 committed position，也不提供覆盖主水位开关。
+结论：阶段 1 只支持 resume。replay 未进入当前实现，后续引入时永不推进主 committed position，也不提供覆盖主水位开关。
 
-### 16.6 Kafka catalog 与 ResourceLocator
+### 16.6 Kafka catalog 与 ResourceLocator（已确认）
 
 分析：用户选择的是 topic，而 partition 是 Kafka 的执行分片和观测事实。把 partition 暴露成资源树可选叶子，会使任务绑定固定分区，破坏 Kafka 扩分区和 consumer group 分配语义。
 
-建议：catalog 使用 `service(cluster) -> topic`，`topic` 是可选择 leaf；partition 数量、leader、副本和当前状态作为 topic facts/diagnostics，不作为资源树子节点和用户 locator。ResourceLocator 使用 `type=topic`。该结论需要先补术语表、catalog model 和路径规范。
+结论：catalog 使用 `service(cluster) -> topic`，`topic` 是可选择 leaf；partition 数量、leader、副本和当前状态作为 topic facts/diagnostics，不作为资源树子节点和用户 locator。ResourceLocator 使用 `type=topic`。该结论已进入术语表、Catalog/路径、Engine Provider 和 capability 正式规范。
 
-### 16.7 普通 Kafka record 的 schema/key 与 Schema Registry
+### 16.7 普通 Kafka record 的 schema/key 与 Schema Registry（已确认）
 
 分析：普通 Kafka 消息的 key、value 编码和业务 schema 没有统一保证；一开始同时支持 JSON、Avro、Protobuf 和多种 Registry 会稀释 continuous runtime 主线验证。
 
-建议：第一版只支持 JSON value；append 可以没有 key，upsert 必须显式配置从 Kafka key 或 value 字段提取稳定目标键。第二步支持 Debezium JSON envelope。Schema Registry、Avro 和 Protobuf 后置，但配置中从一开始区分 `encoding` 与 `envelope`，避免未来重新拆字段。
+结论：第一版只支持 JSON object value，并要求从 value 的显式非空字段提取稳定 key；目标固定为 PostgreSQL upsert。普通 append 无法满足 at-least-once 下的目标幂等要求，因此后置。Kafka 原生 record key 第一版只保留为诊断事实；Debezium JSON envelope、Schema Registry、Avro 和 Protobuf 后置。配置从一开始区分 `encoding` 与 `envelope`。
 
-### 16.8 Continuous timeout、失联和自动恢复
+### 16.8 Continuous timeout、失联和自动恢复（已确认）
 
 分析：continuous execution 正常情况下不会因运行时间过长而 timeout；需要判断的是 runtime heartbeat 丢失、source poll 卡死、checkpoint 长期不推进和目标持续失败。
 
-建议：
+结论：
 
 - 不设置按总运行时长结束的 execution timeout。
 - 使用连续多次 heartbeat 失败判定 lost，阈值由部署配置而不是任务随意设置。
@@ -1093,11 +1114,11 @@ target.policy.apply_mode
 
 具体秒数应通过阶段 2 压测确定，不在概念规范中硬编码。
 
-### 16.9 Dead-letter 是否进入第一版
+### 16.9 Dead-letter 是否进入第一版（已确认）
 
 分析：把坏消息写入 DLQ 后推进源 offset，实质上是经过审计的数据跳过；若 DLQ 写入或回放语义不完整，容易从“不中断任务”退化为静默丢数。
 
-建议：第一版不提供 DLQ，遇到不可解析或不可应用事件时严格阻塞对应 partition。第二阶段再设计 Transfer-owned Infra Kafka DLQ，必须保存原 topic/partition/offset、原始载荷引用、错误、task/execution 和回放状态；只有 DLQ 写入成功后才允许推进源 offset。
+结论：第一版不提供 DLQ，遇到不可解析或不可应用事件时严格阻塞对应 partition。第二阶段再设计 Transfer-owned Infra Kafka DLQ，必须保存原 topic/partition/offset、原始载荷引用、错误、task/execution 和回放状态；只有 DLQ 写入成功后才允许推进源 offset。
 
 ### 16.10 Infra Kafka 发行版、部署与容量
 

@@ -569,22 +569,22 @@ func TestValidateSystemEngineTypeAcceptsRegisteredPlugin(t *testing.T) {
 	}
 }
 
-func TestDecryptSensitiveFieldsRejectsPlainSensitiveValue(t *testing.T) {
+func TestDecryptStoredConnectionInfoRejectsPlainSensitiveValue(t *testing.T) {
 	service := NewEngineService(&repository.EngineRepository{}, nil, []byte("addp-dev-encryption-key-2025!!!!"), nil)
 
-	_, err := service.decryptSensitiveFields(models.ConnectionInfo{
+	_, err := service.decryptStoredConnectionInfo(models.ConnectionInfo{
 		"host":     "localhost",
 		"password": "plain-password",
 	})
 	if err == nil {
-		t.Fatal("decryptSensitiveFields succeeded, want error for plaintext sensitive value")
+		t.Fatal("decryptStoredConnectionInfo succeeded, want error for plaintext sensitive value")
 	}
 	if !strings.Contains(err.Error(), "解密字段 password 失败") {
 		t.Fatalf("error = %q, want password decrypt failure", err.Error())
 	}
 }
 
-func TestDecryptSensitiveFieldsReturnsPlainConnectionInfo(t *testing.T) {
+func TestDecryptStoredConnectionInfoReturnsPlainConnectionInfo(t *testing.T) {
 	key := []byte("addp-dev-encryption-key-2025!!!!")
 	secret, err := commonutils.Encrypt("plain-password", key)
 	if err != nil {
@@ -592,17 +592,83 @@ func TestDecryptSensitiveFieldsReturnsPlainConnectionInfo(t *testing.T) {
 	}
 	service := NewEngineService(&repository.EngineRepository{}, nil, key, nil)
 
-	connInfo, err := service.decryptSensitiveFields(models.ConnectionInfo{
+	connInfo, err := service.decryptStoredConnectionInfo(models.ConnectionInfo{
 		"host":     "localhost",
 		"password": secret,
 	})
 	if err != nil {
-		t.Fatalf("decryptSensitiveFields: %v", err)
+		t.Fatalf("decryptStoredConnectionInfo: %v", err)
 	}
 	if connInfo["password"] != "plain-password" {
 		t.Fatalf("password = %q, want plaintext", connInfo["password"])
 	}
 	if connInfo["host"] != "localhost" {
 		t.Fatalf("host = %q, want localhost", connInfo["host"])
+	}
+}
+
+func TestConnectionInfoStorageRoundTrip(t *testing.T) {
+	key := []byte("addp-dev-encryption-key-2025!!!!")
+	service := NewEngineService(&repository.EngineRepository{}, nil, key, nil)
+	original := models.ConnectionInfo{
+		"host":       "localhost",
+		"password":   "business_password",
+		"access_key": "business-access-key",
+	}
+
+	stored, err := service.encryptConnectionInfoForStorage(original)
+	if err != nil {
+		t.Fatalf("encryptConnectionInfoForStorage: %v", err)
+	}
+	if stored["password"] == original["password"] || stored["access_key"] == original["access_key"] {
+		t.Fatal("stored sensitive fields must be encrypted")
+	}
+	if stored["host"] != original["host"] {
+		t.Fatalf("stored host = %q, want unchanged host", stored["host"])
+	}
+
+	plain, err := service.decryptStoredConnectionInfo(stored)
+	if err != nil {
+		t.Fatalf("decryptStoredConnectionInfo: %v", err)
+	}
+	for key, value := range original {
+		if plain[key] != value {
+			t.Fatalf("round-trip %s = %q, want %q", key, plain[key], value)
+		}
+	}
+}
+
+func TestMergePlainConnectionInfoPreservesSensitiveValueForMaskedOverride(t *testing.T) {
+	service := NewEngineService(&repository.EngineRepository{}, nil, []byte("addp-dev-encryption-key-2025!!!!"), nil)
+
+	merged := service.mergePlainConnectionInfo(
+		models.ConnectionInfo{
+			"host":     "localhost",
+			"password": "business_password",
+		},
+		models.ConnectionInfo{
+			"host":     "127.0.0.1",
+			"password": "******",
+		},
+	)
+
+	if merged["host"] != "127.0.0.1" {
+		t.Fatalf("host = %q, want 127.0.0.1", merged["host"])
+	}
+	if merged["password"] != "business_password" {
+		t.Fatalf("password = %q, want original plaintext", merged["password"])
+	}
+}
+
+func TestMergePlainConnectionInfoReplacesSensitiveValue(t *testing.T) {
+	service := NewEngineService(&repository.EngineRepository{}, nil, []byte("addp-dev-encryption-key-2025!!!!"), nil)
+
+	merged := service.mergePlainConnectionInfo(
+		models.ConnectionInfo{"password": "old-password"},
+		models.ConnectionInfo{"password": "new-password"},
+	)
+
+	if merged["password"] != "new-password" {
+		t.Fatalf("password = %q, want new-password", merged["password"])
 	}
 }

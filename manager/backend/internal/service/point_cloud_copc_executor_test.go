@@ -148,24 +148,25 @@ func TestManagerPointCloudCOPCExecutorInvokesDirectWorkflowAndPublishesArtifact(
 	accessPlan := capturedParams["access_plan"].(map[string]interface{})
 	sourcePlan := accessPlan["source"].(map[string]interface{})
 	targetPlan := accessPlan["target"].(map[string]interface{})
-	progress := accessPlan["progress_callback"].(map[string]interface{})
-	publish := targetPlan["publish"].(map[string]interface{})
+	progress := capturedParams["progress_callback"].(map[string]interface{})
+	sourcePlanAccess := sourcePlan["access"].(map[string]interface{})
+	targetPlanAccess := targetPlan["access"].(map[string]interface{})
 	options := capturedParams["options"].(map[string]interface{})
-	if sourcePlan["root_uri"] != "/mnt/addp-nfs/pointcloud/source.laz" || sourcePlan["format"] != "laz" {
+	if accessPlan["schema_version"] != "addp.workflow.access-plan/v1" || sourcePlanAccess["path"] != "/mnt/addp-nfs/pointcloud/source.laz" || sourcePlan["format"] != "laz" {
 		t.Fatalf("source plan = %#v, want mounted source path and format", sourcePlan)
 	}
-	if publish["method"] != "object_store" || publish["bucket"] != "manager" || publish["object"] != "tenant_7/point-cloud-copc/fp/source.copc.laz" {
-		t.Fatalf("publish = %#v, want Manager infra MinIO target", publish)
+	if targetPlanAccess["method"] != "object_store" || targetPlanAccess["bucket"] != "manager" || targetPlanAccess["object"] != "tenant_7/point-cloud-copc/fp/source.copc.laz" {
+		t.Fatalf("target access = %#v, want Manager infra MinIO target", targetPlanAccess)
 	}
 	if progress["endpoint"] != "http://manager:8081/api/v1/manager/internal/executions/point-cloud-exec-1/events" ||
 		progress["tenant_id"] != float64(7) || progress["execution_id"] != "point-cloud-exec-1" ||
 		progress["internal_api_key"] != "manager-internal-key" {
 		t.Fatalf("progress callback = %#v, want Manager internal execution event callback", progress)
 	}
-	if publish["endpoint"] != "http://minio:9000" || publish["access_key"] != "minioadmin" || publish["secret_key"] != "minioadmin" {
-		t.Fatalf("publish credentials not passed correctly: %#v", publish)
+	if targetPlanAccess["endpoint"] != "minio:9000" || targetPlanAccess["access_key"] != "minioadmin" || targetPlanAccess["secret_key"] != "minioadmin" {
+		t.Fatalf("target credentials not passed correctly: %#v", targetPlanAccess)
 	}
-	if targetPlan["file_name"] != "source.copc.laz" || publish["content_type"] != pointCloudCOPCContentType {
+	if targetPlan["name"] != "source.copc.laz" || targetPlan["content_type"] != pointCloudCOPCContentType || targetPlan["write_mode"] != "replace" {
 		t.Fatalf("target plan = %#v, want COPC file name and content type", targetPlan)
 	}
 	if options["scale_x"] != float64(0.01) {

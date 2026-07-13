@@ -365,7 +365,7 @@ func (e *DevExecutor) executeWorkflow(ctx context.Context, devTask *models.DevTa
 
 	log.Printf("🔵 [DevExecutor] 调用工作流引擎: execution_id=%s config=%s", executionID, configStr)
 	// 调用工作流引擎
-	resp, err := e.workflowEngine.ExecuteWorkflow(execCtx, workflowDef, inputData, configStr)
+	resp, err := e.workflowEngine.ExecuteWorkflow(execCtx, uint(tenantID), workflowDef, inputData, configStr)
 	if err != nil {
 		log.Printf("❌ [DevExecutor] 工作流引擎调用失败: execution_id=%s err=%v", executionID, err)
 		return nil, fmt.Sprintf("工作流执行失败: %v", err)

@@ -9,6 +9,11 @@ import { ElMessage } from 'element-plus'
 import { formatLocatorDisplayPath } from '@addp/common-frontend'
 import { taskAPI } from '@/api/tasks'
 import { parseTransferLocator } from '@/utils/resourceLocator'
+import {
+  continuousMappedTargetKeys,
+  continuousMappingsValid,
+  isKafkaTopicSource
+} from './continuousTask.mjs'
 
 export function useTaskWizardState() {
   const { t } = useI18n()
@@ -19,6 +24,14 @@ export function useTaskWizardState() {
   const schedule = ref('')
   const enabled = ref(false) // 定时任务启用状态
   const batchSize = ref(1000) // 批大小，默认 1000
+  const runtimeBoundary = ref('bounded')
+  const loadMode = ref('snapshot')
+  const watermarkField = ref('')
+  const watermarkTieBreakers = ref([])
+  const targetKeys = ref([])
+  const continuousKeyFields = ref([])
+  const continuousInitialPosition = ref('earliest')
+  const continuousPollBatchSize = ref(1000)
 
   const sourceConfig = ref({})
   const sourceEngineID = ref(null)
@@ -61,6 +74,50 @@ export function useTaskWizardState() {
     })
   })
 
+  const supportsWatermarkIncremental = computed(() => {
+    return isPostgresqlEngineType(sourceEngineType.value) &&
+      sourceRepresentation.value === 'native' &&
+      sourceDataType.value === 'table' &&
+      isPostgresqlEngineType(targetEngineType.value) &&
+      targetRepresentation.value === 'native' &&
+      !isRawCopyTask.value
+  })
+
+  const isContinuousTask = computed(() => runtimeBoundary.value === 'continuous')
+
+  const supportsContinuousTarget = computed(() => {
+    return isContinuousTask.value &&
+      isPostgresqlEngineType(targetEngineType.value) &&
+      targetRepresentation.value === 'native'
+  })
+
+  const isWatermarkIncremental = computed(() => runtimeBoundary.value === 'bounded' && loadMode.value === 'incremental')
+
+  const continuousTargetKeys = computed(() => {
+    return continuousMappedTargetKeys(fieldMappings.value, continuousKeyFields.value)
+  })
+
+  const continuousConfigValid = computed(() => {
+    return isKafkaTopicSource(sourceEngineType.value, sourceLocator.value) &&
+      supportsContinuousTarget.value &&
+      continuousMappingsValid(fieldMappings.value, continuousKeyFields.value) &&
+      continuousPollBatchSize.value > 0 &&
+      ['earliest', 'latest'].includes(continuousInitialPosition.value)
+  })
+
+  const watermarkIncrementalValid = computed(() => {
+    const field = String(watermarkField.value || '').trim()
+    const tieBreakers = normalizedFieldNames(watermarkTieBreakers.value)
+    const keys = normalizedFieldNames(targetKeys.value)
+    const mappedTargets = normalizedFieldNames(fieldMappings.value.map(mapping => mapping?.target_field))
+    return supportsWatermarkIncremental.value &&
+      !!field &&
+      tieBreakers.length > 0 &&
+      !tieBreakers.some(name => sameFieldName(name, field)) &&
+      keys.length > 0 &&
+      keys.every(key => mappedTargets.some(target => sameFieldName(target, key)))
+  })
+
   const canGoNext = computed(() => {
     switch (currentStep.value) {
       case 0: // 选择Source
@@ -81,7 +138,9 @@ export function useTaskWizardState() {
         if (isRawCopyTask.value) return true
         return fieldMappings.value.length > 0 || sourceFields.value.length === 0
       case 3: // 配置
-        return taskName.value.trim() !== ''
+        return taskName.value.trim() !== '' &&
+          (!isContinuousTask.value || continuousConfigValid.value) &&
+          (!isWatermarkIncremental.value || watermarkIncrementalValid.value)
       default:
         return true
     }
@@ -96,21 +155,46 @@ export function useTaskWizardState() {
       description: taskDescription.value,
       task_type: 'sync',
       config: {
-        runtime: { boundary: 'bounded' },
-        load: { mode: 'snapshot' },
+        runtime: { boundary: runtimeBoundary.value },
+        load: buildLoadConfig(),
         source: sourceEndpoint,
         target: targetEndpoint,
-        transforms: buildTransformsConfig(),
-        batch_size: batchSize.value
+        transforms: buildTransformsConfig()
       },
-      schedule: schedule.value,
-      enabled: schedule.value ? enabled.value : false, // 只有设置了定时任务才考虑 enabled
-      batch_size: batchSize.value,
-      auto_scan_metadata: true
+      schedule: isContinuousTask.value ? '' : schedule.value,
+      enabled: isContinuousTask.value ? false : (schedule.value ? enabled.value : false),
+      batch_size: isContinuousTask.value ? continuousPollBatchSize.value : batchSize.value,
+      auto_scan_metadata: !isContinuousTask.value
+    }
+
+    if (!isContinuousTask.value) {
+      config.config.batch_size = batchSize.value
     }
 
     return config
   })
+
+  function buildLoadConfig() {
+    if (isContinuousTask.value) {
+      return {
+        mode: 'incremental',
+        change_detection: { type: 'kafka' }
+      }
+    }
+    if (!isWatermarkIncremental.value) {
+      return { mode: 'snapshot' }
+    }
+    return {
+      mode: 'incremental',
+      change_detection: {
+        type: 'watermark',
+        field: String(watermarkField.value || '').trim(),
+        tie_breaker: normalizedFieldNames(watermarkTieBreakers.value),
+        start: 'committed',
+        end: 'execution_upper_bound'
+      }
+    }
+  }
 
   function buildTransformsConfig() {
     if (isRawCopyTask.value) return []
@@ -152,6 +236,25 @@ export function useTaskWizardState() {
 
   function buildSourceEndpoint() {
     const config = sourceConfig.value || {}
+    if (isContinuousTask.value) {
+      return {
+        locator: sourceLocator.value,
+        representation: 'native',
+        change_stream: {
+          envelope: 'record',
+          encoding: 'json',
+          key: {
+            source: 'value',
+            fields: normalizedFieldNames(continuousKeyFields.value)
+          },
+          start: {
+            mode: 'committed',
+            initial: continuousInitialPosition.value
+          },
+          poll_batch_size: continuousPollBatchSize.value
+        }
+      }
+    }
     const endpoint = {
       locator: sourceLocator.value,
       data_type: sourceDataType.value || 'table',
@@ -185,6 +288,7 @@ export function useTaskWizardState() {
   }
 
   function isSupportedSourceShape() {
+    if (isKafkaTopicSource(sourceEngineType.value, sourceLocator.value)) return true
     if (sourceDataType.value === 'table') {
       if (sourceRepresentation.value === 'native') return true
       if (sourceRepresentation.value === 'encoded') {
@@ -236,14 +340,25 @@ export function useTaskWizardState() {
   function buildTargetEndpoint() {
     const fileConfig = targetConfig.value || {}
     if (targetRepresentation.value === 'native') {
+      const policy = isContinuousTask.value
+        ? {
+            apply_mode: 'upsert',
+            keys: continuousTargetKeys.value
+          }
+        : isWatermarkIncremental.value
+        ? {
+            apply_mode: 'upsert',
+            keys: normalizedFieldNames(targetKeys.value)
+          }
+        : {
+            apply_mode: normalizeTableApplyMode(fileConfig.writeMode)
+          }
       return {
         parent_locator: fileConfig.parentLocator || '',
         name: targetTable.value,
         data_type: 'table',
         representation: 'native',
-        policy: {
-          apply_mode: normalizeTableApplyMode(fileConfig.writeMode)
-        }
+        policy
       }
     }
 
@@ -377,6 +492,17 @@ export function useTaskWizardState() {
     sourceLocator.value = nextLocator
     sourceConfig.value = extra
 
+    const nextContinuous = isKafkaTopicSource(sourceEngineType.value, sourceLocator.value)
+    runtimeBoundary.value = nextContinuous ? 'continuous' : 'bounded'
+    if (nextContinuous) {
+      loadMode.value = 'incremental'
+      schedule.value = ''
+      enabled.value = false
+      targetRepresentation.value = 'native'
+    } else if (oldSourceEmpty || sourceChanged) {
+      loadMode.value = 'snapshot'
+    }
+
     if (sourceChanged) {
       sourceFields.value = []
       targetFields.value = []
@@ -386,7 +512,13 @@ export function useTaskWizardState() {
       targetSchema.value = ''
       targetTable.value = ''
       targetConfig.value = {}
-      targetRepresentation.value = isRawCopyTask.value ? 'encoded' : (sourceRepresentation.value === 'encoded' ? 'native' : 'encoded')
+      targetRepresentation.value = nextContinuous
+        ? 'native'
+        : (isRawCopyTask.value ? 'encoded' : (sourceRepresentation.value === 'encoded' ? 'native' : 'encoded'))
+      resetIncrementalConfig()
+      continuousKeyFields.value = []
+      continuousInitialPosition.value = 'earliest'
+      continuousPollBatchSize.value = 1000
     }
   }
 
@@ -460,6 +592,9 @@ export function useTaskWizardState() {
     targetType.value = config.targetType || 'nfs'
     targetRepresentation.value = config.representation || 'encoded'
     targetConfig.value = extra
+    if (isWatermarkIncremental.value && !supportsWatermarkIncremental.value) {
+      resetIncrementalConfig()
+    }
   }
 
   function clearTarget() {
@@ -471,6 +606,7 @@ export function useTaskWizardState() {
     targetRepresentation.value = 'encoded'
     targetConfig.value = {}
     targetFields.value = []
+    resetIncrementalConfig()
   }
 
   function loadTargetFields(fields) {
@@ -492,7 +628,15 @@ export function useTaskWizardState() {
   }
 
   function updateFieldMapping(index, mapping) {
+    const previousTarget = String(fieldMappings.value[index]?.target_field || '').trim()
     fieldMappings.value[index] = mapping
+    const nextTarget = String(mapping?.target_field || '').trim()
+    if (previousTarget && targetKeys.value.some(key => sameFieldName(key, previousTarget))) {
+      targetKeys.value = normalizedFieldNames(
+        targetKeys.value.map(key => sameFieldName(key, previousTarget) ? nextTarget : key)
+      )
+    }
+    normalizeContinuousKeys()
   }
 
   function addFieldMapping() {
@@ -507,7 +651,15 @@ export function useTaskWizardState() {
   }
 
   function removeFieldMapping(index) {
+    const removedSource = String(fieldMappings.value[index]?.source_field || '').trim()
+    const removedTarget = String(fieldMappings.value[index]?.target_field || '').trim()
     fieldMappings.value.splice(index, 1)
+    if (removedTarget) {
+      targetKeys.value = targetKeys.value.filter(key => !sameFieldName(key, removedTarget))
+    }
+    if (removedSource) {
+      continuousKeyFields.value = continuousKeyFields.value.filter(key => !sameFieldName(key, removedSource))
+    }
   }
 
   // 转换配置
@@ -554,16 +706,26 @@ export function useTaskWizardState() {
     enabled.value = task.enabled || false
     batchSize.value = task.batch_size || 1000
 
+    runtimeBoundary.value = task.config?.runtime?.boundary === 'continuous' ? 'continuous' : 'bounded'
+    const load = task.config?.load || {}
+    loadMode.value = load.mode === 'incremental' ? 'incremental' : 'snapshot'
+    watermarkField.value = load.change_detection?.field || ''
+    watermarkTieBreakers.value = normalizedFieldNames(load.change_detection?.tie_breaker)
+    targetKeys.value = normalizedFieldNames(task.config?.target?.policy?.keys)
+    continuousKeyFields.value = normalizedFieldNames(task.config?.source?.change_stream?.key?.fields)
+    continuousInitialPosition.value = task.config?.source?.change_stream?.start?.initial === 'latest' ? 'latest' : 'earliest'
+    continuousPollBatchSize.value = Number(task.config?.source?.change_stream?.poll_batch_size || task.batch_size || 1000)
+
     // Source 配置
     if (task.config?.source) {
       const source = task.config.source
       const sourceLoc = parseTransferLocator(source.locator)
       sourceEngineID.value = sourceLoc.engineID || null
-      sourceEngineType.value = ''
+      sourceEngineType.value = isContinuousTask.value ? 'kafka' : (isWatermarkIncremental.value ? 'postgresql' : '')
       sourceSchema.value = sourceLoc.path.length >= 2 ? sourceLoc.path[sourceLoc.path.length - 2] : ''
       sourceTable.value = sourceLoc.path.length >= 1 ? sourceLoc.path[sourceLoc.path.length - 1] : ''
       sourceType.value = normalizeEngineType(sourceEngineType.value || 'postgresql')
-      sourceDataType.value = source.data_type || 'table'
+      sourceDataType.value = isContinuousTask.value ? 'unknown' : (source.data_type || 'table')
       sourceRepresentation.value = source.representation || 'native'
       sourceFormat.value = targetUiFormat(source.format, source.options || {})
       sourceLocator.value = source.locator || ''
@@ -575,7 +737,7 @@ export function useTaskWizardState() {
       const target = task.config.target
       const targetParentLoc = parseTransferLocator(target.parent_locator)
       targetEngineID.value = targetParentLoc.engineID || null
-      targetEngineType.value = ''
+      targetEngineType.value = (isContinuousTask.value || isWatermarkIncremental.value) ? 'postgresql' : ''
       targetSchema.value = targetParentLoc.type === 'schema' && targetParentLoc.path.length >= 1 ? targetParentLoc.path[targetParentLoc.path.length - 1] : ''
       targetTable.value = target.representation === 'native' ? (target.name || '') : ''
       targetType.value = normalizeTargetType(target)
@@ -604,8 +766,14 @@ export function useTaskWizardState() {
     const type = String(engineType || '').toLowerCase()
     if (type.includes('postgres')) return 'postgresql'
     if (type.includes('mysql')) return 'mysql'
+    if (type.includes('kafka')) return 'kafka'
     if (type.includes('s3') || type.includes('minio')) return 's3'
     return type || 'postgresql'
+  }
+
+  function isPostgresqlEngineType(engineType) {
+    const type = String(engineType || '').trim().toLowerCase()
+    return !!type && normalizeEngineType(type) === 'postgresql'
   }
 
   function sameLocatorIdentity(left, right) {
@@ -768,6 +936,79 @@ export function useTaskWizardState() {
     return normalizeTableWriteMode(value) === 'append' ? 'append' : 'replace'
   }
 
+  function normalizedFieldNames(values) {
+    const items = Array.isArray(values) ? values : []
+    const seen = new Set()
+    return items
+      .map(value => String(value || '').trim())
+      .filter(value => {
+        const key = value.toLowerCase()
+        if (!value || seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+  }
+
+  function isPrimaryKeyField(field) {
+    return field?.primary_key === true ||
+      field?.primaryKey === true ||
+      field?.is_primary_key === true ||
+      field?.isPrimaryKey === true
+  }
+
+  function mappedTargetField(sourceField) {
+    const mapping = fieldMappings.value.find(item => sameFieldName(item?.source_field, sourceField))
+    return String(mapping?.target_field || '').trim()
+  }
+
+  function initializeIncrementalDefaults() {
+    if (!watermarkField.value) {
+      const updatedAt = sourceFields.value.find(field => sameFieldName(field?.name, 'updated_at'))
+      if (updatedAt) watermarkField.value = updatedAt.name
+    }
+
+    const primaryKeys = sourceFields.value.filter(isPrimaryKeyField).map(field => field.name)
+    if (watermarkTieBreakers.value.length === 0 && primaryKeys.length > 0) {
+      watermarkTieBreakers.value = primaryKeys.filter(name => !sameFieldName(name, watermarkField.value))
+    }
+    if (targetKeys.value.length === 0 && primaryKeys.length > 0) {
+      targetKeys.value = primaryKeys.map(mappedTargetField).filter(Boolean)
+    }
+  }
+
+  function updateContinuousKeyFields(values) {
+    const next = normalizedFieldNames(values)
+    if (!sameFieldList(continuousKeyFields.value, next)) {
+      continuousKeyFields.value = next
+    }
+    normalizeContinuousKeys()
+  }
+
+  function sameFieldList(left, right) {
+    if (left.length !== right.length) return false
+    return left.every((value, index) => sameFieldName(value, right[index]))
+  }
+
+  function normalizeContinuousKeys() {
+    if (!isContinuousTask.value) return
+    const mappedSources = normalizedFieldNames(fieldMappings.value.map(mapping => mapping?.source_field))
+    continuousKeyFields.value = continuousKeyFields.value.filter(key => mappedSources.some(source => sameFieldName(source, key)))
+    for (const mapping of fieldMappings.value) {
+      if (continuousKeyFields.value.some(key => sameFieldName(key, mapping?.source_field))) {
+        mapping.nullable = false
+      }
+    }
+  }
+
+  function resetIncrementalConfig() {
+    if (!isContinuousTask.value) {
+      loadMode.value = 'snapshot'
+    }
+    watermarkField.value = ''
+    watermarkTieBreakers.value = []
+    targetKeys.value = []
+  }
+
   function locatorDisplayPath(locator, representation = '') {
     return formatLocatorDisplayPath(locator, representation)
   }
@@ -777,7 +1018,7 @@ export function useTaskWizardState() {
     const representation = String(shape?.representation || '').toLowerCase()
     const format = String(shape?.format || '').toLowerCase()
     const locatorType = parseTransferLocator(shape?.locator).type
-    return ['document', 'media', 'unknown'].includes(dataType) &&
+    return ['document', 'media', 'cad', 'unknown'].includes(dataType) &&
       representation === 'encoded' &&
       !!format &&
       ['file', 'object'].includes(locatorType) &&
@@ -815,6 +1056,11 @@ export function useTaskWizardState() {
     schedule.value = ''
     enabled.value = false
     batchSize.value = 1000
+    runtimeBoundary.value = 'bounded'
+    resetIncrementalConfig()
+    continuousKeyFields.value = []
+    continuousInitialPosition.value = 'earliest'
+    continuousPollBatchSize.value = 1000
     sourceEngineID.value = null
     sourceEngineType.value = ''
     sourceSchema.value = ''
@@ -849,6 +1095,14 @@ export function useTaskWizardState() {
     schedule,
     enabled,
     batchSize,
+    runtimeBoundary,
+    loadMode,
+    watermarkField,
+    watermarkTieBreakers,
+    targetKeys,
+    continuousKeyFields,
+    continuousInitialPosition,
+    continuousPollBatchSize,
     sourceConfig,
     sourceEngineID,
     sourceEngineType,
@@ -874,6 +1128,13 @@ export function useTaskWizardState() {
     targetFields,
     transforms,
     isRawCopyTask,
+    supportsWatermarkIncremental,
+    isWatermarkIncremental,
+    watermarkIncrementalValid,
+    isContinuousTask,
+    supportsContinuousTarget,
+    continuousTargetKeys,
+    continuousConfigValid,
 
     // 计算属性
     canGoNext,
@@ -890,6 +1151,8 @@ export function useTaskWizardState() {
     updateTarget,
     clearTarget,
     loadTargetFields,
+    initializeIncrementalDefaults,
+    updateContinuousKeyFields,
     autoGenerateFieldMappings,
     updateFieldMapping,
     addFieldMapping,

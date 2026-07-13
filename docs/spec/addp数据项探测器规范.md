@@ -137,6 +137,7 @@ item refresh 只允许刷新该 item 自身的 attributes、字段、format info
 |---|---|---|---|
 | Native item detector | 数据库表、动态 schema 记录集合、图整体 | `single` 或引擎规范声明 | 由引擎稳定 catalog 边界决定 |
 | Single-resource detector | CSV、PDF、图片、SQLite、Excel、ZIP | `single` | 不独占目录 |
+| CAD single-resource detector | DWG | `single` | 不独占目录；Xref 不改变源 DWG item 边界 |
 | Sibling multi-resource detector | Shapefile、主文件 + 索引文件 + 元数据文件 | `multi` | 只认领匹配 ref，不独占目录 |
 | Whole-scope detector | Iceberg 表目录、OSGB Scene 场景目录、完整数据集 prefix | `whole` | 强匹配时可独占扫描范围 |
 
@@ -261,7 +262,21 @@ whole scope 的 `refs` 与 `claims` 必须分工明确：
 4. 所有 `.osgb` 叶子文件和 `metadata.xml` 都进入 claims，避免重复落为单文件 item。
 5. 强命中时 `exclusive=true`，该目录下不再生成普通 `.osgb` file item。
 6. Meta deep scan 解析 `metadata.xml`，把 `ModelMetadata/SRS`、`SRSOrigin`、`Texture/ColorSource` 写入标准 attributes。
-7. Manager 不直接预览 OSGB Scene 源 item；应通过 `model_3d_tiles_generation` 任务生成业务存储中的 3D Tiles item，再复用 3D Tiles 预览。
+7. Manager 不直接预览 OSGB Scene 源 item；SuperMap 路线通过 `osgb_scene_to_s3m` 生成业务存储中的 S3M item，再复用 S3M 预览。
+
+## S3M whole scope 校准用例
+
+```text
+/models/city-s3m/
+  config/
+    scene.scp
+  Data/
+    Tile_1/
+      Tile_1.s3m
+      Tile_1_L14_0.s3m
+```
+
+期望：`config/scene.scp` 通过 descriptor 的固定相对路径强命中，生成一个 `data_type=model_3d`、`layout=whole`、`format=s3m` item；`item.refs` 只保留 SCP manifest，整个 scope 被独占认领，`.s3m` 叶子不重复落 item。Deep scan 解析 SCP 后把 `manifest_encoding`、`tile_extension`、`root_tile_count`、位置和版本写入 `format_info.s3m`。
 
 ## 单 OSGB 校准用例
 

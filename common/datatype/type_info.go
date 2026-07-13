@@ -20,6 +20,9 @@ func (*ContainerInfo) TypeInfoDataType() DataType { return Container }
 // TypeInfoDataType reports that GraphInfo describes graph data.
 func (*GraphInfo) TypeInfoDataType() DataType { return Graph }
 
+// TypeInfoDataType reports that CADInfo describes CAD drawing data.
+func (*CADInfo) TypeInfoDataType() DataType { return CAD }
+
 // TypeInfoDataType reports that Model3DInfo describes 3D model data.
 func (*Model3DInfo) TypeInfoDataType() DataType { return Model3D }
 

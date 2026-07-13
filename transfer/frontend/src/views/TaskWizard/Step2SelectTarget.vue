@@ -16,6 +16,15 @@
       })"
     />
 
+    <el-alert
+      v-else-if="isContinuousSource"
+      class="target-filter-alert"
+      type="info"
+      :closable="false"
+      :title="t('transfer.taskWizard.continuousTargetTitle')"
+      :description="t('transfer.taskWizard.continuousTargetDesc')"
+    />
+
     <el-form class="target-form" :model="formData" label-width="120px">
       <el-form-item :label="t('transfer.taskWizard.targetEngineLabel')">
         <el-select
@@ -62,7 +71,7 @@
         />
       </el-form-item>
 
-      <el-form-item v-if="isNativeTableTarget" :label="t('transfer.taskWizard.writeModeLabel')">
+      <el-form-item v-if="isNativeTableTarget && !isContinuousSource" :label="t('transfer.taskWizard.writeModeLabel')">
         <el-select v-model="tableWriteMode" @change="syncTarget">
           <el-option
             v-for="mode in tableWriteModeOptions"
@@ -245,7 +254,10 @@ const sourceRepresentation = computed(() => props.wizardState.sourceRepresentati
 
 const sourceFormat = computed(() => props.wizardState.sourceFormat?.value || '')
 
+const isContinuousSource = computed(() => props.wizardState.isContinuousTask?.value === true)
+
 const sourceTransferSupported = computed(() => {
+  if (isContinuousSource.value) return true
   if (sourceDataType.value === 'table') {
     return sourceRepresentation.value === 'native' ||
       (sourceRepresentation.value === 'encoded' && supportedEncodedSourceFormat(sourceFormat.value))
@@ -254,7 +266,7 @@ const sourceTransferSupported = computed(() => {
 })
 
 const isRawCopySource = computed(() => {
-  return ['document', 'media', 'unknown'].includes(sourceDataType.value) &&
+  return ['document', 'media', 'cad', 'unknown'].includes(sourceDataType.value) &&
     sourceRepresentation.value === 'encoded' &&
     supportedRawCopyFormats.value.get(String(sourceFormat.value || '').toLowerCase()) === sourceDataType.value
 })
@@ -268,6 +280,7 @@ const targetEnginePlaceholder = computed(() => {
 
 const isNativeTableTarget = computed(() => {
   if (isRawCopySource.value) return false
+  if (isContinuousSource.value) return isPostgresqlEngine(selectedEngine.value)
   return isNativeTableEngine(selectedEngine.value)
 })
 
@@ -698,8 +711,14 @@ async function loadEngines() {
 
 function isAllowedTargetEngine(engine) {
   if (!sourceTransferSupported.value) return false
+  if (isContinuousSource.value) return isPostgresqlEngine(engine)
   if (isRawCopySource.value) return isContentEngine(engine)
   return isNativeTableEngine(engine) || isContentEngine(engine)
+}
+
+function isPostgresqlEngine(engine) {
+  const type = String(engine?.engine_type || engine || '').trim().toLowerCase()
+  return type === 'postgresql' || type === 'postgres' || type.includes('postgresql')
 }
 
 function supportedEncodedSourceFormat(format) {

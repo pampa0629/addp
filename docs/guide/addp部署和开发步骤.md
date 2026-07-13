@@ -62,13 +62,17 @@ bash scripts/dev/restart.sh -transfer
 
 单模块开发时，脚本会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。Meta 用于资源树、元数据扫描和跨模块通用元数据能力。模块自身如有额外依赖，例如 Manager 依赖 Transfer、Model3D Workflow Engine 和 PointCloud Workflow Engine，Develop 依赖 Python/Math/Spark Workflow Engine 和 Jupyter，会在此基础上继续启动。
 
-SuperMap Workflow Engine 依赖宿主机私有 SuperMap iObjects Java Bin、GPA/SPS libs 和许可文件，默认全量启动和 `restart.sh -all` 会一并启动。使用全量启动前需先把许可文件放入 SuperMap Bin 目录，并配置 SDK / GPA libs 挂载路径；单独验证超图算子时也可以显式启动：
+SuperMap Workflow Engine 使用本地两层镜像。首次安装时，把私有 SuperMap iObjects Java、GPA/SPS libs 和许可分别放入 `engines/supermap-workflow/vendor/objectsjava`、`vendor/gpa-libs`、`vendor/license`，然后构建稳定基础镜像：
 
 ```bash
-SUPERMAP_OBJECTSJAVA_BIN_HOST=/path/to/sup_iobjectsjava/Bin \
-SUPERMAP_GPA_LIB_DIR_HOST=/path/to/scp-dc-scheduler/scheduler/gpa/libs \
-SUPERMAP_DATA_HOST_PATH=/path/to/supermap/data \
+bash scripts/build/build-supermap-workflow-base.sh
+```
+
+之后全量启动、`restart.sh -all` 和局部重启都会重新编译当前 ADDP Java 源码。单独验证超图算子时使用：
+
+```bash
 bash scripts/dev/start.sh -supermap-workflow
+bash scripts/dev/restart.sh -supermap-workflow
 ```
 
 ### 第三步: 构建模式 (用于 Docker 镜像构建)
@@ -111,15 +115,14 @@ POINTCLOUD_WORK_HOST_PATH=./data/pointcloud-work
 
 点云 COPC artifact 统一使用 ADDP infra MinIO 配置，不单独配置 `pointcloud_workflow` 专用 MinIO endpoint。Docker Compose 部署时，Manager 与 `pointcloud-workflow-engine` 同在 Compose 网络内，统一使用 infra MinIO 的 `minio:9000`；macOS 本机开发时，PointCloud Workflow 容器通过 `host.docker.internal:${MINIO_API_PORT:-19000}` 访问宿主机 infra MinIO。
 
-`supermap-workflow-engine` 使用 Docker runtime 承载 Linux arm64 SuperMap SDK，不依赖宿主机 Linux OS。开发脚本只负责挂载本机 SDK / GPA libs 并启动运行时，不复制 SDK、native `.so` 或许可到仓库。可选变量：
+`supermap-workflow-engine` 使用 Docker runtime 承载 Linux arm64 SuperMap SDK，不依赖宿主机 Linux OS。私有组件只保存在 Git 忽略的 `engines/supermap-workflow/vendor/` 并进入稳定基础镜像；日常代码镜像每次重启都重新编译。可选变量：
 
 ```bash
 SUPERMAP_WORKFLOW_PORT=8103
-SUPERMAP_OBJECTSJAVA_BIN_HOST=/path/to/sup_iobjectsjava/Bin
-SUPERMAP_GPA_LIB_DIR_HOST=/path/to/gpa/libs
+SUPERMAP_WORKFLOW_BASE_IMAGE=addp-supermap-workflow-base:local
+SUPERMAP_WORKFLOW_IMAGE=addp-supermap-workflow-engine:dev
 SUPERMAP_DATA_HOST_PATH=/path/to/supermap/data
 SUPERMAP_OUTPUT_HOST_PATH=/tmp/supermap-out
-SUPERMAP_WORKFLOW_REBUILD=1  # 修改 engines/supermap-workflow 源码后强制重建镜像
 ```
 
 Develop 正式任务向 NFS 输出 UDBX 时，不需要预先为某个 NFS 存储引擎配置 SuperMap 专用挂载目录。Develop 会在执行期把用户选择的 NFS 引擎连接事实和相对输出路径传给 `supermap-workflow-engine`；容器需要包含 `nfs-common` 并具备 Linux mount 权限，开发脚本和 Compose 已为该容器启用 `SYS_ADMIN` capability。

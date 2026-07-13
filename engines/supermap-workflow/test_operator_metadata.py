@@ -169,3 +169,54 @@ def test_overlay_expansion_uses_dataset_inputs_and_outputs():
         assert "overlayParameters()" in block
         assert 'output("result_dataset", "supermap.dataset"' in block
         assert 'List.of("direct")' not in block
+
+
+def test_osgb_scene_to_s3m_exposes_access_plan_and_both_execution_modes():
+    block = _operator_block("osgb_scene_to_s3m")
+
+    assert 'param("access_plan", "object", false, true' in block
+    assert 'output("s3m", "supermap.s3m_dataset"' in block
+    assert 'List.of("workflow", "direct")' in block
+    assert 'case "osgb_scene_to_s3m" -> convertOSGBSceneToS3M(params)' in SOURCE
+    assert 'case "osgb_scene_to_s3m" -> new OSGBSceneToS3MProcess(params)' in SOURCE
+
+
+def test_cad_inspect_is_direct_only_and_does_not_traverse_geometry():
+    block = _operator_block("cad.inspect")
+
+    assert 'param("access_plan", "object", false, true' in block
+    assert 'output("inspection", "addp.cad.inspect/v1"' in block
+    assert 'List.of("direct")' in block
+    assert 'case "cad.inspect" -> inspectCAD(params)' in SOURCE
+    assert 'interpretation.put("geometry_traversed", false)' in SOURCE
+    inspect_start = SOURCE.index("private static ObjectNode inspectCAD")
+    inspect_end = SOURCE.index("private static String readDWGVersion", inspect_start)
+    inspect_block = SOURCE[inspect_start:inspect_end]
+    assert ".getGeometry(" not in inspect_block
+    assert ".getRecordset(" not in inspect_block
+
+
+def test_cad_render_preview_uses_map_layers_and_direct_mode():
+    block = _operator_block("cad.render_preview")
+
+    assert 'param("access_plan", "object", false, true' in block
+    assert 'output("preview", "addp.cad.render-preview/v1"' in block
+    assert 'List.of("direct")' in block
+    assert 'case "cad.render_preview" -> renderCADPreview(params)' in SOURCE
+    render_start = SOURCE.index("private static ObjectNode renderCADPreview")
+    render_end = SOURCE.index("private static void publishCADPreview", render_start)
+    render_block = SOURCE[render_start:render_end]
+    assert "map.getLayers().add(dataset, true)" in render_block
+    assert "map.outputMapToWEBP" in render_block
+    assert "map.outputMapToFile" not in render_block
+    assert "map.setViewBounds(bounds)" in render_block
+    assert "map.setBackgroundStyle(backgroundStyle)" in render_block
+    assert "double renderSpan = Math.max(drawingBounds.getWidth(), drawingBounds.getHeight())" in render_block
+    assert ".getGeometry(" not in render_block
+
+
+def test_object_store_access_builds_a_container_reachable_minio_endpoint():
+    assert "buildObjectStoreClient(access)" in SOURCE
+    assert '.endpoint(paramText(access, "endpoint"))' not in SOURCE
+    assert "normalizeResourceHost(uri.getHost())" in SOURCE
+    assert 'access.path("use_ssl").asBoolean(false)' in SOURCE

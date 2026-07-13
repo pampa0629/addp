@@ -43,6 +43,7 @@ mindmap
         EnginePlugin 基础
         CatalogProvider
         CatalogFactsProvider
+        ChangeStreamReaderProvider
         QueryRuntimeProvider
       引擎分类
         按功能: 存储/计算/兼备

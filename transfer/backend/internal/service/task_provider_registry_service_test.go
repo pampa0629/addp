@@ -53,7 +53,7 @@ func TestTaskProviderRegistryRegistersStandardTransferContract(t *testing.T) {
 	if captured.BaseURL != "http://transfer.internal" {
 		t.Fatalf("base_url = %q, want http://transfer.internal", captured.BaseURL)
 	}
-	if captured.TaskListEndpoint != "/api/v1/transfer/tasks" ||
+	if captured.TaskListEndpoint != "/api/v1/transfer/provider-tasks" ||
 		captured.TaskDetailEndpoint != "/api/v1/transfer/tasks/{task_type}/{id}" ||
 		captured.TaskExecuteEndpoint != "/api/v1/transfer/tasks/{task_type}/{id}/execute" ||
 		captured.TaskStatusEndpoint != "/api/v1/transfer/executions/{execution_id}" {

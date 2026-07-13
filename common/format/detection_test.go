@@ -15,6 +15,24 @@ func TestDetectFormat(t *testing.T) {
 		want     FormatType
 	}{
 		{
+			name:     "DWG by header and extension",
+			filename: "drawing.dwg",
+			peek:     []byte("AC1032"),
+			want:     FormatDWG,
+		},
+		{
+			name:     "DWG by header without extension",
+			filename: "drawing.bin",
+			peek:     []byte("AC1027"),
+			want:     FormatDWG,
+		},
+		{
+			name:     "DWG extension rejects invalid content",
+			filename: "drawing.dwg",
+			peek:     []byte("not-a-dwg"),
+			want:     FormatUnknown,
+		},
+		{
 			name:     "Shapefile by extension",
 			filename: "data.shp",
 			peek:     []byte{0x00, 0x00, 0x27, 0x0a}, // Shapefile magic

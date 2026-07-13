@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任务配置、字段映射 / 转换编排、写后 Meta 扫描触发和基于 Asynq 的异步执行。导入 / 导出是 Manager 等调用方的用户动作语义，不是 Transfer 的 `task_type`。
+Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任务配置、字段映射 / 转换编排、写后 Meta 扫描触发和执行运行时。bounded execution 由 Asynq worker 承担；continuous execution 由独立 Transfer continuous worker/supervisor 承担。导入 / 导出是 Manager 等调用方的用户动作语义，不是 Transfer 的 `task_type`。
 
 当前主路径基于 `common/engine`、`common/format`、`common/contentio` 和 `common/engine/contentadapter`：
 
@@ -68,6 +68,10 @@ transfer/
 - checkpoint 当前只用于进度展示、故障定位和 provider marker 观测；失败执行 retry 按 restartable 从头重新入队，append 任务 retry 会被拒绝。不得宣称 table Transfer 已支持 checkpoint resumable。
 - 大数据传输要优先考虑批大小、连续读取 / 写入 session、进度日志和 restartable retry。
 - Worker 任务载荷只保存 ID 和必要上下文，不要塞入大对象。
+- 工作包 2B 已实现 common Kafka Engine 的 catalog/facts/ChangeStreamReaderProvider、PostgreSQL partitioned change apply、continuous 严格配置、原子 start/pause/resume/stop、`desired_state`、`runtime_leases`、supervisor 和 Kafka JSON -> PostgreSQL 生产数据循环。第一版只开放业务 Kafka keyed JSON record -> PostgreSQL monotonic upsert；Console Wizard 尚未开放 continuous 配置，不得提前开放 keyless append、Debezium、CDC、DLQ、Schema Registry、Avro、Protobuf、Kafka target、replay 或物理删除。
+- 业务 Kafka 注册为 System Engine，topic 使用 `type=topic` ResourceLocator；partition 只属于 runtime assignment/position/diagnostics。Infra Kafka 来自 ADDP 部署配置，不进入 System engines、资源树或用户任务 JSON。
+- continuous source 必须消费 common `ChangeStreamReaderProvider`；原始 ChangeRecord 到 ChangeEvent 的解码以及 ChangeApplyWriter 归 Transfer runtime。第一版目标必须消费 PostgreSQL `PartitionedTableChangeApplyProvider`，把业务行与业务库 `addp_transfer.apply_positions` 原子提交；普通 `TableUpsertProvider` 不足以阻止失效 worker 写回旧状态。
+- continuous session 不进入 Asynq；使用 `transfer.runtime_leases` 做 owner lease、heartbeat 和 fencing，并使用 `transfer.sync_states` 按 partition 保存 `kafka_offset/v1.next_offset`。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh transfer` 和 `bash scripts/swagger/check-route-coverage.sh transfer`。
 
 ## 开发与验证
@@ -82,6 +86,7 @@ curl http://localhost:8083/health
 
 - `logs/transfer-backend.log`
 - `logs/transfer-worker.log`
+- `logs/transfer-continuous-worker.log`
 
 ## 相关文档
 

@@ -1,0 +1,263 @@
+package kafka
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sort"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/addp/common/engine/plugin"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
+)
+
+type kafkaChangeStreamReader struct {
+	client      *kgo.Client
+	topic       string
+	pollTimeout time.Duration
+	mu          sync.RWMutex
+	assignments map[int32]struct{}
+	blocked     bool
+}
+
+func (p *KafkaPlugin) OpenChangeStream(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ChangeStreamReadOptions) (plugin.ChangeStreamReader, error) {
+	topic, err := kafkaTopicFromPath(path)
+	if err != nil {
+		return nil, err
+	}
+	if opts.ConsumerGroup == "" {
+		return nil, fmt.Errorf("kafka change stream requires consumer group")
+	}
+	if opts.InitialPosition != plugin.ChangeStreamInitialEarliest && opts.InitialPosition != plugin.ChangeStreamInitialLatest {
+		return nil, fmt.Errorf("kafka change stream initial position must be earliest or latest")
+	}
+	for partition, position := range opts.CommittedPositions {
+		if _, err := kafkaPositionNextOffset(position, partition); err != nil {
+			return nil, fmt.Errorf("invalid committed position for partition %q: %w", partition, err)
+		}
+	}
+	reader := &kafkaChangeStreamReader{topic: topic, pollTimeout: opts.PollTimeout, assignments: map[int32]struct{}{}}
+	if reader.pollTimeout <= 0 {
+		reader.pollTimeout = 5 * time.Second
+	}
+	consumerOpts := []kgo.Opt{
+		kgo.ConsumerGroup(opts.ConsumerGroup),
+		kgo.ConsumeTopics(topic),
+		kgo.DisableAutoCommit(),
+		kgo.BlockRebalanceOnPoll(),
+		kgo.OnPartitionsAssigned(func(_ context.Context, client *kgo.Client, assigned map[string][]int32) {
+			offsets := map[string]map[int32]kgo.EpochOffset{}
+			reader.mu.Lock()
+			defer reader.mu.Unlock()
+			for assignedTopic, partitions := range assigned {
+				if assignedTopic != topic {
+					continue
+				}
+				if offsets[assignedTopic] == nil {
+					offsets[assignedTopic] = map[int32]kgo.EpochOffset{}
+				}
+				for _, partition := range partitions {
+					reader.assignments[partition] = struct{}{}
+					key := strconv.FormatInt(int64(partition), 10)
+					if committed, ok := opts.CommittedPositions[key]; ok {
+						next, _ := kafkaPositionNextOffset(committed, key)
+						offsets[assignedTopic][partition] = kgo.EpochOffset{Epoch: -1, Offset: next}
+						continue
+					}
+					if opts.InitialPosition == plugin.ChangeStreamInitialEarliest {
+						offsets[assignedTopic][partition] = kgo.NewOffset().AtStart().EpochOffset()
+					} else {
+						offsets[assignedTopic][partition] = kgo.NewOffset().AtEnd().EpochOffset()
+					}
+				}
+			}
+			client.SetOffsets(offsets)
+		}),
+		kgo.OnPartitionsRevoked(func(_ context.Context, _ *kgo.Client, revoked map[string][]int32) {
+			reader.mu.Lock()
+			defer reader.mu.Unlock()
+			for revokedTopic, partitions := range revoked {
+				if revokedTopic != topic {
+					continue
+				}
+				for _, partition := range partitions {
+					delete(reader.assignments, partition)
+				}
+			}
+		}),
+	}
+	if opts.MaxBytes > 0 {
+		consumerOpts = append(consumerOpts, kgo.FetchMaxBytes(int32(opts.MaxBytes)))
+	}
+	client, err := newKafkaClient(connInfo, consumerOpts...)
+	if err != nil {
+		return nil, err
+	}
+	reader.client = client
+	if err := client.Ping(ctx); err != nil {
+		client.Close()
+		return nil, fmt.Errorf("open kafka change stream: %w", err)
+	}
+	if err := validateKafkaCommittedPositions(ctx, client, topic, opts.CommittedPositions); err != nil {
+		client.Close()
+		return nil, err
+	}
+	return reader, nil
+}
+
+func validateKafkaCommittedPositions(ctx context.Context, client *kgo.Client, topic string, positions map[string]plugin.ChangeStreamPosition) error {
+	if len(positions) == 0 {
+		return nil
+	}
+	admin := kadm.NewClient(client)
+	starts, err := admin.ListStartOffsets(ctx, topic)
+	if err != nil {
+		return fmt.Errorf("list kafka topic start offsets before resume: %w", err)
+	}
+	ends, err := admin.ListEndOffsets(ctx, topic)
+	if err != nil {
+		return fmt.Errorf("list kafka topic end offsets before resume: %w", err)
+	}
+	for partitionText, position := range positions {
+		partitionValue, err := strconv.ParseInt(partitionText, 10, 32)
+		if err != nil || partitionValue < 0 {
+			return fmt.Errorf("invalid committed Kafka partition %q", partitionText)
+		}
+		partition := int32(partitionValue)
+		nextOffset, err := kafkaPositionNextOffset(position, partitionText)
+		if err != nil {
+			return fmt.Errorf("invalid committed position for partition %q: %w", partitionText, err)
+		}
+		start, startOK := starts.Lookup(topic, partition)
+		end, endOK := ends.Lookup(topic, partition)
+		if !startOK || !endOK || start.Err != nil || end.Err != nil {
+			return fmt.Errorf("read Kafka retained range for topic %q partition %d", topic, partition)
+		}
+		if nextOffset < start.Offset {
+			return fmt.Errorf("Kafka committed position is no longer retained for topic %q partition %d: next_offset=%d earliest=%d", topic, partition, nextOffset, start.Offset)
+		}
+		if nextOffset > end.Offset {
+			return fmt.Errorf("Kafka committed position is ahead of topic end for topic %q partition %d: next_offset=%d latest=%d", topic, partition, nextOffset, end.Offset)
+		}
+	}
+	return nil
+}
+
+func (r *kafkaChangeStreamReader) Poll(ctx context.Context, maxRecords int) (*plugin.ChangeRecordBatch, error) {
+	if maxRecords <= 0 {
+		return nil, fmt.Errorf("kafka change stream poll requires positive maxRecords")
+	}
+	r.mu.Lock()
+	allowRebalance := r.blocked
+	r.blocked = false
+	r.mu.Unlock()
+	if allowRebalance {
+		r.client.AllowRebalance()
+	}
+	pollCtx, cancel := context.WithTimeout(ctx, r.pollTimeout)
+	defer cancel()
+	fetches := r.client.PollRecords(pollCtx, maxRecords)
+	for _, fetchErr := range fetches.Errors() {
+		if errors.Is(fetchErr.Err, context.DeadlineExceeded) || errors.Is(fetchErr.Err, context.Canceled) && ctx.Err() == nil {
+			continue
+		}
+		r.client.AllowRebalance()
+		return nil, fmt.Errorf("poll kafka topic %q partition %d: %w", fetchErr.Topic, fetchErr.Partition, fetchErr.Err)
+	}
+	batch := &plugin.ChangeRecordBatch{EndPositions: map[string]plugin.ChangeStreamPosition{}}
+	fetches.EachRecord(func(record *kgo.Record) {
+		partition := strconv.FormatInt(int64(record.Partition), 10)
+		position := kafkaOffsetPosition(partition, record.Offset+1)
+		headers := make([]plugin.ChangeRecordHeader, 0, len(record.Headers))
+		for _, header := range record.Headers {
+			headers = append(headers, plugin.ChangeRecordHeader{Key: header.Key, Value: append([]byte(nil), header.Value...)})
+		}
+		batch.Records = append(batch.Records, plugin.ChangeRecord{
+			Topic: record.Topic, Partition: partition, Offset: record.Offset, Timestamp: record.Timestamp,
+			Headers: headers, Key: append([]byte(nil), record.Key...), Value: append([]byte(nil), record.Value...), Position: position,
+		})
+		batch.EndPositions[partition] = position
+	})
+	if len(batch.Records) > 0 {
+		r.mu.Lock()
+		r.blocked = true
+		r.mu.Unlock()
+	} else {
+		r.client.AllowRebalance()
+	}
+	return batch, nil
+}
+
+func (r *kafkaChangeStreamReader) Assignments() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := make([]string, 0, len(r.assignments))
+	for partition := range r.assignments {
+		result = append(result, strconv.FormatInt(int64(partition), 10))
+	}
+	sort.Strings(result)
+	return result
+}
+
+func (r *kafkaChangeStreamReader) Pause(_ context.Context, partitions []string) error {
+	parsed, err := parseKafkaPartitions(partitions)
+	if err != nil {
+		return err
+	}
+	r.client.PauseFetchPartitions(map[string][]int32{r.topic: parsed})
+	return nil
+}
+
+func (r *kafkaChangeStreamReader) Resume(_ context.Context, partitions []string) error {
+	parsed, err := parseKafkaPartitions(partitions)
+	if err != nil {
+		return err
+	}
+	r.client.ResumeFetchPartitions(map[string][]int32{r.topic: parsed})
+	return nil
+}
+
+func (r *kafkaChangeStreamReader) Close(context.Context) error {
+	r.mu.Lock()
+	allowRebalance := r.blocked
+	r.blocked = false
+	r.mu.Unlock()
+	if allowRebalance {
+		r.client.AllowRebalance()
+	}
+	r.client.Close()
+	return nil
+}
+
+func parseKafkaPartitions(partitions []string) ([]int32, error) {
+	result := make([]int32, 0, len(partitions))
+	for _, partition := range partitions {
+		value, err := strconv.ParseInt(partition, 10, 32)
+		if err != nil || value < 0 {
+			return nil, fmt.Errorf("invalid kafka partition %q", partition)
+		}
+		result = append(result, int32(value))
+	}
+	return result, nil
+}
+
+func kafkaPositionNextOffset(position plugin.ChangeStreamPosition, partition string) (int64, error) {
+	if position.Type != plugin.ChangeStreamPositionTypeKafkaOffset || position.Version != plugin.ChangeStreamPositionVersionV1 || position.Partition != partition {
+		return 0, fmt.Errorf("invalid kafka position identity")
+	}
+	value, err := strconv.ParseInt(position.Values["next_offset"], 10, 64)
+	if err != nil || value < 0 {
+		return 0, fmt.Errorf("invalid kafka next_offset")
+	}
+	return value, nil
+}
+
+func kafkaOffsetPosition(partition string, nextOffset int64) plugin.ChangeStreamPosition {
+	return plugin.ChangeStreamPosition{
+		Type: plugin.ChangeStreamPositionTypeKafkaOffset, Version: plugin.ChangeStreamPositionVersionV1, Partition: partition,
+		Values: map[string]string{"next_offset": strconv.FormatInt(nextOffset, 10)},
+	}
+}

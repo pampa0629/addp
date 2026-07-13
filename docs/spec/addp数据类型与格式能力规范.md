@@ -35,10 +35,10 @@ item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)�
 
 | 类型 | 归属 | 说明 |
 |---|---|---|
-| `DataType` | `common/datatype` | `table`、`document`、`media`、`container`、`graph`、`model_3d`、`point_cloud`、`gaussian_splat`、`unknown` |
+| `DataType` | `common/datatype` | `table`、`document`、`media`、`container`、`graph`、`cad`、`model_3d`、`point_cloud`、`gaussian_splat`、`unknown` |
 | `FieldType` / `FieldInfo` | `common/datatype` | 平台通用字段类型和字段语义 |
 | `GeometryType` | `common/datatype` | 平台标准 OGC 几何拓扑类型 |
-| `TableInfo` / `DocumentInfo` / `MediaInfo` / `ContainerInfo` / `GraphInfo` / `Model3DInfo` / `PointCloudInfo` / `GaussianSplatInfo` | `common/datatype` | 各 data type 的通用 type info |
+| `TableInfo` / `DocumentInfo` / `MediaInfo` / `ContainerInfo` / `GraphInfo` / `CADInfo` / `Model3DInfo` / `PointCloudInfo` / `GaussianSplatInfo` | `common/datatype` | 各 data type 的通用 type info |
 | `SpatialInfo` | `common/datatype` | 空间横切事实，落点是 `attributes.capabilities.spatial` |
 | `AccessIndex` | 暂居 `common/datatype` | 内容读取索引，落点是 `attributes.access_index.<data_type>`；不是 data type，也不是 type info |
 

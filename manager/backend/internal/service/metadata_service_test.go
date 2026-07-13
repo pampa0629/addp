@@ -104,6 +104,8 @@ func TestStreamStorageRefPathRejectsInvalidStorageRefs(t *testing.T) {
 		{name: "empty", engineType: "nfs", storageRef: "///"},
 		{name: "object without key", engineType: "minio", storageRef: "bucket"},
 		{name: "object without bucket", engineType: "minio", storageRef: "/file.txt"},
+		{name: "parent traversal", engineType: "nfs", storageRef: "models/../secret.txt"},
+		{name: "backslash traversal", engineType: "nfs", storageRef: `models\..\secret.txt`},
 		{name: "unsupported engine", engineType: "postgresql", storageRef: "schema/table"},
 	}
 	for _, tc := range cases {

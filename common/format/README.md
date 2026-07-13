@@ -132,7 +132,7 @@ type FormatDescriptor struct {
 | `Format` | 顶层格式事实，例如 `csv`、`json`、`parquet`、`shapefile` |
 | `DataType` | 默认可映射的数据类型，例如 `table`、`document`、`media` |
 | `Layouts` | format 可支持的 content layout：`single`、`multi`、`whole`；使用 `NormalizeLayout` / `HasLayout` 等 helper 处理，不手写自由字符串判断 |
-| `Identification` | 扩展名、确定性文件名、MIME、内容签名等识别事实 |
+| `Identification` | 扩展名、确定性直接子文件名、确定性相对路径、MIME、内容签名等识别事实 |
 
 常用入口：
 
@@ -144,6 +144,8 @@ hasWhole := format.HasLayout(descriptor.Layouts, format.LayoutWhole)
 `FormatDescriptor` 是格式静态事实，覆盖识别、默认 data type 和 layout。内置 descriptor 由 `common/format/plugins/<format>/` 中的 `Descriptor()` 维护；`FormatPlugin` 是格式包的代码入口。调用 `RegisterFormatPlugin` 会注册 plugin，若 plugin 实现 `FormatDescriptorProvider`，会校验 `Format()` 与 `Descriptor().Format` 一致并注册 descriptor。descriptor 可以先于完整 provider / reader 存在，但读写可执行性只由当前进程已注册 plugin 的接口实现决定。
 
 `Identification.FileNames` 只用于有稳定标准入口文件名的格式，例如 `mosaic.addp.json`。它不能替代内容校验；Meta 对 manifest 型 whole scope item 落库前仍应读取 manifest 内容确认 schema、`format`、`data_type` 和 `layout`。
+
+`Identification.RelativePaths` 用于入口 manifest 位于 whole scope 固定子目录的格式，例如 S3M 的 `config/scene.scp`。相对路径从 item scope 根计算并参与强命中；不要用 basename 匹配替代固定相对路径，否则同名文件可能错误认领整个目录。
 
 内置格式通过统一聚合包加载：
 

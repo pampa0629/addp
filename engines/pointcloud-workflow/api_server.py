@@ -14,6 +14,8 @@ from urllib import request as urlrequest
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+from addp_common.workflow_access import WorkflowAccessError
+from addp_common.workflow_runtime import ExecutionRegistry, ExecutionSnapshot, WorkflowRunner, WorkflowValidationError, validate_workflow_def
 from operators import ConverterError, converter_status, invoke_operator, list_operators
 
 
@@ -24,13 +26,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 start_time = datetime.now()
-executions: dict[str, dict[str, Any]] = {}
+executions = ExecutionRegistry()
 
 
 class ErrorCode:
     OPERATOR_NOT_FOUND = "OPERATOR_NOT_FOUND"
     INVALID_PARAMS = "INVALID_PARAMS"
-    WORKFLOW_NOT_SUPPORTED = "WORKFLOW_NOT_SUPPORTED"
+    WORKFLOW_INVALID = "WORKFLOW_INVALID"
+    EXECUTION_FAILED = "EXECUTION_FAILED"
     EXECUTION_NOT_FOUND = "EXECUTION_NOT_FOUND"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
@@ -78,12 +81,29 @@ def get_operators():
 @app.route("/api/workflow", methods=["POST"])
 def execute_workflow():
     started = time.time()
-    response = error_response(
-        ErrorCode.WORKFLOW_NOT_SUPPORTED,
-        "pointcloud_workflow first phase supports direct operator invocation only",
+    data = request.get_json(silent=True) or {}
+    workflow_def = data.get("workflow_def")
+    input_data = data.get("input_data")
+    if not isinstance(input_data, dict):
+        input_data = {}
+    operator_ids = {operator["id"] for operator in list_operators() if "workflow" in operator.get("execution_modes", [])}
+    try:
+        validate_workflow_def(workflow_def, operator_ids=operator_ids)
+    except WorkflowValidationError as exc:
+        response = error_response(ErrorCode.WORKFLOW_INVALID, str(exc))
+        response["execution_time_ms"] = (time.time() - started) * 1000
+        return jsonify(response), 400
+    timeout_seconds = _timeout_seconds(data.get("timeout_seconds"))
+    runner = WorkflowRunner(
+        operator_ids,
+        lambda operator, params: invoke_operator(operator, params, timeout_seconds=timeout_seconds),
     )
-    response["execution_time_ms"] = (time.time() - started) * 1000
-    return jsonify(response), 400
+    snapshot = executions.submit(runner, workflow_def, input_data)
+    return jsonify({
+        "status": snapshot.status,
+        "execution_id": snapshot.execution_id,
+        "execution_time_ms": (time.time() - started) * 1000,
+    }), 202
 
 
 @app.route("/api/operators/<name>/invoke", methods=["POST"])
@@ -96,7 +116,7 @@ def invoke_single_operator(name: str):
         response = error_response(ErrorCode.INVALID_PARAMS, "request body must contain object field 'params'")
         response["execution_id"] = execution_id
         response["execution_time_ms"] = (time.time() - started) * 1000
-        executions[execution_id] = _execution_record("failed", response=response)
+        executions.record(_execution_snapshot(execution_id, "failed", response))
         return jsonify(response), 400
 
     timeout_seconds = _timeout_seconds(data.get("timeout_seconds"))
@@ -109,28 +129,36 @@ def invoke_single_operator(name: str):
             "result": result,
             "execution_time_ms": execution_time_ms,
         }
-        executions[execution_id] = {
-            "status": "success",
-            "result": result,
-            "started_at": datetime.now().isoformat(),
-            "execution_time_ms": execution_time_ms,
-            "message": "direct operator invocation completed",
-        }
+        executions.record(ExecutionSnapshot(
+            execution_id=execution_id,
+            status="success",
+            progress=100,
+            result=result,
+            started_at=datetime.now().isoformat(),
+            execution_time_ms=execution_time_ms,
+        ))
         return jsonify(response), 200
     except ConverterError as exc:
         execution_time_ms = (time.time() - started) * 1000
         response = error_response(exc.error_code, exc.message, exc.details)
         response["execution_id"] = execution_id
         response["execution_time_ms"] = execution_time_ms
-        executions[execution_id] = _execution_record("failed", response=response)
+        executions.record(_execution_snapshot(execution_id, "failed", response))
         return jsonify(response), exc.http_status
+    except WorkflowAccessError as exc:
+        execution_time_ms = (time.time() - started) * 1000
+        response = error_response(ErrorCode.INVALID_PARAMS, str(exc))
+        response["execution_id"] = execution_id
+        response["execution_time_ms"] = execution_time_ms
+        executions.record(_execution_snapshot(execution_id, "failed", response))
+        return jsonify(response), 400
     except Exception as exc:
         logger.exception("pointcloud operator invocation failed")
         execution_time_ms = (time.time() - started) * 1000
         response = error_response(ErrorCode.INTERNAL_ERROR, "internal pointcloud workflow error", str(exc))
         response["execution_id"] = execution_id
         response["execution_time_ms"] = execution_time_ms
-        executions[execution_id] = _execution_record("failed", response=response)
+        executions.record(_execution_snapshot(execution_id, "failed", response))
         return jsonify(response), 500
 
 
@@ -141,16 +169,18 @@ def get_execution_status(execution_id: str):
         return jsonify(error_response(ErrorCode.EXECUTION_NOT_FOUND, "Execution not found")), 404
     return jsonify(
         {
-            "status": execution["status"],
+            "status": execution.status,
             "execution_id": execution_id,
-            "result": execution.get("result"),
-            "all_results": execution.get("all_results"),
-            "error": execution.get("error"),
-            "error_code": execution.get("error_code"),
-            "details": execution.get("details"),
-            "progress": 100 if execution["status"] in {"success", "failed"} else 50,
-            "started_at": execution.get("started_at"),
-            "execution_time_ms": execution.get("execution_time_ms"),
+            "result": execution.result,
+            "all_results": execution.all_results,
+            "task_order": execution.task_order,
+            "current_task": execution.current_task,
+            "error": execution.error,
+            "error_code": execution.error_code,
+            "details": execution.details,
+            "progress": execution.progress,
+            "started_at": execution.started_at,
+            "execution_time_ms": execution.execution_time_ms,
         }
     ), 200
 
@@ -176,7 +206,7 @@ def register_to_system() -> bool:
     payload = {
         "engine_type": "pointcloud_workflow",
         "name": "PointCloud 工作流引擎",
-        "description": "点云处理专用工作流运行时，提供 LAS / LAZ / E57 / PCD / XYZ 转 COPC 快显 direct 算子",
+        "description": "点云持久化转换工作流运行时，LAS / LAZ / E57 / PCD / XYZ 转 COPC 算子同时支持 workflow 与受控 direct 调用",
         "connection_info": connection_info,
         "is_builtin": True,
     }
@@ -225,17 +255,18 @@ def register_to_system_with_retry() -> None:
         threading.Event().wait(retry_interval)
 
 
-def _execution_record(status: str, *, response: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "status": status,
-        "result": response.get("result"),
-        "error": response.get("error"),
-        "error_code": response.get("error_code"),
-        "details": response.get("details"),
-        "started_at": datetime.now().isoformat(),
-        "execution_time_ms": response.get("execution_time_ms"),
-        "message": response.get("error") if status == "failed" else "completed",
-    }
+def _execution_snapshot(execution_id: str, status: str, response: dict[str, Any]) -> ExecutionSnapshot:
+    return ExecutionSnapshot(
+        execution_id=execution_id,
+        status=status,
+        progress=100 if status in {"success", "failed"} else 0,
+        result=response.get("result"),
+        error=response.get("error") or "",
+        error_code=response.get("error_code") or "",
+        details=response.get("details") or "",
+        started_at=datetime.now().isoformat(),
+        execution_time_ms=response.get("execution_time_ms"),
+    )
 
 
 def _timeout_seconds(value: Any) -> int | None:

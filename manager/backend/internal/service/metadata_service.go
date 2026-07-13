@@ -663,9 +663,14 @@ func parseStorageRange(rangeHeader string, size int64) (plugin.ReadOptions, int6
 }
 
 func streamStorageRefPath(engineType string, engineID uint, storageRef string) (plugin.CatalogPath, string, error) {
-	storageRef = strings.Trim(storageRef, "/")
+	storageRef = strings.Trim(strings.ReplaceAll(storageRef, "\\", "/"), "/")
 	if storageRef == "" {
 		return plugin.CatalogPath{}, "", fmt.Errorf("storage ref is empty")
+	}
+	for _, segment := range strings.Split(storageRef, "/") {
+		if segment == "" || segment == "." || segment == ".." || strings.ContainsRune(segment, '\x00') {
+			return plugin.CatalogPath{}, "", fmt.Errorf("invalid storage ref: %s", storageRef)
+		}
 	}
 	if catalogutil.ItemTermMatches(engineType, plugin.CatalogTermObject) {
 		parts := strings.SplitN(storageRef, "/", 2)

@@ -22,8 +22,13 @@ import (
 // fileCatalogPreviewProvider 文件系统类存储引擎预览插件（NFS/对象存储等）
 // 使用 CatalogProvider / CatalogFactsProvider / ContentReadableProvider 读取，不依赖具体客户端。
 type fileCatalogPreviewProvider struct {
-	metadataRepo *repository.MetadataRepository
-	content      *objectcontent.ObjectContentRegistry
+	metadataRepo   *repository.MetadataRepository
+	cadPreviewRepo *repository.CADPreviewRepository
+	content        *objectcontent.ObjectContentRegistry
+}
+
+func (p *fileCatalogPreviewProvider) SetCADPreviewRepository(repo *repository.CADPreviewRepository) {
+	p.cadPreviewRepo = repo
 }
 
 func NewFileCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, content *objectcontent.ObjectContentRegistry) PreviewProvider {
@@ -83,6 +88,9 @@ func (p *fileCatalogPreviewProvider) Preview(ctx context.Context, req *PreviewRe
 	// "/file" 且 filePath 为空，不能因此误判为根目录。
 	isDirNode := req.NodeType == "prefix" || req.NodeType == "directory" || req.NodeType == "bucket" || req.NodeType == "dir" || req.NodeType == "root"
 	if isDirectoryPath(fullPath) || isDirNode {
+		if applyS3MScenePreview(req.Attributes, preview.Object, engine.ID, rootName, fullPath) {
+			return preview, nil
+		}
 		if applyOSGBScenePreviewPrompt(req.Attributes, preview.Object) {
 			return preview, nil
 		}
@@ -172,7 +180,14 @@ func (p *fileCatalogPreviewProvider) previewFile(
 			Size:        meta.Size,
 			Attributes:  preview.Object.Attributes,
 		}
-		if url := buildFileStorageStreamURL(engine.ID, contentPath); url != "" {
+		if isCADObjectContentRequest(contentReq) {
+			url, err := resolveCADPreviewURL(ctx, p.cadPreviewRepo, req, contentReq)
+			if err != nil {
+				return nil, err
+			}
+			contentReq.PreviewURL = url
+			preview.Object.URL = url
+		} else if url := buildFileStorageStreamURL(engine.ID, contentPath); url != "" {
 			contentReq.PreviewURL = url
 			preview.Object.URL = url
 		}
@@ -238,6 +253,18 @@ func buildFileStorageStreamURL(engineID uint, storageRef string) string {
 	values.Set("engine_id", strconv.FormatUint(uint64(engineID), 10))
 	values.Set("storage_ref", storageRef)
 	return "/api/v1/manager/storage-stream?" + values.Encode()
+}
+
+func buildStorageAssetURL(engineID uint, storageRef string) string {
+	storageRef = strings.Trim(strings.ReplaceAll(storageRef, "\\", "/"), "/")
+	if engineID == 0 || storageRef == "" {
+		return ""
+	}
+	parts := strings.Split(storageRef, "/")
+	for index, part := range parts {
+		parts[index] = url.PathEscape(part)
+	}
+	return "/api/v1/manager/storage-assets/" + strconv.FormatUint(uint64(engineID), 10) + "/" + strings.Join(parts, "/")
 }
 
 func openFileCatalogContent(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, path string) (io.ReadCloser, error) {

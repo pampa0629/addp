@@ -260,7 +260,12 @@
       "confirm": "Confirm",
       "cancel": "Cancel",
       "targetTableName": "Target name",
-      "targetTableNamePlaceholder": "Enter the table name, file name, or relative path to create or overwrite"
+      "targetTableNamePlaceholder": "Enter the table name, file name, or relative path to create or overwrite",
+      "targetFileName": "Target file name",
+      "targetDatasetName": "Target dataset name",
+      "targetFileNameWithExtensionPlaceholder": "Enter a file name ending in {extension}",
+      "targetDatasetNamePlaceholder": "Enter target dataset name",
+      "targetExtensionRequired": "Target file name must end in {extension}"
     },
     "notebook": {
       "listTitle": "Notebook List",

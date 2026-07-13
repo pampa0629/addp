@@ -19,6 +19,7 @@ func TestAllPluginsRegistered(t *testing.T) {
 		"clickhouse",
 		"doris",
 		"jupyter",
+		"kafka",
 		"math_workflow",
 		"model3d_workflow",
 		"minio",
@@ -56,8 +57,8 @@ func TestAllPluginsRegistered(t *testing.T) {
 func TestGetAllPlugins(t *testing.T) {
 	plugins := plugin.GetAll()
 
-	if len(plugins) != 17 {
-		t.Errorf("Expected 17 plugins, got %d", len(plugins))
+	if len(plugins) != 18 {
+		t.Errorf("Expected 18 plugins, got %d", len(plugins))
 	}
 
 	// 验证每个插件的基本信息
@@ -71,6 +72,7 @@ func TestGetAllPlugins(t *testing.T) {
 		{"spark", "Apache Spark"},
 		{"clickhouse", "ClickHouse"},
 		{"jupyter", "Jupyter Engine"},
+		{"kafka", "Apache Kafka"},
 		{"math_workflow", "Math Workflow"},
 		{"model3d_workflow", "Model3D Workflow"},
 		{"pointcloud_workflow", "PointCloud Workflow"},
@@ -108,6 +110,7 @@ func TestPluginCapabilities(t *testing.T) {
 		{"doris", "general"},
 		{"clickhouse", "general"},
 		{"mongodb", "general"},
+		{"kafka", "general"},
 		{"spark", "general"},
 		{"minio", "general"},
 		{"s3", "general"},
@@ -156,6 +159,7 @@ func TestPluginDefaultPorts(t *testing.T) {
 		{"doris", 9030},
 		{"clickhouse", 9000},
 		{"mongodb", 27017},
+		{"kafka", 9092},
 		{"spark", 10000},
 		{"minio", 9000},
 		{"s3", 443},
@@ -194,6 +198,7 @@ func TestPluginRequiredFields(t *testing.T) {
 		{"doris", "database"},
 		{"clickhouse", "host"},
 		{"mongodb", "host"},
+		{"kafka", "bootstrap_servers"},
 		{"spark", "host"},
 		{"minio", "endpoint"},
 		{"s3", "access_key"},
@@ -270,6 +275,7 @@ func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
 	}{
 		"clickhouse":       {origin: "general", family: "tabular", storage: true, query: true},
 		"doris":            {origin: "general", family: "tabular", storage: true, query: true},
+		"kafka":            {origin: "general", family: "event_stream", storage: true},
 		"mongodb":          {origin: "general", family: "dynamic_schema", storage: true, query: true},
 		"mysql":            {origin: "general", family: "tabular", storage: true, query: true},
 		"neo4j":            {origin: "general", family: "graph", storage: true, query: true, graphQuery: true},

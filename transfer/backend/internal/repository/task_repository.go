@@ -16,6 +16,7 @@ import (
 )
 
 var ErrTaskAlreadyRunning = errors.New("transfer task is already running")
+var ErrContinuousTaskAlreadyRunning = errors.New("continuous transfer task is already running")
 
 // TaskRepository 任务数据访问层
 type TaskRepository struct {
@@ -90,6 +91,77 @@ func (r *TaskRepository) ClaimExecution(ctx context.Context, taskID, tenantID ui
 	return &claimedTask, claimedState, err
 }
 
+// StartContinuousExecution 原子写入用户期望状态与 pending execution。
+func (r *TaskRepository) StartContinuousExecution(ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution) (*models.TransferTask, error) {
+	var task models.TransferTask
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND tenant_id = ?", taskID, tenantID).First(&task).Error; err != nil {
+			return commonrepo.WrapDBError(err)
+		}
+		if task.DesiredState == models.TaskDesiredStateRunning || task.Status == models.TaskStatusRunning {
+			return ErrContinuousTaskAlreadyRunning
+		}
+		if err := tx.Create(execution).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&task).Updates(map[string]interface{}{
+			"desired_state":         models.TaskDesiredStateRunning,
+			"status":                models.TaskStatusIdle,
+			"progress":              0,
+			"last_execution_id":     execution.ExecutionID,
+			"last_execution_status": commonExecution.ExecutionStatusPending,
+		}).Error; err != nil {
+			return err
+		}
+		task.DesiredState = models.TaskDesiredStateRunning
+		task.LastExecutionID = &execution.ExecutionID
+		status := commonExecution.ExecutionStatusPending
+		task.LastExecutionStatus = &status
+		return nil
+	})
+	return &task, err
+}
+
+// SetContinuousDesiredState 原子改变 continuous task 的期望状态。
+// 尚未被 supervisor claim 的 pending execution 会在同一事务内取消。
+func (r *TaskRepository) SetContinuousDesiredState(ctx context.Context, taskID, tenantID uint, desired models.TaskDesiredState, stopReason string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task models.TransferTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND tenant_id = ?", taskID, tenantID).First(&task).Error; err != nil {
+			return commonrepo.WrapDBError(err)
+		}
+		updates := map[string]interface{}{"desired_state": desired}
+		if desired != models.TaskDesiredStateRunning && task.LastExecutionID != nil {
+			var execution commonExecution.TaskExecution
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("execution_id = ? AND tenant_id = ?", *task.LastExecutionID, tenantID).
+				First(&execution).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			if err == nil && execution.Status == commonExecution.ExecutionStatusPending {
+				now := time.Now()
+				metadata := execution.Metadata
+				if metadata == nil {
+					metadata = commonModels.JSONMap{}
+				}
+				metadata["stop_reason"] = stopReason
+				if err := tx.Model(&execution).Updates(map[string]interface{}{
+					"status": commonExecution.ExecutionStatusCancelled, "metadata": metadata,
+					"completed_at": now, "updated_at": now,
+				}).Error; err != nil {
+					return err
+				}
+				updates["status"] = models.TaskStatusIdle
+				updates["last_execution_status"] = commonExecution.ExecutionStatusCancelled
+			}
+		}
+		return tx.Model(&task).Updates(updates).Error
+	})
+}
+
 // GetByID 根据 ID 获取任务
 func (r *TaskRepository) GetByID(id uint) (*models.TransferTask, error) {
 	var task models.TransferTask
@@ -144,6 +216,13 @@ func (r *TaskRepository) List(tenantID uint, filters map[string]interface{}, pag
 	}
 	if taskType, ok := filters["task_type"].(string); ok && taskType != "" {
 		query = query.Where("task_type = ?", taskType)
+	}
+	if boundary, ok := filters["runtime_boundary"].(string); ok && boundary != "" {
+		if r.db.Dialector.Name() == "sqlite" {
+			query = query.Where("json_extract(config, '$.runtime.boundary') = ?", boundary)
+		} else {
+			query = query.Where("config -> 'runtime' ->> 'boundary' = ?", boundary)
+		}
 	}
 	// 支持根据 enabled 状态过滤（用于调度器加载定时任务）
 	if enabled, ok := filters["enabled"].(bool); ok {

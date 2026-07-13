@@ -1,6 +1,54 @@
 from __future__ import annotations
 
+import time
+
 import api_server
+import pytest
+
+
+@pytest.fixture
+def client():
+    api_server.app.config["TESTING"] = True
+    api_server.executions.clear()
+    with api_server.app.test_client() as test_client:
+        yield test_client
+
+
+def test_workflow_endpoint_runs_asynchronously(client, monkeypatch):
+    monkeypatch.setattr(api_server, "invoke_operator", lambda operator, params, timeout_seconds=None: {"operator": operator})
+    response = client.post("/api/workflow", json={"workflow_def": {"tasks": [
+        {"id": "convert", "operator": "las_to_copc", "params": {}, "depends_on": []}
+    ]}})
+    assert response.status_code == 202
+    execution_id = response.get_json()["execution_id"]
+    deadline = time.time() + 2
+    while time.time() < deadline:
+        status = client.get(f"/api/executions/{execution_id}").get_json()
+        if status["status"] == "success":
+            break
+        time.sleep(0.01)
+    assert status["result"] == {"operator": "las_to_copc"}
+    assert status["all_results"] == {"convert": {"operator": "las_to_copc"}}
+    assert status["task_order"] == ["convert"]
+
+
+def test_workflow_endpoint_records_failure(client, monkeypatch):
+    def fail(operator, params, timeout_seconds=None):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(api_server, "invoke_operator", fail)
+    response = client.post("/api/workflow", json={"workflow_def": {"tasks": [
+        {"id": "convert", "operator": "las_to_copc", "params": {}, "depends_on": []}
+    ]}})
+    execution_id = response.get_json()["execution_id"]
+    deadline = time.time() + 2
+    while time.time() < deadline:
+        status = client.get(f"/api/executions/{execution_id}").get_json()
+        if status["status"] == "failed":
+            break
+        time.sleep(0.01)
+    assert status["error_code"] == "EXECUTION_FAILED"
+    assert "boom" in status["error"]
 
 
 def test_register_to_system_with_retry_keeps_retrying_until_success(monkeypatch):

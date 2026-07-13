@@ -1,4 +1,5 @@
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -43,11 +44,31 @@ def test_get_operators(client):
     assert_operator_metadata_contract(data["operators"], expected_engine_type="model3d_workflow")
 
 
-def test_workflow_endpoint_is_present_but_unsupported(client):
+def test_workflow_endpoint_rejects_invalid_definition(client):
     response = client.post("/api/workflow", json={"workflow_def": {}})
     assert response.status_code == 400
     data = response.get_json()
-    assert data["error_code"] == "WORKFLOW_NOT_SUPPORTED"
+    assert data["error_code"] == "WORKFLOW_INVALID"
+
+
+def test_workflow_endpoint_runs_asynchronously(client, monkeypatch):
+    import api_server
+
+    monkeypatch.setattr(api_server, "invoke_operator", lambda operator, params, timeout_seconds=None: {"operator": operator})
+    response = client.post("/api/workflow", json={"workflow_def": {"tasks": [
+        {"id": "convert", "operator": "osgb_to_glb", "params": {}, "depends_on": []}
+    ]}})
+    assert response.status_code == 202
+    execution_id = response.get_json()["execution_id"]
+    deadline = time.time() + 2
+    while time.time() < deadline:
+        status = client.get(f"/api/executions/{execution_id}").get_json()
+        if status["status"] == "success":
+            break
+        time.sleep(0.01)
+    assert status["result"] == {"operator": "osgb_to_glb"}
+    assert status["all_results"] == {"convert": {"operator": "osgb_to_glb"}}
+    assert status["task_order"] == ["convert"]
 
 
 def test_invoke_unknown_operator(client):
@@ -73,9 +94,10 @@ def test_invoke_scene_success_and_execution_status(client, tmp_path, monkeypatch
     source.mkdir()
 
     def fake_run_command(command, timeout_seconds):
-        target.mkdir(exist_ok=True)
-        (target / "tileset.json").write_text("{}", encoding="utf-8")
-        (target / "0.b3dm").write_bytes(b"tile")
+        runtime_target = Path(command[-1])
+        runtime_target.mkdir(exist_ok=True)
+        (runtime_target / "tileset.json").write_text("{}", encoding="utf-8")
+        (runtime_target / "0.b3dm").write_bytes(b"tile")
         return operators.CommandResult(returncode=0, stdout="ok")
 
     monkeypatch.setattr(operators, "run_command", fake_run_command)
@@ -86,8 +108,9 @@ def test_invoke_scene_success_and_execution_status(client, tmp_path, monkeypatch
         json={
             "params": {
                 "access_plan": {
-                    "source": {"root_uri": str(source)},
-                    "target": {"dataset_root_uri": str(target)},
+                    "schema_version": "addp.workflow.access-plan/v1",
+                    "source": {"kind": "directory", "format": "osgb_scene", "access": {"method": "mounted_path", "path": str(source)}},
+                    "target": {"kind": "directory", "format": "3dtiles", "name": "tiles", "write_mode": "create", "access": {"method": "mounted_path", "path": str(target)}},
                 }
             }
         },
@@ -108,14 +131,17 @@ def test_invoke_scene_success_and_execution_status(client, tmp_path, monkeypatch
 
 def test_converter_unavailable_response(client, tmp_path, monkeypatch):
     monkeypatch.setenv("MODEL3D_CONVERTER_BIN", str(tmp_path / "missing_converter"))
+    source = tmp_path / "source"
+    source.mkdir()
 
     response = client.post(
         "/api/operators/osgb_scene_to_3dtiles/invoke",
         json={
             "params": {
                 "access_plan": {
-                    "source": {"root_uri": str(tmp_path / "source")},
-                    "target": {"dataset_root_uri": str(tmp_path / "target")},
+                    "schema_version": "addp.workflow.access-plan/v1",
+                    "source": {"kind": "directory", "format": "osgb_scene", "access": {"method": "mounted_path", "path": str(source)}},
+                    "target": {"kind": "directory", "format": "3dtiles", "name": "target", "write_mode": "create", "access": {"method": "mounted_path", "path": str(tmp_path / "target")}},
                 }
             }
         },
@@ -171,7 +197,7 @@ def test_register_to_system_posts_model3d_workflow_payload(monkeypatch):
             "json": {
                 "engine_type": "model3d_workflow",
                 "name": "Model3D 工作流引擎",
-                "description": "三维模型转换专用工作流运行时，提供 OSGB 快显和 OSGB Scene 转 3D Tiles direct 算子",
+                "description": "三维模型与 Gaussian Splat 持久化转换工作流运行时，算子同时支持 workflow 与受控 direct 调用",
                 "connection_info": {"protocol": "http", "port": 8101},
                 "is_builtin": True,
             },

@@ -159,10 +159,12 @@ Common 不维护全量业务 `task_type` 编译期枚举。`task_type` 由 owner
 | Meta | `scan` | `meta.scan_tasks` |
 | Transfer | `sync` | `transfer.transfer_tasks` |
 | Develop | `query` / `workflow` / `script` | `develop.dev_tasks` |
-| Manager | `vector_tile_cache_generation` / `vector_materialized_view_generation` / `embedding` / `raster_cog_generation` / `raster_mosaic_generation` / `model_3d_glb_generation` / `model_3d_tiles_generation` / `gaussian_splat_ksplat_generation` / `point_cloud_copc_generation` | `manager.vector_tile_cache_tasks` / `manager.vector_materialized_view_tasks` / `manager.embedding_tasks` / `manager.raster_cog_tasks` / `manager.raster_mosaic_tasks` / `manager.model_3d_glb_tasks` / `manager.model_3d_tiles_tasks` / `manager.gaussian_splat_ksplat_tasks` / `manager.point_cloud_copc_tasks` |
+| Manager | `vector_tile_cache_generation` / `vector_materialized_view_generation` / `embedding` / `raster_cog_generation` / `raster_mosaic_generation` / `model_3d_glb_generation` / `model_3d_tiles_generation` / `gaussian_splat_ksplat_generation` / `point_cloud_copc_generation` / `cad_preview_generation` | `manager.vector_tile_cache_tasks` / `manager.vector_materialized_view_tasks` / `manager.embedding_tasks` / `manager.raster_cog_tasks` / `manager.raster_mosaic_tasks` / `manager.model_3d_glb_tasks` / `manager.model_3d_tiles_tasks` / `manager.gaussian_splat_ksplat_tasks` / `manager.point_cloud_copc_tasks` / `manager.cad_preview_tasks` |
 | Quality | `check` | `quality.check_tasks` |
 | Graph | `kg_build` | `graph.build_tasks` |
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
+
+Manager 的 `cad_preview_generation` 只接受 `data_type=cad + format=dwg + layout=single` 源 item；结果登记到 `manager.cad_previews`，manifest、thumbnail 和 WebP 瓦片存放于 Manager infra MinIO，不自动升格为业务 data item。
 
 System 资源回收（cleanup）不纳入 TaskProvider，也不进入 Orchestrator 编排。cleanup 属于系统级运维资源回收流程，不属于用户数据处理任务；但 cleanup 必须进入 `common.task_executions` 和 System 审计体系。System 创建 `module=system`、`task_type=cleanup` 的父 execution，各模块资源回收执行方创建 `task_type=cleanup_executor` 的子 execution，并通过 `parent_execution_id` 关联。cleanup 不得声明为可编排业务任务，不得出现在 Orchestrator 的任务选择列表中。
 
@@ -174,7 +176,7 @@ Transfer `sync` 的稳定语义由以下正交维度表达：
 | --- | --- | --- |
 | 执行边界 | `config.runtime.boundary` | `bounded` / `continuous` |
 | 装载方式 | `config.load.mode` | `snapshot` / `incremental` |
-| 变化识别 | `config.load.change_detection.type` | `watermark` / `manifest` / `cdc`（按已实现能力开放） |
+| 变化识别 | `config.load.change_detection.type` | `watermark` / `manifest` / `kafka` / `cdc`（按已实现能力开放） |
 | 目标应用 | `config.target.policy.apply_mode` | `replace` / `append` / `upsert` / `upsert_delete`（按目标 Provider 能力开放） |
 
 约束：
@@ -186,6 +188,78 @@ Transfer `sync` 的稳定语义由以下正交维度表达：
 5. 同一增量任务默认只允许一个 active execution 推进主状态；任务 claim 与 pending execution 创建必须在同一数据库事务中完成。
 6. resume 创建新 execution 并从 committed position 继续；replay 是独立执行参数且永不推进主状态。第一版 PostgreSQL watermark 只支持 resume，不支持 replay。
 7. TaskProvider capability 只能声明已真实实现并验证的边界；不具备真实 worker 中断、资源释放和一致落库能力时必须 `supports_cancel=false`，也不得保留只改数据库状态的伪取消入口。
+
+#### Transfer continuous sync v1 契约
+
+continuous execution 表示一次长期运行的 runtime session，不是把 bounded executor 放进无限循环。正式实现必须使用 Transfer 独立 continuous worker/supervisor；现有 Asynq worker 继续只承担 bounded execution。
+
+业务 Kafka 第一版任务配置固定为以下单一路线：
+
+```json
+{
+  "runtime": {"boundary": "continuous"},
+  "load": {
+    "mode": "incremental",
+    "change_detection": {"type": "kafka"}
+  },
+  "source": {
+    "locator": "addp://engine/30/path/orders.events?type=topic",
+    "representation": "native",
+    "change_stream": {
+      "envelope": "record",
+      "encoding": "json",
+      "key": {"source": "value", "fields": ["id"]},
+      "start": {"mode": "committed", "initial": "earliest"},
+      "poll_batch_size": 1000
+    }
+  },
+  "target": {
+    "parent_locator": "addp://engine/8/path/public?type=schema",
+    "name": "orders",
+    "data_type": "table",
+    "representation": "native",
+    "policy": {"apply_mode": "upsert", "keys": ["id"]}
+  },
+  "transforms": [
+    {
+      "type": "field_mapping",
+      "version": "v1",
+      "mode": "project",
+      "fields": [
+        {"source": "id", "target": "id", "target_type": "int", "nullable": false}
+      ]
+    }
+  ]
+}
+```
+
+第一版约束：
+
+1. source 只支持用户在 System 注册的业务 Kafka Engine，locator 必须定位 `type=topic`；Infra Kafka 不进入公开任务配置。
+2. `envelope` 只允许 `record`，`encoding` 只允许 `json`，value 必须是 JSON object；tombstone、数组、标量、Avro、Protobuf、Schema Registry 和 Debezium envelope 均不支持。
+3. 稳定 key 只允许从 JSON value 的显式非空字段提取；`key.source` 固定为 `value`，`key.fields` 非空。Kafka 原生 record key 第一版只保留为诊断事实，不参与目标身份推导。
+4. 同一业务 key 的事件必须由生产者稳定写入同一 partition。Transfer 保证 partition 内顺序，不承诺跨 partition 的同 key 全局顺序。
+5. 目标只支持 PostgreSQL native table，并且必须使用 `apply_mode=upsert`、显式目标 keys 和 `PartitionedTableChangeApplyProvider`；普通 `TableUpsertProvider` 不能单独满足 continuous fencing。keyless append 和可能产生重复的普通 append 不进入第一版。
+6. Kafka JSON 没有可依赖的表 schema，任务必须通过显式 `field_mapping` 固定目标字段和类型；source key fields 映射后的目标字段必须与 `target.policy.keys` 一一对应且非空。未知字段、缺失必填字段或不兼容 schema 变化必须阻塞 partition 并使当前 execution 失败，不得静默丢弃。
+7. `start.mode` 固定为 `committed`。没有 committed state 的 partition 必须由任务显式选择 `initial=earliest|latest`；不得由 consumer 默认值或 auto commit 猜测。
+8. Transfer 为每个 partition 在 `transfer.sync_states` 保存 `position.type=kafka_offset`、`position.version=v1` 和 `next_offset`。目标批次成功提交后才允许用 runtime fencing token 和 state version 做 CAS 推进；worker 恢复时必须 seek 到 `next_offset`。
+9. 每个 continuous task 必须有服务端生成且不可修改的 `apply_identity` UUID，不写入 config。PostgreSQL Provider 在业务目标库维护 `addp_transfer.apply_positions`，以 `apply_identity + source_identity + target_identity + partition` 校验应用主线；业务行 upsert 与目标 `next_offset` 必须在同一事务提交。
+10. Transfer 必须把 poll 结果按 partition 拆成顺序批次，每条已映射记录携带消费后 `next_offset`。Provider 锁定 ledger 行，拒绝位置缺口，跳过不大于已应用位置的重复记录；同一批剩余记录出现相同目标 key 时保留最高 `next_offset` 的最后状态，再执行一次原子 upsert。
+11. 投递保证固定为 `at-least-once delivery + target monotonic apply`。目标提交与 Infra position CAS 之间崩溃会重放，但目标 ledger 必须吸收重复批次，并阻止租约过期 worker 在新 worker 之后写回旧状态；不得宣称跨 Kafka、业务 PostgreSQL 和 Infra PostgreSQL 的分布式 exactly-once。
+12. consumer auto commit 禁用。Kafka consumer group 只用于分区分配，不是 Transfer committed position 的事实源。
+13. 第一版不提供 replay、DLQ、物理删除、Debezium、CDC、Kafka target 或 continuous append。
+
+continuous task 与 execution 生命周期：
+
+1. continuous task definition 必须保存独立活状态 `desired_state=running|paused|stopped`，初始值为 `stopped`。该字段不进入 config JSON，也不复用最近 execution `status`；bounded task 不消费该字段。
+2. `start` 原子设置 `desired_state=running` 并创建 pending execution；`pause` 设置 `paused`，`resume` 设置 `running` 并创建新 execution，`stop` 设置 `stopped`。同一 task 已有合法 active session 时不得重复创建 execution。
+3. 每次启动或自动恢复都创建新的 pending execution；一个 execution 对应一个 runtime session，结束后不得重新变回 running。
+4. runtime session 由 `transfer.runtime_leases` 保存 owner instance、execution、lease deadline、heartbeat 和 fencing token；lease 与 `transfer.sync_states` 的业务 position 分离。
+5. 正常总运行时长不触发 timeout。source poll、target apply、position commit 分别使用操作超时；heartbeat 丢失或 lease 过期以 `failed` 结束当前 execution，并在任务 desired state 仍为 running 时创建新 execution 恢复。
+6. 用户 pause/stop 必须真实停止 poll、完成或放弃当前未提交批次、关闭 source/target session、释放 partition ownership 和 lease，再以 `cancelled` 结束当前 execution，并在 metadata 记录 `stop_reason=paused|stopped`。resume 创建新 execution。
+7. 工作包 2B 真实中断闭环完成时可以恢复 Transfer 私有 task-definition stop 控制入口；但 `supports_cancel` 是整个 `sync` task type 的 TaskProvider 能力，在 bounded execution 也具备真实取消前必须继续为 `false`，不得注册标准 execution cancel endpoint。
+8. continuous execution 不使用 0 到 100 作为主要进度；Monitor 应展示 per-partition next offset、source latest offset、lag、吞吐、last event time、last committed time、checkpoint age、retry/rebalance 和 heartbeat。
+9. Orchestrator v1 不编排 continuous Transfer task。Transfer 的 TaskProvider 任务发现不得把 continuous task 暴露为可选编排步骤，provider execute 入口也必须拒绝 `source=orchestrator` 触发 continuous task；长期服务型 Step 语义进入 Orchestrator v2 专题。
 
 Manager 的瓦片缓存生成、矢量物化视图、embedding、PreviewState、raster COG、raster mosaic、三维模型 GLB 快显、三维模型 3D Tiles 生成、3DGS - KSplat 快显和点云 COPC 快显细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。瓦片缓存生成任务类型为 `vector_tile_cache_generation`，任务定义表为 `manager.vector_tile_cache_tasks`；矢量物化视图任务类型为 `vector_materialized_view_generation`，任务定义表为 `manager.vector_materialized_view_tasks`，结果表为 `manager.vector_materialized_view`；单 TIFF 栅格 COG 生成任务类型为 `raster_cog_generation`，任务定义表为 `manager.raster_cog_tasks`；栅格镶嵌数据集生成任务类型为 `raster_mosaic_generation`，任务定义表为 `manager.raster_mosaic_tasks`，结果是业务存储中的 `format=raster_mosaic` data item，不是 Manager infra artifact；三维模型 GLB 快显任务类型为 `model_3d_glb_generation`，任务定义表为 `manager.model_3d_glb_tasks`，源 item 必须是 `format=osgb`、`layout=single`，`format=gltf`、`layout=multi`，`format=fbx|obj|stl`、`layout=single`，或 `format=ifc`、`layout=single`，结果表为 `manager.model_3d_glb`，结果是 Manager infra MinIO 中的 GLB artifact，不自动升格为业务 data item；IFC 通过 `model3d_workflow.ifc_to_glb` 专用 operator 生成 GLB，不复用 glTF / FBX / OBJ / STL 的 mesh converter；OSGB Scene 倾斜摄影转 3D Tiles 任务类型为 `model_3d_tiles_generation`，任务定义表为 `manager.model_3d_tiles_tasks`，源 item 必须是 `format=osgb_scene`、`layout=whole`，结果是业务存储中的 `format=3dtiles`、`layout=whole` data item，不是 Manager 私有 artifact；3DGS - KSplat 快显任务类型为 `gaussian_splat_ksplat_generation`，任务定义表为 `manager.gaussian_splat_ksplat_tasks`，源 item 必须是 `data_type=gaussian_splat + layout=single + format=ply|splat`，结果表为 `manager.gaussian_splat_ksplat`，结果是 Manager infra MinIO 中的 KSplat artifact，不自动升格为业务 data item；`format=ply|splat` 的高斯泼溅 item 会转换为 `.ksplat` 文件，`format=ksplat` 的源 item 直接基础预览，不创建 KSplat 快显任务；点云 COPC 快显任务类型为 `point_cloud_copc_generation`，任务定义表为 `manager.point_cloud_copc_tasks`，源 item 必须是 `data_type=point_cloud + layout=single + format=las|laz|e57|pcd|xyz`，结果表为 `manager.point_cloud_copc`，结果是 Manager infra MinIO 中的 COPC artifact，不自动升格为业务 data item；源 `format=copc` item 直接基础预览，不创建二次 COPC 快显任务。PreviewState 目标落点为 `manager.preview_state`，用于保存基础预览和快显预览的模式偏好与视角状态，不属于任务定义或快显结果表。MVT 是瓦片缓存格式，应进入任务配置，例如 `config.tile.format=mvt`，不作为任务类型。持久化 embedding 任务执行必须复用任务服务创建的主 execution；ad-hoc embedding 可以自行创建 execution，但不得产生 owner 任务定义，且没有 `source_task_id` 时必须写完整 `execution_config`。
 

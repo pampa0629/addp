@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT_DIR="$(cd "${ENGINE_DIR}/../.." && pwd)"
 
 PLATFORM="${MODEL3D_DOCKER_PLATFORM:-linux/arm64}"
 CONVERTER_IMAGE="${MODEL3D_CONVERTER_IMAGE:-addp/model3d-converter:linux-arm64}"
@@ -52,7 +53,7 @@ docker build \
   --build-arg CONVERTER_IMAGE="${CONVERTER_IMAGE}" \
   -f "${ENGINE_DIR}/docker/runtime/Dockerfile" \
   -t "${RUNTIME_IMAGE}" \
-  "${ENGINE_DIR}"
+  "${ROOT_DIR}"
 
 echo "Smoke checking runtime image"
 docker run --rm --platform "${PLATFORM}" --entrypoint /opt/addp/model3d-workflow/bin/_3dtile "${RUNTIME_IMAGE}" --help >/dev/null

@@ -49,6 +49,7 @@ func FileSingleInput(
 		DataUpdatedAt:      fileModifiedAtPtr(file.ModifiedAt),
 		ScanDepth:          scanDepth,
 		IncludeAccessIndex: true,
+		StrictDeepEnrich:   requiresStrictDeepEnrich(detected),
 	}
 }
 
@@ -81,6 +82,7 @@ func FileDetectedInput(
 		SizeBytes:          itemPlan.SizeBytes,
 		ScanDepth:          scanDepth,
 		IncludeAccessIndex: true,
+		StrictDeepEnrich:   requiresStrictDeepEnrich(detected),
 	}
 }
 
@@ -118,6 +120,7 @@ func ObjectSingleInput(
 		DataUpdatedAt:      catalogResource.LastModified,
 		ScanDepth:          scanDepth,
 		IncludeAccessIndex: true,
+		StrictDeepEnrich:   requiresStrictDeepEnrich(itemPlan.DataItem),
 	}
 }
 
@@ -151,6 +154,7 @@ func ObjectCompositeInput(
 		SizeBytes:          itemPlan.SizeBytes,
 		ScanDepth:          scanDepth,
 		IncludeAccessIndex: true,
+		StrictDeepEnrich:   requiresStrictDeepEnrich(composite.Item),
 	}
 }
 
@@ -215,6 +219,13 @@ func detectedItemContentPath(item *metaitem.DetectedItem, fallback string) strin
 		return strings.Trim(item.PhysicalPath, "/")
 	}
 	return strings.Trim(fallback, "/")
+}
+
+func requiresStrictDeepEnrich(item *metaitem.DetectedItem) bool {
+	return item != nil &&
+		item.Layout == format.LayoutSingle &&
+		item.DataType == datatype.CAD &&
+		item.Format == string(format.FormatDWG)
 }
 
 func splitCatalogResourcePath(value string) (dir, name string) {

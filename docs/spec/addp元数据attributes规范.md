@@ -67,7 +67,7 @@ attributes 分区统一采用以下概念：
 |---|---|---|
 | `storage` | 这个 item 在引擎侧的存储和访问属性是什么 | physical_path、bucket、path、etag、content_type、last_modified_at、total_size |
 | `item` | 这个 data item 的核心语义是什么 | layout、data_type、format、refs、file_count、scope_exclusive |
-| `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children、model_3d mesh_count、point_cloud point_count、gaussian_splat splat_count |
+| `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children、cad layer_count、model_3d mesh_count、point_cloud point_count、gaussian_splat splat_count |
 | `format_info` | 对应文件、容器或格式解析层面的私有信息是什么 | csv encoding、shapefile refs、sqlite version |
 | `access_index` | 面向内容读取的通用访问索引是什么 | table sparse_row_index |
 | `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
@@ -87,14 +87,16 @@ attributes 分区统一采用以下概念：
 | 大小 | `meta_item.size_bytes` + `attributes.storage.total_size` | 表列用于列表和排序，attributes 保存源存储视角 |
 | 修改时间 | `meta_item.data_updated_at` + `attributes.storage.last_modified_at` | `scanned_at` 不进入 attributes |
 | data item 核心语义 | `attributes.item` | layout、data_type、format、refs、file_count、scope_exclusive、claim_policy |
-| 类型信息 | `attributes.type_info.<data_type>` | table、document、media、container、graph、model_3d、point_cloud、gaussian_splat 等通用类型信息 |
+| 类型信息 | `attributes.type_info.<data_type>` | table、document、media、container、graph、cad、model_3d、point_cloud、gaussian_splat 等通用类型信息 |
 | 格式信息 | `attributes.format_info.<format>` | 具体文件格式私有信息 |
 | 访问定位索引 | `attributes.access_index.<data_type>` | 面向内容读取优化的索引，例如 table 稀疏行索引 |
 | 横切能力 | `attributes.capabilities.<capability>` | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
 
 同一事实只能有一个规范存储点，不允许双写旧字段和新字段。
 
-`meta_item.item_type` 必须跟随所属引擎的稳定 catalog leaf 术语：对象存储为 `object`，文件系统为 `file`，关系型数据库为 `table` / `view`，MongoDB 为 `collection`，Neo4j 为 `graph`。内容可读成表格、文档、媒体或容器时，只更新 `attributes.item.data_type`、`attributes.item.format`、`type_info`、`format_info` 和 `capabilities`，不得反向改写 `meta_item.item_type`。
+`meta_item.item_type` 必须跟随所属引擎的稳定 catalog leaf 术语：对象存储为 `object`，文件系统为 `file`，关系型数据库为 `table` / `view`，MongoDB 为 `collection`，Neo4j 为 `graph`，业务 Kafka 为 `topic`。内容可读成表格、文档、媒体或容器时，只更新 `attributes.item.data_type`、`attributes.item.format`、`type_info`、`format_info` 和 `capabilities`，不得反向改写 `meta_item.item_type`。
+
+Kafka topic 第一版 basic scan 只保存 item identity，`attributes.item.data_type=unknown`；Meta 不读取消息、不采样 JSON schema，也不创建 partition item。partition count、leader、replica、ISR 和 offset range 属于实时 topic facts / runtime diagnostics；在正式定义持久化结构前不得写入 attributes 顶层、`type_info` 或 `capabilities` 兜底字段。
 
 ## 分区职责
 
@@ -102,7 +104,7 @@ attributes 分区统一采用以下概念：
 |---|---|---|
 | `storage` | 引擎抽象层、catalog、对象枚举 | physical_path、bucket、path、content_type、etag、last_modified_at、total_size |
 | `item` | Meta 扫描、Meta item normalizer | layout、data_type、format、refs、file_count、scope_exclusive、claim_policy |
-| `type_info` | 数据库 metadata、format info provider、采样器、Meta item normalizer | table fields、primary_key、row_count；media kind/width/height/duration_ms；document title/page_count；container children；graph shapes；model_3d 结构摘要；point_cloud 点云摘要；gaussian_splat 高斯基元摘要 |
+| `type_info` | 数据库 metadata、format info provider、采样器、Meta item normalizer | table fields、primary_key、row_count；media kind/width/height/duration_ms；document title/page_count；container children；graph shapes；cad 图纸结构摘要；model_3d 结构摘要；point_cloud 点云摘要；gaussian_splat 高斯基元摘要 |
 | `format_info` | format plugin / provider、Meta item normalizer | CSV 分隔符、Shapefile related refs、JSON 结构类型、SQLite 版本等具体格式信息 |
 | `access_index` | format plugin / reader、Meta item normalizer | 用于按内容窗口读取的访问索引，例如 table 稀疏行号到字节偏移索引 |
 | `capabilities` | format provider、画像任务、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
@@ -118,6 +120,7 @@ attributes 分区统一采用以下概念：
 | `datatype.MediaInfo` | `attributes.type_info.media` |
 | `datatype.ContainerInfo` | `attributes.type_info.container` |
 | `datatype.GraphInfo` | `attributes.type_info.graph` |
+| `datatype.CADInfo` | `attributes.type_info.cad` |
 | `datatype.Model3DInfo` | `attributes.type_info.model_3d` |
 | `datatype.PointCloudInfo` | `attributes.type_info.point_cloud` |
 | `datatype.GaussianSplatInfo` | `attributes.type_info.gaussian_splat` |
@@ -199,6 +202,7 @@ attributes 分区统一采用以下概念：
 | `media` | `type_info.media` | kind、mime_type、width、height、duration_ms、encoding、color_space、size_bytes |
 | `container` | `type_info.container` | children、default_child、child_count、resource_count |
 | `graph` | `type_info.graph` | model、directed、node_shapes、relationship_shapes、node_count、relationship_count |
+| `cad` | `type_info.cad` | drawing_kind、unit、entity_count、layer_count、layout_count、block_definition_count、xref_count、has_model_space、has_paper_space、bounds_2d、bounds_3d、size_bytes |
 | `model_3d` | `type_info.model_3d` | model_kind、node_count、mesh_count、vertex_count、triangle_count、material_count、texture_count、animation_count、lod_count、bounds_3d、unit、up_axis |
 | `point_cloud` | `type_info.point_cloud` | point_cloud_kind、point_count、point_format、dimension_count、dimensions、bounds_3d、scale、offset、has_color、has_intensity、has_classification |
 | `gaussian_splat` | `type_info.gaussian_splat` | representation、splat_count、has_opacity、has_scale、has_rotation、has_spherical_harmonics、sh_degree、bounds_3d、sampled_bounds_3d、sampled_bounds_method、sampled_bounds_sample_count |
@@ -230,7 +234,11 @@ attributes 分区统一采用以下概念：
 
 label set 必须标准化为去空、去重、排序后的稳定集合；当 node shape 或 endpoint 的 `name` / `shape_name` 为空时，可以由 label set 使用 `+` 连接派生。历史 Meta 数据如果仍使用 `edge_count`、顶层 `from_labels` / `to_labels`、独立 label item 或 relationship item，应删除后重新扫描，不在运行期保留兼容读取。
 
+`type_info.cad` 只承载跨 CAD 格式稳定的图纸结构摘要。DWG 版本、SuperMap provider/version、解释后的 dataset 数量、归一化 Geometry 提示和扫描 warning 进入 `format_info.dwg`；预览瓦片、缩略图、entity 样本和 CAD→GIS 产物不得写入 attributes。Meta deep scan 不得为计算摘要遍历 Recordset Geometry。
+
 `type_info.model_3d` 只承载三维模型跨格式稳定结构摘要。`model_kind` 表达模型子形态，第一版取值为 `mesh_scene`、`photogrammetry_scene`、`bim_model`、`tiled_scene`、`generic`。GLB / glTF、OBJ / STL / FBX、IFC、单 OSGB、OSGB Scene 倾斜摄影、3D Tiles、Revit BIM 都使用 `data_type=model_3d`；不得因为倾斜摄影或 BIM 另行新增 `data_type=osgb`、`data_type=bim` 或平行 type info。单个 `.osgb` 文件的格式私有字段进入 `format_info.osgb`；一套倾斜摄影场景的 `metadata.xml`、`Data/`、SRS 和纹理摘要进入 `format_info.osgb_scene`；`.gltf` manifest 的 asset、scene / buffer / image / accessor 计数、extensions 摘要和外部资源数量进入 `format_info.gltf`，本地资源路径只通过 `item.refs` 表达；OBJ 的 object / group / material library 摘要进入 `format_info.obj`；STL 的 ASCII / binary 编码和三角面摘要进入 `format_info.stl`；FBX 的 binary / ASCII header 编码事实进入 `format_info.fbx`；IFC 的 STEP schema identifiers、schema version、entity count 和 entity type counts 进入 `format_info.ifc`。格式原生字段、构件属性集、tileset 细节、纹理清单、BIM family / level / property set 等进入受控 `format_info.<format>`；空间参考、地理定位和空间范围进入 `capabilities.spatial`。模型原始内容、前端渲染协议、转换产物、缩略图、瓦片或构件查询结果不得写入 `type_info.model_3d`。
+
+S3M 同样使用 `data_type=model_3d`。SCP 的 XML / JSON 编码、S3M 版本、根瓦片数、瓦片扩展名、文件类型和位置进入 `format_info.s3m`；`config/scene.scp` 通过 `item.refs` 以 `role=manifest + primary=true` 表达。S3M 前端 renderer、受控资源 URL、加载队列和浏览器纹理能力不得写入 Meta attributes。
 
 `type_info.point_cloud` 只承载点云跨格式稳定结构摘要。`point_cloud_kind` 表达点云子形态，第一版取值为 `raw_point_cloud`、`tiled_point_cloud`、`scan_collection`、`generic`。LAS / LAZ / COPC、PCD、点云型 PLY、EPT / Potree、E57 等都使用 `data_type=point_cloud`；不得仅因点记录可展开为 x/y/z 等列而归为 `table`。点样本、抽稀结果、前端渲染协议、Potree / EPT / COPC 层级内容、派生瓦片等属于内容读取或 Manager 派生产物，不写入 attributes。CRS、空间定位和空间范围进入 `capabilities.spatial`；分类分布、密度、采样规模等画像事实进入 `capabilities.statistics` 或后续受控画像结构。
 

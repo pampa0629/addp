@@ -49,6 +49,7 @@ const (
 	QuickViewSourceKindModel3D       = "model_3d"
 	QuickViewSourceKindGaussianSplat = "gaussian_splat"
 	QuickViewSourceKindPointCloud    = "point_cloud"
+	QuickViewSourceKindCAD           = "cad"
 
 	QuickViewActionSwitchQuickView             = "switch_quick_view"
 	QuickViewActionBackToBasicPreview          = "back_to_basic_preview"
@@ -58,6 +59,7 @@ const (
 	QuickViewActionGenerateModel3DGLB          = "generate_model_3d_glb"
 	QuickViewActionGenerateGaussianSplatKSplat = "generate_gaussian_splat_ksplat"
 	QuickViewActionGeneratePointCloudCOPC      = "generate_point_cloud_copc"
+	QuickViewActionGenerateCADPreview          = "generate_cad_preview"
 
 	QuickViewRenderSourceCachedTile          = "cached_tile"
 	QuickViewRenderSourceClientCOG           = "client_cog_render"
@@ -186,6 +188,7 @@ type QuickViewSource struct {
 	Model3D            *Model3DGLBSource
 	GaussianSplat      *GaussianSplatKSplatSource
 	PointCloud         *PointCloudCOPCSource
+	CAD                *CADPreviewSource
 	DirectFlatGeobuf   bool
 	FlatGeobufURL      string
 	CanTile            bool
@@ -275,6 +278,12 @@ type PointCloudCOPCSource struct {
 	Bounds3D        *datatype.Bounds3D
 }
 
+type CADPreviewSource struct {
+	Format          string
+	SourceSizeBytes int64
+	PreviewURL      string
+}
+
 type RealtimeTileTarget struct {
 	Schema                       string
 	Table                        string
@@ -313,6 +322,7 @@ type QuickViewCapability struct {
 	Model3D              *QuickViewModel3DInfo       `json:"model_3d,omitempty"`
 	GaussianSplat        *QuickViewGaussianSplatInfo `json:"gaussian_splat,omitempty"`
 	PointCloud           *QuickViewPointCloudInfo    `json:"point_cloud,omitempty"`
+	CAD                  *QuickViewCADInfo           `json:"cad,omitempty"`
 	Optimization         *VectorMaterializedViewInfo `json:"optimization,omitempty"`
 	RealtimeTile         *QuickViewRealtimeTileInfo  `json:"realtime_tile,omitempty"`
 	TileCacheGeneration  TileCacheGeneration         `json:"vector_tile_cache_generation"`
@@ -461,6 +471,14 @@ type QuickViewPointCloudInfo struct {
 	Bounds3D          *datatype.Bounds3D `json:"bounds_3d,omitempty"`
 	UnavailableReason string             `json:"unavailable_reason,omitempty"`
 	RecommendedAction string             `json:"recommended_action,omitempty"`
+}
+
+type QuickViewCADInfo struct {
+	Format            string `json:"format,omitempty"`
+	SizeBytes         int64  `json:"size_bytes,omitempty"`
+	PreviewURL        string `json:"preview_url,omitempty"`
+	UnavailableReason string `json:"unavailable_reason,omitempty"`
+	RecommendedAction string `json:"recommended_action,omitempty"`
 }
 
 type QuickViewRenderFacts struct {
@@ -710,6 +728,8 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		if err := s.applyPointCloudCapability(ctx, capability, identity, source.PointCloud, source.EngineID); err != nil {
 			return nil, err
 		}
+	} else if source.CAD != nil {
+		s.applyCADCapability(capability, source.CAD)
 	} else if source.Model3D != nil {
 		if err := s.applyModel3DCapability(ctx, capability, identity, source.Model3D, source.EngineID); err != nil {
 			return nil, err
@@ -756,7 +776,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	if !capability.TileCacheGeneration.Available {
 		capability.CanGenerateTileCache = false
 	}
-	if source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil || source.GaussianSplat != nil || source.PointCloud != nil {
+	if source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil || source.GaussianSplat != nil || source.PointCloud != nil || source.CAD != nil {
 		capability.CanGenerateTileCache = false
 		capability.TileCacheGeneration = TileCacheGeneration{
 			Available: false,
@@ -826,6 +846,10 @@ func applyAvailableActions(capability *QuickViewCapability) {
 		capability.PointCloud.RecommendedAction == commonExecution.TaskTypePointCloudCOPCGeneration {
 		add(QuickViewActionGeneratePointCloudCOPC)
 	}
+	if capability.SourceKind == QuickViewSourceKindCAD && capability.CAD != nil &&
+		capability.CAD.RecommendedAction == commonExecution.TaskTypeCADPreviewGeneration {
+		add(QuickViewActionGenerateCADPreview)
+	}
 	capability.AvailableActions = actions
 }
 
@@ -875,6 +899,8 @@ func quickViewSourceKind(source QuickViewSource) string {
 		return QuickViewSourceKindGaussianSplat
 	case source.PointCloud != nil:
 		return QuickViewSourceKindPointCloud
+	case source.CAD != nil:
+		return QuickViewSourceKindCAD
 	case source.SpatialMeta != nil || source.CanTile || source.DirectFlatGeobuf || source.RealtimeTileTarget != nil:
 		return QuickViewSourceKindVector
 	default:
@@ -1147,6 +1173,40 @@ func (s *QuickViewService) applyPointCloudCapability(ctx context.Context, capabi
 		capability.PointCloud.RecommendedAction = commonExecution.TaskTypePointCloudCOPCGeneration
 	}
 	return nil
+}
+
+func (s *QuickViewService) applyCADCapability(capability *QuickViewCapability, cad *CADPreviewSource) {
+	if capability == nil || cad == nil {
+		return
+	}
+	capability.CAD = &QuickViewCADInfo{
+		Format:     strings.ToLower(strings.TrimSpace(cad.Format)),
+		SizeBytes:  cad.SourceSizeBytes,
+		PreviewURL: strings.TrimSpace(cad.PreviewURL),
+	}
+	capability.Raster = nil
+	capability.RasterMosaic = nil
+	capability.Model3D = nil
+	capability.GaussianSplat = nil
+	capability.PointCloud = nil
+	capability.Optimization = nil
+	capability.RealtimeTile = nil
+	capability.DefaultTileCacheID = nil
+	capability.CanUseQuickView = false
+	capability.RenderSource = ""
+	capability.RecommendedMode = models.PreviewModeBasicPreview
+	capability.QuickView = QuickViewRenderInfo{}
+	capability.CanGenerateTileCache = false
+	capability.TileCacheGeneration = TileCacheGeneration{Available: false, Reason: "CAD preview uses managed raster tiles"}
+	if capability.CAD.PreviewURL != "" {
+		capability.Status = QuickViewStatusUnavailable
+		capability.UnavailableReason = "source_format_direct_preview"
+		return
+	}
+	capability.Status = QuickViewStatusUnavailable
+	capability.UnavailableReason = "requires_cad_preview_generation"
+	capability.CAD.UnavailableReason = capability.UnavailableReason
+	capability.CAD.RecommendedAction = commonExecution.TaskTypeCADPreviewGeneration
 }
 
 func isSourceKSplat(gaussian *GaussianSplatKSplatSource) bool {
@@ -2533,6 +2593,22 @@ func PointCloudCOPCSourceFromAttributes(attrs map[string]interface{}) *PointClou
 		SourceSizeBytes: sourceSizeBytes,
 		Bounds3D:        bounds3DFromPayload(commonJSON.Section(typeInfo, "bounds_3d")),
 	}
+}
+
+func CADPreviewSourceFromAttributes(attrs map[string]interface{}) *CADPreviewSource {
+	if len(attrs) == 0 || !strings.EqualFold(commonJSON.String(attrs, "item", "data_type"), string(datatype.CAD)) {
+		return nil
+	}
+	itemFormat := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "format")))
+	if format.NormalizeFormat(itemFormat) != format.FormatDWG {
+		return nil
+	}
+	storageInfo := commonJSON.Section(attrs, "storage")
+	sizeBytes := commonJSON.InterfaceInt64(storageInfo["total_size"])
+	if sizeBytes <= 0 {
+		sizeBytes = commonJSON.InterfaceInt64(storageInfo["size"])
+	}
+	return &CADPreviewSource{Format: string(format.FormatDWG), SourceSizeBytes: sizeBytes}
 }
 
 func optionalBoolPtr(values map[string]interface{}, key string) *bool {

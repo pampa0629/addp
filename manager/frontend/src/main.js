@@ -22,6 +22,8 @@ import GaussianSplatPreview from '@/components/explorer/GaussianSplatPreview.vue
 import Model3DPreview from '@/components/explorer/Model3DPreview.vue'
 import PointCloudPreview from '@/components/explorer/PointCloudPreview.vue'
 import ThreeDTilesPreview from '@/components/explorer/ThreeDTilesPreview.vue'
+import S3MPreview from '@/components/explorer/S3MPreview.vue'
+import CadPreview from '@/components/explorer/CadPreview.vue'
 import { loadRuntimePlugins } from '@/plugins/previews/manifestLoader'
 import {
   ObjectCatalogPreview, ImagePreview, JsonPreview, PdfPreview, ContainerPreview,
@@ -99,7 +101,9 @@ if (typeof window !== 'undefined') {
     GaussianSplatPreview,
     Model3DPreview,
     PointCloudPreview,
-    ThreeDTilesPreview
+    ThreeDTilesPreview,
+    S3MPreview,
+    CadPreview
   }
 }
 

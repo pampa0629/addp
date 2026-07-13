@@ -22,6 +22,20 @@ type workflowOperatorAdapterSpec struct {
 	PublicParameters []commonModels.ParameterDescriptor
 	ResourceInputs   []workflowResourceInputSpec
 	ResourceOutputs  []workflowResourceOutputSpec
+	RuntimeParams    []string
+	AccessPlan       *workflowAccessPlanSpec
+}
+
+type workflowAccessPlanSpec struct {
+	SourceFormat      string
+	SourceKind        string
+	SourceScope       string
+	SourceDataTypes   []string
+	TargetFormat      string
+	TargetKind        string
+	TargetExtension   string
+	TargetContentType string
+	OptionParams      []string
 }
 
 var workflowOperatorAdapterSpecs = map[string]map[string]workflowOperatorAdapterSpec{
@@ -36,7 +50,119 @@ var workflowOperatorAdapterSpecs = map[string]map[string]workflowOperatorAdapter
 	"supermap_workflow": {
 		"datasource.open_postgis": workflowSuperMapOpenPostgisAdapterSpec(),
 		"datasource.create":       workflowSuperMapCreateUdbxAdapterSpec(),
+		"osgb_scene_to_s3m":       workflowSuperMapS3MAdapterSpec(),
 	},
+	"model3d_workflow":    model3DWorkflowAdapterSpecs(),
+	"pointcloud_workflow": pointCloudWorkflowAdapterSpecs(),
+}
+
+func workflowSuperMapS3MAdapterSpec() workflowOperatorAdapterSpec {
+	spec := conversionAdapterSpec(
+		"osgb_scene_to_s3m", "OSGB Scene", "osgb_scene", "directory", "directory", nil,
+		"s3m", "directory", "", "", nil,
+	)
+	for index := range spec.PublicParameters {
+		parameter := &spec.PublicParameters[index]
+		if parameter.UIType == "resource_tree_picker" {
+			parameter.UIConfig["engine_families"] = []string{"file"}
+			parameter.UIConfig["engine_types"] = []string{"nfs"}
+		}
+	}
+	return spec
+}
+
+func model3DWorkflowAdapterSpecs() map[string]workflowOperatorAdapterSpec {
+	return map[string]workflowOperatorAdapterSpec{
+		"osgb_to_glb":           conversionAdapterSpec("osgb_to_glb", "OSGB 模型", "osgb", "file", "file", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
+		"gltf_to_glb":           conversionAdapterSpec("gltf_to_glb", "glTF 模型", "gltf", "directory", "parent", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
+		"fbx_to_glb":            conversionAdapterSpec("fbx_to_glb", "FBX 模型", "fbx", "directory", "parent", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
+		"obj_to_glb":            conversionAdapterSpec("obj_to_glb", "OBJ 模型", "obj", "directory", "parent", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
+		"stl_to_glb":            conversionAdapterSpec("stl_to_glb", "STL 模型", "stl", "file", "file", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
+		"ifc_to_glb":            conversionAdapterSpec("ifc_to_glb", "IFC 模型", "ifc", "file", "file", nil, "glb", "file", ".glb", "model/gltf-binary", []commonModels.ParameterDescriptor{{Name: "center_model", Type: "boolean", Required: false, Default: true, Description: "转换时将 BIM 模型居中"}}),
+		"osgb_scene_to_3dtiles": conversionAdapterSpec("osgb_scene_to_3dtiles", "OSGB Scene", "osgb_scene", "directory", "directory", nil, "3dtiles", "directory", "", "", nil),
+		"gaussian_splat_to_ksplat": conversionAdapterSpec("gaussian_splat_to_ksplat", "Gaussian Splat", "ply", "file", "file", []string{"gaussian_splat"}, "ksplat", "file", ".ksplat", "application/vnd.gaussian-ksplat", []commonModels.ParameterDescriptor{
+			{Name: "compression_level", Type: "integer", Required: false, Default: 1, Description: "KSplat 压缩等级"},
+			{Name: "alpha_threshold", Type: "integer", Required: false, Default: 1, Description: "透明度阈值"},
+			{Name: "spherical_harmonics_degree", Type: "integer", Required: false, Default: 0, Description: "球谐阶数"},
+		}),
+	}
+}
+
+func pointCloudWorkflowAdapterSpecs() map[string]workflowOperatorAdapterSpec {
+	result := map[string]workflowOperatorAdapterSpec{}
+	for _, item := range []struct{ id, label, format string }{
+		{"las_to_copc", "LAS 点云", "las"},
+		{"laz_to_copc", "LAZ 点云", "laz"},
+		{"e57_to_copc", "E57 点云", "e57"},
+		{"pcd_to_copc", "PCD 点云", "pcd"},
+		{"xyz_to_copc", "XYZ 点云", "xyz"},
+	} {
+		result[item.id] = conversionAdapterSpec(item.id, item.label, item.format, "file", "file", []string{"point_cloud"}, "copc", "file", ".copc.laz", "application/vnd.laszip+copc", []commonModels.ParameterDescriptor{
+			{Name: "threads", Type: "integer", Required: false, Default: 4, Description: "COPC 写入线程数"},
+			{Name: "a_srs", Type: "string", Required: false, Description: "缺失时补充的源坐标参考系"},
+		})
+	}
+	return result
+}
+
+func conversionAdapterSpec(
+	operatorID, sourceLabel, sourceFormat, sourceKind, sourceScope string,
+	sourceDataTypes []string,
+	targetFormat, targetKind, targetExtension, contentType string,
+	options []commonModels.ParameterDescriptor,
+) workflowOperatorAdapterSpec {
+	fileFormats := []string{sourceFormat}
+	if operatorID == "gaussian_splat_to_ksplat" {
+		fileFormats = []string{"ply", "splat"}
+	}
+	sourceUI := map[string]interface{}{
+		"api_base_url":          "/api/v1/meta",
+		"engine_families":       []string{"file", "object"},
+		"selectable_node_types": []string{"file", "object", "directory"},
+		"file_formats":          fileFormats,
+		"resource_binding": map[string]interface{}{
+			"mode":          "existing",
+			"locator_param": "locator",
+		},
+	}
+	if len(sourceDataTypes) > 0 {
+		sourceUI["data_types"] = sourceDataTypes
+	}
+	public := []commonModels.ParameterDescriptor{
+		resourcePickerParameter("数据源", "选择已有的"+sourceLabel+"数据项。", nil, sourceUI),
+		resourceIdentityParameter("locator", "源数据项 ResourceLocator"),
+		resourcePickerParameter("输出位置", "选择业务存储中的目标目录、Bucket 或 Prefix。", nil, map[string]interface{}{
+			"api_base_url":                 "/api/v1/meta",
+			"engine_families":              []string{"file", "object"},
+			"selectable_parent_node_types": []string{"root", "directory", "dir", "bucket", "prefix"},
+			"target_name_kind":             map[bool]string{true: "dataset", false: "file"}[targetKind == "directory"],
+			"target_name_extension":        targetExtension,
+			"resource_binding": map[string]interface{}{
+				"mode":                 "target",
+				"parent_locator_param": "target_parent_locator",
+				"name_param":           "target_name",
+				"default_params":       map[string]interface{}{"write_mode": "create"},
+			},
+		}),
+		resourceIdentityParameter("target_parent_locator", "目标父节点 ResourceLocator"),
+		resourceIdentityParameter("target_name", "目标名称"),
+		{Name: "write_mode", Type: "string", Required: true, Default: "create", Enum: []string{"create", "replace"}, Description: "目标写入模式"},
+	}
+	public = append(public, options...)
+	optionNames := make([]string, 0, len(options))
+	for _, option := range options {
+		optionNames = append(optionNames, option.Name)
+	}
+	return workflowOperatorAdapterSpec{
+		OperatorID:       operatorID,
+		PublicParameters: public,
+		RuntimeParams:    []string{"access_plan", "options"},
+		AccessPlan: &workflowAccessPlanSpec{
+			SourceFormat: sourceFormat, SourceKind: sourceKind, SourceScope: sourceScope, SourceDataTypes: sourceDataTypes,
+			TargetFormat: targetFormat, TargetKind: targetKind, TargetExtension: targetExtension, TargetContentType: contentType,
+			OptionParams: optionNames,
+		},
+	}
 }
 
 func workflowSuperMapOpenPostgisAdapterSpec() workflowOperatorAdapterSpec {
@@ -338,9 +464,13 @@ func rejectUndeclaredWorkflowResourceParams(engineType, operatorID string, param
 }
 
 func workflowAdapterRuntimeParams(spec workflowOperatorAdapterSpec) map[string]struct{} {
-	result := map[string]struct{}{
-		"engine_id":       {},
-		"connection_info": {},
+	result := map[string]struct{}{}
+	if len(spec.ResourceInputs) > 0 || len(spec.ResourceOutputs) > 0 {
+		result["engine_id"] = struct{}{}
+		result["connection_info"] = struct{}{}
+	}
+	for _, param := range spec.RuntimeParams {
+		result[param] = struct{}{}
 	}
 	for _, input := range spec.ResourceInputs {
 		for _, param := range input.RuntimeParams {

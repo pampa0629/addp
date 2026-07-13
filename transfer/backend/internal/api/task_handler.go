@@ -8,7 +8,9 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
+	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/transfer/internal/models"
+	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -97,6 +99,7 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 // @Param page_size query int false "每页大小 | Page size" default(20)
 // @Param task_type query string false "任务类型，当前固定为 sync | Task type, currently fixed to sync"
 // @Param status query string false "任务定义状态: idle, running | Task definition status"
+// @Param runtime_boundary query string false "执行边界: bounded, continuous | Runtime boundary: bounded, continuous"
 // @Success 200 {object} models.ListProviderTasksResponse "获取成功 | Retrieved successfully"
 // @Failure 400 {object} map[string]string "不支持的任务类型 | Unsupported task type"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
@@ -113,6 +116,7 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 		req.PageSize = 20
 	}
 	req.TaskType = strings.TrimSpace(req.TaskType)
+	req.RuntimeBoundary = strings.TrimSpace(req.RuntimeBoundary)
 	if req.TaskType != "" && req.TaskType != commonExecution.TaskTypeSync {
 		commonAPI.BadRequestError(c, "unsupported task_type: "+req.TaskType)
 		return
@@ -138,6 +142,26 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 		Page:     req.Page,
 		PageSize: req.PageSize,
 	})
+}
+
+// ProviderListTasks 列出 Orchestrator v1 可编排的 bounded Transfer 任务。
+// @Summary 获取 TaskProvider bounded 任务列表 | List bounded TaskProvider tasks
+// @Description 仅返回 runtime.boundary=bounded 的任务，continuous task 不进入 Orchestrator v1 发现结果。| Return only runtime.boundary=bounded tasks; continuous tasks are excluded from Orchestrator v1 discovery.
+// @Tags         任务管理 | Task Management
+// @Produce json
+// @Param page query int false "页码 | Page number" default(1)
+// @Param page_size query int false "每页大小 | Page size" default(100)
+// @Param task_type query string false "任务类型，固定为 sync | Task type, fixed to sync"
+// @Success 200 {object} models.ListProviderTasksResponse
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /provider-tasks [get]
+// @Security BearerAuth
+func (h *TaskHandler) ProviderListTasks(c *gin.Context) {
+	query := c.Request.URL.Query()
+	query.Set("runtime_boundary", "bounded")
+	c.Request.URL.RawQuery = query.Encode()
+	h.ListTasks(c)
 }
 
 // UpdateTask 更新任务
@@ -320,6 +344,20 @@ func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
 
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
+	task, err := h.taskService.GetTask(c.Request.Context(), id, tenantID)
+	if err != nil {
+		respondTaskServiceError(c, err)
+		return
+	}
+	boundary, err := planner.TaskRuntimeBoundary(task.Config)
+	if err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	if boundary == planner.RuntimeBoundaryContinuous {
+		commonAPI.BadRequestError(c, "continuous Transfer tasks cannot be executed through TaskProvider")
+		return
+	}
 
 	execution, err := h.taskService.StartTaskWithContext(c.Request.Context(), id, tenantID, userID, triggerType, source, parentExecutionID)
 	if err != nil {
@@ -335,7 +373,7 @@ func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
 
 // PauseTask 暂停任务
 // @Summary 暂停任务 | Pause task
-// @Description 关闭任务自身定时调度，不中断当前 active execution | Disable the task-owned schedule without interrupting an active execution
+// @Description bounded 任务关闭自身定时调度；continuous 任务将 desired_state 置为 paused 并通知 runtime 取消当前 execution。| Disable a bounded task schedule, or set a continuous task desired_state to paused and request runtime cancellation.
 // @Tags         任务管理 | Task Management
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
@@ -356,12 +394,12 @@ func (h *TaskHandler) PauseTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Task paused successfully"})
+	c.JSON(http.StatusOK, gin.H{"message": i18nmiddleware.T(c, "transfer.task.paused")})
 }
 
 // ResumeTask 恢复任务
 // @Summary 恢复任务 | Resume task
-// @Description 恢复任务自身定时调度；watermark execution resume 由新 execution 自动读取 committed position 完成 | Re-enable the task-owned schedule; watermark execution resume is handled by a new execution reading the committed position
+// @Description bounded 任务恢复自身定时调度；continuous 任务创建新的 pending execution 并从 committed position 恢复。| Re-enable a bounded task schedule, or create a new pending continuous execution that resumes from committed position.
 // @Tags         任务管理 | Task Management
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
@@ -376,13 +414,41 @@ func (h *TaskHandler) ResumeTask(c *gin.Context) {
 	}
 
 	tenantID := c.GetUint("tenant_id")
+	userID := c.GetUint("user_id")
 
-	if err := h.taskService.ResumeTask(c.Request.Context(), id, tenantID); err != nil {
+	execution, err := h.taskService.ResumeTask(c.Request.Context(), id, tenantID, userID)
+	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
+	response := gin.H{"message": i18nmiddleware.T(c, "transfer.task.resumed")}
+	if execution != nil {
+		response["execution"] = execution
+	}
+	c.JSON(http.StatusOK, response)
+}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Task resumed successfully"})
+// StopTask 停止 continuous task。
+// @Summary 停止连续任务 | Stop continuous task
+// @Description 将 continuous task 的 desired_state 置为 stopped，并通知 runtime 取消当前 execution；bounded 任务不支持此操作。| Set a continuous task desired_state to stopped and request runtime cancellation; bounded tasks do not support this operation.
+// @Tags         任务管理 | Task Management
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /task-definitions/{id}/stop [post]
+// @Security BearerAuth
+func (h *TaskHandler) StopTask(c *gin.Context) {
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.taskService.StopTask(c.Request.Context(), id, c.GetUint("tenant_id")); err != nil {
+		respondTaskServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": i18nmiddleware.T(c, "transfer.task.stopped")})
 }
 
 // GetTaskStatistics 获取任务统计

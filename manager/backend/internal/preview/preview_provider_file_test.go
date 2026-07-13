@@ -735,6 +735,51 @@ func TestContainerChildPreviewProviderResolvesZIPTextEntry(t *testing.T) {
 	}
 }
 
+func TestContainerChildPreviewProviderDynamicallyDescribesZIPTextEntryWithoutMetaChildren(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	enginePlugin.content = zipBytesForFilePreviewTest(t, map[string]string{
+		"docs/readme.txt": "hello dynamically described document",
+	})
+	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
+	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins")
+	req := &PreviewRequest{
+		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		ItemType:     "file",
+		Schema:       "datasets",
+		Table:        "outer.zip",
+		PhysicalPath: "/datasets/outer.zip",
+		ChildName:    "docs/readme.txt",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatZIP),
+				"data_type": "container",
+				"layout":    "single",
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Mode != PreviewModeObject || preview.Object == nil || preview.Object.Content == nil {
+		t.Fatalf("preview = %#v, want object content", preview)
+	}
+	if preview.Object.Content.Kind != models.ObjectPreviewKindText || preview.Object.Content.Text != "hello dynamically described document" {
+		t.Fatalf("content = %#v, want dynamically described text entry", preview.Object.Content)
+	}
+}
+
 func TestContainerChildPreviewProviderDetectsUnknownZIPTextEntryForPreviewOnly(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
@@ -1041,6 +1086,58 @@ func TestContainerChildPreviewProviderPreviewsSQLiteTable(t *testing.T) {
 	}
 	if len(preview.Rows) != 2 || preview.Rows[1]["name"] != "Shanghai" {
 		t.Fatalf("Rows = %#v, want SQLite table rows", preview.Rows)
+	}
+}
+
+func TestContainerChildPreviewProviderDynamicallyDescribesUDBXTableWithoutMetaChildren(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingContentPlugin{engineType: "nfs", content: sqliteDatabaseBytesForPreviewTest(t)}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
+	req := &PreviewRequest{
+		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		ItemType:     "file",
+		Schema:       "datasets",
+		Table:        "cities.udbx",
+		PhysicalPath: "/datasets/cities.udbx",
+		ChildName:    "Cities",
+		Page:         1,
+		PageSize:     10,
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatUDBX),
+				"data_type": "container",
+				"layout":    "single",
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Mode != PreviewModeTable {
+		t.Fatalf("Mode = %q, want %q", preview.Mode, PreviewModeTable)
+	}
+	if !reflect.DeepEqual(preview.Columns, []string{"id", "name"}) {
+		t.Fatalf("Columns = %#v, want id/name", preview.Columns)
+	}
+	if len(preview.Rows) != 2 || preview.Rows[1]["name"] != "Shanghai" {
+		t.Fatalf("Rows = %#v, want dynamically described UDBX table rows", preview.Rows)
+	}
+
+	missingReq := *req
+	missingReq.ChildName = "MissingTable"
+	if _, err := provider.Preview(context.Background(), &missingReq); err == nil || !strings.Contains(err.Error(), `container child "MissingTable" not found`) {
+		t.Fatalf("Preview() missing child error = %v, want explicit child not found error", err)
 	}
 }
 

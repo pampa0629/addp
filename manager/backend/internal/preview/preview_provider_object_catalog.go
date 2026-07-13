@@ -59,9 +59,14 @@ func metaItemLiteAttributes(item *models.MetaItemLite) map[string]interface{} {
 
 type objectCatalogPreviewProvider struct {
 	metadataRepo   *repository.MetadataRepository
+	cadPreviewRepo *repository.CADPreviewRepository
 	metaClient     *commonClient.MetaClient
 	metaServiceURL string
 	content        *objectcontent.ObjectContentRegistry
+}
+
+func (p *objectCatalogPreviewProvider) SetCADPreviewRepository(repo *repository.CADPreviewRepository) {
+	p.cadPreviewRepo = repo
 }
 
 func NewObjectCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *objectcontent.ObjectContentRegistry) PreviewProvider {
@@ -270,7 +275,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 				preview.Object.SizeBytes = *item.SizeBytes
 			}
 		}
-		req := &objectcontent.ObjectContentRequest{
+		contentReq := &objectcontent.ObjectContentRequest{
 			Bucket:      bucket,
 			Path:        dir,
 			Name:        name,
@@ -281,15 +286,15 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 			Attributes:  preview.Object.Attributes,
 		}
 		if url := buildStorageStreamURL(resource.ID, preview.Object.StorageRef); url != "" {
-			req.PreviewURL = url
+			contentReq.PreviewURL = url
 			preview.Object.URL = url
 		}
 		if p.content != nil {
-			handler := p.content.Resolve(req)
+			handler := p.content.Resolve(contentReq)
 			if handler == nil {
 				return preview, nil
 			}
-			content, truncated, err := handler.Handle(ctx, req, nil)
+			content, truncated, err := handler.Handle(ctx, contentReq, nil)
 			if err != nil {
 				return nil, err
 			}
@@ -302,6 +307,11 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 			}
 		}
 		return preview, nil
+	}
+	if formatTypeFromMetaAttributes(combinedAttributes) == format.FormatS3M {
+		if applyS3MScenePreview(combinedAttributes, preview.Object, resource.ID, bucket, objectPath) {
+			return preview, nil
+		}
 	}
 
 	if nodeType == "bucket" || nodeType == "prefix" || nodeType == "directory" || objectPath == "" {
@@ -375,7 +385,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 	if p.content != nil && objectPath != "" {
 		// 按照路径统一规范拆分：path（目录，以/结尾）、name（文件名）
 		dir, name := commonModels.SplitObjectPath(objectPath)
-		req := &objectcontent.ObjectContentRequest{
+		contentReq := &objectcontent.ObjectContentRequest{
 			Bucket:      bucket,
 			Path:        dir,  // 目录路径（以 / 结尾）
 			Name:        name, // 文件名
@@ -385,14 +395,21 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 			Size:        stat.Size,
 			Attributes:  preview.Object.Attributes,
 		}
-		if url := buildStorageStreamURL(resource.ID, preview.Object.StorageRef); url != "" {
-			req.PreviewURL = url
+		if isCADObjectContentRequest(contentReq) {
+			url, err := resolveCADPreviewURL(ctx, p.cadPreviewRepo, req, contentReq)
+			if err != nil {
+				return nil, err
+			}
+			contentReq.PreviewURL = url
+			preview.Object.URL = url
+		} else if url := buildStorageStreamURL(resource.ID, preview.Object.StorageRef); url != "" {
+			contentReq.PreviewURL = url
 			preview.Object.URL = url
 		}
-		handler := p.content.Resolve(req)
+		handler := p.content.Resolve(contentReq)
 		if handler != nil {
-			if objectcontent.IsContainerFormat(req.Format) {
-				if content := containerPreviewContentFromMetaAttributes(preview.Object.Attributes, stat.Size, req.Path, req.Name); content != nil {
+			if objectcontent.IsContainerFormat(contentReq.Format) {
+				if content := containerPreviewContentFromMetaAttributes(preview.Object.Attributes, stat.Size, contentReq.Path, contentReq.Name); content != nil {
 					preview.Object.Content = content
 					return preview, nil
 				}
@@ -402,7 +419,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 					return catalogutil.OpenObjectContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
 				}
 
-				content, truncated, err := streamHandler.HandleStream(ctx, req, streamer)
+				content, truncated, err := streamHandler.HandleStream(ctx, contentReq, streamer)
 				if err != nil {
 					return nil, err
 				}
@@ -433,7 +450,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 					return data, truncated, nil
 				}
 
-				content, truncated, err := handler.Handle(ctx, req, fetcher)
+				content, truncated, err := handler.Handle(ctx, contentReq, fetcher)
 				if err != nil {
 					return nil, err
 				}

@@ -181,7 +181,7 @@
 `system.engines.capabilities` 使用 `engine.capabilities/v1` 结构。已注册插件引擎的插件 `Capabilities()` 方法只提供 Provider 能力模板；System 服务启动、Engine API 创建或更新插件引擎时，会忽略调用方提交的插件引擎 `capabilities`，并按 `engine_type` 使用插件模板和可选实例能力解析结果生成落库能力。实例能力解析只允许做只读探测，例如检查数据库扩展、版本或函数是否可用。Registry 能力注册接口中，非插件引擎必须提交标准 `engine.capabilities/v1`；插件引擎即使提交 `capabilities` 也会被 System 忽略，并改用插件模板和实例解析结果生成落库能力。内置扩展引擎通过 `/api/v1/internal/engines/register` 自注册时不提交 `capabilities`。
 
 **边界**：
-- 该字段只表达引擎自身能力，例如 catalog、facts、store、query、workflow、script。
+- 该字段只表达引擎自身能力，例如 catalog、facts、store、change stream read、query、workflow、script。
 - 不表达 Transfer、Manager Preview、Meta 等 ADDP 模块对某个引擎的适配状态。
 - 上层模块可以读取该字段形成自己的执行策略，但模块适配情况不写回该字段。
 - 旧版 `storage[]` / `compute[]`、`dev_modes`、`supported_sources` 结构已不再兼容，发现后应刷新为当前结构。
@@ -221,13 +221,28 @@ type ComputeCapabilities struct {
 |---|---|
 | `schema_version` | 固定为 `engine.capabilities/v1` |
 | `engine_type` | 引擎类型，如 `postgresql`、`mysql`、`acme_geo_workflow` |
-| `engine_family` | 粗粒度引擎族，如 `tabular`、`object`、`file`、`dynamic_schema`、`graph`、`workflow`、`script` |
+| `engine_family` | 粗粒度引擎族，如 `tabular`、`object`、`file`、`dynamic_schema`、`graph`、`event_stream`、`workflow`、`script` |
 | `storage` | 存储、目录、catalog facts、内容访问能力 |
 | `compute` | 查询、工作流、脚本或 Notebook 运行能力 |
 | `limits` | 跨能力限制，有真实调用方时使用 |
 | `extensions` | 引擎特有补充信息，不得替代核心字段 |
 
 详细规范见 [ADDP 引擎能力声明规范](../../../docs/spec/addp引擎能力声明规范.md)。
+
+业务 Kafka Engine 插件已实现 `engine_family=event_stream`、`service -> topic` catalog 和 `storage.store.change_stream_read`，System 后端可按普通 Engine 注册；Console 配置表单与 Transfer continuous runtime 尚未开放。Infra Kafka 属于 ADDP 部署配置，不写入 `system.engines`，也不产生本表 capabilities 记录。
+
+Kafka `connection_info` 第一版字段：
+
+| 字段 | 说明 |
+|---|---|
+| `bootstrap_servers` | 必填，逗号分隔的 broker 地址。 |
+| `client_id` | 可选客户端标识。 |
+| `security_protocol` | `plaintext` / `ssl` / `sasl_plaintext` / `sasl_ssl`，默认 `plaintext`。 |
+| `sasl_mechanism` | SASL 时必填：`plain` / `scram-sha-256` / `scram-sha-512`。 |
+| `username` / `password` | SASL 凭据；`password` 属于敏感字段。 |
+| `tls_ca_cert` | 可选 PEM CA。 |
+| `tls_client_cert` / `tls_client_key` | 可选 mTLS 证书与私钥，必须同时提供；私钥属于敏感字段。 |
+| `tls_insecure_skip_verify` | 可选显式跳过服务端证书校验，默认 false。 |
 
 #### PostgreSQL 示例
 ```json
@@ -246,7 +261,23 @@ type ComputeCapabilities struct {
     },
     "catalog": {"supported": true, "real_time": true, "system_filtering": true},
     "facts": {"supported": true, "field_info": true, "statistics": true, "indexes": true, "constraints": true, "spatial_facts": true, "native_facts": true},
-    "store": {"batch_read": true, "table_read_session": true, "batch_write": true, "table_write_session": true, "table_write_prepare": true, "delete": true}
+    "store": {
+      "batch_read": true,
+      "table_read_session": true,
+      "batch_write": true,
+      "table_write_session": true,
+      "table_write_prepare": true,
+      "bounded_watermark_read": true,
+      "table_upsert": {"supported": true, "idempotent": true},
+      "partitioned_table_change_apply": {
+        "supported": true,
+        "atomic_position_commit": true,
+        "monotonic": true,
+        "position_types": ["kafka_offset/v1"],
+        "operations": ["upsert"]
+      },
+      "delete": true
+    }
   },
   "compute": {
     "query": {

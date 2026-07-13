@@ -26,15 +26,140 @@
         />
       </el-form-item>
 
+      <el-divider content-position="left">{{ t('transfer.taskWizard.loadSettings') }}</el-divider>
+
+      <el-alert
+        v-if="isContinuousTask"
+        :title="t('transfer.taskWizard.continuousSyncTitle')"
+        :description="t('transfer.taskWizard.continuousSyncDesc')"
+        type="info"
+        :closable="false"
+        show-icon
+        class="incremental-alert"
+      />
+
+      <template v-if="isContinuousTask">
+        <el-form-item :label="t('transfer.taskWizard.continuousKeyFieldsLabel')" required>
+          <el-select
+            v-model="formData.continuousKeyFields"
+            multiple
+            filterable
+            :placeholder="t('transfer.taskWizard.continuousKeyFieldsPlaceholder')"
+            class="field-select"
+          >
+            <el-option
+              v-for="field in continuousSourceFieldOptions"
+              :key="field.value"
+              :label="field.label"
+              :value="field.value"
+            />
+          </el-select>
+          <div class="field-hint block-hint">{{ t('transfer.taskWizard.continuousKeyFieldsHint') }}</div>
+        </el-form-item>
+
+        <el-form-item :label="t('transfer.taskWizard.continuousTargetKeysLabel')">
+          <div class="derived-value">{{ continuousTargetKeyText }}</div>
+          <div class="field-hint block-hint">{{ t('transfer.taskWizard.continuousTargetKeysHint') }}</div>
+        </el-form-item>
+
+        <el-form-item :label="t('transfer.taskWizard.continuousInitialPositionLabel')" required>
+          <el-radio-group v-model="formData.continuousInitialPosition">
+            <el-radio value="earliest">{{ t('transfer.taskWizard.continuousInitialEarliest') }}</el-radio>
+            <el-radio value="latest">{{ t('transfer.taskWizard.continuousInitialLatest') }}</el-radio>
+          </el-radio-group>
+          <div class="field-hint block-hint">{{ t('transfer.taskWizard.continuousInitialPositionHint') }}</div>
+        </el-form-item>
+      </template>
+
+      <el-form-item v-else :label="t('transfer.taskWizard.loadModeLabel')">
+        <el-radio-group v-model="formData.loadMode">
+          <el-radio value="snapshot">{{ t('transfer.taskWizard.snapshotLoad') }}</el-radio>
+          <el-radio value="incremental" :disabled="!watermarkIncrementalSupported">
+            {{ t('transfer.taskWizard.watermarkIncrementalLoad') }}
+          </el-radio>
+        </el-radio-group>
+        <div v-if="!watermarkIncrementalSupported" class="field-hint block-hint">
+          {{ t('transfer.taskWizard.watermarkIncrementalUnsupported') }}
+        </div>
+      </el-form-item>
+
+      <template v-if="!isContinuousTask && formData.loadMode === 'incremental'">
+        <el-alert
+          :title="t('transfer.taskWizard.watermarkIncrementalNoticeTitle')"
+          :description="t('transfer.taskWizard.watermarkIncrementalNotice')"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="incremental-alert"
+        />
+
+        <el-form-item :label="t('transfer.taskWizard.watermarkFieldLabel')" required>
+          <el-select
+            v-model="formData.watermarkField"
+            filterable
+            :placeholder="t('transfer.taskWizard.watermarkFieldPlaceholder')"
+            class="field-select"
+          >
+            <el-option
+              v-for="field in sourceFieldOptions"
+              :key="field.value"
+              :label="field.label"
+              :value="field.value"
+            />
+          </el-select>
+          <div class="field-hint block-hint">{{ t('transfer.taskWizard.watermarkFieldHint') }}</div>
+          <div v-if="selectedWatermarkIsPrimaryKey" class="field-warning block-hint">
+            {{ t('transfer.taskWizard.watermarkPrimaryKeyWarning') }}
+          </div>
+        </el-form-item>
+
+        <el-form-item :label="t('transfer.taskWizard.tieBreakerLabel')" required>
+          <el-select
+            v-model="formData.watermarkTieBreakers"
+            multiple
+            filterable
+            :placeholder="t('transfer.taskWizard.tieBreakerPlaceholder')"
+            class="field-select"
+          >
+            <el-option
+              v-for="field in sourceFieldOptions"
+              :key="field.value"
+              :label="field.label"
+              :value="field.value"
+              :disabled="field.value === formData.watermarkField"
+            />
+          </el-select>
+          <div class="field-hint block-hint">{{ t('transfer.taskWizard.tieBreakerHint') }}</div>
+        </el-form-item>
+
+        <el-form-item :label="t('transfer.taskWizard.targetKeysLabel')" required>
+          <el-select
+            v-model="formData.targetKeys"
+            multiple
+            filterable
+            :placeholder="t('transfer.taskWizard.targetKeysPlaceholder')"
+            class="field-select"
+          >
+            <el-option
+              v-for="field in targetFieldOptions"
+              :key="field.value"
+              :label="field.label"
+              :value="field.value"
+            />
+          </el-select>
+          <div class="field-hint block-hint">{{ t('transfer.taskWizard.targetKeysHint') }}</div>
+        </el-form-item>
+      </template>
+
       <!-- 调度计划 -->
-      <el-form-item :label="t('transfer.taskWizard.scheduleLabel2')">
+      <el-form-item v-if="!isContinuousTask" :label="t('transfer.taskWizard.scheduleLabel2')">
         <el-radio-group v-model="scheduleMode">
           <el-radio value="once">{{ t('transfer.taskWizard.runOnce') }}</el-radio>
           <el-radio value="cron">{{ t('transfer.taskWizard.cronSchedule') }}</el-radio>
         </el-radio-group>
       </el-form-item>
 
-      <el-form-item v-if="scheduleMode === 'cron'" :label="t('transfer.taskWizard.cronExpression')">
+      <el-form-item v-if="!isContinuousTask && scheduleMode === 'cron'" :label="t('transfer.taskWizard.cronExpression')">
         <ScheduleConfig
           v-model="formData.schedule"
           :preset-list="transferSchedulePresets"
@@ -42,7 +167,7 @@
         />
       </el-form-item>
 
-      <el-form-item v-if="scheduleMode === 'cron'" :label="t('transfer.taskWizard.enableScheduleLabel')">
+      <el-form-item v-if="!isContinuousTask && scheduleMode === 'cron'" :label="t('transfer.taskWizard.enableScheduleLabel')">
         <el-switch v-model="formData.enabled" />
         <span class="form-hint">{{ t('transfer.taskWizard.enableScheduleHint') }}</span>
       </el-form-item>
@@ -50,7 +175,7 @@
       <!-- 高级选项 -->
       <el-divider content-position="left">{{ t('transfer.taskWizard.advancedOptions') }}</el-divider>
 
-      <el-form-item :label="t('transfer.taskWizard.batchProcessSize')">
+      <el-form-item v-if="!isContinuousTask" :label="t('transfer.taskWizard.batchProcessSize')">
         <el-input-number
           v-model="formData.batchSize"
           :min="100"
@@ -59,12 +184,22 @@
         />
         <span class="form-hint">{{ t('transfer.taskWizard.batchProcessHint') }}</span>
       </el-form-item>
+
+      <el-form-item v-else :label="t('transfer.taskWizard.continuousPollBatchSizeLabel')">
+        <el-input-number
+          v-model="formData.continuousPollBatchSize"
+          :min="1"
+          :max="50000"
+          :step="100"
+        />
+        <span class="form-hint">{{ t('transfer.taskWizard.continuousPollBatchSizeHint') }}</span>
+      </el-form-item>
     </el-form>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ScheduleConfig } from '@common-ui'
 
@@ -78,14 +213,86 @@ const props = defineProps({
 })
 
 const formRef = ref(null)
-const scheduleMode = ref('once')
+const scheduleMode = ref(props.wizardState.schedule.value ? 'cron' : 'once')
 const formData = reactive({
   taskName: props.wizardState.taskName.value,
   taskDescription: props.wizardState.taskDescription.value,
   schedule: props.wizardState.schedule.value,
   enabled: props.wizardState.enabled.value,
-  batchSize: props.wizardState.batchSize.value
+  batchSize: props.wizardState.batchSize.value,
+  loadMode: props.wizardState.loadMode.value,
+  watermarkField: props.wizardState.watermarkField.value,
+  watermarkTieBreakers: [...props.wizardState.watermarkTieBreakers.value],
+  targetKeys: [...props.wizardState.targetKeys.value],
+  continuousKeyFields: [...props.wizardState.continuousKeyFields.value],
+  continuousInitialPosition: props.wizardState.continuousInitialPosition.value,
+  continuousPollBatchSize: props.wizardState.continuousPollBatchSize.value
 })
+
+const isContinuousTask = computed(() => props.wizardState.isContinuousTask.value)
+const watermarkIncrementalSupported = computed(() => props.wizardState.supportsWatermarkIncremental.value)
+
+const continuousSourceFieldOptions = computed(() => {
+  return uniqueFieldOptions(
+    props.wizardState.fieldMappings.value.map(mapping => ({
+      value: String(mapping?.source_field || '').trim(),
+      type: String(mapping?.target_type || '').trim()
+    }))
+  )
+})
+
+const continuousTargetKeyText = computed(() => {
+  return props.wizardState.continuousTargetKeys.value.join(', ') || t('transfer.taskWizard.notConfigured')
+})
+
+const sourceFieldOptions = computed(() => {
+  return uniqueFieldOptions(
+    props.wizardState.sourceFields.value.map(field => ({
+      value: String(field?.name || '').trim(),
+      type: String(field?.type || '').trim(),
+      primaryKey: isPrimaryKeyField(field)
+    }))
+  )
+})
+
+const selectedWatermarkIsPrimaryKey = computed(() => {
+  return sourceFieldOptions.value.some(field => field.value === formData.watermarkField && field.primaryKey)
+})
+
+const targetFieldOptions = computed(() => {
+  return uniqueFieldOptions(
+    props.wizardState.fieldMappings.value.map(mapping => ({
+      value: String(mapping?.target_field || '').trim(),
+      type: String(mapping?.target_type || '').trim()
+    }))
+  )
+})
+
+function uniqueFieldOptions(fields) {
+  const seen = new Set()
+  return fields
+    .filter(field => field.value)
+    .filter(field => {
+      const key = field.value.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .map(field => ({
+      value: field.value,
+      label: field.type
+        ? `${field.value} (${field.type})${field.primaryKey ? ` · ${t('transfer.taskWizard.primaryKeyField')}` : ''}`
+        : field.value,
+      primaryKey: field.primaryKey === true
+    }))
+}
+
+function isPrimaryKeyField(field) {
+  return field?.primary_key === true ||
+    field?.primaryKey === true ||
+    field?.is_primary_key === true ||
+    field?.isPrimaryKey === true
+}
 
 const transferSchedulePresets = [
   {
@@ -140,6 +347,13 @@ watch(
     props.wizardState.schedule.value = scheduleMode.value === 'cron' ? value.schedule : ''
     props.wizardState.enabled.value = scheduleMode.value === 'cron' ? value.enabled : false
     props.wizardState.batchSize.value = value.batchSize
+    props.wizardState.loadMode.value = value.loadMode
+    props.wizardState.watermarkField.value = value.watermarkField
+    props.wizardState.watermarkTieBreakers.value = [...value.watermarkTieBreakers]
+    props.wizardState.targetKeys.value = [...value.targetKeys]
+    props.wizardState.updateContinuousKeyFields(value.continuousKeyFields)
+    props.wizardState.continuousInitialPosition.value = value.continuousInitialPosition
+    props.wizardState.continuousPollBatchSize.value = value.continuousPollBatchSize
   },
   { deep: true, immediate: true }
 )
@@ -148,6 +362,53 @@ watch(scheduleMode, (mode) => {
   props.wizardState.schedule.value = mode === 'cron' ? formData.schedule : ''
   props.wizardState.enabled.value = mode === 'cron' ? formData.enabled : false
 })
+
+watch(isContinuousTask, (continuous) => {
+  if (!continuous) return
+  scheduleMode.value = 'once'
+  formData.schedule = ''
+  formData.enabled = false
+  props.wizardState.schedule.value = ''
+  props.wizardState.enabled.value = false
+}, { immediate: true })
+
+watch(
+  () => props.wizardState.continuousKeyFields.value,
+  (fields) => {
+    formData.continuousKeyFields = [...fields]
+  },
+  { deep: true }
+)
+
+watch(
+  () => formData.loadMode,
+  (mode) => {
+    if (!isContinuousTask.value && mode === 'incremental') {
+      props.wizardState.initializeIncrementalDefaults()
+      formData.watermarkField = props.wizardState.watermarkField.value
+      formData.watermarkTieBreakers = [...props.wizardState.watermarkTieBreakers.value]
+      formData.targetKeys = [...props.wizardState.targetKeys.value]
+    }
+  }
+)
+
+watch(watermarkIncrementalSupported, (supported) => {
+  if (!supported && formData.loadMode === 'incremental') {
+    formData.loadMode = 'snapshot'
+  }
+})
+
+watch(
+  () => formData.watermarkField,
+  (field) => {
+    formData.watermarkTieBreakers = formData.watermarkTieBreakers.filter(item => item !== field)
+    props.wizardState.watermarkField.value = field
+    props.wizardState.watermarkTieBreakers.value = [...formData.watermarkTieBreakers]
+    props.wizardState.initializeIncrementalDefaults()
+    formData.watermarkTieBreakers = [...props.wizardState.watermarkTieBreakers.value]
+    formData.targetKeys = [...props.wizardState.targetKeys.value]
+  }
+)
 </script>
 
 <style scoped>
@@ -165,5 +426,36 @@ watch(scheduleMode, (mode) => {
   margin-left: 12px;
   font-size: 12px;
   color: var(--addp-text-tertiary);
+}
+
+.field-select {
+  width: 100%;
+}
+
+.field-hint {
+  font-size: 12px;
+  color: var(--addp-text-tertiary);
+  line-height: 1.5;
+}
+
+.field-warning {
+  font-size: 12px;
+  color: var(--el-color-warning);
+  line-height: 1.5;
+}
+
+.block-hint {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.incremental-alert {
+  margin-bottom: 18px;
+}
+
+.derived-value {
+  min-height: 32px;
+  line-height: 32px;
+  color: var(--addp-text-primary);
 }
 </style>

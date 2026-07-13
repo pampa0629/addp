@@ -9,6 +9,7 @@
 | 字段 | 说明 |
 |---|---|
 | `id` | 任务 ID。 |
+| `apply_identity` | 服务端生成且不可修改的全局 UUID；不进入任务 config 或公开请求。continuous PostgreSQL 使用它标识业务目标库 apply ledger 主线。 |
 | `tenant_id` | 租户 ID。 |
 | `name` | 任务名称。 |
 | `description` | 任务描述。 |
@@ -19,6 +20,7 @@
 | `enabled` | 定时任务是否启用。 |
 | `auto_scan_metadata` | 成功后是否触发 Meta deep scan。 |
 | `status` | `idle` 或 `running`。 |
+| `desired_state` | continuous runtime 用户期望状态：`running` / `paused` / `stopped`，默认 `stopped`；bounded task 不消费。 |
 | `progress` | 当前任务进度百分比。 |
 | `created_by` | 创建人 ID。 |
 | `last_execution_id` | 最近一次执行 ID。 |
@@ -85,7 +87,7 @@
 | `representation` | `native` 或 `encoded`。 |
 | `format` | encoded endpoint 必填。 |
 | `options` | 格式读写选项。 |
-| `runtime.boundary` | 执行边界；当前只支持 `bounded`。 |
+| `runtime.boundary` | 执行边界：`bounded` 或 `continuous`；continuous 第一版契约固定为业务 Kafka keyed JSON -> PostgreSQL upsert。 |
 | `load.mode` | `snapshot` 或 PostgreSQL native table 的 `incremental`。 |
 | `load.change_detection` | incremental 第一版只支持复合 watermark。 |
 | `target.policy.apply_mode` | `replace` / `append` / `upsert`；按任务组合和目标 Provider 校验。 |
@@ -114,9 +116,12 @@
 | `GET` | `/task-definitions/:id` | 查询任务定义详情。 |
 | `PUT` | `/task-definitions/:id` | 更新任务定义。 |
 | `DELETE` | `/task-definitions/:id` | 删除任务定义。 |
-| `POST` | `/task-definitions/:id/start` | 创建 execution 并入队执行。 |
-| `POST` | `/task-definitions/:id/pause` | 关闭 owner schedule；不停止 active execution。 |
-| `POST` | `/task-definitions/:id/resume` | 恢复 owner schedule。 |
+| `POST` | `/task-definitions/:id/start` | bounded 创建 execution 并入队；continuous 原子设置 running 并创建 pending execution。 |
+| `POST` | `/task-definitions/:id/pause` | bounded 关闭 owner schedule；continuous 设置 paused 并通知 runtime 取消 execution。 |
+| `POST` | `/task-definitions/:id/resume` | bounded 恢复 owner schedule；continuous 设置 running 并创建新 pending execution。 |
+| `POST` | `/task-definitions/:id/stop` | 仅 continuous：设置 stopped 并通知 runtime 取消 execution。 |
 | `GET` | `/task-definitions/:id/executions` | 查询任务执行记录。 |
 
-`/task-definitions/:id/resume` 是调度控制 API，不是 execution resume 参数。PostgreSQL watermark execution 的 resume 由新 execution 自动读取 `transfer.sync_states` 完成。
+bounded 的 `/task-definitions/:id/resume` 是调度控制 API；PostgreSQL watermark execution 的 resume 由新 execution 自动读取 `transfer.sync_states` 完成。continuous resume 总是创建新 execution，不复用已取消 execution。
+
+TaskProvider 注册的任务发现地址为服务端强制过滤 bounded 的 `/provider-tasks`，避免 Orchestrator v1 选择 continuous task；普通用户任务列表继续使用 `/tasks`。

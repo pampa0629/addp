@@ -34,7 +34,7 @@ func TestPreprocessWorkflowParamsDerivesTableSourceFromLocator(t *testing.T) {
 		},
 	}
 
-	got, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow)
+	got, err := svc.preprocessWorkflowParams(context.Background(), 7, "geopython_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParams() error = %v", err)
 	}
@@ -69,7 +69,7 @@ func TestPreprocessWorkflowParamsDerivesSuperMapPostgisSourceFromLocator(t *test
 		},
 	}
 
-	got, err := svc.preprocessWorkflowParams(context.Background(), "supermap_workflow", workflow)
+	got, err := svc.preprocessWorkflowParams(context.Background(), 7, "supermap_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParams() error = %v", err)
 	}
@@ -104,7 +104,7 @@ func TestPreprocessWorkflowParamsDerivesSuperMapPostgisTargetFromParentLocator(t
 		},
 	}
 
-	got, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), "supermap_workflow", workflow)
+	got, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "supermap_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParamsWithTargets() error = %v", err)
 	}
@@ -153,7 +153,7 @@ func TestPreprocessWorkflowParamsDerivesSuperMapUdbxTargetFromNFSDirectory(t *te
 		},
 	}
 
-	got, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), "supermap_workflow", workflow)
+	got, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "supermap_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParamsWithTargets() error = %v", err)
 	}
@@ -188,7 +188,7 @@ func TestPreprocessWorkflowParamsDerivesTableTargetFromParentLocator(t *testing.
 		},
 	}
 
-	got, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow)
+	got, err := svc.preprocessWorkflowParams(context.Background(), 7, "geopython_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParams() error = %v", err)
 	}
@@ -222,7 +222,7 @@ func TestPreprocessWorkflowParamsDerivesFileSourceFromLocator(t *testing.T) {
 		},
 	}
 
-	got, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow)
+	got, err := svc.preprocessWorkflowParams(context.Background(), 7, "geopython_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParams() error = %v", err)
 	}
@@ -253,7 +253,7 @@ func TestPreprocessWorkflowParamsDerivesObjectSourceAsSparkPath(t *testing.T) {
 		},
 	}
 
-	got, err := svc.preprocessWorkflowParams(context.Background(), "spark_workflow", workflow)
+	got, err := svc.preprocessWorkflowParams(context.Background(), 7, "spark_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParams() error = %v", err)
 	}
@@ -281,7 +281,7 @@ func TestPreprocessWorkflowParamsDerivesFileTargetFromParentLocator(t *testing.T
 		},
 	}
 
-	got, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow)
+	got, err := svc.preprocessWorkflowParams(context.Background(), 7, "geopython_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParams() error = %v", err)
 	}
@@ -309,7 +309,7 @@ func TestPreprocessWorkflowParamsDerivesObjectTargetFromBucketLocator(t *testing
 		},
 	}
 
-	got, err := svc.preprocessWorkflowParams(context.Background(), "spark_workflow", workflow)
+	got, err := svc.preprocessWorkflowParams(context.Background(), 7, "spark_workflow", workflow)
 	if err != nil {
 		t.Fatalf("preprocessWorkflowParams() error = %v", err)
 	}
@@ -336,7 +336,7 @@ func TestPreprocessWorkflowParamsRequiresTargetNameWithParentLocator(t *testing.
 		},
 	}
 
-	if _, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow); err == nil {
+	if _, err := svc.preprocessWorkflowParams(context.Background(), 7, "geopython_workflow", workflow); err == nil {
 		t.Fatal("preprocessWorkflowParams() error = nil, want target_name error")
 	}
 }
@@ -359,7 +359,7 @@ func TestPreprocessWorkflowParamsRejectsDirectEngineID(t *testing.T) {
 		},
 	}
 
-	if _, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow); err == nil {
+	if _, err := svc.preprocessWorkflowParams(context.Background(), 7, "geopython_workflow", workflow); err == nil {
 		t.Fatal("preprocessWorkflowParams() error = nil, want direct engine_id error")
 	}
 }
@@ -379,7 +379,7 @@ func TestPreprocessWorkflowParamsRejectsLocatorForUndeclaredOperator(t *testing.
 		},
 	}
 
-	_, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow)
+	_, err := svc.preprocessWorkflowParams(context.Background(), 7, "geopython_workflow", workflow)
 	if err == nil || !strings.Contains(err.Error(), "未声明 Develop Adapter Spec") {
 		t.Fatalf("preprocessWorkflowParams() error = %v, want undeclared adapter spec error", err)
 	}
@@ -400,7 +400,7 @@ func TestPreprocessWorkflowParamsRejectsOperatorAdapterFromDifferentRuntime(t *t
 		},
 	}
 
-	_, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow)
+	_, err := svc.preprocessWorkflowParams(context.Background(), 7, "geopython_workflow", workflow)
 	if err == nil || !strings.Contains(err.Error(), "未声明 Develop Adapter Spec") {
 		t.Fatalf("preprocessWorkflowParams() error = %v, want runtime-specific adapter spec error", err)
 	}
@@ -415,7 +415,7 @@ func TestPreprocessWorkflowParamsRejectsMissingTasks(t *testing.T) {
 		},
 	}
 
-	if _, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow); err == nil {
+	if _, err := svc.preprocessWorkflowParams(context.Background(), 7, "geopython_workflow", workflow); err == nil {
 		t.Fatal("preprocessWorkflowParams() error = nil, want missing tasks error")
 	}
 }
@@ -426,7 +426,7 @@ func TestPreprocessWorkflowParamsRejectsEmptyTasks(t *testing.T) {
 		"tasks": []interface{}{},
 	}
 
-	if _, err := svc.preprocessWorkflowParams(context.Background(), "geopython_workflow", workflow); err == nil {
+	if _, err := svc.preprocessWorkflowParams(context.Background(), 7, "geopython_workflow", workflow); err == nil {
 		t.Fatal("preprocessWorkflowParams() error = nil, want empty tasks error")
 	}
 }
@@ -441,9 +441,9 @@ func TestWorkflowRuntimeOptionsMapsSparkClusterID(t *testing.T) {
 		},
 	}
 
-	got, err := svc.workflowRuntimeOptions("spark_workflow", cfg)
+	got, err := svc.workflowRuntimeOptions(7, "spark_workflow", cfg)
 	if err != nil {
-		t.Fatalf("workflowRuntimeOptions() error = %v", err)
+		t.Fatalf("workflowRuntimeOptions(7, ) error = %v", err)
 	}
 	if got["engine_id"] != uint(34) {
 		t.Fatalf("runtime engine_id = %#v, want 34", got["engine_id"])
@@ -460,9 +460,9 @@ func TestWorkflowRuntimeOptionsMapsSparkClusterIDString(t *testing.T) {
 		},
 	}
 
-	got, err := svc.workflowRuntimeOptions("spark_workflow", cfg)
+	got, err := svc.workflowRuntimeOptions(7, "spark_workflow", cfg)
 	if err != nil {
-		t.Fatalf("workflowRuntimeOptions() error = %v", err)
+		t.Fatalf("workflowRuntimeOptions(7, ) error = %v", err)
 	}
 	if got["engine_id"] != uint(34) {
 		t.Fatalf("runtime engine_id = %#v, want 34", got["engine_id"])
@@ -473,8 +473,8 @@ func TestWorkflowRuntimeOptionsRequiresSparkClusterIDForSparkWorkflow(t *testing
 	svc := newWorkflowEngineServiceWithEnginesForTest(t, nil)
 	cfg := models.WorkflowExecutionConfig{}
 
-	if _, err := svc.workflowRuntimeOptions("spark_workflow", cfg); err == nil {
-		t.Fatal("workflowRuntimeOptions() error = nil, want missing spark_cluster_id error")
+	if _, err := svc.workflowRuntimeOptions(7, "spark_workflow", cfg); err == nil {
+		t.Fatal("workflowRuntimeOptions(7, ) error = nil, want missing spark_cluster_id error")
 	}
 }
 
@@ -486,8 +486,8 @@ func TestWorkflowRuntimeOptionsRejectsSparkClusterIDForNonSparkWorkflow(t *testi
 		},
 	}
 
-	if _, err := svc.workflowRuntimeOptions("geopython_workflow", cfg); err == nil {
-		t.Fatal("workflowRuntimeOptions() error = nil, want non-spark workflow error")
+	if _, err := svc.workflowRuntimeOptions(7, "geopython_workflow", cfg); err == nil {
+		t.Fatal("workflowRuntimeOptions(7, ) error = nil, want non-spark workflow error")
 	}
 }
 
@@ -499,8 +499,8 @@ func TestWorkflowRuntimeOptionsRejectsInvalidSparkClusterID(t *testing.T) {
 		},
 	}
 
-	if _, err := svc.workflowRuntimeOptions("spark_workflow", cfg); err == nil {
-		t.Fatal("workflowRuntimeOptions() error = nil, want invalid spark_cluster_id error")
+	if _, err := svc.workflowRuntimeOptions(7, "spark_workflow", cfg); err == nil {
+		t.Fatal("workflowRuntimeOptions(7, ) error = nil, want invalid spark_cluster_id error")
 	}
 }
 
@@ -514,8 +514,8 @@ func TestWorkflowRuntimeOptionsRejectsNonSparkRuntimeEngine(t *testing.T) {
 		},
 	}
 
-	if _, err := svc.workflowRuntimeOptions("spark_workflow", cfg); err == nil {
-		t.Fatal("workflowRuntimeOptions() error = nil, want non-spark runtime engine error")
+	if _, err := svc.workflowRuntimeOptions(7, "spark_workflow", cfg); err == nil {
+		t.Fatal("workflowRuntimeOptions(7, ) error = nil, want non-spark runtime engine error")
 	}
 }
 
@@ -529,8 +529,8 @@ func TestWorkflowRuntimeOptionsRejectsInactiveSparkRuntimeEngine(t *testing.T) {
 		},
 	}
 
-	if _, err := svc.workflowRuntimeOptions("spark_workflow", cfg); err == nil {
-		t.Fatal("workflowRuntimeOptions() error = nil, want inactive spark runtime engine error")
+	if _, err := svc.workflowRuntimeOptions(7, "spark_workflow", cfg); err == nil {
+		t.Fatal("workflowRuntimeOptions(7, ) error = nil, want inactive spark runtime engine error")
 	}
 }
 
@@ -631,6 +631,7 @@ func TestExecuteWorkflowWaitsForAsyncRuntimeTerminalStatus(t *testing.T) {
 	svc := newWorkflowEngineServiceForTest(t, 91, engineType)
 	resp, err := svc.ExecuteWorkflow(
 		context.Background(),
+		7,
 		map[string]interface{}{
 			"tasks": []interface{}{
 				map[string]interface{}{
@@ -683,6 +684,7 @@ func TestExecuteWorkflowReturnsErrorForTerminalRuntimeFailure(t *testing.T) {
 	svc := newWorkflowEngineServiceForTest(t, 92, engineType)
 	_, err := svc.ExecuteWorkflow(
 		context.Background(),
+		7,
 		map[string]interface{}{
 			"tasks": []interface{}{
 				map[string]interface{}{
@@ -701,6 +703,135 @@ func TestExecuteWorkflowReturnsErrorForTerminalRuntimeFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "EXECUTION_FAILED") || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("error = %v, want runtime failure details", err)
+	}
+}
+
+func TestConversionAdaptersDeriveAccessPlanV1(t *testing.T) {
+	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
+		1: {
+			ID: 1, Name: "business-nfs", EngineType: "nfs", IsActive: true,
+			ConnectionInfo: commonModels.ConnectionInfo{"mount_path": "/data"},
+		},
+		2: {
+			ID: 2, Name: "business-minio", EngineType: "minio", IsActive: true,
+			ConnectionInfo: commonModels.ConnectionInfo{"endpoint": "minio:9000", "access_key": "key", "secret_key": "secret"},
+		},
+	})
+	tests := []struct {
+		engineType, operator, sourceName, targetName, sourceKind, targetKind, entrypoint, sourceFormat string
+	}{
+		{"model3d_workflow", "osgb_to_glb", "models/tile.osgb", "tile.glb", "file", "file", "", "osgb"},
+		{"model3d_workflow", "gltf_to_glb", "models/scene.gltf", "scene.glb", "directory", "file", "scene.gltf", "gltf"},
+		{"model3d_workflow", "fbx_to_glb", "models/scene.fbx", "scene.glb", "directory", "file", "scene.fbx", "fbx"},
+		{"model3d_workflow", "obj_to_glb", "models/scene.obj", "scene.glb", "directory", "file", "scene.obj", "obj"},
+		{"model3d_workflow", "stl_to_glb", "models/scene.stl", "scene.glb", "file", "file", "", "stl"},
+		{"model3d_workflow", "ifc_to_glb", "models/building.ifc", "building.glb", "file", "file", "", "ifc"},
+		{"model3d_workflow", "osgb_scene_to_3dtiles", "scenes/site_a", "site_a", "directory", "directory", "", "osgb_scene"},
+		{"model3d_workflow", "gaussian_splat_to_ksplat", "models/cloud.splat", "cloud.ksplat", "file", "file", "", "splat"},
+		{"pointcloud_workflow", "las_to_copc", "points/cloud.las", "cloud.copc.laz", "file", "file", "", "las"},
+		{"pointcloud_workflow", "laz_to_copc", "points/cloud.laz", "cloud.copc.laz", "file", "file", "", "laz"},
+		{"pointcloud_workflow", "e57_to_copc", "points/cloud.e57", "cloud.copc.laz", "file", "file", "", "e57"},
+		{"pointcloud_workflow", "pcd_to_copc", "points/cloud.pcd", "cloud.copc.laz", "file", "file", "", "pcd"},
+		{"pointcloud_workflow", "xyz_to_copc", "points/cloud.xyz", "cloud.copc.laz", "file", "file", "", "xyz"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.operator, func(t *testing.T) {
+			workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{
+				"id": "convert", "operator": tt.operator, "depends_on": []interface{}{},
+				"params": map[string]interface{}{
+					"locator":               "addp://engine/1/path/" + tt.sourceName + "?type=file&item_id=8",
+					"target_parent_locator": "addp://engine/2/path/business/results?type=prefix",
+					"target_name":           tt.targetName, "write_mode": "create",
+				},
+			}}}
+			got, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, tt.engineType, workflow)
+			if err != nil {
+				t.Fatalf("preprocess access plan: %v", err)
+			}
+			params := firstTaskParams(t, got)
+			plan := params["access_plan"].(commonModels.JSONMap)
+			if plan["schema_version"] != "addp.workflow.access-plan/v1" {
+				t.Fatalf("schema_version = %#v", plan["schema_version"])
+			}
+			source := plan["source"].(commonModels.JSONMap)
+			target := plan["target"].(commonModels.JSONMap)
+			if source["kind"] != tt.sourceKind || source["format"] != tt.sourceFormat || stringParam(source, "entrypoint") != tt.entrypoint {
+				t.Fatalf("source = %#v", source)
+			}
+			if tt.entrypoint == "" {
+				if _, exists := source["entrypoint"]; exists {
+					t.Fatalf("source should not include entrypoint: %#v", source)
+				}
+			}
+			if target["kind"] != tt.targetKind || target["name"] != tt.targetName || target["write_mode"] != "create" {
+				t.Fatalf("target = %#v", target)
+			}
+			if len(targets) != 1 || targets[0].EngineID != 2 {
+				t.Fatalf("produced targets = %#v", targets)
+			}
+			targetAudit := targets[0].AccessPlan["target"].(commonModels.JSONMap)
+			targetAuditAccess := targetAudit["access"].(commonModels.JSONMap)
+			if _, leaked := targetAuditAccess["secret_key"]; leaked {
+				t.Fatalf("produced target audit leaked credentials: %#v", targets[0].AccessPlan)
+			}
+			for _, publicName := range []string{"locator", "target_parent_locator", "target_name", "write_mode"} {
+				if _, exists := params[publicName]; exists {
+					t.Fatalf("public param %s leaked to runtime: %#v", publicName, params)
+				}
+			}
+		})
+	}
+}
+
+func TestConversionAdapterRejectsInfraTargetEngine(t *testing.T) {
+	tenantID := uint(7)
+	svc := newWorkflowEngineServiceWithRawEnginesForTest(t, map[uint]commonModels.Engine{
+		1: {ID: 1, TenantID: &tenantID, EngineType: "nfs", IsActive: true, ConnectionInfo: commonModels.ConnectionInfo{"mount_path": "/data"}},
+		2: {ID: 2, TenantID: nil, EngineType: "minio", IsActive: true, ConnectionInfo: commonModels.ConnectionInfo{"endpoint": "minio:9000", "access_key": "key", "secret_key": "secret"}},
+	})
+	workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{
+		"id": "convert", "operator": "las_to_copc", "depends_on": []interface{}{},
+		"params": map[string]interface{}{
+			"locator":               "addp://engine/1/path/points/cloud.las?type=file&item_id=8",
+			"target_parent_locator": "addp://engine/2/path/infra/results?type=prefix",
+			"target_name":           "cloud.copc.laz", "write_mode": "create",
+		},
+	}}}
+	_, _, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), tenantID, "pointcloud_workflow", workflow)
+	if err == nil || !strings.Contains(err.Error(), "target engine must be a tenant business engine") {
+		t.Fatalf("error = %v, want infra target rejection", err)
+	}
+}
+
+func TestConversionAdapterDerivesObjectStoreParentSource(t *testing.T) {
+	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
+		3: {
+			ID: 3, EngineType: "minio", IsActive: true,
+			ConnectionInfo: commonModels.ConnectionInfo{"endpoint": "minio:9000", "access_key": "key", "secret_key": "secret"},
+		},
+		4: {
+			ID: 4, EngineType: "nfs", IsActive: true,
+			ConnectionInfo: commonModels.ConnectionInfo{"mount_path": "/business"},
+		},
+	})
+	workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{
+		"id": "convert", "operator": "gltf_to_glb", "depends_on": []interface{}{},
+		"params": map[string]interface{}{
+			"locator":               "addp://engine/3/path/bucket/prefix/model.gltf?type=object&item_id=8",
+			"target_parent_locator": "addp://engine/4/path/models/output?type=directory",
+			"target_name":           "model.glb", "write_mode": "create",
+		},
+	}}}
+	got, _, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "model3d_workflow", workflow)
+	if err != nil {
+		t.Fatalf("preprocess object store parent source: %v", err)
+	}
+	plan := firstTaskParams(t, got)["access_plan"].(commonModels.JSONMap)
+	source := plan["source"].(commonModels.JSONMap)
+	access := source["access"].(commonModels.JSONMap)
+	if source["kind"] != "directory" || source["entrypoint"] != "model.gltf" ||
+		access["method"] != "object_store" || access["bucket"] != "bucket" || access["prefix"] != "prefix" {
+		t.Fatalf("source = %#v", source)
 	}
 }
 
@@ -724,6 +855,18 @@ func newWorkflowEngineServiceForTest(t *testing.T, engineID uint, engineType str
 }
 
 func newWorkflowEngineServiceWithEnginesForTest(t *testing.T, engines map[uint]commonModels.Engine) *WorkflowEngineService {
+	t.Helper()
+	tenantID := uint(7)
+	for id, engine := range engines {
+		if engine.TenantID == nil {
+			engine.TenantID = &tenantID
+			engines[id] = engine
+		}
+	}
+	return newWorkflowEngineServiceWithRawEnginesForTest(t, engines)
+}
+
+func newWorkflowEngineServiceWithRawEnginesForTest(t *testing.T, engines map[uint]commonModels.Engine) *WorkflowEngineService {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		const prefix = "/api/v1/internal/engines/"

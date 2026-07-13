@@ -1,9 +1,22 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
+import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    viteStaticCopy({
+      targets: [
+        { src: 'node_modules/cesium/Build/Cesium/Workers', dest: 'cesium' },
+        { src: 'node_modules/cesium/Build/Cesium/Assets', dest: 'cesium' },
+        { src: 'node_modules/cesium/Build/Cesium/ThirdParty', dest: 'cesium' },
+        { src: 'node_modules/cesium/Build/Cesium/Widgets', dest: 'cesium' },
+        { src: 'node_modules/@dfsj/s3m/lib/draco_decoder_new.wasm', dest: 'S3M_module/S3MParser' },
+        { src: 'node_modules/@dfsj/s3m/lib/crunch.wasm', dest: 'S3M_module/S3MTiles/ThirdParty' }
+      ]
+    })
+  ],
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),

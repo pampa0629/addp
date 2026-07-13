@@ -32,6 +32,7 @@ type TaskProviderHandler struct {
 	model3DTilesTaskSvc           *service.Model3DTilesTaskService
 	gaussianSplatKSplatTaskSvc    *service.GaussianSplatKSplatTaskService
 	pointCloudCOPCTaskSvc         *service.PointCloudCOPCTaskService
+	cadPreviewTaskSvc             *service.CADPreviewTaskService
 	taskExecRepo                  *commonExecution.TaskExecutionRepository
 }
 
@@ -71,6 +72,10 @@ func (h *TaskProviderHandler) SetGaussianSplatKSplatTaskService(gaussianSplatKSp
 
 func (h *TaskProviderHandler) SetPointCloudCOPCTaskService(pointCloudCOPCTaskSvc *service.PointCloudCOPCTaskService) {
 	h.pointCloudCOPCTaskSvc = pointCloudCOPCTaskSvc
+}
+
+func (h *TaskProviderHandler) SetCADPreviewTaskService(cadPreviewTaskSvc *service.CADPreviewTaskService) {
+	h.cadPreviewTaskSvc = cadPreviewTaskSvc
 }
 
 // TaskListResponse 任务列表响应（统一包装 Manager provider 声明的任务类型）
@@ -503,12 +508,12 @@ type PointCloudCOPCTaskResponse struct {
 }
 
 // ListTasks GET /api/v1/manager/tasks
-// 查询参数：?task_type=vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding
+// 查询参数：?task_type=vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
 // @Summary 列出任务 | List tasks
-// @Description 列出 Manager 模块的任务（矢量瓦片缓存生成、矢量物化视图、栅格快显 COG 生成、栅格 mosaic 生成、三维模型 GLB 快显生成、三维模型 3D Tiles 生成和向量化任务）| List Manager module tasks
+// @Description 列出 Manager 模块的任务（矢量瓦片缓存生成、矢量物化视图、栅格快显 COG、栅格 mosaic、CAD 栅格预览、三维模型与点云快显、向量化任务）| List Manager module tasks
 // @Tags Manager
 // @Produce json
-// @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding | Task type filter"
+// @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type filter"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} TaskListResponse "任务列表 | Task list"
@@ -681,6 +686,20 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
 		}
+	case commonExecution.TaskTypeCADPreviewGeneration:
+		if h.cadPreviewTaskSvc == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "CAD preview generation task service is unavailable"})
+			return
+		}
+		tasks, t, err := h.cadPreviewTaskSvc.List(ctx, tenantID, page, pageSize)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		total = t
+		for _, task := range tasks {
+			items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeCADPreviewGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
+		}
 	case commonExecution.TaskTypeEmbedding:
 		if h.embeddingTaskSvc == nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "embedding task service is unavailable"})
@@ -787,6 +806,17 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 			total += t
 			for _, task := range tasks {
 				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypePointCloudCOPCGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
+			}
+		}
+		if h.cadPreviewTaskSvc != nil {
+			tasks, t, err := h.cadPreviewTaskSvc.List(ctx, tenantID, page, pageSize)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			total += t
+			for _, task := range tasks {
+				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeCADPreviewGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
 			}
 		}
 		if h.embeddingTaskSvc != nil {
@@ -899,7 +929,7 @@ func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
 // @Description 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and ID
 // @Tags Manager
 // @Produce json
-// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding | Task type"
+// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type"
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} object "任务详情，按 task_type 返回矢量瓦片缓存、矢量物化视图、栅格 COG 生成或向量化任务详情 | Task detail by task_type"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -1006,6 +1036,17 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, pointCloudCOPCTaskResponse(task))
+	case commonExecution.TaskTypeCADPreviewGeneration:
+		task, err := h.cadPreviewTaskSvc.GetByID(ctx, uint(id), tenantID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if task == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+			return
+		}
+		c.JSON(http.StatusOK, cadPreviewTaskResponse(task))
 	case commonExecution.TaskTypeEmbedding:
 		task, err := h.embeddingTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1071,7 +1112,7 @@ type TaskExecuteResponse struct {
 // @Tags Manager
 // @Accept json
 // @Produce json
-// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding | Task type"
+// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type"
 // @Param id path int true "任务ID | Task ID"
 // @Param body body TaskExecuteRequest false "执行配置 | Execution configuration"
 // @Success 202 {object} TaskExecuteResponse "执行ID | Execution ID"
@@ -1131,6 +1172,8 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 		executionID, err = h.gaussianSplatKSplatTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	case commonExecution.TaskTypePointCloudCOPCGeneration:
 		executionID, err = h.pointCloudCOPCTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+	case commonExecution.TaskTypeCADPreviewGeneration:
+		executionID, err = h.cadPreviewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	case commonExecution.TaskTypeEmbedding:
 		executionID, err = h.embeddingTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	default:

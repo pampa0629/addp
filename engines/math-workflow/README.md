@@ -7,7 +7,7 @@
 Math Workflow Engine 是一个符合 [ADDP 工作流计算引擎接口规范](../../docs/spec/addp工作流计算引擎接口规范.md) 的完整工作流引擎实现，提供基础数学运算的 DAG 工作流编排能力。
 
 **特点**:
-- ✅ **极简实现**: 核心代码约 350 行（api_server.py 310 行 + workflow_engine.py 170 行）
+- ✅ **公共执行核心**: DAG 校验、拓扑排序、引用解析和异步状态管理复用 `common-python/addp_common/workflow_runtime`
 - ✅ **完全符合规范**: 实现 OpenAPI 规范定义的所有 5 个必需接口
 - ✅ **完整工作流**: 支持 DAG 执行、参数引用（$ref）、拓扑排序
 - ✅ **易于理解**: 数学运算逻辑一目了然，无复杂依赖
@@ -22,6 +22,7 @@ Math Workflow Engine 是一个符合 [ADDP 工作流计算引擎接口规范](..
 # 1. 安装依赖
 cd engines/math-workflow
 pip install -r requirements.txt
+pip install -e ../../common-python
 
 # 2. 启动引擎
 python api_server.py
@@ -140,17 +141,27 @@ curl -X POST http://localhost:8089/api/workflow \
   }'
 ```
 
-响应:
+提交响应（HTTP 202）:
+```json
+{
+  "status": "pending",
+  "execution_id": "550e8400-e29b-41d4-a716-446655440000",
+  "execution_time_ms": 1.23
+}
+```
+
+随后查询 `GET /api/executions/{execution_id}`：
+
 ```json
 {
   "status": "success",
-  "execution_id": "550e8400-e29b-41d4-a716-446655440000",
-  "final_result": 60,
+  "result": 60,
   "all_results": {
     "task1": 30,
     "task2": 60
   },
-  "execution_time_ms": 1.23
+  "task_order": ["task1", "task2"],
+  "progress": 100
 }
 ```
 
@@ -195,8 +206,7 @@ engines/math-workflow/
 │   └── test_api.py          # API 集成测试
 ├── docs/
 │   └── OPERATORS.md         # 算子详细文档
-├── api_server.py            # Flask API 服务（约 310 行）
-├── workflow_engine.py       # 简化版 DAG 工作流引擎（约 170 行）
+├── api_server.py            # Flask API 与公共 Workflow Runtime 适配
 ├── requirements.txt         # Python 依赖
 ├── Dockerfile               # Docker 镜像定义
 ├── docker-compose.yml       # 容器编排配置
@@ -211,11 +221,11 @@ engines/math-workflow/
    - 完整的元数据定义（符合 OperatorMetadata 规范）
    - 算子注册表（OPERATORS 字典）
 
-2. **workflow_engine.py** - DAG 工作流引擎
-   - Kahn 算法拓扑排序
-   - 参数引用解析（$ref 机制）
+2. **addp_common.workflow_runtime** - Python Workflow Runtime 公共核心
+   - 工作流定义与算子校验
+   - DAG 拓扑排序和 `$ref` / 输出端口引用解析
    - 内存传递中间结果
-   - 循环依赖检测
+   - 异步 execution registry 与标准失败状态
 
 3. **api_server.py** - Flask API 服务
    - 5 个标准 HTTP 端点
@@ -251,7 +261,8 @@ pytest tests/test_api.py -v
 ### 工作流测试示例
 
 ```python
-from workflow_engine import MathWorkflowEngine
+from addp_common.workflow_runtime import WorkflowRunner
+from operators import OPERATORS, get_operator_function
 
 def test_complex_workflow():
     """测试复杂工作流：((10 + 20) × 2 - 5) / 5 = 11"""
@@ -264,14 +275,13 @@ def test_complex_workflow():
         ]
     }
 
-    engine = MathWorkflowEngine()
-    engine.load_workflow(workflow_def)
-    results = engine.execute()
+    runner = WorkflowRunner(set(OPERATORS), lambda operator, params: get_operator_function(operator)(**params))
+    result = runner.execute(workflow_def)
 
-    assert results['t1'] == 30
-    assert results['t2'] == 60
-    assert results['t3'] == 55
-    assert results['t4'] == 11
+    assert result.all_results['t1'] == 30
+    assert result.all_results['t2'] == 60
+    assert result.all_results['t3'] == 55
+    assert result.all_results['t4'] == 11
 ```
 
 ## 🔗 集成到 ADDP 平台

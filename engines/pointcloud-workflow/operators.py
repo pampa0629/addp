@@ -14,7 +14,7 @@ from urllib import error as urlerror
 from urllib.parse import urlparse
 from urllib import request as urlrequest
 
-from minio import Minio
+from addp_common.workflow_access import publish_target_file, require_access_plan, source_format as plan_source_format, stage_source_file, target_name
 
 
 ENGINE_TYPE = "pointcloud_workflow"
@@ -72,11 +72,11 @@ def converter_status(env: dict[str, str] | None = None) -> dict[str, Any]:
 
 def list_operators() -> list[dict[str, Any]]:
     return [
-        _copc_operator("las_to_copc", "LAS 转 COPC", "将 LAS 点云转换为 Manager 受管 COPC 快显 artifact。", "las"),
-        _copc_operator("laz_to_copc", "LAZ 转 COPC", "将 LAZ 点云转换为 Manager 受管 COPC 快显 artifact。", "laz"),
-        _copc_operator("e57_to_copc", "E57 转 COPC", "将 E57 扫描点云转换为 Manager 受管 COPC 快显 artifact。", "e57"),
-        _copc_operator("pcd_to_copc", "PCD 转 COPC", "将 PCD 点云转换为 Manager 受管 COPC 快显 artifact。", "pcd"),
-        _copc_operator("xyz_to_copc", "XYZ 转 COPC", "将简单文本 XYZ 点云转换为 Manager 受管 COPC 快显 artifact。", "xyz"),
+        _copc_operator("las_to_copc", "LAS 转 COPC", "将 LAS 点云转换并持久化为 COPC。", "las"),
+        _copc_operator("laz_to_copc", "LAZ 转 COPC", "将 LAZ 点云转换并持久化为 COPC。", "laz"),
+        _copc_operator("e57_to_copc", "E57 转 COPC", "将 E57 扫描点云转换并持久化为 COPC。", "e57"),
+        _copc_operator("pcd_to_copc", "PCD 转 COPC", "将 PCD 点云转换并持久化为 COPC。", "pcd"),
+        _copc_operator("xyz_to_copc", "XYZ 转 COPC", "将简单文本 XYZ 点云转换并持久化为 COPC。", "xyz"),
     ]
 
 
@@ -89,13 +89,13 @@ def _copc_operator(operator_id: str, display_name: str, description: str, source
         "category": "点云转换",
         "category_path": ["点云转换", "快显"],
         "description": description,
-        "execution_modes": ["direct"],
+        "execution_modes": ["workflow", "direct"],
         "parameters": [
             {
                 "name": "access_plan",
                 "type": "object",
                 "required": True,
-                "description": f"源 {source_format.upper()} 文件访问计划和 COPC artifact 对象存储发布计划。",
+                "description": f"源 {source_format.upper()} 与目标 COPC 的 addp.workflow.access-plan/v1 访问计划。",
             },
             {
                 "name": "options",
@@ -103,12 +103,18 @@ def _copc_operator(operator_id: str, display_name: str, description: str, source
                 "required": False,
                 "description": "PDAL writers.copc 私有选项，第一版只接受受控白名单。",
             },
+            {
+                "name": "progress_callback",
+                "type": "object",
+                "required": False,
+                "description": "调用方受控的执行进度回调；不属于公开算子参数。",
+            },
         ],
         "output_ports": [
             {
                 "name": "result",
                 "type": "object",
-                "description": "COPC artifact 的对象引用、大小、发布结果和转换器信息。",
+                "description": "持久化 COPC 的引用、大小、发布结果和转换器信息。",
                 "is_default": True,
             }
         ],
@@ -147,14 +153,11 @@ def point_cloud_to_copc(
     env: dict[str, str] | None = None,
     timeout_seconds: int | None = None,
 ) -> dict[str, Any]:
-    access_plan = _required_object(params, "access_plan")
+    access_plan = require_access_plan(params)
     source = _required_object(access_plan, "source")
-    target = _required_object(access_plan, "target")
     options = _optional_object(params, "options")
-    source_uri = _required_text(source, "root_uri")
-    source_plan_format = _text(source.get("format")).lower()
-    publish = _required_object(target, "publish")
-    file_name = _required_text(target, "file_name")
+    source_plan_format = plan_source_format(access_plan)
+    file_name = target_name(access_plan)
 
     if source_plan_format and source_plan_format != source_format:
         raise ConverterError(
@@ -163,20 +166,16 @@ def point_cloud_to_copc(
             details=f"source format: {source_plan_format}",
         )
     if not file_name.lower().endswith(".copc.laz"):
-        raise ConverterError("INVALID_PARAMS", "access_plan.target.file_name must end with .copc.laz")
-    if _text(publish.get("method")) != "object_store":
-        raise ConverterError("INVALID_PARAMS", "access_plan.target.publish.method must be object_store")
-
-    if not _is_virtual_path(source_uri) and not Path(source_uri).is_file():
-        raise ConverterError("SOURCE_NOT_FOUND", "Point cloud source file was not found", details=source_uri, http_status=404)
-
+        raise ConverterError("INVALID_PARAMS", "access_plan.target.name must end with .copc.laz")
     temp_dir = _make_work_dir(env)
     target_file = temp_dir / file_name
     started_at = time.time()
-    reporter = _ProgressReporter(access_plan.get("progress_callback"), env)
+    reporter = _ProgressReporter(params.get("progress_callback"), env)
     try:
         reporter.emit("prepare", "started", "准备点云 COPC 转换", overall_progress=1, force=True)
         pdal = _pdal_bin(env)
+        source_file = stage_source_file(access_plan, temp_dir)
+        source_uri = str(source_file)
         pdal_source_uri = _prepare_pdal_source_uri(source_uri, source_format, temp_dir)
         command = [pdal, "translate", pdal_source_uri, str(target_file)]
         command.extend(_pdal_reader_args(source_format))
@@ -195,7 +194,7 @@ def point_cloud_to_copc(
                 "convert",
                 "progress",
                 "生成点云 COPC 文件",
-                overall_progress=_estimate_convert_progress(target_file, source),
+                overall_progress=_estimate_convert_progress(target_file, source.get("metadata") or {}),
                 metadata={"output_size_bytes": _file_size(target_file)},
             ),
         )
@@ -214,7 +213,7 @@ def point_cloud_to_copc(
             metadata={"output_size_bytes": target_file.stat().st_size},
             force=True,
         )
-        publish_result = publish_object_store_file(target_file, publish)
+        publish_result = publish_target_file(target_file, access_plan)
         reporter.emit(
             "publish",
             "completed",
@@ -225,8 +224,8 @@ def point_cloud_to_copc(
         )
         elapsed_ms = int((time.time() - started_at) * 1000)
         return {
-            "copc_uri": publish_result["object_uri"],
-            "copc_ref": publish_result["object_name"],
+            "copc_uri": publish_result.get("object_uri") or publish_result.get("locator") or publish_result.get("path"),
+            "copc_ref": publish_result.get("object_name") or publish_result.get("path"),
             "size_bytes": publish_result["uploaded_bytes"],
             "publish": publish_result,
             "source_format": source_format,
@@ -240,35 +239,6 @@ def point_cloud_to_copc(
         }
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-def publish_object_store_file(path: Path, publish: dict[str, Any]) -> dict[str, Any]:
-    endpoint = _publish_endpoint(_required_text(publish, "endpoint"))
-    bucket = _required_text(publish, "bucket")
-    object_name = _required_text(publish, "object").strip("/")
-    access_key = _required_text(publish, "access_key")
-    secret_key = _required_text(publish, "secret_key")
-    secure = bool(publish.get("use_ssl"))
-    content_type = _text(publish.get("content_type")) or COPC_CONTENT_TYPE
-
-    if not path.is_file():
-        raise ConverterError("OUTPUT_NOT_FOUND", "COPC output file was not generated", details=str(path), http_status=500)
-
-    client = Minio(endpoint, access_key=access_key, secret_key=secret_key, secure=secure)
-    if not client.bucket_exists(bucket):
-        client.make_bucket(bucket)
-
-    size = path.stat().st_size
-    client.fput_object(bucket, object_name, str(path), content_type=content_type)
-    return {
-        "method": "object_store",
-        "bucket": bucket,
-        "object_name": object_name,
-        "object_uri": _text(publish.get("locator")) or f"s3://{bucket}/{object_name}",
-        "uploaded_files": 1,
-        "uploaded_bytes": size,
-        "content_type": content_type,
-    }
 
 
 def _pdal_copc_option_args(options: dict[str, Any], env: dict[str, str] | None = None) -> list[str]:

@@ -20,7 +20,7 @@ import os
 from datetime import datetime
 
 from operators import list_operators, get_operator_function, OPERATORS
-from workflow_engine import MathWorkflowEngine, WorkflowInvalidError
+from addp_common.workflow_runtime import ExecutionRegistry, WorkflowRunner, WorkflowValidationError, validate_workflow_def
 
 # ============ 应用初始化 ============
 
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 # 启动时间（用于计算 uptime）
 start_time = datetime.now()
-executions = {}
+executions = ExecutionRegistry()
 
 # ============ 错误码定义 ============
 
@@ -145,9 +145,8 @@ def execute_workflow():
         }
     """
     start = time.time()
-    execution_id = None
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
 
         if not data or 'workflow_def' not in data:
             response = error_response(
@@ -159,85 +158,35 @@ def execute_workflow():
 
         workflow_def = data['workflow_def']
         input_data = data.get('input_data', {})
-        execution_id = str(uuid.uuid4())
-
-        logger.info(f"开始执行工作流: execution_id={execution_id}")
-
-        # 创建引擎并执行
-        engine = MathWorkflowEngine()
-        engine.load_workflow(workflow_def)
-        results = engine.execute(input_data)
-
-        # 最后一个任务的结果作为最终结果
-        final_task_id = list(results.keys())[-1] if results else None
-        final_result = results[final_task_id] if final_task_id else None
-
-        execution_time = (time.time() - start) * 1000
-
-        logger.info(f"工作流执行成功: execution_id={execution_id}, 耗时={execution_time:.2f}ms")
-
-        executions[execution_id] = {
-            "status": "success",
-            "result": final_result,
-            "all_results": results,
-            "started_at": datetime.now().isoformat(),
-            "execution_time_ms": execution_time,
-            "message": "工作流执行完成"
-        }
-
+        if not isinstance(input_data, dict):
+            input_data = {}
+        operator_ids = set(OPERATORS)
+        validate_workflow_def(workflow_def, operator_ids=operator_ids)
+        runner = WorkflowRunner(operator_ids, lambda operator, params: get_operator_function(operator)(**params))
+        snapshot = executions.submit(runner, workflow_def, input_data)
         return jsonify({
-            "status": "success",
-            "execution_id": execution_id,
-            "final_result": final_result,
-            "all_results": results,
-            "execution_time_ms": execution_time
-        }), 200
+            "status": snapshot.status,
+            "execution_id": snapshot.execution_id,
+            "execution_time_ms": (time.time() - start) * 1000
+        }), 202
 
-    except WorkflowInvalidError as e:
+    except WorkflowValidationError as e:
         logger.error(f"工作流定义无效: {e}")
         execution_time = (time.time() - start) * 1000
-        if execution_id:
-            executions[execution_id] = {
-                "status": "failed",
-                "result": None,
-                "all_results": None,
-                "started_at": datetime.now().isoformat(),
-                "execution_time_ms": execution_time,
-                "message": "工作流定义无效",
-                "error": str(e),
-                "error_code": ErrorCode.WORKFLOW_INVALID,
-                "details": str(e)
-            }
         response = error_response(
             ErrorCode.WORKFLOW_INVALID,
             str(e)
         )
-        if execution_id:
-            response["execution_id"] = execution_id
         response["execution_time_ms"] = execution_time
         return jsonify(response), 400
 
     except Exception as e:
         logger.exception(f"工作流执行失败: {e}")
         execution_time = (time.time() - start) * 1000
-        if execution_id:
-            executions[execution_id] = {
-                "status": "failed",
-                "result": None,
-                "all_results": None,
-                "started_at": datetime.now().isoformat(),
-                "execution_time_ms": execution_time,
-                "message": "工作流执行失败",
-                "error": f"工作流执行失败: {str(e)}",
-                "error_code": ErrorCode.EXECUTION_FAILED,
-                "details": str(e)
-            }
         response = error_response(
             ErrorCode.EXECUTION_FAILED,
             f"工作流执行失败: {str(e)}"
         )
-        if execution_id:
-            response["execution_id"] = execution_id
         response["execution_time_ms"] = execution_time
         return jsonify(response), 500
 
@@ -345,25 +294,26 @@ def get_execution_status(execution_id):
             "progress": 100
         }
     """
-    if execution_id not in executions:
+    execution = executions.get(execution_id)
+    if execution is None:
         return jsonify(error_response(
             ErrorCode.EXECUTION_NOT_FOUND,
             "Execution not found"
         )), 404
 
-    execution = executions[execution_id]
     return jsonify({
-        "status": execution["status"],
+        "status": execution.status,
         "execution_id": execution_id,
-        "result": execution.get("result"),
-        "all_results": execution.get("all_results"),
-        "progress": 100 if execution["status"] in ["success", "failed"] else 50,
-        "message": execution.get("message"),
-        "error": execution.get("error"),
-        "error_code": execution.get("error_code"),
-        "details": execution.get("details"),
-        "started_at": execution.get("started_at"),
-        "execution_time_ms": execution.get("execution_time_ms")
+        "result": execution.result,
+        "all_results": execution.all_results,
+        "task_order": execution.task_order,
+        "current_task": execution.current_task,
+        "progress": execution.progress,
+        "error": execution.error,
+        "error_code": execution.error_code,
+        "details": execution.details,
+        "started_at": execution.started_at,
+        "execution_time_ms": execution.execution_time_ms
     }), 200
 
 
