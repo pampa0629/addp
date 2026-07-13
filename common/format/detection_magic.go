@@ -8,7 +8,7 @@ import (
 
 func needMagicValidation(format FormatType) bool {
 	switch format {
-	case FormatPDF, FormatSQLite, FormatUDBX, FormatGeoPackage, FormatJPEG, FormatPNG, FormatGIF, FormatGLB, FormatLAS, FormatLAZ, FormatCOPC, FormatE57, FormatDWG:
+	case FormatPDF, FormatSQLite, FormatUDBX, FormatGeoPackage, FormatJPEG, FormatPNG, FormatGIF, FormatGLB, FormatLAS, FormatLAZ, FormatCOPC, FormatE57, FormatDWG, FormatDXF:
 		return true
 	default:
 		return false
@@ -21,6 +21,9 @@ func validateMagicBytes(format FormatType, peek []byte) bool {
 	}
 	if format == FormatDWG {
 		return isDWGHeader(peek)
+	}
+	if format == FormatDXF {
+		return isDXFHeader(peek)
 	}
 	if descriptor, ok := GetFormatDescriptor(format); ok && len(descriptor.Identification.ContentSignatures) > 0 {
 		for _, signature := range descriptor.Identification.ContentSignatures {
@@ -60,6 +63,9 @@ func getMagicBytes(format FormatType) []byte {
 func detectByMagic(peek []byte) FormatType {
 	if isDWGHeader(peek) {
 		return FormatDWG
+	}
+	if isDXFHeader(peek) {
+		return FormatDXF
 	}
 	lowerPeek := bytes.ToLower(bytes.TrimSpace(peek))
 	if bytes.HasPrefix(lowerPeek, []byte("<svg")) ||
@@ -120,6 +126,15 @@ func detectByMagic(peek []byte) FormatType {
 func isDWGHeader(peek []byte) bool {
 	return len(peek) >= 6 && bytes.HasPrefix(peek, []byte("AC10")) &&
 		peek[4] >= '0' && peek[4] <= '9' && peek[5] >= '0' && peek[5] <= '9'
+}
+
+func isDXFHeader(peek []byte) bool {
+	if bytes.HasPrefix(peek, []byte("AutoCAD Binary DXF\r\n\x1a\x00")) {
+		return true
+	}
+	normalized := bytes.ReplaceAll(bytes.TrimSpace(bytes.TrimPrefix(peek, []byte{0xEF, 0xBB, 0xBF})), []byte("\r\n"), []byte("\n"))
+	lines := bytes.Split(normalized, []byte("\n"))
+	return len(lines) >= 2 && string(bytes.TrimSpace(lines[0])) == "0" && strings.EqualFold(string(bytes.TrimSpace(lines[1])), "SECTION")
 }
 
 func detectByDescriptorSignature(peek []byte) FormatType {

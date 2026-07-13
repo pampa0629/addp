@@ -1,17 +1,17 @@
 # ADDP CAD 数据支持设计
 
-> 状态：第一阶段实现、真实 DWG 和平台内 Meta/Manager 端到端验收完成。本文固化第一阶段 CAD / DWG 接入路线；稳定语义已同步进入术语表、数据类型与格式规范、attributes 规范、任务规范和 Manager 预览协议。
+> 状态：二维 DWG / DXF 实现与平台内 Meta/Manager 端到端验收。本文固化 CAD 接入路线；稳定语义已同步进入术语表、数据类型与格式规范、attributes 规范、任务规范和 Manager 预览协议。
 
 ## 目标与范围
 
-第一阶段只支持二维 DWG，建立从格式识别、Meta 扫描、Manager 预览到 Transfer 原文件传输的完整主链路。DXF、DGN、三维 CAD、实体级交互和 CAD 编辑不在本阶段范围。
+当前支持二维 DWG、DXF，建立从格式识别、Meta 扫描、Manager 预览到 Transfer 原文件传输的完整主链路。DGN、三维 CAD、实体级交互和 CAD 编辑不在当前范围。
 
-DWG 必须归一为：
+DWG、DXF 必须归一为：
 
 ```text
 layout=single
 data_type=cad
-format=dwg
+format=dwg|dxf
 ```
 
 `cad` 表达设计图纸及其 CAD 原生组织语义。CAD entity 可以在查询或导入界面投影为记录，但源 DWG item 不因此变成 `table`。通过 `cad.import` 生成的 GIS 数据是新的 `table + capabilities.spatial` item。
@@ -20,29 +20,29 @@ format=dwg
 
 ```mermaid
 flowchart LR
-  A["DWG content"] --> B["common/format header detection"]
-  B --> C["Meta basic scan: cad/dwg"]
+  A["DWG / DXF content"] --> B["common/format header detection"]
+  B --> C["Meta basic scan: cad/dwg|dxf"]
   C --> D["Meta deep scan"]
   D --> E["supermap_workflow cad.inspect"]
-  E --> F["type_info.cad + format_info.dwg"]
+  E --> F["type_info.cad + format_info.dwg|dxf"]
   F --> G["Manager cad_preview_generation"]
   G --> H["supermap_workflow cad.render_preview"]
   H --> I["Manager infra MinIO tiles"]
   I --> J["OpenLayers CAD preview"]
 ```
 
-- Go 侧只做 DWG header 识别，不嵌入 SuperMap 或 ODA。
+- Go 侧只做 DWG / DXF header 识别，不嵌入 SuperMap 或 ODA。
 - SuperMap iObjects Java 是 deep scan、渲染和后续 CAD→GIS 导入的唯一 CAD provider。
 - 不直接调用 SuperMap 组件内部 ODA 原生库，不引入独立 ODA Viewer / Open Cloud 或 LibreDWG 备用路径。
 - Meta、Manager 通过现有 Workflow Runtime direct operator 调用 `supermap_workflow`，不构造私有 HTTP 请求。
 
 ## Meta 扫描
 
-Basic scan 读取 DWG 六字节版本头 `AC10xx`，结合 `.dwg` 扩展名和 MIME 完成轻量识别。它不依赖 SuperMap，可在 CAD engine 不可用时稳定写入 `data_type=cad + format=dwg`。
+Basic scan 读取 DWG 六字节版本头 `AC10xx`，或识别 DXF ASCII `0/SECTION` 结构头与 Binary DXF 签名，结合扩展名和 MIME 完成轻量识别。它不依赖 SuperMap，可在 CAD engine 不可用时稳定写入 `data_type=cad + format=dwg|dxf`。
 
-Deep scan 调用 direct-only operator `cad.inspect`，请求使用 `addp.workflow.access-plan/v1`，响应固定使用 `addp.cad.inspect/v1`，至少包含 DWG 版本、单位、model/paper space、layout/layer/block/xref 数量、SuperMap 解释后的 dataset/record 数量、二维范围和 warning。
+Deep scan 调用 direct-only operator `cad.inspect`，请求使用 `addp.workflow.access-plan/v1`，响应固定使用 `addp.cad.inspect/v1`，至少包含源格式、格式版本、单位、model/paper space、layout/layer/block/xref 数量、SuperMap 解释后的 dataset/record 数量、二维范围和 warning。
 
-`cad.inspect` 只读打开 DWG，读取 Datasource、Dataset 元数据、RecordCount 和 Bounds；严禁遍历 Recordset Geometry，也不生成 UDB/UDBX 中间数据。SuperMap 不可用或打开失败时 deep scan 失败且 `scanned_depth` 不升级，不得回退到另一套解析器。
+`cad.inspect` 只读打开 DWG / DXF，读取 Datasource、Dataset 元数据、RecordCount 和 Bounds；严禁遍历 Recordset Geometry，也不生成 UDB/UDBX 中间数据。SuperMap 不可用或打开失败时 deep scan 失败且 `scanned_depth` 不升级，不得回退到另一套解析器。
 
 ## Manager 预览
 
@@ -63,9 +63,9 @@ layouts/<layout-id>/{z}/{x}/{y}.webp
 
 ## CAD→GIS 与 Transfer
 
-后续新增独立 direct operator `cad.import`。它读取 DWG entity，经 SuperMap 转换为 GIS Dataset，并由调用方登记为新的 `data_type=table` item。`cad.inspect`、`cad.render_preview` 和 `cad.import` 三者不得合并。
+后续新增独立 direct operator `cad.import`。它读取 CAD entity，经 SuperMap 转换为 GIS Dataset，并由调用方登记为新的 `data_type=table` item。`cad.inspect`、`cad.render_preview` 和 `cad.import` 三者不得合并。
 
-Transfer 对 `data_type=cad + layout=single` 仅提供 encoded raw copy。传输复制原始 DWG 字节并保留 format，不执行 CAD→GIS、DWG→DXF 或其他隐式转换。
+Transfer 对 `data_type=cad + layout=single` 仅提供 encoded raw copy。传输复制原始 CAD 文件字节并保留 format，不执行 CAD→GIS、DWG↔DXF 或其他隐式转换。
 
 ## 外部引用、字体与安全
 
@@ -77,7 +77,7 @@ Transfer 对 `data_type=cad + layout=single` 仅提供 encoded raw copy。传输
 
 ## 第一阶段完成标准
 
-1. `common/datatype` 唯一声明 `cad`，`common/format` 唯一声明并识别 `dwg`。
+1. `common/datatype` 唯一声明 `cad`，`common/format` 唯一声明并识别 `dwg`、`dxf`。
 2. Meta basic scan 不依赖 SuperMap；deep scan 只走 `cad.inspect` 且不遍历 Geometry。
 3. Manager 只通过 SuperMap 直接渲染 CAD Dataset 生成受管瓦片，前端不重画 entity。
 4. Transfer 只提供 CAD raw copy。
@@ -87,9 +87,9 @@ Transfer 对 `data_type=cad + layout=single` 仅提供 encoded raw copy。传输
 
 截至 2026-07-13，以下主链路已完成：
 
-- Common 已声明 `cad/dwg`、CAD payload 和 DWG header 探测。
+- Common 已声明 `cad/dwg`、`cad/dxf`、CAD payload，以及 DWG / DXF header 探测。
 - Meta basic scan 不依赖 SuperMap；deep scan 只调用 `cad.inspect`，实现未遍历 Geometry。
-- Manager 已提供 `cad_preview_generation`、受管 manifest/WebP 瓦片 API、Quick View 生成动作和 OpenLayers 本地二维预览组件；源 DWG `storage-stream` 不进入 CAD renderer。
+- Manager 已提供 `cad_preview_generation`、受管 manifest/WebP 瓦片 API、Quick View 生成动作、CAD 快显任务/结果管理页和 OpenLayers 本地二维预览组件；源 DWG / DXF `storage-stream` 不进入 CAD renderer。
 - SuperMap 已提供 `cad.inspect` 与 `cad.render_preview` direct operator；渲染金字塔使用正方形本地 extent，manifest 另保留真实 drawing bounds，总瓦片数限制为 25,000。
 - Transfer 已将 CAD 纳入 encoded raw copy，不执行隐式 CAD→GIS 转换。
 - Manager migration SQL 已在临时 PostgreSQL 中实际执行并创建两张目标表；Swagger 公开路由覆盖一致。
@@ -102,3 +102,5 @@ Transfer 对 `data_type=cad + layout=single` 仅提供 encoded raw copy。传输
 - `max_zoom=8` 会超过 25,000 张瓦片上限并被明确拒绝，证明输出预算限制生效。
 
 平台内验收已将 `sample_2018.dwg` 的只读测试副本放入 Business NFS 的 `cad/sample_2018.dwg`。通过两层镜像重建并局部重启 `localhost:8103` 后，Runtime 动态暴露 24 个算子，其中包含 `cad.inspect` / `cad.render_preview`。Meta deep scan 用时约 3.6 秒，写入 AC1032、1 个 Dataset、6 条解释记录、真实二维范围和 `geometry_traversed=false`。Manager `cad_preview_generation` 用时约 4.0 秒生成 21 张 256×256 WebP；正式 manifest API 和 z0 tile API 均返回 200，tile `Content-Type=image/webp`。Java MinIO client 已统一把 access plan 中无 scheme 的 endpoint 按 `use_ssl` 补全，并把 localhost 归一为容器可访问地址。代码同时修正 CAD deep enrich 失败仍错误升级 `scanned_depth=deep` 的问题，未引入备用解析或渲染路线。
+
+DXF 平台内验收使用 Business NFS `cad/example_r14.dxf`：Meta 强制 deep scan 将旧的 `media/image` 身份迁移为 `cad/dxf`，写入 AC1014、1 个 Dataset、64 条解释记录和 `geometry_traversed=false`。Manager Quick View capability 返回 `source_kind=cad`、`cad.format=dxf` 与 `generate_cad_preview`；任务执行后生成 341 张 512×512 WebP，manifest 与 z4 tile API 均返回 200。Business NFS 现有 5 个 DXF 样例已全部强制重扫为 `cad/dxf`，版本覆盖 AC1009、AC1014、AC1015、AC1032。

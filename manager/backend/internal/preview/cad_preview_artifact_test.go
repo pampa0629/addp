@@ -74,4 +74,17 @@ func TestResolveCADPreviewURLUsesTenantFingerprintAndSourceFacts(t *testing.T) {
 	if err != nil || url != "" {
 		t.Fatalf("cross-tenant url = %q, err = %v", url, err)
 	}
+	dxfResult := &models.CADPreview{
+		TenantID: 7, ItemFingerprint: "cad-dxf", SourceEngineID: 26, SourceFormat: "dxf",
+		StorageRef: "s3://manager/cad-dxf", ManifestRef: "manifest.json", Status: models.CADPreviewStatusReady,
+	}
+	if err := db.Create(dxfResult).Error; err != nil {
+		t.Fatalf("create CAD preview: %v", err)
+	}
+	url, err = resolveCADPreviewURL(context.Background(), repository.NewCADPreviewRepository(db), &PreviewRequest{
+		TenantID: &tenantID, ItemFingerprint: "cad-dxf", Engine: &models.Engine{ID: 26},
+	}, &objectcontent.ObjectContentRequest{Format: "dxf"})
+	if err != nil || url == "" {
+		t.Fatalf("DXF url = %q, err = %v", url, err)
+	}
 }

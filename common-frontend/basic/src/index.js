@@ -18,6 +18,7 @@ export * from './utils/index'
 export * from './utils/engineDisplay'
 export * from './utils/consoleBridge'
 export * from './utils/taskOwnerUrl'
+export * from './utils/continuousExecution'
 export { toAmisResponse, toAmisListResponse, createAmisInterceptor } from './utils/amis-adaptor'
 
 // Types

@@ -136,10 +136,10 @@ func (SyncState) TableName() string { return "transfer.sync_states" }
 // RuntimeLease 是 continuous execution 在 Infra PostgreSQL 中的唯一运行所有权事实。
 type RuntimeLease struct {
 	ID              uint      `gorm:"primaryKey" json:"id"`
-	TaskID          uint      `gorm:"not null;uniqueIndex" json:"task_id"`
-	ExecutionID     string    `gorm:"type:varchar(255);not null;uniqueIndex" json:"execution_id"`
-	OwnerInstanceID string    `gorm:"type:varchar(255);not null;index" json:"owner_instance_id"`
-	LeaseUntil      time.Time `gorm:"not null;index" json:"lease_until"`
+	TaskID          uint      `gorm:"not null;unique" json:"task_id"`
+	ExecutionID     string    `gorm:"type:varchar(255);not null;unique" json:"execution_id"`
+	OwnerInstanceID string    `gorm:"type:varchar(255);not null;index:idx_transfer_runtime_leases_owner" json:"owner_instance_id"`
+	LeaseUntil      time.Time `gorm:"not null;index:idx_transfer_runtime_leases_lease_until" json:"lease_until"`
 	HeartbeatAt     time.Time `gorm:"not null" json:"heartbeat_at"`
 	FencingToken    uint64    `gorm:"not null" json:"fencing_token"`
 	ClaimedAt       time.Time `gorm:"not null" json:"claimed_at"`

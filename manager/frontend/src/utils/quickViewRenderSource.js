@@ -13,6 +13,32 @@ export function normalizeQuickViewRenderSource(renderSource) {
   return String(renderSource || '').trim()
 }
 
+export function isModel3DQuickViewSource(previewData = {}, node = {}, selectedNodePath = '') {
+  const object = previewData?.object || {}
+  const item = object.attributes?.item || {}
+  const contentMetadata = object.content?.metadata || {}
+  const metadata = previewData?.metadata || {}
+  const dataType = String(item.data_type || metadata.data_type || contentMetadata.data_type || '').trim().toLowerCase()
+  const format = String(
+    item.format ||
+    metadata.source_format ||
+    metadata.format ||
+    contentMetadata.source_format ||
+    contentMetadata.format ||
+    node.format ||
+    node.file_format ||
+    ''
+  ).trim().toLowerCase()
+  const layout = String(item.layout || metadata.layout || contentMetadata.layout || '').trim().toLowerCase()
+
+  if (format === 'osgb_scene' && (!layout || layout === 'whole')) return true
+  if (dataType === 'model_3d' && format === 'osgb' && (!layout || layout === 'single')) return true
+  if (dataType === 'model_3d' && format === 'gltf' && layout === 'multi') return true
+  if (dataType === 'model_3d' && ['fbx', 'obj', 'stl', 'ifc'].includes(format) && (!layout || layout === 'single')) return true
+  if (['osgb', 'gltf', 'fbx', 'obj', 'stl', 'ifc'].includes(format)) return true
+  return /\.(osgb|gltf|fbx|obj|stl|ifc)$/i.test(String(selectedNodePath || ''))
+}
+
 export function resolveQuickViewRenderSource(status = {}) {
   const explicit = normalizeQuickViewRenderSource(status?.render_source || status?.quick_view?.render_source)
   if (explicit) return explicit

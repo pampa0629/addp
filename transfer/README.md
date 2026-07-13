@@ -2,7 +2,7 @@
 
 Transfer 是 ADDP 的数据传输中枢，负责传输任务配置、执行编排、字段映射、异步 worker、checkpoint 观测、执行日志、指标和写后 Meta 扫描触发。
 
-当前已实现 bounded snapshot、PostgreSQL bounded watermark incremental，以及业务 Kafka keyed JSON -> PostgreSQL 的 continuous v1。continuous worker 已接通严格 JSON/字段映射、partitioned monotonic upsert、业务库 apply ledger、Infra `transfer.sync_states` CAS、lease/fencing 与真实 pause/resume/stop。Console Wizard 尚未开放 continuous 配置，当前需通过严格任务 JSON/API 创建；不得在 UI 中提前展示未完成的配置能力。
+当前已实现 bounded snapshot、PostgreSQL bounded watermark incremental，以及业务 Kafka keyed JSON -> PostgreSQL 的 continuous v1。continuous worker 已接通严格 JSON/字段映射、partitioned monotonic upsert、业务库 apply ledger、Infra `transfer.sync_states` CAS、lease/fencing、真实 pause/resume/stop，以及分区 latest offset、lag、retention horizon 和 degraded/critical 告警；Console Wizard 已支持选择 Kafka topic、手工声明 JSON schema、配置记录唯一标识和首次读取范围，并只允许 PostgreSQL 目标。
 
 当前主路径采用 clean break：Transfer 不再维护私有 reader / writer 插件体系，不再兼容旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type` 等任务 JSON 字段。具体读写能力来自 `common/engine`、`common/format`、`common/contentio` 和 `common/engine/contentadapter`。
 
@@ -82,6 +82,8 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`cad`
 
 continuous 第一版唯一实现路径是：业务 Kafka keyed JSON record -> Transfer continuous worker -> PostgreSQL `PartitionedTableChangeApplyProvider`。Provider 在业务目标库将 native table upsert 与 `addp_transfer.apply_positions` 的 partition `next_offset` 原子提交，避免失效 worker 写回旧状态；Infra PostgreSQL 的 `transfer.sync_states` 仍是任务 committed position 事实源。交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。consumer group 只负责 partition assignment，Kafka auto commit 不作为事实源。无 key append、Debezium、CDC、DLQ、Schema Registry、Avro、Protobuf、Kafka target、replay 和物理删除均后置。Infra Kafka 不进入 System engines 或用户任务配置。
 
+恢复 continuous task 时，Kafka Provider 会先验证 committed `next_offset` 是否仍处于 topic partition 的 earliest/latest 范围。位置已被 retention 清除时 execution 明确失败，不允许静默重置。目标 PostgreSQL 锁等待响应 runtime context 取消，未完成事务会同时回滚业务表和 `addp_transfer.apply_positions`。
+
 ## API
 
 路由前缀：`/api/v1/transfer`。
@@ -112,7 +114,7 @@ continuous 第一版唯一实现路径是：业务 Kafka keyed JSON record -> Tr
 
 `GET /executions/:execution_id` 是 TaskProvider 标准执行详情入口，按统一 `common.task_executions.execution_id` 查询。重试、进度和日志入口也按 `execution_id` 定位执行记录。私有 task-definition `stop` 只控制 continuous runtime；bounded worker 仍不支持真实中断，因此 TaskProvider 保持 `supports_cancel=false`，不注册标准 execution cancel endpoint。
 
-continuous worker 是独立进程角色 `cmd/continuous-worker`，用 Infra PostgreSQL 管理任务状态，并通过 System Engine Resolver 连接业务 Kafka 与业务 PostgreSQL，不使用 Asynq。相关配置为 `TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID`、`TRANSFER_CONTINUOUS_WORKER_CAPACITY`、`TRANSFER_CONTINUOUS_LEASE_DURATION`、`TRANSFER_CONTINUOUS_HEARTBEAT_INTERVAL`、`TRANSFER_CONTINUOUS_CLAIM_INTERVAL`、`TRANSFER_CONTINUOUS_POLL_TIMEOUT` 和 `TRANSFER_CONTINUOUS_FETCH_MAX_BYTES`；heartbeat 必须小于 lease duration 的一半。worker 还要求 `SYSTEM_URL` 与 `INTERNAL_API_KEY` 可用。
+continuous worker 是独立进程角色 `cmd/continuous-worker`，用 Infra PostgreSQL 管理任务状态，并通过 System Engine Resolver 连接业务 Kafka 与业务 PostgreSQL，不使用 Asynq。相关配置为 `TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID`、`TRANSFER_CONTINUOUS_WORKER_CAPACITY`、`TRANSFER_CONTINUOUS_LEASE_DURATION`、`TRANSFER_CONTINUOUS_HEARTBEAT_INTERVAL`、`TRANSFER_CONTINUOUS_CLAIM_INTERVAL`、`TRANSFER_CONTINUOUS_POLL_TIMEOUT`、`TRANSFER_CONTINUOUS_FETCH_MAX_BYTES`、`TRANSFER_CONTINUOUS_DIAGNOSTICS_INTERVAL`、`TRANSFER_CONTINUOUS_RETENTION_DEGRADED_HORIZON` 和 `TRANSFER_CONTINUOUS_RETENTION_CRITICAL_HORIZON`；后三项默认为 `15s` / `6h` / `1h`，critical 阈值必须小于 degraded 阈值。heartbeat 必须小于 lease duration 的一半。worker 还要求 `SYSTEM_URL` 与 `INTERNAL_API_KEY` 可用。
 
 Orchestrator v1 的 TaskProvider 注册使用只返回 bounded task 的 `/provider-tasks`，因此不会发现 continuous task；即使调用方持有 continuous task ID，标准 Provider execute 入口也会拒绝执行。用户侧 `/tasks` 仍查询全部任务，并可显式使用 `runtime_boundary` 过滤。
 

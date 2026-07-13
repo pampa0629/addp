@@ -116,15 +116,31 @@
             <el-icon><MagicStick /></el-icon>
             {{ t('manager.explorer.generateCADPreview') }}
           </el-button>
-          <el-button
-            v-if="showModel3DTilesGenerationAction"
-            size="small"
-            type="primary"
-            @click="handleGenerateModel3DTiles"
+          <el-dropdown
+            v-if="model3DTilesFormats.length"
+            trigger="click"
+            :disabled="model3DTilesGenerationLoading"
+            @command="handleGenerateModel3DTiles"
           >
-            <el-icon><MagicStick /></el-icon>
-            {{ t('manager.explorer.generateModel3DTiles') }}
-          </el-button>
+            <el-button size="small" type="primary" :loading="model3DTilesGenerationLoading">
+              <el-icon><MagicStick /></el-icon>
+              {{ t('manager.explorer.generateModel3DTiles') }}
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item
+                  v-for="item in model3DTilesFormats"
+                  :key="item.target_format"
+                  :command="item.target_format"
+                  :disabled="!item.can_generate"
+                >
+                  <el-tooltip :disabled="!item.unavailable_reason" :content="model3DTilesUnavailableReason(item.unavailable_reason)" placement="left">
+                    <span>{{ model3DTilesFormatLabel(item.target_format) }}</span>
+                  </el-tooltip>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
 
           <!-- 空间快显 / 瓦片缓存入口 -->
           <div v-if="showQuickViewActions" class="quick-view-actions">
@@ -377,6 +393,9 @@
           </div>
         </div>
       </div>
+      <div v-if="readyModel3DTilesFormats.length > 1 && isQuickViewActive" class="model3d-tiles-format-switcher">
+        <el-segmented v-model="selectedModel3DTilesFormat" :options="model3DTilesSegmentOptions" size="small" />
+      </div>
       <component
         v-if="showQuickViewRenderer"
         :is="quickViewRenderer"
@@ -449,6 +468,8 @@ import RasterTIFFQuickView from '@/components/map/RasterTIFFQuickView.vue'
 import Model3DPreview from '@/components/explorer/Model3DPreview.vue'
 import GaussianSplatPreview from '@/components/explorer/GaussianSplatPreview.vue'
 import PointCloudPreview from '@/components/explorer/PointCloudPreview.vue'
+import ThreeDTilesPreview from '@/components/explorer/ThreeDTilesPreview.vue'
+import S3MPreview from '@/components/explorer/S3MPreview.vue'
 import { useExplorerStore } from '@/stores/explorer'
 import { dataFormatDisplayName } from '@/utils/formatDisplay'
 import {
@@ -466,6 +487,7 @@ import {
 } from '@/utils/rasterCOGTask'
 import {
   hasQuickViewAction,
+  isModel3DQuickViewSource,
   isRasterQuickViewRenderSource,
   isTileQuickViewRenderSource,
   resolveQuickViewRenderSource,
@@ -481,6 +503,7 @@ import {
   isTIFFRasterMeta,
   rasterSpatialFacts
 } from '@/utils/rasterQuickViewTarget'
+import { isCADPreviewSource } from '@/utils/cadPreviewSource'
 import {
   combinedMultiRefValue,
   multiRefPreviewOptions
@@ -528,6 +551,8 @@ const model3DGLBGenerationLoading = ref(false)
 const gaussianSplatKSplatGenerationLoading = ref(false)
 const pointCloudCOPCGenerationLoading = ref(false)
 const cadPreviewGenerationLoading = ref(false)
+const model3DTilesGenerationLoading = ref(false)
+const selectedModel3DTilesFormat = ref('')
 const activePreviewMode = ref('basic_preview')
 const mvtGridVisible = ref(false)
 const resourceActions = ref(null)
@@ -1323,32 +1348,7 @@ const isTIFFNode = computed(() => {
 const isRasterMosaicNode = computed(() => isRasterMosaicMeta(props.previewData, props.selectedNode || {}))
 
 const isModel3DGLBSourceNode = computed(() => {
-  const node = props.selectedNode || {}
-  const object = props.previewData?.object || {}
-  const attrs = object.attributes || {}
-  const item = attrs.item || {}
-  const contentMetadata = object.content?.metadata || {}
-  const metadata = props.previewData?.metadata || {}
-  const dataType = String(item.data_type || metadata.data_type || contentMetadata.data_type || '').trim().toLowerCase()
-  const format = String(
-    item.format ||
-    metadata.source_format ||
-    metadata.format ||
-    contentMetadata.source_format ||
-    contentMetadata.format ||
-    node.format ||
-    node.file_format ||
-    ''
-  ).trim().toLowerCase()
-  const layout = String(item.layout || metadata.layout || contentMetadata.layout || '').trim().toLowerCase()
-  if (dataType === 'model_3d' && format === 'osgb' && (!layout || layout === 'single')) return true
-  if (dataType === 'model_3d' && format === 'gltf' && layout === 'multi') return true
-  if (dataType === 'model_3d' && format === 'fbx' && (!layout || layout === 'single')) return true
-  if (dataType === 'model_3d' && format === 'obj' && (!layout || layout === 'single')) return true
-  if (dataType === 'model_3d' && format === 'stl' && (!layout || layout === 'single')) return true
-  if (dataType === 'model_3d' && format === 'ifc' && (!layout || layout === 'single')) return true
-  if (['osgb', 'gltf', 'fbx', 'obj', 'stl', 'ifc'].includes(format)) return true
-  return /\.(osgb|gltf|fbx|obj|stl|ifc)$/i.test(selectedNodePath.value)
+  return isModel3DQuickViewSource(props.previewData, props.selectedNode || {}, selectedNodePath.value)
 })
 
 const isGaussianSplatKSplatSourceNode = computed(() => {
@@ -1394,6 +1394,10 @@ const isPointCloudCOPCSourceNode = computed(() => {
   return /\.(las|laz|e57|pcd|xyz|copc)$/i.test(selectedNodePath.value)
 })
 
+const isCADPreviewSourceNode = computed(() => {
+  return isCADPreviewSource(props.previewData, props.selectedNode || {})
+})
+
 const spatialInfoTooltip = computed(() => {
   if (!hasGeometry.value) return ''
 
@@ -1426,7 +1430,7 @@ const spatialInfoTooltip = computed(() => {
 })
 
 const spatialPreviewTarget = computed(() => {
-  if ((!hasGeometry.value && !isTIFFNode.value && !isRasterMosaicNode.value && !isModel3DGLBSourceNode.value && !isGaussianSplatKSplatSourceNode.value && !isPointCloudCOPCSourceNode.value) || !props.selectedNode) return null
+  if ((!hasGeometry.value && !isTIFFNode.value && !isRasterMosaicNode.value && !isModel3DGLBSourceNode.value && !isGaussianSplatKSplatSourceNode.value && !isPointCloudCOPCSourceNode.value && !isCADPreviewSourceNode.value) || !props.selectedNode) return null
   const node = props.selectedNode
   const locator = String(node.locator || node.id || '').trim()
   let parsedLocator = null
@@ -1493,7 +1497,30 @@ const isQuickViewActive = computed(() => {
   })
 })
 
-const quickViewRenderSource = computed(() => resolveQuickViewRenderSource(quickViewStatus.value))
+const model3DTilesFormats = computed(() => Array.isArray(quickViewStatus.value?.model3d_tiles?.formats)
+  ? quickViewStatus.value.model3d_tiles.formats
+  : [])
+const readyModel3DTilesFormats = computed(() => model3DTilesFormats.value.filter((item) => item.status === 'ready' && item.preview_url))
+const selectedModel3DTilesResult = computed(() => readyModel3DTilesFormats.value.find((item) => item.target_format === selectedModel3DTilesFormat.value) || readyModel3DTilesFormats.value[0] || null)
+const model3DTilesFormatLabel = (format) => format === 's3m' ? 'S3M' : '3D Tiles'
+const model3DTilesUnavailableReason = (reason) => {
+  const key = String(reason || '').trim()
+  const known = new Set(['workflow_engine_discovery_unavailable', 'workflow_engine_list_failed', 'operator_unavailable', 'result_ready', 'generation_running'])
+  return known.has(key) ? t(`manager.explorer.model3DTilesReason.${key}`) : key
+}
+const model3DTilesSegmentOptions = computed(() => readyModel3DTilesFormats.value.map((item) => ({ label: model3DTilesFormatLabel(item.target_format), value: item.target_format })))
+
+watch(readyModel3DTilesFormats, (formats) => {
+  if (!formats.some((item) => item.target_format === selectedModel3DTilesFormat.value)) {
+    selectedModel3DTilesFormat.value = formats[0]?.target_format || ''
+  }
+}, { immediate: true })
+
+const quickViewRenderSource = computed(() => {
+  const selected = selectedModel3DTilesResult.value
+  if (selected) return selected.target_format === 's3m' ? 'model3d_s3m' : 'model3d_3d_tiles'
+  return resolveQuickViewRenderSource(quickViewStatus.value)
+})
 const isRasterQuickView = computed(() => isRasterQuickViewRenderSource(quickViewRenderSource.value))
 
 const quickViewRenderer = computed(() => {
@@ -1504,6 +1531,8 @@ const quickViewRenderer = computed(() => {
   if (quickViewRenderSource.value === 'model_3d_glb') return Model3DPreview
   if (quickViewRenderSource.value === 'gaussian_splat_ksplat') return GaussianSplatPreview
   if (quickViewRenderSource.value === 'point_cloud_copc') return PointCloudPreview
+  if (quickViewRenderSource.value === 'model3d_3d_tiles') return ThreeDTilesPreview
+  if (quickViewRenderSource.value === 'model3d_s3m') return S3MPreview
   if (isTileQuickViewRenderSource(quickViewRenderSource.value)) return VectorTilePreview
   return null
 })
@@ -1577,7 +1606,7 @@ const quickViewRendererStateKey = computed(() => {
   if (quickViewRenderSource.value === 'model_3d_glb') return 'scene_3d'
   if (quickViewRenderSource.value === 'gaussian_splat_ksplat') return 'scene_3d'
   if (quickViewRenderSource.value === 'point_cloud_copc') return 'scene_3d'
-  if (quickViewRenderSource.value === 'model_3d_tiles') return 'scene_3d'
+  if (quickViewRenderSource.value === 'model3d_3d_tiles' || quickViewRenderSource.value === 'model3d_s3m') return 'scene_3d'
   if (quickViewRenderSource.value === 'direct_flatgeobuf' || isTileQuickViewRenderSource(quickViewRenderSource.value)) return 'map'
   if (isRasterQuickView.value) return 'map'
   return ''
@@ -1587,6 +1616,7 @@ const basicPreviewRendererStateKey = computed(() => {
   if (previewPluginName.value === 'model-3d') return 'scene_3d'
   if (previewPluginName.value === 'gaussian-splat') return 'scene_3d'
   if (previewPluginName.value === 'tiles-3d') return 'scene_3d'
+  if (previewPluginName.value === 'cad') return 'map'
   if (previewPluginName.value === 'map' || previewPluginName.value === 'table') return 'map'
   return ''
 })
@@ -1745,6 +1775,30 @@ const quickViewRendererProps = computed(() => {
       viewState: activeQuickViewState.value
     }
   }
+  if (quickViewRenderSource.value === 'model3d_3d_tiles' || quickViewRenderSource.value === 'model3d_s3m') {
+    const selected = selectedModel3DTilesResult.value
+    const previewURL = selected?.preview_url || ''
+    const isS3M = selected?.target_format === 's3m'
+    return {
+      data: {
+        mode: 'object',
+        object: {
+          content_type: isS3M ? 'application/vnd.supermap.s3m-config' : 'application/json',
+          url: previewURL,
+          content: {
+            kind: 'model_3d', frontend_renderer: isS3M ? 's3m' : '3d_tiles', url: previewURL,
+            metadata: {
+              format: isS3M ? 's3m' : '3dtiles',
+              source_format: isS3M ? 's3m' : '3dtiles',
+              manifest_encoding: isS3M ? 'xml' : '',
+              tile_extension: isS3M ? '.s3m' : ''
+            }
+          }
+        }
+      },
+      viewState: activeQuickViewState.value
+    }
+  }
   const source = quickViewSourceContext.value
   return {
     locator: target.locator,
@@ -1784,7 +1838,8 @@ const quickViewRenderKey = computed(() => {
     quickViewStatus.value?.quick_view?.preview_url || '',
     quickViewStatus.value?.model_3d?.result_id || '',
     quickViewStatus.value?.gaussian_splat?.result_id || '',
-    quickViewStatus.value?.point_cloud?.result_id || ''
+    quickViewStatus.value?.point_cloud?.result_id || '',
+    selectedModel3DTilesResult.value?.result_id || ''
   ].join('-')
 })
 
@@ -2064,7 +2119,8 @@ const handleGenerateCADPreview = async () => {
         ElMessage.warning(t('manager.explorer.generateCADPreviewTimeout'))
       }
     }
-    await refreshPreviewAfterArtifactReady('cad_preview')
+    await reloadCurrentPreview()
+    await loadQuickViewStatus()
     activePreviewMode.value = 'basic_preview'
   } catch (error) {
     console.error('提交 CAD 栅格瓦片预览生成失败:', error)
@@ -2074,23 +2130,34 @@ const handleGenerateCADPreview = async () => {
   }
 }
 
-const handleGenerateModel3DTiles = () => {
-  const source = model3DTilesSourcePayload.value
-  if (!source) {
+const handleGenerateModel3DTiles = async (targetFormat) => {
+  const locator = String(props.selectedNode?.locator || props.selectedNode?.id || '').trim()
+  const format = String(targetFormat || '').trim()
+  const action = format === 's3m' ? 'generate_model3d_s3m' : 'generate_model3d_3d_tiles'
+  if (!locator || !canUseQuickViewAction(action)) {
     ElMessage.warning(t('manager.explorer.model3DTilesMissingIdentity'))
     return
   }
-  router.push({
-    name: 'Model3DTiles',
-    query: {
-      create: '1',
-      source_locator: source.item_locator,
-      source_engine_id: String(source.source_engine_id || ''),
-      item_id: String(source.item_id || ''),
-      source_size_bytes: String(source.source_size_bytes || ''),
-      name: title.value || model3DTaskPromptPath.value || ''
+  model3DTilesGenerationLoading.value = true
+  try {
+    const execution = await quickViewAPI.executeQuickViewAction(locator, action)
+    const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
+    ElMessage.success(t('manager.explorer.generateModel3DTilesSubmitted'))
+    if (executionID) {
+      const result = await waitForRasterCOGExecution(executionID, (id) => quickViewAPI.getExecutionStatus(id), { maxAttempts: 180, intervalMs: 2000 })
+      if (result.failed) ElMessage.error(t('manager.explorer.generateModel3DTilesFailed'))
     }
-  })
+    await loadQuickViewStatus()
+    if (readyModel3DTilesFormats.value.length) {
+      selectedModel3DTilesFormat.value = format
+      activePreviewMode.value = 'map_quick_view'
+    }
+  } catch (error) {
+    console.error('提交分块三维模型瓦片生成失败:', error)
+    ElMessage.error(t('manager.explorer.generateModel3DTilesFailed'))
+  } finally {
+    model3DTilesGenerationLoading.value = false
+  }
 }
 
 const handleTileAdvisory = (advisory) => {
@@ -2159,7 +2226,7 @@ const model3DTilesPromptMetadata = computed(() => {
     objectData.value?.attributes?.item?.format ||
     ''
   ).trim().toLowerCase()
-  if (taskType !== 'model_3d_tiles_generation' || sourceFormat !== 'osgb_scene') {
+  if (taskType !== 'model3d_tiles_generation' || sourceFormat !== 'osgb_scene') {
     return null
   }
   return metadata
@@ -2224,7 +2291,6 @@ const showCADPreviewGenerationAction = computed(() => {
   return canUseQuickViewAction('generate_cad_preview')
 })
 
-const showModel3DTilesGenerationAction = computed(() => Boolean(model3DTilesSourcePayload.value))
 const showModel3DTaskPrompt = computed(() => Boolean(model3DGLBPromptMetadata.value || model3DTilesPromptMetadata.value))
 const model3DTaskPromptFormat = computed(() => {
   const metadata = model3DTilesPromptMetadata.value || model3DGLBPromptMetadata.value || {}
@@ -3033,6 +3099,15 @@ const handleNavigate = (path) => {
 .graph-sample-count {
   font-size: 12px;
   color: var(--addp-text-secondary);
+}
+
+.model3d-tiles-format-switcher {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--addp-border-color);
+  background: var(--addp-bg-primary);
 }
 
 .graph-sample-grid {

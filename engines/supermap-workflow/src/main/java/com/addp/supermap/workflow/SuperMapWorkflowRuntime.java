@@ -58,6 +58,7 @@ import io.minio.DownloadObjectArgs;
 import io.minio.MinioClient;
 import io.minio.UploadObjectArgs;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -84,6 +85,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.Comparator;
 import java.util.stream.Stream;
@@ -110,6 +112,7 @@ public final class SuperMapWorkflowRuntime {
     );
     private static final Instant STARTED_AT = Instant.now();
     private static final Map<String, ExecutionRecord> EXECUTIONS = new ConcurrentHashMap<>();
+    private static final Object SUPERMAP_EXECUTION_LOCK = new Object();
 
     private SuperMapWorkflowRuntime() {
     }
@@ -122,6 +125,8 @@ public final class SuperMapWorkflowRuntime {
         server.createContext("/api/workflow", SuperMapWorkflowRuntime::handleWorkflow);
         server.createContext("/api/operators/", SuperMapWorkflowRuntime::handleDirectOperator);
         server.createContext("/api/executions/", SuperMapWorkflowRuntime::handleExecutionStatus);
+        int httpThreads = Math.max(2, Integer.parseInt(System.getenv().getOrDefault("SUPERMAP_HTTP_THREADS", "4")));
+        server.setExecutor(Executors.newFixedThreadPool(httpThreads));
         server.start();
         System.out.printf("%s listening on http://0.0.0.0:%d%n", SERVICE_NAME, port);
     }
@@ -255,7 +260,10 @@ public final class SuperMapWorkflowRuntime {
         String executionID = UUID.randomUUID().toString();
         try {
             JsonNode request = MAPPER.readTree(readAll(exchange.getRequestBody()));
-            ObjectNode response = executeWorkflow(executionID, request, elapsedMs(started));
+            ObjectNode response;
+            synchronized (SUPERMAP_EXECUTION_LOCK) {
+                response = executeWorkflow(executionID, request, elapsedMs(started));
+            }
             EXECUTIONS.put(executionID, ExecutionRecord.success(response));
             sendJson(exchange, 200, response);
         } catch (IllegalArgumentException ex) {
@@ -304,7 +312,10 @@ public final class SuperMapWorkflowRuntime {
             if (!params.isObject()) {
                 throw new IllegalArgumentException("params must be an object");
             }
-            ObjectNode response = invokeDirectOperator(name, params);
+            ObjectNode response;
+            synchronized (SUPERMAP_EXECUTION_LOCK) {
+                response = invokeDirectOperator(name, params);
+            }
             response.put("status", "success");
             response.put("execution_time_ms", elapsedMs(started));
             sendJson(exchange, 200, response);
@@ -393,88 +404,107 @@ public final class SuperMapWorkflowRuntime {
         }
 
         Path sourceRoot = resolveWorkflowAccessPath(requireObject(source, "access"));
-        Path targetRoot = resolveWorkflowAccessPath(requireObject(target, "access"));
-        if (!Files.isDirectory(sourceRoot)) {
-            throw new IllegalArgumentException("OSGB scene directory does not exist: " + sourceRoot);
-        }
-        String writeMode = target.path("write_mode").asText("create");
-        if (Files.exists(targetRoot)) {
-            if ("create".equals(writeMode)) {
-                throw new IllegalArgumentException("S3M target already exists: " + targetRoot);
-            }
-            if (!"replace".equals(writeMode)) {
-                throw new IllegalArgumentException("target write_mode must be create or replace");
-            }
-            deleteRecursively(targetRoot);
-        }
-
-        OSGBSceneMetadata metadata = readOSGBSceneMetadata(sourceRoot.resolve("metadata.xml"));
-        List<String> rootTiles = findOSGBRootTiles(sourceRoot.resolve("Data"));
-        if (rootTiles.isEmpty()) {
-            throw new IllegalArgumentException("OSGB scene does not contain Data/Tile_*/Tile_*.osgb roots");
-        }
-
-        Path workRoot;
+        JsonNode targetAccess = requireObject(target, "access");
+        boolean objectStoreTarget = "object_store".equals(targetAccess.path("method").asText());
+        Path targetRoot;
         try {
-            workRoot = Files.createTempDirectory("addp-supermap-s3m-");
-			Files.createDirectories(targetRoot.resolve("config"));
+            targetRoot = objectStoreTarget
+                    ? Files.createTempDirectory("addp-supermap-s3m-output-")
+                    : resolveWorkflowAccessPath(targetAccess);
         } catch (IOException ex) {
-            throw new IllegalStateException("failed to prepare S3M conversion directories", ex);
+            throw new IllegalStateException("failed to prepare S3M target directory", ex);
         }
-		Path sourceSCP = workRoot.resolve("scene.scp");
-        Workspace workspace = new Workspace();
-        PrjCoordSys prjCoordSys = PrjCoordSys.fromEPSG(metadata.epsg());
-		boolean conversionSucceeded = false;
         try {
-            boolean configGenerated = OSGBCacheBuilder.generateConfigFile(
-                    sourceSCP.toString(),
-                    new Point3D(metadata.originX(), metadata.originY(), metadata.originZ()),
-                    prjCoordSys,
-                    rootTiles.toArray(new String[0])
-            );
-            if (!configGenerated) {
-                throw new IllegalStateException("SuperMap failed to generate OSGB scene SCP");
+            if (!Files.isDirectory(sourceRoot)) {
+                throw new IllegalArgumentException("OSGB scene directory does not exist: " + sourceRoot);
             }
-			boolean converted = CacheBuilderOSGBTool.osgb2s3m(sourceSCP.toString(), targetRoot.resolve("config").toString(), TextureCompressType.TEXTURECOMPRESS_DXT);
-            if (!converted) {
-                throw new IllegalStateException("SuperMap OSGB to S3M conversion returned false");
-            }
-			conversionSucceeded = true;
-        } finally {
-            prjCoordSys.dispose();
-            workspace.dispose();
-            deleteRecursively(workRoot);
-			if (!conversionSucceeded) {
-				deleteRecursively(targetRoot);
-			}
-        }
-
-        Path manifest = findSingleSCP(targetRoot);
-        long fileCount;
-        long sizeBytes;
-        try (Stream<Path> files = Files.walk(targetRoot)) {
-            List<Path> outputs = files.filter(Files::isRegularFile).toList();
-            fileCount = outputs.size();
-            sizeBytes = outputs.stream().mapToLong(item -> {
-                try {
-                    return Files.size(item);
-                } catch (IOException ex) {
-                    throw new IllegalStateException(ex);
+            String writeMode = target.path("write_mode").asText("create");
+            if (Files.exists(targetRoot)) {
+                if (!objectStoreTarget && "create".equals(writeMode)) {
+                    throw new IllegalArgumentException("S3M target already exists: " + targetRoot);
                 }
-            }).sum();
-        } catch (IOException ex) {
-            throw new IllegalStateException("failed to inspect S3M output", ex);
+                if (!"replace".equals(writeMode)) {
+                    throw new IllegalArgumentException("target write_mode must be create or replace");
+                }
+                deleteRecursively(targetRoot);
+            }
+
+            OSGBSceneMetadata metadata = readOSGBSceneMetadata(sourceRoot.resolve("metadata.xml"));
+            List<String> rootTiles = findOSGBRootTiles(sourceRoot.resolve("Data"));
+            if (rootTiles.isEmpty()) {
+                throw new IllegalArgumentException("OSGB scene does not contain Data/Tile_*/Tile_*.osgb roots");
+            }
+
+            Path workRoot;
+            try {
+                workRoot = Files.createTempDirectory("addp-supermap-s3m-");
+                Files.createDirectories(targetRoot.resolve("config"));
+            } catch (IOException ex) {
+                throw new IllegalStateException("failed to prepare S3M conversion directories", ex);
+            }
+            Path sourceSCP = workRoot.resolve("scene.scp");
+            Workspace workspace = new Workspace();
+            PrjCoordSys prjCoordSys = PrjCoordSys.fromEPSG(metadata.epsg());
+            boolean conversionSucceeded = false;
+            try {
+                boolean configGenerated = OSGBCacheBuilder.generateConfigFile(
+                        sourceSCP.toString(),
+                        new Point3D(metadata.originX(), metadata.originY(), metadata.originZ()),
+                        prjCoordSys,
+                        rootTiles.toArray(new String[0])
+                );
+                if (!configGenerated) {
+                    throw new IllegalStateException("SuperMap failed to generate OSGB scene SCP");
+                }
+                boolean converted = CacheBuilderOSGBTool.osgb2s3m(sourceSCP.toString(), targetRoot.resolve("config").toString(), TextureCompressType.TEXTURECOMPRESS_DXT);
+                if (!converted) {
+                    throw new IllegalStateException("SuperMap OSGB to S3M conversion returned false");
+                }
+                conversionSucceeded = true;
+            } finally {
+                prjCoordSys.dispose();
+                workspace.dispose();
+                deleteRecursively(workRoot);
+                if (!conversionSucceeded) {
+                    deleteRecursively(targetRoot);
+                }
+            }
+
+            Path manifest = findSingleSCP(targetRoot);
+            long fileCount;
+            long sizeBytes;
+            try (Stream<Path> files = Files.walk(targetRoot)) {
+                List<Path> outputs = files.filter(Files::isRegularFile).toList();
+                fileCount = outputs.size();
+                sizeBytes = outputs.stream().mapToLong(item -> {
+                    try {
+                        return Files.size(item);
+                    } catch (IOException ex) {
+                        throw new IllegalStateException(ex);
+                    }
+                }).sum();
+            } catch (IOException ex) {
+                throw new IllegalStateException("failed to inspect S3M output", ex);
+            }
+            String manifestRef = targetRoot.relativize(manifest).toString().replace('\\', '/');
+            if (objectStoreTarget) {
+                publishDirectory(targetRoot, targetAccess);
+            }
+            ObjectNode result = MAPPER.createObjectNode();
+            result.put("kind", "supermap_s3m_dataset");
+            result.put("target_format", "s3m");
+            result.put("target_path", objectStoreTarget ? targetAccess.path("prefix").asText("") : targetRoot.toString());
+            result.put("manifest_ref", manifestRef);
+            result.put("texture_compression", "dxt");
+            result.put("root_tile_count", rootTiles.size());
+            result.put("file_count", fileCount);
+            result.put("size_bytes", sizeBytes);
+            return result;
+        } finally {
+            if (objectStoreTarget) {
+                deleteRecursively(targetRoot);
+            }
         }
-        ObjectNode result = MAPPER.createObjectNode();
-        result.put("kind", "supermap_s3m_dataset");
-        result.put("target_format", "s3m");
-        result.put("target_path", targetRoot.toString());
-        result.put("manifest_ref", targetRoot.relativize(manifest).toString().replace('\\', '/'));
-        result.put("texture_compression", "dxt");
-        result.put("root_tile_count", rootTiles.size());
-        result.put("file_count", fileCount);
-        result.put("size_bytes", sizeBytes);
-        return result;
     }
 
     private static ObjectNode inspectCAD(JsonNode params) {
@@ -483,18 +513,19 @@ public final class SuperMapWorkflowRuntime {
             throw new IllegalArgumentException("unsupported access_plan.schema_version");
         }
         JsonNode source = requireObject(plan, "source");
-        if (!"file".equals(source.path("kind").asText()) || !"dwg".equals(source.path("format").asText())) {
-            throw new IllegalArgumentException("access_plan.source must be file/dwg");
+        if (!"file".equals(source.path("kind").asText())) {
+            throw new IllegalArgumentException("access_plan.source must be a CAD file");
         }
+        String sourceFormat = requireCADSourceFormat(source);
         WorkflowAccessFile sourceFile = resolveWorkflowAccessFile(requireObject(source, "access"));
         Path sourcePath = sourceFile.path();
         if (!Files.isRegularFile(sourcePath)) {
             sourceFile.close();
-            throw new IllegalArgumentException("DWG file does not exist: " + sourcePath);
+            throw new IllegalArgumentException("CAD file does not exist: " + sourcePath);
         }
         String formatVersion;
         try {
-            formatVersion = readDWGVersion(sourcePath);
+            formatVersion = readCADFormatVersion(sourcePath, sourceFormat);
         } catch (RuntimeException ex) {
             sourceFile.close();
             throw ex;
@@ -509,7 +540,7 @@ public final class SuperMapWorkflowRuntime {
             connectionInfo.setReadOnly(true);
             Datasource datasource = workspace.getDatasources().open(connectionInfo);
             if (datasource == null || !datasource.isOpened()) {
-                throw new IllegalStateException("SuperMap failed to open DWG datasource: " + sourcePath);
+                throw new IllegalStateException("SuperMap failed to open CAD datasource: " + sourcePath);
             }
 
             int datasetCount = datasource.getDatasets().getCount();
@@ -545,7 +576,7 @@ public final class SuperMapWorkflowRuntime {
 
             ObjectNode result = MAPPER.createObjectNode();
             result.put("schema_version", "addp.cad.inspect/v1");
-            result.put("format", "dwg");
+            result.put("format", sourceFormat);
             result.put("format_version", formatVersion);
             ObjectNode drawing = result.putObject("drawing");
             drawing.put("drawing_kind", "2d");
@@ -587,9 +618,10 @@ public final class SuperMapWorkflowRuntime {
         }
         JsonNode source = requireObject(plan, "source");
         JsonNode target = requireObject(plan, "target");
-        if (!"file".equals(source.path("kind").asText()) || !"dwg".equals(source.path("format").asText())) {
-            throw new IllegalArgumentException("access_plan.source must be file/dwg");
+        if (!"file".equals(source.path("kind").asText())) {
+            throw new IllegalArgumentException("access_plan.source must be a CAD file");
         }
+        String sourceFormat = requireCADSourceFormat(source);
         if (!"directory".equals(target.path("kind").asText()) || !"cad_preview".equals(target.path("format").asText())) {
             throw new IllegalArgumentException("access_plan.target must be directory/cad_preview");
         }
@@ -610,14 +642,14 @@ public final class SuperMapWorkflowRuntime {
         GeoStyle backgroundStyle = new GeoStyle();
         try {
             Path sourcePath = sourceFile.path();
-            readDWGVersion(sourcePath);
+            readCADFormatVersion(sourcePath, sourceFormat);
             connectionInfo.setEngineType(EngineType.VECTORFILE);
             connectionInfo.setServer(sourcePath.toString());
             connectionInfo.setAlias("cad_preview_" + UUID.randomUUID().toString().replace("-", ""));
             connectionInfo.setReadOnly(true);
             Datasource datasource = workspace.getDatasources().open(connectionInfo);
             if (datasource == null || !datasource.isOpened()) {
-                throw new IllegalStateException("SuperMap failed to open DWG datasource: " + sourcePath);
+                throw new IllegalStateException("SuperMap failed to open CAD datasource: " + sourcePath);
             }
 
             Rectangle2D drawingBounds = null;
@@ -642,7 +674,7 @@ public final class SuperMapWorkflowRuntime {
                 }
             }
             if (drawingBounds == null || drawingBounds.isEmpty() || drawingBounds.getWidth() <= 0 || drawingBounds.getHeight() <= 0) {
-                throw new IllegalStateException("DWG datasource has no renderable 2D bounds");
+                throw new IllegalStateException("CAD datasource has no renderable 2D bounds");
             }
             double renderSpan = Math.max(drawingBounds.getWidth(), drawingBounds.getHeight());
             double centerX = (drawingBounds.getLeft() + drawingBounds.getRight()) / 2.0d;
@@ -718,9 +750,10 @@ public final class SuperMapWorkflowRuntime {
             Files.writeString(renderRoot.resolve("manifest.json"), MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(manifest), StandardCharsets.UTF_8);
 
             JsonNode targetAccess = requireObject(target, "access");
-            publishCADPreview(renderRoot, targetAccess);
+            publishDirectory(renderRoot, targetAccess);
             ObjectNode result = MAPPER.createObjectNode();
             result.put("schema_version", "addp.cad.render-preview/v1");
+            result.put("format", sourceFormat);
             result.put("manifest_ref", "manifest.json");
             result.put("thumbnail_ref", "thumbnail.webp");
             result.put("tile_count", tileCount);
@@ -752,7 +785,7 @@ public final class SuperMapWorkflowRuntime {
         return map.outputMapToWEBP(output.toString(), false);
     }
 
-    private static void publishCADPreview(Path renderRoot, JsonNode access) {
+    private static void publishDirectory(Path renderRoot, JsonNode access) {
         String method = access.path("method").asText();
         if ("mounted_path".equals(method)) {
             Path targetRoot = resolveWorkflowAccessPath(access);
@@ -770,12 +803,12 @@ public final class SuperMapWorkflowRuntime {
                     }
                 }
             } catch (IOException ex) {
-                throw new IllegalStateException("failed to publish CAD preview to mounted path", ex);
+                throw new IllegalStateException("failed to publish directory to mounted path", ex);
             }
             return;
         }
         if (!"object_store".equals(method)) {
-            throw new IllegalArgumentException("CAD preview target access method must be mounted_path or object_store");
+            throw new IllegalArgumentException("directory target access method must be mounted_path or object_store");
         }
         String prefix = access.path("prefix").asText("").replace('\\', '/').replaceAll("^/+|/+$", "");
         try {
@@ -792,7 +825,7 @@ public final class SuperMapWorkflowRuntime {
                 }
             }
         } catch (Exception ex) {
-            throw new IllegalStateException("failed to publish CAD preview to object store", ex);
+            throw new IllegalStateException("failed to publish directory to object store", ex);
         }
     }
 
@@ -827,7 +860,7 @@ public final class SuperMapWorkflowRuntime {
             return new WorkflowAccessFile(localFile, tempRoot);
         } catch (Exception ex) {
             deleteRecursively(tempRoot);
-            throw new IllegalStateException("failed to materialize DWG object " + bucket + "/" + object, ex);
+            throw new IllegalStateException("failed to materialize CAD object " + bucket + "/" + object, ex);
         }
     }
 
@@ -866,6 +899,22 @@ public final class SuperMapWorkflowRuntime {
                 .build();
     }
 
+    private static String requireCADSourceFormat(JsonNode source) {
+        String sourceFormat = source.path("format").asText("").trim().toLowerCase();
+        if (!"dwg".equals(sourceFormat) && !"dxf".equals(sourceFormat)) {
+            throw new IllegalArgumentException("access_plan.source.format must be dwg or dxf");
+        }
+        return sourceFormat;
+    }
+
+    private static String readCADFormatVersion(Path sourcePath, String sourceFormat) {
+        return switch (sourceFormat) {
+            case "dwg" -> readDWGVersion(sourcePath);
+            case "dxf" -> readDXFVersion(sourcePath);
+            default -> throw new IllegalArgumentException("unsupported CAD format: " + sourceFormat);
+        };
+    }
+
     private static String readDWGVersion(Path sourcePath) {
         try (InputStream input = Files.newInputStream(sourcePath)) {
             byte[] header = input.readNBytes(6);
@@ -876,6 +925,46 @@ public final class SuperMapWorkflowRuntime {
             return version;
         } catch (IOException ex) {
             throw new IllegalStateException("failed to read DWG header: " + sourcePath, ex);
+        }
+    }
+
+    private static String readDXFVersion(Path sourcePath) {
+        byte[] binarySignature = new byte[] {
+            'A', 'u', 't', 'o', 'C', 'A', 'D', ' ', 'B', 'i', 'n', 'a', 'r', 'y', ' ', 'D', 'X', 'F',
+            '\r', '\n', 0x1a, 0x00
+        };
+        try (InputStream input = Files.newInputStream(sourcePath)) {
+            byte[] header = input.readNBytes(binarySignature.length);
+            if (Arrays.equals(header, binarySignature)) {
+                return "";
+            }
+        } catch (IOException ex) {
+            throw new IllegalStateException("failed to read DXF header: " + sourcePath, ex);
+        }
+        try (BufferedReader reader = Files.newBufferedReader(sourcePath, StandardCharsets.US_ASCII)) {
+            String first = reader.readLine();
+            String second = reader.readLine();
+            if (first == null || second == null || !first.replace("\uFEFF", "").trim().equals("0") || !second.trim().equalsIgnoreCase("SECTION")) {
+                throw new IllegalArgumentException("invalid ASCII DXF SECTION header: " + sourcePath);
+            }
+            for (int lineNumber = 2; lineNumber < 4096; lineNumber++) {
+                String line = reader.readLine();
+                if (line == null) {
+                    break;
+                }
+                if (!"$ACADVER".equalsIgnoreCase(line.trim())) {
+                    continue;
+                }
+                String groupCode = reader.readLine();
+                String value = reader.readLine();
+                if (groupCode != null && value != null && "1".equals(groupCode.trim())) {
+                    return value.trim();
+                }
+                break;
+            }
+            return "";
+        } catch (IOException ex) {
+            throw new IllegalStateException("failed to read DXF header: " + sourcePath, ex);
         }
     }
 
@@ -1282,7 +1371,7 @@ public final class SuperMapWorkflowRuntime {
         result.put("cad.inspect", operator(
                 "cad.inspect",
                 "检查 CAD 图纸",
-                "只读打开 DWG 并返回 Dataset 元数据、记录数和范围；不遍历 Geometry。",
+                "只读打开 DWG 或 DXF 并返回 Dataset 元数据、记录数和范围；不遍历 Geometry。",
                 "CAD",
                 List.of(
                         param("access_plan", "object", false, true, "ADDP 工作流资源访问计划。")
@@ -1293,7 +1382,7 @@ public final class SuperMapWorkflowRuntime {
         result.put("cad.render_preview", operator(
                 "cad.render_preview",
                 "渲染 CAD 预览",
-                "使用 SuperMap Map/Layer 直接渲染 DWG Dataset，生成受管 WebP 瓦片。",
+                "使用 SuperMap Map/Layer 直接渲染 DWG 或 DXF Dataset，生成受管 WebP 瓦片。",
                 "CAD",
                 List.of(
                         param("access_plan", "object", false, true, "ADDP 工作流源文件与目标 artifact 访问计划。"),

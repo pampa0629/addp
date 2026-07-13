@@ -70,7 +70,7 @@
         <el-table-column prop="status" :label="t('transfer.taskList.status')" width="110">
           <template #default="{ row }">
             <el-tag :type="getTaskStatusTagType(row)">
-              {{ getTaskStatusLabel(row) }}
+              {{ getTaskDisplayStatus(row) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -369,6 +369,12 @@ const canStartContinuous = (task) => ['paused', 'stopped'].includes(task.desired
 const canStartSchedule = (task) => !task.enabled
 const canPauseSchedule = (task) => task.enabled
 const canDeleteManual = (task) => !isRunning(task)
+const getTaskDisplayStatus = (task) => {
+  if (!isContinuousTask(task)) return getTaskStatusLabel(task)
+  if (task.desired_state === 'paused') return t('transfer.taskList.continuousPaused')
+  if (task.desired_state === 'stopped') return t('transfer.taskList.continuousStopped')
+  return t('transfer.taskList.continuousRunning')
+}
 
 // 初始化
 onMounted(() => {

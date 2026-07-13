@@ -18,7 +18,7 @@ type CADInspection struct {
 }
 
 type CADInspector interface {
-	InspectCAD(ctx context.Context, source *commonModels.Engine, tenantID uint, physicalPath string, sizeBytes int64) (*CADInspection, error)
+	InspectCAD(ctx context.Context, source *commonModels.Engine, tenantID uint, physicalPath, sourceFormat string, sizeBytes int64) (*CADInspection, error)
 }
 
 func EnrichSingleCADItem(
@@ -31,13 +31,13 @@ func EnrichSingleCADItem(
 	physicalPath string,
 	sizeBytes int64,
 ) error {
-	if item == nil || item.Layout != format.LayoutSingle || item.DataType != datatype.CAD || item.Format != string(format.FormatDWG) {
+	if item == nil || item.Layout != format.LayoutSingle || item.DataType != datatype.CAD || !format.IsCADFormat(format.NormalizeFormat(item.Format)) {
 		return nil
 	}
 	if inspector == nil {
 		return fmt.Errorf("CAD deep scan requires a configured CAD inspector")
 	}
-	inspection, err := inspector.InspectCAD(ctx, source, tenantID, physicalPath, sizeBytes)
+	inspection, err := inspector.InspectCAD(ctx, source, tenantID, physicalPath, item.Format, sizeBytes)
 	if err != nil {
 		return err
 	}
@@ -47,7 +47,7 @@ func EnrichSingleCADItem(
 	item.CAD = inspection.CAD.Clone()
 	metaitem.ApplyCADInfo(attrs, item)
 	if len(inspection.FormatInfo) > 0 {
-		metaattr.MergeStandardAttributes(attrs, metaattr.FormatInfoAttributes(string(format.FormatDWG), inspection.FormatInfo))
+		metaattr.MergeStandardAttributes(attrs, metaattr.FormatInfoAttributes(item.Format, inspection.FormatInfo))
 	}
 	return nil
 }

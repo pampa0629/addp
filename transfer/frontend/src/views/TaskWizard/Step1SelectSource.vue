@@ -314,20 +314,21 @@ function syncSource(node) {
 
   const endpointResource = buildSourceEndpointResource(node)
   const locator = sourceLocatorForNode(node)
+  const dataType = treeNodeType(node) === 'topic' ? 'unknown' : nodeDataType(node)
   props.wizardState.updateSource({
     engineID: formData.engineID,
     engineType: engine.engine_type,
     schema: endpointResource.path?.schema || '',
     table: endpointResource.path?.table || '',
     sourceType: normalizeEngineType(engine.engine_type),
-    dataType: nodeDataType(node),
+    dataType,
     representation: representationForSelection(node),
     format: nodeFormat(node),
     locator,
     extra: {
       sourceLabel: catalogPathForNode(node),
       catalogPath: catalogPathForNode(node),
-      dataType: nodeDataType(node),
+      dataType,
       representation: representationForSelection(node),
       format: nodeFormat(node),
       locator,
@@ -339,7 +340,7 @@ function syncSource(node) {
         kind: node.kind,
         term: node.term,
         path: node.path,
-        data_type: nodeDataType(node),
+        data_type: dataType,
         representation: representationForSelection(node),
         format: nodeFormat(node),
         layout: node.layout,

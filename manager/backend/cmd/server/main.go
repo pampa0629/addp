@@ -189,6 +189,7 @@ func main() {
 
 	// 初始化快显状态服务（依赖数据库与 Meta 空间元数据）
 	quickViewService := service.NewQuickViewService(db, metaClient)
+	quickViewService.SetWorkflowEngineLister(systemClient)
 	quickViewService.SetCapabilityOptions(service.QuickViewCapabilityOptions{
 		DirectFlatGeobufMaxRows: cfg.TileCache.DirectFlatGeobufMaxRows,
 		RealtimeTileTimeoutMS:   cfg.TileCache.RealtimeTileTimeoutMS,
@@ -226,6 +227,7 @@ func main() {
 	pointCloudCOPCTaskSvc := service.NewPointCloudCOPCTaskService(pointCloudCOPCRepo, taskExecRepo)
 	cadPreviewTaskSvc := service.NewCADPreviewTaskService(cadPreviewRepo, taskExecRepo)
 	model3DTilesTaskSvc := service.NewModel3DTilesTaskService(model3DTilesRepo, taskExecRepo)
+	model3DTilesTaskSvc.SetBucket(minioBucket)
 	rasterCOGTaskSvc.SetBucket(minioBucket)
 	rasterCOGTaskSvc.SetCleaner(service.NewMinIORasterCOGCleaner(minioClient, minioBucket))
 	model3DGLBTaskSvc.SetBucket(minioBucket)
@@ -337,9 +339,10 @@ func main() {
 	gaussianSplatKSplatHandler := api.NewGaussianSplatKSplatHandler(gaussianSplatKSplatRepo, minioClient, minioBucket)
 	pointCloudCOPCHandler := api.NewPointCloudCOPCHandler(pointCloudCOPCRepo, minioClient, minioBucket)
 	cadPreviewHandler := api.NewCADPreviewHandler(cadPreviewTaskSvc, cadPreviewRepo, minioClient, minioBucket)
+	model3DTilesHandler := api.NewModel3DTilesHandler(model3DTilesRepo, minioClient, minioBucket)
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("manager")
@@ -355,6 +358,12 @@ func main() {
 		model3DTilesTaskSvc.SetExecutor(service.NewManagerModel3DTilesExecutor(
 			systemClient,
 			systemClient,
+			minioClient,
+			cfg.MinioEndpoint,
+			cfg.MinioAccessKey,
+			cfg.MinioSecretKey,
+			cfg.MinioUseSSL,
+			minioBucket,
 			cfg.RasterMosaicGeneration.Timeout,
 		))
 		model3DGLBTaskSvc.SetExecutor(service.NewManagerModel3DGLBExecutor(
@@ -419,7 +428,6 @@ func main() {
 	}
 	if metaClient != nil {
 		rasterMosaicTaskSvc.SetMetaScanSubmitter(metaClient)
-		model3DTilesTaskSvc.SetMetaScanSubmitter(metaClient)
 	}
 
 	// ========== 服务注册（注册到 System service_registry）==========

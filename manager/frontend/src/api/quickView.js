@@ -257,28 +257,68 @@ export const quickViewAPI = {
     return request.delete(`/manager/point_cloud_copc/${id}`)
   },
 
+  createCADPreviewTask(payload) {
+    return request.post('/manager/cad-preview-tasks', payload)
+  },
+
+  listCADPreviewTasks(params = {}) {
+    return request.get('/manager/cad-preview-tasks', { params })
+  },
+
+  getCADPreviewTask(id) {
+    return request.get(`/manager/cad-preview-tasks/${id}`)
+  },
+
+  updateCADPreviewTask(id, payload) {
+    return request.put(`/manager/cad-preview-tasks/${id}`, payload)
+  },
+
+  deleteCADPreviewTask(id) {
+    return request.delete(`/manager/cad-preview-tasks/${id}`)
+  },
+
+  executeCADPreviewTask(id, payload = {}) {
+    return request.post(`/manager/tasks/cad_preview_generation/${id}/execute`, {
+      trigger_type: 'manual',
+      source: 'manager',
+      ...payload
+    })
+  },
+
+  listCADPreviews(params = {}) {
+    return request.get('/manager/cad-previews', { params })
+  },
+
+  getCADPreview(id) {
+    return request.get(`/manager/cad-previews/${id}`)
+  },
+
+  deleteCADPreview(id) {
+    return request.delete(`/manager/cad-previews/${id}`)
+  },
+
   createModel3DTilesTask(payload) {
-    return request.post('/manager/model_3d_tiles_tasks', payload)
+    return request.post('/manager/model3d_tiles_tasks', payload)
   },
 
   listModel3DTilesTasks(params = {}) {
-    return request.get('/manager/model_3d_tiles_tasks', { params })
+    return request.get('/manager/model3d_tiles_tasks', { params })
   },
 
   getModel3DTilesTask(id) {
-    return request.get(`/manager/model_3d_tiles_tasks/${id}`)
+    return request.get(`/manager/model3d_tiles_tasks/${id}`)
   },
 
   updateModel3DTilesTask(id, payload) {
-    return request.put(`/manager/model_3d_tiles_tasks/${id}`, payload)
+    return request.put(`/manager/model3d_tiles_tasks/${id}`, payload)
   },
 
   deleteModel3DTilesTask(id) {
-    return request.delete(`/manager/model_3d_tiles_tasks/${id}`)
+    return request.delete(`/manager/model3d_tiles_tasks/${id}`)
   },
 
   executeModel3DTilesTask(id, payload = {}) {
-    return request.post(`/manager/tasks/model_3d_tiles_generation/${id}/execute`, {
+    return request.post(`/manager/tasks/model3d_tiles_generation/${id}/execute`, {
       trigger_type: 'manual',
       source: 'manager',
       ...payload

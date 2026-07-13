@@ -14,6 +14,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/dbbridge"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
@@ -60,6 +61,8 @@ const (
 	QuickViewActionGenerateGaussianSplatKSplat = "generate_gaussian_splat_ksplat"
 	QuickViewActionGeneratePointCloudCOPC      = "generate_point_cloud_copc"
 	QuickViewActionGenerateCADPreview          = "generate_cad_preview"
+	QuickViewActionGenerateModel3D3DTiles      = "generate_model3d_3d_tiles"
+	QuickViewActionGenerateModel3DS3M          = "generate_model3d_s3m"
 
 	QuickViewRenderSourceCachedTile          = "cached_tile"
 	QuickViewRenderSourceClientCOG           = "client_cog_render"
@@ -102,6 +105,8 @@ type QuickViewService struct {
 	model3DRepo       *repository.Model3DGLBRepository
 	gaussianSplatRepo *repository.GaussianSplatKSplatRepository
 	pointCloudRepo    *repository.PointCloudCOPCRepository
+	model3DTilesRepo  *repository.Model3DTilesRepository
+	workflowEngines   workflowEngineLister
 	metaClient        *commonClient.MetaClient
 	options           QuickViewCapabilityOptions
 	spatialLoader     func(ctx context.Context, tenantID, engineID uint, schema, table string) (*SpatialMetadataResult, error)
@@ -119,8 +124,13 @@ func NewQuickViewService(
 		model3DRepo:       repository.NewModel3DGLBRepository(db),
 		gaussianSplatRepo: repository.NewGaussianSplatKSplatRepository(db),
 		pointCloudRepo:    repository.NewPointCloudCOPCRepository(db),
+		model3DTilesRepo:  repository.NewModel3DTilesRepository(db),
 		metaClient:        metaClient,
 	}
+}
+
+func (s *QuickViewService) SetWorkflowEngineLister(lister workflowEngineLister) {
+	s.workflowEngines = lister
 }
 
 func (s *QuickViewService) Repository() *repository.PreviewStateRepository {
@@ -320,6 +330,7 @@ type QuickViewCapability struct {
 	Raster               *QuickViewRasterInfo        `json:"raster,omitempty"`
 	RasterMosaic         *QuickViewRasterMosaicInfo  `json:"raster_mosaic,omitempty"`
 	Model3D              *QuickViewModel3DInfo       `json:"model_3d,omitempty"`
+	Model3DTiles         *QuickViewModel3DTilesInfo  `json:"model3d_tiles,omitempty"`
 	GaussianSplat        *QuickViewGaussianSplatInfo `json:"gaussian_splat,omitempty"`
 	PointCloud           *QuickViewPointCloudInfo    `json:"point_cloud,omitempty"`
 	CAD                  *QuickViewCADInfo           `json:"cad,omitempty"`
@@ -429,6 +440,21 @@ type QuickViewModel3DInfo struct {
 	FileName        string  `json:"file_name,omitempty"`
 	SizeBytes       int64   `json:"size_bytes,omitempty"`
 	PreviewURL      string  `json:"preview_url,omitempty"`
+}
+
+type QuickViewModel3DTilesFormatInfo struct {
+	TargetFormat      string  `json:"target_format"`
+	CanGenerate       bool    `json:"can_generate"`
+	UnavailableReason string  `json:"unavailable_reason,omitempty"`
+	Status            string  `json:"status,omitempty"`
+	ResultID          *uint   `json:"result_id,omitempty"`
+	TaskID            *uint   `json:"task_id,omitempty"`
+	LastExecutionID   *string `json:"last_execution_id,omitempty"`
+	PreviewURL        string  `json:"preview_url,omitempty"`
+}
+
+type QuickViewModel3DTilesInfo struct {
+	Formats []QuickViewModel3DTilesFormatInfo `json:"formats"`
 }
 
 type QuickViewGaussianSplatInfo struct {
@@ -836,6 +862,18 @@ func applyAvailableActions(capability *QuickViewCapability) {
 	if capability.SourceKind == QuickViewSourceKindModel3D && !capability.CanUseQuickView && capability.UnavailableReason == "requires_glb_generation" {
 		add(QuickViewActionGenerateModel3DGLB)
 	}
+	if capability.Model3DTiles != nil {
+		for _, item := range capability.Model3DTiles.Formats {
+			if !item.CanGenerate {
+				continue
+			}
+			if item.TargetFormat == models.Model3DTilesTargetFormatS3M {
+				add(QuickViewActionGenerateModel3DS3M)
+			} else {
+				add(QuickViewActionGenerateModel3D3DTiles)
+			}
+		}
+	}
 	if capability.SourceKind == QuickViewSourceKindGaussianSplat && !capability.CanUseQuickView &&
 		capability.GaussianSplat != nil &&
 		capability.GaussianSplat.RecommendedAction == commonExecution.TaskTypeGaussianSplatKSplatGeneration {
@@ -1016,6 +1054,9 @@ func (s *QuickViewService) applyModel3DCapability(ctx context.Context, capabilit
 		Available: false,
 		Reason:    "model 3d GLB does not use vector tile cache generation",
 	}
+	if strings.EqualFold(model3D.Format, string(format.FormatOSGBScene)) {
+		return s.applyModel3DTilesCapability(ctx, capability, identity)
+	}
 
 	if isSourceModel3DDirectPreview(model3D) {
 		reason := "source_format_direct_preview"
@@ -1053,6 +1094,86 @@ func (s *QuickViewService) applyModel3DCapability(ctx context.Context, capabilit
 	capability.RecommendedMode = models.PreviewModeBasicPreview
 	capability.QuickView = QuickViewRenderInfo{}
 	return nil
+}
+
+func (s *QuickViewService) applyModel3DTilesCapability(ctx context.Context, capability *QuickViewCapability, identity QuickViewIdentity) error {
+	if err := s.model3DTilesRepo.MarkOtherFingerprintResultsStale(ctx, identity.TenantID, identity.Locator, identity.ItemFingerprint); err != nil {
+		return err
+	}
+	results, err := s.model3DTilesRepo.ListCurrentResults(ctx, identity.TenantID, identity.ItemFingerprint)
+	if err != nil {
+		return err
+	}
+	byFormat := map[string]*models.Model3DTiles{}
+	for _, result := range results {
+		byFormat[result.TargetFormat] = result
+	}
+	var engines []commonModels.Engine
+	var listErr error
+	if s.workflowEngines != nil {
+		engines, listErr = s.workflowEngines.ListWorkflowEngines(identity.TenantID)
+	}
+	formats := make([]QuickViewModel3DTilesFormatInfo, 0, 2)
+	for _, targetFormat := range []string{models.Model3DTilesTargetFormat3DTiles, models.Model3DTilesTargetFormatS3M} {
+		operatorName := "osgb_scene_to_3dtiles"
+		if targetFormat == models.Model3DTilesTargetFormatS3M {
+			operatorName = "osgb_scene_to_s3m"
+		}
+		info := QuickViewModel3DTilesFormatInfo{TargetFormat: targetFormat}
+		switch {
+		case s.workflowEngines == nil:
+			info.UnavailableReason = "workflow_engine_discovery_unavailable"
+		case listErr != nil:
+			info.UnavailableReason = "workflow_engine_list_failed"
+		default:
+			_, _, resolveErr := dbbridge.ResolveDirectWorkflowOperator(ctx, engines, dbbridge.DirectWorkflowOperatorSelector{OperatorName: operatorName})
+			if resolveErr != nil {
+				info.UnavailableReason = "operator_unavailable"
+			} else {
+				info.CanGenerate = true
+			}
+		}
+		if result := byFormat[targetFormat]; result != nil {
+			info.Status = result.Status
+			info.ResultID = optionalUint(result.ID)
+			info.TaskID = result.TaskID
+			info.LastExecutionID = result.LastExecutionID
+			if result.Status == models.Model3DTilesStatusReady {
+				info.PreviewURL = model3DTilesAssetURL(result.ID, result.ManifestRef)
+				info.CanGenerate = false
+				info.UnavailableReason = "result_ready"
+				if !capability.CanUseQuickView {
+					capability.CanUseQuickView = true
+					capability.Status = QuickViewStatusAvailable
+					capability.UnavailableReason = ""
+					capability.RenderSource = model3DTilesRenderSource(targetFormat)
+					capability.RecommendedMode = models.PreviewModeMapQuickView
+					capability.QuickView = QuickViewRenderInfo{RenderSource: capability.RenderSource, PreviewURL: info.PreviewURL}
+				}
+			} else if result.Status == models.Model3DTilesStatusBuilding {
+				info.CanGenerate = false
+				info.UnavailableReason = "generation_running"
+			}
+		}
+		formats = append(formats, info)
+	}
+	capability.Model3DTiles = &QuickViewModel3DTilesInfo{Formats: formats}
+	if !capability.CanUseQuickView {
+		capability.Status = QuickViewStatusUnavailable
+		capability.UnavailableReason = "requires_model3d_tiles_generation"
+	}
+	return nil
+}
+
+func model3DTilesAssetURL(id uint, manifestRef string) string {
+	return fmt.Sprintf("/api/v1/manager/model3d_tiles/%d/assets/%s", id, strings.TrimPrefix(strings.TrimSpace(manifestRef), "/"))
+}
+
+func model3DTilesRenderSource(targetFormat string) string {
+	if targetFormat == models.Model3DTilesTargetFormatS3M {
+		return "model3d_s3m"
+	}
+	return "model3d_3d_tiles"
 }
 
 func (s *QuickViewService) applyGaussianSplatCapability(ctx context.Context, capability *QuickViewCapability, identity QuickViewIdentity, gaussian *GaussianSplatKSplatSource, engineID uint) error {
@@ -1228,6 +1349,8 @@ func isSourceModel3DDirectPreview(model3D *Model3DGLBSource) bool {
 	case string(format.FormatGLB), string(format.FormatPLY):
 		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
 	case string(format.Format3DTiles):
+		return itemLayout == "" || itemLayout == string(format.LayoutWhole)
+	case string(format.FormatOSGBScene):
 		return itemLayout == "" || itemLayout == string(format.LayoutWhole)
 	default:
 		return false
@@ -2600,7 +2723,8 @@ func CADPreviewSourceFromAttributes(attrs map[string]interface{}) *CADPreviewSou
 		return nil
 	}
 	itemFormat := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "format")))
-	if format.NormalizeFormat(itemFormat) != format.FormatDWG {
+	formatType := format.NormalizeFormat(itemFormat)
+	if !format.IsCADFormat(formatType) {
 		return nil
 	}
 	storageInfo := commonJSON.Section(attrs, "storage")
@@ -2608,7 +2732,7 @@ func CADPreviewSourceFromAttributes(attrs map[string]interface{}) *CADPreviewSou
 	if sizeBytes <= 0 {
 		sizeBytes = commonJSON.InterfaceInt64(storageInfo["size"])
 	}
-	return &CADPreviewSource{Format: string(format.FormatDWG), SourceSizeBytes: sizeBytes}
+	return &CADPreviewSource{Format: string(formatType), SourceSizeBytes: sizeBytes}
 }
 
 func optionalBoolPtr(values map[string]interface{}, key string) *bool {
@@ -2703,7 +2827,7 @@ func isModel3DQuickViewSourceFormat(itemFormat, itemLayout string) bool {
 	switch itemFormat {
 	case string(format.FormatGLB), string(format.FormatPLY):
 		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
-	case string(format.Format3DTiles):
+	case string(format.Format3DTiles), string(format.FormatOSGBScene):
 		return itemLayout == "" || itemLayout == string(format.LayoutWhole)
 	case string(format.FormatOSGB):
 		return itemLayout == "" || itemLayout == string(format.LayoutSingle)

@@ -33,6 +33,14 @@
         </el-tag>
       </template>
     </el-table-column>
+    <el-table-column :label="t('monitor.table.retention_health')" width="120">
+      <template #default="{ row }">
+        <el-tag v-if="continuousHealth(row)" :type="continuousHealthTagType(continuousHealth(row))" size="small">
+          {{ continuousHealthText(continuousHealth(row)) }}
+        </el-tag>
+        <span v-else>-</span>
+      </template>
+    </el-table-column>
     <el-table-column prop="trigger_type" :label="t('monitor.table.trigger_type')" width="110">
       <template #default="{ row }">
         {{ getTriggerText(row.trigger_type) }}
@@ -65,7 +73,7 @@
 
 <script setup>
 import { useI18n } from 'vue-i18n'
-import { resolveTaskTypeDisplayName } from '@common-ui'
+import { continuousHealthTagType, getContinuousDiagnostics, resolveTaskTypeDisplayName } from '@common-ui'
 
 const { t } = useI18n()
 
@@ -104,6 +112,16 @@ function getStatusText(status) {
     cancelled: t('monitor.execution.status.cancelled'),
   }
   return textMap[status] || status
+}
+
+function continuousHealth(row) {
+  return getContinuousDiagnostics(row?.metadata).health || ''
+}
+
+function continuousHealthText(health) {
+  const key = `monitor.execution.detail.continuous.health_values.${health}`
+  const translated = t(key)
+  return translated === key ? health : translated
 }
 
 function getTriggerText(triggerType) {

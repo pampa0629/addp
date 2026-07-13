@@ -115,6 +115,11 @@ func IsGeospatialFormat(format FormatType) bool {
 	}
 }
 
+func IsCADFormat(formatType FormatType) bool {
+	formatType = NormalizeFormat(string(formatType))
+	return formatType == FormatDWG || formatType == FormatDXF
+}
+
 func IsDocumentFormat(format FormatType) bool {
 	dataType, ok := dataTypeForFormat(format)
 	return ok && dataType == datatype.Document

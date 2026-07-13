@@ -212,10 +212,10 @@
         "vectorMaterializedView": "矢量快显 - 物化视图",
         "cogArtifacts": "栅格快显 - COG",
         "rasterMosaic": "栅格快显 - Mosaic",
+        "cadPreview": "CAD 快显",
         "model3DQuickView": "三维快显 - GLB",
         "gaussianSplatQuickView": "高斯快显 - KSplat",
-        "pointCloudCOPC": "点云快显 - COPC",
-        "model3DTiles": "三维快显 - 3D Tiles"
+        "pointCloudCOPC": "点云快显 - COPC"
       },
       "standard": {
         "label": "数据标准",

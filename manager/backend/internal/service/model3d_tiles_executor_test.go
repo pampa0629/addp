@@ -32,7 +32,7 @@ func TestManagerModel3DTilesExecutorStagesObjectStoreSourceAndPublishesTarget(t 
 					t.Fatalf("decode workflow request: %v", err)
 				}
 				capturedParams = payload.Params
-				_, _ = w.Write([]byte(`{"status":"success","execution_id":"model3d-1","execution_time_ms":456,"result":{"tileset_locator":"addp://engine/31/path/target-bucket/tiles/site_a?type=directory","tileset_ref":"tileset.json","tile_count":2,"publish":{"uploaded_files":3,"uploaded_bytes":128}}}`))
+				_, _ = w.Write([]byte(`{"status":"success","execution_id":"model3d-1","execution_time_ms":456,"result":{"manifest_ref":"tileset.json","tile_count":2}}`))
 			default:
 				t.Fatalf("unexpected workflow path: %s", r.URL.Path)
 			}
@@ -83,6 +83,8 @@ func TestManagerModel3DTilesExecutorStagesObjectStoreSourceAndPublishesTarget(t 
 			IsActive:     true,
 			Capabilities: testRasterWorkflowCapabilities(t, testModel3DWorkflowEngineType),
 		}}},
+		&fakeModel3DTilesObjectStore{objects: []minio.ObjectInfo{{Key: "tenant_7/model3d-tiles/fp/3d_tiles/tileset.json", Size: 64}, {Key: "tenant_7/model3d-tiles/fp/3d_tiles/Data/tile.b3dm", Size: 128}}},
+		"infra-minio:9000", "infra-ak", "infra-sk", false, "manager",
 		0,
 	)
 
@@ -95,18 +97,14 @@ func TestManagerModel3DTilesExecutorStagesObjectStoreSourceAndPublishesTarget(t 
 				SourceEngineID: 26,
 				Format:         "osgb_scene",
 			},
-			Target: Model3DTilesTargetConfig{
-				StorageLocator: "addp://engine/31/path/target-bucket/tiles?type=directory",
-				TargetEngineID: 31,
-				DatasetName:    "site_a",
-			},
-			Tiles: Model3DTilesTilesConfig{Format: "3dtiles"},
+			TargetFormat: "3d_tiles",
+			Result:       Model3DTilesResultConfig{StorageRef: `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/model3d-tiles/fp/3d_tiles"}`},
 		},
 	})
 	if err != nil {
 		t.Fatalf("BuildModel3DTiles() error = %v", err)
 	}
-	if result.TilesetLocator != "addp://engine/31/path/target-bucket/tiles/site_a?type=directory" || result.TileCount != 2 {
+	if result.ManifestRef != "tileset.json" || result.FileCount != 2 || result.SizeBytes != 192 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 	accessPlan := capturedParams["access_plan"].(map[string]interface{})
@@ -126,13 +124,13 @@ func TestManagerModel3DTilesExecutorStagesObjectStoreSourceAndPublishesTarget(t 
 	if sourceAccess["endpoint"] != "source-minio:9000" || sourceAccess["access_key"] != "source-ak" || sourceAccess["secret_key"] != "source-sk" {
 		t.Fatalf("source credentials not passed correctly: %#v", sourceAccess)
 	}
-	if targetPlan["kind"] != "directory" || targetPlan["format"] != "3dtiles" || targetPlan["name"] != "site_a" || targetPlan["write_mode"] != "replace" {
+	if targetPlan["kind"] != "directory" || targetPlan["format"] != "3dtiles" || targetPlan["write_mode"] != "replace" {
 		t.Fatalf("target plan = %#v, want replace 3D Tiles dataset", targetPlan)
 	}
-	if targetAccess["method"] != "object_store" || targetAccess["bucket"] != "target-bucket" || targetAccess["prefix"] != "tiles/site_a" {
+	if targetAccess["method"] != "object_store" || targetAccess["bucket"] != "manager" || targetAccess["prefix"] != "tenant_7/model3d-tiles/fp/3d_tiles" {
 		t.Fatalf("target access = %#v, want object store target", targetAccess)
 	}
-	if targetAccess["endpoint"] != "target-minio:9000" || targetAccess["access_key"] != "target-ak" || targetAccess["secret_key"] != "target-sk" {
+	if targetAccess["endpoint"] != "infra-minio:9000" || targetAccess["access_key"] != "infra-ak" || targetAccess["secret_key"] != "infra-sk" {
 		t.Fatalf("target credentials not passed correctly: %#v", targetAccess)
 	}
 	metadataBytes, err := json.Marshal(result.Metadata)
@@ -140,10 +138,38 @@ func TestManagerModel3DTilesExecutorStagesObjectStoreSourceAndPublishesTarget(t 
 		t.Fatalf("marshal result metadata: %v", err)
 	}
 	metadataText := strings.ToLower(strings.TrimSpace(string(metadataBytes)))
-	if strings.Contains(metadataText, "target-sk") || strings.Contains(metadataText, "target-ak") ||
+	if strings.Contains(metadataText, "infra-sk") || strings.Contains(metadataText, "infra-ak") ||
 		strings.Contains(metadataText, "source-sk") || strings.Contains(metadataText, "source-ak") {
 		t.Fatalf("result metadata leaked object store credentials: %s", metadataText)
 	}
+}
+
+type fakeModel3DTilesObjectStore struct{ objects []minio.ObjectInfo }
+
+func (f *fakeModel3DTilesObjectStore) BucketExists(context.Context, string) (bool, error) {
+	return true, nil
+}
+func (f *fakeModel3DTilesObjectStore) MakeBucket(context.Context, string, minio.MakeBucketOptions) error {
+	return nil
+}
+func (f *fakeModel3DTilesObjectStore) ListObjects(_ context.Context, _ string, _ minio.ListObjectsOptions) <-chan minio.ObjectInfo {
+	ch := make(chan minio.ObjectInfo, len(f.objects))
+	for _, item := range f.objects {
+		ch <- item
+	}
+	close(ch)
+	return ch
+}
+func (f *fakeModel3DTilesObjectStore) RemoveObject(context.Context, string, string, minio.RemoveObjectOptions) error {
+	return nil
+}
+func (f *fakeModel3DTilesObjectStore) StatObject(_ context.Context, _ string, object string, _ minio.StatObjectOptions) (minio.ObjectInfo, error) {
+	for _, item := range f.objects {
+		if item.Key == object {
+			return item, nil
+		}
+	}
+	return minio.ObjectInfo{}, nil
 }
 
 func TestManagerModel3DGLBExecutorPublishesGLBFromWorkflowRuntime(t *testing.T) {

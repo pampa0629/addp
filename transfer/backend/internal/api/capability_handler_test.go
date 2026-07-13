@@ -126,6 +126,7 @@ func TestBuildRawCopyFormatCapabilitiesExposeNonTableSingleFormats(t *testing.T)
 		"jpeg":    "media",
 		"mp4":     "media",
 		"dwg":     "cad",
+		"dxf":     "cad",
 		"unknown": "unknown",
 	} {
 		capability, ok := byValue[value]

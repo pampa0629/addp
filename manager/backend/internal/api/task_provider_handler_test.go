@@ -290,16 +290,12 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 			"source": commonModels.JSONMap{
 				"item_locator":     "addp://engine/11/path/models/osgb?type=item&item_id=45",
 				"source_engine_id": uint(11),
+				"item_fingerprint": "fp-osgb-scene",
+				"item_id":          uint(45),
 				"format":           "osgb_scene",
 			},
-			"target": commonModels.JSONMap{
-				"storage_locator":  "addp://engine/12/path/models/tiles?type=node",
-				"target_engine_id": uint(12),
-				"dataset_name":     "osgb_3dtiles",
-			},
-			"tiles": commonModels.JSONMap{
-				"format": "3dtiles",
-			},
+			"target_format": "3d_tiles",
+			"result":        commonModels.JSONMap{},
 		},
 	}); err != nil {
 		t.Fatalf("create model 3d tiles generation task: %v", err)
@@ -359,7 +355,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	router.GET("/embedding_tasks", handler.ListEmbeddingTasks)
 	router.GET("/vector_materialized_view_tasks", handler.ListVectorMaterializedViewTasks)
 	router.GET("/raster_cog_tasks", handler.ListRasterCOGTasks)
-	router.GET("/model_3d_tiles_tasks", handler.ListModel3DTilesTasks)
+	router.GET("/model3d_tiles_tasks", handler.ListModel3DTilesTasks)
 	router.GET("/model_3d_glb_tasks", handler.ListModel3DGLBTasks)
 	router.GET("/gaussian_splat_ksplat_tasks", handler.ListGaussianSplatKSplatTasks)
 
@@ -367,7 +363,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	assertListedTaskTypeValues(t, router, "/embedding_tasks", []string{commonExecution.TaskTypeEmbedding})
 	assertListedTaskTypeValues(t, router, "/vector_materialized_view_tasks", []string{commonExecution.TaskTypeVectorMaterializedViewGeneration})
 	assertListedTaskTypeValues(t, router, "/raster_cog_tasks", []string{commonExecution.TaskTypeRasterCOGGeneration})
-	assertListedTaskTypeValues(t, router, "/model_3d_tiles_tasks", []string{commonExecution.TaskTypeModel3DTilesGeneration})
+	assertListedTaskTypeValues(t, router, "/model3d_tiles_tasks", []string{commonExecution.TaskTypeModel3DTilesGeneration})
 	assertListedTaskTypeValues(t, router, "/model_3d_glb_tasks", []string{commonExecution.TaskTypeModel3DGLBGeneration})
 	assertListedTaskTypeValues(t, router, "/gaussian_splat_ksplat_tasks", []string{commonExecution.TaskTypeGaussianSplatKSplatGeneration})
 }
@@ -673,7 +669,7 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create raster_cog_tasks table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.model_3d_tiles_tasks (
+	if err := db.Exec(`CREATE TABLE manager.model3d_tiles_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		name TEXT NOT NULL,
@@ -690,7 +686,7 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create model_3d_tiles_tasks table: %v", err)
+		t.Fatalf("create model3d_tiles_tasks table: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE manager.model_3d_glb_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

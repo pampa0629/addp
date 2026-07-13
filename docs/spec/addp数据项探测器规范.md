@@ -262,7 +262,7 @@ whole scope 的 `refs` 与 `claims` 必须分工明确：
 4. 所有 `.osgb` 叶子文件和 `metadata.xml` 都进入 claims，避免重复落为单文件 item。
 5. 强命中时 `exclusive=true`，该目录下不再生成普通 `.osgb` file item。
 6. Meta deep scan 解析 `metadata.xml`，把 `ModelMetadata/SRS`、`SRSOrigin`、`Texture/ColorSource` 写入标准 attributes。
-7. Manager 不直接预览 OSGB Scene 源 item；SuperMap 路线通过 `osgb_scene_to_s3m` 生成业务存储中的 S3M item，再复用 S3M 预览。
+7. Manager 不直接预览 OSGB Scene 原始目录；Manager `model3d_tiles_generation` 可生成 infra 3D Tiles 或 S3M 快显结果。Develop 路线通过 `osgb_scene_to_3dtiles` / `osgb_scene_to_s3m` 生成业务存储中的独立 item，再复用对应基础预览。
 
 ## S3M whole scope 校准用例
 

@@ -166,6 +166,9 @@ func buildContinuousFields(specs []FieldMappingSpec) ([]ContinuousFieldPlan, []d
 		if spec.Nullable == nil {
 			return nil, nil, fmt.Errorf("continuous field %q requires explicit nullable", target)
 		}
+		if strings.TrimSpace(spec.Format) != "" {
+			return nil, nil, fmt.Errorf("continuous field %q does not support format conversion", target)
+		}
 		mappings = append(mappings, ContinuousFieldPlan{
 			Source: source, Target: target, Type: fieldType, Nullable: *spec.Nullable, Default: spec.Default,
 		})

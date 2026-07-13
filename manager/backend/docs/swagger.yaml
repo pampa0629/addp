@@ -635,6 +635,8 @@ definitions:
         type: string
       model_3d:
         $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewModel3DInfo'
+      model3d_tiles:
+        $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewModel3DTilesInfo'
       optimization:
         $ref: '#/definitions/github_com_addp_manager_internal_service.VectorMaterializedViewInfo'
       point_cloud:
@@ -743,6 +745,32 @@ definitions:
         type: integer
       task_id:
         type: integer
+    type: object
+  github_com_addp_manager_internal_service.QuickViewModel3DTilesFormatInfo:
+    properties:
+      can_generate:
+        type: boolean
+      last_execution_id:
+        type: string
+      preview_url:
+        type: string
+      result_id:
+        type: integer
+      status:
+        type: string
+      target_format:
+        type: string
+      task_id:
+        type: integer
+      unavailable_reason:
+        type: string
+    type: object
+  github_com_addp_manager_internal_service.QuickViewModel3DTilesInfo:
+    properties:
+      formats:
+        items:
+          $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewModel3DTilesFormatInfo'
+        type: array
     type: object
   github_com_addp_manager_internal_service.QuickViewPointCloudInfo:
     properties:
@@ -1562,43 +1590,40 @@ definitions:
         type: string
       next_run_at:
         type: string
+      result:
+        $ref: '#/definitions/internal_api.Model3DTilesTaskResultResponse'
       schedule:
         type: string
       source:
         $ref: '#/definitions/internal_api.Model3DTilesTaskSourceResponse'
-      target:
-        $ref: '#/definitions/internal_api.Model3DTilesTaskTargetResponse'
+      target_format:
+        type: string
       task_type:
         type: string
       tenant_id:
         type: integer
-      tiles:
-        $ref: '#/definitions/internal_api.Model3DTilesTaskTilesResponse'
       updated_at:
+        type: string
+    type: object
+  internal_api.Model3DTilesTaskResultResponse:
+    properties:
+      storage_ref:
         type: string
     type: object
   internal_api.Model3DTilesTaskSourceResponse:
     properties:
       format:
         type: string
+      item_fingerprint:
+        type: string
+      item_id:
+        type: integer
       item_locator:
         type: string
       source_engine_id:
         type: integer
-    type: object
-  internal_api.Model3DTilesTaskTargetResponse:
-    properties:
-      dataset_name:
-        type: string
-      storage_locator:
-        type: string
-      target_engine_id:
+      source_size_bytes:
         type: integer
-    type: object
-  internal_api.Model3DTilesTaskTilesResponse:
-    properties:
-      format:
-        type: string
     type: object
   internal_api.PointCloudCOPCTaskRequest:
     properties:
@@ -2213,6 +2238,27 @@ paths:
       - Manager
   /cad-previews:
     get:
+      parameters:
+      - description: 任务 ID | Task ID
+        in: query
+        name: task_id
+        type: integer
+      - description: 结果状态 | Result status
+        in: query
+        name: status
+        type: string
+      - description: 关键词 | Keyword
+        in: query
+        name: q
+        type: string
+      - description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
       produces:
       - application/json
       responses:
@@ -3648,10 +3694,39 @@ paths:
       summary: 更新三维模型 GLB 快显任务配置 | Update model 3D GLB generation task configuration
       tags:
       - Manager
-  /model_3d_tiles_tasks:
+  /model3d_tiles/{id}/assets/{asset_path}:
     get:
-      description: 列出 Manager 模块的三维模型 3D Tiles 任务配置。该私有入口固定返回 task_type=model_3d_tiles_generation；编排模块应使用标准
-        /tasks 入口。| List Manager model 3D Tiles generation task configurations.
+      description: 读取 Manager infra MinIO 中 ready 的 3D Tiles 或 S3M 结果资源，保留目录相对路径和
+        HTTP Range 语义。 | Read one asset from a ready Manager-owned 3D Tiles or S3M
+        result while preserving relative paths and HTTP Range semantics.
+      parameters:
+      - description: 结果 ID | Result ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 结果内相对资源路径 | Relative asset path
+        in: path
+        name: asset_path
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: 读取分块三维模型瓦片资源 | Read model3d tiles asset
+      tags:
+      - Manager
+  /model3d_tiles_tasks:
+    get:
+      description: 列出 Manager 模块的分块三维模型瓦片任务配置，target_format 区分 3D Tiles 与 S3M。该私有入口固定返回
+        task_type=model3d_tiles_generation。| List Manager model3d tiles generation
+        task configurations for 3D Tiles and S3M.
       parameters:
       - description: 页码，默认1 | Page number, default 1
         in: query
@@ -3682,9 +3757,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: 创建新的三维模型 3D Tiles 任务配置。任务从 OSGB Scene whole item 读取源数据，并将 3D Tiles
-        数据集写入用户选择的业务存储。| Create a model 3D Tiles task from an OSGB Scene whole item
-        into selected business storage.
+      description: 创建分块三维模型瓦片任务。当前源为 OSGB Scene whole item，结果按 target_format 写入 Manager
+        infra MinIO。| Create a model3d tiles task from an OSGB Scene whole item into
+        Manager infra MinIO.
       parameters:
       - description: model 3D Tiles generation task configuration
         in: body
@@ -3709,7 +3784,7 @@ paths:
       summary: 创建三维模型 3D Tiles 任务配置 | Create model 3D Tiles generation task configuration
       tags:
       - Manager
-  /model_3d_tiles_tasks/{id}:
+  /model3d_tiles_tasks/{id}:
     delete:
       parameters:
       - description: 任务ID | Task ID
@@ -4248,9 +4323,10 @@ paths:
       consumes:
       - application/json
       description: 前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格
-        COG、CAD 栅格预览、三维模型 GLB 快显、3DGS KSplat 快显和点云 COPC 快显。 | Execute a backend-declared
+        COG、CAD 栅格预览、三维模型 GLB、3D Tiles、S3M、3DGS KSplat 和点云 COPC 快显。 | Execute a backend-declared
         quick view action by Resource Locator. The backend creates and executes the
-        corresponding task from capability facts.
+        corresponding task from capability facts, including 3D Tiles and S3M quick-view
+        generation.
       parameters:
       - description: 快显动作请求 | Quick view action request
         in: body
@@ -5259,7 +5335,7 @@ paths:
       description: 列出 Manager 模块的任务（矢量瓦片缓存生成、矢量物化视图、栅格快显 COG、栅格 mosaic、CAD 栅格预览、三维模型与点云快显、向量化任务）|
         List Manager module tasks
       parameters:
-      - description: 任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
+      - description: 任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
           | Task type filter
         in: query
         name: task_type
@@ -5299,7 +5375,7 @@ paths:
       description: 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and
         ID
       parameters:
-      - description: 任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
+      - description: 任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
           | Task type
         in: path
         name: task_type
@@ -5339,7 +5415,7 @@ paths:
       - application/json
       description: 触发指定任务立即执行 | Trigger immediate execution of a specific task
       parameters:
-      - description: 任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
+      - description: 任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
           | Task type
         in: path
         name: task_type

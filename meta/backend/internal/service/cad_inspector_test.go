@@ -16,7 +16,7 @@ func TestNormalizeCADInspectionMapsProviderFacts(t *testing.T) {
 			"provider": "supermap_iobjects_java", "provider_version": "12.1",
 			"normalized_geometry": true, "geometry_traversed": false, "scan_complete": true,
 		},
-	}, 1024)
+	}, "dwg", 1024)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,5 +28,21 @@ func TestNormalizeCADInspectionMapsProviderFacts(t *testing.T) {
 	}
 	if inspection.FormatInfo["geometry_traversed"] == nil {
 		t.Fatalf("format info = %#v", inspection.FormatInfo)
+	}
+}
+
+func TestNormalizeCADInspectionAcceptsDXF(t *testing.T) {
+	inspection, err := normalizeCADInspection(map[string]interface{}{
+		"schema_version": "addp.cad.inspect/v1",
+		"format":         "dxf",
+		"format_version": "AC1014",
+		"drawing":        map[string]interface{}{"drawing_kind": "2d"},
+		"interpretation": map[string]interface{}{"geometry_traversed": false},
+	}, "dxf", 256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection == nil || inspection.CAD == nil || inspection.FormatInfo["format_version"] != "AC1014" {
+		t.Fatalf("inspection = %#v", inspection)
 	}
 }

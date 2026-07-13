@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/plugins/docx"
 	_ "github.com/addp/common/format/plugins/dwg"
+	_ "github.com/addp/common/format/plugins/dxf"
 	_ "github.com/addp/common/format/plugins/pdf"
 )
 
@@ -69,6 +70,23 @@ func TestBuildRawCopyPlanAcceptsCADWithoutConversion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Plan.DataType != "cad" || result.Plan.Format != format.FormatDWG {
+		t.Fatalf("plan identity = %s/%s", result.Plan.DataType, result.Plan.Format)
+	}
+}
+
+func TestBuildRawCopyPlanAcceptsDXFWithoutConversion(t *testing.T) {
+	spec := minimalRawCopySpec()
+	spec.Source.Locator = "addp://engine/1/path/cad/a.dxf?type=object"
+	spec.Source.DataType = "cad"
+	spec.Source.Format = format.FormatDXF
+	spec.Target.Name = "a.dxf"
+	spec.Target.DataType = "cad"
+	spec.Target.Format = format.FormatDXF
+	result, err := BuildRawCopyPlan(spec, StaticEngineResolver{1: {Type: "minio"}, 2: {Type: "nfs"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Plan.DataType != "cad" || result.Plan.Format != format.FormatDXF {
 		t.Fatalf("plan identity = %s/%s", result.Plan.DataType, result.Plan.Format)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
@@ -17,7 +18,7 @@ type stubCADInspector struct {
 	err    error
 }
 
-func (s stubCADInspector) InspectCAD(context.Context, *commonModels.Engine, uint, string, int64) (*CADInspection, error) {
+func (s stubCADInspector) InspectCAD(context.Context, *commonModels.Engine, uint, string, string, int64) (*CADInspection, error) {
 	return s.result, s.err
 }
 
@@ -50,5 +51,20 @@ func TestEnrichSingleCADItemRequiresInspector(t *testing.T) {
 	item.Format = string(format.FormatDWG)
 	if err := EnrichSingleCADItem(context.Background(), models.JSONMap{}, nil, &commonModels.Engine{ID: 1}, 2, item, "drawing.dwg", 128); err == nil {
 		t.Fatal("expected missing inspector error")
+	}
+}
+
+func TestEnrichSingleDXFItemWritesDXFFormatInfo(t *testing.T) {
+	attrs := models.JSONMap{}
+	item := &metaitem.DetectedItem{ResolvedItem: dataitem.ResolvedItem{Layout: format.LayoutSingle, DataType: datatype.CAD, Format: string(format.FormatDXF)}}
+	err := EnrichSingleCADItem(context.Background(), attrs, stubCADInspector{result: &CADInspection{
+		CAD:        &datatype.CADInfo{DrawingKind: datatype.CADDrawingKind2D},
+		FormatInfo: map[string]interface{}{"format_version": "AC1014", "geometry_traversed": false},
+	}}, &commonModels.Engine{ID: 1}, 2, item, "drawing.dxf", 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := commonJSON.String(attrs, "format_info.dxf", "format_version"); got != "AC1014" {
+		t.Fatalf("format_version = %q", got)
 	}
 }

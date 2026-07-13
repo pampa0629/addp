@@ -108,39 +108,77 @@ func (p *KafkaPlugin) OpenChangeStream(ctx context.Context, connInfo plugin.Conn
 	return reader, nil
 }
 
+func readKafkaPositionRanges(ctx context.Context, admin *kadm.Client, topic string) ([]plugin.ChangeStreamPositionRange, error) {
+	starts, err := admin.ListStartOffsets(ctx, topic)
+	if err != nil {
+		return nil, fmt.Errorf("list kafka topic start offsets: %w", err)
+	}
+	ends, err := admin.ListEndOffsets(ctx, topic)
+	if err != nil {
+		return nil, fmt.Errorf("list kafka topic end offsets: %w", err)
+	}
+	partitionEnds := ends[topic]
+	if len(partitionEnds) == 0 {
+		return nil, fmt.Errorf("read Kafka retained ranges for topic %q: no partitions", topic)
+	}
+	partitionIDs := make([]int, 0, len(partitionEnds))
+	for partition := range partitionEnds {
+		partitionIDs = append(partitionIDs, int(partition))
+	}
+	sort.Ints(partitionIDs)
+	ranges := make([]plugin.ChangeStreamPositionRange, 0, len(partitionIDs))
+	for _, value := range partitionIDs {
+		partition := int32(value)
+		start, startOK := starts.Lookup(topic, partition)
+		end, endOK := ends.Lookup(topic, partition)
+		if !startOK || !endOK || start.Err != nil || end.Err != nil {
+			return nil, fmt.Errorf("read Kafka retained range for topic %q partition %d", topic, partition)
+		}
+		partitionText := strconv.FormatInt(int64(partition), 10)
+		ranges = append(ranges, plugin.ChangeStreamPositionRange{
+			Partition: partitionText,
+			Earliest:  kafkaOffsetPosition(partitionText, start.Offset),
+			Latest:    kafkaOffsetPosition(partitionText, end.Offset),
+		})
+	}
+	return ranges, nil
+}
+
+func (r *kafkaChangeStreamReader) PositionRanges(ctx context.Context) ([]plugin.ChangeStreamPositionRange, error) {
+	return readKafkaPositionRanges(ctx, kadm.NewClient(r.client), r.topic)
+}
+
 func validateKafkaCommittedPositions(ctx context.Context, client *kgo.Client, topic string, positions map[string]plugin.ChangeStreamPosition) error {
 	if len(positions) == 0 {
 		return nil
 	}
-	admin := kadm.NewClient(client)
-	starts, err := admin.ListStartOffsets(ctx, topic)
+	ranges, err := readKafkaPositionRanges(ctx, kadm.NewClient(client), topic)
 	if err != nil {
-		return fmt.Errorf("list kafka topic start offsets before resume: %w", err)
+		return fmt.Errorf("read kafka retained ranges before resume: %w", err)
 	}
-	ends, err := admin.ListEndOffsets(ctx, topic)
-	if err != nil {
-		return fmt.Errorf("list kafka topic end offsets before resume: %w", err)
+	rangesByPartition := make(map[string]plugin.ChangeStreamPositionRange, len(ranges))
+	for _, positionRange := range ranges {
+		rangesByPartition[positionRange.Partition] = positionRange
 	}
 	for partitionText, position := range positions {
-		partitionValue, err := strconv.ParseInt(partitionText, 10, 32)
-		if err != nil || partitionValue < 0 {
+		if partitionValue, err := strconv.ParseInt(partitionText, 10, 32); err != nil || partitionValue < 0 {
 			return fmt.Errorf("invalid committed Kafka partition %q", partitionText)
 		}
-		partition := int32(partitionValue)
 		nextOffset, err := kafkaPositionNextOffset(position, partitionText)
 		if err != nil {
 			return fmt.Errorf("invalid committed position for partition %q: %w", partitionText, err)
 		}
-		start, startOK := starts.Lookup(topic, partition)
-		end, endOK := ends.Lookup(topic, partition)
-		if !startOK || !endOK || start.Err != nil || end.Err != nil {
-			return fmt.Errorf("read Kafka retained range for topic %q partition %d", topic, partition)
+		positionRange, ok := rangesByPartition[partitionText]
+		if !ok {
+			return fmt.Errorf("read Kafka retained range for topic %q partition %s", topic, partitionText)
 		}
-		if nextOffset < start.Offset {
-			return fmt.Errorf("Kafka committed position is no longer retained for topic %q partition %d: next_offset=%d earliest=%d", topic, partition, nextOffset, start.Offset)
+		earliest, _ := kafkaPositionNextOffset(positionRange.Earliest, partitionText)
+		latest, _ := kafkaPositionNextOffset(positionRange.Latest, partitionText)
+		if nextOffset < earliest {
+			return fmt.Errorf("Kafka committed position is no longer retained for topic %q partition %s: next_offset=%d earliest=%d", topic, partitionText, nextOffset, earliest)
 		}
-		if nextOffset > end.Offset {
-			return fmt.Errorf("Kafka committed position is ahead of topic end for topic %q partition %d: next_offset=%d latest=%d", topic, partition, nextOffset, end.Offset)
+		if nextOffset > latest {
+			return fmt.Errorf("Kafka committed position is ahead of topic end for topic %q partition %s: next_offset=%d latest=%d", topic, partitionText, nextOffset, latest)
 		}
 	}
 	return nil

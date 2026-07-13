@@ -86,6 +86,67 @@ func TestIntegrationPostgresPartitionedTableChangeApplyIsMonotonic(t *testing.T)
 	}
 }
 
+func TestIntegrationPostgresPartitionedTableChangeApplyCancelsWhileTargetLocked(t *testing.T) {
+	db, pg, connInfo := openPostgresPrepareIntegration(t, false)
+	defer db.Close()
+	ctx := context.Background()
+	schema := "common_pg_it"
+	table := fmt.Sprintf("partitioned_apply_lock_%d", time.Now().UnixNano())
+	path := postgresPrepareTablePath(schema, table)
+	applyIdentity := uuid.NewString()
+	opts := plugin.PartitionedTableChangeApplyOptions{
+		ApplyIdentity:  applyIdentity,
+		SourceIdentity: "addp://engine/30/path/orders.events?type=topic",
+		Fields: []datatype.FieldInfo{
+			{Name: "id", Type: datatype.FieldTypeBigInt, Nullable: false},
+			{Name: "name", Type: datatype.FieldTypeString, Nullable: false},
+		},
+		Keys: []string{"id"},
+	}
+	defer dropPostgresPrepareTable(db, schema, table)
+	defer db.ExecContext(ctx, `DELETE FROM addp_transfer.apply_positions WHERE apply_identity = $1::uuid`, applyIdentity)
+	if err := pg.PreparePartitionedTableChangeApply(ctx, connInfo, path, opts); err != nil {
+		t.Fatalf("PreparePartitionedTableChangeApply failed: %v", err)
+	}
+
+	lockTx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin target lock transaction: %v", err)
+	}
+	if _, err := lockTx.ExecContext(ctx, fmt.Sprintf(`LOCK TABLE "%s"."%s" IN ACCESS EXCLUSIVE MODE`, schema, table)); err != nil {
+		_ = lockTx.Rollback()
+		t.Fatalf("lock target table: %v", err)
+	}
+
+	applyCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	started := time.Now()
+	_, applyErr := pg.ApplyPartitionedTableChanges(applyCtx, connInfo, path, partitionedApplyBatch("0", 0, 1, positionedChange(1, 1, "blocked")), opts)
+	cancel()
+	if applyErr == nil {
+		_ = lockTx.Rollback()
+		t.Fatal("ApplyPartitionedTableChanges succeeded while target table remained locked")
+	}
+	if time.Since(started) > 2*time.Second {
+		_ = lockTx.Rollback()
+		t.Fatalf("locked target cancellation took too long: %s", time.Since(started))
+	}
+	if err := lockTx.Rollback(); err != nil {
+		t.Fatalf("release target table lock: %v", err)
+	}
+
+	var ledgerCount int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM addp_transfer.apply_positions WHERE apply_identity = $1::uuid`, applyIdentity).Scan(&ledgerCount); err != nil {
+		t.Fatalf("query apply ledger after cancellation: %v", err)
+	}
+	if ledgerCount != 0 {
+		t.Fatalf("apply ledger rows after cancelled transaction = %d, want 0", ledgerCount)
+	}
+	if _, err := pg.ApplyPartitionedTableChanges(ctx, connInfo, path, partitionedApplyBatch("0", 0, 1, positionedChange(1, 1, "recovered")), opts); err != nil {
+		t.Fatalf("apply after releasing target lock: %v", err)
+	}
+	assertPartitionedApplyRow(t, ctx, db, schema, table, 1, "recovered")
+}
+
 func partitionedApplyBatch(partition string, start, end int64, changes ...plugin.PartitionedTableChange) *plugin.PartitionedTableChangeBatch {
 	return &plugin.PartitionedTableChangeBatch{
 		Partition:     partition,

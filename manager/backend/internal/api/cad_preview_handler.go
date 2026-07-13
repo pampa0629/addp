@@ -192,12 +192,25 @@ func (h *CADPreviewHandler) DeleteTask(c *gin.Context) {
 // @Summary 列出 CAD 预览结果 | List CAD preview results
 // @Tags Manager
 // @Produce json
+// @Param task_id query int false "任务 ID | Task ID"
+// @Param status query string false "结果状态 | Result status"
+// @Param q query string false "关键词 | Keyword"
+// @Param page query int false "页码 | Page"
+// @Param page_size query int false "每页数量 | Page size"
 // @Success 200 {object} map[string]interface{}
 // @Router /cad-previews [get]
 // @Security BearerAuth
 func (h *CADPreviewHandler) ListResults(c *gin.Context) {
 	page, pageSize := pagination(c)
-	items, total, err := h.service.ListResults(c.Request.Context(), c.GetUint("tenant_id"), page, pageSize)
+	taskID, _ := strconv.ParseUint(strings.TrimSpace(c.Query("task_id")), 10, 32)
+	items, total, err := h.service.ListResults(c.Request.Context(), repository.CADPreviewFilter{
+		TenantID: c.GetUint("tenant_id"),
+		TaskID:   uint(taskID),
+		Status:   c.Query("status"),
+		Q:        c.Query("q"),
+		Page:     page,
+		PageSize: pageSize,
+	})
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return

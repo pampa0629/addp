@@ -677,24 +677,31 @@ func ensureRasterMosaicSchema(db *gorm.DB) error {
 }
 
 func ensureModel3DTilesSchema(db *gorm.DB) error {
-	if err := db.AutoMigrate(&models.Model3DTilesTask{}); err != nil {
+	if err := db.AutoMigrate(&models.Model3DTilesTask{}, &models.Model3DTiles{}); err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.model_3d_tiles_tasks
+		UPDATE manager.model3d_tiles_tasks
 		SET enabled = false
 		WHERE enabled IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.model_3d_tiles_tasks
+		ALTER TABLE manager.model3d_tiles_tasks
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN created_by TYPE BIGINT,
 			ALTER COLUMN enabled SET NOT NULL,
 			ALTER COLUMN created_at SET NOT NULL,
 			ALTER COLUMN updated_at SET NOT NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_model3d_tiles_current_unique
+		ON manager.model3d_tiles (tenant_id, item_fingerprint, target_format)
+		WHERE deleted_at IS NULL AND status <> 'deleted'
 	`).Error; err != nil {
 		return err
 	}

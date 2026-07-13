@@ -48,6 +48,15 @@ func TestParseContinuousTaskSpecRejectsImplicitFieldSchema(t *testing.T) {
 	}
 }
 
+func TestParseContinuousTaskSpecRejectsUnusedFormatConversion(t *testing.T) {
+	config := validContinuousConfig()
+	field := config["transforms"].([]interface{})[0].(map[string]interface{})["fields"].([]interface{})[1].(map[string]interface{})
+	field["format"] = "2006-01-02"
+	if _, err := ParseContinuousTaskSpec(config); err == nil {
+		t.Fatal("ParseContinuousTaskSpec() error = nil, want unsupported format conversion rejection")
+	}
+}
+
 func TestParseContinuousTaskSpecRejectsKeyMappingDrift(t *testing.T) {
 	config := validContinuousConfig()
 	config["target"].(map[string]interface{})["policy"].(map[string]interface{})["keys"] = []interface{}{"order_id"}

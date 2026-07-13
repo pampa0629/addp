@@ -212,10 +212,10 @@
         "vectorMaterializedView": "Vector Quick View - Materialized View",
         "cogArtifacts": "Raster Quick View - COG",
         "rasterMosaic": "Raster Quick View - Mosaic",
+        "cadPreview": "CAD Quick View",
         "model3DQuickView": "3D Quick View - GLB",
         "gaussianSplatQuickView": "Gaussian Quick View - KSplat",
-        "pointCloudCOPC": "Point Cloud Quick View - COPC",
-        "model3DTiles": "3D Quick View - 3D Tiles"
+        "pointCloudCOPC": "Point Cloud Quick View - COPC"
       },
       "standard": {
         "label": "Data Standards",

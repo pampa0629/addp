@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  buildContinuousSourceEndpoint,
   continuousMappedTargetKeys,
   continuousMappingsValid,
   isKafkaTopicSource
@@ -21,6 +22,25 @@ test('continuous target keys follow source key mapping order', () => {
   ]
   assert.deepEqual(continuousMappedTargetKeys(mappings, ['id', 'tenant_id']), ['order_id', 'tenant_id'])
   assert.equal(continuousMappingsValid(mappings, ['id', 'tenant_id']), true)
+})
+
+test('continuous source endpoint uses the strict v1 contract', () => {
+  assert.deepEqual(buildContinuousSourceEndpoint(
+    'addp://engine/30/path/orders.events?type=topic',
+    ['tenant_id', 'id'],
+    'latest',
+    500
+  ), {
+    locator: 'addp://engine/30/path/orders.events?type=topic',
+    representation: 'native',
+    change_stream: {
+      envelope: 'record',
+      encoding: 'json',
+      key: { source: 'value', fields: ['tenant_id', 'id'] },
+      start: { mode: 'committed', initial: 'latest' },
+      poll_batch_size: 500
+    }
+  })
 })
 
 test('continuous mapping rejects nullable keys, duplicate fields and unsupported types', () => {

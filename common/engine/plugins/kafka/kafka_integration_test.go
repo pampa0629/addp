@@ -78,6 +78,25 @@ func TestIntegrationKafkaCatalogAndChangeStream(t *testing.T) {
 		t.Fatalf("OpenChangeStream failed: %v", err)
 	}
 	defer reader.Close(context.Background())
+	ranges, err := reader.PositionRanges(ctx)
+	if err != nil {
+		t.Fatalf("PositionRanges failed: %v", err)
+	}
+	if len(ranges) != 2 {
+		t.Fatalf("position ranges=%#v, want two partitions", ranges)
+	}
+	var latestTotal int64
+	for _, positionRange := range ranges {
+		earliest, earliestErr := kafkaPositionNextOffset(positionRange.Earliest, positionRange.Partition)
+		latest, latestErr := kafkaPositionNextOffset(positionRange.Latest, positionRange.Partition)
+		if earliestErr != nil || latestErr != nil || latest < earliest {
+			t.Fatalf("invalid position range %#v: earliest_err=%v latest_err=%v", positionRange, earliestErr, latestErr)
+		}
+		latestTotal += latest
+	}
+	if latestTotal != 2 {
+		t.Fatalf("latest offset total=%d, want 2", latestTotal)
+	}
 	var records []plugin.ChangeRecord
 	deadline := time.Now().Add(10 * time.Second)
 	for len(records) < 2 && time.Now().Before(deadline) {
@@ -185,6 +204,81 @@ func TestIntegrationKafkaChangeStreamRebalance(t *testing.T) {
 	}
 	if !seen["0"] || !seen["1"] {
 		t.Fatalf("records after rebalance seen=%v, want both partitions", seen)
+	}
+}
+
+func TestIntegrationKafkaChangeStreamRejectsExpiredCommittedPosition(t *testing.T) {
+	if os.Getenv("ADDP_KAFKA_INTEGRATION") != "1" {
+		t.Skip("set ADDP_KAFKA_INTEGRATION=1 to run Kafka integration test")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	connInfo := kafkaIntegrationConnInfo()
+	p := &KafkaPlugin{}
+	client, err := newKafkaClient(connInfo, kgo.RecordPartitioner(kgo.ManualPartitioner()))
+	if err != nil {
+		t.Fatalf("newKafkaClient failed: %v", err)
+	}
+	defer client.Close()
+	if err := client.Ping(ctx); err != nil {
+		t.Skipf("Kafka is not available: %v", err)
+	}
+	admin := kadm.NewClient(client)
+	topic := fmt.Sprintf("addp-transfer-retention-it-%d", time.Now().UnixNano())
+	created, err := admin.CreateTopics(ctx, 1, 1, nil, topic)
+	if err != nil || created.Error() != nil {
+		t.Fatalf("create topic: response=%v error=%v", created.Error(), err)
+	}
+	defer admin.DeleteTopics(context.Background(), topic)
+
+	produced := client.ProduceSync(ctx,
+		&kgo.Record{Topic: topic, Partition: 0, Value: []byte(`{"id":1}`)},
+		&kgo.Record{Topic: topic, Partition: 0, Value: []byte(`{"id":2}`)},
+		&kgo.Record{Topic: topic, Partition: 0, Value: []byte(`{"id":3}`)},
+	)
+	if err := produced.FirstErr(); err != nil {
+		t.Fatalf("produce records: %v", err)
+	}
+	deleted, err := admin.DeleteRecords(ctx, kadm.OffsetsList{{Topic: topic, Partition: 0, At: 2}}.Offsets())
+	if err != nil || deleted.Error() != nil {
+		t.Fatalf("delete records: response=%v error=%v", deleted.Error(), err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		starts, listErr := admin.ListStartOffsets(ctx, topic)
+		start, ok := starts.Lookup(topic, 0)
+		if listErr == nil && ok && start.Err == nil && start.Offset >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("topic start offset did not advance: start=%#v error=%v", start, listErr)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	topicPath := kafkaTopicEntry(plugin.CatalogRootPath(p.CatalogModel(), 30), topic).Path
+	_, err = p.OpenChangeStream(ctx, connInfo, topicPath, plugin.ChangeStreamReadOptions{
+		ConsumerGroup: fmt.Sprintf("addp-transfer-retention-it-%d", time.Now().UnixNano()),
+		CommittedPositions: map[string]plugin.ChangeStreamPosition{
+			"0": kafkaOffsetPosition("0", 1),
+		},
+		InitialPosition: plugin.ChangeStreamInitialEarliest,
+		PollTimeout:     time.Second,
+	})
+	if err == nil || !strings.Contains(err.Error(), "no longer retained") {
+		t.Fatalf("OpenChangeStream error=%v, want expired committed position error", err)
+	}
+	_, err = p.OpenChangeStream(ctx, connInfo, topicPath, plugin.ChangeStreamReadOptions{
+		ConsumerGroup: fmt.Sprintf("addp-transfer-ahead-it-%d", time.Now().UnixNano()),
+		CommittedPositions: map[string]plugin.ChangeStreamPosition{
+			"0": kafkaOffsetPosition("0", 999),
+		},
+		InitialPosition: plugin.ChangeStreamInitialEarliest,
+		PollTimeout:     time.Second,
+	})
+	if err == nil || !strings.Contains(err.Error(), "ahead of topic end") {
+		t.Fatalf("OpenChangeStream error=%v, want committed position ahead error", err)
 	}
 }
 

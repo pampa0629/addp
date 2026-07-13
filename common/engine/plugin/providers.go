@@ -213,6 +213,16 @@ type ChangeStreamReadOptions struct {
 	MaxBytes           int
 }
 
+// ChangeStreamPositionRange describes the currently retained provider range
+// for one partition. Earliest and Latest use the same position identity as
+// records returned by OpenChangeStream; Latest is the next offset at the end
+// of the partition, not the last record offset.
+type ChangeStreamPositionRange struct {
+	Partition string               `json:"partition"`
+	Earliest  ChangeStreamPosition `json:"earliest"`
+	Latest    ChangeStreamPosition `json:"latest"`
+}
+
 type ChangeStreamReaderProvider interface {
 	StoreProvider
 	OpenChangeStream(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts ChangeStreamReadOptions) (ChangeStreamReader, error)
@@ -220,6 +230,7 @@ type ChangeStreamReaderProvider interface {
 
 type ChangeStreamReader interface {
 	Poll(ctx context.Context, maxRecords int) (*ChangeRecordBatch, error)
+	PositionRanges(ctx context.Context) ([]ChangeStreamPositionRange, error)
 	Assignments() []string
 	Pause(ctx context.Context, partitions []string) error
 	Resume(ctx context.Context, partitions []string) error

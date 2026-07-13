@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   hasQuickViewAction,
+  isModel3DQuickViewSource,
   isRasterQuickViewRenderSource,
   isTileQuickViewRenderSource,
   normalizeQuickViewRenderSource,
@@ -11,6 +12,23 @@ import {
 } from '../../src/utils/quickViewRenderSource.js'
 
 describe('quickViewRenderSource', () => {
+  it('recognizes legacy OSGB Scene preview metadata without data_type', () => {
+    expect(isModel3DQuickViewSource({
+      object: {
+        content: {
+          metadata: {
+            source_format: 'osgb_scene',
+            task_type: 'model3d_tiles_generation'
+          }
+        }
+      }
+    })).toBe(true)
+
+    expect(isModel3DQuickViewSource({
+      object: { content: { metadata: { source_format: 'osgb_scene', layout: 'single' } } }
+    })).toBe(false)
+  })
+
   it('classifies raster mosaic as raster quick view', () => {
     expect(isRasterQuickViewRenderSource('raster_mosaic_tile')).toBe(true)
     expect(isRasterQuickViewRenderSource(' client_cog_render ')).toBe(true)

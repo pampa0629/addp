@@ -10,6 +10,7 @@ import { formatLocatorDisplayPath } from '@addp/common-frontend'
 import { taskAPI } from '@/api/tasks'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import {
+  buildContinuousSourceEndpoint,
   continuousMappedTargetKeys,
   continuousMappingsValid,
   isKafkaTopicSource
@@ -101,6 +102,7 @@ export function useTaskWizardState() {
     return isKafkaTopicSource(sourceEngineType.value, sourceLocator.value) &&
       supportsContinuousTarget.value &&
       continuousMappingsValid(fieldMappings.value, continuousKeyFields.value) &&
+      transforms.value.length === 0 &&
       continuousPollBatchSize.value > 0 &&
       ['earliest', 'latest'].includes(continuousInitialPosition.value)
   })
@@ -237,23 +239,12 @@ export function useTaskWizardState() {
   function buildSourceEndpoint() {
     const config = sourceConfig.value || {}
     if (isContinuousTask.value) {
-      return {
-        locator: sourceLocator.value,
-        representation: 'native',
-        change_stream: {
-          envelope: 'record',
-          encoding: 'json',
-          key: {
-            source: 'value',
-            fields: normalizedFieldNames(continuousKeyFields.value)
-          },
-          start: {
-            mode: 'committed',
-            initial: continuousInitialPosition.value
-          },
-          poll_batch_size: continuousPollBatchSize.value
-        }
-      }
+      return buildContinuousSourceEndpoint(
+        sourceLocator.value,
+        continuousKeyFields.value,
+        continuousInitialPosition.value,
+        continuousPollBatchSize.value
+      )
     }
     const endpoint = {
       locator: sourceLocator.value,
@@ -512,6 +503,7 @@ export function useTaskWizardState() {
       targetSchema.value = ''
       targetTable.value = ''
       targetConfig.value = {}
+      transforms.value = []
       targetRepresentation.value = nextContinuous
         ? 'native'
         : (isRawCopyTask.value ? 'encoded' : (sourceRepresentation.value === 'encoded' ? 'native' : 'encoded'))

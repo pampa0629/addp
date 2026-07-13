@@ -64,8 +64,14 @@ func workflowSuperMapS3MAdapterSpec() workflowOperatorAdapterSpec {
 	for index := range spec.PublicParameters {
 		parameter := &spec.PublicParameters[index]
 		if parameter.UIType == "resource_tree_picker" {
-			parameter.UIConfig["engine_families"] = []string{"file"}
-			parameter.UIConfig["engine_types"] = []string{"nfs"}
+			binding, _ := parameter.UIConfig["resource_binding"].(map[string]interface{})
+			if binding["mode"] == "existing" {
+				parameter.UIConfig["engine_families"] = []string{"file"}
+				parameter.UIConfig["engine_types"] = []string{"nfs"}
+			} else {
+				parameter.UIConfig["engine_families"] = []string{"file", "object"}
+				delete(parameter.UIConfig, "engine_types")
+			}
 		}
 	}
 	return spec

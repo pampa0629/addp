@@ -382,7 +382,7 @@ func buildCADContentHandler(cfg ObjectContentPluginConfig) ObjectContentHandler 
 		baseContentHandler: baseContentHandler{
 			name:     cfg.Name,
 			priority: cfg.priorityOr(defaultBuiltinContentPriority(models.ObjectPreviewKindCAD)),
-			matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatDWG, nil, nil),
+			matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatDWG, []commonformat.FormatType{commonformat.FormatDXF}, nil),
 		},
 	}
 }

@@ -101,6 +101,29 @@
           "yes": "Yes",
           "no": "No"
         },
+        "continuous": {
+          "title": "Continuous Sync Retention Window",
+          "sampled_at": "Diagnostics Sampled At",
+          "last_committed_at": "Last Commit Time",
+          "last_event_at": "Last Event Time",
+          "worker": "Worker Instance",
+          "diagnostics_error": "Retention Diagnostics Error",
+          "partition": "Partition",
+          "health": "Health",
+          "committed": "Committed Position",
+          "earliest": "Earliest Retained Offset",
+          "latest": "Source Latest Offset",
+          "lag": "Lag Records",
+          "headroom": "Recovery Headroom",
+          "rate": "Source Rate/sec",
+          "horizon": "Estimated Recovery Horizon",
+          "health_values": {
+            "healthy": "Healthy",
+            "degraded": "Degraded",
+            "critical": "Critical",
+            "unknown": "Unknown"
+          }
+        },
         "result": "Execution Result",
         "error": "Error Details",
         "open_task_definition": "Open task definition",
@@ -116,6 +139,7 @@
       "task_type": "Task Type",
       "source_task_id": "Task Definition ID",
       "status": "Status",
+      "retention_health": "Retention Health",
       "trigger_type": "Trigger",
       "progress": "Progress",
       "created_at": "Created At",

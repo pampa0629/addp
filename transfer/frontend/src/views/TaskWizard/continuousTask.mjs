@@ -50,6 +50,26 @@ export function continuousMappingsValid(fieldMappings, sourceKeys) {
   })
 }
 
+export function buildContinuousSourceEndpoint(locator, sourceKeys, initialPosition, pollBatchSize) {
+  return {
+    locator: String(locator || '').trim(),
+    representation: 'native',
+    change_stream: {
+      envelope: 'record',
+      encoding: 'json',
+      key: {
+        source: 'value',
+        fields: normalizedNames(sourceKeys)
+      },
+      start: {
+        mode: 'committed',
+        initial: initialPosition === 'latest' ? 'latest' : 'earliest'
+      },
+      poll_batch_size: Number(pollBatchSize)
+    }
+  }
+}
+
 function locatorType(locator) {
   try {
     return String(new URL(String(locator || '')).searchParams.get('type') || '').trim().toLowerCase()

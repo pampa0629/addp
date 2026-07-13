@@ -14,6 +14,7 @@ import View from 'ol/View.js'
 import TileLayer from 'ol/layer/Tile.js'
 import XYZ from 'ol/source/XYZ.js'
 import Projection from 'ol/proj/Projection.js'
+import { resolveCADTileURL } from '@/utils/cadPreviewURL'
 
 const props = defineProps({
   data: { type: Object, required: true },
@@ -34,11 +35,6 @@ let loadSerial = 0
 function authHeaders() {
   const token = localStorage.getItem('token')
   return token ? { Authorization: `Bearer ${token}` } : {}
-}
-
-function tileURL(template, z, x, y, baseURL) {
-  const value = template.replace('{z}', z).replace('{x}', x).replace('{y}', y)
-  return new URL(value, baseURL).href
 }
 
 function disposeMap() {
@@ -78,7 +74,7 @@ async function loadManifest(url) {
       minZoom: Number(manifest.min_zoom) || 0,
       maxZoom: Number(manifest.max_zoom) || 0,
       tileSize: Number(manifest.tile_size) || 512,
-      tileUrlFunction: ([z, x, y]) => tileURL(template, z, x, y, url),
+      tileUrlFunction: ([z, x, y]) => resolveCADTileURL(template, z, x, y, url),
       tileLoadFunction: async (imageTile, src) => {
         try {
           const tileResponse = await fetch(src, { headers: authHeaders() })

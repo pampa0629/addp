@@ -101,6 +101,29 @@
           "yes": "是",
           "no": "否"
         },
+        "continuous": {
+          "title": "持续同步保留窗口",
+          "sampled_at": "观测采样时间",
+          "last_committed_at": "最近提交时间",
+          "last_event_at": "最近消息时间",
+          "worker": "Worker 实例",
+          "diagnostics_error": "保留窗口观测异常",
+          "partition": "分区",
+          "health": "状态",
+          "committed": "已提交位置",
+          "earliest": "最早保留位置",
+          "latest": "源最新位置",
+          "lag": "落后记录数",
+          "headroom": "恢复余量",
+          "rate": "源增长/秒",
+          "horizon": "估算恢复时间",
+          "health_values": {
+            "healthy": "正常",
+            "degraded": "风险",
+            "critical": "严重",
+            "unknown": "未知"
+          }
+        },
         "result": "执行结果",
         "error": "错误详情",
         "open_task_definition": "打开任务定义",
@@ -116,6 +139,7 @@
       "task_type": "任务类型",
       "source_task_id": "任务定义ID",
       "status": "状态",
+      "retention_health": "保留窗口",
       "trigger_type": "触发方式",
       "progress": "进度",
       "created_at": "创建时间",

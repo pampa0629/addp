@@ -1,8 +1,8 @@
 # Transfer 任务语义、增量同步与持续运行时设计
 
-更新时间：2026-07-12
+更新时间：2026-07-13
 
-状态：阶段 0/1 已升级并实现；工作包 2A continuous/Kafka 正式契约已冻结；工作包 2B 已完成 Kafka common 插件、PostgreSQL 目标原子应用、continuous 控制面、runtime lease/fencing、supervisor 和 Kafka JSON -> PostgreSQL 数据循环。Debezium、CDC 与 Console Wizard 配置尚未实现。
+状态：阶段 0/1 已升级并实现；工作包 2A continuous/Kafka 正式契约已冻结；工作包 2B 已完成 Kafka common 插件、PostgreSQL 目标原子应用、continuous 控制面、runtime lease/fencing、supervisor 和 Kafka JSON -> PostgreSQL 数据循环；工作包 2C 已完成 Console Wizard、分区 committed position 观测、retention 位置失效检测和目标锁取消验收；工作包 2D 已完成 source latest offset、lag、retention horizon、degraded/critical 判定与 Monitor 告警展示。Debezium 与 CDC 尚未实现。
 
 本文整理 Transfer 全量、批增量、Kafka 流式源、数据库 CDC 和持续运行时的概念与推荐技术路线。bounded/watermark/apply mode/sync state 结论已升级到正式规范并完成第一版实现；continuous/Kafka v1 的 topic locator、ChangeStream Provider、keyed JSON upsert、partition position 和 runtime lease 契约已由工作包 2A 升级到正式规范；Debezium、CDC、replay 和 Infra Kafka 部署仍属后续设计。
 
@@ -1005,8 +1005,25 @@ Debezium connector 名称、内部 topic、consumer group 和 connector runtime 
 2. 实现专用 continuous runtime supervisor、runtime lease 和容量限制。
 3. 实现 keyed JSON record -> ChangeEvent(operation=upsert) -> PostgreSQL `PartitionedTableChangeApplyProvider`，并原子提交业务表与目标 apply ledger。
 4. 实现 partition state、lag、heartbeat、真实暂停和停止。
-5. 已覆盖目标提交后 Infra position 可重复应用、rebalance、worker lease/fencing 失效、pause/resume/stop；目标锁表、Kafka retention 临界与运行期 schema drift 运维验收后续补强。
+5. 已覆盖目标提交后 Infra position 可重复应用、rebalance、worker lease/fencing 失效、pause/resume/stop、目标锁取消、retention 已越过 committed position 和严格 schema drift；lag 与 retention horizon 提前告警由工作包 2D 完成。
 6. Debezium envelope、upsert/delete、DLQ、Schema Registry、Avro 和 Protobuf 后置。
+
+### 阶段 2C：Continuous 产品化与运行保障（已完成第一版）
+
+1. Console Wizard 只开放业务 Kafka topic -> PostgreSQL，手工声明 JSON 字段与记录唯一标识，不提供未实现路线。
+2. 任务列表和详情支持 continuous start/pause/resume/stop，execution 详情展示 owner、heartbeat、lease、fencing token、partition committed `next_offset`、最近提交时间和 checkpoint age。
+3. resume 前校验 committed position 是否仍在 Kafka earliest/latest 范围，retention 已清除时明确失败，不静默重置。
+4. PostgreSQL 目标锁等待响应 context 取消，并验证业务写入与 apply ledger 同时回滚。
+5. 未知字段、缺失必填字段和类型不兼容保持严格阻塞；lag/latest offset 与 retention horizon 主动告警由工作包 2D 完成。
+
+### 阶段 2D：Continuous 保留窗口观测与告警（已完成第一版）
+
+1. Kafka Provider 返回 topic 每分区 earliest/latest provider position；Transfer 不使用 consumer fetch position 或 consumer group offset 代替已提交位置。
+2. Transfer continuous worker 按固定间隔采样，计算每分区 lag records、recovery headroom records、source rate 和 retention horizon seconds，并将样本写入统一 execution metadata。
+3. 冷启动、无 committed position 或零写入速率时 retention horizon 为 unknown，不伪造为健康时间。默认 degraded/critical 阈值分别为 6h/1h，只由 Transfer runtime 配置。
+4. Transfer execution 详情和 Monitor execution 详情展示总体 health、分区 earliest/latest/committed/lag/headroom/rate/horizon 与采样时间；Monitor 不直连 Kafka 或 Transfer 私表。
+5. 用 Redpanda 验证 latest 增长、retention earliest 推进、degraded/critical 判定与 metadata 的 fencing 保护。
+6. pause/stop 改变 desired state 后立即禁止新的 progress/diagnostics 写入；与暂停竞态的 fencing 错误必须将 execution 收敛为 cancelled，不得误记为 failed。
 
 ### 阶段 3：数据库 CDC
 

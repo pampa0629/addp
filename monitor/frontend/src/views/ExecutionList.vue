@@ -223,6 +223,68 @@
           </el-tree>
         </div>
 
+        <div v-if="continuousPartitionRows.length" class="detail-section">
+          <div class="continuous-heading">
+            <h4>{{ t('monitor.execution.detail.continuous.title') }}</h4>
+            <el-tag :type="continuousHealthTagType(continuousDiagnostics.health || 'unknown')">
+              {{ continuousHealthText(continuousDiagnostics.health || 'unknown') }}
+            </el-tag>
+          </div>
+          <el-descriptions :column="2" border class="continuous-summary">
+            <el-descriptions-item :label="t('monitor.execution.detail.continuous.sampled_at')">
+              {{ formatDate(continuousDiagnostics.sampled_at) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.execution.detail.continuous.last_committed_at')">
+              {{ formatDate(currentExecutionMetadata.continuous?.last_committed_at) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.execution.detail.continuous.last_event_at')">
+              {{ formatDate(currentExecutionMetadata.continuous?.last_event_at) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.execution.detail.continuous.worker')">
+              {{ currentExecutionMetadata.continuous?.owner_instance_id || '-' }}
+            </el-descriptions-item>
+          </el-descriptions>
+          <el-alert
+            v-if="continuousDiagnostics.error"
+            :title="t('monitor.execution.detail.continuous.diagnostics_error')"
+            :description="continuousDiagnostics.error"
+            type="warning"
+            :closable="false"
+            class="continuous-alert"
+          />
+          <el-table :data="continuousPartitionRows" border size="small" class="continuous-table">
+            <el-table-column prop="partition" :label="t('monitor.execution.detail.continuous.partition')" width="90" />
+            <el-table-column :label="t('monitor.execution.detail.continuous.health')" width="110">
+              <template #default="{ row }">
+                <el-tag :type="continuousHealthTagType(row.health)" size="small">
+                  {{ continuousHealthText(row.health) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('monitor.execution.detail.continuous.committed')" min-width="120">
+              <template #default="{ row }">{{ continuousMetric(row.nextOffset) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('monitor.execution.detail.continuous.earliest')" min-width="120">
+              <template #default="{ row }">{{ continuousMetric(row.earliestOffset) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('monitor.execution.detail.continuous.latest')" min-width="120">
+              <template #default="{ row }">{{ continuousMetric(row.latestOffset) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('monitor.execution.detail.continuous.lag')" min-width="100">
+              <template #default="{ row }">{{ continuousMetric(row.lagRecords) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('monitor.execution.detail.continuous.headroom')" min-width="130">
+              <template #default="{ row }">{{ continuousMetric(row.recoveryHeadroomRecords) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('monitor.execution.detail.continuous.rate')" min-width="110">
+              <template #default="{ row }">{{ formatContinuousRate(row.sourceRateRecordsPerSecond) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('monitor.execution.detail.continuous.horizon')" min-width="120">
+              <template #default="{ row }">{{ formatContinuousDurationSeconds(row.retentionHorizonSeconds) }}</template>
+            </el-table-column>
+          </el-table>
+        </div>
+
         <!-- 执行元数据 -->
         <div v-if="hasExecutionMetadata" class="detail-section">
           <h4>{{ t('monitor.execution.detail.metadata') }}</h4>
@@ -283,7 +345,15 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Link } from '@element-plus/icons-vue'
-import { buildTaskEditUrlFromProviders, resolveTaskTypeDisplayName } from '@common-ui'
+import {
+  buildContinuousPartitionRows,
+  buildTaskEditUrlFromProviders,
+  continuousHealthTagType,
+  formatContinuousDurationSeconds,
+  formatContinuousRate,
+  getContinuousDiagnostics,
+  resolveTaskTypeDisplayName
+} from '@common-ui'
 import { listExecutions, getExecutionTree, getExecutionTreeByExecutionID, listTaskProviders } from '@/api/monitor'
 import ExecutionTable from '@/components/ExecutionTable.vue'
 
@@ -385,6 +455,8 @@ const hasExecutionMetadata = computed(() => Object.keys(currentExecutionMetadata
 const executionMetadataText = computed(() => JSON.stringify(currentExecutionMetadata.value, null, 2))
 
 const metadataSummaryItems = computed(() => buildMetadataSummaryItems(currentExecutionMetadata.value))
+const continuousDiagnostics = computed(() => getContinuousDiagnostics(currentExecutionMetadata.value))
+const continuousPartitionRows = computed(() => buildContinuousPartitionRows(currentExecutionMetadata.value))
 
 function parseTaskCapabilities(capabilities) {
   const parsed = parseCapabilities(capabilities)
@@ -816,6 +888,16 @@ function formatDuration(ms) {
   return `${(ms / 60000).toFixed(2)}min`
 }
 
+function continuousMetric(value) {
+  return value === null || value === undefined ? '-' : value
+}
+
+function continuousHealthText(health) {
+  const key = `monitor.execution.detail.continuous.health_values.${health}`
+  const translated = t(key)
+  return translated === key ? health : translated
+}
+
 // 初始化
 onMounted(async () => {
   await loadTaskProviders()
@@ -904,6 +986,23 @@ watch(detailDialogVisible, visible => {
 
 .metadata-summary {
   margin-bottom: 12px;
+}
+
+.continuous-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.continuous-heading h4 {
+  margin: 0;
+}
+
+.continuous-summary,
+.continuous-alert,
+.continuous-table {
+  margin-top: 12px;
 }
 
 .metadata-json :deep(.el-textarea__inner) {

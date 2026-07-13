@@ -212,6 +212,38 @@ const docTemplate = `{
                     "Manager"
                 ],
                 "summary": "列出 CAD 预览结果 | List CAD preview results",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "task_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结果状态 | Result status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关键词 | Keyword",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1922,6 +1954,281 @@ const docTemplate = `{
                 }
             }
         },
+        "/model3d_tiles/{id}/assets/{asset_path}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "读取 Manager infra MinIO 中 ready 的 3D Tiles 或 S3M 结果资源，保留目录相对路径和 HTTP Range 语义。 | Read one asset from a ready Manager-owned 3D Tiles or S3M result while preserving relative paths and HTTP Range semantics.",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "读取分块三维模型瓦片资源 | Read model3d tiles asset",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "结果 ID | Result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "结果内相对资源路径 | Relative asset path",
+                        "name": "asset_path",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/model3d_tiles_tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "列出 Manager 模块的分块三维模型瓦片任务配置，target_format 区分 3D Tiles 与 S3M。该私有入口固定返回 task_type=model3d_tiles_generation。| List Manager model3d tiles generation task configurations for 3D Tiles and S3M.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "列出三维模型 3D Tiles 任务配置 | List model 3D Tiles generation task configurations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务列表 | Task list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "创建分块三维模型瓦片任务。当前源为 OSGB Scene whole item，结果按 target_format 写入 Manager infra MinIO。| Create a model3d tiles task from an OSGB Scene whole item into Manager infra MinIO.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "创建三维模型 3D Tiles 任务配置 | Create model 3D Tiles generation task configuration",
+                "parameters": [
+                    {
+                        "description": "model 3D Tiles generation task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.Model3DTilesTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "创建的任务配置 | Created task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.Model3DTilesTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/model3d_tiles_tasks/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取三维模型 3D Tiles 任务配置 | Get model 3D Tiles generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务配置 | Task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.Model3DTilesTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "更新三维模型 3D Tiles 任务配置 | Update model 3D Tiles generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "model 3D Tiles generation task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.Model3DTilesTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的任务配置 | Updated task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.Model3DTilesTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除三维模型 3D Tiles 任务配置 | Delete model 3D Tiles generation task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/model_3d_glb": {
             "get": {
                 "security": [
@@ -2325,240 +2632,6 @@ const docTemplate = `{
                     "Manager"
                 ],
                 "summary": "删除三维模型 GLB 快显任务配置 | Delete model 3D GLB generation task configuration",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "删除成功 | Deleted successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/model_3d_tiles_tasks": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "列出 Manager 模块的三维模型 3D Tiles 任务配置。该私有入口固定返回 task_type=model_3d_tiles_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D Tiles generation task configurations.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "列出三维模型 3D Tiles 任务配置 | List model 3D Tiles generation task configurations",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "页码，默认1 | Page number, default 1",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "每页数量，默认20 | Page size, default 20",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "任务列表 | Task list",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务器内部错误 | Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "创建新的三维模型 3D Tiles 任务配置。任务从 OSGB Scene whole item 读取源数据，并将 3D Tiles 数据集写入用户选择的业务存储。| Create a model 3D Tiles task from an OSGB Scene whole item into selected business storage.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "创建三维模型 3D Tiles 任务配置 | Create model 3D Tiles generation task configuration",
-                "parameters": [
-                    {
-                        "description": "model 3D Tiles generation task configuration",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.Model3DTilesTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "创建的任务配置 | Created task configuration",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.Model3DTilesTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/model_3d_tiles_tasks/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "获取三维模型 3D Tiles 任务配置 | Get model 3D Tiles generation task configuration",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "任务配置 | Task configuration",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.Model3DTilesTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "任务不存在 | Task not found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "更新三维模型 3D Tiles 任务配置 | Update model 3D Tiles generation task configuration",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "model 3D Tiles generation task configuration",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.Model3DTilesTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "更新后的任务配置 | Updated task configuration",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.Model3DTilesTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "任务不存在 | Task not found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "删除三维模型 3D Tiles 任务配置 | Delete model 3D Tiles generation task configuration",
                 "parameters": [
                     {
                         "type": "integer",
@@ -3247,7 +3320,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、CAD 栅格预览、三维模型 GLB 快显、3DGS KSplat 快显和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts.",
+                "description": "前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、CAD 栅格预览、三维模型 GLB、3D Tiles、S3M、3DGS KSplat 和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts, including 3D Tiles and S3M quick-view generation.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4746,7 +4819,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type filter",
+                        "description": "任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type filter",
                         "name": "task_type",
                         "in": "query"
                     },
@@ -4805,7 +4878,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type",
+                        "description": "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -4863,7 +4936,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type",
+                        "description": "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -6621,6 +6694,9 @@ const docTemplate = `{
                 "locator": {
                     "type": "string"
                 },
+                "model3d_tiles": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewModel3DTilesInfo"
+                },
                 "model_3d": {
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewModel3DInfo"
                 },
@@ -6786,6 +6862,46 @@ const docTemplate = `{
                 },
                 "task_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.QuickViewModel3DTilesFormatInfo": {
+            "type": "object",
+            "properties": {
+                "can_generate": {
+                    "type": "boolean"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "preview_url": {
+                    "type": "string"
+                },
+                "result_id": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "target_format": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "unavailable_reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.QuickViewModel3DTilesInfo": {
+            "type": "object",
+            "properties": {
+                "formats": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewModel3DTilesFormatInfo"
+                    }
                 }
             }
         },
@@ -8028,14 +8144,17 @@ const docTemplate = `{
                 "next_run_at": {
                     "type": "string"
                 },
+                "result": {
+                    "$ref": "#/definitions/internal_api.Model3DTilesTaskResultResponse"
+                },
                 "schedule": {
                     "type": "string"
                 },
                 "source": {
                     "$ref": "#/definitions/internal_api.Model3DTilesTaskSourceResponse"
                 },
-                "target": {
-                    "$ref": "#/definitions/internal_api.Model3DTilesTaskTargetResponse"
+                "target_format": {
+                    "type": "string"
                 },
                 "task_type": {
                     "type": "string"
@@ -8043,10 +8162,15 @@ const docTemplate = `{
                 "tenant_id": {
                     "type": "integer"
                 },
-                "tiles": {
-                    "$ref": "#/definitions/internal_api.Model3DTilesTaskTilesResponse"
-                },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.Model3DTilesTaskResultResponse": {
+            "type": "object",
+            "properties": {
+                "storage_ref": {
                     "type": "string"
                 }
             }
@@ -8057,33 +8181,20 @@ const docTemplate = `{
                 "format": {
                     "type": "string"
                 },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
                 "item_locator": {
                     "type": "string"
                 },
                 "source_engine_id": {
                     "type": "integer"
-                }
-            }
-        },
-        "internal_api.Model3DTilesTaskTargetResponse": {
-            "type": "object",
-            "properties": {
-                "dataset_name": {
-                    "type": "string"
                 },
-                "storage_locator": {
-                    "type": "string"
-                },
-                "target_engine_id": {
+                "source_size_bytes": {
                     "type": "integer"
-                }
-            }
-        },
-        "internal_api.Model3DTilesTaskTilesResponse": {
-            "type": "object",
-            "properties": {
-                "format": {
-                    "type": "string"
                 }
             }
         },

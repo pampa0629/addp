@@ -61,6 +61,7 @@ type QuickViewHandler struct {
 	gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService
 	pointCloudCOPCTaskSvc      *service.PointCloudCOPCTaskService
 	cadPreviewTaskSvc          *service.CADPreviewTaskService
+	model3DTilesTaskSvc        *service.Model3DTilesTaskService
 }
 
 func NewQuickViewHandler(service *service.QuickViewService, previewResolver *preview.PreviewResolver, mvtService *service.UnifiedMVTService, _ *redis.Client) *QuickViewHandler {
@@ -71,12 +72,13 @@ func (h *QuickViewHandler) SetTileCacheTaskService(tileCacheTaskSvc *service.Til
 	h.tileCacheTaskSvc = tileCacheTaskSvc
 }
 
-func (h *QuickViewHandler) SetArtifactTaskServices(rasterCOGTaskSvc *service.RasterCOGTaskService, model3DGLBTaskSvc *service.Model3DGLBTaskService, gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService, pointCloudCOPCTaskSvc *service.PointCloudCOPCTaskService, cadPreviewTaskSvc *service.CADPreviewTaskService) {
+func (h *QuickViewHandler) SetArtifactTaskServices(rasterCOGTaskSvc *service.RasterCOGTaskService, model3DGLBTaskSvc *service.Model3DGLBTaskService, gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService, pointCloudCOPCTaskSvc *service.PointCloudCOPCTaskService, cadPreviewTaskSvc *service.CADPreviewTaskService, model3DTilesTaskSvc *service.Model3DTilesTaskService) {
 	h.rasterCOGTaskSvc = rasterCOGTaskSvc
 	h.model3DGLBTaskSvc = model3DGLBTaskSvc
 	h.gaussianSplatKSplatTaskSvc = gaussianSplatKSplatTaskSvc
 	h.pointCloudCOPCTaskSvc = pointCloudCOPCTaskSvc
 	h.cadPreviewTaskSvc = cadPreviewTaskSvc
+	h.model3DTilesTaskSvc = model3DTilesTaskSvc
 }
 
 type UpdatePreferredModeRequest struct {
@@ -131,7 +133,7 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 
 // ExecuteQuickViewAction 执行 locator 快显动作
 // @Summary 执行 locator 快显动作 | Execute locator quick view action
-// @Description 前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、CAD 栅格预览、三维模型 GLB 快显、3DGS KSplat 快显和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts.
+// @Description 前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、CAD 栅格预览、三维模型 GLB、3D Tiles、S3M、3DGS KSplat 和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts, including 3D Tiles and S3M quick-view generation.
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -199,6 +201,13 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 	case service.QuickViewActionGenerateCADPreview:
 		taskType = commonExecution.TaskTypeCADPreviewGeneration
 		taskID, executionID, err = h.createAndExecuteCADPreviewTask(c.Request.Context(), userID, capability, source)
+	case service.QuickViewActionGenerateModel3D3DTiles, service.QuickViewActionGenerateModel3DS3M:
+		taskType = commonExecution.TaskTypeModel3DTilesGeneration
+		targetFormat := models.Model3DTilesTargetFormat3DTiles
+		if action == service.QuickViewActionGenerateModel3DS3M {
+			targetFormat = models.Model3DTilesTargetFormatS3M
+		}
+		taskID, executionID, err = h.createAndExecuteModel3DTilesTask(c.Request.Context(), userID, capability, source, targetFormat)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported quick view action: " + action})
 		return
@@ -665,6 +674,28 @@ func (h *QuickViewHandler) createAndExecuteModel3DGLBTask(ctx context.Context, u
 	return task.ID, executionID, nil
 }
 
+func (h *QuickViewHandler) createAndExecuteModel3DTilesTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, targetFormat string) (uint, string, error) {
+	if h.model3DTilesTaskSvc == nil {
+		return 0, "", errors.New("model3d tiles task service is not initialized")
+	}
+	if capability == nil || source.Model3D == nil || source.Model3D.Format != "osgb_scene" {
+		return 0, "", errors.New("quick view source is not an OSGB Scene")
+	}
+	sourceMap, err := quickViewArtifactSourceConfig(capability, source.EngineID, source.Model3D.Format, source.Model3D.SourceSizeBytes)
+	if err != nil {
+		return 0, "", err
+	}
+	task := models.Model3DTilesTask{TenantID: capability.TenantID, Name: quickViewActionTaskName("分块三维模型瓦片", capability), Enabled: true, Config: commonModels.JSONMap{"source": sourceMap, "target_format": targetFormat, "result": commonModels.JSONMap{}}, CreatedBy: &userID}
+	if err := h.model3DTilesTaskSvc.Create(ctx, &task); err != nil {
+		return 0, "", err
+	}
+	executionID, err := h.model3DTilesTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	if err != nil {
+		return task.ID, "", err
+	}
+	return task.ID, executionID, nil
+}
+
 func (h *QuickViewHandler) createAndExecuteRasterCOGTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource) (uint, string, error) {
 	if h.rasterCOGTaskSvc == nil {
 		return 0, "", errors.New("raster COG task service is not initialized")
@@ -786,7 +817,7 @@ func cadPreviewTaskConfigFromQuickView(capability *service.QuickViewCapability, 
 			"source_engine_id":  source.EngineID,
 			"item_fingerprint":  capability.ItemFingerprint,
 			"item_id":           itemID,
-			"format":            "dwg",
+			"format":            source.CAD.Format,
 			"source_size_bytes": source.CAD.SourceSizeBytes,
 		},
 		"result":  commonModels.JSONMap{},

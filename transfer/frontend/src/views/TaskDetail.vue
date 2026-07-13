@@ -47,7 +47,7 @@
         <el-descriptions-item :label="t('transfer.taskDetail.taskId')">{{ task.id }}</el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskDetail.taskName')">{{ task.name }}</el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskDetail.status')">
-          <el-tag :type="getTaskStatusTagType(task)">{{ getTaskStatusLabel(task) }}</el-tag>
+          <el-tag :type="getTaskStatusTagType(task)">{{ taskDisplayStatus }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskDetail.batchSize')">{{ task.batch_size }}</el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskDetail.schedule')">
@@ -156,6 +156,12 @@ const canStartSchedule = computed(() => !task.value?.enabled)
 const canPauseSchedule = computed(() => task.value?.enabled)
 const canStartContinuous = computed(() => ['paused', 'stopped'].includes(task.value?.desired_state) && task.value?.status !== 'running')
 const canEditTask = computed(() => task.value?.status !== 'running' && (!isContinuousTask.value || task.value?.desired_state === 'stopped'))
+const taskDisplayStatus = computed(() => {
+  if (!isContinuousTask.value) return getTaskStatusLabel(task.value)
+  if (task.value?.desired_state === 'paused') return t('transfer.taskDetail.continuousPaused')
+  if (task.value?.desired_state === 'stopped') return t('transfer.taskDetail.continuousStopped')
+  return t('transfer.taskDetail.continuousRunning')
+})
 
 let refreshTimer = null
 

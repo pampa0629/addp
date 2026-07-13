@@ -34,7 +34,7 @@ func isCADObjectContentRequest(req *objectcontent.ObjectContentRequest) bool {
 	if req == nil {
 		return false
 	}
-	if format.NormalizeFormat(req.Format) == format.FormatDWG {
+	if format.IsCADFormat(format.NormalizeFormat(req.Format)) {
 		return true
 	}
 	return datatype.ParseDataType(commonJSON.InterfaceString(commonJSON.Value(req.Attributes, "item", "data_type"))) == datatype.CAD
@@ -51,7 +51,8 @@ func resolveCADPreviewURL(ctx context.Context, repo *repository.CADPreviewReposi
 	if err != nil || result == nil {
 		return "", err
 	}
-	if req.Engine == nil || result.SourceEngineID != req.Engine.ID || !strings.EqualFold(strings.TrimSpace(result.SourceFormat), string(format.FormatDWG)) {
+	sourceFormat := format.NormalizeFormat(contentReq.Format)
+	if req.Engine == nil || result.SourceEngineID != req.Engine.ID || !format.IsCADFormat(sourceFormat) || !strings.EqualFold(strings.TrimSpace(result.SourceFormat), string(sourceFormat)) {
 		return "", nil
 	}
 	return fmt.Sprintf("/api/v1/manager/cad-previews/%d/manifest", result.ID), nil

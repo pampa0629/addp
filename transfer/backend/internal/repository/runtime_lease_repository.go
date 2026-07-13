@@ -27,6 +27,28 @@ type ContinuousProgress struct {
 	Partition      string
 	Position       models.JSONMap
 	CommittedAt    time.Time
+	LastEventAt    *time.Time
+}
+
+type ContinuousPartitionDiagnostics struct {
+	Partition                  string   `json:"partition"`
+	EarliestOffset             int64    `json:"earliest_offset"`
+	LatestOffset               int64    `json:"latest_offset"`
+	NextOffset                 *int64   `json:"next_offset,omitempty"`
+	LagRecords                 *int64   `json:"lag_records,omitempty"`
+	RecoveryHeadroomRecords    *int64   `json:"recovery_headroom_records,omitempty"`
+	SourceRateRecordsPerSecond *float64 `json:"source_rate_records_per_second,omitempty"`
+	RetentionHorizonSeconds    *float64 `json:"retention_horizon_seconds,omitempty"`
+	Health                     string   `json:"health"`
+}
+
+type ContinuousDiagnostics struct {
+	SampledAt              time.Time                                 `json:"sampled_at"`
+	Health                 string                                    `json:"health"`
+	DegradedHorizonSeconds float64                                   `json:"degraded_horizon_seconds"`
+	CriticalHorizonSeconds float64                                   `json:"critical_horizon_seconds"`
+	Partitions             map[string]ContinuousPartitionDiagnostics `json:"partitions"`
+	Error                  string                                    `json:"error,omitempty"`
 }
 
 type RuntimeLeaseRepository struct {
@@ -97,9 +119,15 @@ func (r *RuntimeLeaseRepository) ClaimNext(ctx context.Context, owner string, no
 		} else if err := tx.Create(&lease).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&execution).Where("status = ?", commonExecution.ExecutionStatusPending).
-			Updates(map[string]interface{}{"status": commonExecution.ExecutionStatusRunning, "updated_at": now}).Error; err != nil {
-			return err
+		metadata := mergeContinuousRuntimeMetadata(execution.Metadata, owner, token, now, lease.LeaseUntil)
+		result := tx.Model(&execution).
+			Where("status IN ?", []string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}).
+			Updates(map[string]interface{}{"status": commonExecution.ExecutionStatusRunning, "metadata": metadata, "updated_at": now})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrRuntimeLeaseLost
 		}
 		if err := tx.Model(&task).Updates(map[string]interface{}{
 			"status": models.TaskStatusRunning, "last_execution_status": commonExecution.ExecutionStatusRunning,
@@ -108,23 +136,57 @@ func (r *RuntimeLeaseRepository) ClaimNext(ctx context.Context, owner string, no
 		}
 		claim = &RuntimeLeaseClaim{Task: task, Execution: execution, Lease: lease}
 		claim.Execution.Status = commonExecution.ExecutionStatusRunning
+		claim.Execution.Metadata = metadata
 		return nil
 	})
 	return claim, err
 }
 
 func (r *RuntimeLeaseRepository) Renew(ctx context.Context, taskID uint, owner string, token uint64, now time.Time, duration time.Duration) error {
-	result := r.db.WithContext(ctx).Model(&models.RuntimeLease{}).
-		Where("task_id = ? AND owner_instance_id = ? AND fencing_token = ?", taskID, owner, token).
-		Where("EXISTS (SELECT 1 FROM transfer.transfer_tasks t WHERE t.id = ? AND t.desired_state = ?)", taskID, models.TaskDesiredStateRunning).
-		Updates(map[string]interface{}{"lease_until": now.Add(duration), "heartbeat_at": now})
-	if result.Error != nil {
-		return result.Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		leaseUntil := now.Add(duration)
+		result := tx.Model(&models.RuntimeLease{}).
+			Where("task_id = ? AND owner_instance_id = ? AND fencing_token = ?", taskID, owner, token).
+			Where("EXISTS (SELECT 1 FROM transfer.transfer_tasks t WHERE t.id = ? AND t.desired_state = ?)", taskID, models.TaskDesiredStateRunning).
+			Updates(map[string]interface{}{"lease_until": leaseUntil, "heartbeat_at": now})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrRuntimeLeaseLost
+		}
+		var lease models.RuntimeLease
+		if err := tx.Where("task_id = ? AND owner_instance_id = ? AND fencing_token = ?", taskID, owner, token).First(&lease).Error; err != nil {
+			return ErrRuntimeLeaseLost
+		}
+		var execution commonExecution.TaskExecution
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("execution_id = ? AND status = ?", lease.ExecutionID, commonExecution.ExecutionStatusRunning).
+			First(&execution).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrRuntimeLeaseLost
+			}
+			return err
+		}
+		metadata := mergeContinuousRuntimeMetadata(execution.Metadata, owner, token, now, leaseUntil)
+		return tx.Model(&execution).Updates(map[string]interface{}{"metadata": metadata, "updated_at": now}).Error
+	})
+}
+
+func mergeContinuousRuntimeMetadata(metadata commonModels.JSONMap, owner string, token uint64, heartbeatAt, leaseUntil time.Time) commonModels.JSONMap {
+	if metadata == nil {
+		metadata = commonModels.JSONMap{}
 	}
-	if result.RowsAffected != 1 {
-		return ErrRuntimeLeaseLost
+	continuousMeta, _ := metadata["continuous"].(map[string]interface{})
+	if continuousMeta == nil {
+		continuousMeta = map[string]interface{}{}
 	}
-	return nil
+	continuousMeta["owner_instance_id"] = owner
+	continuousMeta["fencing_token"] = token
+	continuousMeta["heartbeat_at"] = heartbeatAt
+	continuousMeta["lease_until"] = leaseUntil
+	metadata["continuous"] = continuousMeta
+	return metadata
 }
 
 func (r *RuntimeLeaseRepository) Finish(ctx context.Context, claim RuntimeLeaseClaim, status, stopReason, errorMessage string, now time.Time) error {
@@ -176,6 +238,7 @@ func (r *RuntimeLeaseRepository) RecordProgress(ctx context.Context, claim Runti
 		var leaseCount int64
 		if err := tx.Model(&models.RuntimeLease{}).
 			Where("task_id = ? AND owner_instance_id = ? AND fencing_token = ? AND lease_until > CURRENT_TIMESTAMP", claim.Task.ID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken).
+			Where("EXISTS (SELECT 1 FROM transfer.transfer_tasks t WHERE t.id = ? AND t.desired_state = ?)", claim.Task.ID, models.TaskDesiredStateRunning).
 			Count(&leaseCount).Error; err != nil {
 			return err
 		}
@@ -206,10 +269,50 @@ func (r *RuntimeLeaseRepository) RecordProgress(ctx context.Context, claim Runti
 		partitions[progress.Partition] = progress.Position
 		continuousMeta["partitions"] = partitions
 		continuousMeta["last_committed_at"] = progress.CommittedAt
+		if progress.LastEventAt != nil {
+			continuousMeta["last_event_at"] = *progress.LastEventAt
+		}
 		metadata["continuous"] = continuousMeta
 		return tx.Model(&execution).Updates(map[string]interface{}{
 			"records_read": progress.RecordsRead, "records_written": progress.RecordsWritten,
 			"metadata": metadata, "updated_at": progress.CommittedAt,
+		}).Error
+	})
+}
+
+func (r *RuntimeLeaseRepository) RecordDiagnostics(ctx context.Context, claim RuntimeLeaseClaim, diagnostics ContinuousDiagnostics) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var leaseCount int64
+		if err := tx.Model(&models.RuntimeLease{}).
+			Where("task_id = ? AND owner_instance_id = ? AND fencing_token = ? AND lease_until > CURRENT_TIMESTAMP", claim.Task.ID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken).
+			Where("EXISTS (SELECT 1 FROM transfer.transfer_tasks t WHERE t.id = ? AND t.desired_state = ?)", claim.Task.ID, models.TaskDesiredStateRunning).
+			Count(&leaseCount).Error; err != nil {
+			return err
+		}
+		if leaseCount != 1 {
+			return ErrRuntimeLeaseLost
+		}
+		var execution commonExecution.TaskExecution
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("execution_id = ? AND status = ?", claim.Execution.ExecutionID, commonExecution.ExecutionStatusRunning).
+			First(&execution).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrRuntimeLeaseLost
+			}
+			return err
+		}
+		metadata := execution.Metadata
+		if metadata == nil {
+			metadata = commonModels.JSONMap{}
+		}
+		continuousMeta, _ := metadata["continuous"].(map[string]interface{})
+		if continuousMeta == nil {
+			continuousMeta = map[string]interface{}{}
+		}
+		continuousMeta["diagnostics"] = diagnostics
+		metadata["continuous"] = continuousMeta
+		return tx.Model(&execution).Updates(map[string]interface{}{
+			"metadata": metadata, "updated_at": diagnostics.SampledAt,
 		}).Error
 	})
 }

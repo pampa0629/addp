@@ -22,5 +22,5 @@ RUN chmod +x /app/run.sh \
     /app/src/main/java/com/addp/supermap/workflow/SuperMapWorkflowRuntime.java
 
 EXPOSE 8103
-HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 CMD curl -fsS "http://localhost:${PORT:-8103}/health" | grep -q '"status":"healthy"' || exit 1
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 CMD curl --max-time 2 -fsS "http://localhost:${PORT:-8103}/health" | grep -q '"status":"healthy"' || exit 1
 CMD ["/app/run.sh"]

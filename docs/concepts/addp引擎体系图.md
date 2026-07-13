@@ -120,6 +120,7 @@ classDiagram
 
     class ChangeStreamReaderProvider {
         +OpenChangeStream()
+        +PositionRanges()
     }
 
     class QueryRuntimeProvider {
@@ -165,7 +166,7 @@ classDiagram
 | Manager | 使用 Meta 树展示探查目录；预览结构化数据优先使用 preview / batch read，预览对象或文件优先使用 preview / content read。 |
 | Develop | 根据 `capabilities.compute` 选择查询、工作流或 Notebook 引擎。 |
 | Service | 使用 query runtime 和 Meta item/spatial 元数据发布数据服务。 |
-| Transfer | bounded table/content 路径消费 batch/session/content Provider；continuous source 消费 `ChangeStreamReaderProvider`，由 Transfer adapter 归一化 ChangeEvent 并组合目标 Provider。 |
+| Transfer | bounded table/content 路径消费 batch/session/content Provider；continuous source 消费 `ChangeStreamReaderProvider`，从同一 reader 获取分区 earliest/latest position 用于 lag/retention 诊断，由 Transfer adapter 归一化 ChangeEvent 并组合目标 Provider。 |
 
 ### Develop / Service 内置 DuckDB 联邦查询边界
 
@@ -189,7 +190,7 @@ DuckDB 当前不是用户在 System 中注册的外部 Engine Instance，也不�
 | 图数据库 | Neo4j |
 | 对象存储 | MinIO、S3 |
 | 文件系统 | NFS |
-| 消息流 | Kafka（common 插件已实现 catalog/facts/change stream read；Transfer 已实现 keyed JSON -> PostgreSQL continuous v1，Console Wizard 配置尚未开放） |
+| 消息流 | Kafka（common 插件与 Transfer keyed JSON -> PostgreSQL continuous v1 已实现，Console Wizard 已开放该单一路线） |
 | 工作流运行时 | GeoPython Workflow / Spark Workflow、自动启动服务但手动注册的 Math Workflow 参考实现、Model3D Workflow、PointCloud Workflow、SuperMap Workflow，及用户自研扩展工作流运行时 |
 | 脚本/Notebook | Jupyter |
 

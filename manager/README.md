@@ -109,10 +109,11 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 6. `vector_tile_cache` - 瓦片缓存结果状态，记录存储引用、格式、范围和层级。
 7. `vector_tile_cache_tasks` - 瓦片缓存生成任务定义，TaskProvider `task_type=vector_tile_cache_generation`。
 8. `model_3d_glb` / `model_3d_glb_tasks` - 单体三维模型 GLB 快显结果和任务定义，TaskProvider `task_type=model_3d_glb_generation`。
-9. `gaussian_splat_ksplat` / `gaussian_splat_ksplat_tasks` - 3DGS - KSplat 快显结果和任务定义，TaskProvider `task_type=gaussian_splat_ksplat_generation`。
-10. `point_cloud_copc` / `point_cloud_copc_tasks` - 点云 COPC 快显结果和任务定义，TaskProvider `task_type=point_cloud_copc_generation`；源 `format=copc` 直接基础预览。
-11. MVT 是瓦片格式，进入 `config.tile.format=mvt`，不是任务类型；COG 是 TIFF profile 或 Manager COG 生成结果，不是新的基础 format。
-12. 当前 `vector_tile_cache_generation`、`vector_materialized_view_generation` 和 `raster_cog_generation` 由 Manager Backend 内部执行；COG 生成使用 Manager 预处理 GDAL `source_uri` / `target_uri` / `gdal_env`，再通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 GeoPython Workflow，并直接写入 infra MinIO 的单一路线。点云 COPC 生成使用 Manager 预处理 PDAL `source.root_uri` 和 Manager infra MinIO 发布计划，再通过 `pointcloud_workflow` direct operator 读取源 URI、写入受控工作目录并发布为 Manager 私有 COPC artifact。
+9. `model3d_tiles` / `model3d_tiles_tasks` - 分块三维模型瓦片结果和任务定义，TaskProvider `task_type=model3d_tiles_generation`，`target_format=3d_tiles|s3m`。
+10. `gaussian_splat_ksplat` / `gaussian_splat_ksplat_tasks` - 3DGS - KSplat 快显结果和任务定义，TaskProvider `task_type=gaussian_splat_ksplat_generation`。
+11. `point_cloud_copc` / `point_cloud_copc_tasks` - 点云 COPC 快显结果和任务定义，TaskProvider `task_type=point_cloud_copc_generation`；源 `format=copc` 直接基础预览。
+12. MVT 是瓦片格式，进入 `config.tile.format=mvt`，不是任务类型；COG 是 TIFF profile 或 Manager COG 生成结果，不是新的基础 format。
+13. 当前 `vector_tile_cache_generation`、`vector_materialized_view_generation` 和 `raster_cog_generation` 由 Manager Backend 内部执行；COG 生成使用 Manager 预处理 GDAL `source_uri` / `target_uri` / `gdal_env`，再通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 GeoPython Workflow，并直接写入 infra MinIO 的单一路线。点云 COPC 生成使用 Manager 预处理 PDAL `source.root_uri` 和 Manager infra MinIO 发布计划，再通过 `pointcloud_workflow` direct operator 读取源 URI、写入受控工作目录并发布为 Manager 私有 COPC artifact。
 
 COG 生成运行要求：
 

@@ -91,13 +91,35 @@ func (r *CADPreviewRepository) GetLatestReadyByFingerprint(ctx context.Context, 
 	return &result, err
 }
 
-func (r *CADPreviewRepository) List(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.CADPreview, int64, error) {
-	query := r.db.WithContext(ctx).Model(&models.CADPreview{}).Where("tenant_id = ?", tenantID)
+type CADPreviewFilter struct {
+	TenantID uint
+	TaskID   uint
+	Status   string
+	Q        string
+	Page     int
+	PageSize int
+}
+
+func (r *CADPreviewRepository) List(ctx context.Context, filter CADPreviewFilter) ([]*models.CADPreview, int64, error) {
+	query := r.db.WithContext(ctx).Model(&models.CADPreview{}).Where("tenant_id = ?", filter.TenantID)
+	if filter.TaskID > 0 {
+		query = query.Where("task_id = ?", filter.TaskID)
+	}
+	if status := strings.TrimSpace(filter.Status); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if q := strings.TrimSpace(filter.Q); q != "" {
+		like := "%" + q + "%"
+		query = query.Where(
+			"locator ILIKE ? OR item_fingerprint ILIKE ? OR source_format ILIKE ? OR error_message ILIKE ?",
+			like, like, like, like,
+		)
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	page, pageSize = normalizePage(page, pageSize)
+	page, pageSize := normalizePage(filter.Page, filter.PageSize)
 	var results []*models.CADPreview
 	err := query.Order("updated_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err

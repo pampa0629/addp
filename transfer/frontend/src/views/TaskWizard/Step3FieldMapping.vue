@@ -102,7 +102,7 @@
         </template>
       </el-table-column>
 
-      <el-table-column :label="t('transfer.taskWizard.formatCol')" width="140">
+      <el-table-column v-if="!wizardState.isContinuousTask.value" :label="t('transfer.taskWizard.formatCol')" width="140">
         <template #default="{ row, $index }">
           <el-input
             v-model="row.format"

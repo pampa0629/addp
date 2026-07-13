@@ -76,6 +76,7 @@ const (
 	FormatEPT       FormatType = "ept"
 	Format3DTiles   FormatType = "3dtiles"
 	FormatDWG       FormatType = "dwg"
+	FormatDXF       FormatType = "dxf"
 	FormatS3M       FormatType = "s3m"
 	FormatOSGB      FormatType = "osgb"
 	FormatOSGBScene FormatType = "osgb_scene"

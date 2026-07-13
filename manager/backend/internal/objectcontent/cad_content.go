@@ -15,7 +15,11 @@ type cadContentHandler struct {
 
 func (h *cadContentHandler) Handle(_ context.Context, req *ObjectContentRequest, _ ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
 	metadata := buildPreviewMetadata(req, 0)
-	metadata["source_format"] = string(format.FormatDWG)
+	sourceFormat := format.FormatUnknown
+	if req != nil {
+		sourceFormat = format.NormalizeFormat(req.Format)
+	}
+	metadata["source_format"] = string(sourceFormat)
 	previewURL := ""
 	if req != nil {
 		previewURL = strings.TrimSpace(req.PreviewURL)

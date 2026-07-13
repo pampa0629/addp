@@ -51,6 +51,38 @@ func TestSupervisorCancelsSessionWhenDesiredStateStopsRenewal(t *testing.T) {
 	}
 }
 
+func TestSupervisorClassifiesRunnerFencingAfterPauseAsCancelled(t *testing.T) {
+	store := &fakeLeaseStore{
+		claim: &repository.RuntimeLeaseClaim{
+			Task:      models.TransferTask{ID: 43, DesiredState: models.TaskDesiredStateRunning},
+			Execution: commonExecution.TaskExecution{ExecutionID: "exec-43", Status: commonExecution.ExecutionStatusRunning},
+			Lease:     models.RuntimeLease{TaskID: 43, OwnerInstanceID: "worker-a", FencingToken: 8},
+		},
+		finished: make(chan finishCall, 1),
+	}
+	runner := SessionRunnerFunc(func(context.Context, repository.RuntimeLeaseClaim) error {
+		return repository.ErrRuntimeLeaseLost
+	})
+	supervisor, err := NewSupervisor(store, runner, Config{
+		OwnerInstanceID: "worker-a", Capacity: 1, LeaseDuration: 100 * time.Millisecond,
+		HeartbeatInterval: 10 * time.Millisecond, ClaimInterval: 5 * time.Millisecond,
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewSupervisor() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = supervisor.Run(ctx) }()
+	select {
+	case finished := <-store.finished:
+		if finished.status != commonExecution.ExecutionStatusCancelled || finished.reason != string(models.TaskDesiredStatePaused) {
+			t.Fatalf("finish = %#v, want paused cancellation", finished)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("supervisor did not classify fenced paused session")
+	}
+}
+
 type finishCall struct {
 	status string
 	reason string

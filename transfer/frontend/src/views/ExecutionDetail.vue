@@ -19,11 +19,34 @@
       <template v-if="isContinuousExecution">
         <el-divider>{{ t('transfer.executionDetail.continuousProgress') }}</el-divider>
         <el-descriptions :column="3" border>
+          <el-descriptions-item :label="t('transfer.executionDetail.workerInstance')">
+            {{ continuousMetadata.owner_instance_id || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.executionDetail.fencingToken')">
+            {{ continuousMetadata.fencing_token ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.executionDetail.heartbeatAt')">
+            {{ formatTimestamp(continuousMetadata.heartbeat_at) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.executionDetail.leaseUntil')">
+            {{ formatTimestamp(continuousMetadata.lease_until) }}
+          </el-descriptions-item>
           <el-descriptions-item :label="t('transfer.executionDetail.partitionCount')">
             {{ continuousPartitions.length }}
           </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.executionDetail.retentionHealth')">
+            <el-tag :type="continuousHealthTagType(continuousDiagnostics.health || 'unknown')">
+              {{ continuousHealthText(continuousDiagnostics.health || 'unknown') }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.executionDetail.diagnosticsSampledAt')">
+            {{ formatTimestamp(continuousDiagnostics.sampled_at) }}
+          </el-descriptions-item>
           <el-descriptions-item :label="t('transfer.executionDetail.lastCommittedAt')">
             {{ formatTimestamp(continuousMetadata.last_committed_at) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.executionDetail.lastEventAt')">
+            {{ formatTimestamp(continuousMetadata.last_event_at) }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('transfer.executionDetail.checkpointAge')">
             {{ checkpointAge }}
@@ -33,10 +56,46 @@
           </el-descriptions-item>
         </el-descriptions>
 
+        <el-alert
+          v-if="continuousDiagnostics.error"
+          :title="t('transfer.executionDetail.diagnosticsError')"
+          :description="continuousDiagnostics.error"
+          type="warning"
+          :closable="false"
+          class="diagnostics-alert"
+        />
+
         <el-table :data="continuousPartitions" border size="small" class="partition-table">
           <el-table-column prop="partition" :label="t('transfer.executionDetail.partition')" width="120" />
-          <el-table-column prop="nextOffset" :label="t('transfer.executionDetail.nextOffset')" min-width="160" />
-          <el-table-column prop="positionType" :label="t('transfer.executionDetail.positionType')" min-width="160" />
+          <el-table-column :label="t('transfer.executionDetail.retentionHealth')" width="120">
+            <template #default="{ row }">
+              <el-tag :type="continuousHealthTagType(row.health)" size="small">
+                {{ continuousHealthText(row.health) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('transfer.executionDetail.nextOffset')" min-width="130">
+            <template #default="{ row }">{{ formatContinuousMetric(row.nextOffset) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('transfer.executionDetail.earliestOffset')" min-width="130">
+            <template #default="{ row }">{{ formatContinuousMetric(row.earliestOffset) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('transfer.executionDetail.latestOffset')" min-width="130">
+            <template #default="{ row }">{{ formatContinuousMetric(row.latestOffset) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('transfer.executionDetail.lagRecords')" min-width="120">
+            <template #default="{ row }">{{ formatContinuousMetric(row.lagRecords) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('transfer.executionDetail.recoveryHeadroom')" min-width="150">
+            <template #default="{ row }">{{ formatContinuousMetric(row.recoveryHeadroomRecords) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('transfer.executionDetail.sourceRate')" min-width="140">
+            <template #default="{ row }">{{ formatContinuousRate(row.sourceRateRecordsPerSecond) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('transfer.executionDetail.retentionHorizon')" min-width="150">
+            <template #default="{ row }">{{ formatContinuousDurationSeconds(row.retentionHorizonSeconds) }}</template>
+          </el-table-column>
+          <el-table-column prop="positionType" :label="t('transfer.executionDetail.positionType')" min-width="150" />
         </el-table>
       </template>
 
@@ -147,6 +206,13 @@ import { useRoute } from 'vue-router'
 import { executionAPI } from '@/api/tasks'
 import { ElMessage, ElIcon } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import {
+  buildContinuousPartitionRows,
+  continuousHealthTagType,
+  formatContinuousDurationSeconds,
+  formatContinuousRate,
+  getContinuousDiagnostics
+} from '@addp/common-frontend'
 
 const { t } = useI18n()
 
@@ -160,17 +226,11 @@ const autoRefreshInterval = ref(null)
 const executionId = computed(() => route.params.execution_id)
 
 const continuousMetadata = computed(() => execution.value?.metadata?.continuous || {})
+const continuousDiagnostics = computed(() => getContinuousDiagnostics(execution.value?.metadata))
 const isContinuousExecution = computed(() => {
   return Object.keys(continuousMetadata.value).length > 0 || !!execution.value?.metadata?.stop_reason
 })
-const continuousPartitions = computed(() => {
-  const partitions = continuousMetadata.value?.partitions || {}
-  return Object.entries(partitions).map(([partition, position]) => ({
-    partition,
-    nextOffset: position?.values?.next_offset ?? '-',
-    positionType: [position?.type, position?.version].filter(Boolean).join('/') || '-'
-  })).sort((left, right) => String(left.partition).localeCompare(String(right.partition), undefined, { numeric: true }))
-})
+const continuousPartitions = computed(() => buildContinuousPartitionRows(execution.value?.metadata))
 const checkpointAge = computed(() => {
   const committedAt = continuousMetadata.value?.last_committed_at
   if (!committedAt) return '-'
@@ -187,6 +247,16 @@ function formatTimestamp(value) {
   if (!value) return '-'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString()
+}
+
+function formatContinuousMetric(value) {
+  return value === null || value === undefined ? '-' : value
+}
+
+function continuousHealthText(health) {
+  const key = `transfer.executionDetail.health.${health}`
+  const translated = t(key)
+  return translated === key ? health : translated
 }
 
 const loadExecution = async () => {
@@ -420,6 +490,10 @@ onUnmounted(() => {
 }
 
 .partition-table {
+  margin-top: 12px;
+}
+
+.diagnostics-alert {
   margin-top: 12px;
 }
 

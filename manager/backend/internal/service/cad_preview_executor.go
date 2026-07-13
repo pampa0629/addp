@@ -58,7 +58,7 @@ func (e *ManagerCADPreviewExecutor) BuildCADPreview(ctx context.Context, req CAD
 	if sourceEngine.TenantID != nil && *sourceEngine.TenantID != req.Task.TenantID {
 		return nil, ErrEngineAccessDenied
 	}
-	source, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{Engine: sourceEngine, Locator: loc, Kind: workflowaccess.KindFile, Format: "dwg"})
+	source, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{Engine: sourceEngine, Locator: loc, Kind: workflowaccess.KindFile, Format: req.Config.Source.Format})
 	if err != nil {
 		return nil, fmt.Errorf("resolve CAD source access: %w", err)
 	}

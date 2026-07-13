@@ -339,19 +339,16 @@ type Model3DTilesTaskRequest struct {
 }
 
 type Model3DTilesTaskSourceResponse struct {
-	ItemLocator    string `json:"item_locator,omitempty"`
-	SourceEngineID uint   `json:"source_engine_id,omitempty"`
-	Format         string `json:"format,omitempty"`
+	ItemLocator     string `json:"item_locator,omitempty"`
+	SourceEngineID  uint   `json:"source_engine_id,omitempty"`
+	ItemFingerprint string `json:"item_fingerprint,omitempty"`
+	ItemID          uint   `json:"item_id,omitempty"`
+	Format          string `json:"format,omitempty"`
+	SourceSizeBytes int64  `json:"source_size_bytes,omitempty"`
 }
 
-type Model3DTilesTaskTargetResponse struct {
-	StorageLocator string `json:"storage_locator,omitempty"`
-	TargetEngineID uint   `json:"target_engine_id,omitempty"`
-	DatasetName    string `json:"dataset_name,omitempty"`
-}
-
-type Model3DTilesTaskTilesResponse struct {
-	Format string `json:"format"`
+type Model3DTilesTaskResultResponse struct {
+	StorageRef string `json:"storage_ref,omitempty"`
 }
 
 type Model3DTilesTaskResponse struct {
@@ -369,8 +366,8 @@ type Model3DTilesTaskResponse struct {
 	CreatedBy           *uint                           `json:"created_by,omitempty"`
 	Config              commonModels.JSONMap            `json:"config"`
 	Source              *Model3DTilesTaskSourceResponse `json:"source,omitempty"`
-	Target              *Model3DTilesTaskTargetResponse `json:"target,omitempty"`
-	Tiles               *Model3DTilesTaskTilesResponse  `json:"tiles,omitempty"`
+	TargetFormat        string                          `json:"target_format,omitempty"`
+	Result              *Model3DTilesTaskResultResponse `json:"result,omitempty"`
 	CreatedAt           time.Time                       `json:"created_at"`
 	UpdatedAt           time.Time                       `json:"updated_at"`
 }
@@ -508,12 +505,12 @@ type PointCloudCOPCTaskResponse struct {
 }
 
 // ListTasks GET /api/v1/manager/tasks
-// 查询参数：?task_type=vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
+// 查询参数：?task_type=vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
 // @Summary 列出任务 | List tasks
 // @Description 列出 Manager 模块的任务（矢量瓦片缓存生成、矢量物化视图、栅格快显 COG、栅格 mosaic、CAD 栅格预览、三维模型与点云快显、向量化任务）| List Manager module tasks
 // @Tags Manager
 // @Produce json
-// @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type filter"
+// @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type filter"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} TaskListResponse "任务列表 | Task list"
@@ -929,7 +926,7 @@ func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
 // @Description 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and ID
 // @Tags Manager
 // @Produce json
-// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type"
+// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type"
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} object "任务详情，按 task_type 返回矢量瓦片缓存、矢量物化视图、栅格 COG 生成或向量化任务详情 | Task detail by task_type"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -1112,7 +1109,7 @@ type TaskExecuteResponse struct {
 // @Tags Manager
 // @Accept json
 // @Produce json
-// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model_3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type"
+// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type"
 // @Param id path int true "任务ID | Task ID"
 // @Param body body TaskExecuteRequest false "执行配置 | Execution configuration"
 // @Success 202 {object} TaskExecuteResponse "执行ID | Execution ID"
@@ -2007,16 +2004,16 @@ func (h *TaskProviderHandler) DeleteRasterMosaicTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }
 
-// ListModel3DTilesTasks GET /api/v1/manager/model_3d_tiles_tasks
+// ListModel3DTilesTasks GET /api/v1/manager/model3d_tiles_tasks
 // @Summary 列出三维模型 3D Tiles 任务配置 | List model 3D Tiles generation task configurations
-// @Description 列出 Manager 模块的三维模型 3D Tiles 任务配置。该私有入口固定返回 task_type=model_3d_tiles_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D Tiles generation task configurations.
+// @Description 列出 Manager 模块的分块三维模型瓦片任务配置，target_format 区分 3D Tiles 与 S3M。该私有入口固定返回 task_type=model3d_tiles_generation。| List Manager model3d tiles generation task configurations for 3D Tiles and S3M.
 // @Tags Manager
 // @Produce json
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /model_3d_tiles_tasks [get]
+// @Router /model3d_tiles_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListModel3DTilesTasks(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -2034,16 +2031,16 @@ func (h *TaskProviderHandler) ListModel3DTilesTasks(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize})
 }
 
-// CreateModel3DTilesTask POST /api/v1/manager/model_3d_tiles_tasks
+// CreateModel3DTilesTask POST /api/v1/manager/model3d_tiles_tasks
 // @Summary 创建三维模型 3D Tiles 任务配置 | Create model 3D Tiles generation task configuration
-// @Description 创建新的三维模型 3D Tiles 任务配置。任务从 OSGB Scene whole item 读取源数据，并将 3D Tiles 数据集写入用户选择的业务存储。| Create a model 3D Tiles task from an OSGB Scene whole item into selected business storage.
+// @Description 创建分块三维模型瓦片任务。当前源为 OSGB Scene whole item，结果按 target_format 写入 Manager infra MinIO。| Create a model3d tiles task from an OSGB Scene whole item into Manager infra MinIO.
 // @Tags Manager
 // @Accept json
 // @Produce json
 // @Param body body Model3DTilesTaskRequest true "model 3D Tiles generation task configuration"
 // @Success 201 {object} Model3DTilesTaskResponse "创建的任务配置 | Created task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /model_3d_tiles_tasks [post]
+// @Router /model3d_tiles_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateModel3DTilesTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -2074,7 +2071,7 @@ func (h *TaskProviderHandler) CreateModel3DTilesTask(c *gin.Context) {
 	c.JSON(http.StatusCreated, model3DTilesTaskResponse(&task))
 }
 
-// GetModel3DTilesTask GET /api/v1/manager/model_3d_tiles_tasks/:id
+// GetModel3DTilesTask GET /api/v1/manager/model3d_tiles_tasks/:id
 // @Summary 获取三维模型 3D Tiles 任务配置 | Get model 3D Tiles generation task configuration
 // @Tags Manager
 // @Produce json
@@ -2082,14 +2079,14 @@ func (h *TaskProviderHandler) CreateModel3DTilesTask(c *gin.Context) {
 // @Success 200 {object} Model3DTilesTaskResponse "任务配置 | Task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
-// @Router /model_3d_tiles_tasks/{id} [get]
+// @Router /model3d_tiles_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetModel3DTilesTask(c *gin.Context) {
 	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeModel3DTilesGeneration})
 	h.TaskDetail(c)
 }
 
-// UpdateModel3DTilesTask PUT /api/v1/manager/model_3d_tiles_tasks/:id
+// UpdateModel3DTilesTask PUT /api/v1/manager/model3d_tiles_tasks/:id
 // @Summary 更新三维模型 3D Tiles 任务配置 | Update model 3D Tiles generation task configuration
 // @Tags Manager
 // @Accept json
@@ -2099,7 +2096,7 @@ func (h *TaskProviderHandler) GetModel3DTilesTask(c *gin.Context) {
 // @Success 200 {object} Model3DTilesTaskResponse "更新后的任务配置 | Updated task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
-// @Router /model_3d_tiles_tasks/{id} [put]
+// @Router /model3d_tiles_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateModel3DTilesTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -2137,14 +2134,14 @@ func (h *TaskProviderHandler) UpdateModel3DTilesTask(c *gin.Context) {
 	c.JSON(http.StatusOK, model3DTilesTaskResponse(existing))
 }
 
-// DeleteModel3DTilesTask DELETE /api/v1/manager/model_3d_tiles_tasks/:id
+// DeleteModel3DTilesTask DELETE /api/v1/manager/model3d_tiles_tasks/:id
 // @Summary 删除三维模型 3D Tiles 任务配置 | Delete model 3D Tiles generation task configuration
 // @Tags Manager
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /model_3d_tiles_tasks/{id} [delete]
+// @Router /model3d_tiles_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteModel3DTilesTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -3443,22 +3440,14 @@ func model3DTilesTaskResponse(task *models.Model3DTilesTask) Model3DTilesTaskRes
 	}
 	if source, ok := asJSONMap(task.Config["source"]); ok {
 		resp.Source = &Model3DTilesTaskSourceResponse{
-			ItemLocator:    stringFromConfig(source["item_locator"]),
-			SourceEngineID: uintFromConfig(source["source_engine_id"]),
-			Format:         stringFromConfig(source["format"]),
+			ItemLocator: stringFromConfig(source["item_locator"]), SourceEngineID: uintFromConfig(source["source_engine_id"]),
+			ItemFingerprint: stringFromConfig(source["item_fingerprint"]), ItemID: uintFromConfig(source["item_id"]),
+			Format: stringFromConfig(source["format"]), SourceSizeBytes: int64FromAPIConfig(source["source_size_bytes"], 0),
 		}
 	}
-	if target, ok := asJSONMap(task.Config["target"]); ok {
-		resp.Target = &Model3DTilesTaskTargetResponse{
-			StorageLocator: stringFromConfig(target["storage_locator"]),
-			TargetEngineID: uintFromConfig(target["target_engine_id"]),
-			DatasetName:    stringFromConfig(target["dataset_name"]),
-		}
-	}
-	if tiles, ok := asJSONMap(task.Config["tiles"]); ok {
-		resp.Tiles = &Model3DTilesTaskTilesResponse{
-			Format: stringFromConfig(tiles["format"]),
-		}
+	resp.TargetFormat = stringFromConfig(task.Config["target_format"])
+	if result, ok := asJSONMap(task.Config["result"]); ok {
+		resp.Result = &Model3DTilesTaskResultResponse{StorageRef: stringFromConfig(result["storage_ref"])}
 	}
 	return resp
 }

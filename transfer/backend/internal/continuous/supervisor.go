@@ -144,6 +144,8 @@ func (s *Supervisor) runSession(ctx context.Context, claim repository.RuntimeLea
 				errorMessage = "continuous session ended unexpectedly"
 			} else if errors.Is(err, context.Canceled) {
 				status, stopReason = commonExecution.ExecutionStatusCancelled, "worker_shutdown"
+			} else if reason, cancelled := s.desiredStateCancellationReason(claim.Task.ID); cancelled {
+				status, stopReason = commonExecution.ExecutionStatusCancelled, reason
 			} else {
 				errorMessage = err.Error()
 			}
@@ -157,10 +159,9 @@ func (s *Supervisor) runSession(ctx context.Context, claim repository.RuntimeLea
 			if err := s.repo.Renew(ctx, claim.Task.ID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken, now, s.cfg.LeaseDuration); err != nil {
 				cancelRunner()
 				<-runnerDone
-				state, stateErr := s.repo.DesiredState(context.Background(), claim.Task.ID)
-				if stateErr == nil && state != models.TaskDesiredStateRunning {
+				if reason, cancelled := s.desiredStateCancellationReason(claim.Task.ID); cancelled {
 					status = commonExecution.ExecutionStatusCancelled
-					stopReason = string(state)
+					stopReason = reason
 				} else {
 					errorMessage = err.Error()
 				}
@@ -173,6 +174,14 @@ finish:
 	if err := s.repo.Finish(context.Background(), claim, status, stopReason, errorMessage, time.Now()); err != nil && !errors.Is(err, repository.ErrRuntimeLeaseLost) {
 		s.logger.Error("continuous session finish failed", "task_id", claim.Task.ID, "error", err)
 	}
+}
+
+func (s *Supervisor) desiredStateCancellationReason(taskID uint) (string, bool) {
+	state, err := s.repo.DesiredState(context.Background(), taskID)
+	if err != nil || state == models.TaskDesiredStateRunning {
+		return "", false
+	}
+	return string(state), true
 }
 
 func (s *Supervisor) activeCount() int {

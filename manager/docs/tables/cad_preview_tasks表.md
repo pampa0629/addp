@@ -1,10 +1,10 @@
 # cad_preview_tasks 表结构说明
 
-> 状态：当前实现说明。`manager.cad_preview_tasks` 表达二维 DWG 栅格瓦片预览生成任务定义，TaskProvider `task_type=cad_preview_generation`。
+> 状态：当前实现说明。`manager.cad_preview_tasks` 表达二维 DWG / DXF 栅格瓦片预览生成任务定义，TaskProvider `task_type=cad_preview_generation`。
 
 ## 一、表定位
 
-该表保存“以后按什么配置为哪个 DWG item 生成或刷新 Manager 受管预览 artifact”。它不替代 `manager.cad_previews` 的结果状态、`manager.preview_state` 的用户视角状态、`common.task_executions` 的执行历史或源 CAD data item。
+该表保存“以后按什么配置为哪个 CAD item 生成或刷新 Manager 受管预览 artifact”。它不替代 `manager.cad_previews` 的结果状态、`manager.preview_state` 的用户视角状态、`common.task_executions` 的执行历史或源 CAD data item。
 
 ## 二、核心字段
 
@@ -44,11 +44,11 @@
 }
 ```
 
-源必须是 `data_type=cad + layout=single + format=dwg`。`storage_ref` 缺省时由服务端按 `tenant_<tenant>/cad-previews/<fingerprint>` 生成。`tile_size` 范围为 128–1024，`max_zoom` 数值范围为 0–8，但总输出不得超过 25,000 张，因此当前可执行上限为 7。
+源必须是 `data_type=cad + layout=single + format=dwg|dxf`。`storage_ref` 缺省时由服务端按 `tenant_<tenant>/cad-previews/<fingerprint>` 生成。`tile_size` 范围为 128–1024，`max_zoom` 数值范围为 0–8，但总输出不得超过 25,000 张，因此当前可执行上限为 7。
 
 ## 四、执行语义
 
-执行器通过 `addp.workflow.access-plan/v1` direct 调用 `supermap_workflow cad.render_preview`。SuperMap 直接打开 DWG Datasource 并渲染 Dataset，不遍历 Geometry，不生成 WKB / GeoJSON，不让前端重画 entity。
+执行器通过 `addp.workflow.access-plan/v1` direct 调用 `supermap_workflow cad.render_preview`。SuperMap 直接打开 DWG / DXF Datasource 并渲染 Dataset，不遍历 Geometry，不生成 WKB / GeoJSON，不让前端重画 entity。
 
 标准入口：
 

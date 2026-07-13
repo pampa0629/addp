@@ -44,6 +44,7 @@ func SetupRouter(
 	gaussianSplatKSplatHandler *GaussianSplatKSplatHandler,
 	pointCloudCOPCHandler *PointCloudCOPCHandler,
 	cadPreviewHandler *CADPreviewHandler,
+	model3DTilesHandler *Model3DTilesHandler,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -142,13 +143,17 @@ func SetupRouter(
 			rasterMosaicTasksGroup.PUT("/:id", taskProviderHandler.UpdateRasterMosaicTask)
 			rasterMosaicTasksGroup.DELETE("/:id", taskProviderHandler.DeleteRasterMosaicTask)
 		}
-		model3DTilesTasksGroup := api.Group("/model_3d_tiles_tasks")
+		model3DTilesTasksGroup := api.Group("/model3d_tiles_tasks")
 		{
 			model3DTilesTasksGroup.GET("", taskProviderHandler.ListModel3DTilesTasks)
 			model3DTilesTasksGroup.POST("", taskProviderHandler.CreateModel3DTilesTask)
 			model3DTilesTasksGroup.GET("/:id", taskProviderHandler.GetModel3DTilesTask)
 			model3DTilesTasksGroup.PUT("/:id", taskProviderHandler.UpdateModel3DTilesTask)
 			model3DTilesTasksGroup.DELETE("/:id", taskProviderHandler.DeleteModel3DTilesTask)
+		}
+		model3DTilesAssets := api.Group("/model3d_tiles")
+		{
+			model3DTilesAssets.GET("/:id/assets/*asset_path", model3DTilesHandler.GetAsset)
 		}
 		model3DGLBTasksGroup := api.Group("/model_3d_glb_tasks")
 		{
@@ -316,7 +321,7 @@ func SetupRouter(
 		quickViewHandler := NewQuickViewHandler(quickViewService, previewResolver, unifiedMVTService, redisClient)
 		if taskProviderHandler != nil {
 			quickViewHandler.SetTileCacheTaskService(taskProviderHandler.tileCacheTaskSvc)
-			quickViewHandler.SetArtifactTaskServices(taskProviderHandler.rasterCOGTaskSvc, taskProviderHandler.model3DGLBTaskSvc, taskProviderHandler.gaussianSplatKSplatTaskSvc, taskProviderHandler.pointCloudCOPCTaskSvc, taskProviderHandler.cadPreviewTaskSvc)
+			quickViewHandler.SetArtifactTaskServices(taskProviderHandler.rasterCOGTaskSvc, taskProviderHandler.model3DGLBTaskSvc, taskProviderHandler.gaussianSplatKSplatTaskSvc, taskProviderHandler.pointCloudCOPCTaskSvc, taskProviderHandler.cadPreviewTaskSvc, taskProviderHandler.model3DTilesTaskSvc)
 		}
 		api.GET("/quick-view/capability", quickViewHandler.GetQuickViewCapabilityByLocator)
 		api.POST("/quick-view/actions", quickViewHandler.ExecuteQuickViewAction)

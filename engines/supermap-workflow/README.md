@@ -38,16 +38,18 @@ SuperMap SDK、GPA/SPS jar、native `.so` 和许可文件不进入 ADDP 代码�
 - `vector.query`
 - `dataset.save`
 - `osgb_scene_to_s3m`
-- `cad.inspect`（direct-only，读取 DWG Dataset 元数据、record count 与 bounds，不遍历 Geometry）
-- `cad.render_preview`（direct-only，使用 SuperMap Map/Layer 直接渲染 DWG Dataset，输出 WebP 瓦片）
+- `cad.inspect`（direct-only，读取 DWG / DXF Dataset 元数据、record count 与 bounds，不遍历 Geometry）
+- `cad.render_preview`（direct-only，使用 SuperMap Map/Layer 直接渲染 DWG / DXF Dataset，输出 WebP 瓦片）
 
 这些算子运行在同一个 JVM / 同一次 `WorkflowExecutor.execute()` 内，DAG 边上传递 `Datasource`、`DatasetVector` 等 Java 对象或轻量引用；输出到外部时再写入 UDBX 数据源。
+
+HTTP 层使用独立线程池，确保长时间 CAD 渲染或其他 SuperMap 算子执行期间，`/health`、算子发现和执行状态接口仍可响应。SuperMap 算子执行通过 JVM 内统一锁串行化，避免在同一 iObjects Java 运行时中并发访问非线程安全的 Workspace、Datasource 或 Map 对象；HTTP 并发不等于 SuperMap 计算并发。
 
 算子元数据使用 `param_type=input` 标识由工作流连线传入的参数，并用 `supermap.datasource`、`supermap.dataset`、`supermap.query_result` 等细分类型描述 SPS DAG 内部对象，避免多个通用 `object` 输入只能按连线顺序推断。
 
 `datasource.open_postgis` 只打开已有 PostGIS 空间表所在数据源，不调用 SuperMap `create`，因此不会主动创建 SuperMap `sm*` 系统表。`datasource.enable_postgis` 是 direct-only 高危算子，用于 System 引擎管理入口显式启用 SuperMap SDX+ 空间工作区，可能在目标 PostgreSQL 数据库中创建 SuperMap 系统表，不进入 Develop 工作流画布。`datasource.upgrade_udbx` 同样是 direct-only 高危算子：它先以 SQLite 只读检查 UDBX 的 SuperMap 系统表与 `SmRegister` 关键字段，再以可写方式打开原文件，由当前 iObjects Java SDK 完成原位 schema 升级，关闭后再次检查并返回是否发生变更。它不得在 `datasource.open` 或其他普通读取链路中隐式执行；调用方必须先备份文件并记录审计信息。`locator` 只属于 Develop/UI 的资源选择契约；调用 runtime 前，Develop Backend 必须把它派生为 `connection_info`、`schema` 和 `table` 并移除，SuperMap runtime 不解析 ADDP locator。
 
-`osgb_scene_to_s3m` 同时支持 workflow 和 direct 模式，输入输出统一使用 `addp.workflow.access-plan/v1`。当前只接受 NFS `mounted_path`，运行时按访问计划中的 `server + export_path + nfs_version` 动态挂载；源目录必须包含 `metadata.xml` 与 `Data/Tile_*/Tile_*.osgb`。算子依次调用 `OSGBCacheBuilder.generateConfigFile` 和 `CacheBuilderOSGBTool.osgb2s3m`，输出固定为 `config/scene.scp + Data/**/*.s3m`，纹理固定使用 DXT，便于 Manager 的 Cesium S3M 预览稳定解码。结果是业务存储中的 `format=s3m + layout=whole` 数据集，应由调用方触发 Meta scan。
+`osgb_scene_to_s3m` 同时支持 workflow 和 direct 模式，输入输出统一使用 `addp.workflow.access-plan/v1`。源当前接受 NFS `mounted_path`，运行时按访问计划中的 `server + export_path + nfs_version` 动态挂载；源目录必须包含 `metadata.xml` 与 `Data/Tile_*/Tile_*.osgb`。目标支持 NFS `mounted_path` 与 MinIO/S3 `object_store`：对象存储目标先在本地临时目录完成转换，再递归发布。算子依次调用 `OSGBCacheBuilder.generateConfigFile` 和 `CacheBuilderOSGBTool.osgb2s3m`，输出固定为 `config/scene.scp + Data/**/*.s3m`，纹理固定使用 DXT，便于 Manager 的 Cesium S3M 预览稳定解码。Develop workflow 结果是业务存储中的 `format=s3m + layout=whole` 数据集并触发 Meta scan；Manager direct 结果写入 Manager infra MinIO 并由 Manager 维护生命周期。
 
 UDBX 升级调试示例：
 

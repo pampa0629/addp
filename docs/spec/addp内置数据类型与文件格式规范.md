@@ -58,6 +58,7 @@
 | PPTX | `single` | `document` | `pptx` | 第一阶段以内置格式识别和 raw / range 预览为主 |
 | WPS | `single` | `document` | `wps` | 第一阶段以内置格式识别和 raw / range 预览为主 |
 | DWG | `single` | `cad` | `dwg` | 二维 CAD 图纸；basic scan 识别 header，deep scan 与预览使用 SuperMap iObjects |
+| DXF | `single` | `cad` | `dxf` | 二维 CAD 交换图纸；basic scan 识别 ASCII/Binary DXF header，deep scan 与预览使用 SuperMap iObjects |
 | GLB | `single` | `model_3d` | `glb` | 第一阶段三维模型代表格式；预览优先走 raw / range / storage stream + 前端 Three.js |
 | glTF | `multi` | `model_3d` | `gltf` | 由 `.gltf` manifest 声明的多资源三维模型，buffers / images 作为 related refs |
 | OBJ | `single` | `model_3d` | `obj` | Wavefront OBJ 单体网格模型；第一阶段支持识别和轻量摘要 |
@@ -76,7 +77,7 @@
 | XYZ | `single` | `point_cloud` | `xyz` | 文本 XYZ 点云；deep scan 做预算内采样摘要 |
 | EPT | `whole` | `point_cloud` | `ept` | Entwine Point Tiles whole-scope 点云数据集；`ept.json` manifest 强命中 |
 
-## DWG
+## DWG / DXF
 
 ### 识别与组织
 
@@ -84,33 +85,34 @@
 |---|---|
 | `layout` | `single` |
 | `data_type` | `cad` |
-| `format` | `dwg` |
-| 主资源 | `meta_item.full_name` 指向 `.dwg` 文件或对象 |
+| `format` | `dwg` 或 `dxf` |
+| 主资源 | `meta_item.full_name` 指向 `.dwg` 或 `.dxf` 文件或对象 |
 
-Basic scan 通过六字节 `AC10xx` DWG 版本头、扩展名和 MIME 完成轻量识别，不依赖 SuperMap。`.dwg` 扩展名存在但 header 不合法时不得识别为 DWG。
+Basic scan 不依赖 SuperMap。DWG 通过六字节 `AC10xx` 版本头识别；DXF 通过 ASCII `0/SECTION` 结构头或 `AutoCAD Binary DXF` 签名识别。扩展名存在但 header 不合法时不得识别为对应 CAD 格式。
 
 ### attributes 写入
 
 | 分区 | 写入内容 |
 |---|---|
-| `item` | `layout=single`、`data_type=cad`、`format=dwg` |
+| `item` | `layout=single`、`data_type=cad`、`format=dwg|dxf` |
 | `type_info.cad` | drawing kind、单位、entity/layer/layout/block/xref 数量、model/paper space 标记、二维/三维范围、文件大小 |
 | `format_info.dwg` | `format_version`、SuperMap provider/version、interpreted dataset/record count、normalized geometry 标记、scan complete 和 warnings |
+| `format_info.dxf` | `format_version`、SuperMap provider/version、interpreted dataset/record count、normalized geometry 标记、scan complete 和 warnings |
 | `capabilities.spatial` | 仅在 DWG 已有明确 CRS / 空间定位事实时写入；本地 CAD 坐标不得伪造 EPSG |
 
 ### 消费要求
 
-Meta deep scan 只通过 `supermap_workflow` direct operator `cad.inspect` 打开 DWG，读取 Datasource/Dataset 元数据、record count 和 bounds，不遍历 Geometry，不生成 UDBX，不使用第二解析器回退。
+Meta deep scan 只通过 `supermap_workflow` direct operator `cad.inspect` 打开 DWG 或 DXF，读取 Datasource/Dataset 元数据、record count 和 bounds，不遍历 Geometry，不生成 UDBX，不使用第二解析器回退。
 
-Manager 通过 `cad.render_preview` 让 SuperMap `Map/Layer/MapPainter` 直接渲染 CAD Dataset，生成受管栅格瓦片；不得把 entity 转为 WKB/GeoJSON 后交给前端重画。Transfer 只允许 encoded raw copy。显式 `cad.import` 的 GIS 输出登记为新的 table item，不修改源 DWG item。
+Manager 通过 `cad.render_preview` 让 SuperMap `Map/Layer/MapPainter` 直接渲染 CAD Dataset，生成受管栅格瓦片；不得把 entity 转为 WKB/GeoJSON 后交给前端重画。Transfer 只允许 encoded raw copy。显式 `cad.import` 的 GIS 输出登记为新的 table item，不修改源 CAD item。
 
 ### 格式约束
 
-- 第一阶段只承诺二维 DWG。
+- 当前只承诺二维 DWG、DXF。
 - Xref 只允许同目录或同 object prefix 的相对引用；拒绝绝对路径、网络路径和越权引用。
 - SHX/TTF 只从平台受控目录加载。
-- entity-as-row 只是读取投影，不得把源 DWG 归为 `table`。
-- 预览任务、瓦片、缩略图和 CAD→GIS 转换报告不得写入 `type_info.cad` 或 `format_info.dwg`。
+- entity-as-row 只是读取投影，不得把源 DWG、DXF 归为 `table`。
+- 预览任务、瓦片、缩略图和 CAD→GIS 转换报告不得写入 `type_info.cad` 或 `format_info.<cad-format>`。
 
 ## GLB
 
@@ -487,7 +489,7 @@ OSGB Scene 在 ADDP 中表示一套 OSGB 倾斜摄影三维模型数据集，不
 
 ### 消费要求
 
-Manager 第一阶段不直接预览 OSGB Scene 源数据。OSGB Scene 源 item 应通过 `model_3d_tiles_generation` 任务转换为目标业务存储中的 `format=3dtiles`、`layout=whole` item；转换完成后触发 Meta deep scan，并复用 3D Tiles 预览链路。
+Manager 不直接预览 OSGB Scene 原始目录。OSGB Scene 源 item 通过 `model3d_tiles_generation` 生成 Manager infra 快显结果：`target_format=3d_tiles` 产生 3D Tiles，`target_format=s3m` 产生 S3M；两种结果分别登记到 `manager.model3d_tiles`，不触发 Meta scan。Develop 使用相同 workflow 算子写入业务存储时，目标才经 Meta deep scan 形成独立 `3dtiles` 或 `s3m` data item。
 
 ### 格式约束
 

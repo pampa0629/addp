@@ -31,6 +31,7 @@ monitor/
 - 路由前缀：`/api/v1/monitor`。
 - 主要接口：`GET /executions`、`GET /executions/:id`、`GET /executions/stats`、`GET /executions/trend`、`GET /modules`、`GET /modules/:module/health`、`GET /modules/health/all`、`GET /providers/health`、`GET /providers/:module/health`。
 - provider health 从 System 读取启用的 TaskProvider 注册记录，复用模块 `/health` 与标准 `GET /tasks?task_type=` 做无副作用探活；Monitor 不复制 capabilities、不修复 provider 注册、不读取 owner 私有表。
+- Transfer continuous 的 lag 与 retention health 来自 `common.task_executions.metadata.continuous.diagnostics`；Monitor 列表和详情只展示 owner 已写入的 `healthy|degraded|critical|unknown` 及分区诊断，不直连业务 Kafka，不读取 `transfer.sync_states` 或 `transfer.runtime_leases`。
 - 执行记录字段以 `common/execution/task_execution.go` 为准；新增模块写执行记录时应复用 `common/execution/repository.go` 和 `common/execution.EnsureStore`。
 
 ## 开发与验证

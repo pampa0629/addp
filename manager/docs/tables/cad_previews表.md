@@ -1,6 +1,6 @@
 # cad_previews 表结构说明
 
-> 状态：当前实现说明。`manager.cad_previews` 表达 Manager 拥有生命周期的二维 DWG 栅格瓦片预览结果。
+> 状态：当前实现说明。`manager.cad_previews` 表达 Manager 拥有生命周期的二维 DWG / DXF 栅格瓦片预览结果。
 
 ## 一、表定位
 
@@ -14,8 +14,8 @@
 | `tenant_id` / `item_fingerprint` | bigint / varchar(64) | 源 item 稳定身份 |
 | `item_id` / `locator` | bigint / text | 当前 Meta 行引用与 ResourceLocator |
 | `task_id` / `last_execution_id` | bigint / varchar | 最近任务和 execution |
-| `source_engine_id` / `source_format` | bigint / varchar | 源引擎与固定 `dwg` 格式 |
-| `source_size_bytes` | bigint | 源 DWG 大小 |
+| `source_engine_id` / `source_format` | bigint / varchar | 源引擎与 `dwg` / `dxf` 格式 |
+| `source_size_bytes` | bigint | 源 CAD 文件大小 |
 | `storage_ref` | text | Manager infra MinIO 目录引用，前端不得消费 |
 | `manifest_ref` / `thumbnail_ref` | varchar | 目录内 manifest 和缩略图相对路径 |
 | `tile_count` / `tile_size` | bigint / integer | 瓦片数量与像素尺寸 |
@@ -48,7 +48,7 @@ GET /api/v1/manager/cad-previews/{id}/tiles/{z}/{x}/{y}
 
 ## 四、删除语义
 
-删除结果时，Manager 先删除 `storage_ref` 下的 infra artifact，再将记录标记为 `deleted` 并软删除。不得删除源 DWG、任务定义、execution 历史或 `preview_state`。
+删除结果时，Manager 先删除 `storage_ref` 下的 infra artifact，再将记录标记为 `deleted` 并软删除。不得删除源 CAD 文件、任务定义、execution 历史或 `preview_state`。
 
 ## 五、相关文档
 

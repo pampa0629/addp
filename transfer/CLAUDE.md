@@ -68,7 +68,9 @@ transfer/
 - checkpoint 当前只用于进度展示、故障定位和 provider marker 观测；失败执行 retry 按 restartable 从头重新入队，append 任务 retry 会被拒绝。不得宣称 table Transfer 已支持 checkpoint resumable。
 - 大数据传输要优先考虑批大小、连续读取 / 写入 session、进度日志和 restartable retry。
 - Worker 任务载荷只保存 ID 和必要上下文，不要塞入大对象。
-- 工作包 2B 已实现 common Kafka Engine 的 catalog/facts/ChangeStreamReaderProvider、PostgreSQL partitioned change apply、continuous 严格配置、原子 start/pause/resume/stop、`desired_state`、`runtime_leases`、supervisor 和 Kafka JSON -> PostgreSQL 生产数据循环。第一版只开放业务 Kafka keyed JSON record -> PostgreSQL monotonic upsert；Console Wizard 尚未开放 continuous 配置，不得提前开放 keyless append、Debezium、CDC、DLQ、Schema Registry、Avro、Protobuf、Kafka target、replay 或物理删除。
+- 工作包 2B/2C 已实现 common Kafka Engine 的 catalog/facts/ChangeStreamReaderProvider、PostgreSQL partitioned change apply、continuous 严格配置、原子 start/pause/resume/stop、`desired_state`、`runtime_leases`、supervisor、Kafka JSON -> PostgreSQL 生产数据循环和 Console Wizard 配置。第一版只开放业务 Kafka keyed JSON record -> PostgreSQL monotonic upsert；不得提前开放 keyless append、Debezium、CDC、DLQ、Schema Registry、Avro、Protobuf、Kafka target、replay 或物理删除。
+- continuous resume 前必须验证 committed `next_offset` 仍在 Kafka 保留范围内；低于 earliest offset 时明确失败，不能静默跳到 earliest。目标 PostgreSQL 被锁时必须响应 context 取消并回滚业务写入与 apply ledger。
+- continuous worker 从同一 ChangeStreamReader 采集分区 earliest/latest，用 Transfer committed `next_offset` 计算 lag、recovery headroom、source rate 和 retention horizon，并将 `healthy|degraded|critical|unknown` 写入 execution metadata。Monitor 只展示该 metadata，不直连 Kafka 或 Transfer 私表。
 - 业务 Kafka 注册为 System Engine，topic 使用 `type=topic` ResourceLocator；partition 只属于 runtime assignment/position/diagnostics。Infra Kafka 来自 ADDP 部署配置，不进入 System engines、资源树或用户任务 JSON。
 - continuous source 必须消费 common `ChangeStreamReaderProvider`；原始 ChangeRecord 到 ChangeEvent 的解码以及 ChangeApplyWriter 归 Transfer runtime。第一版目标必须消费 PostgreSQL `PartitionedTableChangeApplyProvider`，把业务行与业务库 `addp_transfer.apply_positions` 原子提交；普通 `TableUpsertProvider` 不足以阻止失效 worker 写回旧状态。
 - continuous session 不进入 Asynq；使用 `transfer.runtime_leases` 做 owner lease、heartbeat 和 fencing，并使用 `transfer.sync_states` 按 partition 保存 `kafka_offset/v1.next_offset`。

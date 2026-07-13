@@ -1,6 +1,6 @@
 # ADDP 数据类型与文件格式扩展指南
 
-新增 CAD 格式时必须优先判断是否需要保留 CAD 原生图层、块、布局、标注等语义。DWG 使用既有 `data_type=cad`，不得因为 entity 可投影为行而归为 `table`；CAD→GIS 必须作为显式转换生成新的 table item。第一阶段 DWG deep scan 和预览统一使用 `supermap_workflow` 的 direct operator，不在 Meta 或 Manager 进程嵌入 SuperMap/ODA SDK，也不保留第二解析路线。
+新增 CAD 格式时必须优先判断是否需要保留 CAD 原生图层、块、布局、标注等语义。DWG、DXF 使用既有 `data_type=cad`，不得因为 entity 可投影为行而归为 `table`；CAD→GIS 必须作为显式转换生成新的 table item。二维 CAD deep scan 和预览统一使用 `supermap_workflow` 的 direct operator，不在 Meta 或 Manager 进程嵌入 SuperMap/ODA SDK，也不保留第二解析路线。
 
 本文是新增或修改数据类型、文件格式、容器格式、多组件格式、whole scope 数据集或引擎原生数据表示时的实施清单。概念解释不在本文重复，先读：
 

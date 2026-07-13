@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
+	rastercogref "github.com/addp/manager/internal/cog"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/google/uuid"
@@ -21,11 +21,6 @@ type Model3DTilesExecutor interface {
 	BuildModel3DTiles(ctx context.Context, req Model3DTilesExecutionRequest) (*Model3DTilesExecutionResult, error)
 }
 
-type Model3DTilesMetaScanSubmitter interface {
-	CreateManualScanRun(opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error)
-	SetTenantID(tenantID *uint)
-}
-
 type Model3DTilesExecutionRequest struct {
 	Task        *models.Model3DTilesTask
 	ExecutionID string
@@ -33,40 +28,36 @@ type Model3DTilesExecutionRequest struct {
 }
 
 type Model3DTilesExecutionResult struct {
-	TilesetLocator string
-	TilesetRef     string
-	TileCount      int64
-	Metadata       commonModels.JSONMap
+	StorageRef  string
+	ManifestRef string
+	FileCount   int64
+	SizeBytes   int64
+	Metadata    commonModels.JSONMap
 }
 
 type Model3DTilesExecutionConfig struct {
-	Source  Model3DTilesSourceConfig
-	Target  Model3DTilesTargetConfig
-	Tiles   Model3DTilesTilesConfig
-	Options commonModels.JSONMap
+	Source       Model3DTilesSourceConfig
+	TargetFormat string
+	Result       Model3DTilesResultConfig
+	Options      commonModels.JSONMap
 }
 
 type Model3DTilesSourceConfig struct {
-	ItemLocator    string
-	SourceEngineID uint
-	Format         string
+	ItemLocator     string
+	SourceEngineID  uint
+	ItemFingerprint string
+	ItemID          uint
+	Format          string
+	SourceSizeBytes int64
 }
 
-type Model3DTilesTargetConfig struct {
-	StorageLocator string
-	TargetEngineID uint
-	DatasetName    string
-}
-
-type Model3DTilesTilesConfig struct {
-	Format string
-}
+type Model3DTilesResultConfig struct{ StorageRef string }
 
 type Model3DTilesTaskService struct {
-	repo              *repository.Model3DTilesRepository
-	taskExecRepo      *commonExecution.TaskExecutionRepository
-	executor          Model3DTilesExecutor
-	metaScanSubmitter Model3DTilesMetaScanSubmitter
+	repo         *repository.Model3DTilesRepository
+	taskExecRepo *commonExecution.TaskExecutionRepository
+	executor     Model3DTilesExecutor
+	bucket       string
 }
 
 func NewModel3DTilesTaskService(repo *repository.Model3DTilesRepository, taskExecRepo *commonExecution.TaskExecutionRepository) *Model3DTilesTaskService {
@@ -77,12 +68,10 @@ func (s *Model3DTilesTaskService) SetExecutor(executor Model3DTilesExecutor) {
 	s.executor = executor
 }
 
-func (s *Model3DTilesTaskService) SetMetaScanSubmitter(submitter Model3DTilesMetaScanSubmitter) {
-	s.metaScanSubmitter = submitter
-}
+func (s *Model3DTilesTaskService) SetBucket(bucket string) { s.bucket = strings.TrimSpace(bucket) }
 
 func (s *Model3DTilesTaskService) Create(ctx context.Context, task *models.Model3DTilesTask) error {
-	if err := normalizeModel3DTilesTask(task); err != nil {
+	if err := normalizeModel3DTilesTask(task, s.bucket); err != nil {
 		return err
 	}
 	return s.repo.CreateTask(ctx, task)
@@ -97,7 +86,7 @@ func (s *Model3DTilesTaskService) List(ctx context.Context, tenantID uint, page,
 }
 
 func (s *Model3DTilesTaskService) Update(ctx context.Context, task *models.Model3DTilesTask) error {
-	if err := normalizeModel3DTilesTask(task); err != nil {
+	if err := normalizeModel3DTilesTask(task, s.bucket); err != nil {
 		return err
 	}
 	return s.repo.UpdateTask(ctx, task)
@@ -129,7 +118,7 @@ func (s *Model3DTilesTaskService) Execute(ctx context.Context, taskID uint, tena
 
 	executionID := uuid.New().String()
 	now := time.Now()
-	currentStep := "生成三维模型 3D Tiles"
+	currentStep := "生成分块三维模型瓦片"
 	executionConfig := task.Config.Clone()
 	if executionConfig == nil {
 		executionConfig = commonModels.JSONMap{}
@@ -157,45 +146,44 @@ func (s *Model3DTilesTaskService) Execute(ctx context.Context, taskID uint, tena
 		return "", err
 	}
 
-	go s.runModel3DTilesGeneration(context.Background(), task, executionID, now)
+	result, cfg, err := s.prepareModel3DTilesResult(ctx, task, executionID)
+	if err != nil {
+		completedAt := time.Now()
+		_ = s.taskExecRepo.UpdateFields(ctx, executionID, int(tenantID), map[string]interface{}{
+			"status": commonExecution.ExecutionStatusFailed, "error_details": commonModels.JSONMap{"message": err.Error()},
+			"completed_at": completedAt, "updated_at": completedAt,
+		})
+		_ = s.repo.UpdateTaskLastExecution(ctx, taskID, tenantID, executionID, commonExecution.ExecutionStatusFailed, completedAt)
+		return "", err
+	}
+	go s.runModel3DTilesGeneration(context.Background(), task, result, cfg, executionID, now)
 	return executionID, nil
 }
 
-func (s *Model3DTilesTaskService) runModel3DTilesGeneration(ctx context.Context, task *models.Model3DTilesTask, executionID string, startedAt time.Time) {
+func (s *Model3DTilesTaskService) runModel3DTilesGeneration(ctx context.Context, task *models.Model3DTilesTask, artifact *models.Model3DTiles, cfg Model3DTilesExecutionConfig, executionID string, startedAt time.Time) {
 	status := commonExecution.ExecutionStatusSuccess
 	progress := 100
 	metadata := commonModels.JSONMap{}
 	var errDetails commonModels.JSONMap
 
-	cfg, err := normalizeModel3DTilesTaskConfig(task.Config)
+	var err error
 	var result *Model3DTilesExecutionResult
-	if err == nil {
-		if s.executor == nil {
-			err = errors.New("model 3d tiles generation executor is not configured")
-		} else {
-			result, err = s.executor.BuildModel3DTiles(ctx, Model3DTilesExecutionRequest{Task: task, ExecutionID: executionID, Config: cfg})
-		}
+	if s.executor == nil {
+		err = errors.New("model 3d tiles generation executor is not configured")
+	} else {
+		result, err = s.executor.BuildModel3DTiles(ctx, Model3DTilesExecutionRequest{Task: task, ExecutionID: executionID, Config: cfg})
+	}
+	if err == nil && result == nil {
+		err = errors.New("model3d tiles generation returned no result")
 	}
 	if err == nil && result != nil {
 		metadata = result.Metadata.Clone()
 		if metadata == nil {
 			metadata = commonModels.JSONMap{}
 		}
-		metadata["tileset_locator"] = result.TilesetLocator
-		metadata["tileset_ref"] = result.TilesetRef
-		metadata["tile_count"] = result.TileCount
-		var scanRun *commonExecution.TaskExecution
-		scanRun, err = s.submitModel3DTilesMetaScan(task.TenantID, cfg)
-		if err == nil && scanRun != nil {
-			metadata["meta_scan"] = commonModels.JSONMap{
-				"execution_id": scanRun.ExecutionID,
-				"status":       scanRun.Status,
-				"task_type":    scanRun.TaskType,
-				"module":       scanRun.Module,
-				"engine_id":    cfg.Target.TargetEngineID,
-				"catalog_path": model3DTilesDatasetCatalogPath(cfg),
-			}
-		}
+		metadata["storage_ref"] = result.StorageRef
+		metadata["manifest_ref"] = result.ManifestRef
+		metadata["file_count"] = result.FileCount
 	}
 	if err != nil {
 		if model3DTilesExecutionTimedOut(err) {
@@ -206,6 +194,20 @@ func (s *Model3DTilesTaskService) runModel3DTilesGeneration(ctx context.Context,
 		progress = s.model3DTilesExistingExecutionProgress(ctx, executionID, int(task.TenantID))
 		errDetails = commonModels.JSONMap{"message": err.Error()}
 	}
+	artifactFields := map[string]interface{}{"last_execution_id": executionID, "updated_at": time.Now()}
+	if err != nil {
+		artifactFields["status"] = models.Model3DTilesStatusFailed
+		artifactFields["error_message"] = err.Error()
+	} else {
+		artifactFields["status"] = models.Model3DTilesStatusReady
+		artifactFields["error_message"] = ""
+		artifactFields["storage_ref"] = result.StorageRef
+		artifactFields["manifest_ref"] = result.ManifestRef
+		artifactFields["file_count"] = result.FileCount
+		artifactFields["size_bytes"] = result.SizeBytes
+		artifactFields["metadata"] = metadata
+	}
+	_ = s.repo.UpdateResultFields(ctx, artifact.ID, task.TenantID, artifactFields)
 	metadata = s.mergeModel3DTilesExistingExecutionMetadata(ctx, executionID, int(task.TenantID), metadata)
 
 	completedAt := time.Now()
@@ -255,38 +257,6 @@ func (s *Model3DTilesTaskService) model3DTilesExistingExecutionProgress(ctx cont
 	return exec.Progress
 }
 
-func (s *Model3DTilesTaskService) submitModel3DTilesMetaScan(tenantID uint, cfg Model3DTilesExecutionConfig) (*commonExecution.TaskExecution, error) {
-	if s == nil || s.metaScanSubmitter == nil {
-		return nil, errors.New("model 3d tiles meta scan submitter is not configured")
-	}
-	if cfg.Target.TargetEngineID == 0 {
-		return nil, errors.New("model 3d tiles target engine_id is required for meta scan")
-	}
-	catalogPath := model3DTilesDatasetCatalogPath(cfg)
-	if catalogPath == "" {
-		return nil, errors.New("model 3d tiles dataset catalog path is required for meta scan")
-	}
-	if tenantID > 0 {
-		s.metaScanSubmitter.SetTenantID(&tenantID)
-	}
-	return s.metaScanSubmitter.CreateManualScanRun(commonClient.MetaScanOptions{
-		EngineID:     cfg.Target.TargetEngineID,
-		CatalogPaths: []string{catalogPath},
-		ScanDepth:    "deep",
-		Force:        true,
-		TriggerType:  commonExecution.TriggerTypeManual,
-		Source:       commonExecution.ModuleManager,
-	})
-}
-
-func model3DTilesDatasetCatalogPath(cfg Model3DTilesExecutionConfig) string {
-	loc, err := resourcetree.ParseURI(cfg.Target.StorageLocator)
-	if err != nil || loc == nil {
-		return ""
-	}
-	return strings.Trim(joinFilePath(strings.Trim(loc.FullName(), "/"), strings.Trim(cfg.Target.DatasetName, "/")), "/")
-}
-
 func (s *Model3DTilesTaskService) mergeModel3DTilesExistingExecutionMetadata(ctx context.Context, executionID string, tenantID int, metadata commonModels.JSONMap) commonModels.JSONMap {
 	if metadata == nil {
 		metadata = commonModels.JSONMap{}
@@ -308,7 +278,7 @@ func (s *Model3DTilesTaskService) mergeModel3DTilesExistingExecutionMetadata(ctx
 	return merged
 }
 
-func normalizeModel3DTilesTask(task *models.Model3DTilesTask) error {
+func normalizeModel3DTilesTask(task *models.Model3DTilesTask, bucket string) error {
 	if task == nil {
 		return errors.New("model 3d tiles generation task is nil")
 	}
@@ -327,22 +297,30 @@ func normalizeModel3DTilesTask(task *models.Model3DTilesTask) error {
 	if task.Schedule != "" || task.NextRunAt != nil {
 		return errors.New("model 3d tiles generation task does not support schedule")
 	}
-	_, err := normalizeModel3DTilesTaskConfig(task.Config)
+	_, err := normalizeModel3DTilesTaskConfig(task.Config, bucket, task.TenantID)
 	return err
 }
 
-func normalizeModel3DTilesTaskConfig(config commonModels.JSONMap) (Model3DTilesExecutionConfig, error) {
+func normalizeModel3DTilesTaskConfig(config commonModels.JSONMap, bucket string, tenantID uint) (Model3DTilesExecutionConfig, error) {
 	source, err := normalizeModel3DTilesSource(config)
 	if err != nil {
 		return Model3DTilesExecutionConfig{}, err
 	}
-	target, err := normalizeModel3DTilesTarget(config)
-	if err != nil {
-		return Model3DTilesExecutionConfig{}, err
+	targetFormat := strings.ToLower(strings.TrimSpace(stringFromConfig(config["target_format"])))
+	if targetFormat != models.Model3DTilesTargetFormat3DTiles && targetFormat != models.Model3DTilesTargetFormatS3M {
+		return Model3DTilesExecutionConfig{}, errors.New("model3d tiles config.target_format must be 3d_tiles or s3m")
 	}
-	tiles := normalizeModel3DTilesTiles(config)
+	config["target_format"] = targetFormat
+	resultMap, _ := asJSONMap(config["result"])
+	storageRef := stringFromConfig(resultMap["storage_ref"])
+	if storageRef == "" {
+		prefix := fmt.Sprintf("tenant_%d/model3d-tiles/%s/%s", tenantID, source.ItemFingerprint, targetFormat)
+		storageRef = rastercogref.ObjectStorageRef(firstNonEmptyConfig(bucket, "manager"), prefix)
+	}
+	result := Model3DTilesResultConfig{StorageRef: storageRef}
+	config["result"] = commonModels.JSONMap{"storage_ref": storageRef}
 	options := normalizeModel3DTilesOptions(config)
-	return Model3DTilesExecutionConfig{Source: source, Target: target, Tiles: tiles, Options: options}, nil
+	return Model3DTilesExecutionConfig{Source: source, TargetFormat: targetFormat, Result: result, Options: options}, nil
 }
 
 func normalizeModel3DTilesSource(config commonModels.JSONMap) (Model3DTilesSourceConfig, error) {
@@ -351,12 +329,13 @@ func normalizeModel3DTilesSource(config commonModels.JSONMap) (Model3DTilesSourc
 		return Model3DTilesSourceConfig{}, errors.New("model 3d tiles config.source is required")
 	}
 	source := Model3DTilesSourceConfig{
-		ItemLocator:    stringFromConfig(sourceMap["item_locator"]),
-		SourceEngineID: uintFromConfig(sourceMap["source_engine_id"]),
-		Format:         strings.ToLower(firstNonEmptyConfig(stringFromConfig(sourceMap["format"]), string(format.FormatOSGBScene))),
+		ItemLocator: stringFromConfig(sourceMap["item_locator"]), SourceEngineID: uintFromConfig(sourceMap["source_engine_id"]),
+		ItemFingerprint: strings.TrimSpace(stringFromConfig(sourceMap["item_fingerprint"])), ItemID: uintFromConfig(sourceMap["item_id"]),
+		Format:          strings.ToLower(firstNonEmptyConfig(stringFromConfig(sourceMap["format"]), string(format.FormatOSGBScene))),
+		SourceSizeBytes: int64FromConfig(sourceMap["source_size_bytes"], 0),
 	}
-	if source.ItemLocator == "" || source.SourceEngineID == 0 {
-		return Model3DTilesSourceConfig{}, errors.New("model 3d tiles config.source requires item_locator and source_engine_id")
+	if source.ItemLocator == "" || source.SourceEngineID == 0 || source.ItemFingerprint == "" {
+		return Model3DTilesSourceConfig{}, errors.New("model3d tiles config.source requires item_locator, source_engine_id and item_fingerprint")
 	}
 	if source.Format != string(format.FormatOSGBScene) {
 		return Model3DTilesSourceConfig{}, errors.New("model 3d tiles config.source.format must be osgb_scene")
@@ -369,54 +348,41 @@ func normalizeModel3DTilesSource(config commonModels.JSONMap) (Model3DTilesSourc
 		return Model3DTilesSourceConfig{}, errors.New("model 3d tiles config.source.item_locator engine_id does not match source_engine_id")
 	}
 	config["source"] = commonModels.JSONMap{
-		"item_locator":     source.ItemLocator,
-		"source_engine_id": source.SourceEngineID,
-		"format":           source.Format,
+		"item_locator": source.ItemLocator, "source_engine_id": source.SourceEngineID,
+		"item_fingerprint": source.ItemFingerprint, "item_id": source.ItemID,
+		"format": source.Format, "source_size_bytes": source.SourceSizeBytes,
 	}
 	return source, nil
 }
 
-func normalizeModel3DTilesTarget(config commonModels.JSONMap) (Model3DTilesTargetConfig, error) {
-	targetMap, ok := asJSONMap(config["target"])
-	if !ok {
-		return Model3DTilesTargetConfig{}, errors.New("model 3d tiles config.target is required")
-	}
-	target := Model3DTilesTargetConfig{
-		StorageLocator: stringFromConfig(targetMap["storage_locator"]),
-		TargetEngineID: uintFromConfig(targetMap["target_engine_id"]),
-		DatasetName:    stringFromConfig(targetMap["dataset_name"]),
-	}
-	if target.StorageLocator == "" || target.TargetEngineID == 0 {
-		return Model3DTilesTargetConfig{}, errors.New("model 3d tiles config.target requires storage_locator and target_engine_id")
-	}
-	loc, err := resourcetree.ParseURI(target.StorageLocator)
+func (s *Model3DTilesTaskService) prepareModel3DTilesResult(ctx context.Context, task *models.Model3DTilesTask, executionID string) (*models.Model3DTiles, Model3DTilesExecutionConfig, error) {
+	cfg, err := normalizeModel3DTilesTaskConfig(task.Config, s.bucket, task.TenantID)
 	if err != nil {
-		return Model3DTilesTargetConfig{}, fmt.Errorf("model 3d tiles config.target.storage_locator is invalid: %w", err)
+		return nil, cfg, err
 	}
-	if loc.EngineID != target.TargetEngineID {
-		return Model3DTilesTargetConfig{}, errors.New("model 3d tiles config.target.storage_locator engine_id does not match target_engine_id")
+	existing, err := s.repo.GetCurrentResult(ctx, task.TenantID, cfg.Source.ItemFingerprint, cfg.TargetFormat)
+	if err != nil {
+		return nil, cfg, err
 	}
-	if target.DatasetName == "" {
-		target.DatasetName = "model_3d_tiles"
+	fields := map[string]interface{}{"task_id": task.ID, "last_execution_id": executionID, "storage_ref": cfg.Result.StorageRef, "manifest_ref": model3DTilesManifestRef(cfg.TargetFormat), "status": models.Model3DTilesStatusBuilding, "error_message": "", "updated_at": time.Now()}
+	if existing != nil {
+		if err := s.repo.UpdateResultFields(ctx, existing.ID, task.TenantID, fields); err != nil {
+			return nil, cfg, err
+		}
+		return existing, cfg, nil
 	}
-	config["target"] = commonModels.JSONMap{
-		"storage_locator":  target.StorageLocator,
-		"target_engine_id": target.TargetEngineID,
-		"dataset_name":     target.DatasetName,
+	result := &models.Model3DTiles{TenantID: task.TenantID, ItemFingerprint: cfg.Source.ItemFingerprint, ItemID: optionalUint(cfg.Source.ItemID), Locator: cfg.Source.ItemLocator, TaskID: optionalUint(task.ID), LastExecutionID: &executionID, SourceEngineID: cfg.Source.SourceEngineID, SourceFormat: cfg.Source.Format, SourceSizeBytes: cfg.Source.SourceSizeBytes, TargetFormat: cfg.TargetFormat, StorageRef: cfg.Result.StorageRef, ManifestRef: model3DTilesManifestRef(cfg.TargetFormat), Status: models.Model3DTilesStatusBuilding, Metadata: commonModels.JSONMap{}, CreatedBy: task.CreatedBy}
+	if err := s.repo.CreateResult(ctx, result); err != nil {
+		return nil, cfg, err
 	}
-	return target, nil
+	return result, cfg, nil
 }
 
-func normalizeModel3DTilesTiles(config commonModels.JSONMap) Model3DTilesTilesConfig {
-	tilesMap, _ := asJSONMap(config["tiles"])
-	tiles := Model3DTilesTilesConfig{
-		Format: strings.ToLower(firstNonEmptyConfig(stringFromConfig(tilesMap["format"]), "3dtiles")),
+func model3DTilesManifestRef(targetFormat string) string {
+	if targetFormat == models.Model3DTilesTargetFormatS3M {
+		return "config/scene.scp"
 	}
-	if tiles.Format != "3dtiles" {
-		tiles.Format = "3dtiles"
-	}
-	config["tiles"] = commonModels.JSONMap{"format": tiles.Format}
-	return tiles
+	return "tileset.json"
 }
 
 func normalizeModel3DTilesOptions(config commonModels.JSONMap) commonModels.JSONMap {

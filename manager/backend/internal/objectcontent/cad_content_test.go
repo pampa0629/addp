@@ -43,3 +43,14 @@ func TestCADContentUsesManifestURLOnlyWhenArtifactReady(t *testing.T) {
 		t.Fatalf("url = %q", content.URL)
 	}
 }
+
+func TestCADContentAcceptsDXF(t *testing.T) {
+	handler := buildCADContentHandler(ObjectContentPluginConfig{Name: "cad", Builtin: models.ObjectPreviewKindCAD})
+	content, _, err := handler.Handle(context.Background(), &ObjectContentRequest{Name: "drawing.dxf", Format: "dxf"}, nil)
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if content.Kind != models.ObjectPreviewKindCAD || content.Metadata["source_format"] != "dxf" {
+		t.Fatalf("content = %#v", content)
+	}
+}

@@ -179,6 +179,9 @@ def test_osgb_scene_to_s3m_exposes_access_plan_and_both_execution_modes():
     assert 'List.of("workflow", "direct")' in block
     assert 'case "osgb_scene_to_s3m" -> convertOSGBSceneToS3M(params)' in SOURCE
     assert 'case "osgb_scene_to_s3m" -> new OSGBSceneToS3MProcess(params)' in SOURCE
+    assert '"object_store".equals(targetAccess.path("method").asText())' in SOURCE
+    assert 'publishDirectory(targetRoot, targetAccess)' in SOURCE
+    assert "if (objectStoreTarget) {\n                deleteRecursively(targetRoot);" in SOURCE
 
 
 def test_cad_inspect_is_direct_only_and_does_not_traverse_geometry():
@@ -189,8 +192,10 @@ def test_cad_inspect_is_direct_only_and_does_not_traverse_geometry():
     assert 'List.of("direct")' in block
     assert 'case "cad.inspect" -> inspectCAD(params)' in SOURCE
     assert 'interpretation.put("geometry_traversed", false)' in SOURCE
+    assert 'requireCADSourceFormat(source)' in SOURCE
+    assert 'result.put("format", sourceFormat)' in SOURCE
     inspect_start = SOURCE.index("private static ObjectNode inspectCAD")
-    inspect_end = SOURCE.index("private static String readDWGVersion", inspect_start)
+    inspect_end = SOURCE.index("private static String requireCADSourceFormat", inspect_start)
     inspect_block = SOURCE[inspect_start:inspect_end]
     assert ".getGeometry(" not in inspect_block
     assert ".getRecordset(" not in inspect_block
@@ -204,7 +209,7 @@ def test_cad_render_preview_uses_map_layers_and_direct_mode():
     assert 'List.of("direct")' in block
     assert 'case "cad.render_preview" -> renderCADPreview(params)' in SOURCE
     render_start = SOURCE.index("private static ObjectNode renderCADPreview")
-    render_end = SOURCE.index("private static void publishCADPreview", render_start)
+    render_end = SOURCE.index("private static void publishDirectory", render_start)
     render_block = SOURCE[render_start:render_end]
     assert "map.getLayers().add(dataset, true)" in render_block
     assert "map.outputMapToWEBP" in render_block
@@ -212,7 +217,15 @@ def test_cad_render_preview_uses_map_layers_and_direct_mode():
     assert "map.setViewBounds(bounds)" in render_block
     assert "map.setBackgroundStyle(backgroundStyle)" in render_block
     assert "double renderSpan = Math.max(drawingBounds.getWidth(), drawingBounds.getHeight())" in render_block
+    assert "readCADFormatVersion(sourcePath, sourceFormat)" in render_block
     assert ".getGeometry(" not in render_block
+
+
+def test_cad_source_formats_accept_dwg_and_dxf_with_one_operator_path():
+    assert '!"dwg".equals(sourceFormat) && !"dxf".equals(sourceFormat)' in SOURCE
+    assert 'case "dwg" -> readDWGVersion(sourcePath)' in SOURCE
+    assert 'case "dxf" -> readDXFVersion(sourcePath)' in SOURCE
+    assert '"$ACADVER".equalsIgnoreCase(line.trim())' in SOURCE
 
 
 def test_object_store_access_builds_a_container_reachable_minio_endpoint():

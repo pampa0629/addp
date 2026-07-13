@@ -18,6 +18,80 @@ import (
 	"gorm.io/gorm"
 )
 
+type runtimeLeaseMigrationFixture models.RuntimeLease
+
+func (runtimeLeaseMigrationFixture) TableName() string {
+	return "transfer_runtime_lease_migration_test.runtime_leases"
+}
+
+func TestIntegrationPostgresRuntimeLeaseSQLMigrationMatchesGORMModel(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	connInfo := testpg.ConnInfoFromEnv(t)
+	dsn, err := (&postgresql.PostgreSQLPlugin{}).BuildDSN(connInfo)
+	if err != nil {
+		t.Fatalf("BuildDSN failed: %v", err)
+	}
+	db, err := gorm.Open(postgresdriver.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open PostgreSQL failed: %v", err)
+	}
+	const schema = "transfer_runtime_lease_migration_test"
+	if err := db.Exec("DROP SCHEMA IF EXISTS " + schema + " CASCADE").Error; err != nil {
+		t.Fatalf("drop stale migration test schema: %v", err)
+	}
+	if err := db.Exec("CREATE SCHEMA " + schema).Error; err != nil {
+		t.Fatalf("create migration test schema: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Exec("DROP SCHEMA IF EXISTS " + schema + " CASCADE").Error })
+	if err := db.Exec(`
+		CREATE TABLE transfer_runtime_lease_migration_test.runtime_leases (
+			id BIGSERIAL PRIMARY KEY,
+			task_id BIGINT NOT NULL,
+			execution_id VARCHAR(255) NOT NULL,
+			owner_instance_id VARCHAR(255) NOT NULL,
+			lease_until TIMESTAMPTZ NOT NULL,
+			heartbeat_at TIMESTAMPTZ NOT NULL,
+			fencing_token BIGINT NOT NULL,
+			claimed_at TIMESTAMPTZ NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			CONSTRAINT uq_transfer_runtime_leases_task UNIQUE (task_id),
+			CONSTRAINT uq_transfer_runtime_leases_execution UNIQUE (execution_id)
+		);
+		CREATE INDEX idx_transfer_runtime_leases_lease_until
+			ON transfer_runtime_lease_migration_test.runtime_leases (lease_until);
+		CREATE INDEX idx_transfer_runtime_leases_owner
+			ON transfer_runtime_lease_migration_test.runtime_leases (owner_instance_id);
+	`).Error; err != nil {
+		t.Fatalf("create SQL-migrated runtime_leases fixture: %v", err)
+	}
+
+	if err := db.AutoMigrate(&runtimeLeaseMigrationFixture{}); err != nil {
+		t.Fatalf("AutoMigrate SQL-migrated runtime_leases: %v", err)
+	}
+	var indexNames []string
+	if err := db.Raw(`
+		SELECT indexname
+		FROM pg_indexes
+		WHERE schemaname = ? AND tablename = 'runtime_leases'
+		ORDER BY indexname
+	`, schema).Scan(&indexNames).Error; err != nil {
+		t.Fatalf("list runtime_leases indexes after AutoMigrate: %v", err)
+	}
+	wantIndexes := []string{
+		"idx_transfer_runtime_leases_lease_until",
+		"idx_transfer_runtime_leases_owner",
+		"runtime_leases_pkey",
+		"uq_transfer_runtime_leases_execution",
+		"uq_transfer_runtime_leases_task",
+	}
+	if fmt.Sprint(indexNames) != fmt.Sprint(wantIndexes) {
+		t.Fatalf("runtime_leases indexes = %v, want %v", indexNames, wantIndexes)
+	}
+}
+
 func TestIntegrationPostgresAtomicTaskClaimAndSyncStateCAS(t *testing.T) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
@@ -160,6 +234,20 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	if claim.Lease.FencingToken != 1 || claim.Execution.Status != commonExecution.ExecutionStatusRunning {
 		t.Fatalf("first claim = %#v", claim)
 	}
+	continuousMetadata, ok := claim.Execution.Metadata["continuous"].(map[string]interface{})
+	if !ok || continuousMetadata["owner_instance_id"] != "worker-a" || fmt.Sprint(continuousMetadata["fencing_token"]) != "1" || continuousMetadata["heartbeat_at"] == nil {
+		t.Fatalf("first claim continuous metadata = %#v", claim.Execution.Metadata)
+	}
+	diagnostics := ContinuousDiagnostics{
+		SampledAt: now.Add(500 * time.Millisecond), Health: "degraded",
+		DegradedHorizonSeconds: 21600, CriticalHorizonSeconds: 3600,
+		Partitions: map[string]ContinuousPartitionDiagnostics{
+			"0": {Partition: "0", EarliestOffset: 0, LatestOffset: 10, Health: "degraded"},
+		},
+	}
+	if err := leaseRepo.RecordDiagnostics(context.Background(), *claim, diagnostics); err != nil {
+		t.Fatalf("RecordDiagnostics() error = %v", err)
+	}
 	syncRepo := NewSyncStateRepository(db)
 	partitionState, err := syncRepo.ClaimContinuousPartition(
 		context.Background(), task.ID, "addp://engine/30/path/orders.events?type=topic", "0",
@@ -178,8 +266,19 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	if err := leaseRepo.Renew(context.Background(), task.ID, "worker-a", 1, now.Add(time.Second), 30*time.Second); err != nil {
 		t.Fatalf("Renew() error = %v", err)
 	}
+	var renewedExecution commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", execution.ExecutionID).First(&renewedExecution).Error; err != nil {
+		t.Fatalf("load renewed execution: %v", err)
+	}
+	renewedMetadata, ok := renewedExecution.Metadata["continuous"].(map[string]interface{})
+	if !ok || renewedMetadata["owner_instance_id"] != "worker-a" || renewedMetadata["lease_until"] == nil {
+		t.Fatalf("renewed continuous metadata = %#v", renewedExecution.Metadata)
+	}
 	if err := taskRepo.SetContinuousDesiredState(context.Background(), task.ID, task.TenantID, models.TaskDesiredStatePaused, "paused"); err != nil {
 		t.Fatalf("pause continuous task: %v", err)
+	}
+	if err := leaseRepo.RecordDiagnostics(context.Background(), *claim, diagnostics); !errors.Is(err, ErrRuntimeLeaseLost) {
+		t.Fatalf("diagnostics after pause error = %v, want ErrRuntimeLeaseLost", err)
 	}
 	if err := leaseRepo.Renew(context.Background(), task.ID, "worker-a", 1, now.Add(2*time.Second), 30*time.Second); !errors.Is(err, ErrRuntimeLeaseLost) {
 		t.Fatalf("renew after pause error = %v, want ErrRuntimeLeaseLost", err)
@@ -201,6 +300,18 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	}
 	if secondClaim.Lease.FencingToken != 2 {
 		t.Fatalf("second fencing token = %d, want 2", secondClaim.Lease.FencingToken)
+	}
+	if err := leaseRepo.RecordDiagnostics(context.Background(), *claim, diagnostics); !errors.Is(err, ErrRuntimeLeaseLost) {
+		t.Fatalf("stale diagnostics error = %v, want ErrRuntimeLeaseLost", err)
+	}
+	var diagnosticsExecution commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", execution.ExecutionID).First(&diagnosticsExecution).Error; err != nil {
+		t.Fatalf("load diagnostics execution: %v", err)
+	}
+	diagnosticsMetadata, _ := diagnosticsExecution.Metadata["continuous"].(map[string]interface{})
+	storedDiagnostics, _ := diagnosticsMetadata["diagnostics"].(map[string]interface{})
+	if storedDiagnostics["health"] != "degraded" {
+		t.Fatalf("stored diagnostics = %#v", diagnosticsMetadata["diagnostics"])
 	}
 	partitionState, err = syncRepo.ClaimContinuousPartition(
 		context.Background(), task.ID, "addp://engine/30/path/orders.events?type=topic", "0",

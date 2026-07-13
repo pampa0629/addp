@@ -287,6 +287,8 @@ func rawCopyFormatLabel(value string) string {
 		return "WPS"
 	case "dwg":
 		return "DWG"
+	case "dxf":
+		return "DXF"
 	case "text":
 		return "Text"
 	case "markdown":

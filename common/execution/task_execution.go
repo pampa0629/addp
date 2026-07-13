@@ -152,7 +152,7 @@ const (
 	TaskTypeRasterCOGGeneration              = "raster_cog_generation"
 	TaskTypeRasterMosaicGeneration           = "raster_mosaic_generation"
 	TaskTypeModel3DGLBGeneration             = "model_3d_glb_generation"
-	TaskTypeModel3DTilesGeneration           = "model_3d_tiles_generation"
+	TaskTypeModel3DTilesGeneration           = "model3d_tiles_generation"
 	TaskTypeGaussianSplatKSplatGeneration    = "gaussian_splat_ksplat_generation"
 	TaskTypePointCloudCOPCGeneration         = "point_cloud_copc_generation"
 	TaskTypeCADPreviewGeneration             = "cad_preview_generation"

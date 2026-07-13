@@ -42,6 +42,7 @@ import (
 	// 导入内置文档 info provider / text reader，触发 init() 自动注册
 	_ "github.com/addp/common/format/plugins/docx"
 	_ "github.com/addp/common/format/plugins/dwg"
+	_ "github.com/addp/common/format/plugins/dxf"
 	_ "github.com/addp/common/format/plugins/pdf"
 	_ "github.com/addp/common/format/plugins/pptx"
 	_ "github.com/addp/common/format/plugins/text"

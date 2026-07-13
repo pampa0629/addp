@@ -266,6 +266,7 @@ type ChangeStreamReaderProvider interface {
 
 type ChangeStreamReader interface {
     Poll(ctx context.Context, maxRecords int) (*ChangeRecordBatch, error)
+    PositionRanges(ctx context.Context) ([]ChangeStreamPositionRange, error)
     Assignments() []string
     Pause(ctx context.Context, partitions []string) error
     Resume(ctx context.Context, partitions []string) error
@@ -279,6 +280,7 @@ type ChangeStreamReader interface {
 - `ChangeRecordBatch.EndPositions` 按 partition 返回批次成功应用后可提交的位置；Transfer 不得根据记录数量自行计算 offset。
 - `ChangeStreamPosition` 必须包含 `type`、`version`、`partition` 和 canonical string `values`。Kafka 第一版固定为 `type=kafka_offset`、`version=v1`、`values.next_offset`；`next_offset` 是下一条应消费的 offset，不是最后一条已处理 offset。
 - `ChangeStreamReadOptions` 按 partition 传入 committed positions，并显式传入首次无状态 partition 的 `earliest|latest` 策略、poll timeout 和容量上限。Provider 不得静默使用客户端默认 offset reset。
+- `ChangeStreamReader.PositionRanges()` 必须通过已打开的 reader/client 返回当前每分区 earliest/latest provider position；`latest` 表示分区末尾的下一位置。该方法用于 lag 与 retention 诊断，不得为每次采样新建第二个长期 consumer，也不得把 fetch position 当作 committed position。
 - Kafka Provider 必须关闭 consumer auto commit。consumer group 只可用于 assignment/rebalance，不得覆盖 Transfer 传入的 committed positions。
 - rebalance revoke 时 Provider 必须停止被撤销 partition 的新 poll，并让调用方完成或放弃未提交批次；Provider 不得在目标结果未知时自行提交 position。
 - `Pause` / `Resume` 只控制 reader 拉取和背压，不改变任务 desired state、execution status 或同步主状态。

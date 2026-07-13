@@ -33,6 +33,24 @@ func TestDetectFormat(t *testing.T) {
 			want:     FormatUnknown,
 		},
 		{
+			name:     "ASCII DXF by header and extension",
+			filename: "drawing.dxf",
+			peek:     []byte("  0\r\nSECTION\r\n  2\r\nHEADER"),
+			want:     FormatDXF,
+		},
+		{
+			name:     "binary DXF by header without extension",
+			filename: "drawing.bin",
+			peek:     []byte("AutoCAD Binary DXF\r\n\x1a\x00"),
+			want:     FormatDXF,
+		},
+		{
+			name:     "DXF extension rejects invalid content",
+			filename: "drawing.dxf",
+			peek:     []byte("not-a-dxf"),
+			want:     FormatUnknown,
+		},
+		{
 			name:     "Shapefile by extension",
 			filename: "data.shp",
 			peek:     []byte{0x00, 0x00, 0x27, 0x0a}, // Shapefile magic

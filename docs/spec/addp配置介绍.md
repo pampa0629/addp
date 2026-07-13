@@ -130,6 +130,23 @@ MANAGER_VECTOR_MAX_FILE_SIZE_MB=10
 MANAGER_VECTOR_BATCH_CONCURRENCY=5
 ```
 
+### Transfer continuous 运行观测配置
+
+Transfer continuous worker 自己采集业务 Kafka 分区 earliest/latest position，并把 lag 和 retention 恢复窗口写入统一 execution metadata。Monitor 只读取该 metadata，不直连 Kafka。
+
+```bash
+# 分区位置与 retention 观测采样间隔，默认 15 秒。
+TRANSFER_CONTINUOUS_DIAGNOSTICS_INTERVAL=15s
+
+# 估算剩余恢复时间不大于该值时进入 degraded，默认 6 小时。
+TRANSFER_CONTINUOUS_RETENTION_DEGRADED_HORIZON=6h
+
+# 估算剩余恢复时间不大于该值时进入 critical，默认 1 小时。
+TRANSFER_CONTINUOUS_RETENTION_CRITICAL_HORIZON=1h
+```
+
+critical 阈值必须小于 degraded 阈值。这些阈值是 Transfer runtime 统一运维策略，不写入用户 task config，也不按任务开放第二条判定路径。
+
 ### Manager 快显与动态 MVT 配置
 
 Manager 快显中的动态 MVT 是交互式预览能力，单瓦片查询必须受响应时间预算保护。以下配置同时影响能力接口返回的 `realtime_tile.timeout_budget_ms`、动态 MVT 查询的实际超时控制，以及超时响应头中的诊断信息。

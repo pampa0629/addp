@@ -60,6 +60,12 @@ const routes = [
         meta: { requiresAuth: true, title: '栅格快显 - Mosaic-addp' }
       },
       {
+        path: 'spatial-quick-view/cad-preview',
+        name: 'CADPreviewManagement',
+        component: () => import('../views/CADPreviewManagement.vue'),
+        meta: { requiresAuth: true, title: 'CAD 快显-addp' }
+      },
+      {
         path: 'model-3d-glb',
         name: 'Model3DGLB',
         component: () => import('../views/Model3DGLB.vue'),
@@ -76,12 +82,6 @@ const routes = [
         name: 'PointCloudCOPC',
         component: () => import('../views/PointCloudCOPC.vue'),
         meta: { requiresAuth: true, title: '点云快显 - COPC-addp' }
-      },
-      {
-        path: 'model-3d-tiles',
-        name: 'Model3DTiles',
-        component: () => import('../views/Model3DTiles.vue'),
-        meta: { requiresAuth: true, title: '倾斜摄影 3D Tiles-addp' }
       },
       {
         path: 'spatial-preview',

@@ -115,8 +115,8 @@ func (s *CADPreviewTaskService) Update(ctx context.Context, task *models.CADPrev
 func (s *CADPreviewTaskService) Delete(ctx context.Context, id, tenantID uint) error {
 	return s.repo.DeleteTask(ctx, id, tenantID)
 }
-func (s *CADPreviewTaskService) ListResults(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.CADPreview, int64, error) {
-	return s.repo.List(ctx, tenantID, page, pageSize)
+func (s *CADPreviewTaskService) ListResults(ctx context.Context, filter repository.CADPreviewFilter) ([]*models.CADPreview, int64, error) {
+	return s.repo.List(ctx, filter)
 }
 func (s *CADPreviewTaskService) GetResult(ctx context.Context, id, tenantID uint) (*models.CADPreview, error) {
 	return s.repo.GetByID(ctx, id, tenantID)
@@ -285,8 +285,9 @@ func normalizeCADPreviewTaskConfig(config commonModels.JSONMap, bucket string, t
 	if source.ItemLocator == "" || source.SourceEngineID == 0 || source.ItemFingerprint == "" {
 		return CADPreviewExecutionConfig{}, errors.New("CAD preview config.source requires item_locator, source_engine_id and item_fingerprint")
 	}
-	if format.NormalizeFormat(source.Format) != format.FormatDWG {
-		return CADPreviewExecutionConfig{}, errors.New("CAD preview config.source.format must be dwg")
+	formatType := format.NormalizeFormat(source.Format)
+	if !format.IsCADFormat(formatType) {
+		return CADPreviewExecutionConfig{}, errors.New("CAD preview config.source.format must be dwg or dxf")
 	}
 	if source.SourceSizeBytes < 0 {
 		return CADPreviewExecutionConfig{}, errors.New("CAD preview config.source.source_size_bytes must not be negative")
@@ -295,7 +296,7 @@ func normalizeCADPreviewTaskConfig(config commonModels.JSONMap, bucket string, t
 	if err != nil || loc.EngineID != source.SourceEngineID {
 		return CADPreviewExecutionConfig{}, errors.New("CAD preview source locator is invalid or engine_id does not match")
 	}
-	source.Format = string(format.FormatDWG)
+	source.Format = string(formatType)
 	config["source"] = commonModels.JSONMap{"item_locator": source.ItemLocator, "source_engine_id": source.SourceEngineID, "item_fingerprint": source.ItemFingerprint, "item_id": source.ItemID, "format": source.Format, "source_size_bytes": source.SourceSizeBytes}
 
 	resultMap, _ := asJSONMap(config["result"])

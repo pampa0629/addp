@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"strings"
@@ -103,6 +106,16 @@ func TestCADPreviewSourceAndCapabilityRequireManagedArtifact(t *testing.T) {
 	}
 	if capability.ActiveMode != models.PreviewModeBasicPreview {
 		t.Fatalf("active mode = %q", capability.ActiveMode)
+	}
+}
+
+func TestCADPreviewSourceAcceptsDXF(t *testing.T) {
+	source := CADPreviewSourceFromAttributes(map[string]interface{}{
+		"item":    map[string]interface{}{"data_type": "cad", "format": "dxf", "layout": "single"},
+		"storage": map[string]interface{}{"total_size": int64(2048)},
+	})
+	if source == nil || source.Format != "dxf" || source.SourceSizeBytes != 2048 {
+		t.Fatalf("CAD source = %#v", source)
 	}
 }
 
@@ -716,6 +729,25 @@ func TestModel3DDirectPreviewSourceFromAttributes(t *testing.T) {
 				t.Fatalf("source = %#v, want %s/%s facts", source, tc.format, tc.layout)
 			}
 		})
+	}
+}
+
+func TestModel3DGLBSourceFromAttributesSupportsOSGBSceneWholeItem(t *testing.T) {
+	source := Model3DGLBSourceFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"data_type": "model_3d",
+			"format":    "osgb_scene",
+			"layout":    "whole",
+		},
+		"storage": map[string]interface{}{
+			"total_size": int64(1749426479),
+		},
+	})
+	if source == nil {
+		t.Fatal("source is nil, want OSGB Scene whole item to be a model3d tiles quick view source")
+	}
+	if source.Format != "osgb_scene" || source.Layout != "whole" || source.SourceSizeBytes != 1749426479 {
+		t.Fatalf("source = %#v, want OSGB Scene whole item facts", source)
 	}
 }
 
@@ -2862,6 +2894,209 @@ func TestGaussianSplatProgressiveOrder(t *testing.T) {
 	if sourceOrder != "source_order" {
 		t.Fatalf("progressive order = %q, want source_order", sourceOrder)
 	}
+}
+
+func TestModel3DTilesCapabilityChecksOperatorsPerTargetFormat(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	createModel3DTilesResultTableForTest(t, db)
+	server := newWorkflowOperatorServerForTest(t, "osgb_scene_to_3dtiles")
+
+	svc := NewQuickViewService(db, nil)
+	svc.SetWorkflowEngineLister(staticWorkflowEngineLister{engines: []commonModels.Engine{workflowEngineForTest(t, server.URL)}})
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), model3DTilesQuickViewSource("fp-current", "addp://engine/26/path/site?type=directory"))
+	if err != nil {
+		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
+	}
+	formats := model3DTilesFormatsByName(t, capability)
+	if !formats[models.Model3DTilesTargetFormat3DTiles].CanGenerate {
+		t.Fatalf("3d_tiles capability = %#v, want can_generate=true", formats[models.Model3DTilesTargetFormat3DTiles])
+	}
+	if got := formats[models.Model3DTilesTargetFormatS3M]; got.CanGenerate || got.UnavailableReason != "operator_unavailable" {
+		t.Fatalf("s3m capability = %#v, want operator_unavailable", got)
+	}
+	assertActions(t, capability.AvailableActions, QuickViewActionGenerateModel3D3DTiles)
+	assertNoActions(t, capability.AvailableActions, QuickViewActionGenerateModel3DS3M)
+}
+
+func TestModel3DTilesCapabilityReturnsIndependentReadyResultsWhenEngineDiscoveryFails(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	createModel3DTilesResultTableForTest(t, db)
+	locator := "addp://engine/26/path/site?type=directory"
+	results := []*models.Model3DTiles{
+		{TenantID: 7, ItemFingerprint: "fp-ready", Locator: locator, SourceEngineID: 26, SourceFormat: "osgb_scene", TargetFormat: models.Model3DTilesTargetFormat3DTiles, StorageRef: "3d-ref", ManifestRef: "tileset.json", Status: models.Model3DTilesStatusReady, Metadata: commonModels.JSONMap{}},
+		{TenantID: 7, ItemFingerprint: "fp-ready", Locator: locator, SourceEngineID: 26, SourceFormat: "osgb_scene", TargetFormat: models.Model3DTilesTargetFormatS3M, StorageRef: "s3m-ref", ManifestRef: "config/scene.scp", Status: models.Model3DTilesStatusReady, Metadata: commonModels.JSONMap{}},
+	}
+	for _, result := range results {
+		if err := db.Create(result).Error; err != nil {
+			t.Fatalf("create model3d tiles result: %v", err)
+		}
+	}
+
+	svc := NewQuickViewService(db, nil)
+	svc.SetWorkflowEngineLister(staticWorkflowEngineLister{err: fmt.Errorf("system unavailable")})
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), model3DTilesQuickViewSource("fp-ready", locator))
+	if err != nil {
+		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
+	}
+	formats := model3DTilesFormatsByName(t, capability)
+	for _, targetFormat := range []string{models.Model3DTilesTargetFormat3DTiles, models.Model3DTilesTargetFormatS3M} {
+		formatInfo := formats[targetFormat]
+		if formatInfo.Status != models.Model3DTilesStatusReady || formatInfo.PreviewURL == "" || formatInfo.UnavailableReason != "result_ready" {
+			t.Fatalf("%s capability = %#v, want independent ready preview", targetFormat, formatInfo)
+		}
+	}
+	if !capability.CanUseQuickView || capability.RenderSource != "model3d_3d_tiles" {
+		t.Fatalf("capability = %#v, want 3D Tiles as deterministic default ready renderer", capability)
+	}
+	if !strings.Contains(formats[models.Model3DTilesTargetFormatS3M].PreviewURL, "/config/scene.scp") {
+		t.Fatalf("s3m preview_url = %q, want scene.scp", formats[models.Model3DTilesTargetFormatS3M].PreviewURL)
+	}
+}
+
+func TestModel3DTilesCapabilityKeepsReadyFormatAvailableWhileOtherFormatBuilds(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	createModel3DTilesResultTableForTest(t, db)
+	locator := "addp://engine/26/path/site?type=directory"
+	for _, result := range []*models.Model3DTiles{
+		{TenantID: 7, ItemFingerprint: "fp-mixed", Locator: locator, SourceEngineID: 26, SourceFormat: "osgb_scene", TargetFormat: models.Model3DTilesTargetFormat3DTiles, StorageRef: "3d-ref", ManifestRef: "tileset.json", Status: models.Model3DTilesStatusReady, Metadata: commonModels.JSONMap{}},
+		{TenantID: 7, ItemFingerprint: "fp-mixed", Locator: locator, SourceEngineID: 26, SourceFormat: "osgb_scene", TargetFormat: models.Model3DTilesTargetFormatS3M, StorageRef: "s3m-ref", ManifestRef: "config/scene.scp", Status: models.Model3DTilesStatusBuilding, Metadata: commonModels.JSONMap{}},
+	} {
+		if err := db.Create(result).Error; err != nil {
+			t.Fatalf("create model3d tiles result: %v", err)
+		}
+	}
+
+	capability, err := NewQuickViewService(db, nil).BuildCapabilityFromSource(context.Background(), model3DTilesQuickViewSource("fp-mixed", locator))
+	if err != nil {
+		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
+	}
+	formats := model3DTilesFormatsByName(t, capability)
+	if !capability.CanUseQuickView || formats[models.Model3DTilesTargetFormat3DTiles].PreviewURL == "" {
+		t.Fatalf("capability = %#v, want ready 3D Tiles preview", capability)
+	}
+	if got := formats[models.Model3DTilesTargetFormatS3M]; got.Status != models.Model3DTilesStatusBuilding || got.UnavailableReason != "generation_running" {
+		t.Fatalf("s3m capability = %#v, want generation_running", got)
+	}
+}
+
+func TestModel3DTilesCapabilityMarksPreviousFingerprintResultsStale(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	createModel3DTilesResultTableForTest(t, db)
+	locator := "addp://engine/26/path/site?type=directory"
+	oldResult := &models.Model3DTiles{TenantID: 7, ItemFingerprint: "fp-old", Locator: locator, SourceEngineID: 26, SourceFormat: "osgb_scene", TargetFormat: models.Model3DTilesTargetFormat3DTiles, StorageRef: "old-ref", ManifestRef: "tileset.json", Status: models.Model3DTilesStatusReady, Metadata: commonModels.JSONMap{}}
+	if err := db.Create(oldResult).Error; err != nil {
+		t.Fatalf("create old model3d tiles result: %v", err)
+	}
+
+	if _, err := NewQuickViewService(db, nil).BuildCapabilityFromSource(context.Background(), model3DTilesQuickViewSource("fp-new", locator)); err != nil {
+		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
+	}
+	var stored models.Model3DTiles
+	if err := db.First(&stored, oldResult.ID).Error; err != nil {
+		t.Fatalf("reload old model3d tiles result: %v", err)
+	}
+	if stored.Status != models.Model3DTilesStatusStale {
+		t.Fatalf("old result status = %q, want stale", stored.Status)
+	}
+}
+
+type staticWorkflowEngineLister struct {
+	engines []commonModels.Engine
+	err     error
+}
+
+func (l staticWorkflowEngineLister) ListWorkflowEngines(uint) ([]commonModels.Engine, error) {
+	return l.engines, l.err
+}
+
+func model3DTilesQuickViewSource(fingerprint, locator string) QuickViewSource {
+	return QuickViewSource{
+		Identity: QuickViewIdentity{TenantID: 7, ItemFingerprint: fingerprint, Locator: locator},
+		EngineID: 26,
+		Model3D:  &Model3DGLBSource{Format: "osgb_scene", Layout: "whole", SourceSizeBytes: 1024},
+	}
+}
+
+func createModel3DTilesResultTableForTest(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec(`CREATE TABLE manager.model3d_tiles (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		item_fingerprint TEXT NOT NULL,
+		item_id INTEGER,
+		locator TEXT,
+		task_id INTEGER,
+		last_execution_id TEXT,
+		source_engine_id INTEGER NOT NULL,
+		source_format TEXT NOT NULL,
+		source_size_bytes INTEGER,
+		target_format TEXT NOT NULL,
+		storage_ref TEXT NOT NULL,
+		manifest_ref TEXT NOT NULL,
+		file_count INTEGER,
+		size_bytes INTEGER,
+		status TEXT NOT NULL,
+		metadata JSON,
+		error_message TEXT,
+		created_by INTEGER,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create model3d_tiles table: %v", err)
+	}
+}
+
+func newWorkflowOperatorServerForTest(t *testing.T, operatorNames ...string) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health":
+			w.WriteHeader(http.StatusOK)
+		case "/api/operators":
+			operators := make([]map[string]interface{}, 0, len(operatorNames))
+			for _, name := range operatorNames {
+				operators = append(operators, map[string]interface{}{
+					"id": name, "name": name, "display_name": name, "engine_type": "quick_view_test_workflow",
+					"type": "model_3d", "category": "Model 3D", "category_path": []string{"Model 3D"},
+					"description": "Model 3D test operator", "parameters": []map[string]interface{}{},
+					"output_ports":    []map[string]interface{}{{"name": "default", "type": "object", "is_default": true}},
+					"execution_modes": []string{"workflow", "direct"},
+				})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"operators": operators})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func workflowEngineForTest(t *testing.T, rawURL string) commonModels.Engine {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse workflow server URL: %v", err)
+	}
+	capabilities := commonModels.JSONString(`{"schema_version":"engine.capabilities/v1","engine_type":"quick_view_test_workflow","engine_family":"workflow","compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}}}`)
+	return commonModels.Engine{
+		ID: 1, Name: "Quick View Test Workflow", EngineType: "quick_view_test_workflow", EngineOrigin: "extension", IsActive: true,
+		ConnectionInfo: commonModels.ConnectionInfo{"host": parsed.Hostname(), "port": parsed.Port(), "protocol": parsed.Scheme},
+		Capabilities:   &capabilities,
+	}
+}
+
+func model3DTilesFormatsByName(t *testing.T, capability *QuickViewCapability) map[string]QuickViewModel3DTilesFormatInfo {
+	t.Helper()
+	if capability == nil || capability.Model3DTiles == nil || len(capability.Model3DTiles.Formats) != 2 {
+		t.Fatalf("model3d_tiles capability = %#v, want two target formats", capability)
+	}
+	formats := make(map[string]QuickViewModel3DTilesFormatInfo, len(capability.Model3DTiles.Formats))
+	for _, formatInfo := range capability.Model3DTiles.Formats {
+		formats[formatInfo.TargetFormat] = formatInfo
+	}
+	return formats
 }
 
 func containsString(values []string, expected string) bool {

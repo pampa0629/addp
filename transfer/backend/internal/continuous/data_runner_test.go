@@ -153,6 +153,12 @@ type fakeChangeStreamReader struct {
 	sent  bool
 }
 
+func (r *fakeChangeStreamReader) PositionRanges(context.Context) ([]plugin.ChangeStreamPositionRange, error) {
+	return []plugin.ChangeStreamPositionRange{{
+		Partition: "0", Earliest: kafkaOffsetPosition("0", 0), Latest: kafkaOffsetPosition("0", 6),
+	}}, nil
+}
+
 func (r *fakeChangeStreamReader) Poll(ctx context.Context, _ int) (*plugin.ChangeRecordBatch, error) {
 	if !r.sent {
 		r.sent = true
@@ -229,4 +235,87 @@ type fakeContinuousProgressStore struct {
 func (s *fakeContinuousProgressStore) RecordProgress(_ context.Context, _ repository.RuntimeLeaseClaim, progress repository.ContinuousProgress) error {
 	s.committed <- progress
 	return nil
+}
+
+func (s *fakeContinuousProgressStore) RecordDiagnostics(context.Context, repository.RuntimeLeaseClaim, repository.ContinuousDiagnostics) error {
+	return nil
+}
+
+func TestCollectContinuousDiagnosticsCalculatesLagAndRetentionHealth(t *testing.T) {
+	sampledAt := time.Date(2026, 7, 13, 10, 0, 0, 0, time.UTC)
+	reader := &diagnosticsChangeStreamReader{ranges: []plugin.ChangeStreamPositionRange{{
+		Partition: "0", Earliest: kafkaOffsetPosition("0", 0), Latest: kafkaOffsetPosition("0", 100),
+	}}}
+	committed := map[string]plugin.ChangeStreamPosition{"0": kafkaOffsetPosition("0", 50)}
+	previous := map[string]sourceLatestSample{"0": {Latest: 80, SampledAt: sampledAt.Add(-10 * time.Second)}}
+
+	diagnostics, _ := collectContinuousDiagnostics(
+		context.Background(), reader, committed, previous, sampledAt,
+		time.Minute, 10*time.Second,
+	)
+	partition := diagnostics.Partitions["0"]
+	if diagnostics.Health != continuousHealthDegraded || partition.Health != continuousHealthDegraded {
+		t.Fatalf("health = %q/%q, want degraded", diagnostics.Health, partition.Health)
+	}
+	if partition.LagRecords == nil || *partition.LagRecords != 50 {
+		t.Fatalf("lag = %#v, want 50", partition.LagRecords)
+	}
+	if partition.RecoveryHeadroomRecords == nil || *partition.RecoveryHeadroomRecords != 50 {
+		t.Fatalf("headroom = %#v, want 50", partition.RecoveryHeadroomRecords)
+	}
+	if partition.SourceRateRecordsPerSecond == nil || *partition.SourceRateRecordsPerSecond != 2 {
+		t.Fatalf("source rate = %#v, want 2", partition.SourceRateRecordsPerSecond)
+	}
+	if partition.RetentionHorizonSeconds == nil || *partition.RetentionHorizonSeconds != 25 {
+		t.Fatalf("retention horizon = %#v, want 25", partition.RetentionHorizonSeconds)
+	}
+}
+
+func TestCollectContinuousDiagnosticsMarksLostRetentionCritical(t *testing.T) {
+	reader := &diagnosticsChangeStreamReader{ranges: []plugin.ChangeStreamPositionRange{{
+		Partition: "0", Earliest: kafkaOffsetPosition("0", 20), Latest: kafkaOffsetPosition("0", 100),
+	}}}
+	diagnostics, _ := collectContinuousDiagnostics(
+		context.Background(), reader,
+		map[string]plugin.ChangeStreamPosition{"0": kafkaOffsetPosition("0", 10)}, nil, time.Now(),
+		6*time.Hour, time.Hour,
+	)
+	partition := diagnostics.Partitions["0"]
+	if diagnostics.Health != continuousHealthCritical || partition.Health != continuousHealthCritical {
+		t.Fatalf("health = %q/%q, want critical", diagnostics.Health, partition.Health)
+	}
+	if partition.RecoveryHeadroomRecords == nil || *partition.RecoveryHeadroomRecords != -10 {
+		t.Fatalf("headroom = %#v, want -10", partition.RecoveryHeadroomRecords)
+	}
+}
+
+func TestCollectContinuousDiagnosticsKeepsColdLagUnknownAndCaughtUpHealthy(t *testing.T) {
+	reader := &diagnosticsChangeStreamReader{ranges: []plugin.ChangeStreamPositionRange{
+		{Partition: "0", Earliest: kafkaOffsetPosition("0", 0), Latest: kafkaOffsetPosition("0", 100)},
+		{Partition: "1", Earliest: kafkaOffsetPosition("1", 0), Latest: kafkaOffsetPosition("1", 50)},
+	}}
+	diagnostics, _ := collectContinuousDiagnostics(
+		context.Background(), reader, map[string]plugin.ChangeStreamPosition{
+			"0": kafkaOffsetPosition("0", 90), "1": kafkaOffsetPosition("1", 50),
+		}, nil, time.Now(), 6*time.Hour, time.Hour,
+	)
+	if diagnostics.Partitions["0"].Health != continuousHealthUnknown {
+		t.Fatalf("cold lagging health = %q, want unknown", diagnostics.Partitions["0"].Health)
+	}
+	if diagnostics.Partitions["1"].Health != continuousHealthHealthy {
+		t.Fatalf("caught up health = %q, want healthy", diagnostics.Partitions["1"].Health)
+	}
+	if diagnostics.Health != continuousHealthUnknown {
+		t.Fatalf("overall health = %q, want unknown", diagnostics.Health)
+	}
+}
+
+type diagnosticsChangeStreamReader struct {
+	fakeChangeStreamReader
+	ranges []plugin.ChangeStreamPositionRange
+	err    error
+}
+
+func (r *diagnosticsChangeStreamReader) PositionRanges(context.Context) ([]plugin.ChangeStreamPositionRange, error) {
+	return r.ranges, r.err
 }

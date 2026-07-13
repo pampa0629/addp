@@ -225,7 +225,7 @@ func requiresStrictDeepEnrich(item *metaitem.DetectedItem) bool {
 	return item != nil &&
 		item.Layout == format.LayoutSingle &&
 		item.DataType == datatype.CAD &&
-		item.Format == string(format.FormatDWG)
+		format.IsCADFormat(format.NormalizeFormat(item.Format))
 }
 
 func splitCatalogResourcePath(value string) (dir, name string) {

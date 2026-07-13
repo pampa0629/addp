@@ -93,6 +93,20 @@ func TestCADPreviewTaskConfigFromQuickView(t *testing.T) {
 	}
 }
 
+func TestCADPreviewTaskConfigFromQuickViewPreservesDXF(t *testing.T) {
+	capability := &service.QuickViewCapability{
+		TenantID: 7, ItemFingerprint: "cad-dxf", Locator: "addp://engine/26/path/cad/site.dxf?type=file", SourceKind: service.QuickViewSourceKindCAD,
+	}
+	config, err := cadPreviewTaskConfigFromQuickView(capability, service.QuickViewSource{EngineID: 26, CAD: &service.CADPreviewSource{Format: "dxf"}})
+	if err != nil {
+		t.Fatalf("cadPreviewTaskConfigFromQuickView() error = %v", err)
+	}
+	source := config["source"].(commonModels.JSONMap)
+	if source["format"] != "dxf" {
+		t.Fatalf("source format = %#v, want dxf", source["format"])
+	}
+}
+
 func TestQuickViewFeatureCollectionUsesRequestedGeometryColumn(t *testing.T) {
 	tablePreview := &models.TablePreview{
 		Rows: []map[string]interface{}{
@@ -270,6 +284,45 @@ func TestQuickViewSourceFromPreviewDetectsSingleOSGBObject(t *testing.T) {
 	}
 	if source.Model3D.Format != "osgb" || source.Model3D.Layout != "single" || source.Model3D.SourceSizeBytes != 612396 {
 		t.Fatalf("model3d facts = %#v, want single osgb facts", source.Model3D)
+	}
+}
+
+func TestQuickViewSourceFromPreviewDetectsOSGBSceneWholeItem(t *testing.T) {
+	locator := "addp://engine/26/path/3d/辽庆州白塔OSGB?type=file&item_id=10281"
+	tablePreview := &models.TablePreview{
+		EngineID:   26,
+		EngineType: "nfs",
+		Object: &models.ObjectPreview{
+			EngineID: 26,
+			Attributes: map[string]interface{}{
+				"item": map[string]interface{}{
+					"data_type": "model_3d",
+					"format":    "osgb_scene",
+					"layout":    "whole",
+				},
+				"storage": map[string]interface{}{
+					"total_size": int64(1749426479),
+				},
+			},
+		},
+	}
+	result := &preview.PreviewResult{
+		Metadata: &preview.PreviewMetadata{
+			Locator:         locator,
+			ItemFingerprint: "75333d5dac9eb53a52f6104b263183d1935619f556665750fdc621c29c4ffea8",
+		},
+	}
+
+	source := quickViewSourceFromPreview(locator, nil, result, tablePreview)
+
+	if source.Model3D == nil {
+		t.Fatal("Model3D is nil, want OSGB Scene model3d tiles source")
+	}
+	if source.DirectFlatGeobuf || source.FlatGeobufURL != "" || source.CanTile {
+		t.Fatalf("source routing = direct_flatgeobuf:%v flatgeobuf_url:%q can_tile:%v, want model3d-only", source.DirectFlatGeobuf, source.FlatGeobufURL, source.CanTile)
+	}
+	if source.EngineID != 26 || source.Model3D.Format != "osgb_scene" || source.Model3D.Layout != "whole" || source.Model3D.SourceSizeBytes != 1749426479 {
+		t.Fatalf("model3d source = engine:%d facts:%#v, want OSGB Scene whole item facts", source.EngineID, source.Model3D)
 	}
 }
 

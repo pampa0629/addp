@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/workflowaccess"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/meta/internal/metaenrich"
@@ -24,7 +25,7 @@ func NewSuperMapCADInspector(engineService *EngineService) *SuperMapCADInspector
 	return &SuperMapCADInspector{engineService: engineService}
 }
 
-func (i *SuperMapCADInspector) InspectCAD(ctx context.Context, source *commonModels.Engine, tenantID uint, physicalPath string, sizeBytes int64) (*metaenrich.CADInspection, error) {
+func (i *SuperMapCADInspector) InspectCAD(ctx context.Context, source *commonModels.Engine, tenantID uint, physicalPath, sourceFormat string, sizeBytes int64) (*metaenrich.CADInspection, error) {
 	if i == nil || i.engineService == nil || source == nil {
 		return nil, fmt.Errorf("CAD inspector is not configured")
 	}
@@ -56,8 +57,12 @@ func (i *SuperMapCADInspector) InspectCAD(ctx context.Context, source *commonMod
 	if locator == nil {
 		return nil, fmt.Errorf("cannot build CAD source locator for %q", physicalPath)
 	}
+	formatType := format.NormalizeFormat(sourceFormat)
+	if !format.IsCADFormat(formatType) {
+		return nil, fmt.Errorf("unsupported CAD format %q", sourceFormat)
+	}
 	workflowSource, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{
-		Engine: source, Locator: locator, Kind: workflowaccess.KindFile, Format: "dwg",
+		Engine: source, Locator: locator, Kind: workflowaccess.KindFile, Format: string(formatType),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("resolve CAD workflow access: %w", err)
@@ -73,7 +78,7 @@ func (i *SuperMapCADInspector) InspectCAD(ctx context.Context, source *commonMod
 	if err != nil {
 		return nil, fmt.Errorf("invoke cad.inspect: %w", err)
 	}
-	return normalizeCADInspection(result.Result, sizeBytes)
+	return normalizeCADInspection(result.Result, string(formatType), sizeBytes)
 }
 
 type cadInspectDTO struct {
@@ -105,7 +110,7 @@ type cadInspectDTO struct {
 	} `json:"interpretation"`
 }
 
-func normalizeCADInspection(raw map[string]interface{}, sizeBytes int64) (*metaenrich.CADInspection, error) {
+func normalizeCADInspection(raw map[string]interface{}, sourceFormat string, sizeBytes int64) (*metaenrich.CADInspection, error) {
 	payload, err := json.Marshal(raw)
 	if err != nil {
 		return nil, err
@@ -114,7 +119,7 @@ func normalizeCADInspection(raw map[string]interface{}, sizeBytes int64) (*metae
 	if err := json.Unmarshal(payload, &dto); err != nil {
 		return nil, err
 	}
-	if dto.SchemaVersion != "addp.cad.inspect/v1" || dto.Format != "dwg" {
+	if dto.SchemaVersion != "addp.cad.inspect/v1" || dto.Format != sourceFormat || !format.IsCADFormat(format.NormalizeFormat(dto.Format)) {
 		return nil, fmt.Errorf("unsupported CAD inspection response %q/%q", dto.SchemaVersion, dto.Format)
 	}
 	entityCount := dto.Drawing.EntityCount

@@ -26,6 +26,9 @@ func main() {
 	commonConfig.LoadEnv()
 	cfg := config.Load()
 	logger.Init(logger.Options{Level: envOr("LOG_LEVEL", "info"), Format: "json", FilePath: filepath.Join("logs", "transfer-continuous-worker.log"), AddSource: true, RedirectStdLog: true})
+	if err := cfg.ValidateContinuousRuntimeObservability(); err != nil {
+		log.Fatalf("continuous worker 观测配置无效: %v", err)
+	}
 
 	db, err := connectDatabase(cfg)
 	if err != nil {
@@ -45,6 +48,9 @@ func main() {
 		Resolver: planner.NewSystemEngineResolver(systemClient),
 		States:   repository.NewSyncStateRepository(db), Progress: leaseRepo,
 		PollTimeout: cfg.ContinuousPollTimeout, MaxBytes: cfg.ContinuousFetchMaxBytes,
+		DiagnosticsInterval:      cfg.ContinuousDiagnosticsInterval,
+		RetentionDegradedHorizon: cfg.ContinuousRetentionDegradedHorizon,
+		RetentionCriticalHorizon: cfg.ContinuousRetentionCriticalHorizon,
 	}
 	supervisor, err := continuous.NewSupervisor(
 		leaseRepo,

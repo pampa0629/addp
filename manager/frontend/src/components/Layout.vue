@@ -72,13 +72,13 @@
               <el-icon><Grid /></el-icon>
               <span>{{ t('manager.layout.rasterMosaic') }}</span>
             </el-menu-item>
+            <el-menu-item index="/spatial-quick-view/cad-preview">
+              <el-icon><MapLocation /></el-icon>
+              <span>{{ t('manager.layout.cadPreview') }}</span>
+            </el-menu-item>
             <el-menu-item index="/model-3d-glb">
               <el-icon><Box /></el-icon>
               <span>{{ t('manager.layout.model3DGLB') }}</span>
-            </el-menu-item>
-            <el-menu-item index="/model-3d-tiles">
-              <el-icon><Grid /></el-icon>
-              <span>{{ t('manager.layout.model3DTiles') }}</span>
             </el-menu-item>
             <el-menu-item index="/gaussian-splat-ksplat">
               <el-icon><Aim /></el-icon>
