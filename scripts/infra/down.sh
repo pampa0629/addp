@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # ADDP Infrastructure Down Script
-# 停止 ADDP 系统基础设施容器（PostgreSQL、Redis、MinIO、Meilisearch）
+# 停止 ADDP 系统基础设施容器
 # 不影响 business 容器
 
 set -euo pipefail
@@ -26,10 +26,10 @@ Options:
 
 说明：
   默认停止并删除容器、网络，但保留数据卷。
-  使用 -v 或 --volumes 会同时删除数据卷（PostgreSQL、Redis、MinIO、Meilisearch 的所有数据将丢失）。
+  使用 -v 或 --volumes 会同时删除数据卷（PostgreSQL、Redis、MinIO、Meilisearch、Kafka 的所有数据将丢失）。
 
 职责范围：
-  仅停止 addp-* 容器（addp-postgres, addp-redis, addp-minio, addp-meilisearch）
+  仅停止 addp-* 容器（包括 addp-postgres、addp-redis、addp-minio、addp-meilisearch、addp-kafka、addp-kafka-init、addp-kafka-connect）
   不影响 business-* 容器
 EOF
 }
@@ -82,7 +82,7 @@ if [ -n "$CONTAINERS_TO_REMOVE" ]; then
 
   if [ -n "$NON_ADDP_CONTAINERS" ]; then
     echo -e "${RED}⚠️  警告：检测到非 ADDP 系统容器！${NC}"
-    echo -e "${YELLOW}  预期容器：addp-postgres, addp-redis, addp-minio, addp-meilisearch${NC}"
+    echo -e "${YELLOW}  预期容器：docker-compose.infra.yml 中定义的 addp-* 基础设施容器${NC}"
     echo -e "${YELLOW}  检测到的异常容器：${NC}"
     echo "$NON_ADDP_CONTAINERS" | while read -r container; do
       echo "    - $container"

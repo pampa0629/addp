@@ -111,6 +111,12 @@ func (e *ManagerModel3DTilesExecutor) BuildModel3DTiles(ctx context.Context, req
 		sizeBytes += object.Size
 	}
 	facts := operatorInvokeJSONFacts(invokeResult)
+	if req.Config.TargetFormat == models.Model3DTilesTargetFormatS3M {
+		expectedRootTiles := int64FromConfig(facts["root_tile_count"], 0)
+		if fileCount <= 1 || (expectedRootTiles > 0 && fileCount < expectedRootTiles+1) {
+			return nil, fmt.Errorf("incomplete S3M artifact: published_files=%d root_tile_count=%d", fileCount, expectedRootTiles)
+		}
+	}
 	result := &Model3DTilesExecutionResult{
 		StorageRef: req.Config.Result.StorageRef, ManifestRef: manifestRef, FileCount: fileCount, SizeBytes: sizeBytes,
 		Metadata: commonModels.JSONMap{

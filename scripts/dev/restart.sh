@@ -754,9 +754,11 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
       rm -f .dev-bins/addp-quality 2>/dev/null || true
     else
       rm -f .dev-bins/addp-${module} 2>/dev/null || true
-      rm -f .dev-bins/addp-${module}-worker 2>/dev/null || true
       if [ "$module" = "transfer" ]; then
+        rm -f .dev-bins/addp-transfer-bounded-worker 2>/dev/null || true
         rm -f .dev-bins/addp-transfer-continuous-worker 2>/dev/null || true
+      else
+        rm -f .dev-bins/addp-${module}-worker 2>/dev/null || true
       fi
     fi
 

@@ -1,5 +1,81 @@
 basePath: /api/v1/service
 definitions:
+  dataitem.ItemDescriptor:
+    properties:
+      dataType:
+        $ref: '#/definitions/datatype.DataType'
+      format:
+        type: string
+      layout:
+        $ref: '#/definitions/format.Layout'
+      physicalPath:
+        type: string
+      primaryContentPath:
+        type: string
+      refs:
+        items:
+          $ref: '#/definitions/dataitem.ItemRef'
+        type: array
+      scopePath:
+        type: string
+      sizeBytes:
+        format: int64
+        type: integer
+      storageBucket:
+        type: string
+      storageName:
+        type: string
+      storagePath:
+        type: string
+    type: object
+  dataitem.ItemRef:
+    properties:
+      extension:
+        type: string
+      path:
+        type: string
+      primary:
+        type: boolean
+      required:
+        type: boolean
+      role:
+        type: string
+    type: object
+  datatype.CRSDefinition:
+    properties:
+      definition:
+        type: string
+      definition_encoding:
+        type: string
+      id:
+        type: string
+      source:
+        type: string
+    type: object
+  datatype.DataType:
+    enum:
+    - unknown
+    - table
+    - document
+    - media
+    - container
+    - graph
+    - cad
+    - model_3d
+    - point_cloud
+    - gaussian_splat
+    type: string
+    x-enum-varnames:
+    - Unknown
+    - Table
+    - Document
+    - Media
+    - Container
+    - Graph
+    - CAD
+    - Model3D
+    - PointCloud
+    - GaussianSplat
   datatype.FieldInfo:
     properties:
       comment:
@@ -67,6 +143,74 @@ definitions:
     - FieldTypeArray
     - FieldTypeUUID
     - FieldTypeGeometry
+  datatype.GeometryColumnInfo:
+    properties:
+      crs_ref:
+        type: string
+      dimension:
+        type: integer
+      geometry_type:
+        type: string
+      name:
+        type: string
+      nullable:
+        type: boolean
+      srid:
+        type: integer
+    type: object
+  datatype.SpatialInfo:
+    properties:
+      crs_definitions:
+        items:
+          $ref: '#/definitions/datatype.CRSDefinition'
+        type: array
+      crs_ref:
+        type: string
+      extent:
+        items:
+          type: number
+        type: array
+      geometry_columns:
+        items:
+          $ref: '#/definitions/datatype.GeometryColumnInfo'
+        type: array
+      has_spatial_index:
+        type: boolean
+      index_name:
+        type: string
+      primary_geometry_column:
+        type: string
+      srid:
+        type: integer
+    type: object
+  datatype.TableInfo:
+    properties:
+      comment:
+        type: string
+      created_at:
+        type: string
+      fields:
+        items:
+          $ref: '#/definitions/datatype.FieldInfo'
+        type: array
+      kind:
+        type: string
+      name:
+        type: string
+      native:
+        additionalProperties: true
+        type: object
+      primary_key:
+        items:
+          type: string
+        type: array
+      row_count:
+        type: integer
+      size_bytes:
+        type: integer
+      updated_at:
+        type: string
+    type: object
   encoding_xml.Name:
     properties:
       local:
@@ -74,6 +218,16 @@ definitions:
       space:
         type: string
     type: object
+  format.Layout:
+    enum:
+    - single
+    - multi
+    - whole
+    type: string
+    x-enum-varnames:
+    - LayoutSingle
+    - LayoutMulti
+    - LayoutWhole
   github_com_addp_service_internal_models.AggregateColumn:
     properties:
       alias:
@@ -221,6 +375,10 @@ definitions:
         maximum: 10000
         minimum: 1
         type: integer
+      output_contract:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_service_internal_models.QueryServiceOutputContract'
+        description: SQL 模式检测得到的输出契约；快照时间和 hash 由 Service 生成。
       protocols:
         additionalProperties: true
         description: 协议配置（可选，使用默认值）
@@ -465,6 +623,130 @@ definitions:
         description: string | integer | float | boolean
         type: string
     type: object
+  github_com_addp_service_internal_models.QueryServiceDTO:
+    properties:
+      config_type:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        description: 审计
+        type: integer
+      data_config:
+        additionalProperties: true
+        description: 配置
+        type: object
+      description:
+        type: string
+      endpoints:
+        additionalProperties:
+          type: string
+        description: 服务端点
+        type: object
+      engine_id:
+        type: integer
+      error_message:
+        type: string
+      id:
+        type: integer
+      keywords:
+        items:
+          type: string
+        type: array
+      max_features:
+        type: integer
+      protocols:
+        additionalProperties: true
+        type: object
+      public_access:
+        description: 访问控制
+        type: boolean
+      schema_name:
+        description: 表配置
+        type: string
+      service_name:
+        type: string
+      sql_query:
+        description: SQL配置
+        type: string
+      status:
+        description: 状态
+        type: string
+      table_name:
+        type: string
+      tenant_id:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.QueryServiceDependencySnapshot:
+    properties:
+      captured_at:
+        type: string
+      dependency_hash:
+        type: string
+      federated_object_tables:
+        additionalProperties:
+          additionalProperties:
+            type: string
+          type: object
+        type: object
+      object_table:
+        $ref: '#/definitions/dataitem.ItemDescriptor'
+      query_hash:
+        type: string
+      source:
+        $ref: '#/definitions/github_com_addp_service_internal_models.QueryServiceSourceRef'
+      spatial:
+        $ref: '#/definitions/datatype.SpatialInfo'
+      table:
+        $ref: '#/definitions/datatype.TableInfo'
+      verification_status:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.QueryServiceOutputContract:
+    properties:
+      spatial:
+        $ref: '#/definitions/datatype.SpatialInfo'
+      table:
+        $ref: '#/definitions/datatype.TableInfo'
+    type: object
+  github_com_addp_service_internal_models.QueryServiceSnapshotDiff:
+    properties:
+      current_dependency_hash:
+        type: string
+      current_snapshot:
+        $ref: '#/definitions/github_com_addp_service_internal_models.QueryServiceDependencySnapshot'
+      object_table_changed:
+        type: boolean
+      published_dependency_hash:
+        type: string
+      published_snapshot:
+        $ref: '#/definitions/github_com_addp_service_internal_models.QueryServiceDependencySnapshot'
+      service_id:
+        type: integer
+      source_changed:
+        type: boolean
+      spatial_changed:
+        type: boolean
+      status:
+        type: string
+      table_changed:
+        type: boolean
+    type: object
+  github_com_addp_service_internal_models.QueryServiceSourceRef:
+    properties:
+      data_updated_at:
+        type: string
+      item_fingerprint:
+        type: string
+      item_id:
+        type: integer
+      scanned_at:
+        type: string
+    type: object
   github_com_addp_service_internal_models.RefreshMetadataRequest:
     properties:
       force:
@@ -556,6 +838,16 @@ definitions:
         type: integer
       updated_at:
         type: string
+    type: object
+  github_com_addp_service_internal_models.SQLQueryOutputContractRequest:
+    properties:
+      engine_id:
+        type: integer
+      sql:
+        type: string
+    required:
+    - engine_id
+    - sql
     type: object
   github_com_addp_service_internal_models.TileServiceDTO:
     properties:
@@ -1898,6 +2190,86 @@ paths:
       summary: 更新查询服务 | Update query service
       tags:
       - QueryService
+  /query/{id}/refresh-source-snapshot:
+    post:
+      description: 用 Meta 当前事实替换表模式查询服务已发布快照 | Replace a table-mode query service
+        snapshot with current Meta facts
+      parameters:
+      - description: 服务ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 刷新后的查询服务 | Refreshed query service
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.QueryServiceDTO'
+        "400":
+          description: 请求错误 | Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 服务不存在 | Service not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 刷新失败 | Refresh failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 刷新查询服务依赖快照 | Refresh query service dependency snapshot
+      tags:
+      - QueryService
+  /query/{id}/source-snapshot-diff:
+    get:
+      description: 仅在显式管理动作中读取 Meta 当前事实并与已发布快照比较 | Read current Meta facts only during
+        an explicit management action and compare them with the published snapshot
+      parameters:
+      - description: 服务ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 快照差异 | Snapshot diff
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.QueryServiceSnapshotDiff'
+        "400":
+          description: 请求错误 | Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 服务不存在 | Service not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 检查失败 | Check failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 检查查询服务依赖快照 | Check query service dependency snapshot
+      tags:
+      - QueryService
   /registered:
     get:
       parameters:
@@ -2169,41 +2541,39 @@ paths:
       summary: 刷新注册服务元数据 | Refresh registered service metadata
       tags:
       - RegisteredService
-  /sql/spatial-metadata:
+  /sql/output-contract:
     post:
       consumes:
       - application/json
       parameters:
-      - description: SQL 空间元数据请求 | SQL spatial metadata request
+      - description: SQL 输出契约请求 | SQL output contract request
         in: body
         name: request
         required: true
         schema:
-          additionalProperties: true
-          type: object
+          $ref: '#/definitions/github_com_addp_service_internal_models.SQLQueryOutputContractRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 输出契约 | Output contract
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_service_internal_models.QueryServiceOutputContract'
         "400":
-          description: Bad Request
+          description: 请求错误 | Bad request
           schema:
             additionalProperties:
               type: string
             type: object
         "500":
-          description: Internal Server Error
+          description: 检测失败 | Detection failed
           schema:
             additionalProperties:
               type: string
             type: object
       security:
       - BearerAuth: []
-      summary: 获取 SQL 空间元数据 | Get SQL spatial metadata
+      summary: 获取 SQL 输出契约 | Get SQL output contract
       tags:
       - 资源能力 | Resource Capabilities
   /tile:

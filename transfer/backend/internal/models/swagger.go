@@ -73,7 +73,8 @@ type TransferLoadDoc struct {
 }
 
 type TransferChangeDetectionDoc struct {
-	Type       string   `json:"type" example:"watermark" enums:"watermark,kafka"`
+	Type       string   `json:"type" example:"watermark" enums:"watermark,kafka,cdc"`
+	Bootstrap  string   `json:"bootstrap,omitempty" example:"initial_snapshot" enums:"initial_snapshot"`
 	Field      string   `json:"field" example:"updated_at"`
 	TieBreaker []string `json:"tie_breaker" example:"id"`
 	Start      string   `json:"start" example:"committed" enums:"committed"`
@@ -121,7 +122,7 @@ type TransferTargetEndpointDoc struct {
 }
 
 type TransferTargetPolicyDoc struct {
-	ApplyMode string   `json:"apply_mode" example:"replace" enums:"replace,append,upsert"`
+	ApplyMode string   `json:"apply_mode" example:"replace" enums:"replace,append,upsert,upsert_delete"`
 	Keys      []string `json:"keys,omitempty" example:"id"`
 }
 

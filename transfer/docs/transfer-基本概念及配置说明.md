@@ -22,7 +22,7 @@
 | `batch_size` | 批大小；config 内未声明时作为 planner 默认值。 |
 | `enabled` | 定时任务是否启用。 |
 | `auto_scan_metadata` | 成功后是否触发 Meta deep scan，默认 true。 |
-| `status` | 任务状态：`idle`、`running`。 |
+| `status` | 任务实际状态：`idle`、`running`、`blocked`；`blocked` 当前用于不可恢复的 PostgreSQL CDC schema drift。 |
 | `progress` | 任务进度百分比。 |
 
 任务状态只表达当前任务是否正在运行；成功或失败等结果在统一执行记录中查看。
@@ -236,7 +236,7 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 | `replace` | Transfer 写入前清理目标资源或让 prepare 重建目标。 |
 | `append` | 追加写入；失败 retry 当前拒绝 append，避免重复写入。 |
 | `upsert` | 按稳定键幂等新增或更新；第一版只支持 PostgreSQL native table 目标。 |
-| `upsert_delete` | 为后续完整 CDC 保留；当前拒绝。 |
+| `upsert_delete` | PostgreSQL CDC v1 按稳定键新增、更新和物理删除；与目标 partition ledger 原子提交。 |
 
 apply mode 是 Transfer policy；真实 upsert/delete 能力必须由目标 engine Provider 和 capability 声明。raw copy 第一版只支持 `replace`，并要求目标 engine 提供删除资源能力。
 
@@ -265,13 +265,41 @@ Kafka Provider 通过 `ChangeStreamReaderProvider` 返回原始 ChangeRecord 和
 
 每个 partition 的主状态继续存储在 `transfer.sync_states`，position 固定为 `type=kafka_offset`、`version=v1`、`next_offset`。consumer auto commit 禁用；目标提交后才允许以 runtime fencing token + state version 做 CAS。首次无状态 partition 必须显式选择 `earliest|latest`。
 
-continuous worker 是 Transfer 独立进程角色，不使用 Asynq。`desired_state`、原子 start/pause/resume/stop、session owner/lease/heartbeat/fencing、supervisor 和 Kafka JSON -> PostgreSQL 生产数据循环已经实现；每次启动或恢复创建新 execution。pause/stop 会先取消 runtime，等待 source/target 关闭，再结束 execution 和释放 lease。consumer group 只负责 partition assignment，Kafka auto commit 禁用；交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。Console Wizard 已支持 topic、JSON 字段、记录唯一标识、首次读取范围和 PostgreSQL 目标配置；execution 详情展示 owner、heartbeat、lease、fencing token、每个 partition 的 committed next offset 与最近提交时间。第一版不支持无 key append、Debezium、CDC、DLQ、Schema Registry、Avro、Protobuf、Kafka target、replay 和物理删除。
+continuous worker 是 Transfer 独立进程角色，不使用 Asynq。`desired_state`、原子 start/pause/resume/stop、session owner/lease/heartbeat/fencing、supervisor、业务 Kafka JSON upsert 和 PostgreSQL CDC snapshot/upsert/delete 已实现。两条路线共用同一个 consumer/apply/CAS 主循环；consumer group 只负责 partition assignment，Kafka auto commit 禁用。交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。Console Wizard 已支持业务 Kafka 和 PostgreSQL CDC 配置；execution 详情展示 owner、heartbeat、lease、fencing token、每个 partition 的 committed next offset 与最近提交时间。第一版仍不支持无 key append、DLQ、Schema Registry、Avro、Protobuf、Kafka target 和 replay。
 
-resume 前必须确认 committed `next_offset` 仍在 Kafka partition 的保留范围内。若 retention 已删除该位置，任务明确失败并要求人工决定如何处理，不能自动跳到 earliest。PostgreSQL 目标锁等待必须响应 context 取消；取消事务不得留下业务行或目标 ledger 的半提交状态。未知 JSON 字段、缺失必填字段和类型不兼容继续按严格 schema drift 策略使当前 execution 失败。
+resume 前必须确认 committed `next_offset` 仍在 Kafka partition 的保留范围内。若 retention 已删除该位置，任务明确失败并要求人工决定如何处理，不能自动跳到 earliest。PostgreSQL 目标锁等待必须响应 context 取消；取消事务不得留下业务行或目标 ledger 的半提交状态。PostgreSQL CDC 遇到未知字段、缺失必填字段或类型不兼容时，当前 execution 失败且任务进入 `blocked`；业务 Kafka record 路线继续按其严格映射规则失败，但不复用 CDC 的不可恢复 generation 语义。
 
 continuous worker 每隔 `TRANSFER_CONTINUOUS_DIAGNOSTICS_INTERVAL`（默认 `15s`）读取每分区 earliest/latest offset，用目标已成功应用的 committed `next_offset` 计算 lag 和 retention 恢复余量。时间余量使用连续 latest 样本的增长率估算；冷启动、无 committed position 或写入速率为零时显示 unknown。默认 degraded/critical 阈值由 `TRANSFER_CONTINUOUS_RETENTION_DEGRADED_HORIZON=6h` 和 `TRANSFER_CONTINUOUS_RETENTION_CRITICAL_HORIZON=1h` 统一控制，不进入任务 JSON。诊断结果写入 `common.task_executions.metadata.continuous.diagnostics`，Monitor 只读取 execution metadata，不直连业务 Kafka。
 
-## 九、Checkpoint、进度和重试
+## 九、PostgreSQL CDC v1 已冻结边界
+
+工作包 3A-3D 已完成第一版的 CDC 路线为：
+
+```text
+PostgreSQL 单表
+  -> Debezium PostgreSQL Connector
+  -> Infra Kafka
+  -> Transfer Continuous Worker
+  -> PostgreSQL 新目标表
+```
+
+公开任务仍只保存 `runtime.boundary=continuous`、`load.mode=incremental`、`load.change_detection.type=cdc`、`bootstrap=initial_snapshot`、源表 locator、目标表和 field mapping。connector、replication slot、publication、Infra Kafka topic 和 consumer group 都由服务端生成，不进入任务 JSON、System Engine 或 Meta 资源树。
+
+第一版只支持有稳定主键的单表。Debezium `op=r` 作为 snapshot upsert，`op=c|u` 作为 upsert，`op=d` 使用 record key 做物理 delete；目标固定为 `apply_mode=upsert_delete`。目标必须是不存在的新表，由 bootstrap 创建；不清空或接管已有目标表。捕获位点由 Kafka Connect 管理，Transfer 只在 `transfer.sync_states` 保存目标已应用的 Infra Kafka `next_offset`，两类位点不能互相代替。
+
+CDC v1 在创建 capture 前核对完整源表字段和真实 PostgreSQL 类型，只开放 `string|bool|int|bigint|float|double|decimal|date|time|timestamp|json|uuid`。connector 固定 Decimal 字符串和 Connect 毫秒时间编码，避免 schemaless JSON 同一数字无法判断单位；`time` 和无时区 `timestamp` 仅允许精度 `0..3`，PostgreSQL 默认微秒精度或显式精度大于 3 的列会在启动前拒绝，不能静默截断。`bytea`、数组、空间、interval、枚举及其他用户定义类型同样明确拒绝。
+
+类型不兼容与字段增删、envelope/source 结构变化一样进入 `schema_change_blocked`，execution metadata 会记录 missing/unexpected/incompatible 字段，当前 Kafka 消息不会被跳过。任务同时进入 `status=blocked`，禁止再次启动、恢复或重试；connector 在用户 Stop 前仍会继续采集，因此 backlog、Kafka retention 和磁盘风险继续存在。第一版唯一处理方式是永久停止旧任务，再创建新任务和新目标表重新初始化，不支持“调整目标后原地恢复”。
+
+`pause` 停止目标应用，但 connector 继续把 WAL 变化写入 Infra Kafka 并推进 slot。正常 pause 的主要代价是 Kafka backlog、磁盘和 retention 窗口，不是 slot 本身停止后堆积 WAL；connector/Kafka 故障导致 slot 不推进时仍可能撑大源库 WAL。暂停期间必须继续观测 connector health、slot lag、Kafka 容量和 retention horizon，且 resume 只在 committed position 尚未过期时保证无损。
+
+`stop` 是 CDC task 的不可逆终态：删除 ADDP-owned connector、slot、publication 和 CDC topic，任务不得再次 start/resume。重新同步必须创建新任务、新目标表并重新 initial snapshot。服务端 Stop API 必须要求 `confirmed=true` 且 `confirmation_text` 与任务名称完全一致，Console 同时使用 danger 二次确认并要求输入任务名称；stop 不删除目标业务表、目标 ledger、任务定义、execution 或审计记录。
+
+完整配置、envelope、schema drift、目标原子应用和资源 owner 约束以 [ADDP 任务体系规范](../../docs/spec/addp任务体系规范.md) 的“Transfer PostgreSQL CDC v1 契约”为准。MySQL、Oracle、多表、无主键、replay、DLQ、Schema Registry、Avro、Protobuf、自动 DDL 和 truncate 事件均后置。
+
+capture supervisor 已通过 Kafka Connect REST 和 Infra Kafka admin API 管理任务级 generation，状态登记在 `transfer.capture_resources`。continuous worker 从登记的内部 topic/group 消费 Debezium 3.6 schemaless JSON，严格处理 `r/c/u/d`，并在协议或 schema 变化时以 `schema_change_blocked` 阻塞而不推进 offset。公开任务配置仍不出现这些内部名称。
+
+## 十、Checkpoint、进度和重试
 
 当前 checkpoint 语义：
 
@@ -288,7 +316,7 @@ continuous worker 每隔 `TRANSFER_CONTINUOUS_DIAGNOSTICS_INTERVAL`（默认 `15
 | restartable | 已支持 retry 从头重跑；append 拒绝。 |
 | resumable | PostgreSQL watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume；snapshot checkpoint 仍仅可观测。 |
 
-## 十、写后 Meta 扫描
+## 十一、写后 Meta 扫描
 
 成功写入后，如果 `auto_scan_metadata=true`，Transfer 触发 Meta deep scan。
 

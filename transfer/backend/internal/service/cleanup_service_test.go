@@ -95,6 +95,27 @@ func TestTransferCleanupPhysicalDeletesTaskDefinitions(t *testing.T) {
 	}
 }
 
+func TestTransferCleanupUsesCaptureOwnerForPostgreSQLCDC(t *testing.T) {
+	db := newTransferCleanupTestDB(t)
+	task := models.TransferTask{
+		TenantID: 7, Name: "cdc-cleanup", TaskType: "sync", Config: validPostgreSQLCDCTaskConfig(),
+		Status: models.TaskStatusIdle, DesiredState: models.TaskDesiredStateStopped,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	control := &fakeCaptureControl{}
+	cleanup := NewTransferCleanupService(db, nil, nil)
+	cleanup.SetCaptureControl(control)
+	stats, err := cleanup.ExecuteCleanup(context.Background(), 7, events.CleanupModePhysical, map[string]interface{}{"engine_id": 12})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.CaptureResources != 1 || stats.CleanedCaptureResources != 1 || control.stopCalls != 1 {
+		t.Fatalf("capture cleanup stats=%+v calls=%d", stats, control.stopCalls)
+	}
+}
+
 func newTransferCleanupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})

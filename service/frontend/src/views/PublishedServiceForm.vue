@@ -552,17 +552,7 @@ const handleSubmit = async () => {
 
         // 数据配置
         data_config: {
-          locator: selectedTable.value.locator,
-          geometry: selectedTable.value.hasGeometry ? {
-            has_geometry: true,
-            column: selectedTable.value.geometryColumn,
-            srid: selectedTable.value.srid || 4326,
-            types: selectedTable.value.geometryTypes?.length
-              ? selectedTable.value.geometryTypes
-              : (selectedTable.value.geometryType ? [selectedTable.value.geometryType] : [])
-          } : {
-            has_geometry: false
-          }
+		  locator: selectedTable.value.locator
         },
 
         // 协议配置

@@ -37,6 +37,9 @@ func TestModel3DTilesHandlerServesReadyAssetsWithContentTypeAndRange(t *testing.
 	if recorder.Code != http.StatusOK || recorder.Header().Get("Content-Type") != "application/json" {
 		t.Fatalf("tileset response: status=%d content-type=%q body=%q", recorder.Code, recorder.Header().Get("Content-Type"), recorder.Body.String())
 	}
+	if recorder.Header().Get("Cache-Control") != "no-store" || recorder.Header().Get("Pragma") != "no-cache" {
+		t.Fatalf("tileset cache headers: cache-control=%q pragma=%q", recorder.Header().Get("Cache-Control"), recorder.Header().Get("Pragma"))
+	}
 	if recorder.Body.String() != string(objects["/manager/tenant_7/model3d-tiles/fp/3d_tiles/tileset.json"]) {
 		t.Fatalf("tileset body = %q", recorder.Body.String())
 	}
@@ -50,6 +53,9 @@ func TestModel3DTilesHandlerServesReadyAssetsWithContentTypeAndRange(t *testing.
 	}
 	if recorder.Header().Get("Content-Type") != "application/vnd.supermap.s3m-config" {
 		t.Fatalf("S3M content-type = %q", recorder.Header().Get("Content-Type"))
+	}
+	if recorder.Header().Get("Cache-Control") != "no-store" || recorder.Header().Get("Pragma") != "no-cache" {
+		t.Fatalf("S3M cache headers: cache-control=%q pragma=%q", recorder.Header().Get("Cache-Control"), recorder.Header().Get("Pragma"))
 	}
 	if recorder.Header().Get("Content-Range") != "bytes 0-7/16" || recorder.Body.String() != "<SuperMa" {
 		t.Fatalf("S3M range headers/body: content-range=%q body=%q", recorder.Header().Get("Content-Range"), recorder.Body.String())

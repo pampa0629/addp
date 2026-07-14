@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
+import 'ol/ol.css'
 // 导入 Element Plus 深色模式 CSS
 import 'element-plus/theme-chalk/dark/css-vars.css'
 // 导入统一主题 CSS
@@ -15,6 +16,10 @@ import { useTheme } from '@common-ui'
 import { createAddpI18n } from '../../../common-frontend/basic/src/composables/useAddpI18n'
 import zhCnMessages from './i18n/zh-cn.json'
 import enMessages from './i18n/en.json'
+import { mapMessagesEn, mapMessagesZhCn, setMapConfigAPI } from '@common-ui-map'
+import configAPI from '@/api/config'
+
+setMapConfigAPI(configAPI)
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -26,7 +31,10 @@ for (const [key, component] of Object.entries(icons)) {
 }
 
 const { i18n, init: initI18n } = createAddpI18n({
-  moduleMessages: { 'zh-cn': zhCnMessages, 'en': enMessages },
+  moduleMessages: {
+    'zh-cn': { ...zhCnMessages, ...mapMessagesZhCn },
+    'en': { ...enMessages, ...mapMessagesEn }
+  },
   listenToConsole: true,
 })
 

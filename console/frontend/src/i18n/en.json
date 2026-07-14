@@ -212,8 +212,9 @@
         "vectorMaterializedView": "Vector Quick View - Materialized View",
         "cogArtifacts": "Raster Quick View - COG",
         "rasterMosaic": "Raster Quick View - Mosaic",
-        "cadPreview": "CAD Quick View",
+        "cadPreview": "CAD Quick View - Raster Tiles",
         "model3DQuickView": "3D Quick View - GLB",
+        "model3DTiles": "3D Quick View - Tiles",
         "gaussianSplatQuickView": "Gaussian Quick View - KSplat",
         "pointCloudCOPC": "Point Cloud Quick View - COPC"
       },

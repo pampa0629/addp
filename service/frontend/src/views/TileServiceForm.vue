@@ -1,224 +1,262 @@
 <template>
   <div class="tile-service-form">
-    <h1>{{ isEditing ? $t('service.tile.formEditTitle') : $t('service.tile.formCreateTitle') }}</h1>
-
-    <!-- 步骤指示器 -->
-    <div class="steps">
-      <div class="step" :class="{ active: currentStep === 0, completed: currentStep > 0 }">
-        <div class="step-number">1</div>
-        <div class="step-title">{{ $t('service.tile.step1Title') }}</div>
-      </div>
-      <div class="step-line" :class="{ active: currentStep > 0 }"></div>
-      <div class="step" :class="{ active: currentStep === 1, completed: currentStep > 1 }">
-        <div class="step-number">2</div>
-        <div class="step-title">{{ $t('service.tile.step2Title') }}</div>
-      </div>
-      <div class="step-line" :class="{ active: currentStep > 1 }"></div>
-      <div class="step" :class="{ active: currentStep === 2, completed: currentStep > 2 }">
-        <div class="step-number">3</div>
-        <div class="step-title">{{ $t('service.tile.step3Title') }}</div>
-      </div>
+    <div class="page-header">
+      <h2>{{ isEditing ? $t('service.tile.formEditTitle') : $t('service.tile.formCreateTitle') }}</h2>
     </div>
 
+    <el-steps :active="currentStep" finish-status="success" align-center class="service-steps">
+      <el-step :title="$t('service.tile.step1Title')" />
+      <el-step :title="$t('service.tile.step2Title')" />
+      <el-step :title="$t('service.tile.step3Title')" />
+    </el-steps>
+
     <!-- Step 0: 添加第一个图层 -->
-    <div v-if="currentStep === 0" class="form-step">
-      <h2>{{ $t('service.tile.selectLayerType') }}</h2>
-      <div class="layer-type-selector">
+    <el-card v-if="currentStep === 0" class="form-card" shadow="never">
+      <template #header>
+        <span>{{ $t('service.tile.selectLayerType') }}</span>
+      </template>
+
+      <el-radio-group v-model="layerType" class="layer-type-selector">
         <div
-          class="layer-type-card"
+          class="layer-type-option"
           :class="{ selected: layerType === 'dynamic' }"
           @click="layerType = 'dynamic'"
         >
-          <h3>{{ $t('service.tile.dynamicLayer') }}</h3>
-          <p>{{ $t('service.tile.dynamicLayerDesc') }}</p>
+          <el-radio value="dynamic">
+            <div class="layer-type-content">
+              <h3>{{ $t('service.tile.dynamicLayer') }}</h3>
+              <p>{{ $t('service.tile.dynamicLayerDesc') }}</p>
+            </div>
+          </el-radio>
         </div>
         <div
-          class="layer-type-card"
+          class="layer-type-option"
           :class="{ selected: layerType === 'static' }"
           @click="layerType = 'static'"
         >
-          <h3>{{ $t('service.tile.staticLayer') }}</h3>
-          <p>{{ $t('service.tile.staticLayerDesc') }}</p>
+          <el-radio value="static">
+            <div class="layer-type-content">
+              <h3>{{ $t('service.tile.staticLayer') }}</h3>
+              <p>{{ $t('service.tile.staticLayerDesc') }}</p>
+            </div>
+          </el-radio>
         </div>
-      </div>
+      </el-radio-group>
 
       <!-- 动态图层配置 -->
       <div v-if="layerType === 'dynamic'" class="layer-config">
-        <h3>{{ $t('service.tile.dynamicLayerConfig') }}</h3>
-        <div class="form-group">
-          <label>{{ $t('service.tile.layerNameLabel') }} *</label>
-          <input v-model="form.layerName" type="text" :placeholder="$t('service.tile.layerNamePlaceholder')" />
-        </div>
-        <div class="form-group">
-          <label>{{ $t('service.tile.layerTitleLabel') }} *</label>
-          <input v-model="form.layerTitle" type="text" :placeholder="$t('service.tile.layerTitlePlaceholder')" />
-        </div>
-        <div class="form-group">
-          <label>{{ $t('service.tile.layerDescLabel') }}</label>
-          <textarea v-model="form.layerDescription" :placeholder="$t('service.tile.layerDescPlaceholder')" rows="2"></textarea>
-        </div>
-
-        <div class="form-group">
-          <label>{{ $t('service.tile.selectTableLabel') }} *</label>
-          <ResourceTreePicker
-            :api-base-url="metaApiBaseUrl"
-            :engine-types="nativeTableEngineTypes"
-            mode="item"
-            :node-filter="isNativeTableVisibleNode"
-            :selectable-filter="isNativeTableNode"
-            :show-selection-summary="true"
-            :engine-multiple="true"
-            :select-all-engines-by-default="true"
-            :search-selectable-only="true"
-            :show-disabled-label="false"
-            :show-count="false"
-            @update:model-value="handleTableSelection"
-          />
-        </div>
+        <el-divider content-position="left">{{ $t('service.tile.dynamicLayerConfig') }}</el-divider>
+        <el-form :model="form" label-position="top">
+          <el-form-item :label="$t('service.tile.layerNameLabel')" required>
+            <el-input v-model="form.layerName" :placeholder="$t('service.tile.layerNamePlaceholder')" />
+          </el-form-item>
+          <el-form-item :label="$t('service.tile.layerTitleLabel')" required>
+            <el-input v-model="form.layerTitle" :placeholder="$t('service.tile.layerTitlePlaceholder')" />
+          </el-form-item>
+          <el-form-item :label="$t('service.tile.layerDescLabel')">
+            <el-input
+              v-model="form.layerDescription"
+              type="textarea"
+              :rows="2"
+              :placeholder="$t('service.tile.layerDescPlaceholder')"
+            />
+          </el-form-item>
+          <el-form-item :label="$t('service.tile.selectTableLabel')" required>
+            <ResourceTreePicker
+              :api-base-url="metaApiBaseUrl"
+              :engine-types="nativeTableEngineTypes"
+              mode="item"
+              :node-filter="isNativeTableVisibleNode"
+              :selectable-filter="isNativeTableNode"
+              :show-selection-summary="true"
+              :engine-multiple="true"
+              :select-all-engines-by-default="true"
+              :search-selectable-only="true"
+              :show-disabled-label="false"
+              :show-count="false"
+              @update:model-value="handleTableSelection"
+            />
+          </el-form-item>
+        </el-form>
 
         <!-- 显示检测到的空间字段信息 -->
-        <div v-if="spatialMetadata && spatialMetadata.hasGeometry" class="geometry-info">
-          <p>✅ {{ $t('service.tile.spatialDetected') }}</p>
-          <ul>
-            <li><strong>{{ $t('service.tile.geomColumnLabel') }}：</strong>{{ spatialMetadata.geometryColumn }}</li>
-            <li><strong>SRID：</strong>{{ spatialMetadata.srid }}</li>
-            <li v-if="spatialMetadata.geometryTypes && spatialMetadata.geometryTypes.length"><strong>{{ $t('service.tile.geomTypeLabel') }}：</strong>{{ spatialMetadata.geometryTypes.join(', ') }}</li>
-          </ul>
-        </div>
+        <el-alert
+          v-if="spatialMetadata && spatialMetadata.hasGeometry"
+          :title="$t('service.tile.spatialDetected')"
+          type="success"
+          :closable="false"
+          show-icon
+        >
+          <div class="geometry-details">
+            <span><strong>{{ $t('service.tile.geomColumnLabel') }}：</strong>{{ spatialMetadata.geometryColumn }}</span>
+            <span><strong>SRID：</strong>{{ spatialMetadata.srid }}</span>
+            <span v-if="spatialMetadata.geometryTypes && spatialMetadata.geometryTypes.length">
+              <strong>{{ $t('service.tile.geomTypeLabel') }}：</strong>{{ spatialMetadata.geometryTypes.join(', ') }}
+            </span>
+          </div>
+        </el-alert>
       </div>
 
       <!-- 静态图层配置 -->
       <div v-else-if="layerType === 'static'" class="layer-config">
-        <h3>{{ $t('service.tile.staticLayerConfig') }}</h3>
-        <div class="form-group">
-          <label>{{ $t('service.tile.layerNameLabel') }} *</label>
-          <input v-model="form.layerName" type="text" :placeholder="$t('service.tile.staticLayerNamePlaceholder')" />
-        </div>
-        <div class="form-group">
-          <label>{{ $t('service.tile.layerTitleLabel') }} *</label>
-          <input v-model="form.layerTitle" type="text" :placeholder="$t('service.tile.staticLayerTitlePlaceholder')" />
-        </div>
-        <div class="form-group">
-          <label>{{ $t('service.tile.layerDescLabel') }}</label>
-          <textarea v-model="form.layerDescription" :placeholder="$t('service.tile.layerDescPlaceholder')" rows="2"></textarea>
-        </div>
-        <div class="form-group">
-          <label>{{ $t('service.tile.tilePathLabel') }} *</label>
-          <input v-model="form.tilePath" type="text" :placeholder="$t('service.tile.tilePathPlaceholder')" />
-          <p class="help-text">{{ $t('service.tile.tilePathHelp') }}</p>
-        </div>
-        <div class="form-group">
-          <label>{{ $t('service.tile.tileFormatLabel') }} *</label>
-          <select v-model="form.format">
-            <option value="mvt">MVT (Mapbox Vector Tile)</option>
-            <option value="png">PNG</option>
-            <option value="jpeg">JPEG</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>{{ $t('service.tile.minZoomLabel') }} *</label>
-            <input v-model.number="form.minZoom" type="number" min="0" max="22" />
+        <el-divider content-position="left">{{ $t('service.tile.staticLayerConfig') }}</el-divider>
+        <el-form :model="form" label-position="top">
+          <el-form-item :label="$t('service.tile.layerNameLabel')" required>
+            <el-input v-model="form.layerName" :placeholder="$t('service.tile.staticLayerNamePlaceholder')" />
+          </el-form-item>
+          <el-form-item :label="$t('service.tile.layerTitleLabel')" required>
+            <el-input v-model="form.layerTitle" :placeholder="$t('service.tile.staticLayerTitlePlaceholder')" />
+          </el-form-item>
+          <el-form-item :label="$t('service.tile.layerDescLabel')">
+            <el-input
+              v-model="form.layerDescription"
+              type="textarea"
+              :rows="2"
+              :placeholder="$t('service.tile.layerDescPlaceholder')"
+            />
+          </el-form-item>
+          <el-form-item :label="$t('service.tile.tilePathLabel')" required>
+            <el-input v-model="form.tilePath" :placeholder="$t('service.tile.tilePathPlaceholder')" />
+            <div class="help-text">{{ $t('service.tile.tilePathHelp') }}</div>
+          </el-form-item>
+          <el-form-item :label="$t('service.tile.tileFormatLabel')" required>
+            <el-select v-model="form.format" class="full-width-control">
+              <el-option label="MVT (Mapbox Vector Tile)" value="mvt" />
+              <el-option label="PNG" value="png" />
+              <el-option label="JPEG" value="jpeg" />
+            </el-select>
+          </el-form-item>
+          <div class="form-row">
+            <el-form-item :label="$t('service.tile.minZoomLabel')" required>
+              <el-input-number v-model="form.minZoom" :min="0" :max="22" controls-position="right" />
+            </el-form-item>
+            <el-form-item :label="$t('service.tile.maxZoomLabel')" required>
+              <el-input-number v-model="form.maxZoom" :min="0" :max="22" controls-position="right" />
+            </el-form-item>
           </div>
-          <div class="form-group">
-            <label>{{ $t('service.tile.maxZoomLabel') }} *</label>
-            <input v-model.number="form.maxZoom" type="number" min="0" max="22" />
-          </div>
-        </div>
+        </el-form>
       </div>
 
       <div class="form-actions">
-        <button @click="$router.back()" class="btn btn-secondary">{{ $t('service.common.cancel') }}</button>
-        <button @click="nextStep" class="btn btn-primary" :disabled="!validateStep0()">{{ $t('service.tile.nextStep') }}</button>
+        <el-button @click="$router.back()">{{ $t('service.common.cancel') }}</el-button>
+        <el-button type="primary" :disabled="!validateStep0()" @click="nextStep">
+          {{ $t('service.tile.nextStep') }}
+        </el-button>
       </div>
-    </div>
+    </el-card>
 
     <!-- Step 1: 配置服务信息 -->
-    <div v-if="currentStep === 1" class="form-step">
-      <h2>{{ $t('service.tile.serviceInfoTitle') }}</h2>
-      <div class="form-group">
-        <label>{{ $t('service.tile.serviceNameLabel') }} * <span class="help-text">{{ $t('service.tile.serviceNameHelp') }}</span></label>
-        <input v-model="form.serviceName" type="text" :placeholder="$t('service.tile.serviceNamePlaceholder')" />
-      </div>
-      <div class="form-group">
-        <label>{{ $t('service.tile.serviceTitleLabel') }} *</label>
-        <input v-model="form.title" type="text" :placeholder="$t('service.tile.serviceTitlePlaceholder')" />
-      </div>
-      <div class="form-group">
-        <label>{{ $t('service.tile.serviceDescLabel') }}</label>
-        <textarea v-model="form.description" :placeholder="$t('service.tile.serviceDescPlaceholder')" rows="3"></textarea>
-      </div>
-      <div class="form-group">
-        <label>{{ $t('service.tile.keywordsLabel') }}</label>
-        <input v-model="form.keywords" type="text" :placeholder="$t('service.tile.keywordsPlaceholder')" />
-      </div>
+    <el-card v-if="currentStep === 1" class="form-card" shadow="never">
+      <template #header>
+        <span>{{ $t('service.tile.serviceInfoTitle') }}</span>
+      </template>
 
-      <h3>{{ $t('service.tile.protocolConfigTitle') }}</h3>
-      <div class="protocols-config">
-        <label class="checkbox-label">
-          <input type="checkbox" v-model="protocols.xyz.enabled" />
-          {{ $t('service.tile.xyzProtocol') }}
-        </label>
-        <label class="checkbox-label">
-          <input type="checkbox" v-model="protocols.ogc_tiles.enabled" />
-          OGC Tiles API
-        </label>
-        <label class="checkbox-label">
-          <input type="checkbox" v-model="protocols.tms.enabled" />
-          TMS
-        </label>
-      </div>
+      <el-form :model="form" label-position="top">
+        <el-form-item :label="$t('service.tile.serviceNameLabel')" required>
+          <el-input v-model="form.serviceName" :placeholder="$t('service.tile.serviceNamePlaceholder')" />
+          <div class="help-text">{{ $t('service.tile.serviceNameHelp') }}</div>
+        </el-form-item>
+        <el-form-item :label="$t('service.tile.serviceTitleLabel')" required>
+          <el-input v-model="form.title" :placeholder="$t('service.tile.serviceTitlePlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="$t('service.tile.serviceDescLabel')">
+          <el-input
+            v-model="form.description"
+            type="textarea"
+            :rows="3"
+            :placeholder="$t('service.tile.serviceDescPlaceholder')"
+          />
+        </el-form-item>
+        <el-form-item :label="$t('service.tile.keywordsLabel')">
+          <el-input v-model="form.keywords" :placeholder="$t('service.tile.keywordsPlaceholder')" />
+        </el-form-item>
 
-      <h3>{{ $t('service.tile.accessControlTitle') }}</h3>
-      <div class="form-group">
-        <label class="checkbox-label">
-          <input type="checkbox" v-model="form.publicAccess" />
-          {{ $t('service.tile.publicAccessLabel') }}
-        </label>
-      </div>
+        <el-divider content-position="left">{{ $t('service.tile.protocolConfigTitle') }}</el-divider>
+        <el-form-item>
+          <div class="protocols-config">
+            <el-checkbox v-model="protocols.xyz.enabled">{{ $t('service.tile.xyzProtocol') }}</el-checkbox>
+            <el-checkbox v-model="protocols.ogc_tiles.enabled">OGC Tiles API</el-checkbox>
+            <el-checkbox v-model="protocols.tms.enabled">TMS</el-checkbox>
+          </div>
+        </el-form-item>
+
+        <el-divider content-position="left">{{ $t('service.tile.accessControlTitle') }}</el-divider>
+        <el-form-item>
+          <el-checkbox v-model="form.publicAccess">{{ $t('service.tile.publicAccessLabel') }}</el-checkbox>
+        </el-form-item>
+      </el-form>
 
       <div class="form-actions">
-        <button @click="previousStep" class="btn btn-secondary">{{ $t('service.tile.prevStep') }}</button>
-        <button @click="submitForm" class="btn btn-primary" :disabled="!validateStep1() || submitting">
-          {{ submitting ? $t('service.tile.creating') : $t('service.tile.createBtn') }}
-        </button>
+        <el-button @click="previousStep">{{ $t('service.tile.prevStep') }}</el-button>
+        <el-button
+          type="primary"
+          :disabled="!validateStep1()"
+          :loading="submitting"
+          @click="submitForm"
+        >
+          {{ $t('service.tile.createBtn') }}
+        </el-button>
       </div>
-    </div>
+    </el-card>
 
     <!-- Step 2: 完成 -->
-    <div v-if="currentStep === 2" class="form-step completion-step">
-      <div class="success-icon">✓</div>
-      <h2>{{ $t('service.tile.createSuccess') }}</h2>
+    <el-card v-if="currentStep === 2" class="form-card completion-step" shadow="never">
+      <el-result icon="success" :title="$t('service.tile.createSuccess')" />
       <div v-if="createdService" class="service-info">
-        <p><strong>{{ $t('service.tile.colServiceName') }}:</strong> {{ createdService.service_name }}</p>
-        <p><strong>{{ $t('service.tile.colTitle') }}:</strong> {{ createdService.title }}</p>
+        <el-descriptions :column="1" border>
+          <el-descriptions-item :label="$t('service.tile.colServiceName')">
+            {{ createdService.service_name }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="$t('service.tile.colTitle')">
+            {{ createdService.title }}
+          </el-descriptions-item>
+        </el-descriptions>
         <div v-if="createdService.endpoints" class="endpoints">
-          <h3>{{ $t('service.tile.endpointsTitle') }}:</h3>
+          <el-divider content-position="left">{{ $t('service.tile.endpointsTitle') }}</el-divider>
           <div v-if="createdService.endpoints.xyz_tiles" class="endpoint">
-            <strong>XYZ Tiles:</strong>
-            <code>{{ createdService.endpoints.xyz_tiles }}</code>
-            <button @click="copyToClipboard(createdService.endpoints.xyz_tiles)" class="btn btn-sm btn-secondary">{{ $t('service.common.copy') }}</button>
+            <span class="endpoint-label">XYZ Tiles</span>
+            <el-input :model-value="createdService.endpoints.xyz_tiles" readonly>
+              <template #append>
+                <el-tooltip :content="$t('service.common.copy')" placement="top">
+                  <el-button :aria-label="$t('service.common.copy')" @click="copyToClipboard(createdService.endpoints.xyz_tiles)">
+                    <el-icon><DocumentCopy /></el-icon>
+                  </el-button>
+                </el-tooltip>
+              </template>
+            </el-input>
           </div>
           <div v-if="createdService.endpoints.wmts" class="endpoint">
-            <strong>WMTS:</strong>
-            <code>{{ createdService.endpoints.wmts }}</code>
-            <button @click="copyToClipboard(createdService.endpoints.wmts)" class="btn btn-sm btn-secondary">{{ $t('service.common.copy') }}</button>
+            <span class="endpoint-label">WMTS</span>
+            <el-input :model-value="createdService.endpoints.wmts" readonly>
+              <template #append>
+                <el-tooltip :content="$t('service.common.copy')" placement="top">
+                  <el-button :aria-label="$t('service.common.copy')" @click="copyToClipboard(createdService.endpoints.wmts)">
+                    <el-icon><DocumentCopy /></el-icon>
+                  </el-button>
+                </el-tooltip>
+              </template>
+            </el-input>
           </div>
           <div v-if="createdService.endpoints.ogc_tiles" class="endpoint">
-            <strong>OGC Tiles API:</strong>
-            <code>{{ createdService.endpoints.ogc_tiles }}</code>
-            <button @click="copyToClipboard(createdService.endpoints.ogc_tiles)" class="btn btn-sm btn-secondary">{{ $t('service.common.copy') }}</button>
+            <span class="endpoint-label">OGC Tiles API</span>
+            <el-input :model-value="createdService.endpoints.ogc_tiles" readonly>
+              <template #append>
+                <el-tooltip :content="$t('service.common.copy')" placement="top">
+                  <el-button :aria-label="$t('service.common.copy')" @click="copyToClipboard(createdService.endpoints.ogc_tiles)">
+                    <el-icon><DocumentCopy /></el-icon>
+                  </el-button>
+                </el-tooltip>
+              </template>
+            </el-input>
           </div>
         </div>
       </div>
-      <div v-else class="service-info">
-        <p>{{ $t('service.common.loading') }}</p>
-      </div>
+      <el-skeleton v-else :rows="3" animated />
       <div class="form-actions">
-        <button @click="viewDetail" class="btn btn-primary">{{ $t('service.common.detail') }}</button>
-        <button @click="createAnother" class="btn btn-secondary">{{ $t('service.tile.createAnother') }}</button>
+        <el-button type="primary" @click="viewDetail">{{ $t('service.common.detail') }}</el-button>
+        <el-button @click="createAnother">{{ $t('service.tile.createAnother') }}</el-button>
       </div>
-    </div>
+    </el-card>
   </div>
 </template>
 
@@ -226,11 +264,13 @@
 import tileServiceAPI from '@/api/tileService'
 import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
 import { ElMessage } from 'element-plus'
+import { DocumentCopy } from '@element-plus/icons-vue'
 import { NATIVE_TABLE_ENGINE_TYPES, isNativeTableNode, isNativeTableVisibleNode } from '@/utils/resourceSelection'
 
 export default {
   name: 'TileServiceForm',
   components: {
+    DocumentCopy,
     ResourceTreePicker
   },
   data() {
@@ -426,7 +466,7 @@ export default {
         this.currentStep = 2
       } catch (error) {
         console.error('创建瓦片服务失败:', error)
-        alert(this.$t('service.tile.createFailed') + ': ' + (error.response?.data?.error || error.message))
+        ElMessage.error(this.$t('service.tile.createFailed') + ': ' + (error.response?.data?.error || error.message))
       } finally {
         this.submitting = false
       }
@@ -469,12 +509,13 @@ export default {
       }
     },
 
-    copyToClipboard(text) {
-      navigator.clipboard.writeText(text).then(() => {
-        alert(this.$t('service.common.copied'))
-      }).catch(err => {
+    async copyToClipboard(text) {
+      try {
+        await navigator.clipboard.writeText(text)
+        ElMessage.success(this.$t('service.common.copied'))
+      } catch (err) {
         console.error('复制失败:', err)
-      })
+      }
     }
   }
 }
@@ -482,328 +523,193 @@ export default {
 
 <style scoped>
 .tile-service-form {
-  max-width: 900px;
+  max-width: 1080px;
   margin: 0 auto;
-  padding: 20px;
-}
-
-h1 {
-  margin-bottom: 30px;
+  padding: 24px;
   color: var(--addp-text-primary);
 }
 
-/* 步骤指示器 */
-.steps {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin-bottom: 40px;
+.page-header {
+  margin-bottom: 24px;
 }
 
-.step {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.step-number {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: #e0e0e0;
-  color: var(--addp-text-tertiary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: bold;
-  transition: all 0.3s;
-}
-
-.step.active .step-number {
-  background: #1976d2;
-  color: white;
-}
-
-.step.completed .step-number {
-  background: #388e3c;
-  color: white;
-}
-
-.step-title {
-  font-size: 14px;
-  color: var(--addp-text-tertiary);
-}
-
-.step.active .step-title {
-  color: #1976d2;
-  font-weight: 600;
-}
-
-.step-line {
-  width: 80px;
-  height: 2px;
-  background: #e0e0e0;
-  margin: 0 10px;
-  transition: all 0.3s;
-}
-
-.step-line.active {
-  background: #388e3c;
-}
-
-/* 表单步骤 */
-.form-step {
-  background: white;
-  padding: 30px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-h2 {
-  margin-bottom: 20px;
+.page-header h2 {
+  margin: 0;
+  font-size: 24px;
   color: var(--addp-text-primary);
-  font-size: 20px;
 }
 
-h3 {
-  margin: 20px 0 15px 0;
-  color: #555;
-  font-size: 16px;
+.service-steps {
+  margin-bottom: 32px;
 }
 
-/* 图层类型选择卡片 */
 .layer-type-selector {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  margin-bottom: 30px;
+  gap: 16px;
+  width: 100%;
+  margin-bottom: 24px;
 }
 
-.layer-type-card {
-  padding: 30px 20px;
-  border: 2px solid #e0e0e0;
+.layer-type-option {
+  min-width: 0;
+  padding: 20px;
+  border: 2px solid var(--addp-border-color);
   border-radius: 8px;
-  text-align: center;
   cursor: pointer;
-  transition: all 0.2s;
+  background: var(--addp-bg-primary) !important;
 }
 
-.layer-type-card:hover {
-  border-color: #1976d2;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+.layer-type-option:hover,
+.layer-type-option.selected {
+  border-color: var(--el-color-primary);
 }
 
-.layer-type-card.selected {
-  border-color: #1976d2;
-  background: #e3f2fd;
+.layer-type-option.selected {
+  background: var(--el-color-primary-light-9) !important;
 }
 
-.layer-type-card h3 {
-  margin: 0 0 10px 0;
+.layer-type-option :deep(.el-radio) {
+  align-items: flex-start;
+  width: 100%;
+  height: auto;
+  margin: 0;
+}
+
+.layer-type-option :deep(.el-radio__input) {
+  margin-top: 3px;
+}
+
+.layer-type-option :deep(.el-radio__label) {
+  min-width: 0;
+  padding-left: 12px;
+  white-space: normal;
+}
+
+.layer-type-content h3 {
+  margin: 0 0 8px;
   color: var(--addp-text-primary);
+  font-size: 16px;
+  line-height: 1.4;
 }
 
-.layer-type-card p {
+.layer-type-content p {
   margin: 0;
   color: var(--addp-text-secondary);
   font-size: 14px;
-}
-
-/* 表单组件 */
-.layer-config,
-.protocols-config {
-  margin-bottom: 20px;
-}
-
-.form-group {
-  margin-bottom: 20px;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: 500;
-  color: #555;
+  line-height: 1.6;
 }
 
 .help-text {
+  width: 100%;
+  margin-top: 4px;
   font-size: 12px;
   color: var(--addp-text-tertiary);
-  margin-top: 4px;
 }
 
-.form-group input[type="text"],
-.form-group input[type="number"],
-.form-group select,
-.form-group textarea {
+.full-width-control,
+.form-row :deep(.el-input-number) {
   width: 100%;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-  box-sizing: border-box;
 }
 
-.form-group textarea {
-  resize: vertical;
+.layer-config :deep(.el-form-item:last-child) {
+  margin-bottom: 0;
 }
 
-/* 空间字段信息展示 */
-.geometry-info {
-  background: #e8f5e9;
-  border: 1px solid #4caf50;
-  border-radius: 4px;
-  padding: 15px;
-  margin-top: 15px;
-}
-
-.geometry-info p {
-  margin: 0 0 10px 0;
-  color: #2e7d32;
-  font-weight: 500;
-}
-
-.geometry-info ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.geometry-info ul li {
-  padding: 4px 0;
-  color: #555;
-}
-
-.geometry-info ul li strong {
-  color: #2e7d32;
+.geometry-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
 }
 
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: 16px;
 }
 
-.checkbox-label {
+.protocols-config {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-  cursor: pointer;
+  flex-wrap: wrap;
+  gap: 12px 24px;
 }
 
-.checkbox-label input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  cursor: pointer;
-}
-
-/* 表单操作按钮 */
 .form-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 15px;
-  margin-top: 30px;
-  padding-top: 20px;
-  border-top: 1px solid #eee;
-}
-
-/* 完成步骤 */
-.completion-step {
-  text-align: center;
-}
-
-.success-icon {
-  width: 80px;
-  height: 80px;
-  margin: 0 auto 20px;
-  background: #388e3c;
-  color: white;
-  font-size: 48px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--addp-border-color);
 }
 
 .service-info {
-  background: #f9f9f9;
-  padding: 20px;
-  border-radius: 4px;
-  margin: 20px 0;
-  text-align: left;
-}
-
-.service-info p {
-  margin: 10px 0;
+  max-width: 760px;
+  margin: 0 auto;
 }
 
 .endpoints {
-  margin-top: 20px;
+  margin-top: 24px;
 }
 
 .endpoint {
-  margin: 15px 0;
-  padding: 15px;
-  background: white;
-  border-radius: 4px;
-  border: 1px solid #ddd;
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
-.endpoint strong {
-  display: block;
-  margin-bottom: 8px;
-  color: #555;
-}
-
-.endpoint code {
-  display: inline-block;
-  padding: 8px 12px;
-  background: var(--addp-bg-secondary);
-  border-radius: 4px;
-  font-family: monospace;
-  font-size: 12px;
-  word-break: break-all;
-  margin-right: 10px;
-}
-
-/* 按钮样式 */
-.btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
+.endpoint-label {
+  color: var(--addp-text-primary);
   font-size: 14px;
-  transition: all 0.2s;
+  font-weight: 500;
 }
 
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.completion-step .form-actions {
+  justify-content: center;
 }
 
-.btn-primary {
-  background: #1976d2;
-  color: white;
+.form-card {
+  background: var(--addp-bg-primary) !important;
+  border-color: var(--addp-border-color) !important;
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: #1565c0;
+.form-card :deep(.el-card__header) {
+  color: var(--addp-text-primary);
+  font-size: 18px;
+  font-weight: 600;
 }
 
-.btn-secondary {
-  background: #757575;
-  color: white;
+.form-card :deep(.el-form-item__label),
+.form-card :deep(.el-divider__text) {
+  color: var(--addp-text-primary);
 }
 
-.btn-secondary:hover {
-  background: #616161;
+.form-card :deep(.el-divider__text) {
+  background: var(--addp-bg-primary) !important;
 }
 
-.btn-sm {
-  padding: 6px 12px;
-  font-size: 12px;
+.form-card :deep(.el-result__title p) {
+  color: var(--addp-text-primary);
+}
+
+.form-card :deep(.el-descriptions__label),
+.form-card :deep(.el-descriptions__content) {
+  color: var(--addp-text-primary) !important;
+  background: var(--addp-bg-primary) !important;
+}
+
+@media (max-width: 768px) {
+  .tile-service-form {
+    padding: 16px;
+  }
+
+  .layer-type-selector,
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .form-actions {
+    flex-wrap: wrap;
+  }
 }
 </style>

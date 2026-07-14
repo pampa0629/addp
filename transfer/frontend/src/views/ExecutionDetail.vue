@@ -65,6 +65,15 @@
           class="diagnostics-alert"
         />
 
+				<el-alert
+					v-if="continuousSchemaChange"
+					:title="t('transfer.executionDetail.schemaChangeBlocked')"
+					:description="schemaChangeDescription"
+					type="error"
+					:closable="false"
+					class="diagnostics-alert"
+				/>
+
         <el-table :data="continuousPartitions" border size="small" class="partition-table">
           <el-table-column prop="partition" :label="t('transfer.executionDetail.partition')" width="120" />
           <el-table-column :label="t('transfer.executionDetail.retentionHealth')" width="120">
@@ -227,6 +236,17 @@ const executionId = computed(() => route.params.execution_id)
 
 const continuousMetadata = computed(() => execution.value?.metadata?.continuous || {})
 const continuousDiagnostics = computed(() => getContinuousDiagnostics(execution.value?.metadata))
+const continuousSchemaChange = computed(() => continuousMetadata.value?.schema_change || null)
+const schemaChangeDescription = computed(() => {
+	const change = continuousSchemaChange.value
+	if (!change) return ''
+	return t('transfer.executionDetail.schemaChangeDescription', {
+		scope: change.scope || '-',
+		missing: Array.isArray(change.missing_fields) && change.missing_fields.length > 0 ? change.missing_fields.join(', ') : '-',
+		unexpected: Array.isArray(change.unexpected_fields) && change.unexpected_fields.length > 0 ? change.unexpected_fields.join(', ') : '-',
+		incompatible: Array.isArray(change.incompatible_fields) && change.incompatible_fields.length > 0 ? change.incompatible_fields.join(', ') : '-'
+	})
+})
 const isContinuousExecution = computed(() => {
   return Object.keys(continuousMetadata.value).length > 0 || !!execution.value?.metadata?.stop_reason
 })

@@ -49,6 +49,7 @@ func ToMetaItemLite(item models.MetaItem) models.MetaItemLite {
 		ItemType:      item.ItemType,
 		Name:          item.Name,
 		FullName:      item.FullName,
+		Fingerprint:   item.Fingerprint,
 		RowCount:      item.RowCount,
 		SizeBytes:     item.SizeBytes,
 		DataUpdatedAt: dataUpdatedAt,

@@ -148,6 +148,10 @@ func (s *Supervisor) runSession(ctx context.Context, claim repository.RuntimeLea
 				status, stopReason = commonExecution.ExecutionStatusCancelled, reason
 			} else {
 				errorMessage = err.Error()
+				var schemaErr *SchemaChangeError
+				if errors.As(err, &schemaErr) {
+					stopReason = "schema_change_blocked"
+				}
 			}
 			goto finish
 		case <-ctx.Done():

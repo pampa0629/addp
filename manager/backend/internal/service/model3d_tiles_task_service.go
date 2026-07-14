@@ -17,8 +17,17 @@ import (
 	"github.com/google/uuid"
 )
 
+var (
+	ErrModel3DTilesResultNotFound    = errors.New("model3d tiles result not found")
+	ErrModel3DTilesTaskExecutionBusy = errors.New("model3d tiles task already has an active execution")
+)
+
 type Model3DTilesExecutor interface {
 	BuildModel3DTiles(ctx context.Context, req Model3DTilesExecutionRequest) (*Model3DTilesExecutionResult, error)
+}
+
+type Model3DTilesArtifactCleaner interface {
+	DeleteByStorageRef(ctx context.Context, storageRef string) error
 }
 
 type Model3DTilesExecutionRequest struct {
@@ -57,6 +66,7 @@ type Model3DTilesTaskService struct {
 	repo         *repository.Model3DTilesRepository
 	taskExecRepo *commonExecution.TaskExecutionRepository
 	executor     Model3DTilesExecutor
+	cleaner      Model3DTilesArtifactCleaner
 	bucket       string
 }
 
@@ -68,13 +78,40 @@ func (s *Model3DTilesTaskService) SetExecutor(executor Model3DTilesExecutor) {
 	s.executor = executor
 }
 
+func (s *Model3DTilesTaskService) SetCleaner(cleaner Model3DTilesArtifactCleaner) {
+	s.cleaner = cleaner
+}
+
 func (s *Model3DTilesTaskService) SetBucket(bucket string) { s.bucket = strings.TrimSpace(bucket) }
 
 func (s *Model3DTilesTaskService) Create(ctx context.Context, task *models.Model3DTilesTask) error {
 	if err := normalizeModel3DTilesTask(task, s.bucket); err != nil {
 		return err
 	}
-	return s.repo.CreateTask(ctx, task)
+	cfg, err := normalizeModel3DTilesTaskConfig(task.Config, s.bucket, task.TenantID)
+	if err != nil {
+		return err
+	}
+	existing, err := s.repo.GetTaskByItemFingerprintAndFormat(ctx, task.TenantID, cfg.Source.ItemFingerprint, cfg.TargetFormat)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		return s.reuseExistingTask(ctx, task, existing)
+	}
+	if err := s.repo.CreateTask(ctx, task); err != nil {
+		if strings.Contains(err.Error(), "idx_model3d_tiles_tasks_source_format_unique") {
+			existing, lookupErr := s.repo.GetTaskByItemFingerprintAndFormat(ctx, task.TenantID, cfg.Source.ItemFingerprint, cfg.TargetFormat)
+			if lookupErr != nil {
+				return lookupErr
+			}
+			if existing != nil {
+				return s.reuseExistingTask(ctx, task, existing)
+			}
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *Model3DTilesTaskService) GetByID(ctx context.Context, id uint, tenantID uint) (*models.Model3DTilesTask, error) {
@@ -83,6 +120,29 @@ func (s *Model3DTilesTaskService) GetByID(ctx context.Context, id uint, tenantID
 
 func (s *Model3DTilesTaskService) List(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.Model3DTilesTask, int64, error) {
 	return s.repo.ListTasks(ctx, tenantID, page, pageSize)
+}
+
+func (s *Model3DTilesTaskService) ListResults(ctx context.Context, filter repository.Model3DTilesFilter) ([]*models.Model3DTiles, int64, error) {
+	return s.repo.ListResults(ctx, filter)
+}
+
+func (s *Model3DTilesTaskService) DeleteResult(ctx context.Context, id uint, tenantID uint) error {
+	result, err := s.repo.GetResult(ctx, id, tenantID)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return ErrModel3DTilesResultNotFound
+	}
+	if strings.TrimSpace(result.StorageRef) != "" {
+		if s.cleaner == nil {
+			return errors.New("model3d tiles artifact cleaner is not configured")
+		}
+		if err := s.cleaner.DeleteByStorageRef(ctx, result.StorageRef); err != nil {
+			return err
+		}
+	}
+	return s.repo.DeleteResult(ctx, id, tenantID)
 }
 
 func (s *Model3DTilesTaskService) Update(ctx context.Context, task *models.Model3DTilesTask) error {
@@ -94,6 +154,23 @@ func (s *Model3DTilesTaskService) Update(ctx context.Context, task *models.Model
 
 func (s *Model3DTilesTaskService) Delete(ctx context.Context, id uint, tenantID uint) error {
 	return s.repo.DeleteTask(ctx, id, tenantID)
+}
+
+func (s *Model3DTilesTaskService) reuseExistingTask(ctx context.Context, task *models.Model3DTilesTask, existing *models.Model3DTilesTask) error {
+	existing.Name = task.Name
+	existing.Description = task.Description
+	existing.Enabled = task.Enabled
+	existing.Schedule = ""
+	existing.NextRunAt = nil
+	existing.Config = task.Config.Clone()
+	if existing.CreatedBy == nil {
+		existing.CreatedBy = task.CreatedBy
+	}
+	if err := s.repo.UpdateTask(ctx, existing); err != nil {
+		return err
+	}
+	*task = *existing
+	return nil
 }
 
 func (s *Model3DTilesTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string) (string, error) {
@@ -139,11 +216,12 @@ func (s *Model3DTilesTaskService) Execute(ctx context.Context, taskID uint, tena
 		ExecutionConfig:   executionConfig,
 		StartedAt:         &now,
 	}
-	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
+	active, err := s.repo.CreateExecutionIfIdle(ctx, taskID, tenantID, exec, now)
+	if err != nil {
 		return "", err
 	}
-	if err := s.repo.UpdateTaskLastExecution(ctx, taskID, tenantID, executionID, commonExecution.ExecutionStatusRunning, now); err != nil {
-		return "", err
+	if active {
+		return "", ErrModel3DTilesTaskExecutionBusy
 	}
 
 	result, cfg, err := s.prepareModel3DTilesResult(ctx, task, executionID)

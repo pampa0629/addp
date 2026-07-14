@@ -1,11 +1,13 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	commonAPI "github.com/addp/common/api"
+	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
@@ -126,11 +128,12 @@ func (h *ExecutionHandler) GetTaskExecutions(c *gin.Context) {
 
 // RetryExecution 重试失败的执行
 // @Summary 重试执行 | Retry execution
-// @Description 为失败执行创建新的 retry 执行记录，并按 restartable 语义从头重新入队执行 | Create a new retry execution for a failed execution and enqueue it from the beginning with restartable semantics
+// @Description 为允许重试的失败 bounded execution 创建 restartable retry；continuous execution 和 schema drift blocked CDC 不支持 retry。| Create a restartable retry for an eligible failed bounded execution. Continuous executions and schema-drift-blocked CDC do not support retry.
 // @Tags 执行管理 | Execution Management
 // @Produce json
 // @Param execution_id path string true "执行ID | Execution ID"
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string "CDC 被结构变化阻塞 | CDC blocked by schema change"
 // @Failure 500 {object} map[string]string
 // @Router /executions/{execution_id}/retry [post]
 // @Security BearerAuth
@@ -144,6 +147,10 @@ func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 
 	newExecution, err := h.executionService.RetryExecution(c.Request.Context(), execution.ID, tenantID, userID)
 	if err != nil {
+		if errors.Is(err, service.ErrCDCSchemaChangeBlocked) {
+			c.JSON(http.StatusConflict, gin.H{"error": i18nmiddleware.T(c, "transfer.cdc.schema_change_blocked")})
+			return
+		}
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/sqldialect"
 	"github.com/google/uuid"
 )
 
@@ -26,6 +27,8 @@ type postgresApplyLedgerPosition struct {
 
 type positionedPostgresRow struct {
 	nextOffset int64
+	operation  string
+	key        string
 	row        map[string]interface{}
 }
 
@@ -104,17 +107,33 @@ func (p *PostgreSQLPlugin) ApplyPartitionedTableChanges(ctx context.Context, con
 		return nil, fmt.Errorf("postgresql target apply ledger gap for partition %q: ledger next_offset=%d, batch start=%d", batch.Partition, ledger.NextOffset, startOffset)
 	}
 
-	rows, skipped, err := filterAndCoalescePostgresChanges(batch, keys, startOffset, ledger.NextOffset, endOffset)
+	changes, skipped, err := filterAndCoalescePostgresChanges(batch, keys, startOffset, ledger.NextOffset, endOffset)
 	if err != nil {
 		return nil, err
 	}
-	if len(rows) > 0 {
-		data := &plugin.BatchData{Fields: opts.Fields, Spatial: opts.SpatialInfo, Rows: make([]map[string]interface{}, 0, len(rows))}
-		for _, row := range rows {
-			data.Rows = append(data.Rows, row.row)
+	if len(changes) > 0 {
+		upsertRows := make([]map[string]interface{}, 0, len(changes))
+		deleteRows := make([]map[string]interface{}, 0, len(changes))
+		for _, change := range changes {
+			switch change.operation {
+			case plugin.TableChangeOperationUpsert:
+				upsertRows = append(upsertRows, change.row)
+			case plugin.TableChangeOperationDelete:
+				deleteRows = append(deleteRows, change.row)
+			default:
+				return nil, fmt.Errorf("unsupported coalesced table change operation %q", change.operation)
+			}
 		}
-		if err := upsertPostgresRowsTx(ctx, tx, schema, table, data, keys); err != nil {
-			return nil, err
+		if len(upsertRows) > 0 {
+			data := &plugin.BatchData{Fields: opts.Fields, Spatial: opts.SpatialInfo, Rows: upsertRows}
+			if err := upsertPostgresRowsTx(ctx, tx, schema, table, data, keys); err != nil {
+				return nil, err
+			}
+		}
+		if len(deleteRows) > 0 {
+			if err := deletePostgresRowsTx(ctx, tx, schema, table, deleteRows, keys); err != nil {
+				return nil, err
+			}
 		}
 	}
 	committedOffset := ledger.NextOffset
@@ -128,7 +147,7 @@ func (p *PostgreSQLPlugin) ApplyPartitionedTableChanges(ctx context.Context, con
 		return nil, fmt.Errorf("commit postgresql partitioned change apply: %w", err)
 	}
 	return &plugin.PartitionedTableChangeApplyResult{
-		AppliedRecords: len(rows),
+		AppliedRecords: len(changes),
 		SkippedRecords: skipped,
 		Position:       kafkaOffsetPosition(batch.Partition, committedOffset),
 	}, nil
@@ -252,7 +271,7 @@ func filterAndCoalescePostgresChanges(batch *plugin.PartitionedTableChangeBatch,
 	skipped := 0
 	previousOffset := int64(-1)
 	for index, change := range batch.Changes {
-		if change.Operation != plugin.TableChangeOperationUpsert {
+		if change.Operation != plugin.TableChangeOperationUpsert && change.Operation != plugin.TableChangeOperationDelete {
 			return nil, 0, fmt.Errorf("unsupported table change operation %q at index %d", change.Operation, index)
 		}
 		nextOffset, err := kafkaNextOffset(change.Position, batch.Partition)
@@ -280,7 +299,7 @@ func filterAndCoalescePostgresChanges(batch *plugin.PartitionedTableChangeBatch,
 		if _, exists := byKey[key]; exists {
 			skipped++
 		}
-		byKey[key] = positionedPostgresRow{nextOffset: nextOffset, row: change.Row}
+		byKey[key] = positionedPostgresRow{nextOffset: nextOffset, operation: change.Operation, key: key, row: change.Row}
 	}
 	if len(batch.Changes) > 0 && previousOffset != endOffset {
 		return nil, 0, fmt.Errorf("last table change next_offset %d does not match batch end %d", previousOffset, endOffset)
@@ -289,8 +308,51 @@ func filterAndCoalescePostgresChanges(batch *plugin.PartitionedTableChangeBatch,
 	for _, row := range byKey {
 		rows = append(rows, row)
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].nextOffset < rows[j].nextOffset })
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].nextOffset == rows[j].nextOffset {
+			return rows[i].key < rows[j].key
+		}
+		return rows[i].nextOffset < rows[j].nextOffset
+	})
 	return rows, skipped, nil
+}
+
+func deletePostgresRowsTx(ctx context.Context, tx *sql.Tx, schema, table string, rows []map[string]interface{}, keys []string) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	dialect := sqldialect.ForEngine("postgresql")
+	quotedKeys := make([]string, 0, len(keys))
+	for _, key := range keys {
+		quotedKeys = append(quotedKeys, dialect.QuoteIdentifier(key))
+	}
+	chunkSize := effectivePostgresInsertChunkSize(len(keys), postgresDefaultInsertChunkSize)
+	for start := 0; start < len(rows); start += chunkSize {
+		end := start + chunkSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		args := make([]interface{}, 0, (end-start)*len(keys))
+		tuples := make([]string, 0, end-start)
+		for _, row := range rows[start:end] {
+			placeholders := make([]string, 0, len(keys))
+			for _, key := range keys {
+				value, ok := row[key]
+				if !ok || value == nil {
+					return fmt.Errorf("postgresql delete row is missing non-null key field %q", key)
+				}
+				args = append(args, value)
+				placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)))
+			}
+			tuples = append(tuples, "("+strings.Join(placeholders, ", ")+")")
+		}
+		statement := "DELETE FROM " + dialect.QuoteIdentifier(schema) + "." + dialect.QuoteIdentifier(table) +
+			" WHERE (" + strings.Join(quotedKeys, ", ") + ") IN (" + strings.Join(tuples, ", ") + ")"
+		if _, err := tx.ExecContext(ctx, statement, args...); err != nil {
+			return fmt.Errorf("execute postgresql delete rows %d-%d: %w", start, end, err)
+		}
+	}
+	return nil
 }
 
 func postgresChangeKey(row map[string]interface{}, keys []string) (string, error) {

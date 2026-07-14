@@ -72,6 +72,12 @@ const routes = [
         meta: { requiresAuth: true, title: '三维模型 GLB-addp' }
       },
       {
+        path: 'model-3d-tiles',
+        name: 'Model3DTiles',
+        component: () => import('../views/Model3DTiles.vue'),
+        meta: { requiresAuth: true, title: '三维快显 - 瓦片-addp' }
+      },
+      {
         path: 'gaussian-splat-ksplat',
         name: 'GaussianSplatKSplat',
         component: () => import('../views/GaussianSplatKSplat.vue'),

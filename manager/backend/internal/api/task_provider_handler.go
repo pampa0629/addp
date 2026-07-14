@@ -11,7 +11,9 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
+	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
@@ -1115,6 +1117,7 @@ type TaskExecuteResponse struct {
 // @Success 202 {object} TaskExecuteResponse "执行ID | Execution ID"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Failure 409 {object} map[string]interface{} "任务已有活动执行 | Task already has an active execution"
 // @Router /tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
@@ -1181,6 +1184,10 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, service.ErrTaskNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+			return
+		}
+		if errors.Is(err, service.ErrModel3DTilesTaskExecutionBusy) {
+			c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, manageri18n.MsgModel3DTilesExecutionBusy)})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2033,7 +2040,7 @@ func (h *TaskProviderHandler) ListModel3DTilesTasks(c *gin.Context) {
 
 // CreateModel3DTilesTask POST /api/v1/manager/model3d_tiles_tasks
 // @Summary 创建三维模型 3D Tiles 任务配置 | Create model 3D Tiles generation task configuration
-// @Description 创建分块三维模型瓦片任务。当前源为 OSGB Scene whole item，结果按 target_format 写入 Manager infra MinIO。| Create a model3d tiles task from an OSGB Scene whole item into Manager infra MinIO.
+// @Description 创建或复用分块三维模型瓦片任务。同一 tenant_id、item_fingerprint 和 target_format 返回同一任务 ID；结果写入 Manager infra MinIO。| Create or reuse a model3d tiles task. The same tenant_id, item_fingerprint, and target_format return the same task ID; results are stored in Manager infra MinIO.
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -2155,6 +2162,71 @@ func (h *TaskProviderHandler) DeleteModel3DTilesTask(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+// ListModel3DTilesResults GET /api/v1/manager/model3d_tiles
+// @Summary 列出分块三维模型瓦片快显结果 | List model3d tiles quick view results
+// @Description 列出 Manager infra MinIO 中受管的 3D Tiles 与 S3M 快显结果。| List Manager-owned 3D Tiles and S3M quick view results stored in infra MinIO.
+// @Tags Manager
+// @Produce json
+// @Param item_id query int false "数据项ID | Item ID"
+// @Param item_fingerprint query string false "数据项指纹 | Item fingerprint"
+// @Param task_id query int false "任务ID | Task ID"
+// @Param target_format query string false "目标格式：3d_tiles 或 s3m | Target format: 3d_tiles or s3m"
+// @Param status query string false "状态 | Status"
+// @Param q query string false "关键词 | Keyword"
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "结果列表 | Result list"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /model3d_tiles [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListModel3DTilesResults(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	itemID64, _ := strconv.ParseUint(c.Query("item_id"), 10, 32)
+	taskID64, _ := strconv.ParseUint(c.Query("task_id"), 10, 32)
+	results, total, err := h.model3DTilesTaskSvc.ListResults(c.Request.Context(), repository.Model3DTilesFilter{
+		TenantID: tenantID, ItemID: uint(itemID64), ItemFingerprint: c.Query("item_fingerprint"),
+		TaskID: uint(taskID64), TargetFormat: c.Query("target_format"), Status: c.Query("status"), Q: c.Query("q"),
+		Page: page, PageSize: pageSize,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": results, "total": total, "page": page, "page_size": pageSize})
+}
+
+// DeleteModel3DTilesResult DELETE /api/v1/manager/model3d_tiles/:id
+// @Summary 删除分块三维模型瓦片快显结果 | Delete model3d tiles quick view result
+// @Description 删除 Manager infra MinIO 中的受管 3D Tiles 或 S3M 瓦片，并软删除对应结果记录；不删除源 item、任务定义或 execution 历史。| Delete managed 3D Tiles or S3M assets from Manager infra MinIO and soft-delete the result record without deleting the source item, task definition, or execution history.
+// @Tags Manager
+// @Produce json
+// @Param id path int true "结果 ID | Result ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "结果不存在 | Result not found"
+// @Failure 500 {object} map[string]interface{} "删除失败 | Delete failed"
+// @Router /model3d_tiles/{id} [delete]
+// @Security BearerAuth
+func (h *TaskProviderHandler) DeleteModel3DTilesResult(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidModel3DTilesResultID)
+		return
+	}
+	if err := h.model3DTilesTaskSvc.DeleteResult(c.Request.Context(), uint(id), tenantID); err != nil {
+		if errors.Is(err, service.ErrModel3DTilesResultNotFound) {
+			managerError(c, http.StatusNotFound, manageri18n.MsgModel3DTilesResultNotFound)
+			return
+		}
+		managerErrorWithDetail(c, http.StatusInternalServerError, manageri18n.MsgDeleteModel3DTilesFailed, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, manageri18n.MsgModel3DTilesResultDeleted)})
 }
 
 // ListModel3DGLBTasks GET /api/v1/manager/model_3d_glb_tasks

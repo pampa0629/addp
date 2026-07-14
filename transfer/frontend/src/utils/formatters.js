@@ -57,7 +57,8 @@ export const getTaskStatusLabel = (task) => {
 }
 
 export const getTaskStatusTagType = (task) => {
-  const label = getTaskStatusLabel(task)
+	if (task?.status === 'blocked') return 'danger'
+	const label = getTaskStatusLabel(task)
   const types = {
     执行中: 'primary',
     空闲: 'info',

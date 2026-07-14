@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	commonExecution "github.com/addp/common/execution"
 	"testing"
@@ -181,6 +182,28 @@ func TestRetryExecutionRejectsAppendTask(t *testing.T) {
 	}
 	if len(executions) != 1 {
 		t.Fatalf("execution count = %d, want no new retry execution", len(executions))
+	}
+}
+
+func TestRetryExecutionRejectsSchemaBlockedCDC(t *testing.T) {
+	ctx := context.Background()
+	db := newExecutionServiceTestDB(t)
+	task := createExecutionServiceTestTask(t, db)
+	task.Config = validPostgreSQLCDCTaskConfig()
+	task.Status = models.TaskStatusBlocked
+	task.DesiredState = models.TaskDesiredStateRunning
+	if err := db.Save(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	oldExecution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusFailed)
+	queue := &fakeTaskQueue{}
+	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+	service.SetTaskQueue(queue)
+	if _, err := service.RetryExecution(ctx, uint(oldExecution.ID), uint(task.TenantID), 9); !errors.Is(err, ErrCDCSchemaChangeBlocked) {
+		t.Fatalf("RetryExecution() error = %v, want ErrCDCSchemaChangeBlocked", err)
+	}
+	if queue.enqueued {
+		t.Fatal("schema-blocked CDC retry was enqueued")
 	}
 }
 

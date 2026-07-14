@@ -343,7 +343,7 @@ Transfer 写 Shapefile sidecar 时可以在 executor 内部使用 bucket 内 obj
    ```
 
 3. 查日志：
-   - `logs/transfer-worker.log`：确认 `target_refs` 是否包含 `.prj`。
+   - `logs/transfer-bounded-worker.log`：确认 `target_refs` 是否包含 `.prj`。
    - `logs/meta-worker.log`：如果看到把 object key 第一段当 bucket 的错误，优先检查 Transfer 提交的 `ref_groups.path`。
 
 4. 不要用 MinIO 容器内 `/data/...` 文件系统形态判断对象是否存在。MinIO 后端存储布局可能把对象表现为目录；应通过项目 content reader、MinIO API 或 Meta/Transfer 执行元数据确认。

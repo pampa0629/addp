@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # ADDP Infrastructure Up Script
-# 以容器方式拉起系统库（PostgreSQL、Redis、MinIO），并做健康检查
+# 以容器方式拉起 ADDP 基础设施，并做健康检查
 
 set -euo pipefail
 
@@ -17,7 +17,7 @@ cd "${PROJECT_ROOT}"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}ADDP Infrastructure Up${NC}"
-echo -e "${BLUE}(PostgreSQL/Redis/MinIO/Meilisearch)${NC}"
+echo -e "${BLUE}(PostgreSQL/Redis/MinIO/Meilisearch/Kafka/Kafka Connect)${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -100,6 +100,8 @@ REDIS_PORT=16379
 MINIO_API_PORT=19000
 MINIO_CONSOLE_PORT=19001
 MEILISEARCH_PORT=17700
+KAFKA_PORT=19092
+KAFKA_CONNECT_PORT=18083
 
 # Track if all services are already running (for idempotency)
 ALL_SERVICES_RUNNING=true
@@ -164,6 +166,34 @@ else
   ALL_SERVICES_RUNNING=false
 fi
 
+# Infra Kafka（固定 19092）
+if [ "$(check_port "$KAFKA_PORT")" = "busy" ]; then
+  if port_used_by_container "$KAFKA_PORT" "addp-kafka"; then
+    echo -e "  ${GREEN}✓ Infra Kafka 端口 ${KAFKA_PORT} 已由 addp-kafka 容器使用${NC}"
+  else
+    echo -e "  ${RED}✗ Infra Kafka 端口 ${KAFKA_PORT} 被其他进程占用${NC}"
+    echo -e "    建议：使用 lsof -nP -i :${KAFKA_PORT} 查占用并释放。"
+    exit 1
+  fi
+else
+  echo -e "  ${GREEN}✓ Infra Kafka 端口 ${KAFKA_PORT} 可用${NC}"
+  ALL_SERVICES_RUNNING=false
+fi
+
+# Kafka Connect REST（固定 18083）
+if [ "$(check_port "$KAFKA_CONNECT_PORT")" = "busy" ]; then
+  if port_used_by_container "$KAFKA_CONNECT_PORT" "addp-kafka-connect"; then
+    echo -e "  ${GREEN}✓ Kafka Connect 端口 ${KAFKA_CONNECT_PORT} 已由 addp-kafka-connect 容器使用${NC}"
+  else
+    echo -e "  ${RED}✗ Kafka Connect 端口 ${KAFKA_CONNECT_PORT} 被其他进程占用${NC}"
+    echo -e "    建议：使用 lsof -nP -i :${KAFKA_CONNECT_PORT} 查占用并释放。"
+    exit 1
+  fi
+else
+  echo -e "  ${GREEN}✓ Kafka Connect 端口 ${KAFKA_CONNECT_PORT} 可用${NC}"
+  ALL_SERVICES_RUNNING=false
+fi
+
 echo -e "${YELLOW}▶ 检查 Docker 镜像...${NC}"
 
 # Images to check
@@ -172,6 +202,8 @@ IMAGES=(
   "redis:7-alpine"
   "minio/minio:latest"
   "getmeili/meilisearch:v1.7"
+  "${INFRA_KAFKA_IMAGE:-apache/kafka:4.3.0}"
+  "${KAFKA_CONNECT_IMAGE:-quay.io/debezium/connect:3.6.0.Final}"
 )
 
 for image in "${IMAGES[@]}"; do
@@ -189,10 +221,10 @@ echo -e "${YELLOW}▶ 检查服务运行状态...${NC}"
 # Check if services are already running
 RUNNING_SERVICES=$(docker compose -f docker-compose.infra.yml ps --status running --format "{{.Service}}" 2>/dev/null || true)
 
-if echo "$RUNNING_SERVICES" | grep -qE "postgres|redis|minio|meilisearch"; then
+if echo "$RUNNING_SERVICES" | grep -qE "postgres|redis|minio|meilisearch|kafka|kafka-connect"; then
   echo -e "  ${GREEN}检测到部分服务已在运行${NC}"
   echo "  运行中的服务:"
-  for svc in postgres redis minio meilisearch; do
+  for svc in postgres redis minio meilisearch kafka kafka-connect; do
     if echo "$RUNNING_SERVICES" | grep -q "^${svc}$"; then
       echo -e "    ${GREEN}✓ $svc${NC}"
     fi
@@ -203,16 +235,14 @@ fi
 
 echo ""
 if [ "$ALL_SERVICES_RUNNING" = "true" ]; then
-  echo -e "${GREEN}✓ 所有基础设施服务已在运行，跳过启动步骤（幂等检查通过）${NC}"
-  echo -e "${YELLOW}▶ 直接进行健康检查...${NC}"
-else
-  echo -e "${YELLOW}▶ 启动基础设施容器: postgres, redis, minio, meilisearch${NC}"
-  docker compose -f docker-compose.infra.yml up -d
-  echo ""
-  echo -e "${YELLOW}等待服务就绪...${NC}"
+  echo -e "${GREEN}✓ 基础设施长期服务已在运行，将幂等校验一次性初始化服务${NC}"
 fi
+echo -e "${YELLOW}▶ 启动或校验基础设施容器${NC}"
+docker compose -f docker-compose.infra.yml up -d
+echo ""
+echo -e "${YELLOW}等待服务就绪...${NC}"
 
-max_wait=90
+max_wait=180
 
 # PostgreSQL
 printf "%s" "- PostgreSQL "
@@ -288,6 +318,58 @@ else
   echo -e "${YELLOW}▶ 跳过 Meilisearch 索引初始化（SKIP_MEILISEARCH_INIT=1）${NC}"
 fi
 
+# Infra Kafka
+printf "%s" "- Infra Kafka "
+for i in $(seq 1 ${max_wait}); do
+  kafka_health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' addp-kafka 2>/dev/null || true)
+  if [ "$kafka_health" = "healthy" ]; then
+    echo -e "${GREEN}✓${NC}"
+    break
+  fi
+  sleep 1; printf "%s" "."
+  if [ "$i" -eq "$max_wait" ]; then
+    echo -e "\n${RED}✗ Infra Kafka 等待超时${NC}"
+    docker compose -f docker-compose.infra.yml logs --tail=100 kafka || true
+    exit 1
+  fi
+done
+
+# Kafka internal topics and ACLs
+printf "%s" "- Kafka Init  "
+for i in $(seq 1 ${max_wait}); do
+  init_status=$(docker inspect --format '{{.State.Status}}:{{.State.ExitCode}}' addp-kafka-init 2>/dev/null || true)
+  if [ "$init_status" = "exited:0" ]; then
+    echo -e "${GREEN}✓${NC}"
+    break
+  fi
+  if [[ "$init_status" == exited:* && "$init_status" != "exited:0" ]]; then
+    echo -e "${RED}✗${NC}"
+    docker compose -f docker-compose.infra.yml logs --tail=150 kafka-init || true
+    exit 1
+  fi
+  sleep 1; printf "%s" "."
+  if [ "$i" -eq "$max_wait" ]; then
+    echo -e "\n${RED}✗ Kafka Init 等待超时${NC}"
+    docker compose -f docker-compose.infra.yml logs --tail=150 kafka-init || true
+    exit 1
+  fi
+done
+
+# Kafka Connect
+printf "%s" "- Kafka Connect "
+for i in $(seq 1 ${max_wait}); do
+  if curl -sf "http://localhost:${KAFKA_CONNECT_PORT}/connectors" >/dev/null 2>&1; then
+    echo -e "${GREEN}✓${NC}"
+    break
+  fi
+  sleep 1; printf "%s" "."
+  if [ "$i" -eq "$max_wait" ]; then
+    echo -e "\n${RED}✗ Kafka Connect 等待超时${NC}"
+    docker compose -f docker-compose.infra.yml logs --tail=150 kafka-connect || true
+    exit 1
+  fi
+done
+
 echo ""
 echo -e "${GREEN}基础设施就绪！${NC}"
 echo ""
@@ -297,5 +379,7 @@ echo "  - Redis:       localhost:16379  password=addp_redis"
 echo "  - MinIO API:   http://localhost:19000  user=${MINIO_ROOT_USER:-minioadmin}  password=${MINIO_ROOT_PASSWORD:-minioadmin}"
 echo "  - MinIO Console:http://localhost:19001"
 echo "  - Meilisearch: http://localhost:17700  master_key=${MEILISEARCH_MASTER_KEY:-未设置}"
+echo "  - Infra Kafka: localhost:19092  SASL_PLAINTEXT/PLAIN（内部使用）"
+echo "  - Kafka Connect:http://localhost:18083  （内部控制面）"
 echo ""
 echo -e "${YELLOW}提示：修改默认密码可通过根目录 .env 覆盖相应变量。${NC}"

@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/kafka"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
@@ -31,12 +33,22 @@ type ContinuousProgressStore interface {
 	RecordDiagnostics(ctx context.Context, claim repository.RuntimeLeaseClaim, diagnostics repository.ContinuousDiagnostics) error
 }
 
+type ContinuousCaptureStore interface {
+	GetLatest(ctx context.Context, taskID, tenantID uint) (*models.CaptureResource, error)
+}
+
+type ContinuousSchemaChangeStore interface {
+	RecordSchemaChange(ctx context.Context, claim repository.RuntimeLeaseClaim, change repository.ContinuousSchemaChange) error
+}
+
 type PluginGetter func(engineType string) (engineplugin.EnginePlugin, error)
 
 type DataSessionRunner struct {
 	Resolver                 planner.EngineResolver
 	States                   ContinuousStateStore
 	Progress                 ContinuousProgressStore
+	Captures                 ContinuousCaptureStore
+	InfraKafkaConnection     engineplugin.ConnectionInfo
 	GetPlugin                PluginGetter
 	PollTimeout              time.Duration
 	MaxBytes                 int
@@ -62,13 +74,9 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 	if r == nil || r.Resolver == nil || r.States == nil || r.Progress == nil {
 		return fmt.Errorf("continuous data runner dependencies are required")
 	}
-	spec, err := planner.ParseContinuousTaskSpec(claim.Task.Config)
+	plan, err := r.buildPlan(ctx, claim)
 	if err != nil {
-		return fmt.Errorf("parse continuous task: %w", err)
-	}
-	plan, err := planner.BuildContinuousPlan(spec, r.Resolver)
-	if err != nil {
-		return fmt.Errorf("build continuous plan: %w", err)
+		return err
 	}
 	getPlugin := r.GetPlugin
 	if getPlugin == nil {
@@ -105,8 +113,12 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 	if pollTimeout <= 0 {
 		pollTimeout = 5 * time.Second
 	}
+	consumerGroup := strings.TrimSpace(plan.Source.ConsumerGroup)
+	if consumerGroup == "" {
+		consumerGroup = "addp-transfer-" + claim.Task.ApplyIdentity
+	}
 	reader, err := source.OpenChangeStream(ctx, plan.Source.ConnInfo, plan.Source.Path, engineplugin.ChangeStreamReadOptions{
-		ConsumerGroup: "addp-transfer-" + claim.Task.ApplyIdentity, CommittedPositions: committed,
+		ConsumerGroup: consumerGroup, CommittedPositions: committed,
 		InitialPosition: plan.Source.InitialPosition, PollTimeout: pollTimeout, MaxBytes: r.MaxBytes,
 	})
 	if err != nil {
@@ -187,6 +199,19 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 			}
 			changes, err := mapPartitionRecords(group.records, start, plan)
 			if err != nil {
+				var schemaErr *SchemaChangeError
+				if errors.As(err, &schemaErr) {
+					if recorder, ok := r.Progress.(ContinuousSchemaChangeStore); ok {
+						if recordErr := recorder.RecordSchemaChange(ctx, claim, repository.ContinuousSchemaChange{
+							DetectedAt: now(), Scope: schemaErr.Scope,
+							MissingFields:      append([]string(nil), schemaErr.MissingFields...),
+							UnexpectedFields:   append([]string(nil), schemaErr.UnexpectedFields...),
+							IncompatibleFields: append([]string(nil), schemaErr.IncompatibleFields...),
+						}); recordErr != nil {
+							return fmt.Errorf("record continuous schema change: %w", recordErr)
+						}
+					}
+				}
 				return fmt.Errorf("map continuous partition %q: %w", group.partition, err)
 			}
 			if len(changes) == 0 {
@@ -229,6 +254,51 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 			}
 		}
 	}
+}
+
+func (r *DataSessionRunner) buildPlan(ctx context.Context, claim repository.RuntimeLeaseClaim) (*planner.ContinuousPlan, error) {
+	if planner.IsPostgreSQLCDCTaskConfig(claim.Task.Config) {
+		if r.Captures == nil {
+			return nil, fmt.Errorf("PostgreSQL CDC data runner requires capture resource store")
+		}
+		if len(r.InfraKafkaConnection) == 0 {
+			return nil, fmt.Errorf("PostgreSQL CDC data runner requires Infra Kafka connection")
+		}
+		resource, err := r.Captures.GetLatest(ctx, claim.Task.ID, claim.Task.TenantID)
+		if err != nil {
+			return nil, fmt.Errorf("load PostgreSQL CDC capture generation: %w", err)
+		}
+		if resource.Status != models.CaptureStatusRunning || !resource.TopicCreated || !resource.ConnectorCreated {
+			return nil, fmt.Errorf("PostgreSQL CDC capture generation is not running")
+		}
+		spec, err := planner.ParsePostgreSQLCDCTaskSpec(claim.Task.Config)
+		if err != nil {
+			return nil, fmt.Errorf("parse PostgreSQL CDC task: %w", err)
+		}
+		return planner.BuildPostgreSQLCDCContinuousPlan(spec, r.Resolver, planner.PostgreSQLCDCStreamBinding{
+			ConnInfo: r.InfraKafkaConnection, Path: internalKafkaTopicPath(resource.TopicName),
+			ConsumerGroup: resource.ConsumerGroup, SourceIdentity: resource.SourceIdentity,
+			Database: resource.SourceDatabase, Schema: resource.SourceSchema, Table: resource.SourceTable,
+		}, claim.Task.BatchSize)
+	}
+	spec, err := planner.ParseContinuousTaskSpec(claim.Task.Config)
+	if err != nil {
+		return nil, fmt.Errorf("parse continuous task: %w", err)
+	}
+	plan, err := planner.BuildContinuousPlan(spec, r.Resolver)
+	if err != nil {
+		return nil, fmt.Errorf("build continuous plan: %w", err)
+	}
+	return plan, nil
+}
+
+func internalKafkaTopicPath(topic string) engineplugin.CatalogPath {
+	model := (&kafka.KafkaPlugin{}).CatalogModel()
+	path := engineplugin.CatalogRootPath(model, 0)
+	path.Segments = append(path.Segments, engineplugin.CatalogSegment{
+		Term: kafka.CatalogTermTopic, Kind: kafka.CatalogKindTopic, Name: topic,
+	})
+	return path
 }
 
 func collectContinuousDiagnostics(
@@ -389,12 +459,33 @@ func mapPartitionRecords(records []engineplugin.ChangeRecord, start engineplugin
 		if nextOffset <= startOffset {
 			continue
 		}
-		row, err := decodeAndMapRecord(record, plan)
+		operation := engineplugin.TableChangeOperationUpsert
+		var row map[string]interface{}
+		switch plan.Envelope {
+		case planner.ContinuousEnvelopeRecord:
+			row, err = decodeAndMapRecord(record, plan)
+		case planner.ContinuousEnvelopePostgreSQLDebezium:
+			var event *ChangeEvent
+			event, err = decodePostgreSQLDebeziumRecord(record, plan)
+			if err == nil {
+				row = event.Row
+				switch event.Operation {
+				case changeEventOperationSnapshot, changeEventOperationUpsert:
+					operation = engineplugin.TableChangeOperationUpsert
+				case changeEventOperationDelete:
+					operation = engineplugin.TableChangeOperationDelete
+				default:
+					err = fmt.Errorf("unsupported normalized change event operation %q", event.Operation)
+				}
+			}
+		default:
+			err = fmt.Errorf("unsupported continuous envelope %q", plan.Envelope)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("offset %d: %w", record.Offset, err)
 		}
 		changes = append(changes, engineplugin.PartitionedTableChange{
-			Operation: engineplugin.TableChangeOperationUpsert, Position: record.Position, Row: row,
+			Operation: operation, Position: record.Position, Row: row,
 		})
 	}
 	return changes, nil
@@ -481,8 +572,12 @@ func coerceContinuousValue(value interface{}, fieldType datatype.FieldType) (int
 		return continuousFloat64(value)
 	case datatype.FieldTypeDecimal:
 		switch typed := value.(type) {
+		case string:
+			if _, _, err := big.ParseFloat(typed, 10, 256, big.ToNearestEven); err == nil {
+				return typed, nil
+			}
 		case json.Number:
-			if _, err := strconv.ParseFloat(typed.String(), 64); err == nil {
+			if _, _, err := big.ParseFloat(typed.String(), 10, 256, big.ToNearestEven); err == nil {
 				return typed.String(), nil
 			}
 		case float64:
@@ -496,6 +591,9 @@ func coerceContinuousValue(value interface{}, fieldType datatype.FieldType) (int
 				return typed, nil
 			}
 		}
+		if days, err := continuousInt64(value); err == nil && days >= -719162 && days <= 2932896 {
+			return time.Unix(days*24*60*60, 0).UTC().Format("2006-01-02"), nil
+		}
 	case datatype.FieldTypeTime:
 		if typed, ok := value.(string); ok {
 			for _, layout := range []string{"15:04:05", "15:04:05.999999999"} {
@@ -504,11 +602,17 @@ func coerceContinuousValue(value interface{}, fieldType datatype.FieldType) (int
 				}
 			}
 		}
+		if milliseconds, err := continuousInt64(value); err == nil && milliseconds >= 0 && milliseconds < 24*60*60*1000 {
+			return time.UnixMilli(milliseconds).UTC().Format("15:04:05.999"), nil
+		}
 	case datatype.FieldTypeTimestamp:
 		if typed, ok := value.(string); ok {
 			if parsed, err := time.Parse(time.RFC3339Nano, typed); err == nil {
 				return parsed, nil
 			}
+		}
+		if milliseconds, err := continuousInt64(value); err == nil {
+			return time.UnixMilli(milliseconds).UTC(), nil
 		}
 	case datatype.FieldTypeUUID:
 		if typed, ok := value.(string); ok {
@@ -517,6 +621,9 @@ func coerceContinuousValue(value interface{}, fieldType datatype.FieldType) (int
 			}
 		}
 	case datatype.FieldTypeJSON:
+		if typed, ok := value.(string); ok && json.Valid([]byte(typed)) {
+			return typed, nil
+		}
 		encoded, err := json.Marshal(value)
 		if err == nil {
 			return string(encoded), nil

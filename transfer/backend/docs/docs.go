@@ -300,7 +300,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "为失败执行创建新的 retry 执行记录，并按 restartable 语义从头重新入队执行 | Create a new retry execution for a failed execution and enqueue it from the beginning with restartable semantics",
+                "description": "为允许重试的失败 bounded execution 创建 restartable retry；continuous execution 和 schema drift blocked CDC 不支持 retry。| Create a restartable retry for an eligible failed bounded execution. Continuous executions and schema-drift-blocked CDC do not support retry.",
                 "produces": [
                     "application/json"
                 ],
@@ -323,6 +323,15 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "CDC 被结构变化阻塞 | CDC blocked by schema change",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "500": {
@@ -349,71 +358,6 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/provider-tasks": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "仅返回 runtime.boundary=bounded 的任务，continuous task 不进入 Orchestrator v1 发现结果。| Return only runtime.boundary=bounded tasks; continuous tasks are excluded from Orchestrator v1 discovery.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "任务管理 | Task Management"
-                ],
-                "summary": "获取 TaskProvider bounded 任务列表 | List bounded TaskProvider tasks",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "default": 1,
-                        "description": "页码 | Page number",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 100,
-                        "description": "每页大小 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "任务类型，固定为 sync | Task type, fixed to sync",
-                        "name": "task_type",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.ListProviderTasksResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -485,7 +429,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建 bounded Transfer 任务。配置必须使用 runtime.boundary、load.mode 和 target.policy.apply_mode；PostgreSQL watermark 增量需声明复合游标与目标 keys。旧 mode/write_mode 字段会被拒绝。| Create a bounded Transfer task using runtime.boundary, load.mode, and target.policy.apply_mode. PostgreSQL watermark incremental tasks must declare a composite cursor and target keys. Legacy mode/write_mode fields are rejected.",
+                "description": "创建 bounded、业务 Kafka continuous 或 PostgreSQL CDC 任务。配置必须使用 runtime.boundary、load.mode、load.change_detection 和 target.policy.apply_mode；CDC 第一版固定为 PostgreSQL 单表 initial_snapshot 和 PostgreSQL 新目标表 upsert_delete。旧 mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka continuous, or PostgreSQL CDC task using runtime.boundary, load.mode, load.change_detection, and target.policy.apply_mode. CDC v1 is limited to a single PostgreSQL table with initial_snapshot and a new PostgreSQL upsert_delete target. Legacy mode/write_mode fields are rejected.",
                 "consumes": [
                     "application/json"
                 ],
@@ -827,7 +771,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "bounded 任务关闭自身定时调度；continuous 任务将 desired_state 置为 paused 并通知 runtime 取消当前 execution。| Disable a bounded task schedule, or set a continuous task desired_state to paused and request runtime cancellation.",
+                "description": "bounded 任务关闭自身定时调度；continuous 任务将 desired_state 置为 paused 并通知 runtime 取消当前 execution；schema drift blocked CDC 只能 Stop。| Disable a bounded task schedule, or set a continuous task desired_state to paused and request runtime cancellation. Schema-drift-blocked CDC can only be stopped.",
                 "produces": [
                     "application/json"
                 ],
@@ -854,8 +798,26 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "409": {
+                        "description": "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "捕获控制面不可用 | Capture control unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -873,7 +835,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "bounded 任务恢复自身定时调度；continuous 任务创建新的 pending execution 并从 committed position 恢复。| Re-enable a bounded task schedule, or create a new pending continuous execution that resumes from committed position.",
+                "description": "bounded 任务恢复自身定时调度；continuous 任务创建新的 pending execution 并从 committed position 恢复；schema drift blocked CDC 不支持恢复，必须 Stop 后新建任务和目标表。| Re-enable a bounded task schedule, or create a new pending continuous execution that resumes from committed position. Schema-drift-blocked CDC cannot resume and must be stopped and recreated with a new target table.",
                 "produces": [
                     "application/json"
                 ],
@@ -900,8 +862,26 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "409": {
+                        "description": "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "捕获控制面不可用 | Capture control unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -919,7 +899,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "启动任务执行，创建新的执行记录 | Start task execution and create a new execution record",
+                "description": "启动任务执行并创建执行记录；PostgreSQL CDC 首次启动会先创建并确认 capture generation，普通中断恢复时复用同一 generation；schema drift blocked 任务不得再次启动。| Start task execution and create an execution record. PostgreSQL CDC provisions and verifies its capture generation before the first runtime session and reuses that generation for normal interruption recovery; schema-drift-blocked tasks cannot be started again.",
                 "consumes": [
                     "application/json"
                 ],
@@ -955,6 +935,15 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "409": {
+                        "description": "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "500": {
                         "description": "服务器错误 | Server error",
                         "schema": {
@@ -974,7 +963,10 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "将 continuous task 的 desired_state 置为 stopped，并通知 runtime 取消当前 execution；bounded 任务不支持此操作。| Set a continuous task desired_state to stopped and request runtime cancellation; bounded tasks do not support this operation.",
+                "description": "普通业务 Kafka continuous stop 保留 committed position；PostgreSQL CDC stop 是不可逆终态，必须提交 confirmed=true 且 confirmation_text 与任务名称完全一致，并删除 ADDP-owned connector、slot、publication 和 CDC topic。| Business Kafka continuous stop keeps committed positions. PostgreSQL CDC stop is irreversible and requires confirmed=true plus confirmation_text exactly matching the task name; ADDP-owned connector, slot, publication, and CDC topic are deleted.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -989,6 +981,14 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "CDC 不可逆停止确认；普通 Kafka continuous 可省略 | Irreversible CDC stop confirmation; optional for business Kafka continuous",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.StopTaskRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -1010,8 +1010,26 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "409": {
+                        "description": "CDC 已永久停止 | CDC permanently stopped",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "捕获控制面不可用 | Capture control unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1063,7 +1081,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "任务定义状态: idle, running | Task definition status",
+                        "description": "任务定义状态: idle, running, blocked | Task definition status: idle, running, blocked",
                         "name": "status",
                         "in": "query"
                     },
@@ -1233,6 +1251,45 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "github_com_addp_transfer_internal_models.CaptureStatus": {
+            "type": "string",
+            "enum": [
+                "provisioning",
+                "running",
+                "failed",
+                "cleaning",
+                "cleanup_failed",
+                "stopped"
+            ],
+            "x-enum-varnames": [
+                "CaptureStatusProvisioning",
+                "CaptureStatusRunning",
+                "CaptureStatusFailed",
+                "CaptureStatusCleaning",
+                "CaptureStatusCleanupFailed",
+                "CaptureStatusStopped"
+            ]
+        },
+        "github_com_addp_transfer_internal_models.CaptureSummary": {
+            "type": "object",
+            "properties": {
+                "connector_status": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "integer"
+                },
+                "last_observed_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureStatus"
+                },
+                "stopped_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.CreateTaskRequestDoc": {
             "type": "object",
             "properties": {
@@ -1351,6 +1408,17 @@ const docTemplate = `{
             "properties": {
                 "time.Time": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.StopTaskRequest": {
+            "type": "object",
+            "properties": {
+                "confirmation_text": {
+                    "type": "string"
+                },
+                "confirmed": {
+                    "type": "boolean"
                 }
             }
         },
@@ -1542,24 +1610,35 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "idle",
-                "running"
+                "running",
+                "blocked"
             ],
             "x-enum-comments": {
+                "TaskStatusBlocked": "运行被不可恢复条件阻塞，只允许终止或重建",
                 "TaskStatusIdle": "空闲（未执行或执行完成）",
                 "TaskStatusRunning": "执行中"
             },
             "x-enum-descriptions": [
                 "空闲（未执行或执行完成）",
-                "执行中"
+                "执行中",
+                "运行被不可恢复条件阻塞，只允许终止或重建"
             ],
             "x-enum-varnames": [
                 "TaskStatusIdle",
-                "TaskStatusRunning"
+                "TaskStatusRunning",
+                "TaskStatusBlocked"
             ]
         },
         "github_com_addp_transfer_internal_models.TransferChangeDetectionDoc": {
             "type": "object",
             "properties": {
+                "bootstrap": {
+                    "type": "string",
+                    "enum": [
+                        "initial_snapshot"
+                    ],
+                    "example": "initial_snapshot"
+                },
                 "end": {
                     "type": "string",
                     "enum": [
@@ -1591,7 +1670,8 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "watermark",
-                        "kafka"
+                        "kafka",
+                        "cdc"
                     ],
                     "example": "watermark"
                 }
@@ -1776,7 +1856,8 @@ const docTemplate = `{
                     "enum": [
                         "replace",
                         "append",
-                        "upsert"
+                        "upsert",
+                        "upsert_delete"
                     ],
                     "example": "replace"
                 },
@@ -1799,6 +1880,9 @@ const docTemplate = `{
                 },
                 "batch_size": {
                     "type": "integer"
+                },
+                "capture": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureSummary"
                 },
                 "config": {
                     "description": "Reader-Transform-Writer 管道配置",

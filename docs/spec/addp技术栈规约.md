@@ -8,12 +8,14 @@
 - **数据库**: PostgreSQL 15 (所有模块使用 schema 隔离: system, manager, meta, transfer, orchestrator, develop)
 - **缓存/队列**: Redis 7
 - **对象存储**: MinIO (兼容 S3)
+- **Infra Kafka**: Apache Kafka 4.3.0，KRaft 模式
+- **Kafka Connect / Debezium**: `quay.io/debezium/connect:3.6.0.Final`，内置 Kafka Connect 4.3.0；PostgreSQL Connector 3.6.0.Final
 - **任务队列**: Asynq (基于 Redis,用于 Transfer 模块), Cron (用于 Meta 模块调度)
 - **空间计算**: GeoPython Workflow Engine (基于 Python 的空间工作流执行引擎,内存 GeoDataFrame 处理)
 
 ### Go 依赖版本规范
 
-为确保所有模块依赖版本一致，ADDP 平台使用以下统一的 Go 依赖版本（最后更新: 2025-12-17）：
+为确保所有模块依赖版本一致，ADDP 平台使用以下统一的 Go 依赖版本（最后更新: 2026-07-13）：
 
 #### 核心框架
 

@@ -18,3 +18,12 @@ other = "ref 中的 ID 无效"
 
 [service.success.deleted]
 other = "删除成功"
+
+[service.err.snapshot_check_failed]
+other = "检查查询服务依赖快照失败"
+
+[service.err.snapshot_refresh_failed]
+other = "刷新查询服务依赖快照失败"
+
+[service.err.sql_output_contract_failed]
+other = "检测 SQL 输出契约失败"

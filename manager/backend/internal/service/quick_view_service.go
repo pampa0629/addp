@@ -1139,7 +1139,7 @@ func (s *QuickViewService) applyModel3DTilesCapability(ctx context.Context, capa
 			info.TaskID = result.TaskID
 			info.LastExecutionID = result.LastExecutionID
 			if result.Status == models.Model3DTilesStatusReady {
-				info.PreviewURL = model3DTilesAssetURL(result.ID, result.ManifestRef)
+				info.PreviewURL = model3DTilesAssetURL(result.ID, result.ManifestRef, result.LastExecutionID)
 				info.CanGenerate = false
 				info.UnavailableReason = "result_ready"
 				if !capability.CanUseQuickView {
@@ -1165,8 +1165,12 @@ func (s *QuickViewService) applyModel3DTilesCapability(ctx context.Context, capa
 	return nil
 }
 
-func model3DTilesAssetURL(id uint, manifestRef string) string {
-	return fmt.Sprintf("/api/v1/manager/model3d_tiles/%d/assets/%s", id, strings.TrimPrefix(strings.TrimSpace(manifestRef), "/"))
+func model3DTilesAssetURL(id uint, manifestRef string, executionID *string) string {
+	result := fmt.Sprintf("/api/v1/manager/model3d_tiles/%d/assets/%s", id, strings.TrimPrefix(strings.TrimSpace(manifestRef), "/"))
+	if executionID != nil && strings.TrimSpace(*executionID) != "" {
+		result += "?version=" + url.QueryEscape(strings.TrimSpace(*executionID))
+	}
+	return result
 }
 
 func model3DTilesRenderSource(targetFormat string) string {

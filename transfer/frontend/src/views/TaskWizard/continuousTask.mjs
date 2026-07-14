@@ -17,6 +17,10 @@ export function isKafkaTopicSource(engineType, locator) {
   return String(engineType || '').trim().toLowerCase() === 'kafka' && locatorType(locator) === 'topic'
 }
 
+export function isPostgreSQLTableSource(engineType, locator) {
+  return String(engineType || '').trim().toLowerCase() === 'postgresql' && locatorType(locator) === 'table'
+}
+
 export function continuousMappedTargetKeys(fieldMappings, sourceKeys) {
   const mappings = Array.isArray(fieldMappings) ? fieldMappings : []
   return normalizedNames(sourceKeys).map(sourceKey => {
@@ -50,6 +54,13 @@ export function continuousMappingsValid(fieldMappings, sourceKeys) {
   })
 }
 
+export function cdcMappingsCoverSourceFields(fieldMappings, sourceFields) {
+	const mapped = normalizedNames((Array.isArray(fieldMappings) ? fieldMappings : []).map(item => item?.source_field))
+	const source = normalizedNames((Array.isArray(sourceFields) ? sourceFields : []).map(item => item?.name))
+	if (mapped.length === 0 || mapped.length !== source.length) return false
+	return source.every(field => mapped.some(mappedField => sameName(mappedField, field)))
+}
+
 export function buildContinuousSourceEndpoint(locator, sourceKeys, initialPosition, pollBatchSize) {
   return {
     locator: String(locator || '').trim(),
@@ -67,6 +78,14 @@ export function buildContinuousSourceEndpoint(locator, sourceKeys, initialPositi
       },
       poll_batch_size: Number(pollBatchSize)
     }
+  }
+}
+
+export function buildPostgreSQLCDCSourceEndpoint(locator) {
+  return {
+    locator: String(locator || '').trim(),
+    data_type: 'table',
+    representation: 'native'
   }
 }
 

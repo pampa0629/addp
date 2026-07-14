@@ -83,15 +83,49 @@ func TestSupervisorClassifiesRunnerFencingAfterPauseAsCancelled(t *testing.T) {
 	}
 }
 
+func TestSupervisorMarksSchemaChangeBlocked(t *testing.T) {
+	store := &fakeLeaseStore{
+		claim: &repository.RuntimeLeaseClaim{
+			Task:      models.TransferTask{ID: 44, DesiredState: models.TaskDesiredStateRunning},
+			Execution: commonExecution.TaskExecution{ExecutionID: "exec-44", Status: commonExecution.ExecutionStatusRunning},
+			Lease:     models.RuntimeLease{TaskID: 44, OwnerInstanceID: "worker-a", FencingToken: 9},
+		},
+		desiredState: models.TaskDesiredStateRunning,
+		finished:     make(chan finishCall, 1),
+	}
+	runner := SessionRunnerFunc(func(context.Context, repository.RuntimeLeaseClaim) error {
+		return &SchemaChangeError{Scope: "Debezium after", UnexpectedFields: []string{"extra"}}
+	})
+	supervisor, err := NewSupervisor(store, runner, Config{
+		OwnerInstanceID: "worker-a", Capacity: 1, LeaseDuration: 100 * time.Millisecond,
+		HeartbeatInterval: 10 * time.Millisecond, ClaimInterval: 5 * time.Millisecond,
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewSupervisor() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = supervisor.Run(ctx) }()
+	select {
+	case finished := <-store.finished:
+		if finished.status != commonExecution.ExecutionStatusFailed || finished.reason != "schema_change_blocked" {
+			t.Fatalf("finish = %#v, want schema_change_blocked failure", finished)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("supervisor did not finish schema-blocked session")
+	}
+}
+
 type finishCall struct {
 	status string
 	reason string
 }
 
 type fakeLeaseStore struct {
-	mu       sync.Mutex
-	claim    *repository.RuntimeLeaseClaim
-	finished chan finishCall
+	mu           sync.Mutex
+	claim        *repository.RuntimeLeaseClaim
+	desiredState models.TaskDesiredState
+	finished     chan finishCall
 }
 
 func (f *fakeLeaseStore) ClaimNext(context.Context, string, time.Time, time.Duration) (*repository.RuntimeLeaseClaim, error) {
@@ -112,5 +146,8 @@ func (f *fakeLeaseStore) Finish(_ context.Context, _ repository.RuntimeLeaseClai
 }
 
 func (f *fakeLeaseStore) DesiredState(context.Context, uint) (models.TaskDesiredState, error) {
-	return models.TaskDesiredStatePaused, nil
+	if f.desiredState == "" {
+		return models.TaskDesiredStatePaused, nil
+	}
+	return f.desiredState, nil
 }

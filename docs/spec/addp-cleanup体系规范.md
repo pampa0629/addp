@@ -124,13 +124,21 @@ Transfer、Develop、Service、Asset、Portal 等模块按同一原则处理：
 - 可以消费 System 或 owner 模块发布的生命周期事件。
 - 不得让其他模块代替自己解释私有表、任务定义或物理路径。
 
-Transfer 第一阶段资源回收执行方只治理 Transfer-owned 任务定义残留：
+Transfer 已实现的资源回收执行方当前只治理 Transfer-owned 任务定义残留：
 
 - `engine.deleted` 时，扫描 source / target endpoint locator 引用该 engine 的 `transfer.transfer_tasks`。
 - `logical_cleanup` 禁用命中的任务定义、清空下一次调度并恢复 idle 状态。
 - `physical_cleanup` 删除 Transfer 任务定义本身；不删除任务曾经写入的 target 业务数据。
 - 没有明确 lifecycle context 的普通 scan 不应把全部 Transfer 任务定义视作待回收对象。
 - Transfer 不拥有目标引擎中的表、文件或对象生命周期；这些资源只有在被其他 owner 模块登记为 artifact state 时，才由对应 owner executor 清理。
+
+PostgreSQL CDC v1 capture control plane 已实现，Transfer cleanup executor 必须治理由 capture supervisor 明确登记的任务级捕获资源：
+
+- ADDP-created Kafka Connect connector、replication slot、publication、Infra Kafka CDC topic 和 consumer group 归 Transfer owner；按 `task_id + capture_generation` 精确定位，不按 topic prefix 或数据库名称猜测。
+- CDC stop 先执行同一套幂等 task-level cleanup；System cleanup 负责补偿残留，不建立第二套删除实现。
+- Kafka Connect config/offset/status 等共享内部 topic、Kafka broker 数据目录和 ACL 基础配置归 Infra 部署 owner，不得由单个 Transfer task cleanup 删除。
+- cleanup 不删除目标业务表、目标业务行、目标 `addp_transfer.apply_positions`、`common.task_executions` 或 System 审计日志。
+- slot/publication 只允许删除资源登记中标记为 ADDP-created 且 identity 完全匹配的对象，不得按同名规则删除用户已有资源。
 
 Service 第一阶段资源回收执行方只治理 Service-owned 服务发布定义和动态图层状态：
 

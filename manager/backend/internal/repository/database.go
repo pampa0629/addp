@@ -699,6 +699,39 @@ func ensureModel3DTilesSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
+		WITH ranked AS (
+			SELECT
+				id,
+				ROW_NUMBER() OVER (
+					PARTITION BY tenant_id, config->'source'->>'item_fingerprint', config->>'target_format'
+					ORDER BY updated_at DESC, id DESC
+				) AS rn
+			FROM manager.model3d_tiles_tasks
+			WHERE deleted_at IS NULL
+				AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
+				AND COALESCE(config->>'target_format', '') <> ''
+		)
+		UPDATE manager.model3d_tiles_tasks AS tasks
+		SET deleted_at = NOW(), updated_at = NOW(), enabled = false
+		FROM ranked
+		WHERE tasks.id = ranked.id AND ranked.rn > 1
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_model3d_tiles_tasks_source_format_unique
+		ON manager.model3d_tiles_tasks (
+			tenant_id,
+			((config->'source'->>'item_fingerprint')),
+			((config->>'target_format'))
+		)
+		WHERE deleted_at IS NULL
+			AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
+			AND COALESCE(config->>'target_format', '') <> ''
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_model3d_tiles_current_unique
 		ON manager.model3d_tiles (tenant_id, item_fingerprint, target_format)
 		WHERE deleted_at IS NULL AND status <> 'deleted'

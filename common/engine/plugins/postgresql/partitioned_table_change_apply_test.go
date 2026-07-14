@@ -29,6 +29,32 @@ func TestFilterAndCoalescePostgresChangesSkipsReplayAndKeepsLatestKey(t *testing
 	}
 }
 
+func TestFilterAndCoalescePostgresChangesKeepsLatestDeletePerKey(t *testing.T) {
+	batch := &plugin.PartitionedTableChangeBatch{
+		Partition: "0",
+		Changes: []plugin.PartitionedTableChange{
+			{Operation: plugin.TableChangeOperationUpsert, Position: kafkaOffsetPosition("0", 6), Row: map[string]interface{}{"id": int64(1), "name": "created"}},
+			{Operation: plugin.TableChangeOperationDelete, Position: kafkaOffsetPosition("0", 7), Row: map[string]interface{}{"id": int64(1)}},
+			{Operation: plugin.TableChangeOperationDelete, Position: kafkaOffsetPosition("0", 8), Row: map[string]interface{}{"id": int64(2)}},
+			{Operation: plugin.TableChangeOperationUpsert, Position: kafkaOffsetPosition("0", 9), Row: map[string]interface{}{"id": int64(2), "name": "recreated"}},
+		},
+	}
+
+	changes, skipped, err := filterAndCoalescePostgresChanges(batch, []string{"id"}, 5, 5, 9)
+	if err != nil {
+		t.Fatalf("filterAndCoalescePostgresChanges() error = %v", err)
+	}
+	if skipped != 2 || len(changes) != 2 {
+		t.Fatalf("skipped=%d changes=%d, want skipped=2 changes=2", skipped, len(changes))
+	}
+	if changes[0].operation != plugin.TableChangeOperationDelete || changes[0].row["id"] != int64(1) {
+		t.Fatalf("first change = %#v, want id=1 delete", changes[0])
+	}
+	if changes[1].operation != plugin.TableChangeOperationUpsert || changes[1].row["id"] != int64(2) {
+		t.Fatalf("second change = %#v, want id=2 upsert", changes[1])
+	}
+}
+
 func TestFilterAndCoalescePostgresChangesRejectsNonIncreasingPositions(t *testing.T) {
 	batch := &plugin.PartitionedTableChangeBatch{
 		Partition: "0",

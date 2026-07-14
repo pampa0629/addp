@@ -162,3 +162,18 @@ other = "Shapefile 组件必须使用相同 basename"
 
 [manager.error.import_zip_missing_required]
 other = "缺少同一 basename 的 .shp/.dbf/.shx 组件集合"
+
+[manager.error.invalid_model3d_tiles_result_id]
+other = "无效的三维瓦片快显结果 ID"
+
+[manager.error.model3d_tiles_result_not_found]
+other = "三维瓦片快显结果不存在"
+
+[manager.error.delete_model3d_tiles_failed]
+other = "删除三维瓦片快显结果失败"
+
+[manager.error.model3d_tiles_execution_busy]
+other = "该三维瓦片快显任务正在生成，不能重复执行"
+
+[manager.model3d_tiles.result_deleted]
+other = "三维瓦片快显结果已删除"

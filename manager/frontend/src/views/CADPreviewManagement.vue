@@ -38,7 +38,7 @@
             <el-table-column :label="t('manager.cadPreviewManagement.updatedAt')" width="170">
               <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
             </el-table-column>
-            <el-table-column :label="t('manager.cadPreviewManagement.actions')" width="360" fixed="right">
+            <el-table-column :label="t('manager.cadPreviewManagement.actions')" width="420" fixed="right">
               <template #default="{ row }">
                 <div class="row-actions">
                   <el-button type="primary" size="small" :loading="executingId === row.id" @click="executeTask(row)">
@@ -496,7 +496,13 @@ onMounted(async () => {
 .toolbar,
 .filter-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .toolbar-tip { flex: 1; min-width: 260px; color: var(--el-text-color-secondary); font-size: 13px; }
-.row-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
 .pagination { margin-top: 16px; justify-content: flex-end; }
 .status-filter { width: 150px; }
 .keyword-filter { width: 260px; }

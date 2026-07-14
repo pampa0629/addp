@@ -19,7 +19,7 @@
 | `batch_size` | 默认批大小。 |
 | `enabled` | 定时任务是否启用。 |
 | `auto_scan_metadata` | 成功后是否触发 Meta deep scan。 |
-| `status` | `idle` 或 `running`。 |
+| `status` | `idle`、`running` 或 `blocked`；`blocked` 表示 PostgreSQL CDC 当前 generation 被 schema drift 永久阻塞，只允许 Stop。 |
 | `desired_state` | continuous runtime 用户期望状态：`running` / `paused` / `stopped`，默认 `stopped`；bounded task 不消费。 |
 | `progress` | 当前任务进度百分比。 |
 | `created_by` | 创建人 ID。 |
@@ -118,10 +118,10 @@
 | `DELETE` | `/task-definitions/:id` | 删除任务定义。 |
 | `POST` | `/task-definitions/:id/start` | bounded 创建 execution 并入队；continuous 原子设置 running 并创建 pending execution。 |
 | `POST` | `/task-definitions/:id/pause` | bounded 关闭 owner schedule；continuous 设置 paused 并通知 runtime 取消 execution。 |
-| `POST` | `/task-definitions/:id/resume` | bounded 恢复 owner schedule；continuous 设置 running 并创建新 pending execution。 |
+| `POST` | `/task-definitions/:id/resume` | bounded 恢复 owner schedule；未阻塞的 continuous 设置 running 并创建新 pending execution；CDC `status=blocked` 返回 409。 |
 | `POST` | `/task-definitions/:id/stop` | 仅 continuous：设置 stopped 并通知 runtime 取消 execution。 |
 | `GET` | `/task-definitions/:id/executions` | 查询任务执行记录。 |
 
-bounded 的 `/task-definitions/:id/resume` 是调度控制 API；PostgreSQL watermark execution 的 resume 由新 execution 自动读取 `transfer.sync_states` 完成。continuous resume 总是创建新 execution，不复用已取消 execution。
+bounded 的 `/task-definitions/:id/resume` 是调度控制 API；PostgreSQL watermark execution 的 resume 由新 execution 自动读取 `transfer.sync_states` 完成。普通 continuous resume 总是创建新 execution，不复用已取消 execution；PostgreSQL CDC schema drift blocked generation 不支持 resume 或 retry。
 
-TaskProvider 注册的任务发现地址为服务端强制过滤 bounded 的 `/provider-tasks`，避免 Orchestrator v1 选择 continuous task；普通用户任务列表继续使用 `/tasks`。
+TaskProvider 注册的任务发现地址是唯一标准 `/tasks`。服务端在请求带 `task_type=sync` 时强制过滤为 bounded，避免 Orchestrator v1 选择 continuous task；Console 不带 `task_type` 时仍通过同一路由查询全部任务。不保留 `/provider-tasks` 私有路由。

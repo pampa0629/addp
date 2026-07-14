@@ -72,6 +72,7 @@ type TaskStatus string
 const (
 	TaskStatusIdle    TaskStatus = "idle"    // 空闲（未执行或执行完成）
 	TaskStatusRunning TaskStatus = "running" // 执行中
+	TaskStatusBlocked TaskStatus = "blocked" // 运行被不可恢复条件阻塞，只允许终止或重建
 )
 
 // TaskDesiredState 是 continuous runtime 的用户期望状态。
@@ -106,13 +107,14 @@ type TransferTask struct {
 	Progress         float64          `gorm:"type:numeric(5,2);default:0" json:"progress"`
 	CreatedBy        *uint            `json:"created_by,omitempty"`
 	// BaseTask 基类字段
-	LastExecutionID     *string        `gorm:"size:36" json:"last_execution_id,omitempty"`
-	LastExecutionStatus *string        `gorm:"size:20" json:"last_execution_status,omitempty"`
-	LastRunAt           *time.Time     `json:"last_run_at,omitempty"`
-	NextRunAt           *time.Time     `json:"next_run_at,omitempty"`
-	CreatedAt           time.Time      `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt           time.Time      `gorm:"autoUpdateTime" json:"updated_at"`
-	DeletedAt           gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	LastExecutionID     *string         `gorm:"size:36" json:"last_execution_id,omitempty"`
+	LastExecutionStatus *string         `gorm:"size:20" json:"last_execution_status,omitempty"`
+	LastRunAt           *time.Time      `json:"last_run_at,omitempty"`
+	NextRunAt           *time.Time      `json:"next_run_at,omitempty"`
+	CreatedAt           time.Time       `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt           time.Time       `gorm:"autoUpdateTime" json:"updated_at"`
+	DeletedAt           gorm.DeletedAt  `gorm:"index" json:"deleted_at,omitempty"`
+	Capture             *CaptureSummary `gorm:"-" json:"capture,omitempty"`
 }
 
 // SyncState is the single committed-position fact for one Transfer task source partition.
@@ -148,6 +150,71 @@ type RuntimeLease struct {
 }
 
 func (RuntimeLease) TableName() string { return "transfer.runtime_leases" }
+
+type CaptureStatus string
+
+const (
+	CaptureStatusProvisioning  CaptureStatus = "provisioning"
+	CaptureStatusRunning       CaptureStatus = "running"
+	CaptureStatusFailed        CaptureStatus = "failed"
+	CaptureStatusCleaning      CaptureStatus = "cleaning"
+	CaptureStatusCleanupFailed CaptureStatus = "cleanup_failed"
+	CaptureStatusStopped       CaptureStatus = "stopped"
+)
+
+// CaptureResource 是 PostgreSQL CDC task generation 的资源登记事实。
+// 只登记 ADDP 创建且拥有生命周期的 connector、slot、publication、topic 和 consumer group。
+type CaptureResource struct {
+	ID                          uint          `gorm:"primaryKey" json:"id"`
+	TaskID                      uint          `gorm:"not null;uniqueIndex:uq_transfer_capture_generation" json:"task_id"`
+	TenantID                    uint          `gorm:"not null;index" json:"tenant_id"`
+	Generation                  uint64        `gorm:"not null;uniqueIndex:uq_transfer_capture_generation" json:"generation"`
+	ConnectorName               string        `gorm:"type:varchar(255);not null;uniqueIndex:uq_transfer_capture_connector" json:"connector_name"`
+	TopicName                   string        `gorm:"type:varchar(255);not null;uniqueIndex:uq_transfer_capture_topic" json:"topic_name"`
+	ConsumerGroup               string        `gorm:"type:varchar(255);not null;uniqueIndex:uq_transfer_capture_group" json:"consumer_group"`
+	SlotName                    string        `gorm:"type:varchar(63);not null;uniqueIndex:uq_transfer_capture_slot" json:"slot_name"`
+	PublicationName             string        `gorm:"type:varchar(63);not null;uniqueIndex:uq_transfer_capture_publication" json:"publication_name"`
+	SourceIdentity              string        `gorm:"type:text;not null" json:"source_identity"`
+	SourceConnectionFingerprint string        `gorm:"type:varchar(64);not null" json:"source_connection_fingerprint"`
+	SourceEngineID              uint          `gorm:"not null" json:"source_engine_id"`
+	SourceDatabase              string        `gorm:"type:varchar(255);not null" json:"source_database"`
+	SourceSchema                string        `gorm:"type:varchar(255);not null" json:"source_schema"`
+	SourceTable                 string        `gorm:"type:varchar(255);not null" json:"source_table"`
+	Status                      CaptureStatus `gorm:"type:varchar(32);not null;index" json:"status"`
+	ConnectorStatus             string        `gorm:"type:varchar(32)" json:"connector_status,omitempty"`
+	ConnectorError              string        `gorm:"type:text" json:"connector_error,omitempty"`
+	TopicCreated                bool          `gorm:"not null;default:false" json:"topic_created"`
+	ConnectorCreated            bool          `gorm:"not null;default:false" json:"connector_created"`
+	SlotOwned                   bool          `gorm:"not null;default:true" json:"slot_owned"`
+	PublicationOwned            bool          `gorm:"not null;default:true" json:"publication_owned"`
+	ResourceVersion             uint64        `gorm:"not null;default:1" json:"resource_version"`
+	LastObservedAt              *time.Time    `json:"last_observed_at,omitempty"`
+	StoppedAt                   *time.Time    `json:"stopped_at,omitempty"`
+	CreatedAt                   time.Time     `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt                   time.Time     `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+func (CaptureResource) TableName() string { return "transfer.capture_resources" }
+
+// CaptureSummary 是任务 API 可展示的捕获状态；内部资源名称和连接身份不对外暴露。
+type CaptureSummary struct {
+	Generation      uint64        `json:"generation"`
+	Status          CaptureStatus `json:"status"`
+	ConnectorStatus string        `json:"connector_status,omitempty"`
+	LastObservedAt  *time.Time    `json:"last_observed_at,omitempty"`
+	StoppedAt       *time.Time    `json:"stopped_at,omitempty"`
+}
+
+func NewCaptureSummary(resource *CaptureResource) *CaptureSummary {
+	if resource == nil {
+		return nil
+	}
+	return &CaptureSummary{
+		Generation: resource.Generation, Status: resource.Status,
+		ConnectorStatus: resource.ConnectorStatus,
+		LastObservedAt:  resource.LastObservedAt, StoppedAt: resource.StoppedAt,
+	}
+}
 
 // TableName 指定表名（带 schema 前缀）
 func (TransferTask) TableName() string {
@@ -223,6 +290,12 @@ type UpdateTaskRequest struct {
 	BatchSize        *int                   `json:"batch_size"`
 	Enabled          *bool                  `json:"enabled"`
 	AutoScanMetadata *bool                  `json:"auto_scan_metadata"`
+}
+
+// StopTaskRequest 仅 PostgreSQL CDC stop 强制要求不可逆确认；普通业务 Kafka continuous 可提交空 body。
+type StopTaskRequest struct {
+	Confirmed        bool   `json:"confirmed"`
+	ConfirmationText string `json:"confirmation_text"`
 }
 
 // ListTasksRequest 查询任务列表请求

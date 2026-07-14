@@ -220,7 +220,7 @@ START_META_FRONTEND=false
 START_META_WORKER=false
 START_TRANSFER_BACKEND=false
 START_TRANSFER_FRONTEND=false
-START_TRANSFER_WORKER=false
+START_TRANSFER_BOUNDED_WORKER=false
 START_TRANSFER_CONTINUOUS_WORKER=false
 START_ORCHESTRATOR_BACKEND=false
 START_ORCHESTRATOR_FRONTEND=false
@@ -275,7 +275,7 @@ if [ "$START_ALL" = true ]; then
   START_META_WORKER=true
   START_TRANSFER_BACKEND=true
   START_TRANSFER_FRONTEND=true
-  START_TRANSFER_WORKER=true
+  START_TRANSFER_BOUNDED_WORKER=true
   START_TRANSFER_CONTINUOUS_WORKER=true
   START_ORCHESTRATOR_BACKEND=true
   START_ORCHESTRATOR_FRONTEND=true
@@ -319,7 +319,7 @@ else
       START_MANAGER_BACKEND=true
       START_MANAGER_FRONTEND=true
       START_TRANSFER_BACKEND=true
-      START_TRANSFER_WORKER=true
+      START_TRANSFER_BOUNDED_WORKER=true
       START_TRANSFER_CONTINUOUS_WORKER=true
       START_MODEL3D_WORKFLOW=true
       START_POINTCLOUD_WORKFLOW=true
@@ -330,7 +330,7 @@ else
     transfer)
       START_TRANSFER_BACKEND=true
       START_TRANSFER_FRONTEND=true
-      START_TRANSFER_WORKER=true
+      START_TRANSFER_BOUNDED_WORKER=true
       START_TRANSFER_CONTINUOUS_WORKER=true
       ;;
     orchestrator)
@@ -415,7 +415,7 @@ else
     gateway)
       START_MANAGER_BACKEND=true
       START_TRANSFER_BACKEND=true
-      START_TRANSFER_WORKER=true
+      START_TRANSFER_BOUNDED_WORKER=true
       START_TRANSFER_CONTINUOUS_WORKER=true
       START_ORCHESTRATOR_BACKEND=true
       START_DEVELOP_BACKEND=true
@@ -438,7 +438,7 @@ else
       START_META_FRONTEND=true
       START_TRANSFER_BACKEND=true
       START_TRANSFER_FRONTEND=true
-      START_TRANSFER_WORKER=true
+      START_TRANSFER_BOUNDED_WORKER=true
       START_TRANSFER_CONTINUOUS_WORKER=true
       START_ORCHESTRATOR_BACKEND=true
       START_ORCHESTRATOR_FRONTEND=true
@@ -588,18 +588,29 @@ build_worker() {
 
     echo "  🔨 编译 ${binary_name}..."
 
-    # Transfer 模块需要启用 SQLite 扩展加载支持
-    local build_tags=""
-    if [[ "$name" == "transfer" ]]; then
-        build_tags="-tags sqlite_load_extension"
-    fi
-
-    (cd "$src_dir" && go build $build_tags -o "${PROJECT_ROOT}/${binary_path}" cmd/worker/main.go) || {
+    (cd "$src_dir" && go build -o "${PROJECT_ROOT}/${binary_path}" cmd/worker/main.go) || {
         echo "  ✗ 编译失败: ${name} worker"
         return 1
     }
 
     echo "  ✓ ${binary_name} 编译完成"
+}
+
+build_transfer_bounded_worker() {
+    local binary_path=".dev-bins/addp-transfer-bounded-worker"
+    if [[ -f "$binary_path" ]]; then
+        local src_newer=$(find "transfer/backend" -type f -name "*.go" -newer "$binary_path" 2>/dev/null | wc -l | tr -d ' ')
+        if [[ $src_newer -eq 0 ]]; then
+            echo "  ✓ addp-transfer-bounded-worker 已是最新"
+            return 0
+        fi
+    fi
+    echo "  🔨 编译 addp-transfer-bounded-worker..."
+    (cd transfer/backend && go build -tags sqlite_load_extension -o "${PROJECT_ROOT}/${binary_path}" cmd/worker/main.go) || {
+        echo "  ✗ 编译失败: transfer bounded worker"
+        return 1
+    }
+    echo "  ✓ addp-transfer-bounded-worker 编译完成"
 }
 
 build_transfer_continuous_worker() {
@@ -891,8 +902,8 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     BUILD_PIDS+=($!)
   fi
 
-  if [ "$START_TRANSFER_WORKER" = true ]; then
-    build_worker "transfer" "transfer/backend" &
+  if [ "$START_TRANSFER_BOUNDED_WORKER" = true ]; then
+    build_transfer_bounded_worker &
     BUILD_PIDS+=($!)
   fi
 
@@ -1071,13 +1082,13 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     fi
   fi
 
-  if [ "$START_TRANSFER_WORKER" = true ]; then
-    if check_service_running "transfer-worker" ""; then
-      .dev-bins/addp-transfer-worker > logs/transfer-worker.log 2>&1 &
-      TRANSFER_WORKER_PID=$!
-      echo $TRANSFER_WORKER_PID > .dev-pids/transfer-worker.pid
+  if [ "$START_TRANSFER_BOUNDED_WORKER" = true ]; then
+    if check_service_running "transfer-bounded-worker" ""; then
+      .dev-bins/addp-transfer-bounded-worker > logs/transfer-bounded-worker.log 2>&1 &
+      TRANSFER_BOUNDED_WORKER_PID=$!
+      echo $TRANSFER_BOUNDED_WORKER_PID > .dev-pids/transfer-bounded-worker.pid
     else
-      TRANSFER_WORKER_PID=$(cat .dev-pids/transfer-worker.pid 2>/dev/null)
+      TRANSFER_BOUNDED_WORKER_PID=$(cat .dev-pids/transfer-bounded-worker.pid 2>/dev/null)
     fi
   fi
 
@@ -1299,7 +1310,7 @@ echo "  Orchestrator Backend: PID $ORCHESTRATOR_PID (http://localhost:${ORCHESTR
 echo "  Develop Backend:    PID $DEVELOP_PID (http://localhost:${DEVELOP_BACKEND_PORT})"
 echo "  Service Backend:    PID $SERVICE_PID (http://localhost:${SERVICE_BACKEND_PORT})"
 echo "  Meta Worker:        PID $META_WORKER_PID"
-echo "  Transfer Worker:    PID $TRANSFER_WORKER_PID"
+echo "  Transfer Bounded Worker: PID $TRANSFER_BOUNDED_WORKER_PID"
 echo "  Transfer Continuous Worker: PID $TRANSFER_CONTINUOUS_WORKER_PID"
 echo ""
 
@@ -2636,7 +2647,7 @@ echo "  Gateway:              $GATEWAY_PID"
 echo ""
 echo "Workers PID:"
 echo "  Meta Worker:          $META_WORKER_PID"
-echo "  Transfer Worker:      $TRANSFER_WORKER_PID"
+echo "  Transfer Bounded Worker: $TRANSFER_BOUNDED_WORKER_PID"
 echo "  Transfer Continuous Worker: $TRANSFER_CONTINUOUS_WORKER_PID"
 echo ""
 echo "日志文件:"
@@ -2661,7 +2672,7 @@ echo "  SuperMap Workflow Engine: docker logs supermap-workflow-engine"
 echo "  Spark 工作流引擎: logs/spark-workflow-engine.log"
 echo "  Jupyter Engine: logs/jupyter-engine.log"
 echo "  Gateway:  logs/gateway.log"
-echo "  Transfer Worker: logs/transfer-worker.log"
+echo "  Transfer Bounded Worker: logs/transfer-bounded-worker.log"
 echo "  Transfer Continuous Worker: logs/transfer-continuous-worker.log"
 echo "  Meta Worker: logs/meta-worker.log"
 echo "  Meta FE:  logs/meta-frontend.log"

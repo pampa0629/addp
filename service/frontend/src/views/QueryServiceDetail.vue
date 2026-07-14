@@ -26,6 +26,13 @@
         </div>
       </div>
       <div class="header-right">
+		<el-button
+		  v-if="service?.config_type === 'table'"
+		  :loading="snapshotChecking"
+		  @click="checkSourceSnapshot"
+		>
+		  {{ t('service.query.snapshotCheck') }}
+		</el-button>
         <el-button @click="goToEdit">{{ t('service.common.edit') }}</el-button>
         <el-button type="danger" @click="handleDelete">{{ t('service.common.delete') }}</el-button>
       </div>
@@ -99,14 +106,14 @@
           <el-divider content-position="left">{{ t('service.query.dividerGeometry') }}</el-divider>
           <el-descriptions :column="2" border>
             <el-descriptions-item :label="t('service.query.labelGeomColumn')">
-              <code>{{ geometryConfig?.column }}</code>
+			  <code>{{ primaryGeometry?.name }}</code>
             </el-descriptions-item>
             <el-descriptions-item :label="t('service.query.labelSrid')">
-              EPSG:{{ geometryConfig?.srid }}
+			  {{ primaryCRSLabel }}
             </el-descriptions-item>
             <el-descriptions-item :label="t('service.query.labelGeomType')" :span="2">
               <el-tag
-                v-for="type in geometryConfig?.types"
+				v-for="type in geometryTypes"
                 :key="type"
                 size="small"
                 type="success"
@@ -115,9 +122,9 @@
                 {{ type }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item v-if="geometryConfig?.extent" :label="t('service.query.labelExtent')" :span="2">
+			<el-descriptions-item v-if="spatialInfo?.extent" :label="t('service.query.labelExtent')" :span="2">
               <code style="font-size: 12px">
-                {{ JSON.stringify(geometryConfig.extent) }}
+				{{ JSON.stringify(spatialInfo.extent) }}
               </code>
             </el-descriptions-item>
           </el-descriptions>
@@ -170,15 +177,41 @@
           <el-divider content-position="left">{{ t('service.query.dividerGeometry') }}</el-divider>
           <el-descriptions :column="2" border>
             <el-descriptions-item :label="t('service.query.labelGeomColumn')">
-              <code>{{ geometryConfig?.column }}</code>
+			  <code>{{ primaryGeometry?.name }}</code>
             </el-descriptions-item>
             <el-descriptions-item :label="t('service.query.labelSrid')">
-              EPSG:{{ geometryConfig?.srid }}
+			  {{ primaryCRSLabel }}
             </el-descriptions-item>
           </el-descriptions>
         </div>
       </div>
     </el-card>
+
+	<el-card v-if="sourceSnapshot" :header="t('service.query.snapshotTitle')" class="snapshot-card">
+	  <el-descriptions :column="2" border>
+		<el-descriptions-item :label="t('service.query.snapshotCapturedAt')">
+		  {{ formatDate(sourceSnapshot.captured_at) }}
+		</el-descriptions-item>
+		<el-descriptions-item :label="t('service.query.snapshotStatus')">
+		  <el-tag :type="snapshotStatusType">{{ snapshotStatusText }}</el-tag>
+		</el-descriptions-item>
+		<el-descriptions-item :label="t('service.query.snapshotHash')" :span="2">
+		  <code>{{ sourceSnapshot.dependency_hash }}</code>
+		</el-descriptions-item>
+		<el-descriptions-item v-if="sourceSnapshot.source" :label="t('service.query.snapshotFingerprint')" :span="2">
+		  <code>{{ sourceSnapshot.source.item_fingerprint }}</code>
+		</el-descriptions-item>
+	  </el-descriptions>
+	  <div v-if="snapshotDiff?.status === 'changed'" class="snapshot-diff">
+		<el-tag v-if="snapshotDiff.source_changed" type="warning">{{ t('service.query.snapshotSourceChanged') }}</el-tag>
+		<el-tag v-if="snapshotDiff.table_changed" type="warning">{{ t('service.query.snapshotTableChanged') }}</el-tag>
+		<el-tag v-if="snapshotDiff.spatial_changed" type="warning">{{ t('service.query.snapshotSpatialChanged') }}</el-tag>
+		<el-tag v-if="snapshotDiff.object_table_changed" type="warning">{{ t('service.query.snapshotObjectChanged') }}</el-tag>
+		<el-button type="primary" :loading="snapshotRefreshing" @click="refreshSourceSnapshot">
+		  {{ t('service.query.snapshotRefresh') }}
+		</el-button>
+	  </div>
+	</el-card>
 
     <!-- 服务端点卡片 -->
     <el-card :header="t('service.query.cardEndpoints')" style="margin-bottom: 20px">
@@ -295,45 +328,13 @@
         </div>
       </div>
 
-      <!-- 数据表格 -->
-      <el-table
-        v-if="previewData.length > 0"
-        :data="previewData"
-        border
-        stripe
-        style="margin-top: 16px"
-        max-height="600"
-        v-loading="previewLoading"
-      >
-        <el-table-column
-          v-for="column in previewColumns"
-          :key="column"
-          :prop="column"
-          :label="column"
-          :min-width="120"
-          show-overflow-tooltip
-        >
-          <template #default="{ row }">
-            <span v-if="isGeometryColumn(column)" class="geometry-data">
-              {{ t('service.query.geometryData') }}
-            </span>
-            <span v-else>{{ formatCellValue(row[column]) }}</span>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <!-- 分页 -->
-      <el-pagination
-        v-if="previewData.length > 0"
-        v-model:current-page="previewPagination.page"
-        v-model:page-size="previewPagination.pageSize"
-        :page-sizes="[10, 20, 50, 100]"
-        :total="previewPagination.total"
-        layout="total, sizes, prev, pager, next, jumper"
-        @current-change="loadPreviewData"
-        @size-change="loadPreviewData"
-        style="margin-top: 16px; justify-content: center"
-      />
+      <div v-if="previewData.length > 0" class="preview-content">
+        <TablePreview
+          :data="previewTableData"
+          :loading="previewLoading"
+          @page-change="handlePreviewPageChange"
+        />
+      </div>
 
       <!-- 空状态 -->
       <div v-if="previewData.length === 0 && !previewLoading" class="preview-empty">
@@ -349,9 +350,10 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Link } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { TablePreview } from '@common-ui-map'
 import queryServiceAPI from '@/api/queryService'
+import { buildQueryServicePreview, queryServicePreviewFields } from '@/utils/queryServicePreview'
 import { copyToClipboard } from '../utils/serviceHelper'
-import axios from 'axios'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -359,10 +361,12 @@ const route = useRoute()
 
 const service = ref(null)
 const loading = ref(false)
+const snapshotChecking = ref(false)
+const snapshotRefreshing = ref(false)
+const snapshotDiff = ref(null)
 
 // 数据预览相关状态
 const previewData = ref([])
-const previewColumns = ref([])
 const previewLoading = ref(false)
 const previewPagination = ref({
   page: 1,
@@ -372,15 +376,37 @@ const previewPagination = ref({
 
 const serviceId = computed(() => route.params.id)
 
-// 计算属性：空间字段配置
-const hasGeometry = computed(() => {
-  if (!service.value?.data_config?.geometry) return false
-  return service.value.data_config.geometry.has_geometry === true
+const sourceSnapshot = computed(() => service.value?.data_config?.source_snapshot || null)
+const spatialInfo = computed(() => sourceSnapshot.value?.spatial || null)
+const primaryGeometry = computed(() => {
+  const columns = spatialInfo.value?.geometry_columns || []
+  const primaryName = spatialInfo.value?.primary_geometry_column
+  return columns.find((column) => column.name === primaryName) || (columns.length === 1 ? columns[0] : null)
+})
+const hasGeometry = computed(() => !!primaryGeometry.value?.name)
+const geometryTypes = computed(() => primaryGeometry.value?.geometry_type ? [primaryGeometry.value.geometry_type] : [])
+const primaryCRSLabel = computed(() => {
+  return primaryGeometry.value?.crs_ref || spatialInfo.value?.crs_ref || (primaryGeometry.value?.srid ? `EPSG:${primaryGeometry.value.srid}` : t('service.query.snapshotUnknownCRS'))
+})
+const snapshotStatusType = computed(() => ['changed', 'unverifiable'].includes(snapshotDisplayStatus.value) ? 'warning' : snapshotDisplayStatus.value === 'current' ? 'success' : 'info')
+const snapshotDisplayStatus = computed(() => {
+  if (snapshotDiff.value?.status) return snapshotDiff.value.status
+  if (sourceSnapshot.value?.verification_status === 'unverifiable') return 'unverifiable'
+  return 'unchecked'
+})
+const snapshotStatusText = computed(() => {
+  return t(`service.query.snapshotStatus_${snapshotDisplayStatus.value}`)
 })
 
-const geometryConfig = computed(() => {
-  return service.value?.data_config?.geometry || null
-})
+const previewTableData = computed(() => buildQueryServicePreview({
+  rows: previewData.value,
+  pagination: {
+    page: previewPagination.value.page,
+    page_size: previewPagination.value.pageSize,
+    total: previewPagination.value.total
+  },
+	spatial: spatialInfo.value
+}))
 
 // 计算属性：字段配置
 const defaultFields = computed(() => {
@@ -524,6 +550,37 @@ const goToEdit = () => {
   router.push(`/query-services/${serviceId.value}/edit`)
 }
 
+const checkSourceSnapshot = async () => {
+	snapshotChecking.value = true
+	try {
+	  snapshotDiff.value = await queryServiceAPI.checkSourceSnapshot(serviceId.value)
+	} catch (error) {
+	  ElMessage.error(t('service.query.snapshotCheckFailed') + ': ' + (error.message || t('service.common.unknownError')))
+	} finally {
+	  snapshotChecking.value = false
+	}
+}
+
+const refreshSourceSnapshot = async () => {
+	try {
+	  await ElMessageBox.confirm(
+		t('service.query.snapshotRefreshConfirm'),
+		t('service.query.snapshotRefresh'),
+		{ confirmButtonText: t('service.common.confirm'), cancelButtonText: t('service.common.cancel'), type: 'warning' }
+	  )
+	  snapshotRefreshing.value = true
+	  service.value = await queryServiceAPI.refreshSourceSnapshot(serviceId.value)
+	  snapshotDiff.value = null
+	  ElMessage.success(t('service.query.snapshotRefreshSuccess'))
+	} catch (error) {
+	  if (error !== 'cancel') {
+		ElMessage.error(t('service.query.snapshotRefreshFailed') + ': ' + (error.message || t('service.common.unknownError')))
+	  }
+	} finally {
+	  snapshotRefreshing.value = false
+	}
+}
+
 // 数据预览方法
 const loadPreviewData = async () => {
   if (!service.value?.service_name) {
@@ -533,29 +590,31 @@ const loadPreviewData = async () => {
 
   previewLoading.value = true
   try {
-    const url = `/api/query/${service.value.service_name}`
     const params = {
       page: previewPagination.value.page,
       page_size: previewPagination.value.pageSize,
       format: 'json'
     }
+    const fields = queryServicePreviewFields({
+      configType: service.value.config_type,
+      defaultFields: defaultFields.value,
+	  spatial: spatialInfo.value
+    })
+    if (fields) params.fields = fields
 
-    const response = await axios.get(url, { params })
+    const response = await queryServiceAPI.testQuery(service.value.service_name, params)
 
-    if (response.data && response.data.data) {
-      previewData.value = response.data.data
-
-      // 提取列名（从第一行数据中）
-      if (response.data.data.length > 0) {
-        previewColumns.value = Object.keys(response.data.data[0])
-      }
+    if (response && Array.isArray(response.data)) {
+      previewData.value = response.data
 
       // 更新分页信息
-      if (response.data.pagination) {
-        previewPagination.value.total = response.data.pagination.total
+      if (response.pagination) {
+        previewPagination.value.page = response.pagination.page
+        previewPagination.value.pageSize = response.pagination.page_size
+        previewPagination.value.total = response.pagination.total
       }
 
-      ElMessage.success(t('service.query.loadPreviewSuccess', { count: response.data.data.length }))
+      ElMessage.success(t('service.query.loadPreviewSuccess', { count: response.data.length }))
     } else {
       ElMessage.warning(t('service.query.noDataWarning'))
     }
@@ -567,24 +626,10 @@ const loadPreviewData = async () => {
   }
 }
 
-// 判断是否是几何列
-const isGeometryColumn = (columnName) => {
-  const geometryColumnNames = ['geom', 'geometry', 'shape', 'wkb_geometry', 'smgeometry', 'the_geom']
-  return geometryColumnNames.includes(columnName.toLowerCase())
-}
-
-// 格式化单元格值
-const formatCellValue = (value) => {
-  if (value === null || value === undefined) {
-    return '-'
-  }
-  if (typeof value === 'object') {
-    return JSON.stringify(value)
-  }
-  if (typeof value === 'number') {
-    return value.toLocaleString()
-  }
-  return value
+const handlePreviewPageChange = ({ page, pageSize }) => {
+  previewPagination.value.page = page
+  previewPagination.value.pageSize = pageSize
+  loadPreviewData()
 }
 
 // 生命周期
@@ -712,9 +757,21 @@ ul {
   text-align: center;
 }
 
-.geometry-data {
-  color: var(--addp-text-tertiary);
-  font-style: italic;
-  font-size: 12px;
+.preview-content {
+  height: 720px;
+  min-height: 560px;
+  margin-top: 16px;
+}
+
+.snapshot-card {
+  margin-bottom: 20px;
+}
+
+.snapshot-diff {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
 }
 </style>

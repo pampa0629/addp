@@ -55,8 +55,7 @@ export function getQueryServiceEndpoints(service, baseURL = '') {
  * @returns {Boolean} 是否有几何字段
  */
 export function hasGeometry(service) {
-  if (!service || !service.data_config) return false
-  return service.data_config.geometry?.has_geometry || false
+	return !!getGeometryInfo(service)?.column
 }
 
 /**
@@ -65,14 +64,17 @@ export function hasGeometry(service) {
  * @returns {Object|null} 几何信息 {column, srid, types, extent}
  */
 export function getGeometryInfo(service) {
-  if (!hasGeometry(service)) return null
-
-  const geom = service.data_config.geometry
+	const spatial = service?.data_config?.source_snapshot?.spatial
+	const columns = spatial?.geometry_columns || []
+	const primaryName = spatial?.primary_geometry_column
+	const geom = columns.find(column => column.name === primaryName) || (columns.length === 1 ? columns[0] : null)
+	if (!geom?.name) return null
   return {
-    column: geom.column,
-    srid: geom.srid,
-    types: geom.types || [],
-    extent: geom.extent || null
+	column: geom.name,
+	srid: geom.srid || spatial.srid || 0,
+	types: geom.geometry_type ? [geom.geometry_type] : [],
+	extent: spatial.extent || null,
+	crs_ref: geom.crs_ref || spatial.crs_ref || ''
   }
 }
 

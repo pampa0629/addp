@@ -83,15 +83,20 @@ graph LR
     class TM1,TM2,SM1,SM2 detail
 ```
 
-### 几何列自动检测
+### 查询服务依赖快照
 
-创建查询服务时，系统会自动分析数据并存储以下空间元数据（`data_config.geometry`）：
+查询服务不复制完整 Meta item attributes，只冻结执行和对外契约真正依赖的事实：
 
-- `has_geometry` - 是否包含几何列
-- `column` - 几何列名
-- `srid` - 坐标参考系（如 4326）
-- `types` - 几何类型（Point、Polygon 等）
-- `extent` - 空间范围 [minX, minY, maxX, maxY]
+- 表模式以 `data_config.locator` 指向的 Meta item 为源身份，保存 item fingerprint、源扫描时间以及从标准 attributes 解析出的 `datatype.TableInfo`、`datatype.SpatialInfo` 和对象表执行描述符。
+- SQL 模式没有单一 Meta item 身份，保存规范化 SQL hash 以及检测得到的输出 `TableInfo` / `SpatialInfo`。
+- DuckDB 联邦 SQL 如果引用对象表，还会在发布时冻结查询实际引用的对象表物理映射；普通执行只从 System 获取当前连接信息，不再调用 Meta 重新解析对象表。
+- Meta 负责当前 item 事实、fingerprint、`scanned_at` 和 `data_updated_at`；Service 负责 `captured_at` 和依赖投影 hash。
+- 普通服务执行只读取已发布快照，不在每次请求时调用 Meta。只有显式检查或刷新动作才重新读取源事实并比较差异。
+- 快照结构直接复用 `common/datatype` 现有模型，不新增与 `SpatialInfo`、`TableInfo` 重复的空间或表结构实体。
+- `dependency_hash` 只覆盖查询执行和输出契约事实，不包含 `row_count`、大小、扫描时间、数据更新时间、空间范围和空间索引状态，避免数据量变化被误判为结构契约变化。
+- 历史记录不保留兼容路径：无法通过 locator 定位同租户且具有 fingerprint 的 Meta item 的表模式服务，以及无法还原对象表依赖的旧 DuckDB 联邦 SQL 服务，在快照迁移时直接删除并由用户重新创建。
+
+空间信息统一保存为标准 `SpatialInfo` payload，例如 `geometry_columns`、`primary_geometry_column`、`crs_ref`、`crs_definitions` 和原生 CRS 下的 `extent`，不再保存 Service 私有的 `column/srid/types` 简化结构。
 
 ### 支持的协议
 
@@ -126,11 +131,14 @@ GET /ogc/features/:serviceName/collections/:id/items/:fid ← 单个要素
 ### 查询服务管理 API
 
 ```
-POST   /api/service/query          ← 创建查询服务
-GET    /api/service/query          ← 列表（支持分页、搜索、按 config_type 过滤）
-GET    /api/service/query/:id      ← 详情
-PUT    /api/service/query/:id      ← 更新
-DELETE /api/service/query/:id      ← 删除
+POST   /api/v1/service/query                              ← 创建查询服务
+GET    /api/v1/service/query                              ← 列表
+GET    /api/v1/service/query/:id                          ← 详情
+PUT    /api/v1/service/query/:id                          ← 更新用户配置
+DELETE /api/v1/service/query/:id                          ← 删除
+GET    /api/v1/service/query/:id/source-snapshot-diff     ← 显式检查 Meta 当前事实差异
+POST   /api/v1/service/query/:id/refresh-source-snapshot  ← 显式刷新表模式依赖快照
+POST   /api/v1/service/sql/output-contract                ← 检测 SQL 输出 TableInfo / SpatialInfo
 ```
 
 ---

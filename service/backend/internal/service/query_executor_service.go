@@ -23,19 +23,16 @@ import (
 type QueryExecutorService struct {
 	queryRepo    *repository.QueryServiceRepository
 	systemClient *client.SystemClient
-	metaClient   *client.MetaClient
 }
 
 // NewQueryExecutorService 创建查询执行服务
 func NewQueryExecutorService(
 	queryRepo *repository.QueryServiceRepository,
 	systemClient *client.SystemClient,
-	metaClient *client.MetaClient,
 ) *QueryExecutorService {
 	return &QueryExecutorService{
 		queryRepo:    queryRepo,
 		systemClient: systemClient,
-		metaClient:   metaClient,
 	}
 }
 
@@ -123,7 +120,7 @@ func (s *QueryExecutorService) ExecuteQuery(
 	if service.ConfigType == "table" {
 		rows, total, err = s.executeTableQuery(ctx, gormDB, engine.EngineType, service, params)
 	} else {
-		rows, total, err = s.executeSQLQuery(ctx, gormDB, service, params)
+		rows, total, err = s.executeSQLQuery(ctx, gormDB, engine.EngineType, service, params)
 	}
 
 	if err != nil {
@@ -243,7 +240,17 @@ func (s *QueryExecutorService) executeDuckDBSQLQuery(
 	execCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	session, err := duckdb.PrepareFederatedQuery(execCtx, service.TenantID, service.SqlQuery, s.systemClient, s.metaClient)
+	snapshot := service.SourceSnapshot()
+	if snapshot == nil {
+		return nil, fmt.Errorf("query service dependency snapshot is missing")
+	}
+	session, err := duckdb.PrepareFederatedQueryWithObjectTables(
+		execCtx,
+		service.TenantID,
+		service.SqlQuery,
+		s.systemClient,
+		snapshot.FederatedObjectTables,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -370,6 +377,7 @@ func (s *QueryExecutorService) executeTableQuery(
 func (s *QueryExecutorService) executeSQLQuery(
 	ctx context.Context,
 	db *gorm.DB,
+	engineType string,
 	service *models.QueryService,
 	params *QueryParams,
 ) ([]map[string]interface{}, int64, error) {
@@ -382,11 +390,17 @@ func (s *QueryExecutorService) executeSQLQuery(
 		return nil, 0, fmt.Errorf("failed to get total count: %w", err)
 	}
 
-	// 2. 执行分页查询
+	// 2. 执行分页查询。空间输出契约存在时，在外层统一转换 primary geometry 为 GeoJSON。
 	offset := (params.Page - 1) * params.PageSize
 	limit := params.PageSize
 
-	paginatedQuery := sqldialect.PaginateQuerySQL(sqlQuery, limit, offset)
+	dataQuery := sqlQuery
+	if sqldialect.ForEngine(engineType).IsPostgreSQL() && service.HasGeometry() {
+		if selectFields := sqlOutputSelectFields(service); selectFields != "" {
+			dataQuery = fmt.Sprintf("SELECT %s FROM (%s) AS _query_output", selectFields, sqlQuery)
+		}
+	}
+	paginatedQuery := sqldialect.PaginateQuerySQL(dataQuery, limit, offset)
 
 	var rows []map[string]interface{}
 	if err := db.WithContext(ctx).Raw(paginatedQuery).Scan(&rows).Error; err != nil {
@@ -394,6 +408,25 @@ func (s *QueryExecutorService) executeSQLQuery(
 	}
 
 	return rows, total, nil
+}
+
+func sqlOutputSelectFields(service *models.QueryService) string {
+	table := service.GetTableInfo()
+	geometryColumn := service.GetGeometryColumn()
+	if table == nil || geometryColumn == "" || len(table.Fields) == 0 {
+		return ""
+	}
+	dialect := sqldialect.ForEngine("postgresql")
+	fields := make([]string, 0, len(table.Fields))
+	for _, field := range table.Fields {
+		quoted := dialect.QuoteIdentifier(field.Name)
+		if field.Name == geometryColumn {
+			fields = append(fields, fmt.Sprintf("ST_AsGeoJSON(%s) AS %s", quoted, quoted))
+			continue
+		}
+		fields = append(fields, quoted)
+	}
+	return strings.Join(fields, ", ")
 }
 
 // replaceGeometryColumn 替换几何列为空间函数

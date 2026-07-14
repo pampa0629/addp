@@ -2,9 +2,9 @@
 
 更新时间：2026-07-13
 
-状态：阶段 0/1 已升级并实现；工作包 2A continuous/Kafka 正式契约已冻结；工作包 2B 已完成 Kafka common 插件、PostgreSQL 目标原子应用、continuous 控制面、runtime lease/fencing、supervisor 和 Kafka JSON -> PostgreSQL 数据循环；工作包 2C 已完成 Console Wizard、分区 committed position 观测、retention 位置失效检测和目标锁取消验收；工作包 2D 已完成 source latest offset、lag、retention horizon、degraded/critical 判定与 Monitor 告警展示。Debezium 与 CDC 尚未实现。
+状态：阶段 0/1 与工作包 2A-2D 已完成；工作包 3A 已冻结 PostgreSQL CDC v1 契约，3B 已完成 Infra Kafka/Kafka Connect，3C 已完成 capture control plane，3D 已完成 Debezium 数据面、目标原子 upsert/delete、公开任务创建、Console Wizard 和全链路验收。
 
-本文整理 Transfer 全量、批增量、Kafka 流式源、数据库 CDC 和持续运行时的概念与推荐技术路线。bounded/watermark/apply mode/sync state 结论已升级到正式规范并完成第一版实现；continuous/Kafka v1 的 topic locator、ChangeStream Provider、keyed JSON upsert、partition position 和 runtime lease 契约已由工作包 2A 升级到正式规范；Debezium、CDC、replay 和 Infra Kafka 部署仍属后续设计。
+本文整理 Transfer 全量、批增量、Kafka 流式源、数据库 CDC 和持续运行时的概念与推荐技术路线。bounded/watermark、业务 Kafka continuous 和 PostgreSQL CDC v1 已完成第一版；replay、DLQ、MySQL/Oracle CDC 和自动 DDL 仍未实现。
 
 当前稳定实现仍以以下文档为准：
 
@@ -12,7 +12,7 @@
 - `transfer/docs/transfer-基本概念及配置说明.md`
 - `transfer/docs/design.md`
 
-当前实现支持 bounded snapshot 的 `replace` / `append`、PostgreSQL -> PostgreSQL 的 bounded watermark incremental + 幂等 `upsert` + `transfer.sync_states` resume，以及业务 Kafka keyed JSON -> PostgreSQL 的 continuous v1。continuous 使用目标 monotonic apply、业务库 ledger、Infra state CAS 与 runtime fencing；CDC、replay 和物理删除尚未实现。
+当前实现支持 bounded snapshot 的 `replace` / `append`、PostgreSQL bounded watermark incremental、业务 Kafka keyed JSON continuous upsert，以及 PostgreSQL 单表 CDC initial snapshot + upsert/delete。continuous/CDC 使用目标 monotonic apply、业务库 ledger、Infra state CAS 与 runtime fencing；replay 仍未实现。
 
 ## 一、本文要解决的问题
 
@@ -50,6 +50,7 @@
 15. Debezium 运行在独立 Kafka Connect distributed 集群中，由 Transfer capture supervisor 通过受控 API 管理，不嵌入 Transfer Go 进程。
 16. Schema 变化第一阶段默认严格阻塞，不静默忽略字段，也不默认自动执行目标 DDL。
 17. 业务 Kafka 第一版只支持 keyed JSON record -> PostgreSQL monotonic upsert；业务目标库通过 partition apply ledger 原子推进 `next_offset`，普通 append 不进入第一版。
+18. PostgreSQL CDC 第一版只支持有稳定主键的单表 initial snapshot -> snapshot/upsert/delete -> PostgreSQL 新目标表；pause 保持捕获，stop 是不可逆终态。
 
 ## 三、Transfer 的稳定定位
 
@@ -155,7 +156,7 @@ continuous 任务也可以被手动或定时启动。因此 `realtime` 不进入
 | `upsert` | 按稳定键新增或更新。 | watermark、无删除 CDC |
 | `upsert_delete` | 按稳定键新增、更新和删除。 | 完整 CDC |
 
-稳定字段已 clean break 为 `target.policy.apply_mode=replace|append|upsert|upsert_delete`；当前实现开放 `replace|append|upsert`，`upsert_delete` 留待 CDC。旧 `write_mode` 已拒绝，不保留字段别名。
+稳定字段已 clean break 为 `target.policy.apply_mode=replace|append|upsert|upsert_delete`；当前 PostgreSQL CDC v1 已开放 `upsert_delete`。旧 `write_mode` 已拒绝，不保留字段别名。
 
 Transfer 拥有应用策略，但目标引擎必须提供真实写入能力，并声明键要求、提交边界、删除能力和幂等语义。不能仅靠 Transfer 配置中的字符串推导目标支持 upsert。
 
@@ -936,9 +937,9 @@ ADDP 不自动暂停用户 Oracle 或其他上游业务写入。平台可以暂�
 }
 ```
 
-### 13.3 Oracle CDC
+### 13.3 PostgreSQL CDC v1（工作包 3A 已冻结）
 
-Oracle CDC 公开任务配置只引用 Oracle 和目标 Engine，不暴露 Infra Kafka topic：
+PostgreSQL CDC 公开任务配置只引用源 PostgreSQL 表和目标 PostgreSQL Engine，不暴露 Infra Kafka topic：
 
 ```json
 {
@@ -953,24 +954,40 @@ Oracle CDC 公开任务配置只引用 Oracle 和目标 Engine，不暴露 Infra
     }
   },
   "source": {
-    "locator": "addp://engine/12/path/APP/ORDERS?type=table",
+    "locator": "addp://engine/12/path/public/orders?type=table",
     "data_type": "table",
     "representation": "native"
   },
   "target": {
     "parent_locator": "addp://engine/20/path/public?type=schema",
-    "name": "orders",
+    "name": "orders_cdc",
     "data_type": "table",
     "representation": "native",
     "policy": {
       "apply_mode": "upsert_delete",
-      "keys": ["ID"]
+      "keys": ["id"]
     }
-  }
+  },
+  "transforms": [
+    {
+      "type": "field_mapping",
+      "version": "v1",
+      "mode": "project",
+      "fields": [
+        {"source": "id", "target": "id", "target_type": "int", "nullable": false}
+      ]
+    }
+  ]
 }
 ```
 
-Debezium connector 名称、内部 topic、consumer group 和 connector runtime 参数属于 Transfer/infra 执行配置，不进入用户任务的通用 source endpoint。
+Debezium connector 名称、slot、publication、内部 topic、consumer group 和 connector runtime 参数属于 Transfer/infra 执行配置，不进入用户任务的通用 source endpoint。第一版要求单表、稳定主键和不存在的新目标表；`op=r|c|u|d` 分别归一化为 snapshot/upsert/delete，目标固定为 `upsert_delete`。完整约束已升级到 `docs/spec/addp任务体系规范.md`。
+
+生命周期固定为：pause 只停止目标应用，connector 继续捕获并把 backlog 写入 Infra Kafka；stop 删除 ADDP-owned connector/slot/publication/topic 并进入不可恢复终态。暂停的常态风险是 Kafka retention 和磁盘，connector/Kafka 故障导致 slot 不推进时才会额外造成源库 WAL 堆积。Stop 必须由服务端校验 `confirmed=true` 和与任务名称完全一致的 `confirmation_text`，Console 同时显示高危二次确认并要求输入任务名称。
+
+### 13.4 Oracle CDC（后续）
+
+Oracle CDC 沿用相同公开任务形态和 Infra Kafka/ChangeEvent/目标应用契约，但 source locator 指向 Oracle 表，捕获实现使用 Debezium Oracle Connector + LogMiner。Oracle 版本、RAC、CDB/PDB、LOB 和权限矩阵在 PostgreSQL CDC 链路稳定后单独冻结，不与 PostgreSQL 第一版并行实现。
 
 ## 十四、推荐实施顺序
 
@@ -1006,11 +1023,11 @@ Debezium connector 名称、内部 topic、consumer group 和 connector runtime 
 3. 实现 keyed JSON record -> ChangeEvent(operation=upsert) -> PostgreSQL `PartitionedTableChangeApplyProvider`，并原子提交业务表与目标 apply ledger。
 4. 实现 partition state、lag、heartbeat、真实暂停和停止。
 5. 已覆盖目标提交后 Infra position 可重复应用、rebalance、worker lease/fencing 失效、pause/resume/stop、目标锁取消、retention 已越过 committed position 和严格 schema drift；lag 与 retention horizon 提前告警由工作包 2D 完成。
-6. Debezium envelope、upsert/delete、DLQ、Schema Registry、Avro 和 Protobuf 后置。
+6. 当时将 Debezium envelope 与 upsert/delete 后置到工作包 3D；现已完成。DLQ、Schema Registry、Avro 和 Protobuf 继续后置。
 
 ### 阶段 2C：Continuous 产品化与运行保障（已完成第一版）
 
-1. Console Wizard 只开放业务 Kafka topic -> PostgreSQL，手工声明 JSON 字段与记录唯一标识，不提供未实现路线。
+1. Console Wizard 已开放业务 Kafka topic -> PostgreSQL 和 PostgreSQL 单表 CDC -> PostgreSQL 新目标表两条已实现路线，不提供未实现路线。
 2. 任务列表和详情支持 continuous start/pause/resume/stop，execution 详情展示 owner、heartbeat、lease、fencing token、partition committed `next_offset`、最近提交时间和 checkpoint age。
 3. resume 前校验 committed position 是否仍在 Kafka earliest/latest 范围，retention 已清除时明确失败，不静默重置。
 4. PostgreSQL 目标锁等待响应 context 取消，并验证业务写入与 apply ledger 同时回滚。
@@ -1025,12 +1042,38 @@ Debezium connector 名称、内部 topic、consumer group 和 connector runtime 
 5. 用 Redpanda 验证 latest 增长、retention earliest 推进、degraded/critical 判定与 metadata 的 fencing 保护。
 6. pause/stop 改变 desired state 后立即禁止新的 progress/diagnostics 写入；与暂停竞态的 fencing 错误必须将 execution 收敛为 cancelled，不得误记为 failed。
 
-### 阶段 3：数据库 CDC
+### 工作包 3A：PostgreSQL CDC 契约冻结（已完成）
 
-1. 先以 PostgreSQL/MySQL Debezium 验证通用 Kafka、ChangeEvent 和目标幂等链路。
-2. 增加 Infra Kafka 部署、ACL、retention 和 cleanup。
-3. 部署 Kafka Connect distributed 集群，并由 Transfer capture supervisor 管理 Debezium connector 生命周期。
-4. 最后接入 Oracle LogMiner，集中验证 Oracle 权限、日志、snapshot、LOB、DDL 和长事务。
+1. 已冻结 PostgreSQL 单表、稳定主键、Debezium `initial` snapshot 和 PostgreSQL 新目标表的唯一第一版范围。
+2. 已冻结 schemaless JSON Debezium envelope：`r -> snapshot/upsert`、`c|u -> upsert`、`d -> delete`，tombstone/truncate/message 事件严格拒绝。
+3. 已冻结 Kafka Connect capture position 与 Transfer committed position 的双位点 owner 边界。
+4. 已冻结 `upsert_delete`、目标 ledger 原子应用、strict schema drift、resume-only 和不提供 replay/DLQ/自动 DDL。
+5. 已冻结 pause 保持 connector 捕获、stop 不可逆清理 capture resource、重新同步必须新建任务和新目标表；Stop API 与 Console 都必须显式高危确认。
+
+### 工作包 3B：Infra Kafka 与 Kafka Connect 部署（已完成第一版）
+
+1. 已在 ADDP infra 中增加唯一 Apache Kafka 4.3.0 KRaft 路线和 Debezium Connect 3.6.0.Final distributed 进程角色。
+2. 已实现固定端口、健康检查、Connect compact internal topics、CDC topic namespace 和 `admin/connect/transfer` SASL principal/ACL；生产 3 broker/2 Connect 拓扑仍由部署规范约束，不在单机开发 Compose 内伪装验证。
+3. 已实现 retention/capacity 配置、Kafka 磁盘水位、connector/task 状态和本地业务 PostgreSQL slot/WAL lag 运维检查；cleanup owner 已进入正式规范。
+4. 已为业务 PostgreSQL 开发容器启用 logical replication、slot WAL 上限和 replication HBA，不修改 Infra PostgreSQL。真实 Debezium smoke 已验证 `initial snapshot -> r,c,u,d -> Infra Kafka`，并确认 connector/slot/publication/topic/table 清理无残留。
+
+### 工作包 3C：Capture control plane（已完成第一版）
+
+1. 已增加 Transfer capture supervisor 和 Kafka Connect REST client，支持创建/更新、状态、pause/resume 与删除；产品 pause 路径明确不暂停 connector，只持续监控捕获健康。
+2. 已增加 `transfer.capture_resources` generation/resource 事实、稳定内部命名、单分区 topic 显式创建、start/resume 复用、不可逆 stop 和统一幂等 cleanup。
+3. Stop API 已增加服务端不可逆确认；Console 已增加 CDC danger 输入任务名确认和 pause 的 Kafka retention/WAL 风险提示。
+4. 3C 完成时公开 task 创建仍拒绝 CDC；该临时关闭规则已由 3D 数据面闭环删除。
+
+### 工作包 3D：PostgreSQL CDC 数据面（已完成第一版）
+
+1. 已实现 Debezium 3.6 schemaless JSON adapter、snapshot/upsert/delete ChangeEvent 和严格 envelope/source/schema 校验；Decimal 固定 string、时间固定 Connect 毫秒编码，并在 capture 前校验 PostgreSQL CDC v1 类型矩阵。
+2. 已扩展 PostgreSQL `PartitionedTableChangeApplyProvider`，把 upsert/delete 与目标 ledger 原子提交。
+3. 已复用 continuous worker、`kafka_offset/v1`、CAS/fencing、retention 位置保护和 capture generation，不建立第二套 CDC consumer。
+4. 已完成 PostgreSQL -> PostgreSQL initial snapshot、update、delete、worker 崩溃换 owner 恢复、目标 ledger/Infra state 对齐和 stop cleanup 端到端测试。
+
+### 工作包 3E：Oracle CDC（PostgreSQL 稳定后）
+
+接入 Oracle LogMiner，集中验证 Oracle 权限、日志、snapshot、LOB、DDL、长事务和版本兼容矩阵；MySQL CDC 与 Oracle 一样后置，不与 PostgreSQL v1 并行开放。
 
 ### 阶段 4：按真实需求评估 Flink
 
@@ -1057,7 +1100,7 @@ Debezium connector 名称、内部 topic、consumer group 和 connector runtime 
 
 ## 十六、设计确认状态与后续问题
 
-16.1 至 16.5 已随阶段 0/1 升级为正式规范并实现；16.6 至 16.9 已由工作包 2A 确认并升级为正式规范，工作包 2B 已完成 keyed JSON -> PostgreSQL continuous v1；16.10 之后仍属于 Infra Kafka/CDC 后续工作。
+16.1 至 16.5 已随阶段 0/1 升级为正式规范并实现；16.6 至 16.9 已由工作包 2A 确认并实现 keyed JSON -> PostgreSQL continuous v1；16.10 至 16.12 和 16.14 已由工作包 3A 确认并升级到正式规范。Infra Kafka/Kafka Connect 的代码部署属于工作包 3B，Oracle 和 Flink 仍后置。
 
 ### 16.1 任务配置采用嵌套结构还是扁平结构（已确认）
 
@@ -1137,40 +1180,50 @@ target.policy.apply_mode
 
 结论：第一版不提供 DLQ，遇到不可解析或不可应用事件时严格阻塞对应 partition。第二阶段再设计 Transfer-owned Infra Kafka DLQ，必须保存原 topic/partition/offset、原始载荷引用、错误、task/execution 和回放状态；只有 DLQ 写入成功后才允许推进源 offset。
 
-### 16.10 Infra Kafka 发行版、部署与容量
+### 16.10 Infra Kafka 发行版、部署与容量（已确认）
 
 分析：这是部署与运维选择，依赖预期吞吐、最长下游故障、数据保留、节点数量和生产环境。过早选择多种兼容发行版会形成测试矩阵。
 
-建议：生产参考实现采用 Apache Kafka KRaft + Kafka Connect distributed，开发环境也优先使用相同协议实现，避免先维护另一套行为差异。第一版规范必须给出：
+结论：唯一参考实现固定为 Apache Kafka 4.3.0 KRaft + Debezium Connect 3.6.0.Final（内置 Kafka Connect 4.3.0）。开发环境使用 1 broker/1 Connect、RF/ISR=`1/1`；生产参考使用 3 broker/至少 2 Connect、RF/ISR=`3/2`。
 
-- broker/replication 最小拓扑。
-- internal/config/offset/status 和 CDC topic 的复制因子。
-- topic namespace、ACL 和租户隔离。
-- retention time/bytes 与容量计算方法。
-- 磁盘高水位、lag、retention horizon 告警。
-- backup 不替代 Kafka replay，真正恢复依赖源日志和 connector offset 的边界。
+- Connect shared internal topics 固定为 `__addp_connect_configs`、`__addp_connect_offsets`、`__addp_connect_status`，使用 compact 和开发/生产 `1/3` 复制因子。
+- CDC topic 固定为单 partition `__addp_cdc.<tenant>.<task>.<generation>`，使用 delete cleanup、默认 7 天 retention；生产必须显式设置并校验 `retention.bytes`。
+- principal 分离为 infra admin、`addp-connect`、`addp-transfer`，业务 Kafka principal 不得访问 infra namespace。
+- Transfer capture supervisor 是 task-level connector/topic/slot/publication cleanup owner；Kafka Connect shared internal topics 和 broker 数据目录归 Infra 部署 owner。
+- 容量基线至少为 `峰值编码字节/秒 * 恢复窗口秒数 * 副本因子 * 1.3`。time/bytes 任一先到都会缩短真实恢复窗口，backup 不替代 source WAL、connector offset 和 Kafka retention。
+- 端口固定为 host Kafka `19092`、Connect REST `18083`；Connect REST 只供内部控制面使用，不经 Gateway 对外暴露。
 
-具体端口和镜像版本在进入阶段 3 前按 ADDP 端口与技术栈规范确定。
-
-### 16.11 Debezium connector 托管边界
+### 16.11 Debezium connector 托管边界（已确认）
 
 分析：将 Debezium 嵌入 Go continuous worker 会混合 JVM runtime、connector HA 和目标消费；让用户自己管理 connector 又会破坏 ADDP 任务的一致生命周期。
 
-建议：确认独立 Kafka Connect distributed + Transfer capture supervisor 单一路线。capture supervisor 通过 Kafka Connect API 管理 connector 和状态映射；continuous worker 只消费 Infra Kafka。Kafka Connect 管 capture offset，Transfer 管 target committed offset，两者不能互相替代。
+结论：采用独立 Kafka Connect distributed + Transfer capture supervisor 单一路线。capture supervisor 通过 Kafka Connect API 管理 connector 和状态映射；continuous worker 只消费 Infra Kafka。Kafka Connect 管 capture offset，Transfer 管 target committed offset，两者不能互相替代。connector、slot、publication、topic 和 group 均由服务端按 task/generation 生成，不进入公开任务配置。
 
-### 16.12 Oracle 第一版支持范围
+### 16.12 PostgreSQL CDC 第一版范围与生命周期（已确认）
+
+分析：如果 stop 后删除 connector/slot 再直接 resume，会产生无法补齐的捕获空档；如果重新 snapshot 只做 upsert，又无法删除目标中已经不存在于源端的残留行。若为了 resume 让已 stop 的任务永久保持捕获，stop 就失去真实资源终止语义。
+
+结论：第一版只支持 PostgreSQL 有稳定主键的单表，使用 Debezium `initial` snapshot，经单 partition Infra Kafka topic 写入不存在的 PostgreSQL 新目标表。snapshot/c/u/d 归一化为 snapshot/upsert/delete，目标固定 `upsert_delete`，schema drift 固定 fail。
+
+- pause 只停止目标应用，connector 继续捕获并推进 slot；resume 在 capture healthy 且 Kafka committed position 未过期时无损恢复。
+- 正常 pause 的主要资源代价是 Infra Kafka backlog、磁盘和 retention；connector/Kafka 故障导致 slot 停滞时，源库 WAL 才会额外持续增长。
+- stop 是不可逆终态，清理 ADDP-owned connector/slot/publication/topic；已 stop 任务不得 start/resume，重新同步创建新任务和新目标表。
+- Stop API 必须由服务端校验 `confirmed=true` 和与任务名称完全一致的 `confirmation_text`，Console 同时显示 danger 二次确认并要求输入任务名称；stop 保留目标业务数据、任务、execution、目标 ledger 和清理审计。
+- 第一版只支持 resume，不支持 replay、DLQ、truncate、自动 DDL、多表、无主键、MySQL 或 Oracle。
+
+### 16.13 Oracle 第一版支持范围
 
 分析：Oracle RAC、CDB/PDB、LOB、DDL 和长事务会显著增加验证矩阵。第一版应先证明通用 CDC 链路，而不是承诺所有 Oracle 部署形态。
 
-建议：在 PostgreSQL/MySQL CDC 链路稳定后，Oracle 第一版优先限定为一个明确受支持版本和单实例部署、表级选择、insert/update/delete、稳定主键和基础标量类型；初始 snapshot + LogMiner continuous 必须闭环。RAC、复杂 LOB、自动 DDL 传播和无主键表后置。最终版本范围必须结合用户真实 Oracle 环境与 Debezium 兼容矩阵确认，不能仅凭文档猜测。
+建议：在 PostgreSQL CDC 链路稳定后，Oracle 第一版优先限定为一个明确受支持版本和单实例部署、表级选择、insert/update/delete、稳定主键和基础标量类型；初始 snapshot + LogMiner continuous 必须闭环。RAC、复杂 LOB、自动 DDL 传播和无主键表后置。最终版本范围必须结合用户真实 Oracle 环境与 Debezium 兼容矩阵确认，不能仅凭文档猜测。
 
-### 16.13 Schema 变化与 Meta 协议
+### 16.14 Schema 变化与 Meta 协议（已确认）
 
 分析：Schema change 决定目标是否能继续应用，Meta scan 只负责识别变化后的事实。二者不能互相替代，也不能通过忽略未知字段维持假成功。
 
-建议：第一版使用 `fail/manual` 路线：阻塞 partition、保存 schema diff、产生用户可见诊断，用户完成目标变更后创建新 execution 恢复。安全 additive 自动变更后置。目标 DDL 成功后触发一次防抖 Meta deep scan；Meta scan 失败不回滚已提交 DDL，但 execution/派生 scan 关系必须可观测。
+结论：第一版只使用固定 `fail` 路线，不增加 `manual|additive` 任务配置开关。检测到字段增删、主键变化、类型不兼容或 envelope/source 结构变化时阻塞 partition、保存 schema diff，并以 `schema_change_blocked` 结束 execution；任务进入 `status=blocked`，禁止 start/resume/retry。由于 capture generation 创建后配置不可修改且第一版不能跳过当前消息，唯一处理方式是 Stop 旧任务并创建新任务、新目标表重新 initial snapshot。自动 DDL、安全 additive evolution、schema change request 和可恢复 generation migration 后置。
 
-### 16.14 何时评估 Flink
+### 16.15 何时评估 Flink
 
 分析：不能按“项目发展到某阶段”或“数据量看起来很大”引入 Flink，应由现有 runtime 的可测瓶颈或新计算语义触发。
 

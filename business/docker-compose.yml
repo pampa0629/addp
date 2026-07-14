@@ -29,6 +29,8 @@ services:
       - -c
       - config_file=/etc/postgresql/postgresql.conf
       - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+      - -c
       - timezone=Asia/Shanghai
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-business}
@@ -39,6 +41,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init.sh:/docker-entrypoint-initdb.d/init.sh:ro,cached
       - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro,cached
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro,cached
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
     healthcheck:

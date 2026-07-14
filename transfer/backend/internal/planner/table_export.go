@@ -29,6 +29,7 @@ const (
 	applyModeReplace       = "replace"
 	applyModeAppend        = "append"
 	applyModeUpsert        = "upsert"
+	applyModeUpsertDelete  = "upsert_delete"
 )
 
 type EngineRef struct {

@@ -64,6 +64,10 @@ func TestManagerErrorMessagesRegistered(t *testing.T) {
 		manageri18n.MsgImportZipMissingShp,
 		manageri18n.MsgImportZipBasenameMismatch,
 		manageri18n.MsgImportZipMissingRequired,
+		manageri18n.MsgInvalidModel3DTilesResultID,
+		manageri18n.MsgModel3DTilesResultNotFound,
+		manageri18n.MsgDeleteModel3DTilesFailed,
+		manageri18n.MsgModel3DTilesResultDeleted,
 	}
 
 	for _, messageID := range messageIDs {

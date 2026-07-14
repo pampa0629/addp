@@ -51,6 +51,14 @@ type ContinuousDiagnostics struct {
 	Error                  string                                    `json:"error,omitempty"`
 }
 
+type ContinuousSchemaChange struct {
+	DetectedAt         time.Time `json:"detected_at"`
+	Scope              string    `json:"scope"`
+	MissingFields      []string  `json:"missing_fields,omitempty"`
+	UnexpectedFields   []string  `json:"unexpected_fields,omitempty"`
+	IncompatibleFields []string  `json:"incompatible_fields,omitempty"`
+}
+
 type RuntimeLeaseRepository struct {
 	db *gorm.DB
 }
@@ -227,8 +235,12 @@ func (r *RuntimeLeaseRepository) Finish(ctx context.Context, claim RuntimeLeaseC
 		if result.RowsAffected != 1 {
 			return fmt.Errorf("finish continuous execution %s: current status is not running", claim.Execution.ExecutionID)
 		}
+		taskStatus := models.TaskStatusIdle
+		if stopReason == "schema_change_blocked" {
+			taskStatus = models.TaskStatusBlocked
+		}
 		return tx.Model(&models.TransferTask{}).Where("id = ?", claim.Task.ID).Updates(map[string]interface{}{
-			"status": models.TaskStatusIdle, "last_execution_status": status,
+			"status": taskStatus, "last_execution_status": status,
 		}).Error
 	})
 }
@@ -313,6 +325,43 @@ func (r *RuntimeLeaseRepository) RecordDiagnostics(ctx context.Context, claim Ru
 		metadata["continuous"] = continuousMeta
 		return tx.Model(&execution).Updates(map[string]interface{}{
 			"metadata": metadata, "updated_at": diagnostics.SampledAt,
+		}).Error
+	})
+}
+
+func (r *RuntimeLeaseRepository) RecordSchemaChange(ctx context.Context, claim RuntimeLeaseClaim, change ContinuousSchemaChange) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var leaseCount int64
+		if err := tx.Model(&models.RuntimeLease{}).
+			Where("task_id = ? AND owner_instance_id = ? AND fencing_token = ? AND lease_until > CURRENT_TIMESTAMP", claim.Task.ID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken).
+			Where("EXISTS (SELECT 1 FROM transfer.transfer_tasks t WHERE t.id = ? AND t.desired_state = ?)", claim.Task.ID, models.TaskDesiredStateRunning).
+			Count(&leaseCount).Error; err != nil {
+			return err
+		}
+		if leaseCount != 1 {
+			return ErrRuntimeLeaseLost
+		}
+		var execution commonExecution.TaskExecution
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("execution_id = ? AND status = ?", claim.Execution.ExecutionID, commonExecution.ExecutionStatusRunning).
+			First(&execution).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrRuntimeLeaseLost
+			}
+			return err
+		}
+		metadata := execution.Metadata
+		if metadata == nil {
+			metadata = commonModels.JSONMap{}
+		}
+		continuousMeta, _ := metadata["continuous"].(map[string]interface{})
+		if continuousMeta == nil {
+			continuousMeta = map[string]interface{}{}
+		}
+		continuousMeta["schema_change"] = change
+		metadata["continuous"] = continuousMeta
+		return tx.Model(&execution).Updates(map[string]interface{}{
+			"metadata": metadata, "updated_at": change.DetectedAt,
 		}).Error
 	})
 }

@@ -11,9 +11,12 @@ import { taskAPI } from '@/api/tasks'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import {
   buildContinuousSourceEndpoint,
+  buildPostgreSQLCDCSourceEndpoint,
+	cdcMappingsCoverSourceFields,
   continuousMappedTargetKeys,
   continuousMappingsValid,
-  isKafkaTopicSource
+	isKafkaTopicSource,
+	isPostgreSQLTableSource
 } from './continuousTask.mjs'
 
 export function useTaskWizardState() {
@@ -85,6 +88,21 @@ export function useTaskWizardState() {
   })
 
   const isContinuousTask = computed(() => runtimeBoundary.value === 'continuous')
+	const isKafkaContinuousTask = computed(() => {
+		return isContinuousTask.value && isKafkaTopicSource(sourceEngineType.value, sourceLocator.value)
+	})
+
+	const supportsPostgreSQLCDC = computed(() => {
+		return isPostgreSQLTableSource(sourceEngineType.value, sourceLocator.value) &&
+			sourceRepresentation.value === 'native' &&
+			sourceDataType.value === 'table' &&
+			isPostgresqlEngineType(targetEngineType.value) &&
+			targetRepresentation.value === 'native'
+	})
+
+	const isPostgreSQLCDCTask = computed(() => {
+		return isContinuousTask.value && loadMode.value === 'cdc'
+	})
 
   const supportsContinuousTarget = computed(() => {
     return isContinuousTask.value &&
@@ -99,12 +117,16 @@ export function useTaskWizardState() {
   })
 
   const continuousConfigValid = computed(() => {
-    return isKafkaTopicSource(sourceEngineType.value, sourceLocator.value) &&
+		const sourceValid = isPostgreSQLCDCTask.value
+			? supportsPostgreSQLCDC.value
+			: isKafkaTopicSource(sourceEngineType.value, sourceLocator.value)
+		return sourceValid &&
       supportsContinuousTarget.value &&
       continuousMappingsValid(fieldMappings.value, continuousKeyFields.value) &&
+			(!isPostgreSQLCDCTask.value || cdcMappingsCoverSourceFields(fieldMappings.value, sourceFields.value)) &&
       transforms.value.length === 0 &&
       continuousPollBatchSize.value > 0 &&
-      ['earliest', 'latest'].includes(continuousInitialPosition.value)
+			(isPostgreSQLCDCTask.value || ['earliest', 'latest'].includes(continuousInitialPosition.value))
   })
 
   const watermarkIncrementalValid = computed(() => {
@@ -177,6 +199,12 @@ export function useTaskWizardState() {
   })
 
   function buildLoadConfig() {
+		if (isPostgreSQLCDCTask.value) {
+			return {
+				mode: 'incremental',
+				change_detection: { type: 'cdc', bootstrap: 'initial_snapshot' }
+			}
+		}
     if (isContinuousTask.value) {
       return {
         mode: 'incremental',
@@ -238,6 +266,9 @@ export function useTaskWizardState() {
 
   function buildSourceEndpoint() {
     const config = sourceConfig.value || {}
+		if (isPostgreSQLCDCTask.value) {
+			return buildPostgreSQLCDCSourceEndpoint(sourceLocator.value)
+		}
     if (isContinuousTask.value) {
       return buildContinuousSourceEndpoint(
         sourceLocator.value,
@@ -333,7 +364,7 @@ export function useTaskWizardState() {
     if (targetRepresentation.value === 'native') {
       const policy = isContinuousTask.value
         ? {
-            apply_mode: 'upsert',
+						apply_mode: isPostgreSQLCDCTask.value ? 'upsert_delete' : 'upsert',
             keys: continuousTargetKeys.value
           }
         : isWatermarkIncremental.value
@@ -513,6 +544,28 @@ export function useTaskWizardState() {
       continuousPollBatchSize.value = 1000
     }
   }
+
+	function setLoadMode(mode) {
+		if (isKafkaTopicSource(sourceEngineType.value, sourceLocator.value)) {
+			loadMode.value = 'incremental'
+			runtimeBoundary.value = 'continuous'
+			return
+		}
+		if (mode === 'cdc') {
+			if (!supportsPostgreSQLCDC.value) return
+			loadMode.value = 'cdc'
+			runtimeBoundary.value = 'continuous'
+			schedule.value = ''
+			enabled.value = false
+			targetRepresentation.value = 'native'
+			continuousInitialPosition.value = 'earliest'
+			const primaryKeys = sourceFields.value.filter(isPrimaryKeyField).map(field => field.name)
+			updateContinuousKeyFields(primaryKeys)
+			return
+		}
+		loadMode.value = mode === 'incremental' ? 'incremental' : 'snapshot'
+		runtimeBoundary.value = 'bounded'
+	}
 
   function loadSourceFields(fields, attributes = null) {
     sourceFields.value = enrichSourceFieldsWithSpatialInfo(
@@ -700,11 +753,17 @@ export function useTaskWizardState() {
 
     runtimeBoundary.value = task.config?.runtime?.boundary === 'continuous' ? 'continuous' : 'bounded'
     const load = task.config?.load || {}
-    loadMode.value = load.mode === 'incremental' ? 'incremental' : 'snapshot'
+		const changeType = load.change_detection?.type
+		loadMode.value = changeType === 'cdc' ? 'cdc' : (load.mode === 'incremental' ? 'incremental' : 'snapshot')
     watermarkField.value = load.change_detection?.field || ''
     watermarkTieBreakers.value = normalizedFieldNames(load.change_detection?.tie_breaker)
     targetKeys.value = normalizedFieldNames(task.config?.target?.policy?.keys)
-    continuousKeyFields.value = normalizedFieldNames(task.config?.source?.change_stream?.key?.fields)
+		continuousKeyFields.value = changeType === 'cdc'
+			? normalizedFieldNames(task.config?.target?.policy?.keys).map(targetKey => {
+				const mapping = (task.config?.transforms?.[0]?.fields || []).find(field => sameFieldName(field?.target, targetKey))
+				return String(mapping?.source || '').trim()
+			}).filter(Boolean)
+			: normalizedFieldNames(task.config?.source?.change_stream?.key?.fields)
     continuousInitialPosition.value = task.config?.source?.change_stream?.start?.initial === 'latest' ? 'latest' : 'earliest'
     continuousPollBatchSize.value = Number(task.config?.source?.change_stream?.poll_batch_size || task.batch_size || 1000)
 
@@ -713,11 +772,11 @@ export function useTaskWizardState() {
       const source = task.config.source
       const sourceLoc = parseTransferLocator(source.locator)
       sourceEngineID.value = sourceLoc.engineID || null
-      sourceEngineType.value = isContinuousTask.value ? 'kafka' : (isWatermarkIncremental.value ? 'postgresql' : '')
+			sourceEngineType.value = changeType === 'cdc' ? 'postgresql' : (changeType === 'kafka' ? 'kafka' : (isWatermarkIncremental.value ? 'postgresql' : ''))
       sourceSchema.value = sourceLoc.path.length >= 2 ? sourceLoc.path[sourceLoc.path.length - 2] : ''
       sourceTable.value = sourceLoc.path.length >= 1 ? sourceLoc.path[sourceLoc.path.length - 1] : ''
       sourceType.value = normalizeEngineType(sourceEngineType.value || 'postgresql')
-      sourceDataType.value = isContinuousTask.value ? 'unknown' : (source.data_type || 'table')
+			sourceDataType.value = isKafkaContinuousTask.value ? 'unknown' : (source.data_type || 'table')
       sourceRepresentation.value = source.representation || 'native'
       sourceFormat.value = targetUiFormat(source.format, source.options || {})
       sourceLocator.value = source.locator || ''
@@ -1124,6 +1183,9 @@ export function useTaskWizardState() {
     isWatermarkIncremental,
     watermarkIncrementalValid,
     isContinuousTask,
+		isKafkaContinuousTask,
+		isPostgreSQLCDCTask,
+		supportsPostgreSQLCDC,
     supportsContinuousTarget,
     continuousTargetKeys,
     continuousConfigValid,
@@ -1145,6 +1207,7 @@ export function useTaskWizardState() {
     loadTargetFields,
     initializeIncrementalDefaults,
     updateContinuousKeyFields,
+		setLoadMode,
     autoGenerateFieldMappings,
     updateFieldMapping,
     addFieldMapping,

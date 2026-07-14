@@ -2,15 +2,22 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
+	pgmapper "github.com/addp/common/format/mappers/postgresql"
 	commonJSON "github.com/addp/common/jsonmap"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/models"
+	"github.com/addp/common/sqldialect"
+	servicei18n "github.com/addp/service/i18n"
+	serviceModels "github.com/addp/service/internal/models"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -109,32 +116,28 @@ func graphInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.GraphIn
 	return datatype.GraphInfoFromPayload(commonJSON.Section(attrs, "type_info.graph"))
 }
 
-// GetSQLSpatialMetadata 检测 SQL 查询结果的空间元数据
-// @Summary 获取 SQL 空间元数据 | Get SQL spatial metadata
+// GetSQLOutputContract 检测 SQL 查询结果的标准输出契约。
+// @Summary 获取 SQL 输出契约 | Get SQL output contract
 // @Tags 资源能力 | Resource Capabilities
 // @Accept json
 // @Produce json
-// @Param request body map[string]interface{} true "SQL 空间元数据请求 | SQL spatial metadata request"
-// @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router /sql/spatial-metadata [post]
+// @Param request body serviceModels.SQLQueryOutputContractRequest true "SQL 输出契约请求 | SQL output contract request"
+// @Success 200 {object} serviceModels.QueryServiceOutputContract "输出契约 | Output contract"
+// @Failure 400 {object} map[string]string "请求错误 | Bad request"
+// @Failure 500 {object} map[string]string "检测失败 | Detection failed"
+// @Router /sql/output-contract [post]
 // @Security BearerAuth
-func (h *ResourceCapabilityHandler) GetSQLSpatialMetadata(c *gin.Context) {
-	var req struct {
-		EngineID uint   `json:"engine_id" binding:"required"`
-		SQL      string `json:"sql" binding:"required"`
-	}
-
+func (h *ResourceCapabilityHandler) GetSQLOutputContract(c *gin.Context) {
+	var req serviceModels.SQLQueryOutputContractRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.TWithDetail(c, commoni18n.MsgInvalidParams, err.Error())})
 		return
 	}
 
 	// 1. 获取引擎信息
 	engine, err := h.systemClient.GetEngine(req.EngineID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get engine: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgSQLOutputContractFailed, err.Error())})
 		return
 	}
 
@@ -147,45 +150,31 @@ func (h *ResourceCapabilityHandler) GetSQLSpatialMetadata(c *gin.Context) {
 
 	db, err := dbbridge.GetOrCreatePool(commonEngine, dbbridge.DefaultPoolConfig())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to connect to database: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgSQLOutputContractFailed, err.Error())})
 		return
 	}
 
-	// 3. 检测 SQL 查询结果中的空间字段
-	spatialMeta, err := h.detectSQLSpatialFields(c.Request.Context(), db, engine.EngineType, req.SQL)
+	contract, err := h.detectSQLOutputContract(c.Request.Context(), db, engine.EngineType, req.SQL)
 	if err != nil {
-		// 如果 SQL 查询结果不包含空间字段，返回空结果而不是错误
-		c.JSON(http.StatusOK, gin.H{
-			"has_geometry": false,
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgSQLOutputContractFailed, err.Error())})
 		return
 	}
-
-	// 根据 API 规范：查询单个资源直接返回对象
-	c.JSON(http.StatusOK, gin.H{
-		"has_geometry":    spatialMeta.HasGeometry,
-		"geometry_column": spatialMeta.GeometryColumn,
-		"srid":            spatialMeta.SRID,
-		"geometry_type":   spatialMeta.GeometryType,
-		"geometry_types":  spatialMeta.GeometryTypes,
-		"extent":          spatialMeta.Extent,
-	})
+	c.JSON(http.StatusOK, contract)
 }
 
-// detectSQLSpatialFields 检测 SQL 查询结果中的空间字段
-func (h *ResourceCapabilityHandler) detectSQLSpatialFields(
+func (h *ResourceCapabilityHandler) detectSQLOutputContract(
 	ctx context.Context,
 	db *gorm.DB,
 	engineType string,
-	sql string,
-) (*SQLSpatialMetadata, error) {
+	query string,
+) (*serviceModels.QueryServiceOutputContract, error) {
 	// 仅支持 PostgreSQL（PostGIS）
 	if engineType != "postgresql" {
-		return nil, fmt.Errorf("spatial detection only supported for PostgreSQL")
+		return nil, fmt.Errorf("SQL output contract detection only supports PostgreSQL")
 	}
 
-	// 1. 执行 SQL 查询（LIMIT 1）获取列信息
-	testSQL := fmt.Sprintf("SELECT * FROM (%s) AS subquery LIMIT 1", sql)
+	query = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(query), ";"))
+	testSQL := fmt.Sprintf("SELECT * FROM (%s) AS subquery LIMIT 1", query)
 	rows, err := db.WithContext(ctx).Raw(testSQL).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute SQL: %w", err)
@@ -198,23 +187,39 @@ func (h *ResourceCapabilityHandler) detectSQLSpatialFields(
 		return nil, fmt.Errorf("failed to get column types: %w", err)
 	}
 
-	// 2. 查找几何列
+	mapper := &pgmapper.TypeMapper{}
+	tableInfo := &datatype.TableInfo{Kind: "query", Fields: make([]datatype.FieldInfo, 0, len(columnTypes))}
 	var geometryColumn string
-	for _, colType := range columnTypes {
-		dataType := colType.DatabaseTypeName()
-		// PostGIS 几何类型：geometry, geography
-		if dataType == "geometry" || dataType == "geography" {
+	for index, colType := range columnTypes {
+		nativeType := strings.ToLower(strings.TrimSpace(colType.DatabaseTypeName()))
+		fieldType := mapper.ToCommon(nativeType)
+		if nativeType == "geography" {
+			fieldType = datatype.FieldTypeGeometry
+		}
+		nullable, _ := colType.Nullable()
+		length, _ := colType.Length()
+		precision, scale, _ := colType.DecimalSize()
+		field := datatype.FieldInfo{
+			Name:            colType.Name(),
+			Type:            fieldType,
+			NativeType:      nativeType,
+			Nullable:        nullable,
+			OrdinalPosition: index + 1,
+			Size:            int(length),
+			Precision:       int(precision),
+			Scale:           int(scale),
+		}
+		tableInfo.Fields = append(tableInfo.Fields, field)
+		if geometryColumn == "" && datatype.IsSpatialFieldType(fieldType) {
 			geometryColumn = colType.Name()
-			break
 		}
 	}
 
 	if geometryColumn == "" {
-		return nil, fmt.Errorf("no geometry column found")
+		return &serviceModels.QueryServiceOutputContract{Table: tableInfo}, nil
 	}
 
-	// 3. 查询几何列的 SRID 和类型
-	// 使用 ST_SRID 和 ST_GeometryType 函数
+	quotedGeometryColumn := sqldialect.ForEngine(engineType).QuoteIdentifier(geometryColumn)
 	metaSQL := fmt.Sprintf(`
 		SELECT
 			ST_SRID(%s) AS srid,
@@ -222,25 +227,18 @@ func (h *ResourceCapabilityHandler) detectSQLSpatialFields(
 		FROM (%s) AS subquery
 		WHERE %s IS NOT NULL
 		LIMIT 1
-	`, geometryColumn, geometryColumn, sql, geometryColumn)
+	`, quotedGeometryColumn, quotedGeometryColumn, query, quotedGeometryColumn)
 
-	var srid int
-	var geomTypeRaw string
-	err = db.WithContext(ctx).Raw(metaSQL).Row().Scan(&srid, &geomTypeRaw)
-	if err != nil {
-		// 如果查询失败（可能是空表），使用默认值
-		srid = 4326
-		geomTypeRaw = "GEOMETRY"
+	var sridValue sql.NullInt64
+	var geometryTypeValue sql.NullString
+	if err := db.WithContext(ctx).Raw(metaSQL).Row().Scan(&sridValue, &geometryTypeValue); err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("detect geometry metadata failed: %w", err)
+	}
+	geometryType := "Geometry"
+	if geometryTypeValue.Valid {
+		geometryType = strings.TrimPrefix(geometryTypeValue.String, "ST_")
 	}
 
-	// PostGIS 返回的类型格式为 "ST_Point", "ST_LineString" 等
-	// 需要移除 "ST_" 前缀
-	geometryType := geomTypeRaw
-	if len(geomTypeRaw) > 3 && geomTypeRaw[:3] == "ST_" {
-		geometryType = geomTypeRaw[3:]
-	}
-
-	// 4. 计算空间范围（extent）
 	extentSQL := fmt.Sprintf(`
 		SELECT
 			ST_XMin(extent) AS min_x,
@@ -251,39 +249,48 @@ func (h *ResourceCapabilityHandler) detectSQLSpatialFields(
 			SELECT ST_Extent(%s) AS extent
 			FROM (%s) AS subquery
 		) AS extent_query
-	`, geometryColumn, sql)
+	`, quotedGeometryColumn, query)
 
 	var minX, minY, maxX, maxY *float64
 	err = db.WithContext(ctx).Raw(extentSQL).Row().Scan(&minX, &minY, &maxX, &maxY)
 
-	var extent map[string]interface{}
+	var extent *datatype.BoundingBox
 	if err == nil && minX != nil && minY != nil && maxX != nil && maxY != nil {
-		extent = map[string]interface{}{
-			"minX": *minX,
-			"minY": *minY,
-			"maxX": *maxX,
-			"maxY": *maxY,
+		bbox := datatype.NewBoundingBox(*minX, *minY, *maxX, *maxY)
+		extent = &bbox
+	}
+
+	column := datatype.GeometryColumnInfo{Name: geometryColumn, GeometryType: geometryType}
+	spatialInfo := &datatype.SpatialInfo{
+		GeometryColumns:       []datatype.GeometryColumnInfo{column},
+		PrimaryGeometryColumn: geometryColumn,
+		Extent:                extent,
+	}
+	if sridValue.Valid && sridValue.Int64 > 0 {
+		srid := int(sridValue.Int64)
+		crsRef := datatype.EPSGCRSRef(srid)
+		spatialInfo.GeometryColumns[0].SRID = &srid
+		spatialInfo.GeometryColumns[0].CRSRef = crsRef
+		var wkt, proj4 sql.NullString
+		if err := db.WithContext(ctx).Raw(`SELECT srtext, proj4text FROM spatial_ref_sys WHERE srid = ?`, srid).Row().Scan(&wkt, &proj4); err == nil {
+			definition := strings.TrimSpace(wkt.String)
+			encoding := datatype.CRSDefinitionEncodingWKT
+			if definition == "" {
+				definition = strings.TrimSpace(proj4.String)
+				encoding = datatype.CRSDefinitionEncodingProj4
+			}
+			if definition != "" {
+				spatialInfo.CRSDefinitions = []datatype.CRSDefinition{{
+					ID:                 crsRef,
+					DefinitionEncoding: encoding,
+					Definition:         definition,
+					Source:             datatype.CRSDefinitionSourcePostGISSpatialRefSys,
+				}}
+			}
 		}
 	}
 
-	return &SQLSpatialMetadata{
-		HasGeometry:    true,
-		GeometryColumn: geometryColumn,
-		SRID:           srid,
-		GeometryType:   geometryType,
-		GeometryTypes:  []string{geometryType},
-		Extent:         extent,
-	}, nil
-}
-
-// SQLSpatialMetadata SQL 查询结果的空间元数据
-type SQLSpatialMetadata struct {
-	HasGeometry    bool                   `json:"has_geometry"`
-	GeometryColumn string                 `json:"geometry_column"`
-	SRID           int                    `json:"srid"`
-	GeometryType   string                 `json:"geometry_type"`
-	GeometryTypes  []string               `json:"geometry_types"`
-	Extent         map[string]interface{} `json:"extent"`
+	return &serviceModels.QueryServiceOutputContract{Table: tableInfo, Spatial: spatialInfo}, nil
 }
 
 // HealthCheck 健康检查

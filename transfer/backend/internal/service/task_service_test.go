@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	commonExecution "github.com/addp/common/execution"
@@ -58,6 +59,12 @@ func TestValidateNewTaskConfigStillAcceptsTableTransfer(t *testing.T) {
 	}, 1000)
 	if err != nil {
 		t.Fatalf("validateNewTaskConfig() error = %v", err)
+	}
+}
+
+func TestValidateNewTaskConfigAcceptsPostgreSQLCDCAfterDataPlaneIsAvailable(t *testing.T) {
+	if err := validateNewTaskConfig(validPostgreSQLCDCTaskConfig(), 1000); err != nil {
+		t.Fatalf("PostgreSQL CDC task config rejected: %v", err)
 	}
 }
 
@@ -206,7 +213,7 @@ func TestContinuousTaskLifecycleIsAtomicWithoutAsynqQueue(t *testing.T) {
 	if second == nil || second.ExecutionID == first.ExecutionID {
 		t.Fatalf("resume execution = %#v, first=%s", second, first.ExecutionID)
 	}
-	if err := taskSvc.StopTask(context.Background(), task.ID, 7); err != nil {
+	if err := taskSvc.StopTask(context.Background(), task.ID, 7, models.StopTaskRequest{}); err != nil {
 		t.Fatalf("StopTask() error = %v", err)
 	}
 	stored, err := taskSvc.GetTask(context.Background(), task.ID, 7)
@@ -215,6 +222,93 @@ func TestContinuousTaskLifecycleIsAtomicWithoutAsynqQueue(t *testing.T) {
 	}
 	if stored.DesiredState != models.TaskDesiredStateStopped {
 		t.Fatalf("final desired_state = %q", stored.DesiredState)
+	}
+}
+
+func TestPostgreSQLCDCTaskStartsCaptureBeforeRuntimeAndResumesGeneration(t *testing.T) {
+	db := newTransferTaskServiceTestDB(t)
+	control := &fakeCaptureControl{}
+	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc.SetCaptureControl(control)
+	taskSvc.SetExecutionService(NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db)))
+	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
+		Name: "cdc", TaskType: commonExecution.TaskTypeSync, Config: validPostgreSQLCDCTaskConfig(), BatchSize: 100,
+	}, 7, 9)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	first, err := taskSvc.StartTask(context.Background(), task.ID, 7, 9)
+	if err != nil {
+		t.Fatalf("StartTask() error = %v", err)
+	}
+	if first == nil || control.startCalls != 1 || control.resumeCalls != 0 {
+		t.Fatalf("first start execution=%#v capture=%+v", first, control)
+	}
+	if err := taskSvc.PauseTask(context.Background(), task.ID, 7); err != nil {
+		t.Fatalf("PauseTask() error = %v", err)
+	}
+	second, err := taskSvc.ResumeTask(context.Background(), task.ID, 7, 9)
+	if err != nil {
+		t.Fatalf("ResumeTask() error = %v", err)
+	}
+	if second == nil || control.startCalls != 1 || control.resumeCalls != 1 {
+		t.Fatalf("resume execution=%#v capture=%+v", second, control)
+	}
+}
+
+func TestPostgreSQLCDCSchemaBlockedTaskCannotStartOrResume(t *testing.T) {
+	db := newTransferTaskServiceTestDB(t)
+	control := &fakeCaptureControl{resource: &models.CaptureResource{Status: models.CaptureStatusRunning}}
+	task := &models.TransferTask{
+		TenantID: 7, Name: "blocked cdc", TaskType: commonExecution.TaskTypeSync,
+		Config: validPostgreSQLCDCTaskConfig(), BatchSize: 100,
+		Status: models.TaskStatusBlocked, DesiredState: models.TaskDesiredStateRunning,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc.SetCaptureControl(control)
+	for name, start := range map[string]func() error{
+		"start": func() error {
+			_, err := taskSvc.StartTask(context.Background(), task.ID, 7, 9)
+			return err
+		},
+		"resume": func() error {
+			_, err := taskSvc.ResumeTask(context.Background(), task.ID, 7, 9)
+			return err
+		},
+		"pause": func() error {
+			return taskSvc.PauseTask(context.Background(), task.ID, 7)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := start(); !errors.Is(err, ErrCDCSchemaChangeBlocked) {
+				t.Fatalf("error = %v, want ErrCDCSchemaChangeBlocked", err)
+			}
+		})
+	}
+	if control.startCalls != 0 || control.resumeCalls != 0 {
+		t.Fatalf("blocked task touched capture control: start=%d resume=%d", control.startCalls, control.resumeCalls)
+	}
+}
+
+func TestPostgreSQLCDCConfigIsImmutableAfterCaptureGenerationCreation(t *testing.T) {
+	db := newTransferTaskServiceTestDB(t)
+	task := &models.TransferTask{
+		TenantID: 7, Name: "cdc", TaskType: commonExecution.TaskTypeSync,
+		Config: validPostgreSQLCDCTaskConfig(), BatchSize: 100, Status: models.TaskStatusIdle,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	control := &fakeCaptureControl{resource: &models.CaptureResource{TaskID: task.ID, TenantID: 7, Status: models.CaptureStatusRunning}}
+	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc.SetCaptureControl(control)
+	config := validPostgreSQLCDCTaskConfig()
+	config["target"].(map[string]interface{})["name"] = "other_target"
+	if _, err := taskSvc.UpdateTask(context.Background(), task.ID, 7, &models.UpdateTaskRequest{Config: config}); err == nil || !strings.Contains(err.Error(), "immutable") {
+		t.Fatalf("UpdateTask() error = %v, want immutable CDC config", err)
 	}
 }
 
@@ -237,6 +331,32 @@ func TestListTasksCanRestrictProviderDiscoveryToBounded(t *testing.T) {
 	}
 	if total != 1 || len(tasks) != 1 || tasks[0].Name != "bounded" {
 		t.Fatalf("bounded tasks total=%d items=%#v", total, tasks)
+	}
+}
+
+func TestStopPostgreSQLCDCRequiresExactTaskNameAndCleansCapture(t *testing.T) {
+	db := newTransferTaskServiceTestDB(t)
+	task := &models.TransferTask{
+		TenantID: 7, Name: "订单数据库变更同步", TaskType: commonExecution.TaskTypeSync,
+		Config: validPostgreSQLCDCTaskConfig(), Status: models.TaskStatusIdle, DesiredState: models.TaskDesiredStatePaused,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	control := &fakeCaptureControl{}
+	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc.SetCaptureControl(control)
+	if err := taskSvc.StopTask(context.Background(), task.ID, 7, models.StopTaskRequest{Confirmed: true, ConfirmationText: "错误名称"}); !errors.Is(err, ErrCDCStopConfirmationRequired) {
+		t.Fatalf("StopTask() error = %v", err)
+	}
+	if control.stopCalls != 0 {
+		t.Fatalf("capture cleanup called before confirmation: %d", control.stopCalls)
+	}
+	if err := taskSvc.StopTask(context.Background(), task.ID, 7, models.StopTaskRequest{Confirmed: true, ConfirmationText: task.Name}); err != nil {
+		t.Fatal(err)
+	}
+	if control.stopCalls != 1 {
+		t.Fatalf("capture cleanup calls = %d", control.stopCalls)
 	}
 }
 
@@ -362,4 +482,60 @@ func validContinuousTaskConfig() map[string]interface{} {
 			}},
 		}},
 	}
+}
+
+func validPostgreSQLCDCTaskConfig() map[string]interface{} {
+	return map[string]interface{}{
+		"runtime": map[string]interface{}{"boundary": "continuous"},
+		"load": map[string]interface{}{
+			"mode": "incremental", "change_detection": map[string]interface{}{"type": "cdc", "bootstrap": "initial_snapshot"},
+		},
+		"source": map[string]interface{}{
+			"locator": "addp://engine/12/path/public/orders?type=table", "data_type": "table", "representation": "native",
+		},
+		"target": map[string]interface{}{
+			"parent_locator": "addp://engine/20/path/public?type=schema", "name": "orders_cdc", "data_type": "table", "representation": "native",
+			"policy": map[string]interface{}{"apply_mode": "upsert_delete", "keys": []interface{}{"id"}},
+		},
+		"transforms": []interface{}{map[string]interface{}{
+			"type": "field_mapping", "version": "v1", "mode": "project",
+			"fields": []interface{}{map[string]interface{}{"source": "id", "target": "id", "target_type": "bigint", "nullable": false}},
+		}},
+	}
+}
+
+type fakeCaptureControl struct {
+	startCalls  int
+	resumeCalls int
+	pauseCalls  int
+	stopCalls   int
+	terminal    bool
+	resource    *models.CaptureResource
+}
+
+func (f *fakeCaptureControl) Start(_ context.Context, task *models.TransferTask) (*models.CaptureResource, error) {
+	f.startCalls++
+	f.resource = &models.CaptureResource{TaskID: task.ID, TenantID: task.TenantID, Status: models.CaptureStatusRunning}
+	return f.resource, nil
+}
+func (f *fakeCaptureControl) Pause(context.Context, *models.TransferTask) error {
+	f.pauseCalls++
+	return nil
+}
+func (f *fakeCaptureControl) Resume(context.Context, *models.TransferTask) error {
+	f.resumeCalls++
+	return nil
+}
+func (f *fakeCaptureControl) Stop(context.Context, *models.TransferTask) error {
+	f.stopCalls++
+	return nil
+}
+func (f *fakeCaptureControl) Get(context.Context, uint, uint) (*models.CaptureResource, error) {
+	if f.resource == nil {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return f.resource, nil
+}
+func (f *fakeCaptureControl) HasTerminalGeneration(context.Context, uint, uint) (bool, error) {
+	return f.terminal, nil
 }

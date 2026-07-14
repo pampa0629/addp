@@ -1493,6 +1493,128 @@ const docTemplate = `{
                 }
             }
         },
+        "/query/{id}/refresh-source-snapshot": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "用 Meta 当前事实替换表模式查询服务已发布快照 | Replace a table-mode query service snapshot with current Meta facts",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QueryService"
+                ],
+                "summary": "刷新查询服务依赖快照 | Refresh query service dependency snapshot",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务ID | Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "刷新后的查询服务 | Refreshed query service",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "服务不存在 | Service not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "刷新失败 | Refresh failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/query/{id}/source-snapshot-diff": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅在显式管理动作中读取 Meta 当前事实并与已发布快照比较 | Read current Meta facts only during an explicit management action and compare them with the published snapshot",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QueryService"
+                ],
+                "summary": "检查查询服务依赖快照 | Check query service dependency snapshot",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务ID | Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "快照差异 | Snapshot diff",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceSnapshotDiff"
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "服务不存在 | Service not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "检查失败 | Check failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/registered": {
             "get": {
                 "security": [
@@ -1919,7 +2041,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/sql/spatial-metadata": {
+        "/sql/output-contract": {
             "post": {
                 "security": [
                     {
@@ -1935,29 +2057,27 @@ const docTemplate = `{
                 "tags": [
                     "资源能力 | Resource Capabilities"
                 ],
-                "summary": "获取 SQL 空间元数据 | Get SQL spatial metadata",
+                "summary": "获取 SQL 输出契约 | Get SQL output contract",
                 "parameters": [
                     {
-                        "description": "SQL 空间元数据请求 | SQL spatial metadata request",
+                        "description": "SQL 输出契约请求 | SQL output contract request",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.SQLQueryOutputContractRequest"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "输出契约 | Output contract",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceOutputContract"
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "请求错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1966,7 +2086,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "检测失败 | Detection failed",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2484,6 +2604,112 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "dataitem.ItemDescriptor": {
+            "type": "object",
+            "properties": {
+                "dataType": {
+                    "$ref": "#/definitions/datatype.DataType"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "layout": {
+                    "$ref": "#/definitions/format.Layout"
+                },
+                "physicalPath": {
+                    "type": "string"
+                },
+                "primaryContentPath": {
+                    "type": "string"
+                },
+                "refs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataitem.ItemRef"
+                    }
+                },
+                "scopePath": {
+                    "type": "string"
+                },
+                "sizeBytes": {
+                    "type": "integer",
+                    "format": "int64"
+                },
+                "storageBucket": {
+                    "type": "string"
+                },
+                "storageName": {
+                    "type": "string"
+                },
+                "storagePath": {
+                    "type": "string"
+                }
+            }
+        },
+        "dataitem.ItemRef": {
+            "type": "object",
+            "properties": {
+                "extension": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "primary": {
+                    "type": "boolean"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "datatype.CRSDefinition": {
+            "type": "object",
+            "properties": {
+                "definition": {
+                    "type": "string"
+                },
+                "definition_encoding": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "datatype.DataType": {
+            "type": "string",
+            "enum": [
+                "unknown",
+                "table",
+                "document",
+                "media",
+                "container",
+                "graph",
+                "cad",
+                "model_3d",
+                "point_cloud",
+                "gaussian_splat"
+            ],
+            "x-enum-varnames": [
+                "Unknown",
+                "Table",
+                "Document",
+                "Media",
+                "Container",
+                "Graph",
+                "CAD",
+                "Model3D",
+                "PointCloud",
+                "GaussianSplat"
+            ]
+        },
         "datatype.FieldInfo": {
             "type": "object",
             "properties": {
@@ -2569,6 +2795,109 @@ const docTemplate = `{
                 "FieldTypeGeometry"
             ]
         },
+        "datatype.GeometryColumnInfo": {
+            "type": "object",
+            "properties": {
+                "crs_ref": {
+                    "type": "string"
+                },
+                "dimension": {
+                    "type": "integer"
+                },
+                "geometry_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "srid": {
+                    "type": "integer"
+                }
+            }
+        },
+        "datatype.SpatialInfo": {
+            "type": "object",
+            "properties": {
+                "crs_definitions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.CRSDefinition"
+                    }
+                },
+                "crs_ref": {
+                    "type": "string"
+                },
+                "extent": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "geometry_columns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.GeometryColumnInfo"
+                    }
+                },
+                "has_spatial_index": {
+                    "type": "boolean"
+                },
+                "index_name": {
+                    "type": "string"
+                },
+                "primary_geometry_column": {
+                    "type": "string"
+                },
+                "srid": {
+                    "type": "integer"
+                }
+            }
+        },
+        "datatype.TableInfo": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "native": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "primary_key": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "row_count": {
+                    "type": "integer"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "encoding_xml.Name": {
             "type": "object",
             "properties": {
@@ -2579,6 +2908,19 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "format.Layout": {
+            "type": "string",
+            "enum": [
+                "single",
+                "multi",
+                "whole"
+            ],
+            "x-enum-varnames": [
+                "LayoutSingle",
+                "LayoutMulti",
+                "LayoutWhole"
+            ]
         },
         "github_com_addp_service_internal_models.AggregateColumn": {
             "type": "object",
@@ -2792,6 +3134,14 @@ const docTemplate = `{
                     "type": "integer",
                     "maximum": 10000,
                     "minimum": 1
+                },
+                "output_contract": {
+                    "description": "SQL 模式检测得到的输出契约；快照时间和 hash 由 Service 生成。",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceOutputContract"
+                        }
+                    ]
                 },
                 "protocols": {
                     "description": "协议配置（可选，使用默认值）",
@@ -3132,6 +3482,190 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_service_internal_models.QueryServiceDTO": {
+            "type": "object",
+            "properties": {
+                "config_type": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "审计",
+                    "type": "integer"
+                },
+                "data_config": {
+                    "description": "配置",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "description": {
+                    "type": "string"
+                },
+                "endpoints": {
+                    "description": "服务端点",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "max_features": {
+                    "type": "integer"
+                },
+                "protocols": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "public_access": {
+                    "description": "访问控制",
+                    "type": "boolean"
+                },
+                "schema_name": {
+                    "description": "表配置",
+                    "type": "string"
+                },
+                "service_name": {
+                    "type": "string"
+                },
+                "sql_query": {
+                    "description": "SQL配置",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "状态",
+                    "type": "string"
+                },
+                "table_name": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.QueryServiceDependencySnapshot": {
+            "type": "object",
+            "properties": {
+                "captured_at": {
+                    "type": "string"
+                },
+                "dependency_hash": {
+                    "type": "string"
+                },
+                "federated_object_tables": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "object_table": {
+                    "$ref": "#/definitions/dataitem.ItemDescriptor"
+                },
+                "query_hash": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceSourceRef"
+                },
+                "spatial": {
+                    "$ref": "#/definitions/datatype.SpatialInfo"
+                },
+                "table": {
+                    "$ref": "#/definitions/datatype.TableInfo"
+                },
+                "verification_status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.QueryServiceOutputContract": {
+            "type": "object",
+            "properties": {
+                "spatial": {
+                    "$ref": "#/definitions/datatype.SpatialInfo"
+                },
+                "table": {
+                    "$ref": "#/definitions/datatype.TableInfo"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.QueryServiceSnapshotDiff": {
+            "type": "object",
+            "properties": {
+                "current_dependency_hash": {
+                    "type": "string"
+                },
+                "current_snapshot": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceDependencySnapshot"
+                },
+                "object_table_changed": {
+                    "type": "boolean"
+                },
+                "published_dependency_hash": {
+                    "type": "string"
+                },
+                "published_snapshot": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceDependencySnapshot"
+                },
+                "service_id": {
+                    "type": "integer"
+                },
+                "source_changed": {
+                    "type": "boolean"
+                },
+                "spatial_changed": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "table_changed": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.QueryServiceSourceRef": {
+            "type": "object",
+            "properties": {
+                "data_updated_at": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "scanned_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_service_internal_models.RefreshMetadataRequest": {
             "type": "object",
             "properties": {
@@ -3262,6 +3796,21 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.SQLQueryOutputContractRequest": {
+            "type": "object",
+            "required": [
+                "engine_id",
+                "sql"
+            ],
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "sql": {
                     "type": "string"
                 }
             }

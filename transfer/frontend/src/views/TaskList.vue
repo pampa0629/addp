@@ -54,6 +54,7 @@
             <el-select v-model="searchForm.status" :placeholder="t('transfer.taskList.statusPlaceholder')" clearable class="search-select">
               <el-option :label="t('transfer.taskList.idle')" value="idle" />
               <el-option :label="t('transfer.taskList.running')" value="running" />
+							<el-option :label="t('transfer.taskList.schemaBlocked')" value="blocked" />
             </el-select>
           </el-form-item>
           <el-form-item>
@@ -87,16 +88,16 @@
         <el-table-column :label="t('transfer.taskList.actions')" width="430" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="handleDetail(row.id)">{{ t('transfer.taskList.detail') }}</el-button>
-            <el-button size="small" @click="handleEdit(row)" :disabled="isRunning(row)">{{ t('transfer.taskList.edit') }}</el-button>
+            <el-button size="small" @click="handleEdit(row)" :disabled="isRunning(row) || isCDCSchemaBlocked(row)">{{ t('transfer.taskList.edit') }}</el-button>
             <template v-if="isContinuousTask(row)">
               <el-button size="small" type="primary" @click="handleStartContinuous(row)" :disabled="!canStartContinuous(row)">
                 {{ row.desired_state === 'paused' ? t('transfer.taskList.resume') : t('transfer.taskList.start') }}
               </el-button>
-              <el-button size="small" type="warning" @click="handlePause(row)" :disabled="row.desired_state !== 'running'">
+              <el-button size="small" type="warning" @click="handlePause(row)" :disabled="row.desired_state !== 'running' || isCDCSchemaBlocked(row)">
                 {{ t('transfer.taskList.pause') }}
               </el-button>
-              <el-button size="small" @click="handleStop(row)" :disabled="row.desired_state === 'stopped'">
-                {{ t('transfer.taskList.stop') }}
+              <el-button size="small" :type="isPostgreSQLCDCTask(row) ? 'danger' : undefined" @click="handleStop(row)" :disabled="row.desired_state === 'stopped' && row.capture?.status !== 'cleanup_failed'">
+                {{ row.capture?.status === 'cleanup_failed' ? t('transfer.taskList.retryCleanup') : t('transfer.taskList.stop') }}
               </el-button>
               <el-button size="small" type="danger" @click="handleDelete(row)" :disabled="row.desired_state !== 'stopped' || isRunning(row)">
                 {{ t('transfer.taskList.delete') }}
@@ -153,6 +154,7 @@ import { Plus, Loading, SuccessFilled, CircleCloseFilled } from '@element-plus/i
 import { taskAPI } from '@/api/tasks'
 import { formatDate } from '@common-ui'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType } from '@/utils/formatters'
+import { buildCDCStopRequest, isCDCSchemaBlocked, isPostgreSQLCDCTask } from '@/utils/cdcTask.mjs'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -286,7 +288,10 @@ const handleExecute = async (task) => {
 // 暂停定时任务
 const handlePause = async (task) => {
   try {
-    await ElMessageBox.confirm(t('transfer.taskList.pauseConfirm'), t('transfer.taskList.hint'), {
+    const message = isPostgreSQLCDCTask(task)
+      ? t('transfer.taskList.cdcPauseConfirm')
+      : t('transfer.taskList.pauseConfirm')
+    await ElMessageBox.confirm(message, t('transfer.taskList.hint'), {
       confirmButtonText: t('transfer.taskList.confirm'),
       cancelButtonText: t('transfer.taskList.cancel'),
       type: 'warning'
@@ -328,6 +333,24 @@ const handleStartContinuous = async (task) => {
 
 const handleStop = async (task) => {
   try {
+    if (isPostgreSQLCDCTask(task)) {
+      const { value } = await ElMessageBox.prompt(
+        t('transfer.taskList.cdcStopConfirm', { name: task.name }),
+        t('transfer.taskList.cdcStopTitle'),
+        {
+          confirmButtonText: t('transfer.taskList.cdcStopButton'),
+          cancelButtonText: t('transfer.taskList.cancel'),
+          type: 'error',
+          confirmButtonClass: 'el-button--danger',
+          inputPlaceholder: t('transfer.taskList.cdcStopInputPlaceholder'),
+          inputValidator: (input) => input === task.name || t('transfer.taskList.cdcStopNameMismatch')
+        }
+      )
+      await taskAPI.stop(task.id, buildCDCStopRequest(task.name, value))
+      ElMessage.success(t('transfer.taskList.stopped'))
+      await loadPageData()
+      return
+    }
     await ElMessageBox.confirm(t('transfer.taskList.stopConfirm'), t('transfer.taskList.hint'), {
       confirmButtonText: t('transfer.taskList.confirm'),
       cancelButtonText: t('transfer.taskList.cancel'),
@@ -364,13 +387,18 @@ const handleDelete = async (task) => {
 // 辅助函数
 const isManualTask = (task) => !task.schedule
 const isContinuousTask = (task) => task?.config?.runtime?.boundary === 'continuous'
-const isRunning = (task) => task.status === 'running' || (isContinuousTask(task) && task.desired_state === 'running')
-const canStartContinuous = (task) => ['paused', 'stopped'].includes(task.desired_state) && !isRunning(task)
+const isRunning = (task) => !isCDCSchemaBlocked(task) && (task.status === 'running' || (isContinuousTask(task) && task.desired_state === 'running'))
+const canStartContinuous = (task) => {
+	if (isCDCSchemaBlocked(task)) return false
+  if (isPostgreSQLCDCTask(task) && task.desired_state === 'stopped') return false
+  return ['paused', 'stopped'].includes(task.desired_state) && !isRunning(task)
+}
 const canStartSchedule = (task) => !task.enabled
 const canPauseSchedule = (task) => task.enabled
 const canDeleteManual = (task) => !isRunning(task)
 const getTaskDisplayStatus = (task) => {
   if (!isContinuousTask(task)) return getTaskStatusLabel(task)
+	if (isCDCSchemaBlocked(task)) return t('transfer.taskList.schemaBlocked')
   if (task.desired_state === 'paused') return t('transfer.taskList.continuousPaused')
   if (task.desired_state === 'stopped') return t('transfer.taskList.continuousStopped')
   return t('transfer.taskList.continuousRunning')

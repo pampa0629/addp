@@ -80,6 +80,8 @@ func (h *Model3DTilesHandler) GetAsset(c *gin.Context) {
 		contentType = model3DTilesAssetContentType(cleaned)
 	}
 	c.Header("Accept-Ranges", "bytes")
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
 	c.Header("Content-Type", contentType)
 	http.ServeContent(c.Writer, c.Request, path.Base(cleaned), info.LastModified, io.NewSectionReader(object, 0, info.Size))
 }

@@ -95,8 +95,6 @@ func SetupRouter(
 
 	protected.GET("/system-engines", systemEngineHandler.List)
 	protected.GET("/capabilities", capabilityHandler.Get)
-	protected.GET("/provider-tasks", taskHandler.ProviderListTasks)
-
 	// 任务管理路由
 	tasks := protected.Group("/tasks")
 	{

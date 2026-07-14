@@ -67,13 +67,13 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 	if opts.TableUpsert {
 		caps.Storage.Store.TableUpsert = &TableUpsertCapability{Supported: true, Idempotent: true}
 	}
-	if opts.PartitionedTableChangeApply {
+	if len(opts.PartitionedTableChangeApplyOperations) > 0 {
 		caps.Storage.Store.PartitionedTableChangeApply = &PartitionedTableChangeApplyCapability{
 			Supported:            true,
 			AtomicPositionCommit: true,
 			Monotonic:            true,
 			PositionTypes:        []string{"kafka_offset/v1"},
-			Operations:           []string{TableChangeOperationUpsert},
+			Operations:           append([]string(nil), opts.PartitionedTableChangeApplyOperations...),
 		}
 	}
 	if opts.Delete {
@@ -84,24 +84,24 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 }
 
 type TabularCapabilityOptions struct {
-	Write                       bool
-	BulkWrite                   bool
-	TableReadSession            bool
-	TableReadSpatialTransform   bool
-	TableSpatialEncoding        *NativeTableSpatialEncodingCapability
-	BatchWrite                  bool
-	TableWriteSession           bool
-	TableWritePrepare           bool
-	BoundedWatermarkRead        bool
-	TableUpsert                 bool
-	PartitionedTableChangeApply bool
-	Delete                      bool
-	SpatialFacts                bool
-	SupportsExplain             bool
-	SupportsCancel              bool
-	DefaultLanguage             string
-	Description                 string
-	WriterConnector             string
+	Write                                 bool
+	BulkWrite                             bool
+	TableReadSession                      bool
+	TableReadSpatialTransform             bool
+	TableSpatialEncoding                  *NativeTableSpatialEncodingCapability
+	BatchWrite                            bool
+	TableWriteSession                     bool
+	TableWritePrepare                     bool
+	BoundedWatermarkRead                  bool
+	TableUpsert                           bool
+	PartitionedTableChangeApplyOperations []string
+	Delete                                bool
+	SpatialFacts                          bool
+	SupportsExplain                       bool
+	SupportsCancel                        bool
+	DefaultLanguage                       string
+	Description                           string
+	WriterConnector                       string
 }
 
 func cloneNativeTableSpatialEncoding(capability *NativeTableSpatialEncodingCapability) *NativeTableSpatialEncodingCapability {

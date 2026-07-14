@@ -2922,9 +2922,11 @@ func TestModel3DTilesCapabilityReturnsIndependentReadyResultsWhenEngineDiscovery
 	db := newTileCacheTaskServiceTestDB(t)
 	createModel3DTilesResultTableForTest(t, db)
 	locator := "addp://engine/26/path/site?type=directory"
+	execution3DTiles := "exec-3d-tiles"
+	executionS3M := "exec-s3m"
 	results := []*models.Model3DTiles{
-		{TenantID: 7, ItemFingerprint: "fp-ready", Locator: locator, SourceEngineID: 26, SourceFormat: "osgb_scene", TargetFormat: models.Model3DTilesTargetFormat3DTiles, StorageRef: "3d-ref", ManifestRef: "tileset.json", Status: models.Model3DTilesStatusReady, Metadata: commonModels.JSONMap{}},
-		{TenantID: 7, ItemFingerprint: "fp-ready", Locator: locator, SourceEngineID: 26, SourceFormat: "osgb_scene", TargetFormat: models.Model3DTilesTargetFormatS3M, StorageRef: "s3m-ref", ManifestRef: "config/scene.scp", Status: models.Model3DTilesStatusReady, Metadata: commonModels.JSONMap{}},
+		{TenantID: 7, ItemFingerprint: "fp-ready", Locator: locator, SourceEngineID: 26, SourceFormat: "osgb_scene", TargetFormat: models.Model3DTilesTargetFormat3DTiles, StorageRef: "3d-ref", ManifestRef: "tileset.json", Status: models.Model3DTilesStatusReady, LastExecutionID: &execution3DTiles, Metadata: commonModels.JSONMap{}},
+		{TenantID: 7, ItemFingerprint: "fp-ready", Locator: locator, SourceEngineID: 26, SourceFormat: "osgb_scene", TargetFormat: models.Model3DTilesTargetFormatS3M, StorageRef: "s3m-ref", ManifestRef: "config/scene.scp", Status: models.Model3DTilesStatusReady, LastExecutionID: &executionS3M, Metadata: commonModels.JSONMap{}},
 	}
 	for _, result := range results {
 		if err := db.Create(result).Error; err != nil {
@@ -2950,6 +2952,9 @@ func TestModel3DTilesCapabilityReturnsIndependentReadyResultsWhenEngineDiscovery
 	}
 	if !strings.Contains(formats[models.Model3DTilesTargetFormatS3M].PreviewURL, "/config/scene.scp") {
 		t.Fatalf("s3m preview_url = %q, want scene.scp", formats[models.Model3DTilesTargetFormatS3M].PreviewURL)
+	}
+	if !strings.Contains(formats[models.Model3DTilesTargetFormatS3M].PreviewURL, "version=exec-s3m") {
+		t.Fatalf("s3m preview_url = %q, want execution version", formats[models.Model3DTilesTargetFormatS3M].PreviewURL)
 	}
 }
 

@@ -1,10 +1,20 @@
 package postgresql
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 )
+
+func TestPostgreSQLPartitionedChangeApplyDeclaresUpsertAndDelete(t *testing.T) {
+	capability := (&PostgreSQLPlugin{}).Capabilities().Storage.Store.PartitionedTableChangeApply
+	want := []string{plugin.TableChangeOperationUpsert, plugin.TableChangeOperationDelete}
+	if capability == nil || !reflect.DeepEqual(capability.Operations, want) {
+		t.Fatalf("partitioned change apply operations = %#v, want %v", capability, want)
+	}
+}
 
 func TestPostgreSQLIsSystemSchema(t *testing.T) {
 	plugin := &PostgreSQLPlugin{}

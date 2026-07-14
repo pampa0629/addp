@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	servicei18n "github.com/addp/service/i18n"
 	"github.com/addp/service/internal/models"
 	svc "github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
@@ -241,6 +243,66 @@ func (h *QueryServiceHandler) DeleteService(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Service deleted successfully"})
+}
+
+// CheckSourceSnapshot 检查查询服务依赖快照。
+// @Summary 检查查询服务依赖快照 | Check query service dependency snapshot
+// @Description 仅在显式管理动作中读取 Meta 当前事实并与已发布快照比较 | Read current Meta facts only during an explicit management action and compare them with the published snapshot
+// @Tags QueryService
+// @Produce json
+// @Param id path int true "服务ID | Service ID"
+// @Success 200 {object} models.QueryServiceSnapshotDiff "快照差异 | Snapshot diff"
+// @Failure 400 {object} map[string]string "请求错误 | Bad request"
+// @Failure 404 {object} map[string]string "服务不存在 | Service not found"
+// @Failure 500 {object} map[string]string "检查失败 | Check failed"
+// @Router /query/{id}/source-snapshot-diff [get]
+// @Security BearerAuth
+func (h *QueryServiceHandler) CheckSourceSnapshot(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, commoni18n.MsgInvalidID)})
+		return
+	}
+	result, err := h.svc.CheckSourceSnapshot(uint(id), c.GetUint("tenant_id"))
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgSnapshotCheckFailed, err.Error())})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// RefreshSourceSnapshot 刷新查询服务依赖快照。
+// @Summary 刷新查询服务依赖快照 | Refresh query service dependency snapshot
+// @Description 用 Meta 当前事实替换表模式查询服务已发布快照 | Replace a table-mode query service snapshot with current Meta facts
+// @Tags QueryService
+// @Produce json
+// @Param id path int true "服务ID | Service ID"
+// @Success 200 {object} models.QueryServiceDTO "刷新后的查询服务 | Refreshed query service"
+// @Failure 400 {object} map[string]string "请求错误 | Bad request"
+// @Failure 404 {object} map[string]string "服务不存在 | Service not found"
+// @Failure 500 {object} map[string]string "刷新失败 | Refresh failed"
+// @Router /query/{id}/refresh-source-snapshot [post]
+// @Security BearerAuth
+func (h *QueryServiceHandler) RefreshSourceSnapshot(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, commoni18n.MsgInvalidID)})
+		return
+	}
+	result, err := h.svc.RefreshSourceSnapshot(uint(id), c.GetUint("tenant_id"))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgSnapshotRefreshFailed, err.Error())})
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // ===== REST 查询 API =====

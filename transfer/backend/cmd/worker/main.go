@@ -46,7 +46,7 @@ func main() {
 	if logLevel == "" {
 		logLevel = "info"
 	}
-	logFile := filepath.Join("logs", "transfer-worker.log")
+	logFile := filepath.Join("logs", "transfer-bounded-worker.log")
 	logger.Init(logger.Options{
 		Level:          logLevel,
 		Format:         "json",
@@ -54,7 +54,7 @@ func main() {
 		AddSource:      true,
 		RedirectStdLog: true,
 	})
-	logger.L().Info("transfer worker starting",
+	logger.L().Info("transfer bounded worker starting",
 		"version", "0.0.20",
 		"log_level", logLevel,
 		"log_file", logFile,
@@ -157,7 +157,7 @@ func main() {
 	defer scheduler.Stop()
 
 	// 启动 Worker
-	log.Printf("🚀 Transfer Worker 启动中...")
+	log.Printf("🚀 Transfer Bounded Worker 启动中...")
 	log.Printf("📊 数据库: %s@%s:%s/%s (schema: %s)",
 		cfg.DBUser, cfg.DBHost, cfg.DBPort, cfg.DBName, cfg.DBSchema)
 	log.Printf("📮 Redis: %s", redisAddr)
@@ -176,7 +176,7 @@ func main() {
 		}
 	}()
 
-	log.Println("✅ Transfer Worker 已启动，等待任务...")
+	log.Println("✅ Transfer Bounded Worker 已启动，等待任务...")
 
 	// 等待关闭信号
 	<-ctx.Done()

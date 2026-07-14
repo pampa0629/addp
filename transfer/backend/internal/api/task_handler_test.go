@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -38,6 +39,69 @@ func TestTaskHandlerListTasksRejectsUnsupportedTaskType(t *testing.T) {
 	}
 }
 
+func TestTaskHandlerResumeSchemaBlockedCDCReturnsConflict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newTransferTaskHandlerTestDB(t)
+	task := &models.TransferTask{
+		TenantID: 7, Name: "blocked cdc", TaskType: commonExecution.TaskTypeSync,
+		Config: validTransferTaskHandlerCDCConfig(), BatchSize: 100,
+		Status: models.TaskStatusBlocked, DesiredState: models.TaskDesiredStateRunning,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	taskSvc := service.NewTaskService(db, nil, nil, nil)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", uint(7))
+		c.Set("user_id", uint(9))
+		c.Next()
+	})
+	router.POST("/task-definitions/:id/resume", NewTaskHandler(taskSvc).ResumeTask)
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/task-definitions/%d/resume", task.ID), nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "结构变化") {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestExecutionHandlerRetrySchemaBlockedCDCReturnsConflict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newTransferTaskHandlerTestDB(t)
+	task := &models.TransferTask{
+		TenantID: 7, Name: "blocked cdc", TaskType: commonExecution.TaskTypeSync,
+		Config: validTransferTaskHandlerCDCConfig(), BatchSize: 100,
+		Status: models.TaskStatusBlocked, DesiredState: models.TaskDesiredStateRunning,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	execution := commonExecution.TaskExecution{
+		TenantID: 7, ExecutionID: "blocked-cdc-execution", Module: commonExecution.ModuleTransfer,
+		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
+		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), Status: commonExecution.ExecutionStatusFailed,
+		TriggerType: commonExecution.TriggerTypeManual,
+	}
+	if err := db.Create(&execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	executionSvc := service.NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", uint(7))
+		c.Set("user_id", uint(9))
+		c.Next()
+	})
+	router.POST("/executions/:execution_id/retry", NewExecutionHandler(executionSvc).RetryExecution)
+	req := httptest.NewRequest(http.MethodPost, "/executions/blocked-cdc-execution/retry", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "结构变化") {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
 func TestTaskHandlerListTasksUsesStandardItemsShape(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newTransferTaskHandlerTestDB(t)
@@ -49,6 +113,12 @@ func TestTaskHandlerListTasksUsesStandardItemsShape(t *testing.T) {
 	}, 7, 9)
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
+	}
+	_, err = taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
+		Name: "continuous sync task", TaskType: commonExecution.TaskTypeSync, Config: validTransferTaskHandlerContinuousConfig(),
+	}, 7, 9)
+	if err != nil {
+		t.Fatalf("CreateTask(continuous) error = %v", err)
 	}
 
 	router := gin.New()
@@ -87,6 +157,16 @@ func TestTaskHandlerListTasksUsesStandardItemsShape(t *testing.T) {
 	}
 	if resp.TotalPages != nil {
 		t.Fatalf("total_pages = %d, want omitted in TaskProvider standard response; body=%s", *resp.TotalPages, w.Body.String())
+	}
+
+	allReq := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+	all := httptest.NewRecorder()
+	router.ServeHTTP(all, allReq)
+	var allResp struct {
+		Items []models.TransferTask `json:"items"`
+	}
+	if all.Code != http.StatusOK || json.Unmarshal(all.Body.Bytes(), &allResp) != nil || len(allResp.Items) != 2 {
+		t.Fatalf("Console task list should keep bounded and continuous tasks: status=%d body=%s", all.Code, all.Body.String())
 	}
 }
 
@@ -257,5 +337,47 @@ func validTransferTaskHandlerConfig() map[string]interface{} {
 			"format":         string(format.FormatCSV),
 			"policy":         map[string]interface{}{"apply_mode": "replace"},
 		},
+	}
+}
+
+func validTransferTaskHandlerContinuousConfig() map[string]interface{} {
+	return map[string]interface{}{
+		"runtime": map[string]interface{}{"boundary": "continuous"},
+		"load":    map[string]interface{}{"mode": "incremental", "change_detection": map[string]interface{}{"type": "kafka"}},
+		"source": map[string]interface{}{
+			"locator": "addp://engine/30/path/orders.events?type=topic", "representation": "native",
+			"change_stream": map[string]interface{}{
+				"envelope": "record", "encoding": "json", "key": map[string]interface{}{"source": "value", "fields": []interface{}{"id"}},
+				"start": map[string]interface{}{"mode": "committed", "initial": "earliest"}, "poll_batch_size": 100,
+			},
+		},
+		"target": map[string]interface{}{
+			"parent_locator": "addp://engine/8/path/public?type=schema", "name": "orders", "data_type": "table", "representation": "native",
+			"policy": map[string]interface{}{"apply_mode": "upsert", "keys": []interface{}{"id"}},
+		},
+		"transforms": []interface{}{map[string]interface{}{
+			"type": "field_mapping", "version": "v1", "mode": "project",
+			"fields": []interface{}{map[string]interface{}{"source": "id", "target": "id", "target_type": "bigint", "nullable": false}},
+		}},
+	}
+}
+
+func validTransferTaskHandlerCDCConfig() map[string]interface{} {
+	return map[string]interface{}{
+		"runtime": map[string]interface{}{"boundary": "continuous"},
+		"load": map[string]interface{}{
+			"mode": "incremental", "change_detection": map[string]interface{}{"type": "cdc", "bootstrap": "initial_snapshot"},
+		},
+		"source": map[string]interface{}{
+			"locator": "addp://engine/12/path/public/orders?type=table", "data_type": "table", "representation": "native",
+		},
+		"target": map[string]interface{}{
+			"parent_locator": "addp://engine/20/path/public?type=schema", "name": "orders_cdc", "data_type": "table", "representation": "native",
+			"policy": map[string]interface{}{"apply_mode": "upsert_delete", "keys": []interface{}{"id"}},
+		},
+		"transforms": []interface{}{map[string]interface{}{
+			"type": "field_mapping", "version": "v1", "mode": "project",
+			"fields": []interface{}{map[string]interface{}{"source": "id", "target": "id", "target_type": "bigint", "nullable": false}},
+		}},
 	}
 }

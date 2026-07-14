@@ -422,13 +422,13 @@ Manager 预览应消费已入库 `data_type=model_3d + format=3dtiles`、`layout
 | 主入口 | `config/scene.scp` |
 | 内容 | 旧版 XML SCP + `.s3m`，或新版 JSON SCP + `.s3mb` |
 
-ADDP 生成的 S3M 数据集统一使用 `config/scene.scp`，detector 通过 descriptor 的固定相对路径强命中并独占认领整个 scope。`item.refs` 只保留 SCP manifest；`Data/` 下的瓦片、LOD 和纹理内容不重复落为 data item。
+ADDP 生成的 S3M 数据集统一使用 `config/scene.scp`，detector 通过 descriptor 的固定相对路径强命中并独占认领整个 scope。`item.refs` 只保留 SCP manifest；manifest 引用的数据目录（当前 SuperMap 输出为 `config/scene/Data/`）下的瓦片、LOD 和纹理内容不重复落为 data item。
 
 ### attributes 与消费
 
 `format_info.s3m` 保存 `manifest_ref`、`manifest_encoding`、`version`、`file_type`、`root_tile_count`、`tile_extension` 和位置摘要；稳定的分块场景语义进入 `type_info.model_3d.model_kind=tiled_scene`。Manager 返回 `preview_material=url + frontend_renderer=s3m`，使用路径型受控资源 URL 保持 SCP 相对引用可访问；Cesium 和 S3M renderer 只在该预览组件挂载时动态加载。
 
-SuperMap Workflow 的 `osgb_scene_to_s3m` 固定使用 DXT 纹理压缩。前端必须在加载前检测 S3TC；浏览器未启用该能力时给出硬件加速提示，不得继续渲染为静默白模。不得把 renderer 状态、浏览器能力或受控 URL 写回 Meta attributes。
+SuperMap Workflow 的 `osgb_scene_to_s3m` 固定使用 WebP 纹理压缩。Manager 使用 S3M renderer 的 WebP 解码路径加载纹理，不依赖 WebGL S3TC 压缩纹理扩展；不得把 renderer 状态、浏览器能力或受控 URL 写回 Meta attributes。
 
 ## OSGB
 

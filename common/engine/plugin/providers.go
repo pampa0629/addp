@@ -170,6 +170,7 @@ const (
 	ChangeStreamPositionTypeKafkaOffset = "kafka_offset"
 	ChangeStreamPositionVersionV1       = "v1"
 	TableChangeOperationUpsert          = "upsert"
+	TableChangeOperationDelete          = "delete"
 	ChangeStreamInitialEarliest         = "earliest"
 	ChangeStreamInitialLatest           = "latest"
 )

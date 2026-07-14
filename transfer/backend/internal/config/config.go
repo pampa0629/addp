@@ -3,9 +3,13 @@ package config
 import (
 	"fmt"
 	"log"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	commonConfig "github.com/addp/common/config"
+	engineplugin "github.com/addp/common/engine/plugin"
 )
 
 type Config struct {
@@ -34,6 +38,26 @@ type Config struct {
 	ContinuousDiagnosticsInterval      time.Duration
 	ContinuousRetentionDegradedHorizon time.Duration
 	ContinuousRetentionCriticalHorizon time.Duration
+	InfraKafkaBootstrapServers         string
+	InfraKafkaAdminUsername            string
+	InfraKafkaAdminPassword            string
+	InfraKafkaTransferPassword         string
+	InfraKafkaSecurityProtocol         string
+	InfraKafkaTLSCACertFile            string
+	InfraKafkaTLSInsecure              bool
+	CaptureTopicRetention              time.Duration
+	CaptureTopicRetentionBytes         int64
+	CaptureTopicReplicationFactor      int
+	KafkaConnectURL                    string
+	KafkaConnectUsername               string
+	KafkaConnectPassword               string
+	KafkaConnectTimeout                time.Duration
+	KafkaConnectLoopbackHost           string
+	CaptureProvisioningTimeout         time.Duration
+	CaptureStatusPollInterval          time.Duration
+	CaptureMonitorInterval             time.Duration
+	CaptureRuntimeStopTimeout          time.Duration
+	CaptureRuntimeStopPollInterval     time.Duration
 
 	BuiltinMinioEndpoint  string
 	BuiltinMinioAccessKey string
@@ -78,6 +102,26 @@ func Load() *Config {
 		ContinuousDiagnosticsInterval:      commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_DIAGNOSTICS_INTERVAL", "15s"),
 		ContinuousRetentionDegradedHorizon: commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RETENTION_DEGRADED_HORIZON", "6h"),
 		ContinuousRetentionCriticalHorizon: commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RETENTION_CRITICAL_HORIZON", "1h"),
+		InfraKafkaBootstrapServers:         commonConfig.GetEnv("INFRA_KAFKA_BOOTSTRAP_SERVERS", "localhost:19092"),
+		InfraKafkaAdminUsername:            commonConfig.GetEnv("INFRA_KAFKA_ADMIN_USERNAME", "admin"),
+		InfraKafkaAdminPassword:            commonConfig.GetEnv("INFRA_KAFKA_ADMIN_PASSWORD", "addp_kafka_admin"),
+		InfraKafkaTransferPassword:         commonConfig.GetEnv("INFRA_KAFKA_TRANSFER_PASSWORD", "addp_kafka_transfer"),
+		InfraKafkaSecurityProtocol:         commonConfig.GetEnv("INFRA_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext"),
+		InfraKafkaTLSCACertFile:            commonConfig.GetEnv("INFRA_KAFKA_TLS_CA_CERT_FILE", ""),
+		InfraKafkaTLSInsecure:              commonConfig.GetEnvBool("INFRA_KAFKA_TLS_INSECURE_SKIP_VERIFY", false),
+		CaptureTopicRetention:              commonConfig.GetEnvDuration("INFRA_KAFKA_CDC_RETENTION", "168h"),
+		CaptureTopicRetentionBytes:         getEnvInt64("INFRA_KAFKA_CDC_RETENTION_BYTES", 0),
+		CaptureTopicReplicationFactor:      commonConfig.GetEnvInt("INFRA_KAFKA_CDC_REPLICATION_FACTOR", 1),
+		KafkaConnectURL:                    commonConfig.GetEnv("KAFKA_CONNECT_URL", "http://localhost:18083"),
+		KafkaConnectUsername:               commonConfig.GetEnv("KAFKA_CONNECT_USERNAME", ""),
+		KafkaConnectPassword:               commonConfig.GetEnv("KAFKA_CONNECT_PASSWORD", ""),
+		KafkaConnectTimeout:                commonConfig.GetEnvDuration("KAFKA_CONNECT_TIMEOUT", "15s"),
+		KafkaConnectLoopbackHost:           commonConfig.GetEnv("KAFKA_CONNECT_LOOPBACK_HOST", "host.docker.internal"),
+		CaptureProvisioningTimeout:         commonConfig.GetEnvDuration("TRANSFER_CAPTURE_PROVISIONING_TIMEOUT", "60s"),
+		CaptureStatusPollInterval:          commonConfig.GetEnvDuration("TRANSFER_CAPTURE_STATUS_POLL_INTERVAL", "1s"),
+		CaptureMonitorInterval:             commonConfig.GetEnvDuration("TRANSFER_CAPTURE_MONITOR_INTERVAL", "15s"),
+		CaptureRuntimeStopTimeout:          commonConfig.GetEnvDuration("TRANSFER_CAPTURE_RUNTIME_STOP_TIMEOUT", "45s"),
+		CaptureRuntimeStopPollInterval:     commonConfig.GetEnvDuration("TRANSFER_CAPTURE_RUNTIME_STOP_POLL_INTERVAL", "250ms"),
 	}
 
 	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
@@ -111,4 +155,53 @@ func Load() *Config {
 	}
 
 	return cfg
+}
+
+func (c Config) InfraKafkaTransferConnectionInfo() (engineplugin.ConnectionInfo, error) {
+	if strings.TrimSpace(c.InfraKafkaBootstrapServers) == "" {
+		return nil, fmt.Errorf("Infra Kafka bootstrap servers are required")
+	}
+	protocol := strings.ToLower(strings.TrimSpace(c.InfraKafkaSecurityProtocol))
+	if protocol == "" {
+		protocol = "sasl_plaintext"
+	}
+	if protocol != "plaintext" && protocol != "ssl" && protocol != "sasl_plaintext" && protocol != "sasl_ssl" {
+		return nil, fmt.Errorf("unsupported Infra Kafka security protocol %q", protocol)
+	}
+	info := engineplugin.ConnectionInfo{
+		"bootstrap_servers": c.InfraKafkaBootstrapServers,
+		"security_protocol": protocol,
+		"client_id":         "addp-transfer-continuous-worker",
+	}
+	if protocol == "sasl_plaintext" || protocol == "sasl_ssl" {
+		if strings.TrimSpace(c.InfraKafkaTransferPassword) == "" {
+			return nil, fmt.Errorf("Infra Kafka transfer principal password is required")
+		}
+		info["username"] = "transfer"
+		info["password"] = c.InfraKafkaTransferPassword
+		info["sasl_mechanism"] = "plain"
+	}
+	if protocol == "ssl" || protocol == "sasl_ssl" {
+		if strings.TrimSpace(c.InfraKafkaTLSCACertFile) != "" {
+			pem, err := os.ReadFile(c.InfraKafkaTLSCACertFile)
+			if err != nil {
+				return nil, fmt.Errorf("read Infra Kafka CA certificate: %w", err)
+			}
+			info["tls_ca_cert"] = string(pem)
+		}
+		info["tls_insecure_skip_verify"] = c.InfraKafkaTLSInsecure
+	}
+	return info, nil
+}
+
+func getEnvInt64(key string, fallback int64) int64 {
+	value := commonConfig.GetEnv(key, "")
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }

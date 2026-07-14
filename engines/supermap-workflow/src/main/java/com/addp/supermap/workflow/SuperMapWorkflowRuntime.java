@@ -92,6 +92,7 @@ import java.util.stream.Stream;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
 
 public final class SuperMapWorkflowRuntime {
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -436,11 +437,21 @@ public final class SuperMapWorkflowRuntime {
             }
 
             Path workRoot;
+            Path stagedSceneRoot;
+            Path stagedDataRoot;
             try {
                 workRoot = Files.createTempDirectory("addp-supermap-s3m-");
+                stagedSceneRoot = workRoot.resolve("scene");
+                stagedDataRoot = stagedSceneRoot.resolve("Data");
+                stageOSGBSceneData(sourceRoot.resolve("Data"), stagedDataRoot);
                 Files.createDirectories(targetRoot.resolve("config"));
             } catch (IOException ex) {
                 throw new IllegalStateException("failed to prepare S3M conversion directories", ex);
+            }
+            List<String> stagedRootTiles = findOSGBRootTiles(stagedDataRoot);
+            if (stagedRootTiles.size() != rootTiles.size()) {
+                deleteRecursively(workRoot);
+                throw new IllegalStateException("failed to stage all OSGB root tiles");
             }
             Path sourceSCP = workRoot.resolve("scene.scp");
             Workspace workspace = new Workspace();
@@ -451,15 +462,17 @@ public final class SuperMapWorkflowRuntime {
                         sourceSCP.toString(),
                         new Point3D(metadata.originX(), metadata.originY(), metadata.originZ()),
                         prjCoordSys,
-                        rootTiles.toArray(new String[0])
+                        stagedRootTiles.toArray(new String[0])
                 );
                 if (!configGenerated) {
                     throw new IllegalStateException("SuperMap failed to generate OSGB scene SCP");
                 }
-                boolean converted = CacheBuilderOSGBTool.osgb2s3m(sourceSCP.toString(), targetRoot.resolve("config").toString(), TextureCompressType.TEXTURECOMPRESS_DXT);
+                boolean converted = CacheBuilderOSGBTool.osgb2s3m(sourceSCP.toString(), targetRoot.resolve("config").toString(), TextureCompressType.TEXTURECOMPRESS_WEBP);
                 if (!converted) {
                     throw new IllegalStateException("SuperMap OSGB to S3M conversion returned false");
                 }
+                Path generatedManifest = findSingleSCP(targetRoot);
+                validateS3MOutput(targetRoot, generatedManifest, rootTiles.size());
                 conversionSucceeded = true;
             } finally {
                 prjCoordSys.dispose();
@@ -495,7 +508,7 @@ public final class SuperMapWorkflowRuntime {
             result.put("target_format", "s3m");
             result.put("target_path", objectStoreTarget ? targetAccess.path("prefix").asText("") : targetRoot.toString());
             result.put("manifest_ref", manifestRef);
-            result.put("texture_compression", "dxt");
+            result.put("texture_compression", "webp");
             result.put("root_tile_count", rootTiles.size());
             result.put("file_count", fileCount);
             result.put("size_bytes", sizeBytes);
@@ -1059,6 +1072,55 @@ public final class SuperMapWorkflowRuntime {
             return manifests.get(0);
         } catch (IOException ex) {
             throw new IllegalStateException("failed to inspect S3M manifest", ex);
+        }
+    }
+
+    private static void stageOSGBSceneData(Path sourceDataRoot, Path stagedDataRoot) throws IOException {
+        if (!Files.isDirectory(sourceDataRoot)) {
+            throw new IllegalArgumentException("OSGB scene Data directory does not exist: " + sourceDataRoot);
+        }
+        try (Stream<Path> paths = Files.walk(sourceDataRoot)) {
+            for (Path source : paths.toList()) {
+                Path staged = stagedDataRoot.resolve(sourceDataRoot.relativize(source).toString());
+                if (Files.isDirectory(source)) {
+                    Files.createDirectories(staged);
+                } else if (Files.isRegularFile(source)) {
+                    Files.createDirectories(staged.getParent());
+                    Files.copy(source, staged, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+                }
+            }
+        }
+    }
+
+    private static void validateS3MOutput(Path targetRoot, Path manifest, int expectedRootTiles) {
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setExpandEntityReferences(false);
+            Document document = factory.newDocumentBuilder().parse(manifest.toFile());
+            NodeList elements = document.getElementsByTagName("*");
+            int referencedTiles = 0;
+            for (int index = 0; index < elements.getLength(); index++) {
+                if (!(elements.item(index) instanceof Element element)) {
+                    continue;
+                }
+                String name = element.getLocalName() == null ? element.getNodeName() : element.getLocalName();
+                if (!name.endsWith("FileName")) {
+                    continue;
+                }
+                Path tile = manifest.getParent().resolve(element.getTextContent().trim()).normalize();
+                if (!tile.startsWith(targetRoot.normalize()) || !Files.isRegularFile(tile)) {
+                    throw new IllegalStateException("S3M manifest references a missing tile: " + element.getTextContent().trim());
+                }
+                referencedTiles++;
+            }
+            if (referencedTiles < expectedRootTiles) {
+                throw new IllegalStateException("S3M output is incomplete: referenced root tiles=" + referencedTiles + ", expected=" + expectedRootTiles);
+            }
+        } catch (IllegalStateException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new IllegalStateException("failed to validate S3M output", ex);
         }
     }
 

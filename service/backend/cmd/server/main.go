@@ -95,8 +95,8 @@ func main() {
 
 	// 构建服务基础URL用于查询服务
 	// 使用 Gateway URL 作为对外服务端点的基础地址
-	queryServiceService := serviceInternal.NewQueryServiceService(queryServiceRepo, metaClient, cfg.GatewayURL)
-	queryExecutorService := serviceInternal.NewQueryExecutorService(queryServiceRepo, systemClient, metaClient)
+	queryServiceService := serviceInternal.NewQueryServiceService(queryServiceRepo, systemClient, metaClient, cfg.GatewayURL)
+	queryExecutorService := serviceInternal.NewQueryExecutorService(queryServiceRepo, systemClient)
 
 	// 图查询服务
 	graphQueryServiceService := serviceInternal.NewGraphQueryServiceService(graphQueryServiceRepo, cfg.GatewayURL)

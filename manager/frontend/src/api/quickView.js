@@ -305,6 +305,14 @@ export const quickViewAPI = {
     return request.get('/manager/model3d_tiles_tasks', { params })
   },
 
+  listModel3DTilesResults(params = {}) {
+    return request.get('/manager/model3d_tiles', { params })
+  },
+
+  deleteModel3DTilesResult(id) {
+    return request.delete(`/manager/model3d_tiles/${id}`)
+  },
+
   getModel3DTilesTask(id) {
     return request.get(`/manager/model3d_tiles_tasks/${id}`)
   },

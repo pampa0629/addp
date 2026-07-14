@@ -221,6 +221,18 @@ func TestValidateWorkflowOperatorContractsRequiresAdapterRuntimeParams(t *testin
 	}
 }
 
+func TestValidateWorkflowOperatorContractsAcceptsSuperMapS3MAccessPlanOnly(t *testing.T) {
+	err := validateWorkflowOperatorContracts("supermap_workflow", []commonModels.OperatorDescriptor{{
+		ID: "osgb_scene_to_s3m",
+		Parameters: []commonModels.ParameterDescriptor{
+			{Name: "access_plan", Type: "object"},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("validateWorkflowOperatorContracts() error = %v, want nil", err)
+	}
+}
+
 func TestValidateWorkflowOperatorContractsRejectsDuplicateRuntimeParam(t *testing.T) {
 	err := validateWorkflowOperatorContracts("acme_workflow", []commonModels.OperatorDescriptor{{
 		ID: "duplicate",

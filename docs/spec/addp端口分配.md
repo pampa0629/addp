@@ -9,8 +9,10 @@
 - MinIO API: `19000`
 - MinIO Console: `19001`
 - Meilisearch: `17700`
+- Infra Kafka bootstrap: `19092`
+- Kafka Connect REST: `18083`
 
-来源：`docker-compose.infra.yml`。脚本固定使用这些端口，不会自动改动；若被其他进程占用，`scripts/infra/up.sh` 会给出提示，可能导致启动失败。请使用 `lsof -nP -i :<port>` 查占用并释放，或手动调整 compose 端口映射。
+PostgreSQL、Redis、MinIO 和 Meilisearch 当前来源于 `docker-compose.infra.yml`；Infra Kafka/Kafka Connect 端口已由工作包 3A 保留，工作包 3B 才写入 compose 和启动脚本。脚本固定使用这些端口，不会自动改动；若被其他进程占用，`scripts/infra/up.sh` 会给出提示，可能导致启动失败。请使用 `lsof -nP -i :<port>` 查占用并释放，或手动调整 compose 端口映射。
 
 ## Business (业务库)
 
@@ -118,6 +120,8 @@ make ports-validate
 | MinIO System API      | 19000    | 19000       | 系统文件存储               |
 | MinIO System Console  | 19001    | 19001       | 系统 MinIO Web UI          |
 | Meilisearch           | 17700    | 17700       | 全文检索引擎               |
+| Infra Kafka           | 19092    | 9092        | 内部 CDC 总线；不注册为 System Engine |
+| Kafka Connect REST    | 18083    | 8083        | Transfer capture supervisor 内部控制面，不经 Gateway 暴露 |
 
 ## 端口分配规则
 

@@ -2442,6 +2442,9 @@ const docTemplate = `{
                 "engine_id": {
                     "type": "integer"
                 },
+                "fingerprint": {
+                    "type": "string"
+                },
                 "full_name": {
                     "type": "string"
                 },

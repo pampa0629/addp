@@ -5,7 +5,7 @@
 -- 变更:
 --   1. 创建 query_services 表 (查询服务)
 --   2. 支持两种配置方式: table (界面配置) 和 sql (SQL配置)
---   3. 使用 data_config JSONB 字段存储空间配置、默认字段、可过滤字段等
+--   3. 使用 data_config JSONB 字段存储 locator、依赖快照和用户字段配置
 --   4. 支持 REST API 和 OGC Features 协议
 -- ====================================================================
 
@@ -31,16 +31,18 @@ CREATE TABLE IF NOT EXISTS service.query_services (
     -- SQL配置字段（config_type='sql'时使用）
     sql_query TEXT,
 
-    -- 数据配置（JSONB，包含空间字段、默认字段等配置）
+    -- 数据配置（JSONB，包含 locator、依赖快照和用户字段配置）
     data_config JSONB NOT NULL DEFAULT '{}'::jsonb,
     /* data_config 结构示例：
     {
-      "geometry": {                               // 空间字段配置（如有）
-        "has_geometry": true,
-        "column": "geom",
-        "srid": 4326,
-        "types": ["Point"],
-        "extent": {"minX": 116.0, "minY": 39.0, "maxX": 117.0, "maxY": 40.0}
+	  "locator": "addp://engine/9/path/public/roads?type=table&item_id=33",
+	  "source_snapshot": {
+		"source": {"item_id": 33, "item_fingerprint": "..."},
+		"captured_at": "2026-07-14T08:05:00Z",
+		"dependency_hash": "...",
+		"verification_status": "verified",
+		"table": {"fields": [], "primary_key": ["id"]},
+		"spatial": {"geometry_columns": [], "primary_geometry_column": "geom"}
       },
       "default_fields": ["id", "name", "geom"],  // 默认返回字段（Table模式）
       "filterable_fields": ["name", "category"]  // 可过滤字段（Table模式）
@@ -85,7 +87,7 @@ COMMENT ON COLUMN service.query_services.engine_id IS '关联的存储引擎ID';
 COMMENT ON COLUMN service.query_services.schema_name IS '数据库Schema名称（仅table模式使用）';
 COMMENT ON COLUMN service.query_services.table_name IS '数据表名称（仅table模式使用）';
 COMMENT ON COLUMN service.query_services.sql_query IS 'SQL查询语句（仅sql模式使用）';
-COMMENT ON COLUMN service.query_services.data_config IS '数据配置JSON: geometry(空间字段配置)、default_fields(默认返回字段)、filterable_fields(可过滤字段)';
+COMMENT ON COLUMN service.query_services.data_config IS '查询服务配置JSON: locator、source_snapshot、default_fields、filterable_fields';
 COMMENT ON COLUMN service.query_services.protocols IS '协议配置JSON: rest_api、ogc_features';
 COMMENT ON COLUMN service.query_services.public_access IS '是否允许公开访问（无需JWT认证）';
 COMMENT ON COLUMN service.query_services.max_features IS '单次请求最大返回要素数';

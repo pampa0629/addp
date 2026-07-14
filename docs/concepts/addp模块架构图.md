@@ -53,7 +53,7 @@ graph TB
 
     subgraph "Worker运行时"
         TransferBoundedWorker[Transfer Bounded Worker<br/>Asynq 有界任务]
-        TransferContinuousWorker[Transfer Continuous Worker<br/>2B 待实现]
+        TransferContinuousWorker[Transfer Continuous Worker<br/>Supervisor / Runtime Sessions]
         MetaWorker[Meta Worker<br/>扫描任务处理]
     end
 
@@ -74,6 +74,8 @@ graph TB
         Redis[(Redis<br/>缓存/队列<br/>:16379)]
         MinIO[(MinIO<br/>对象存储<br/>:19000)]
         Meilisearch[(Meilisearch<br/>全文搜索<br/>:17700)]
+        InfraKafka[(Infra Kafka<br/>KRaft<br/>:19092)]
+        KafkaConnect[Kafka Connect<br/>Debezium<br/>:18083]
     end
 
     Console --> Gateway
@@ -116,6 +118,7 @@ graph TB
     Common --> Redis
     Common --> MinIO
     Common --> Meilisearch
+    KafkaConnect --> InfraKafka
 
     Transfer --> TransferBoundedWorker
     Transfer -.-> TransferContinuousWorker
@@ -144,7 +147,7 @@ graph TB
     class TransferBoundedWorker,TransferContinuousWorker,MetaWorker worker
     class Common,CommonFE shared
     class PyWorkflow,SparkWorkflow,CustomWorkflow,Jupyter engine
-    class PostgreSQL,Redis,MinIO,Meilisearch infra
+    class PostgreSQL,Redis,MinIO,Meilisearch,InfraKafka,KafkaConnect infra
 ```
 
 **说明**:
@@ -153,12 +156,12 @@ graph TB
 - **服务层**: 各业务模块的后端服务,提供 RESTful API
 - **Worker运行时**: 独立的后台任务处理进程
   - **Transfer Bounded Worker**: 基于 Asynq 的异步任务队列，处理 snapshot 和 watermark bounded execution。
-  - **Transfer Continuous Worker**: 后续独立长驻进程角色，通过 supervisor、DB lease、heartbeat 和 fencing 承载多个 continuous runtime session；不使用 Asynq 承载无限消费循环。
+  - **Transfer Continuous Worker**: 已实现的独立长驻进程角色，通过 supervisor、DB lease、heartbeat 和 fencing 承载多个 continuous runtime session；不使用 Asynq 承载无限消费循环。当前数据面只开放业务 Kafka keyed JSON -> PostgreSQL，Debezium CDC 尚未实现。
   - **Meta Worker**: 基于 Asynq 的扫描任务处理,执行元数据扫描和索引
 - **Manager 快显与瓦片任务**: 当前 PostGIS + MVT 格式实现中，`vector_tile_cache_generation` 由 Manager Backend 内的任务服务和调度器执行；任务定义为 `manager.vector_tile_cache_tasks`，执行记录进入 `common.task_executions`，结果状态进入 `manager.vector_tile_cache`。`vector_materialized_view_generation` 由 Manager Backend 在手动或编排触发时执行，任务定义为 `manager.vector_materialized_view_tasks`，结果状态进入 `manager.vector_materialized_view`，当前不启动模块自身定时调度。若后续矢量物化视图构建或瓦片缓存生成负载转移到 Manager 进程内、需要多执行器横向扩展，或引入专门 GIS 计算引擎，应将对应任务类型的唯一执行运行时切换为 Manager Worker 或 GIS 执行引擎，不允许 Backend 与 Worker 双轨并存。
 - **共享模块**: common 和 common-frontend 提供可复用的代码和组件
 - **扩展运行时**: engines 目录下的内置工作流 / 脚本运行时，由 Develop 模块通过统一 Provider 调用
-- **基础设施层**: 共享的数据库、缓存、对象存储和搜索引擎
+- **基础设施层**: 共享的数据库、缓存、对象存储、搜索引擎，以及 PostgreSQL CDC 使用的 Infra Kafka/Kafka Connect。Infra Kafka 和 Connect 已部署，但 CDC task/capture supervisor 尚未开放。
 
 ---
 
@@ -174,7 +177,7 @@ graph TB
 | **Meta Worker** | Meta 扫描任务处理器 | - | Go, Asynq Worker |
 | **Transfer** | 数据传输:同步、搬运、格式转换任务 | 8083 / 8083 | Go, Gin, Asynq |
 | **Transfer Bounded Worker** | Transfer 有界任务处理器 | - | Go, Asynq Worker |
-| **Transfer Continuous Worker** | Transfer 持续任务处理器，工作包 2B 实现 | - | Go, DB lease, Kafka client |
+| **Transfer Continuous Worker** | Transfer 持续任务处理器 | - | Go, DB lease, Kafka client |
 | **Orchestrator** | 任务编排:跨模块任务编排调度 | 8084 / 8084 | Go, Gin, Cron |
 | **Develop** | 数据开发:查询执行、工作流、Notebook 开发 | 8185 / 8185 | Go, Gin, Monaco Editor |
 | **Service** | 数据服务:服务发布(空间OGC标准与非空间)、外部服务注册 | 8086 / 8086 | Go, Gin, OGC 标准 |
@@ -343,6 +346,7 @@ graph TB
 **运行时说明**:
 - **Asynq 队列**: 当前用于 Transfer、Meta 等独立 Worker 场景。
 - **Continuous supervisor**: Transfer continuous worker 直接 claim pending execution 和 `transfer.runtime_leases`；同一 task 同一时刻只有一个合法 owner，不把长期 session 投递为 Asynq job。
+- **CDC capture supervisor**: PostgreSQL CDC v1 契约已由工作包 3A 冻结，Infra Kafka/Kafka Connect 开发部署已由 3B 完成。后续 capture supervisor 作为 Transfer 独立捕获控制角色通过 Kafka Connect REST 管理 Debezium connector；它不嵌入 continuous worker，也不把 Infra Kafka 注册为 System Engine。
 - **DB claim 调度**: Manager 瓦片缓存任务通过 `enabled + schedule + next_run_at` 轮询并 claim 到期任务；矢量物化视图当前 `supports_schedule=false`，不由 Manager 自身定时调度。
 - **执行记录**: 各模块执行状态统一写入 `common.task_executions`。
 - **结果状态**: Manager 瓦片缓存结果状态写入 `manager.vector_tile_cache`，矢量物化视图结果状态写入 `manager.vector_materialized_view`，不由 execution 替代。

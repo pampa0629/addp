@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/transfer/internal/models"
+	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -496,6 +497,9 @@ func (s *ExecutionService) RetryExecution(ctx context.Context, id, tenantID, use
 	task, err := s.taskRepo.GetByID(oldExecution.TaskID)
 	if err != nil {
 		return nil, fmt.Errorf("task not found: %w", err)
+	}
+	if task.Status == models.TaskStatusBlocked && planner.IsPostgreSQLCDCTaskConfig(task.Config) {
+		return nil, ErrCDCSchemaChangeBlocked
 	}
 	if mode := taskApplyMode(task); mode != "replace" && mode != "upsert" {
 		return nil, fmt.Errorf("retry execution only supports replace snapshot or resumable upsert tasks; got apply_mode %q", mode)

@@ -354,8 +354,7 @@ import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } fro
 import {
   QUERY_TABLE_ENGINE_TYPES,
   isQueryableTableNode,
-  isQueryableTableVisibleNode,
-  objectTableConfigFromSelection
+  isQueryableTableVisibleNode
 } from '@/utils/resourceSelection'
 
 const { t } = useI18n()
@@ -365,7 +364,6 @@ const route = useRoute()
 const loading = ref(false)
 const submitting = ref(false)
 const currentStep = ref(0)
-const detecting = ref(false)
 const detectingSQLSpatial = ref(false)
 
 const isEdit = computed(() => !!route.params.id)
@@ -377,7 +375,6 @@ const form = reactive({
   schema_name: '',
   table_name: '',
   sql_query: '',
-  object_table: null,
   service_name: '',
   title: '',
   description: '',
@@ -400,8 +397,9 @@ const spatialMetadata = ref(null)
 // SQL 模式的空间字段配置
 const sqlHasGeometry = ref(false)
 const sqlGeometryColumn = ref('')
-const sqlSrid = ref(4326)
+const sqlSrid = ref(0)
 const sqlGeometryType = ref('')
+const sqlOutputContract = ref(null)
 
 // 字段配置输入
 const defaultFieldsInput = ref('')
@@ -470,34 +468,6 @@ const canProceed = computed(() => {
   return true
 })
 
-// 方法：检测空间字段
-const detectSpatialFields = async () => {
-  detecting.value = true
-  try {
-    // 临时模拟数据
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    spatialMetadata.value = {
-      hasGeometry: true,
-      geometryColumn: 'geom',
-      srid: 4326,
-      geometryTypes: ['Point'],
-      extent: { minX: 116.0, minY: 39.0, maxX: 117.0, maxY: 40.0 }
-    }
-
-    if (spatialMetadata.value.hasGeometry) {
-      enableOgcFeatures.value = true
-      ElMessage.success(t('service.query.detectSpatialSuccess', { column: spatialMetadata.value.geometryColumn, srid: spatialMetadata.value.srid }))
-    } else {
-      ElMessage.info(t('service.query.detectSpatialNone'))
-    }
-  } catch (error) {
-    ElMessage.warning(t('service.query.detectSpatialFailed') + ': ' + (error.message || t('service.common.unknownError')))
-    spatialMetadata.value = { hasGeometry: false }
-  } finally {
-    detecting.value = false
-  }
-}
-
 // 方法：检测 SQL 查询结果的空间字段
 const detectSQLSpatialFields = async () => {
   if (!form.engine_id || !form.sql_query) {
@@ -512,26 +482,31 @@ const detectSQLSpatialFields = async () => {
 
   detectingSQLSpatial.value = true
   try {
-    const response = await queryServiceAPI.detectSQLSpatialMetadata({
+    const response = await queryServiceAPI.detectSQLOutputContract({
       engine_id: form.engine_id,
       sql: form.sql_query
     })
 
     console.log('[QueryServiceForm] Detection response:', response)
 
-    if (response.has_geometry) {
+	  sqlOutputContract.value = response
+	  const spatial = response?.spatial
+	  const columns = spatial?.geometry_columns || []
+	  const primary = columns.find(column => column.name === spatial?.primary_geometry_column) || (columns.length === 1 ? columns[0] : null)
+
+    if (primary?.name) {
       // 自动填充空间字段信息
       sqlHasGeometry.value = true
-      sqlGeometryColumn.value = response.geometry_column
-      sqlSrid.value = response.srid || 4326
-      sqlGeometryType.value = response.geometry_type || ''
+      sqlGeometryColumn.value = primary.name
+      sqlSrid.value = primary.srid || spatial.srid || 0
+      sqlGeometryType.value = primary.geometry_type || ''
 
-      ElMessage.success(t('service.query.detectSpatialSuccess', { column: response.geometry_column, srid: response.srid }))
+	  ElMessage.success(t('service.query.detectSpatialSuccess', { column: primary.name, srid: sqlSrid.value || '-' }))
     } else {
       // 未检测到空间字段
       sqlHasGeometry.value = false
       sqlGeometryColumn.value = ''
-      sqlSrid.value = 4326
+	  sqlSrid.value = 0
       sqlGeometryType.value = ''
 
       ElMessage.info(t('service.query.detectSpatialNone'))
@@ -554,7 +529,6 @@ const handleTableSelection = async (selection) => {
     form.schema_name = ''
     form.table_name = ''
     form.locator = ''
-    form.object_table = null
     spatialMetadata.value = null
     return
   }
@@ -568,7 +542,6 @@ const handleTableSelection = async (selection) => {
   form.schema_name = schemaName
   form.table_name = tableName
   form.locator = selection.identity?.locator || ''
-  form.object_table = objectTableConfigFromSelection(selection)
 
   const geometry = await detectTableMetadata('/api/v1/meta', {
     locator: form.locator,
@@ -595,7 +568,6 @@ const handleTableSelection = async (selection) => {
 const onEngineChange = () => {
   form.schema_name = ''
   form.table_name = ''
-  form.object_table = null
   spatialMetadata.value = null
 }
 
@@ -632,6 +604,32 @@ const handleInputConfirm = () => {
   inputValue.value = ''
 }
 
+const buildSQLOutputContract = () => {
+	const table = sqlOutputContract.value?.table || null
+	if (!sqlHasGeometry.value || !sqlGeometryColumn.value.trim()) {
+	  return table ? { table } : null
+	}
+	const srid = Number(sqlSrid.value) > 0 ? Number(sqlSrid.value) : 0
+	const crsRef = srid > 0 ? `EPSG:${srid}` : ''
+	const existingSpatial = sqlOutputContract.value?.spatial || {}
+	const definitions = (existingSpatial.crs_definitions || []).filter(definition => definition?.id === crsRef)
+	const geometryColumn = {
+	  name: sqlGeometryColumn.value.trim(),
+	  geometry_type: sqlGeometryType.value || 'Geometry'
+	}
+	if (srid > 0) {
+	  geometryColumn.srid = srid
+	  geometryColumn.crs_ref = crsRef
+	}
+	const spatial = {
+	  geometry_columns: [geometryColumn],
+	  primary_geometry_column: geometryColumn.name
+	}
+	if (definitions.length > 0) spatial.crs_definitions = definitions
+	if (existingSpatial.extent) spatial.extent = existingSpatial.extent
+	return { ...(table ? { table } : {}), spatial }
+}
+
 // 方法：提交表单
 const handleSubmit = async () => {
   submitting.value = true
@@ -656,7 +654,7 @@ const handleSubmit = async () => {
 
       // 构建 data_config
       const dataConfig = {}
-      if (form.locator) {
+	  if (!isEdit.value && form.locator) {
         dataConfig.locator = form.locator
       }
 
@@ -670,10 +668,6 @@ const handleSubmit = async () => {
         dataConfig.filterable_fields = filterableFieldsInput.value.split(',').map(f => f.trim())
       }
 
-      if (form.object_table) {
-        dataConfig.object_table = form.object_table
-      }
-
       if (Object.keys(dataConfig).length > 0) {
         requestData.data_config = dataConfig
       }
@@ -682,16 +676,10 @@ const handleSubmit = async () => {
     else {
       requestData.sql_query = form.sql_query
 
-      // 如果有空间字段配置
-      if (sqlHasGeometry.value && sqlGeometryColumn.value) {
-        requestData.data_config = {
-          geometry: {
-            has_geometry: true,
-            column: sqlGeometryColumn.value,
-            srid: sqlSrid.value
-          }
-        }
-      }
+	  if (!isEdit.value) {
+		const outputContract = buildSQLOutputContract()
+		if (outputContract) requestData.output_contract = outputContract
+	  }
     }
 
     // 协议配置
@@ -766,34 +754,25 @@ onMounted(async () => {
         table_name: form.table_name
       })
 
-      // 如果是 table 模式且有 locator，按资源主身份重新检测空间字段。
-      if (form.config_type === 'table' && form.locator) {
-        try {
-          console.log('[QueryServiceForm] 编辑模式：开始检测空间字段...')
-          const geometryInfo = await detectTableMetadata(metaApiBaseUrl.value, {
-            locator: form.locator
-          })
-
-          console.log('[QueryServiceForm] 编辑模式：检测结果', geometryInfo)
-
-          if (geometryInfo.has_geometry) {
-            spatialMetadata.value = {
-              hasGeometry: true,
-              geometryColumn: geometryInfo.geometry_column,
-              srid: geometryInfo.srid,
-              geometryTypes: geometryInfo.geometry_types || [],
-              extent: geometryInfo.extent
-            }
-            console.log('[QueryServiceForm] 编辑模式：检测到空间字段', geometryInfo.geometry_column)
-          } else {
-            spatialMetadata.value = { hasGeometry: false }
-            console.log('[QueryServiceForm] 编辑模式：未检测到空间字段')
-          }
-        } catch (error) {
-          console.error('[QueryServiceForm] 编辑模式：空间字段检测失败:', error)
-          spatialMetadata.value = { hasGeometry: false }
-        }
-      }
+	  const snapshot = service.data_config?.source_snapshot
+	  const spatial = snapshot?.spatial
+	  const columns = spatial?.geometry_columns || []
+	  const primary = columns.find(column => column.name === spatial?.primary_geometry_column) || (columns.length === 1 ? columns[0] : null)
+	  if (form.config_type === 'table') {
+		spatialMetadata.value = primary ? {
+		  hasGeometry: true,
+		  geometryColumn: primary.name,
+		  srid: primary.srid || spatial.srid || 0,
+		  geometryTypes: primary.geometry_type ? [primary.geometry_type] : [],
+		  extent: spatial.extent || null
+		} : { hasGeometry: false }
+	  } else {
+		sqlOutputContract.value = { table: snapshot?.table || null, spatial: spatial || null }
+		sqlHasGeometry.value = !!primary
+		sqlGeometryColumn.value = primary?.name || ''
+		sqlSrid.value = primary?.srid || spatial?.srid || 0
+		sqlGeometryType.value = primary?.geometry_type || ''
+	  }
 
       // 协议配置
       if (service.protocols?.ogc_features?.enabled) {

@@ -61,6 +61,7 @@ func workflowSuperMapS3MAdapterSpec() workflowOperatorAdapterSpec {
 		"osgb_scene_to_s3m", "OSGB Scene", "osgb_scene", "directory", "directory", nil,
 		"s3m", "directory", "", "", nil,
 	)
+	spec.RuntimeParams = []string{"access_plan"}
 	for index := range spec.PublicParameters {
 		parameter := &spec.PublicParameters[index]
 		if parameter.UIType == "resource_tree_picker" {

@@ -11,6 +11,7 @@ import (
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
+	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -29,7 +30,7 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 
 // CreateTask 创建任务
 // @Summary 创建数据传输任务 | Create data transfer task
-// @Description 创建 bounded Transfer 任务。配置必须使用 runtime.boundary、load.mode 和 target.policy.apply_mode；PostgreSQL watermark 增量需声明复合游标与目标 keys。旧 mode/write_mode 字段会被拒绝。| Create a bounded Transfer task using runtime.boundary, load.mode, and target.policy.apply_mode. PostgreSQL watermark incremental tasks must declare a composite cursor and target keys. Legacy mode/write_mode fields are rejected.
+// @Description 创建 bounded、业务 Kafka continuous 或 PostgreSQL CDC 任务。配置必须使用 runtime.boundary、load.mode、load.change_detection 和 target.policy.apply_mode；CDC 第一版固定为 PostgreSQL 单表 initial_snapshot 和 PostgreSQL 新目标表 upsert_delete。旧 mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka continuous, or PostgreSQL CDC task using runtime.boundary, load.mode, load.change_detection, and target.policy.apply_mode. CDC v1 is limited to a single PostgreSQL table with initial_snapshot and a new PostgreSQL upsert_delete target. Legacy mode/write_mode fields are rejected.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
@@ -98,7 +99,7 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 // @Param page query int false "页码 | Page number" default(1)
 // @Param page_size query int false "每页大小 | Page size" default(20)
 // @Param task_type query string false "任务类型，当前固定为 sync | Task type, currently fixed to sync"
-// @Param status query string false "任务定义状态: idle, running | Task definition status"
+// @Param status query string false "任务定义状态: idle, running, blocked | Task definition status: idle, running, blocked"
 // @Param runtime_boundary query string false "执行边界: bounded, continuous | Runtime boundary: bounded, continuous"
 // @Success 200 {object} models.ListProviderTasksResponse "获取成功 | Retrieved successfully"
 // @Failure 400 {object} map[string]string "不支持的任务类型 | Unsupported task type"
@@ -121,6 +122,10 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 		commonAPI.BadRequestError(c, "unsupported task_type: "+req.TaskType)
 		return
 	}
+	// 带 task_type 的调用遵循标准 TaskProvider 发现语义，只暴露 Orchestrator v1 可编排的 bounded task。
+	if req.TaskType == commonExecution.TaskTypeSync {
+		req.RuntimeBoundary = "bounded"
+	}
 
 	// 确保分页参数有效
 	if req.Page <= 0 {
@@ -142,26 +147,6 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 		Page:     req.Page,
 		PageSize: req.PageSize,
 	})
-}
-
-// ProviderListTasks 列出 Orchestrator v1 可编排的 bounded Transfer 任务。
-// @Summary 获取 TaskProvider bounded 任务列表 | List bounded TaskProvider tasks
-// @Description 仅返回 runtime.boundary=bounded 的任务，continuous task 不进入 Orchestrator v1 发现结果。| Return only runtime.boundary=bounded tasks; continuous tasks are excluded from Orchestrator v1 discovery.
-// @Tags         任务管理 | Task Management
-// @Produce json
-// @Param page query int false "页码 | Page number" default(1)
-// @Param page_size query int false "每页大小 | Page size" default(100)
-// @Param task_type query string false "任务类型，固定为 sync | Task type, fixed to sync"
-// @Success 200 {object} models.ListProviderTasksResponse
-// @Failure 400 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router /provider-tasks [get]
-// @Security BearerAuth
-func (h *TaskHandler) ProviderListTasks(c *gin.Context) {
-	query := c.Request.URL.Query()
-	query.Set("runtime_boundary", "bounded")
-	c.Request.URL.RawQuery = query.Encode()
-	h.ListTasks(c)
 }
 
 // UpdateTask 更新任务
@@ -230,13 +215,14 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 
 // StartTask 启动任务
 // @Summary 启动任务 | Start task
-// @Description 启动任务执行，创建新的执行记录 | Start task execution and create a new execution record
+// @Description 启动任务执行并创建执行记录；PostgreSQL CDC 首次启动会先创建并确认 capture generation，普通中断恢复时复用同一 generation；schema drift blocked 任务不得再次启动。| Start task execution and create an execution record. PostgreSQL CDC provisions and verifies its capture generation before the first runtime session and reuses that generation for normal interruption recovery; schema-drift-blocked tasks cannot be started again.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} models.TaskExecution "启动成功，返回执行记录 | Started successfully, returns execution record"
 // @Failure 400 {object} map[string]string "参数错误或任务已在运行 | Bad request or task already running"
+// @Failure 409 {object} map[string]string "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @Router /task-definitions/{id}/start [post]
 // @Security BearerAuth
@@ -373,11 +359,13 @@ func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
 
 // PauseTask 暂停任务
 // @Summary 暂停任务 | Pause task
-// @Description bounded 任务关闭自身定时调度；continuous 任务将 desired_state 置为 paused 并通知 runtime 取消当前 execution。| Disable a bounded task schedule, or set a continuous task desired_state to paused and request runtime cancellation.
+// @Description bounded 任务关闭自身定时调度；continuous 任务将 desired_state 置为 paused 并通知 runtime 取消当前 execution；schema drift blocked CDC 只能 Stop。| Disable a bounded task schedule, or set a continuous task desired_state to paused and request runtime cancellation. Schema-drift-blocked CDC can only be stopped.
 // @Tags         任务管理 | Task Management
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]string
+// @Failure 409 {object} map[string]string "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change"
+// @Failure 503 {object} map[string]string "捕获控制面不可用 | Capture control unavailable"
 // @Failure 500 {object} map[string]string
 // @Router /task-definitions/{id}/pause [post]
 // @Security BearerAuth
@@ -390,7 +378,7 @@ func (h *TaskHandler) PauseTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
 	if err := h.taskService.PauseTask(c.Request.Context(), id, tenantID); err != nil {
-		commonAPI.InternalServerError(c, err.Error())
+		respondTaskServiceError(c, err)
 		return
 	}
 
@@ -399,11 +387,13 @@ func (h *TaskHandler) PauseTask(c *gin.Context) {
 
 // ResumeTask 恢复任务
 // @Summary 恢复任务 | Resume task
-// @Description bounded 任务恢复自身定时调度；continuous 任务创建新的 pending execution 并从 committed position 恢复。| Re-enable a bounded task schedule, or create a new pending continuous execution that resumes from committed position.
+// @Description bounded 任务恢复自身定时调度；continuous 任务创建新的 pending execution 并从 committed position 恢复；schema drift blocked CDC 不支持恢复，必须 Stop 后新建任务和目标表。| Re-enable a bounded task schedule, or create a new pending continuous execution that resumes from committed position. Schema-drift-blocked CDC cannot resume and must be stopped and recreated with a new target table.
 // @Tags         任务管理 | Task Management
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]string
+// @Failure 409 {object} map[string]string "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change"
+// @Failure 503 {object} map[string]string "捕获控制面不可用 | Capture control unavailable"
 // @Failure 500 {object} map[string]string
 // @Router /task-definitions/{id}/resume [post]
 // @Security BearerAuth
@@ -418,7 +408,7 @@ func (h *TaskHandler) ResumeTask(c *gin.Context) {
 
 	execution, err := h.taskService.ResumeTask(c.Request.Context(), id, tenantID, userID)
 	if err != nil {
-		commonAPI.InternalServerError(c, err.Error())
+		respondTaskServiceError(c, err)
 		return
 	}
 	response := gin.H{"message": i18nmiddleware.T(c, "transfer.task.resumed")}
@@ -430,12 +420,16 @@ func (h *TaskHandler) ResumeTask(c *gin.Context) {
 
 // StopTask 停止 continuous task。
 // @Summary 停止连续任务 | Stop continuous task
-// @Description 将 continuous task 的 desired_state 置为 stopped，并通知 runtime 取消当前 execution；bounded 任务不支持此操作。| Set a continuous task desired_state to stopped and request runtime cancellation; bounded tasks do not support this operation.
+// @Description 普通业务 Kafka continuous stop 保留 committed position；PostgreSQL CDC stop 是不可逆终态，必须提交 confirmed=true 且 confirmation_text 与任务名称完全一致，并删除 ADDP-owned connector、slot、publication 和 CDC topic。| Business Kafka continuous stop keeps committed positions. PostgreSQL CDC stop is irreversible and requires confirmed=true plus confirmation_text exactly matching the task name; ADDP-owned connector, slot, publication, and CDC topic are deleted.
 // @Tags         任务管理 | Task Management
+// @Accept json
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
+// @Param request body models.StopTaskRequest false "CDC 不可逆停止确认；普通 Kafka continuous 可省略 | Irreversible CDC stop confirmation; optional for business Kafka continuous"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
+// @Failure 409 {object} map[string]string "CDC 已永久停止 | CDC permanently stopped"
+// @Failure 503 {object} map[string]string "捕获控制面不可用 | Capture control unavailable"
 // @Failure 500 {object} map[string]string
 // @Router /task-definitions/{id}/stop [post]
 // @Security BearerAuth
@@ -444,7 +438,12 @@ func (h *TaskHandler) StopTask(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.taskService.StopTask(c.Request.Context(), id, c.GetUint("tenant_id")); err != nil {
+	var req models.StopTaskRequest
+	if err := commonAPI.BindOptionalJSONStrict(c, &req); err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	if err := h.taskService.StopTask(c.Request.Context(), id, c.GetUint("tenant_id"), req); err != nil {
 		respondTaskServiceError(c, err)
 		return
 	}
@@ -480,6 +479,22 @@ func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {
 }
 
 func respondTaskServiceError(c *gin.Context, err error) {
+	if errors.Is(err, service.ErrCDCStopConfirmationRequired) {
+		commonAPI.BadRequestError(c, i18nmiddleware.T(c, "transfer.cdc.stop_confirmation_required"))
+		return
+	}
+	if errors.Is(err, repository.ErrCaptureTerminal) {
+		c.JSON(http.StatusConflict, gin.H{"error": i18nmiddleware.T(c, "transfer.cdc.terminal")})
+		return
+	}
+	if errors.Is(err, service.ErrCDCSchemaChangeBlocked) {
+		c.JSON(http.StatusConflict, gin.H{"error": i18nmiddleware.T(c, "transfer.cdc.schema_change_blocked")})
+		return
+	}
+	if errors.Is(err, service.ErrCDCCaptureControlUnavailable) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": i18nmiddleware.T(c, "transfer.cdc.capture_unavailable")})
+		return
+	}
 	if errors.Is(err, service.ErrInvalidTaskConfig) {
 		commonAPI.BadRequestError(c, err.Error())
 		return

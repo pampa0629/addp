@@ -111,7 +111,7 @@ func TestIntegrationPostgresAtomicTaskClaimAndSyncStateCAS(t *testing.T) {
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatalf("ensure common execution store: %v", err)
 	}
-	if err := db.AutoMigrate(&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}); err != nil {
+	if err := db.AutoMigrate(&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}, &models.CaptureResource{}); err != nil {
 		t.Fatalf("migrate transfer integration models: %v", err)
 	}
 
@@ -325,5 +325,28 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	}
 	if err := leaseRepo.Renew(context.Background(), task.ID, "worker-a", 1, now.Add(4*time.Second), 30*time.Second); !errors.Is(err, ErrRuntimeLeaseLost) {
 		t.Fatalf("stale worker renew error = %v, want ErrRuntimeLeaseLost", err)
+	}
+	if err := leaseRepo.Finish(context.Background(), *secondClaim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema changed", now.Add(5*time.Second)); err != nil {
+		t.Fatalf("finish schema-blocked execution: %v", err)
+	}
+	var blockedTask models.TransferTask
+	if err := db.First(&blockedTask, task.ID).Error; err != nil {
+		t.Fatalf("load schema-blocked task: %v", err)
+	}
+	if blockedTask.Status != models.TaskStatusBlocked || blockedTask.DesiredState != models.TaskDesiredStateRunning {
+		t.Fatalf("schema-blocked task status=%q desired=%q", blockedTask.Status, blockedTask.DesiredState)
+	}
+	blockedExecution := claimTestExecution(task, uuid.NewString())
+	if _, err := taskRepo.StartContinuousExecution(context.Background(), task.ID, task.TenantID, &blockedExecution); !errors.Is(err, ErrContinuousTaskBlocked) {
+		t.Fatalf("start blocked task error = %v, want ErrContinuousTaskBlocked", err)
+	}
+	if err := taskRepo.SetContinuousDesiredState(context.Background(), task.ID, task.TenantID, models.TaskDesiredStateStopped, "stopped"); err != nil {
+		t.Fatalf("stop blocked task: %v", err)
+	}
+	if err := db.First(&blockedTask, task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if blockedTask.Status != models.TaskStatusIdle || blockedTask.DesiredState != models.TaskDesiredStateStopped {
+		t.Fatalf("stopped blocked task status=%q desired=%q", blockedTask.Status, blockedTask.DesiredState)
 	}
 }

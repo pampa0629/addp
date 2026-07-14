@@ -184,6 +184,27 @@ def test_osgb_scene_to_s3m_exposes_access_plan_and_both_execution_modes():
     assert "if (objectStoreTarget) {\n                deleteRecursively(targetRoot);" in SOURCE
 
 
+def test_osgb_scene_to_s3m_stages_tiles_and_validates_the_published_dataset():
+    conversion_start = SOURCE.index("private static ObjectNode convertOSGBSceneToS3M")
+    conversion_end = SOURCE.index("private static ObjectNode inspectCAD", conversion_start)
+    block = SOURCE[conversion_start:conversion_end]
+
+    assert "stageOSGBSceneData(" in block
+    assert "validateS3MOutput(" in block
+    assert "TextureCompressType.TEXTURECOMPRESS_WEBP" in block
+    assert "TextureCompressType.TEXTURECOMPRESS_DXT" not in block
+    assert 'result.put("texture_compression", "webp")' in block
+    assert 'result.put("texture_compression", "dxt")' not in block
+    assert block.index("validateS3MOutput(") < block.index("publishDirectory(targetRoot, targetAccess)")
+    stage_start = SOURCE.index("private static void stageOSGBSceneData")
+    stage_end = SOURCE.index("private static void validateS3MOutput", stage_start)
+    stage_block = SOURCE[stage_start:stage_end]
+    assert "Files.copy(source, staged" in stage_block
+    assert "Files.createSymbolicLink" not in stage_block
+    assert "rewriteS3MManifestPaths" not in SOURCE
+    assert "copyGeneratedS3MTiles" not in SOURCE
+
+
 def test_cad_inspect_is_direct_only_and_does_not_traverse_geometry():
     block = _operator_block("cad.inspect")
 

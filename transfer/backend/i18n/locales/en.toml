@@ -21,3 +21,15 @@ other = "Task resumed successfully"
 
 [transfer.execution.cancelled]
 other = "Execution cancelled successfully"
+
+[transfer.cdc.stop_confirmation_required]
+other = "Stopping database change synchronization is irreversible. Confirm the action and enter the exact current task name."
+
+[transfer.cdc.terminal]
+other = "This database change synchronization task is permanently stopped and cannot be started or resumed. Create a new task and target table to synchronize again."
+
+[transfer.cdc.capture_unavailable]
+other = "The database change capture control plane is unavailable"
+
+[transfer.cdc.schema_change_blocked]
+other = "A source schema change permanently blocked the current synchronization generation. The task can only be permanently stopped; then create a new task and target table."

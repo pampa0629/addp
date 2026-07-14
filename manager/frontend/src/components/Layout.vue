@@ -32,7 +32,7 @@
       </div>
     </el-header>
 
-    <el-container>
+    <el-container class="body-container">
       <el-aside width="200px" class="sidebar">
         <el-menu
           :default-active="activeMenu"
@@ -79,6 +79,10 @@
             <el-menu-item index="/model-3d-glb">
               <el-icon><Box /></el-icon>
               <span>{{ t('manager.layout.model3DGLB') }}</span>
+            </el-menu-item>
+            <el-menu-item index="/model-3d-tiles">
+              <el-icon><Grid /></el-icon>
+              <span>{{ t('manager.layout.model3DTiles') }}</span>
             </el-menu-item>
             <el-menu-item index="/gaussian-splat-ksplat">
               <el-icon><Aim /></el-icon>
@@ -155,6 +159,14 @@ const handleLogout = () => {
 <style scoped>
 .layout-container {
   height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.body-container {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .header {
@@ -197,6 +209,8 @@ const handleLogout = () => {
 }
 
 .main-content {
+  min-width: 0;
+  min-height: 0;
   background: var(--addp-bg-secondary) !important;
   padding: 20px;
   overflow: auto;

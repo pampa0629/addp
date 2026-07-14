@@ -225,6 +225,7 @@ type MetaItemLite struct {
 	ItemType      string                 `json:"item_type"`
 	Name          string                 `json:"name"`
 	FullName      string                 `json:"full_name"`
+	Fingerprint   string                 `json:"fingerprint"`
 	RowCount      *int64                 `json:"row_count,omitempty"`
 	SizeBytes     *int64                 `json:"size_bytes,omitempty"`
 	DataUpdatedAt *string                `json:"data_updated_at,omitempty"`

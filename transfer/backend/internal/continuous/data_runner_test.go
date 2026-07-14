@@ -71,6 +71,113 @@ func TestDataSessionRunnerAppliesThenCommitsPartitionPosition(t *testing.T) {
 	}
 }
 
+func TestDataSessionRunnerConsumesRegisteredPostgreSQLCDCGeneration(t *testing.T) {
+	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
+	resolver := planner.StaticEngineResolver{
+		12: {Type: "postgresql", ConnInfo: plugin.ConnectionInfo{"database": "business"}},
+		20: {Type: "postgresql", ConnInfo: plugin.ConnectionInfo{"host": "unused"}, Capabilities: &targetCaps},
+	}
+	reader := &fakeChangeStreamReader{batch: &plugin.ChangeRecordBatch{Records: []plugin.ChangeRecord{
+		{Topic: "__addp_cdc.7.42.1", Partition: "0", Offset: 0, Key: []byte(`{"id":1}`), Value: []byte(debeziumEnvelope("r", `null`, `{"id":1}`, "business", "public", "orders")), Position: kafkaOffsetPosition("0", 1)},
+		{Topic: "__addp_cdc.7.42.1", Partition: "0", Offset: 1, Key: []byte(`{"id":1}`), Value: []byte(debeziumEnvelope("d", `{"id":1}`, `null`, "business", "public", "orders")), Position: kafkaOffsetPosition("0", 2)},
+	}}}
+	source := &fakeChangeStreamProvider{reader: reader}
+	target := &fakeChangeApplyProvider{}
+	states := &fakeContinuousStateStore{target: target}
+	progress := &fakeContinuousProgressStore{committed: make(chan repository.ContinuousProgress, 1)}
+	runner := &DataSessionRunner{
+		Resolver: resolver, States: states, Progress: progress,
+		Captures: &fakeCaptureStore{resource: &models.CaptureResource{
+			TaskID: 42, TenantID: 7, Status: models.CaptureStatusRunning,
+			TopicName: "__addp_cdc.7.42.1", ConsumerGroup: "__addp_cdc_consumer.7.42.1",
+			SourceIdentity: "addp://engine/12/path/public/orders?type=table",
+			SourceDatabase: "business", SourceSchema: "public", SourceTable: "orders",
+			TopicCreated: true, ConnectorCreated: true,
+		}},
+		InfraKafkaConnection: plugin.ConnectionInfo{"bootstrap_servers": "infra"},
+		PollTimeout:          time.Millisecond,
+		GetPlugin: func(engineType string) (plugin.EnginePlugin, error) {
+			if engineType == "kafka" {
+				return source, nil
+			}
+			return target, nil
+		},
+	}
+	claim := continuousRunnerClaim()
+	claim.Task.TenantID = 7
+	claim.Task.BatchSize = 100
+	claim.Task.Config = postgresqlCDCRunnerConfig()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runner.Run(ctx, claim) }()
+	select {
+	case <-progress.committed:
+		if source.options.ConsumerGroup != "__addp_cdc_consumer.7.42.1" {
+			t.Fatalf("consumer group = %q", source.options.ConsumerGroup)
+		}
+		if len(target.lastBatch.Changes) != 2 || target.lastBatch.Changes[0].Operation != plugin.TableChangeOperationUpsert || target.lastBatch.Changes[1].Operation != plugin.TableChangeOperationDelete {
+			t.Fatalf("CDC target batch = %#v", target.lastBatch)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("CDC runner did not commit progress")
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v", err)
+	}
+}
+
+func TestDataSessionRunnerRecordsIncompatiblePostgreSQLCDCSchemaField(t *testing.T) {
+	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
+	resolver := planner.StaticEngineResolver{
+		12: {Type: "postgresql", ConnInfo: plugin.ConnectionInfo{"database": "business"}},
+		20: {Type: "postgresql", ConnInfo: plugin.ConnectionInfo{"host": "unused"}, Capabilities: &targetCaps},
+	}
+	reader := &fakeChangeStreamReader{batch: &plugin.ChangeRecordBatch{Records: []plugin.ChangeRecord{{
+		Topic: "__addp_cdc.7.42.1", Partition: "0", Offset: 0,
+		Key: []byte(`{"id":1}`), Value: []byte(debeziumEnvelope("c", `null`, `{"id":"bad"}`, "business", "public", "orders")),
+		Position: kafkaOffsetPosition("0", 1),
+	}}}}
+	target := &fakeChangeApplyProvider{}
+	progress := &fakeContinuousProgressStore{schemaChange: make(chan repository.ContinuousSchemaChange, 1)}
+	runner := &DataSessionRunner{
+		Resolver: resolver, States: &fakeContinuousStateStore{target: target}, Progress: progress,
+		Captures: &fakeCaptureStore{resource: &models.CaptureResource{
+			TaskID: 42, TenantID: 7, Status: models.CaptureStatusRunning,
+			TopicName: "__addp_cdc.7.42.1", ConsumerGroup: "__addp_cdc_consumer.7.42.1",
+			SourceIdentity: "addp://engine/12/path/public/orders?type=table",
+			SourceDatabase: "business", SourceSchema: "public", SourceTable: "orders",
+			TopicCreated: true, ConnectorCreated: true,
+		}},
+		InfraKafkaConnection: plugin.ConnectionInfo{"bootstrap_servers": "infra"}, PollTimeout: time.Millisecond,
+		GetPlugin: func(engineType string) (plugin.EnginePlugin, error) {
+			if engineType == "kafka" {
+				return &fakeChangeStreamProvider{reader: reader}, nil
+			}
+			return target, nil
+		},
+	}
+	claim := continuousRunnerClaim()
+	claim.Task.TenantID = 7
+	claim.Task.Config = postgresqlCDCRunnerConfig()
+	err := runner.Run(context.Background(), claim)
+	var schemaErr *SchemaChangeError
+	if !errors.As(err, &schemaErr) {
+		t.Fatalf("Run() error = %v, want SchemaChangeError", err)
+	}
+	select {
+	case change := <-progress.schemaChange:
+		if change.Scope != "Debezium after" || len(change.IncompatibleFields) != 1 || change.IncompatibleFields[0] != "id" {
+			t.Fatalf("recorded schema change = %#v", change)
+		}
+	default:
+		t.Fatal("schema change was not recorded")
+	}
+	if target.applied {
+		t.Fatal("target applied an incompatible CDC event")
+	}
+}
+
 func TestDecodeAndMapRecordRejectsUnknownAndMissingRequiredFields(t *testing.T) {
 	plan := &planner.ContinuousPlan{
 		Mappings: []planner.ContinuousFieldPlan{
@@ -126,7 +233,32 @@ func continuousRunnerConfig() models.JSONMap {
 	}
 }
 
-type fakeChangeStreamProvider struct{ reader plugin.ChangeStreamReader }
+func postgresqlCDCRunnerConfig() models.JSONMap {
+	return models.JSONMap{
+		"runtime": map[string]interface{}{"boundary": "continuous"},
+		"load": map[string]interface{}{
+			"mode": "incremental", "change_detection": map[string]interface{}{"type": "cdc", "bootstrap": "initial_snapshot"},
+		},
+		"source": map[string]interface{}{
+			"locator": "addp://engine/12/path/public/orders?type=table", "data_type": "table", "representation": "native",
+		},
+		"target": map[string]interface{}{
+			"parent_locator": "addp://engine/20/path/public?type=schema", "name": "orders_cdc", "data_type": "table", "representation": "native",
+			"policy": map[string]interface{}{"apply_mode": "upsert_delete", "keys": []interface{}{"id"}},
+		},
+		"transforms": []interface{}{map[string]interface{}{
+			"type": "field_mapping", "version": "v1", "mode": "project",
+			"fields": []interface{}{map[string]interface{}{
+				"source": "id", "target": "id", "target_type": "bigint", "nullable": false,
+			}},
+		}},
+	}
+}
+
+type fakeChangeStreamProvider struct {
+	reader  plugin.ChangeStreamReader
+	options plugin.ChangeStreamReadOptions
+}
 
 func (p *fakeChangeStreamProvider) Type() string                                       { return "kafka" }
 func (p *fakeChangeStreamProvider) DisplayName() string                                { return "fake kafka" }
@@ -144,8 +276,15 @@ func (p *fakeChangeStreamProvider) Capabilities() plugin.EngineCapabilities {
 func (p *fakeChangeStreamProvider) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
-func (p *fakeChangeStreamProvider) OpenChangeStream(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ChangeStreamReadOptions) (plugin.ChangeStreamReader, error) {
+func (p *fakeChangeStreamProvider) OpenChangeStream(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, options plugin.ChangeStreamReadOptions) (plugin.ChangeStreamReader, error) {
+	p.options = options
 	return p.reader, nil
+}
+
+type fakeCaptureStore struct{ resource *models.CaptureResource }
+
+func (s *fakeCaptureStore) GetLatest(context.Context, uint, uint) (*models.CaptureResource, error) {
+	return s.resource, nil
 }
 
 type fakeChangeStreamReader struct {
@@ -229,7 +368,8 @@ func (s *fakeContinuousStateStore) CommitContinuousPosition(_ context.Context, _
 }
 
 type fakeContinuousProgressStore struct {
-	committed chan repository.ContinuousProgress
+	committed    chan repository.ContinuousProgress
+	schemaChange chan repository.ContinuousSchemaChange
 }
 
 func (s *fakeContinuousProgressStore) RecordProgress(_ context.Context, _ repository.RuntimeLeaseClaim, progress repository.ContinuousProgress) error {
@@ -238,6 +378,13 @@ func (s *fakeContinuousProgressStore) RecordProgress(_ context.Context, _ reposi
 }
 
 func (s *fakeContinuousProgressStore) RecordDiagnostics(context.Context, repository.RuntimeLeaseClaim, repository.ContinuousDiagnostics) error {
+	return nil
+}
+
+func (s *fakeContinuousProgressStore) RecordSchemaChange(_ context.Context, _ repository.RuntimeLeaseClaim, change repository.ContinuousSchemaChange) error {
+	if s.schemaChange != nil {
+		s.schemaChange <- change
+	}
 	return nil
 }
 

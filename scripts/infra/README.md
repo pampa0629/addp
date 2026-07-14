@@ -12,6 +12,9 @@
 | addp-redis | Redis 7 | 缓存和任务队列 |
 | addp-minio | MinIO | 系统文件存储 |
 | addp-meilisearch | Meilisearch | 全文搜索 |
+| addp-kafka | Apache Kafka 4.3.0 KRaft | 内部 CDC 总线 |
+| addp-kafka-init | Kafka CLI 一次性任务 | Connect internal topics 和 ACL 幂等初始化 |
+| addp-kafka-connect | Debezium Connect 3.6.0.Final | 数据库日志捕获运行时 |
 
 ### 不管理的容器（business-*）
 
@@ -46,6 +49,7 @@ business 容器由 `business/` 目录独立管理，可脱离 ADDP 部署。
 - **init-redis.sh** - 初始化 Redis 配置
 - **init-minio.sh** - 初始化 MinIO buckets
 - **init-meilisearch.sh** - 初始化 Meilisearch 索引
+- **init-kafka.sh** - 初始化 Kafka Connect internal topics 和 infra principal ACL；`VERIFY_ACL=1` 时执行临时 topic 权限验收
 
 ## 项目隔离
 
@@ -581,6 +585,15 @@ MINIO_CONSOLE_PORT=19001
 MEILISEARCH_MASTER_KEY=your-master-key   # ⚠️ 生产环境必须修改
 MEILISEARCH_URL_LOCAL=http://localhost:17700
 
+# Infra Kafka / Kafka Connect（CDC 内部基础设施）
+INFRA_KAFKA_IMAGE=apache/kafka:4.3.0
+INFRA_KAFKA_PORT=19092
+INFRA_KAFKA_ADMIN_PASSWORD=change-in-production
+INFRA_KAFKA_CONNECT_PASSWORD=change-in-production
+INFRA_KAFKA_TRANSFER_PASSWORD=change-in-production
+KAFKA_CONNECT_IMAGE=quay.io/debezium/connect:3.6.0.Final
+KAFKA_CONNECT_PORT=18083
+
 # PostgreSQL 镜像（可选,默认 x86_64）
 POSTGRES_IMAGE=postgis/postgis:15-3.4
 # ARM64: POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4
@@ -607,6 +620,7 @@ SKIP_MEILISEARCH_INIT=0
 - `redis_data` - Redis 数据
 - `minio_data` - MinIO 对象存储
 - `meilisearch_data` - Meilisearch 索引
+- `kafka_data` - Infra Kafka 日志、Connect internal topics 和 CDC topic
 
 **停止容器不会丢失数据**,除非显式删除 volumes:
 ```bash

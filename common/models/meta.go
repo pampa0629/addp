@@ -35,6 +35,7 @@ type MetaItem struct {
 	ItemType        string                 `json:"item_type"`
 	Name            string                 `json:"name"`
 	FullName        string                 `json:"full_name"`
+	Fingerprint     string                 `json:"fingerprint"`
 	RowCount        *int64                 `json:"row_count,omitempty"`
 	SizeBytes       *int64                 `json:"size_bytes,omitempty"`
 	ObjectSizeBytes *int64                 `json:"object_size_bytes,omitempty"`

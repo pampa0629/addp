@@ -239,7 +239,7 @@ type StoreProvider interface {
 - `BoundedWatermarkReadProvider.OpenBoundedWatermarkRead()`：在引擎一致性读边界内冻结复合 watermark 上界，按稳定顺序读取 `(start, upper_bound]`。session 必须返回上界，并能从已读取行生成 provider 可解释的复合位置；普通 batch reader 不得被推断为具备该语义。
 - `TableUpsertProvider.PrepareTableUpsert()` / `UpsertBatch()`：按显式稳定键准备目标并幂等应用 insert/update。Provider 必须校验键字段和唯一约束；普通 `BatchWritableProvider` 或 COPY session 不得被推断为 upsert。
 - `ChangeStreamReaderProvider.OpenChangeStream()`：打开 partitioned change stream，按 provider position seek、poll 原始记录并支持受控 pause/resume/close。Kafka topic 不能伪装成 `BatchReadableProvider` 或 content `stream_read`。
-- `PartitionedTableChangeApplyProvider.PreparePartitionedTableChangeApply()` / `ApplyPartitionedTableChanges()`：把单个 source partition 的已映射表变化与目标 apply position 在同一目标事务中提交。普通 `TableUpsertProvider`、Infra state CAS 或 runtime lease 均不得被推断为具备目标侧 monotonic apply 语义。
+- `PartitionedTableChangeApplyProvider.PreparePartitionedTableChangeApply()` / `ApplyPartitionedTableChanges()`：把单个 source partition 的已映射表变化与目标 apply position 在同一目标事务中提交。PostgreSQL 当前真实实现 `upsert|delete`；同一 key 在批内只保留最高 position 的最终操作，目标行变化和 `addp_transfer.apply_positions` 必须原子提交。普通 `TableUpsertProvider`、Infra state CAS 或 runtime lease 均不得被推断为具备目标侧 monotonic apply 语义。
 
 第一版 PostgreSQL watermark 契约：
 
@@ -287,7 +287,7 @@ type ChangeStreamReader interface {
 
 Provider 只返回原始 ChangeRecord，不负责 JSON、Debezium、Avro 或 Protobuf 解码。Transfer source adapter 负责把 record 解码、校验并归一化为内部 ChangeEvent；第一版 keyed JSON record 归一化为 `operation=upsert`。
 
-`ChangeEvent`、transform 和 `ChangeApplyWriter` 属于 Transfer runtime，不是 Engine Catalog/Store Provider。Transfer 将已映射行、目标 key、每条记录的 provider position 和单 partition 批次边界交给 `PartitionedTableChangeApplyProvider`；Provider 不解析 JSON 或 ChangeEvent，只负责目标数据库内的原子数据应用与位置账本。
+`ChangeEvent`、transform 和 `ChangeApplyWriter` 属于 Transfer runtime，不是 Engine Catalog/Store Provider。Transfer 将已映射行、目标 key、`upsert|delete` 操作、每条记录的 provider position 和单 partition 批次边界交给 `PartitionedTableChangeApplyProvider`；Provider 不解析 JSON、Kafka record 或 Debezium envelope，只负责目标数据库内的原子数据应用与位置账本。
 
 第一版 PostgreSQL 契约：
 

@@ -142,6 +142,8 @@ func SetupRouter(
 			queryAPI.GET("/:id", queryServiceHandler.GetService)
 			queryAPI.PUT("/:id", queryServiceHandler.UpdateService)
 			queryAPI.DELETE("/:id", queryServiceHandler.DeleteService)
+			queryAPI.GET("/:id/source-snapshot-diff", queryServiceHandler.CheckSourceSnapshot)
+			queryAPI.POST("/:id/refresh-source-snapshot", queryServiceHandler.RefreshSourceSnapshot)
 		}
 
 		// 图查询服务管理 API
@@ -198,7 +200,7 @@ func SetupRouter(
 
 		// 资源能力辅助 API。资源选择统一走 Meta resource-tree，Service 仅保留业务能力接口。
 		api.GET("/graphs/node-shapes", resourceCapabilityHandler.GetGraphNodeShapes)
-		api.POST("/sql/spatial-metadata", resourceCapabilityHandler.GetSQLSpatialMetadata)
+		api.POST("/sql/output-contract", resourceCapabilityHandler.GetSQLOutputContract)
 	}
 
 	return router

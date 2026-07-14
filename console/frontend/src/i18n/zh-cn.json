@@ -212,8 +212,9 @@
         "vectorMaterializedView": "矢量快显 - 物化视图",
         "cogArtifacts": "栅格快显 - COG",
         "rasterMosaic": "栅格快显 - Mosaic",
-        "cadPreview": "CAD 快显",
+        "cadPreview": "CAD 快显 - 栅格瓦片",
         "model3DQuickView": "三维快显 - GLB",
+        "model3DTiles": "三维快显 - 瓦片",
         "gaussianSplatQuickView": "高斯快显 - KSplat",
         "pointCloudCOPC": "点云快显 - COPC"
       },

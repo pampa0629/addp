@@ -21,3 +21,15 @@ other = "任务恢复成功"
 
 [transfer.execution.cancelled]
 other = "执行已取消"
+
+[transfer.cdc.stop_confirmation_required]
+other = "停止数据库变更同步是不可逆操作，必须勾选确认并完整输入当前任务名称"
+
+[transfer.cdc.terminal]
+other = "该数据库变更同步任务已永久停止，不能再次启动或恢复；请新建任务和新目标表重新同步"
+
+[transfer.cdc.capture_unavailable]
+other = "数据库变更捕获控制面当前不可用"
+
+[transfer.cdc.schema_change_blocked]
+other = "源表结构变化已永久阻塞当前同步 generation；当前任务只能永久停止，请停止旧任务后创建新任务和新目标表"

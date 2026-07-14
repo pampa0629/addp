@@ -4,6 +4,15 @@
       <div class="panel-header">
         <div class="header-left">
           <span class="header-title">{{ title }}</span>
+          <el-tag
+            v-if="selectedModel3DTilesResult && isQuickViewActive && currentItemFormatLabel"
+            size="small"
+            type="primary"
+            effect="plain"
+            class="current-item-format"
+          >
+            {{ currentItemFormatLabel }}
+          </el-tag>
           <!-- 表格空间信息 -->
           <div v-if="showTableInfo" class="table-info">
             <!-- 空间标签（带 tooltip）-->
@@ -116,6 +125,17 @@
             <el-icon><MagicStick /></el-icon>
             {{ t('manager.explorer.generateCADPreview') }}
           </el-button>
+          <div v-if="selectedModel3DTilesResult && isQuickViewActive" class="model3d-tiles-format-switcher">
+            <el-segmented
+              v-if="readyModel3DTilesFormats.length > 1"
+              v-model="selectedModel3DTilesFormat"
+              :options="model3DTilesSegmentOptions"
+              size="small"
+            />
+            <el-tag v-else size="small" type="primary" effect="plain">
+              {{ model3DTilesQuickViewLabel(selectedModel3DTilesResult.target_format) }}
+            </el-tag>
+          </div>
           <el-dropdown
             v-if="model3DTilesFormats.length"
             trigger="click"
@@ -392,9 +412,6 @@
             </div>
           </div>
         </div>
-      </div>
-      <div v-if="readyModel3DTilesFormats.length > 1 && isQuickViewActive" class="model3d-tiles-format-switcher">
-        <el-segmented v-model="selectedModel3DTilesFormat" :options="model3DTilesSegmentOptions" size="small" />
       </div>
       <component
         v-if="showQuickViewRenderer"
@@ -1503,12 +1520,15 @@ const model3DTilesFormats = computed(() => Array.isArray(quickViewStatus.value?.
 const readyModel3DTilesFormats = computed(() => model3DTilesFormats.value.filter((item) => item.status === 'ready' && item.preview_url))
 const selectedModel3DTilesResult = computed(() => readyModel3DTilesFormats.value.find((item) => item.target_format === selectedModel3DTilesFormat.value) || readyModel3DTilesFormats.value[0] || null)
 const model3DTilesFormatLabel = (format) => format === 's3m' ? 'S3M' : '3D Tiles'
+const model3DTilesQuickViewLabel = (format) => format === 's3m'
+  ? t('manager.explorer.s3mTileQuickView')
+  : t('manager.explorer.threeDTilesTileQuickView')
 const model3DTilesUnavailableReason = (reason) => {
   const key = String(reason || '').trim()
   const known = new Set(['workflow_engine_discovery_unavailable', 'workflow_engine_list_failed', 'operator_unavailable', 'result_ready', 'generation_running'])
   return known.has(key) ? t(`manager.explorer.model3DTilesReason.${key}`) : key
 }
-const model3DTilesSegmentOptions = computed(() => readyModel3DTilesFormats.value.map((item) => ({ label: model3DTilesFormatLabel(item.target_format), value: item.target_format })))
+const model3DTilesSegmentOptions = computed(() => readyModel3DTilesFormats.value.map((item) => ({ label: model3DTilesQuickViewLabel(item.target_format), value: item.target_format })))
 
 watch(readyModel3DTilesFormats, (formats) => {
   if (!formats.some((item) => item.target_format === selectedModel3DTilesFormat.value)) {
@@ -2342,6 +2362,14 @@ const objectCanonicalFormat = computed(() => {
     ''
   ).trim()
 })
+const currentItemFormatLabel = computed(() => {
+  const format = objectCanonicalFormat.value || String(
+    props.selectedNode?.format ||
+    props.selectedNode?.file_format ||
+    ''
+  ).trim()
+  return format ? dataFormatDisplayName(format) : ''
+})
 
 function metadataValue(key) {
   const value = objectContentMetadata.value?.[key]
@@ -2853,11 +2881,15 @@ const handleNavigate = (path) => {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
   flex: 1;
+  min-width: 0;
 }
 
 .header-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -3103,11 +3135,12 @@ const handleNavigate = (path) => {
 
 .model3d-tiles-format-switcher {
   flex: 0 0 auto;
-  display: flex;
-  justify-content: center;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--addp-border-color);
-  background: var(--addp-bg-primary);
+  display: inline-flex;
+  align-items: center;
+}
+
+.current-item-format {
+  flex: 0 0 auto;
 }
 
 .graph-sample-grid {

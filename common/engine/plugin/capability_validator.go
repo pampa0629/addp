@@ -152,6 +152,16 @@ func validateStoreCapabilities(p EnginePlugin, store *StoreCapability) error {
 		if !capability.AtomicPositionCommit || !capability.Monotonic || len(capability.PositionTypes) == 0 || len(capability.Operations) == 0 {
 			return fmt.Errorf("%s declares invalid partitioned_table_change_apply semantics", p.Type())
 		}
+		seenOperations := map[string]bool{}
+		for _, operation := range capability.Operations {
+			if operation != TableChangeOperationUpsert && operation != TableChangeOperationDelete {
+				return fmt.Errorf("%s declares unsupported partitioned_table_change_apply operation %q", p.Type(), operation)
+			}
+			if seenOperations[operation] {
+				return fmt.Errorf("%s declares duplicate partitioned_table_change_apply operation %q", p.Type(), operation)
+			}
+			seenOperations[operation] = true
+		}
 		if _, ok := p.(PartitionedTableChangeApplyProvider); !ok {
 			return fmt.Errorf("%s declares partitioned_table_change_apply but does not implement PartitionedTableChangeApplyProvider", p.Type())
 		}

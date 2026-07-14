@@ -1,10 +1,28 @@
 package models
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestCaptureSummaryDoesNotExposeInternalResourceNames(t *testing.T) {
+	summary := NewCaptureSummary(&CaptureResource{
+		Generation: 1, Status: CaptureStatusRunning, ConnectorStatus: "RUNNING",
+		ConnectorName: "secret-connector", TopicName: "__addp_cdc.1.2.1", SlotName: "secret_slot",
+	})
+	data, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{"secret-connector", "__addp_cdc", "secret_slot"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("capture summary leaked %q: %s", forbidden, text)
+		}
+	}
+}
 
 func TestTransferTaskCreateKeepsExplicitAutoScanFalse(t *testing.T) {
 	field, ok := reflect.TypeOf(TransferTask{}).FieldByName("AutoScanMetadata")

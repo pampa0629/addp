@@ -3,15 +3,28 @@ import assert from 'node:assert/strict'
 
 import {
   buildContinuousSourceEndpoint,
+  buildPostgreSQLCDCSourceEndpoint,
+	cdcMappingsCoverSourceFields,
   continuousMappedTargetKeys,
   continuousMappingsValid,
-  isKafkaTopicSource
+	isKafkaTopicSource,
+	isPostgreSQLTableSource
 } from '../src/views/TaskWizard/continuousTask.mjs'
 
 test('Kafka topic source is the only continuous source shape', () => {
   assert.equal(isKafkaTopicSource('kafka', 'addp://engine/30/path/orders.events?type=topic'), true)
   assert.equal(isKafkaTopicSource('postgresql', 'addp://engine/30/path/orders.events?type=topic'), false)
   assert.equal(isKafkaTopicSource('kafka', 'addp://engine/30/path/orders?type=table'), false)
+})
+
+test('PostgreSQL table is the only CDC source shape', () => {
+	assert.equal(isPostgreSQLTableSource('postgresql', 'addp://engine/12/path/public/orders?type=table'), true)
+	assert.equal(isPostgreSQLTableSource('kafka', 'addp://engine/12/path/public/orders?type=table'), false)
+	assert.deepEqual(buildPostgreSQLCDCSourceEndpoint('addp://engine/12/path/public/orders?type=table'), {
+		locator: 'addp://engine/12/path/public/orders?type=table',
+		data_type: 'table',
+		representation: 'native'
+	})
 })
 
 test('continuous target keys follow source key mapping order', () => {
@@ -54,4 +67,12 @@ test('continuous mapping rejects nullable keys, duplicate fields and unsupported
     { source_field: 'id', target_field: 'id', target_type: 'int', nullable: false },
     { source_field: 'ID', target_field: 'other_id', target_type: 'int', nullable: false }
   ], ['id']), false)
+})
+
+test('CDC mapping must cover the complete frozen source schema', () => {
+	const fields = [{ name: 'id' }, { name: 'name' }]
+	assert.equal(cdcMappingsCoverSourceFields([
+		{ source_field: 'id' }, { source_field: 'name' }
+	], fields), true)
+	assert.equal(cdcMappingsCoverSourceFields([{ source_field: 'id' }], fields), false)
 })

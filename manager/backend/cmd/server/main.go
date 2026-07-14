@@ -228,6 +228,7 @@ func main() {
 	cadPreviewTaskSvc := service.NewCADPreviewTaskService(cadPreviewRepo, taskExecRepo)
 	model3DTilesTaskSvc := service.NewModel3DTilesTaskService(model3DTilesRepo, taskExecRepo)
 	model3DTilesTaskSvc.SetBucket(minioBucket)
+	model3DTilesTaskSvc.SetCleaner(service.NewMinIOModel3DTilesCleaner(minioClient, minioBucket))
 	rasterCOGTaskSvc.SetBucket(minioBucket)
 	rasterCOGTaskSvc.SetCleaner(service.NewMinIORasterCOGCleaner(minioClient, minioBucket))
 	model3DGLBTaskSvc.SetBucket(minioBucket)

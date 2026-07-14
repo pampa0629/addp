@@ -2,6 +2,9 @@ package models
 
 import (
 	"time"
+
+	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 )
 
 // QueryService 查询服务模型
@@ -32,12 +35,12 @@ type QueryService struct {
 	DataConfig JSONB `gorm:"type:jsonb;not null;default:'{}';index:idx_query_services_data_config_gin,type:gin" json:"data_config"`
 	/* data_config 结构示例：
 	{
-	  "geometry": {
-	    "has_geometry": true,
-	    "column": "geom",
-	    "srid": 4326,
-	    "types": ["Point"],
-	    "extent": {"minX": 116.0, "minY": 39.0, "maxX": 117.0, "maxY": 40.0}
+	  "source_snapshot": {
+	    "source": {"item_id": 33, "item_fingerprint": "..."},
+	    "captured_at": "2026-07-14T08:05:00Z",
+	    "dependency_hash": "...",
+	    "table": {"fields": [], "primary_key": []},
+	    "spatial": {"geometry_columns": [], "primary_geometry_column": "geom"}
 	  },
 	  "default_fields": ["id", "name", "geom"],
 	  "filterable_fields": ["name", "category"]
@@ -86,24 +89,28 @@ func (q *QueryService) IsTableMode() bool {
 
 // IsObjectTable 是否为对象存储中的文件/目录型表格资源。
 func (q *QueryService) IsObjectTable() bool {
-	if q.DataConfig == nil {
-		return false
+	snapshot := q.SourceSnapshot()
+	return snapshot != nil && snapshot.ObjectTable != nil
+}
+
+// GetObjectTableDescriptor 获取对象表执行描述符。
+func (q *QueryService) GetObjectTableDescriptor() *dataitem.ItemDescriptor {
+	snapshot := q.SourceSnapshot()
+	if snapshot == nil || snapshot.ObjectTable == nil {
+		return nil
 	}
-	_, ok := q.DataConfig["object_table"].(map[string]interface{})
-	return ok
+	descriptor := *snapshot.ObjectTable
+	descriptor.Refs = append([]dataitem.ItemRef(nil), snapshot.ObjectTable.Refs...)
+	return &descriptor
 }
 
 // GetObjectTablePhysicalPath 获取对象表的物理路径。
 func (q *QueryService) GetObjectTablePhysicalPath() string {
-	if q.DataConfig == nil {
+	descriptor := q.GetObjectTableDescriptor()
+	if descriptor == nil {
 		return ""
 	}
-	objectTable, ok := q.DataConfig["object_table"].(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	physicalPath, _ := objectTable["physical_path"].(string)
-	return physicalPath
+	return descriptor.PhysicalPath
 }
 
 // IsSQLMode 是否为SQL配置模式
@@ -113,47 +120,67 @@ func (q *QueryService) IsSQLMode() bool {
 
 // HasGeometry 是否包含空间字段
 func (q *QueryService) HasGeometry() bool {
-	if q.DataConfig == nil {
-		return false
+	spatial := q.GetSpatialInfo()
+	return spatial != nil && spatial.PrimaryGeometryName() != ""
+}
+
+// GetSpatialInfo 获取已发布空间事实。
+func (q *QueryService) GetSpatialInfo() *datatype.SpatialInfo {
+	snapshot := q.SourceSnapshot()
+	if snapshot == nil || snapshot.Spatial == nil {
+		return nil
 	}
-	geometry, ok := q.DataConfig["geometry"].(map[string]interface{})
-	if !ok {
-		return false
+	return snapshot.Spatial.Clone()
+}
+
+// GetTableInfo 获取已发布表输出契约。
+func (q *QueryService) GetTableInfo() *datatype.TableInfo {
+	snapshot := q.SourceSnapshot()
+	if snapshot == nil || snapshot.Table == nil {
+		return nil
 	}
-	hasGeometry, ok := geometry["has_geometry"].(bool)
-	return ok && hasGeometry
+	return snapshot.Table.Clone()
 }
 
 // GetGeometryColumn 获取几何列名
 func (q *QueryService) GetGeometryColumn() string {
-	if q.DataConfig == nil {
+	spatial := q.GetSpatialInfo()
+	if spatial == nil {
 		return ""
 	}
-	geometry, ok := q.DataConfig["geometry"].(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	column, ok := geometry["column"].(string)
-	if !ok {
-		return ""
-	}
-	return column
+	return spatial.PrimaryGeometryName()
 }
 
 // GetSRID 获取坐标系
 func (q *QueryService) GetSRID() int {
-	if q.DataConfig == nil {
+	spatial := q.GetSpatialInfo()
+	if spatial == nil {
 		return 0
 	}
-	geometry, ok := q.DataConfig["geometry"].(map[string]interface{})
-	if !ok {
-		return 0
+	if primary := spatial.PrimaryGeometry(); primary != nil && primary.SRID != nil {
+		return *primary.SRID
 	}
-	srid, ok := geometry["srid"].(float64)
-	if !ok {
-		return 0
+	if spatial.SRID != nil {
+		return *spatial.SRID
 	}
-	return int(srid)
+	return 0
+}
+
+// GetPrimaryKey 获取已发布主键字段名。
+func (q *QueryService) GetPrimaryKey() string {
+	table := q.GetTableInfo()
+	if table == nil {
+		return ""
+	}
+	if len(table.PrimaryKey) > 0 {
+		return table.PrimaryKey[0]
+	}
+	for _, field := range table.Fields {
+		if field.PrimaryKey {
+			return field.Name
+		}
+	}
+	return ""
 }
 
 // GetDefaultFields 获取默认返回字段
@@ -249,6 +276,9 @@ type CreateQueryServiceRequest struct {
 
 	// 数据配置。table 模式必须提供 locator，格式为带 item_id 的 ResourceLocator。
 	DataConfig map[string]interface{} `json:"data_config"`
+
+	// SQL 模式检测得到的输出契约；快照时间和 hash 由 Service 生成。
+	OutputContract *QueryServiceOutputContract `json:"output_contract,omitempty"`
 
 	// 协议配置（可选，使用默认值）
 	Protocols map[string]interface{} `json:"protocols"`

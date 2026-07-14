@@ -30,13 +30,28 @@
 
       <el-alert
         v-if="isContinuousTask"
-        :title="t('transfer.taskWizard.continuousSyncTitle')"
-        :description="t('transfer.taskWizard.continuousSyncDesc')"
+				:title="isPostgreSQLCDCTask ? t('transfer.taskWizard.cdcSyncTitle') : t('transfer.taskWizard.continuousSyncTitle')"
+				:description="isPostgreSQLCDCTask ? t('transfer.taskWizard.cdcSyncDesc') : t('transfer.taskWizard.continuousSyncDesc')"
         type="info"
         :closable="false"
         show-icon
         class="incremental-alert"
       />
+
+			<el-form-item v-if="!isKafkaContinuousTask" :label="t('transfer.taskWizard.loadModeLabel')">
+				<el-radio-group v-model="formData.loadMode">
+					<el-radio value="snapshot">{{ t('transfer.taskWizard.snapshotLoad') }}</el-radio>
+					<el-radio value="incremental" :disabled="!watermarkIncrementalSupported">
+						{{ t('transfer.taskWizard.watermarkIncrementalLoad') }}
+					</el-radio>
+					<el-radio value="cdc" :disabled="!postgresqlCDCSupported">
+						{{ t('transfer.taskWizard.postgresqlCDCLoad') }}
+					</el-radio>
+				</el-radio-group>
+				<div v-if="!postgresqlCDCSupported" class="field-hint block-hint">
+					{{ t('transfer.taskWizard.postgresqlCDCUnsupported') }}
+				</div>
+			</el-form-item>
 
       <template v-if="isContinuousTask">
         <el-form-item :label="t('transfer.taskWizard.continuousKeyFieldsLabel')" required>
@@ -45,6 +60,7 @@
             multiple
             filterable
             :placeholder="t('transfer.taskWizard.continuousKeyFieldsPlaceholder')"
+						:disabled="isPostgreSQLCDCTask"
             class="field-select"
           >
             <el-option
@@ -57,12 +73,22 @@
           <div class="field-hint block-hint">{{ t('transfer.taskWizard.continuousKeyFieldsHint') }}</div>
         </el-form-item>
 
+				<el-alert
+					v-if="isPostgreSQLCDCTask"
+					:title="t('transfer.taskWizard.cdcLifecycleWarningTitle')"
+					:description="t('transfer.taskWizard.cdcLifecycleWarning')"
+					type="warning"
+					:closable="false"
+					show-icon
+					class="incremental-alert"
+				/>
+
         <el-form-item :label="t('transfer.taskWizard.continuousTargetKeysLabel')">
           <div class="derived-value">{{ continuousTargetKeyText }}</div>
           <div class="field-hint block-hint">{{ t('transfer.taskWizard.continuousTargetKeysHint') }}</div>
         </el-form-item>
 
-        <el-form-item :label="t('transfer.taskWizard.continuousInitialPositionLabel')" required>
+				<el-form-item v-if="isKafkaContinuousTask" :label="t('transfer.taskWizard.continuousInitialPositionLabel')" required>
           <el-radio-group v-model="formData.continuousInitialPosition">
             <el-radio value="earliest">{{ t('transfer.taskWizard.continuousInitialEarliest') }}</el-radio>
             <el-radio value="latest">{{ t('transfer.taskWizard.continuousInitialLatest') }}</el-radio>
@@ -70,18 +96,6 @@
           <div class="field-hint block-hint">{{ t('transfer.taskWizard.continuousInitialPositionHint') }}</div>
         </el-form-item>
       </template>
-
-      <el-form-item v-else :label="t('transfer.taskWizard.loadModeLabel')">
-        <el-radio-group v-model="formData.loadMode">
-          <el-radio value="snapshot">{{ t('transfer.taskWizard.snapshotLoad') }}</el-radio>
-          <el-radio value="incremental" :disabled="!watermarkIncrementalSupported">
-            {{ t('transfer.taskWizard.watermarkIncrementalLoad') }}
-          </el-radio>
-        </el-radio-group>
-        <div v-if="!watermarkIncrementalSupported" class="field-hint block-hint">
-          {{ t('transfer.taskWizard.watermarkIncrementalUnsupported') }}
-        </div>
-      </el-form-item>
 
       <template v-if="!isContinuousTask && formData.loadMode === 'incremental'">
         <el-alert
@@ -230,7 +244,10 @@ const formData = reactive({
 })
 
 const isContinuousTask = computed(() => props.wizardState.isContinuousTask.value)
+const isKafkaContinuousTask = computed(() => props.wizardState.isKafkaContinuousTask.value)
+const isPostgreSQLCDCTask = computed(() => props.wizardState.isPostgreSQLCDCTask.value)
 const watermarkIncrementalSupported = computed(() => props.wizardState.supportsWatermarkIncremental.value)
+const postgresqlCDCSupported = computed(() => props.wizardState.supportsPostgreSQLCDC.value)
 
 const continuousSourceFieldOptions = computed(() => {
   return uniqueFieldOptions(
@@ -347,7 +364,6 @@ watch(
     props.wizardState.schedule.value = scheduleMode.value === 'cron' ? value.schedule : ''
     props.wizardState.enabled.value = scheduleMode.value === 'cron' ? value.enabled : false
     props.wizardState.batchSize.value = value.batchSize
-    props.wizardState.loadMode.value = value.loadMode
     props.wizardState.watermarkField.value = value.watermarkField
     props.wizardState.watermarkTieBreakers.value = [...value.watermarkTieBreakers]
     props.wizardState.targetKeys.value = [...value.targetKeys]
@@ -383,6 +399,7 @@ watch(
 watch(
   () => formData.loadMode,
   (mode) => {
+		props.wizardState.setLoadMode(mode)
     if (!isContinuousTask.value && mode === 'incremental') {
       props.wizardState.initializeIncrementalDefaults()
       formData.watermarkField = props.wizardState.watermarkField.value
@@ -396,6 +413,12 @@ watch(watermarkIncrementalSupported, (supported) => {
   if (!supported && formData.loadMode === 'incremental') {
     formData.loadMode = 'snapshot'
   }
+})
+
+watch(postgresqlCDCSupported, (supported) => {
+	if (!supported && formData.loadMode === 'cdc') {
+		formData.loadMode = 'snapshot'
+	}
 })
 
 watch(

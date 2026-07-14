@@ -1954,6 +1954,145 @@ const docTemplate = `{
                 }
             }
         },
+        "/model3d_tiles": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "列出 Manager infra MinIO 中受管的 3D Tiles 与 S3M 快显结果。| List Manager-owned 3D Tiles and S3M quick view results stored in infra MinIO.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "列出分块三维模型瓦片快显结果 | List model3d tiles quick view results",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "数据项ID | Item ID",
+                        "name": "item_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据项指纹 | Item fingerprint",
+                        "name": "item_fingerprint",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "task_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "目标格式：3d_tiles 或 s3m | Target format: 3d_tiles or s3m",
+                        "name": "target_format",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态 | Status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关键词 | Keyword",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "结果列表 | Result list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/model3d_tiles/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除 Manager infra MinIO 中的受管 3D Tiles 或 S3M 瓦片，并软删除对应结果记录；不删除源 item、任务定义或 execution 历史。| Delete managed 3D Tiles or S3M assets from Manager infra MinIO and soft-delete the result record without deleting the source item, task definition, or execution history.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除分块三维模型瓦片快显结果 | Delete model3d tiles quick view result",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "结果 ID | Result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "结果不存在 | Result not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "删除失败 | Delete failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/model3d_tiles/{id}/assets/{asset_path}": {
             "get": {
                 "security": [
@@ -2047,7 +2186,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建分块三维模型瓦片任务。当前源为 OSGB Scene whole item，结果按 target_format 写入 Manager infra MinIO。| Create a model3d tiles task from an OSGB Scene whole item into Manager infra MinIO.",
+                "description": "创建或复用分块三维模型瓦片任务。同一 tenant_id、item_fingerprint 和 target_format 返回同一任务 ID；结果写入 Manager infra MinIO。| Create or reuse a model3d tiles task. The same tenant_id, item_fingerprint, and target_format return the same task ID; results are stored in Manager infra MinIO.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4973,6 +5112,13 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "任务已有活动执行 | Task already has an active execution",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

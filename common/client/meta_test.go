@@ -178,11 +178,12 @@ func TestMetaClientDecodesItemDataUpdatedAt(t *testing.T) {
 	t.Parallel()
 
 	const dataUpdatedAt = "2026-06-06T08:30:00Z"
+	const fingerprint = "item-fingerprint-21"
 	var gotPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":21,"tenant_id":8,"engine_id":7,"node_id":3,"item_type":"object","name":"roads.geojson","full_name":"bucket/roads.geojson","data_updated_at":"` + dataUpdatedAt + `"}`))
+		_, _ = w.Write([]byte(`{"id":21,"tenant_id":8,"engine_id":7,"node_id":3,"item_type":"object","name":"roads.geojson","full_name":"bucket/roads.geojson","fingerprint":"` + fingerprint + `","data_updated_at":"` + dataUpdatedAt + `"}`))
 	}))
 	defer server.Close()
 
@@ -200,5 +201,8 @@ func TestMetaClientDecodesItemDataUpdatedAt(t *testing.T) {
 	}
 	if item.DataUpdatedAt == nil || !item.DataUpdatedAt.Equal(want) {
 		t.Fatalf("DataUpdatedAt = %#v, want %v", item.DataUpdatedAt, want)
+	}
+	if item.Fingerprint != fingerprint {
+		t.Fatalf("Fingerprint = %q, want %q", item.Fingerprint, fingerprint)
 	}
 }

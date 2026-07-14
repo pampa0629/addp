@@ -62,7 +62,7 @@
           <el-descriptions-item :label="t('transfer.taskWizard.continuousTargetKeysLabel')">
             {{ wizardState.continuousTargetKeys.value.join(', ') }}
           </el-descriptions-item>
-          <el-descriptions-item :label="t('transfer.taskWizard.continuousInitialPositionLabel')">
+					<el-descriptions-item v-if="wizardState.isKafkaContinuousTask.value" :label="t('transfer.taskWizard.continuousInitialPositionLabel')">
             {{ continuousInitialPositionLabel }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('transfer.taskWizard.continuousPollBatchSizeLabel')">
@@ -101,7 +101,7 @@
           {{ wizardState.sourceEngineID.value }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskWizard.dataType')">
-          {{ wizardState.isContinuousTask.value ? t('transfer.taskWizard.kafkaTopicLabel') : dataTypeLabel(wizardState.sourceDataType.value) }}
+							{{ wizardState.isKafkaContinuousTask.value ? t('transfer.taskWizard.kafkaTopicLabel') : dataTypeLabel(wizardState.sourceDataType.value) }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskWizard.representation')">
           {{ representationLabel(wizardState.sourceRepresentation.value) }}
@@ -253,6 +253,9 @@ const warnings = computed(() => {
 const hasWarnings = computed(() => warnings.value.length > 0)
 
 const loadModeLabel = computed(() => {
+	if (props.wizardState.isPostgreSQLCDCTask.value) {
+		return t('transfer.taskWizard.postgresqlCDCLoad')
+	}
   if (props.wizardState.isContinuousTask.value) {
     return t('transfer.taskWizard.continuousIncrementalLoad')
   }
@@ -274,6 +277,9 @@ const continuousInitialPositionLabel = computed(() => {
 })
 
 const targetApplyModeLabel = computed(() => {
+	if (props.wizardState.isPostgreSQLCDCTask.value) {
+		return t('transfer.taskWizard.applyModeUpsertDelete')
+	}
   if (props.wizardState.isContinuousTask.value || props.wizardState.isWatermarkIncremental.value) {
     return t('transfer.taskWizard.applyModeUpsert')
   }

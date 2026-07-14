@@ -17,8 +17,11 @@ import (
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/common/utils"
 	"github.com/addp/transfer/internal/api"
+	"github.com/addp/transfer/internal/capture"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/models"
+	"github.com/addp/transfer/internal/planner"
+	transferRepo "github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
 	"github.com/addp/transfer/internal/worker"
 	"github.com/redis/go-redis/v9"
@@ -106,23 +109,66 @@ func main() {
 	// 	log.Fatalf("Failed to register connectors: %v", err)
 	// }
 
+	// 初始化 System 客户端（用于审计日志、Engine 解析和服务间调用）
+	var systemClient *commonClient.SystemClient
+	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
+		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+		log.Printf("✅ SystemClient 已初始化: %s", cfg.SystemServiceURL)
+	}
+
 	// 初始化 Service 层（传入 taskQueue 和 redisClient）
 	taskService := service.NewTaskService(db, nil, cfg, taskQueue)         // engine 传 nil（暂不执行任务）
 	executionService := service.NewExecutionService(db, taskExecutionRepo) // 使用统一执行表
 	executionService.SetTaskQueue(taskQueue)
 	taskService.SetExecutionService(executionService) // 注入执行服务（避免循环依赖）
 	cleanupService := service.NewTransferCleanupService(db, redisClient, taskExecutionRepo)
+
+	// PostgreSQL CDC capture control plane；数据面由独立 continuous worker 消费登记的 Infra Kafka generation。
+	if systemClient != nil {
+		topicAdmin, err := capture.NewKafkaTopicAdmin(capture.KafkaAdminConfig{
+			BootstrapServers: cfg.InfraKafkaBootstrapServers,
+			Username:         cfg.InfraKafkaAdminUsername, Password: cfg.InfraKafkaAdminPassword,
+			SecurityProtocol: cfg.InfraKafkaSecurityProtocol,
+			TLSCACertFile:    cfg.InfraKafkaTLSCACertFile, TLSInsecure: cfg.InfraKafkaTLSInsecure,
+		})
+		if err != nil {
+			log.Fatalf("初始化 Infra Kafka capture admin 失败: %v", err)
+		}
+		defer topicAdmin.Close()
+		connectClient, err := capture.NewConnectClient(cfg.KafkaConnectURL, cfg.KafkaConnectUsername, cfg.KafkaConnectPassword, cfg.KafkaConnectTimeout)
+		if err != nil {
+			log.Fatalf("初始化 Kafka Connect client 失败: %v", err)
+		}
+		captureSupervisor, err := capture.NewSupervisor(
+			transferRepo.NewCaptureRepository(db),
+			capture.NewPostgreSQLPlanResolver(planner.NewSystemEngineResolver(systemClient)),
+			connectClient, topicAdmin, capture.PostgreSQLSourceResources{},
+			capture.SupervisorConfig{
+				TopicRetention: cfg.CaptureTopicRetention, TopicRetentionBytes: cfg.CaptureTopicRetentionBytes,
+				TopicReplication: int16(cfg.CaptureTopicReplicationFactor), ConnectLoopbackHost: cfg.KafkaConnectLoopbackHost,
+				ProvisioningTimeout: cfg.CaptureProvisioningTimeout, StatusPollInterval: cfg.CaptureStatusPollInterval,
+				MonitorInterval: cfg.CaptureMonitorInterval,
+			},
+			logger.With("component", "capture_supervisor"),
+		)
+		if err != nil {
+			log.Fatalf("初始化 Transfer capture supervisor 失败: %v", err)
+		}
+		taskService.SetCaptureControl(captureSupervisor)
+		cleanupService.SetCaptureControl(captureSupervisor)
+		captureCtx, cancelCapture := context.WithCancel(context.Background())
+		defer cancelCapture()
+		go func() {
+			if err := captureSupervisor.Run(captureCtx); err != nil && err != context.Canceled {
+				logger.L().Error("Transfer capture supervisor 已退出", "error", err)
+			}
+		}()
+	}
 	if err := cleanupService.Start(context.Background()); err != nil {
 		logger.L().Warn("Transfer 资源回收服务启动失败", "error", err)
 	}
 	defer cleanupService.Stop()
 
-	// 初始化 System 客户端（用于审计日志和服务间调用）
-	var systemClient *commonClient.SystemClient
-	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		log.Printf("✅ SystemClient 已初始化: %s", cfg.SystemServiceURL)
-	}
 	// 设置路由
 	router := api.SetupRouter(taskService, executionService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient)
 
@@ -199,6 +245,7 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&models.TransferTask{},
 		&models.SyncState{},
 		&models.RuntimeLease{},
+		&models.CaptureResource{},
 	)
 	if err != nil {
 		return nil, err

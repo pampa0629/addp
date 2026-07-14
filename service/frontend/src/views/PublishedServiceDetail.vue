@@ -207,14 +207,24 @@ const loading = ref(false)
 const service = ref(null)
 
 // 计算几何信息
+const spatialInfo = computed(() => service.value?.data_config?.source_snapshot?.spatial || null)
+const primaryGeometry = computed(() => {
+	const columns = spatialInfo.value?.geometry_columns || []
+	const primaryName = spatialInfo.value?.primary_geometry_column
+	return columns.find(column => column.name === primaryName) || (columns.length === 1 ? columns[0] : null)
+})
 const hasGeometry = computed(() => {
-  if (!service.value?.data_config?.geometry) return false
-  return service.value.data_config.geometry.has_geometry === true
+	return !!primaryGeometry.value?.name
 })
 
 const geometryInfo = computed(() => {
   if (!hasGeometry.value) return null
-  return service.value.data_config.geometry
+	return {
+	  column: primaryGeometry.value.name,
+	  srid: primaryGeometry.value.srid || spatialInfo.value?.srid || 0,
+	  types: primaryGeometry.value.geometry_type ? [primaryGeometry.value.geometry_type] : [],
+	  extent: spatialInfo.value?.extent || null
+	}
 })
 
 // 检查协议是否启用

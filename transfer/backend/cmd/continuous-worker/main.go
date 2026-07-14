@@ -43,10 +43,15 @@ func main() {
 		owner = fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString())
 	}
 	leaseRepo := repository.NewRuntimeLeaseRepository(db)
+	infraKafkaConnection, err := cfg.InfraKafkaTransferConnectionInfo()
+	if err != nil {
+		log.Fatalf("continuous worker Infra Kafka 配置无效: %v", err)
+	}
 	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 	runner := &continuous.DataSessionRunner{
 		Resolver: planner.NewSystemEngineResolver(systemClient),
 		States:   repository.NewSyncStateRepository(db), Progress: leaseRepo,
+		Captures: repository.NewCaptureRepository(db), InfraKafkaConnection: infraKafkaConnection,
 		PollTimeout: cfg.ContinuousPollTimeout, MaxBytes: cfg.ContinuousFetchMaxBytes,
 		DiagnosticsInterval:      cfg.ContinuousDiagnosticsInterval,
 		RetentionDegradedHorizon: cfg.ContinuousRetentionDegradedHorizon,
@@ -69,7 +74,7 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	logger.L().Info("transfer continuous worker starting", "owner_instance_id", owner, "capacity", cfg.ContinuousWorkerCapacity, "data_plane", "kafka_to_postgresql")
+	logger.L().Info("transfer continuous worker starting", "owner_instance_id", owner, "capacity", cfg.ContinuousWorkerCapacity, "data_plane", "kafka_or_postgresql_cdc_to_postgresql")
 	if err := supervisor.Run(ctx); err != nil && err != context.Canceled {
 		log.Fatalf("continuous supervisor 退出: %v", err)
 	}

@@ -17,6 +17,7 @@ import (
 
 var ErrTaskAlreadyRunning = errors.New("transfer task is already running")
 var ErrContinuousTaskAlreadyRunning = errors.New("continuous transfer task is already running")
+var ErrContinuousTaskBlocked = errors.New("continuous transfer task is blocked")
 
 // TaskRepository 任务数据访问层
 type TaskRepository struct {
@@ -99,6 +100,9 @@ func (r *TaskRepository) StartContinuousExecution(ctx context.Context, taskID, t
 			Where("id = ? AND tenant_id = ?", taskID, tenantID).First(&task).Error; err != nil {
 			return commonrepo.WrapDBError(err)
 		}
+		if task.Status == models.TaskStatusBlocked {
+			return ErrContinuousTaskBlocked
+		}
 		if task.DesiredState == models.TaskDesiredStateRunning || task.Status == models.TaskStatusRunning {
 			return ErrContinuousTaskAlreadyRunning
 		}
@@ -133,6 +137,9 @@ func (r *TaskRepository) SetContinuousDesiredState(ctx context.Context, taskID, 
 			return commonrepo.WrapDBError(err)
 		}
 		updates := map[string]interface{}{"desired_state": desired}
+		if desired == models.TaskDesiredStateStopped && task.Status == models.TaskStatusBlocked {
+			updates["status"] = models.TaskStatusIdle
+		}
 		if desired != models.TaskDesiredStateRunning && task.LastExecutionID != nil {
 			var execution commonExecution.TaskExecution
 			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -160,6 +167,35 @@ func (r *TaskRepository) SetContinuousDesiredState(ctx context.Context, taskID, 
 		}
 		return tx.Model(&task).Updates(updates).Error
 	})
+}
+
+// WaitContinuousRuntimeStopped 等待 active owner 释放或 lease 过期。
+// capture cleanup 必须在此之后删除 CDC topic，避免仍在运行的 worker 读取已删除资源。
+func (r *TaskRepository) WaitContinuousRuntimeStopped(ctx context.Context, taskID uint, timeout, pollInterval time.Duration) error {
+	if timeout <= 0 || pollInterval <= 0 {
+		return fmt.Errorf("continuous runtime stop wait requires positive timeout and poll interval")
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+	for {
+		var active int64
+		if err := r.db.WithContext(ctx).Model(&models.RuntimeLease{}).
+			Where("task_id = ? AND owner_instance_id <> '' AND lease_until > ?", taskID, time.Now()).Count(&active).Error; err != nil {
+			return err
+		}
+		if active == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return fmt.Errorf("timed out waiting for continuous runtime of task %d to stop", taskID)
+		case <-ticker.C:
+		}
+	}
 }
 
 // GetByID 根据 ID 获取任务

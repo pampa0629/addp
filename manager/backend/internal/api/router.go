@@ -153,6 +153,8 @@ func SetupRouter(
 		}
 		model3DTilesAssets := api.Group("/model3d_tiles")
 		{
+			model3DTilesAssets.GET("", taskProviderHandler.ListModel3DTilesResults)
+			model3DTilesAssets.DELETE("/:id", taskProviderHandler.DeleteModel3DTilesResult)
 			model3DTilesAssets.GET("/:id/assets/*asset_path", model3DTilesHandler.GetAsset)
 		}
 		model3DGLBTasksGroup := api.Group("/model_3d_glb_tasks")

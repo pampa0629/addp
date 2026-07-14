@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/addp/service/internal/models"
 	svc "github.com/addp/service/internal/service"
@@ -170,24 +171,14 @@ func (h *OGCFeaturesHandler) GetCollections(c *gin.Context) {
 		},
 	}
 
-	// 如果有空间信息，添加 extent
-	if geomConfig, ok := service.DataConfig["geometry"].(map[string]interface{}); ok {
-		if hasGeometry, ok := geomConfig["has_geometry"].(bool); ok && hasGeometry {
-			if extent, ok := geomConfig["extent"].(map[string]interface{}); ok {
-				collection["extent"] = gin.H{
-					"spatial": gin.H{
-						"bbox": [][]float64{
-							{
-								extent["minX"].(float64),
-								extent["minY"].(float64),
-								extent["maxX"].(float64),
-								extent["maxY"].(float64),
-							},
-						},
-						"crs": fmt.Sprintf("http://www.opengis.net/def/crs/EPSG/0/%v", geomConfig["srid"]),
-					},
-				}
-			}
+	// collection extent 直接来自已发布 SpatialInfo，保持源 CRS 语义。
+	if spatialInfo := service.GetSpatialInfo(); spatialInfo != nil && spatialInfo.Extent != nil {
+		if crs := ogcCRSURI(spatialInfo.PrimaryCRSRef()); crs != "" {
+			extent := *spatialInfo.Extent
+			collection["extent"] = gin.H{"spatial": gin.H{
+				"bbox": [][]float64{{extent[0], extent[1], extent[2], extent[3]}},
+				"crs":  crs,
+			}}
 		}
 	}
 
@@ -369,9 +360,15 @@ func (h *OGCFeaturesHandler) GetItem(c *gin.Context) {
 		return
 	}
 
-	// 构建 ID 过滤条件（假设主键为 id）
+	primaryKey := service.GetPrimaryKey()
+	if primaryKey == "" {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "Published output contract does not define a primary key"})
+		return
+	}
+
+	// 单要素查询使用已发布主键，不假设字段名为 id。
 	params := svc.QueryParams{
-		Filter:   fmt.Sprintf("id=%s", featureID),
+		Filter:   fmt.Sprintf("%s='%s'", primaryKey, strings.ReplaceAll(featureID, "'", "''")),
 		Page:     1,
 		PageSize: 1,
 		Format:   "geojson",
@@ -400,6 +397,14 @@ func (h *OGCFeaturesHandler) GetItem(c *gin.Context) {
 
 	c.Header("Content-Type", "application/geo+json")
 	c.Data(http.StatusOK, "application/geo+json", geojsonData)
+}
+
+func ogcCRSURI(crsRef string) string {
+	parts := strings.Split(strings.TrimSpace(crsRef), ":")
+	if len(parts) == 2 && strings.EqualFold(parts[0], "EPSG") && parts[1] != "" {
+		return fmt.Sprintf("http://www.opengis.net/def/crs/EPSG/0/%s", parts[1])
+	}
+	return ""
 }
 
 // getAndValidateService 通用服务查找和权限验证逻辑

@@ -184,12 +184,25 @@ CREATE TABLE service.query_services (
     data_config JSONB NOT NULL DEFAULT '{}'::jsonb,
     /* data_config 结构：
     {
-      "geometry": {                               // 空间字段配置（如有）
-        "has_geometry": true,
-        "column": "geom",
-        "srid": 4326,
-        "types": ["Point"],
-        "extent": {"minX": 116.0, "minY": 39.0, "maxX": 117.0, "maxY": 40.0}
+      "source_snapshot": {                        // Service 执行依赖快照
+        "source": {
+          "item_id": 33,
+          "item_fingerprint": "...",
+          "scanned_at": "2026-07-14T08:00:00Z",
+          "data_updated_at": "2026-07-14T07:30:00Z"
+        },
+        "captured_at": "2026-07-14T08:05:00Z",
+        "dependency_hash": "...",
+		"verification_status": "verified",
+        "table": {"fields": [], "primary_key": []},
+        "spatial": {
+          "geometry_columns": [{"name": "geom", "geometry_type": "Point", "srid": 4326, "crs_ref": "EPSG:4326"}],
+          "primary_geometry_column": "geom",
+          "crs_definitions": []
+		},
+		"federated_object_tables": {
+		  "lake": {"public.sales": "bucket/public/sales.parquet"}
+		}
       },
       "default_fields": ["id", "name", "geom"],  // 默认返回字段（Table模式）
       "filterable_fields": ["name", "category"]  // 可过滤字段（Table模式）
@@ -221,7 +234,12 @@ CREATE TABLE service.query_services (
 
 **核心字段说明**：
 - `config_type`: 'table' 或 'sql'，创建后不可修改
-- `data_config`: JSONB 字段，存储空间配置、默认字段、可过滤字段
+- `data_config`: JSONB 字段，存储 locator、Service 依赖快照、默认字段和可过滤字段。依赖快照只保存执行所需事实，不复制完整 Meta attributes。
+- `dependency_hash`: 只计算字段、主键、空间字段/CRS、对象表执行描述符和 SQL query hash；排除行数、大小、扫描时间、数据更新时间、extent 和空间索引状态。
+- `verification_status`: 新发布或显式刷新的快照为 `verified`；一次性迁移的历史快照为 `unverifiable`，需通过管理动作重新检查或刷新。
+- DuckDB 联邦 SQL 只保存查询实际引用的对象表映射。执行时仍从 System 获取当前连接配置，但不再调用 Meta；对象表映射变化需要重新发布查询服务。
+- 历史表模式记录只有在 locator 能定位同租户且具有 fingerprint 的 Meta item 时才迁移；无法建立可靠源身份的旧记录在迁移时删除，需重新创建。
+- 历史 DuckDB 联邦 SQL 无法仅靠旧几何配置节点还原对象表依赖，迁移时直接删除，需重新创建；运行时不为旧记录恢复 Meta 动态解析分支。
 - `protocols`: 协议配置，默认启用 REST API
 - `public_access`: 公开访问开关，启用后无需 JWT 认证
 
@@ -464,9 +482,8 @@ Content-Type: application/json
   "keywords": ["POI", "北京"],
   "config_type": "table",
   "engine_id": "uuid",
-  "schema_name": "public",
-  "table_name": "beijing_poi",
   "data_config": {
+	"locator": "addp://engine/9/path/public/beijing_poi?type=table&item_id=33",
     "default_fields": ["id", "name", "category", "geom"],
     "filterable_fields": ["name", "category"]
   },
@@ -487,12 +504,18 @@ Content-Type: application/json
   "title": "北京POI数据查询",
   "config_type": "table",
   "data_config": {
-    "geometry": {
-      "has_geometry": true,
-      "column": "geom",
-      "srid": 4326,
-      "types": ["Point"]
-    },
+	"locator": "addp://engine/9/path/public/beijing_poi?type=table&item_id=33",
+	"source_snapshot": {
+	  "source": {"item_id": 33, "item_fingerprint": "..."},
+	  "captured_at": "2026-07-14T08:05:00Z",
+	  "dependency_hash": "...",
+	  "verification_status": "verified",
+	  "table": {"fields": [], "primary_key": ["id"]},
+	  "spatial": {
+		"geometry_columns": [{"name": "geom", "geometry_type": "Point", "srid": 4326, "crs_ref": "EPSG:4326"}],
+		"primary_geometry_column": "geom"
+	  }
+	},
     "default_fields": ["id", "name", "category", "geom"]
   },
   "endpoints": {

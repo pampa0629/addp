@@ -52,6 +52,10 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | attributes | 元数据属性 | `meta_item.attributes` 中保存的结构化扩展事实。 | 包含 `storage`、`item`、`type_info`、`format_info`、`access_index`、`capabilities`。 |
+| item fingerprint | 数据项指纹 | 由 `engine_id + full_name` 计算的稳定 data item 身份。 | 同一数据项内容变化时指纹不变；不是内容哈希，也不是源版本。`item_id` 只是当前 Meta 行引用。 |
+| source version | 源版本 | 表达某个稳定数据项的当前内容版本事实。 | 可由 `content_hash`、`data_updated_at`、`last_modified_at` 或格式专用版本事实组成；用于判断派生结果是否过期，不替代 item fingerprint。 |
+| dependency snapshot | 依赖快照 | 业务定义在创建或显式刷新时，从上游当前事实中选择其执行和对外契约真正依赖的部分并冻结保存。 | 不是完整 Meta item 副本。Meta 提供源事实和源时间；业务模块记录采集时间并对依赖投影计算 hash。差异用于提示重新发布，不自动改变既有业务契约。 |
+| output contract snapshot | 输出契约快照 | 对没有单一 Meta item 身份的查询或计算结果，保存其已检测输出字段、主键、空间信息等契约事实。 | SQL 查询服务使用该快照；查询结果未物化并经 Meta 扫描前，不创建或伪造 Meta item。 |
 | access index | 访问定位索引 | 为高效读取内容窗口而生成的定位索引。 | 标准落点为 `attributes.access_index.<data_type>`；例如 CSV / JSONL 表格的稀疏行号到字节偏移索引。它不是全文索引。 |
 | content hash | 内容哈希 | 对原始内容二进制流计算得到的哈希值。 | 标准落点为 `attributes.storage.content_hash`，用于判断内容是否变化；不用于定位外部全文索引记录。 |
 | basic scan | 基础扫描 | 快速发现资源树和 data item 身份的低成本扫描。 | 原则上不读取 file/object 内容。 |
@@ -80,6 +84,8 @@
 |---|---|---|---|
 | Task | 任务 | 可被执行的业务能力抽象。 | Task 是抽象概念，不是统一任务总表；任务定义归 owner 模块私有表。 |
 | task definition | 任务定义 | “未来应该按什么策略处理什么对象”的定义态。 | 例如 `meta.scan_tasks`、`transfer.transfer_tasks`、`manager.vector_tile_cache_tasks`。 |
+| task semantic identity | 任务语义身份 | owner 模块用于判定两次创建是否表达同一个持久任务定义的规范化键。 | 不等于任务 ID，也不由 execution ID 构成。受管派生任务通常由租户、稳定源身份和派生变体构成。 |
+| artifact variant | 派生变体 | 在同一稳定源上区分不同当前派生目标的规范化配置投影。 | 例如 `target_format=3d_tiles|s3m`、`tile_format=mvt`、几何列加目标 SRID。不能用输出目录名推断。 |
 | owner task schedule | 任务自身调度 | owner 模块任务定义上保存并由 owner scheduler 触发的独立定时计划。 | 只决定该任务作为独立任务何时自动执行。 |
 | orchestration schedule | 编排调度 | Orchestrator 编排定义上保存的定时计划。 | 只决定编排 run 何时启动；不继承、不覆盖其中 Step 引用任务的自身调度。 |
 | task type | 任务类型 | owner 模块内稳定的任务类型标识。 | 例如 `scan`、`vector_tile_cache_generation`、`embedding`；由 TaskProvider capabilities 声明。 |
@@ -94,15 +100,18 @@
 | execution boundary | 执行边界 | 一次 execution 是否具有确定结束条件。 | `bounded` 表示处理到本次冻结上界后结束；`continuous` 表示持续等待变化直到被真实停止、失败或失联。 |
 | load mode | 装载方式 | Transfer 从源端读取完整范围还是已提交位置之后的变化。 | 只允许 `snapshot` / `incremental`；它与触发方式和目标应用方式正交。 |
 | watermark | 水位游标 | 以源表中可稳定排序的业务字段识别 insert/update 变化的批增量位置。 | 必须使用 `(watermark_field, tie_breaker...)` 复合游标并冻结每次 bounded execution 的上界；普通 watermark 不发现物理删除，不等同于 CDC。 |
+| CDC | 数据库变更捕获 | 从数据库事务日志持续捕获已提交的 insert、update 和 delete，并按确定的初始化与恢复协议交给下游应用。 | CDC 不等于按 `updated_at` 轮询；PostgreSQL 第一版由 Debezium 读取 logical replication slot，经 Infra Kafka 交给 Transfer。 |
+| CDC bootstrap | CDC 初始化 | 在一个无空洞的日志衔接点上建立一致性初始快照，并继续消费快照期间和之后产生的日志变化。 | PostgreSQL 第一版固定使用 Debezium `initial` snapshot；Transfer 不自行拼接“先全量、后开 CDC”两条路径。 |
 | apply mode | 目标应用方式 | Transfer 将本次读取结果应用到目标的策略。 | 稳定取值为 `replace`、`append`、`upsert`、`upsert_delete`；目标 Provider 必须声明并真实实现对应能力。 |
 | sync state | 同步主状态 | Transfer 为增量任务保存的已提交源位置。 | 存储于 `transfer.sync_states`；与任务定义、execution checkpoint 分离，只能在目标提交成功后通过 CAS/fencing 推进。 |
+| capture position | 捕获位点 | 捕获组件已经从源数据库事务日志可靠读取并写入 Infra Kafka 的源日志位置。 | PostgreSQL CDC 对应 Debezium/Kafka Connect 管理的 LSN 与 connector offset；Transfer 不复制维护该位点。 |
 | committed position | 已提交位置 | 目标端已可靠应用完成后允许继续消费的源位置。 | Kafka position v1 按 partition 保存 `next_offset`；worker 必须从该 offset seek，不能依赖 consumer auto commit 作为事实源。 |
 | runtime session | 运行时会话 | continuous execution 在某个 Transfer continuous worker 中的一次实际长驻运行。 | 一个 task 同一时刻只有一个合法 session owner；session 结束后 execution 随之结束，恢复必须创建新 execution。 |
 | runtime lease | 运行时租约 | continuous worker 对 runtime session 的限时所有权。 | 保存 owner instance、lease deadline、heartbeat 和 fencing token；与业务 committed position 分离。 |
 | apply identity | 应用身份 | Transfer 为一个任务生成、跨 execution 保持不变的全局 UUID，用于标识该任务对外部目标的应用主线。 | 由服务端生成且不可修改，不进入任务 config；业务目标 PostgreSQL 的 apply ledger 使用它隔离任务并校验 source/target identity。 |
 | target apply ledger | 目标应用账本 | 与业务数据位于同一目标数据库、记录各 source partition 已原子应用位置的技术账本。 | continuous PostgreSQL v1 固定为 `addp_transfer.apply_positions`；数据 upsert 与 `next_offset` 推进必须在同一事务，不能用 Infra PostgreSQL 中的 `transfer.sync_states` 替代。 |
 | ChangeRecord | 变化原始记录 | Change stream Provider 从外部消息系统读取的原生记录。 | Kafka record 包含 topic、partition、offset、timestamp、headers、key/value 原始字节；不等于归一化 ChangeEvent。 |
-| ChangeEvent | 统一变化事件 | Transfer source adapter 将 Kafka record 或 CDC envelope 归一化后的内部变化对象。 | 第一版 keyed JSON record 归一化为 `operation=upsert`；Kafka、Debezium 和数据库日志协议细节不得进入目标 writer。 |
+| ChangeEvent | 统一变化事件 | Transfer source adapter 将 Kafka record 或 CDC envelope 归一化后的内部变化对象。 | 业务 Kafka record v1 归一化为 `operation=upsert`；PostgreSQL CDC v1 契约归一化 snapshot/upsert/delete。Kafka、Debezium 和数据库日志协议细节不得进入目标 writer。 |
 | business Kafka Engine | 业务 Kafka 引擎 | 用户在 System 注册、按租户授权并显式选择 topic 的外部 Kafka。 | 进入 System engines、Catalog 和 ResourceLocator；ADDP 不默认创建或删除用户 topic。 |
 | Infra Kafka | 基础设施 Kafka | ADDP 内部为 Debezium CDC 中转、缓冲和 replay 使用的基础设施。 | 不进入 System engines、资源树或用户任务 endpoint；与业务 Kafka 即使物理共用也必须使用独立凭据、ACL 和 topic namespace。 |
 | resume | 恢复执行 | 新 execution 从任务同步主状态的 committed position 继续处理。 | 第一版 watermark 增量仅支持 resume；已结束 execution 不复用。 |

@@ -18,3 +18,12 @@ other = "Invalid ID in ref"
 
 [service.success.deleted]
 other = "Deleted successfully"
+
+[service.err.snapshot_check_failed]
+other = "Failed to check query service dependency snapshot"
+
+[service.err.snapshot_refresh_failed]
+other = "Failed to refresh query service dependency snapshot"
+
+[service.err.sql_output_contract_failed]
+other = "Failed to detect SQL output contract"

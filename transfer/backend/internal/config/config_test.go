@@ -27,3 +27,18 @@ func TestValidateContinuousRuntimeObservability(t *testing.T) {
 		t.Fatal("critical horizon greater than or equal to degraded horizon was accepted")
 	}
 }
+
+func TestInfraKafkaTransferConnectionInfoUsesDedicatedPrincipal(t *testing.T) {
+	cfg := Config{
+		InfraKafkaBootstrapServers: "localhost:19092",
+		InfraKafkaSecurityProtocol: "sasl_plaintext",
+		InfraKafkaTransferPassword: "secret",
+	}
+	info, err := cfg.InfraKafkaTransferConnectionInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info["username"] != "transfer" || info["password"] != "secret" || info["sasl_mechanism"] != "plain" {
+		t.Fatalf("connection info = %#v", info)
+	}
+}

@@ -54,7 +54,39 @@ func PrepareFederatedQuery(
 		engines = FilterEnginesByName(engines, referencedNames)
 	}
 
-	// 2. 打开 DuckDB 内存连接
+	engineObjectTables := BuildObjectTableMap(ctx, tenantID, engines, metaClient)
+	return prepareFederatedSession(ctx, sqlStr, engines, engineObjectTables)
+}
+
+// PrepareFederatedQueryWithObjectTables 使用业务模块发布时冻结的对象表映射准备联邦查询。
+// 该路径仍从 System 获取当前连接信息，但不会在普通执行时读取 Meta。
+func PrepareFederatedQueryWithObjectTables(
+	ctx context.Context,
+	tenantID uint,
+	sqlStr string,
+	systemClient SystemClientIface,
+	engineObjectTables map[string]map[string]string,
+) (*FederatedSession, error) {
+	referencedNames := ExtractReferencedEngineNames(sqlStr)
+	var engines []commonModels.Engine
+	if len(referencedNames) > 0 {
+		var err error
+		engines, err = systemClient.ListEngines("", tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("获取引擎列表失败: %w", err)
+		}
+		engines = FilterEnginesByName(engines, referencedNames)
+	}
+	return prepareFederatedSession(ctx, sqlStr, engines, engineObjectTables)
+}
+
+func prepareFederatedSession(
+	ctx context.Context,
+	sqlStr string,
+	engines []commonModels.Engine,
+	engineObjectTables map[string]map[string]string,
+) (*FederatedSession, error) {
+	// 1. 打开 DuckDB 内存连接
 	db, err := OpenDB()
 	if err != nil {
 		return nil, err
@@ -66,18 +98,16 @@ func PrepareFederatedQuery(
 		return nil, fmt.Errorf("获取 DuckDB 连接失败: %w", err)
 	}
 
-	// 3. 挂载引擎 + 构建对象存储表映射
-	var engineObjectTables map[string]map[string]string
+	// 2. 挂载引擎。
 	if len(engines) > 0 {
-		engineObjectTables = BuildObjectTableMap(ctx, tenantID, engines, metaClient)
 		if err := MountEngines(ctx, conn, engines); err != nil {
 			// 挂载失败只记录警告，不中断（部分引擎可能不可用）
 			slog.Warn("部分引擎挂载失败", "error", err)
 		}
 	}
 
-	// 4. 改写 SQL（对象存储表引用 → read_parquet）
-	rewriter := NewSQLRewriter(metaClient, tenantID)
+	// 3. 使用调用方提供的已冻结对象表映射改写 SQL。
+	rewriter := NewSQLRewriter(nil, 0)
 	rewrittenSQL, err := rewriter.RewriteWithEngines(ctx, sqlStr, engineObjectTables)
 	if err != nil {
 		conn.Close()

@@ -86,6 +86,58 @@ func TestIntegrationPostgresPartitionedTableChangeApplyIsMonotonic(t *testing.T)
 	}
 }
 
+func TestIntegrationPostgresPartitionedTableChangeApplyCommitsDeleteWithLedger(t *testing.T) {
+	db, pg, connInfo := openPostgresPrepareIntegration(t, false)
+	defer db.Close()
+	ctx := context.Background()
+	schema := "common_pg_it"
+	table := fmt.Sprintf("partitioned_apply_delete_%d", time.Now().UnixNano())
+	path := postgresPrepareTablePath(schema, table)
+	applyIdentity := uuid.NewString()
+	opts := plugin.PartitionedTableChangeApplyOptions{
+		ApplyIdentity: applyIdentity, SourceIdentity: "addp://engine/12/path/public/orders?type=table",
+		Fields: []datatype.FieldInfo{
+			{Name: "id", Type: datatype.FieldTypeBigInt, Nullable: false},
+			{Name: "name", Type: datatype.FieldTypeString, Nullable: false},
+		},
+		Keys: []string{"id"},
+	}
+	defer dropPostgresPrepareTable(db, schema, table)
+	defer db.ExecContext(ctx, `DELETE FROM addp_transfer.apply_positions WHERE apply_identity = $1::uuid`, applyIdentity)
+	if err := pg.PreparePartitionedTableChangeApply(ctx, connInfo, path, opts); err != nil {
+		t.Fatalf("PreparePartitionedTableChangeApply failed: %v", err)
+	}
+	if _, err := pg.ApplyPartitionedTableChanges(ctx, connInfo, path, partitionedApplyBatch("0", 0, 1, positionedChange(1, 1, "created")), opts); err != nil {
+		t.Fatalf("initial upsert failed: %v", err)
+	}
+	deleted := plugin.PartitionedTableChange{
+		Operation: plugin.TableChangeOperationDelete,
+		Position:  kafkaOffsetPosition("0", 2),
+		Row:       map[string]interface{}{"id": int64(1)},
+	}
+	result, err := pg.ApplyPartitionedTableChanges(ctx, connInfo, path, partitionedApplyBatch("0", 1, 2, deleted), opts)
+	if err != nil {
+		t.Fatalf("delete apply failed: %v", err)
+	}
+	if result.AppliedRecords != 1 || result.Position.Values["next_offset"] != "2" {
+		t.Fatalf("delete result = %#v", result)
+	}
+	var rowCount int
+	if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM "%s"."%s" WHERE id = 1`, schema, table)).Scan(&rowCount); err != nil {
+		t.Fatal(err)
+	}
+	if rowCount != 0 {
+		t.Fatalf("deleted row count = %d, want 0", rowCount)
+	}
+	var nextOffset int64
+	if err := db.QueryRowContext(ctx, `SELECT next_offset FROM addp_transfer.apply_positions WHERE apply_identity = $1::uuid AND partition = '0'`, applyIdentity).Scan(&nextOffset); err != nil {
+		t.Fatal(err)
+	}
+	if nextOffset != 2 {
+		t.Fatalf("ledger next_offset = %d, want 2", nextOffset)
+	}
+}
+
 func TestIntegrationPostgresPartitionedTableChangeApplyCancelsWhileTargetLocked(t *testing.T) {
 	db, pg, connInfo := openPostgresPrepareIntegration(t, false)
 	defer db.Close()

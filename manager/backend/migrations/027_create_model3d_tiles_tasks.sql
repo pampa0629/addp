@@ -24,5 +24,14 @@ CREATE TABLE IF NOT EXISTS manager.model3d_tiles_tasks (
 CREATE INDEX IF NOT EXISTS idx_model3d_tiles_tasks_tenant ON manager.model3d_tiles_tasks (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_model3d_tiles_tasks_last_execution ON manager.model3d_tiles_tasks (last_execution_id);
 CREATE INDEX IF NOT EXISTS idx_model3d_tiles_tasks_deleted_at ON manager.model3d_tiles_tasks (deleted_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_model3d_tiles_tasks_source_format_unique
+    ON manager.model3d_tiles_tasks (
+        tenant_id,
+        ((config->'source'->>'item_fingerprint')),
+        ((config->>'target_format'))
+    )
+    WHERE deleted_at IS NULL
+      AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
+      AND COALESCE(config->>'target_format', '') <> '';
 
 COMMENT ON TABLE manager.model3d_tiles_tasks IS '分块三维模型瓦片任务定义表，target_format 区分 3D Tiles 与 S3M';

@@ -27,6 +27,15 @@ type TaskQueue interface {
 	Close() error
 }
 
+type CaptureControl interface {
+	Start(ctx context.Context, task *models.TransferTask) (*models.CaptureResource, error)
+	Pause(ctx context.Context, task *models.TransferTask) error
+	Resume(ctx context.Context, task *models.TransferTask) error
+	Stop(ctx context.Context, task *models.TransferTask) error
+	Get(ctx context.Context, taskID, tenantID uint) (*models.CaptureResource, error)
+	HasTerminalGeneration(ctx context.Context, taskID, tenantID uint) (bool, error)
+}
+
 // TaskService 任务服务
 type TaskService struct {
 	db               *gorm.DB
@@ -35,7 +44,12 @@ type TaskService struct {
 	executionEngine  *ExecutionEngineService
 	cfg              *config.Config
 	taskQueue        TaskQueue
+	captureControl   CaptureControl
 	logger           *slog.Logger
+}
+
+func (s *TaskService) SetCaptureControl(control CaptureControl) {
+	s.captureControl = control
 }
 
 // NewTaskService 创建任务服务
@@ -137,8 +151,19 @@ func (s *TaskService) GetTask(ctx context.Context, id, tenantID uint) (*models.T
 	if task.TenantID != tenantID {
 		return nil, fmt.Errorf("task not found or access denied")
 	}
+	s.attachCaptureSummary(ctx, task)
 
 	return task, nil
+}
+
+func (s *TaskService) attachCaptureSummary(ctx context.Context, task *models.TransferTask) {
+	if task == nil || s.captureControl == nil || !planner.IsPostgreSQLCDCTaskConfig(task.Config) {
+		return
+	}
+	resource, err := s.captureControl.Get(ctx, task.ID, task.TenantID)
+	if err == nil {
+		task.Capture = models.NewCaptureSummary(resource)
+	}
 }
 
 // UpdateTask 更新任务
@@ -151,6 +176,22 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 	// 运行中的任务需要先停止才能更新
 	if task.Status == models.TaskStatusRunning {
 		return nil, fmt.Errorf("cannot update task in %s status", task.Status)
+	}
+	if s.captureControl != nil {
+		terminal, err := s.captureControl.HasTerminalGeneration(ctx, id, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if terminal {
+			return nil, repository.ErrCaptureTerminal
+		}
+		if req.Config != nil && planner.IsPostgreSQLCDCTaskConfig(task.Config) {
+			if _, err := s.captureControl.Get(ctx, id, tenantID); err == nil {
+				return nil, fmt.Errorf("PostgreSQL CDC config is immutable after capture generation creation")
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, err
+			}
+		}
 	}
 
 	effectiveConfig := task.Config
@@ -231,10 +272,13 @@ func validateNewTaskConfig(config map[string]interface{}, batchSize int) error {
 		return fmt.Errorf("%w: %v", ErrInvalidTaskConfig, boundaryErr)
 	}
 	if boundary == planner.RuntimeBoundaryContinuous {
-		if _, err := planner.ParseContinuousTaskSpec(config); err != nil {
-			return fmt.Errorf("%w: continuous=%v", ErrInvalidTaskConfig, err)
+		if _, cdcErr := planner.ParsePostgreSQLCDCTaskSpec(config); cdcErr == nil {
+			return nil
+		} else if _, kafkaErr := planner.ParseContinuousTaskSpec(config); kafkaErr == nil {
+			return nil
+		} else {
+			return fmt.Errorf("%w: continuous_kafka=%v; postgresql_cdc=%v", ErrInvalidTaskConfig, kafkaErr, cdcErr)
 		}
-		return nil
 	}
 	if _, err := planner.ParseRawCopyTaskSpec(config); err == nil {
 		return nil
@@ -258,6 +302,14 @@ func (s *TaskService) DeleteTask(ctx context.Context, id, tenantID uint) error {
 	// 只有非运行中的任务才能删除
 	if task.Status == models.TaskStatusRunning {
 		return fmt.Errorf("cannot delete running task")
+	}
+	if planner.IsPostgreSQLCDCTaskConfig(task.Config) {
+		if s.captureControl == nil {
+			return ErrCDCCaptureControlUnavailable
+		}
+		if err := s.captureControl.Stop(ctx, task); err != nil {
+			return fmt.Errorf("cleanup PostgreSQL CDC capture before deleting task: %w", err)
+		}
 	}
 
 	// 删除任务
@@ -295,7 +347,14 @@ func (s *TaskService) ListTasks(ctx context.Context, tenantID uint, req *models.
 		filters["runtime_boundary"] = req.RuntimeBoundary
 	}
 
-	return s.taskRepo.List(tenantID, filters, req.Page, req.PageSize)
+	tasks, total, err := s.taskRepo.List(tenantID, filters, req.Page, req.PageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	for index := range tasks {
+		s.attachCaptureSummary(ctx, &tasks[index])
+	}
+	return tasks, total, nil
 }
 
 // GetTaskStatistics 获取任务统计
@@ -321,6 +380,19 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 	// 2. 启动前再次校验，阻止历史旧 JSON 任务进入 worker。
 	if err := normalizeTransferTaskType(&task.TaskType); err != nil {
 		return nil, err
+	}
+	isPostgreSQLCDC := planner.IsPostgreSQLCDCTaskConfig(task.Config)
+	if isPostgreSQLCDC && task.Status == models.TaskStatusBlocked {
+		return nil, ErrCDCSchemaChangeBlocked
+	}
+	if isPostgreSQLCDC && s.captureControl != nil {
+		terminal, err := s.captureControl.HasTerminalGeneration(ctx, id, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if terminal {
+			return nil, repository.ErrCaptureTerminal
+		}
 	}
 	if err := validateNewTaskConfig(task.Config, task.BatchSize); err != nil {
 		return nil, err
@@ -350,8 +422,16 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 		if task.Schedule != "" || task.Enabled {
 			return nil, fmt.Errorf("continuous tasks do not support task-owned schedules")
 		}
+		if isPostgreSQLCDC {
+			if err := s.ensurePostgreSQLCDCCapture(ctx, task); err != nil {
+				return nil, err
+			}
+		}
 		_, err = s.taskRepo.StartContinuousExecution(ctx, id, tenantID, executionRecord)
 		if err != nil {
+			if errors.Is(err, repository.ErrContinuousTaskBlocked) {
+				return nil, ErrCDCSchemaChangeBlocked
+			}
 			if errors.Is(err, repository.ErrContinuousTaskAlreadyRunning) {
 				return nil, fmt.Errorf("continuous task is already running")
 			}
@@ -393,6 +473,29 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 	return execution, nil
 }
 
+func (s *TaskService) ensurePostgreSQLCDCCapture(ctx context.Context, task *models.TransferTask) error {
+	if s.captureControl == nil {
+		return ErrCDCCaptureControlUnavailable
+	}
+	resource, err := s.captureControl.Get(ctx, task.ID, task.TenantID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		if _, err := s.captureControl.Start(ctx, task); err != nil {
+			return fmt.Errorf("start PostgreSQL CDC capture: %w", err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("load PostgreSQL CDC capture: %w", err)
+	}
+	if resource.Status == models.CaptureStatusStopped {
+		return repository.ErrCaptureTerminal
+	}
+	if err := s.captureControl.Resume(ctx, task); err != nil {
+		return fmt.Errorf("resume PostgreSQL CDC capture: %w", err)
+	}
+	return nil
+}
+
 // PauseTask 暂停任务（暂停定时调度）
 func (s *TaskService) PauseTask(ctx context.Context, id, tenantID uint) error {
 	task, err := s.GetTask(ctx, id, tenantID)
@@ -405,8 +508,20 @@ func (s *TaskService) PauseTask(ctx context.Context, id, tenantID uint) error {
 		return fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
 	}
 	if boundary == planner.RuntimeBoundaryContinuous {
+		isCDC := planner.IsPostgreSQLCDCTaskConfig(task.Config)
+		if isCDC && task.Status == models.TaskStatusBlocked {
+			return ErrCDCSchemaChangeBlocked
+		}
+		if isCDC && s.captureControl == nil {
+			return ErrCDCCaptureControlUnavailable
+		}
 		if err := s.taskRepo.SetContinuousDesiredState(ctx, id, tenantID, models.TaskDesiredStatePaused, "paused"); err != nil {
 			return fmt.Errorf("failed to pause continuous task: %w", err)
+		}
+		if isCDC {
+			if err := s.captureControl.Pause(ctx, task); err != nil {
+				return fmt.Errorf("observe PostgreSQL CDC capture while pausing target apply: %w", err)
+			}
 		}
 		s.logger.Info("continuous task pause requested", "task_id", id)
 		return nil
@@ -482,8 +597,8 @@ func (s *TaskService) ResumeTask(ctx context.Context, id, tenantID, userID uint)
 	return nil, nil
 }
 
-// StopTask 将 continuous task 收敛到 stopped；bounded task 没有常驻 runtime，不能调用 stop。
-func (s *TaskService) StopTask(ctx context.Context, id, tenantID uint) error {
+// StopTask 将 continuous task 收敛到 stopped；PostgreSQL CDC stop 还是不可逆 capture 终态。
+func (s *TaskService) StopTask(ctx context.Context, id, tenantID uint, req models.StopTaskRequest) error {
 	task, err := s.GetTask(ctx, id, tenantID)
 	if err != nil {
 		return err
@@ -495,8 +610,25 @@ func (s *TaskService) StopTask(ctx context.Context, id, tenantID uint) error {
 	if boundary != planner.RuntimeBoundaryContinuous {
 		return fmt.Errorf("bounded tasks do not support stop; pause their schedule instead")
 	}
+	isCDC := planner.IsPostgreSQLCDCTaskConfig(task.Config)
+	if isCDC && (!req.Confirmed || req.ConfirmationText != task.Name) {
+		return ErrCDCStopConfirmationRequired
+	}
+	if isCDC && s.captureControl == nil {
+		return ErrCDCCaptureControlUnavailable
+	}
 	if err := s.taskRepo.SetContinuousDesiredState(ctx, id, tenantID, models.TaskDesiredStateStopped, "stopped"); err != nil {
 		return fmt.Errorf("failed to stop continuous task: %w", err)
+	}
+	if isCDC {
+		if s.cfg != nil {
+			if err := s.taskRepo.WaitContinuousRuntimeStopped(ctx, id, s.cfg.CaptureRuntimeStopTimeout, s.cfg.CaptureRuntimeStopPollInterval); err != nil {
+				return fmt.Errorf("wait for PostgreSQL CDC target apply runtime to stop: %w", err)
+			}
+		}
+		if err := s.captureControl.Stop(ctx, task); err != nil {
+			return fmt.Errorf("cleanup PostgreSQL CDC capture: %w", err)
+		}
 	}
 	s.logger.Info("continuous task stop requested", "task_id", id)
 	return nil

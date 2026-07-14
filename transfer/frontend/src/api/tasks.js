@@ -43,8 +43,8 @@ export const taskAPI = {
   },
 
   // 停止持续同步任务
-  stop(id) {
-    return client.post(`/transfer/task-definitions/${id}/stop`)
+  stop(id, data) {
+    return client.post(`/transfer/task-definitions/${id}/stop`, data)
   },
 
   // 获取任务统计

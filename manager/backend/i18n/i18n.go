@@ -66,6 +66,11 @@ const (
 	MsgImportZipMissingShp         = "manager.error.import_zip_missing_shp"
 	MsgImportZipBasenameMismatch   = "manager.error.import_zip_basename_mismatch"
 	MsgImportZipMissingRequired    = "manager.error.import_zip_missing_required"
+	MsgInvalidModel3DTilesResultID = "manager.error.invalid_model3d_tiles_result_id"
+	MsgModel3DTilesResultNotFound  = "manager.error.model3d_tiles_result_not_found"
+	MsgDeleteModel3DTilesFailed    = "manager.error.delete_model3d_tiles_failed"
+	MsgModel3DTilesExecutionBusy   = "manager.error.model3d_tiles_execution_busy"
+	MsgModel3DTilesResultDeleted   = "manager.model3d_tiles.result_deleted"
 )
 
 func init() {

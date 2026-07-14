@@ -10,6 +10,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
+import { cameraViewState, preserveDerivedResourceQuery } from '@/utils/s3mViewState'
 
 const props = defineProps({
   data: { type: Object, required: true },
@@ -36,10 +37,13 @@ function cesiumBaseURL() {
 
 function authenticatedResource(Cesium, url) {
   const token = localStorage.getItem('token')
-  return new Cesium.Resource({
+  const resource = new Cesium.Resource({
     url,
     headers: token ? { Authorization: `Bearer ${token}` } : {}
   })
+  const version = new URL(url, window.location.origin).searchParams.get('version')
+  if (version) resource.setQueryParameters({ version })
+  return preserveDerivedResourceQuery(resource)
 }
 
 function installCesiumGlobal(Cesium) {
@@ -67,12 +71,8 @@ function applyViewState(Cesium) {
 
 function emitViewState() {
   if (!viewer) return
-  emit('view-state-change', {
-    position: viewer.camera.positionWC.toArray(),
-    heading: viewer.camera.heading,
-    pitch: viewer.camera.pitch,
-    roll: viewer.camera.roll
-  })
+  const state = cameraViewState(viewer.camera)
+  if (state) emit('view-state-change', state)
 }
 
 async function loadS3M(url) {
@@ -89,7 +89,7 @@ async function loadS3M(url) {
   try {
     const Cesium = await import('cesium')
     installCesiumGlobal(Cesium)
-    const { default: S3MTilesLayer } = await import('@/vendor/supermap-s3m/S3MTiles/S3MTilesLayer.js')
+    const { default: S3MTilesLayer } = await import('@/lib/supermap-s3m/S3MTiles/S3MTilesLayer.js?renderer=webp-mips-v2')
     if (currentLoad !== loadSerial) return
     viewer = new Cesium.Viewer(viewportRef.value, {
       animation: false,
@@ -107,13 +107,6 @@ async function loadS3M(url) {
     viewer.scene.globe.show = false
     viewer.scene.skyAtmosphere.show = false
     viewer.scene.skyBox.show = false
-    const gl = viewer.scene._context?._gl
-    const supportsS3TC = gl?.getExtension('WEBGL_compressed_texture_s3tc') ||
-      gl?.getExtension('MOZ_WEBGL_compressed_texture_s3tc') ||
-      gl?.getExtension('WEBKIT_WEBGL_compressed_texture_s3tc')
-    if (!supportsS3TC) {
-      throw new Error(t('manager.explorer.s3mS3TCRequired'))
-    }
     const encoding = String(metadata.value.manifest_encoding || '').toLowerCase()
     const extension = String(metadata.value.tile_extension || '').toLowerCase()
     layer = new S3MTilesLayer({
@@ -142,14 +135,18 @@ async function loadS3M(url) {
 }
 
 function disposeViewer() {
-  if (viewer) {
-    viewer.camera?.moveEnd?.removeEventListener(emitViewState)
-    if (layer && !layer.isDestroyed?.()) layer.destroy()
-    viewer.destroy()
-  }
+  const currentViewer = viewer
+  const currentLayer = layer
   viewer = null
   layer = null
-  if (viewportRef.value) viewportRef.value.replaceChildren()
+  if (currentViewer && !currentViewer.isDestroyed()) {
+    currentViewer.useDefaultRenderLoop = false
+    currentViewer.camera?.moveEnd?.removeEventListener(emitViewState)
+    if (currentLayer && !currentLayer.isDestroyed?.()) {
+      currentViewer.scene.primitives.remove(currentLayer)
+    }
+    currentViewer.destroy()
+  }
 }
 
 watch(sourceURL, loadS3M, { immediate: true })

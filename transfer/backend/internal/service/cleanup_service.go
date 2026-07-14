@@ -20,18 +20,25 @@ import (
 )
 
 type TransferCleanupService struct {
-	db           *gorm.DB
-	redis        *redis.Client
-	taskExecRepo *commonExecution.TaskExecutionRepository
-	log          *slog.Logger
-	stopCh       chan struct{}
+	db             *gorm.DB
+	redis          *redis.Client
+	taskExecRepo   *commonExecution.TaskExecutionRepository
+	captureControl CaptureControl
+	log            *slog.Logger
+	stopCh         chan struct{}
 }
 
 type TransferCleanupStats struct {
 	TaskDefinitions         int      `json:"task_definitions"`
 	DisabledTaskDefinitions int      `json:"disabled_task_definitions,omitempty"`
 	DeletedTaskDefinitions  int      `json:"deleted_task_definitions,omitempty"`
+	CaptureResources        int      `json:"capture_resources,omitempty"`
+	CleanedCaptureResources int      `json:"cleaned_capture_resources,omitempty"`
 	Errors                  []string `json:"errors,omitempty"`
+}
+
+func (s *TransferCleanupService) SetCaptureControl(control CaptureControl) {
+	s.captureControl = control
 }
 
 func NewTransferCleanupService(db *gorm.DB, redisClient *redis.Client, taskExecRepo *commonExecution.TaskExecutionRepository) *TransferCleanupService {
@@ -169,7 +176,13 @@ func (s *TransferCleanupService) ScanReclaimCandidates(ctx context.Context, tena
 	if err != nil {
 		return nil, err
 	}
-	return &TransferCleanupStats{TaskDefinitions: len(tasks)}, nil
+	stats := &TransferCleanupStats{TaskDefinitions: len(tasks)}
+	for _, task := range tasks {
+		if planner.IsPostgreSQLCDCTaskConfig(task.Config) {
+			stats.CaptureResources++
+		}
+	}
+	return stats, nil
 }
 
 func (s *TransferCleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, cleanupMode string, cleanupContext map[string]interface{}) (*TransferCleanupStats, error) {
@@ -187,6 +200,18 @@ func (s *TransferCleanupService) ExecuteCleanup(ctx context.Context, tenantID ui
 	stats := &TransferCleanupStats{TaskDefinitions: len(tasks)}
 	now := time.Now()
 	for _, task := range tasks {
+		if planner.IsPostgreSQLCDCTaskConfig(task.Config) {
+			stats.CaptureResources++
+			if s.captureControl == nil {
+				stats.Errors = append(stats.Errors, fmt.Sprintf("cleanup PostgreSQL CDC task %d failed: capture control is unavailable", task.ID))
+				continue
+			}
+			if err := s.captureControl.Stop(ctx, &task); err != nil {
+				stats.Errors = append(stats.Errors, fmt.Sprintf("cleanup PostgreSQL CDC task %d failed: %v", task.ID, err))
+				continue
+			}
+			stats.CleanedCaptureResources++
+		}
 		switch cleanupMode {
 		case events.CleanupModeLogical:
 			updates := map[string]interface{}{
@@ -244,6 +269,9 @@ func (s *TransferCleanupService) listCandidateTaskDefinitions(ctx context.Contex
 func taskReferencesEngine(task models.TransferTask, engineID uint) bool {
 	if engineID == 0 {
 		return false
+	}
+	if spec, err := planner.ParsePostgreSQLCDCTaskSpec(task.Config); err == nil {
+		return endpointReferencesEngine(spec.Source, engineID) || endpointReferencesEngine(spec.Target, engineID)
 	}
 	if spec, err := planner.ParseRawCopyTaskSpec(task.Config); err == nil {
 		return endpointReferencesEngine(spec.Source, engineID) || endpointReferencesEngine(spec.Target, engineID)

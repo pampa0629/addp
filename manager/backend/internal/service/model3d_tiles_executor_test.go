@@ -144,6 +144,67 @@ func TestManagerModel3DTilesExecutorStagesObjectStoreSourceAndPublishesTarget(t 
 	}
 }
 
+func TestManagerModel3DTilesExecutorRejectsIncompleteS3MArtifact(t *testing.T) {
+	workflowServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/operators":
+			writeModel3DOperatorList(w, testModel3DWorkflowEngineType, []string{"direct"})
+		case r.URL.Path == "/api/operators/osgb_scene_to_s3m/invoke":
+			_, _ = w.Write([]byte(`{"status":"success","execution_id":"s3m-1","result":{"manifest_ref":"config/scene.scp","root_tile_count":2,"file_count":1}}`))
+		default:
+			t.Fatalf("unexpected workflow path: %s", r.URL.Path)
+		}
+	})}
+	workflowListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer workflowServer.Close()
+	go func() { _ = workflowServer.Serve(workflowListener) }()
+	_, workflowPort, err := net.SplitHostPort(workflowListener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	systemServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/v1/internal/engines/26" {
+			t.Fatalf("unexpected system path: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Business NFS","engine_type":"nfs","connection_info":{"export_path":"/mnt/addp-nfs"},"is_active":true}`))
+	})}
+	systemListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer systemServer.Close()
+	go func() { _ = systemServer.Serve(systemListener) }()
+
+	executor := NewManagerModel3DTilesExecutor(
+		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
+		recordingWorkflowLister{engines: []commonModels.Engine{{
+			ID: 99, Name: "SuperMap Workflow", EngineType: testModel3DWorkflowEngineType,
+			ConnectionInfo: commonModels.ConnectionInfo{"protocol": "http", "host": "127.0.0.1", "port": workflowPort},
+			IsActive:       true, Capabilities: testRasterWorkflowCapabilities(t, testModel3DWorkflowEngineType),
+		}}},
+		&fakeModel3DTilesObjectStore{objects: []minio.ObjectInfo{{Key: "tenant_7/model3d-tiles/fp/s3m/config/scene.scp", Size: 64}}},
+		"infra-minio:9000", "infra-ak", "infra-sk", false, "manager", 0,
+	)
+
+	_, err = executor.BuildModel3DTiles(context.Background(), Model3DTilesExecutionRequest{
+		Task: &models.Model3DTilesTask{TenantID: 7, Name: "生成 S3M"}, ExecutionID: "s3m-exec-1",
+		Config: Model3DTilesExecutionConfig{
+			Source:       Model3DTilesSourceConfig{ItemLocator: "addp://engine/26/path/3d/baita?type=file&item_id=77", SourceEngineID: 26, Format: "osgb_scene"},
+			TargetFormat: "s3m",
+			Result:       Model3DTilesResultConfig{StorageRef: `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/model3d-tiles/fp/s3m"}`},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "incomplete S3M artifact") {
+		t.Fatalf("BuildModel3DTiles() error = %v, want incomplete S3M artifact", err)
+	}
+}
+
 type fakeModel3DTilesObjectStore struct{ objects []minio.ObjectInfo }
 
 func (f *fakeModel3DTilesObjectStore) BucketExists(context.Context, string) (bool, error) {
@@ -557,8 +618,24 @@ func writeModel3DOperatorList(w http.ResponseWriter, engineType string, executio
 					{"name": "default", "type": "object", "description": "3D Tiles 生成结果", "is_default": true},
 				},
 			},
+			{
+				"id":              "osgb_scene_to_s3m",
+				"name":            "osgb_scene_to_s3m",
+				"display_name":    "OSGB Scene 转 S3M",
+				"engine_type":     engineType,
+				"category":        "三维模型转换",
+				"category_path":   []string{"三维模型转换"},
+				"description":     "生成 S3M",
+				"execution_modes": executionModes,
+				"parameters": []map[string]interface{}{
+					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
+				},
+				"output_ports": []map[string]interface{}{
+					{"name": "default", "type": "object", "description": "S3M 生成结果", "is_default": true},
+				},
+			},
 		},
-		"count": 4,
+		"count": 8,
 	}
 	_ = json.NewEncoder(w).Encode(payload)
 }
