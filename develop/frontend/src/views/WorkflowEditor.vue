@@ -311,6 +311,7 @@ import {
   isStandardWorkflowDefinition
 } from '@/utils/workflowDevTaskPayload'
 import { isStandardOperatorMetadata } from '@/utils/operatorMetadataContract'
+import { resolveWorkflowGenerationResult } from '@/utils/workflowGenerationResult.mjs'
 import { openMonitorExecution } from '@addp/common-frontend'
 
 const route = useRoute()
@@ -774,16 +775,25 @@ const generateWorkflow = async () => {
       user_id: 1,
       workflow_engine_id: workflowEngineId.value  // 算子发现、详情和验证以工作流引擎实例为准
     })
+    const resolved = resolveWorkflowGenerationResult(result)
+    if (resolved.clarificationKey) {
+      ElMessage.warning({
+        message: t(resolved.clarificationKey),
+        duration: 5000,
+        showClose: true
+      })
+      return
+    }
 
     // 直接加载到画布
-    workflowData.value = result.workflow
+    workflowData.value = resolved.workflow
     aiDialogOpen.value = false
-    ElMessage.success(t('develop.workflow.generateSuccess', { count: result.workflow.tasks.length }))
+    ElMessage.success(t('develop.workflow.generateSuccess', { count: resolved.workflow.tasks.length }))
   } catch (error) {
     console.error('工作流生成失败:', error)
 
     // 提取后端返回的错误消息
-    let errorMsg = '未知错误'
+    let errorMsg = t('develop.workflow.generateFailed')
     if (error.response?.data?.detail) {
       errorMsg = error.response.data.detail
     } else if (error.message) {

@@ -11,9 +11,13 @@
           <span>{{ t('transfer.taskDetail.taskDetailTitle', { name: task.name }) }}</span>
           <div>
             <template v-if="isContinuousTask">
-              <el-button type="primary" @click="handleStartContinuous" :disabled="!canStartContinuous">
-                {{ task.desired_state === 'paused' ? t('transfer.taskDetail.resume') : t('transfer.taskDetail.start') }}
-              </el-button>
+              <el-tooltip :content="continuousStartDisabledMessage" :disabled="!continuousStartDisabledMessage" placement="top">
+                <span class="continuous-start-action">
+                  <el-button type="primary" @click="handleStartContinuous" :disabled="!canStartContinuous">
+                    {{ task.desired_state === 'paused' ? t('transfer.taskDetail.resume') : t('transfer.taskDetail.start') }}
+                  </el-button>
+                </span>
+              </el-tooltip>
               <el-button type="warning" @click="handlePause" :disabled="task.desired_state !== 'running' || isCDCSchemaBlocked">
                 {{ t('transfer.taskDetail.pause') }}
               </el-button>
@@ -167,7 +171,7 @@ import { formatLocatorDisplayPath } from '@addp/common-frontend'
 import { taskAPI, executionAPI } from '@/api/tasks'
 import { formatDate } from '@common-ui'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType, getExecutionTagType, getExecutionLabel } from '@/utils/formatters'
-import { buildCDCStopRequest, getCDCCaptureHealthWarning, isCDCSchemaBlocked as isCDCSchemaBlockedTask, isPostgreSQLCDCTask } from '@/utils/cdcTask.mjs'
+import { buildCDCStopRequest, continuousStartDisabledReason, getCDCCaptureHealthWarning, isCDCSchemaBlocked as isCDCSchemaBlockedTask, isPostgreSQLCDCTask } from '@/utils/cdcTask.mjs'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 
 const { t } = useI18n()
@@ -186,17 +190,20 @@ const captureHealthWarning = computed(() => getCDCCaptureHealthWarning(task.valu
 const isManualTask = computed(() => !isContinuousTask.value && !task.value?.schedule)
 const canStartSchedule = computed(() => !task.value?.enabled)
 const canPauseSchedule = computed(() => task.value?.enabled)
-const canStartContinuous = computed(() => {
-	if (isCDCSchemaBlocked.value) return false
-  if (isPostgreSQLCDC.value && task.value?.desired_state === 'stopped') return false
-  return ['paused', 'stopped'].includes(task.value?.desired_state) && task.value?.status !== 'running'
-})
+const continuousStartDisabledReasonCode = computed(() => continuousStartDisabledReason(task.value))
+const continuousStartDisabledMessage = computed(() => continuousStartDisabledReasonCode.value
+	? t(`transfer.continuousStartDisabled.${continuousStartDisabledReasonCode.value}`)
+	: '')
+const canStartContinuous = computed(() => continuousStartDisabledReasonCode.value === null)
 const canEditTask = computed(() => task.value?.status !== 'running' && (!isContinuousTask.value || task.value?.desired_state === 'stopped'))
 const taskDisplayStatus = computed(() => {
   if (!isContinuousTask.value) return getTaskStatusLabel(task.value)
 	if (isCDCSchemaBlocked.value) return t('transfer.taskDetail.schemaBlocked')
   if (task.value?.desired_state === 'paused') return t('transfer.taskDetail.continuousPaused')
-  if (task.value?.desired_state === 'stopped') return t('transfer.taskDetail.continuousStopped')
+	if (task.value?.desired_state === 'stopped') {
+		if (isPostgreSQLCDC.value && !task.value?.capture) return t('transfer.taskDetail.continuousNotStarted')
+		return t('transfer.taskDetail.continuousStopped')
+	}
   return t('transfer.taskDetail.continuousRunning')
 })
 
@@ -484,6 +491,14 @@ onBeforeUnmount(() => {
 
 .schema-blocked-alert {
 	margin-top: 16px;
+}
+
+.continuous-start-action {
+  display: inline-flex;
+}
+
+.continuous-start-action + .el-button {
+  margin-left: 12px;
 }
 
 .json-dialog-header {

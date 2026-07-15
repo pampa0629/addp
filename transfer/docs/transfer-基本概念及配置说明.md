@@ -271,6 +271,8 @@ resume 前必须确认 committed `next_offset` 仍在 Kafka partition 的保留�
 
 continuous worker 每隔 `TRANSFER_CONTINUOUS_DIAGNOSTICS_INTERVAL`（默认 `15s`）读取每分区 earliest/latest offset，用目标已成功应用的 committed `next_offset` 计算 lag 和 retention 恢复余量。时间余量使用连续 latest 样本的增长率估算；冷启动、无 committed position 或写入速率为零时显示 unknown。默认 degraded/critical 阈值由 `TRANSFER_CONTINUOUS_RETENTION_DEGRADED_HORIZON=6h` 和 `TRANSFER_CONTINUOUS_RETENTION_CRITICAL_HORIZON=1h` 统一控制，不进入任务 JSON。诊断结果写入 `common.task_executions.metadata.continuous.diagnostics`，Monitor 只读取 execution metadata，不直连业务 Kafka。
 
+continuous worker 重启时不会复用已结束的 execution。正常 worker shutdown 将旧 execution 收敛为 `cancelled + stop_reason=worker_shutdown`；新 worker 在任务 `desired_state=running` 时原子创建 recovery execution，继承上一 execution 的 `trigger_type`，并从 `transfer.sync_states` 已提交位置继续。runtime lease 过期时旧 execution 先以 `failed + stop_reason=lease_expired` 结束，再创建 recovery execution。恢复 execution 在 metadata 记录 `recovery_reason` 和 `recovered_from_execution_id`，每次领取继续递增 fencing token。
+
 ## 九、PostgreSQL CDC v1 已冻结边界
 
 工作包 3A-3D 已完成第一版的 CDC 路线为：
@@ -296,6 +298,8 @@ Debezium 的 geometry 属性名是 `wkb`，真实 PostGIS connector 可能在该
 `pause` 停止目标应用，但 connector 继续把 WAL 变化写入 Infra Kafka 并推进 slot。正常 pause 的主要代价是 Kafka backlog、磁盘和 retention 窗口，不是 slot 本身停止后堆积 WAL；connector/Kafka 故障导致 slot 不推进时仍可能撑大源库 WAL。暂停期间必须继续观测 connector health、slot lag、Kafka 容量和 retention horizon，且 resume 只在 committed position 尚未过期时保证无损。
 
 `stop` 是 CDC task 的不可逆终态：删除 ADDP-owned connector、slot、publication 和 CDC topic，任务不得再次 start/resume。重新同步必须创建新任务、新目标表并重新 initial snapshot。服务端 Stop API 必须要求 `confirmed=true` 且 `confirmation_text` 与任务名称完全一致，Console 同时使用 danger 二次确认并要求输入任务名称；stop 不删除目标业务表、目标 ledger、任务定义、execution 或审计记录。
+
+continuous task 初始同样保存 `desired_state=stopped`，所以该字段只表达用户期望状态，不能证明 PostgreSQL CDC 已被永久停止。CDC 的不可逆终态以 `transfer.capture_resources.status=stopped` 为事实；尚无 capture generation 的新任务可以首次启动。`cleanup_failed` 表示 Stop 清理尚未完成，只允许重试清理，不允许重新启动或恢复。
 
 完整配置、envelope、schema drift、目标原子应用和资源 owner 约束以 [ADDP 任务体系规范](../../docs/spec/addp任务体系规范.md) 的“Transfer PostgreSQL CDC v1 契约”为准。MySQL、Oracle、多表、无主键、replay、DLQ、Schema Registry、Avro、Protobuf、自动 DDL 和 truncate 事件均后置。
 

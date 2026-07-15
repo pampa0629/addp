@@ -1,7 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { buildCDCStopRequest, getCDCCaptureHealthWarning, isCDCSchemaBlocked, isPostgreSQLCDCTask } from '../src/utils/cdcTask.mjs'
+import {
+	buildCDCStopRequest,
+	continuousStartDisabledReason,
+	getCDCCaptureHealthWarning,
+	isCDCSchemaBlocked,
+	isPostgreSQLCDCTask
+} from '../src/utils/cdcTask.mjs'
 
 test('detects only frozen PostgreSQL CDC task shape', () => {
   assert.equal(isPostgreSQLCDCTask({
@@ -47,4 +53,41 @@ test('reports unhealthy active CDC capture without warning for stopped capture',
 		config,
 		capture: { status: 'stopped', connector_status: 'DELETED' }
 	}), null)
+})
+
+test('allows first PostgreSQL CDC start and distinguishes terminal capture state', () => {
+	const config = {
+		runtime: { boundary: 'continuous' },
+		load: { mode: 'incremental', change_detection: { type: 'cdc', bootstrap: 'initial_snapshot' } }
+	}
+	assert.equal(continuousStartDisabledReason({ config, status: 'idle', desired_state: 'stopped' }), null)
+	assert.equal(continuousStartDisabledReason({
+		config,
+		status: 'idle',
+		desired_state: 'stopped',
+		capture: { status: 'failed' }
+	}), null)
+	assert.equal(continuousStartDisabledReason({
+		config,
+		status: 'idle',
+		desired_state: 'stopped',
+		capture: { status: 'stopped' }
+	}), 'permanently_stopped')
+	assert.equal(continuousStartDisabledReason({
+		config,
+		status: 'idle',
+		desired_state: 'stopped',
+		capture: { status: 'cleanup_failed' }
+	}), 'cleanup_failed')
+})
+
+test('reports other continuous start guards', () => {
+	const config = {
+		runtime: { boundary: 'continuous' },
+		load: { mode: 'incremental', change_detection: { type: 'cdc', bootstrap: 'initial_snapshot' } }
+	}
+	assert.equal(continuousStartDisabledReason({ config, status: 'blocked', desired_state: 'paused' }), 'schema_blocked')
+	assert.equal(continuousStartDisabledReason({ config, status: 'running', desired_state: 'paused' }), 'running')
+	assert.equal(continuousStartDisabledReason({ config, status: 'idle', desired_state: 'running' }), 'running')
+	assert.equal(continuousStartDisabledReason({ config, status: 'idle', desired_state: 'unknown' }), 'invalid_state')
 })

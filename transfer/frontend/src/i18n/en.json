@@ -27,6 +27,13 @@
       "usernameRequired": "Please enter username",
       "passwordRequired": "Please enter password"
     },
+    "continuousStartDisabled": {
+      "schema_blocked": "A source schema change blocked this sync. Permanently stop it, then create a new task.",
+      "permanently_stopped": "This database change sync was permanently stopped and cannot be started again. Create a new task and target table.",
+      "cleanup_failed": "Resource cleanup for the permanent stop is incomplete. Retry cleanup first.",
+      "running": "The task is already running.",
+      "invalid_state": "The task cannot be started in its current state."
+    },
     "dashboard": {
       "totalTasks": "Total Tasks",
       "notExecuted": "Not Executed",
@@ -72,6 +79,7 @@
       "continuousRuntime": "Continuous Sync",
       "continuousRunning": "Running Continuously",
       "continuousPaused": "Paused",
+      "continuousNotStarted": "Not Started",
       "continuousStopped": "Stopped",
 			"schemaBlocked": "Schema Change Blocked",
       "executeSubmitted": "Task execution submitted",
@@ -157,6 +165,7 @@
       "continuousRuntime": "Continuous Sync",
       "continuousRunning": "Running Continuously",
       "continuousPaused": "Paused",
+      "continuousNotStarted": "Not Started",
       "continuousStopped": "Stopped",
 			"schemaBlocked": "Schema Change Blocked",
 			"schemaBlockedTitle": "This Database Change Sync Cannot Recover",

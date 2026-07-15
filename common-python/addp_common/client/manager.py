@@ -12,10 +12,19 @@ class ManagerClient(BaseClient):
 
     async def preview_by_locator(self, locator: str, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
         """通过 ResourceLocator URI 预览数据
-        locator 格式：addp://engine/{engine_id}/path/{schema}/{table}?type=table
+        locator 格式：addp://engine/{engine_id}/path/{schema}/{table}?type=table&item_id={item_id}
         """
         return await self.get("/api/v1/manager/preview", params={"locator": locator, "page": page, "page_size": page_size})
 
-    async def search(self, q: str, page: int = 1, page_size: int = 10) -> Dict[str, Any]:
+    async def search(self, q: str, tenant_id: int, page: int = 1, page_size: int = 10) -> Dict[str, Any]:
         """混合检索（全文检索 + 向量语义检索）"""
-        return await self.get("/api/v1/manager/search", params={"q": q, "page": page, "page_size": page_size})
+        response = await self.get("/api/v1/manager/search", params={
+            "q": q,
+            "tenant_id": tenant_id,
+            "page": page,
+            "page_size": page_size,
+        })
+        data = response.get("data") if isinstance(response, dict) else None
+        if not isinstance(data, dict):
+            raise ValueError("manager search response must contain data object")
+        return data

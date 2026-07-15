@@ -20,7 +20,7 @@
 | `enabled` | 定时任务是否启用。 |
 | `auto_scan_metadata` | 成功后是否触发 Meta deep scan。 |
 | `status` | `idle`、`running` 或 `blocked`；`blocked` 表示 PostgreSQL CDC 当前 generation 被 schema drift 永久阻塞，只允许 Stop。 |
-| `desired_state` | continuous runtime 用户期望状态：`running` / `paused` / `stopped`，默认 `stopped`；bounded task 不消费。 |
+| `desired_state` | continuous runtime 用户期望状态：`running` / `paused` / `stopped`，默认 `stopped`；bounded task 不消费。该字段不能单独判定 PostgreSQL CDC 是否永久停止，终态以 `capture_resources.status=stopped` 为准。 |
 | `progress` | 当前任务进度百分比。 |
 | `created_by` | 创建人 ID。 |
 | `last_execution_id` | 最近一次执行 ID。 |

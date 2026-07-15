@@ -202,7 +202,7 @@ class OperatorSelectionChain:
             print(f"[OperatorSelectionChain] ❌ 算子选择失败: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
-            return []
+            raise
 
     def _fallback_parse(self, text: str) -> List[str]:
         """回退方案：从文本中提取算子名称"""

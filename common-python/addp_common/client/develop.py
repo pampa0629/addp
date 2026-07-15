@@ -21,19 +21,6 @@ class DevelopClient(BaseClient):
             raise ValueError("develop workflow engines response must be a list")
         return resp
 
-    async def list_namespaces(self, engine_id: int) -> List[Dict[str, Any]]:
-        """获取 catalog 命名空间列表"""
-        resp = await self.get(f"/api/v1/develop/engines/{engine_id}/namespaces")
-        return resp.get("namespaces", [])
-
-    async def list_catalog_items(self, engine_id: int, namespace: str = "") -> List[Dict[str, Any]]:
-        """获取 catalog 数据项列表"""
-        resp = await self.get(
-            f"/api/v1/develop/engines/{engine_id}/items",
-            params={"namespace": namespace}
-        )
-        return resp.get("items", [])
-
     async def list_operators(self, workflow_engine_id: int) -> List[Dict[str, Any]]:
         """获取指定工作流引擎实例的算子列表"""
         resp = await self.get(f"/api/v1/develop/workflow-engines/{workflow_engine_id}/operators")

@@ -114,6 +114,57 @@ func TestIntegrationKafkaCatalogAndChangeStream(t *testing.T) {
 	}
 }
 
+func TestIntegrationKafkaChangeStreamStartsAtTransferCommittedPosition(t *testing.T) {
+	if os.Getenv("ADDP_KAFKA_INTEGRATION") != "1" {
+		t.Skip("set ADDP_KAFKA_INTEGRATION=1 to run Kafka integration test")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	connInfo := kafkaIntegrationConnInfo()
+	p := &KafkaPlugin{}
+	client, err := newKafkaClient(connInfo, kgo.RecordPartitioner(kgo.ManualPartitioner()))
+	if err != nil {
+		t.Fatalf("newKafkaClient failed: %v", err)
+	}
+	defer client.Close()
+	admin := kadm.NewClient(client)
+	topic := fmt.Sprintf("addp-transfer-resume-it-%d", time.Now().UnixNano())
+	created, err := admin.CreateTopics(ctx, 1, 1, nil, topic)
+	if err != nil || created.Error() != nil {
+		t.Fatalf("create topic: response=%v error=%v", created.Error(), err)
+	}
+	defer admin.DeleteTopics(context.Background(), topic)
+
+	produced := client.ProduceSync(ctx,
+		&kgo.Record{Topic: topic, Partition: 0, Value: []byte(`{"id":1}`)},
+		&kgo.Record{Topic: topic, Partition: 0, Value: []byte(`{"id":2}`)},
+		&kgo.Record{Topic: topic, Partition: 0, Value: []byte(`{"id":3}`)},
+	)
+	if err := produced.FirstErr(); err != nil {
+		t.Fatalf("produce records: %v", err)
+	}
+
+	reader, err := p.OpenChangeStream(ctx, connInfo, kafkaTopicEntry(plugin.CatalogRootPath(p.CatalogModel(), 30), topic).Path, plugin.ChangeStreamReadOptions{
+		ConsumerGroup: fmt.Sprintf("addp-transfer-resume-it-%d", time.Now().UnixNano()),
+		CommittedPositions: map[string]plugin.ChangeStreamPosition{
+			"0": kafkaOffsetPosition("0", 2),
+		},
+		InitialPosition: plugin.ChangeStreamInitialEarliest,
+		PollTimeout:     time.Second,
+	})
+	if err != nil {
+		t.Fatalf("OpenChangeStream failed: %v", err)
+	}
+	defer reader.Close(context.Background())
+	batch, err := reader.Poll(ctx, 10)
+	if err != nil {
+		t.Fatalf("Poll failed: %v", err)
+	}
+	if len(batch.Records) != 1 || batch.Records[0].Offset != 2 {
+		t.Fatalf("resumed records=%#v, want only offset 2", batch.Records)
+	}
+}
+
 func TestIntegrationKafkaChangeStreamRebalance(t *testing.T) {
 	if os.Getenv("ADDP_KAFKA_INTEGRATION") != "1" {
 		t.Skip("set ADDP_KAFKA_INTEGRATION=1 to run Kafka integration test")

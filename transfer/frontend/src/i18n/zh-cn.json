@@ -27,6 +27,13 @@
       "usernameRequired": "请输入用户名",
       "passwordRequired": "请输入密码"
     },
+    "continuousStartDisabled": {
+      "schema_blocked": "源表结构变化已阻塞当前同步，只能永久停止后新建任务。",
+      "permanently_stopped": "该数据库变更同步已永久停止，不能再次启动；请新建任务和目标表。",
+      "cleanup_failed": "永久停止的资源清理尚未完成，请先重试清理。",
+      "running": "任务已在运行。",
+      "invalid_state": "当前任务状态不允许启动。"
+    },
     "dashboard": {
       "totalTasks": "总任务数",
       "notExecuted": "未执行",
@@ -72,6 +79,7 @@
       "continuousRuntime": "持续同步",
       "continuousRunning": "持续运行中",
       "continuousPaused": "已暂停",
+      "continuousNotStarted": "未启动",
       "continuousStopped": "已停止",
 			"schemaBlocked": "结构变化阻塞",
       "executeSubmitted": "任务执行已提交",
@@ -157,6 +165,7 @@
       "continuousRuntime": "持续同步",
       "continuousRunning": "持续运行中",
       "continuousPaused": "已暂停",
+      "continuousNotStarted": "未启动",
       "continuousStopped": "已停止",
 			"schemaBlocked": "结构变化阻塞",
 			"schemaBlockedTitle": "当前数据库变更同步不可恢复",

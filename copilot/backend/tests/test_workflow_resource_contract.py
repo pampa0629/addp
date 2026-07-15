@@ -18,13 +18,8 @@ def load_module(name: str, relative_path: str):
 
 
 workflow_validation = load_module("workflow_validation_chain_module", "chains/workflow_validation_chain.py")
-resource_locator = load_module("resource_locator_module", "utils/resource_locator.py")
 
 WorkflowValidationChain = workflow_validation.WorkflowValidationChain
-bucket_locator = resource_locator.bucket_locator
-object_locator = resource_locator.object_locator
-schema_locator = resource_locator.schema_locator
-table_locator = resource_locator.table_locator
 
 
 class FakeOperatorDetailTool:
@@ -37,8 +32,14 @@ class FakeOperatorDetailTool:
             "load": {
                 "execution_modes": ["workflow"],
                 "parameters": [
-                    {"name": "source_type", "required": True},
-                    {"name": "locator", "required": True},
+                    {"name": "connection_info", "required": False},
+                    {"name": "schema", "required": False},
+                    {"name": "table", "required": False},
+                    {"name": "path", "required": False},
+                ],
+                "public_parameters": [
+                    {"name": "数据源", "type": "ui", "param_type": "ui"},
+                    {"name": "locator", "type": "string", "param_type": "resource"},
                 ],
                 "output_ports": [{"name": "default"}],
             },
@@ -46,26 +47,29 @@ class FakeOperatorDetailTool:
                 "execution_modes": ["workflow"],
                 "parameters": [
                     {"name": "input_df", "required": True},
-                    {"name": "target_type", "required": True},
-                    {"name": "target_parent_locator", "required": True},
-                    {"name": "target_name", "required": True},
+                    {"name": "connection_info", "required": False},
+                    {"name": "schema", "required": False},
+                    {"name": "table", "required": False},
+                    {"name": "path", "required": False},
+                    {"name": "mode", "required": False},
+                ],
+                "public_parameters": [
+                    {"name": "input_df", "required": True},
+                    {"name": "mode", "required": False},
+                    {"name": "保存目标", "type": "ui", "param_type": "ui"},
+                    {"name": "target_parent_locator", "type": "string", "param_type": "resource"},
+                    {"name": "target_name", "type": "string", "param_type": "resource"},
                 ],
                 "output_ports": [{"name": "default"}],
             },
             "direct_only": {
                 "execution_modes": ["direct"],
                 "parameters": [],
+                "public_parameters": [],
                 "output_ports": [{"name": "default"}],
             },
         }
         return definitions.get(operator_name)
-
-
-def test_resource_locators_are_constructed_from_standard_contract():
-    assert table_locator(12, "public", "roads") == "addp://engine/12/path/public/roads?type=table"
-    assert schema_locator(12, "public") == "addp://engine/12/path/public?type=schema"
-    assert object_locator(4, "addp", "lake/roads.parquet") == "addp://engine/4/path/addp/lake/roads.parquet?type=object"
-    assert bucket_locator(4, "addp") == "addp://engine/4/path/addp?type=bucket"
 
 
 def test_data_source_location_uses_namespace_field():
@@ -81,6 +85,7 @@ def test_data_source_context_uses_typed_candidates():
         engine_id=12,
         engine_name="PostgreSQL",
         engine_type="postgresql",
+        resource_name="roads",
         location=DataSourceLocation(
             namespace="public",
             table="roads",
@@ -109,7 +114,6 @@ def test_task_requires_explicit_depends_on():
             id="task1",
             operator="load",
             params={
-                "source_type": "table",
                 "locator": "addp://engine/12/path/public/roads?type=table",
             },
         )
@@ -129,7 +133,6 @@ async def _assert_validation_rejects_runtime_derived_resource_params():
             id="task1",
             operator="load",
             params={
-                "source_type": "table",
                 "engine_id": 12,
                 "schema": "public",
                 "table": "roads",
@@ -142,7 +145,6 @@ async def _assert_validation_rejects_runtime_derived_resource_params():
 
     assert not result.is_valid
     assert any("运行时派生参数" in error for error in result.errors)
-    assert any("locator" in error for error in result.errors)
     assert tool.seen_workflow_engine_ids == []
 
 
@@ -158,7 +160,6 @@ async def _assert_validation_accepts_locator_resource_contract():
             id="task1",
             operator="load",
             params={
-                "source_type": "table",
                 "locator": "addp://engine/12/path/public/roads?type=table",
             },
             depends_on=[],
@@ -168,7 +169,6 @@ async def _assert_validation_accepts_locator_resource_contract():
             operator="save",
             params={
                 "input_df": {"$ref": "task1"},
-                "target_type": "table",
                 "target_parent_locator": "addp://engine/12/path/public?type=schema",
                 "target_name": "roads_buffer",
             },
@@ -183,11 +183,11 @@ async def _assert_validation_accepts_locator_resource_contract():
     assert tool.seen_workflow_engine_ids == [9, 9]
 
 
-def test_validation_rejects_storage_engine_type_as_source_type():
-    asyncio.run(_assert_validation_rejects_storage_engine_type_as_source_type())
+def test_validation_rejects_obsolete_resource_type_parameters():
+    asyncio.run(_assert_validation_rejects_obsolete_resource_type_parameters())
 
 
-async def _assert_validation_rejects_storage_engine_type_as_source_type():
+async def _assert_validation_rejects_obsolete_resource_type_parameters():
     tool = FakeOperatorDetailTool()
     validator = WorkflowValidationChain(tool)
     workflow = Workflow(tasks=[
@@ -195,7 +195,7 @@ async def _assert_validation_rejects_storage_engine_type_as_source_type():
             id="task1",
             operator="load",
             params={
-                "source_type": "nfs",
+                "source_type": "table",
                 "locator": "addp://engine/3/path/data/roads.csv?type=file",
             },
             depends_on=[],
@@ -205,8 +205,8 @@ async def _assert_validation_rejects_storage_engine_type_as_source_type():
     result = await validator.validate(workflow, workflow_engine_id=9)
 
     assert not result.is_valid
-    assert any("source_type" in error and "file" in error for error in result.errors)
-    assert tool.seen_workflow_engine_ids == []
+    assert any("未定义的参数" in error and "source_type" in error for error in result.errors)
+    assert tool.seen_workflow_engine_ids == [9]
 
 
 def test_validation_requires_workflow_engine_id():
@@ -220,7 +220,6 @@ async def _assert_validation_requires_workflow_engine_id():
             id="task1",
             operator="load",
             params={
-                "source_type": "table",
                 "locator": "addp://engine/12/path/public/roads?type=table",
             },
             depends_on=[],
@@ -268,6 +267,8 @@ def test_workflow_prompts_describe_locator_resource_contract():
     assert "禁止在算子 params 中填写 `engine_id`" in prompt_text
     assert "每个任务都必须显式包含 `depends_on`" in prompt_text
     assert '使用对象格式 `{{"$ref": "task_id"}}`' in prompt_text
+    assert "source_type" not in prompt_text
+    assert "target_type" not in prompt_text
     assert 'params": {{"table":' not in prompt_text
     assert "修改 save 任务的 table 参数" not in prompt_text
 
@@ -278,4 +279,6 @@ def test_auto_fix_prompt_describes_locator_resource_contract():
     assert "load 任务读取已有表、文件或对象时必须使用 `locator`" in source
     assert "save 任务创建新目标时必须使用 `target_parent_locator + target_name`" in source
     assert "不要在算子 params 中填写 `engine_id`" in source
+    assert "source_type" not in source
+    assert "target_type" not in source
     assert "不编造资源" in source

@@ -7,7 +7,7 @@ import time
 from typing import List, Dict, Optional
 from langchain.tools import BaseTool
 
-from addp_common.client import DevelopClient, SystemClient
+from addp_common.client import DevelopClient
 from config import settings
 
 
@@ -48,91 +48,11 @@ class EngineTool(BaseTool):
                 ]
         except Exception as e:
             print(f"[EngineTool] ❌ 获取引擎失败: {type(e).__name__}: {e}")
-            return []
+            raise
 
     def _run(self, tenant_id: int) -> List[Dict]:
         """同步执行（不支持）"""
         raise NotImplementedError("EngineTool only supports async execution")
-
-
-class SchemaTableTool(BaseTool):
-    """获取 catalog 命名空间和数据项列表 Tool"""
-    name: str = "get_catalog_items"
-    description: str = """
-获取指定关系数据库引擎的 catalog 命名空间和数据项列表。
-仅适用于关系数据库类型（PostgreSQL、MySQL、Doris、ClickHouse）。
-使用方式：输入 engine_id（整数），可选 namespace（字符串），返回命名空间和数据项列表
-"""
-
-    async def _arun(self, engine_id: int, namespace: Optional[str] = None) -> Dict:
-        """异步执行"""
-        print(f"[SchemaTableTool] 获取引擎 {engine_id} 的 catalog 列表（namespace={namespace}）")
-
-        try:
-            async with DevelopClient(
-                base_url=settings.get_develop_url(),
-                internal_api_key=settings.internal_api_key
-            ) as client:
-                result = {"namespaces": [], "items": []}
-
-                namespaces = await client.list_namespaces(engine_id)
-                result["namespaces"] = namespaces
-                print(f"[SchemaTableTool] ✅ 获取到 {len(namespaces)} 个命名空间")
-
-                target_namespace = namespace or "public"
-                items = await client.list_catalog_items(engine_id, target_namespace)
-                result["items"] = items
-                print(f"[SchemaTableTool] ✅ 获取到 {len(items)} 个数据项")
-
-                return result
-        except Exception as e:
-            print(f"[SchemaTableTool] ❌ 获取 catalog 列表失败: {type(e).__name__}: {e}")
-            return {"namespaces": [], "items": []}
-
-    def _run(self, engine_id: int, namespace: Optional[str] = None) -> Dict:
-        """同步执行（不支持）"""
-        raise NotImplementedError("SchemaTableTool only supports async execution")
-
-
-class ObjectStorageTool(BaseTool):
-    """获取对象存储 Bucket 和对象列表 Tool"""
-    name: str = "get_object_storage"
-    description: str = """
-获取指定对象存储引擎的 Bucket 和对象列表。
-仅适用于对象存储类型（MinIO、S3、OSS）。
-使用方式：输入 engine_id（整数），可选 bucket（字符串），返回 Bucket/对象列表
-"""
-
-    async def _arun(self, engine_id: int, bucket: Optional[str] = None, prefix: Optional[str] = None) -> Dict:
-        """异步执行"""
-        print(f"[ObjectStorageTool] 获取引擎 {engine_id} 的对象存储信息（bucket={bucket}, prefix={prefix}）")
-
-        try:
-            async with SystemClient(
-                base_url=settings.get_system_url(),
-                internal_api_key=settings.internal_api_key
-            ) as client:
-                result = {"buckets": [], "objects": []}
-
-                # 获取 Bucket 列表
-                buckets = await client.list_buckets(engine_id)
-                result["buckets"] = buckets
-                print(f"[ObjectStorageTool] ✅ 获取到 {len(buckets)} 个 Bucket")
-
-                # 如果指定了 bucket，获取对象列表
-                if bucket:
-                    objects = await client.list_objects(engine_id, bucket, prefix)
-                    result["objects"] = objects
-                    print(f"[ObjectStorageTool] ✅ 获取到 {len(objects)} 个对象")
-
-                return result
-        except Exception as e:
-            print(f"[ObjectStorageTool] ❌ 获取对象存储信息失败: {type(e).__name__}: {e}")
-            return {"buckets": [], "objects": []}
-
-    def _run(self, engine_id: int, bucket: Optional[str] = None, prefix: Optional[str] = None) -> Dict:
-        """同步执行（不支持）"""
-        raise NotImplementedError("ObjectStorageTool only supports async execution")
 
 
 class OperatorDiscoveryTool(BaseTool):
@@ -152,8 +72,7 @@ class OperatorDiscoveryTool(BaseTool):
     async def _arun(self, workflow_engine_id: int) -> List[Dict]:
         """异步执行，获取指定工作流引擎实例的算子"""
         if not workflow_engine_id:
-            print("[OperatorDiscoveryTool] ❌ workflow_engine_id 不能为空")
-            return []
+            raise ValueError("workflow_engine_id 不能为空")
 
         # 检查缓存
         if self._cache and self._cache_time and hasattr(self, '_cache_workflow_engine_id'):
@@ -192,11 +111,7 @@ class OperatorDiscoveryTool(BaseTool):
                 return brief_operators
         except Exception as e:
             print(f"[OperatorDiscoveryTool] ❌ 获取算子失败: {type(e).__name__}: {e}")
-            # 如果有缓存且引擎类型匹配，即使过期也返回
-            if self._cache and hasattr(self, '_cache_workflow_engine_id') and self._cache_workflow_engine_id == workflow_engine_id:
-                print(f"[OperatorDiscoveryTool] 使用过期缓存作为降级")
-                return self._cache
-            return []
+            raise
 
     def _run(self) -> List[Dict]:
         """同步执行（不支持）"""
@@ -214,8 +129,7 @@ class OperatorDetailTool(BaseTool):
     async def _arun(self, operator_name: str, workflow_engine_id: int) -> Optional[Dict]:
         """异步执行，获取指定工作流引擎实例的算子详情"""
         if not workflow_engine_id:
-            print("[OperatorDetailTool] ❌ workflow_engine_id 不能为空")
-            return None
+            raise ValueError("workflow_engine_id 不能为空")
 
         print(f"[OperatorDetailTool] 获取算子 '{operator_name}' 的详细信息（工作流引擎 ID: {workflow_engine_id}）")
 
@@ -233,7 +147,7 @@ class OperatorDetailTool(BaseTool):
                     return None
         except Exception as e:
             print(f"[OperatorDetailTool] ❌ 获取算子详情失败: {type(e).__name__}: {e}")
-            return None
+            raise
 
     def _run(self, operator_name: str) -> Optional[Dict]:
         """同步执行（不支持）"""

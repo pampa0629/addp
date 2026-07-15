@@ -50,7 +50,7 @@ func (r *CaptureRepository) BeginGeneration(ctx context.Context, identity Captur
 		}
 		err := tx.Where("task_id = ?", identity.TaskID).Order("generation DESC").First(&resource).Error
 		if err == nil {
-			if resource.Status == models.CaptureStatusStopped {
+			if captureStopInitiated(resource.Status) {
 				return ErrCaptureTerminal
 			}
 			if resource.SourceIdentity != identity.SourceIdentity || resource.SourceConnectionFingerprint != identity.SourceConnectionFingerprint || resource.SourceEngineID != identity.SourceEngineID ||
@@ -137,11 +137,19 @@ func (r *CaptureRepository) ForceUpdate(ctx context.Context, id uint, fields map
 	return r.db.WithContext(ctx).Model(&models.CaptureResource{}).Where("id = ?", id).Updates(fields).Error
 }
 
-func (r *CaptureRepository) HasTerminalGeneration(ctx context.Context, taskID, tenantID uint) (bool, error) {
+func (r *CaptureRepository) HasStopInitiatedGeneration(ctx context.Context, taskID, tenantID uint) (bool, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&models.CaptureResource{}).
-		Where("task_id = ? AND tenant_id = ? AND status = ?", taskID, tenantID, models.CaptureStatusStopped).Count(&count).Error
+		Where("task_id = ? AND tenant_id = ? AND status IN ?", taskID, tenantID, []models.CaptureStatus{
+			models.CaptureStatusCleaning,
+			models.CaptureStatusCleanupFailed,
+			models.CaptureStatusStopped,
+		}).Count(&count).Error
 	return count > 0, err
+}
+
+func captureStopInitiated(status models.CaptureStatus) bool {
+	return status == models.CaptureStatusCleaning || status == models.CaptureStatusCleanupFailed || status == models.CaptureStatusStopped
 }
 
 func captureConnectorName(tenantID, taskID uint, generation uint64) string {

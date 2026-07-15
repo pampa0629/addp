@@ -1,0 +1,142 @@
+import asyncio
+import importlib.util
+from pathlib import Path
+
+import pytest
+from fastapi import HTTPException
+
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+
+
+def load_module(name: str, relative_path: str):
+    spec = importlib.util.spec_from_file_location(name, BACKEND_DIR / relative_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+workflow_generation = load_module("workflow_generation_contract_module", "chains/workflow_generation_chain.py")
+operator_selection = load_module("operator_selection_contract_module", "chains/operator_selection_chain.py")
+data_source_stage = load_module("data_source_stage_contract_module", "pipelines/data_source_stage.py")
+workflow_api = load_module("workflow_agent_api_contract_module", "api/workflow_agent_api.py")
+
+WorkflowGenerationChain = workflow_generation.WorkflowGenerationChain
+OperatorSelectionChain = operator_selection.OperatorSelectionChain
+DataSourceStage = data_source_stage.DataSourceStage
+
+
+def live_load_descriptor():
+    return {
+        "name": "load",
+        "brief_description": "从数据库表或文件资源加载数据",
+        "category": "数据I/O",
+        "detailed_description": {
+            "notes": ["connection_info、schema/table 或 path 由 Develop Adapter 注入"],
+            "workflow_example": {
+                "id": "load_roads",
+                "operator": "load",
+                "params": {"connection_info": {}, "schema": "public", "table": "roads"},
+                "depends_on": [],
+            },
+        },
+        "parameters": [
+            {"name": "connection_info", "type": "object"},
+            {"name": "schema", "type": "string"},
+            {"name": "table", "type": "string"},
+            {"name": "path", "type": "string"},
+        ],
+        "public_parameters": [
+            {"name": "数据源", "type": "ui", "param_type": "ui"},
+            {"name": "locator", "type": "string", "param_type": "resource"},
+        ],
+        "output_ports": [{"name": "default", "type": "geodataframe"}],
+    }
+
+
+def test_generation_uses_public_parameters_and_ignores_runtime_example():
+    chain = WorkflowGenerationChain.__new__(WorkflowGenerationChain)
+
+    formatted = chain._format_operator_details([live_load_descriptor()])
+
+    assert "`locator`" in formatted
+    assert "`connection_info`" not in formatted
+    assert "`schema`" not in formatted
+    assert "`table`" not in formatted
+    assert "`数据源`" not in formatted
+    assert "load_roads" not in formatted
+
+
+def test_generation_rejects_missing_public_operator_contract():
+    chain = WorkflowGenerationChain.__new__(WorkflowGenerationChain)
+    descriptor = live_load_descriptor()
+    del descriptor["public_parameters"]
+
+    with pytest.raises(ValueError, match="public_parameters"):
+        chain._format_operator_details([descriptor])
+
+
+class RaisingLLMChain:
+    async def ainvoke(self, _payload):
+        raise RuntimeError("upstream insufficient_balance")
+
+
+class StaticOperatorTool:
+    async def _arun(self, workflow_engine_id: int):
+        return [{"name": "load", "brief": "load", "category": "I/O"}]
+
+
+async def _assert_operator_selection_propagates_llm_error():
+    chain = OperatorSelectionChain.__new__(OperatorSelectionChain)
+    chain.operator_tool = StaticOperatorTool()
+    chain.chain = RaisingLLMChain()
+
+    with pytest.raises(RuntimeError, match="insufficient_balance"):
+        await chain.select("load roads", workflow_engine_id=20)
+
+
+def test_operator_selection_propagates_llm_error():
+    asyncio.run(_assert_operator_selection_propagates_llm_error())
+
+
+class RaisingLLM:
+    async def ainvoke(self, _messages):
+        raise RuntimeError("upstream insufficient_balance")
+
+
+async def _assert_data_source_stage_propagates_llm_error():
+    stage = DataSourceStage(
+        llm=RaisingLLM(),
+        engine_tool=None,
+        metadata_search_tool=None,
+    )
+
+    with pytest.raises(RuntimeError, match="insufficient_balance"):
+        await stage.understand("load roads")
+
+
+def test_data_source_stage_propagates_llm_error():
+    asyncio.run(_assert_data_source_stage_propagates_llm_error())
+
+
+class FailingPipeline:
+    async def run(self, **_kwargs):
+        raise RuntimeError("upstream insufficient_balance")
+
+
+async def _assert_workflow_api_returns_non_2xx_with_upstream_reason(monkeypatch):
+    monkeypatch.setattr(workflow_api, "get_workflow_pipeline", lambda: FailingPipeline())
+    request = workflow_api.WorkflowGenerationRequest(
+        query="load roads",
+        workflow_engine_id=20,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await workflow_api.generate_workflow(request)
+
+    assert exc_info.value.status_code == 500
+    assert "insufficient_balance" in exc_info.value.detail
+
+
+def test_workflow_api_returns_non_2xx_with_upstream_reason(monkeypatch):
+    asyncio.run(_assert_workflow_api_returns_non_2xx_with_upstream_reason(monkeypatch))

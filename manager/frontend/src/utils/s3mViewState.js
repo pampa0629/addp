@@ -1,3 +1,26 @@
+export const S3M_VIEW_MODE_MODEL = 'model'
+export const S3M_VIEW_MODE_GLOBE = 'globe'
+export const S3M_THREE_RENDERER_RUNTIME = 'three_s3m'
+
+export function isThreeS3MViewState(state) {
+  return Boolean(state && typeof state === 'object' && state.renderer_runtime === S3M_THREE_RENDERER_RUNTIME)
+}
+
+export function normalizeS3MViewMode(value) {
+  return value === S3M_VIEW_MODE_GLOBE ? S3M_VIEW_MODE_GLOBE : S3M_VIEW_MODE_MODEL
+}
+
+export function isS3MViewStateForMode(state, viewMode) {
+  if (!state || typeof state !== 'object') return false
+  if (![S3M_VIEW_MODE_MODEL, S3M_VIEW_MODE_GLOBE].includes(state.view_mode)) return false
+  return state.view_mode === normalizeS3MViewMode(viewMode)
+}
+
+export function s3mGlobeCameraRange(radius) {
+  const normalizedRadius = Number(radius)
+  return Math.max(Number.isFinite(normalizedRadius) && normalizedRadius > 0 ? normalizedRadius * 5 : 0, 5000)
+}
+
 export function cameraViewState(camera) {
   const position = camera?.positionWC
   const coordinates = [Number(position?.x), Number(position?.y), Number(position?.z)]

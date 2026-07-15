@@ -19,6 +19,10 @@ const s3mPreviewSource = readFileSync(
   new URL('../../src/components/explorer/S3MPreview.vue', import.meta.url),
   'utf8'
 )
+const s3mCesiumPreviewSource = readFileSync(
+  new URL('../../src/components/explorer/S3MCesiumPreview.vue', import.meta.url),
+  'utf8'
+)
 const materialPassSource = readFileSync(
   new URL('../../src/lib/supermap-s3m/S3MTiles/MaterialPass.js', import.meta.url),
   'utf8'
@@ -62,9 +66,15 @@ describe('S3M preview policy', () => {
     expect(previewPanelSource).not.toContain("tile_extension: isS3M ? '.s3m'")
   })
 
-  it('uses the managed renderer that retains legacy .s3m parsing', () => {
-    expect(s3mPreviewSource).toContain('@/lib/supermap-s3m/S3MTiles/S3MTilesLayer.js')
+  it('uses Three.js for the active renderer and keeps Cesium isolated as reference code', () => {
+    expect(s3mPreviewSource).toContain('@/lib/supermap-s3m/three/S3MThreeLayer.js')
+    expect(s3mPreviewSource).toContain("three/examples/jsm/controls/OrbitControls.js")
+    expect(s3mPreviewSource).not.toContain("import('cesium')")
+    expect(s3mPreviewSource).not.toContain('cesium/Build/Cesium/Widgets/widgets.css')
+    expect(s3mPreviewSource).not.toContain('@/lib/supermap-s3m/S3MTiles/S3MTilesLayer.js')
     expect(s3mPreviewSource).not.toContain("import('@dfsj/s3m')")
+    expect(previewPanelSource).not.toContain('S3MCesiumPreview')
+    expect(s3mCesiumPreviewSource).toContain("import('cesium')")
     expect(s3mTileSource).toContain("import S3ModelOldParser from '../S3MParser/S3ModelOldParser.js'")
     expect(s3mTileSource).toContain("tile.fileExtension === 's3m'")
   })
@@ -188,9 +198,9 @@ describe('S3M preview policy', () => {
     ])).toBe(false)
   })
 
-  it('removes the S3M primitive before destroying the viewer without mutating Vue DOM', () => {
-    expect(s3mPreviewSource).toContain('currentViewer.scene.primitives.remove(currentLayer)')
-    expect(s3mPreviewSource).not.toContain('layer.destroy()')
+  it('removes the S3M group before disposing Three.js resources without mutating Vue DOM', () => {
+    expect(s3mPreviewSource).toContain('scene.remove(targetLayer.group)')
+    expect(s3mPreviewSource).toContain('targetLayer.dispose()')
     expect(s3mPreviewSource).not.toContain('replaceChildren()')
   })
 

@@ -33,7 +33,7 @@ type CaptureControl interface {
 	Resume(ctx context.Context, task *models.TransferTask) error
 	Stop(ctx context.Context, task *models.TransferTask) error
 	Get(ctx context.Context, taskID, tenantID uint) (*models.CaptureResource, error)
-	HasTerminalGeneration(ctx context.Context, taskID, tenantID uint) (bool, error)
+	HasStopInitiatedGeneration(ctx context.Context, taskID, tenantID uint) (bool, error)
 }
 
 // TaskService 任务服务
@@ -178,7 +178,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 		return nil, fmt.Errorf("cannot update task in %s status", task.Status)
 	}
 	if s.captureControl != nil {
-		terminal, err := s.captureControl.HasTerminalGeneration(ctx, id, tenantID)
+		terminal, err := s.captureControl.HasStopInitiatedGeneration(ctx, id, tenantID)
 		if err != nil {
 			return nil, err
 		}
@@ -386,7 +386,7 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 		return nil, ErrCDCSchemaChangeBlocked
 	}
 	if isPostgreSQLCDC && s.captureControl != nil {
-		terminal, err := s.captureControl.HasTerminalGeneration(ctx, id, tenantID)
+		terminal, err := s.captureControl.HasStopInitiatedGeneration(ctx, id, tenantID)
 		if err != nil {
 			return nil, err
 		}

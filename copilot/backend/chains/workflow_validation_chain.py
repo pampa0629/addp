@@ -11,6 +11,7 @@ from typing import List, Set, Dict, Any
 from collections import deque
 
 from models.workflow_models import Workflow, ValidationResult, Task
+from utils.operator_contract import public_workflow_parameters
 
 
 class WorkflowValidationChain:
@@ -333,10 +334,11 @@ class WorkflowValidationChain:
                 )
                 continue
 
-            # 2. 构建算子参数集合
-            defined_params = {p["name"] for p in operator_def.get("parameters", [])}
+            # 2. 构建公开参数集合，运行时派生参数不属于 workflow definition
+            public_parameters = public_workflow_parameters(operator_def)
+            defined_params = {p["name"] for p in public_parameters}
             required_params = {
-                p["name"] for p in operator_def.get("parameters", [])
+                p["name"] for p in public_parameters
                 if p.get("required", False)
             }
 
@@ -387,31 +389,20 @@ class WorkflowValidationChain:
             )
 
         if task.operator == "load":
-            source_type = task.params.get("source_type")
-            if source_type in {"nfs", "minio", "s3", "oss"}:
-                errors.append(
-                    f"任务 '{task.id}' 的 source_type 不能使用存储引擎类型 '{source_type}'，请使用 'file'"
-                )
-            if source_type in {"table", "file"} and not task.params.get("locator"):
+            if not task.params.get("locator"):
                 errors.append(
                     f"任务 '{task.id}' ({task.operator}) 必须使用 locator 表达源资源"
                 )
 
         if task.operator == "save":
-            target_type = task.params.get("target_type")
-            if target_type in {"nfs", "minio", "s3", "oss"}:
+            if not task.params.get("target_parent_locator"):
                 errors.append(
-                    f"任务 '{task.id}' 的 target_type 不能使用存储引擎类型 '{target_type}'，请使用 'file'"
+                    f"任务 '{task.id}' ({task.operator}) 必须使用 target_parent_locator 表达目标父资源"
                 )
-            if target_type in {"table", "file"}:
-                if not task.params.get("target_parent_locator"):
-                    errors.append(
-                        f"任务 '{task.id}' ({task.operator}) 必须使用 target_parent_locator 表达目标父资源"
-                    )
-                if not task.params.get("target_name"):
-                    errors.append(
-                        f"任务 '{task.id}' ({task.operator}) 必须使用 target_name 表达目标名称"
-                    )
+            if not task.params.get("target_name"):
+                errors.append(
+                    f"任务 '{task.id}' ({task.operator}) 必须使用 target_name 表达目标名称"
+                )
 
         return errors
 
@@ -455,7 +446,7 @@ class WorkflowValidationChain:
         # 根据错误类型生成建议
         for error in errors:
             if "缺少必需参数" in error:
-                suggestions.append("请参考算子的 workflow_example，确保填写所有必需参数")
+                suggestions.append("请参考算子的 public_parameters，确保填写所有必需参数")
 
             elif "未定义的参数" in error:
                 suggestions.append("检查参数名称拼写，确保与算子定义完全一致（区分大小写）")
@@ -474,9 +465,6 @@ class WorkflowValidationChain:
 
             elif "运行时派生参数" in error or "locator" in error or "target_parent_locator" in error:
                 suggestions.append("工作流资源参数必须使用 locator 或 target_parent_locator + target_name，不要填写 engine_id、schema、table、path 或 connection_info")
-
-            elif "存储引擎类型" in error:
-                suggestions.append("source_type/target_type 使用访问形态 table 或 file，具体存储引擎类型由 locator 对应的 engine 决定")
 
         # 根据警告生成建议
         for warning in warnings:

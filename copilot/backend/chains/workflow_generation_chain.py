@@ -14,6 +14,7 @@ from langchain_core.exceptions import OutputParserException
 
 from models.workflow_models import Workflow, DataSourceContext
 from tools.develop_tools import OperatorDetailTool
+from utils.operator_contract import public_workflow_parameters
 
 
 class WorkflowGenerationChain:
@@ -23,7 +24,7 @@ class WorkflowGenerationChain:
     功能：
     1. 批量获取算子详情（而不是逐个获取）
     2. 使用 Pydantic 输出解析器确保输出格式
-    3. 强调 workflow_example 的重要性
+    3. 只向 LLM 暴露 Public Operator Spec
     4. 处理 LLM 输出解析错误
     """
 
@@ -106,7 +107,7 @@ class WorkflowGenerationChain:
         if not operator_details:
             raise ValueError("无法获取算子详情，无法生成工作流")
 
-        # 2. 格式化算子详情（强调 workflow_example）
+        # 2. 格式化算子的公开契约
         operators_detail_text = self._format_operator_details(operator_details)
 
         # 3. 格式化数据源信息
@@ -180,18 +181,12 @@ class WorkflowGenerationChain:
             for name in operator_names
         ]
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks)
 
-        # 过滤掉失败的结果
         operator_details = []
         for name, result in zip(operator_names, results):
-            if isinstance(result, Exception):
-                print(f"[WorkflowGenerationChain] ⚠️ 获取算子 '{name}' 详情失败: {result}")
-                continue
-
             if result is None:
-                print(f"[WorkflowGenerationChain] ⚠️ 算子 '{name}' 不存在")
-                continue
+                raise ValueError(f"工作流引擎 {workflow_engine_id} 不存在算子 {name}")
 
             operator_details.append(result)
 
@@ -200,7 +195,7 @@ class WorkflowGenerationChain:
 
     def _format_operator_details(self, operator_details: List[Dict]) -> str:
         """
-        格式化算子详情为文本（强调 workflow_example）
+        格式化算子公开契约为文本
 
         Args:
             operator_details: 算子详情列表
@@ -217,6 +212,8 @@ class WorkflowGenerationChain:
 
             # 从 detailed_description 中提取详细信息
             detailed = op.get("detailed_description", {})
+            if not isinstance(detailed, dict):
+                detailed = {}
 
             # 算子级别的注意事项（重要！包含如"必须先 dissolve"等关键提示）
             op_notes = detailed.get("notes", [])
@@ -225,10 +222,10 @@ class WorkflowGenerationChain:
                 for note in op_notes:
                     lines.append(f"  - {note}")
 
-            # 参数定义
-            if op.get("parameters"):
+            parameters = public_workflow_parameters(op)
+            if parameters:
                 lines.append("\n**参数**:")
-                for param in op["parameters"]:
+                for param in parameters:
                     required = "必需" if param.get("required") else "可选"
                     param_type = param.get("type", "未知")
                     default = param.get("default", "无")
@@ -248,21 +245,6 @@ class WorkflowGenerationChain:
                         param_line += f"\n    说明: {param['notes']}"
 
                     lines.append(param_line)
-
-            # ⭐ 重点：workflow_example（从 detailed_description 中取）
-            workflow_example = detailed.get("workflow_example")
-            if workflow_example:
-                lines.append("\n**⭐ 工作流示例（重要参考）**:")
-                lines.append("```json")
-
-                import json
-                if isinstance(workflow_example, dict):
-                    example_json = json.dumps(workflow_example, ensure_ascii=False, indent=2)
-                else:
-                    example_json = workflow_example
-
-                lines.append(example_json)
-                lines.append("```")
 
             # 输出定义
             if op.get("output_ports"):

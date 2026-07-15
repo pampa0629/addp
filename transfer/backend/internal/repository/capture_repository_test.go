@@ -68,6 +68,15 @@ func TestCaptureRepositoryReusesGenerationAndRejectsStoppedRestart(t *testing.T)
 	if _, err := repo.BeginGeneration(context.Background(), identity); err == nil || err.Error() != "capture source identity changed after generation creation" {
 		t.Fatalf("BeginGeneration() spatial identity error = %v", err)
 	}
+	if err := repo.ForceUpdate(context.Background(), first.ID, map[string]interface{}{"status": models.CaptureStatusCleanupFailed}); err != nil {
+		t.Fatal(err)
+	}
+	if stopped, err := repo.HasStopInitiatedGeneration(context.Background(), task.ID, task.TenantID); err != nil || !stopped {
+		t.Fatalf("HasStopInitiatedGeneration() = %v, %v, want true, nil", stopped, err)
+	}
+	if _, err := repo.BeginGeneration(context.Background(), identity); !errors.Is(err, ErrCaptureTerminal) {
+		t.Fatalf("BeginGeneration() cleanup_failed error = %v, want ErrCaptureTerminal", err)
+	}
 	if err := repo.ForceUpdate(context.Background(), first.ID, map[string]interface{}{"status": models.CaptureStatusStopped}); err != nil {
 		t.Fatal(err)
 	}

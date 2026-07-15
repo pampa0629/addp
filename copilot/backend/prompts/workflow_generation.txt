@@ -29,7 +29,7 @@
 - 正确设置任务依赖关系（depends_on）；每个任务都必须显式包含 `depends_on`，没有依赖时写空数组 `[]`
 
 ### 2. 参数填写规则
-- **仔细参考每个算子的 `workflow_example`**：这是最重要的参考！
+- **只使用算子详情中列出的公开参数**：不得编造或使用未列出的运行时参数
 - **必需参数**：确保所有 required=true 的参数都填写
 - **参数类型**：严格按照算子定义的类型填写（字符串、数字、布尔值、数组、对象）
 - **参数引用（重要）**：
@@ -39,7 +39,6 @@
 - **⭐ 数据源参数（非常重要）**：
   - 读取已有表、文件或对象时，load 任务必须使用 `locator`
   - 创建新目标时，save 任务必须使用 `target_parent_locator + target_name`
-  - `source_type` / `target_type` 表达访问形态，只能使用 `table`、`file`、`geojson` 等算子定义中的枚举值，不能使用 `nfs`、`minio`、`s3` 等存储引擎类型
   - **禁止在算子 params 中填写 `engine_id`、`connection_info`、`schema`、`table`、`path`**，这些是 Develop Backend 执行前派生的运行时参数
   - 如果"数据源信息"提供了"源资源 locator"，第一个 load 任务直接使用该 locator，不要自己编造
   - 如果"数据源信息"提供了"目标父 locator"，save 任务使用该 locator；目标名称从用户需求中提取，无法确定时使用清晰的候选名称
@@ -70,15 +69,6 @@ load → process1 ┐
 load2 → process2 ┘
 ```
 
-### 5. 算子 workflow_example 的重要性
-
-每个算子的 `workflow_example` 字段提供了该算子在工作流中的标准用法，包括：
-- 参数的正确格式
-- 如何引用前驱任务的输出
-- 常见的参数组合
-
-**务必仔细参考这些示例！**
-
 ## 输出格式
 
 {format_instructions}
@@ -91,12 +81,12 @@ load2 → process2 ┘
 4. **依赖关系必须正确**，不能有循环依赖
 5. **参数引用格式**：使用对象格式 `{{"$ref": "task_id"}}`，不要使用字符串模板
 6. **第一个任务通常是 load**，最后一个任务通常是 save
-7. **参考 workflow_example**：这是最可靠的参数填写参考！
+7. **只使用公开参数**：算子详情未列出的参数不得写入 `params`
 
 ## 示例
 
 假设用户需求是"读取 test 表，计算 100 米缓冲区，保存为 test_buffer"，
-数据源是 PostgreSQL，源资源 locator 为 `addp://engine/1/path/public/test?type=table`，目标父 locator 为 `addp://engine/1/path/public?type=schema`，
+数据源是 PostgreSQL，源资源 locator 为 `addp://engine/1/path/public/test?type=table&item_id=102`，目标父 locator 为 `addp://engine/1/path/public?type=schema&node_id=11`，
 选定的算子是 load、buffer、save。
 
 正确的工作流 JSON：
@@ -107,8 +97,7 @@ load2 → process2 ┘
       "id": "task1",
       "operator": "load",
       "params": {{
-        "source_type": "table",
-        "locator": "addp://engine/1/path/public/test?type=table"
+        "locator": "addp://engine/1/path/public/test?type=table&item_id=102"
       }},
       "depends_on": []
     }},
@@ -127,8 +116,7 @@ load2 → process2 ┘
       "operator": "save",
       "params": {{
         "input_df": {{"$ref": "task2"}},
-        "target_type": "table",
-        "target_parent_locator": "addp://engine/1/path/public?type=schema",
+        "target_parent_locator": "addp://engine/1/path/public?type=schema&node_id=11",
         "target_name": "test_buffer",
         "mode": "replace"
       }},

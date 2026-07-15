@@ -7,8 +7,6 @@ import pytest
 import asyncio
 from tools.develop_tools import (
     EngineTool,
-    SchemaTableTool,
-    ObjectStorageTool,
     OperatorDiscoveryTool,
     OperatorDetailTool
 )
@@ -33,34 +31,6 @@ class TestDevelopTools:
             assert "name" in engine
             assert "type" in engine
             print(f"   示例引擎：{engine['name']} ({engine['type']})")
-
-    @pytest.mark.asyncio
-    async def test_schema_table_tool(self):
-        """测试 SchemaTableTool"""
-        tool = SchemaTableTool()
-
-        # 先获取一个引擎 ID
-        engine_tool = EngineTool()
-        engines = await engine_tool._arun(tenant_id=1)
-
-        if not engines:
-            pytest.skip("没有可用的引擎，跳过测试")
-
-        # 找到一个关系数据库引擎
-        db_engine = next(
-            (e for e in engines if e["type"] in ["postgresql", "mysql", "doris"]),
-            None
-        )
-
-        if not db_engine:
-            pytest.skip("没有可用的关系数据库引擎，跳过测试")
-
-        result = await tool._arun(engine_id=db_engine["id"])
-
-        assert isinstance(result, dict)
-        assert "namespaces" in result
-        assert "items" in result
-        print(f"✅ SchemaTableTool 测试通过：{len(result['namespaces'])} namespaces, {len(result['items'])} items")
 
     @pytest.mark.asyncio
     async def test_operator_discovery_tool(self):

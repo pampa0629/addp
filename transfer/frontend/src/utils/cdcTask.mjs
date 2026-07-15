@@ -10,6 +10,18 @@ export function isCDCSchemaBlocked(task) {
 	return isPostgreSQLCDCTask(task) && task?.status === 'blocked'
 }
 
+export function continuousStartDisabledReason(task) {
+	if (isCDCSchemaBlocked(task)) return 'schema_blocked'
+	if (isPostgreSQLCDCTask(task)) {
+		const captureStatus = String(task?.capture?.status || '').toLowerCase()
+		if (captureStatus === 'cleanup_failed' || captureStatus === 'cleaning') return 'cleanup_failed'
+		if (captureStatus === 'stopped') return 'permanently_stopped'
+	}
+	if (task?.status === 'running' || task?.desired_state === 'running') return 'running'
+	if (!['paused', 'stopped'].includes(task?.desired_state)) return 'invalid_state'
+	return null
+}
+
 export function getCDCCaptureHealthWarning(task) {
 	if (!isPostgreSQLCDCTask(task) || !task?.capture) return null
 	const status = String(task.capture.status || '').toLowerCase()

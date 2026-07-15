@@ -48,33 +48,20 @@ func (p *KafkaPlugin) OpenChangeStream(ctx context.Context, connInfo plugin.Conn
 		kgo.ConsumeTopics(topic),
 		kgo.DisableAutoCommit(),
 		kgo.BlockRebalanceOnPoll(),
-		kgo.OnPartitionsAssigned(func(_ context.Context, client *kgo.Client, assigned map[string][]int32) {
-			offsets := map[string]map[int32]kgo.EpochOffset{}
+		kgo.OnPartitionsAssigned(func(_ context.Context, _ *kgo.Client, assigned map[string][]int32) {
 			reader.mu.Lock()
 			defer reader.mu.Unlock()
 			for assignedTopic, partitions := range assigned {
 				if assignedTopic != topic {
 					continue
 				}
-				if offsets[assignedTopic] == nil {
-					offsets[assignedTopic] = map[int32]kgo.EpochOffset{}
-				}
 				for _, partition := range partitions {
 					reader.assignments[partition] = struct{}{}
-					key := strconv.FormatInt(int64(partition), 10)
-					if committed, ok := opts.CommittedPositions[key]; ok {
-						next, _ := kafkaPositionNextOffset(committed, key)
-						offsets[assignedTopic][partition] = kgo.EpochOffset{Epoch: -1, Offset: next}
-						continue
-					}
-					if opts.InitialPosition == plugin.ChangeStreamInitialEarliest {
-						offsets[assignedTopic][partition] = kgo.NewOffset().AtStart().EpochOffset()
-					} else {
-						offsets[assignedTopic][partition] = kgo.NewOffset().AtEnd().EpochOffset()
-					}
 				}
 			}
-			client.SetOffsets(offsets)
+		}),
+		kgo.AdjustFetchOffsetsFn(func(_ context.Context, assigned map[string]map[int32]kgo.Offset) (map[string]map[int32]kgo.Offset, error) {
+			return adjustKafkaFetchOffsets(topic, opts.CommittedPositions, opts.InitialPosition, assigned)
 		}),
 		kgo.OnPartitionsRevoked(func(_ context.Context, _ *kgo.Client, revoked map[string][]int32) {
 			reader.mu.Lock()
@@ -106,6 +93,26 @@ func (p *KafkaPlugin) OpenChangeStream(ctx context.Context, connInfo plugin.Conn
 		return nil, err
 	}
 	return reader, nil
+}
+
+func adjustKafkaFetchOffsets(topic string, committedPositions map[string]plugin.ChangeStreamPosition, initialPosition string, assigned map[string]map[int32]kgo.Offset) (map[string]map[int32]kgo.Offset, error) {
+	for partition := range assigned[topic] {
+		partitionText := strconv.FormatInt(int64(partition), 10)
+		if committed, ok := committedPositions[partitionText]; ok {
+			nextOffset, err := kafkaPositionNextOffset(committed, partitionText)
+			if err != nil {
+				return nil, fmt.Errorf("adjust committed position for partition %q: %w", partitionText, err)
+			}
+			assigned[topic][partition] = kgo.NewOffset().At(nextOffset).WithEpoch(-1)
+			continue
+		}
+		if initialPosition == plugin.ChangeStreamInitialEarliest {
+			assigned[topic][partition] = kgo.NewOffset().AtStart()
+		} else {
+			assigned[topic][partition] = kgo.NewOffset().AtEnd()
+		}
+	}
+	return assigned, nil
 }
 
 func readKafkaPositionRanges(ctx context.Context, admin *kadm.Client, topic string) ([]plugin.ChangeStreamPositionRange, error) {

@@ -3,7 +3,6 @@
 from typing import Any
 
 from models.workflow_models import DataSourceCandidate, DataSourceLocation
-from utils.resource_locator import bucket_locator, object_locator, schema_locator, table_locator
 
 
 RELATIONAL_ENGINE_TYPES = {"postgresql", "mysql", "doris", "clickhouse"}
@@ -59,7 +58,9 @@ def _build_candidate(
     if engine_id is None:
         return None
 
-    engine = engine_by_id.get(engine_id, {})
+    engine = engine_by_id.get(engine_id)
+    if engine is None:
+        return None
     engine_type = _first_value(result, "engine_type") or engine.get("type") or engine.get("engine_type")
     if not engine_type:
         return None
@@ -67,11 +68,15 @@ def _build_candidate(
     location = _build_location(result, engine_id, str(engine_type), default_namespace)
     if location is None:
         return None
+    resource_name = _first_value(result, "name", "file_name", "title")
+    if not resource_name:
+        return None
 
     return DataSourceCandidate(
         engine_id=engine_id,
         engine_name=engine.get("name") or _first_value(result, "engine_name"),
         engine_type=str(engine_type),
+        resource_name=str(resource_name),
         location=location,
         confidence=_normalize_score(result.get("score")),
         reason=_first_value(result, "reason") or "元数据搜索匹配",
@@ -85,6 +90,10 @@ def _build_location(
     default_namespace: str | None,
 ) -> DataSourceLocation | None:
     result_type = str(result.get("type") or "").lower()
+    locator = _first_value(result, "locator")
+    target_parent_locator = _first_value(result, "target_parent_locator")
+    if not locator or not target_parent_locator:
+        return None
 
     if engine_type in RELATIONAL_ENGINE_TYPES:
         table = _first_value(result, "table", "table_name")
@@ -97,8 +106,8 @@ def _build_location(
         return DataSourceLocation(
             namespace=str(namespace),
             table=str(table),
-            locator=table_locator(engine_id, str(namespace), str(table)),
-            target_parent_locator=schema_locator(engine_id, str(namespace)),
+            locator=str(locator),
+            target_parent_locator=str(target_parent_locator),
         )
 
     if engine_type in OBJECT_ENGINE_TYPES:
@@ -112,14 +121,15 @@ def _build_location(
         return DataSourceLocation(
             bucket=str(bucket) if bucket else None,
             path=str(path) if path else None,
-            locator=object_locator(engine_id, str(bucket), str(path)) if bucket and path else None,
-            target_parent_locator=bucket_locator(engine_id, str(bucket)) if bucket else None,
+            locator=str(locator),
+            target_parent_locator=str(target_parent_locator),
         )
 
-    identifier = _first_value(result, "resource_identifier", "locator", "path", "name")
-    if not identifier:
-        return None
-    return DataSourceLocation(resource_identifier=str(identifier))
+    return DataSourceLocation(
+        resource_identifier=str(locator),
+        locator=str(locator),
+        target_parent_locator=str(target_parent_locator),
+    )
 
 
 def _first_value(result: dict[str, Any], *keys: str) -> Any:

@@ -55,6 +55,7 @@ class WorkflowGenerationResponse(BaseModel):
 
     # 数据源候选（当 status=need_clarification 时）
     data_source_candidates: Optional[list] = None
+    clarification_reason: Optional[str] = None
     message: Optional[str] = None
 
     # 验证结果（当 status=validation_failed 时）
@@ -68,7 +69,12 @@ class WorkflowGenerationResponse(BaseModel):
     validation_result: Optional[Dict] = None
 
 
-@router.post("/workflow/generate", response_model=WorkflowGenerationResponse, summary="生成工作流 | Generate Workflow")
+@router.post(
+    "/workflow/generate",
+    response_model=WorkflowGenerationResponse,
+    summary="生成工作流 | Generate Workflow",
+    responses={500: {"description": "工作流生成失败 | Workflow generation failed"}},
+)
 async def generate_workflow(request: WorkflowGenerationRequest):
     """
     生成工作流（基于 WorkflowPipeline）
@@ -131,6 +137,7 @@ async def generate_workflow(request: WorkflowGenerationRequest):
             response = WorkflowGenerationResponse(
                 status="need_clarification",
                 data_source_candidates=result.get("data_source_candidates", []),
+                clarification_reason=result.get("clarification_reason"),
                 message=result.get("message", "请选择数据源")
             )
 
@@ -172,11 +179,7 @@ async def generate_workflow(request: WorkflowGenerationRequest):
         import traceback
         traceback.print_exc()
 
-        # 返回错误响应
-        return WorkflowGenerationResponse(
-            status="error",
-            message=f"服务内部错误: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"工作流生成失败: {str(e)}") from e
 
 
 # TODO: Copilot 暂时不需要对话历史功能

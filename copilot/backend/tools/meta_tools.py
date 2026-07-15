@@ -6,7 +6,7 @@ Meta API 相关的 LangChain Tools
 from typing import List, Dict, Optional
 from langchain.tools import BaseTool
 
-from addp_common.client import ManagerClient
+from addp_common.client import ManagerClient, MetaClient
 from config import settings
 
 
@@ -29,33 +29,78 @@ class MetadataSearchTool(BaseTool):
         """异步执行元数据搜索"""
         print(f"[MetadataSearchTool] 搜索元数据: query='{query}', type={metadata_type}, tenant_id={tenant_id}")
 
-        try:
-            async with ManagerClient(
-                base_url=settings.get_manager_url(),
-                internal_api_key=settings.internal_api_key
-            ) as client:
-                result = await client.search(q=query, page=1, page_size=limit)
-                results = result.get("results", [])
-                print(f"[MetadataSearchTool] ✅ 找到 {len(results)} 个匹配结果")
+        async with ManagerClient(
+            base_url=settings.get_manager_url(),
+            internal_api_key=settings.internal_api_key
+        ) as manager_client, MetaClient(
+            base_url=settings.get_meta_url(),
+            internal_api_key=settings.internal_api_key
+        ) as meta_client:
+            result = await manager_client.search(
+                q=query,
+                tenant_id=tenant_id,
+                page=1,
+                page_size=limit,
+            )
+            results = result.get("results")
+            if not isinstance(results, list):
+                raise ValueError("manager search data.results must be an array")
 
-                # 简化返回结果
-                return [
-                    {
-                        "id": r.get("id"),
-                        "name": r.get("name"),
-                        "type": r.get("type"),
-                        "engine_id": r.get("engine_id"),
-                        "schema": r.get("schema"),
-                        "table": r.get("table"),
-                        "path": r.get("path"),
-                        "score": r.get("score", 0),
-                        "metadata": r.get("metadata", {})
-                    }
-                    for r in results
-                ]
-        except Exception as e:
-            print(f"[MetadataSearchTool] ❌ 元数据搜索失败: {type(e).__name__}: {e}")
-            return []
+            verified_results = []
+            for item in results:
+                if not isinstance(item, dict) or not self._matches_type(item, metadata_type):
+                    continue
+                verified = await self._verify_locator(meta_client, item)
+                if verified is not None:
+                    verified_results.append(verified)
+
+            print(f"[MetadataSearchTool] ✅ 找到 {len(verified_results)} 个已验证匹配结果")
+            return verified_results
+
+    @staticmethod
+    def _matches_type(item: Dict, metadata_type: Optional[str]) -> bool:
+        if not metadata_type:
+            return True
+        item_type = str(item.get("asset_type") or item.get("type") or "").lower()
+        if metadata_type == "table":
+            return item_type in {"table", "view"}
+        if metadata_type == "file":
+            return item_type in {"file", "object"}
+        return item_type == metadata_type
+
+    @staticmethod
+    async def _verify_locator(meta_client: MetaClient, item: Dict) -> Optional[Dict]:
+        locator = item.get("locator")
+        engine_id = item.get("engine_id")
+        if not locator or not engine_id:
+            return None
+
+        response = await meta_client.get_resource_tree_ancestors(int(engine_id), str(locator))
+        ancestors = response.get("ancestors")
+        if not isinstance(ancestors, list) or len(ancestors) < 2:
+            return None
+
+        parent = ancestors[-2]
+        parent_locator = parent.get("locator") if isinstance(parent, dict) else None
+        target_locator = response.get("target_locator")
+        if not target_locator or not parent_locator:
+            return None
+
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        return {
+            "name": item.get("name") or item.get("file_name") or item.get("title"),
+            "type": item.get("asset_type") or item.get("type"),
+            "engine_id": int(engine_id),
+            "engine_name": item.get("engine_name"),
+            "engine_type": item.get("engine_type"),
+            "schema": item.get("schema"),
+            "bucket": item.get("bucket"),
+            "path": item.get("path"),
+            "score": item.get("score"),
+            "metadata": metadata,
+            "locator": str(target_locator),
+            "target_parent_locator": str(parent_locator),
+        }
 
     def _run(
         self,

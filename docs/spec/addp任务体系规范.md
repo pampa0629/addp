@@ -276,7 +276,7 @@ continuous task 与 execution 生命周期：
 2. `start` 原子设置 `desired_state=running` 并创建 pending execution；`pause` 设置 `paused`，`resume` 设置 `running` 并创建新 execution，`stop` 设置 `stopped`。同一 task 已有合法 active session 时不得重复创建 execution。
 3. 每次启动或自动恢复都创建新的 pending execution；一个 execution 对应一个 runtime session，结束后不得重新变回 running。
 4. runtime session 由 `transfer.runtime_leases` 保存 owner instance、execution、lease deadline、heartbeat 和 fencing token；lease 与 `transfer.sync_states` 的业务 position 分离。
-5. 正常总运行时长不触发 timeout。source poll、target apply、position commit 分别使用操作超时；heartbeat 丢失或 lease 过期以 `failed` 结束当前 execution，并在任务 desired state 仍为 running 时创建新 execution 恢复。
+5. 正常总运行时长不触发 timeout。source poll、target apply、position commit 分别使用操作超时；heartbeat 丢失或 lease 过期以 `failed` 结束当前 execution，并在任务 desired state 仍为 running 时创建新 execution 恢复。worker 正常退出时当前 execution 以 `cancelled + stop_reason=worker_shutdown` 结束；新 worker 必须自动创建 recovery execution，继承上一 execution 的 `trigger_type`，并在 metadata 记录 `recovery_reason` 与 `recovered_from_execution_id`。lease 过期恢复同样创建新 execution，并记录 `recovery_reason=lease_expired`；两种情况都不得把旧 execution 重新置为 running。
 6. 用户 pause/stop 必须真实停止 poll、完成或放弃当前未提交批次、关闭 source/target session、释放 partition ownership 和 lease，再以 `cancelled` 结束当前 execution，并在 metadata 记录 `stop_reason=paused|stopped`。resume 创建新 execution。
 7. 工作包 2B 真实中断闭环完成时可以恢复 Transfer 私有 task-definition stop 控制入口；但 `supports_cancel` 是整个 `sync` task type 的 TaskProvider 能力，在 bounded execution 也具备真实取消前必须继续为 `false`，不得注册标准 execution cancel endpoint。
 8. continuous execution 不使用 0 到 100 作为主要进度；Monitor 应展示 per-partition next offset、source latest offset、lag、吞吐、last event time、last committed time、checkpoint age、retry/rebalance 和 heartbeat。
@@ -355,6 +355,7 @@ PostgreSQL 单表 -> Debezium PostgreSQL Connector -> Infra Kafka
 5. pause 的无损恢复只在 connector 健康且 committed position 未被 Kafka retention 清除时成立，不是无限期保证。暂停期间必须继续观测 connector 状态、slot/WAL lag、topic 容量和 committed position 的 retention horizon。
 6. `resume` 只允许从 paused 或可恢复失败状态创建新 execution；继续使用同一 capture generation、connector offset、topic 和 Transfer committed position。`status=blocked` 的 schema drift 不是可恢复失败，start/resume API 必须返回 `409 Conflict`。
 7. `stop` 是 PostgreSQL CDC task 的不可逆终态：停止目标 runtime，停止并删除 connector，删除 ADDP-owned slot/publication 和内部 CDC topic，使原 capture generation 失效。已停止任务不得再次 start/resume；重新同步必须创建新任务和新目标表并重新 initial snapshot。
+   `desired_state=stopped` 同时也是 continuous task definition 的初始值，因此不能单独作为 PostgreSQL CDC 已进入不可逆终态的判据。永久停止必须以 `transfer.capture_resources` 中当前 generation 的 `status=stopped` 为事实；尚无 capture generation 的新任务允许首次 start。`status=cleanup_failed` 表示不可逆 Stop 已开始但资源清理未完成，此时只允许重试 Stop 清理，不允许 start/resume。
 8. Stop API 必须由服务端要求显式不可逆确认，不能只依赖前端弹窗；沿用唯一 `POST /task-definitions/:id/stop` 路由，CDC task 请求体必须提交 `confirmed=true` 且 `confirmation_text` 与当前任务名称完全一致。Console 同时使用 danger 样式二次确认并要求输入任务名称，明确说明不能恢复、内部捕获资源会被删除且重新同步必须新建任务。普通业务 Kafka continuous stop 不要求该请求体，仍按其既有可恢复 committed-position 语义处理，不能混用 CDC 的终态提示。
 9. stop 不删除目标业务表、目标行、目标 apply ledger、任务定义、execution 或清理审计。任务删除和 System cleanup 必须再次幂等清理残留 capture 资源，并保留统一 execution/审计事实。
 

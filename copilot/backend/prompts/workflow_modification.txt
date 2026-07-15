@@ -60,7 +60,6 @@
 
 - 读取已有表、文件或对象时，load 任务必须使用 `locator`
 - 创建新目标时，save 任务必须使用 `target_parent_locator + target_name`
-- `source_type` / `target_type` 表达访问形态，只能使用 `table`、`file`、`geojson` 等算子定义中的枚举值，不能使用 `nfs`、`minio`、`s3` 等存储引擎类型
 - **禁止在算子 params 中填写 `engine_id`、`connection_info`、`schema`、`table`、`path`**，这些是 Develop Backend 执行前派生的运行时参数
 - 修改数据源时，只替换为用户或系统已经提供的 `locator`；如果没有明确 locator，不要自行拼接 `addp://...`
 - 修改目标名称时优先只改 `target_name`，不要改动 `target_parent_locator`，除非用户明确要求切换目标父资源并提供了新的 locator
@@ -113,9 +112,9 @@
 ```json
 {{
   "tasks": [
-    {{"id": "task1", "operator": "load", "params": {{"source_type": "table", "locator": "addp://engine/1/path/public/test?type=table"}}, "depends_on": []}},
+    {{"id": "task1", "operator": "load", "params": {{"locator": "addp://engine/1/path/public/test?type=table&item_id=102"}}, "depends_on": []}},
     {{"id": "task2", "operator": "buffer", "params": {{"distance": 100}}, "depends_on": ["task1"]}},
-    {{"id": "task3", "operator": "save", "params": {{"target_type": "table", "target_parent_locator": "addp://engine/1/path/public?type=schema", "target_name": "result"}}, "depends_on": ["task2"]}}
+    {{"id": "task3", "operator": "save", "params": {{"target_parent_locator": "addp://engine/1/path/public?type=schema&node_id=11", "target_name": "result"}}, "depends_on": ["task2"]}}
   ]
 }}
 ```
@@ -126,9 +125,9 @@
 ```json
 {{
   "tasks": [
-    {{"id": "task1", "operator": "load", "params": {{"source_type": "table", "locator": "addp://engine/1/path/public/test?type=table"}}, "depends_on": []}},
+    {{"id": "task1", "operator": "load", "params": {{"locator": "addp://engine/1/path/public/test?type=table&item_id=102"}}, "depends_on": []}},
     {{"id": "task2", "operator": "buffer", "params": {{"distance": 200}}, "depends_on": ["task1"]}},
-    {{"id": "task3", "operator": "save", "params": {{"target_type": "table", "target_parent_locator": "addp://engine/1/path/public?type=schema", "target_name": "result"}}, "depends_on": ["task2"]}}
+    {{"id": "task3", "operator": "save", "params": {{"target_parent_locator": "addp://engine/1/path/public?type=schema&node_id=11", "target_name": "result"}}, "depends_on": ["task2"]}}
   ]
 }}
 ```
@@ -142,10 +141,10 @@
 ```json
 {{
   "tasks": [
-    {{"id": "task1", "operator": "load", "params": {{"source_type": "table", "locator": "addp://engine/1/path/public/test?type=table"}}, "depends_on": []}},
+    {{"id": "task1", "operator": "load", "params": {{"locator": "addp://engine/1/path/public/test?type=table&item_id=102"}}, "depends_on": []}},
     {{"id": "task2", "operator": "buffer", "params": {{"distance": 100}}, "depends_on": ["task1"]}},
     {{"id": "task4", "operator": "union", "params": {{}}, "depends_on": ["task2"]}},
-    {{"id": "task3", "operator": "save", "params": {{"target_type": "table", "target_parent_locator": "addp://engine/1/path/public?type=schema", "target_name": "result"}}, "depends_on": ["task4"]}}
+    {{"id": "task3", "operator": "save", "params": {{"target_parent_locator": "addp://engine/1/path/public?type=schema&node_id=11", "target_name": "result"}}, "depends_on": ["task4"]}}
   ]
 }}
 ```

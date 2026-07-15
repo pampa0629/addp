@@ -83,7 +83,6 @@ class WorkflowAutoFixer:
    - load 任务读取已有表、文件或对象时必须使用 `locator`
    - save 任务创建新目标时必须使用 `target_parent_locator + target_name`
    - 不要在算子 params 中填写 `engine_id`、`connection_info`、`schema`、`table`、`path`
-   - `source_type` / `target_type` 只能使用 `table`、`file`、`geojson` 等访问形态，不能使用 `nfs`、`minio`、`s3` 等存储引擎类型
 
 ## 修复原则
 

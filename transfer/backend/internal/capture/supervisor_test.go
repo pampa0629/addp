@@ -132,7 +132,7 @@ func (f *fakeCaptureStore) apply(fields map[string]interface{}) {
 	}
 }
 
-func (f *fakeCaptureStore) HasTerminalGeneration(context.Context, uint, uint) (bool, error) {
+func (f *fakeCaptureStore) HasStopInitiatedGeneration(context.Context, uint, uint) (bool, error) {
 	return f.terminal, nil
 }
 

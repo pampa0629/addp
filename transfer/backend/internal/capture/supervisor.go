@@ -19,7 +19,7 @@ type ResourceStore interface {
 	GetLatest(ctx context.Context, taskID, tenantID uint) (*models.CaptureResource, error)
 	ListObservable(ctx context.Context, limit int) ([]models.CaptureResource, error)
 	Update(ctx context.Context, id uint, expectedVersion uint64, fields map[string]interface{}) error
-	HasTerminalGeneration(ctx context.Context, taskID, tenantID uint) (bool, error)
+	HasStopInitiatedGeneration(ctx context.Context, taskID, tenantID uint) (bool, error)
 }
 
 type SupervisorConfig struct {
@@ -235,8 +235,8 @@ func (s *Supervisor) dropSourceResources(ctx context.Context, plan *CapturePlan,
 	}
 }
 
-func (s *Supervisor) HasTerminalGeneration(ctx context.Context, taskID, tenantID uint) (bool, error) {
-	return s.store.HasTerminalGeneration(ctx, taskID, tenantID)
+func (s *Supervisor) HasStopInitiatedGeneration(ctx context.Context, taskID, tenantID uint) (bool, error) {
+	return s.store.HasStopInitiatedGeneration(ctx, taskID, tenantID)
 }
 
 func (s *Supervisor) Get(ctx context.Context, taskID, tenantID uint) (*models.CaptureResource, error) {

@@ -536,6 +536,6 @@ func (f *fakeCaptureControl) Get(context.Context, uint, uint) (*models.CaptureRe
 	}
 	return f.resource, nil
 }
-func (f *fakeCaptureControl) HasTerminalGeneration(context.Context, uint, uint) (bool, error) {
+func (f *fakeCaptureControl) HasStopInitiatedGeneration(context.Context, uint, uint) (bool, error) {
 	return f.terminal, nil
 }

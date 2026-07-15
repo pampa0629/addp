@@ -194,8 +194,7 @@ class ConversationResponse(ConversationBase):
         "id": "task1",
         "operator": "load",
         "params": {
-          "source_type": "table",
-          "locator": "addp://engine/1/path/public/cities?type=table"
+          "locator": "addp://engine/1/path/public/cities?type=table&item_id=103"
         },
         "depends_on": []
       },
@@ -212,9 +211,8 @@ class ConversationResponse(ConversationBase):
         "id": "task3",
         "operator": "save",
         "params": {
-          "data": {"$ref": "task2"},
-          "target_type": "table",
-          "target_parent_locator": "addp://engine/1/path/public?type=schema",
+          "input_df": {"$ref": "task2"},
+          "target_parent_locator": "addp://engine/1/path/public?type=schema&node_id=11",
           "target_name": "cities_buffer"
         },
         "depends_on": ["task2"]

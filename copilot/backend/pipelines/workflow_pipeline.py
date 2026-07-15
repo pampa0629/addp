@@ -16,8 +16,6 @@ from models.workflow_models import Workflow, DataSourceContext, ValidationResult
 
 from tools.develop_tools import (
     EngineTool,
-    SchemaTableTool,
-    ObjectStorageTool,
     OperatorDiscoveryTool,
     OperatorDetailTool
 )
@@ -50,8 +48,6 @@ class WorkflowPipeline:
         # 初始化所有 Tools
         print("[WorkflowPipeline] 初始化 Tools")
         self.engine_tool = EngineTool()
-        self.schema_table_tool = SchemaTableTool()
-        self.object_storage_tool = ObjectStorageTool()
         self.operator_discovery_tool = OperatorDiscoveryTool()
         self.operator_detail_tool = OperatorDetailTool()
         self.metadata_search_tool = MetadataSearchTool()
@@ -64,8 +60,6 @@ class WorkflowPipeline:
             self.data_source_agent = DataSourceStage(
                 llm=self.llm,
                 engine_tool=self.engine_tool,
-                schema_table_tool=self.schema_table_tool,
-                object_storage_tool=self.object_storage_tool,
                 metadata_search_tool=self.metadata_search_tool
             )
         else:
@@ -151,17 +145,15 @@ class WorkflowPipeline:
                 print(f"  候选项数量: {len(data_source.alternatives)}")
                 print(f"[WorkflowPipeline] ===== 结果结束 =====\n")
 
-                # 如果置信度低，返回候选让用户选择
-                if data_source.confidence < 0.8:
-                    print(f"[WorkflowPipeline] ⚠️ 数据源置信度低 ({data_source.confidence:.2f})")
-
-                    if data_source.alternatives:
-                        candidates = [candidate.model_dump(exclude_none=True) for candidate in data_source.alternatives]
-                        return {
-                            "status": "need_clarification",
-                            "data_source_candidates": candidates,
-                            "message": f"找到 {len(data_source.alternatives)} 个匹配的数据源，请选择一个"
-                        }
+                if not data_source.location.locator or not data_source.location.target_parent_locator:
+                    candidates = [candidate.model_dump(exclude_none=True) for candidate in data_source.alternatives]
+                    reason = "data_source_not_found" if not candidates else "data_source_ambiguous"
+                    print(f"[WorkflowPipeline] ⚠️ 数据源需要确认: {reason}")
+                    return {
+                        "status": "need_clarification",
+                        "clarification_reason": reason,
+                        "data_source_candidates": candidates,
+                    }
 
                 print(f"[WorkflowPipeline] ✅ 数据源理解完成")
                 print(f"  引擎: {data_source.engine_name} ({data_source.engine_type})")
@@ -190,6 +182,15 @@ class WorkflowPipeline:
             )
 
             print(f"[WorkflowPipeline] ✅ 工作流生成完成：{len(workflow.tasks)} 个任务")
+
+            if data_source and not self._workflow_resource_facts_are_verified(workflow, data_source):
+                candidates = [candidate.model_dump(exclude_none=True) for candidate in data_source.alternatives]
+                print("[WorkflowPipeline] ⚠️ 生成结果包含未验证的资源 locator")
+                return {
+                    "status": "need_clarification",
+                    "clarification_reason": "data_source_unverified",
+                    "data_source_candidates": candidates,
+                }
 
             # ========== 阶段 4: 工作流验证 + 自动修复 ==========
             print("\n[WorkflowPipeline] ▶ 阶段 4: 工作流验证")
@@ -361,6 +362,20 @@ class WorkflowPipeline:
             parts.append(f"数据位置: {location.bucket}/{location.path}")
 
         return ", ".join(parts)
+
+    @staticmethod
+    def _workflow_resource_facts_are_verified(
+        workflow: Workflow,
+        data_source: DataSourceContext,
+    ) -> bool:
+        source_locator = data_source.location.locator
+        target_parent_locator = data_source.location.target_parent_locator
+        for task in workflow.tasks:
+            if task.operator == "load" and task.params.get("locator") != source_locator:
+                return False
+            if task.operator == "save" and task.params.get("target_parent_locator") != target_parent_locator:
+                return False
+        return True
 
     def _generate_explanation(
         self,

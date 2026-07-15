@@ -45,6 +45,7 @@ class DataSourceCandidate(BaseModel):
     engine_id: int = Field(description="候选数据源所属引擎 ID")
     engine_name: Optional[str] = Field(default=None, description="候选数据源所属引擎名称")
     engine_type: str = Field(description="候选数据源所属引擎类型")
+    resource_name: str = Field(description="搜索结果中的真实资源名称")
     location: DataSourceLocation = Field(description="候选数据源位置")
     confidence: Optional[float] = Field(default=None, description="候选项置信度")
     reason: Optional[str] = Field(default=None, description="候选原因")
@@ -55,11 +56,12 @@ class DataSourceCandidate(BaseModel):
                 "engine_id": 1,
                 "engine_name": "PostgreSQL 主库",
                 "engine_type": "postgresql",
+                "resource_name": "users",
                 "location": {
                     "namespace": "public",
                     "table": "users",
-                    "locator": "addp://engine/1/path/public/users?type=table",
-                    "target_parent_locator": "addp://engine/1/path/public?type=schema"
+                    "locator": "addp://engine/1/path/public/users?type=table&item_id=101",
+                    "target_parent_locator": "addp://engine/1/path/public?type=schema&node_id=11"
                 },
                 "confidence": 0.75,
                 "reason": "表名与用户描述匹配"
@@ -90,8 +92,8 @@ class DataSourceContext(BaseModel):
                 "location": {
                     "namespace": "public",
                     "table": "test",
-                    "locator": "addp://engine/1/path/public/test?type=table",
-                    "target_parent_locator": "addp://engine/1/path/public?type=schema"
+                    "locator": "addp://engine/1/path/public/test?type=table&item_id=102",
+                    "target_parent_locator": "addp://engine/1/path/public?type=schema&node_id=11"
                 },
                 "confidence": 0.95,
                 "alternatives": []
@@ -117,8 +119,7 @@ class Task(BaseModel):
                 "id": "task1",
                 "operator": "load",
                 "params": {
-                    "source_type": "table",
-                    "locator": "addp://engine/1/path/public/test?type=table"
+                    "locator": "addp://engine/1/path/public/test?type=table&item_id=102"
                 },
                 "depends_on": []
             },
@@ -126,7 +127,7 @@ class Task(BaseModel):
                 "id": "task2",
                 "operator": "buffer",
                 "params": {
-                    "input_gdf": "task1",
+                    "input_gdf": {"$ref": "task1"},
                     "distance": 100
                 },
                 "depends_on": ["task1"]
@@ -151,22 +152,21 @@ class Workflow(BaseModel):
                     {
                         "id": "task1",
                         "operator": "load",
-                        "params": {"source_type": "table", "locator": "addp://engine/1/path/public/test?type=table"},
+                        "params": {"locator": "addp://engine/1/path/public/test?type=table&item_id=102"},
                         "depends_on": []
                     },
                     {
                         "id": "task2",
                         "operator": "buffer",
-                        "params": {"input_gdf": "task1", "distance": 100},
+                        "params": {"input_gdf": {"$ref": "task1"}, "distance": 100},
                         "depends_on": ["task1"]
                     },
                     {
                         "id": "task3",
                         "operator": "save",
                         "params": {
-                            "data": {"$ref": "task2"},
-                            "target_type": "table",
-                            "target_parent_locator": "addp://engine/1/path/public?type=schema",
+                            "input_df": {"$ref": "task2"},
+                            "target_parent_locator": "addp://engine/1/path/public?type=schema&node_id=11",
                             "target_name": "test3"
                         },
                         "depends_on": ["task2"]
@@ -202,12 +202,12 @@ class ValidationResult(BaseModel):
                 "is_valid": False,
                 "errors": [
                     "任务 task2 依赖不存在的任务 task99",
-                    "任务 task3 缺少必需参数 target_type"
+                    "任务 task3 缺少必需参数 target_name"
                 ],
                 "warnings": [],
                 "suggestions": [
                     "检查 task2 的 depends_on 字段，确保引用的任务存在",
-                    "为 task3 添加 target_type 参数（如 'table' 或 'file'）"
+                    "为 task3 添加 target_name 参数"
                 ]
             }
         ]

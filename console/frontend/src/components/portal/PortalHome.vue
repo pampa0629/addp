@@ -314,6 +314,9 @@ onMounted(() => {
 
 <style scoped>
 .home-view {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: 32px 40px;
   box-sizing: border-box;
 }

@@ -350,3 +350,121 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 		t.Fatalf("stopped blocked task status=%q desired=%q", blockedTask.Status, blockedTask.DesiredState)
 	}
 }
+
+func TestIntegrationPostgresContinuousAutomaticRecoveryCreatesNewExecution(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	connInfo := testpg.ConnInfoFromEnv(t)
+	dsn, err := (&postgresql.PostgreSQLPlugin{}).BuildDSN(connInfo)
+	if err != nil {
+		t.Fatalf("BuildDSN failed: %v", err)
+	}
+	db, err := gorm.Open(postgresdriver.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open PostgreSQL failed: %v", err)
+	}
+	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS transfer").Error; err != nil {
+		t.Fatalf("create transfer schema: %v", err)
+	}
+	if err := commonExecution.EnsureStore(db); err != nil {
+		t.Fatalf("ensure execution store: %v", err)
+	}
+	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}); err != nil {
+		t.Fatalf("migrate continuous models: %v", err)
+	}
+
+	task := models.TransferTask{
+		TenantID: 999999, Name: fmt.Sprintf("continuous-recovery-%d", time.Now().UnixNano()), TaskType: commonExecution.TaskTypeSync,
+		Config: models.JSONMap{"runtime": map[string]interface{}{"boundary": "continuous"}}, BatchSize: 100,
+		Status: models.TaskStatusIdle, DesiredState: models.TaskDesiredStateStopped,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
+		_ = db.Where("module = ? AND source_task_id = ?", commonExecution.ModuleTransfer, fmt.Sprint(task.ID)).Delete(&commonExecution.TaskExecution{}).Error
+		_ = db.Unscoped().Delete(&models.TransferTask{}, task.ID).Error
+	})
+
+	taskRepo := NewTaskRepository(db)
+	leaseRepo := NewRuntimeLeaseRepository(db)
+	now := time.Now()
+	firstExecution := claimTestExecution(task, uuid.NewString())
+	firstExecution.ExecutionConfig = task.Config
+	if _, err := taskRepo.StartContinuousExecution(context.Background(), task.ID, task.TenantID, &firstExecution); err != nil {
+		t.Fatalf("start continuous execution: %v", err)
+	}
+	firstClaim, err := leaseRepo.ClaimNext(context.Background(), "worker-a", now, 30*time.Second)
+	if err != nil || firstClaim == nil {
+		t.Fatalf("first ClaimNext() claim=%#v error=%v", firstClaim, err)
+	}
+	if err := leaseRepo.Finish(context.Background(), *firstClaim, commonExecution.ExecutionStatusCancelled, "worker_shutdown", "", now.Add(time.Second)); err != nil {
+		t.Fatalf("finish worker shutdown execution: %v", err)
+	}
+
+	type claimResult struct {
+		claim *RuntimeLeaseClaim
+		err   error
+	}
+	recoveryStart := make(chan struct{})
+	recoveryResults := make(chan claimResult, 2)
+	for _, owner := range []string{"worker-b", "worker-c"} {
+		go func(owner string) {
+			<-recoveryStart
+			claim, claimErr := leaseRepo.ClaimNext(context.Background(), owner, now.Add(2*time.Second), 30*time.Second)
+			recoveryResults <- claimResult{claim: claim, err: claimErr}
+		}(owner)
+	}
+	close(recoveryStart)
+	var secondClaim *RuntimeLeaseClaim
+	emptyClaims := 0
+	for range 2 {
+		result := <-recoveryResults
+		if result.err != nil {
+			t.Fatalf("worker-shutdown recovery ClaimNext() error=%v", result.err)
+		}
+		if result.claim == nil {
+			emptyClaims++
+			continue
+		}
+		if secondClaim != nil {
+			t.Fatalf("worker-shutdown recovery created multiple claims: %s and %s", secondClaim.Execution.ExecutionID, result.claim.Execution.ExecutionID)
+		}
+		secondClaim = result.claim
+	}
+	if secondClaim == nil || emptyClaims != 1 {
+		t.Fatalf("worker-shutdown recovery claim=%#v empty_claims=%d, want one claim and one empty result", secondClaim, emptyClaims)
+	}
+	if secondClaim.Execution.ExecutionID == firstClaim.Execution.ExecutionID {
+		t.Fatalf("worker-shutdown recovery reused execution %s", secondClaim.Execution.ExecutionID)
+	}
+	if secondClaim.Execution.TriggerType != firstClaim.Execution.TriggerType || secondClaim.Execution.Metadata["recovery_reason"] != "worker_shutdown" {
+		t.Fatalf("worker-shutdown recovery execution = %#v", secondClaim.Execution)
+	}
+	if secondClaim.Lease.FencingToken != 2 {
+		t.Fatalf("worker-shutdown recovery fencing token = %d, want 2", secondClaim.Lease.FencingToken)
+	}
+
+	thirdClaim, err := leaseRepo.ClaimNext(context.Background(), "worker-d", now.Add(33*time.Second), 30*time.Second)
+	if err != nil || thirdClaim == nil {
+		t.Fatalf("lease-expiry recovery ClaimNext() claim=%#v error=%v", thirdClaim, err)
+	}
+	if thirdClaim.Execution.ExecutionID == secondClaim.Execution.ExecutionID {
+		t.Fatalf("lease-expiry recovery reused execution %s", thirdClaim.Execution.ExecutionID)
+	}
+	if thirdClaim.Execution.TriggerType != secondClaim.Execution.TriggerType || thirdClaim.Execution.Metadata["recovery_reason"] != "lease_expired" {
+		t.Fatalf("lease-expiry recovery execution = %#v", thirdClaim.Execution)
+	}
+	if thirdClaim.Lease.FencingToken != 3 {
+		t.Fatalf("lease-expiry recovery fencing token = %d, want 3", thirdClaim.Lease.FencingToken)
+	}
+	var expiredExecution commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", secondClaim.Execution.ExecutionID).First(&expiredExecution).Error; err != nil {
+		t.Fatalf("load expired execution: %v", err)
+	}
+	if expiredExecution.Status != commonExecution.ExecutionStatusFailed || expiredExecution.Metadata["stop_reason"] != "lease_expired" {
+		t.Fatalf("expired execution status=%q metadata=%#v", expiredExecution.Status, expiredExecution.Metadata)
+	}
+}

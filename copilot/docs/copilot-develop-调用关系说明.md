@@ -18,7 +18,7 @@ Copilot 是一个**纯后端 API 服务**（Python FastAPI，端口 8087），�
 | **Copilot 后端** | `workflow_agent_api.py` | 工作流生成 API 端点；接收请求，调用 WorkflowPipeline |
 | **Copilot 后端** | `workflow_pipeline.py` | 5 阶段流水线编排器；协调数据源理解、算子筛选、生成、验证全流程 |
 | **Copilot 后端** | `operator_selection_chain.py` | LLM Chain；从全量算子列表中筛选 3-8 个最相关算子 |
-| **Copilot 后端** | `workflow_generation_chain.py` | LLM Chain；根据选定算子的详情（含 workflow_example）生成完整 DAG JSON |
+| **Copilot 后端** | `workflow_generation_chain.py` | LLM Chain；根据选定算子的 Public Operator Spec 生成完整 DAG JSON |
 | **Copilot 后端** | `workflow_validation_chain.py` | 四层验证；结构、唯一性、依赖关系、参数合法性 |
 | **Copilot 后端** | `develop_tools.py` | LangChain Tools；封装对 Develop 后端算子 API 的调用（发现 + 详情） |
 | **工作流引擎** | `python-workflow` / `spark-workflow` / `math-workflow` | 暴露 `/api/operators` 端点；提供算子元数据（参数定义、输出定义、workflow_example） |
@@ -43,9 +43,11 @@ sequenceDiagram
     GW->>Copilot: 3. 反向代理转发
     Copilot->>Pipeline: 4. run(query, workflow_engine_id)
 
-    note over Pipeline: 阶段1：数据源理解（可选）
+    note over Pipeline: 阶段1：数据源理解
     Pipeline->>LLM: 5. 分析查询中的数据源关键词
-    LLM-->>Pipeline: 返回数据源上下文 DataSourceContext
+    Pipeline->>Pipeline: 通过 Manager 语义检索查找已有资源
+    Pipeline->>Pipeline: 通过 Meta ancestors 校验 locator 并取得父节点 locator
+    LLM-->>Pipeline: 返回仅包含已验证 locator 的 DataSourceContext
 
     note over Pipeline: 阶段2：算子筛选
     Pipeline->>DevBE: 6. GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators<br/>获取该工作流引擎实例的全量算子列表（简要信息）
@@ -55,7 +57,7 @@ sequenceDiagram
 
     note over Pipeline: 阶段3：工作流生成
     Pipeline->>DevBE: 8. 批量并发获取选定算子的详细信息<br/>GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators 后本地匹配
-    DevBE-->>Pipeline: 返回算子详情（parameters、output_ports、workflow_example）
+    DevBE-->>Pipeline: 返回算子详情（parameters、public_parameters、output_ports）
     Pipeline->>LLM: 9. 结合算子详情 + 数据源上下文<br/>生成工作流 DAG JSON
     LLM-->>Pipeline: 返回工作流 JSON
 
@@ -103,7 +105,7 @@ sequenceDiagram
     DevBE-->>Copilot: 算子列表（name, brief_description, category）
 
     Copilot->>Copilot: OperatorDetailTool 从同一工作流引擎实例的算子列表中匹配 operator_name
-    Copilot-->>Copilot: 算子详情（parameters, output_ports, workflow_example）
+    Copilot-->>Copilot: 算子详情（parameters, public_parameters, output_ports）
 ```
 
 ---
@@ -125,14 +127,17 @@ sequenceDiagram
     API->>Pipeline: run(query, workflow_engine_id)
 
     rect rgb(240,248,255)
-        note right of Pipeline: 阶段1 数据源理解（可选）
+        note right of Pipeline: 阶段1 数据源理解
         Pipeline->>DS: understand(query)
         DS->>LLM: 提取数据源关键信息
         LLM-->>DS: 数据源关键词
         DS->>DevTools: EngineTool → 获取所有存储引擎
         DevTools-->>DS: 引擎列表
-        DS->>LLM: 匹配最合适的引擎
-        LLM-->>DS: DataSourceContext（engine_id, location, confidence）
+        DS->>DevTools: Manager 混合检索已有资源
+        DevTools-->>DS: 搜索结果（必须含真实 locator）
+        DS->>DevTools: Meta ancestors 校验 locator 并定位父节点
+        DevTools-->>DS: 当前资源 locator + 真实父节点 locator
+        DS-->>DS: 仅在唯一候选且置信度达标时构造 DataSourceContext
         DS-->>Pipeline: DataSourceContext
     end
 
@@ -150,8 +155,8 @@ sequenceDiagram
         note right of Pipeline: 阶段3 工作流生成
         Pipeline->>Gen: generate(query, data_source, operators, workflow_engine_id)
         Gen->>DevTools: OperatorDetailTool（并发批量）<br/>获取每个选定算子的详情
-        DevTools-->>Gen: 算子详情（parameters, output_ports, workflow_example）
-        Gen->>LLM: 生成工作流 DAG<br/>（参考 workflow_example 确保参数格式正确）
+        DevTools-->>Gen: 算子详情（parameters, public_parameters, output_ports）
+        Gen->>LLM: 生成工作流 DAG<br/>（只使用 public_parameters 中的非 UI 参数）
         LLM-->>Gen: 工作流 JSON 字符串
         Gen->>Gen: 清理 markdown 标记、解析 JSON
         Gen-->>Pipeline: Workflow 对象
@@ -211,11 +216,19 @@ Develop前端（用户选择引擎）
 
 工作流任务参数中的数据资源身份统一使用 `locator` 或 `target_parent_locator + target_name`。`engine_id`、`connection_info`、`schema`、`table`、`path` 是 Develop 执行前派生给运行时的内部参数，不由 Copilot 写入任务 params。
 
+### 数据源事实约定
+
+- Manager 混合检索只负责语义匹配，搜索结果的 `locator` 必须是由 Meta 事实建立的已有资源身份。
+- Copilot 必须使用 Meta `resource-tree/{engine_id}/ancestors` 校验搜索结果 locator，并从 ancestors 响应中取得创建目标所需的真实父节点 locator。
+- Copilot 不得根据 `engine_id + schema/table/bucket/path` 自行拼接 locator，也不得从已删除的 Develop catalog 查询路径推导资源身份。
+- 未找到候选、候选不唯一、置信度不足或 Meta 无法校验 locator 时，Pipeline 必须返回 `need_clarification`，不得继续调用工作流生成 LLM。
+- 工作流生成后必须再校验资源事实：所有 `load.locator` 和 `save.target_parent_locator` 都必须来自本次已验证数据源上下文。LLM 新增任何未验证 locator 时统一返回 `need_clarification`，不进入自动修复。
+
 ---
 
 ## 算子元数据结构
 
-每个算子向 Develop 后端暴露标准化的元数据，其中 `workflow_example` 是 LLM 生成工作流时最重要的参考字段。
+每个算子向 Develop 后端暴露标准化的元数据。`parameters` 是工作流运行时真实执行参数，`public_parameters` 是前端、用户和 AI 共同使用的公开契约。Copilot 只能根据 `public_parameters` 生成和验证 workflow definition，不能消费 Runtime Operator Spec 中的 `parameters` 或 `detailed_description.workflow_example`。
 
 ```json
 {
@@ -228,6 +241,20 @@ Develop前端（用户选择引擎）
   "brief_description": "对几何对象生成指定距离的缓冲区",
   "detailed_description": "...",
   "parameters": [
+    {
+      "name": "input_gdf",
+      "type": "GeoDataFrame",
+      "required": true,
+      "description": "运行时输入"
+    },
+    {
+      "name": "distance",
+      "type": "float",
+      "required": true,
+      "description": "缓冲区距离"
+    }
+  ],
+  "public_parameters": [
     {
       "name": "distance",
       "type": "float",
@@ -250,15 +277,6 @@ Develop前端（用户选择引擎）
       "description": "缓冲区结果"
     }
   ],
-  "workflow_example": {
-    "id": "buffer_task",
-    "operator": "buffer",
-    "params": {
-      "distance": 100,
-      "unit": "meters"
-    },
-    "depends_on": ["load_task"]
-  },
   "use_cases": ["POI 服务范围分析", "洪水淹没区域计算"],
   "notes": ["输入几何必须已设置正确的坐标系"]
 }
@@ -271,6 +289,14 @@ Develop前端（用户选择引擎）
 | `name` / `display_name` | 展示算子名称 | 算子引用标识 | 算子存在性检查 |
 | `category` | 分类展示 | LLM 筛选参考 | - |
 | `brief_description` | 悬浮提示 | LLM 筛选参考 | - |
-| `parameters` | 参数配置面板渲染 | 参数名/类型参考 | 必需参数、参数名称验证 |
+| `parameters` | - | - | -（仅供 Develop Adapter 构造运行时请求） |
+| `public_parameters` | 参数配置面板渲染 | 非 UI 参数的名称、类型和约束 | 必需参数、参数名称验证 |
 | `output_ports` | - | 输出引用参考 | 参数引用格式验证 |
-| `workflow_example` | - | **最重要**：LLM 参考此格式生成 tasks | - |
+
+`public_parameters` 中 `param_type=ui` 的条目只描述前端控件，不能写入 workflow task `params`。资源参数通过同一数组中的 `locator`、`target_parent_locator` 和 `target_name` 声明。
+
+## 错误传播约定
+
+- LLM 调用失败、Develop API 失败或算子公开契约缺失时，Copilot 必须立即终止当前生成流程并向 API 层传播真实原因。
+- 不得将上游异常转换为空算子列表或空算子详情，否则会将真实故障误报为“无法获取算子详情”。
+- API 以非 2xx 状态返回生成失败，`detail` 保留可操作的上游错误信息，Develop 前端直接展示该字段。
