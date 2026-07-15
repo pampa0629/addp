@@ -10,7 +10,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
-import { cameraViewState, preserveDerivedResourceQuery } from '@/utils/s3mViewState'
+import { cameraViewState, preserveDerivedResourceQuery, s3mRootBoundingSphere } from '@/utils/s3mViewState'
 
 const props = defineProps({
   data: { type: Object, required: true },
@@ -119,10 +119,8 @@ async function loadS3M(url) {
     await layer.readyPromise
     if (currentLoad !== loadSerial) return
     if (!applyViewState(Cesium) && layer._rootTiles?.length) {
-      const bounds = Cesium.BoundingSphere.fromBoundingSpheres(
-        layer._rootTiles.map(tile => tile.boundingVolume.boundingVolume)
-      )
-      await viewer.camera.flyToBoundingSphere(bounds, { duration: 0 })
+      const bounds = s3mRootBoundingSphere(Cesium, layer._rootTiles)
+      if (bounds) await viewer.camera.flyToBoundingSphere(bounds, { duration: 0 })
     }
     viewer.camera.moveEnd.addEventListener(emitViewState)
     loading.value = false

@@ -447,7 +447,17 @@
 			"cdcSyncTitle": "Continuously Synchronize Database Changes",
 			"cdcSyncDesc": "The first run loads the current source table, then continuously synchronizes inserts, updates, and physical deletes. Interrupted runs resume from the last committed position.",
 			"postgresqlCDCLoad": "Continuously Sync Inserts, Updates, and Deletes",
-			"postgresqlCDCUnsupported": "This mode requires PostgreSQL native tables for both source and target, and the target table must not already exist.",
+			"postgresqlCDCUnavailableReasons": {
+				"sourcePostgreSQLRequired": "The source must use a PostgreSQL engine.",
+				"sourceTableRequired": "The source must be a PostgreSQL table.",
+				"sourceNativeRequired": "The source must use a native database table.",
+				"targetPostgreSQLRequired": "The target must use a PostgreSQL engine.",
+				"targetNativeRequired": "The target must create a native database table.",
+				"sourceFieldsRequired": "Source fields have not been loaded. Return to the source step and reselect or refresh the table.",
+				"sourcePrimaryKeyRequired": "The source table must have a stable, non-null primary key.",
+				"sourceFieldTypesUnsupported": "These source fields use types not yet supported by continuous synchronization: {fields}.",
+				"unknown": "The current source or target configuration does not meet continuous synchronization requirements."
+			},
 			"cdcLifecycleWarningTitle": "Pause and Stop Resource Impact",
 			"cdcLifecycleWarning": "Pause stops target writes while source capture continues and consumes internal message storage. Stop permanently deletes capture resources and cannot be resumed; create a new task and target table to synchronize again.",
       "continuousKeyFieldsLabel": "Record Identity Fields",

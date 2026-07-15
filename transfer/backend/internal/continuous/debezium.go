@@ -2,6 +2,7 @@ package continuous
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,8 +11,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
+	commonSpatial "github.com/addp/common/spatial"
 	"github.com/addp/transfer/internal/planner"
+	"github.com/twpayne/go-geom"
 )
 
 const (
@@ -30,10 +34,15 @@ type SchemaChangeError struct {
 	MissingFields      []string
 	UnexpectedFields   []string
 	IncompatibleFields []string
+	Details            map[string]string
 }
 
 func (e *SchemaChangeError) Error() string {
-	return fmt.Sprintf("schema change blocked for %s: missing=%v unexpected=%v incompatible=%v", e.Scope, e.MissingFields, e.UnexpectedFields, e.IncompatibleFields)
+	message := fmt.Sprintf("schema change blocked for %s: missing=%v unexpected=%v incompatible=%v", e.Scope, e.MissingFields, e.UnexpectedFields, e.IncompatibleFields)
+	if len(e.Details) > 0 {
+		message += fmt.Sprintf(" details=%v", e.Details)
+	}
+	return message
 }
 
 func decodePostgreSQLDebeziumRecord(record engineplugin.ChangeRecord, plan *planner.ContinuousPlan) (*ChangeEvent, error) {
@@ -193,13 +202,118 @@ func mapCDCSourceRow(source map[string]interface{}, plan *planner.ContinuousPlan
 			row[mapping.Target] = nil
 			continue
 		}
-		converted, err := coerceContinuousValue(value, mapping.Type)
+		var converted interface{}
+		var err error
+		if mapping.Type == datatype.FieldTypeGeometry {
+			converted, err = coercePostgreSQLCDCGeometry(value, mapping.Source, plan.CDC.SpatialInfo)
+		} else {
+			converted, err = coerceContinuousValue(value, mapping.Type)
+		}
 		if err != nil {
-			return nil, incompatibleSchemaField("Debezium after", mapping.Source)
+			schemaErr := incompatibleSchemaField("Debezium after", mapping.Source)
+			schemaErr.Details = map[string]string{mapping.Source: err.Error()}
+			return nil, schemaErr
 		}
 		row[mapping.Target] = converted
 	}
 	return row, nil
+}
+
+func coercePostgreSQLCDCGeometry(value interface{}, fieldName string, spatialInfo *datatype.SpatialInfo) ([]byte, error) {
+	geometryValue, ok := value.(map[string]interface{})
+	if !ok || len(geometryValue) != 2 {
+		return nil, fmt.Errorf("PostgreSQL CDC geometry %q must contain exactly wkb and srid", fieldName)
+	}
+	wkbValue, hasWKB := geometryValue["wkb"]
+	sridValue, hasSRID := geometryValue["srid"]
+	if !hasWKB || !hasSRID {
+		return nil, fmt.Errorf("PostgreSQL CDC geometry %q must contain wkb and srid", fieldName)
+	}
+	wkbBase64, ok := wkbValue.(string)
+	if !ok || strings.TrimSpace(wkbBase64) == "" {
+		return nil, fmt.Errorf("PostgreSQL CDC geometry %q wkb must be base64 text", fieldName)
+	}
+	sridNumber, ok := sridValue.(json.Number)
+	if !ok {
+		return nil, fmt.Errorf("PostgreSQL CDC geometry %q srid must be an integer", fieldName)
+	}
+	srid64, err := sridNumber.Int64()
+	if err != nil || srid64 <= 0 || int64(int(srid64)) != srid64 {
+		return nil, fmt.Errorf("PostgreSQL CDC geometry %q srid is invalid", fieldName)
+	}
+	column := spatialGeometryColumn(spatialInfo, fieldName)
+	if column == nil || column.SRID == nil || column.Dimension == nil || *column.SRID <= 0 {
+		return nil, fmt.Errorf("PostgreSQL CDC geometry %q has no frozen spatial facts", fieldName)
+	}
+	if int(srid64) != *column.SRID {
+		return nil, fmt.Errorf("PostgreSQL CDC geometry %q srid changed from %d to %d", fieldName, *column.SRID, srid64)
+	}
+	wkbValueBytes, err := base64.StdEncoding.Strict().DecodeString(wkbBase64)
+	if err != nil || len(wkbValueBytes) == 0 {
+		return nil, fmt.Errorf("PostgreSQL CDC geometry %q wkb is not valid base64", fieldName)
+	}
+	geometry, err := commonSpatial.ParseGeometryBytes(wkbValueBytes)
+	if err != nil {
+		return nil, fmt.Errorf("decode PostgreSQL CDC geometry %q: %w", fieldName, err)
+	}
+	if geometry.SRID() > 0 && geometry.SRID() != *column.SRID {
+		return nil, fmt.Errorf("PostgreSQL CDC geometry %q embedded SRID changed from %d to %d", fieldName, *column.SRID, geometry.SRID())
+	}
+	if datatype.ParseGeometryType(column.GeometryType) != geometryTopology(geometry) {
+		return nil, fmt.Errorf("PostgreSQL CDC geometry %q topology changed", fieldName)
+	}
+	if !geometryLayoutMatchesDimension(geometry.Layout(), *column.Dimension) {
+		return nil, fmt.Errorf("PostgreSQL CDC geometry %q dimension changed", fieldName)
+	}
+	ewkb, err := commonSpatial.GeomToEWKB(geometry, *column.SRID)
+	if err != nil {
+		return nil, fmt.Errorf("encode PostgreSQL CDC geometry %q as EWKB: %w", fieldName, err)
+	}
+	return ewkb, nil
+}
+
+func spatialGeometryColumn(info *datatype.SpatialInfo, fieldName string) *datatype.GeometryColumnInfo {
+	if info == nil {
+		return nil
+	}
+	for i := range info.GeometryColumns {
+		if info.GeometryColumns[i].Name == fieldName {
+			return &info.GeometryColumns[i]
+		}
+	}
+	return nil
+}
+
+func geometryTopology(geometry geom.T) datatype.GeometryType {
+	switch geometry.(type) {
+	case *geom.Point:
+		return datatype.GeometryTypePoint
+	case *geom.MultiPoint:
+		return datatype.GeometryTypeMultiPoint
+	case *geom.LineString:
+		return datatype.GeometryTypeLineString
+	case *geom.MultiLineString:
+		return datatype.GeometryTypeMultiLineString
+	case *geom.Polygon:
+		return datatype.GeometryTypePolygon
+	case *geom.MultiPolygon:
+		return datatype.GeometryTypeMultiPolygon
+	case *geom.GeometryCollection:
+		return datatype.GeometryTypeGeometryCollection
+	default:
+		return datatype.GeometryTypeUnknown
+	}
+}
+
+func geometryLayoutMatchesDimension(layout geom.Layout, dimension int) bool {
+	switch dimension {
+	case 2:
+		return layout == geom.XY
+	case 3:
+		return layout == geom.XYZ
+	default:
+		return false
+	}
 }
 
 func decodeJSONObject(raw []byte, label string) (map[string]interface{}, error) {

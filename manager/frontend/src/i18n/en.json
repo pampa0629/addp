@@ -1,5 +1,8 @@
 {
   "manager": {
+    "quickViewDisplay": {
+      "unknownEngine": "Unknown engine"
+    },
     "layout": {
       "title": "Data Management",
       "logout": "Logout",
@@ -201,7 +204,6 @@
       "name": "Task Name",
       "description": "Description",
       "engine": "Engine",
-      "engineWithId": "Engine {id}",
       "schema": "Schema",
       "table": "Item",
       "resource": "Resource",
@@ -347,7 +349,6 @@
       "name": "Task Name",
       "description": "Description",
       "engine": "Engine",
-      "engineWithId": "Engine {id}",
       "resource": "Resource",
       "sourceData": "Source Data",
       "sourceDataPath": "Source Data Path",
@@ -438,7 +439,6 @@
       "id": "ID",
       "name": "Task Name",
       "engine": "Engine",
-      "engineWithId": "Engine {id}",
       "resource": "Resource",
       "sourceDataPath": "Source Data Path",
       "profile": "Profile",
@@ -511,8 +511,6 @@
       "searchPlaceholder": "Search resources in current engine",
       "searchAllEnginesPlaceholder": "Search resources in all engines",
       "searchEmptyText": "No resources found",
-      "sourceLocator": "Source Locator",
-      "sourceEngineID": "Source Engine ID",
       "itemFingerprint": "Item Fingerprint",
       "itemID": "Item ID",
       "sourceSize": "Source Size",
@@ -1346,8 +1344,6 @@
       "searchPlaceholder": "Search resources in current engine",
       "searchAllEnginesPlaceholder": "Search resources in all engines",
       "searchEmptyText": "No resources found",
-      "sourceLocator": "Source Locator",
-      "sourceEngineID": "Source Engine ID",
       "itemFingerprint": "Item Fingerprint",
       "itemID": "Item ID",
       "sourceSize": "Source Size",
@@ -1436,8 +1432,6 @@
       "searchPlaceholder": "Search resources in current engine",
       "searchAllEnginesPlaceholder": "Search resources in all engines",
       "searchEmptyText": "No resources found",
-      "sourceLocator": "Source Locator",
-      "sourceEngineID": "Source Engine ID",
       "itemFingerprint": "Item Fingerprint",
       "sourceSize": "Source Size",
       "sourceFormat": "Source Format",

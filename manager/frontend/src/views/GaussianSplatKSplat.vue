@@ -19,12 +19,14 @@
           </div>
 
           <el-table :data="tasks" v-loading="tasksLoading" stripe>
-            <el-table-column prop="name" :label="t('manager.gaussianSplatKSplat.name')" min-width="180" show-overflow-tooltip />
-            <el-table-column :label="t('manager.gaussianSplatKSplat.engine')" width="120">
-              <template #default="{ row }">{{ source(row).source_engine_id || '-' }}</template>
+            <el-table-column :label="t('manager.gaussianSplatKSplat.name')" min-width="180" show-overflow-tooltip>
+              <template #default="{ row }">{{ displayText(row.name) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('manager.gaussianSplatKSplat.engine')" min-width="140" show-overflow-tooltip>
+              <template #default="{ row }">{{ engineName(source(row).source_engine_id) }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.gaussianSplatKSplat.source')" min-width="300" show-overflow-tooltip>
-              <template #default="{ row }">{{ source(row).item_locator || '-' }}</template>
+              <template #default="{ row }">{{ resourcePath(source(row).item_locator) }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.gaussianSplatKSplat.sourceFormat')" width="110">
               <template #default="{ row }">{{ formatLabel(source(row).format) }}</template>
@@ -99,11 +101,11 @@
           </div>
 
           <el-table :data="results" v-loading="resultsLoading" stripe>
-            <el-table-column :label="t('manager.gaussianSplatKSplat.engine')" width="120">
-              <template #default="{ row }">{{ row.source_engine_id || '-' }}</template>
+            <el-table-column :label="t('manager.gaussianSplatKSplat.engine')" min-width="140" show-overflow-tooltip>
+              <template #default="{ row }">{{ engineName(row.source_engine_id) }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.gaussianSplatKSplat.source')" min-width="300" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.locator || '-' }}</template>
+              <template #default="{ row }">{{ resourcePath(row.locator) }}</template>
             </el-table-column>
             <el-table-column prop="file_name" :label="t('manager.gaussianSplatKSplat.fileName')" min-width="150" show-overflow-tooltip />
             <el-table-column :label="t('manager.gaussianSplatKSplat.resultStatus')" width="120">
@@ -195,11 +197,11 @@
         />
 
         <el-descriptions class="source-facts" :column="2" border size="small">
-          <el-descriptions-item :label="t('manager.gaussianSplatKSplat.sourceLocator')">
+          <el-descriptions-item :label="t('manager.gaussianSplatKSplat.source')">
             {{ sourceFactText(form.source.item_locator) }}
           </el-descriptions-item>
-          <el-descriptions-item :label="t('manager.gaussianSplatKSplat.sourceEngineID')">
-            {{ form.source.source_engine_id || '-' }}
+          <el-descriptions-item :label="t('manager.gaussianSplatKSplat.engine')">
+            {{ engineName(form.source.source_engine_id) }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('manager.gaussianSplatKSplat.itemFingerprint')">
             {{ form.source.item_fingerprint || '-' }}
@@ -312,11 +314,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { InfoFilled, Refresh } from '@element-plus/icons-vue'
 import { ResourceTreePicker, openMonitorExecution, parseLocatorSafe } from '@addp/common-frontend'
 import { quickViewAPI } from '../api/quickView'
+import { useQuickViewResourceDisplay } from '../composables/useQuickViewResourceDisplay'
 import { formatBytes, formatDateTime } from '../utils/formatters'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const { displayText, engineName, loadQuickViewEngines, resourcePath } = useQuickViewResourceDisplay(t)
 
 const activeTab = ref(route.query.tab === 'results' ? 'results' : 'tasks')
 const tasks = ref([])
@@ -348,7 +352,7 @@ const form = reactive(defaultForm())
 
 const resultTaskFilterLabel = computed(() => {
   if (!selectedResultTask.value) return ''
-  return selectedResultTask.value.name || t('manager.gaussianSplatKSplat.taskWithId', { id: selectedResultTask.value.id })
+  return selectedResultTask.value.name ? displayText(selectedResultTask.value.name) : t('manager.gaussianSplatKSplat.taskWithId', { id: selectedResultTask.value.id })
 })
 
 function defaultForm() {
@@ -809,7 +813,7 @@ onMounted(async () => {
   if (activeTab.value === 'results') {
     await loadResultTaskFilterFromRoute()
   }
-  await Promise.all([loadTasks(), loadResults()])
+  await Promise.all([loadQuickViewEngines(), loadTasks(), loadResults()])
   if (route.query.create === '1') {
     await openCreateDialog()
     return

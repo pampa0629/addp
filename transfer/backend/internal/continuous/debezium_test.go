@@ -1,6 +1,7 @@
 package continuous
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -9,7 +10,9 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	commonSpatial "github.com/addp/common/spatial"
 	"github.com/addp/transfer/internal/planner"
+	"github.com/twpayne/go-geom"
 )
 
 func TestDecodePostgreSQLDebeziumRecordNormalizesSnapshotUpsertAndDelete(t *testing.T) {
@@ -171,6 +174,86 @@ func TestDecodePostgreSQLDebeziumRecordReportsIncompatibleField(t *testing.T) {
 	}
 }
 
+func TestDecodePostgreSQLDebeziumGeometryAsEWKB(t *testing.T) {
+	plan := postgresqlCDCGeometryAdapterPlan("MultiPolygon", 4549, 2)
+	geometry := geom.NewMultiPolygonFlat(geom.XY, []float64{
+		0, 0, 10, 0, 10, 10, 0, 0,
+	}, [][]int{{8}})
+	wkb, err := commonSpatial.GeomToEWKB(geometry, 4549)
+	if err != nil {
+		t.Fatal(err)
+	}
+	geometryValue, err := json.Marshal(map[string]interface{}{
+		"wkb": base64.StdEncoding.EncodeToString(wkb), "srid": 4549,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := `{"id":1,"shape":` + string(geometryValue) + `}`
+	event, err := decodePostgreSQLDebeziumRecord(plugin.ChangeRecord{
+		Key:   []byte(`{"id":1}`),
+		Value: []byte(debeziumEnvelope("c", `null`, after, "business", "public", "orders")),
+	}, plan)
+	if err != nil {
+		t.Fatalf("decodePostgreSQLDebeziumRecord() error = %v", err)
+	}
+	ewkb, ok := event.Row["geometry"].([]byte)
+	if !ok || len(ewkb) == 0 {
+		t.Fatalf("geometry row value = %T, want non-empty []byte EWKB", event.Row["geometry"])
+	}
+	decoded, err := commonSpatial.DecodeGeometryValue(ewkb, "ewkb", 0)
+	if err != nil {
+		t.Fatalf("decode EWKB: %v", err)
+	}
+	if decoded.SRID() != 4549 {
+		t.Fatalf("EWKB SRID = %d, want 4549", decoded.SRID())
+	}
+	if _, ok := decoded.(*geom.MultiPolygon); !ok {
+		t.Fatalf("EWKB geometry = %T, want *geom.MultiPolygon", decoded)
+	}
+}
+
+func TestDecodePostgreSQLDebeziumGeometryRejectsSchemaDrift(t *testing.T) {
+	pointXY := geom.NewPointFlat(geom.XY, []float64{1, 2})
+	pointXYZ := geom.NewPointFlat(geom.XYZ, []float64{1, 2, 3})
+	multiPolygon := geom.NewMultiPolygonFlat(geom.XY, []float64{0, 0, 1, 0, 1, 1, 0, 0}, [][]int{{8}})
+	encode := func(geometry geom.T) string {
+		wkb, err := commonSpatial.GeomToWKB(geometry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return base64.StdEncoding.EncodeToString(wkb)
+	}
+	tests := []struct {
+		name  string
+		value map[string]interface{}
+	}{
+		{name: "unexpected member", value: map[string]interface{}{"wkb": encode(multiPolygon), "srid": 4549, "encoding": "wkb"}},
+		{name: "wrong srid", value: map[string]interface{}{"wkb": encode(multiPolygon), "srid": 4326}},
+		{name: "wrong topology", value: map[string]interface{}{"wkb": encode(pointXY), "srid": 4549}},
+		{name: "wrong dimension", value: map[string]interface{}{"wkb": encode(pointXYZ), "srid": 4549}},
+		{name: "invalid base64", value: map[string]interface{}{"wkb": "not-base64", "srid": 4549}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			plan := postgresqlCDCGeometryAdapterPlan("MultiPolygon", 4549, 2)
+			geometryValue, err := json.Marshal(test.value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			after := `{"id":1,"shape":` + string(geometryValue) + `}`
+			_, err = decodePostgreSQLDebeziumRecord(plugin.ChangeRecord{
+				Key:   []byte(`{"id":1}`),
+				Value: []byte(debeziumEnvelope("c", `null`, after, "business", "public", "orders")),
+			}, plan)
+			var schemaErr *SchemaChangeError
+			if !errors.As(err, &schemaErr) || !containsTestString(schemaErr.IncompatibleFields, "shape") {
+				t.Fatalf("error = %v, want incompatible geometry field", err)
+			}
+		})
+	}
+}
+
 func pluginJSONNumber(value string) interface{} {
 	var decoded interface{}
 	decoder := json.NewDecoder(strings.NewReader(value))
@@ -210,6 +293,16 @@ func postgresqlCDCAdapterPlan() *planner.ContinuousPlan {
 			Database: "business", Schema: "public", Table: "orders",
 		},
 	}
+}
+
+func postgresqlCDCGeometryAdapterPlan(geometryType string, srid, dimension int) *planner.ContinuousPlan {
+	plan := postgresqlCDCAdapterPlan()
+	plan.Mappings = []planner.ContinuousFieldPlan{
+		{Source: "id", Target: "id", Type: datatype.FieldTypeBigInt, Nullable: false},
+		{Source: "shape", Target: "geometry", Type: datatype.FieldTypeGeometry, Nullable: true},
+	}
+	plan.CDC.SpatialInfo = datatype.NewSingleGeometrySpatialInfo("shape", geometryType, srid, dimension)
+	return plan
 }
 
 func debeziumEnvelope(op, before, after, database, schema, table string) string {

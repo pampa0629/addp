@@ -11,7 +11,9 @@
           </div>
 
           <el-table :data="tasks" v-loading="tasksLoading" stripe>
-            <el-table-column prop="name" :label="t('manager.tileCache.name')" min-width="180" show-overflow-tooltip />
+            <el-table-column :label="t('manager.tileCache.name')" min-width="180" show-overflow-tooltip>
+              <template #default="{ row }">{{ displayText(row.name) }}</template>
+            </el-table-column>
             <el-table-column :label="t('manager.tileCache.engine')" min-width="140" show-overflow-tooltip>
               <template #default="{ row }">{{ engineName(row.target?.source_engine_id) }}</template>
             </el-table-column>
@@ -318,7 +320,7 @@
     <el-dialog v-model="detailDialogVisible" :title="t('manager.tileCache.dialogTitle')" width="920px">
       <el-descriptions v-if="selectedTask" :column="2" border>
         <el-descriptions-item :label="t('manager.tileCache.id')">{{ selectedTask.id }}</el-descriptions-item>
-        <el-descriptions-item :label="t('manager.tileCache.name')">{{ selectedTask.name }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.tileCache.name')">{{ displayText(selectedTask.name) }}</el-descriptions-item>
         <el-descriptions-item :label="t('manager.tileCache.description')" :span="2">
           {{ selectedTask.description || '-' }}
         </el-descriptions-item>
@@ -448,6 +450,7 @@ import {
 } from '../utils/tileCacheTaskForm'
 import { buildVectorMaterializedViewCreateQuery } from '../utils/quickViewNavigationQuery'
 import { tileCacheOptimizationAdvice as buildTileCacheOptimizationAdvice } from '../utils/tileCacheOptimizationAdvice'
+import { quickViewDisplayText } from '../utils/quickViewResourceDisplay'
 import {
   createResourceRootNode,
   geometryColumnsFromNode,
@@ -530,7 +533,7 @@ const selectedResourceSummary = computed(() => {
 })
 const resultTaskFilterLabel = computed(() => {
   if (!selectedResultTask.value) return ''
-  return `${t('manager.tileCache.currentTask')}: ${selectedResultTask.value.name || taskResource(selectedResultTask.value)}`
+  return `${t('manager.tileCache.currentTask')}: ${selectedResultTask.value.name ? displayText(selectedResultTask.value.name) : taskResource(selectedResultTask.value)}`
 })
 const selectedExecutionMetadata = computed(() => {
   const metadata = selectedTaskExecution.value?.metadata || selectedTaskExecution.value?.Metadata || null
@@ -1303,7 +1306,7 @@ const engineName = (engineId) => {
   const id = Number(engineId || 0)
   if (!id) return '-'
   const engine = engineOptions.value.find((item) => Number(item.id) === id)
-  return engine?.name || t('manager.tileCache.engineWithId', { id })
+  return engine?.name || t('manager.quickViewDisplay.unknownEngine')
 }
 
 const resultLocatorInfo = (result) => {
@@ -1322,6 +1325,8 @@ const resultSourceDataPath = (result) => {
 const resourceTextFromLocator = (locator) => {
   return resourceTextFromLocatorValue(locator, safeParseLocator)
 }
+
+const displayText = (value) => quickViewDisplayText(value, parseLocatorSafe) || '-'
 
 const storageLocation = (storageRef) => {
   if (!storageRef) return '-'

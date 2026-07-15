@@ -15,12 +15,14 @@
           </div>
 
           <el-table :data="tasks" v-loading="tasksLoading" stripe>
-            <el-table-column prop="name" :label="t('manager.model3DTiles.name')" min-width="190" show-overflow-tooltip />
-            <el-table-column :label="t('manager.model3DTiles.sourceEngine')" width="110">
-              <template #default="{ row }">{{ taskSource(row).source_engine_id || '-' }}</template>
+            <el-table-column :label="t('manager.model3DTiles.name')" min-width="190" show-overflow-tooltip>
+              <template #default="{ row }">{{ displayText(row.name) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('manager.model3DTiles.sourceEngine')" min-width="140" show-overflow-tooltip>
+              <template #default="{ row }">{{ engineName(taskSource(row).source_engine_id) }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.model3DTiles.source')" min-width="300" show-overflow-tooltip>
-              <template #default="{ row }">{{ sourcePath(taskSource(row).item_locator) }}</template>
+              <template #default="{ row }">{{ resourcePath(taskSource(row).item_locator) }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.model3DTiles.targetFormat')" width="120">
               <template #default="{ row }"><el-tag>{{ formatLabel(taskTargetFormat(row)) }}</el-tag></template>
@@ -77,7 +79,7 @@
         <el-tab-pane :label="t('manager.model3DTiles.resultsTab')" name="results">
           <div class="filter-bar">
             <el-tag v-if="selectedTask" type="primary" closable @close="clearTaskFilter">
-              {{ selectedTask.name || t('manager.model3DTiles.taskWithId', { id: selectedTask.id }) }}
+              {{ selectedTask.name ? displayText(selectedTask.name) : t('manager.model3DTiles.taskWithId', { id: selectedTask.id }) }}
             </el-tag>
             <el-select v-model="resultFilters.target_format" clearable class="format-filter" :placeholder="t('manager.model3DTiles.targetFormat')">
               <el-option label="3D Tiles" value="3d_tiles" />
@@ -93,11 +95,11 @@
           </div>
 
           <el-table :data="results" v-loading="resultsLoading" stripe>
-            <el-table-column :label="t('manager.model3DTiles.sourceEngine')" width="110">
-              <template #default="{ row }">{{ row.source_engine_id || '-' }}</template>
+            <el-table-column :label="t('manager.model3DTiles.sourceEngine')" min-width="140" show-overflow-tooltip>
+              <template #default="{ row }">{{ engineName(row.source_engine_id) }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.model3DTiles.source')" min-width="300" show-overflow-tooltip>
-              <template #default="{ row }">{{ sourcePath(row.locator) }}</template>
+              <template #default="{ row }">{{ resourcePath(row.locator) }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.model3DTiles.targetFormat')" width="120">
               <template #default="{ row }"><el-tag>{{ formatLabel(row.target_format) }}</el-tag></template>
@@ -145,13 +147,15 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { InfoFilled, Refresh } from '@element-plus/icons-vue'
-import { openMonitorExecution, parseLocatorSafe } from '@addp/common-frontend'
+import { openMonitorExecution } from '@addp/common-frontend'
 import { quickViewAPI } from '../api/quickView'
+import { useQuickViewResourceDisplay } from '../composables/useQuickViewResourceDisplay'
 import { formatBytes, formatDateTime } from '../utils/formatters'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const { displayText, engineName, loadQuickViewEngines, resourcePath } = useQuickViewResourceDisplay(t)
 const activeTab = ref(route.query.tab === 'results' ? 'results' : 'tasks')
 const tasks = ref([])
 const tasksLoading = ref(false)
@@ -177,10 +181,6 @@ const unwrapList = (response) => {
 const taskSource = (task) => task?.source || task?.config?.source || {}
 const taskTargetFormat = (task) => String(task?.target_format || task?.config?.target_format || '').trim()
 const formatLabel = (value) => String(value || '').trim().toLowerCase() === 's3m' ? 'S3M' : '3D Tiles'
-const sourcePath = (locator) => {
-  const parsed = parseLocatorSafe(locator)
-  return parsed?.path?.length ? parsed.path.join(' / ') : String(locator || '-').trim() || '-'
-}
 const errorMessage = (error, fallback) => error?.response?.data?.error || error?.message || fallback
 const executionStatusTagType = (status) => {
   const value = String(status || '').toLowerCase()
@@ -298,7 +298,7 @@ onMounted(async () => {
     resultFilters.task_id = taskID
     try { selectedTask.value = unwrapPayload(await quickViewAPI.getModel3DTilesTask(taskID)) } catch { selectedTask.value = null }
   }
-  await Promise.all([loadTasks(), loadResults()])
+  await Promise.all([loadQuickViewEngines(), loadTasks(), loadResults()])
 })
 </script>
 

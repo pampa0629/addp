@@ -191,13 +191,29 @@ def test_osgb_scene_to_s3m_stages_tiles_and_validates_the_published_dataset():
 
     assert "stageOSGBSceneData(" in block
     assert "validateS3MOutput(" in block
-    assert "TextureCompressType.TEXTURECOMPRESS_WEBP" in block
-    assert "TextureCompressType.TEXTURECOMPRESS_DXT" not in block
-    assert 'result.put("texture_compression", "webp")' in block
-    assert 'result.put("texture_compression", "dxt")' not in block
+    assert "new ObliquePhotogrammetryBuilder" in block
+    assert "TextureCompressType.TEXTURECOMPRESS_DXT" in block
+    assert "VertexOptimizationType.VO_DRACO" in block
+    assert "S3MVersion.VERSION_301" in block
+    assert "CacheFileType.S3MB" in block
+    assert "ObliqueProcessType.MODIFY_CENTER" not in block
+    assert "normalizeS3MManifestGeoreference(" in block
+    assert "CoordSysTranslator.convert(" in SOURCE
+    assert "builder.setTargetPrjCoordSys" not in block
+    assert 'position.put("unit", "Degree")' in SOURCE
+    assert 'config.put("crs", "epsg:4326")' in SOURCE
+    assert "CacheBuilderOSGBTool.osgb2s3m" not in block
+    assert 'result.put("texture_compression", "dxt")' in block
+    assert 'result.put("geometry_compression", "draco")' in block
+    assert 'result.put("s3m_version", "3.01")' in block
+    assert 'result.put("manifest_encoding", "json")' in block
+    assert 'result.put("tile_extension", ".s3mb")' in block
+    assert 'result.put("crs", "EPSG:4326")' in block
+    assert 'result.put("root_tile_count", generatedRootTileCount)' in block
+    assert 'result.put("source_root_candidate_count", rootTiles.size())' in block
     assert block.index("validateS3MOutput(") < block.index("publishDirectory(targetRoot, targetAccess)")
     stage_start = SOURCE.index("private static void stageOSGBSceneData")
-    stage_end = SOURCE.index("private static void validateS3MOutput", stage_start)
+    stage_end = SOURCE.index("private static int validateS3MOutput", stage_start)
     stage_block = SOURCE[stage_start:stage_end]
     assert "Files.copy(source, staged" in stage_block
     assert "Files.createSymbolicLink" not in stage_block

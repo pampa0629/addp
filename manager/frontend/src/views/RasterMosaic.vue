@@ -19,7 +19,9 @@
           </div>
 
           <el-table :data="tasks" v-loading="tasksLoading" stripe>
-            <el-table-column prop="name" :label="t('manager.rasterMosaic.name')" min-width="190" show-overflow-tooltip />
+            <el-table-column :label="t('manager.rasterMosaic.name')" min-width="190" show-overflow-tooltip>
+              <template #default="{ row }">{{ displayText(row.name) }}</template>
+            </el-table-column>
             <el-table-column :label="t('manager.rasterMosaic.mode')" width="120">
               <template #default="{ row }">{{ placementModeLabel(taskPlacementMode(row)) }}</template>
             </el-table-column>
@@ -200,18 +202,16 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { InfoFilled, Refresh } from '@element-plus/icons-vue'
-import { ResourceTreePicker, openMonitorExecution, parseLocatorSafe } from '@addp/common-frontend'
+import { ResourceTreePicker, openMonitorExecution } from '@addp/common-frontend'
 import { quickViewAPI } from '../api/quickView'
+import { useQuickViewResourceDisplay } from '../composables/useQuickViewResourceDisplay'
 import { formatDateTime } from '../utils/formatters'
-import {
-  rasterCOGExecutionStatusTagType,
-  rasterCOGLastExecutionStatus,
-  rasterCOGResourcePathFromLocator
-} from '../utils/rasterCOGDisplay'
+import { rasterCOGExecutionStatusTagType, rasterCOGLastExecutionStatus } from '../utils/rasterCOGDisplay'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const { displayText, loadQuickViewEngines, resourceLabel } = useQuickViewResourceDisplay(t)
 
 const activeTab = ref(route.query.tab === 'tasks' ? 'tasks' : 'tasks')
 const tasks = ref([])
@@ -287,13 +287,14 @@ const resetForm = () => {
   editingTask.value = null
 }
 
-const locatorText = (locator) => rasterCOGResourcePathFromLocator(locator, parseLocatorSafe) || '-'
 const taskPlacementMode = (task) => task?.placement?.mode || task?.config?.placement?.mode || ''
 const taskSourceLocator = (task) => task?.source?.node_locator || task?.config?.source?.node_locator || ''
 const taskTargetLocator = (task) => task?.target?.storage_locator || task?.config?.target?.storage_locator || ''
+const taskSourceEngineID = (task) => task?.source?.source_engine_id || task?.config?.source?.source_engine_id || 0
+const taskTargetEngineID = (task) => task?.target?.target_engine_id || task?.config?.target?.target_engine_id || 0
 const taskDatasetName = (task) => task?.target?.dataset_name || task?.config?.target?.dataset_name || '-'
-const taskSourceText = (task) => locatorText(taskSourceLocator(task))
-const taskTargetText = (task) => locatorText(taskTargetLocator(task))
+const taskSourceText = (task) => resourceLabel(taskSourceEngineID(task), taskSourceLocator(task))
+const taskTargetText = (task) => resourceLabel(taskTargetEngineID(task), taskTargetLocator(task))
 const lastExecutionStatus = (task) => rasterCOGLastExecutionStatus(task)
 const executionStatusTagType = (status) => rasterCOGExecutionStatusTagType(status)
 
@@ -517,7 +518,7 @@ const handleTasksSizeChange = () => {
   loadTasks()
 }
 
-onMounted(loadTasks)
+onMounted(() => Promise.all([loadQuickViewEngines(), loadTasks()]))
 </script>
 
 <style scoped>

@@ -82,14 +82,16 @@ func TestIntegrationPostgreSQLCDCDataPlaneSnapshotUpdateDeleteCrashResumeAndSche
 		changed_at_tz timestamp(6) with time zone NOT NULL,
 		enabled boolean NOT NULL,
 		payload jsonb NOT NULL,
-		ref uuid NOT NULL
+		ref uuid NOT NULL,
+		shape geometry(MultiPolygon,4549)
 	)`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := businessDB.ExecContext(ctx, `INSERT INTO `+pq.QuoteIdentifier(schema)+`.`+pq.QuoteIdentifier(sourceTable)+` VALUES (
 		1, 'snapshot', 12345678901234567890.1234, DATE '2024-01-02', TIME '03:04:05.006',
 		TIMESTAMP '2024-01-02 03:04:05.006', TIMESTAMPTZ '2024-01-02 03:04:05.006789+08', true,
-		'{"enabled":true,"items":2}'::jsonb, '550e8400-e29b-41d4-a716-446655440000'::uuid
+		'{"enabled":true,"items":2}'::jsonb, '550e8400-e29b-41d4-a716-446655440000'::uuid,
+		ST_GeomFromText('MULTIPOLYGON(((0 0,10 0,10 10,0 0)))', 4549)
 	)`); err != nil {
 		t.Fatal(err)
 	}
@@ -172,10 +174,12 @@ func TestIntegrationPostgreSQLCDCDataPlaneSnapshotUpdateDeleteCrashResumeAndSche
 	go func() { firstDone <- runner.Run(firstCtx, *claim) }()
 	waitCDCDataRow(t, ctx, firstDone, businessDB, schema, targetTable, 1, "snapshot", true)
 	assertCDCDataTypeMatrix(t, ctx, businessDB, schema, targetTable)
-	if _, err := businessDB.ExecContext(ctx, `UPDATE `+pq.QuoteIdentifier(schema)+`.`+pq.QuoteIdentifier(sourceTable)+` SET name='updated' WHERE id=1`); err != nil {
+	if _, err := businessDB.ExecContext(ctx, `UPDATE `+pq.QuoteIdentifier(schema)+`.`+pq.QuoteIdentifier(sourceTable)+`
+		SET name='updated', shape=ST_GeomFromText('MULTIPOLYGON(((20 20,30 20,30 30,20 20)))', 4549) WHERE id=1`); err != nil {
 		t.Fatal(err)
 	}
 	waitCDCDataRow(t, ctx, firstDone, businessDB, schema, targetTable, 1, "updated", true)
+	waitCDCDataGeometry(t, ctx, firstDone, businessDB, schema, targetTable, "MULTIPOLYGON(((20 20,30 20,30 30,20 20)))")
 	cancelFirst()
 	if err := <-firstDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("first runner error = %v", err)
@@ -313,6 +317,7 @@ func cdcDataTaskConfig(schema, sourceTable, targetTable string) models.JSONMap {
 				map[string]interface{}{"source": "enabled", "target": "enabled", "target_type": "bool", "nullable": false},
 				map[string]interface{}{"source": "payload", "target": "payload", "target_type": "json", "nullable": false},
 				map[string]interface{}{"source": "ref", "target": "ref", "target_type": "uuid", "nullable": false},
+				map[string]interface{}{"source": "shape", "target": "geometry", "target_type": "geometry", "nullable": true},
 			},
 		}},
 	}
@@ -320,23 +325,48 @@ func cdcDataTaskConfig(schema, sourceTable, targetTable string) models.JSONMap {
 
 func assertCDCDataTypeMatrix(t *testing.T, ctx context.Context, db *sql.DB, schema, table string) {
 	t.Helper()
-	var amount, businessDate, businessTime, changedAt, changedAtTZ, payload, ref string
+	var amount, businessDate, businessTime, changedAt, changedAtTZ, payload, ref, geometryType, geometryText string
+	var geometrySRID int
 	var enabled bool
 	err := db.QueryRowContext(ctx, `
 		SELECT amount::text, business_date::text, business_time::text,
 		       to_char(changed_at, 'YYYY-MM-DD HH24:MI:SS.MS'),
 		       to_char(changed_at_tz, 'YYYY-MM-DD HH24:MI:SS.US'),
-		       enabled, payload::text, ref::text
+		       enabled, payload::text, ref::text,
+		       GeometryType(geometry), ST_SRID(geometry), ST_AsText(geometry)
 		FROM `+pq.QuoteIdentifier(schema)+`.`+pq.QuoteIdentifier(table)+` WHERE id=1
-	`).Scan(&amount, &businessDate, &businessTime, &changedAt, &changedAtTZ, &enabled, &payload, &ref)
+	`).Scan(&amount, &businessDate, &businessTime, &changedAt, &changedAtTZ, &enabled, &payload, &ref, &geometryType, &geometrySRID, &geometryText)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if amount != "12345678901234567890.1234" || businessDate != "2024-01-02" || businessTime != "03:04:05.006" ||
 		changedAt != "2024-01-02 03:04:05.006" || changedAtTZ != "2024-01-01 19:04:05.006789" || !enabled ||
-		payload != `{"items": 2, "enabled": true}` || ref != "550e8400-e29b-41d4-a716-446655440000" {
-		t.Fatalf("CDC type matrix mismatch: amount=%q date=%q time=%q ts=%q tstz=%q enabled=%v payload=%q ref=%q",
-			amount, businessDate, businessTime, changedAt, changedAtTZ, enabled, payload, ref)
+		payload != `{"items": 2, "enabled": true}` || ref != "550e8400-e29b-41d4-a716-446655440000" ||
+		geometryType != "MULTIPOLYGON" || geometrySRID != 4549 || geometryText != "MULTIPOLYGON(((0 0,10 0,10 10,0 0)))" {
+		t.Fatalf("CDC type matrix mismatch: amount=%q date=%q time=%q ts=%q tstz=%q enabled=%v payload=%q ref=%q geometry=%s/%d/%q",
+			amount, businessDate, businessTime, changedAt, changedAtTZ, enabled, payload, ref, geometryType, geometrySRID, geometryText)
+	}
+}
+
+func waitCDCDataGeometry(t *testing.T, ctx context.Context, runnerDone <-chan error, db *sql.DB, schema, table, wantText string) {
+	t.Helper()
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var geometryType, geometryText string
+		var srid int
+		err := db.QueryRowContext(ctx, `SELECT GeometryType(geometry), ST_SRID(geometry), ST_AsText(geometry) FROM `+
+			pq.QuoteIdentifier(schema)+`.`+pq.QuoteIdentifier(table)+` WHERE id=1`).Scan(&geometryType, &srid, &geometryText)
+		if err == nil && geometryType == "MULTIPOLYGON" && srid == 4549 && geometryText == wantText {
+			return
+		}
+		select {
+		case err := <-runnerDone:
+			t.Fatalf("CDC data runner exited before target geometry converged: %v", err)
+		case <-ctx.Done():
+			t.Fatalf("wait target geometry %q: %v", wantText, ctx.Err())
+		case <-ticker.C:
+		}
 	}
 }
 

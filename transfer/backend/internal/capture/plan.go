@@ -34,6 +34,7 @@ type CapturePlan struct {
 	SourceKeys                  []string
 	SourceFields                []string
 	SourceFieldTypes            map[string]datatype.FieldType
+	SourceSpatialInfo           *datatype.SpatialInfo
 	TargetKeys                  []string
 }
 
@@ -55,10 +56,10 @@ func (r *PostgreSQLPlanResolver) Resolve(ctx context.Context, task *models.Trans
 	if err != nil {
 		return nil, err
 	}
-	if err := validateSourcePrimaryKey(ctx, plan); err != nil {
+	if err := validateSourceFields(ctx, plan); err != nil {
 		return nil, err
 	}
-	if err := validateSourceFields(ctx, plan); err != nil {
+	if err := validateSourcePrimaryKey(ctx, plan); err != nil {
 		return nil, err
 	}
 	if err := validateTargetDoesNotExist(ctx, plan); err != nil {
@@ -158,7 +159,7 @@ func validateSourceFields(ctx context.Context, plan *CapturePlan) error {
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `
-		SELECT a.attname, format_type(a.atttypid, a.atttypmod), ic.datetime_precision
+		SELECT a.attname, format_type(a.atttypid, a.atttypmod), ic.datetime_precision, NOT a.attnotnull
 		FROM pg_attribute a
 		JOIN pg_class c ON c.oid = a.attrelid
 		JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -174,15 +175,18 @@ func validateSourceFields(ctx context.Context, plan *CapturePlan) error {
 	actual := make([]string, 0)
 	actualTypes := make(map[string]string)
 	temporalPrecisions := make(map[string]sql.NullInt64)
+	nullableFields := make(map[string]bool)
 	for rows.Next() {
 		var name, nativeType string
 		var temporalPrecision sql.NullInt64
-		if err := rows.Scan(&name, &nativeType, &temporalPrecision); err != nil {
+		var nullable bool
+		if err := rows.Scan(&name, &nativeType, &temporalPrecision, &nullable); err != nil {
 			return err
 		}
 		actual = append(actual, name)
 		actualTypes[name] = nativeType
 		temporalPrecisions[name] = temporalPrecision
+		nullableFields[name] = nullable
 	}
 	if err := rows.Err(); err != nil {
 		return err
@@ -193,9 +197,31 @@ func validateSourceFields(ctx context.Context, plan *CapturePlan) error {
 	if !reflect.DeepEqual(actual, configured) {
 		return fmt.Errorf("PostgreSQL CDC field mapping must cover the complete source schema: actual=%v configured=%v", actual, configured)
 	}
-	for name, nativeType := range actualTypes {
+	spatialColumns := make([]datatype.GeometryColumnInfo, 0)
+	for _, name := range actual {
+		nativeType := actualTypes[name]
 		if err := validatePostgreSQLCDCSourceFieldType(name, nativeType, temporalPrecisions[name], plan.SourceFieldTypes[name]); err != nil {
 			return err
+		}
+		if plan.SourceFieldTypes[name] == datatype.FieldTypeGeometry {
+			geometryType, srid, dimension, err := parsePostgreSQLCDCGeometryType(nativeType)
+			if err != nil {
+				return fmt.Errorf("PostgreSQL CDC source field %q: %w", name, err)
+			}
+			nullable := nullableFields[name]
+			spatialColumns = append(spatialColumns, datatype.GeometryColumnInfo{
+				Name: name, GeometryType: geometryType, SRID: &srid,
+				CRSRef: datatype.EPSGCRSRef(srid), Dimension: &dimension, Nullable: &nullable,
+			})
+		}
+	}
+	if len(spatialColumns) > 0 {
+		plan.SourceSpatialInfo = &datatype.SpatialInfo{
+			GeometryColumns: spatialColumns, PrimaryGeometryColumn: spatialColumns[0].Name,
+		}
+		if len(spatialColumns) == 1 {
+			plan.SourceSpatialInfo.SRID = spatialColumns[0].SRID
+			plan.SourceSpatialInfo.CRSRef = spatialColumns[0].CRSRef
 		}
 	}
 	return nil
@@ -207,7 +233,7 @@ func postgresqlCDCCommonFieldType(nativeType string) datatype.FieldType {
 
 func validatePostgreSQLCDCSourceFieldType(name, nativeType string, temporalPrecision sql.NullInt64, configuredType datatype.FieldType) error {
 	actualType := postgresqlCDCCommonFieldType(nativeType)
-	if actualType == datatype.FieldTypeUnknown || !planner.ContinuousFieldTypeSupported(actualType) {
+	if actualType == datatype.FieldTypeUnknown || !planner.PostgreSQLCDCFieldTypeSupported(actualType) {
 		return fmt.Errorf("PostgreSQL CDC source field %q uses unsupported PostgreSQL type %q", name, nativeType)
 	}
 	if actualType != configuredType {
@@ -222,6 +248,37 @@ func validatePostgreSQLCDCSourceFieldType(name, nativeType string, temporalPreci
 		}
 	}
 	return nil
+}
+
+func parsePostgreSQLCDCGeometryType(nativeType string) (string, int, int, error) {
+	value := strings.TrimSpace(nativeType)
+	lower := strings.ToLower(value)
+	if !strings.HasPrefix(lower, "geometry(") || !strings.HasSuffix(lower, ")") {
+		return "", 0, 0, fmt.Errorf("geometry type %q must declare a concrete OGC type and positive SRID", nativeType)
+	}
+	inner := strings.TrimSpace(value[strings.Index(value, "(")+1 : len(value)-1])
+	parts := strings.Split(inner, ",")
+	if len(parts) != 2 {
+		return "", 0, 0, fmt.Errorf("geometry type %q must declare exactly type and SRID", nativeType)
+	}
+	typeToken := strings.TrimSpace(parts[0])
+	typeLower := strings.ToLower(typeToken)
+	if strings.HasSuffix(typeLower, "zm") || strings.HasSuffix(typeLower, "m") {
+		return "", 0, 0, fmt.Errorf("geometry type %q uses unsupported M/ZM coordinates", nativeType)
+	}
+	dimension := 2
+	if strings.HasSuffix(typeLower, "z") {
+		dimension = 3
+	}
+	geometryType := datatype.StandardGeometryType(typeToken)
+	if geometryType == "" || geometryType == string(datatype.GeometryTypeGeometry) {
+		return "", 0, 0, fmt.Errorf("geometry type %q must use a concrete supported OGC type", nativeType)
+	}
+	srid, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err != nil || srid <= 0 {
+		return "", 0, 0, fmt.Errorf("geometry type %q must use a positive SRID", nativeType)
+	}
+	return geometryType, srid, dimension, nil
 }
 
 func usesConnectMillisecondTemporalEncoding(nativeType string, fieldType datatype.FieldType) bool {
@@ -272,6 +329,11 @@ func validateSourcePrimaryKey(ctx context.Context, plan *CapturePlan) error {
 	}
 	if len(actual) == 0 {
 		return fmt.Errorf("PostgreSQL CDC source table requires a primary key")
+	}
+	for _, key := range actual {
+		if plan.SourceFieldTypes[key] == datatype.FieldTypeGeometry {
+			return fmt.Errorf("PostgreSQL CDC source primary key field %q cannot use geometry", key)
+		}
 	}
 	if !reflect.DeepEqual(actual, plan.SourceKeys) {
 		return fmt.Errorf("PostgreSQL CDC source primary key %v must map one-to-one to configured target keys via source fields %v", actual, plan.SourceKeys)

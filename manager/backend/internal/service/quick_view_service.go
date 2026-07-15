@@ -443,14 +443,19 @@ type QuickViewModel3DInfo struct {
 }
 
 type QuickViewModel3DTilesFormatInfo struct {
-	TargetFormat      string  `json:"target_format"`
-	CanGenerate       bool    `json:"can_generate"`
-	UnavailableReason string  `json:"unavailable_reason,omitempty"`
-	Status            string  `json:"status,omitempty"`
-	ResultID          *uint   `json:"result_id,omitempty"`
-	TaskID            *uint   `json:"task_id,omitempty"`
-	LastExecutionID   *string `json:"last_execution_id,omitempty"`
-	PreviewURL        string  `json:"preview_url,omitempty"`
+	TargetFormat        string  `json:"target_format"`
+	CanGenerate         bool    `json:"can_generate"`
+	UnavailableReason   string  `json:"unavailable_reason,omitempty"`
+	Status              string  `json:"status,omitempty"`
+	ResultID            *uint   `json:"result_id,omitempty"`
+	TaskID              *uint   `json:"task_id,omitempty"`
+	LastExecutionID     *string `json:"last_execution_id,omitempty"`
+	PreviewURL          string  `json:"preview_url,omitempty"`
+	ManifestEncoding    string  `json:"manifest_encoding,omitempty"`
+	TileExtension       string  `json:"tile_extension,omitempty"`
+	TextureCompression  string  `json:"texture_compression,omitempty"`
+	GeometryCompression string  `json:"geometry_compression,omitempty"`
+	S3MVersion          string  `json:"s3m_version,omitempty"`
 }
 
 type QuickViewModel3DTilesInfo struct {
@@ -1139,6 +1144,12 @@ func (s *QuickViewService) applyModel3DTilesCapability(ctx context.Context, capa
 			info.TaskID = result.TaskID
 			info.LastExecutionID = result.LastExecutionID
 			if result.Status == models.Model3DTilesStatusReady {
+				tilesFacts := commonJSON.Section(result.Metadata, "tiles_facts")
+				info.ManifestEncoding = strings.TrimSpace(commonJSON.InterfaceString(tilesFacts["manifest_encoding"]))
+				info.TileExtension = strings.TrimSpace(commonJSON.InterfaceString(tilesFacts["tile_extension"]))
+				info.TextureCompression = strings.TrimSpace(commonJSON.InterfaceString(tilesFacts["texture_compression"]))
+				info.GeometryCompression = strings.TrimSpace(commonJSON.InterfaceString(tilesFacts["geometry_compression"]))
+				info.S3MVersion = strings.TrimSpace(commonJSON.InterfaceString(tilesFacts["s3m_version"]))
 				info.PreviewURL = model3DTilesAssetURL(result.ID, result.ManifestRef, result.LastExecutionID)
 				info.CanGenerate = false
 				info.UnavailableReason = "result_ready"

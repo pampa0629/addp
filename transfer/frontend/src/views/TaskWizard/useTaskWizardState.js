@@ -14,9 +14,11 @@ import {
   buildPostgreSQLCDCSourceEndpoint,
 	cdcMappingsCoverSourceFields,
   continuousMappedTargetKeys,
-  continuousMappingsValid,
-	isKafkaTopicSource,
-	isPostgreSQLTableSource
+	continuousMappingsValid,
+  isKafkaTopicSource,
+	normalizeContinuousKeyFields,
+	postgresqlCDCMappingsValid,
+	postgresqlCDCUnavailableReasonCodes
 } from './continuousTask.mjs'
 
 export function useTaskWizardState() {
@@ -92,13 +94,17 @@ export function useTaskWizardState() {
 		return isContinuousTask.value && isKafkaTopicSource(sourceEngineType.value, sourceLocator.value)
 	})
 
-	const supportsPostgreSQLCDC = computed(() => {
-		return isPostgreSQLTableSource(sourceEngineType.value, sourceLocator.value) &&
-			sourceRepresentation.value === 'native' &&
-			sourceDataType.value === 'table' &&
-			isPostgresqlEngineType(targetEngineType.value) &&
-			targetRepresentation.value === 'native'
-	})
+	const postgresqlCDCUnavailableReasons = computed(() => postgresqlCDCUnavailableReasonCodes({
+		sourceEngineType: sourceEngineType.value,
+		sourceLocator: sourceLocator.value,
+		sourceRepresentation: sourceRepresentation.value,
+		sourceDataType: sourceDataType.value,
+		targetEngineType: targetEngineType.value,
+		targetRepresentation: targetRepresentation.value,
+		sourceFields: sourceFields.value
+	}))
+
+	const supportsPostgreSQLCDC = computed(() => postgresqlCDCUnavailableReasons.value.length === 0)
 
 	const isPostgreSQLCDCTask = computed(() => {
 		return isContinuousTask.value && loadMode.value === 'cdc'
@@ -120,9 +126,12 @@ export function useTaskWizardState() {
 		const sourceValid = isPostgreSQLCDCTask.value
 			? supportsPostgreSQLCDC.value
 			: isKafkaTopicSource(sourceEngineType.value, sourceLocator.value)
+		const mappingsValid = isPostgreSQLCDCTask.value
+			? postgresqlCDCMappingsValid(fieldMappings.value, continuousKeyFields.value)
+			: continuousMappingsValid(fieldMappings.value, continuousKeyFields.value)
 		return sourceValid &&
       supportsContinuousTarget.value &&
-      continuousMappingsValid(fieldMappings.value, continuousKeyFields.value) &&
+			mappingsValid &&
 			(!isPostgreSQLCDCTask.value || cdcMappingsCoverSourceFields(fieldMappings.value, sourceFields.value)) &&
       transforms.value.length === 0 &&
       continuousPollBatchSize.value > 0 &&
@@ -741,7 +750,7 @@ export function useTaskWizardState() {
   }
 
   // 从任务详情加载数据（编辑模式）
-  function loadFromTask(task) {
+  function loadFromTask(task, engineTypes = {}) {
     if (!task) return
 
     // 基本信息
@@ -772,10 +781,10 @@ export function useTaskWizardState() {
       const source = task.config.source
       const sourceLoc = parseTransferLocator(source.locator)
       sourceEngineID.value = sourceLoc.engineID || null
-			sourceEngineType.value = changeType === 'cdc' ? 'postgresql' : (changeType === 'kafka' ? 'kafka' : (isWatermarkIncremental.value ? 'postgresql' : ''))
+			sourceEngineType.value = normalizeEngineType(engineTypes.source || '')
       sourceSchema.value = sourceLoc.path.length >= 2 ? sourceLoc.path[sourceLoc.path.length - 2] : ''
       sourceTable.value = sourceLoc.path.length >= 1 ? sourceLoc.path[sourceLoc.path.length - 1] : ''
-      sourceType.value = normalizeEngineType(sourceEngineType.value || 'postgresql')
+			sourceType.value = normalizeEngineType(sourceEngineType.value)
 			sourceDataType.value = isKafkaContinuousTask.value ? 'unknown' : (source.data_type || 'table')
       sourceRepresentation.value = source.representation || 'native'
       sourceFormat.value = targetUiFormat(source.format, source.options || {})
@@ -788,7 +797,7 @@ export function useTaskWizardState() {
       const target = task.config.target
       const targetParentLoc = parseTransferLocator(target.parent_locator)
       targetEngineID.value = targetParentLoc.engineID || null
-      targetEngineType.value = (isContinuousTask.value || isWatermarkIncremental.value) ? 'postgresql' : ''
+			targetEngineType.value = normalizeEngineType(engineTypes.target || '')
       targetSchema.value = targetParentLoc.type === 'schema' && targetParentLoc.path.length >= 1 ? targetParentLoc.path[targetParentLoc.path.length - 1] : ''
       targetTable.value = target.representation === 'native' ? (target.name || '') : ''
       targetType.value = normalizeTargetType(target)
@@ -819,7 +828,7 @@ export function useTaskWizardState() {
     if (type.includes('mysql')) return 'mysql'
     if (type.includes('kafka')) return 'kafka'
     if (type.includes('s3') || type.includes('minio')) return 's3'
-    return type || 'postgresql'
+		return type
   }
 
   function isPostgresqlEngineType(engineType) {
@@ -1004,7 +1013,8 @@ export function useTaskWizardState() {
     return field?.primary_key === true ||
       field?.primaryKey === true ||
       field?.is_primary_key === true ||
-      field?.isPrimaryKey === true
+			field?.isPrimaryKey === true ||
+			String(field?.key || '').trim().toLowerCase() === 'pri'
   }
 
   function mappedTargetField(sourceField) {
@@ -1042,8 +1052,10 @@ export function useTaskWizardState() {
 
   function normalizeContinuousKeys() {
     if (!isContinuousTask.value) return
-    const mappedSources = normalizedFieldNames(fieldMappings.value.map(mapping => mapping?.source_field))
-    continuousKeyFields.value = continuousKeyFields.value.filter(key => mappedSources.some(source => sameFieldName(source, key)))
+		const normalizedKeys = normalizeContinuousKeyFields(continuousKeyFields.value, fieldMappings.value)
+		if (!sameFieldList(continuousKeyFields.value, normalizedKeys)) {
+			continuousKeyFields.value = normalizedKeys
+		}
     for (const mapping of fieldMappings.value) {
       if (continuousKeyFields.value.some(key => sameFieldName(key, mapping?.source_field))) {
         mapping.nullable = false
@@ -1186,6 +1198,7 @@ export function useTaskWizardState() {
 		isKafkaContinuousTask,
 		isPostgreSQLCDCTask,
 		supportsPostgreSQLCDC,
+		postgresqlCDCUnavailableReasons,
     supportsContinuousTarget,
     continuousTargetKeys,
     continuousConfigValid,

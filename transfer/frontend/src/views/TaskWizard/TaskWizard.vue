@@ -65,7 +65,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTaskWizardState } from './useTaskWizardState'
 import { taskAPI } from '@/api/tasks'
 import { getItemByID, getItemFieldsByID } from '@/api/meta'
+import { systemEnginesAPI } from '@/api/systemEngines'
 import { parseTransferLocator } from '@/utils/resourceLocator'
+import { taskEngineTypes } from './continuousTask.mjs'
 
 // 导入步骤组件
 import Step1SelectSource from './Step1SelectSource.vue'
@@ -108,7 +110,8 @@ async function loadTaskDetail() {
     const task = response.data || response
 
     // 回填任务数据到向导状态
-    wizardState.loadFromTask(task)
+		const engineTypes = await loadTaskEngineTypes(task)
+		wizardState.loadFromTask(task, engineTypes)
     await restoreSourceItemForEdit(task)
 
     // 加载源字段和目标字段
@@ -122,6 +125,11 @@ async function loadTaskDetail() {
   } finally {
     loading.value = false
   }
+}
+
+async function loadTaskEngineTypes(task) {
+	const engines = await systemEnginesAPI.list()
+	return taskEngineTypes(task, engines)
 }
 
 async function restoreSourceItemForEdit(task) {
@@ -140,7 +148,8 @@ async function restoreSourceItemForEdit(task) {
 async function loadSourceFieldsForEdit(task) {
   if (!task.config?.source) return
 
-  if (task.config?.runtime?.boundary === 'continuous') {
+	const changeType = task.config?.load?.change_detection?.type
+	if (task.config?.runtime?.boundary === 'continuous' && changeType !== 'cdc') {
     wizardState.loadSourceFields([])
     return
   }

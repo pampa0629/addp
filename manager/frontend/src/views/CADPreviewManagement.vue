@@ -10,12 +10,14 @@
           </div>
 
           <el-table :data="tasks" v-loading="tasksLoading" stripe>
-            <el-table-column prop="name" :label="t('manager.cadPreviewManagement.name')" min-width="180" show-overflow-tooltip />
-            <el-table-column :label="t('manager.cadPreviewManagement.engine')" width="100">
-              <template #default="{ row }">{{ taskSource(row).source_engine_id || '-' }}</template>
+            <el-table-column :label="t('manager.cadPreviewManagement.name')" min-width="180" show-overflow-tooltip>
+              <template #default="{ row }">{{ displayText(row.name) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('manager.cadPreviewManagement.engine')" min-width="140" show-overflow-tooltip>
+              <template #default="{ row }">{{ engineName(taskSource(row).source_engine_id) }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.cadPreviewManagement.source')" min-width="300" show-overflow-tooltip>
-              <template #default="{ row }">{{ taskSource(row).item_locator || '-' }}</template>
+              <template #default="{ row }">{{ resourcePath(taskSource(row).item_locator) }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.cadPreviewManagement.sourceFormat')" width="100">
               <template #default="{ row }">{{ formatLabel(taskSource(row).format) }}</template>
@@ -70,7 +72,7 @@
         <el-tab-pane :label="t('manager.cadPreviewManagement.resultsTab')" name="results">
           <div class="filter-bar">
             <el-tag v-if="selectedResultTask" type="primary" closable @close="clearTaskFilter">
-              {{ selectedResultTask.name || `#${selectedResultTask.id}` }}
+              {{ selectedResultTask.name ? displayText(selectedResultTask.name) : `#${selectedResultTask.id}` }}
             </el-tag>
             <el-select v-model="resultFilters.status" clearable class="status-filter" :placeholder="t('manager.cadPreviewManagement.status')">
               <el-option v-for="status in resultStatuses" :key="status" :label="status" :value="status" />
@@ -88,11 +90,11 @@
           </div>
 
           <el-table :data="results" v-loading="resultsLoading" stripe>
-            <el-table-column :label="t('manager.cadPreviewManagement.engine')" width="100">
-              <template #default="{ row }">{{ row.source_engine_id || '-' }}</template>
+            <el-table-column :label="t('manager.cadPreviewManagement.engine')" min-width="140" show-overflow-tooltip>
+              <template #default="{ row }">{{ engineName(row.source_engine_id) }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.cadPreviewManagement.source')" min-width="300" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.locator || '-' }}</template>
+              <template #default="{ row }">{{ resourcePath(row.locator) }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.cadPreviewManagement.sourceFormat')" width="100">
               <template #default="{ row }">{{ formatLabel(row.source_format) }}</template>
@@ -179,7 +181,7 @@
         />
         <el-descriptions class="source-facts" :column="2" border size="small">
           <el-descriptions-item :label="t('manager.cadPreviewManagement.source')">{{ sourcePath(form.source.item_locator) }}</el-descriptions-item>
-          <el-descriptions-item :label="t('manager.cadPreviewManagement.engine')">{{ form.source.source_engine_id || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('manager.cadPreviewManagement.engine')">{{ engineName(form.source.source_engine_id) }}</el-descriptions-item>
           <el-descriptions-item :label="t('manager.cadPreviewManagement.itemFingerprint')">{{ form.source.item_fingerprint || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('manager.cadPreviewManagement.sourceFormat')">{{ formatLabel(form.source.format) }}</el-descriptions-item>
           <el-descriptions-item :label="t('manager.cadPreviewManagement.sourceSize')">{{ formatBytes(form.source.source_size_bytes) }}</el-descriptions-item>
@@ -211,11 +213,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { ResourceTreePicker, openMonitorExecution, parseLocatorSafe } from '@addp/common-frontend'
 import { quickViewAPI } from '../api/quickView'
+import { useQuickViewResourceDisplay } from '../composables/useQuickViewResourceDisplay'
 import { formatBytes, formatDateTime } from '../utils/formatters'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const { displayText, engineName, loadQuickViewEngines, resourcePath } = useQuickViewResourceDisplay(t)
 
 const activeTab = ref(route.query.tab === 'results' ? 'results' : 'tasks')
 const tasks = ref([])
@@ -487,7 +491,7 @@ onMounted(async () => {
     resultFilters.task_id = taskID
     try { selectedResultTask.value = unwrapPayload(await quickViewAPI.getCADPreviewTask(taskID)) } catch { selectedResultTask.value = null }
   }
-  await Promise.all([loadTasks(), loadResults()])
+  await Promise.all([loadQuickViewEngines(), loadTasks(), loadResults()])
 })
 </script>
 

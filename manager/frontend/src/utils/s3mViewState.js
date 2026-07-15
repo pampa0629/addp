@@ -19,3 +19,19 @@ export function preserveDerivedResourceQuery(resource) {
   })
   return resource
 }
+
+export function s3mRootBoundingSphere(Cesium, rootTiles) {
+  const spheres = (Array.isArray(rootTiles) ? rootTiles : []).map((tile) => {
+    const volume = tile?.boundingVolume?.boundingVolume
+    if (!volume) return null
+    if (Number.isFinite(Number(volume.radius))) {
+      return Cesium.BoundingSphere.clone(volume)
+    }
+    if (volume.halfAxes) {
+      return Cesium.BoundingSphere.fromOrientedBoundingBox(volume)
+    }
+    return null
+  }).filter(Boolean)
+  if (!spheres.length) return null
+  return Cesium.BoundingSphere.fromBoundingSpheres(spheres)
+}

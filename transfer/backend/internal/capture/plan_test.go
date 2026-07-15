@@ -74,3 +74,28 @@ func TestPostgreSQLCDCSourceTypeMatrix(t *testing.T) {
 		}
 	}
 }
+
+func TestParsePostgreSQLCDCGeometryTypeFreezesConcreteTypmod(t *testing.T) {
+	tests := []struct {
+		nativeType   string
+		geometryType string
+		srid         int
+		dimension    int
+	}{
+		{nativeType: "geometry(MultiPolygon,4549)", geometryType: "MultiPolygon", srid: 4549, dimension: 2},
+		{nativeType: "geometry(PointZ,4326)", geometryType: "Point", srid: 4326, dimension: 3},
+	}
+	for _, test := range tests {
+		geometryType, srid, dimension, err := parsePostgreSQLCDCGeometryType(test.nativeType)
+		if err != nil || geometryType != test.geometryType || srid != test.srid || dimension != test.dimension {
+			t.Fatalf("parsePostgreSQLCDCGeometryType(%q) = %q/%d/%d err=%v", test.nativeType, geometryType, srid, dimension, err)
+		}
+	}
+	for _, nativeType := range []string{
+		"geometry", "geometry(Geometry,4326)", "geometry(Point,0)", "geometry(PointM,4326)", "geometry(PointZM,4326)",
+	} {
+		if _, _, _, err := parsePostgreSQLCDCGeometryType(nativeType); err == nil {
+			t.Fatalf("parsePostgreSQLCDCGeometryType(%q) error = nil", nativeType)
+		}
+	}
+}

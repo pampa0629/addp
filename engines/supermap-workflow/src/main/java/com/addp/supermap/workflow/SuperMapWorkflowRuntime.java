@@ -30,16 +30,22 @@ import com.supermap.data.EngineType;
 import com.supermap.data.FieldInfo;
 import com.supermap.data.FieldInfos;
 import com.supermap.data.GeoStyle;
-import com.supermap.data.PrjCoordSys;
+import com.supermap.data.Point2D;
+import com.supermap.data.Point2Ds;
 import com.supermap.data.Point3D;
+import com.supermap.data.PrjCoordSys;
 import com.supermap.data.QueryParameter;
 import com.supermap.data.Rectangle2D;
 import com.supermap.data.Recordset;
+import com.supermap.data.S3MVersion;
 import com.supermap.data.SpatialRelationType;
 import com.supermap.data.Workspace;
-import com.supermap.data.processing.CacheBuilderOSGBTool;
+import com.supermap.data.processing.ObliquePhotogrammetryBuilder;
+import com.supermap.data.processing.ObliqueProcessType;
 import com.supermap.data.processing.OSGBCacheBuilder;
 import com.supermap.data.processing.TextureCompressType;
+import com.supermap.data.processing.VertexOptimizationType;
+import com.supermap.realspace.CacheFileType;
 import com.supermap.sps.core.executor.IWorkflowExecutor;
 import com.supermap.sps.core.executor.WorkflowExecutors;
 import com.supermap.sps.core.parameters.ISingleDataDefinition;
@@ -454,8 +460,21 @@ public final class SuperMapWorkflowRuntime {
                 throw new IllegalStateException("failed to stage all OSGB root tiles");
             }
             Path sourceSCP = workRoot.resolve("scene.scp");
-            Workspace workspace = new Workspace();
             PrjCoordSys prjCoordSys = PrjCoordSys.fromEPSG(metadata.epsg());
+            PrjCoordSys targetPrjCoordSys = PrjCoordSys.fromEPSG(4326);
+            if (prjCoordSys == null || targetPrjCoordSys == null) {
+                if (prjCoordSys != null) {
+                    prjCoordSys.dispose();
+                }
+                if (targetPrjCoordSys != null) {
+                    targetPrjCoordSys.dispose();
+                }
+                deleteRecursively(workRoot);
+                throw new IllegalArgumentException("unsupported OSGB scene source or target CRS");
+            }
+            CoordSysTransParameter targetCoordSysTransParameter = new CoordSysTransParameter();
+            ObliquePhotogrammetryBuilder builder = null;
+            int generatedRootTileCount = 0;
             boolean conversionSucceeded = false;
             try {
                 boolean configGenerated = OSGBCacheBuilder.generateConfigFile(
@@ -467,16 +486,37 @@ public final class SuperMapWorkflowRuntime {
                 if (!configGenerated) {
                     throw new IllegalStateException("SuperMap failed to generate OSGB scene SCP");
                 }
-                boolean converted = CacheBuilderOSGBTool.osgb2s3m(sourceSCP.toString(), targetRoot.resolve("config").toString(), TextureCompressType.TEXTURECOMPRESS_WEBP);
+                builder = new ObliquePhotogrammetryBuilder(new ObliqueProcessType[]{ObliqueProcessType.COMPRESS_TEXTURE});
+                builder.setTexCompressType(TextureCompressType.TEXTURECOMPRESS_DXT);
+                builder.setVertexOptimazationType(VertexOptimizationType.VO_DRACO);
+                builder.setS3MVersion(S3MVersion.VERSION_301);
+                builder.setFileType(CacheFileType.S3MB);
+                boolean converted = builder.build(sourceSCP.toString(), targetRoot.resolve("config").toString(), 1);
                 if (!converted) {
                     throw new IllegalStateException("SuperMap OSGB to S3M conversion returned false");
                 }
                 Path generatedManifest = findSingleSCP(targetRoot);
-                validateS3MOutput(targetRoot, generatedManifest, rootTiles.size());
+                Path manifest = generatedManifest.resolveSibling("scene.scp");
+                if (!generatedManifest.equals(manifest)) {
+                    Files.move(generatedManifest, manifest, StandardCopyOption.REPLACE_EXISTING);
+                }
+                normalizeS3MManifestGeoreference(
+                        manifest,
+                        prjCoordSys,
+                        targetPrjCoordSys,
+                        targetCoordSysTransParameter
+                );
+                generatedRootTileCount = validateS3MOutput(targetRoot, manifest, rootTiles.size());
                 conversionSucceeded = true;
+            } catch (IOException ex) {
+                throw new IllegalStateException("failed to finalize S3M manifest", ex);
             } finally {
+                if (builder != null) {
+                    builder.dispose();
+                }
+                targetCoordSysTransParameter.dispose();
                 prjCoordSys.dispose();
-                workspace.dispose();
+                targetPrjCoordSys.dispose();
                 deleteRecursively(workRoot);
                 if (!conversionSucceeded) {
                     deleteRecursively(targetRoot);
@@ -508,8 +548,14 @@ public final class SuperMapWorkflowRuntime {
             result.put("target_format", "s3m");
             result.put("target_path", objectStoreTarget ? targetAccess.path("prefix").asText("") : targetRoot.toString());
             result.put("manifest_ref", manifestRef);
-            result.put("texture_compression", "webp");
-            result.put("root_tile_count", rootTiles.size());
+            result.put("texture_compression", "dxt");
+            result.put("geometry_compression", "draco");
+            result.put("s3m_version", "3.01");
+            result.put("crs", "EPSG:4326");
+            result.put("manifest_encoding", "json");
+            result.put("tile_extension", ".s3mb");
+            result.put("root_tile_count", generatedRootTileCount);
+            result.put("source_root_candidate_count", rootTiles.size());
             result.put("file_count", fileCount);
             result.put("size_bytes", sizeBytes);
             return result;
@@ -1092,36 +1138,126 @@ public final class SuperMapWorkflowRuntime {
         }
     }
 
-    private static void validateS3MOutput(Path targetRoot, Path manifest, int expectedRootTiles) {
+    private static int validateS3MOutput(Path targetRoot, Path manifest, int sourceRootCandidates) {
         try {
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            factory.setExpandEntityReferences(false);
-            Document document = factory.newDocumentBuilder().parse(manifest.toFile());
-            NodeList elements = document.getElementsByTagName("*");
+            JsonNode config = MAPPER.readTree(manifest.toFile());
+            if (!"3.01".equals(config.path("version").asText())) {
+                throw new IllegalStateException("S3M manifest version must be 3.01");
+            }
+            if (!"epsg:4326".equalsIgnoreCase(config.path("crs").asText())) {
+                throw new IllegalStateException("S3M manifest CRS must be EPSG:4326");
+            }
+            JsonNode position = config.path("position");
+            if (!"degree".equalsIgnoreCase(position.path("unit").asText())) {
+                throw new IllegalStateException("S3M manifest position unit must be Degree");
+            }
+            JsonNode point = position.path("point3D");
+            double longitude = point.path("x").asDouble(Double.NaN);
+            double latitude = point.path("y").asDouble(Double.NaN);
+            if (!Double.isFinite(longitude) || longitude < -180 || longitude > 180
+                    || !Double.isFinite(latitude) || latitude < -90 || latitude > 90) {
+                throw new IllegalStateException("S3M manifest position must contain WGS84 longitude and latitude");
+            }
+            JsonNode extensions = config.path("extensions");
+            if (!"DXT".equalsIgnoreCase(extensions.path("s3m:TextureCompressionType").asText())) {
+                throw new IllegalStateException("S3M manifest texture compression must be DXT");
+            }
+            if (!"DRACO".equalsIgnoreCase(extensions.path("s3m:VertexCompressionType").asText())) {
+                throw new IllegalStateException("S3M manifest geometry compression must be DRACO");
+            }
+            JsonNode rootTiles = config.path("rootTiles");
+            if (!rootTiles.isArray()) {
+                throw new IllegalStateException("S3M manifest rootTiles must be an array");
+            }
             int referencedTiles = 0;
-            for (int index = 0; index < elements.getLength(); index++) {
-                if (!(elements.item(index) instanceof Element element)) {
-                    continue;
+            for (JsonNode rootTile : rootTiles) {
+                String ref = rootTile.path("url").asText().trim();
+                if (!ref.toLowerCase().endsWith(".s3mb")) {
+                    throw new IllegalStateException("S3M 3.01 root tile must use .s3mb: " + ref);
                 }
-                String name = element.getLocalName() == null ? element.getNodeName() : element.getLocalName();
-                if (!name.endsWith("FileName")) {
-                    continue;
-                }
-                Path tile = manifest.getParent().resolve(element.getTextContent().trim()).normalize();
+                Path tile = manifest.getParent().resolve(ref).normalize();
                 if (!tile.startsWith(targetRoot.normalize()) || !Files.isRegularFile(tile)) {
-                    throw new IllegalStateException("S3M manifest references a missing tile: " + element.getTextContent().trim());
+                    throw new IllegalStateException("S3M manifest references a missing tile: " + ref);
                 }
                 referencedTiles++;
             }
-            if (referencedTiles < expectedRootTiles) {
-                throw new IllegalStateException("S3M output is incomplete: referenced root tiles=" + referencedTiles + ", expected=" + expectedRootTiles);
+            if (referencedTiles == 0 || referencedTiles > sourceRootCandidates) {
+                throw new IllegalStateException("S3M output has invalid root tile count: referenced=" + referencedTiles + ", source candidates=" + sourceRootCandidates);
             }
+            return referencedTiles;
         } catch (IllegalStateException ex) {
             throw ex;
         } catch (Exception ex) {
             throw new IllegalStateException("failed to validate S3M output", ex);
         }
+    }
+
+    private static void normalizeS3MManifestGeoreference(
+            Path manifest,
+            PrjCoordSys sourcePrjCoordSys,
+            PrjCoordSys targetPrjCoordSys,
+            CoordSysTransParameter transParameter
+    ) throws IOException {
+        JsonNode parsed = MAPPER.readTree(manifest.toFile());
+        if (!(parsed instanceof ObjectNode config)
+                || !(config.path("position") instanceof ObjectNode position)
+                || !(position.path("point3D") instanceof ObjectNode point)) {
+            throw new IllegalStateException("S3M manifest position is missing");
+        }
+
+        List<Point2D> sourcePoints = new ArrayList<>();
+        sourcePoints.add(new Point2D(point.path("x").asDouble(Double.NaN), point.path("y").asDouble(Double.NaN)));
+        ObjectNode geoBounds = config.path("geoBounds") instanceof ObjectNode bounds ? bounds : null;
+        if (geoBounds != null) {
+            double left = geoBounds.path("left").asDouble(Double.NaN);
+            double bottom = geoBounds.path("bottom").asDouble(Double.NaN);
+            double right = geoBounds.path("right").asDouble(Double.NaN);
+            double top = geoBounds.path("top").asDouble(Double.NaN);
+            sourcePoints.add(new Point2D(left, bottom));
+            sourcePoints.add(new Point2D(left, top));
+            sourcePoints.add(new Point2D(right, bottom));
+            sourcePoints.add(new Point2D(right, top));
+        }
+        if (sourcePoints.stream().anyMatch(value -> !Double.isFinite(value.getX()) || !Double.isFinite(value.getY()))) {
+            throw new IllegalStateException("S3M manifest projected position or bounds are invalid");
+        }
+
+        Point2Ds transformed = new Point2Ds(sourcePoints.toArray(new Point2D[0]));
+        if (!CoordSysTranslator.convert(
+                transformed,
+                sourcePrjCoordSys,
+                targetPrjCoordSys,
+                transParameter,
+                CoordSysTransMethod.MTH_Prj4
+        )) {
+            throw new IllegalStateException("failed to transform S3M manifest georeference to EPSG:4326");
+        }
+
+        Point2D origin = transformed.getItem(0);
+        point.put("x", origin.getX());
+        point.put("y", origin.getY());
+        position.put("unit", "Degree");
+        position.remove("units");
+        config.put("crs", "epsg:4326");
+
+        if (geoBounds != null) {
+            double left = Double.POSITIVE_INFINITY;
+            double bottom = Double.POSITIVE_INFINITY;
+            double right = Double.NEGATIVE_INFINITY;
+            double top = Double.NEGATIVE_INFINITY;
+            for (int index = 1; index < transformed.getCount(); index++) {
+                Point2D value = transformed.getItem(index);
+                left = Math.min(left, value.getX());
+                bottom = Math.min(bottom, value.getY());
+                right = Math.max(right, value.getX());
+                top = Math.max(top, value.getY());
+            }
+            geoBounds.put("left", left);
+            geoBounds.put("bottom", bottom);
+            geoBounds.put("right", right);
+            geoBounds.put("top", top);
+        }
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(manifest.toFile(), config);
     }
 
     private static void deleteRecursively(Path root) {

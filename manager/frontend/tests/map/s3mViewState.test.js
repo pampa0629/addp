@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cameraViewState, preserveDerivedResourceQuery } from '@/utils/s3mViewState'
+import { cameraViewState, preserveDerivedResourceQuery, s3mRootBoundingSphere } from '@/utils/s3mViewState'
 
 describe('s3mViewState', () => {
   it('reads Cesium Cartesian3 coordinates without relying on toArray', () => {
@@ -41,5 +41,37 @@ describe('S3M resource query inheritance', () => {
       preserveQueryParameters: true
     })
     expect(calls).toHaveLength(1)
+  })
+})
+
+describe('S3M root bounds', () => {
+  it('converts oriented boxes before merging root bounding spheres', () => {
+    const calls = []
+    const Cesium = {
+      BoundingSphere: {
+        clone(volume) {
+          calls.push(['clone', volume])
+          return { kind: 'sphere', volume }
+        },
+        fromOrientedBoundingBox(volume) {
+          calls.push(['obb', volume])
+          return { kind: 'obb', volume }
+        },
+        fromBoundingSpheres(spheres) {
+          calls.push(['merge', spheres])
+          return { kind: 'merged', spheres }
+        }
+      }
+    }
+    const sphereVolume = { radius: 12 }
+    const orientedVolume = { halfAxes: {} }
+    const result = s3mRootBoundingSphere(Cesium, [
+      { boundingVolume: { boundingVolume: sphereVolume } },
+      { boundingVolume: { boundingVolume: orientedVolume } }
+    ])
+
+    expect(result.kind).toBe('merged')
+    expect(result.spheres.map(item => item.kind)).toEqual(['sphere', 'obb'])
+    expect(calls.map(item => item[0])).toEqual(['clone', 'obb', 'merge'])
   })
 })

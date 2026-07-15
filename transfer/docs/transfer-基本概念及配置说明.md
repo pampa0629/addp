@@ -287,7 +287,9 @@ PostgreSQL 单表
 
 第一版只支持有稳定主键的单表。Debezium `op=r` 作为 snapshot upsert，`op=c|u` 作为 upsert，`op=d` 使用 record key 做物理 delete；目标固定为 `apply_mode=upsert_delete`。目标必须是不存在的新表，由 bootstrap 创建；不清空或接管已有目标表。捕获位点由 Kafka Connect 管理，Transfer 只在 `transfer.sync_states` 保存目标已应用的 Infra Kafka `next_offset`，两类位点不能互相代替。
 
-CDC v1 在创建 capture 前核对完整源表字段和真实 PostgreSQL 类型，只开放 `string|bool|int|bigint|float|double|decimal|date|time|timestamp|json|uuid`。connector 固定 Decimal 字符串和 Connect 毫秒时间编码，避免 schemaless JSON 同一数字无法判断单位；`time` 和无时区 `timestamp` 仅允许精度 `0..3`，PostgreSQL 默认微秒精度或显式精度大于 3 的列会在启动前拒绝，不能静默截断。`bytea`、数组、空间、interval、枚举及其他用户定义类型同样明确拒绝。
+CDC v1 在创建 capture 前核对完整源表字段和真实 PostgreSQL 类型，开放 `string|bool|int|bigint|float|double|decimal|date|time|timestamp|json|uuid|geometry`。PostGIS geometry 必须固定 OGC type、正 SRID和 XY/XYZ 维度；Transfer 将 Debezium `{wkb,srid}` 解码为 EWKB，按源空间事实创建目标 geometry 列，不做坐标转换，geometry 也不能作为主键。这里不使用同构空间源/目标的 native encoding 直通优化：PostGIS `geometry` 是数据库内部类型，不是跨 Provider encoding，而且 CDC 数据必须经过 Debezium 和 Infra Kafka。只有源、目标通过能力声明协商出相同 native geometry encoding 且链路没有转换或中间几何算子时，普通 Transfer planner 才可选择 native encoding 直通。connector 固定 Decimal 字符串和 Connect 毫秒时间编码，避免 schemaless JSON 同一数字无法判断单位；`time` 和无时区 `timestamp` 仅允许精度 `0..3`，PostgreSQL 默认微秒精度或显式精度大于 3 的列会在启动前拒绝，不能静默截断。`bytea`、数组、geography、未约束 geometry、M/ZM geometry、interval、枚举及其他用户定义类型同样明确拒绝。
+
+Debezium 的 geometry 属性名是 `wkb`，真实 PostGIS connector 可能在该 base64 属性中发送带 SRID 的 EWKB。Transfer 使用统一 WKB/EWKB 解析器，并校验内嵌 SRID、旁路 `srid` 与 generation 冻结事实一致，再输出 ADDP 标准 EWKB 行值。
 
 类型不兼容与字段增删、envelope/source 结构变化一样进入 `schema_change_blocked`，execution metadata 会记录 missing/unexpected/incompatible 字段，当前 Kafka 消息不会被跳过。任务同时进入 `status=blocked`，禁止再次启动、恢复或重试；connector 在用户 Stop 前仍会继续采集，因此 backlog、Kafka retention 和磁盘风险继续存在。第一版唯一处理方式是永久停止旧任务，再创建新任务和新目标表重新初始化，不支持“调整目标后原地恢复”。
 

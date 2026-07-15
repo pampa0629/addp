@@ -191,7 +191,7 @@ function createPriorityFunction(tile) {
 function getContentFailedFunction(tile) {
     return function(error) {
         tile.contentState = ContentState.FAILED;
-        tile.contentReadyPromise.reject(error);
+        tile.contentReadyPromise && tile.contentReadyPromise.reject(error);
     };
 }
 
@@ -231,22 +231,28 @@ function createChildren(parent, datas) {
 
 async function contentReadyFunction(layer, tile, arrayBuffer) {
     layer._cache.add(tile);
+    tile.contentState = ContentState.PARSING;
 
     let content;
     if(tile.fileExtension === 's3mb'){
-        content = S3ModelParser.parseBuffer(arrayBuffer);
+        content = await S3ModelParser.parseBuffer(arrayBuffer);
     }
     else if(tile.fileExtension === 's3m'){
         content = S3ModelOldParser.parseBuffer(arrayBuffer);
     }
 
+    if(tile.isDestroyed()){
+        return;
+    }
+
     if(!content){
-        tile.contentState = ContentState.FAILED;
-        tile.contentReadyPromise.reject();
-        return ;
+        throw new Error(`Unsupported or invalid S3M tile: ${tile.fileName}`);
     }
 
     let data = await S3MContentParser.parse(layer, content, tile);
+    if(tile.isDestroyed()){
+        return;
+    }
 
     createChildren(tile, data);
     tile.contentState = ContentState.LOADED;
@@ -280,18 +286,22 @@ S3MTile.prototype.requestContent = function() {
 
     promise.then(function(arrayBuffer) {
         if (that.isDestroyed()) {
-            contentFailedFunction();
             return;
         }
 
-        contentReadyFunction(layer, that, arrayBuffer);
-    },(error)=>{
+        return contentReadyFunction(layer, that, arrayBuffer);
+    }).catch(function(error) {
         if (request.state === Cesium.RequestState.CANCELLED) {
             that.contentState = ContentState.UNLOADED;
             return;
         }
 
-        // contentFailedFunction(error);
+        if (that.isDestroyed()) {
+            return;
+        }
+
+        console.error(`[S3M] Failed to load or parse tile ${that.fileName}`, error);
+        contentFailedFunction(error);
     });
 
     return true;

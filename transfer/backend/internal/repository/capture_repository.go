@@ -1,7 +1,9 @@
 package repository
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -22,6 +24,7 @@ type CaptureIdentity struct {
 	SourceDatabase              string
 	SourceSchema                string
 	SourceTable                 string
+	SourceSpatialInfo           models.JSONMap
 }
 
 type CaptureRepository struct {
@@ -51,7 +54,8 @@ func (r *CaptureRepository) BeginGeneration(ctx context.Context, identity Captur
 				return ErrCaptureTerminal
 			}
 			if resource.SourceIdentity != identity.SourceIdentity || resource.SourceConnectionFingerprint != identity.SourceConnectionFingerprint || resource.SourceEngineID != identity.SourceEngineID ||
-				resource.SourceDatabase != identity.SourceDatabase || resource.SourceSchema != identity.SourceSchema || resource.SourceTable != identity.SourceTable {
+				resource.SourceDatabase != identity.SourceDatabase || resource.SourceSchema != identity.SourceSchema || resource.SourceTable != identity.SourceTable ||
+				!captureSpatialInfoEqual(resource.SourceSpatialInfo, identity.SourceSpatialInfo) {
 				return fmt.Errorf("capture source identity changed after generation creation")
 			}
 			return nil
@@ -70,11 +74,21 @@ func (r *CaptureRepository) BeginGeneration(ctx context.Context, identity Captur
 			SourceIdentity:  identity.SourceIdentity, SourceConnectionFingerprint: identity.SourceConnectionFingerprint,
 			SourceEngineID: identity.SourceEngineID,
 			SourceDatabase: identity.SourceDatabase, SourceSchema: identity.SourceSchema, SourceTable: identity.SourceTable,
-			Status: models.CaptureStatusProvisioning, SlotOwned: true, PublicationOwned: true, ResourceVersion: 1,
+			SourceSpatialInfo: identity.SourceSpatialInfo,
+			Status:            models.CaptureStatusProvisioning, SlotOwned: true, PublicationOwned: true, ResourceVersion: 1,
 		}
 		return tx.Create(&resource).Error
 	})
 	return &resource, err
+}
+
+func captureSpatialInfoEqual(left, right models.JSONMap) bool {
+	if len(left) == 0 && len(right) == 0 {
+		return true
+	}
+	leftJSON, leftErr := json.Marshal(left)
+	rightJSON, rightErr := json.Marshal(right)
+	return leftErr == nil && rightErr == nil && bytes.Equal(leftJSON, rightJSON)
 }
 
 func (r *CaptureRepository) GetLatest(ctx context.Context, taskID, tenantID uint) (*models.CaptureResource, error) {

@@ -2,18 +2,22 @@ package continuous
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"testing"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/kafka"
 	"github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
+	commonSpatial "github.com/addp/common/spatial"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/google/uuid"
+	"github.com/twpayne/go-geom"
 )
 
 func TestDataSessionRunnerAppliesThenCommitsPartitionPosition(t *testing.T) {
@@ -77,8 +81,13 @@ func TestDataSessionRunnerConsumesRegisteredPostgreSQLCDCGeneration(t *testing.T
 		12: {Type: "postgresql", ConnInfo: plugin.ConnectionInfo{"database": "business"}},
 		20: {Type: "postgresql", ConnInfo: plugin.ConnectionInfo{"host": "unused"}, Capabilities: &targetCaps},
 	}
+	shapeWKB, err := commonSpatial.GeomToEWKB(geom.NewPointFlat(geom.XY, []float64{1, 2}), 4549)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shapeValue := `{"wkb":"` + base64.StdEncoding.EncodeToString(shapeWKB) + `","srid":4549}`
 	reader := &fakeChangeStreamReader{batch: &plugin.ChangeRecordBatch{Records: []plugin.ChangeRecord{
-		{Topic: "__addp_cdc.7.42.1", Partition: "0", Offset: 0, Key: []byte(`{"id":1}`), Value: []byte(debeziumEnvelope("r", `null`, `{"id":1}`, "business", "public", "orders")), Position: kafkaOffsetPosition("0", 1)},
+		{Topic: "__addp_cdc.7.42.1", Partition: "0", Offset: 0, Key: []byte(`{"id":1}`), Value: []byte(debeziumEnvelope("r", `null`, `{"id":1,"shape":`+shapeValue+`}`, "business", "public", "orders")), Position: kafkaOffsetPosition("0", 1)},
 		{Topic: "__addp_cdc.7.42.1", Partition: "0", Offset: 1, Key: []byte(`{"id":1}`), Value: []byte(debeziumEnvelope("d", `{"id":1}`, `null`, "business", "public", "orders")), Position: kafkaOffsetPosition("0", 2)},
 	}}}
 	source := &fakeChangeStreamProvider{reader: reader}
@@ -92,7 +101,8 @@ func TestDataSessionRunnerConsumesRegisteredPostgreSQLCDCGeneration(t *testing.T
 			TopicName: "__addp_cdc.7.42.1", ConsumerGroup: "__addp_cdc_consumer.7.42.1",
 			SourceIdentity: "addp://engine/12/path/public/orders?type=table",
 			SourceDatabase: "business", SourceSchema: "public", SourceTable: "orders",
-			TopicCreated: true, ConnectorCreated: true,
+			SourceSpatialInfo: models.JSONMap(datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("shape", "Point", 4549, 2))),
+			TopicCreated:      true, ConnectorCreated: true,
 		}},
 		InfraKafkaConnection: plugin.ConnectionInfo{"bootstrap_servers": "infra"},
 		PollTimeout:          time.Millisecond,
@@ -106,7 +116,7 @@ func TestDataSessionRunnerConsumesRegisteredPostgreSQLCDCGeneration(t *testing.T
 	claim := continuousRunnerClaim()
 	claim.Task.TenantID = 7
 	claim.Task.BatchSize = 100
-	claim.Task.Config = postgresqlCDCRunnerConfig()
+	claim.Task.Config = postgresqlCDCGeometryRunnerConfig()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- runner.Run(ctx, claim) }()
@@ -117,6 +127,13 @@ func TestDataSessionRunnerConsumesRegisteredPostgreSQLCDCGeneration(t *testing.T
 		}
 		if len(target.lastBatch.Changes) != 2 || target.lastBatch.Changes[0].Operation != plugin.TableChangeOperationUpsert || target.lastBatch.Changes[1].Operation != plugin.TableChangeOperationDelete {
 			t.Fatalf("CDC target batch = %#v", target.lastBatch)
+		}
+		if target.prepareOptions.SpatialInfo == nil || target.prepareOptions.SpatialInfo.PrimaryGeometryName() != "geometry" ||
+			target.prepareOptions.SpatialInfo.PrimarySRIDValue() != 4549 {
+			t.Fatalf("CDC target spatial options = %#v", target.prepareOptions.SpatialInfo)
+		}
+		if _, ok := target.lastBatch.Changes[0].Row["geometry"].([]byte); !ok {
+			t.Fatalf("CDC geometry row = %T, want []byte EWKB", target.lastBatch.Changes[0].Row["geometry"])
 		}
 	case <-time.After(time.Second):
 		t.Fatal("CDC runner did not commit progress")
@@ -255,6 +272,15 @@ func postgresqlCDCRunnerConfig() models.JSONMap {
 	}
 }
 
+func postgresqlCDCGeometryRunnerConfig() models.JSONMap {
+	config := postgresqlCDCRunnerConfig()
+	transform := config["transforms"].([]interface{})[0].(map[string]interface{})
+	transform["fields"] = append(transform["fields"].([]interface{}), map[string]interface{}{
+		"source": "shape", "target": "geometry", "target_type": "geometry", "nullable": true,
+	})
+	return config
+}
+
 type fakeChangeStreamProvider struct {
 	reader  plugin.ChangeStreamReader
 	options plugin.ChangeStreamReadOptions
@@ -312,9 +338,10 @@ func (r *fakeChangeStreamReader) Resume(context.Context, []string) error { retur
 func (r *fakeChangeStreamReader) Close(context.Context) error            { return nil }
 
 type fakeChangeApplyProvider struct {
-	prepared  bool
-	applied   bool
-	lastBatch *plugin.PartitionedTableChangeBatch
+	prepared       bool
+	applied        bool
+	prepareOptions plugin.PartitionedTableChangeApplyOptions
+	lastBatch      *plugin.PartitionedTableChangeBatch
 }
 
 func (p *fakeChangeApplyProvider) Type() string                                       { return "postgresql" }
@@ -333,8 +360,9 @@ func (p *fakeChangeApplyProvider) Capabilities() plugin.EngineCapabilities {
 func (p *fakeChangeApplyProvider) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
-func (p *fakeChangeApplyProvider) PreparePartitionedTableChangeApply(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.PartitionedTableChangeApplyOptions) error {
+func (p *fakeChangeApplyProvider) PreparePartitionedTableChangeApply(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, options plugin.PartitionedTableChangeApplyOptions) error {
 	p.prepared = true
+	p.prepareOptions = options
 	return nil
 }
 func (p *fakeChangeApplyProvider) ApplyPartitionedTableChanges(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, batch *plugin.PartitionedTableChangeBatch, _ plugin.PartitionedTableChangeApplyOptions) (*plugin.PartitionedTableChangeApplyResult, error) {

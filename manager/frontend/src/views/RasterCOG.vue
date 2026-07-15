@@ -18,8 +18,10 @@
           </div>
 
           <el-table :data="tasks" v-loading="tasksLoading" stripe>
-            <el-table-column prop="name" :label="t('manager.rasterCOG.name')" min-width="190" show-overflow-tooltip />
-            <el-table-column :label="t('manager.rasterCOG.engine')" min-width="120" show-overflow-tooltip>
+            <el-table-column :label="t('manager.rasterCOG.name')" min-width="190" show-overflow-tooltip>
+              <template #default="{ row }">{{ displayText(row.name) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('manager.rasterCOG.engine')" min-width="140" show-overflow-tooltip>
               <template #default="{ row }">{{ engineName(row.target?.source_engine_id) }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.rasterCOG.resource')" min-width="260" show-overflow-tooltip>
@@ -112,7 +114,7 @@
           </div>
 
           <el-table :data="results" v-loading="resultsLoading" stripe>
-            <el-table-column :label="t('manager.rasterCOG.engine')" min-width="120" show-overflow-tooltip>
+            <el-table-column :label="t('manager.rasterCOG.engine')" min-width="140" show-overflow-tooltip>
               <template #default="{ row }">{{ engineName(row.source_engine_id) }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.rasterCOG.sourceDataPath')" min-width="260" show-overflow-tooltip>
@@ -180,6 +182,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { InfoFilled, Refresh } from '@element-plus/icons-vue'
 import { openMonitorExecution, parseLocatorSafe } from '@addp/common-frontend'
 import { quickViewAPI } from '../api/quickView'
+import { useQuickViewResourceDisplay } from '../composables/useQuickViewResourceDisplay'
 import { formatBytes, formatDateTime } from '../utils/formatters'
 import {
   rasterCOGExecutionStatusTagType,
@@ -194,6 +197,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const { displayText, engineName, loadQuickViewEngines } = useQuickViewResourceDisplay(t)
 
 const activeTab = ref(route.query.tab === 'results' ? 'results' : 'tasks')
 const tasks = ref([])
@@ -217,7 +221,7 @@ const resultFilters = reactive({
 
 const resultTaskFilterLabel = computed(() => {
   if (!selectedResultTask.value) return ''
-  return selectedResultTask.value.name || t('manager.rasterCOG.taskWithId', { id: selectedResultTask.value.id })
+  return selectedResultTask.value.name ? displayText(selectedResultTask.value.name) : t('manager.rasterCOG.taskWithId', { id: selectedResultTask.value.id })
 })
 
 const unwrapList = (response) => {
@@ -246,7 +250,6 @@ const errorMessage = (error, fallback) => (
   fallback
 )
 
-const engineName = (id) => Number(id || 0) > 0 ? t('manager.rasterCOG.engineWithId', { id }) : '-'
 const taskResourceText = (task) => rasterCOGTaskResource(task, parseLocatorSafe)
 const sourcePathText = (result) => rasterCOGSourcePath(result, parseLocatorSafe)
 const rasterSize = (width, height) => rasterCOGRasterSize(width, height)
@@ -422,11 +425,10 @@ const openSourcePreview = (result) => {
 
 onMounted(async () => {
   await loadResultTaskFilterFromRoute()
-  if (activeTab.value === 'results') {
-    await loadResults()
-  } else {
-    await loadTasks()
-  }
+  await Promise.all([
+    loadQuickViewEngines(),
+    activeTab.value === 'results' ? loadResults() : loadTasks()
+  ])
 })
 </script>
 

@@ -1066,7 +1066,7 @@ Oracle CDC 沿用相同公开任务形态和 Infra Kafka/ChangeEvent/目标应�
 
 ### 工作包 3D：PostgreSQL CDC 数据面（已完成第一版）
 
-1. 已实现 Debezium 3.6 schemaless JSON adapter、snapshot/upsert/delete ChangeEvent 和严格 envelope/source/schema 校验；Decimal 固定 string、时间固定 Connect 毫秒编码，并在 capture 前校验 PostgreSQL CDC v1 类型矩阵。
+1. 已实现 Debezium 3.6 schemaless JSON adapter、snapshot/upsert/delete ChangeEvent 和严格 envelope/source/schema 校验；Decimal 固定 string、时间固定 Connect 毫秒编码，并在 capture 前校验 PostgreSQL CDC v1 类型矩阵。后续增强已加入 PostGIS geometry：generation 冻结 OGC type/SRID/dimension，Debezium `{wkb,srid}` 严格解码为 EWKB，目标按同一空间事实建表且不做重投影。
 2. 已扩展 PostgreSQL `PartitionedTableChangeApplyProvider`，把 upsert/delete 与目标 ledger 原子提交。
 3. 已复用 continuous worker、`kafka_offset/v1`、CAS/fencing、retention 位置保护和 capture generation，不建立第二套 CDC consumer。
 4. 已完成 PostgreSQL -> PostgreSQL initial snapshot、update、delete、worker 崩溃换 owner 恢复、目标 ledger/Infra state 对齐和 stop cleanup 端到端测试。

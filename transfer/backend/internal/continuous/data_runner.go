@@ -100,7 +100,7 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 	}
 	applyOptions := engineplugin.PartitionedTableChangeApplyOptions{
 		ApplyIdentity: claim.Task.ApplyIdentity, SourceIdentity: plan.Source.SourceIdentity,
-		Fields: plan.Target.Fields, Keys: plan.Target.Keys,
+		Fields: plan.Target.Fields, SpatialInfo: plan.Target.SpatialInfo, Keys: plan.Target.Keys,
 	}
 	if err := target.PreparePartitionedTableChangeApply(ctx, plan.Target.ConnInfo, plan.Target.Path, applyOptions); err != nil {
 		return fmt.Errorf("prepare continuous target: %w", err)
@@ -279,6 +279,7 @@ func (r *DataSessionRunner) buildPlan(ctx context.Context, claim repository.Runt
 			ConnInfo: r.InfraKafkaConnection, Path: internalKafkaTopicPath(resource.TopicName),
 			ConsumerGroup: resource.ConsumerGroup, SourceIdentity: resource.SourceIdentity,
 			Database: resource.SourceDatabase, Schema: resource.SourceSchema, Table: resource.SourceTable,
+			SpatialInfo: datatype.SpatialInfoFromPayload(map[string]interface{}(resource.SourceSpatialInfo)),
 		}, claim.Task.BatchSize)
 	}
 	spec, err := planner.ParseContinuousTaskSpec(claim.Task.Config)

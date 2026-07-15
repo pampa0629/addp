@@ -5,10 +5,14 @@ import {
   buildContinuousSourceEndpoint,
   buildPostgreSQLCDCSourceEndpoint,
 	cdcMappingsCoverSourceFields,
-  continuousMappedTargetKeys,
-  continuousMappingsValid,
+	continuousMappedTargetKeys,
+	continuousMappingsValid,
 	isKafkaTopicSource,
-	isPostgreSQLTableSource
+	isPostgreSQLTableSource,
+	normalizeContinuousKeyFields,
+	postgresqlCDCMappingsValid,
+	postgresqlCDCUnavailableReasonCodes,
+	taskEngineTypes
 } from '../src/views/TaskWizard/continuousTask.mjs'
 
 test('Kafka topic source is the only continuous source shape', () => {
@@ -35,6 +39,17 @@ test('continuous target keys follow source key mapping order', () => {
   ]
   assert.deepEqual(continuousMappedTargetKeys(mappings, ['id', 'tenant_id']), ['order_id', 'tenant_id'])
   assert.equal(continuousMappingsValid(mappings, ['id', 'tenant_id']), true)
+})
+
+test('continuous key normalization is idempotent and removes only unmapped keys', () => {
+	const mappings = [
+		{ source_field: 'id' },
+		{ source_field: 'tenant_id' }
+	]
+	const first = normalizeContinuousKeyFields(['ID', 'missing', 'tenant_id', 'id'], mappings)
+	const second = normalizeContinuousKeyFields(first, mappings)
+	assert.deepEqual(first, ['ID', 'tenant_id'])
+	assert.deepEqual(second, first)
 })
 
 test('continuous source endpoint uses the strict v1 contract', () => {
@@ -75,4 +90,62 @@ test('CDC mapping must cover the complete frozen source schema', () => {
 		{ source_field: 'id' }, { source_field: 'name' }
 	], fields), true)
 	assert.equal(cdcMappingsCoverSourceFields([{ source_field: 'id' }], fields), false)
+})
+
+test('PostgreSQL CDC accepts geometry without opening geometry to generic Kafka tasks', () => {
+	const mappings = [
+		{ source_field: 'id', target_field: 'id', target_type: 'bigint', nullable: false },
+		{ source_field: 'shape', target_field: 'geometry', target_type: 'geometry', nullable: true }
+	]
+	assert.equal(postgresqlCDCMappingsValid(mappings, ['id']), true)
+	assert.equal(continuousMappingsValid(mappings, ['id']), false)
+})
+
+test('PostgreSQL CDC availability reports concrete blocking reasons', () => {
+	const available = postgresqlCDCUnavailableReasonCodes({
+		sourceEngineType: 'postgresql',
+		sourceLocator: 'addp://engine/8/path/public/roads?type=table',
+		sourceRepresentation: 'native',
+		sourceDataType: 'table',
+		targetEngineType: 'postgresql',
+		targetRepresentation: 'native',
+		sourceFields: [
+			{ name: 'id', type: 'bigint', primary_key: true },
+			{ name: 'shape', type: 'geometry' }
+		]
+	})
+	assert.deepEqual(available, [])
+
+	const unavailable = postgresqlCDCUnavailableReasonCodes({
+		sourceEngineType: 'mysql',
+		sourceLocator: 'addp://engine/9/path/public/roads?type=table',
+		sourceRepresentation: 'encoded',
+		sourceDataType: 'table',
+		targetEngineType: 'minio',
+		targetRepresentation: 'encoded',
+		sourceFields: [{ name: 'payload', type: 'bytes' }]
+	})
+	assert.deepEqual(unavailable.map(reason => reason.code), [
+		'sourcePostgreSQLRequired',
+		'sourceNativeRequired',
+		'targetPostgreSQLRequired',
+		'targetNativeRequired',
+		'sourcePrimaryKeyRequired',
+		'sourceFieldTypesUnsupported'
+	])
+	assert.deepEqual(unavailable.at(-1).fields, ['payload'])
+})
+
+test('snapshot task engine types are restored from System engines instead of load mode guesses', () => {
+	const task = {
+		config: {
+			source: { locator: 'addp://engine/8/path/public/source?type=table' },
+			target: { parent_locator: 'addp://engine/20/path/tiger?type=schema' }
+		}
+	}
+	assert.deepEqual(taskEngineTypes(task, [
+		{ id: 8, engine_type: 'postgresql' },
+		{ id: 20, engine_type: 'postgresql' }
+	]), { source: 'postgresql', target: 'postgresql' })
+	assert.deepEqual(taskEngineTypes(task, []), { source: '', target: '' })
 })

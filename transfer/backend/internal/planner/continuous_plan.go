@@ -32,9 +32,10 @@ type ContinuousSourcePlan struct {
 }
 
 type PostgreSQLCDCSourcePlan struct {
-	Database string
-	Schema   string
-	Table    string
+	Database    string
+	Schema      string
+	Table       string
+	SpatialInfo *datatype.SpatialInfo
 }
 
 type PostgreSQLCDCStreamBinding struct {
@@ -45,13 +46,15 @@ type PostgreSQLCDCStreamBinding struct {
 	Database       string
 	Schema         string
 	Table          string
+	SpatialInfo    *datatype.SpatialInfo
 }
 
 type ContinuousTargetPlan struct {
-	ConnInfo engineplugin.ConnectionInfo
-	Path     engineplugin.CatalogPath
-	Fields   []datatype.FieldInfo
-	Keys     []string
+	ConnInfo    engineplugin.ConnectionInfo
+	Path        engineplugin.CatalogPath
+	Fields      []datatype.FieldInfo
+	SpatialInfo *datatype.SpatialInfo
+	Keys        []string
 }
 
 type ContinuousPlan struct {
@@ -184,11 +187,15 @@ func BuildPostgreSQLCDCContinuousPlan(spec PostgreSQLCDCTaskSpec, resolver Engin
 	if err != nil {
 		return nil, fmt.Errorf("build PostgreSQL CDC target path: %w", err)
 	}
-	mappings, fields, err := buildContinuousFields(spec.Transforms[0].Fields)
+	mappings, fields, err := buildPostgreSQLCDCFields(spec.Transforms[0].Fields)
 	if err != nil {
 		return nil, err
 	}
 	sourceKeys, targetKeys, err := PostgreSQLCDCSourceToTargetKeys(spec)
+	if err != nil {
+		return nil, err
+	}
+	targetSpatialInfo, err := mapPostgreSQLCDCSpatialInfo(stream.SpatialInfo, mappings)
 	if err != nil {
 		return nil, err
 	}
@@ -198,12 +205,56 @@ func BuildPostgreSQLCDCContinuousPlan(spec PostgreSQLCDCTaskSpec, resolver Engin
 			ConsumerGroup: stream.ConsumerGroup, InitialPosition: engineplugin.ChangeStreamInitialEarliest,
 			PollBatchSize: pollBatchSize,
 		},
-		Target:   ContinuousTargetPlan{ConnInfo: target.ConnInfo, Path: targetPath, Fields: fields, Keys: targetKeys},
+		Target:   ContinuousTargetPlan{ConnInfo: target.ConnInfo, Path: targetPath, Fields: fields, SpatialInfo: targetSpatialInfo, Keys: targetKeys},
 		Mappings: mappings, SourceKeys: sourceKeys, SourceType: "kafka", TargetType: "postgresql",
 		Envelope: ContinuousEnvelopePostgreSQLDebezium,
-		CDC:      &PostgreSQLCDCSourcePlan{Database: stream.Database, Schema: stream.Schema, Table: stream.Table},
+		CDC:      &PostgreSQLCDCSourcePlan{Database: stream.Database, Schema: stream.Schema, Table: stream.Table, SpatialInfo: stream.SpatialInfo.Clone()},
 	}, nil
 }
+
+func mapPostgreSQLCDCSpatialInfo(source *datatype.SpatialInfo, mappings []ContinuousFieldPlan) (*datatype.SpatialInfo, error) {
+	geometryMappings := make(map[string]ContinuousFieldPlan)
+	for _, mapping := range mappings {
+		if mapping.Type == datatype.FieldTypeGeometry {
+			geometryMappings[mapping.Source] = mapping
+		}
+	}
+	if len(geometryMappings) == 0 {
+		if source != nil && len(source.GeometryColumns) > 0 {
+			return nil, fmt.Errorf("PostgreSQL CDC capture contains spatial facts but task has no geometry mapping")
+		}
+		return nil, nil
+	}
+	if source == nil || len(source.GeometryColumns) == 0 {
+		return nil, fmt.Errorf("PostgreSQL CDC geometry mappings require frozen capture spatial facts")
+	}
+	columns := make([]datatype.GeometryColumnInfo, 0, len(source.GeometryColumns))
+	seen := make(map[string]bool)
+	for _, sourceColumn := range source.GeometryColumns {
+		mapping, ok := geometryMappings[sourceColumn.Name]
+		if !ok {
+			return nil, fmt.Errorf("PostgreSQL CDC spatial source field %q is not mapped as geometry", sourceColumn.Name)
+		}
+		column := sourceColumn
+		column.Name = mapping.Target
+		column.Nullable = boolPtr(mapping.Nullable)
+		columns = append(columns, column)
+		seen[mapping.Source] = true
+	}
+	for sourceName := range geometryMappings {
+		if !seen[sourceName] {
+			return nil, fmt.Errorf("PostgreSQL CDC geometry field %q has no frozen source spatial fact", sourceName)
+		}
+	}
+	result := &datatype.SpatialInfo{GeometryColumns: columns, PrimaryGeometryColumn: columns[0].Name}
+	if len(columns) == 1 {
+		result.SRID = columns[0].SRID
+		result.CRSRef = columns[0].CRSRef
+	}
+	return result, nil
+}
+
+func boolPtr(value bool) *bool { return &value }
 
 func continuousSourceEngineRef(source ContinuousSourceSpec) (EngineRef, error) {
 	loc, err := resourcetree.ParseURI(strings.TrimSpace(source.Locator))
@@ -246,6 +297,14 @@ func declaresPartitionedMonotonicApply(binding EngineBinding, operations ...stri
 }
 
 func buildContinuousFields(specs []FieldMappingSpec) ([]ContinuousFieldPlan, []datatype.FieldInfo, error) {
+	return buildContinuousFieldsWithTypeSupport(specs, ContinuousFieldTypeSupported)
+}
+
+func buildPostgreSQLCDCFields(specs []FieldMappingSpec) ([]ContinuousFieldPlan, []datatype.FieldInfo, error) {
+	return buildContinuousFieldsWithTypeSupport(specs, PostgreSQLCDCFieldTypeSupported)
+}
+
+func buildContinuousFieldsWithTypeSupport(specs []FieldMappingSpec, supported func(datatype.FieldType) bool) ([]ContinuousFieldPlan, []datatype.FieldInfo, error) {
 	mappings := make([]ContinuousFieldPlan, 0, len(specs))
 	fields := make([]datatype.FieldInfo, 0, len(specs))
 	seenSource := map[string]bool{}
@@ -261,7 +320,7 @@ func buildContinuousFields(specs []FieldMappingSpec) ([]ContinuousFieldPlan, []d
 		if fieldType == datatype.FieldTypeUnknown {
 			return nil, nil, fmt.Errorf("continuous field %q requires a known target_type", target)
 		}
-		if !ContinuousFieldTypeSupported(fieldType) {
+		if !supported(fieldType) {
 			return nil, nil, fmt.Errorf("continuous v1 does not support target_type %q", fieldType)
 		}
 		if spec.Nullable == nil {
@@ -276,6 +335,12 @@ func buildContinuousFields(specs []FieldMappingSpec) ([]ContinuousFieldPlan, []d
 		fields = append(fields, datatype.FieldInfo{Name: target, Type: fieldType, Nullable: *spec.Nullable})
 	}
 	return mappings, fields, nil
+}
+
+// PostgreSQLCDCFieldTypeSupported extends the scalar continuous contract with
+// ADDP's canonical EWKB + SpatialInfo geometry representation.
+func PostgreSQLCDCFieldTypeSupported(fieldType datatype.FieldType) bool {
+	return ContinuousFieldTypeSupported(fieldType) || fieldType == datatype.FieldTypeGeometry
 }
 
 // ContinuousFieldTypeSupported 返回 continuous v1 数据面可无歧义应用的字段类型。

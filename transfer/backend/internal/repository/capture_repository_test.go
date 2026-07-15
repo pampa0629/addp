@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/transfer/internal/models"
 )
 
@@ -27,6 +28,7 @@ func TestCaptureRepositoryReusesGenerationAndRejectsStoppedRestart(t *testing.T)
 			source_database TEXT NOT NULL,
 			source_schema TEXT NOT NULL,
 			source_table TEXT NOT NULL,
+			source_spatial_info TEXT NOT NULL DEFAULT '{}',
 			status TEXT NOT NULL,
 			connector_status TEXT,
 			connector_error TEXT,
@@ -62,11 +64,35 @@ func TestCaptureRepositoryReusesGenerationAndRejectsStoppedRestart(t *testing.T)
 	if first.ID != second.ID || first.Generation != 1 {
 		t.Fatalf("generation not reused: first=%+v second=%+v", first, second)
 	}
+	identity.SourceSpatialInfo = models.JSONMap(datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("shape", "Point", 4326, 2)))
+	if _, err := repo.BeginGeneration(context.Background(), identity); err == nil || err.Error() != "capture source identity changed after generation creation" {
+		t.Fatalf("BeginGeneration() spatial identity error = %v", err)
+	}
 	if err := repo.ForceUpdate(context.Background(), first.ID, map[string]interface{}{"status": models.CaptureStatusStopped}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := repo.BeginGeneration(context.Background(), identity); !errors.Is(err, ErrCaptureTerminal) {
 		t.Fatalf("BeginGeneration() error = %v, want ErrCaptureTerminal", err)
+	}
+
+	spatialTask := createTaskRepositoryTestTask(t, db, 7, "cdc")
+	spatialIdentity := CaptureIdentity{
+		TaskID: spatialTask.ID, TenantID: spatialTask.TenantID, SourceIdentity: "addp://engine/12/path/public/roads?type=table",
+		SourceConnectionFingerprint: "fingerprint",
+		SourceEngineID:              12, SourceDatabase: "business", SourceSchema: "public", SourceTable: "roads",
+		SourceSpatialInfo: models.JSONMap(datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("shape", "Point", 4549, 2))),
+	}
+	spatialFirst, err := repo.BeginGeneration(context.Background(), spatialIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spatialSecond, err := repo.BeginGeneration(context.Background(), spatialIdentity)
+	if err != nil || spatialSecond.ID != spatialFirst.ID {
+		t.Fatalf("spatial generation was not reused after JSON round trip: first=%#v second=%#v err=%v", spatialFirst, spatialSecond, err)
+	}
+	spatialIdentity.SourceSpatialInfo["srid"] = 4326
+	if _, err := repo.BeginGeneration(context.Background(), spatialIdentity); err == nil || err.Error() != "capture source identity changed after generation creation" {
+		t.Fatalf("BeginGeneration() changed spatial identity error = %v", err)
 	}
 }
 

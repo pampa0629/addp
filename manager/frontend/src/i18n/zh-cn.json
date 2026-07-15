@@ -1,5 +1,8 @@
 {
   "manager": {
+    "quickViewDisplay": {
+      "unknownEngine": "未知引擎"
+    },
     "layout": {
       "title": "数据管理模块",
       "logout": "退出登录",
@@ -201,7 +204,6 @@
       "name": "任务名称",
       "description": "描述",
       "engine": "引擎",
-      "engineWithId": "引擎 {id}",
       "schema": "Schema",
       "table": "数据项",
       "resource": "资源",
@@ -347,7 +349,6 @@
       "name": "任务名称",
       "description": "描述",
       "engine": "引擎",
-      "engineWithId": "引擎 {id}",
       "resource": "资源",
       "sourceData": "源数据",
       "sourceDataPath": "源数据路径",
@@ -438,7 +439,6 @@
       "id": "ID",
       "name": "任务名称",
       "engine": "引擎",
-      "engineWithId": "引擎 {id}",
       "resource": "资源",
       "sourceDataPath": "源数据路径",
       "profile": "Profile",
@@ -511,8 +511,6 @@
       "searchPlaceholder": "搜索当前引擎资源",
       "searchAllEnginesPlaceholder": "搜索全部引擎资源",
       "searchEmptyText": "未找到资源",
-      "sourceLocator": "源定位符",
-      "sourceEngineID": "源引擎 ID",
       "itemFingerprint": "数据项指纹",
       "itemID": "数据项 ID",
       "sourceSize": "源大小",
@@ -1347,8 +1345,6 @@
       "searchPlaceholder": "搜索当前引擎资源",
       "searchAllEnginesPlaceholder": "搜索全部引擎资源",
       "searchEmptyText": "未找到资源",
-      "sourceLocator": "源定位符",
-      "sourceEngineID": "源引擎 ID",
       "itemFingerprint": "数据项指纹",
       "itemID": "数据项 ID",
       "sourceSize": "源大小",
@@ -1437,8 +1433,6 @@
       "searchPlaceholder": "搜索当前引擎资源",
       "searchAllEnginesPlaceholder": "搜索全部引擎资源",
       "searchEmptyText": "未找到资源",
-      "sourceLocator": "源定位符",
-      "sourceEngineID": "源引擎 ID",
       "itemFingerprint": "数据项指纹",
       "sourceSize": "源大小",
       "sourceFormat": "源格式",

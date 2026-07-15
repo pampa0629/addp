@@ -1632,6 +1632,27 @@ const quickViewRendererStateKey = computed(() => {
   return ''
 })
 
+const quickViewArtifactVersion = computed(() => {
+  const source = quickViewRenderSource.value
+  if (source === 'model3d_3d_tiles' || source === 'model3d_s3m') {
+    const selected = selectedModel3DTilesResult.value
+    return String(selected?.last_execution_id || selected?.result_id || '').trim()
+  }
+  if (source === 'model_3d_glb') {
+    const result = quickViewStatus.value?.model_3d || {}
+    return String(result.last_execution_id || result.result_id || '').trim()
+  }
+  if (source === 'gaussian_splat_ksplat') {
+    const result = quickViewStatus.value?.gaussian_splat || {}
+    return String(result.last_execution_id || result.result_id || '').trim()
+  }
+  if (source === 'point_cloud_copc') {
+    const result = quickViewStatus.value?.point_cloud || {}
+    return String(result.last_execution_id || result.result_id || '').trim()
+  }
+  return ''
+})
+
 const basicPreviewRendererStateKey = computed(() => {
   if (previewPluginName.value === 'model-3d') return 'scene_3d'
   if (previewPluginName.value === 'gaussian-splat') return 'scene_3d'
@@ -1652,7 +1673,12 @@ function rendererState(mode, renderer) {
 }
 
 const activeQuickViewState = computed(() => {
-  return rendererState('quick_view', quickViewRendererStateKey.value)
+  const state = rendererState('quick_view', quickViewRendererStateKey.value)
+  if (quickViewRendererStateKey.value !== 'scene_3d') return state
+  if (state.render_source !== quickViewRenderSource.value) return {}
+  const artifactVersion = quickViewArtifactVersion.value
+  if (artifactVersion && state.artifact_version !== artifactVersion) return {}
+  return state
 })
 
 const activeBasicPreviewState = computed(() => {
@@ -1810,8 +1836,11 @@ const quickViewRendererProps = computed(() => {
             metadata: {
               format: isS3M ? 's3m' : '3dtiles',
               source_format: isS3M ? 's3m' : '3dtiles',
-              manifest_encoding: isS3M ? 'xml' : '',
-              tile_extension: isS3M ? '.s3m' : ''
+              manifest_encoding: isS3M ? selected?.manifest_encoding : '',
+              tile_extension: isS3M ? selected?.tile_extension : '',
+              texture_compression: isS3M ? selected?.texture_compression : '',
+              geometry_compression: isS3M ? selected?.geometry_compression : '',
+              s3m_version: isS3M ? selected?.s3m_version : ''
             }
           }
         }
@@ -1932,7 +1961,14 @@ const clearSelectedChildPreview = () => {
 }
 
 const handleQuickViewStateChange = (state) => {
-  handleRendererStateChange('quick_view', quickViewRendererStateKey.value, state)
+  const rendererStateValue = quickViewRendererStateKey.value === 'scene_3d'
+    ? {
+        ...state,
+        render_source: quickViewRenderSource.value,
+        artifact_version: quickViewArtifactVersion.value
+      }
+    : state
+  handleRendererStateChange('quick_view', quickViewRendererStateKey.value, rendererStateValue)
 }
 
 const handleBasicPreviewStateChange = (state) => {

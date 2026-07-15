@@ -3,55 +3,50 @@ import DXTTextureDecode from './DXTTextureDecode.js';
 import { parseMeshOptSkeleton, parseMeshOpIndexPackage } from './ParseMeshOpt.js'
 import dracoDecoderModule from './draco_decode.module.js';
 import { parseDracoSkeleton } from './ParseDraco.js'
+import { mapStandardTextureCompression, standardTextureInternalFormat } from './S3MTextureFormat.js'
 
 function S3ModelParser() {
 
 }
 
-function defer() {
-    let resolve;
-    let reject;
-    const promise = new Promise(function (res, rej) {
-      resolve = res;
-      reject = rej;
-    });
-  
-    return {
-      resolve: resolve,
-      reject: reject,
-      promise: promise,
-    };
-  }
-
 function loadArrayBuffer(url) {
-    let readyPromise = defer();
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', url, true);
-    xhr.responseType = 'arraybuffer';
-    xhr.onload = function() {
-        if (xhr.status < 200 || xhr.status >= 300) {
-            readyPromise.reject(xhr.response)
-            throw new Error(xhr.response)
-        }
-        readyPromise.resolve(xhr.response)
-    };
-    xhr.onerror = function(e) {
-        readyPromise.reject(new Error(e));
-    };
-    xhr.send();
-    return readyPromise.promise;
+    return new Promise(function(resolve, reject) {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        xhr.responseType = 'arraybuffer';
+        xhr.onload = function() {
+            if (xhr.status < 200 || xhr.status >= 300) {
+                reject(new Error(`Failed to load Draco decoder: HTTP ${xhr.status}`));
+                return;
+            }
+            resolve(xhr.response);
+        };
+        xhr.onerror = function() {
+            reject(new Error('Failed to load Draco decoder'));
+        };
+        xhr.send();
+    });
 }
 
 let dracoLib;
 function initDracoLib() {
-    if(dracoLib) return;
-    loadArrayBuffer('S3M_module/S3MParser/draco_decoder_new.wasm').then(function (arrayBuffer) {
-        dracoDecoderModule({wasmBinary: arrayBuffer}).then(function (compiledModule) {
-            dracoLib = compiledModule;
-        })
-    })
+    return loadArrayBuffer('/S3M_module/S3MParser/draco_decoder_new.wasm')
+        .then(function(arrayBuffer) {
+            return new Promise(function(resolve, reject) {
+                try {
+                    const decoderModule = dracoDecoderModule({ wasmBinary: arrayBuffer });
+                    decoderModule.then(function(compiledModule) {
+                        dracoLib = compiledModule;
+                        resolve();
+                    });
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        });
 }
-initDracoLib();
+
+S3ModelParser.readyPromise = initDracoLib();
 
 S3ModelParser.s3tc = true;
 S3ModelParser.pvrtc = false;
@@ -472,7 +467,7 @@ function parseInstanceInfo(buffer, view, bytesOffset, vertexPackage, version) {
         bytesOffset += Uint16Array.BYTES_PER_ELEMENT;
         if(texDimensions === 16){
             bytesOffset -= Uint16Array.BYTES_PER_ELEMENT;
-            const perInstanceOffset = version === 3 ? Uint16Array.BYTES_PER_ELEMENT : Uint32Array.BYTES_PER_ELEMENT;
+            const perInstanceOffset = Math.trunc(version) === 3 ? Uint16Array.BYTES_PER_ELEMENT : Uint32Array.BYTES_PER_ELEMENT;
             let byteLength = texCoordCount * (texDimensions * Float32Array.BYTES_PER_ELEMENT + perInstanceOffset);
             let rowArray = typedArray.subarray(bytesOffset, bytesOffset + byteLength);
             bytesOffset += byteLength;
@@ -1129,7 +1124,15 @@ function parseSkeleton(buffer, view, bytesOffset, geoPackage, version) {
             bytesOffset = parseCompressSkeleton(buffer, view, bytesOffset, vertexPackage, version);
         }
         else if(tag === S3MBVertexTag.SV_DracoCompressed){
-            bytesOffset = parseDracoSkeleton(buffer, view, bytesOffset, vertexPackage, version, arrIndexPackage, dracoLib);
+            bytesOffset = parseDracoSkeleton(
+                buffer,
+                view,
+                bytesOffset,
+                vertexPackage,
+                version,
+                arrIndexPackage,
+                dracoLib
+            );
         }
 
         if(tag === S3MBVertexTag.SV_Compressed && version >= 3){
@@ -1215,6 +1218,7 @@ function parseTexturePackage(buffer, view, bytesOffset, texturePackage, version)
         let height = view.getUint32(bytesOffset, true);
         bytesOffset += Uint32Array.BYTES_PER_ELEMENT;
         let compressType = view.getUint32(bytesOffset, true);
+        const sourceCompressType = compressType;
         bytesOffset += Uint32Array.BYTES_PER_ELEMENT;
         let size = view.getUint32(bytesOffset, true);
         bytesOffset += Uint32Array.BYTES_PER_ELEMENT;
@@ -1223,9 +1227,11 @@ function parseTexturePackage(buffer, view, bytesOffset, texturePackage, version)
         let textureData = new Uint8Array(buffer, bytesOffset, size);
         bytesOffset += size;
         if(version === 3.01){
-            compressType = fromStandardTextureCompressType(compressType);
+            compressType = mapStandardTextureCompression(sourceCompressType);
         }
-        let internalFormat = (pixelFormat === S3MPixelFormat.RGB ||  pixelFormat === S3MPixelFormat.BGR) ? 33776 :  33779;
+        let internalFormat = version === 3.01
+            ? standardTextureInternalFormat(sourceCompressType, pixelFormat)
+            : (pixelFormat === S3MPixelFormat.RGB || pixelFormat === S3MPixelFormat.BGR) ? 33776 : 33779;
         if(compressType === 22){
             internalFormat = 36196;//rgb_etc1
         }
@@ -1244,6 +1250,7 @@ function parseTexturePackage(buffer, view, bytesOffset, texturePackage, version)
             width: width,
             height: height,
             compressType: compressType,
+            sourceCompressType: sourceCompressType,
             nFormat: pixelFormat,
             internalFormat : internalFormat,
             arrayBufferView: textureData
@@ -1264,6 +1271,13 @@ function parseMaterial(buffer, view, bytesOffset, result) {
     return bytesOffset;
 }
 
+function parseS3M301LodMetadata(buffer, view, bytesOffset, result) {
+    const metadata = parseString(buffer, view, bytesOffset)
+    const parsed = JSON.parse(metadata.string)
+    result.lodProcessType = Array.isArray(parsed.lodProcessType) ? parsed.lodProcessType : []
+    return metadata.bytesOffset
+}
+
 let colorScratch = {
     red : 0,
     green : 0,
@@ -1281,7 +1295,7 @@ function unpackColor(array, startingIndex, result) {
 
 let LEFT_16 = 65536;
 function parsePickInfo(buffer, view, bytesOffset, nOptions, geoPackage, version) {
-    if(version >= 3){
+    if(version === 3){
         nOptions = view.getUint32(bytesOffset, true);
         bytesOffset += Uint32Array.BYTES_PER_ELEMENT;
     }
@@ -1385,49 +1399,8 @@ function createBatchIdAttribute(vertexPackage, typedArray, instanceDivisor){
         instanceDivisor: instanceDivisor
     });
 }
-const S3MBTextureCompressType = 
-{
-	TC_NONE : 0,
-	TC_DXT1_RGB : 33776,
-	TC_DXT1_RGBA : 33777,
-	TC_DXT3 : 33778,
-	TC_DXT5 : 33779,
-	TC_WEBP : 38000,
-	TC_CRN : 38001,
-	TC_KTX2 : 38002,
-	//自定义扩展类型
-	TC_CRN_DXT5 : 50000
-};
-
-
-function fromStandardTextureCompressType(nType){
-    let nResType = S3MPixelFormat.NONE
-    switch (nType)
-    {
-    case S3MBTextureCompressType.TC_DXT1_RGB:
-    case S3MBTextureCompressType.TC_DXT5:
-        nResType = S3MPixelFormat.BGRA;
-        break;
-    case S3MBTextureCompressType.TC_WEBP:
-        nResType = S3MPixelFormat.WEBP;
-        break;
-    case S3MBTextureCompressType.TC_CRN:
-        nResType = S3MPixelFormat.STANDARD_CRN;
-        break;
-    case S3MBTextureCompressType.TC_KTX2:
-        nResType = S3MPixelFormat.KTX2;
-        break;
-    case S3MBTextureCompressType.TC_CRN_DXT5:
-        nResType = S3MPixelFormat.CRN_DXT5;
-        break;
-    default:
-        nResType = S3MPixelFormat.NONE;
-        break;
-    }
-    return nResType;
-}
-
-S3ModelParser.parseBuffer = function(buffer) {
+S3ModelParser.parseBuffer = async function(buffer) {
+        await S3ModelParser.readyPromise;
         let bytesOffset = 0;
         let result = {
             version : undefined,
@@ -1474,6 +1447,10 @@ S3ModelParser.parseBuffer = function(buffer) {
         bytesOffset = parseTexturePackage(unzipBuffer, view, bytesOffset, result.texturePackage, result.version);
 
         bytesOffset = parseMaterial(unzipBuffer, view, bytesOffset, result);
+
+        if(result.version === 3.01 && bytesOffset < unzipBuffer.byteLength){
+            bytesOffset = parseS3M301LodMetadata(unzipBuffer, view, bytesOffset, result);
+        }
 
         parsePickInfo(unzipBuffer, view, bytesOffset, nOptions, result.geoPackage, result.version);
 

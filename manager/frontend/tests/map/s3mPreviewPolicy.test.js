@@ -4,6 +4,12 @@ import {
   isCompleteWebpMipChain,
   parseWebpMipPayload
 } from '../../src/lib/supermap-s3m/S3MTiles/MaterialPass.js'
+import ContentState from '../../src/lib/supermap-s3m/S3MTiles/Enum/ContentState.js'
+import { readDracoAttributeInfo } from '../../src/lib/supermap-s3m/S3MParser/ParseDraco.js'
+import {
+  mapStandardTextureCompression,
+  standardTextureInternalFormat
+} from '../../src/lib/supermap-s3m/S3MParser/S3MTextureFormat.js'
 
 const previewPanelSource = readFileSync(
   new URL('../../src/components/explorer/PreviewPanel.vue', import.meta.url),
@@ -25,6 +31,10 @@ const s3mTileSource = readFileSync(
   new URL('../../src/lib/supermap-s3m/S3MTiles/S3MTile.js', import.meta.url),
   'utf8'
 )
+const s3mParserSource = readFileSync(
+  new URL('../../src/lib/supermap-s3m/S3MParser/S3ModelParser.js', import.meta.url),
+  'utf8'
+)
 
 describe('S3M preview policy', () => {
   it('keeps the source item format beside the title and the quick-view format with the actions', () => {
@@ -42,9 +52,14 @@ describe('S3M preview policy', () => {
     expect(previewPanelSource).not.toContain('currentQuickViewFormat')
   })
 
-  it('does not require S3TC for WebP-backed S3M results', () => {
-    expect(s3mPreviewSource).not.toContain('WEBGL_compressed_texture_s3tc')
-    expect(s3mPreviewSource).not.toContain('s3mS3TCRequired')
+  it('passes the managed S3M artifact encoding instead of hardcoding legacy tiles', () => {
+    expect(previewPanelSource).toContain('selected?.manifest_encoding')
+    expect(previewPanelSource).toContain('selected?.tile_extension')
+    expect(previewPanelSource).toContain('selected?.texture_compression')
+    expect(previewPanelSource).toContain('selected?.geometry_compression')
+    expect(previewPanelSource).toContain('selected?.s3m_version')
+    expect(previewPanelSource).not.toContain("manifest_encoding: isS3M ? 'xml'")
+    expect(previewPanelSource).not.toContain("tile_extension: isS3M ? '.s3m'")
   })
 
   it('uses the managed renderer that retains legacy .s3m parsing', () => {
@@ -52,6 +67,74 @@ describe('S3M preview policy', () => {
     expect(s3mPreviewSource).not.toContain("import('@dfsj/s3m')")
     expect(s3mTileSource).toContain("import S3ModelOldParser from '../S3MParser/S3ModelOldParser.js'")
     expect(s3mTileSource).toContain("tile.fileExtension === 's3m'")
+  })
+
+  it('waits for the Draco decoder before parsing S3MB content', () => {
+    expect(s3mParserSource).toContain('S3ModelParser.readyPromise')
+    expect(s3mParserSource).toContain('await S3ModelParser.readyPromise')
+    expect(s3mParserSource).toContain('dracoLib = compiledModule')
+    expect(s3mParserSource).toContain('resolve()')
+    expect(s3mParserSource).not.toContain('return dracoDecoderModule')
+    expect(s3mParserSource).not.toContain('if(dracoLib) return')
+  })
+
+  it('uses the S3M major version for 3.01 Draco binary layout checks', () => {
+    expect(s3mParserSource).toContain('Math.trunc(version) === 3')
+    expect(s3mParserSource).toContain('version === 3.01')
+  })
+
+  it('reads the S3M 3.01 direct custom Draco attribute ID without shifting material data', () => {
+    const words = new Int32Array([
+      3988,
+      0,
+      0,
+      -1,
+      -1,
+      1,
+      1,
+      1,
+      2,
+      1
+    ])
+    const view = new DataView(words.buffer)
+    const result = readDracoAttributeInfo(view, 0, 3.01)
+
+    expect(result.attributes).toEqual({
+      posUniqueID: 0,
+      normalUniqueID: -1,
+      colorUniqueID: -1,
+      secondColorUniqueID: 1,
+      texCoordUniqueIDs: [1],
+      vertexAttrUniqueIDs: [2]
+    })
+    expect(result.bytesOffset).toBe(9 * Int32Array.BYTES_PER_ELEMENT)
+    expect(view.getInt32(result.bytesOffset, true)).toBe(1)
+  })
+
+  it('consumes S3M 3.01 LOD metadata before optional pick data', () => {
+    expect(s3mParserSource).toContain('parseS3M301LodMetadata')
+    expect(s3mParserSource).toContain('result.lodProcessType')
+    expect(s3mParserSource).toContain('if(version === 3)')
+    expect(s3mParserSource).not.toContain('if(version >= 3){\n        nOptions = view.getUint32')
+  })
+
+  it('preserves the DXT subtype declared by S3M 3.01 textures', () => {
+    expect(mapStandardTextureCompression(33776)).toBe(17)
+    expect(mapStandardTextureCompression(33779)).toBe(21)
+    expect(standardTextureInternalFormat(33776, 32849)).toBe(33776)
+    expect(standardTextureInternalFormat(33779, 32849)).toBe(33779)
+  })
+
+  it('propagates asynchronous S3M content failures through the tile state', () => {
+    expect(s3mTileSource).toContain('return contentReadyFunction(layer, that, arrayBuffer)')
+    expect(s3mTileSource).toContain('.catch(function(error)')
+    expect(s3mTileSource).toContain('contentFailedFunction(error)')
+    expect(s3mTileSource).not.toContain('// contentFailedFunction(error)')
+  })
+
+  it('defines the loaded state consumed by the S3M scheduler', () => {
+    expect(ContentState.LOADED).toBeTypeOf('number')
+    expect(ContentState.LOADED).not.toBe(ContentState.PARSING)
   })
 
   it('uploads decoded WebP mip images directly while restoring WebGL state', () => {
@@ -109,6 +192,14 @@ describe('S3M preview policy', () => {
     expect(s3mPreviewSource).toContain('currentViewer.scene.primitives.remove(currentLayer)')
     expect(s3mPreviewSource).not.toContain('layer.destroy()')
     expect(s3mPreviewSource).not.toContain('replaceChildren()')
+  })
+
+  it('scopes shared scene camera state to the renderer and managed artifact version', () => {
+    expect(previewPanelSource).toContain('const quickViewArtifactVersion = computed')
+    expect(previewPanelSource).toContain('state.render_source !== quickViewRenderSource.value')
+    expect(previewPanelSource).toContain('state.artifact_version !== artifactVersion')
+    expect(previewPanelSource).toContain('render_source: quickViewRenderSource.value')
+    expect(previewPanelSource).toContain('artifact_version: quickViewArtifactVersion.value')
   })
 
   it('contains the standalone Manager body so percentage-height previews cannot grow the page', () => {

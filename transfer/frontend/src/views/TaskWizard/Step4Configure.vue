@@ -48,9 +48,11 @@
 						{{ t('transfer.taskWizard.postgresqlCDCLoad') }}
 					</el-radio>
 				</el-radio-group>
-				<div v-if="!postgresqlCDCSupported" class="field-hint block-hint">
-					{{ t('transfer.taskWizard.postgresqlCDCUnsupported') }}
-				</div>
+				<ul v-if="postgresqlCDCUnavailableReasons.length" class="field-hint block-hint cdc-unavailable-reasons">
+					<li v-for="reason in postgresqlCDCUnavailableReasons" :key="reason.code">
+						{{ postgresqlCDCReasonText(reason) }}
+					</li>
+				</ul>
 			</el-form-item>
 
       <template v-if="isContinuousTask">
@@ -248,6 +250,12 @@ const isKafkaContinuousTask = computed(() => props.wizardState.isKafkaContinuous
 const isPostgreSQLCDCTask = computed(() => props.wizardState.isPostgreSQLCDCTask.value)
 const watermarkIncrementalSupported = computed(() => props.wizardState.supportsWatermarkIncremental.value)
 const postgresqlCDCSupported = computed(() => props.wizardState.supportsPostgreSQLCDC.value)
+const postgresqlCDCUnavailableReasons = computed(() => props.wizardState.postgresqlCDCUnavailableReasons.value)
+
+function postgresqlCDCReasonText(reason) {
+	const key = `transfer.taskWizard.postgresqlCDCUnavailableReasons.${reason?.code || 'unknown'}`
+	return t(key, { fields: Array.isArray(reason?.fields) ? reason.fields.join(', ') : '' })
+}
 
 const continuousSourceFieldOptions = computed(() => {
   return uniqueFieldOptions(
@@ -308,7 +316,8 @@ function isPrimaryKeyField(field) {
   return field?.primary_key === true ||
     field?.primaryKey === true ||
     field?.is_primary_key === true ||
-    field?.isPrimaryKey === true
+		field?.isPrimaryKey === true ||
+		String(field?.key || '').trim().toLowerCase() === 'pri'
 }
 
 const transferSchedulePresets = [
@@ -438,6 +447,11 @@ watch(
 .step4-configure {
   max-width: 800px;
   margin: 0 auto;
+}
+
+.cdc-unavailable-reasons {
+	margin: 6px 0 0;
+	padding-left: 20px;
 }
 
 .step-description {

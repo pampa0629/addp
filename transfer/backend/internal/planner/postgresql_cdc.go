@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/resourcetree"
 )
 
@@ -94,7 +95,8 @@ func validatePostgreSQLCDCTaskSpec(spec PostgreSQLCDCTaskSpec) error {
 	if len(spec.Transforms[0].Fields) == 0 {
 		return fmt.Errorf("PostgreSQL CDC field mapping must not be empty")
 	}
-	if _, _, err := buildContinuousFields(spec.Transforms[0].Fields); err != nil {
+	_, fields, err := buildPostgreSQLCDCFields(spec.Transforms[0].Fields)
+	if err != nil {
 		return err
 	}
 	mappedTargets := make(map[string]bool, len(spec.Transforms[0].Fields))
@@ -112,6 +114,11 @@ func validatePostgreSQLCDCTaskSpec(spec PostgreSQLCDCTaskSpec) error {
 	for _, key := range keys {
 		if !mappedTargets[key] {
 			return fmt.Errorf("PostgreSQL CDC target key %q is not mapped", key)
+		}
+		for _, field := range fields {
+			if field.Name == key && field.Type == datatype.FieldTypeGeometry {
+				return fmt.Errorf("PostgreSQL CDC target key %q cannot use geometry", key)
+			}
 		}
 	}
 	return nil

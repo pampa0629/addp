@@ -3,6 +3,8 @@ package planner
 import (
 	"testing"
 
+	"github.com/addp/common/datatype"
+	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/kafka"
 	"github.com/addp/common/engine/plugins/postgresql"
 )
@@ -62,6 +64,35 @@ func TestParseContinuousTaskSpecRejectsKeyMappingDrift(t *testing.T) {
 	config["target"].(map[string]interface{})["policy"].(map[string]interface{})["keys"] = []interface{}{"order_id"}
 	if _, err := ParseContinuousTaskSpec(config); err == nil {
 		t.Fatal("ParseContinuousTaskSpec() error = nil, want key mapping rejection")
+	}
+}
+
+func TestBuildPostgreSQLCDCContinuousPlanMapsFrozenSpatialFactsToTarget(t *testing.T) {
+	config := validPostgreSQLCDCConfig()
+	fields := config["transforms"].([]interface{})[0].(map[string]interface{})["fields"].([]interface{})
+	config["transforms"].([]interface{})[0].(map[string]interface{})["fields"] = append(fields, map[string]interface{}{
+		"source": "shape", "target": "geometry", "target_type": "geometry", "nullable": true,
+	})
+	spec, err := ParsePostgreSQLCDCTaskSpec(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
+	plan, err := BuildPostgreSQLCDCContinuousPlan(spec, StaticEngineResolver{
+		12: {Type: "postgresql", ConnInfo: engineplugin.ConnectionInfo{"database": "business"}},
+		20: {Type: "postgresql", Capabilities: &targetCaps},
+	}, PostgreSQLCDCStreamBinding{
+		ConnInfo:      engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
+		ConsumerGroup: "group", SourceIdentity: "addp://engine/12/path/public/orders?type=table",
+		Database: "business", Schema: "public", Table: "orders",
+		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("shape", "MultiPolygon", 4549, 2),
+	}, 100)
+	if err != nil {
+		t.Fatalf("BuildPostgreSQLCDCContinuousPlan() error = %v", err)
+	}
+	if plan.CDC.SpatialInfo.PrimaryGeometryName() != "shape" || plan.Target.SpatialInfo.PrimaryGeometryName() != "geometry" ||
+		plan.Target.SpatialInfo.PrimaryGeometryType() != "MultiPolygon" || plan.Target.SpatialInfo.PrimarySRIDValue() != 4549 {
+		t.Fatalf("CDC spatial plan source=%#v target=%#v", plan.CDC.SpatialInfo, plan.Target.SpatialInfo)
 	}
 }
 

@@ -21,7 +21,9 @@
           </div>
 
           <el-table :data="tasks" v-loading="tasksLoading" stripe>
-            <el-table-column prop="name" :label="t('manager.vectorMaterializedView.name')" min-width="180" show-overflow-tooltip />
+            <el-table-column :label="t('manager.vectorMaterializedView.name')" min-width="180" show-overflow-tooltip>
+              <template #default="{ row }">{{ displayText(row.name) }}</template>
+            </el-table-column>
             <el-table-column :label="t('manager.vectorMaterializedView.engine')" min-width="140" show-overflow-tooltip>
               <template #default="{ row }">{{ engineName(row.target?.source_engine_id) }}</template>
             </el-table-column>
@@ -322,6 +324,7 @@ import {
   createVectorMaterializedViewTaskPayload
 } from '@/utils/vectorMaterializedViewTaskForm'
 import { vectorMaterializedViewResultAction } from '@/utils/vectorMaterializedViewResultAction'
+import { quickViewDisplayText } from '@/utils/quickViewResourceDisplay'
 import { buildTileCacheCreateQuery } from '@/utils/quickViewNavigationQuery'
 import {
   createResourceRootNode,
@@ -389,7 +392,7 @@ const selectedResourceSummary = computed(() => {
 })
 const resultTaskFilterLabel = computed(() => {
   if (!selectedResultTask.value) return ''
-  return `${t('manager.vectorMaterializedView.currentTask')}: ${selectedResultTask.value.name || taskResource(selectedResultTask.value)}`
+  return `${t('manager.vectorMaterializedView.currentTask')}: ${selectedResultTask.value.name ? displayText(selectedResultTask.value.name) : taskResource(selectedResultTask.value)}`
 })
 const sourceAlready3857 = computed(() => Number(form.config.geometry.source_srid || 0) === 3857)
 const rules = computed(() => ({
@@ -909,11 +912,13 @@ const taskResource = (task) => taskResourceValue(task, safeParseLocator)
 
 const resourceTextFromLocator = (locator) => resourceTextFromLocatorValue(locator, safeParseLocator)
 
+const displayText = (value) => quickViewDisplayText(value, parseLocatorSafe) || '-'
+
 const engineName = (engineId) => {
   const id = Number(engineId || 0)
   if (!id) return '-'
   const engine = engineOptions.value.find((item) => Number(item.id) === id)
-  return engine?.name || t('manager.vectorMaterializedView.engineWithId', { id })
+  return engine?.name || t('manager.quickViewDisplay.unknownEngine')
 }
 
 const sourceDataPath = (result) => {

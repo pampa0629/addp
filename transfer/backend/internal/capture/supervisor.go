@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/repository"
 	"gorm.io/gorm"
@@ -68,11 +69,16 @@ func (s *Supervisor) Start(ctx context.Context, task *models.TransferTask) (*mod
 	if err != nil {
 		return nil, err
 	}
+	spatialInfo := models.JSONMap{}
+	if payload := datatype.SpatialInfoPayload(plan.SourceSpatialInfo); len(payload) > 0 {
+		spatialInfo = models.JSONMap(payload)
+	}
 	resource, err := s.store.BeginGeneration(ctx, repository.CaptureIdentity{
 		TaskID: task.ID, TenantID: task.TenantID, SourceIdentity: plan.SourceIdentity,
 		SourceConnectionFingerprint: plan.SourceConnectionFingerprint,
 		SourceEngineID:              plan.SourceEngineID, SourceDatabase: plan.SourceDatabase,
 		SourceSchema: plan.SourceSchema, SourceTable: plan.SourceTable,
+		SourceSpatialInfo: spatialInfo,
 	})
 	if err != nil {
 		return nil, err

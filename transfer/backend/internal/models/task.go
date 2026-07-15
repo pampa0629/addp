@@ -180,6 +180,7 @@ type CaptureResource struct {
 	SourceDatabase              string        `gorm:"type:varchar(255);not null" json:"source_database"`
 	SourceSchema                string        `gorm:"type:varchar(255);not null" json:"source_schema"`
 	SourceTable                 string        `gorm:"type:varchar(255);not null" json:"source_table"`
+	SourceSpatialInfo           JSONMap       `gorm:"type:jsonb;not null;default:'{}'" json:"source_spatial_info,omitempty"`
 	Status                      CaptureStatus `gorm:"type:varchar(32);not null;index" json:"status"`
 	ConnectorStatus             string        `gorm:"type:varchar(32)" json:"connector_status,omitempty"`
 	ConnectorError              string        `gorm:"type:text" json:"connector_error,omitempty"`

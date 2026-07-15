@@ -7017,7 +7017,13 @@ const docTemplate = `{
                 "can_generate": {
                     "type": "boolean"
                 },
+                "geometry_compression": {
+                    "type": "string"
+                },
                 "last_execution_id": {
+                    "type": "string"
+                },
+                "manifest_encoding": {
                     "type": "string"
                 },
                 "preview_url": {
@@ -7025,6 +7031,9 @@ const docTemplate = `{
                 },
                 "result_id": {
                     "type": "integer"
+                },
+                "s3m_version": {
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -7034,6 +7043,12 @@ const docTemplate = `{
                 },
                 "task_id": {
                     "type": "integer"
+                },
+                "texture_compression": {
+                    "type": "string"
+                },
+                "tile_extension": {
+                    "type": "string"
                 },
                 "unavailable_reason": {
                     "type": "string"

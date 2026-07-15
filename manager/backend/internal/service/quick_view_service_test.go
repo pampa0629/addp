@@ -2926,7 +2926,12 @@ func TestModel3DTilesCapabilityReturnsIndependentReadyResultsWhenEngineDiscovery
 	executionS3M := "exec-s3m"
 	results := []*models.Model3DTiles{
 		{TenantID: 7, ItemFingerprint: "fp-ready", Locator: locator, SourceEngineID: 26, SourceFormat: "osgb_scene", TargetFormat: models.Model3DTilesTargetFormat3DTiles, StorageRef: "3d-ref", ManifestRef: "tileset.json", Status: models.Model3DTilesStatusReady, LastExecutionID: &execution3DTiles, Metadata: commonModels.JSONMap{}},
-		{TenantID: 7, ItemFingerprint: "fp-ready", Locator: locator, SourceEngineID: 26, SourceFormat: "osgb_scene", TargetFormat: models.Model3DTilesTargetFormatS3M, StorageRef: "s3m-ref", ManifestRef: "config/scene.scp", Status: models.Model3DTilesStatusReady, LastExecutionID: &executionS3M, Metadata: commonModels.JSONMap{}},
+		{TenantID: 7, ItemFingerprint: "fp-ready", Locator: locator, SourceEngineID: 26, SourceFormat: "osgb_scene", TargetFormat: models.Model3DTilesTargetFormatS3M, StorageRef: "s3m-ref", ManifestRef: "config/scene.scp", Status: models.Model3DTilesStatusReady, LastExecutionID: &executionS3M, Metadata: commonModels.JSONMap{
+			"tiles_facts": commonModels.JSONMap{
+				"manifest_encoding": "json", "tile_extension": ".s3mb", "texture_compression": "dxt",
+				"geometry_compression": "draco", "s3m_version": "3.01",
+			},
+		}},
 	}
 	for _, result := range results {
 		if err := db.Create(result).Error; err != nil {
@@ -2955,6 +2960,11 @@ func TestModel3DTilesCapabilityReturnsIndependentReadyResultsWhenEngineDiscovery
 	}
 	if !strings.Contains(formats[models.Model3DTilesTargetFormatS3M].PreviewURL, "version=exec-s3m") {
 		t.Fatalf("s3m preview_url = %q, want execution version", formats[models.Model3DTilesTargetFormatS3M].PreviewURL)
+	}
+	s3m := formats[models.Model3DTilesTargetFormatS3M]
+	if s3m.ManifestEncoding != "json" || s3m.TileExtension != ".s3mb" || s3m.TextureCompression != "dxt" ||
+		s3m.GeometryCompression != "draco" || s3m.S3MVersion != "3.01" {
+		t.Fatalf("s3m artifact facts = %#v, want json/.s3mb/dxt/draco/3.01", s3m)
 	}
 }
 

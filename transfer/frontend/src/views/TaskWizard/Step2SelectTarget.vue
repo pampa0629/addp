@@ -556,10 +556,14 @@ async function handleTargetEngineChange() {
 
 async function handleTargetParentSelect(selection) {
   if (isNativeTableTarget.value) {
+		const previousParentLocator = targetParentLocator.value
+		const nextParentLocator = selection?.identity?.locator || ''
     targetParentSelection.value = selection
     normalizedTargetParentLocator.value = ''
     targetSchema.value = targetParentNameFromSelection(selection)
-    targetTable.value = ''
+		if (!sameTargetParentIdentity(previousParentLocator, nextParentLocator)) {
+			targetTable.value = ''
+		}
   } else if (isContentTarget.value) {
     if (selection.resource?.kind === 'item') {
       const normalized = await normalizeExistingTargetSelection(selection)
@@ -579,6 +583,15 @@ async function handleTargetParentSelect(selection) {
     }
   }
   syncTarget()
+}
+
+function sameTargetParentIdentity(left, right) {
+	const leftLocator = parseTransferLocator(left)
+	const rightLocator = parseTransferLocator(right)
+	return !!leftLocator.engineID &&
+		leftLocator.engineID === rightLocator.engineID &&
+		leftLocator.type === rightLocator.type &&
+		leftLocator.path.join('/') === rightLocator.path.join('/')
 }
 
 function isTargetParentSelectable(node, context = {}) {
@@ -754,7 +767,7 @@ async function loadCapabilities() {
     if (!writableOutputFormats.value.some(format => format.value === outputFormat.value)) {
       outputFormat.value = writableOutputFormats.value[0]?.value || ''
     }
-    if (!outputFormat.value && !isRawCopySource.value) {
+		if (!outputFormat.value && !isRawCopySource.value && props.wizardState.targetRepresentation.value === 'encoded') {
       clearTarget()
     }
   } catch (error) {

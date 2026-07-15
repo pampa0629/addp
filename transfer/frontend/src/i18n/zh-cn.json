@@ -425,7 +425,17 @@
 			"cdcSyncTitle": "持续同步数据库变化",
 			"cdcSyncDesc": "首次启动会装载源表当前数据，之后持续同步新增、更新和物理删除；中断后从上次成功位置恢复。",
 			"postgresqlCDCLoad": "持续同步新增、更新和删除",
-			"postgresqlCDCUnsupported": "此方式要求源和目标都是 PostgreSQL 原生表，并且目标表尚不存在。",
+			"postgresqlCDCUnavailableReasons": {
+				"sourcePostgreSQLRequired": "源必须选择 PostgreSQL 引擎。",
+				"sourceTableRequired": "源必须选择一张 PostgreSQL 表。",
+				"sourceNativeRequired": "源必须使用数据库原生表。",
+				"targetPostgreSQLRequired": "目标必须选择 PostgreSQL 引擎。",
+				"targetNativeRequired": "目标必须创建数据库原生表。",
+				"sourceFieldsRequired": "尚未读取到源表字段，请返回源配置重新选择或刷新表。",
+				"sourcePrimaryKeyRequired": "源表必须有稳定且非空的主键。",
+				"sourceFieldTypesUnsupported": "以下源字段类型暂不支持持续同步：{fields}。",
+				"unknown": "当前源或目标配置不满足持续同步要求。"
+			},
 			"cdcLifecycleWarningTitle": "暂停与停止的资源影响",
 			"cdcLifecycleWarning": "暂停只停止目标写入，源端捕获仍会继续并占用内部消息存储；停止会永久删除捕获资源且无法恢复，重新同步必须新建任务和目标表。",
       "continuousKeyFieldsLabel": "记录唯一标识字段",
