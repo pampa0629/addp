@@ -1,0 +1,184 @@
+import json
+from typing import Any, Awaitable, Callable
+
+import httpx
+from jsonschema import Draft202012Validator
+
+from addp_common.client import CopilotClient, DevelopClient, ManagerClient, MetaClient, SystemClient
+
+from .manifest import ToolDefinition, get_tool
+
+
+class ToolExecutionError(Exception):
+    def __init__(self, code: str, message: str, details: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details = details or {}
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "error": {
+                "code": self.code,
+                "message": self.message,
+                **({"details": self.details} if self.details else {}),
+            }
+        }
+
+
+class ToolExecutor:
+    """Tool Manifest 到 Python SDK 的唯一执行映射。"""
+
+    def __init__(self, base_url: str, user_token: str):
+        self.base_url = base_url.rstrip("/")
+        self.user_token = user_token
+        self._handlers: dict[str, Callable[[dict[str, Any]], Awaitable[Any]]] = {
+            "engine.list": self._engine_list,
+            "data.search": self._data_search,
+            "resource.ancestors.get": self._resource_ancestors_get,
+            "data.preview": self._data_preview,
+            "workflow.operators.list": self._workflow_operators_list,
+            "workflow.draft.generate": self._workflow_draft_generate,
+            "workflow.validate": self._workflow_validate,
+            "workflow.run": self._workflow_run,
+            "execution.get": self._execution_get,
+        }
+
+    async def call(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
+        try:
+            definition = get_tool(name)
+        except KeyError as exc:
+            raise ToolExecutionError("tool_not_found", f"未知 ADDP Tool: {name}") from exc
+
+        arguments = arguments or {}
+        validation_errors = sorted(
+            Draft202012Validator(definition.input_schema).iter_errors(arguments),
+            key=lambda error: list(error.absolute_path),
+        )
+        if validation_errors:
+            error = validation_errors[0]
+            path = ".".join(str(item) for item in error.absolute_path)
+            raise ToolExecutionError(
+                "invalid_arguments",
+                error.message,
+                {"path": path},
+            )
+
+        handler = self._handlers.get(name)
+        if handler is None:
+            raise ToolExecutionError("tool_not_implemented", f"Tool 尚未实现: {name}")
+
+        try:
+            result = await handler(arguments)
+        except httpx.HTTPStatusError as exc:
+            raise ToolExecutionError(
+                "owner_api_error",
+                f"{definition.owner} API 返回 HTTP {exc.response.status_code}",
+                {"status": exc.response.status_code},
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ToolExecutionError(
+                "owner_api_unavailable",
+                f"无法访问 {definition.owner} API",
+            ) from exc
+        except ValueError as exc:
+            raise ToolExecutionError("invalid_owner_response", str(exc)) from exc
+
+        self._validate_output(definition, result)
+        return result
+
+    def _validate_output(self, definition: ToolDefinition, result: Any) -> None:
+        errors = list(Draft202012Validator(definition.output_schema).iter_errors(result))
+        if errors:
+            raise ToolExecutionError("invalid_owner_response", errors[0].message)
+        encoded = json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        if len(encoded) > definition.limits["max_bytes"]:
+            raise ToolExecutionError(
+                "result_too_large",
+                f"Tool 结果超过 {definition.limits['max_bytes']} 字节限制",
+            )
+
+    def _client(self, client_type):
+        return client_type(base_url=self.base_url, user_token=self.user_token)
+
+    async def _engine_list(self, arguments: dict[str, Any]) -> Any:
+        async with self._client(SystemClient) as client:
+            if arguments.get("capability") == "workflow":
+                return await client.get_workflow_engines()
+            return await client.list_engines()
+
+    async def _data_search(self, arguments: dict[str, Any]) -> Any:
+        async with self._client(ManagerClient) as client:
+            return await client.search(
+                q=arguments["query"],
+                page=1,
+                page_size=arguments.get("limit", 10),
+            )
+
+    async def _resource_ancestors_get(self, arguments: dict[str, Any]) -> Any:
+        async with self._client(MetaClient) as client:
+            return await client.get_resource_tree_ancestors(
+                arguments["engine_id"],
+                arguments["locator"],
+            )
+
+    async def _data_preview(self, arguments: dict[str, Any]) -> Any:
+        async with self._client(ManagerClient) as client:
+            return await client.preview_by_locator(
+                arguments["locator"],
+                page=1,
+                page_size=arguments.get("limit", 10),
+            )
+
+    async def _workflow_operators_list(self, arguments: dict[str, Any]) -> Any:
+        async with self._client(DevelopClient) as client:
+            operators = await client.list_operators(arguments["workflow_engine_id"])
+            return {
+                "workflow_engine_id": arguments["workflow_engine_id"],
+                "count": len(operators),
+                "operators": operators,
+            }
+
+    async def _workflow_draft_generate(self, arguments: dict[str, Any]) -> Any:
+        async with self._client(CopilotClient) as client:
+            return await client.generate_workflow(
+                query=arguments["query"],
+                workflow_engine_id=arguments["workflow_engine_id"],
+                resources=arguments["resources"],
+            )
+
+    async def _workflow_validate(self, arguments: dict[str, Any]) -> Any:
+        async with self._client(DevelopClient) as client:
+            return await client.validate_workflow(
+                arguments["workflow_definition"],
+                arguments["workflow_engine_id"],
+            )
+
+    async def _workflow_run(self, arguments: dict[str, Any]) -> Any:
+        async with self._client(DevelopClient) as client:
+            return await client.run_workflow_content(
+                arguments["workflow_definition"],
+                engine_id=arguments["workflow_engine_id"],
+                engine_specific=arguments.get("engine_specific"),
+            )
+
+    async def _execution_get(self, arguments: dict[str, Any]) -> Any:
+        async with self._client(DevelopClient) as client:
+            result = await client.get_execution(arguments["execution_id"])
+        allowed = {
+            "execution_id",
+            "status",
+            "progress",
+            "current_step",
+            "error_details",
+            "execution_time_ms",
+            "records_read",
+            "records_written",
+            "bytes_read",
+            "bytes_written",
+            "started_at",
+            "completed_at",
+            "created_at",
+            "updated_at",
+        }
+        return {key: value for key, value in result.items() if key in allowed}

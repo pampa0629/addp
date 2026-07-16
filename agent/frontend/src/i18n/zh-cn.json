@@ -16,11 +16,24 @@
       "welcome": "你好！我是 ADDP AI 助手，可以帮你完成数据管理、分析、发布等操作。",
       "inputPlaceholder": "输入消息，Ctrl+Enter 发送...",
       "send": "发送",
+      "cancel": "停止",
+      "cancelFailed": "停止失败: {msg}",
+      "retry": "重试",
       "createFailed": "创建会话失败",
       "deleteFailed": "删除失败",
       "sendFailed": "发送失败: {msg}",
       "errorReply": "抱歉，发生了错误，请重试。",
-      "workflowGenerated": "已生成工作流"
+      "workflowGenerated": "已生成工作流",
+      "presentationFailed": "界面内容渲染失败",
+      "resultRef": {
+        "unknownStatus": "状态未知",
+        "loadFailed": "执行状态读取失败",
+        "openExecution": "打开执行详情"
+      },
+      "toolStatus": {
+        "running": "执行中",
+        "completed": "已完成"
+      }
     },
     "quickHints": {
       "viewCatalog": "查看我的数据目录",

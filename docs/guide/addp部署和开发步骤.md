@@ -68,7 +68,7 @@ SuperMap Workflow Engine 使用本地两层镜像。首次安装时，把私有 
 bash scripts/build/build-supermap-workflow-base.sh
 ```
 
-之后全量启动、`restart.sh -all` 和局部重启都会重新编译当前 ADDP Java 源码。单独验证超图算子时使用：
+之后全量启动、`restart.sh -all` 和局部重启都会计算当前 ADDP Java 源码、运行脚本、Dockerfile、基础镜像和目标平台的构建指纹；输入未变化时直接复用现有代码镜像，输入变化或镜像不存在时才重新运行 `javac` 和镜像构建。单独验证超图算子时使用：
 
 ```bash
 bash scripts/dev/start.sh -supermap-workflow

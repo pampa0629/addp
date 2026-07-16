@@ -6,7 +6,7 @@ ADDP Agent 主智能体实现
 - 路由节点（_route_node）：携带历史上下文，单次 LLM 调用（结构化输出）
   同时完成意图识别、技能路由和直接回复（无技能时）
 - AgentFactory（graph/factory.py）：按需动态构建领域 Agent
-  只注入 Skill front matter 声明的工具白名单，工具隔离
+  只注入 Skill `agents/addp.yaml` 声明的稳定 Tool 白名单
 
 主流程：
 1. 构建 AgentState（历史由 chat.py 从 DB 加载）
@@ -19,26 +19,28 @@ from pathlib import Path
 from typing import List, Dict, Any, AsyncIterator, Optional
 
 import yaml
+from addp_common.tools import load_manifest
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from utils.llm import get_llm
 from graph.state import AgentState, TaskContext, RouteDecision
-from graph.factory import AgentFactory, MSG_TYPE_PROGRESS, MSG_TYPE_RESULT
+from agents.events import AgentEvent, text_event
+from graph.factory import AgentFactory
 
 logger = logging.getLogger("agent.main")
 
-_SKILLS_DIR = Path(__file__).parent.parent / "skills"
+_SKILLS_DIR = Path(__file__).resolve().parents[3] / "skills"
 
-# 对外导出，供 chat.py 使用
-__all__ = ["stream_agent_response", "MSG_TYPE_PROGRESS", "MSG_TYPE_RESULT"]
+# 对外导出，供 AG-UI 适配层使用
+__all__ = ["stream_agent_response"]
 
 
 # ─────────────────────────────────────────────
-# Skill 元数据加载（启动时一次性读取）
+# Skill 与 ADDP Runtime 装配加载（启动时一次性读取）
 # ─────────────────────────────────────────────
 
 class SkillMeta:
-    """Skill 的元数据（来自 SKILL.md front matter）"""
+    """Skill 公共元数据与 ADDP Runtime 装配。"""
 
     def __init__(
         self,
@@ -81,10 +83,12 @@ _skill_registry: Dict[str, SkillMeta] = {}
 
 
 def _load_skill_registry() -> Dict[str, SkillMeta]:
-    """扫描 skills/ 目录，解析每个 SKILL.md 的 front matter，构建注册表"""
+    """扫描平台级 skills/，组合公共 front matter 与 agents/addp.yaml。"""
     registry: Dict[str, SkillMeta] = {}
     if not _SKILLS_DIR.exists():
         return registry
+
+    available_tools = {tool.name for tool in load_manifest().tools}
 
     for skill_file in sorted(_SKILLS_DIR.glob("*/SKILL.md")):
         content = skill_file.read_text(encoding="utf-8").strip()
@@ -92,12 +96,23 @@ def _load_skill_registry() -> Dict[str, SkillMeta]:
         name = meta.get("name", "")
         if not name:
             continue
+        runtime_file = skill_file.parent / "agents" / "addp.yaml"
+        if not runtime_file.exists():
+            logger.info("Skill %s 未声明 ADDP Runtime 配置，跳过内置 Agent 装配", name)
+            continue
+        runtime = yaml.safe_load(runtime_file.read_text(encoding="utf-8")) or {}
+        if runtime.get("schema") != "addp.skill-runtime/v1":
+            raise ValueError(f"Skill {name} 的 agents/addp.yaml schema 无效")
+        required_tools = runtime.get("required_tools") or []
+        missing_tools = sorted(set(required_tools) - available_tools)
+        if missing_tools:
+            raise ValueError(f"Skill {name} 引用了不存在的 Tool: {missing_tools}")
         registry[name] = SkillMeta(
             name=name,
             description=meta.get("description", ""),
             path=skill_file,
-            tools=meta.get("tools") or [],           # 工具白名单
-            max_iterations=int(meta.get("max_iterations", 5)),
+            tools=required_tools,
+            max_iterations=int(runtime.get("max_iterations", 5)),
         )
     return registry
 
@@ -144,6 +159,8 @@ def _build_routing_system_prompt(session_summary: Optional[str] = None) -> str:
 
 ## 决策规则
 - 涉及查看/查询/预览/搜索数据 → 激活对应技能，skill 填写技能名称，direct_reply 为 null
+- 涉及空间分析、工作流设计、DAG、算子组合、工作流校验或执行 → 必须激活对应技能
+- 用户要求“方案”或“可执行方案”时，如果完成它需要读取平台数据或算子事实，也必须激活技能，不能退化为常识计算
 - 问候、功能说明、一般性回答 → skill 为 null，direct_reply 填写中文回复
 - 可以根据对话历史理解上下文（如"继续查询"、"那个表"等指代上文的表达）
 
@@ -226,7 +243,8 @@ async def stream_agent_response(
     tenant_id: int,
     token: str,
     session_summary: Optional[str] = None,
-) -> AsyncIterator[tuple[str, str]]:
+    checkpoint: Optional[Dict[str, Any]] = None,
+) -> AsyncIterator[AgentEvent]:
     """
     流式输出 Agent 回复。yield (msg_type, content) 元组。
 
@@ -268,17 +286,20 @@ async def stream_agent_response(
             "user_id": user_id,
             "tenant_id": tenant_id,
             "token": token,
+            "checkpoint": checkpoint or {},
         }
 
-        async for msg_type, content in AgentFactory.run(
+        yield AgentEvent(kind="run_state", payload={"skill_name": skill_name})
+
+        async for event in AgentFactory.run(
             task_context=task_context,
             skill_body=skill_meta.load_body(),
             allowed_tool_names=skill_meta.tools,
             max_iterations=skill_meta.max_iterations,
         ):
-            yield (msg_type, content)
+            yield event
     else:
         # 直接回复路径（来自路由节点，无额外 LLM 调用）
         reply = state.get("direct_reply") or ""
         if reply:
-            yield (MSG_TYPE_RESULT, reply)
+            yield text_event(reply)

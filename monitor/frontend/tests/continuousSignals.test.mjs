@@ -1,0 +1,71 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+
+import {
+  buildContinuousPartitionRows,
+  buildContinuousSignals,
+  hasContinuousExecutionMetadata
+} from '../../../common-frontend/basic/src/utils/continuousExecution.js'
+
+const now = Date.parse('2026-07-15T08:00:00Z')
+
+test('prioritizes circuit and retention critical signals', () => {
+  const signals = buildContinuousSignals({
+    recovery_reason: 'execution_failed',
+    recovery_consecutive_failures: 5,
+    recovery_not_before: '2026-07-15T08:05:00Z',
+    recovery_circuit_state: 'open',
+    continuous: {
+      diagnostics: {
+        health: 'critical',
+        checkpoint_health: 'degraded'
+      }
+    }
+  }, 'pending', now)
+
+  assert.deepEqual(signals.map(signal => [signal.code, signal.severity]), [
+    ['recovery_circuit_open', 'critical'],
+    ['retention_critical', 'critical'],
+    ['checkpoint_stalled', 'warning']
+  ])
+})
+
+test('derives recovery waiting without inventing a persisted alert state', () => {
+  const signals = buildContinuousSignals({
+    recovery_reason: 'lease_expired',
+    recovery_consecutive_failures: 2,
+    recovery_not_before: '2026-07-15T08:00:10Z',
+    recovery_circuit_state: 'closed'
+  }, 'pending', now)
+
+  assert.equal(signals.length, 1)
+  assert.equal(signals[0].code, 'recovery_waiting')
+  assert.equal(signals[0].recovery.waitMilliseconds, 10000)
+})
+
+test('maps owner-provided checkpoint diagnostics into partition rows', () => {
+  const rows = buildContinuousPartitionRows({
+    continuous: {
+      diagnostics: {
+        partitions: {
+          0: {
+            next_offset: 80,
+            latest_offset: 100,
+            checkpoint_age_seconds: 360,
+            checkpoint_health: 'degraded'
+          }
+        }
+      }
+    }
+  })
+
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].checkpointAgeSeconds, 360)
+  assert.equal(rows[0].checkpointHealth, 'degraded')
+})
+
+test('identifies continuous execution metadata without relying on progress', () => {
+  assert.equal(hasContinuousExecutionMetadata({ continuous: { owner_instance_id: 'worker-a' } }), true)
+  assert.equal(hasContinuousExecutionMetadata({ recovery_reason: 'worker_shutdown' }), true)
+  assert.equal(hasContinuousExecutionMetadata({}), false)
+})

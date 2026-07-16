@@ -4,6 +4,10 @@
 > **实施内容**: 统一执行表 + Monitor 监控模块
 > **状态**: ✅ 已完成并验证通过
 
+> **2026-07-15 更新**: 已增加 continuous 观测信号、持久化告警事件与 Webhook v1 可靠通知闭环。
+> **2026-07-16 更新**: 已增加 Webhook v1.1 测试投递、`dead` 手动重投、目标删除和 System 统一操作审计。
+> **2026-07-16 更新**: 已增加通用任务最近失败、最近超时和连续失败规则，以及显式 Webhook/邮件通知路由。
+
 ---
 
 ## 一、实施概览
@@ -375,11 +379,31 @@ ws.On("execution_updated", func(exec *TaskExecution) {
 })
 ```
 
-### 9.2 告警机制 (可选)
+### 9.2 告警与通知
 
-- 高失败率告警 (失败率 > 50%)
-- 长时间运行告警 (执行时间 > 阈值)
-- 孤儿执行清理 (超过 24 小时)
+当前已实现：
+
+- Monitor 从最新 active execution 的公共 metadata 派生 continuous 观测信号。
+- `monitor.alert_incidents` 保存 `open|acknowledged|resolved` 告警生命周期。
+- `monitor.alert_events` 保存不可变 `opened|escalated|resolved` 生命周期事件。
+- `monitor.webhook_destinations` 保存租户级 Webhook 目标；HMAC secret 使用平台 `ENCRYPTION_KEY` 做 AES-256-GCM 加密，API 不返回 secret。
+- `monitor.webhook_deliveries` 是 per-destination outbox 和投递审计表；dispatcher 通过 `FOR UPDATE SKIP LOCKED` 领取、指数退避并按至少一次语义发送。
+- Webhook 使用 `monitor.alert.webhook/v1` payload、`delivery_id` 幂等身份和 HMAC-SHA256 签名；默认拒绝 HTTP、私网、环回及 metadata 地址。
+- Webhook 目标支持独立 `monitor.webhook.test/v1` 测试投递；测试不伪造告警 event/outbox。
+- `dead` delivery 支持复用原 `delivery_id` 的手动重投，累计尝试次数、重投周期基线和人工重投次数分别保存；目标删除取消未领取投递并保留历史审计。
+- Webhook 所有写操作复用 System Audit Middleware，secret 由现有审计脱敏链路处理，不新增 Monitor 私有操作审计表。
+- 生命周期 event 由统一通知协调器创建一次，再在同一事务中分别生成 Webhook 和邮件 outbox，渠道不会重复制造告警事实。
+- `monitor.email_destinations` 保存租户级邮件目标，只包含名称、收件人、订阅事件和启用状态；SMTP Relay、认证、强制 TLS 和发件身份属于部署配置。
+- `monitor.email_deliveries` 冻结收件人、主题、纯文本正文和 HTML 正文；邮件 dispatcher 使用独立租约、指数退避和至少一次投递语义。
+- 邮件目标支持同步测试、禁用、删除和 `dead` 手动重投；测试不创建 event/outbox，重投复用原 `delivery_id`、主题和正文并使用目标当前收件人。
+- SMTP host 为空时邮件 dispatcher 不启动，pending outbox 保留；第一版只支持强制 STARTTLS 或隐式 TLS，不支持明文和机会式降级。
+- 邮件所有写操作复用 System Audit Middleware，SMTP password 不进入租户 API、Swagger 或投递审计。
+- `monitor.alert_rules` 精确绑定租户、模块、任务类型和任务定义 ID，只读取根 execution 的 `success|failed|timeout` 公共终态；忽略 `cancelled`，并排除 ad-hoc、子 execution 与 Transfer continuous session。
+- `monitor.notification_routes` 显式绑定规则与 Webhook/邮件目标；无路由仍创建 incident/event，但不创建 delivery。规则语义更新、停用或删除前先恢复当前活动 incident。
+- Transfer continuous evaluator 与通用规则 evaluator 先收集全部 active signal，再由单一 reconciler 统一打开、升级和恢复 incident，避免不同 evaluator 相互误恢复。
+- 告警页面通过“告警事件 / 告警规则”页签提供规则查询、创建、编辑、启停和删除；规则目标只能从已有稳定根任务身份中选择。
+
+后续若扩展成功率或 stalled 规则，仍必须消费 owner 公共事实。统一 heartbeat/deadline 契约完成前，不得使用 `created_at`、`updated_at` 或全局固定时长推断任务卡死。
 
 ### 9.3 表分区 (数据量 > 1000万时)
 
@@ -414,13 +438,31 @@ FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
 - `monitor/backend/internal/api/execution_handler.go` - 执行查询 Handler ✅
 - `monitor/backend/internal/api/statistics_handler.go` - 统计 Handler ✅
 - `monitor/backend/internal/api/health_handler.go` - 健康检查 Handler ✅
+- `monitor/backend/internal/api/alert_handler.go` - 告警事件 Handler ✅
+- `monitor/backend/internal/api/alert_rule_handler.go` - 通用告警规则与可选任务 Handler ✅
+- `monitor/backend/internal/api/webhook_handler.go` - Webhook 目标与投递审计 Handler ✅
+- `monitor/backend/internal/api/email_handler.go` - 邮件目标与投递审计 Handler ✅
 - `monitor/backend/internal/service/execution_query_service.go` - 查询服务 ✅
 - `monitor/backend/internal/service/statistics_service.go` - 统计服务 ✅
 - `monitor/backend/internal/service/health_check_service.go` - 健康检查服务 ✅
+- `monitor/backend/internal/service/alert_service.go` - 告警 evaluator 与 lifecycle 服务 ✅
+- `monitor/backend/internal/service/alert_rule_service.go` - 通用规则、任务身份与通知路由服务 ✅
+- `monitor/backend/internal/service/webhook_service.go` - destination、event 和 outbox 服务 ✅
+- `monitor/backend/internal/service/webhook_dispatcher.go` - Webhook claim、重试与终态推进 ✅
+- `monitor/backend/internal/service/webhook_sender.go` - SSRF 校验、HMAC 签名与 HTTP 发送 ✅
+- `monitor/backend/internal/service/notification_service.go` - 唯一 lifecycle event 与多渠道 outbox 协调 ✅
+- `monitor/backend/internal/service/email_service.go` - 邮件 destination、内容冻结和 outbox 服务 ✅
+- `monitor/backend/internal/service/email_dispatcher.go` - 邮件 claim、重试与终态推进 ✅
+- `monitor/backend/internal/service/email_sender.go` - 强制 TLS SMTP Relay 发送 ✅
 
 **Frontend**:
 - `monitor/frontend/src/views/Dashboard.vue` - 监控仪表盘 ✅
 - `monitor/frontend/src/views/ExecutionList.vue` - 执行列表 ✅
+- `monitor/frontend/src/views/AlertList.vue` - 告警事件列表 ✅
+- `monitor/frontend/src/views/AlertRuleList.vue` - 通用任务告警规则管理 ✅
+- `monitor/frontend/src/views/WebhookList.vue` - Webhook 配置与投递审计 ✅
+- `monitor/frontend/src/views/NotificationList.vue` - Webhook/邮件通知统一入口 ✅
+- `monitor/frontend/src/views/EmailList.vue` - 邮件目标与投递审计 ✅
 - `monitor/frontend/src/components/StatisticsCard.vue` - 统计卡片 ✅
 - `monitor/frontend/src/components/ExecutionTable.vue` - 执行表格 ✅
 - `monitor/frontend/src/components/ModuleStatusBadge.vue` - 模块状态徽章 ✅

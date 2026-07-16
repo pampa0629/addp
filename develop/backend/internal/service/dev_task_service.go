@@ -177,7 +177,7 @@ func validateDevTaskContent(devType string, content map[string]interface{}) erro
 		if !ok {
 			return fmt.Errorf("workflow 类型必须在 content.workflow_definition 中提供工作流定义")
 		}
-		if err := validateWorkflowDefinition(workflowDef); err != nil {
+		if err := ValidateWorkflowDefinition(workflowDef); err != nil {
 			return err
 		}
 	}
@@ -185,7 +185,9 @@ func validateDevTaskContent(devType string, content map[string]interface{}) erro
 	return nil
 }
 
-func validateWorkflowDefinition(workflowDef map[string]interface{}) error {
+// ValidateWorkflowDefinition 校验 addp.workflow/v1 的基础 DAG 结构。
+// 具体工作流引擎的算子和公开参数由 OperatorDiscoveryService.ValidateWorkflow 校验。
+func ValidateWorkflowDefinition(workflowDef map[string]interface{}) error {
 	tasksValue, ok := workflowDef["tasks"]
 	if !ok {
 		return fmt.Errorf("workflow 类型必须在 content.workflow_definition.tasks 中提供任务数组")

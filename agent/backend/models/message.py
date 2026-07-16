@@ -12,9 +12,8 @@ class Message(Base):
     session_id = Column(Integer, ForeignKey("agent.sessions.id", ondelete="CASCADE"), nullable=False)
     role = Column(String(50), nullable=False)  # 'user' | 'assistant' | 'system'
     content = Column(Text, nullable=False)
-    message_type = Column(String(50), default="text")  # 'text' | 'tool_progress'（不存DB）
-    result_type = Column(String(50))  # 'text' | 'table' | 'chart' | 'map' | 'error'
-    result_data = Column(JSONB)
+    protocol_message_id = Column(String(100), nullable=True)
+    parts = Column(JSONB, nullable=False, default=list)
     created_at = Column(DateTime, server_default=func.now())
 
     session = relationship("Session", back_populates="messages")

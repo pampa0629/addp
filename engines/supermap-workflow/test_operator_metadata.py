@@ -1,7 +1,21 @@
+import re
 from pathlib import Path
 
 
-SOURCE = (Path(__file__).parent / "src/main/java/com/addp/supermap/workflow/SuperMapWorkflowRuntime.java").read_text(encoding="utf-8")
+def _normalize_java(source: str) -> str:
+    normalized = re.sub(r"\s+", " ", source)
+    return re.sub(r"\(\s+", "(", normalized)
+
+
+SOURCE_ROOT = Path(__file__).parent / "src/main/java"
+SOURCES = {
+    source.name: _normalize_java(source.read_text(encoding="utf-8"))
+    for source in sorted(SOURCE_ROOT.rglob("*.java"))
+}
+SOURCE = "\n".join(SOURCES.values())
+REGISTRY_SOURCE = SOURCES["SuperMapOperatorRegistry.java"]
+S3M_SOURCE = SOURCES["SuperMapS3MConversionService.java"]
+CAD_SOURCE = SOURCES["SuperMapCadService.java"]
 
 
 def _open_postgis_operator_block() -> str:
@@ -177,17 +191,17 @@ def test_osgb_scene_to_s3m_exposes_access_plan_and_both_execution_modes():
     assert 'param("access_plan", "object", false, true' in block
     assert 'output("s3m", "supermap.s3m_dataset"' in block
     assert 'List.of("workflow", "direct")' in block
-    assert 'case "osgb_scene_to_s3m" -> convertOSGBSceneToS3M(params)' in SOURCE
-    assert 'case "osgb_scene_to_s3m" -> new OSGBSceneToS3MProcess(params)' in SOURCE
-    assert '"object_store".equals(targetAccess.path("method").asText())' in SOURCE
-    assert 'publishDirectory(targetRoot, targetAccess)' in SOURCE
-    assert "if (objectStoreTarget) {\n                deleteRecursively(targetRoot);" in SOURCE
+    assert '"osgb_scene_to_s3m", SuperMapS3MConversionService::convertOSGBSceneToS3M' in REGISTRY_SOURCE
+    assert 'Map.entry("osgb_scene_to_s3m", (params, context) -> new OSGBSceneToS3MProcess(params))' in REGISTRY_SOURCE
+    assert '"object_store".equals(targetAccess.path("method").asText())' in S3M_SOURCE
+    assert 'publishDirectory(targetRoot, targetAccess)' in S3M_SOURCE
+    assert "if (objectStoreTarget)" in S3M_SOURCE
+    assert "deleteRecursively(targetRoot);" in S3M_SOURCE
 
 
 def test_osgb_scene_to_s3m_stages_tiles_and_validates_the_published_dataset():
-    conversion_start = SOURCE.index("private static ObjectNode convertOSGBSceneToS3M")
-    conversion_end = SOURCE.index("private static ObjectNode inspectCAD", conversion_start)
-    block = SOURCE[conversion_start:conversion_end]
+    conversion_start = S3M_SOURCE.index("static ObjectNode convertOSGBSceneToS3M")
+    block = S3M_SOURCE[conversion_start:]
 
     assert "stageOSGBSceneData(" in block
     assert "validateS3MOutput(" in block
@@ -198,10 +212,10 @@ def test_osgb_scene_to_s3m_stages_tiles_and_validates_the_published_dataset():
     assert "CacheFileType.S3MB" in block
     assert "ObliqueProcessType.MODIFY_CENTER" not in block
     assert "normalizeS3MManifestGeoreference(" in block
-    assert "CoordSysTranslator.convert(" in SOURCE
+    assert "CoordSysTranslator.convert(" in S3M_SOURCE
     assert "builder.setTargetPrjCoordSys" not in block
-    assert 'position.put("unit", "Degree")' in SOURCE
-    assert 'config.put("crs", "epsg:4326")' in SOURCE
+    assert 'position.put("unit", "Degree")' in S3M_SOURCE
+    assert 'config.put("crs", "epsg:4326")' in S3M_SOURCE
     assert "CacheBuilderOSGBTool.osgb2s3m" not in block
     assert 'result.put("texture_compression", "dxt")' in block
     assert 'result.put("geometry_compression", "draco")' in block
@@ -212,13 +226,13 @@ def test_osgb_scene_to_s3m_stages_tiles_and_validates_the_published_dataset():
     assert 'result.put("root_tile_count", generatedRootTileCount)' in block
     assert 'result.put("source_root_candidate_count", rootTiles.size())' in block
     assert block.index("validateS3MOutput(") < block.index("publishDirectory(targetRoot, targetAccess)")
-    stage_start = SOURCE.index("private static void stageOSGBSceneData")
-    stage_end = SOURCE.index("private static int validateS3MOutput", stage_start)
-    stage_block = SOURCE[stage_start:stage_end]
+    stage_start = S3M_SOURCE.index("private static void stageOSGBSceneData")
+    stage_end = S3M_SOURCE.index("private static int validateS3MOutput", stage_start)
+    stage_block = S3M_SOURCE[stage_start:stage_end]
     assert "Files.copy(source, staged" in stage_block
     assert "Files.createSymbolicLink" not in stage_block
-    assert "rewriteS3MManifestPaths" not in SOURCE
-    assert "copyGeneratedS3MTiles" not in SOURCE
+    assert "rewriteS3MManifestPaths" not in S3M_SOURCE
+    assert "copyGeneratedS3MTiles" not in S3M_SOURCE
 
 
 def test_cad_inspect_is_direct_only_and_does_not_traverse_geometry():
@@ -227,13 +241,13 @@ def test_cad_inspect_is_direct_only_and_does_not_traverse_geometry():
     assert 'param("access_plan", "object", false, true' in block
     assert 'output("inspection", "addp.cad.inspect/v1"' in block
     assert 'List.of("direct")' in block
-    assert 'case "cad.inspect" -> inspectCAD(params)' in SOURCE
-    assert 'interpretation.put("geometry_traversed", false)' in SOURCE
-    assert 'requireCADSourceFormat(source)' in SOURCE
-    assert 'result.put("format", sourceFormat)' in SOURCE
-    inspect_start = SOURCE.index("private static ObjectNode inspectCAD")
-    inspect_end = SOURCE.index("private static String requireCADSourceFormat", inspect_start)
-    inspect_block = SOURCE[inspect_start:inspect_end]
+    assert '"cad.inspect", SuperMapCadService::inspectCAD' in REGISTRY_SOURCE
+    assert 'interpretation.put("geometry_traversed", false)' in CAD_SOURCE
+    assert 'requireCADSourceFormat(source)' in CAD_SOURCE
+    assert 'result.put("format", sourceFormat)' in CAD_SOURCE
+    inspect_start = CAD_SOURCE.index("static ObjectNode inspectCAD")
+    inspect_end = CAD_SOURCE.index("static ObjectNode renderCADPreview", inspect_start)
+    inspect_block = CAD_SOURCE[inspect_start:inspect_end]
     assert ".getGeometry(" not in inspect_block
     assert ".getRecordset(" not in inspect_block
 
@@ -244,14 +258,14 @@ def test_cad_render_preview_uses_map_layers_and_direct_mode():
     assert 'param("access_plan", "object", false, true' in block
     assert 'output("preview", "addp.cad.render-preview/v1"' in block
     assert 'List.of("direct")' in block
-    assert 'case "cad.render_preview" -> renderCADPreview(params)' in SOURCE
-    render_start = SOURCE.index("private static ObjectNode renderCADPreview")
-    render_end = SOURCE.index("private static void publishDirectory", render_start)
-    render_block = SOURCE[render_start:render_end]
+    assert '"cad.render_preview", SuperMapCadService::renderCADPreview' in REGISTRY_SOURCE
+    render_start = CAD_SOURCE.index("static ObjectNode renderCADPreview")
+    render_end = CAD_SOURCE.index("private static boolean outputCADMapToWebP", render_start)
+    render_block = CAD_SOURCE[render_start:render_end]
     assert "map.getLayers().add(dataset, true)" in render_block
-    assert "map.outputMapToWEBP" in render_block
-    assert "map.outputMapToFile" not in render_block
-    assert "map.setViewBounds(bounds)" in render_block
+    assert "map.outputMapToWEBP" in CAD_SOURCE
+    assert "map.outputMapToFile" not in CAD_SOURCE
+    assert "map.setViewBounds(bounds)" in CAD_SOURCE
     assert "map.setBackgroundStyle(backgroundStyle)" in render_block
     assert "double renderSpan = Math.max(drawingBounds.getWidth(), drawingBounds.getHeight())" in render_block
     assert "readCADFormatVersion(sourcePath, sourceFormat)" in render_block

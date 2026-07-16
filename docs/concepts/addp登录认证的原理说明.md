@@ -2,10 +2,10 @@
 
 ## 一、认证流程概述
 
-ADDP 平台使用 **JWT (JSON Web Token)** 进行用户认证，流程简单清晰：
+ADDP 当前由 System 签发第一方 JWT 访问令牌，并以 AuthContext 作为所有业务模块消费身份和授权信息的唯一契约：
 
 ```
-用户登录 → System 后端验证 → 返回 JWT Token → 前端存储 Token → 后续请求携带 Token → 后端验证 Token
+用户登录 → System 签发访问令牌 → 前端存储 Token → 后续请求携带 Token → System 解析为 AuthContext → 业务模块授权
 ```
 
 ### 核心组件
@@ -13,7 +13,12 @@ ADDP 平台使用 **JWT (JSON Web Token)** 进行用户认证，流程简单清�
 **后端 (System 模块)**：
 - `/api/v1/system/login` - 登录接口，返回 JWT Token
 - `/api/v1/system/refresh` - 刷新过期的 Token
-- `AuthMiddleware` - 验证每个请求的 Token
+- `/api/v1/system/auth/context` - 验证访问令牌、回查用户和租户，返回权威 AuthContext
+- `AuthMiddleware` - System 内部唯一的用户 Token 解析入口
+
+**后端 (业务模块)**：
+- `common/middleware/auth` 或 `common-python/addp_common/auth.py` - 调用 System AuthContext API
+- owner 模块 - 基于 AuthContext 执行租户、Scope、资源权限和审批校验
 
 **前端 (各模块)**：
 - `authAPI` - 调用登录/用户信息接口
@@ -39,8 +44,8 @@ sequenceDiagram
     System->>DB: 4. 查询用户<br/>(users 表)
     DB-->>System: 5. 返回用户信息<br/>(含 password_hash, tenant_id)
     System->>System: 6. 验证密码<br/>(bcrypt)
-    System->>System: 7. 生成 JWT Token<br/>payload: {user_id, tenant_id, role}
-    System-->>Gateway: 8. 返回 {token, user_info}
+    System->>System: 7. 生成第一方访问令牌<br/>payload: {user_id, username, tenant_id, exp, iat}
+    System-->>Gateway: 8. 返回 {access_token, token_type}
     Gateway-->>Frontend: 9. 返回登录成功
     Frontend->>Frontend: 10. 存储 token<br/>(localStorage)
 
@@ -49,12 +54,13 @@ sequenceDiagram
     User->>Frontend: 11. 访问受保护资源
     Frontend->>Gateway: 12. GET /api/v1/manager/preview<br/>Header: Authorization: Bearer {token}
     Gateway->>Manager: 13. 转发请求
-    Manager->>Manager: 14. 验证 JWT Token<br/>提取 tenant_id
-    Manager->>DB: 15. 查询租户内资源
-    DB-->>Manager: 16. 返回租户数据
-    Manager-->>Gateway: 17. 返回结果
-    Gateway-->>Frontend: 18. 返回数据
-    Frontend-->>User: 19. 展示数据
+    Manager->>System: 14. GET /auth/context<br/>验证 Token 并回查用户/租户
+    System-->>Manager: 15. 返回 AuthContext
+    Manager->>DB: 16. 按 AuthContext.tenant_id 查询租户内资源
+    DB-->>Manager: 17. 返回租户数据
+    Manager-->>Gateway: 18. 返回结果
+    Gateway-->>Frontend: 19. 返回数据
+    Frontend-->>User: 20. 展示数据
 ```
 
 ---
@@ -124,12 +130,13 @@ Vue Router 触发
           "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
         }
     ↓
-【后端 - System】AuthMiddleware 验证 Token
+【后端 - System】AuthMiddleware 验证 Token 并生成 AuthContext
     ├─ 从 Authorization 头提取 Token
     ├─ 使用 JWT_SECRET 验证签名
     ├─ 验证过期时间（exp）
     ├─ 验证签名算法（必须是 HS256）
-    └─ 提取用户信息存入 Gin context:
+    ├─ 回查用户、租户和激活状态
+    └─ 将权威身份存入 Gin context:
         c.Set("user_id", 2)
         c.Set("username", "admin")
         c.Set("tenant_id", 1)
@@ -166,9 +173,10 @@ Vue Router 触发
     ↓
 【后端 - Meta】接收请求
     ↓
-【后端 - Meta】AuthMiddleware 验证 Token
-    ├─ 验证签名和过期时间
-    └─ 提取用户信息到 context
+【后端 - Meta】公共 AuthMiddleware 获取 AuthContext
+    ├─ 将 Bearer Token 转发到 System /auth/context
+    ├─ System 验证 Token 并回查当前用户、租户和激活状态
+    └─ 将 AuthContext 注入业务请求 context
     ↓
 【后端 - Meta】ScanTaskHandler.ListTasks()
     ├─ 从 context 获取 tenant_id
@@ -227,8 +235,8 @@ Vue Router 触发
 - 业务 API：Develop 后端 `http://localhost:8185/api/v1/develop/*`
 
 **关键点**：
-- ✅ **所有模块的认证都通过 System 模块完成**（统一的用户表和 JWT Secret）
-- ✅ 各模块只负责业务逻辑，认证中间件验证 token 后获取用户信息
+- ✅ **所有模块的认证都通过 System 模块完成**（统一的用户、租户事实源和 AuthContext）
+- ✅ 只有 System 持有 `JWT_SECRET` 并解析 Token；业务模块只消费 AuthContext
 - ✅ Meta 和 Develop 是独立的前端应用，各自维护自己的 authStore
 
 ---
@@ -374,30 +382,28 @@ graph TB
 ### 2. 认证中间件工作原理
 
 ```go
-// 后端每个受保护的 API 都会经过这个中间件
-func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
+// 业务模块的受保护 API 使用 common/middleware/auth。
+func SystemAuthMiddleware(systemURL string) gin.HandlerFunc {
     return func(c *gin.Context) {
-        // 1. 提取 Token
-        authHeader := c.GetHeader("Authorization")  // "Bearer eyJhbGci..."
-        parts := strings.SplitN(authHeader, " ", 2)
-        tokenString := parts[1]
+        // 1. 将原始 Authorization Header 转发给 System。
+        authContext := getAuthorizationContext(
+            systemURL + "/api/v1/system/auth/context",
+            c.GetHeader("Authorization"),
+        )
 
-        // 2. 验证 Token
-        claims, err := utils.ParseToken(tokenString, cfg.JWTSecret)
-        // - 验证签名算法（必须是 HS256，防止攻击）
-        // - 验证签名正确性（使用 JWT_SECRET）
-        // - 验证过期时间（exp）
+        // 2. 注入 System 返回的权威授权上下文。
+        c.Set("authorization_context", authContext)
+        c.Set("user_id", authContext.UserID)
+        c.Set("username", authContext.Username)
+        c.Set("tenant_id", authContext.TenantID)
 
-        // 3. 提取用户信息到请求上下文
-        c.Set("user_id", claims.UserID)
-        c.Set("username", claims.Username)
-        c.Set("tenant_id", claims.TenantID)
-
-        // 4. 继续处理请求
+        // 3. 业务 Handler 继续执行 owner 权限判断。
         c.Next()
     }
 }
 ```
+
+上述代码只表达调用边界，实际实现统一位于 `common/middleware/auth`。System 自己的 `AuthMiddleware` 才能读取 `JWT_SECRET`、解析签名并生成 AuthContext；业务模块不得复制这段逻辑。
 
 ### 3. 前端自动刷新机制
 
@@ -558,7 +564,7 @@ tenantID := c.GetInt("tenant_id")
 return db.Where("tenant_id = ?", tenantID).Find(&tasks).Error
 ```
 
-- ✅ Token 包含 tenant_id
+- ✅ AuthContext 返回经过当前用户和租户状态校验的 `tenant_id`
 - ✅ 所有数据查询自动过滤租户
 - ✅ 租户管理员只能访问自己租户的数据
 
@@ -570,10 +576,10 @@ return db.Where("tenant_id = ?", tenantID).Find(&tasks).Error
 
 **A**: System 是认证中心，负责：
 - 管理用户表（users）
-- 生成和验证 JWT Token
-- 使用统一的 JWT_SECRET
+- 签发和验证用户访问令牌
+- 独占 `JWT_SECRET`，回查用户/租户并生成 AuthContext
 
-所有模块使用相同的 Token，用户在任何模块登录后都可以访问其他模块。
+所有业务模块通过共享中间件消费同一 AuthContext 契约，不共享签名密钥，也不自行解析 Token。
 
 ### Q2: Meta 和 Develop 独立登录，token 能互通吗？
 
@@ -617,10 +623,10 @@ cd system/backend && go run cmd/server/main.go
 
 ADDP 认证系统的核心设计思想：
 
-1. **统一认证中心**：所有模块通过 System 登录，使用统一的 JWT Secret
+1. **统一认证中心**：所有模块通过 System 登录，System 独占令牌解析并提供 AuthContext
 2. **Token 自动刷新**：前端拦截器自动处理 401，无需用户手动重新登录
 3. **iframe Token 传递**：Console 统一登录后，通过 URL query 传递 token 到子模块
-4. **多租户隔离**：Token 包含 tenant_id，后端自动过滤数据
+4. **多租户隔离**：System 校验当前租户后返回 AuthContext，owner 后端按其中的 tenant_id 过滤数据
 5. **安全优先**：bcrypt 密码加密、签名算法验证、URL token 移除
 
 **推荐使用方式**：

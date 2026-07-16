@@ -7,13 +7,27 @@ from .base import BaseClient
 class SystemClient(BaseClient):
     """System 模块 API 客户端 - 引擎管理、用户认证"""
 
-    async def list_engines(self, tenant_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    async def list_engines(
+        self,
+        tenant_id: Optional[int] = None,
+        page: int = 1,
+        page_size: int = 100,
+    ) -> List[Dict[str, Any]]:
         """获取引擎列表"""
-        params = {"tenant_id": tenant_id} if tenant_id else None
+        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        if tenant_id:
+            params["tenant_id"] = tenant_id
         resp = await self.get("/api/v1/system/engines", params=params)
         if not isinstance(resp, dict) or not isinstance(resp.get("data"), list):
             raise ValueError("system engines response must be a paginated object with data")
         return resp["data"]
+
+    async def get_authorization_context(self) -> Dict[str, Any]:
+        """Resolve the current user access token through System AuthContext."""
+        response = await self.get("/api/v1/system/auth/context")
+        if not isinstance(response, dict) or not response.get("user_id"):
+            raise ValueError("system authorization context must contain user_id")
+        return response
 
     async def list_internal_engines(self, tenant_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """通过服务间接口获取引擎列表"""

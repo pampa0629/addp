@@ -3,6 +3,8 @@ package api
 import (
 	"time"
 
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/monitor/docs"
@@ -18,8 +20,13 @@ func SetupRouter(
 	queryService *service.ExecutionQueryService,
 	statisticsService *service.StatisticsService,
 	healthService *service.HealthCheckService,
+	alertService *service.AlertService,
+	alertRuleService *service.AlertRuleService,
+	webhookService *service.WebhookService,
+	emailService *service.EmailService,
 	systemURL string,
 	redisClient *redis.Client,
+	systemClient *commonClient.SystemClient,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -32,7 +39,7 @@ func SetupRouter(
 	// CORS 中间件
 	router.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		if c.Request.Method == "OPTIONS" {
@@ -47,6 +54,10 @@ func SetupRouter(
 	executionHandler := NewExecutionHandler(queryService)
 	statisticsHandler := NewStatisticsHandler(statisticsService)
 	healthHandler := NewHealthHandler(healthService)
+	alertHandler := NewAlertHandler(alertService)
+	alertRuleHandler := NewAlertRuleHandler(alertRuleService)
+	webhookHandler := NewWebhookHandler(webhookService)
+	emailHandler := NewEmailHandler(emailService)
 
 	// API 路由组
 	api := router.Group("/api/v1/monitor")
@@ -57,6 +68,9 @@ func SetupRouter(
 	} else {
 		// Fallback: 无缓存模式
 		api.Use(commonAuth.SystemAuthMiddleware(systemURL))
+	}
+	if systemClient != nil {
+		api.Use(audit.AuditMiddleware("monitor", systemClient))
 	}
 
 	{
@@ -71,6 +85,29 @@ func SetupRouter(
 		api.GET("/executions/by-execution-id/:execution_id", executionHandler.GetExecutionByExecutionID)
 		api.GET("/executions/:id/tree", executionHandler.GetExecutionTree)
 		api.GET("/executions/:id", executionHandler.GetExecution)
+
+		api.GET("/alerts", alertHandler.ListAlerts)
+		api.POST("/alerts/:id/acknowledge", alertHandler.AcknowledgeAlert)
+		api.POST("/alerts/:id/suppress", alertHandler.SuppressAlert)
+		api.GET("/alert-rule-targets", alertRuleHandler.ListAlertRuleTargets)
+		api.GET("/alert-rules", alertRuleHandler.ListAlertRules)
+		api.POST("/alert-rules", alertRuleHandler.CreateAlertRule)
+		api.PATCH("/alert-rules/:id", alertRuleHandler.UpdateAlertRule)
+		api.DELETE("/alert-rules/:id", alertRuleHandler.DeleteAlertRule)
+		api.GET("/webhook-destinations", webhookHandler.ListWebhookDestinations)
+		api.POST("/webhook-destinations", webhookHandler.CreateWebhookDestination)
+		api.PATCH("/webhook-destinations/:id", webhookHandler.UpdateWebhookDestination)
+		api.POST("/webhook-destinations/:id/test", webhookHandler.TestWebhookDestination)
+		api.DELETE("/webhook-destinations/:id", webhookHandler.DeleteWebhookDestination)
+		api.GET("/webhook-deliveries", webhookHandler.ListWebhookDeliveries)
+		api.POST("/webhook-deliveries/:delivery_id/retry", webhookHandler.RetryWebhookDelivery)
+		api.GET("/email-destinations", emailHandler.ListEmailDestinations)
+		api.POST("/email-destinations", emailHandler.CreateEmailDestination)
+		api.PATCH("/email-destinations/:id", emailHandler.UpdateEmailDestination)
+		api.POST("/email-destinations/:id/test", emailHandler.TestEmailDestination)
+		api.DELETE("/email-destinations/:id", emailHandler.DeleteEmailDestination)
+		api.GET("/email-deliveries", emailHandler.ListEmailDeliveries)
+		api.POST("/email-deliveries/:delivery_id/retry", emailHandler.RetryEmailDelivery)
 
 		// 模块健康检查
 		api.GET("/task-providers", healthHandler.GetTaskProviders)

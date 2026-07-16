@@ -12,7 +12,7 @@ from langchain.prompts import PromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.exceptions import OutputParserException
 
-from models.workflow_models import Workflow, DataSourceContext
+from models.workflow_models import Workflow, WorkflowResourceFact
 from tools.develop_tools import OperatorDetailTool
 from utils.operator_contract import public_workflow_parameters
 
@@ -73,16 +73,17 @@ class WorkflowGenerationChain:
     async def generate(
         self,
         query: str,
-        data_source: Optional[DataSourceContext],
+        resources: List[WorkflowResourceFact],
         selected_operators: List[str],
-        workflow_engine_id: Optional[int] = None
+        workflow_engine_id: Optional[int] = None,
+        tenant_id: int = 0,
     ) -> Workflow:
         """
         生成工作流
 
         Args:
             query: 用户查询
-            data_source: 数据源上下文（可选，如果数据源理解失败可为 None）
+            resources: 已由 owner Tool 验证的多资源事实
             selected_operators: 选定的算子名称列表
             workflow_engine_id: 工作流引擎实例 ID，用于获取正确的算子详情
 
@@ -102,7 +103,11 @@ class WorkflowGenerationChain:
 
         # 1. 批量获取算子详情（按工作流引擎实例）
         print(f"[WorkflowGenerationChain] 批量获取 {len(selected_operators)} 个算子的详情（工作流引擎 ID: {workflow_engine_id}）")
-        operator_details = await self._fetch_operator_details(selected_operators, workflow_engine_id)
+        operator_details = await self._fetch_operator_details(
+            selected_operators,
+            workflow_engine_id,
+            tenant_id,
+        )
 
         if not operator_details:
             raise ValueError("无法获取算子详情，无法生成工作流")
@@ -111,7 +116,7 @@ class WorkflowGenerationChain:
         operators_detail_text = self._format_operator_details(operator_details)
 
         # 3. 格式化数据源信息
-        data_source_info = self._format_data_source_info(data_source)
+        data_source_info = self._format_resource_info(resources)
 
         # 📝 记录完整的算子详情（用于调试）
         print("\n" + "="*80)
@@ -164,7 +169,12 @@ class WorkflowGenerationChain:
             print(f"[WorkflowGenerationChain] ❌ 生成工作流失败: {type(e).__name__}: {e}")
             raise
 
-    async def _fetch_operator_details(self, operator_names: List[str], workflow_engine_id: int) -> List[Dict]:
+    async def _fetch_operator_details(
+        self,
+        operator_names: List[str],
+        workflow_engine_id: int,
+        tenant_id: int,
+    ) -> List[Dict]:
         """
         批量获取算子详情
 
@@ -177,7 +187,11 @@ class WorkflowGenerationChain:
         """
         # 使用 asyncio.gather 并行获取所有算子详情
         tasks = [
-            self.operator_detail_tool._arun(operator_name=name, workflow_engine_id=workflow_engine_id)
+            self.operator_detail_tool._arun(
+                operator_name=name,
+                workflow_engine_id=workflow_engine_id,
+                tenant_id=tenant_id,
+            )
             for name in operator_names
         ]
 
@@ -259,41 +273,19 @@ class WorkflowGenerationChain:
 
         return "\n".join(lines)
 
-    def _format_data_source_info(self, data_source: Optional[DataSourceContext]) -> str:
-        """
-        格式化数据源信息为文本
-
-        Args:
-            data_source: 数据源上下文
-
-        Returns:
-            格式化的文本
-        """
-        if not data_source:
-            return "数据源信息未提供（用户可能直接指定了参数）"
-
-        lines = [
-            f"**引擎名称**: {data_source.engine_name}",
-            f"**引擎类型**: {data_source.engine_type}",
-            f"**置信度**: {data_source.confidence:.2f}",
-        ]
-
-        # 根据引擎类型显示不同的位置信息
-        location = data_source.location
-        if location.locator:
-            lines.append(f"**源资源 locator**: {location.locator}")
-        if location.target_parent_locator:
-            lines.append(f"**目标父 locator**: {location.target_parent_locator}")
-        if location.target_name:
-            lines.append(f"**目标名称**: {location.target_name}")
-
-        if location.namespace and location.table:
-            lines.append(f"**源资源说明**: {location.namespace}.{location.table}")
-        elif location.bucket and location.path:
-            lines.append(f"**源资源说明**: {location.bucket}/{location.path}")
-        elif location.resource_identifier:
-            lines.append(f"**资源标识**: {location.resource_identifier}")
-
+    def _format_resource_info(self, resources: List[WorkflowResourceFact]) -> str:
+        lines = []
+        for resource in resources:
+            lines.extend([
+                f"### {resource.role}",
+                f"- locator: `{resource.locator}`",
+                f"- data_type: {resource.data_type or '未知'}",
+                f"- geometry_column: {resource.geometry_column or '无'}",
+                f"- geometry_type: {resource.geometry_type or '未知'}",
+                f"- crs: {resource.crs or '未知'}",
+            ])
+            if resource.fields:
+                lines.append(f"- fields: {resource.fields}")
         return "\n".join(lines)
 
     def _clean_llm_output(self, output: str) -> str:

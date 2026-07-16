@@ -5,7 +5,7 @@
 
 **集中化的内容**:
 
-1. **认证**: `JWT_SECRET` - 确保所有服务使用相同的 JWT 签名密钥
+1. **授权上下文**: 用户 Token 由 System `/api/v1/system/auth/context` 解析，`JWT_SECRET` 只保留在 System
 2. **系统数据库**: PostgreSQL 连接信息 - 系统数据的单一来源
 3. **业务引擎**: System 的 `engines` 表中管理的引擎 - 所有数据源配置
 4. **加密密钥**: `ENCRYPTION_KEY` - 跨服务的一致加密
@@ -18,7 +18,7 @@
 尝试从 System 获取配置 (/internal/config)
    ↓
    ├─ 成功 ✅
-   │  └─ 使用 System 配置 (JWT_SECRET, DB 连接)
+   │  └─ 使用 System 配置 (DB 连接、加密和内部调用配置)
    │
    └─ 失败 ⚠️
       └─ 回退到本地 .env 配置
@@ -65,7 +65,7 @@ DB_SCHEMA=manager                  # 模块特定 schema
 SYSTEM_URL=http://localhost:8180
 ENABLE_SERVICE_INTEGRATION=true    # 启用配置中心
 
-# 共享配置 (JWT_SECRET, DB 连接) 从 System 获取
+# 共享配置 (DB 连接、加密和内部调用配置) 从 System 获取
 # 回退配置已注释 (仅在集成禁用时使用)
 ```
 
@@ -143,9 +143,63 @@ TRANSFER_CONTINUOUS_RETENTION_DEGRADED_HORIZON=6h
 
 # 估算剩余恢复时间不大于该值时进入 critical，默认 1 小时。
 TRANSFER_CONTINUOUS_RETENTION_CRITICAL_HORIZON=1h
+
+# 存在 source lag 且真实 position commit 超过该时长未推进时，checkpoint health 进入 degraded，默认 5 分钟。
+TRANSFER_CONTINUOUS_CHECKPOINT_STALE_AFTER=5m
+
+# 自动恢复首次退避、最大退避、最大连续失败次数、circuit 冷却时间和稳定运行阈值。
+TRANSFER_CONTINUOUS_RECOVERY_INITIAL_BACKOFF=1s
+TRANSFER_CONTINUOUS_RECOVERY_MAX_BACKOFF=1m
+TRANSFER_CONTINUOUS_RECOVERY_MAX_CONSECUTIVE_FAILURES=5
+TRANSFER_CONTINUOUS_RECOVERY_CIRCUIT_OPEN_DURATION=5m
+TRANSFER_CONTINUOUS_RECOVERY_STABILITY_WINDOW=5m
 ```
 
-critical 阈值必须小于 degraded 阈值。这些阈值是 Transfer runtime 统一运维策略，不写入用户 task config，也不按任务开放第二条判定路径。
+critical 阈值必须小于 degraded 阈值；checkpoint 停滞阈值必须大于 diagnostics 采样间隔。恢复初始退避不得大于最大退避，最大连续失败次数必须为正，circuit 冷却时间和稳定运行阈值必须为正。这些阈值是 Transfer runtime 统一运维策略，不写入用户 task config，也不按任务开放第二条判定路径。
+
+Monitor 每隔以下时间评估最新 active execution 的公共 metadata，将观测信号物化为告警事件。该配置属于 Monitor 部署策略，不进入任务 JSON；Monitor 不因此读取 Transfer 私有表或业务 Kafka。
+
+```bash
+MONITOR_ALERT_EVALUATION_INTERVAL=15s
+
+# Webhook delivery dispatcher 轮询周期、HTTP 超时和 claim lease。
+MONITOR_WEBHOOK_DISPATCH_INTERVAL=2s
+MONITOR_WEBHOOK_HTTP_TIMEOUT=10s
+MONITOR_WEBHOOK_LEASE_DURATION=30s
+
+# delivery 最大尝试次数和指数退避边界。
+MONITOR_WEBHOOK_MAX_ATTEMPTS=8
+MONITOR_WEBHOOK_RETRY_INITIAL_BACKOFF=5s
+MONITOR_WEBHOOK_RETRY_MAX_BACKOFF=5m
+
+# 默认 false：拒绝 HTTP、环回、私网、链路本地和云 metadata 目标。
+# 只在本地联调或明确受管内网部署中开启。
+MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS=false
+
+# Webhook payload 内告警详情链接使用的 Console 外部地址。
+MONITOR_CONSOLE_BASE_URL=http://localhost:5170
+
+# 邮件 outbox dispatcher 的轮询、SMTP 超时、领取租约和重试策略。
+MONITOR_EMAIL_DISPATCH_INTERVAL=2s
+MONITOR_EMAIL_SMTP_TIMEOUT=15s
+MONITOR_EMAIL_LEASE_DURATION=30s
+MONITOR_EMAIL_MAX_ATTEMPTS=8
+MONITOR_EMAIL_RETRY_INITIAL_BACKOFF=5s
+MONITOR_EMAIL_RETRY_MAX_BACKOFF=5m
+
+# 平台统一 SMTP Relay。host 为空时邮件 dispatcher 不启动。
+MONITOR_EMAIL_SMTP_HOST=
+MONITOR_EMAIL_SMTP_PORT=587
+MONITOR_EMAIL_SMTP_USERNAME=
+MONITOR_EMAIL_SMTP_PASSWORD=
+MONITOR_EMAIL_SMTP_TLS_MODE=starttls
+MONITOR_EMAIL_FROM_ADDRESS=
+MONITOR_EMAIL_FROM_NAME=ADDP Monitor
+```
+
+Webhook destination 的 HMAC secret 使用平台统一 `ENCRYPTION_KEY` 做 AES-256-GCM 加密，不新增 Monitor 私有加密密钥。dispatcher 配置属于部署策略，不进入任务定义或普通用户请求；`MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS` 只能由部署者设置，API 不提供绕过开关。
+
+邮件第一版只允许 `MONITOR_EMAIL_SMTP_TLS_MODE=starttls|tls`，不支持明文或机会式降级，也不根据端口猜测 TLS 模式。配置 username 时必须同时配置 password，反之亦然；配置 host 时必须配置合法的 from address。SMTP host 为空时 Monitor 仍可管理邮件目标，但不会启动邮件 dispatcher，既有 `pending` outbox 会在部署者补齐配置并重启后继续投递。SMTP 凭据只存在部署环境，不进入 System Engine、任务 JSON、租户 API 或投递审计。
 
 ### Infra Kafka、Kafka Connect 与 Capture Supervisor 配置（工作包 3B/3C 已实现）
 
@@ -207,7 +261,7 @@ QUICK_VIEW_REALTIME_TILE_RETRY_AFTER_SEC=60
 根目录 `.env` 文件 (从 `.env.example` 复制):
 
 ```bash
-# 安全性 (生产环境必须更改)
+# System 签名密钥（只由 System 读取，不通过共享配置下发）
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 
 # PostgreSQL - ADDP 系统数据库

@@ -1,0 +1,235 @@
+{
+  "schema": "addp.tool-manifest/v1",
+  "version": "1.0.0",
+  "tools": [
+    {
+      "name": "engine.list",
+      "version": "1.0.0",
+      "description": "查询当前用户可访问的引擎实例，可限定为工作流运行时。",
+      "owner": "system",
+      "risk": "read",
+      "approval": {"mode": "none"},
+      "auth": "user_jwt",
+      "permission_enforced_by": "owner",
+      "audit": {"mode": "owner"},
+      "result_ref": {"mode": "none"},
+      "limits": {"max_bytes": 131072},
+      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "input_schema": {
+        "type": "object",
+        "properties": {"capability": {"type": "string", "enum": ["all", "workflow"], "default": "all"}},
+        "additionalProperties": false
+      },
+      "output_schema": {"type": "array", "items": {"type": "object"}}
+    },
+    {
+      "name": "data.search",
+      "version": "1.0.0",
+      "description": "搜索当前租户已有数据项并返回稳定 locator 候选。",
+      "owner": "manager",
+      "risk": "read",
+      "approval": {"mode": "none"},
+      "auth": "user_jwt",
+      "permission_enforced_by": "owner",
+      "audit": {"mode": "owner"},
+      "result_ref": {"mode": "locator"},
+      "limits": {"max_bytes": 131072},
+      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "minLength": 1},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10}
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      },
+      "output_schema": {"type": "object"}
+    },
+    {
+      "name": "resource.ancestors.get",
+      "version": "1.0.0",
+      "description": "按 Meta 当前事实校验 locator 并返回根到目标的祖先链。",
+      "owner": "meta",
+      "risk": "read",
+      "approval": {"mode": "none"},
+      "auth": "user_jwt",
+      "permission_enforced_by": "owner",
+      "audit": {"mode": "owner"},
+      "result_ref": {"mode": "locator"},
+      "limits": {"max_bytes": 131072},
+      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "engine_id": {"type": "integer", "minimum": 1},
+          "locator": {"type": "string", "minLength": 1}
+        },
+        "required": ["engine_id", "locator"],
+        "additionalProperties": false
+      },
+      "output_schema": {"type": "object"}
+    },
+    {
+      "name": "data.preview",
+      "version": "1.0.0",
+      "description": "按 locator 返回受限字段、样本和空间事实预览。",
+      "owner": "manager",
+      "risk": "read",
+      "approval": {"mode": "none"},
+      "auth": "user_jwt",
+      "permission_enforced_by": "owner",
+      "audit": {"mode": "owner"},
+      "result_ref": {"mode": "locator"},
+      "limits": {"max_bytes": 262144},
+      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "locator": {"type": "string", "minLength": 1},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10}
+        },
+        "required": ["locator"],
+        "additionalProperties": false
+      },
+      "output_schema": {"type": "object"}
+    },
+    {
+      "name": "workflow.operators.list",
+      "version": "1.0.0",
+      "description": "查询具体工作流运行时实例的 Public Operator Spec。",
+      "owner": "develop",
+      "risk": "read",
+      "approval": {"mode": "none"},
+      "auth": "user_jwt",
+      "permission_enforced_by": "owner",
+      "audit": {"mode": "owner"},
+      "result_ref": {"mode": "none"},
+      "limits": {"max_bytes": 524288},
+      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "input_schema": {
+        "type": "object",
+        "properties": {"workflow_engine_id": {"type": "integer", "minimum": 1}},
+        "required": ["workflow_engine_id"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": ["workflow_engine_id", "count", "operators"]
+      }
+    },
+    {
+      "name": "workflow.draft.generate",
+      "version": "1.0.0",
+      "description": "根据自然语言、目标运行时和已验证的多资源事实生成候选 workflow definition。",
+      "owner": "copilot",
+      "risk": "propose",
+      "approval": {"mode": "none"},
+      "auth": "user_jwt",
+      "permission_enforced_by": "owner",
+      "audit": {"mode": "owner"},
+      "result_ref": {"mode": "none"},
+      "limits": {"max_bytes": 262144},
+      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "minLength": 1},
+          "workflow_engine_id": {"type": "integer", "minimum": 1},
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": {"type": "string", "minLength": 1},
+                "locator": {"type": "string", "minLength": 1},
+                "data_type": {"type": "string"},
+                "geometry_column": {"type": ["string", "null"]},
+                "geometry_type": {"type": ["string", "null"]},
+                "crs": {"type": ["string", "null"]},
+                "fields": {"type": "array", "items": {"type": "object"}, "maxItems": 200}
+              },
+              "required": ["role", "locator"],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 20
+          }
+        },
+        "required": ["query", "workflow_engine_id", "resources"],
+        "additionalProperties": false
+      },
+      "output_schema": {"type": "object", "required": ["status"]}
+    },
+    {
+      "name": "workflow.validate",
+      "version": "1.0.0",
+      "description": "按 addp.workflow/v1 和目标运行时 Public Operator Spec 校验候选 definition。",
+      "owner": "develop",
+      "risk": "read",
+      "approval": {"mode": "none"},
+      "auth": "user_jwt",
+      "permission_enforced_by": "owner",
+      "audit": {"mode": "owner"},
+      "result_ref": {"mode": "none"},
+      "limits": {"max_bytes": 131072},
+      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "workflow_engine_id": {"type": "integer", "minimum": 1},
+          "workflow_definition": {"type": "object"}
+        },
+        "required": ["workflow_engine_id", "workflow_definition"],
+        "additionalProperties": false
+      },
+      "output_schema": {"type": "object", "required": ["valid", "workflow_engine_id", "errors", "warnings"]}
+    },
+    {
+      "name": "workflow.run",
+      "version": "1.0.0",
+      "description": "向 Develop 提交已校验的 workflow definition 并创建 execution。",
+      "owner": "develop",
+      "risk": "write",
+      "approval": {"mode": "owner_policy"},
+      "auth": "user_jwt",
+      "permission_enforced_by": "owner",
+      "audit": {"mode": "required"},
+      "result_ref": {"mode": "execution", "schema": "addp.result-ref/v1"},
+      "limits": {"max_bytes": 65536},
+      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "workflow_engine_id": {"type": "integer", "minimum": 1},
+          "workflow_definition": {"type": "object"},
+          "engine_specific": {"type": "object"}
+        },
+        "required": ["workflow_engine_id", "workflow_definition"],
+        "additionalProperties": false
+      },
+      "output_schema": {"type": "object", "required": ["execution_id"]}
+    },
+    {
+      "name": "execution.get",
+      "version": "1.0.0",
+      "description": "查询 Develop execution 的状态、进度和受限结果摘要。",
+      "owner": "develop",
+      "risk": "read",
+      "approval": {"mode": "none"},
+      "auth": "user_jwt",
+      "permission_enforced_by": "owner",
+      "audit": {"mode": "owner"},
+      "result_ref": {"mode": "execution", "schema": "addp.result-ref/v1"},
+      "limits": {"max_bytes": 131072},
+      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "input_schema": {
+        "type": "object",
+        "properties": {"execution_id": {"type": "string", "minLength": 1}},
+        "required": ["execution_id"],
+        "additionalProperties": false
+      },
+      "output_schema": {"type": "object", "required": ["execution_id", "status"]}
+    }
+  ]
+}

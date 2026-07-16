@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	"github.com/addp/common/contentio"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
@@ -24,6 +26,8 @@ const (
 	buildMaterialsDir  = "build/"
 	copilotExtractPath = "/api/v1/copilot/kg-build/extract"
 )
+
+var ErrBuildRuntimeNotOwned = fmt.Errorf("%w: graph build runtime is not owned by this process", commonAPI.ErrConflict)
 
 // BuildService 图谱构建业务逻辑
 type BuildService struct {
@@ -40,7 +44,12 @@ type BuildService struct {
 
 	// 取消令牌（graphID+taskID → cancel func）
 	cancelMu sync.Mutex
-	cancels  map[string]context.CancelFunc
+	cancels  map[string]*activeBuildRun
+}
+
+type activeBuildRun struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 func NewBuildService(
@@ -65,7 +74,7 @@ func NewBuildService(
 		materialWriter:    materialWriter,
 		copilotURL:        copilotURL,
 		httpClient:        &http.Client{Timeout: 120 * time.Second},
-		cancels:           make(map[string]context.CancelFunc),
+		cancels:           make(map[string]*activeBuildRun),
 	}
 }
 
@@ -158,16 +167,17 @@ func (s *BuildService) RunTaskWithContext(
 	source string,
 	parentExecutionID *string,
 ) (string, error) {
-	task, err := s.buildRepo.GetTask(taskID, tenantID)
-	if err != nil {
-		return "", fmt.Errorf("任务不存在: %w", err)
-	}
-	if task.GraphID != graphID {
-		return "", fmt.Errorf("任务不属于指定图谱")
-	}
-	if task.Status == models.BuildStatusRunning {
-		return "", fmt.Errorf("任务已在运行中")
-	}
+	return s.claimAndLaunchTask(ctx, taskID, graphID, tenantID, userID, triggerType, source, parentExecutionID, repository.BuildExecutionClaimRun)
+}
+
+func (s *BuildService) claimAndLaunchTask(
+	ctx context.Context,
+	taskID, graphID, tenantID, userID uint,
+	triggerType string,
+	source string,
+	parentExecutionID *string,
+	claimMode repository.BuildExecutionClaimMode,
+) (string, error) {
 	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
 		return "", err
@@ -177,12 +187,7 @@ func (s *BuildService) RunTaskWithContext(
 		normalizedSource = commonExecution.ModuleGraph
 	}
 
-	materials, err := s.buildRepo.ListMaterials(taskID, tenantID)
-	if err != nil || len(materials) == 0 {
-		return "", fmt.Errorf("任务没有可处理的材料")
-	}
-
-	// 创建 Monitor 执行记录
+	// 任务定义 claim 与 pending execution 创建必须位于同一事务。
 	now := time.Now()
 	executionID := uuid.New().String()
 	uid := int(userID)
@@ -192,42 +197,44 @@ func (s *BuildService) RunTaskWithContext(
 		Module:            commonExecution.ModuleGraph,
 		TaskType:          commonExecution.TaskTypeKGBuild,
 		Source:            normalizedSource,
-		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(taskID),
-		SourceTaskName:    &task.Name,
 		ParentExecutionID: parentExecutionID,
 		Status:            commonExecution.ExecutionStatusPending,
 		Progress:          0,
 		TriggerType:       normalizedTriggerType,
 		TriggeredBy:       &uid,
-		ExecutionConfig: commonModels.JSONMap{
-			"graph_id":             graphID,
-			"confidence_threshold": task.ConfidenceThreshold,
-			"material_count":       len(materials),
-		},
-		StartedAt: &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
-	_ = s.taskExecutionRepo.Create(ctx, execution)
-
-	// 保存 execution_id 到 build_task
-	task.ExecutionID = executionID
-	task.Status = models.BuildStatusRunning
-	task.StartedAt = &now
-	_ = s.buildRepo.UpdateTask(task)
+	task, materials, err := s.buildRepo.ClaimExecution(ctx, taskID, graphID, tenantID, execution, claimMode)
+	if err != nil {
+		return "", fmt.Errorf("claim graph build execution: %w", err)
+	}
 
 	// 异步执行
 	runCtx, cancel := context.WithCancel(context.Background())
 	key := fmt.Sprintf("%d-%d", graphID, taskID)
+	run := &activeBuildRun{cancel: cancel, done: make(chan struct{})}
 	s.cancelMu.Lock()
-	s.cancels[key] = cancel
+	s.cancels[key] = run
 	s.cancelMu.Unlock()
 
 	go func() {
 		defer func() {
 			s.cancelMu.Lock()
-			delete(s.cancels, key)
+			if s.cancels[key] == run {
+				delete(s.cancels, key)
+			}
 			s.cancelMu.Unlock()
+			close(run.done)
 			cancel()
 		}()
+		startedAt := time.Now()
+		if err := s.buildRepo.StartExecution(context.Background(), taskID, tenantID, executionID, startedAt); err != nil {
+			s.failTask(context.Background(), task, int(tenantID), executionID, fmt.Sprintf("启动图谱构建执行失败: %v", err))
+			return
+		}
+		task.Status = models.BuildStatusRunning
+		task.StartedAt = &startedAt
 		s.executeTask(runCtx, task, materials, int(tenantID), executionID)
 	}()
 
@@ -254,61 +261,41 @@ func (s *BuildService) CancelTask(taskID, graphID, tenantID uint) error {
 	if err != nil {
 		return err
 	}
-	if task.Status != models.BuildStatusRunning {
+	if task.GraphID != graphID {
+		return fmt.Errorf("任务不属于指定图谱")
+	}
+	if task.Status != models.BuildStatusRunning && !(task.Status == models.BuildStatusPending && task.ExecutionID != "") {
 		return fmt.Errorf("任务未在运行中")
 	}
 
 	key := fmt.Sprintf("%d-%d", graphID, taskID)
 	s.cancelMu.Lock()
-	cancel, ok := s.cancels[key]
+	run, ok := s.cancels[key]
 	s.cancelMu.Unlock()
-	if ok {
-		cancel()
+	if !ok {
+		return ErrBuildRuntimeNotOwned
 	}
+	run.cancel()
+	<-run.done
 
-	task.Status = models.BuildStatusCancelled
-	now := time.Now()
-	task.CompletedAt = &now
-	_ = s.buildRepo.UpdateTask(task)
-
-	if task.ExecutionID != "" {
-		_ = s.taskExecutionRepo.UpdateFields(context.Background(), task.ExecutionID, int(tenantID), map[string]interface{}{
-			"status":       commonExecution.ExecutionStatusCancelled,
-			"completed_at": now,
-		})
+	finished, err := s.buildRepo.GetTask(taskID, tenantID)
+	if err != nil {
+		return err
+	}
+	if finished.Status != models.BuildStatusCancelled {
+		return fmt.Errorf("%w: graph build task finished as %s before cancellation", commonAPI.ErrConflict, finished.Status)
 	}
 	return nil
 }
 
 // RerunTask 重置任务状态并重新执行（对 success/failed/cancelled 任务适用）
 func (s *BuildService) RerunTask(ctx context.Context, taskID, graphID, tenantID, userID uint) error {
-	task, err := s.buildRepo.GetTask(taskID, tenantID)
-	if err != nil {
-		return fmt.Errorf("任务不存在: %w", err)
-	}
-	if task.Status == models.BuildStatusRunning {
-		return fmt.Errorf("任务正在运行中，无法重新运行")
-	}
-
-	// 重置材料进度
-	if err := s.buildRepo.ResetMaterials(taskID, tenantID); err != nil {
-		return fmt.Errorf("重置材料状态失败: %w", err)
-	}
-	// 清空 pending 审核项（已 approved/rejected/modified 的保留）
-	_ = s.buildRepo.DeletePendingReviewItems(taskID, tenantID)
-
-	// 重置任务自身状态
-	task.Status = models.BuildStatusPending
-	task.ErrorMessage = ""
-	task.ExecutionID = ""
-	task.StartedAt = nil
-	task.CompletedAt = nil
-	task.Stats = []byte("{}")
-	if err := s.buildRepo.UpdateTask(task); err != nil {
-		return fmt.Errorf("重置任务状态失败: %w", err)
-	}
-
-	return s.RunTask(ctx, taskID, graphID, tenantID, userID)
+	_, err := s.claimAndLaunchTask(
+		ctx, taskID, graphID, tenantID, userID,
+		commonExecution.TriggerTypeManual, commonExecution.ModuleGraph, nil,
+		repository.BuildExecutionClaimRerun,
+	)
+	return err
 }
 
 // ============ 核心执行逻辑 ============
@@ -317,6 +304,9 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 	autoWritten := 0
 	pendingReview := 0
 	processed := 0
+	if s.finishCancelledIfRequested(ctx, task, tenantID, executionID) {
+		return
+	}
 
 	// 加载本体快照
 	kg, err := s.graphRepo.GetByID(task.GraphID, uint(tenantID))
@@ -331,6 +321,9 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 	}
 	ontologySchema := buildOntologySchema(ontology)
 	ancestorChains := buildAncestorChains(ontology)
+	if s.finishCancelledIfRequested(ctx, task, tenantID, executionID) {
+		return
+	}
 
 	// 构建空间图层查找表（实体类型名 → 空间映射，含继承关系）
 	spatialLayerLookup, _ := s.ontologySvc.BuildSpatialLayerLookup(kg.OntologyID, uint(tenantID))
@@ -340,16 +333,21 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 
 	total := len(materials)
 	for i, mat := range materials {
-		select {
-		case <-ctx.Done():
+		if s.finishCancelledIfRequested(ctx, task, tenantID, executionID) {
 			return
-		default:
 		}
 
 		mat.Status = models.BuildMaterialStatusProcessing
 		_ = s.buildRepo.UpdateMaterial(&mat)
 
 		written, queued, err := s.processMaterial(ctx, task, &mat, ontologySchema, spatialLayerLookup, ancestorChains, uint(tenantID))
+		if ctx.Err() != nil {
+			if resetErr := s.resetCancelledMaterial(&mat); resetErr != nil {
+				log.Printf("failed to reset graph build material %d after cancellation: %v", mat.ID, resetErr)
+			}
+			s.finishCancelledIfRequested(ctx, task, tenantID, executionID)
+			return
+		}
 		if err != nil {
 			mat.Status = models.BuildMaterialStatusFailed
 			mat.ErrorMessage = err.Error()
@@ -378,12 +376,11 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 			},
 		})
 	}
+	if s.finishCancelledIfRequested(ctx, task, tenantID, executionID) {
+		return
+	}
 
 	// 完成
-	now := time.Now()
-	task.Status = models.BuildStatusSuccess
-	task.CompletedAt = &now
-
 	statsBytes, _ := json.Marshal(models.BuildTaskStats{
 		TotalMaterials: total,
 		Processed:      processed,
@@ -391,36 +388,75 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 		PendingReview:  pendingReview,
 	})
 	task.Stats = statsBytes
-	_ = s.buildRepo.UpdateTask(task)
 
 	rw := int64(autoWritten)
-	_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, tenantID, map[string]interface{}{
-		"status":          commonExecution.ExecutionStatusSuccess,
-		"progress":        100,
-		"completed_at":    now,
-		"records_written": rw,
-		"metadata": commonModels.JSONMap{
-			"auto_written":    autoWritten,
-			"pending_review":  pendingReview,
-			"total_materials": total,
-		},
-	})
+	if err := s.finishTask(ctx, task, tenantID, executionID, commonExecution.ExecutionStatusSuccess, "", commonModels.JSONMap{
+		"auto_written":    autoWritten,
+		"pending_review":  pendingReview,
+		"total_materials": total,
+	}, &rw); err != nil {
+		log.Printf("failed to finish graph execution %s: %v", executionID, err)
+	}
 }
 
 func (s *BuildService) failTask(ctx context.Context, task *models.BuildTask, tenantID int, executionID, msg string) {
-	task.Status = models.BuildStatusFailed
-	task.ErrorMessage = msg
-	now := time.Now()
-	task.CompletedAt = &now
-	_ = s.buildRepo.UpdateTask(task)
-
-	if executionID != "" {
-		_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, tenantID, map[string]interface{}{
-			"status":        commonExecution.ExecutionStatusFailed,
-			"completed_at":  now,
-			"error_details": commonModels.JSONMap{"message": msg},
-		})
+	if executionID == "" {
+		return
 	}
+	if err := s.finishTask(ctx, task, tenantID, executionID, commonExecution.ExecutionStatusFailed, msg, nil, nil); err != nil {
+		log.Printf("failed to persist graph execution %s failure: %v", executionID, err)
+	}
+}
+
+func (s *BuildService) finishCancelledIfRequested(ctx context.Context, task *models.BuildTask, tenantID int, executionID string) bool {
+	if ctx.Err() == nil {
+		return false
+	}
+	if err := s.finishTask(context.Background(), task, tenantID, executionID, commonExecution.ExecutionStatusCancelled, "", commonModels.JSONMap{
+		"stop_reason": "user_cancelled",
+	}, nil); err != nil {
+		log.Printf("failed to persist graph execution %s cancellation: %v", executionID, err)
+	}
+	return true
+}
+
+func (s *BuildService) resetCancelledMaterial(material *models.BuildMaterial) error {
+	material.Status = models.BuildMaterialStatusPending
+	material.ProcessedChunks = 0
+	material.TotalChunks = 0
+	material.ErrorMessage = ""
+	material.ProcessedAt = nil
+	material.Stats = []byte("{}")
+	return s.buildRepo.UpdateMaterial(material)
+}
+
+func (s *BuildService) finishTask(ctx context.Context, task *models.BuildTask, tenantID int, executionID, status, errorMessage string, metadata commonModels.JSONMap, recordsWritten *int64) error {
+	now := time.Now()
+	taskFields := map[string]interface{}{
+		"status": status, "completed_at": now, "error_message": errorMessage,
+	}
+	if task.Stats != nil {
+		taskFields["stats"] = task.Stats
+	}
+	executionFields := map[string]interface{}{
+		"status": status, "completed_at": now, "updated_at": now,
+	}
+	if status == commonExecution.ExecutionStatusSuccess {
+		executionFields["progress"] = 100
+	}
+	if task.StartedAt != nil {
+		executionFields["execution_time_ms"] = now.Sub(*task.StartedAt).Milliseconds()
+	}
+	if errorMessage != "" {
+		executionFields["error_details"] = commonModels.JSONMap{"message": errorMessage}
+	}
+	if metadata != nil {
+		executionFields["metadata"] = metadata
+	}
+	if recordsWritten != nil {
+		executionFields["records_written"] = *recordsWritten
+	}
+	return s.buildRepo.FinishExecution(ctx, task.ID, uint(tenantID), executionID, taskFields, executionFields)
 }
 
 // syncSpatialLayersBeforeBuild 在构建前自动同步所有空间图层（幂等，含继承类型）

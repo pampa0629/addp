@@ -18,6 +18,17 @@
 
       <template v-if="isContinuousExecution">
         <el-divider>{{ t('transfer.executionDetail.continuousProgress') }}</el-divider>
+
+        <el-alert
+          v-if="recoveryAlertVisible"
+          :title="recoveryStateText"
+          :description="recoveryDescription"
+          :type="recoveryAlertType"
+          :closable="false"
+          show-icon
+          class="diagnostics-alert"
+        />
+
         <el-descriptions :column="3" border>
           <el-descriptions-item :label="t('transfer.executionDetail.workerInstance')">
             {{ continuousMetadata.owner_instance_id || '-' }}
@@ -51,9 +62,39 @@
           <el-descriptions-item :label="t('transfer.executionDetail.checkpointAge')">
             {{ checkpointAge }}
           </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.executionDetail.checkpointHealth')">
+            <el-tag :type="continuousHealthTagType(continuousDiagnostics.checkpoint_health || 'unknown')">
+              {{ continuousHealthText(continuousDiagnostics.checkpoint_health || 'unknown') }}
+            </el-tag>
+          </el-descriptions-item>
           <el-descriptions-item v-if="execution.metadata?.stop_reason" :label="t('transfer.executionDetail.stopReason')">
             {{ execution.metadata.stop_reason }}
           </el-descriptions-item>
+          <template v-if="continuousRecovery">
+            <el-descriptions-item :label="t('transfer.recovery.state')">
+              <el-tag :type="continuousRecoveryTagType(continuousRecovery.state)">
+                {{ recoveryStateText }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('transfer.recovery.reason')">
+              {{ recoveryReasonText }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('transfer.recovery.attempt')">
+              {{ continuousRecovery.attempt ?? '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('transfer.recovery.consecutiveFailures')">
+              {{ continuousRecovery.consecutiveFailures }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('transfer.recovery.backoff')">
+              {{ formatRecoverySeconds(continuousRecovery.backoffSeconds) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('transfer.recovery.nextAttemptAt')">
+              {{ formatTimestamp(continuousRecovery.notBefore) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('transfer.recovery.recoveredFrom')" :span="3">
+              {{ continuousRecovery.recoveredFromExecutionId || '-' }}
+            </el-descriptions-item>
+          </template>
         </el-descriptions>
 
         <el-alert
@@ -103,6 +144,16 @@
           </el-table-column>
           <el-table-column :label="t('transfer.executionDetail.retentionHorizon')" min-width="150">
             <template #default="{ row }">{{ formatContinuousDurationSeconds(row.retentionHorizonSeconds) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('transfer.executionDetail.checkpointHealth')" min-width="130">
+            <template #default="{ row }">
+              <el-tag :type="continuousHealthTagType(row.checkpointHealth)" size="small">
+                {{ continuousHealthText(row.checkpointHealth) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('transfer.executionDetail.checkpointAge')" min-width="130">
+            <template #default="{ row }">{{ formatContinuousDurationSeconds(row.checkpointAgeSeconds) }}</template>
           </el-table-column>
           <el-table-column prop="positionType" :label="t('transfer.executionDetail.positionType')" min-width="150" />
         </el-table>
@@ -218,9 +269,12 @@ import { useI18n } from 'vue-i18n'
 import {
   buildContinuousPartitionRows,
   continuousHealthTagType,
+  continuousRecoveryTagType,
   formatContinuousDurationSeconds,
   formatContinuousRate,
-  getContinuousDiagnostics
+  formatRecoverySeconds,
+  getContinuousDiagnostics,
+  getContinuousRecovery
 } from '@addp/common-frontend'
 
 const { t } = useI18n()
@@ -236,6 +290,25 @@ const executionId = computed(() => route.params.execution_id)
 
 const continuousMetadata = computed(() => execution.value?.metadata?.continuous || {})
 const continuousDiagnostics = computed(() => getContinuousDiagnostics(execution.value?.metadata))
+const continuousRecovery = computed(() => getContinuousRecovery(execution.value?.metadata, execution.value?.status))
+const recoveryStateText = computed(() => continuousRecovery.value
+  ? t(`transfer.recovery.states.${continuousRecovery.value.state}`)
+  : '-')
+const recoveryReasonText = computed(() => {
+  const reason = continuousRecovery.value?.reason || 'unknown'
+  const key = `transfer.recovery.reasons.${reason}`
+  const translated = t(key)
+  return translated === key ? reason : translated
+})
+const recoveryAlertVisible = computed(() => ['waiting', 'open', 'half_open', 'ready'].includes(continuousRecovery.value?.state))
+const recoveryAlertType = computed(() => continuousRecovery.value?.state === 'open' ? 'error' : 'warning')
+const recoveryDescription = computed(() => continuousRecovery.value
+  ? t('transfer.recovery.noticeDescription', {
+      reason: recoveryReasonText.value,
+      failures: continuousRecovery.value.consecutiveFailures,
+      nextAttempt: formatTimestamp(continuousRecovery.value.notBefore)
+    })
+  : '')
 const continuousSchemaChange = computed(() => continuousMetadata.value?.schema_change || null)
 const schemaChangeDescription = computed(() => {
 	const change = continuousSchemaChange.value
@@ -248,7 +321,7 @@ const schemaChangeDescription = computed(() => {
 	})
 })
 const isContinuousExecution = computed(() => {
-  return Object.keys(continuousMetadata.value).length > 0 || !!execution.value?.metadata?.stop_reason
+  return Object.keys(continuousMetadata.value).length > 0 || !!execution.value?.metadata?.stop_reason || !!continuousRecovery.value
 })
 const continuousPartitions = computed(() => buildContinuousPartitionRows(execution.value?.metadata))
 const checkpointAge = computed(() => {
@@ -299,7 +372,7 @@ const loadExecution = async () => {
     }
 
     // 如果任务正在运行，启动自动刷新
-    if (execution.value.status === 'running' && !autoRefreshInterval.value) {
+    if (['pending', 'running'].includes(execution.value.status) && !autoRefreshInterval.value) {
       autoRefreshInterval.value = setInterval(refreshLogs, 5000)
     }
   } catch (error) {
@@ -331,7 +404,7 @@ const refreshLogs = async () => {
     execution.value = await executionAPI.get(executionId.value)
 
     // 如果任务不再运行，停止自动刷新
-    if (execution.value.status !== 'running' && autoRefreshInterval.value) {
+    if (!['pending', 'running'].includes(execution.value.status) && autoRefreshInterval.value) {
       clearInterval(autoRefreshInterval.value)
       autoRefreshInterval.value = null
     }

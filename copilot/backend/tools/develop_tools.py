@@ -31,7 +31,8 @@ class EngineTool(BaseTool):
         try:
             async with DevelopClient(
                 base_url=settings.get_develop_url(),
-                internal_api_key=settings.internal_api_key
+                internal_api_key=settings.internal_api_key,
+                tenant_id=tenant_id,
             ) as client:
                 engines = await client.list_engines()
                 print(f"[EngineTool] ✅ 成功获取 {len(engines)} 个引擎")
@@ -69,14 +70,14 @@ class OperatorDiscoveryTool(BaseTool):
     _cache_time: Optional[float] = None
     _cache_ttl: int = 300  # 5 分钟
 
-    async def _arun(self, workflow_engine_id: int) -> List[Dict]:
+    async def _arun(self, workflow_engine_id: int, tenant_id: int = 0) -> List[Dict]:
         """异步执行，获取指定工作流引擎实例的算子"""
         if not workflow_engine_id:
             raise ValueError("workflow_engine_id 不能为空")
 
         # 检查缓存
         if self._cache and self._cache_time and hasattr(self, '_cache_workflow_engine_id'):
-            if self._cache_workflow_engine_id == workflow_engine_id:
+            if self._cache_workflow_engine_id == workflow_engine_id and getattr(self, '_cache_tenant_id', None) == tenant_id:
                 age = time.time() - self._cache_time
                 if age < self._cache_ttl:
                     print(f"[OperatorDiscoveryTool] 使用缓存（工作流引擎 ID: {workflow_engine_id}, 年龄: {age:.1f}秒）")
@@ -88,7 +89,8 @@ class OperatorDiscoveryTool(BaseTool):
         try:
             async with DevelopClient(
                 base_url=settings.get_develop_url(),
-                internal_api_key=settings.internal_api_key
+                internal_api_key=settings.internal_api_key,
+                tenant_id=tenant_id,
             ) as client:
                 operators = await client.list_operators(workflow_engine_id)
                 print(f"[OperatorDiscoveryTool] ✅ 从 API 获取到 {len(operators)} 个算子（工作流引擎 ID: {workflow_engine_id}）")
@@ -107,6 +109,7 @@ class OperatorDiscoveryTool(BaseTool):
                 self._cache = brief_operators
                 self._cache_time = time.time()
                 self._cache_workflow_engine_id = workflow_engine_id
+                self._cache_tenant_id = tenant_id
 
                 return brief_operators
         except Exception as e:
@@ -126,7 +129,7 @@ class OperatorDetailTool(BaseTool):
 使用方式：输入算子名称（字符串），返回算子详情（JSON）
 """
 
-    async def _arun(self, operator_name: str, workflow_engine_id: int) -> Optional[Dict]:
+    async def _arun(self, operator_name: str, workflow_engine_id: int, tenant_id: int = 0) -> Optional[Dict]:
         """异步执行，获取指定工作流引擎实例的算子详情"""
         if not workflow_engine_id:
             raise ValueError("workflow_engine_id 不能为空")
@@ -136,7 +139,8 @@ class OperatorDetailTool(BaseTool):
         try:
             async with DevelopClient(
                 base_url=settings.get_develop_url(),
-                internal_api_key=settings.internal_api_key
+                internal_api_key=settings.internal_api_key,
+                tenant_id=tenant_id,
             ) as client:
                 operator = await client.get_operator(operator_name, workflow_engine_id)
                 if operator:

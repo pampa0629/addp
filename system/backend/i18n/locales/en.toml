@@ -13,6 +13,9 @@ other = "Invalid Authorization format"
 [system.auth.invalid_token]
 other = "Invalid token"
 
+[system.auth.account_unavailable]
+other = "The user or tenant is unavailable"
+
 [system.auth.token_refresh_failed]
 other = "Failed to refresh token"
 

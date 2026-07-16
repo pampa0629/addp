@@ -179,6 +179,10 @@ func TestIntegrationPostgresAtomicTaskClaimAndSyncStateCAS(t *testing.T) {
 	if err := stateRepo.CommitPosition(context.Background(), state.ID, state.StateVersion, state.FencingToken, position, "pg-atomic-winner"); err != nil {
 		t.Fatalf("commit sync position: %v", err)
 	}
+	committedState, err := stateRepo.GetByID(context.Background(), state.ID)
+	if err != nil || committedState.PositionCommittedAt == nil {
+		t.Fatalf("committed position time = %#v, error = %v", committedState, err)
+	}
 	if err := stateRepo.CommitPosition(context.Background(), state.ID, state.StateVersion, state.FencingToken, position, "stale"); !errors.Is(err, ErrSyncStateFenced) {
 		t.Fatalf("stale sync commit error = %v, want ErrSyncStateFenced", err)
 	}
@@ -226,13 +230,16 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	if _, err := taskRepo.StartContinuousExecution(context.Background(), task.ID, task.TenantID, &execution); err != nil {
 		t.Fatalf("start continuous execution: %v", err)
 	}
-	leaseRepo := NewRuntimeLeaseRepository(db)
+	leaseRepo := NewRuntimeLeaseRepository(db, testContinuousRecoveryPolicy())
 	claim, err := leaseRepo.ClaimNext(context.Background(), "worker-a", now, 30*time.Second)
 	if err != nil || claim == nil {
 		t.Fatalf("ClaimNext() claim=%#v error=%v", claim, err)
 	}
 	if claim.Lease.FencingToken != 1 || claim.Execution.Status != commonExecution.ExecutionStatusRunning {
 		t.Fatalf("first claim = %#v", claim)
+	}
+	if claim.Execution.StartedAt == nil || !claim.Execution.StartedAt.Equal(now) {
+		t.Fatalf("first claim started_at = %v, want %v", claim.Execution.StartedAt, now)
 	}
 	continuousMetadata, ok := claim.Execution.Metadata["continuous"].(map[string]interface{})
 	if !ok || continuousMetadata["owner_instance_id"] != "worker-a" || fmt.Sprint(continuousMetadata["fencing_token"]) != "1" || continuousMetadata["heartbeat_at"] == nil {
@@ -389,7 +396,7 @@ func TestIntegrationPostgresContinuousAutomaticRecoveryCreatesNewExecution(t *te
 	})
 
 	taskRepo := NewTaskRepository(db)
-	leaseRepo := NewRuntimeLeaseRepository(db)
+	leaseRepo := NewRuntimeLeaseRepository(db, testContinuousRecoveryPolicy())
 	now := time.Now()
 	firstExecution := claimTestExecution(task, uuid.NewString())
 	firstExecution.ExecutionConfig = task.Config
@@ -447,9 +454,13 @@ func TestIntegrationPostgresContinuousAutomaticRecoveryCreatesNewExecution(t *te
 		t.Fatalf("worker-shutdown recovery fencing token = %d, want 2", secondClaim.Lease.FencingToken)
 	}
 
-	thirdClaim, err := leaseRepo.ClaimNext(context.Background(), "worker-d", now.Add(33*time.Second), 30*time.Second)
+	leaseExpiryDetection, err := leaseRepo.ClaimNext(context.Background(), "worker-d", now.Add(33*time.Second), 30*time.Second)
+	if err != nil || leaseExpiryDetection != nil {
+		t.Fatalf("lease-expiry detection ClaimNext() claim=%#v error=%v, want backoff", leaseExpiryDetection, err)
+	}
+	thirdClaim, err := leaseRepo.ClaimNext(context.Background(), "worker-d", now.Add(34*time.Second), 30*time.Second)
 	if err != nil || thirdClaim == nil {
-		t.Fatalf("lease-expiry recovery ClaimNext() claim=%#v error=%v", thirdClaim, err)
+		t.Fatalf("lease-expiry recovery after backoff ClaimNext() claim=%#v error=%v", thirdClaim, err)
 	}
 	if thirdClaim.Execution.ExecutionID == secondClaim.Execution.ExecutionID {
 		t.Fatalf("lease-expiry recovery reused execution %s", thirdClaim.Execution.ExecutionID)
@@ -466,5 +477,154 @@ func TestIntegrationPostgresContinuousAutomaticRecoveryCreatesNewExecution(t *te
 	}
 	if expiredExecution.Status != commonExecution.ExecutionStatusFailed || expiredExecution.Metadata["stop_reason"] != "lease_expired" {
 		t.Fatalf("expired execution status=%q metadata=%#v", expiredExecution.Status, expiredExecution.Metadata)
+	}
+}
+
+func TestIntegrationPostgresContinuousRecoveryBackoffAndCircuitBreaker(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	connInfo := testpg.ConnInfoFromEnv(t)
+	dsn, err := (&postgresql.PostgreSQLPlugin{}).BuildDSN(connInfo)
+	if err != nil {
+		t.Fatalf("BuildDSN failed: %v", err)
+	}
+	db, err := gorm.Open(postgresdriver.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open PostgreSQL failed: %v", err)
+	}
+	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS transfer").Error; err != nil {
+		t.Fatalf("create transfer schema: %v", err)
+	}
+	if err := commonExecution.EnsureStore(db); err != nil {
+		t.Fatalf("ensure execution store: %v", err)
+	}
+	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}); err != nil {
+		t.Fatalf("migrate continuous models: %v", err)
+	}
+
+	task := models.TransferTask{
+		TenantID: 999999, Name: fmt.Sprintf("continuous-circuit-%d", time.Now().UnixNano()), TaskType: commonExecution.TaskTypeSync,
+		Config: models.JSONMap{"runtime": map[string]interface{}{"boundary": "continuous"}}, BatchSize: 100,
+		Status: models.TaskStatusIdle, DesiredState: models.TaskDesiredStateStopped,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
+		_ = db.Where("module = ? AND source_task_id = ?", commonExecution.ModuleTransfer, fmt.Sprint(task.ID)).Delete(&commonExecution.TaskExecution{}).Error
+		_ = db.Unscoped().Delete(&models.TransferTask{}, task.ID).Error
+	})
+
+	taskRepo := NewTaskRepository(db)
+	leaseRepo := NewRuntimeLeaseRepository(db, testContinuousRecoveryPolicy())
+	now := time.Now()
+	initial := claimTestExecution(task, uuid.NewString())
+	initial.ExecutionConfig = task.Config
+	if _, err := taskRepo.StartContinuousExecution(context.Background(), task.ID, task.TenantID, &initial); err != nil {
+		t.Fatalf("start continuous execution: %v", err)
+	}
+	first, err := leaseRepo.ClaimNext(context.Background(), "worker-a", now, 30*time.Second)
+	if err != nil || first == nil {
+		t.Fatalf("first ClaimNext() claim=%#v error=%v", first, err)
+	}
+	if err := leaseRepo.Finish(context.Background(), *first, commonExecution.ExecutionStatusFailed, "", "source failed", now.Add(time.Second)); err != nil {
+		t.Fatalf("finish first failure: %v", err)
+	}
+	assertPendingRecoveryMetadata(t, db, task.ID, 1, recoveryCircuitClosed, now.Add(2*time.Second))
+	if claim, err := leaseRepo.ClaimNext(context.Background(), "worker-b", now.Add(1500*time.Millisecond), 30*time.Second); err != nil || claim != nil {
+		t.Fatalf("claim before first backoff claim=%#v error=%v", claim, err)
+	}
+	second, err := leaseRepo.ClaimNext(context.Background(), "worker-b", now.Add(2*time.Second), 30*time.Second)
+	if err != nil || second == nil {
+		t.Fatalf("second ClaimNext() claim=%#v error=%v", second, err)
+	}
+	if err := leaseRepo.Finish(context.Background(), *second, commonExecution.ExecutionStatusFailed, "", "target failed", now.Add(3*time.Second)); err != nil {
+		t.Fatalf("finish second failure: %v", err)
+	}
+	assertPendingRecoveryMetadata(t, db, task.ID, 2, recoveryCircuitClosed, now.Add(5*time.Second))
+	if claim, err := leaseRepo.ClaimNext(context.Background(), "worker-c", now.Add(4*time.Second), 30*time.Second); err != nil || claim != nil {
+		t.Fatalf("claim before second backoff claim=%#v error=%v", claim, err)
+	}
+	third, err := leaseRepo.ClaimNext(context.Background(), "worker-c", now.Add(5*time.Second), 30*time.Second)
+	if err != nil || third == nil {
+		t.Fatalf("third ClaimNext() claim=%#v error=%v", third, err)
+	}
+	if err := leaseRepo.Finish(context.Background(), *third, commonExecution.ExecutionStatusFailed, "", "apply failed", now.Add(6*time.Second)); err != nil {
+		t.Fatalf("finish third failure: %v", err)
+	}
+	assertPendingRecoveryMetadata(t, db, task.ID, 3, recoveryCircuitOpen, now.Add(16*time.Second))
+	if claim, err := leaseRepo.ClaimNext(context.Background(), "worker-d", now.Add(15*time.Second), 30*time.Second); err != nil || claim != nil {
+		t.Fatalf("claim while circuit open claim=%#v error=%v", claim, err)
+	}
+	halfOpen, err := leaseRepo.ClaimNext(context.Background(), "worker-d", now.Add(16*time.Second), 30*time.Second)
+	if err != nil || halfOpen == nil {
+		t.Fatalf("half-open ClaimNext() claim=%#v error=%v", halfOpen, err)
+	}
+	if halfOpen.Execution.Metadata["recovery_circuit_state"] != recoveryCircuitHalfOpen {
+		t.Fatalf("half-open execution metadata=%#v", halfOpen.Execution.Metadata)
+	}
+	if err := leaseRepo.Finish(context.Background(), *halfOpen, commonExecution.ExecutionStatusFailed, "", "half-open failed", now.Add(17*time.Second)); err != nil {
+		t.Fatalf("finish half-open failure: %v", err)
+	}
+	assertPendingRecoveryMetadata(t, db, task.ID, 3, recoveryCircuitOpen, now.Add(27*time.Second))
+
+	probe, err := leaseRepo.ClaimNext(context.Background(), "worker-e", now.Add(27*time.Second), 30*time.Second)
+	if err != nil || probe == nil {
+		t.Fatalf("second half-open ClaimNext() claim=%#v error=%v", probe, err)
+	}
+	if err := leaseRepo.RecordProgress(context.Background(), *probe, ContinuousProgress{
+		RecordsRead: 1, RecordsWritten: 1, Partition: "0",
+		Position:    models.JSONMap{"type": "kafka_offset", "version": "v1", "values": map[string]string{"next_offset": "1"}},
+		CommittedAt: now.Add(27500 * time.Millisecond),
+	}); err != nil {
+		t.Fatalf("record successful progress: %v", err)
+	}
+	var progressedProbe commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", probe.Execution.ExecutionID).First(&progressedProbe).Error; err != nil {
+		t.Fatalf("load progressed half-open probe: %v", err)
+	}
+	if recoveryMetadataInt(progressedProbe.Metadata["recovery_attempt"]) != 3 ||
+		recoveryMetadataInt(progressedProbe.Metadata["recovery_consecutive_failures"]) != 0 ||
+		progressedProbe.Metadata["recovery_backoff_seconds"] != float64(10) ||
+		progressedProbe.Metadata["recovery_circuit_state"] != recoveryCircuitClosed {
+		t.Fatalf("progressed probe recovery metadata=%#v", progressedProbe.Metadata)
+	}
+	if err := leaseRepo.Finish(context.Background(), *probe, commonExecution.ExecutionStatusFailed, "", "failure after progress", now.Add(28*time.Second)); err != nil {
+		t.Fatalf("finish failure after progress: %v", err)
+	}
+	assertPendingRecoveryMetadata(t, db, task.ID, 1, recoveryCircuitClosed, now.Add(29*time.Second))
+}
+
+func assertPendingRecoveryMetadata(t *testing.T, db *gorm.DB, taskID uint, wantAttempt int, wantCircuit string, wantNotBefore time.Time) {
+	t.Helper()
+	var execution commonExecution.TaskExecution
+	if err := db.Where("module = ? AND source_task_id = ? AND status = ?", commonExecution.ModuleTransfer, fmt.Sprint(taskID), commonExecution.ExecutionStatusPending).
+		Order("created_at DESC, id DESC").First(&execution).Error; err != nil {
+		t.Fatalf("load pending recovery execution: %v", err)
+	}
+	if recoveryMetadataInt(execution.Metadata["recovery_attempt"]) != wantAttempt ||
+		recoveryMetadataInt(execution.Metadata["recovery_consecutive_failures"]) != wantAttempt ||
+		execution.Metadata["recovery_circuit_state"] != wantCircuit {
+		t.Fatalf("pending recovery metadata=%#v, want attempt=%d circuit=%s", execution.Metadata, wantAttempt, wantCircuit)
+	}
+	if execution.StartedAt != nil {
+		t.Fatalf("pending recovery started_at=%v, want nil", execution.StartedAt)
+	}
+	storedNotBefore, ok := execution.Metadata["recovery_not_before"].(string)
+	if !ok {
+		t.Fatalf("pending recovery_not_before=%#v", execution.Metadata["recovery_not_before"])
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, storedNotBefore)
+	if err != nil || !parsed.Equal(wantNotBefore) {
+		t.Fatalf("pending recovery_not_before=%q parsed=%v error=%v, want %v", storedNotBefore, parsed, err, wantNotBefore)
+	}
+}
+
+func testContinuousRecoveryPolicy() ContinuousRecoveryPolicy {
+	return ContinuousRecoveryPolicy{
+		InitialBackoff: time.Second, MaxBackoff: 4 * time.Second, MaxFailures: 3,
+		CircuitOpenTime: 10 * time.Second, StabilityWindow: 30 * time.Second,
 	}
 }

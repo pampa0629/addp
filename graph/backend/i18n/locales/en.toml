@@ -40,6 +40,15 @@ other = "Task cancelled"
 [graph.build.task_restarted]
 other = "Task restarted"
 
+[graph.build.task_active]
+other = "The graph build task already has a pending or running execution"
+
+[graph.build.task_runtime_not_owned]
+other = "This service instance does not own the task runtime, so it cannot cancel it; the task state was not changed"
+
+[graph.build.task_run_failed]
+other = "Graph build task operation failed"
+
 [graph.review.approved]
 other = "Written to Neo4j"
 

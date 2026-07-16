@@ -13,6 +13,9 @@ other = "Check task not found"
 [quality.check_task.run_failed]
 other = "Failed to run check task"
 
+[quality.check_task.active]
+other = "The check task already has a pending or running execution"
+
 [quality.check_task.delete_failed]
 other = "Failed to delete check task"
 

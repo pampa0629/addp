@@ -7,5 +7,89 @@ other = "无效的执行记录ID"
 [monitor.execution.not_found]
 other = "执行记录不存在"
 
+[monitor.alert.invalid_id]
+other = "告警 ID 无效"
+
+[monitor.alert.not_active]
+other = "告警不存在或已经恢复"
+
+[monitor.alert.invalid_suppression]
+other = "抑制截止时间必须晚于当前时间"
+
+[monitor.alert_rule.invalid]
+other = "告警规则无效；请选择有效任务、规则类型、严重级别和通知目标"
+
+[monitor.alert_rule.invalid_id]
+other = "告警规则 ID 无效"
+
+[monitor.alert_rule.not_found]
+other = "告警规则不存在"
+
+[monitor.alert_rule.conflict]
+other = "告警规则名称已存在"
+
+[monitor.alert_rule.deleted]
+other = "告警规则已删除"
+
+[monitor.alert_rule.operation_failed]
+other = "告警规则操作失败"
+
+[monitor.webhook.invalid_destination]
+other = "Webhook 配置无效；请检查名称、URL、事件类型和至少 16 字节的签名密钥"
+
+[monitor.webhook.destination_not_found]
+other = "Webhook 目标不存在"
+
+[monitor.webhook.destination_conflict]
+other = "Webhook 目标名称已存在"
+
+[monitor.webhook.destination_deleted]
+other = "Webhook 目标已删除，历史投递记录已保留"
+
+[monitor.webhook.invalid_delivery]
+other = "Webhook 投递 ID 无效"
+
+[monitor.webhook.delivery_not_found]
+other = "Webhook 投递不存在"
+
+[monitor.webhook.delivery_not_retryable]
+other = "该投递当前不可重投；仅 dead 状态且目标仍存在并启用时可以重投"
+
+[monitor.webhook.test_failed]
+other = "Webhook 测试投递失败，请检查接收端状态和网络配置"
+
+[monitor.webhook.operation_failed]
+other = "Webhook 操作失败"
+
+[monitor.email.invalid_destination]
+other = "邮件配置无效；请检查名称、收件地址和事件类型，收件人最多 50 个"
+
+[monitor.email.destination_not_found]
+other = "邮件目标不存在"
+
+[monitor.email.destination_conflict]
+other = "邮件目标名称已存在"
+
+[monitor.email.destination_deleted]
+other = "邮件目标已删除，历史投递记录已保留"
+
+[monitor.email.invalid_delivery]
+other = "邮件投递 ID 无效"
+
+[monitor.email.delivery_not_found]
+other = "邮件投递不存在"
+
+[monitor.email.delivery_not_retryable]
+other = "该邮件当前不可重投；仅 dead 状态且目标仍存在并启用时可以重投"
+
+[monitor.email.sender_unavailable]
+other = "平台尚未配置 SMTP Relay，邮件发送暂不可用"
+
+[monitor.email.test_failed]
+other = "邮件测试投递失败，请检查 SMTP Relay、收件地址和网络配置"
+
+[monitor.email.operation_failed]
+other = "邮件通知操作失败"
+
 [monitor.health.module_not_found]
 other = "模块不存在"

@@ -88,6 +88,48 @@ func GetUsername(c *gin.Context) string {
 	return username
 }
 
+// GetAuthorizationContext returns the canonical context produced by System.
+func GetAuthorizationContext(c *gin.Context) (AuthorizationContext, bool) {
+	value, exists := c.Get(ContextAuthorizationContextKey)
+	if !exists {
+		return AuthorizationContext{}, false
+	}
+	context, ok := value.(AuthorizationContext)
+	return context, ok
+}
+
+func GetUserType(c *gin.Context) string {
+	context, ok := GetAuthorizationContext(c)
+	if !ok {
+		return ""
+	}
+	return context.UserType
+}
+
+func GetClientID(c *gin.Context) string {
+	context, ok := GetAuthorizationContext(c)
+	if !ok || context.ClientID == nil {
+		return ""
+	}
+	return *context.ClientID
+}
+
+func GetScopes(c *gin.Context) []string {
+	context, ok := GetAuthorizationContext(c)
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), context.Scopes...)
+}
+
+func GetAudiences(c *gin.Context) []string {
+	context, ok := GetAuthorizationContext(c)
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), context.Audiences...)
+}
+
 // IsTenantIsolationEnabled 检查是否启用租户隔离
 func IsTenantIsolationEnabled(c *gin.Context) bool {
 	enabled, exists := c.Get(ContextTenantIsolationEnabledKey)

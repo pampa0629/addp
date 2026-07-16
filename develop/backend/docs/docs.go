@@ -1559,6 +1559,11 @@ const docTemplate = `{
         },
         "/workflow-engines/{id}/operators": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -1580,6 +1585,59 @@ const docTemplate = `{
                         "description": "算子列表 | Operator list",
                         "schema": {
                             "$ref": "#/definitions/internal_api.OperatorListResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/workflow-validations": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按 addp.workflow/v1 基础结构和目标运行时 Public Operator Spec 校验候选工作流，不创建 execution | Validate a workflow candidate against addp.workflow/v1 and the target runtime Public Operator Spec without creating an execution",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Operator"
+                ],
+                "summary": "校验工作流定义 | Validate workflow definition",
+                "parameters": [
+                    {
+                        "description": "工作流校验请求 | Workflow validation request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.WorkflowValidationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "校验结果 | Validation result",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.WorkflowValidationResult"
+                        }
+                    },
+                    "400": {
+                        "description": "请求或工作流引擎错误 | Invalid request or workflow engine",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未授权 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -2434,6 +2492,43 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_develop_backend_internal_service.WorkflowValidationIssue": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_service.WorkflowValidationResult": {
+            "type": "object",
+            "properties": {
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.WorkflowValidationIssue"
+                    }
+                },
+                "valid": {
+                    "type": "boolean"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.WorkflowValidationIssue"
+                    }
+                },
+                "workflow_engine_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.ExecuteNotebookRequest": {
             "type": "object",
             "required": [
@@ -2606,6 +2701,22 @@ const docTemplate = `{
                 },
                 "query_type": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.WorkflowValidationRequest": {
+            "type": "object",
+            "required": [
+                "workflow_definition",
+                "workflow_engine_id"
+            ],
+            "properties": {
+                "workflow_definition": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "workflow_engine_id": {
+                    "type": "integer"
                 }
             }
         },

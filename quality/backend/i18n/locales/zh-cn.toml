@@ -13,6 +13,9 @@ other = "检查任务不存在"
 [quality.check_task.run_failed]
 other = "执行检查任务失败"
 
+[quality.check_task.active]
+other = "检查任务已有待执行或运行中的执行记录"
+
 [quality.check_task.delete_failed]
 other = "删除检查任务失败"
 

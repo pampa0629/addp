@@ -336,6 +336,11 @@ frontend/src/
 - `POST /api/v1/system/register` - 用户注册（仅限初始化）
 - `POST /api/v1/system/refresh` - Token 刷新
 
+### 授权上下文（需认证）
+- `GET /api/v1/system/auth/context` - 验证当前访问令牌，回查用户和租户状态，返回权威 AuthContext
+
+`/auth/context` 是 Go/Python 业务模块消费用户身份的唯一接口。`/users/me` 只返回用户资料，不用于 Token 验证。
+
 ### 用户管理（需认证）
 - `GET /api/v1/system/users/me` - 获取当前用户信息
 - `POST /api/v1/system/users` - 创建用户（租户管理员创建本租户用户）

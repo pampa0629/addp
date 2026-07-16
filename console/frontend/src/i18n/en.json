@@ -80,6 +80,27 @@
       "requestFailed": "Request failed ({status})",
       "unknown": "Unknown error"
     },
+    "oauth": {
+      "client": "Client",
+      "scope": "Scope",
+      "failed": "Authorization request failed",
+      "invalidRequest": "Invalid authorization request",
+      "authorize": {
+        "title": "Authorize access to ADDP",
+        "description": "Client {client} wants to access ADDP on your behalf.",
+        "approve": "Allow access"
+      },
+      "device": {
+        "title": "Device authorization",
+        "description": "Enter the device code shown by the CLI and approve access.",
+        "placeholder": "For example ABCD-EFGH",
+        "required": "Enter the device code",
+        "approve": "Allow device",
+        "deny": "Deny",
+        "approved": "Device authorized. You can return to the CLI.",
+        "denied": "Device authorization denied"
+      }
+    },
     "apiDocs": {
       "title": "API Docs",
       "platformCenter": "Platform API Center",
@@ -269,7 +290,9 @@
       "monitor": {
         "label": "Execution Monitor",
         "dashboard": "Dashboard",
-        "executions": "Executions"
+        "executions": "Executions",
+        "alerts": "Alerts",
+        "notifications": "Alert Notifications"
       },
       "asset": {
         "label": "Asset Management",

@@ -124,6 +124,39 @@ def test_execute_sql_uses_content_and_execution_config():
     asyncio.run(_test_execute_sql_uses_content_and_execution_config())
 
 
+def test_validate_workflow_uses_canonical_resource():
+    asyncio.run(_test_validate_workflow_uses_canonical_resource())
+
+
+async def _test_validate_workflow_uses_canonical_resource():
+    workflow = {"tasks": [{"id": "task1", "operator": "noop", "params": {}, "depends_on": []}]}
+
+    async def handler(request):
+        assert request.url.path == "/api/v1/develop/workflow-validations"
+        assert json.loads(request.content) == {
+            "workflow_engine_id": 12,
+            "workflow_definition": workflow,
+        }
+        return httpx.Response(200, json={
+            "valid": True,
+            "workflow_engine_id": 12,
+            "errors": [],
+            "warnings": [],
+        })
+
+    client = DevelopClient("http://develop")
+    client._client = httpx.AsyncClient(
+        base_url="http://develop",
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        result = await client.validate_workflow(workflow, workflow_engine_id=12)
+    finally:
+        await client.close()
+
+    assert result["valid"] is True
+
+
 async def _test_execute_sql_uses_content_and_execution_config():
     async def handler(request):
         assert request.url.path == "/api/v1/develop/execute"

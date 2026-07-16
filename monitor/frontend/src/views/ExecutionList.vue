@@ -132,10 +132,12 @@
     <el-dialog
       v-model="detailDialogVisible"
       :title="t('monitor.execution.detail.title')"
-      width="60%"
+      width="72%"
+      top="4vh"
       :close-on-click-modal="false"
+      class="execution-detail-dialog"
     >
-      <div v-if="currentExecution">
+      <div v-if="currentExecution" class="execution-detail-content">
         <el-descriptions :column="2" border>
           <el-descriptions-item :label="t('monitor.execution.detail.id')">
             {{ currentExecution.id }}
@@ -163,8 +165,11 @@
               {{ getStatusText(currentExecution.status) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item :label="t('monitor.execution.detail.progress')">
-            {{ currentExecution.progress }}%
+          <el-descriptions-item :label="isContinuousExecution(currentExecution) ? t('monitor.execution.detail.runtime_mode') : t('monitor.execution.detail.progress')">
+            <el-tag v-if="isContinuousExecution(currentExecution)" size="small" type="info">
+              {{ t('monitor.execution.detail.continuous_mode') }}
+            </el-tag>
+            <template v-else>{{ currentExecution.progress }}%</template>
           </el-descriptions-item>
           <el-descriptions-item :label="t('monitor.execution.detail.trigger_type')">
             {{ getTriggerText(currentExecution.trigger_type) }}
@@ -223,12 +228,27 @@
           </el-tree>
         </div>
 
-        <div v-if="continuousPartitionRows.length" class="detail-section">
+        <div v-if="hasContinuousObservability" class="detail-section">
+          <el-alert
+            v-for="signal in continuousSignals"
+            :key="signal.code"
+            :title="continuousSignalText(signal.code)"
+            :description="continuousSignalDescription(signal)"
+            :type="continuousSignalAlertType(signal.severity)"
+            :closable="false"
+            show-icon
+            class="continuous-alert"
+          />
           <div class="continuous-heading">
             <h4>{{ t('monitor.execution.detail.continuous.title') }}</h4>
-            <el-tag :type="continuousHealthTagType(continuousDiagnostics.health || 'unknown')">
-              {{ continuousHealthText(continuousDiagnostics.health || 'unknown') }}
-            </el-tag>
+            <div class="continuous-heading-tags">
+              <el-tag :type="continuousHealthTagType(continuousDiagnostics.health || 'unknown')">
+                {{ t('monitor.execution.detail.continuous.retention_health') }}: {{ continuousHealthText(continuousDiagnostics.health || 'unknown') }}
+              </el-tag>
+              <el-tag :type="continuousHealthTagType(continuousDiagnostics.checkpoint_health || 'unknown')">
+                {{ t('monitor.execution.detail.continuous.checkpoint_health') }}: {{ continuousHealthText(continuousDiagnostics.checkpoint_health || 'unknown') }}
+              </el-tag>
+            </div>
           </div>
           <el-descriptions :column="2" border class="continuous-summary">
             <el-descriptions-item :label="t('monitor.execution.detail.continuous.sampled_at')">
@@ -241,18 +261,13 @@
               {{ formatDate(currentExecutionMetadata.continuous?.last_event_at) }}
             </el-descriptions-item>
             <el-descriptions-item :label="t('monitor.execution.detail.continuous.worker')">
-              {{ currentExecutionMetadata.continuous?.owner_instance_id || '-' }}
+              <span class="runtime-identity">{{ currentExecutionMetadata.continuous?.owner_instance_id || '-' }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.execution.detail.continuous.checkpoint_stale_after')">
+              {{ formatContinuousDurationSeconds(continuousDiagnostics.checkpoint_stale_after_seconds) }}
             </el-descriptions-item>
           </el-descriptions>
-          <el-alert
-            v-if="continuousDiagnostics.error"
-            :title="t('monitor.execution.detail.continuous.diagnostics_error')"
-            :description="continuousDiagnostics.error"
-            type="warning"
-            :closable="false"
-            class="continuous-alert"
-          />
-          <el-table :data="continuousPartitionRows" border size="small" class="continuous-table">
+          <el-table v-if="continuousPartitionRows.length" :data="continuousPartitionRows" border size="small" class="continuous-table">
             <el-table-column prop="partition" :label="t('monitor.execution.detail.continuous.partition')" width="90" />
             <el-table-column :label="t('monitor.execution.detail.continuous.health')" width="110">
               <template #default="{ row }">
@@ -281,6 +296,16 @@
             </el-table-column>
             <el-table-column :label="t('monitor.execution.detail.continuous.horizon')" min-width="120">
               <template #default="{ row }">{{ formatContinuousDurationSeconds(row.retentionHorizonSeconds) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('monitor.execution.detail.continuous.checkpoint_health')" min-width="120">
+              <template #default="{ row }">
+                <el-tag :type="continuousHealthTagType(row.checkpointHealth)" size="small">
+                  {{ continuousHealthText(row.checkpointHealth) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('monitor.execution.detail.continuous.checkpoint_age')" min-width="120">
+              <template #default="{ row }">{{ formatContinuousDurationSeconds(row.checkpointAgeSeconds) }}</template>
             </el-table-column>
           </el-table>
         </div>
@@ -347,11 +372,14 @@ import { ElMessage } from 'element-plus'
 import { Link } from '@element-plus/icons-vue'
 import {
   buildContinuousPartitionRows,
+  buildContinuousSignals,
   buildTaskEditUrlFromProviders,
   continuousHealthTagType,
+  continuousSignalTagType,
   formatContinuousDurationSeconds,
   formatContinuousRate,
   getContinuousDiagnostics,
+  hasContinuousExecutionMetadata,
   resolveTaskTypeDisplayName
 } from '@common-ui'
 import { listExecutions, getExecutionTree, getExecutionTreeByExecutionID, listTaskProviders } from '@/api/monitor'
@@ -457,6 +485,38 @@ const executionMetadataText = computed(() => JSON.stringify(currentExecutionMeta
 const metadataSummaryItems = computed(() => buildMetadataSummaryItems(currentExecutionMetadata.value))
 const continuousDiagnostics = computed(() => getContinuousDiagnostics(currentExecutionMetadata.value))
 const continuousPartitionRows = computed(() => buildContinuousPartitionRows(currentExecutionMetadata.value))
+const continuousSignals = computed(() => buildContinuousSignals(
+  currentExecutionMetadata.value,
+  currentExecution.value?.status
+))
+const hasContinuousObservability = computed(() => continuousPartitionRows.value.length > 0 ||
+  Object.keys(continuousDiagnostics.value).length > 0 || continuousSignals.value.length > 0)
+
+function isContinuousExecution(execution) {
+  return hasContinuousExecutionMetadata(normalizeObject(execution?.metadata))
+}
+
+function continuousSignalText(code) {
+  const key = `monitor.execution.detail.continuous.signals.${code}.title`
+  const translated = t(key)
+  return translated === key ? code : translated
+}
+
+function continuousSignalDescription(signal) {
+  const key = `monitor.execution.detail.continuous.signals.${signal.code}.description`
+  const recovery = signal.recovery || {}
+  const diagnostics = signal.diagnostics || {}
+  return t(key, {
+    failures: recovery.consecutiveFailures ?? 0,
+    nextAttempt: formatDate(recovery.notBefore),
+    threshold: formatContinuousDurationSeconds(diagnostics.checkpoint_stale_after_seconds),
+    error: diagnostics.error || '-'
+  })
+}
+
+function continuousSignalAlertType(severity) {
+  return severity === 'critical' ? 'error' : continuousSignalTagType(severity)
+}
 
 function parseTaskCapabilities(capabilities) {
   const parsed = parseCapabilities(capabilities)
@@ -976,6 +1036,12 @@ watch(detailDialogVisible, visible => {
   justify-content: flex-end;
 }
 
+.execution-detail-content {
+  max-height: 82vh;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
 .execution-tree {
   margin-top: 20px;
 }
@@ -999,10 +1065,27 @@ watch(detailDialogVisible, visible => {
   margin: 0;
 }
 
+.continuous-heading-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .continuous-summary,
 .continuous-alert,
 .continuous-table {
   margin-top: 12px;
+}
+
+.continuous-summary :deep(.el-descriptions__label) {
+  width: 150px;
+}
+
+.runtime-identity {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .metadata-json :deep(.el-textarea__inner) {

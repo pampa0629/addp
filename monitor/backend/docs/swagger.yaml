@@ -82,6 +82,191 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_addp_monitor_internal_models.AlertIncident:
+    properties:
+      acknowledged_at:
+        type: string
+      acknowledged_by:
+        type: string
+      alert_rule_id:
+        type: integer
+      created_at:
+        type: string
+      details:
+        $ref: '#/definitions/models.JSONMap'
+      execution_id:
+        type: string
+      fingerprint:
+        type: string
+      id:
+        type: integer
+      last_observed_at:
+        type: string
+      module:
+        type: string
+      opened_at:
+        type: string
+      resolved_at:
+        type: string
+      rule_id:
+        type: string
+      rule_name:
+        type: string
+      severity:
+        type: string
+      signal_code:
+        type: string
+      source_task_id:
+        type: string
+      status:
+        type: string
+      suppressed_until:
+        type: string
+      task_type:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_monitor_internal_models.EmailDelivery:
+    properties:
+      alert_event_id:
+        type: integer
+      attempt_count:
+        type: integer
+      claimed_by:
+        type: string
+      created_at:
+        type: string
+      delivered_at:
+        type: string
+      delivery_id:
+        type: string
+      destination_id:
+        type: integer
+      destination_name:
+        type: string
+      event_type:
+        type: string
+      html_body:
+        type: string
+      id:
+        type: integer
+      incident_id:
+        type: integer
+      last_error:
+        type: string
+      lease_expires_at:
+        type: string
+      manual_retry_count:
+        type: integer
+      next_attempt_at:
+        type: string
+      recipients:
+        items:
+          type: string
+        type: array
+      retry_base_attempt_count:
+        type: integer
+      status:
+        type: string
+      subject:
+        type: string
+      tenant_id:
+        type: integer
+      text_body:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_monitor_internal_models.NotificationRoute:
+    properties:
+      alert_rule_id:
+        type: integer
+      channel:
+        type: string
+      created_at:
+        type: string
+      destination_id:
+        type: integer
+      id:
+        type: integer
+      tenant_id:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_models.WebhookDelivery:
+    properties:
+      alert_event_id:
+        type: integer
+      attempt_count:
+        type: integer
+      claimed_by:
+        type: string
+      created_at:
+        type: string
+      delivered_at:
+        type: string
+      delivery_id:
+        type: string
+      destination_id:
+        type: integer
+      destination_name:
+        type: string
+      event_type:
+        type: string
+      id:
+        type: integer
+      incident_id:
+        type: integer
+      last_error:
+        type: string
+      last_http_status:
+        type: integer
+      lease_expires_at:
+        type: string
+      manual_retry_count:
+        type: integer
+      next_attempt_at:
+        type: string
+      payload:
+        $ref: '#/definitions/models.JSONMap'
+      request_url:
+        type: string
+      retry_base_attempt_count:
+        type: integer
+      status:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_monitor_internal_service.AlertRuleRouteInput:
+    properties:
+      channel:
+        type: string
+      destination_id:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_service.AlertRuleTarget:
+    properties:
+      module:
+        type: string
+      source_task_id:
+        type: string
+      source_task_name:
+        type: string
+      task_type:
+        type: string
+    type: object
+  github_com_addp_monitor_internal_service.EmailTestResult:
+    properties:
+      delivery_id:
+        type: string
+      recipients:
+        type: integer
+    type: object
   github_com_addp_monitor_internal_service.ExecutionTreeNode:
     properties:
       children:
@@ -103,6 +288,51 @@ definitions:
       status:
         description: '"up", "down", "unknown"'
         type: string
+    type: object
+  github_com_addp_monitor_internal_service.ListAlertsResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_models.AlertIncident'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_service.ListEmailDeliveriesResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_models.EmailDelivery'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_service.ListWebhookDeliveriesResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_models.WebhookDelivery'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
     type: object
   github_com_addp_monitor_internal_service.ProviderCapabilitiesStatus:
     properties:
@@ -162,13 +392,449 @@ definitions:
       task_type:
         type: string
     type: object
-  models.ErrorResponse:
+  github_com_addp_monitor_internal_service.WebhookTestResult:
     properties:
-      code:
-        example: 400
+      delivery_id:
+        type: string
+      http_status:
         type: integer
+    type: object
+  internal_api.AlertIncidentResponse:
+    properties:
+      acknowledged_at:
+        type: string
+      acknowledged_by:
+        type: string
+      alert_rule_id:
+        type: integer
+      created_at:
+        type: string
+      details:
+        $ref: '#/definitions/models.JSONMap'
+      execution_id:
+        type: string
+      fingerprint:
+        type: string
+      id:
+        type: integer
+      last_observed_at:
+        type: string
+      module:
+        type: string
+      opened_at:
+        type: string
+      resolved_at:
+        type: string
+      rule_id:
+        type: string
+      rule_name:
+        type: string
+      severity:
+        type: string
+      signal_code:
+        type: string
+      source_task_id:
+        type: string
+      status:
+        type: string
+      suppressed_until:
+        type: string
+      task_type:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  internal_api.AlertRuleResponse:
+    properties:
+      created_at:
+        type: string
+      enabled:
+        type: boolean
+      failure_threshold:
+        type: integer
+      id:
+        type: integer
+      module:
+        type: string
+      name:
+        type: string
+      routes:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_models.NotificationRoute'
+        type: array
+      rule_id:
+        type: string
+      rule_type:
+        type: string
+      severity:
+        type: string
+      source_task_id:
+        type: string
+      source_task_name:
+        type: string
+      task_type:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  internal_api.CreateAlertRuleRequest:
+    properties:
+      enabled:
+        type: boolean
+      failure_threshold:
+        example: 3
+        type: integer
+      module:
+        example: transfer
+        type: string
+      name:
+        example: 核心同步任务连续失败
+        type: string
+      routes:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.AlertRuleRouteInput'
+        type: array
+      rule_type:
+        enum:
+        - last_terminal_failed
+        - last_terminal_timeout
+        - consecutive_failures
+        type: string
+      severity:
+        enum:
+        - warning
+        - critical
+        type: string
+      source_task_id:
+        example: "43"
+        type: string
+      source_task_name:
+        example: 生产数据同步
+        type: string
+      task_type:
+        example: sync
+        type: string
+    required:
+    - enabled
+    - module
+    - name
+    - rule_type
+    - severity
+    - source_task_id
+    - task_type
+    type: object
+  internal_api.CreateEmailDestinationRequest:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+      event_types:
+        example:
+        - opened
+        - escalated
+        - resolved
+        items:
+          type: string
+        type: array
+      name:
+        example: 值班邮箱
+        type: string
+      recipients:
+        example:
+        - ops@example.com
+        - oncall@example.com
+        items:
+          type: string
+        type: array
+    required:
+    - event_types
+    - name
+    - recipients
+    type: object
+  internal_api.CreateWebhookDestinationRequest:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+      event_types:
+        example:
+        - opened
+        - resolved
+        items:
+          type: string
+        type: array
+      name:
+        example: 运维平台
+        type: string
+      secret:
+        example: replace-with-a-random-secret
+        type: string
+      url:
+        example: https://ops.example.com/hooks/addp
+        type: string
+    required:
+    - event_types
+    - name
+    - secret
+    - url
+    type: object
+  internal_api.DeleteAlertRuleResponse:
+    properties:
       message:
-        example: 请求参数错误
+        example: 告警规则已删除
+        type: string
+    type: object
+  internal_api.EmailDeliveryResponse:
+    properties:
+      alert_event_id:
+        type: integer
+      attempt_count:
+        type: integer
+      claimed_by:
+        type: string
+      created_at:
+        type: string
+      delivered_at:
+        type: string
+      delivery_id:
+        type: string
+      destination_id:
+        type: integer
+      destination_name:
+        type: string
+      event_type:
+        type: string
+      html_body:
+        type: string
+      id:
+        type: integer
+      incident_id:
+        type: integer
+      last_error:
+        type: string
+      lease_expires_at:
+        type: string
+      manual_retry_count:
+        type: integer
+      next_attempt_at:
+        type: string
+      recipients:
+        items:
+          type: string
+        type: array
+      retry_base_attempt_count:
+        type: integer
+      status:
+        type: string
+      subject:
+        type: string
+      tenant_id:
+        type: integer
+      text_body:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_api.EmailDestinationResponse:
+    properties:
+      created_at:
+        type: string
+      enabled:
+        type: boolean
+      event_types:
+        items:
+          type: string
+        type: array
+      id:
+        type: integer
+      name:
+        type: string
+      recipients:
+        items:
+          type: string
+        type: array
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  internal_api.EmailOperationResponse:
+    properties:
+      message:
+        example: 邮件目标已删除
+        type: string
+    type: object
+  internal_api.ErrorResponse:
+    properties:
+      error:
+        example: 告警不存在或已经恢复
+        type: string
+    type: object
+  internal_api.SuppressAlertRequest:
+    properties:
+      suppressed_until:
+        example: "2026-07-16T08:00:00Z"
+        type: string
+    required:
+    - suppressed_until
+    type: object
+  internal_api.UpdateAlertRuleRequest:
+    properties:
+      enabled:
+        type: boolean
+      failure_threshold:
+        type: integer
+      module:
+        type: string
+      name:
+        type: string
+      routes:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.AlertRuleRouteInput'
+        type: array
+      rule_type:
+        enum:
+        - last_terminal_failed
+        - last_terminal_timeout
+        - consecutive_failures
+        type: string
+      severity:
+        enum:
+        - warning
+        - critical
+        type: string
+      source_task_id:
+        type: string
+      source_task_name:
+        type: string
+      task_type:
+        type: string
+    type: object
+  internal_api.UpdateEmailDestinationRequest:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+      event_types:
+        example:
+        - opened
+        - escalated
+        - resolved
+        items:
+          type: string
+        type: array
+      name:
+        example: 值班邮箱
+        type: string
+      recipients:
+        example:
+        - ops@example.com
+        - oncall@example.com
+        items:
+          type: string
+        type: array
+    type: object
+  internal_api.UpdateWebhookDestinationRequest:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+      event_types:
+        example:
+        - opened
+        - escalated
+        - resolved
+        items:
+          type: string
+        type: array
+      name:
+        example: 运维平台
+        type: string
+      secret:
+        example: replace-with-a-new-random-secret
+        type: string
+      url:
+        example: https://ops.example.com/hooks/addp
+        type: string
+    type: object
+  internal_api.WebhookDeliveryResponse:
+    properties:
+      alert_event_id:
+        type: integer
+      attempt_count:
+        type: integer
+      claimed_by:
+        type: string
+      created_at:
+        type: string
+      delivered_at:
+        type: string
+      delivery_id:
+        type: string
+      destination_id:
+        type: integer
+      destination_name:
+        type: string
+      event_type:
+        type: string
+      id:
+        type: integer
+      incident_id:
+        type: integer
+      last_error:
+        type: string
+      last_http_status:
+        type: integer
+      lease_expires_at:
+        type: string
+      manual_retry_count:
+        type: integer
+      next_attempt_at:
+        type: string
+      payload:
+        $ref: '#/definitions/models.JSONMap'
+      request_url:
+        type: string
+      retry_base_attempt_count:
+        type: integer
+      status:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  internal_api.WebhookDestinationResponse:
+    properties:
+      created_at:
+        type: string
+      enabled:
+        type: boolean
+      event_types:
+        items:
+          type: string
+        type: array
+      id:
+        type: integer
+      name:
+        type: string
+      secret_configured:
+        type: boolean
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      url:
+        type: string
+    type: object
+  internal_api.WebhookOperationResponse:
+    properties:
+      message:
+        example: Webhook 目标已删除
         type: string
     type: object
   models.JSONMap:
@@ -222,6 +888,510 @@ info:
   title: ADDP Monitor API
   version: "1.0"
 paths:
+  /alert-rule-targets:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 任务列表 | Task list
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_monitor_internal_service.AlertRuleTarget'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询可配置告警的任务 | List alert rule targets
+      tags:
+      - Monitor Alert Rules
+  /alert-rules:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 告警规则列表 | Alert rule list
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.AlertRuleResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询告警规则 | List alert rules
+      tags:
+      - Monitor Alert Rules
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 告警规则 | Alert rule
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreateAlertRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 已创建规则 | Created rule
+          schema:
+            $ref: '#/definitions/internal_api.AlertRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建告警规则 | Create alert rule
+      tags:
+      - Monitor Alert Rules
+  /alert-rules/{id}:
+    delete:
+      parameters:
+      - description: 规则 ID | Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.DeleteAlertRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除告警规则 | Delete alert rule
+      tags:
+      - Monitor Alert Rules
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规则 ID | Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 规则变更 | Rule changes
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdateAlertRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已更新规则 | Updated rule
+          schema:
+            $ref: '#/definitions/internal_api.AlertRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新告警规则 | Update alert rule
+      tags:
+      - Monitor Alert Rules
+  /alerts:
+    get:
+      parameters:
+      - description: 告警状态 | Alert status
+        in: query
+        name: status
+        type: string
+      - description: 严重级别 | Severity
+        in: query
+        name: severity
+        type: string
+      - description: 模块 | Module
+        in: query
+        name: module
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 告警列表 | Alert list
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ListAlertsResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询告警事件 | List alert incidents
+      tags:
+      - Monitor Alerts
+  /alerts/{id}/acknowledge:
+    post:
+      parameters:
+      - description: 告警 ID | Alert ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已确认告警 | Acknowledged alert
+          schema:
+            $ref: '#/definitions/internal_api.AlertIncidentResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 确认告警 | Acknowledge alert
+      tags:
+      - Monitor Alerts
+  /alerts/{id}/suppress:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 告警 ID | Alert ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 抑制截止时间 | Suppression deadline
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.SuppressAlertRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已抑制告警 | Suppressed alert
+          schema:
+            $ref: '#/definitions/internal_api.AlertIncidentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 抑制告警通知 | Suppress alert notifications
+      tags:
+      - Monitor Alerts
+  /email-deliveries:
+    get:
+      description: 分页查询当前租户的邮件 outbox 和投递审计记录 | List email outbox and delivery audit
+        records for the current tenant
+      parameters:
+      - description: 邮件目标 ID | Email destination ID
+        in: query
+        name: destination_id
+        type: integer
+      - description: 投递状态 | Delivery status
+        in: query
+        name: status
+        type: string
+      - description: 生命周期事件类型 | Lifecycle event type
+        in: query
+        name: event_type
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 投递记录 | Delivery records
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ListEmailDeliveriesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询邮件投递 | List email deliveries
+      tags:
+      - Monitor Emails
+  /email-deliveries/{delivery_id}/retry:
+    post:
+      description: 只允许重投 dead delivery；复用原 delivery_id、主题和正文，并使用目标当前收件人开启新的尝试周期 |
+        Retry only a dead delivery; reuse its delivery_id, subject, and body with
+        the destination's current recipients in a new attempt cycle
+      parameters:
+      - description: 邮件投递 ID | Email delivery ID
+        in: path
+        name: delivery_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已重新入队 | Requeued delivery
+          schema:
+            $ref: '#/definitions/internal_api.EmailDeliveryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 手动重投邮件 delivery | Manually retry email delivery
+      tags:
+      - Monitor Emails
+  /email-destinations:
+    get:
+      description: 查询当前租户的告警邮件目标；SMTP Relay 配置不属于租户 API | List alert email destinations
+        for the current tenant; SMTP Relay settings are not part of the tenant API
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 邮件目标列表 | Email destination list
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.EmailDestinationResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询邮件目标 | List email destinations
+      tags:
+      - Monitor Emails
+    post:
+      consumes:
+      - application/json
+      description: 创建当前租户的告警邮件目标；只保存收件人和订阅事件 | Create an alert email destination for
+        the current tenant; only recipients and event subscriptions are stored
+      parameters:
+      - description: 邮件目标 | Email destination
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreateEmailDestinationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 已创建目标 | Created destination
+          schema:
+            $ref: '#/definitions/internal_api.EmailDestinationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建邮件目标 | Create email destination
+      tags:
+      - Monitor Emails
+  /email-destinations/{id}:
+    delete:
+      description: 删除当前租户目标并取消尚未领取的邮件投递；历史投递审计保留 | Delete a destination and cancel
+        its unclaimed email deliveries; historical delivery audit is preserved
+      parameters:
+      - description: 邮件目标 ID | Email destination ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 目标已删除 | Destination deleted
+          schema:
+            $ref: '#/definitions/internal_api.EmailOperationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除邮件目标 | Delete email destination
+      tags:
+      - Monitor Emails
+    patch:
+      consumes:
+      - application/json
+      description: 部分更新当前租户的邮件目标 | Partially update an email destination for the current
+        tenant
+      parameters:
+      - description: 邮件目标 ID | Email destination ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新内容 | Update fields
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdateEmailDestinationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已更新目标 | Updated destination
+          schema:
+            $ref: '#/definitions/internal_api.EmailDestinationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新邮件目标 | Update email destination
+      tags:
+      - Monitor Emails
+  /email-destinations/{id}/test:
+    post:
+      description: 使用目标当前收件人和平台 SMTP Relay 同步发送独立测试邮件；不创建告警事件或正式投递记录 | Send a standalone
+        test email synchronously using the destination's current recipients and the
+        platform SMTP Relay; no alert event or delivery record is created
+      parameters:
+      - description: 邮件目标 ID | Email destination ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 测试投递成功 | Test delivery succeeded
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.EmailTestResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "502":
+          description: SMTP 投递失败 | SMTP delivery failed
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: SMTP 未配置 | SMTP is not configured
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 测试邮件目标 | Test email destination
+      tags:
+      - Monitor Emails
   /executions:
     get:
       parameters:
@@ -476,11 +1646,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/models.ErrorResponse'
+            $ref: '#/definitions/internal_api.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/models.ErrorResponse'
+            $ref: '#/definitions/internal_api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 检查单个任务提供者运行态健康状态 | Check task provider health
@@ -503,7 +1673,7 @@ paths:
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/models.ErrorResponse'
+            $ref: '#/definitions/internal_api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 检查所有任务提供者运行态健康状态 | Check all task provider health
@@ -525,6 +1695,272 @@ paths:
       summary: 获取任务提供者列表 | Get task providers
       tags:
       - Monitor
+  /webhook-deliveries:
+    get:
+      description: 分页查询当前租户的 Webhook outbox 和投递审计记录 | List webhook outbox and delivery
+        audit records for the current tenant
+      parameters:
+      - description: Webhook 目标 ID | Webhook destination ID
+        in: query
+        name: destination_id
+        type: integer
+      - description: 投递状态 | Delivery status
+        in: query
+        name: status
+        type: string
+      - description: 生命周期事件类型 | Lifecycle event type
+        in: query
+        name: event_type
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 投递记录 | Delivery records
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ListWebhookDeliveriesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询 Webhook 投递 | List webhook deliveries
+      tags:
+      - Monitor Webhooks
+  /webhook-deliveries/{delivery_id}/retry:
+    post:
+      description: 只允许重投 dead delivery；复用原 delivery_id 和 payload，并使用目标当前 URL/secret
+        开启新的尝试周期 | Retry only a dead delivery; reuse its delivery_id and payload with
+        the destination's current URL and secret in a new attempt cycle
+      parameters:
+      - description: Webhook 投递 ID | Webhook delivery ID
+        in: path
+        name: delivery_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已重新入队 | Requeued delivery
+          schema:
+            $ref: '#/definitions/internal_api.WebhookDeliveryResponse'
+        "400":
+          description: 投递 ID 无效 | Invalid delivery ID
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: 投递不存在 | Delivery not found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: 投递或目标当前不可重投 | Delivery or destination is not retryable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: 内部错误 | Internal error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 手动重投 Webhook delivery | Manually retry webhook delivery
+      tags:
+      - Monitor Webhooks
+  /webhook-destinations:
+    get:
+      description: 查询当前租户的告警 Webhook 目标；secret 只返回是否已配置，不返回明文或密文 | List alert webhook
+        destinations for the current tenant; secrets are never returned
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Webhook 目标列表 | Webhook destination list
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.WebhookDestinationResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询 Webhook 目标 | List webhook destinations
+      tags:
+      - Monitor Webhooks
+    post:
+      consumes:
+      - application/json
+      description: 创建当前租户的 HMAC 签名 Webhook 目标；secret 使用平台加密密钥保存且不会返回 | Create an HMAC-signed
+        webhook destination; the secret is encrypted and never returned
+      parameters:
+      - description: Webhook 目标 | Webhook destination
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreateWebhookDestinationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 已创建目标 | Created destination
+          schema:
+            $ref: '#/definitions/internal_api.WebhookDestinationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建 Webhook 目标 | Create webhook destination
+      tags:
+      - Monitor Webhooks
+  /webhook-destinations/{id}:
+    delete:
+      description: 删除当前租户目标并取消尚未领取的投递；历史投递审计保留 | Delete a destination and cancel its
+        unclaimed deliveries; historical delivery audit is preserved
+      parameters:
+      - description: Webhook 目标 ID | Webhook destination ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 目标已删除 | Destination deleted
+          schema:
+            $ref: '#/definitions/internal_api.WebhookOperationResponse'
+        "400":
+          description: 目标 ID 无效 | Invalid destination ID
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: 目标不存在 | Destination not found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: 内部错误 | Internal error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除 Webhook 目标 | Delete webhook destination
+      tags:
+      - Monitor Webhooks
+    patch:
+      consumes:
+      - application/json
+      description: 部分更新当前租户的 Webhook 目标；省略 secret 表示保留现有 secret | Partially update
+        a webhook destination; omit secret to keep the current secret
+      parameters:
+      - description: Webhook 目标 ID | Webhook destination ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新内容 | Update fields
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdateWebhookDestinationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已更新目标 | Updated destination
+          schema:
+            $ref: '#/definitions/internal_api.WebhookDestinationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新 Webhook 目标 | Update webhook destination
+      tags:
+      - Monitor Webhooks
+  /webhook-destinations/{id}/test:
+    post:
+      description: 使用目标当前 URL 和 secret 同步发送独立测试 payload；不创建告警事件或正式投递记录 | Send a standalone
+        test payload synchronously with the destination's current URL and secret;
+        no alert event or delivery record is created
+      parameters:
+      - description: Webhook 目标 ID | Webhook destination ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 测试投递成功 | Test delivery succeeded
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.WebhookTestResult'
+        "400":
+          description: 目标 ID 无效 | Invalid destination ID
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: 目标不存在 | Destination not found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: 内部错误 | Internal error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "502":
+          description: 接收端投递失败 | Receiver delivery failed
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 测试 Webhook 目标 | Test webhook destination
+      tags:
+      - Monitor Webhooks
 securityDefinitions:
   BearerAuth:
     in: header

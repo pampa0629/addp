@@ -425,8 +425,9 @@ func TestCollectContinuousDiagnosticsCalculatesLagAndRetentionHealth(t *testing.
 	previous := map[string]sourceLatestSample{"0": {Latest: 80, SampledAt: sampledAt.Add(-10 * time.Second)}}
 
 	diagnostics, _ := collectContinuousDiagnostics(
-		context.Background(), reader, committed, previous, sampledAt,
-		time.Minute, 10*time.Second,
+		context.Background(), reader, committed,
+		map[string]time.Time{"0": sampledAt.Add(-5 * time.Second)}, previous, sampledAt,
+		time.Minute, 10*time.Second, 30*time.Second,
 	)
 	partition := diagnostics.Partitions["0"]
 	if diagnostics.Health != continuousHealthDegraded || partition.Health != continuousHealthDegraded {
@@ -452,8 +453,8 @@ func TestCollectContinuousDiagnosticsMarksLostRetentionCritical(t *testing.T) {
 	}}}
 	diagnostics, _ := collectContinuousDiagnostics(
 		context.Background(), reader,
-		map[string]plugin.ChangeStreamPosition{"0": kafkaOffsetPosition("0", 10)}, nil, time.Now(),
-		6*time.Hour, time.Hour,
+		map[string]plugin.ChangeStreamPosition{"0": kafkaOffsetPosition("0", 10)}, nil, nil, time.Now(),
+		6*time.Hour, time.Hour, 5*time.Minute,
 	)
 	partition := diagnostics.Partitions["0"]
 	if diagnostics.Health != continuousHealthCritical || partition.Health != continuousHealthCritical {
@@ -472,7 +473,7 @@ func TestCollectContinuousDiagnosticsKeepsColdLagUnknownAndCaughtUpHealthy(t *te
 	diagnostics, _ := collectContinuousDiagnostics(
 		context.Background(), reader, map[string]plugin.ChangeStreamPosition{
 			"0": kafkaOffsetPosition("0", 90), "1": kafkaOffsetPosition("1", 50),
-		}, nil, time.Now(), 6*time.Hour, time.Hour,
+		}, nil, nil, time.Now(), 6*time.Hour, time.Hour, 5*time.Minute,
 	)
 	if diagnostics.Partitions["0"].Health != continuousHealthUnknown {
 		t.Fatalf("cold lagging health = %q, want unknown", diagnostics.Partitions["0"].Health)
@@ -482,6 +483,33 @@ func TestCollectContinuousDiagnosticsKeepsColdLagUnknownAndCaughtUpHealthy(t *te
 	}
 	if diagnostics.Health != continuousHealthUnknown {
 		t.Fatalf("overall health = %q, want unknown", diagnostics.Health)
+	}
+}
+
+func TestCollectContinuousDiagnosticsMarksOnlyLaggingStaleCheckpointDegraded(t *testing.T) {
+	sampledAt := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	reader := &diagnosticsChangeStreamReader{ranges: []plugin.ChangeStreamPositionRange{
+		{Partition: "0", Earliest: kafkaOffsetPosition("0", 0), Latest: kafkaOffsetPosition("0", 100)},
+		{Partition: "1", Earliest: kafkaOffsetPosition("1", 0), Latest: kafkaOffsetPosition("1", 50)},
+	}}
+	diagnostics, _ := collectContinuousDiagnostics(
+		context.Background(), reader,
+		map[string]plugin.ChangeStreamPosition{
+			"0": kafkaOffsetPosition("0", 80), "1": kafkaOffsetPosition("1", 50),
+		},
+		map[string]time.Time{
+			"0": sampledAt.Add(-6 * time.Minute), "1": sampledAt.Add(-24 * time.Hour),
+		}, nil, sampledAt, 6*time.Hour, time.Hour, 5*time.Minute,
+	)
+	if diagnostics.CheckpointHealth != continuousHealthDegraded {
+		t.Fatalf("checkpoint health = %q, want degraded", diagnostics.CheckpointHealth)
+	}
+	stale := diagnostics.Partitions["0"]
+	if stale.CheckpointHealth != continuousHealthDegraded || stale.CheckpointAgeSeconds == nil || *stale.CheckpointAgeSeconds != 360 {
+		t.Fatalf("stale checkpoint diagnostics = %#v", stale)
+	}
+	if caughtUp := diagnostics.Partitions["1"]; caughtUp.CheckpointHealth != continuousHealthHealthy || caughtUp.CheckpointAgeSeconds != nil {
+		t.Fatalf("caught-up checkpoint diagnostics = %#v", caughtUp)
 	}
 }
 

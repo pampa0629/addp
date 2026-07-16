@@ -78,7 +78,6 @@ func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orche
 		TriggerType:       normalizedTriggerType,
 		TriggeredBy:       triggeredByPtr,
 		Metadata:          make(commonModels.JSONMap),
-		StartedAt:         &now,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
@@ -139,8 +138,7 @@ func (s *ExecutionService) UpdateStatus(ctx context.Context, id uint, status str
 
 	// 如果状态是运行中，更新 started_at
 	if status == commonExecution.ExecutionStatusRunning {
-		now := time.Now()
-		updates["started_at"] = now
+		return s.taskExecutionRepo.StartExecution(ctx, execution.ExecutionID, execution.TenantID, time.Now())
 	}
 
 	// 如果状态是完成或失败，更新 completed_at
@@ -216,6 +214,9 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status,
 		"status":       status,
 		"completed_at": now,
 		"progress":     100,
+	}
+	if execution.StartedAt != nil {
+		updates["execution_time_ms"] = now.Sub(*execution.StartedAt).Milliseconds()
 	}
 
 	// 更新步骤结果

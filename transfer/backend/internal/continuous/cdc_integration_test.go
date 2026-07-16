@@ -143,7 +143,10 @@ func TestIntegrationPostgreSQLCDCDataPlaneSnapshotUpdateDeleteCrashResumeAndSche
 	defer captureSupervisor.Stop(context.Background(), &task)
 
 	taskRepo := repository.NewTaskRepository(infraDB)
-	leaseRepo := repository.NewRuntimeLeaseRepository(infraDB)
+	leaseRepo := repository.NewRuntimeLeaseRepository(infraDB, repository.ContinuousRecoveryPolicy{
+		InitialBackoff: time.Second, MaxBackoff: 4 * time.Second, MaxFailures: 3,
+		CircuitOpenTime: 10 * time.Second, StabilityWindow: 30 * time.Second,
+	})
 	stateRepo := repository.NewSyncStateRepository(infraDB)
 	execution := cdcDataExecution(task)
 	if _, err := taskRepo.StartContinuousExecution(ctx, task.ID, task.TenantID, &execution); err != nil {
@@ -189,7 +192,11 @@ func TestIntegrationPostgreSQLCDCDataPlaneSnapshotUpdateDeleteCrashResumeAndSche
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	secondClaim, err := leaseRepo.ClaimNext(ctx, "cdc-worker-b", time.Now(), 30*time.Second)
+	recoveryDetectedAt := time.Now()
+	if recoveryClaim, err := leaseRepo.ClaimNext(ctx, "cdc-worker-b", recoveryDetectedAt, 30*time.Second); err != nil || recoveryClaim != nil {
+		t.Fatalf("lease-expiry detection claim=%#v err=%v, want persisted backoff", recoveryClaim, err)
+	}
+	secondClaim, err := leaseRepo.ClaimNext(ctx, "cdc-worker-b", recoveryDetectedAt.Add(time.Second), 30*time.Second)
 	if err != nil || secondClaim == nil || secondClaim.Lease.FencingToken <= claim.Lease.FencingToken {
 		t.Fatalf("second claim=%#v err=%v", secondClaim, err)
 	}
@@ -377,7 +384,7 @@ func cdcDataExecution(task models.TransferTask) commonExecution.TaskExecution {
 		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
 		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), SourceTaskName: &task.Name,
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
-		ExecutionConfig: task.Config, StartedAt: &now, CreatedAt: now, UpdatedAt: now,
+		ExecutionConfig: task.Config, CreatedAt: now, UpdatedAt: now,
 	}
 }
 

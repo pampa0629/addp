@@ -16,8 +16,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// CachedSystemAuthMiddleware is similar to SystemAuthMiddleware but caches user info in Redis.
-// This significantly reduces load on the System service by avoiding repeated /api/v1/system/users/me calls
+// CachedSystemAuthMiddleware is similar to SystemAuthMiddleware but caches authorization contexts in Redis.
+// This significantly reduces load on the System service by avoiding repeated /api/v1/system/auth/context calls
 // for the same token within the TTL window.
 //
 // Architecture:
@@ -34,11 +34,12 @@ import (
 // - cacheTTL: Time-to-live for cached user info (recommended: 5 minutes)
 //
 // Usage:
-//   redisClient := redis.NewClient(&redis.Options{...})
-//   router.Use(auth.CachedSystemAuthMiddleware("http://localhost:8180", redisClient, 5*time.Minute))
+//
+//	redisClient := redis.NewClient(&redis.Options{...})
+//	router.Use(auth.CachedSystemAuthMiddleware("http://localhost:8180", redisClient, 5*time.Minute))
 func CachedSystemAuthMiddleware(systemURL string, redisClient *redis.Client, cacheTTL time.Duration) gin.HandlerFunc {
 	baseURL := strings.TrimSuffix(systemURL, "/")
-	meEndpoint := baseURL + "/api/v1/system/users/me"
+	authContextEndpoint := baseURL + "/api/v1/system/auth/context"
 	httpClient := &http.Client{
 		Timeout: 10 * time.Second,
 	}
@@ -60,13 +61,14 @@ func CachedSystemAuthMiddleware(systemURL string, redisClient *redis.Client, cac
 			}
 
 			// Set a system user context for internal API calls
-			c.Set(ContextUserIDKey, uint(1))        // System user ID
-			c.Set(ContextUsernameKey, "internal-api-call")
-			c.Set(ContextTenantIDKey, tenantID)     // Use tenant_id from header if provided
-			c.Set(ContextUserInfoKey, UserInfo{
-				ID:       1,
-				Username: "internal-api-call",
-				TenantID: tenantIDPtr,
+			setAuthorizationContext(c, AuthorizationContext{
+				SubjectType: "service",
+				UserID:      1,
+				Username:    "internal-api-call",
+				TenantID:    tenantIDPtr,
+				AuthType:    "internal_api_key",
+				Audiences:   []string{},
+				Scopes:      []string{},
 			})
 			c.Next()
 			return
@@ -104,25 +106,19 @@ func CachedSystemAuthMiddleware(systemURL string, redisClient *redis.Client, cac
 
 		if err == nil && cachedData != "" {
 			// Cache hit! Decode and use cached user info
-			var userInfo UserInfo
-			if err := json.Unmarshal([]byte(cachedData), &userInfo); err == nil {
-				// Inject cached user info into Gin context
-				c.Set(ContextUserIDKey, userInfo.ID)
-				c.Set(ContextUsernameKey, userInfo.Username)
-				if userInfo.TenantID != nil {
-					c.Set(ContextTenantIDKey, *userInfo.TenantID)
-				} else {
-					c.Set(ContextTenantIDKey, uint(0))
-				}
-				c.Set(ContextUserInfoKey, userInfo)
+			var authorizationContext AuthorizationContext
+			if err := json.Unmarshal([]byte(cachedData), &authorizationContext); err == nil &&
+				authorizationContext.ExpiresAt.After(time.Now()) {
+				setAuthorizationContext(c, authorizationContext)
 				c.Next()
 				return
 			}
+			_ = redisClient.Del(ctx, cacheKey).Err()
 			// If unmarshal failed, fall through to System service call
 		}
 
 		// 4. Cache miss or Redis error → call System service
-		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, meEndpoint, nil)
+		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, authContextEndpoint, nil)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create verification request"})
 			c.Abort()
@@ -142,38 +138,42 @@ func CachedSystemAuthMiddleware(systemURL string, redisClient *redis.Client, cac
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10)) // cap to 4KB
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error":   "invalid token",
-				"details": string(body),
-			})
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+			statusCode := http.StatusUnauthorized
+			if resp.StatusCode >= http.StatusInternalServerError {
+				statusCode = http.StatusServiceUnavailable
+			}
+			c.JSON(statusCode, gin.H{"error": "authorization context unavailable"})
 			c.Abort()
 			return
 		}
 
-		var userInfo UserInfo
-		if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode system user response"})
+		var authorizationContext AuthorizationContext
+		if err := json.NewDecoder(resp.Body).Decode(&authorizationContext); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "failed to decode authorization context"})
+			c.Abort()
+			return
+		}
+		if authorizationContext.UserID == 0 || authorizationContext.SubjectType != "user" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization context"})
 			c.Abort()
 			return
 		}
 
-		// 5. Cache user info in Redis for future requests
-		userInfoJSON, err := json.Marshal(userInfo)
-		if err == nil {
+		// 5. Cache the context no longer than the access token remains valid.
+		authorizationContextJSON, err := json.Marshal(authorizationContext)
+		remainingTTL := time.Until(authorizationContext.ExpiresAt)
+		if err == nil && remainingTTL > 0 {
+			effectiveTTL := cacheTTL
+			if remainingTTL < effectiveTTL {
+				effectiveTTL = remainingTTL
+			}
 			// Best-effort caching (don't fail request if Redis write fails)
-			_ = redisClient.Set(ctx, cacheKey, userInfoJSON, cacheTTL).Err()
+			_ = redisClient.Set(ctx, cacheKey, authorizationContextJSON, effectiveTTL).Err()
 		}
 
-		// 6. Inject user info into Gin context
-		c.Set(ContextUserIDKey, userInfo.ID)
-		c.Set(ContextUsernameKey, userInfo.Username)
-		if userInfo.TenantID != nil {
-			c.Set(ContextTenantIDKey, *userInfo.TenantID)
-		} else {
-			c.Set(ContextTenantIDKey, uint(0))
-		}
-		c.Set(ContextUserInfoKey, userInfo)
+		// 6. Inject the canonical context.
+		setAuthorizationContext(c, authorizationContext)
 
 		c.Next()
 	}
@@ -182,13 +182,14 @@ func CachedSystemAuthMiddleware(systemURL string, redisClient *redis.Client, cac
 // generateTokenCacheKey creates a deterministic cache key from a token using SHA-256 hash.
 // This avoids storing plaintext tokens in Redis while ensuring uniqueness.
 //
-// Key format: "auth:token_cache:<sha256_hash>"
+// Key format: "auth:context:<sha256_hash>"
 //
 // Example:
-//   token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-//   cache key: "auth:token_cache:3a4f8c2b1e7d9f5a..."
+//
+//	token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+//	cache key: "auth:context:3a4f8c2b1e7d9f5a..."
 func generateTokenCacheKey(token string) string {
 	hash := sha256.Sum256([]byte(token))
 	hashHex := hex.EncodeToString(hash[:])
-	return fmt.Sprintf("auth:token_cache:%s", hashHex)
+	return fmt.Sprintf("auth:context:%s", hashHex)
 }

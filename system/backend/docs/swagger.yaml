@@ -343,6 +343,48 @@ definitions:
       username:
         type: string
     type: object
+  github_com_addp_system_internal_models.AuthorizationContext:
+    properties:
+      agent_run_id:
+        type: string
+      audiences:
+        items:
+          type: string
+        type: array
+      auth_type:
+        example: first_party_access_token
+        type: string
+      client_id:
+        type: string
+      delegated_by:
+        type: string
+      expires_at:
+        type: string
+      issued_at:
+        type: string
+      scopes:
+        items:
+          type: string
+        type: array
+      subject_type:
+        example: user
+        type: string
+      tenant_id:
+        example: 3
+        type: integer
+      tool_call_id:
+        type: string
+      user_id:
+        example: 12
+        type: integer
+      user_type:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_system_internal_models.UserType'
+        example: tenant_admin
+      username:
+        example: alice
+        type: string
+    type: object
   github_com_addp_system_internal_models.CapabilitiesView:
     properties:
       json_view:
@@ -510,6 +552,30 @@ definitions:
         type: integer
     required:
     - name
+    type: object
+  github_com_addp_system_internal_models.DeviceApprovalRequest:
+    properties:
+      approve:
+        type: boolean
+      user_code:
+        type: string
+    required:
+    - user_code
+    type: object
+  github_com_addp_system_internal_models.DeviceAuthorizationResponse:
+    properties:
+      device_code:
+        type: string
+      expires_in:
+        type: integer
+      interval:
+        type: integer
+      user_code:
+        type: string
+      verification_uri:
+        type: string
+      verification_uri_complete:
+        type: string
     type: object
   github_com_addp_system_internal_models.Engine:
     properties:
@@ -687,7 +753,36 @@ definitions:
     properties:
       access_token:
         type: string
+      expires_in:
+        type: integer
       token_type:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.OAuthAuthorizationRequest:
+    properties:
+      client_id:
+        type: string
+      code_challenge:
+        type: string
+      code_challenge_method:
+        type: string
+      redirect_uri:
+        type: string
+      scope:
+        type: string
+      state:
+        type: string
+    required:
+    - client_id
+    - code_challenge
+    - code_challenge_method
+    - redirect_uri
+    - scope
+    - state
+    type: object
+  github_com_addp_system_internal_models.OAuthAuthorizationResponse:
+    properties:
+      redirect_url:
         type: string
     type: object
   github_com_addp_system_internal_models.SuccessResponse:
@@ -752,6 +847,19 @@ definitions:
       is_active:
         type: boolean
       name:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.TokenResponse:
+    properties:
+      access_token:
+        type: string
+      expires_in:
+        type: integer
+      refresh_token:
+        type: string
+      scope:
+        type: string
+      token_type:
         type: string
     type: object
   github_com_addp_system_internal_models.UpdateApplicationRequest:
@@ -1291,6 +1399,26 @@ paths:
       summary: 撤销 API Key | Revoke API key
       tags:
       - 应用管理 | Application Management
+  /auth/context:
+    get:
+      description: 将当前 Bearer Token 解析为权威用户、租户和授权上下文 | Resolve the current Bearer
+        token into the authoritative user, tenant and authorization context
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.AuthorizationContext'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取授权上下文 | Get authorization context
+      tags:
+      - 认证 | Auth
   /engines:
     get:
       consumes:
@@ -1662,6 +1790,18 @@ paths:
       summary: 用户登录 | User login
       tags:
       - 认证 | Auth
+  /logout:
+    post:
+      description: 撤销当前 Refresh Token Family 并清除 Cookie | Revoke the current refresh
+        token family and clear the cookie
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+      summary: 退出登录 | Logout
+      tags:
+      - 认证 | Auth
   /logs:
     get:
       consumes:
@@ -1849,11 +1989,161 @@ paths:
       summary: 获取日志趋势 | Get log trends
       tags:
       - 日志管理 | Log Management
+  /oauth/authorizations:
+    post:
+      consumes:
+      - application/json
+      description: 使用当前用户身份签发一次性 PKCE Authorization Code | Issue a one-time PKCE authorization
+        code for the current user
+      parameters:
+      - description: 授权请求 | Authorization request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 批准 OAuth 授权 | Approve OAuth authorization
+      tags:
+      - OAuth
+  /oauth/device/authorizations:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 设备授权确认 | Device authorization approval
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.DeviceApprovalRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 批准设备授权 | Approve device authorization
+      tags:
+      - OAuth
+  /oauth/device/code:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: OAuth Client ID
+        in: formData
+        name: client_id
+        required: true
+        type: string
+      - description: OAuth Scope
+        in: formData
+        name: scope
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.DeviceAuthorizationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      summary: 创建设备授权 | Create device authorization
+      tags:
+      - OAuth
+  /oauth/revoke:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: Refresh Token
+        in: formData
+        name: token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+      summary: 撤销 OAuth Token | Revoke OAuth token
+      tags:
+      - OAuth
+  /oauth/token:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: OAuth grant type
+        in: formData
+        name: grant_type
+        required: true
+        type: string
+      - description: OAuth Client ID
+        in: formData
+        name: client_id
+        required: true
+        type: string
+      - description: Authorization Code
+        in: formData
+        name: code
+        type: string
+      - description: Redirect URI
+        in: formData
+        name: redirect_uri
+        type: string
+      - description: PKCE verifier
+        in: formData
+        name: code_verifier
+        type: string
+      - description: Device Code
+        in: formData
+        name: device_code
+        type: string
+      - description: Refresh Token
+        in: formData
+        name: refresh_token
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.TokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      summary: 兑换 OAuth Token | Exchange OAuth token
+      tags:
+      - OAuth
   /refresh:
     post:
       consumes:
       - application/json
-      description: 使用即将过期的 token 获取新的 token | Use expiring token to get a new token
+      description: 使用 HttpOnly Cookie 中的 Refresh Token 轮换并获取新的 Access Token | Rotate
+        the refresh token from the HttpOnly cookie and issue a new access token
       produces:
       - application/json
       responses:
@@ -1865,8 +2155,6 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
       summary: 刷新 Token | Refresh token
       tags:
       - 认证 | Auth
@@ -2276,7 +2564,7 @@ paths:
       - 用户管理 | User Management
 securityDefinitions:
   BearerAuth:
-    description: Type "Bearer" followed by a space and JWT token.
+    description: Type "Bearer" followed by a space and an ADDP opaque access token.
     in: header
     name: Authorization
     type: apiKey

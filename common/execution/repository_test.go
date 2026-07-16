@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	commonapi "github.com/addp/common/api"
 	"gorm.io/driver/sqlite"
@@ -71,6 +72,38 @@ func TestUpdateFieldsReturnsNotFoundWhenExecutionDoesNotMatchTenant(t *testing.T
 	})
 	if !errors.Is(err, commonapi.ErrNotFound) {
 		t.Fatalf("UpdateFields error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestStartExecutionAtomicallySetsRunningAndStartedAt(t *testing.T) {
+	db := newTaskExecutionRepositoryTestDB(t)
+	repo := NewTaskExecutionRepository(db)
+	createdAt := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	exec := &TaskExecution{
+		TenantID: 7, ExecutionID: "pending-1", Module: ModuleMeta, TaskType: TaskTypeScan,
+		Source: ModuleMeta, Status: ExecutionStatusPending, TriggerType: TriggerTypeManual,
+		CreatedAt: createdAt, UpdatedAt: createdAt,
+	}
+	if err := repo.Create(context.Background(), exec); err != nil {
+		t.Fatalf("create pending execution: %v", err)
+	}
+	if exec.StartedAt != nil {
+		t.Fatalf("pending started_at = %v, want nil", exec.StartedAt)
+	}
+
+	startedAt := createdAt.Add(30 * time.Second)
+	if err := repo.StartExecution(context.Background(), exec.ExecutionID, exec.TenantID, startedAt); err != nil {
+		t.Fatalf("StartExecution: %v", err)
+	}
+	stored, err := repo.GetByExecutionID(context.Background(), exec.ExecutionID, exec.TenantID)
+	if err != nil {
+		t.Fatalf("load started execution: %v", err)
+	}
+	if stored.Status != ExecutionStatusRunning || stored.StartedAt == nil || !stored.StartedAt.Equal(startedAt) {
+		t.Fatalf("started execution status=%s started_at=%v, want running %v", stored.Status, stored.StartedAt, startedAt)
+	}
+	if err := repo.StartExecution(context.Background(), exec.ExecutionID, exec.TenantID, startedAt.Add(time.Second)); !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("second StartExecution error = %v, want ErrConflict", err)
 	}
 }
 

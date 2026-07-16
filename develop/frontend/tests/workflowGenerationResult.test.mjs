@@ -20,6 +20,13 @@ const unverified = resolveWorkflowGenerationResult({
 
 assert.equal(unverified.clarificationKey, 'develop.workflow.dataSourceUnverified')
 
+const resourceFactsRequired = resolveWorkflowGenerationResult({
+  status: 'need_clarification',
+  clarification_reason: 'resource_facts_required'
+})
+
+assert.equal(resourceFactsRequired.clarificationKey, 'develop.workflow.resourceFactsRequired')
+
 const successWorkflow = { tasks: [{ id: 'task1' }] }
 const success = resolveWorkflowGenerationResult({
   status: 'success',

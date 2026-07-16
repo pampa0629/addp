@@ -4,13 +4,27 @@ Tools 单元测试
 测试所有 LangChain Tools 的基本功能
 """
 import pytest
-import asyncio
+from addp_common.client import DevelopClient
+
+from config import settings
 from tools.develop_tools import (
     EngineTool,
     OperatorDiscoveryTool,
     OperatorDetailTool
 )
 from tools.meta_tools import MetadataSearchTool
+
+
+async def first_workflow_engine_id(tenant_id: int) -> int:
+    async with DevelopClient(
+        base_url=settings.get_develop_url(),
+        internal_api_key=settings.internal_api_key,
+        tenant_id=tenant_id,
+    ) as client:
+        engines = await client.list_workflow_engines()
+
+    assert engines, "Develop 未返回可用的工作流引擎"
+    return engines[0]["id"]
 
 
 class TestDevelopTools:
@@ -36,7 +50,12 @@ class TestDevelopTools:
     async def test_operator_discovery_tool(self):
         """测试 OperatorDiscoveryTool"""
         tool = OperatorDiscoveryTool()
-        result = await tool._arun()
+        tenant_id = 1
+        workflow_engine_id = await first_workflow_engine_id(tenant_id)
+        result = await tool._arun(
+            workflow_engine_id=workflow_engine_id,
+            tenant_id=tenant_id,
+        )
 
         assert isinstance(result, list)
         print(f"✅ OperatorDiscoveryTool 测试通过：获取到 {len(result)} 个算子")
@@ -52,7 +71,13 @@ class TestDevelopTools:
     async def test_operator_detail_tool(self):
         """测试 OperatorDetailTool"""
         tool = OperatorDetailTool()
-        result = await tool._arun(operator_name="load")
+        tenant_id = 1
+        workflow_engine_id = await first_workflow_engine_id(tenant_id)
+        result = await tool._arun(
+            operator_name="load",
+            workflow_engine_id=workflow_engine_id,
+            tenant_id=tenant_id,
+        )
 
         assert result is not None or result is None  # API 可能返回 None
         print(f"✅ OperatorDetailTool 测试通过")

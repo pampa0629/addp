@@ -825,11 +825,15 @@ func (s *CleanupOrchestratorService) updateTaskAndExecutionStatus(
 	}
 
 	now := time.Now()
+	executionStatus := executionStatusFromTaskStatus(overallStatus)
 	fields := map[string]interface{}{
-		"status":     executionStatusFromTaskStatus(overallStatus),
+		"status":     executionStatus,
 		"progress":   progressFromTaskStatus(overallStatus),
 		"metadata":   commonModels.JSONMap{"cleanup_summary": summary, "cleanup_status": overallStatus},
 		"updated_at": now,
+	}
+	if executionStatus == commonExecution.ExecutionStatusFailed || executionStatus == commonExecution.ExecutionStatusTimeout {
+		fields["error_details"] = cleanupExecutionErrorDetails(overallStatus, summary)
 	}
 	if isTaskTerminal(overallStatus) {
 		fields["completed_at"] = now
@@ -854,6 +858,16 @@ func (s *CleanupOrchestratorService) updateTaskAndExecutionStatus(
 		})
 	}
 	return nil
+}
+
+func cleanupExecutionErrorDetails(overallStatus string, summary events.CleanupResultSummary) commonModels.JSONMap {
+	message := "cleanup completed with errors"
+	if executionStatusFromTaskStatus(overallStatus) == commonExecution.ExecutionStatusTimeout {
+		message = "cleanup timed out"
+	}
+	return commonModels.JSONMap{
+		"message": message, "cleanup_status": overallStatus, "error_count": summary.ErrorCount,
+	}
 }
 
 func summaryFromResults(results map[string]interface{}) events.CleanupResultSummary {

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
@@ -11,6 +13,7 @@ import (
 	"github.com/addp/monitor/internal/api"
 	"github.com/addp/monitor/internal/config"
 	"github.com/addp/monitor/internal/service"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -41,6 +44,9 @@ func main() {
 	if err := commonExecution.EnsureStore(db); err != nil {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
+	if err := service.EnsureMonitorStore(db); err != nil {
+		log.Fatalf("Failed to ensure monitor store: %v", err)
+	}
 
 	// 连接 Redis
 	var redisClient *redis.Client
@@ -62,15 +68,72 @@ func main() {
 	queryService := service.NewExecutionQueryService(taskExecutionRepo)
 	statisticsService := service.NewStatisticsService(taskExecutionRepo)
 	healthService := service.NewHealthCheckService(systemClient, cfg.InternalAPIKey)
+	webhookSender := service.NewHTTPWebhookSender(cfg.WebhookHTTPTimeout, cfg.WebhookAllowPrivate)
+	webhookService := service.NewWebhookService(db, cfg.EncryptionKey, cfg.WebhookAllowPrivate, cfg.ConsoleBaseURL, webhookSender)
+	var emailSender service.EmailSender
+	if cfg.EmailSMTPConfigured() {
+		emailSender, err = service.NewSMTPEmailSender(service.SMTPEmailSenderConfig{
+			Host: cfg.EmailSMTPHost, Port: cfg.EmailSMTPPort, Username: cfg.EmailSMTPUsername,
+			Password: cfg.EmailSMTPPassword, TLSMode: cfg.EmailSMTPTLSMode,
+			FromAddress: cfg.EmailFromAddress, FromName: cfg.EmailFromName, Timeout: cfg.EmailSMTPTimeout,
+		})
+		if err != nil {
+			log.Fatalf("Failed to configure email sender: %v", err)
+		}
+	}
+	emailService := service.NewEmailService(db, cfg.ConsoleBaseURL, emailSender)
+	notificationService := service.NewNotificationService(webhookService, emailService)
+	alertService := service.NewAlertService(db, notificationService)
+	alertRuleService := service.NewAlertRuleService(db, alertService, systemClient)
+	webhookDispatcher := service.NewWebhookDispatcher(
+		db,
+		webhookSender,
+		service.WebhookDispatcherConfig{
+			WorkerID: "monitor-webhook-" + uuid.NewString(), DispatchInterval: cfg.WebhookDispatchInterval,
+			LeaseDuration: cfg.WebhookLeaseDuration, MaxAttempts: cfg.WebhookMaxAttempts,
+			RetryInitial: cfg.WebhookRetryInitial, RetryMax: cfg.WebhookRetryMax, EncryptionKey: cfg.EncryptionKey,
+		},
+	)
 
 	// 设置路由
 	router := api.SetupRouter(
 		queryService,
 		statisticsService,
 		healthService,
+		alertService,
+		alertRuleService,
+		webhookService,
+		emailService,
 		cfg.SystemURL,
 		redisClient,
+		systemClient,
 	)
+
+	go func() {
+		ticker := time.NewTicker(cfg.AlertEvaluationInterval)
+		defer ticker.Stop()
+		for {
+			if err := alertService.Evaluate(context.Background(), time.Now()); err != nil {
+				log.Printf("Alert evaluation failed: %v", err)
+			}
+			<-ticker.C
+		}
+	}()
+	go webhookDispatcher.Run(context.Background())
+	if emailSender != nil {
+		emailDispatcher := service.NewEmailDispatcher(
+			db,
+			emailSender,
+			service.EmailDispatcherConfig{
+				WorkerID: "monitor-email-" + uuid.NewString(), DispatchInterval: cfg.EmailDispatchInterval,
+				LeaseDuration: cfg.EmailLeaseDuration, MaxAttempts: cfg.EmailMaxAttempts,
+				RetryInitial: cfg.EmailRetryInitial, RetryMax: cfg.EmailRetryMax,
+			},
+		)
+		go emailDispatcher.Run(context.Background())
+	} else {
+		log.Printf("Email dispatcher disabled: MONITOR_EMAIL_SMTP_HOST is not configured")
+	}
 
 	// 启动服务
 	addr := ":" + cfg.ServerPort

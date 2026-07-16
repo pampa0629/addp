@@ -125,6 +125,10 @@ func TestSyncStateCommitUsesStateVersionAndFencingToken(t *testing.T) {
 	if err := stateRepo.CommitPosition(context.Background(), state.ID, 0, 1, position, execution.ExecutionID); err != nil {
 		t.Fatalf("CommitPosition failed: %v", err)
 	}
+	committedState, err := stateRepo.GetByID(context.Background(), state.ID)
+	if err != nil || committedState.PositionCommittedAt == nil {
+		t.Fatalf("committed state position time = %#v, error = %v", committedState, err)
+	}
 	if err := stateRepo.CommitPosition(context.Background(), state.ID, 0, 1, position, execution.ExecutionID); err != ErrSyncStateFenced {
 		t.Fatalf("stale CommitPosition error = %v, want ErrSyncStateFenced", err)
 	}
@@ -208,6 +212,7 @@ func newTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 			state_version INTEGER NOT NULL DEFAULT 0,
 			fencing_token INTEGER NOT NULL DEFAULT 0,
 			updated_execution_id TEXT,
+			position_committed_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME,
 			UNIQUE(task_id, source_identity, partition)
@@ -227,7 +232,7 @@ func claimTestExecution(task models.TransferTask, executionID string) commonExec
 		TenantID: int(task.TenantID), ExecutionID: executionID, Module: commonExecution.ModuleTransfer,
 		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
 		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), Status: commonExecution.ExecutionStatusPending,
-		TriggerType: commonExecution.TriggerTypeManual, StartedAt: &now, CreatedAt: now, UpdatedAt: now,
+		TriggerType: commonExecution.TriggerTypeManual, CreatedAt: now, UpdatedAt: now,
 	}
 }
 

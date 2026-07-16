@@ -172,11 +172,12 @@ type ChangePasswordRequest struct {
   "user_id": 2,
   "username": "admin",
   "tenant_id": 1,
-  "user_type": "tenant_admin",
   "exp": 1735833600,
   "iat": 1735747200
 }
 ```
+
+`user_type`、用户激活状态和租户激活状态由 `GET /api/v1/system/auth/context` 回查当前数据后返回，不从 JWT 字符串推断。
 
 ---
 
@@ -433,15 +434,16 @@ Content-Type: application/json
 
 ### 6.1 认证机制
 
-**JWT 认证**:
+**用户访问令牌**:
 - 算法:HS256
-- 签名密钥:`JWT_SECRET` 环境变量
+- 签名密钥:`JWT_SECRET` 环境变量，仅 System 读取
 - Token 位置:`Authorization: Bearer <token>`
-- Payload 字段:user_id、username、tenant_id、user_type、exp、iat
+- Payload 字段:user_id、username、tenant_id、exp、iat
 
 **中间件**:`middleware.AuthMiddleware`
 - 验证 JWT Token 有效性
-- 提取用户信息注入到 Context
+- 回查当前用户、租户和激活状态，生成 AuthContext
+- 仅在 System 内部解析 Token；业务模块通过 `/api/v1/system/auth/context` 消费结果
 - 处理 Token 过期和无效情况
 
 ### 6.2 租户隔离
@@ -501,7 +503,7 @@ curl -X POST http://localhost:8180/api/v1/system/login \
 
 ```json
 {
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJ1c2VyX3R5cGUiOiJ0ZW5hbnRfYWRtaW4iLCJleHAiOjE3MzU4MzM2MDAsImlhdCI6MTczNTc0NzIwMH0.xxxxxx",
+  "access_token": "<signed-user-access-token>",
   "token_type": "Bearer"
 }
 ```

@@ -10,6 +10,7 @@ from .meta import MetaClient
 from .develop import DevelopClient
 from .manager import ManagerClient
 from .graph import GraphClient
+from .copilot import CopilotClient
 
 __all__ = [
     "BaseClient",
@@ -18,4 +19,5 @@ __all__ = [
     "DevelopClient",
     "ManagerClient",
     "GraphClient",
+    "CopilotClient",
 ]

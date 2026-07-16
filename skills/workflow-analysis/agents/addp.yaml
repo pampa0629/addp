@@ -1,0 +1,12 @@
+schema: addp.skill-runtime/v1
+required_tools:
+  - engine.list
+  - data.search
+  - resource.ancestors.get
+  - data.preview
+  - workflow.operators.list
+  - workflow.draft.generate
+  - workflow.validate
+  - workflow.run
+  - execution.get
+max_iterations: 8

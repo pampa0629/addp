@@ -36,7 +36,8 @@ class WorkflowValidationChain:
     async def validate(
         self,
         workflow: Workflow,
-        workflow_engine_id: int | None = None
+        workflow_engine_id: int | None = None,
+        tenant_id: int = 0,
     ) -> ValidationResult:
         """
         执行完整的工作流验证
@@ -90,7 +91,11 @@ class WorkflowValidationChain:
 
         # 第 4 层：参数验证（异步，按 workflow_engine_id 获取算子定义）
         print(f"[WorkflowValidationChain] 第 4 层：参数验证")
-        param_errors, param_warnings = await self._validate_parameters(workflow, workflow_engine_id)
+        param_errors, param_warnings = await self._validate_parameters(
+            workflow,
+            workflow_engine_id,
+            tenant_id,
+        )
         errors.extend(param_errors)
         warnings.extend(param_warnings)
 
@@ -286,7 +291,12 @@ class WorkflowValidationChain:
         # 如果排序的节点数量少于总节点数，说明有环
         return sorted_count < len(graph)
 
-    async def _validate_parameters(self, workflow: Workflow, workflow_engine_id: int) -> tuple[List[str], List[str]]:
+    async def _validate_parameters(
+        self,
+        workflow: Workflow,
+        workflow_engine_id: int,
+        tenant_id: int,
+    ) -> tuple[List[str], List[str]]:
         """
         第 4 层：参数验证
 
@@ -318,7 +328,8 @@ class WorkflowValidationChain:
             # 1. 获取算子定义（按工作流引擎实例）
             operator_def = await self.operator_detail_tool._arun(
                 operator_name=task.operator,
-                workflow_engine_id=workflow_engine_id
+                workflow_engine_id=workflow_engine_id,
+                tenant_id=tenant_id,
             )
 
             if not operator_def:

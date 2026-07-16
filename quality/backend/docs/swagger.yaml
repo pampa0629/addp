@@ -17,6 +17,9 @@ definitions:
       execution_id:
         type: string
       status:
+        enum:
+        - pending
+        example: pending
         type: string
     type: object
   internal_api.taskProviderTaskListItem:
@@ -186,6 +189,12 @@ paths:
       responses:
         "202":
           description: Accepted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 任务已有活动 execution | Task already has an active execution
           schema:
             additionalProperties:
               type: string
@@ -454,6 +463,11 @@ paths:
             $ref: '#/definitions/internal_api.taskProviderTaskListResponse'
         "400":
           description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 任务已有活动 execution | Task already has an active execution
           schema:
             additionalProperties: true
             type: object

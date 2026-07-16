@@ -605,6 +605,30 @@ definitions:
       table:
         type: string
     type: object
+  github_com_addp_develop_backend_internal_service.WorkflowValidationIssue:
+    properties:
+      code:
+        type: string
+      message:
+        type: string
+      path:
+        type: string
+    type: object
+  github_com_addp_develop_backend_internal_service.WorkflowValidationResult:
+    properties:
+      errors:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_service.WorkflowValidationIssue'
+        type: array
+      valid:
+        type: boolean
+      warnings:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_service.WorkflowValidationIssue'
+        type: array
+      workflow_engine_id:
+        type: integer
+    type: object
   internal_api.ExecuteNotebookRequest:
     properties:
       input_path:
@@ -720,6 +744,17 @@ definitions:
         type: string
       query_type:
         type: string
+    type: object
+  internal_api.WorkflowValidationRequest:
+    properties:
+      workflow_definition:
+        additionalProperties: true
+        type: object
+      workflow_engine_id:
+        type: integer
+    required:
+    - workflow_definition
+    - workflow_engine_id
     type: object
   internal_api.providerExecuteDevRequest:
     properties:
@@ -2038,7 +2073,45 @@ paths:
           description: 算子列表 | Operator list
           schema:
             $ref: '#/definitions/internal_api.OperatorListResponse'
+      security:
+      - BearerAuth: []
       summary: 根据工作流引擎实例获取算子列表 | List operators by workflow engine instance
+      tags:
+      - Operator
+  /workflow-validations:
+    post:
+      consumes:
+      - application/json
+      description: 按 addp.workflow/v1 基础结构和目标运行时 Public Operator Spec 校验候选工作流，不创建
+        execution | Validate a workflow candidate against addp.workflow/v1 and the
+        target runtime Public Operator Spec without creating an execution
+      parameters:
+      - description: 工作流校验请求 | Workflow validation request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.WorkflowValidationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 校验结果 | Validation result
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_service.WorkflowValidationResult'
+        "400":
+          description: 请求或工作流引擎错误 | Invalid request or workflow engine
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未授权 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 校验工作流定义 | Validate workflow definition
       tags:
       - Operator
 securityDefinitions:

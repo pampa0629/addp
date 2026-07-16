@@ -124,8 +124,9 @@ graph TB
     subgraph "API层隔离"
         API[API 请求]
 
-        API --> JWT[JWT Token<br/>包含 tenant_id]
-        JWT --> Middleware[认证中间件<br/>提取 tenant_id]
+        API --> Token[用户访问令牌]
+        Token --> AuthContext[System AuthContext<br/>回查用户与租户]
+        AuthContext --> Middleware[认证中间件<br/>注入 tenant_id]
         Middleware --> Query[SQL WHERE tenant_id = ?<br/>MinIO Path Prefix<br/>Redis Key Prefix]
     end
 
@@ -160,14 +161,14 @@ graph TB
 - 示例: `system:cache:user:tenant_1:123`
 
 **4. API 层隔离**:
-- JWT Token 包含 `tenant_id` 字段
-- 中间件自动提取 `tenant_id` 并注入上下文
+- System 从访问令牌解析身份并回查当前用户、租户和激活状态
+- 公共中间件将 AuthContext 中的 `tenant_id` 注入上下文
 - 所有查询和操作自动应用租户过滤
 
 ### 内置租户
 
 - 系统启动时自动创建**"默认租户"** (ID=1)
-- 所有用户必须归属于某个租户
+- TenantAdmin 和 User 必须归属于某个租户；SuperAdmin 不属于租户
 - 超级管理员可创建新租户
 
 ---
@@ -194,8 +195,8 @@ sequenceDiagram
     System->>System: 6. 验证密码<br/>bcrypt.Compare(password, password_hash)
 
     alt 密码正确
-        System->>System: 7. 生成 JWT Token<br/>payload: {user_id, tenant_id, role}
-        System-->>Gateway: 8. 返回 {token, user_info}
+        System->>System: 7. 生成第一方访问令牌<br/>payload: {user_id, username, tenant_id, exp, iat}
+        System-->>Gateway: 8. 返回 {access_token, token_type}
         Gateway-->>Frontend: 9. 返回登录成功
         Frontend->>Frontend: 10. 存储 token 到 localStorage
 
@@ -204,12 +205,13 @@ sequenceDiagram
         User->>Frontend: 11. 访问受保护资源
         Frontend->>Gateway: 12. GET /api/v1/manager/preview<br/>Header: Authorization: Bearer {token}
         Gateway->>Manager: 13. 转发请求
-        Manager->>Manager: 14. 验证 JWT Token<br/>提取 tenant_id
-        Manager->>DB: 15. SELECT * FROM data<br/>WHERE tenant_id = ?
-        DB-->>Manager: 16. 返回租户数据
-        Manager-->>Gateway: 17. 返回结果
-        Gateway-->>Frontend: 18. 返回数据
-        Frontend-->>User: 19. 展示数据
+        Manager->>System: 14. GET /auth/context<br/>验证 Token 并回查用户/租户
+        System-->>Manager: 15. 返回 AuthContext
+        Manager->>DB: 16. SELECT * FROM data<br/>WHERE tenant_id = AuthContext.tenant_id
+        DB-->>Manager: 17. 返回租户数据
+        Manager-->>Gateway: 18. 返回结果
+        Gateway-->>Frontend: 19. 返回数据
+        Frontend-->>User: 20. 展示数据
     else 密码错误
         System-->>Gateway: 8. 返回 401 Unauthorized
         Gateway-->>Frontend: 9. 登录失败
@@ -225,15 +227,15 @@ sequenceDiagram
 3. Gateway 转发到 System Backend
 4. System 查询数据库验证用户
 5. 验证密码(使用 bcrypt)
-6. 生成 JWT Token,包含 `user_id`、`tenant_id`、`role`
+6. 生成第一方短期访问令牌，包含 `user_id`、`username`、`tenant_id`、`exp`、`iat`
 7. 前端存储 Token 到 localStorage
 
 **访问资源阶段**:
 1. 前端请求携带 `Authorization: Bearer {token}` Header
-2. Gateway 中间件验证 Token 有效性
-3. 提取 `tenant_id` 并注入请求上下文
-4. 后端自动应用租户过滤
-5. 返回租户隔离的数据
+2. 业务模块的公共认证中间件调用 System `GET /api/v1/system/auth/context`
+3. System 验证 Token，回查当前用户、租户和激活状态，返回 AuthContext
+4. 业务模块从 AuthContext 获取 `user_id`、`user_type`、`tenant_id`，应用租户和资源权限
+5. 返回当前用户有权访问的数据
 
 ### JWT Token 结构
 
@@ -247,8 +249,6 @@ sequenceDiagram
     "user_id": 123,
     "username": "admin",
     "tenant_id": 1,
-    "tenant_name": "默认租户",
-    "role": "admin",
     "exp": 1708099200,
     "iat": 1708012800
   },
@@ -260,10 +260,10 @@ sequenceDiagram
 - `user_id`: 用户 ID
 - `username`: 用户名
 - `tenant_id`: 租户 ID(用于数据隔离)
-- `tenant_name`: 租户名称
-- `role`: 用户角色(用于权限控制)
 - `exp`: 过期时间(默认 24 小时)
 - `iat`: 签发时间
+
+`user_type`、用户/租户当前激活状态不从 JWT 字符串推断，由 System AuthContext 回查 `system.users` / `system.tenants` 后返回。
 
 ---
 

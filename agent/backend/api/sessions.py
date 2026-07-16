@@ -4,8 +4,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel
-from typing import Optional, List
+from pydantic import BaseModel, ConfigDict
+from typing import Optional
 from database import get_db
 from models.session import Session
 
@@ -17,13 +17,12 @@ class SessionCreate(BaseModel):
 
 
 class SessionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     title: Optional[str]
     created_at: str
     updated_at: str
-
-    class Config:
-        from_attributes = True
 
 
 @router.get("", summary="获取会话列表 | List Sessions")

@@ -1,3 +1,1 @@
-from .main_agent import stream_agent_response
-
-__all__ = ["stream_agent_response"]
+"""Agent 实现包；调用方应从具体模块显式导入。"""

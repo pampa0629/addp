@@ -175,18 +175,19 @@ GET    /health                                 # 服务健康检查
     ↓
 生成 execution_id（UUID）
     ↓
-在 common.task_executions 创建初始记录（status: running）
+在任务定义行锁保护下原子创建 common.task_executions（status: pending，started_at 为空）
     ↓
 异步 goroutine 执行（doCheck）：
-    1. 加载该任务关联的所有 rule_applications
-    2. 对每条规则调用 SQLGenerator 生成检查 SQL
-    3. 通过 dbbridge 获取目标引擎连接
-    4. 执行 SQL，计算 failedCount 和 totalCount
-    5. 汇总字段级评分和表级综合质量评分
-    6. 为失败规则创建 Issue 工单
+    1. 原子推进 execution 与 check_tasks 最近执行摘要为 running，并写真实 started_at
+    2. 加载该任务关联的所有 rule_applications
+    3. 对每条规则调用 SQLGenerator 生成检查 SQL
+    4. 通过 dbbridge 获取目标引擎连接
+    5. 执行 SQL，计算 failedCount 和 totalCount
+    6. 汇总字段级评分和表级综合质量评分
+    7. 为失败规则创建 Issue 工单
     ↓
-更新 common.task_executions（status: success/failed，metadata: JSONB）
-更新 check_tasks.last_run_at、last_execution_id、last_execution_status
+在同一事务更新 common.task_executions 终态和
+check_tasks.last_run_at、last_execution_id、last_execution_status
 ```
 
 ### SQL 生成器（`sql_generator.go`）

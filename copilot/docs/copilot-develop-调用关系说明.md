@@ -39,15 +39,13 @@ sequenceDiagram
     participant LLM as LLM服务
 
     User->>FE: 1. 在AI助手面板输入自然语言描述<br/>（已选择工作流引擎实例）
-    FE->>GW: 2. POST /api/copilot/workflow/generate<br/>{ query, workflow_engine_id, tenant_id }
+    FE->>GW: 2. POST /api/v1/copilot/workflow/generate<br/>Bearer JWT + { query, workflow_engine_id, resources[] }
     GW->>Copilot: 3. 反向代理转发
-    Copilot->>Pipeline: 4. run(query, workflow_engine_id)
+    Copilot->>Copilot: 4. 通过 System 校验 JWT 并取得 tenant_id / user_id
+    Copilot->>Pipeline: 5. run(query, tenant_id, workflow_engine_id, resources[])
 
-    note over Pipeline: 阶段1：数据源理解
-    Pipeline->>LLM: 5. 分析查询中的数据源关键词
-    Pipeline->>Pipeline: 通过 Manager 语义检索查找已有资源
-    Pipeline->>Pipeline: 通过 Meta ancestors 校验 locator 并取得父节点 locator
-    LLM-->>Pipeline: 返回仅包含已验证 locator 的 DataSourceContext
+    note over Pipeline: 阶段1：消费已验证资源事实
+    Pipeline->>Pipeline: 校验 resources[] 非空、空间资源 CRS 完整
 
     note over Pipeline: 阶段2：算子筛选
     Pipeline->>DevBE: 6. GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators<br/>获取该工作流引擎实例的全量算子列表（简要信息）
@@ -195,17 +193,18 @@ sequenceDiagram
 
 ### 引擎选择与运行时绑定
 
-Copilot 生成接口只接收 `workflow_engine_id`：
+Copilot 生成接口接收 `workflow_engine_id` 和 `resources[]`：
 
 - `workflow_engine_id`：决定**使用哪个工作流引擎实例**发现算子、获取算子详情和验证工作流；不写入算子 params。工作流实际执行时由 Develop 的执行配置 `engine_id` 指向同一类工作流运行时实例
+- `resources[]`：调用方通过 owner Tool 验证的全部输入资源事实；Copilot 不再搜索或推断数据源
 - Spark 工作流执行还需要在 `engine_specific.spark_cluster_id` 中绑定真实 `spark` 通用引擎；该 ID 只用于运行时连接 Spark 集群，不能和工作流运行时 `engine_id` 或数据源 locator 混用
 
 ### 参数传递路径
 
 ```
 Develop前端（用户选择引擎）
-  → POST /api/copilot/workflow/generate
-    { workflow_engine_id: 1 }
+  → POST /api/v1/copilot/workflow/generate（用户身份来自 Bearer JWT）
+    { workflow_engine_id: 1, resources: [{ role, locator, geometry_column, crs }] }
   → Copilot WorkflowPipeline
     → OperatorDiscoveryTool: GET /api/v1/develop/workflow-engines/1/operators
     → 算子筛选 → 工作流生成（算子均来自该工作流引擎实例）

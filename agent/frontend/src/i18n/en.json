@@ -16,11 +16,24 @@
       "welcome": "Hello! I'm the ADDP AI Assistant. I can help you with data management, analysis, and publishing.",
       "inputPlaceholder": "Type a message, Ctrl+Enter to send...",
       "send": "Send",
+      "cancel": "Stop",
+      "cancelFailed": "Stop failed: {msg}",
+      "retry": "Retry",
       "createFailed": "Failed to create session",
       "deleteFailed": "Delete failed",
       "sendFailed": "Send failed: {msg}",
       "errorReply": "Sorry, an error occurred. Please try again.",
-      "workflowGenerated": "Workflow generated"
+      "workflowGenerated": "Workflow generated",
+      "presentationFailed": "Failed to render interface content",
+      "resultRef": {
+        "unknownStatus": "Unknown status",
+        "loadFailed": "Failed to load execution status",
+        "openExecution": "Open execution details"
+      },
+      "toolStatus": {
+        "running": "Running",
+        "completed": "Completed"
+      }
     },
     "quickHints": {
       "viewCatalog": "View my data catalog",

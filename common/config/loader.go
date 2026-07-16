@@ -77,7 +77,6 @@ func discoverProjectRoot() string {
 
 // SharedConfig 从 System 服务获取的共享配置
 type SharedConfig struct {
-	JWTSecret      string `json:"jwt_secret"`
 	EncryptionKey  string `json:"encryption_key"`
 	InternalAPIKey string `json:"internal_api_key"`
 	Database       struct {
@@ -102,7 +101,6 @@ type BaseConfig struct {
 	DBName     string
 	DBUser     string
 	DBPassword string
-	JWTSecret  string
 
 	// 通用配置
 	SystemServiceURL  string
@@ -154,7 +152,6 @@ func LoadSharedConfig(systemURL string, target *BaseConfig) error {
 	}
 
 	// 应用共享配置
-	target.JWTSecret = shared.JWTSecret
 	target.DBHost = shared.Database.Host
 	target.DBPort = shared.Database.Port
 	target.DBUser = shared.Database.User
@@ -188,8 +185,6 @@ func LoadSharedConfig(systemURL string, target *BaseConfig) error {
 
 // LoadLocalConfig 从本地环境变量加载配置（降级方案）
 func LoadLocalConfig(target *BaseConfig) {
-	target.JWTSecret = GetEnv("JWT_SECRET", "")
-
 	// 优先使用 POSTGRES_* 变量（.env 中的标准变量），fallback 到 DB_* 变量
 	target.DBHost = GetEnv("POSTGRES_HOST", GetEnv("DB_HOST", "localhost"))
 	target.DBPort = GetEnv("POSTGRES_PORT", GetEnv("DB_PORT", "15432"))
@@ -208,9 +203,6 @@ func LoadLocalConfig(target *BaseConfig) {
 	target.LogAddSource = GetEnvBool("LOG_ADD_SOURCE", false)
 	target.LogFile = GetEnv("LOG_FILE", "")
 
-	if target.JWTSecret == "" {
-		logger.L().Warn("JWT_SECRET 未设置，认证将失败")
-	}
 }
 
 func setProjectRoot(candidate string) {
@@ -267,8 +259,8 @@ func LoadEncryptionKey() []byte {
 	if keyStr == "" {
 		// 开发环境使用默认密钥 (生产环境必须设置!)
 		logger.L().Warn("ENCRYPTION_KEY 未设置，使用开发默认值（生产环境请务必设置）")
-		// 使用固定的32字节密钥作为开发默认值
-		return []byte("dev-encryption-key-32-bytes!") // 正好32字节
+		// 与 System 开发环境使用同一个固定 32 字节密钥。
+		return []byte("addp-dev-encryption-key-2025!!!!")
 	}
 
 	// 从 Base64 解码密钥

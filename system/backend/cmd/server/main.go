@@ -30,7 +30,7 @@ import (
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
-// @description Type "Bearer" followed by a space and JWT token.
+// @description Type "Bearer" followed by a space and an ADDP opaque access token.
 func main() {
 	// 加载根目录统一的环境变量
 	commonConfig.LoadEnv()
@@ -63,6 +63,10 @@ func main() {
 	// 自动迁移
 	if err := repository.AutoMigrate(db); err != nil {
 		logger.L().Error("数据库迁移失败", "error", err)
+		os.Exit(1)
+	}
+	if err := repository.EnsureBuiltinOAuthClients(db); err != nil {
+		logger.L().Error("内置 OAuth Client 初始化失败", "error", err)
 		os.Exit(1)
 	}
 

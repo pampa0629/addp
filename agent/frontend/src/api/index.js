@@ -23,4 +23,16 @@ export const sessionAPI = {
   },
 }
 
+export const runAPI = {
+  cancel(id) {
+    return agentClient.post(`/agent/runs/${id}/cancel`)
+  },
+}
+
+export const resultRefAPI = {
+  getDevelopExecution(executionId) {
+    return agentClient.get(`/develop/executions/${encodeURIComponent(executionId)}`)
+  }
+}
+
 export default agentClient

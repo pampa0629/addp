@@ -628,6 +628,12 @@
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
+                    },
+                    "409": {
+                        "description": "任务冲突或当前进程不持有运行实例 | Task conflict or runtime not owned by current process",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -839,6 +845,12 @@
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -883,6 +895,12 @@
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -3053,6 +3071,12 @@
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -4494,7 +4518,11 @@
                     "type": "string"
                 },
                 "status": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "pending"
+                    ],
+                    "example": "pending"
                 }
             }
         }

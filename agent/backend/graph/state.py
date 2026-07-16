@@ -5,7 +5,7 @@ AgentState:    请求级状态，在路由节点和执行节点之间传递
 TaskContext:   主 Agent → 领域 Agent 的标准化任务包
 RouteDecision: 路由节点的结构化输出 Schema（路由 + 直接回复二合一）
 """
-from typing import TypedDict, Optional, List, Dict, Any
+from typing import TypedDict, Optional, List, Dict, Any, NotRequired
 from pydantic import BaseModel, Field
 
 
@@ -37,6 +37,7 @@ class TaskContext(TypedDict):
     user_id: int
     tenant_id: int
     token: str               # JWT token，用于 ADDP API 调用
+    checkpoint: NotRequired[Dict[str, Any]]  # addp.agent-checkpoint/v1 语义检查点
 
 
 class RouteDecision(BaseModel):

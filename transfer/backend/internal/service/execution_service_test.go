@@ -75,6 +75,31 @@ func TestRetryExecutionEnqueuesRestartExecution(t *testing.T) {
 	if storedExecution.Status != commonExecution.ExecutionStatusPending || storedExecution.TriggerType != commonExecution.TriggerTypeManual {
 		t.Fatalf("new execution status=%s trigger=%s, want pending manual", storedExecution.Status, storedExecution.TriggerType)
 	}
+	if storedExecution.StartedAt != nil {
+		t.Fatalf("pending retry started_at = %v, want nil", storedExecution.StartedAt)
+	}
+	if len(storedExecution.ExecutionConfig) == 0 {
+		t.Fatal("pending retry execution_config is empty")
+	}
+}
+
+func TestUpdateStatusStartsPendingExecution(t *testing.T) {
+	ctx := context.Background()
+	db := newExecutionServiceTestDB(t)
+	task := createExecutionServiceTestTask(t, db)
+	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusPending)
+	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+
+	if err := service.UpdateStatus(ctx, uint(execution.ID), models.ExecutionStatusRunning); err != nil {
+		t.Fatalf("UpdateStatus(running): %v", err)
+	}
+	var stored commonExecution.TaskExecution
+	if err := db.First(&stored, execution.ID).Error; err != nil {
+		t.Fatalf("load started execution: %v", err)
+	}
+	if stored.Status != commonExecution.ExecutionStatusRunning || stored.StartedAt == nil {
+		t.Fatalf("started execution status=%s started_at=%v", stored.Status, stored.StartedAt)
+	}
 }
 
 func TestRetryExecutionDoesNotCarryCheckpointState(t *testing.T) {

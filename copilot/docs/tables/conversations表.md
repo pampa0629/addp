@@ -167,7 +167,9 @@ class ConversationResponse(ConversationBase):
 
 ---
 
-### 5.2 POST /copilot/workflow/generate - 生成工作流(创建 Workflow 对话)
+### 5.2 POST /api/v1/copilot/workflow/generate - 生成工作流
+
+请求必须携带 `Authorization: Bearer <token>`。Copilot 通过 System 校验 JWT 并取得用户与租户身份，请求体不得提交 `tenant_id` 或 `user_id`。
 
 **请求体**:
 
@@ -175,10 +177,10 @@ class ConversationResponse(ConversationBase):
 {
   "query": "加载数据,计算 100 米缓冲区,然后保存结果",
   "conversation_id": null,
-  "tenant_id": 1,
-  "user_id": 2,
   "workflow_engine_id": 1,
-  "use_two_stage": true
+  "resources": [
+    {"role": "input", "locator": "addp://engine/1/path/public/cities?type=table&item_id=103", "geometry_column": "geom", "crs": "EPSG:32650"}
+  ]
 }
 ```
 
@@ -404,15 +406,13 @@ curl -X POST http://localhost:8087/copilot/sql/generate \
 ### 7.3 创建工作流对话
 
 ```bash
-curl -X POST http://localhost:8087/copilot/workflow/generate \
+curl -X POST http://localhost:8087/api/v1/copilot/workflow/generate \
+  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
     "query": "加载数据,计算 100 米缓冲区,保存结果",
     "conversation_id": null,
-    "tenant_id": 1,
-    "user_id": 2,
-    "workflow_engine_id": 1,
-    "use_two_stage": true
+    "workflow_engine_id": 1
   }'
 ```
 

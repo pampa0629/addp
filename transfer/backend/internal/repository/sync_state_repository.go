@@ -102,9 +102,10 @@ func (r *SyncStateRepository) CommitPosition(ctx context.Context, id uint, expec
 	result := r.db.WithContext(ctx).Model(&models.SyncState{}).
 		Where("id = ? AND state_version = ? AND fencing_token = ?", id, expectedVersion, fencingToken).
 		Updates(map[string]interface{}{
-			"position":             position,
-			"state_version":        expectedVersion + 1,
-			"updated_execution_id": executionID,
+			"position":              position,
+			"state_version":         expectedVersion + 1,
+			"updated_execution_id":  executionID,
+			"position_committed_at": gorm.Expr("CURRENT_TIMESTAMP"),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("commit transfer sync position: %w", result.Error)
@@ -128,9 +129,10 @@ func (r *SyncStateRepository) CommitContinuousPosition(
 		Where("EXISTS (SELECT 1 FROM transfer.runtime_leases l WHERE l.task_id = ? AND l.owner_instance_id = ? AND l.fencing_token = ? AND l.lease_until > CURRENT_TIMESTAMP)", taskID, owner, fencingToken).
 		Where("EXISTS (SELECT 1 FROM transfer.transfer_tasks t WHERE t.id = ? AND t.desired_state = ?)", taskID, models.TaskDesiredStateRunning).
 		Updates(map[string]interface{}{
-			"position":             position,
-			"state_version":        expectedVersion + 1,
-			"updated_execution_id": executionID,
+			"position":              position,
+			"state_version":         expectedVersion + 1,
+			"updated_execution_id":  executionID,
+			"position_committed_at": gorm.Expr("CURRENT_TIMESTAMP"),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("commit continuous transfer sync position: %w", result.Error)

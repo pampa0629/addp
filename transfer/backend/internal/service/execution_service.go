@@ -344,7 +344,7 @@ func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, taskI
 		Progress:          0,
 		TriggerType:       normalizedTriggerType,
 		TriggeredBy:       triggeredByInt,
-		StartedAt:         &now,
+		ExecutionConfig:   task.Config,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
@@ -515,7 +515,7 @@ func (s *ExecutionService) RetryExecution(ctx context.Context, id, tenantID, use
 		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
 		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), SourceTaskName: &task.Name,
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
-		TriggeredBy: &triggeredBy, ExecutionConfig: task.Config, StartedAt: &now, CreatedAt: now, UpdatedAt: now,
+		TriggeredBy: &triggeredBy, ExecutionConfig: task.Config, CreatedAt: now, UpdatedAt: now,
 	}
 	if _, _, err := s.taskRepo.ClaimExecution(ctx, task.ID, tenantID, record, incrementalSourceIdentity(task)); err != nil {
 		return nil, fmt.Errorf("claim retry execution: %w", err)
@@ -662,6 +662,10 @@ func (s *ExecutionService) UpdateStatus(ctx context.Context, id uint, status mod
 	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0)
 	if err != nil {
 		return err
+	}
+
+	if status == models.ExecutionStatusRunning {
+		return s.taskExecutionRepo.StartExecution(ctx, execution.ExecutionID, execution.TenantID, time.Now())
 	}
 
 	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, map[string]interface{}{

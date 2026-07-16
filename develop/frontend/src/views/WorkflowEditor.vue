@@ -769,11 +769,14 @@ const generateWorkflow = async () => {
 
   generating.value = true
   try {
+    const currentWorkflow = canvasRef.value?.getWorkflow()
+    const resources = (currentWorkflow?.tasks || [])
+      .filter(task => task.operator === 'load' && task.params?.locator)
+      .map(task => ({ role: task.id, locator: task.params.locator }))
     const result = await generateWorkflowFromNL({
       query: aiQuery.value,
-      tenant_id: 1, // TODO: 从 store 获取
-      user_id: 1,
-      workflow_engine_id: workflowEngineId.value  // 算子发现、详情和验证以工作流引擎实例为准
+      workflow_engine_id: workflowEngineId.value,
+      resources
     })
     const resolved = resolveWorkflowGenerationResult(result)
     if (resolved.clarificationKey) {

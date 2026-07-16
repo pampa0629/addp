@@ -40,6 +40,15 @@ other = "任务已取消"
 [graph.build.task_restarted]
 other = "任务已重新启动"
 
+[graph.build.task_active]
+other = "图谱构建任务已有待执行或运行中的执行记录"
+
+[graph.build.task_runtime_not_owned]
+other = "当前服务实例未持有该任务的运行实例，无法取消；任务状态未改变"
+
+[graph.build.task_run_failed]
+other = "图谱构建任务操作失败"
+
 [graph.review.approved]
 other = "已写入 Neo4j"
 

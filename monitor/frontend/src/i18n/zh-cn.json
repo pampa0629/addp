@@ -65,6 +65,8 @@
         "source_task_name": "任务定义名称",
         "status": "状态",
         "progress": "进度",
+        "runtime_mode": "执行模式",
+        "continuous_mode": "持续运行",
         "trigger_type": "触发方式",
         "duration": "执行时长",
         "created_at": "创建时间",
@@ -102,12 +104,16 @@
           "no": "否"
         },
         "continuous": {
-          "title": "持续同步保留窗口",
+          "title": "持续同步运行状态",
           "sampled_at": "观测采样时间",
           "last_committed_at": "最近提交时间",
           "last_event_at": "最近消息时间",
           "worker": "Worker 实例",
           "diagnostics_error": "保留窗口观测异常",
+          "retention_health": "保留窗口",
+          "checkpoint_health": "提交健康",
+          "checkpoint_age": "距最近提交",
+          "checkpoint_stale_after": "停滞判定阈值",
           "partition": "分区",
           "health": "状态",
           "committed": "已提交位置",
@@ -122,6 +128,40 @@
             "degraded": "风险",
             "critical": "严重",
             "unknown": "未知"
+          },
+          "signals": {
+            "recovery_circuit_open": {
+              "title": "自动恢复已熔断",
+              "description": "连续失败 {failures} 次，系统将在 {nextAttempt} 进入恢复探测；当前没有合法运行会话。"
+            },
+            "recovery_half_open": {
+              "title": "正在探测恢复",
+              "description": "熔断冷却已结束，当前会话正在验证数据链路能否稳定恢复。"
+            },
+            "recovery_waiting": {
+              "title": "等待自动恢复",
+              "description": "连续失败 {failures} 次，下次允许恢复时间为 {nextAttempt}。"
+            },
+            "recovery_ready": {
+              "title": "等待 Worker 接管",
+              "description": "恢复退避已结束，执行正在等待可用的 continuous worker。"
+            },
+            "retention_critical": {
+              "title": "连续恢复窗口严重不足",
+              "description": "已提交位置可能已越过源保留边界，或剩余恢复时间低于严重阈值。"
+            },
+            "retention_degraded": {
+              "title": "连续恢复窗口存在风险",
+              "description": "按当前源增长速率估算，剩余恢复时间已低于风险阈值。"
+            },
+            "checkpoint_stalled": {
+              "title": "目标提交长期未推进",
+              "description": "源端仍有积压，真实 position commit 已超过 {threshold} 未推进。"
+            },
+            "diagnostics_error": {
+              "title": "持续同步观测异常",
+              "description": "Transfer 无法完成本次诊断采样：{error}"
+            }
           }
         },
         "result": "执行结果",
@@ -139,9 +179,10 @@
       "task_type": "任务类型",
       "source_task_id": "任务定义ID",
       "status": "状态",
-      "retention_health": "保留窗口",
+      "observation_signals": "观测信号",
       "trigger_type": "触发方式",
       "progress": "进度",
+      "continuous": "持续",
       "created_at": "创建时间",
       "duration": "执行时长",
       "actions": "操作",
@@ -173,8 +214,7 @@
       "modules_failed": "加载模块健康状态失败",
       "refresh_success": "刷新成功",
       "trend_failed": "加载趋势数据失败",
-      "executions_failed": "加载执行记录失败",
-      "view_execution": "查看执行记录 #{id}"
+      "executions_failed": "加载执行记录失败"
     },
     "module_status": {
       "up": "正常",
@@ -184,6 +224,180 @@
       "latency": "延迟: {ms}ms",
       "task_discovery": "任务发现: {up}/{total}",
       "capabilities_invalid": "能力声明异常"
+    },
+    "alert": {
+      "title": "告警事件",
+      "incident_tab": "告警事件",
+      "rule_tab": "告警规则",
+      "signal": "观测信号",
+      "status": "状态",
+      "severity": "级别",
+      "opened_at": "打开时间",
+      "last_observed_at": "最近观测",
+      "actions": "操作",
+      "view_execution": "查看执行",
+      "acknowledge": "确认",
+      "acknowledged": "告警已确认",
+      "suppress_one_hour": "抑制 1 小时",
+      "suppress_confirm": "抑制只暂停该告警的后续通知，不会改变运行信号或任务状态。",
+      "suppressed": "告警通知已抑制 1 小时",
+      "status_values": { "open": "待处理", "acknowledged": "已确认", "resolved": "已恢复" },
+      "severity_values": { "critical": "严重", "warning": "警告" }
+    },
+    "alert_rule": {
+      "title": "通用任务告警规则",
+      "description": "根据任务的真实执行终态判定告警；持续同步任务继续使用专用运行告警。",
+      "create": "新增规则",
+      "edit": "编辑",
+      "delete": "删除",
+      "delete_title": "删除告警规则",
+      "delete_confirm": "删除“{name}”？当前活动告警会先恢复，历史事件和投递记录将保留。",
+      "deleted": "告警规则已删除",
+      "name": "规则名称",
+      "target": "任务",
+      "target_placeholder": "选择一个已有任务",
+      "target_help": "只显示具有稳定任务身份的根任务，不包含持续同步会话和临时执行。",
+      "rule_type": "触发条件",
+      "failure_threshold": "连续次数",
+      "routes": "通知目标",
+      "routes_help": "不选择目标时仍会记录告警事件，但不会发送 Webhook 或邮件。",
+      "no_routes": "仅记录事件",
+      "enabled": "启用",
+      "updated_at": "更新时间",
+      "empty": "尚未配置通用任务告警规则",
+      "saved": "告警规则已保存",
+      "enabled_success": "告警规则已启用",
+      "disabled_success": "告警规则已停用，当前活动告警已恢复",
+      "operation_failed": "告警规则操作失败",
+      "rule_types": {
+        "last_terminal_failed": "最近一次执行失败",
+        "last_terminal_timeout": "最近一次执行超时",
+        "consecutive_failures": "连续执行失败或超时"
+      },
+      "validation": {
+        "name": "请输入规则名称",
+        "target": "请选择任务",
+        "rule_type": "请选择触发条件"
+      }
+    },
+    "notification": {
+      "webhook_tab": "Webhook",
+      "email_tab": "邮件",
+      "event_type_values": {
+        "opened": "告警打开",
+        "escalated": "级别升级",
+        "resolved": "告警恢复"
+      },
+      "status_values": {
+        "pending": "等待投递",
+        "delivering": "正在投递",
+        "delivered": "已送达",
+        "dead": "投递失败",
+        "suppressed": "已抑制",
+        "cancelled": "已取消"
+      }
+    },
+    "email": {
+      "title": "邮件通知",
+      "description": "告警打开、升级或恢复时，通过平台统一 SMTP Relay 发送邮件。",
+      "create": "新增邮件目标",
+      "edit": "编辑邮件目标",
+      "test": "测试",
+      "test_success": "测试邮件已发送给 {count} 个收件人",
+      "delete": "删除",
+      "delete_title": "删除邮件目标",
+      "delete_confirm": "确定删除“{name}”吗？尚未领取的邮件将取消，历史投递记录会保留，已领取的发送仍可能完成。",
+      "deleted": "邮件目标已删除",
+      "name": "名称",
+      "recipients": "收件人",
+      "recipients_placeholder": "输入邮箱地址后按回车",
+      "recipients_help": "最多 50 个邮箱地址。SMTP Relay 和发件身份由平台部署统一配置。",
+      "event_types": "订阅事件",
+      "enabled": "启用",
+      "updated_at": "更新时间",
+      "actions": "操作",
+      "empty": "尚未配置邮件目标",
+      "saved": "邮件目标已保存",
+      "enabled_success": "邮件目标已启用",
+      "disabled_success": "邮件目标已停用，尚未领取的投递已取消",
+      "operation_failed": "邮件通知操作失败",
+      "validation": {
+        "name": "请输入邮件目标名称",
+        "recipients": "请输入 1 到 50 个有效邮箱地址",
+        "event_types": "至少选择一种生命周期事件"
+      },
+      "delivery": {
+        "title": "邮件投递记录",
+        "delivery_id": "投递 ID",
+        "destination": "邮件目标",
+        "recipients": "收件人",
+        "subject": "主题",
+        "event_type": "事件",
+        "status": "状态",
+        "attempts": "尝试次数",
+        "manual_retries": "人工重投",
+        "next_attempt_at": "下次尝试",
+        "last_error": "最近错误",
+        "created_at": "创建时间",
+        "retry": "重投",
+        "retry_title": "手动重投邮件",
+        "retry_confirm": "将复用原投递 ID、主题和正文，并发送给目标当前收件人。收件人可能再次收到该邮件，是否继续？",
+        "retry_success": "邮件已重新进入投递队列"
+      }
+    },
+    "webhook": {
+      "title": "Webhook 通知",
+      "description": "告警打开、升级或恢复时，向已配置的接收端可靠投递签名 JSON。",
+      "create": "新增 Webhook",
+      "edit": "编辑 Webhook",
+      "test": "测试",
+      "test_success": "测试投递成功，接收端返回 HTTP {status}",
+      "delete": "删除",
+      "delete_title": "删除 Webhook 目标",
+      "delete_confirm": "确定删除“{name}”吗？尚未领取的投递将取消，历史投递记录会保留，已领取的请求仍可能完成。",
+      "deleted": "Webhook 目标已删除",
+      "name": "名称",
+      "url": "接收地址",
+      "url_placeholder": "https://ops.example.com/hooks/addp",
+      "url_help": "默认只允许 HTTPS 公网地址；内网或本地地址需由部署配置显式开放。",
+      "secret": "签名密钥",
+      "secret_placeholder": "至少 16 字节",
+      "secret_keep_placeholder": "留空表示保留现有密钥",
+      "secret_help": "密钥用于 HMAC-SHA256 签名，加密保存且不会再次显示。",
+      "secret_configured": "已配置",
+      "secret_missing": "未配置",
+      "event_types": "订阅事件",
+      "enabled": "启用",
+      "updated_at": "更新时间",
+      "actions": "操作",
+      "empty": "尚未配置 Webhook 目标",
+      "saved": "Webhook 配置已保存",
+      "enabled_success": "Webhook 已启用",
+      "disabled_success": "Webhook 已停用，尚未领取的投递已取消",
+      "operation_failed": "Webhook 操作失败",
+      "validation": {
+        "name": "请输入 Webhook 名称",
+        "url": "请输入接收地址",
+        "secret": "签名密钥至少需要 16 字节",
+        "event_types": "至少选择一种生命周期事件"
+      },
+      "delivery": {
+        "title": "投递记录",
+        "delivery_id": "投递 ID",
+        "destination": "Webhook 目标",
+        "event_type": "事件",
+        "status": "状态",
+        "attempts": "尝试次数",
+        "manual_retries": "人工重投",
+        "http_status": "HTTP",
+        "next_attempt_at": "下次尝试",
+        "last_error": "最近错误",
+        "created_at": "创建时间",
+        "retry": "重投",
+        "retry_title": "手动重投",
+        "retry_confirm": "将使用目标当前的接收地址和签名密钥重投，并复用原投递 ID。接收端可能再次处理该消息，是否继续？",
+        "retry_success": "投递已重新进入队列"
+      }
     }
   }
 }

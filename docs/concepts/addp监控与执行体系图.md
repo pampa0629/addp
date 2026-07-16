@@ -210,7 +210,21 @@ sequenceDiagram
 
 执行元数据由任务 owner 模块写入 `common.task_executions.metadata`，Monitor 只负责通用展示和轻量摘要，不反向拥有或改写模块产物。对于 Manager 瓦片缓存生成和矢量物化视图，执行详情应能展示实际生成目标、`target_kind`、是否使用外部 3857 优化目标、是否建议矢量物化视图、瓦片生成统计等诊断字段，并保留原始 JSON 作为兜底。
 
-Transfer continuous 运行观测同样遵守 owner 边界：Transfer worker 从业务 Kafka 采集分区 earliest/latest，以目标已提交 `next_offset` 计算 lag 和 retention 恢复余量，并写入 `metadata.continuous.diagnostics`。Monitor 只从 `common.task_executions` 展示 health 和分区诊断，不直连业务 Kafka，不读取 `transfer.sync_states` 或 `transfer.runtime_leases`。这保证 Monitor 始终是统一观测者，而不是 continuous runtime 的第二个 owner。
+Transfer continuous 运行观测同样遵守 owner 边界：Transfer worker 从业务 Kafka 采集分区 earliest/latest，以目标已提交 `next_offset` 计算 lag、retention 恢复余量和 checkpoint age/health，并写入 `metadata.continuous.diagnostics`。Monitor 只从 `common.task_executions` 展示 health、恢复 circuit 和分区诊断，不直连业务 Kafka，不读取 `transfer.sync_states` 或 `transfer.runtime_leases`。这保证 Monitor 始终是统一观测者，而不是 continuous runtime 的第二个 owner。
+
+Monitor 可以把 owner metadata 无状态归一化为实时观测信号：retention critical 与 recovery circuit open 为严重，retention degraded、checkpoint degraded、恢复等待和 half-open 为警告。观测信号不是新的 execution 状态。Monitor evaluator 只扫描 `common.task_executions` 公共事实，把仍存在的信号物化为 `monitor.alert_incidents`；信号消失时自动恢复。告警身份包含规则身份和实际任务身份，同一规则、同一任务同时最多一个 `open|acknowledged` 事件。确认只记录操作人和时间，抑制只暂停通知，二者都不得改写 execution metadata 或 owner 私有状态。
+
+通用执行告警由 Monitor 拥有规则策略，但不拥有运行事实。租户规则精确绑定 `module + task_type + source_task_id`，第一版只允许最近失败、最近超时和连续失败；owner 模块负责写真实 `success|failed|timeout`，Monitor 不读取 owner 私有表补判。ad-hoc、子 execution 和 Transfer continuous session 不进入通用规则；同一任务的最新根 execution 已切换为 continuous 时，Monitor 不再沿用其历史 bounded 终态。多个 evaluator 必须先收集全部 active signal，再由一个 reconciler 统一打开、升级和恢复 incident，避免一个 evaluator 错误恢复另一个 evaluator 的告警。
+
+通用规则的外部通知采用显式 `monitor.notification_routes`。规则没有路由时仍保存 incident 和不可变 lifecycle event，但不产生 Webhook/邮件 delivery；有路由时只向当前租户绑定的目标生成 outbox。规则、incident/event、路由和 delivery 均归 Monitor，System 只提供统一操作审计，各任务 owner 不保存通知目标或告警阈值。
+
+Webhook v1 由 Monitor 拥有。告警打开、严重级别由 warning 升为 critical、告警恢复时，Monitor 必须在更新 incident 的同一个 Infra PostgreSQL 事务中写入不可变 `monitor.alert_events`，并为当时已启用且订阅该事件的 `monitor.webhook_destinations` 生成 `monitor.webhook_deliveries` outbox。HTTP 发送只能在事务外执行；dispatcher 使用短事务和 `FOR UPDATE SKIP LOCKED` 领取到期 delivery，按至少一次语义重试。接收方以全局唯一 `delivery_id` 幂等。确认不产生通知；抑制期间仍保留生命周期 event，但对应 delivery 记为 suppressed 且不补发。通知渠道不能反向成为告警、execution 或 Transfer runtime 的事实源。
+
+Webhook 请求固定使用 `monitor.alert.webhook/v1` JSON schema，事件类型只允许 `opened|escalated|resolved`。签名使用目标独立 secret 对 `timestamp + "." + raw_body` 做 HMAC-SHA256，并通过 `X-ADDP-Webhook-ID`、`X-ADDP-Webhook-Timestamp`、`X-ADDP-Webhook-Signature: v1=<hex>` 传递。secret 使用平台 `ENCRYPTION_KEY` 做 AES-256-GCM 加密，API 和投递审计不得返回明文或密文。payload 只包含稳定告警摘要、任务/执行身份和 Console 链接，不携带业务数据、凭据或完整 execution metadata。
+
+Webhook 目标运维不改变告警事实边界。测试投递使用独立 `monitor.webhook.test/v1` schema，同步验证目标当前 URL、secret、SSRF 策略和签名，不生成告警 event 或正式 outbox。人工重投只允许 `dead` delivery，复用原 `delivery_id` 和 payload，并使用目标当前 URL/secret 开启新的最大尝试周期；累计尝试次数和人工重投次数必须保留。删除目标取消未领取投递但保留历史 delivery，已领取请求可以完成。所有写操作进入 System 统一审计日志，Monitor 不建立第二套操作审计。
+
+邮件通知与 Webhook 消费同一条不可变 `monitor.alert_events` 事实流，但使用独立 `monitor.email_destinations` 和 `monitor.email_deliveries`。租户目标只保存名称、收件地址、订阅事件和启用状态；SMTP Relay、TLS 模式、认证凭据与发件身份属于 Monitor 部署配置。邮件 delivery 冻结收件人、主题和正文，dispatcher 在事务外按至少一次语义发送；测试发送不生成 event/outbox，`dead` 人工重投复用原 `delivery_id` 和内容。SMTP 未配置时 dispatcher 不启动，未投递 outbox 保持 `pending`，不能伪造通知结果。
 
 **4. 统计分析**:
 - 成功率趋势图
@@ -218,10 +232,13 @@ Transfer continuous 运行观测同样遵守 owner 边界：Transfer worker 从�
 - 失败原因分析
 - 热点任务 Top 10
 
-**5. 告警通知** (可选):
-- 任务失败告警
-- 执行超时告警
-- 成功率下降告警
+**5. 告警通知**:
+- Webhook v1 支持 continuous 告警的打开、升级和恢复投递
+- 每租户维护独立 Webhook 目标、订阅事件和签名 secret
+- 支持指数退避、失败终态和投递审计
+- 支持独立测试投递、`dead` 手动重投、目标删除和 System 操作审计
+- 通用任务最近失败、最近超时和连续失败按同一告警生命周期评估
+- 邮件通知 v1 使用平台统一 SMTP Relay 和独立邮件 outbox；站内通知后续实现
 
 ---
 
@@ -248,7 +265,7 @@ Transfer continuous 运行观测同样遵守 owner 边界：Transfer worker 从�
 - [返回核心概念关系图](addp核心概念关系图.md)
 - [ADDP 任务编排体系图](addp任务编排体系图.md)
 - [ADDP 任务体系规范](../spec/addp任务体系规范.md)
-- [Monitor 模块实施报告](../Monitor模块实施报告.md)
+- [Monitor 模块实施报告](../../monitor/docs/Monitor模块实施报告.md)
 
 ---
 

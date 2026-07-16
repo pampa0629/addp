@@ -16,6 +16,18 @@ const routes = [
     meta: { requiresAuth: true, title: '控制台-addp' }
   },
   {
+    path: '/oauth/authorize',
+    name: 'OAuthAuthorize',
+    component: () => import('../views/OAuthAuthorize.vue'),
+    meta: { requiresAuth: true, title: 'OAuth-addp' }
+  },
+  {
+    path: '/oauth/device',
+    name: 'OAuthDevice',
+    component: () => import('../views/OAuthDevice.vue'),
+    meta: { requiresAuth: true, title: 'OAuth-addp' }
+  },
+  {
     path: '/meta',
     redirect: '/meta/scan'
   },

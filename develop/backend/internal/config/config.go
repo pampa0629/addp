@@ -11,7 +11,6 @@ import (
 type Config struct {
 	Env        string
 	ServerAddr string
-	JWTSecret  string
 
 	// PostgreSQL 配置
 	PostgresHost     string
@@ -49,14 +48,6 @@ type Config struct {
 func Load() *Config {
 	env := getEnv("ENV", "development")
 
-	// JWT Secret（可从 System 服务获取，或使用本地配置）
-	jwtSecret := getEnv("JWT_SECRET", "your-secret-key-change-in-production")
-
-	// 开发环境警告
-	if env == "development" && strings.Contains(jwtSecret, "change-in-production") {
-		log.Println("WARNING: Using default JWT_SECRET in development environment.")
-	}
-
 	// 加载加密密钥
 	encryptionKey := loadEncryptionKey()
 
@@ -66,7 +57,6 @@ func Load() *Config {
 	return &Config{
 		Env:        env,
 		ServerAddr: ":" + getEnv("DEVELOP_BACKEND_PORT", "8185"),
-		JWTSecret:  jwtSecret,
 
 		// PostgreSQL 配置
 		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),

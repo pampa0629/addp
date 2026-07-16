@@ -119,18 +119,19 @@ type TransferTask struct {
 
 // SyncState is the single committed-position fact for one Transfer task source partition.
 type SyncState struct {
-	ID                 uint      `gorm:"primaryKey" json:"id"`
-	TaskID             uint      `gorm:"not null;uniqueIndex:idx_transfer_sync_state_identity" json:"task_id"`
-	SourceIdentity     string    `gorm:"type:text;not null;uniqueIndex:idx_transfer_sync_state_identity" json:"source_identity"`
-	Partition          string    `gorm:"type:varchar(255);not null;default:'default';uniqueIndex:idx_transfer_sync_state_identity" json:"partition"`
-	Position           JSONMap   `gorm:"type:jsonb" json:"position,omitempty"`
-	PositionType       string    `gorm:"type:varchar(50);not null;default:'watermark'" json:"position_type"`
-	PositionVersion    string    `gorm:"type:varchar(20);not null;default:'v1'" json:"position_version"`
-	StateVersion       uint64    `gorm:"not null;default:0" json:"state_version"`
-	FencingToken       uint64    `gorm:"not null;default:0" json:"fencing_token"`
-	UpdatedExecutionID string    `gorm:"type:varchar(36)" json:"updated_execution_id,omitempty"`
-	CreatedAt          time.Time `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt          time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+	ID                  uint       `gorm:"primaryKey" json:"id"`
+	TaskID              uint       `gorm:"not null;uniqueIndex:idx_transfer_sync_state_identity" json:"task_id"`
+	SourceIdentity      string     `gorm:"type:text;not null;uniqueIndex:idx_transfer_sync_state_identity" json:"source_identity"`
+	Partition           string     `gorm:"type:varchar(255);not null;default:'default';uniqueIndex:idx_transfer_sync_state_identity" json:"partition"`
+	Position            JSONMap    `gorm:"type:jsonb" json:"position,omitempty"`
+	PositionType        string     `gorm:"type:varchar(50);not null;default:'watermark'" json:"position_type"`
+	PositionVersion     string     `gorm:"type:varchar(20);not null;default:'v1'" json:"position_version"`
+	StateVersion        uint64     `gorm:"not null;default:0" json:"state_version"`
+	FencingToken        uint64     `gorm:"not null;default:0" json:"fencing_token"`
+	UpdatedExecutionID  string     `gorm:"type:varchar(36)" json:"updated_execution_id,omitempty"`
+	PositionCommittedAt *time.Time `json:"position_committed_at,omitempty"`
+	CreatedAt           time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt           time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
 func (SyncState) TableName() string { return "transfer.sync_states" }

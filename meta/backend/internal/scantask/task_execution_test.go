@@ -32,6 +32,9 @@ func TestNewManualExecution(t *testing.T) {
 	if exec.TenantID != 3 || exec.Module != commonExecution.ModuleMeta || exec.Status != commonExecution.ExecutionStatusPending {
 		t.Fatalf("execution basics = %#v", exec)
 	}
+	if exec.StartedAt != nil {
+		t.Fatalf("pending execution started_at = %v, want nil", exec.StartedAt)
+	}
 	if exec.TriggeredBy == nil || *exec.TriggeredBy != 9 {
 		t.Fatalf("triggered_by = %#v", exec.TriggeredBy)
 	}
@@ -56,6 +59,9 @@ func TestNewScheduledExecutionUsesTargets(t *testing.T) {
 
 	if exec.TriggerType != models.TriggerTypeScheduled {
 		t.Fatalf("trigger_type = %q", exec.TriggerType)
+	}
+	if exec.StartedAt != nil {
+		t.Fatalf("scheduled pending started_at = %v, want nil", exec.StartedAt)
 	}
 	if exec.SourceTaskID == nil || *exec.SourceTaskID != "11" {
 		t.Fatalf("source_task_id = %#v", exec.SourceTaskID)

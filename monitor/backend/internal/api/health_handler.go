@@ -63,7 +63,7 @@ func (h *HealthHandler) GetTaskProviders(c *gin.Context) {
 // @Tags Monitor
 // @Produce json
 // @Success 200 {array} service.ProviderHealthStatus
-// @Failure 500 {object} models.ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Router /providers/health [get]
 // @Security BearerAuth
 func (h *HealthHandler) CheckAllProvidersHealth(c *gin.Context) {
@@ -83,8 +83,8 @@ func (h *HealthHandler) CheckAllProvidersHealth(c *gin.Context) {
 // @Produce json
 // @Param module path string true "模块名 | Module"
 // @Success 200 {object} service.ProviderHealthStatus
-// @Failure 404 {object} models.ErrorResponse
-// @Failure 500 {object} models.ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Router /providers/{module}/health [get]
 // @Security BearerAuth
 func (h *HealthHandler) CheckProviderHealth(c *gin.Context) {

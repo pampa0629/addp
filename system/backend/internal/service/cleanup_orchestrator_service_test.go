@@ -47,6 +47,19 @@ func TestCreateEventScanTaskBuildsEventContext(t *testing.T) {
 	}
 }
 
+func TestCleanupExecutionErrorDetails(t *testing.T) {
+	t.Parallel()
+
+	failed := cleanupExecutionErrorDetails("completed_with_errors", events.CleanupResultSummary{ErrorCount: 3})
+	if failed["message"] != "cleanup completed with errors" || failed["error_count"] != 3 {
+		t.Fatalf("failed error details = %#v", failed)
+	}
+	timedOut := cleanupExecutionErrorDetails("timeout", events.CleanupResultSummary{ErrorCount: 1})
+	if timedOut["message"] != "cleanup timed out" || timedOut["cleanup_status"] != "timeout" {
+		t.Fatalf("timeout error details = %#v", timedOut)
+	}
+}
+
 func TestCleanupExecutorEnabledReadsModuleRegistryCapability(t *testing.T) {
 	t.Parallel()
 

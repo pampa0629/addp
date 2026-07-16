@@ -18,12 +18,12 @@ def load_module(name: str, relative_path: str):
 
 workflow_generation = load_module("workflow_generation_contract_module", "chains/workflow_generation_chain.py")
 operator_selection = load_module("operator_selection_contract_module", "chains/operator_selection_chain.py")
-data_source_stage = load_module("data_source_stage_contract_module", "pipelines/data_source_stage.py")
 workflow_api = load_module("workflow_agent_api_contract_module", "api/workflow_agent_api.py")
+workflow_pipeline = load_module("workflow_pipeline_contract_module", "pipelines/workflow_pipeline.py")
 
 WorkflowGenerationChain = workflow_generation.WorkflowGenerationChain
 OperatorSelectionChain = operator_selection.OperatorSelectionChain
-DataSourceStage = data_source_stage.DataSourceStage
+WorkflowPipeline = workflow_pipeline.WorkflowPipeline
 
 
 def live_load_descriptor():
@@ -82,41 +82,26 @@ class RaisingLLMChain:
 
 
 class StaticOperatorTool:
-    async def _arun(self, workflow_engine_id: int):
+    seen_tenant_id = None
+
+    async def _arun(self, workflow_engine_id: int, tenant_id: int = 0):
+        self.seen_tenant_id = tenant_id
         return [{"name": "load", "brief": "load", "category": "I/O"}]
 
 
 async def _assert_operator_selection_propagates_llm_error():
     chain = OperatorSelectionChain.__new__(OperatorSelectionChain)
-    chain.operator_tool = StaticOperatorTool()
+    tool = StaticOperatorTool()
+    chain.operator_tool = tool
     chain.chain = RaisingLLMChain()
 
     with pytest.raises(RuntimeError, match="insufficient_balance"):
-        await chain.select("load roads", workflow_engine_id=20)
+        await chain.select("load roads", workflow_engine_id=20, tenant_id=3)
+    assert tool.seen_tenant_id == 3
 
 
 def test_operator_selection_propagates_llm_error():
     asyncio.run(_assert_operator_selection_propagates_llm_error())
-
-
-class RaisingLLM:
-    async def ainvoke(self, _messages):
-        raise RuntimeError("upstream insufficient_balance")
-
-
-async def _assert_data_source_stage_propagates_llm_error():
-    stage = DataSourceStage(
-        llm=RaisingLLM(),
-        engine_tool=None,
-        metadata_search_tool=None,
-    )
-
-    with pytest.raises(RuntimeError, match="insufficient_balance"):
-        await stage.understand("load roads")
-
-
-def test_data_source_stage_propagates_llm_error():
-    asyncio.run(_assert_data_source_stage_propagates_llm_error())
 
 
 class FailingPipeline:
@@ -125,14 +110,23 @@ class FailingPipeline:
 
 
 async def _assert_workflow_api_returns_non_2xx_with_upstream_reason(monkeypatch):
+    from addp_common.auth import AuthorizationContext
+
     monkeypatch.setattr(workflow_api, "get_workflow_pipeline", lambda: FailingPipeline())
     request = workflow_api.WorkflowGenerationRequest(
         query="load roads",
         workflow_engine_id=20,
+        resources=[{
+            "role": "roads",
+            "locator": "addp://engine/8/path/public/roads?type=table&item_id=91",
+        }],
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await workflow_api.generate_workflow(request)
+        await workflow_api.generate_workflow(
+            request,
+            AuthorizationContext(user_id=7, tenant_id=3, username="tester", user_type="user"),
+        )
 
     assert exc_info.value.status_code == 500
     assert "insufficient_balance" in exc_info.value.detail
@@ -140,3 +134,10 @@ async def _assert_workflow_api_returns_non_2xx_with_upstream_reason(monkeypatch)
 
 def test_workflow_api_returns_non_2xx_with_upstream_reason(monkeypatch):
     asyncio.run(_assert_workflow_api_returns_non_2xx_with_upstream_reason(monkeypatch))
+
+
+def test_empty_invalid_workflow_message_does_not_offer_preview():
+    source = (BACKEND_DIR / "pipelines" / "workflow_pipeline.py").read_text(encoding="utf-8")
+
+    assert "has_previewable_workflow = bool(workflow.tasks)" in source
+    assert "工作流生成失败，未形成可预览的任务" in source

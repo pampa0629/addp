@@ -38,6 +38,12 @@ type Config struct {
 	ContinuousDiagnosticsInterval      time.Duration
 	ContinuousRetentionDegradedHorizon time.Duration
 	ContinuousRetentionCriticalHorizon time.Duration
+	ContinuousCheckpointStaleAfter     time.Duration
+	ContinuousRecoveryInitialBackoff   time.Duration
+	ContinuousRecoveryMaxBackoff       time.Duration
+	ContinuousRecoveryMaxFailures      int
+	ContinuousRecoveryCircuitOpenTime  time.Duration
+	ContinuousRecoveryStabilityWindow  time.Duration
 	InfraKafkaBootstrapServers         string
 	InfraKafkaAdminUsername            string
 	InfraKafkaAdminPassword            string
@@ -65,12 +71,24 @@ type Config struct {
 	BuiltinMinioUseSSL    bool
 }
 
-func (c Config) ValidateContinuousRuntimeObservability() error {
-	if c.ContinuousDiagnosticsInterval <= 0 || c.ContinuousRetentionDegradedHorizon <= 0 || c.ContinuousRetentionCriticalHorizon <= 0 {
-		return fmt.Errorf("continuous diagnostics interval and retention horizons must be greater than zero")
+func (c Config) ValidateContinuousRuntime() error {
+	if c.ContinuousDiagnosticsInterval <= 0 || c.ContinuousRetentionDegradedHorizon <= 0 || c.ContinuousRetentionCriticalHorizon <= 0 || c.ContinuousCheckpointStaleAfter <= 0 {
+		return fmt.Errorf("continuous diagnostics, retention, and checkpoint durations must be greater than zero")
 	}
 	if c.ContinuousRetentionCriticalHorizon >= c.ContinuousRetentionDegradedHorizon {
 		return fmt.Errorf("continuous retention critical horizon must be less than degraded horizon")
+	}
+	if c.ContinuousCheckpointStaleAfter <= c.ContinuousDiagnosticsInterval {
+		return fmt.Errorf("continuous checkpoint stale threshold must be greater than diagnostics interval")
+	}
+	if c.ContinuousRecoveryInitialBackoff <= 0 || c.ContinuousRecoveryMaxBackoff <= 0 || c.ContinuousRecoveryCircuitOpenTime <= 0 || c.ContinuousRecoveryStabilityWindow <= 0 {
+		return fmt.Errorf("continuous recovery durations must be greater than zero")
+	}
+	if c.ContinuousRecoveryInitialBackoff > c.ContinuousRecoveryMaxBackoff {
+		return fmt.Errorf("continuous recovery initial backoff must not exceed max backoff")
+	}
+	if c.ContinuousRecoveryMaxFailures <= 0 {
+		return fmt.Errorf("continuous recovery max failures must be greater than zero")
 	}
 	return nil
 }
@@ -102,6 +120,12 @@ func Load() *Config {
 		ContinuousDiagnosticsInterval:      commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_DIAGNOSTICS_INTERVAL", "15s"),
 		ContinuousRetentionDegradedHorizon: commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RETENTION_DEGRADED_HORIZON", "6h"),
 		ContinuousRetentionCriticalHorizon: commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RETENTION_CRITICAL_HORIZON", "1h"),
+		ContinuousCheckpointStaleAfter:     commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_CHECKPOINT_STALE_AFTER", "5m"),
+		ContinuousRecoveryInitialBackoff:   commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RECOVERY_INITIAL_BACKOFF", "1s"),
+		ContinuousRecoveryMaxBackoff:       commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RECOVERY_MAX_BACKOFF", "1m"),
+		ContinuousRecoveryMaxFailures:      commonConfig.GetEnvInt("TRANSFER_CONTINUOUS_RECOVERY_MAX_CONSECUTIVE_FAILURES", 5),
+		ContinuousRecoveryCircuitOpenTime:  commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RECOVERY_CIRCUIT_OPEN_DURATION", "5m"),
+		ContinuousRecoveryStabilityWindow:  commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RECOVERY_STABILITY_WINDOW", "5m"),
 		InfraKafkaBootstrapServers:         commonConfig.GetEnv("INFRA_KAFKA_BOOTSTRAP_SERVERS", "localhost:19092"),
 		InfraKafkaAdminUsername:            commonConfig.GetEnv("INFRA_KAFKA_ADMIN_USERNAME", "admin"),
 		InfraKafkaAdminPassword:            commonConfig.GetEnv("INFRA_KAFKA_ADMIN_PASSWORD", "addp_kafka_admin"),

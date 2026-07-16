@@ -28,7 +28,6 @@ func (h *ConfigHandler) GetSharedConfig(c *gin.Context) {
 		"project": gin.H{
 			"name": h.cfg.ProjectName,
 		},
-		"jwt_secret":       h.cfg.JWTSecret,
 		"encryption_key":   encryptionKey,
 		"internal_api_key": h.cfg.InternalAPIKey,
 		"map": gin.H{

@@ -199,6 +199,25 @@ import {
 
 地图预览、CRS registry、底图 profile 和 GCJ-02 展示适配规则见 [Map 前端组件说明](./map/README.md)。
 
+### Agent UI 协议组件
+
+`agent-ui/` 提供 ADDP Agent 界面的共享协议适配层：
+
+- 使用官方 `@a2ui/web_core/v0_9` 处理 A2UI Surface；
+- 使用 `addp.catalog/v1` 注册受信任 Vue 组件；
+- 当前包含 `WorkflowDag` 和 `ClarificationChoice`；
+- 未注册组件会被拒绝，不执行 Agent 生成的任意前端代码；
+- A2UI wrapper 只映射声明式 props 和 action，业务事实仍通过 ResultRef / Interaction 访问 owner API。
+
+消费模块必须在自己的 `package.json` 中声明 `@a2ui/web_core`、Vue、Element Plus 和 Zod 依赖，`common-frontend` 不保存独立 `node_modules`。
+
+AG-UI 等基于 Fetch 的流式客户端必须使用共享 `createAuthenticatedFetch()`，以便动态注入当前 JWT，并在 401 后通过 System 刷新 Token。模块内不得复制刷新和重试逻辑。
+
+```javascript
+import { A2UISurface } from '@addp/common-frontend/agent-ui'
+import { createAuthenticatedFetch } from '@common-ui'
+```
+
 ### 表单组件
 
 - **StorageEngineForm** - 存储引擎配置表单（支持 PostgreSQL、MinIO/S3）

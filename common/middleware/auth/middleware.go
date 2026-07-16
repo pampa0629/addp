@@ -13,24 +13,35 @@ import (
 
 // Context keys used to store authenticated user data.
 const (
-	ContextUserIDKey   = "user_id"
-	ContextUsernameKey = "username"
-	ContextTenantIDKey = "tenant_id"
-	ContextUserInfoKey = "user_info"
+	ContextUserIDKey               = "user_id"
+	ContextUsernameKey             = "username"
+	ContextTenantIDKey             = "tenant_id"
+	ContextAuthorizationContextKey = "authorization_context"
 )
 
-// UserInfo mirrors the payload returned by the System service /api/v1/system/users/me endpoint.
-type UserInfo struct {
-	ID       uint   `json:"id"`
-	Username string `json:"username"`
-	TenantID *uint  `json:"tenant_id"`
+// AuthorizationContext mirrors the canonical System /api/v1/system/auth/context response.
+type AuthorizationContext struct {
+	SubjectType string    `json:"subject_type"`
+	UserID      uint      `json:"user_id"`
+	Username    string    `json:"username"`
+	UserType    string    `json:"user_type"`
+	TenantID    *uint     `json:"tenant_id"`
+	AuthType    string    `json:"auth_type"`
+	ClientID    *string   `json:"client_id"`
+	Audiences   []string  `json:"audiences"`
+	Scopes      []string  `json:"scopes"`
+	DelegatedBy *string   `json:"delegated_by"`
+	AgentRunID  *string   `json:"agent_run_id"`
+	ToolCallID  *string   `json:"tool_call_id"`
+	IssuedAt    time.Time `json:"issued_at"`
+	ExpiresAt   time.Time `json:"expires_at"`
 }
 
 // SystemAuthMiddleware validates the incoming request token by delegating to the System service.
 // On success it stores the resolved user information in the Gin context using the constants defined above.
 func SystemAuthMiddleware(systemURL string) gin.HandlerFunc {
 	baseURL := strings.TrimSuffix(systemURL, "/")
-	meEndpoint := baseURL + "/api/v1/system/users/me"
+	authContextEndpoint := baseURL + "/api/v1/system/auth/context"
 	httpClient := &http.Client{
 		Timeout: 10 * time.Second,
 	}
@@ -46,13 +57,14 @@ func SystemAuthMiddleware(systemURL string) gin.HandlerFunc {
 				}
 			}
 
-			c.Set(ContextUserIDKey, uint(1))
-			c.Set(ContextUsernameKey, "internal-api-call")
-			c.Set(ContextTenantIDKey, tenantID)
-			c.Set(ContextUserInfoKey, UserInfo{
-				ID:       1,
-				Username: "internal-api-call",
-				TenantID: tenantIDPtr,
+			setAuthorizationContext(c, AuthorizationContext{
+				SubjectType: "service",
+				UserID:      1,
+				Username:    "internal-api-call",
+				TenantID:    tenantIDPtr,
+				AuthType:    "internal_api_key",
+				Audiences:   []string{},
+				Scopes:      []string{},
 			})
 			c.Next()
 			return
@@ -78,7 +90,7 @@ func SystemAuthMiddleware(systemURL string) gin.HandlerFunc {
 			return
 		}
 
-		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, meEndpoint, nil)
+		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, authContextEndpoint, nil)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create verification request"})
 			c.Abort()
@@ -98,31 +110,40 @@ func SystemAuthMiddleware(systemURL string) gin.HandlerFunc {
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10)) // cap to 4KB
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error":   "invalid token",
-				"details": string(body),
-			})
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+			statusCode := http.StatusUnauthorized
+			if resp.StatusCode >= http.StatusInternalServerError {
+				statusCode = http.StatusServiceUnavailable
+			}
+			c.JSON(statusCode, gin.H{"error": "authorization context unavailable"})
 			c.Abort()
 			return
 		}
 
-		var userInfo UserInfo
-		if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode system user response"})
+		var authorizationContext AuthorizationContext
+		if err := json.NewDecoder(resp.Body).Decode(&authorizationContext); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "failed to decode authorization context"})
 			c.Abort()
 			return
 		}
-
-		c.Set(ContextUserIDKey, userInfo.ID)
-		c.Set(ContextUsernameKey, userInfo.Username)
-		if userInfo.TenantID != nil {
-			c.Set(ContextTenantIDKey, *userInfo.TenantID)
-		} else {
-			c.Set(ContextTenantIDKey, uint(0))
+		if authorizationContext.UserID == 0 || authorizationContext.SubjectType != "user" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization context"})
+			c.Abort()
+			return
 		}
-		c.Set(ContextUserInfoKey, userInfo)
+		setAuthorizationContext(c, authorizationContext)
 
 		c.Next()
 	}
+}
+
+func setAuthorizationContext(c *gin.Context, authorizationContext AuthorizationContext) {
+	c.Set(ContextUserIDKey, authorizationContext.UserID)
+	c.Set(ContextUsernameKey, authorizationContext.Username)
+	if authorizationContext.TenantID != nil {
+		c.Set(ContextTenantIDKey, *authorizationContext.TenantID)
+	} else {
+		c.Set(ContextTenantIDKey, uint(0))
+	}
+	c.Set(ContextAuthorizationContextKey, authorizationContext)
 }

@@ -34,6 +34,20 @@ class DevelopClient(BaseClient):
                 return op
         return None
 
+    async def validate_workflow(
+        self,
+        workflow: Dict[str, Any],
+        workflow_engine_id: int,
+    ) -> Dict[str, Any]:
+        """按目标运行时的 Public Operator Spec 校验候选工作流。"""
+        return await self.post(
+            "/api/v1/develop/workflow-validations",
+            json={
+                "workflow_engine_id": workflow_engine_id,
+                "workflow_definition": workflow,
+            },
+        )
+
     async def execute_sql(self, sql: str, engine_id: int) -> Dict[str, Any]:
         """执行 SQL 查询"""
         return await self.post("/api/v1/develop/execute", json={

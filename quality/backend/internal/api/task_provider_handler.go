@@ -51,7 +51,7 @@ type qualityTaskProviderExecuteRequest struct {
 
 type qualityTaskProviderExecuteResponse struct {
 	ExecutionID string `json:"execution_id"`
-	Status      string `json:"status"`
+	Status      string `json:"status" enums:"pending" example:"pending"`
 }
 
 // ListTasks 列出 Quality 检查任务。
@@ -62,6 +62,7 @@ type qualityTaskProviderExecuteResponse struct {
 // @Param task_type query string false "任务类型，固定为 check | Task type, fixed to check"
 // @Success 200 {object} taskProviderTaskListResponse "任务列表 | Task list"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 409 {object} map[string]interface{} "任务已有活动 execution | Task already has an active execution"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /tasks [get]
 // @Security BearerAuth
@@ -185,12 +186,12 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 
 	executionID, err := h.executor.RunCheckWithContext(c.Request.Context(), taskID, getTenantID(c), getUserID(c), triggerType, source, parentExecutionID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondCheckRunError(c, err)
 		return
 	}
 	c.JSON(http.StatusAccepted, qualityTaskProviderExecuteResponse{
 		ExecutionID: executionID,
-		Status:      commonExecution.ExecutionStatusRunning,
+		Status:      commonExecution.ExecutionStatusPending,
 	})
 }
 

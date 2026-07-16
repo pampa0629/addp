@@ -16,14 +16,22 @@ class ManagerClient(BaseClient):
         """
         return await self.get("/api/v1/manager/preview", params={"locator": locator, "page": page, "page_size": page_size})
 
-    async def search(self, q: str, tenant_id: int, page: int = 1, page_size: int = 10) -> Dict[str, Any]:
+    async def search(
+        self,
+        q: str,
+        tenant_id: Optional[int] = None,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> Dict[str, Any]:
         """混合检索（全文检索 + 向量语义检索）"""
-        response = await self.get("/api/v1/manager/search", params={
+        params = {
             "q": q,
-            "tenant_id": tenant_id,
             "page": page,
             "page_size": page_size,
-        })
+        }
+        if tenant_id is not None:
+            params["tenant_id"] = tenant_id
+        response = await self.get("/api/v1/manager/search", params=params)
         data = response.get("data") if isinstance(response, dict) else None
         if not isinstance(data, dict):
             raise ValueError("manager search response must contain data object")

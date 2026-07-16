@@ -578,6 +578,37 @@ const docTemplate = `{
                 }
             }
         },
+        "/auth/context": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "将当前 Bearer Token 解析为权威用户、租户和授权上下文 | Resolve the current Bearer token into the authoritative user, tenant and authorization context",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Auth"
+                ],
+                "summary": "获取授权上下文 | Get authorization context",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.AuthorizationContext"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/engines": {
             "get": {
                 "security": [
@@ -1141,6 +1172,23 @@ const docTemplate = `{
                 }
             }
         },
+        "/logout": {
+            "post": {
+                "description": "撤销当前 Refresh Token Family 并清除 Cookie | Revoke the current refresh token family and clear the cookie",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Auth"
+                ],
+                "summary": "退出登录 | Logout",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
         "/logs": {
             "get": {
                 "security": [
@@ -1433,14 +1481,240 @@ const docTemplate = `{
                 }
             }
         },
-        "/refresh": {
+        "/oauth/authorizations": {
             "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "使用即将过期的 token 获取新的 token | Use expiring token to get a new token",
+                "description": "使用当前用户身份签发一次性 PKCE Authorization Code | Issue a one-time PKCE authorization code for the current user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OAuth"
+                ],
+                "summary": "批准 OAuth 授权 | Approve OAuth authorization",
+                "parameters": [
+                    {
+                        "description": "授权请求 | Authorization request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/oauth/device/authorizations": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OAuth"
+                ],
+                "summary": "批准设备授权 | Approve device authorization",
+                "parameters": [
+                    {
+                        "description": "设备授权确认 | Device authorization approval",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.DeviceApprovalRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/oauth/device/code": {
+            "post": {
+                "consumes": [
+                    "application/x-www-form-urlencoded"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OAuth"
+                ],
+                "summary": "创建设备授权 | Create device authorization",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth Client ID",
+                        "name": "client_id",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "OAuth Scope",
+                        "name": "scope",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.DeviceAuthorizationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/oauth/revoke": {
+            "post": {
+                "consumes": [
+                    "application/x-www-form-urlencoded"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OAuth"
+                ],
+                "summary": "撤销 OAuth Token | Revoke OAuth token",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Refresh Token",
+                        "name": "token",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/oauth/token": {
+            "post": {
+                "consumes": [
+                    "application/x-www-form-urlencoded"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OAuth"
+                ],
+                "summary": "兑换 OAuth Token | Exchange OAuth token",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth grant type",
+                        "name": "grant_type",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "OAuth Client ID",
+                        "name": "client_id",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Authorization Code",
+                        "name": "code",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Redirect URI",
+                        "name": "redirect_uri",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "PKCE verifier",
+                        "name": "code_verifier",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Device Code",
+                        "name": "device_code",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Refresh Token",
+                        "name": "refresh_token",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.TokenResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/refresh": {
+            "post": {
+                "description": "使用 HttpOnly Cookie 中的 Refresh Token 轮换并获取新的 Access Token | Rotate the refresh token from the HttpOnly cookie and issue a new access token",
                 "consumes": [
                     "application/json"
                 ],
@@ -2594,6 +2868,69 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_models.AuthorizationContext": {
+            "type": "object",
+            "properties": {
+                "agent_run_id": {
+                    "type": "string"
+                },
+                "audiences": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "auth_type": {
+                    "type": "string",
+                    "example": "first_party_access_token"
+                },
+                "client_id": {
+                    "type": "string"
+                },
+                "delegated_by": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "issued_at": {
+                    "type": "string"
+                },
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "subject_type": {
+                    "type": "string",
+                    "example": "user"
+                },
+                "tenant_id": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "tool_call_id": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "user_type": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.UserType"
+                        }
+                    ],
+                    "example": "tenant_admin"
+                },
+                "username": {
+                    "type": "string",
+                    "example": "alice"
+                }
+            }
+        },
         "github_com_addp_system_internal_models.CapabilitiesView": {
             "type": "object",
             "properties": {
@@ -2838,6 +3175,43 @@ const docTemplate = `{
                 },
                 "rate_limit_per_minute": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.DeviceApprovalRequest": {
+            "type": "object",
+            "required": [
+                "user_code"
+            ],
+            "properties": {
+                "approve": {
+                    "type": "boolean"
+                },
+                "user_code": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.DeviceAuthorizationResponse": {
+            "type": "object",
+            "properties": {
+                "device_code": {
+                    "type": "string"
+                },
+                "expires_in": {
+                    "type": "integer"
+                },
+                "interval": {
+                    "type": "integer"
+                },
+                "user_code": {
+                    "type": "string"
+                },
+                "verification_uri": {
+                    "type": "string"
+                },
+                "verification_uri_complete": {
+                    "type": "string"
                 }
             }
         },
@@ -3094,7 +3468,49 @@ const docTemplate = `{
                 "access_token": {
                     "type": "string"
                 },
+                "expires_in": {
+                    "type": "integer"
+                },
                 "token_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.OAuthAuthorizationRequest": {
+            "type": "object",
+            "required": [
+                "client_id",
+                "code_challenge",
+                "code_challenge_method",
+                "redirect_uri",
+                "scope",
+                "state"
+            ],
+            "properties": {
+                "client_id": {
+                    "type": "string"
+                },
+                "code_challenge": {
+                    "type": "string"
+                },
+                "code_challenge_method": {
+                    "type": "string"
+                },
+                "redirect_uri": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.OAuthAuthorizationResponse": {
+            "type": "object",
+            "properties": {
+                "redirect_url": {
                     "type": "string"
                 }
             }
@@ -3190,6 +3606,26 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.TokenResponse": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "type": "string"
+                },
+                "expires_in": {
+                    "type": "integer"
+                },
+                "refresh_token": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "token_type": {
                     "type": "string"
                 }
             }
@@ -3454,7 +3890,7 @@ const docTemplate = `{
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "Type \"Bearer\" followed by a space and JWT token.",
+            "description": "Type \"Bearer\" followed by a space and an ADDP opaque access token.",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"

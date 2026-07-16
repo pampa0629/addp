@@ -16,6 +16,7 @@ const (
 	MsgMissingAuthHeader  = "system.auth.missing_auth_header"
 	MsgInvalidAuthFormat  = "system.auth.invalid_auth_format"
 	MsgInvalidToken       = "system.auth.invalid_token"
+	MsgAccountUnavailable = "system.auth.account_unavailable"
 	MsgTokenRefreshFailed = "system.auth.token_refresh_failed"
 
 	MsgLogNotFound          = "system.log.not_found"

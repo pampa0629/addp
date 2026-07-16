@@ -1,0 +1,4 @@
+interface:
+  display_name: "工作流分析"
+  short_description: "基于 ADDP 数据事实设计、校验并执行可复用工作流"
+  default_prompt: "使用 $workflow-analysis 根据已选数据设计并校验一个 ADDP 分析工作流。"

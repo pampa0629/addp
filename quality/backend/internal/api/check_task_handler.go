@@ -2,9 +2,13 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 
+	commonAPI "github.com/addp/common/api"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	qualityi18n "github.com/addp/quality/i18n"
 	"github.com/addp/quality/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -135,6 +139,7 @@ func (h *CheckTaskHandler) Delete(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 202 {object} map[string]string
+// @Failure 409 {object} map[string]string "任务已有活动 execution | Task already has an active execution"
 // @Router /check-tasks/{id}/run [post]
 // @Security BearerAuth
 func (h *CheckTaskHandler) Run(c *gin.Context) {
@@ -147,8 +152,16 @@ func (h *CheckTaskHandler) Run(c *gin.Context) {
 	}
 	executionID, err := h.executor.RunCheck(context.Background(), id, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondCheckRunError(c, err)
 		return
 	}
 	c.JSON(http.StatusAccepted, gin.H{"execution_id": executionID, "message": "check started"})
+}
+
+func respondCheckRunError(c *gin.Context, err error) {
+	if errors.Is(err, commonAPI.ErrConflict) {
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, qualityi18n.MsgCheckTaskActive)})
+		return
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, qualityi18n.MsgCheckTaskRunFailed)})
 }

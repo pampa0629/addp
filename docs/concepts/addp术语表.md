@@ -110,6 +110,21 @@
 | runtime lease | 运行时租约 | continuous worker 对 runtime session 的限时所有权。 | 保存 owner instance、lease deadline、heartbeat 和 fencing token；与业务 committed position 分离。 |
 | apply identity | 应用身份 | Transfer 为一个任务生成、跨 execution 保持不变的全局 UUID，用于标识该任务对外部目标的应用主线。 | 由服务端生成且不可修改，不进入任务 config；业务目标 PostgreSQL 的 apply ledger 使用它隔离任务并校验 source/target identity。 |
 | target apply ledger | 目标应用账本 | 与业务数据位于同一目标数据库、记录各 source partition 已原子应用位置的技术账本。 | continuous PostgreSQL v1 固定为 `addp_transfer.apply_positions`；数据 upsert 与 `next_offset` 推进必须在同一事务，不能用 Infra PostgreSQL 中的 `transfer.sync_states` 替代。 |
+| observation signal | 观测信号 | 由 owner 写入的运行诊断事实无状态派生出的当前风险提示。 | 不是任务状态、execution 状态或持久化告警；例如 retention critical、checkpoint stalled。 |
+| alert incident | 告警事件 | Monitor 将持续存在的观测信号物化出的可确认、可抑制、可恢复的运维事件。 | 告警不反向修改 owner 状态；同一任务同一信号同时最多一个未恢复事件。 |
+| alert event | 告警生命周期事件 | 告警事件发生打开、严重级别升级或恢复时，由 Monitor 在同一事务中写入的不可变事件。 | 稳定类型为 `opened`、`escalated`、`resolved`；是通知 outbox 的事实输入。 |
+| alert notification | 告警通知 | 告警事件打开、升级或恢复时向外部渠道发送的消息。 | 通知是告警生命周期的消费结果，不是新的健康事实源。 |
+| alert rule | 告警规则 | Monitor 对一个稳定 owner 任务定义配置的告警判定策略。 | 第一版精确绑定 `module + task_type + source_task_id`，规则不进入 owner 任务 config，也不读取 owner 私有表。 |
+| generic execution alert | 通用执行告警 | Monitor 根据统一 execution 终态派生的任务级告警。 | 第一版包括最近失败、最近超时和连续失败；ad-hoc execution、子 execution 与 Transfer continuous session 不进入通用规则。 |
+| notification route | 通知路由 | 一条租户告警规则到一个 Webhook 或邮件目标的显式投递绑定。 | 无路由时仍保存 incident/event，但不生成外部 delivery；路由只影响后续生命周期事件。 |
+| webhook destination | Webhook 目标 | 租户在 Monitor 中配置的告警通知 HTTP 接收端。 | 保存名称、URL、订阅事件、启用状态和加密签名密钥；不属于 System Engine 或 TaskProvider。 |
+| webhook delivery | Webhook 投递 | 一个告警生命周期事件面向一个 Webhook 目标生成的可靠投递记录。 | 采用至少一次投递；接收方必须使用 `delivery_id` 幂等。 |
+| webhook test delivery | Webhook 测试投递 | 用户主动验证某个 Webhook 目标连通性、签名和接收行为的一次同步测试请求。 | 使用独立 `monitor.webhook.test/v1` schema，不创建告警生命周期事件或正式 delivery outbox；操作本身进入 System 审计日志。 |
+| webhook manual retry | Webhook 手动重投 | 用户把已经进入 `dead` 终态的 Webhook delivery 重新放回投递队列。 | 复用原 `delivery_id` 和 payload，使用目标当前 URL/secret，并以新的最大尝试周期继续投递；不得生成新 delivery 身份。 |
+| email destination | 邮件目标 | 租户在 Monitor 中配置的告警邮件收件目标。 | 只保存名称、收件地址、订阅事件和启用状态；SMTP Relay、发件身份和凭据属于平台部署配置。 |
+| email delivery | 邮件投递 | 一个告警生命周期事件面向一个邮件目标生成的可靠投递记录。 | 冻结收件人、主题和正文，采用至少一次投递；`delivery_id` 同时作为稳定投递身份和邮件 Message-ID 的组成部分。 |
+| email test delivery | 邮件测试投递 | 用户主动验证邮件目标和平台 SMTP Relay 的一次同步测试发送。 | 使用独立测试内容，不创建告警生命周期事件或正式 delivery outbox；操作本身进入 System 审计日志。 |
+| email manual retry | 邮件手动重投 | 用户把已经进入 `dead` 终态的邮件 delivery 重新放回投递队列。 | 复用原 `delivery_id`、主题和正文，使用目标当前收件地址，并以新的最大尝试周期继续投递；不得生成新 delivery 身份。 |
 | ChangeRecord | 变化原始记录 | Change stream Provider 从外部消息系统读取的原生记录。 | Kafka record 包含 topic、partition、offset、timestamp、headers、key/value 原始字节；不等于归一化 ChangeEvent。 |
 | ChangeEvent | 统一变化事件 | Transfer source adapter 将 Kafka record 或 CDC envelope 归一化后的内部变化对象。 | 业务 Kafka record v1 归一化为 `operation=upsert`；PostgreSQL CDC v1 契约归一化 snapshot/upsert/delete。Kafka、Debezium 和数据库日志协议细节不得进入目标 writer。 |
 | business Kafka Engine | 业务 Kafka 引擎 | 用户在 System 注册、按租户授权并显式选择 topic 的外部 Kafka。 | 进入 System engines、Catalog 和 ResourceLocator；ADDP 不默认创建或删除用户 topic。 |
@@ -132,6 +147,37 @@
 | SPS Process | SPS 处理节点 | SuperMap SPS 工作流中的可执行节点，实现或等价实现 SPS `IProcess`，声明 input / output 并由 `WorkflowExecutor` 调度。 | 在 `supermap_workflow` runtime 内部使用；不是独立 OS 进程、独立 HTTP 服务或独立容器。 |
 | SuperMap Algorithm | SuperMap 算法 | SuperMap iObjects Java / native / iObjectSpy 等实际完成空间分析、数据处理或格式转换的底层能力。 | 通常由 SPS Process 的 `execute()` 调用；不直接暴露给 ADDP 前端。 |
 | supermap_workflow | SuperMap 工作流运行时 | ADDP 工作流运行时类型，对外实现 `addp.workflow/v1`，对内使用 Java SuperMap SPS 执行 DAG。 | 设计与验证记录见 `docs/next/SuperMap工作流运行时设计.md`。 |
+
+## 智能体能力与交互
+
+| 英文术语 | 中文术语 | 定义 | 备注 |
+|---|---|---|---|
+| Agent Runtime | 智能体运行时 | 负责多轮对话、上下文管理、Skill 加载、规划、Tool 调用循环和 run 生命周期的智能体执行环境。 | ADDP 内置 Agent、Codex、Hermes Agent 都可以是 Agent Runtime；Agent Runtime 不拥有 ADDP 业务能力。 |
+| AgentRun | 智能体运行 | Agent Runtime 为完成一次用户目标而持有的可暂停、恢复和审计的逻辑运行。 | 可以跨多个 AG-UI 请求或连接存在；不等同于 owner 模块 execution，也不以某个内存中的 LLM 调用为生命周期边界。 |
+| AgentCheckpoint | 智能体检查点 | AgentRun 在可恢复边界保存的语义状态快照。 | 只保存 owner Tool 已观察事实、用户已确认选择、待处理 Interaction 和恢复所需控制状态；不保存模型隐藏推理、完整大结果或框架私有内存对象。 |
+| AgentRunStep | 智能体运行步骤 | AgentRun 中一次可审计的 Tool 调用或 Runtime 控制动作记录。 | 保存稳定 Tool 名称、输入、状态、受限输出摘要、事实投影和时间；不是 owner 模块 execution step。 |
+| AgentRunEvent | 智能体运行事件 | AgentRun 向客户端输出的、可按序重放的安全协议事件记录。 | 以 run 内单调 sequence 排序；仅保存文本、状态、Tool 进度和 Presentation 等可重建投影，不保存 Tool 原始参数、原始结果、模型隐藏推理或框架私有状态。 |
+| ADDP Skill | ADDP 技能 | 面向一类可复用任务的知识与工作方法包，包含触发条件、步骤、反模式和所需 Tool。 | 不绑定单次业务案例、固定数据集或固定参数；`workflow-analysis` 是 Skill，铁路占耕地面积计算是评测场景。 |
+| ADDP Tool | ADDP 工具 | 面向智能体暴露的稳定、受控操作能力。 | Tool 是 AI 能力契约，不等同于任意 HTTP endpoint；业务执行仍归 owner 模块正式 API。 |
+| Tool Manifest | 工具清单 | 声明 ADDP Tool 名称、版本、输入输出 Schema、owner、权限、风险、错误和审计约束的机器可读契约。 | 是 AI Tool 契约事实源；不替代 Swagger，也不自动开放全部 API。 |
+| Tool Adapter | 工具适配器 | 把同一 Tool Manifest 和 Python SDK 暴露给特定 Agent 宿主的薄协议层。 | ADDP Agent Tool Provider、`addp` CLI 和后续 MCP Server 都是 Adapter；不得包含分叉业务逻辑或第二套 API Client。 |
+| ResultRef | 结果引用 | Agent 消息对 owner 模块业务结果的稳定引用。 | 不建立全局 Artifact 实体，不复制 workflow、execution、数据项或其他 owner 事实。 |
+| Interaction | 交互请求 | 等待用户完成澄清、审批、表单或资源选择的有状态请求。 | 必须有稳定 ID、owner 和状态；写入审批由业务 owner 模块持有，客户端确认不是权威事实。 |
+| Presentation | 表现描述 | 描述 ResultRef 或 Interaction 如何在客户端显示的可重建投影。 | A2UI Surface、文本摘要和 `open_url` 都属于表现方式，不是业务事实源。 |
+| AG-UI | Agent 用户交互协议 | Agent Runtime 与 Web 前端之间传递 run 生命周期、文本、Tool、状态和 Activity 的标准事件协议。 | ADDP Agent 正式切换后不再使用 `0:`、`dag:` 等私有流前缀。 |
+| A2UI | Agent 到用户界面协议 | 通过版本化 Catalog 和声明式组件消息描述 Agent 界面的表现协议。 | 只允许客户端预注册组件和函数；负责 Presentation，不替代 ResultRef、Interaction、权限或服务端校验。 |
+| A2UI Surface | A2UI 界面单元 | A2UI 中由组件树、数据模型和 action 组成的独立渲染单元。 | 通过 `surface_id` 引用；完整组件树不应作为大段 Tool Result 进入 LLM 上下文。 |
+
+## 身份与授权
+
+| 英文术语 | 中文术语 | 定义 | 备注 |
+|---|---|---|---|
+| AuthContext | 授权上下文 | System 对一枚访问令牌完成验证并回查当前用户、租户后生成的权威身份与授权投影。 | 是 Go/Python 模块消费用户身份的唯一契约；`/users/me` 不是 Token 验证接口。 |
+| OAuth Client | OAuth 客户端 | 代表 `addp-cli`、Codex 或 Hermes 等请求用户授权的客户端软件。 | 不是 ADDP 用户或租户；公共客户端使用 PKCE / Device Flow，不内置 Client Secret。 |
+| OAuth Scope | OAuth 授权范围 | 一枚访问令牌被允许执行的最大能力集合。 | 只能缩小权限，不取代 `user_type`、租户隔离、owner 资源权限或审批。 |
+| User Access Token | 用户访问令牌 | 以当前 ADDP 用户为主体、用于访问业务 API 的短期 Bearer Token。 | 通过 AuthContext 解析；不将客户端参数视为用户或租户事实。 |
+| Refresh Token Family | 刷新令牌族 | 一次用户授权会话中经轮换先后产生的 Refresh Token 链。 | 旧 Refresh Token 重复使用视为泄露信号，必须撤销整个 family。 |
+| Delegated Access Token | 受委托访问令牌 | System 为 Agent 代表当前用户调用特定 owner 能力签发的短期、限 audience 和 Scope 令牌。 | 不改变原用户和租户；可绑定 AgentRun / ToolCall 用于审计。 |
 
 ## Cleanup 与生命周期
 

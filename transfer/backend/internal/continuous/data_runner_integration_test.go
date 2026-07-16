@@ -20,11 +20,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sasl/plain"
 	postgresdriver "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
-func TestIntegrationContinuousKafkaToPostgresPauseResumeStop(t *testing.T) {
+func TestIntegrationContinuousKafkaToPostgresMultiWorkerFailoverPauseResumeStop(t *testing.T) {
 	if os.Getenv("ADDP_CONTINUOUS_E2E") != "1" {
 		t.Skip("set ADDP_CONTINUOUS_E2E=1 to run Kafka -> PostgreSQL continuous integration test")
 	}
@@ -51,10 +52,7 @@ func TestIntegrationContinuousKafkaToPostgresPauseResumeStop(t *testing.T) {
 	}
 
 	kafkaInfo := continuousKafkaIntegrationConnInfo()
-	producer, err := kgo.NewClient(
-		kgo.SeedBrokers(strings.Split(engineplugin.GetString(kafkaInfo, "bootstrap_servers"), ",")...),
-		kgo.RecordPartitioner(kgo.ManualPartitioner()),
-	)
+	producer, err := newContinuousIntegrationProducer(kafkaInfo)
 	if err != nil {
 		t.Fatalf("create Kafka producer: %v", err)
 	}
@@ -116,24 +114,38 @@ func TestIntegrationContinuousKafkaToPostgresPauseResumeStop(t *testing.T) {
 		30: {Type: "kafka", ConnInfo: kafkaInfo, Capabilities: &sourceCaps},
 		8:  {Type: "postgresql", ConnInfo: targetInfo, Capabilities: &targetCaps},
 	}
-	leaseRepo := repository.NewRuntimeLeaseRepository(infraDB)
+	leaseRepo := repository.NewRuntimeLeaseRepository(infraDB, repository.ContinuousRecoveryPolicy{
+		InitialBackoff: time.Second, MaxBackoff: 4 * time.Second, MaxFailures: 3,
+		CircuitOpenTime: 10 * time.Second, StabilityWindow: 30 * time.Second,
+	})
 	runner := &DataSessionRunner{
 		Resolver: resolver, States: repository.NewSyncStateRepository(infraDB), Progress: leaseRepo,
 		PollTimeout: 100 * time.Millisecond, MaxBytes: 4 << 20, DiagnosticsInterval: 50 * time.Millisecond,
 	}
-	supervisor, err := NewSupervisor(leaseRepo, runner, Config{
-		OwnerInstanceID: "continuous-e2e-worker", Capacity: 1, LeaseDuration: 2 * time.Second,
-		HeartbeatInterval: 100 * time.Millisecond, ClaimInterval: 20 * time.Millisecond,
-	}, nil)
-	if err != nil {
-		t.Fatalf("NewSupervisor() error = %v", err)
+	workerStops := map[string]context.CancelFunc{}
+	workerDone := map[string]chan error{}
+	for _, owner := range []string{"continuous-e2e-worker-a", "continuous-e2e-worker-b"} {
+		supervisor, err := NewSupervisor(leaseRepo, runner, Config{
+			OwnerInstanceID: owner, Capacity: 1, LeaseDuration: 2 * time.Second,
+			HeartbeatInterval: 100 * time.Millisecond, ClaimInterval: 20 * time.Millisecond,
+		}, nil)
+		if err != nil {
+			t.Fatalf("NewSupervisor(%s) error = %v", owner, err)
+		}
+		supervisorCtx, stopSupervisor := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		workerStops[owner] = stopSupervisor
+		workerDone[owner] = done
+		go func() { done <- supervisor.Run(supervisorCtx) }()
 	}
-	supervisorCtx, stopSupervisor := context.WithCancel(ctx)
-	supervisorDone := make(chan error, 1)
-	go func() { supervisorDone <- supervisor.Run(supervisorCtx) }()
 	defer func() {
-		stopSupervisor()
-		<-supervisorDone
+		for owner, stop := range workerStops {
+			if workerDone[owner] == nil {
+				continue
+			}
+			stop()
+			<-workerDone[owner]
+		}
 	}()
 
 	produceContinuousRecords(t, ctx, producer,
@@ -146,7 +158,7 @@ func TestIntegrationContinuousKafkaToPostgresPauseResumeStop(t *testing.T) {
 	})
 	waitContinuousCondition(t, ctx, "healthy continuous position diagnostics", func() bool {
 		diagnostics := integrationContinuousDiagnostics(infraDB, firstExecution.ExecutionID)
-		if diagnostics["health"] != continuousHealthHealthy {
+		if diagnostics["health"] != continuousHealthHealthy || diagnostics["checkpoint_health"] != continuousHealthHealthy {
 			return false
 		}
 		partitions, _ := diagnostics["partitions"].(map[string]interface{})
@@ -154,16 +166,42 @@ func TestIntegrationContinuousKafkaToPostgresPauseResumeStop(t *testing.T) {
 		return fmt.Sprint(partition0["latest_offset"]) == "2" && fmt.Sprint(partition0["next_offset"]) == "2"
 	})
 
+	var firstLease models.RuntimeLease
+	if err := infraDB.Where("task_id = ?", task.ID).First(&firstLease).Error; err != nil {
+		t.Fatalf("load first runtime lease: %v", err)
+	}
+	firstOwner := firstLease.OwnerInstanceID
+	workerStops[firstOwner]()
+	<-workerDone[firstOwner]
+	workerDone[firstOwner] = nil
+
+	var failoverExecution commonExecution.TaskExecution
+	waitContinuousCondition(t, ctx, "second worker claims recovery execution", func() bool {
+		var lease models.RuntimeLease
+		if err := infraDB.Where("task_id = ?", task.ID).First(&lease).Error; err != nil ||
+			lease.OwnerInstanceID == firstOwner || lease.FencingToken <= firstLease.FencingToken {
+			return false
+		}
+		return infraDB.Where("execution_id = ? AND status = ?", lease.ExecutionID, commonExecution.ExecutionStatusRunning).
+			First(&failoverExecution).Error == nil
+	})
+	produceContinuousRecords(t, ctx, producer,
+		&kgo.Record{Topic: topic, Partition: 0, Key: []byte("4"), Value: []byte(`{"id":4,"name":"after-failover"}`)},
+	)
+	waitContinuousCondition(t, ctx, "second worker continues from committed offsets", func() bool {
+		return integrationTargetRows(targetDB, targetSchema) == 3 && integrationTargetName(targetDB, targetSchema, 4) == "after-failover"
+	})
+
 	if err := taskRepo.SetContinuousDesiredState(ctx, task.ID, task.TenantID, models.TaskDesiredStatePaused, "paused"); err != nil {
 		t.Fatalf("pause continuous task: %v", err)
 	}
-	waitContinuousExecutionStatus(t, ctx, infraDB, firstExecution.ExecutionID, commonExecution.ExecutionStatusCancelled, "paused")
+	waitContinuousExecutionStatus(t, ctx, infraDB, failoverExecution.ExecutionID, commonExecution.ExecutionStatusCancelled, "paused")
 	produceContinuousRecords(t, ctx, producer,
 		&kgo.Record{Topic: topic, Partition: 0, Key: []byte("3"), Value: []byte(`{"id":3,"name":"paused"}`)},
 	)
 	time.Sleep(300 * time.Millisecond)
-	if count := integrationTargetRows(targetDB, targetSchema); count != 2 {
-		t.Fatalf("target rows after pause = %d, want 2", count)
+	if count := integrationTargetRows(targetDB, targetSchema); count != 3 {
+		t.Fatalf("target rows after pause = %d, want 3", count)
 	}
 
 	secondExecution := continuousIntegrationExecution(task, uuid.NewString())
@@ -171,7 +209,7 @@ func TestIntegrationContinuousKafkaToPostgresPauseResumeStop(t *testing.T) {
 		t.Fatalf("resume continuous execution: %v", err)
 	}
 	waitContinuousCondition(t, ctx, "resume from committed Kafka offsets", func() bool {
-		return integrationTargetRows(targetDB, targetSchema) == 3
+		return integrationTargetRows(targetDB, targetSchema) == 4
 	})
 	if err := taskRepo.SetContinuousDesiredState(ctx, task.ID, task.TenantID, models.TaskDesiredStateStopped, "stopped"); err != nil {
 		t.Fatalf("stop continuous task: %v", err)
@@ -184,6 +222,11 @@ func TestIntegrationContinuousKafkaToPostgresPauseResumeStop(t *testing.T) {
 	}
 	if len(states) != 2 {
 		t.Fatalf("sync states = %#v, want two partitions", states)
+	}
+	for _, state := range states {
+		if state.PositionCommittedAt == nil {
+			t.Fatalf("partition %q has no real position commit time", state.Partition)
+		}
 	}
 }
 
@@ -241,13 +284,14 @@ func TestIntegrationContinuousKafkaRetentionHealthTransitions(t *testing.T) {
 	produceContinuousDiagnosticRecords(t, ctx, producer, topic, 100)
 	sampledAt := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
 	committed := map[string]engineplugin.ChangeStreamPosition{"0": kafkaOffsetPosition("0", 10)}
-	first, samples := collectContinuousDiagnostics(ctx, reader, committed, nil, sampledAt, 10*time.Second, 2*time.Second)
+	committedAt := map[string]time.Time{"0": sampledAt}
+	first, samples := collectContinuousDiagnostics(ctx, reader, committed, committedAt, nil, sampledAt, 10*time.Second, 2*time.Second, time.Minute)
 	if first.Health != continuousHealthUnknown {
 		t.Fatalf("first diagnostics health = %q, want unknown", first.Health)
 	}
 
 	produceContinuousDiagnosticRecords(t, ctx, producer, topic, 20)
-	second, samples := collectContinuousDiagnostics(ctx, reader, committed, samples, sampledAt.Add(10*time.Second), 10*time.Second, 2*time.Second)
+	second, samples := collectContinuousDiagnostics(ctx, reader, committed, committedAt, samples, sampledAt.Add(10*time.Second), 10*time.Second, 2*time.Second, time.Minute)
 	partition := second.Partitions["0"]
 	if second.Health != continuousHealthDegraded || partition.RetentionHorizonSeconds == nil || *partition.RetentionHorizonSeconds != 5 {
 		t.Fatalf("degraded diagnostics = %#v", second)
@@ -255,7 +299,7 @@ func TestIntegrationContinuousKafkaRetentionHealthTransitions(t *testing.T) {
 
 	produceContinuousDiagnosticRecords(t, ctx, producer, topic, 10)
 	committed["0"] = kafkaOffsetPosition("0", 1)
-	third, _ := collectContinuousDiagnostics(ctx, reader, committed, samples, sampledAt.Add(20*time.Second), 10*time.Second, 2*time.Second)
+	third, _ := collectContinuousDiagnostics(ctx, reader, committed, committedAt, samples, sampledAt.Add(20*time.Second), 10*time.Second, 2*time.Second, time.Minute)
 	partition = third.Partitions["0"]
 	if third.Health != continuousHealthCritical || partition.RetentionHorizonSeconds == nil || *partition.RetentionHorizonSeconds != 1 {
 		t.Fatalf("critical diagnostics = %#v", third)
@@ -282,10 +326,32 @@ func integrationContinuousDiagnostics(db *gorm.DB, executionID string) map[strin
 }
 
 func continuousKafkaIntegrationConnInfo() engineplugin.ConnectionInfo {
-	return engineplugin.ConnectionInfo{
+	info := engineplugin.ConnectionInfo{
 		"bootstrap_servers": integrationEnv("ADDP_TEST_KAFKA_BOOTSTRAP_SERVERS", "localhost:19092"),
-		"security_protocol": "plaintext",
+		"security_protocol": integrationEnv("ADDP_TEST_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext"),
 	}
+	for _, key := range []string{"username", "password", "sasl_mechanism"} {
+		if value := integrationEnv("ADDP_TEST_KAFKA_"+strings.ToUpper(key), ""); value != "" {
+			info[key] = value
+		}
+	}
+	return info
+}
+
+func newContinuousIntegrationProducer(info engineplugin.ConnectionInfo) (*kgo.Client, error) {
+	opts := []kgo.Opt{
+		kgo.SeedBrokers(strings.Split(engineplugin.GetString(info, "bootstrap_servers"), ",")...),
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+	}
+	protocol := strings.ToLower(strings.TrimSpace(engineplugin.GetString(info, "security_protocol")))
+	if protocol == "sasl_plaintext" {
+		username := engineplugin.GetString(info, "username")
+		password := engineplugin.GetString(info, "password")
+		opts = append(opts, kgo.SASL(plain.Plain(func(context.Context) (plain.Auth, error) {
+			return plain.Auth{User: username, Pass: password}, nil
+		})))
+	}
+	return kgo.NewClient(opts...)
 }
 
 func continuousBusinessPostgresConnInfo() engineplugin.ConnectionInfo {
@@ -316,7 +382,7 @@ func continuousIntegrationExecution(task models.TransferTask, executionID string
 		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
 		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), SourceTaskName: &task.Name,
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
-		TriggeredBy: &triggeredBy, ExecutionConfig: task.Config, StartedAt: &now, CreatedAt: now, UpdatedAt: now,
+		TriggeredBy: &triggeredBy, ExecutionConfig: task.Config, CreatedAt: now, UpdatedAt: now,
 	}
 }
 

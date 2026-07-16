@@ -3,12 +3,15 @@
 
 基于 WorkflowPipeline 的多阶段工作流生成
 """
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, Dict, Any
 
 from pipelines.workflow_pipeline import WorkflowPipeline
 from services.llm_service import llm_service
+from addp_common.auth import AuthorizationContext
+from dependencies.auth import require_user
+from models.workflow_models import WorkflowResourceFact
 
 # TODO: Copilot 暂时不需要保存对话历史，注释掉以避免数据库依赖
 # from services.memory_service import memory_service
@@ -26,10 +29,7 @@ def get_workflow_pipeline() -> WorkflowPipeline:
     if _workflow_pipeline is None:
         print("[API] 初始化 WorkflowPipeline...")
         llm = llm_service.get_llm()
-        _workflow_pipeline = WorkflowPipeline(
-            llm=llm,
-            enable_data_source_understanding=True  # 启用数据源理解
-        )
+        _workflow_pipeline = WorkflowPipeline(llm=llm)
         print("[API] ✅ WorkflowPipeline 初始化完成")
 
     return _workflow_pipeline
@@ -41,9 +41,10 @@ class WorkflowGenerationRequest(BaseModel):
 
     query: str
     conversation_id: Optional[int] = None
-    tenant_id: int = 1
-    user_id: int = 1
     workflow_engine_id: int  # 工作流引擎实例 ID；算子发现、详情和验证均以该实例为准
+    resources: list[WorkflowResourceFact] = Field(
+        description="由 owner Tool 验证的全部输入资源事实；不允许 Copilot 自行搜索或拼接 locator"
+    )
 
 
 class WorkflowGenerationResponse(BaseModel):
@@ -53,8 +54,6 @@ class WorkflowGenerationResponse(BaseModel):
     explanation: Optional[str] = None
     conversation_id: Optional[int] = None
 
-    # 数据源候选（当 status=need_clarification 时）
-    data_source_candidates: Optional[list] = None
     clarification_reason: Optional[str] = None
     message: Optional[str] = None
 
@@ -64,7 +63,7 @@ class WorkflowGenerationResponse(BaseModel):
     suggestions: Optional[list] = None
 
     # 额外信息
-    data_source: Optional[Dict] = None
+    resources: Optional[list[Dict[str, Any]]] = None
     selected_operators: Optional[list] = None
     validation_result: Optional[Dict] = None
 
@@ -75,7 +74,10 @@ class WorkflowGenerationResponse(BaseModel):
     summary="生成工作流 | Generate Workflow",
     responses={500: {"description": "工作流生成失败 | Workflow generation failed"}},
 )
-async def generate_workflow(request: WorkflowGenerationRequest):
+async def generate_workflow(
+    request: WorkflowGenerationRequest,
+    user: AuthorizationContext = Depends(require_user),
+):
     """
     生成工作流（基于 WorkflowPipeline）
 
@@ -90,8 +92,8 @@ async def generate_workflow(request: WorkflowGenerationRequest):
     print(f"\n{'='*80}")
     print(f"[API] 收到工作流生成请求")
     print(f"[API] 用户查询: {request.query}")
-    print(f"[API] 租户 ID: {request.tenant_id}")
-    print(f"[API] 用户 ID: {request.user_id}")
+    print(f"[API] 租户 ID: {user.tenant_id}")
+    print(f"[API] 用户 ID: {user.user_id}")
     print(f"[API] 对话 ID: {request.conversation_id}")
     print(f"[API] 工作流引擎 ID: {request.workflow_engine_id}")
     print(f"{'='*80}\n")
@@ -104,8 +106,9 @@ async def generate_workflow(request: WorkflowGenerationRequest):
         print(f"[API] 调用 WorkflowPipeline...")
         result = await pipeline.run(
             query=request.query,
-            tenant_id=request.tenant_id,
-            workflow_engine_id=request.workflow_engine_id
+            tenant_id=user.tenant_id,
+            workflow_engine_id=request.workflow_engine_id,
+            resources=request.resources,
         )
         print(f"[API] ✅ WorkflowPipeline 返回结果")
 
@@ -122,7 +125,7 @@ async def generate_workflow(request: WorkflowGenerationRequest):
                 workflow=result["workflow"],
                 explanation=result.get("explanation", "工作流生成成功"),
                 conversation_id=conversation_id,
-                data_source=result.get("data_source"),
+                resources=result.get("resources"),
                 selected_operators=result.get("selected_operators"),
                 validation_result=result.get("validation_result")
             )
@@ -133,16 +136,13 @@ async def generate_workflow(request: WorkflowGenerationRequest):
             return response
 
         elif status == "need_clarification":
-            # 数据源模糊，需要用户选择
             response = WorkflowGenerationResponse(
                 status="need_clarification",
-                data_source_candidates=result.get("data_source_candidates", []),
                 clarification_reason=result.get("clarification_reason"),
-                message=result.get("message", "请选择数据源")
+                message=result.get("message", "请补充已验证的资源事实")
             )
 
-            print(f"[API] ⚠️  数据源模糊，返回候选项")
-            print(f"[API] 候选数量: {len(result.get('data_source_candidates', []))}")
+            print(f"[API] ⚠️  资源事实需要澄清")
             return response
 
         elif status == "validation_failed":
@@ -154,7 +154,7 @@ async def generate_workflow(request: WorkflowGenerationRequest):
                 warnings=result.get("warnings", []),
                 suggestions=result.get("suggestions", []),
                 message=result.get("message", "工作流生成但存在问题"),
-                data_source=result.get("data_source"),
+                resources=result.get("resources"),
                 selected_operators=result.get("selected_operators"),
                 validation_result=result.get("validation_result")
             )

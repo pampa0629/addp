@@ -16,7 +16,7 @@ Python 共享模块，为 ADDP 平台的 Python 后端提供统一客户端、�
 ## 使用示例
 
 ```python
-from addp_common.client import SystemClient, DevelopClient, MetaClient
+from addp_common.client import SystemClient, DevelopClient, ManagerClient
 
 # 服务间调用 (使用 Internal API Key)
 system = SystemClient(
@@ -28,17 +28,17 @@ engines = await system.list_internal_engines()
 # 用户请求 (使用 JWT Token)
 develop = DevelopClient(
     base_url="http://localhost:8000",
-    user_token="user-jwt-token"
+    user_token="user-access-token"
 )
 workflow_engines = await develop.list_workflow_engines()
 operators = await develop.list_operators(workflow_engines[0]["id"])
 
-# 元数据搜索
-meta = MetaClient(
-    base_url="http://localhost:8280",
-    internal_api_key="your-internal-key"
+# 当前用户数据搜索
+manager = ManagerClient(
+    base_url="http://localhost:8000",
+    user_token="user-access-token"
 )
-results = await meta.search_metadata("城市", limit=10)
+results = await manager.search("城市", page_size=10)
 ```
 
 ## 客户端列表
@@ -48,6 +48,22 @@ results = await meta.search_metadata("城市", limit=10)
 - `MetaClient` - Meta 模块 (元数据搜索)
 - `DevelopClient` - Develop 模块 (SQL、工作流、算子)
 - `ManagerClient` - Manager 模块 (数据管理、预览)
+- `CopilotClient` - Copilot 模块（结构化生成）
+
+## Tool 与 CLI
+
+`addp_common.tools.manifest.json` 定义稳定 Tool 契约，`ToolExecutor` 只通过上述 SDK Client 调用 owner API。安装后可供 Codex 等本地 Agent 使用：
+
+```bash
+export ADDP_BASE_URL=http://localhost:8000
+export ADDP_TOKEN='<user-jwt-token>'
+
+addp tools list
+addp tools get workflow.validate
+addp tool call data.search --arguments '{"query":"城市","limit":10}'
+```
+
+成功响应的 stdout 是 Tool 结果紧凑 JSON；失败响应也是标准错误 JSON，并返回非零 exit code。
 
 ## 认证方式
 

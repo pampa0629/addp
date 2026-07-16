@@ -15,6 +15,788 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/alert-rule-targets": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Alert Rules"
+                ],
+                "summary": "查询可配置告警的任务 | List alert rule targets",
+                "responses": {
+                    "200": {
+                        "description": "任务列表 | Task list",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_monitor_internal_service.AlertRuleTarget"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/alert-rules": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Alert Rules"
+                ],
+                "summary": "查询告警规则 | List alert rules",
+                "responses": {
+                    "200": {
+                        "description": "告警规则列表 | Alert rule list",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.AlertRuleResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Alert Rules"
+                ],
+                "summary": "创建告警规则 | Create alert rule",
+                "parameters": [
+                    {
+                        "description": "告警规则 | Alert rule",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.CreateAlertRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "已创建规则 | Created rule",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.AlertRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/alert-rules/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Alert Rules"
+                ],
+                "summary": "删除告警规则 | Delete alert rule",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "规则 ID | Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.DeleteAlertRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Alert Rules"
+                ],
+                "summary": "更新告警规则 | Update alert rule",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "规则 ID | Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "规则变更 | Rule changes",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.UpdateAlertRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已更新规则 | Updated rule",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.AlertRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/alerts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Alerts"
+                ],
+                "summary": "查询告警事件 | List alert incidents",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "告警状态 | Alert status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "严重级别 | Severity",
+                        "name": "severity",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "模块 | Module",
+                        "name": "module",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "告警列表 | Alert list",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ListAlertsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/alerts/{id}/acknowledge": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Alerts"
+                ],
+                "summary": "确认告警 | Acknowledge alert",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "告警 ID | Alert ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已确认告警 | Acknowledged alert",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.AlertIncidentResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/alerts/{id}/suppress": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Alerts"
+                ],
+                "summary": "抑制告警通知 | Suppress alert notifications",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "告警 ID | Alert ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "抑制截止时间 | Suppression deadline",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.SuppressAlertRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已抑制告警 | Suppressed alert",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.AlertIncidentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/email-deliveries": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "分页查询当前租户的邮件 outbox 和投递审计记录 | List email outbox and delivery audit records for the current tenant",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Emails"
+                ],
+                "summary": "查询邮件投递 | List email deliveries",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "邮件目标 ID | Email destination ID",
+                        "name": "destination_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "投递状态 | Delivery status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "生命周期事件类型 | Lifecycle event type",
+                        "name": "event_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "投递记录 | Delivery records",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ListEmailDeliveriesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/email-deliveries/{delivery_id}/retry": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "只允许重投 dead delivery；复用原 delivery_id、主题和正文，并使用目标当前收件人开启新的尝试周期 | Retry only a dead delivery; reuse its delivery_id, subject, and body with the destination's current recipients in a new attempt cycle",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Emails"
+                ],
+                "summary": "手动重投邮件 delivery | Manually retry email delivery",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "邮件投递 ID | Email delivery ID",
+                        "name": "delivery_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已重新入队 | Requeued delivery",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.EmailDeliveryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/email-destinations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "查询当前租户的告警邮件目标；SMTP Relay 配置不属于租户 API | List alert email destinations for the current tenant; SMTP Relay settings are not part of the tenant API",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Emails"
+                ],
+                "summary": "查询邮件目标 | List email destinations",
+                "responses": {
+                    "200": {
+                        "description": "邮件目标列表 | Email destination list",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.EmailDestinationResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "创建当前租户的告警邮件目标；只保存收件人和订阅事件 | Create an alert email destination for the current tenant; only recipients and event subscriptions are stored",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Emails"
+                ],
+                "summary": "创建邮件目标 | Create email destination",
+                "parameters": [
+                    {
+                        "description": "邮件目标 | Email destination",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.CreateEmailDestinationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "已创建目标 | Created destination",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.EmailDestinationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/email-destinations/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除当前租户目标并取消尚未领取的邮件投递；历史投递审计保留 | Delete a destination and cancel its unclaimed email deliveries; historical delivery audit is preserved",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Emails"
+                ],
+                "summary": "删除邮件目标 | Delete email destination",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "邮件目标 ID | Email destination ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "目标已删除 | Destination deleted",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.EmailOperationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "部分更新当前租户的邮件目标 | Partially update an email destination for the current tenant",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Emails"
+                ],
+                "summary": "更新邮件目标 | Update email destination",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "邮件目标 ID | Email destination ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新内容 | Update fields",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.UpdateEmailDestinationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已更新目标 | Updated destination",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.EmailDestinationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/email-destinations/{id}/test": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "使用目标当前收件人和平台 SMTP Relay 同步发送独立测试邮件；不创建告警事件或正式投递记录 | Send a standalone test email synchronously using the destination's current recipients and the platform SMTP Relay; no alert event or delivery record is created",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Emails"
+                ],
+                "summary": "测试邮件目标 | Test email destination",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "邮件目标 ID | Email destination ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "测试投递成功 | Test delivery succeeded",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.EmailTestResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "SMTP 投递失败 | SMTP delivery failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "SMTP 未配置 | SMTP is not configured",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/executions": {
             "get": {
                 "security": [
@@ -418,7 +1200,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -458,13 +1240,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -492,6 +1274,408 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/models.TaskProvider"
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/webhook-deliveries": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "分页查询当前租户的 Webhook outbox 和投递审计记录 | List webhook outbox and delivery audit records for the current tenant",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Webhooks"
+                ],
+                "summary": "查询 Webhook 投递 | List webhook deliveries",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Webhook 目标 ID | Webhook destination ID",
+                        "name": "destination_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "投递状态 | Delivery status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "生命周期事件类型 | Lifecycle event type",
+                        "name": "event_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "投递记录 | Delivery records",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ListWebhookDeliveriesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/webhook-deliveries/{delivery_id}/retry": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "只允许重投 dead delivery；复用原 delivery_id 和 payload，并使用目标当前 URL/secret 开启新的尝试周期 | Retry only a dead delivery; reuse its delivery_id and payload with the destination's current URL and secret in a new attempt cycle",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Webhooks"
+                ],
+                "summary": "手动重投 Webhook delivery | Manually retry webhook delivery",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Webhook 投递 ID | Webhook delivery ID",
+                        "name": "delivery_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已重新入队 | Requeued delivery",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.WebhookDeliveryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "投递 ID 无效 | Invalid delivery ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "投递不存在 | Delivery not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "投递或目标当前不可重投 | Delivery or destination is not retryable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误 | Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/webhook-destinations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "查询当前租户的告警 Webhook 目标；secret 只返回是否已配置，不返回明文或密文 | List alert webhook destinations for the current tenant; secrets are never returned",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Webhooks"
+                ],
+                "summary": "查询 Webhook 目标 | List webhook destinations",
+                "responses": {
+                    "200": {
+                        "description": "Webhook 目标列表 | Webhook destination list",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.WebhookDestinationResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "创建当前租户的 HMAC 签名 Webhook 目标；secret 使用平台加密密钥保存且不会返回 | Create an HMAC-signed webhook destination; the secret is encrypted and never returned",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Webhooks"
+                ],
+                "summary": "创建 Webhook 目标 | Create webhook destination",
+                "parameters": [
+                    {
+                        "description": "Webhook 目标 | Webhook destination",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.CreateWebhookDestinationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "已创建目标 | Created destination",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.WebhookDestinationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/webhook-destinations/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除当前租户目标并取消尚未领取的投递；历史投递审计保留 | Delete a destination and cancel its unclaimed deliveries; historical delivery audit is preserved",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Webhooks"
+                ],
+                "summary": "删除 Webhook 目标 | Delete webhook destination",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Webhook 目标 ID | Webhook destination ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "目标已删除 | Destination deleted",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.WebhookOperationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "目标 ID 无效 | Invalid destination ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "目标不存在 | Destination not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误 | Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "部分更新当前租户的 Webhook 目标；省略 secret 表示保留现有 secret | Partially update a webhook destination; omit secret to keep the current secret",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Webhooks"
+                ],
+                "summary": "更新 Webhook 目标 | Update webhook destination",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Webhook 目标 ID | Webhook destination ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新内容 | Update fields",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.UpdateWebhookDestinationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已更新目标 | Updated destination",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.WebhookDestinationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/webhook-destinations/{id}/test": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "使用目标当前 URL 和 secret 同步发送独立测试 payload；不创建告警事件或正式投递记录 | Send a standalone test payload synchronously with the destination's current URL and secret; no alert event or delivery record is created",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor Webhooks"
+                ],
+                "summary": "测试 Webhook 目标 | Test webhook destination",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Webhook 目标 ID | Webhook destination ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "测试投递成功 | Test delivery succeeded",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.WebhookTestResult"
+                        }
+                    },
+                    "400": {
+                        "description": "目标 ID 无效 | Invalid destination ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "目标不存在 | Destination not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误 | Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "接收端投递失败 | Receiver delivery failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 }
@@ -619,6 +1803,287 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_monitor_internal_models.AlertIncident": {
+            "type": "object",
+            "properties": {
+                "acknowledged_at": {
+                    "type": "string"
+                },
+                "acknowledged_by": {
+                    "type": "string"
+                },
+                "alert_rule_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "details": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "fingerprint": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_observed_at": {
+                    "type": "string"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "opened_at": {
+                    "type": "string"
+                },
+                "resolved_at": {
+                    "type": "string"
+                },
+                "rule_id": {
+                    "type": "string"
+                },
+                "rule_name": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "signal_code": {
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "suppressed_until": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_models.EmailDelivery": {
+            "type": "object",
+            "properties": {
+                "alert_event_id": {
+                    "type": "integer"
+                },
+                "attempt_count": {
+                    "type": "integer"
+                },
+                "claimed_by": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "delivered_at": {
+                    "type": "string"
+                },
+                "delivery_id": {
+                    "type": "string"
+                },
+                "destination_id": {
+                    "type": "integer"
+                },
+                "destination_name": {
+                    "type": "string"
+                },
+                "event_type": {
+                    "type": "string"
+                },
+                "html_body": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "incident_id": {
+                    "type": "integer"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "lease_expires_at": {
+                    "type": "string"
+                },
+                "manual_retry_count": {
+                    "type": "integer"
+                },
+                "next_attempt_at": {
+                    "type": "string"
+                },
+                "recipients": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "retry_base_attempt_count": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "subject": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "text_body": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_models.NotificationRoute": {
+            "type": "object",
+            "properties": {
+                "alert_rule_id": {
+                    "type": "integer"
+                },
+                "channel": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "destination_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_models.WebhookDelivery": {
+            "type": "object",
+            "properties": {
+                "alert_event_id": {
+                    "type": "integer"
+                },
+                "attempt_count": {
+                    "type": "integer"
+                },
+                "claimed_by": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "delivered_at": {
+                    "type": "string"
+                },
+                "delivery_id": {
+                    "type": "string"
+                },
+                "destination_id": {
+                    "type": "integer"
+                },
+                "destination_name": {
+                    "type": "string"
+                },
+                "event_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "incident_id": {
+                    "type": "integer"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_http_status": {
+                    "type": "integer"
+                },
+                "lease_expires_at": {
+                    "type": "string"
+                },
+                "manual_retry_count": {
+                    "type": "integer"
+                },
+                "next_attempt_at": {
+                    "type": "string"
+                },
+                "payload": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "request_url": {
+                    "type": "string"
+                },
+                "retry_base_attempt_count": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.AlertRuleRouteInput": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "destination_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.AlertRuleTarget": {
+            "type": "object",
+            "properties": {
+                "module": {
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.EmailTestResult": {
+            "type": "object",
+            "properties": {
+                "delivery_id": {
+                    "type": "string"
+                },
+                "recipients": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_service.ExecutionTreeNode": {
             "type": "object",
             "properties": {
@@ -649,6 +2114,75 @@ const docTemplate = `{
                 "status": {
                     "description": "\"up\", \"down\", \"unknown\"",
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ListAlertsResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_models.AlertIncident"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ListEmailDeliveriesResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_models.EmailDelivery"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ListWebhookDeliveriesResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_models.WebhookDelivery"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
                 }
             }
         },
@@ -741,16 +2275,655 @@ const docTemplate = `{
                 }
             }
         },
-        "models.ErrorResponse": {
+        "github_com_addp_monitor_internal_service.WebhookTestResult": {
             "type": "object",
             "properties": {
-                "code": {
-                    "type": "integer",
-                    "example": 400
+                "delivery_id": {
+                    "type": "string"
                 },
+                "http_status": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.AlertIncidentResponse": {
+            "type": "object",
+            "properties": {
+                "acknowledged_at": {
+                    "type": "string"
+                },
+                "acknowledged_by": {
+                    "type": "string"
+                },
+                "alert_rule_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "details": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "fingerprint": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_observed_at": {
+                    "type": "string"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "opened_at": {
+                    "type": "string"
+                },
+                "resolved_at": {
+                    "type": "string"
+                },
+                "rule_id": {
+                    "type": "string"
+                },
+                "rule_name": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "signal_code": {
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "suppressed_until": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.AlertRuleResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "failure_threshold": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "routes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_models.NotificationRoute"
+                    }
+                },
+                "rule_id": {
+                    "type": "string"
+                },
+                "rule_type": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.CreateAlertRuleRequest": {
+            "type": "object",
+            "required": [
+                "enabled",
+                "module",
+                "name",
+                "rule_type",
+                "severity",
+                "source_task_id",
+                "task_type"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "failure_threshold": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "module": {
+                    "type": "string",
+                    "example": "transfer"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "核心同步任务连续失败"
+                },
+                "routes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.AlertRuleRouteInput"
+                    }
+                },
+                "rule_type": {
+                    "type": "string",
+                    "enum": [
+                        "last_terminal_failed",
+                        "last_terminal_timeout",
+                        "consecutive_failures"
+                    ]
+                },
+                "severity": {
+                    "type": "string",
+                    "enum": [
+                        "warning",
+                        "critical"
+                    ]
+                },
+                "source_task_id": {
+                    "type": "string",
+                    "example": "43"
+                },
+                "source_task_name": {
+                    "type": "string",
+                    "example": "生产数据同步"
+                },
+                "task_type": {
+                    "type": "string",
+                    "example": "sync"
+                }
+            }
+        },
+        "internal_api.CreateEmailDestinationRequest": {
+            "type": "object",
+            "required": [
+                "event_types",
+                "name",
+                "recipients"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "event_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "opened",
+                        "escalated",
+                        "resolved"
+                    ]
+                },
+                "name": {
+                    "type": "string",
+                    "example": "值班邮箱"
+                },
+                "recipients": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "ops@example.com",
+                        "oncall@example.com"
+                    ]
+                }
+            }
+        },
+        "internal_api.CreateWebhookDestinationRequest": {
+            "type": "object",
+            "required": [
+                "event_types",
+                "name",
+                "secret",
+                "url"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "event_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "opened",
+                        "resolved"
+                    ]
+                },
+                "name": {
+                    "type": "string",
+                    "example": "运维平台"
+                },
+                "secret": {
+                    "type": "string",
+                    "example": "replace-with-a-random-secret"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://ops.example.com/hooks/addp"
+                }
+            }
+        },
+        "internal_api.DeleteAlertRuleResponse": {
+            "type": "object",
+            "properties": {
                 "message": {
                     "type": "string",
-                    "example": "请求参数错误"
+                    "example": "告警规则已删除"
+                }
+            }
+        },
+        "internal_api.EmailDeliveryResponse": {
+            "type": "object",
+            "properties": {
+                "alert_event_id": {
+                    "type": "integer"
+                },
+                "attempt_count": {
+                    "type": "integer"
+                },
+                "claimed_by": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "delivered_at": {
+                    "type": "string"
+                },
+                "delivery_id": {
+                    "type": "string"
+                },
+                "destination_id": {
+                    "type": "integer"
+                },
+                "destination_name": {
+                    "type": "string"
+                },
+                "event_type": {
+                    "type": "string"
+                },
+                "html_body": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "incident_id": {
+                    "type": "integer"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "lease_expires_at": {
+                    "type": "string"
+                },
+                "manual_retry_count": {
+                    "type": "integer"
+                },
+                "next_attempt_at": {
+                    "type": "string"
+                },
+                "recipients": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "retry_base_attempt_count": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "subject": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "text_body": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.EmailDestinationResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "event_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "recipients": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.EmailOperationResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "邮件目标已删除"
+                }
+            }
+        },
+        "internal_api.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "告警不存在或已经恢复"
+                }
+            }
+        },
+        "internal_api.SuppressAlertRequest": {
+            "type": "object",
+            "required": [
+                "suppressed_until"
+            ],
+            "properties": {
+                "suppressed_until": {
+                    "type": "string",
+                    "example": "2026-07-16T08:00:00Z"
+                }
+            }
+        },
+        "internal_api.UpdateAlertRuleRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "failure_threshold": {
+                    "type": "integer"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "routes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.AlertRuleRouteInput"
+                    }
+                },
+                "rule_type": {
+                    "type": "string",
+                    "enum": [
+                        "last_terminal_failed",
+                        "last_terminal_timeout",
+                        "consecutive_failures"
+                    ]
+                },
+                "severity": {
+                    "type": "string",
+                    "enum": [
+                        "warning",
+                        "critical"
+                    ]
+                },
+                "source_task_id": {
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.UpdateEmailDestinationRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "event_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "opened",
+                        "escalated",
+                        "resolved"
+                    ]
+                },
+                "name": {
+                    "type": "string",
+                    "example": "值班邮箱"
+                },
+                "recipients": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "ops@example.com",
+                        "oncall@example.com"
+                    ]
+                }
+            }
+        },
+        "internal_api.UpdateWebhookDestinationRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "event_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "opened",
+                        "escalated",
+                        "resolved"
+                    ]
+                },
+                "name": {
+                    "type": "string",
+                    "example": "运维平台"
+                },
+                "secret": {
+                    "type": "string",
+                    "example": "replace-with-a-new-random-secret"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://ops.example.com/hooks/addp"
+                }
+            }
+        },
+        "internal_api.WebhookDeliveryResponse": {
+            "type": "object",
+            "properties": {
+                "alert_event_id": {
+                    "type": "integer"
+                },
+                "attempt_count": {
+                    "type": "integer"
+                },
+                "claimed_by": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "delivered_at": {
+                    "type": "string"
+                },
+                "delivery_id": {
+                    "type": "string"
+                },
+                "destination_id": {
+                    "type": "integer"
+                },
+                "destination_name": {
+                    "type": "string"
+                },
+                "event_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "incident_id": {
+                    "type": "integer"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_http_status": {
+                    "type": "integer"
+                },
+                "lease_expires_at": {
+                    "type": "string"
+                },
+                "manual_retry_count": {
+                    "type": "integer"
+                },
+                "next_attempt_at": {
+                    "type": "string"
+                },
+                "payload": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "request_url": {
+                    "type": "string"
+                },
+                "retry_base_attempt_count": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.WebhookDestinationResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "event_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "secret_configured": {
+                    "type": "boolean"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.WebhookOperationResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "Webhook 目标已删除"
                 }
             }
         },

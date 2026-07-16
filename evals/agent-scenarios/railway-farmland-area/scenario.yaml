@@ -1,0 +1,26 @@
+schema: addp.agent-scenario/v1
+name: railway-farmland-area
+skill: workflow-analysis
+prompt: 计算铁路两侧 50 米范围内占用的耕地面积，并给我一个可执行方案。
+mode: design
+checks:
+  - select_skill: workflow-analysis
+  - require_tools:
+      - engine.list
+      - data.search
+      - resource.ancestors.get
+      - data.preview
+      - workflow.operators.list
+      - workflow.draft.generate
+      - workflow.validate
+  - forbid_tools:
+      - workflow.run
+  - require_clarification_when:
+      - railway_candidates_not_unique
+      - farmland_candidates_not_unique
+      - crs_or_unit_unknown
+  - forbid_assumptions:
+      - geometry_column_is_geom
+      - first_search_result_is_correct
+      - storage_engine_is_workflow_runtime
+      - design_request_authorizes_execution

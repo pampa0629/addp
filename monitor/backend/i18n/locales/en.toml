@@ -7,5 +7,89 @@ other = "Invalid execution ID"
 [monitor.execution.not_found]
 other = "Execution record not found"
 
+[monitor.alert.invalid_id]
+other = "Invalid alert ID"
+
+[monitor.alert.not_active]
+other = "Alert does not exist or has already resolved"
+
+[monitor.alert.invalid_suppression]
+other = "Suppression deadline must be in the future"
+
+[monitor.alert_rule.invalid]
+other = "Invalid alert rule; select a valid task, rule type, severity, and notification destinations"
+
+[monitor.alert_rule.invalid_id]
+other = "Invalid alert rule ID"
+
+[monitor.alert_rule.not_found]
+other = "Alert rule not found"
+
+[monitor.alert_rule.conflict]
+other = "Alert rule name already exists"
+
+[monitor.alert_rule.deleted]
+other = "Alert rule deleted"
+
+[monitor.alert_rule.operation_failed]
+other = "Alert rule operation failed"
+
+[monitor.webhook.invalid_destination]
+other = "Invalid webhook configuration; check the name, URL, event types, and signing secret of at least 16 bytes"
+
+[monitor.webhook.destination_not_found]
+other = "Webhook destination not found"
+
+[monitor.webhook.destination_conflict]
+other = "Webhook destination name already exists"
+
+[monitor.webhook.destination_deleted]
+other = "Webhook destination deleted; historical delivery records were preserved"
+
+[monitor.webhook.invalid_delivery]
+other = "Invalid webhook delivery ID"
+
+[monitor.webhook.delivery_not_found]
+other = "Webhook delivery not found"
+
+[monitor.webhook.delivery_not_retryable]
+other = "The delivery is not retryable; only dead deliveries with an existing enabled destination can be retried"
+
+[monitor.webhook.test_failed]
+other = "Webhook test delivery failed; check the receiver status and network configuration"
+
+[monitor.webhook.operation_failed]
+other = "Webhook operation failed"
+
+[monitor.email.invalid_destination]
+other = "Invalid email configuration; check the name, recipients, and event types, with at most 50 recipients"
+
+[monitor.email.destination_not_found]
+other = "Email destination not found"
+
+[monitor.email.destination_conflict]
+other = "Email destination name already exists"
+
+[monitor.email.destination_deleted]
+other = "Email destination deleted; historical delivery records were preserved"
+
+[monitor.email.invalid_delivery]
+other = "Invalid email delivery ID"
+
+[monitor.email.delivery_not_found]
+other = "Email delivery not found"
+
+[monitor.email.delivery_not_retryable]
+other = "The email is not retryable; only dead deliveries with an existing enabled destination can be retried"
+
+[monitor.email.sender_unavailable]
+other = "The platform SMTP Relay is not configured, so email delivery is unavailable"
+
+[monitor.email.test_failed]
+other = "Email test delivery failed; check the SMTP Relay, recipients, and network configuration"
+
+[monitor.email.operation_failed]
+other = "Email notification operation failed"
+
 [monitor.health.module_not_found]
 other = "Module not found"

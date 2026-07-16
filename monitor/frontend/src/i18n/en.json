@@ -65,6 +65,8 @@
         "source_task_name": "Task Definition Name",
         "status": "Status",
         "progress": "Progress",
+        "runtime_mode": "Execution Mode",
+        "continuous_mode": "Continuous",
         "trigger_type": "Trigger Type",
         "duration": "Duration",
         "created_at": "Created At",
@@ -102,12 +104,16 @@
           "no": "No"
         },
         "continuous": {
-          "title": "Continuous Sync Retention Window",
+          "title": "Continuous Sync Runtime",
           "sampled_at": "Diagnostics Sampled At",
           "last_committed_at": "Last Commit Time",
           "last_event_at": "Last Event Time",
           "worker": "Worker Instance",
           "diagnostics_error": "Retention Diagnostics Error",
+          "retention_health": "Retention Health",
+          "checkpoint_health": "Checkpoint Health",
+          "checkpoint_age": "Time Since Commit",
+          "checkpoint_stale_after": "Stall Threshold",
           "partition": "Partition",
           "health": "Health",
           "committed": "Committed Position",
@@ -122,6 +128,40 @@
             "degraded": "Degraded",
             "critical": "Critical",
             "unknown": "Unknown"
+          },
+          "signals": {
+            "recovery_circuit_open": {
+              "title": "Automatic Recovery Circuit Open",
+              "description": "Recovery has failed {failures} consecutive times. The next probe is allowed at {nextAttempt}; no valid runtime session is active."
+            },
+            "recovery_half_open": {
+              "title": "Recovery Probe In Progress",
+              "description": "The circuit cooldown has elapsed and the current session is verifying whether the data path can recover stably."
+            },
+            "recovery_waiting": {
+              "title": "Waiting for Automatic Recovery",
+              "description": "Recovery has failed {failures} consecutive times. The next attempt is allowed at {nextAttempt}."
+            },
+            "recovery_ready": {
+              "title": "Waiting for Worker Claim",
+              "description": "The recovery backoff has elapsed and the execution is waiting for an available continuous worker."
+            },
+            "retention_critical": {
+              "title": "Continuous Recovery Window Critical",
+              "description": "The committed position may be outside source retention, or the remaining recovery horizon is below the critical threshold."
+            },
+            "retention_degraded": {
+              "title": "Continuous Recovery Window at Risk",
+              "description": "At the current source growth rate, the estimated recovery horizon is below the degraded threshold."
+            },
+            "checkpoint_stalled": {
+              "title": "Target Commit Has Stalled",
+              "description": "Source lag remains and the real position commit has not advanced for more than {threshold}."
+            },
+            "diagnostics_error": {
+              "title": "Continuous Diagnostics Failed",
+              "description": "Transfer could not complete the latest diagnostics sample: {error}"
+            }
           }
         },
         "result": "Execution Result",
@@ -139,9 +179,10 @@
       "task_type": "Task Type",
       "source_task_id": "Task Definition ID",
       "status": "Status",
-      "retention_health": "Retention Health",
+      "observation_signals": "Observation Signals",
       "trigger_type": "Trigger",
       "progress": "Progress",
+      "continuous": "Continuous",
       "created_at": "Created At",
       "duration": "Duration",
       "actions": "Actions",
@@ -173,8 +214,7 @@
       "modules_failed": "Failed to load module health status",
       "refresh_success": "Refreshed successfully",
       "trend_failed": "Failed to load trend data",
-      "executions_failed": "Failed to load execution records",
-      "view_execution": "View execution record #{id}"
+      "executions_failed": "Failed to load execution records"
     },
     "module_status": {
       "up": "Online",
@@ -184,6 +224,180 @@
       "latency": "Latency: {ms}ms",
       "task_discovery": "Task discovery: {up}/{total}",
       "capabilities_invalid": "Invalid capabilities"
+    },
+    "alert": {
+      "title": "Alert Incidents",
+      "incident_tab": "Alert Incidents",
+      "rule_tab": "Alert Rules",
+      "signal": "Observation Signal",
+      "status": "Status",
+      "severity": "Severity",
+      "opened_at": "Opened At",
+      "last_observed_at": "Last Observed",
+      "actions": "Actions",
+      "view_execution": "View Execution",
+      "acknowledge": "Acknowledge",
+      "acknowledged": "Alert acknowledged",
+      "suppress_one_hour": "Suppress for 1 Hour",
+      "suppress_confirm": "Suppression only pauses subsequent notifications. It does not change the runtime signal or task state.",
+      "suppressed": "Alert notifications suppressed for one hour",
+      "status_values": { "open": "Open", "acknowledged": "Acknowledged", "resolved": "Resolved" },
+      "severity_values": { "critical": "Critical", "warning": "Warning" }
+    },
+    "alert_rule": {
+      "title": "Generic Task Alert Rules",
+      "description": "Evaluate real task execution terminal states. Continuous sync tasks keep their dedicated runtime alerts.",
+      "create": "Add Rule",
+      "edit": "Edit",
+      "delete": "Delete",
+      "delete_title": "Delete Alert Rule",
+      "delete_confirm": "Delete “{name}”? Active incidents will resolve first, while historical events and deliveries remain.",
+      "deleted": "Alert rule deleted",
+      "name": "Rule Name",
+      "target": "Task",
+      "target_placeholder": "Select an existing task",
+      "target_help": "Only root tasks with stable identities are shown. Continuous sync sessions and ad-hoc executions are excluded.",
+      "rule_type": "Condition",
+      "failure_threshold": "Consecutive Count",
+      "routes": "Notification Destinations",
+      "routes_help": "With no destination selected, the incident is still recorded but no webhook or email is sent.",
+      "no_routes": "Event only",
+      "enabled": "Enabled",
+      "updated_at": "Updated At",
+      "empty": "No generic task alert rule configured",
+      "saved": "Alert rule saved",
+      "enabled_success": "Alert rule enabled",
+      "disabled_success": "Alert rule disabled and its active incident resolved",
+      "operation_failed": "Alert rule operation failed",
+      "rule_types": {
+        "last_terminal_failed": "Latest execution failed",
+        "last_terminal_timeout": "Latest execution timed out",
+        "consecutive_failures": "Consecutive failures or timeouts"
+      },
+      "validation": {
+        "name": "Enter a rule name",
+        "target": "Select a task",
+        "rule_type": "Select a condition"
+      }
+    },
+    "notification": {
+      "webhook_tab": "Webhook",
+      "email_tab": "Email",
+      "event_type_values": {
+        "opened": "Alert Opened",
+        "escalated": "Severity Escalated",
+        "resolved": "Alert Resolved"
+      },
+      "status_values": {
+        "pending": "Pending",
+        "delivering": "Delivering",
+        "delivered": "Delivered",
+        "dead": "Failed",
+        "suppressed": "Suppressed",
+        "cancelled": "Cancelled"
+      }
+    },
+    "email": {
+      "title": "Email Notifications",
+      "description": "Send email through the platform SMTP Relay when an alert opens, escalates, or resolves.",
+      "create": "Add Email Destination",
+      "edit": "Edit Email Destination",
+      "test": "Test",
+      "test_success": "Test email sent to {count} recipients",
+      "delete": "Delete",
+      "delete_title": "Delete Email Destination",
+      "delete_confirm": "Delete “{name}”? Unclaimed emails will be cancelled, historical delivery records will remain, and already claimed sends may still complete.",
+      "deleted": "Email destination deleted",
+      "name": "Name",
+      "recipients": "Recipients",
+      "recipients_placeholder": "Enter an email address and press Enter",
+      "recipients_help": "Up to 50 email addresses. The SMTP Relay and sender identity are configured by the platform deployment.",
+      "event_types": "Subscribed Events",
+      "enabled": "Enabled",
+      "updated_at": "Updated At",
+      "actions": "Actions",
+      "empty": "No email destination configured",
+      "saved": "Email destination saved",
+      "enabled_success": "Email destination enabled",
+      "disabled_success": "Email destination disabled; unclaimed deliveries were cancelled",
+      "operation_failed": "Email notification operation failed",
+      "validation": {
+        "name": "Enter an email destination name",
+        "recipients": "Enter between 1 and 50 valid email addresses",
+        "event_types": "Select at least one lifecycle event"
+      },
+      "delivery": {
+        "title": "Email Delivery Records",
+        "delivery_id": "Delivery ID",
+        "destination": "Email Destination",
+        "recipients": "Recipients",
+        "subject": "Subject",
+        "event_type": "Event",
+        "status": "Status",
+        "attempts": "Attempts",
+        "manual_retries": "Manual Retries",
+        "next_attempt_at": "Next Attempt",
+        "last_error": "Last Error",
+        "created_at": "Created At",
+        "retry": "Retry",
+        "retry_title": "Manual Email Retry",
+        "retry_confirm": "Reuse the original delivery ID, subject, and body, and send to the destination's current recipients? Recipients may receive the email again.",
+        "retry_success": "Email delivery requeued"
+      }
+    },
+    "webhook": {
+      "title": "Webhook Notifications",
+      "description": "Reliably deliver signed JSON when an alert opens, escalates, or resolves.",
+      "create": "Add Webhook",
+      "edit": "Edit Webhook",
+      "test": "Test",
+      "test_success": "Test delivery succeeded with HTTP {status}",
+      "delete": "Delete",
+      "delete_title": "Delete Webhook Destination",
+      "delete_confirm": "Delete “{name}”? Unclaimed deliveries will be cancelled, historical delivery records will remain, and already claimed requests may still complete.",
+      "deleted": "Webhook destination deleted",
+      "name": "Name",
+      "url": "Endpoint URL",
+      "url_placeholder": "https://ops.example.com/hooks/addp",
+      "url_help": "Only public HTTPS endpoints are allowed by default. Private or local endpoints require an explicit deployment setting.",
+      "secret": "Signing Secret",
+      "secret_placeholder": "At least 16 bytes",
+      "secret_keep_placeholder": "Leave blank to keep the current secret",
+      "secret_help": "Used for HMAC-SHA256 signatures. It is encrypted at rest and never displayed again.",
+      "secret_configured": "Configured",
+      "secret_missing": "Missing",
+      "event_types": "Subscribed Events",
+      "enabled": "Enabled",
+      "updated_at": "Updated At",
+      "actions": "Actions",
+      "empty": "No webhook destination configured",
+      "saved": "Webhook configuration saved",
+      "enabled_success": "Webhook enabled",
+      "disabled_success": "Webhook disabled; unclaimed deliveries were cancelled",
+      "operation_failed": "Webhook operation failed",
+      "validation": {
+        "name": "Enter a webhook name",
+        "url": "Enter an endpoint URL",
+        "secret": "The signing secret must be at least 16 bytes",
+        "event_types": "Select at least one lifecycle event"
+      },
+      "delivery": {
+        "title": "Delivery Records",
+        "delivery_id": "Delivery ID",
+        "destination": "Webhook Destination",
+        "event_type": "Event",
+        "status": "Status",
+        "attempts": "Attempts",
+        "manual_retries": "Manual Retries",
+        "http_status": "HTTP",
+        "next_attempt_at": "Next Attempt",
+        "last_error": "Last Error",
+        "created_at": "Created At",
+        "retry": "Retry",
+        "retry_title": "Manual Retry",
+        "retry_confirm": "Retry with the destination's current endpoint and signing secret while reusing the original delivery ID? The receiver may process the message again.",
+        "retry_success": "Delivery requeued"
+      }
     }
   }
 }

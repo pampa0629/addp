@@ -456,6 +456,7 @@ continuous execution 不使用 0 到 100 的业务进度作为主要观测指标
 - events/second、bytes/second。
 - last event time。
 - last checkpoint time 和 checkpoint age。
+- retention health 与 checkpoint health；前者表达恢复窗口，后者只在存在 lag 时表达真实 position commit 是否长期不推进。
 - rebalance、retry 和 dead-letter 摘要。
 - runtime heartbeat。
 
@@ -848,6 +849,8 @@ retention 同时受时间与容量约束：
 
 `retention.bytes` 可以保护磁盘，但也可能提前删除尚未消费的数据，因此不能把它仅描述为防磁盘打满的安全开关。任务 lag 接近 retention horizon 时应进入 degraded/critical 告警，并明确提示可能失去连续恢复能力。
 
+checkpoint 停滞不能由 Monitor 根据 execution `updated_at` 或页面时间猜测。Transfer 必须保存真实 position commit 时间：lag 为 0 时 checkpoint health 为 healthy；lag 大于 0 且真实 position commit age 超过部署阈值时为 degraded；缺少 commit 时间时为 unknown。Monitor 只把该 owner 事实与 recovery circuit、retention health 归一化为实时观测信号，不在本阶段创建持久化告警或通知记录。
+
 ADDP 不自动暂停用户 Oracle 或其他上游业务写入。平台可以暂停新 replay、限制非关键任务、对目标应用背压并发出告警；是否干预上游业务由用户决定。自动暂停 Debezium connector 也必须谨慎，因为暂停期间数据库归档日志仍可能超出保留窗口。
 
 ## 十三、建议配置形态
@@ -1171,6 +1174,9 @@ target.policy.apply_mode
 - source poll、target apply 和 checkpoint 分别设置操作超时。
 - 自动恢复使用指数退避、最大连续失败次数和 circuit breaker。
 - 每次恢复创建新 execution，并从 committed position 开始。
+- 可恢复失败立即创建唯一 pending recovery execution，使用持久化 `recovery_not_before` 控制领取；worker shutdown 不计失败，普通 execution failure 与 lease expiry 计入连续失败，schema drift、Pause、Stop 不自动恢复。
+- 达到最大连续失败次数后 circuit 进入 `open`，冷却到期领取 pending execution 时进入 `half_open`；open 不复用任务 `blocked`，任务保持 `desired_state=running` 且无活 lease 时实际状态为 `idle`。
+- 任一目标 position 成功提交或 session 达到稳定运行阈值后，连续失败计数重置。退避/circuit 参数只属于 Transfer runtime 部署配置，不进入任务 JSON。
 
 具体秒数应通过阶段 2 压测确定，不在概念规范中硬编码。
 

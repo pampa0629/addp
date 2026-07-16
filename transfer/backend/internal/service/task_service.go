@@ -416,7 +416,7 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 		TaskType: commonExecution.TaskTypeSync, Source: source, SourceTaskID: commonExecution.NewSourceTaskIDFromUint(id),
 		SourceTaskName: &task.Name, ParentExecutionID: parentExecutionID, Status: commonExecution.ExecutionStatusPending,
 		TriggerType: normalizedTriggerType, TriggeredBy: &triggeredBy, ExecutionConfig: task.Config,
-		StartedAt: &now, CreatedAt: now, UpdatedAt: now,
+		CreatedAt: now, UpdatedAt: now,
 	}
 	if boundary == planner.RuntimeBoundaryContinuous {
 		if task.Schedule != "" || task.Enabled {

@@ -38,7 +38,10 @@ func (s *ScanExecutionService) executeRun(ctx context.Context, executionID strin
 	}
 
 	start := time.Now()
-	if err := s.taskExecutionRepo.UpdateFields(ctx, executionID, exec.TenantID, scantask.RunningExecutionFields(start, time.Now())); err != nil {
+	if err := s.taskExecutionRepo.StartExecution(ctx, executionID, exec.TenantID, start); err != nil {
+		return err
+	}
+	if err := s.taskExecutionRepo.UpdateFields(ctx, executionID, exec.TenantID, scantask.RunningExecutionFields(time.Now())); err != nil {
 		return err
 	}
 

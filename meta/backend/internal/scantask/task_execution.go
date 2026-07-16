@@ -38,7 +38,6 @@ func NewManualExecution(tenantID, userID uint, engineID uint, itemID uint, stora
 			source,
 			token,
 		),
-		StartedAt: &now,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -67,7 +66,6 @@ func NewTaskExecution(task *metaModels.ScanTask, userID uint, storageType string
 		TriggerType:       triggerType,
 		TriggeredBy:       &userIDInt,
 		ExecutionConfig:   scanflow.TaskExecutionConfig(task.EngineID, storageType, task.Scope, task.Parameters, scanflow.ScanDepthDeep, source),
-		StartedAt:         &now,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
@@ -85,16 +83,13 @@ func NewScheduledExecution(task *metaModels.ScanTask, storageType string, target
 		Status:          commonExecution.ExecutionStatusPending,
 		TriggerType:     metaModels.TriggerTypeScheduled,
 		ExecutionConfig: scanflow.TargetExecutionConfig(task.EngineID, storageType, targets.CatalogPaths, targets.RefGroups, JSONMapString(task.Parameters, "scan_depth", scanflow.ScanDepthDeep), JSONMapBool(task.Parameters, "force", false), "meta", plannedRunAt.Format(time.RFC3339Nano)),
-		StartedAt:       &now,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
 }
 
-func RunningExecutionFields(startedAt time.Time, now time.Time) map[string]interface{} {
+func RunningExecutionFields(now time.Time) map[string]interface{} {
 	return map[string]interface{}{
-		"status":       commonExecution.ExecutionStatusRunning,
-		"started_at":   startedAt,
 		"current_step": "任务开始执行",
 		"updated_at":   now,
 	}

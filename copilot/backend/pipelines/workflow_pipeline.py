@@ -5,21 +5,15 @@
 """
 from typing import Dict, Optional, Any
 
-from pipelines.data_source_stage import DataSourceStage
 from chains.operator_selection_chain import OperatorSelectionChain
 from chains.workflow_generation_chain import WorkflowGenerationChain
 from chains.workflow_validation_chain import WorkflowValidationChain
 from chains.workflow_auto_fix import WorkflowAutoFixer
 from chains.workflow_modification_chain import WorkflowModificationChain
 
-from models.workflow_models import Workflow, DataSourceContext, ValidationResult
+from models.workflow_models import Workflow, WorkflowResourceFact, ValidationResult
 
-from tools.develop_tools import (
-    EngineTool,
-    OperatorDiscoveryTool,
-    OperatorDetailTool
-)
-from tools.meta_tools import MetadataSearchTool
+from tools.develop_tools import OperatorDiscoveryTool, OperatorDetailTool
 
 
 class WorkflowPipeline:
@@ -27,43 +21,28 @@ class WorkflowPipeline:
     工作流生成主流水线
 
     协调 5 个阶段：
-    1. 数据源理解（DataSourceStage）
+    1. 消费调用方已验证的多资源事实
     2. 算子筛选（OperatorSelectionChain）
     3. 工作流生成（WorkflowGenerationChain）
     4. 工作流验证 + 自动修复（WorkflowValidationChain + AutoFixer）
     5. 多轮对话改进（WorkflowModificationChain，可选）
     """
 
-    def __init__(self, llm, enable_data_source_understanding: bool = True):
+    def __init__(self, llm):
         """
         初始化工作流生成流水线
 
         Args:
             llm: LangChain LLM 实例
-            enable_data_source_understanding: 是否启用数据源理解阶段
         """
         self.llm = llm
-        self.enable_data_source_understanding = enable_data_source_understanding
-
         # 初始化所有 Tools
         print("[WorkflowPipeline] 初始化 Tools")
-        self.engine_tool = EngineTool()
         self.operator_discovery_tool = OperatorDiscoveryTool()
         self.operator_detail_tool = OperatorDetailTool()
-        self.metadata_search_tool = MetadataSearchTool()
 
         # 初始化各阶段
         print("[WorkflowPipeline] 初始化各阶段 Chains/Agents")
-
-        # 阶段 1: 数据源理解 Agent
-        if self.enable_data_source_understanding:
-            self.data_source_agent = DataSourceStage(
-                llm=self.llm,
-                engine_tool=self.engine_tool,
-                metadata_search_tool=self.metadata_search_tool
-            )
-        else:
-            self.data_source_agent = None
 
         # 阶段 2: 算子筛选 Chain
         self.operator_selection_chain = OperatorSelectionChain(
@@ -98,7 +77,8 @@ class WorkflowPipeline:
         self,
         query: str,
         tenant_id: int = 1,
-        workflow_engine_id: Optional[int] = None
+        workflow_engine_id: Optional[int] = None,
+        resources: list[WorkflowResourceFact] | None = None,
     ) -> Dict[str, Any]:
         """
         执行完整的工作流生成流程
@@ -129,44 +109,33 @@ class WorkflowPipeline:
             if not workflow_engine_id:
                 raise ValueError("workflow_engine_id 是 Copilot 工作流生成必需上下文")
 
-            # ========== 阶段 1: 数据源理解 ==========
-            data_source: Optional[DataSourceContext] = None
-
-            if self.enable_data_source_understanding:
-                print("\n[WorkflowPipeline] ▶ 阶段 1: 数据源理解")
-                data_source = await self.data_source_agent.understand(query, tenant_id)
-
-                print(f"\n[WorkflowPipeline] ===== 数据源理解结果 =====")
-                print(f"  引擎 ID: {data_source.engine_id}")
-                print(f"  引擎名称: {data_source.engine_name}")
-                print(f"  引擎类型: {data_source.engine_type}")
-                print(f"  位置信息: {data_source.location}")
-                print(f"  置信度: {data_source.confidence:.2f}")
-                print(f"  候选项数量: {len(data_source.alternatives)}")
-                print(f"[WorkflowPipeline] ===== 结果结束 =====\n")
-
-                if not data_source.location.locator or not data_source.location.target_parent_locator:
-                    candidates = [candidate.model_dump(exclude_none=True) for candidate in data_source.alternatives]
-                    reason = "data_source_not_found" if not candidates else "data_source_ambiguous"
-                    print(f"[WorkflowPipeline] ⚠️ 数据源需要确认: {reason}")
-                    return {
-                        "status": "need_clarification",
-                        "clarification_reason": reason,
-                        "data_source_candidates": candidates,
-                    }
-
-                print(f"[WorkflowPipeline] ✅ 数据源理解完成")
-                print(f"  引擎: {data_source.engine_name} ({data_source.engine_type})")
-                print(f"  位置: {data_source.location}")
-                print(f"  置信度: {data_source.confidence:.2f}")
+            resources = resources or []
+            if not resources:
+                return {
+                    "status": "need_clarification",
+                    "clarification_reason": "resource_facts_required",
+                    "message": "请先通过 ADDP 数据发现与预览确认工作流输入资源",
+                }
+            missing_crs_roles = [
+                resource.role
+                for resource in resources
+                if resource.geometry_column and not resource.crs
+            ]
+            if missing_crs_roles:
+                return {
+                    "status": "need_clarification",
+                    "clarification_reason": "resource_crs_required",
+                    "message": "以下空间资源缺少 CRS：" + "、".join(missing_crs_roles),
+                }
 
             # ========== 阶段 2: 算子筛选 ==========
             print("\n[WorkflowPipeline] ▶ 阶段 2: 算子筛选")
-            data_source_info = self._format_data_source_for_selection(data_source) if data_source else None
+            resource_info = self._format_resources(resources)
             selected_operators = await self.operator_selection_chain.select(
                 query,
-                data_source_info,
-                workflow_engine_id=workflow_engine_id
+                resource_info,
+                workflow_engine_id=workflow_engine_id,
+                tenant_id=tenant_id,
             )
 
             print(f"[WorkflowPipeline] ✅ 算子筛选完成：{len(selected_operators)} 个算子")
@@ -176,27 +145,28 @@ class WorkflowPipeline:
             print("\n[WorkflowPipeline] ▶ 阶段 3: 工作流生成")
             workflow = await self.workflow_generation_chain.generate(
                 query=query,
-                data_source=data_source,
+                resources=resources,
                 selected_operators=selected_operators,
-                workflow_engine_id=workflow_engine_id
+                workflow_engine_id=workflow_engine_id,
+                tenant_id=tenant_id,
             )
 
             print(f"[WorkflowPipeline] ✅ 工作流生成完成：{len(workflow.tasks)} 个任务")
 
-            if data_source and not self._workflow_resource_facts_are_verified(workflow, data_source):
-                candidates = [candidate.model_dump(exclude_none=True) for candidate in data_source.alternatives]
+            if not self._workflow_resource_facts_are_verified(workflow, resources):
                 print("[WorkflowPipeline] ⚠️ 生成结果包含未验证的资源 locator")
                 return {
                     "status": "need_clarification",
-                    "clarification_reason": "data_source_unverified",
-                    "data_source_candidates": candidates,
+                    "clarification_reason": "resource_facts_unverified",
+                    "message": "候选工作流引用了 resources 之外的 locator",
                 }
 
             # ========== 阶段 4: 工作流验证 + 自动修复 ==========
             print("\n[WorkflowPipeline] ▶ 阶段 4: 工作流验证")
             validation_result = await self.workflow_validation_chain.validate(
                 workflow,
-                workflow_engine_id=workflow_engine_id
+                workflow_engine_id=workflow_engine_id,
+                tenant_id=tenant_id,
             )
 
             if not validation_result.is_valid:
@@ -207,21 +177,26 @@ class WorkflowPipeline:
                 workflow, validation_result = await self.workflow_auto_fixer.auto_fix(
                     workflow,
                     validation_result,
-                    workflow_engine_id=workflow_engine_id
+                    workflow_engine_id=workflow_engine_id,
+                    tenant_id=tenant_id,
                 )
 
                 # 重新检查验证结果
                 if not validation_result.is_valid:
                     print(f"[WorkflowPipeline] ❌ 自动修复失败")
-                    # 修复失败，返回错误但仍返回工作流供用户预览
+                    has_previewable_workflow = bool(workflow.tasks)
                     return {
                         "status": "validation_failed",
                         "workflow": workflow.dict(),
                         "errors": validation_result.errors,
                         "warnings": validation_result.warnings,
                         "suggestions": validation_result.suggestions,
-                        "message": "工作流生成但存在问题，请预览后决定是否使用",
-                        "data_source": data_source.dict() if data_source else None,
+                        "message": (
+                            "工作流生成但存在问题，请预览后决定是否使用"
+                            if has_previewable_workflow
+                            else "工作流生成失败，未形成可预览的任务"
+                        ),
+                        "resources": [resource.model_dump(exclude_none=True) for resource in resources],
                         "selected_operators": selected_operators,
                         "validation_result": validation_result.dict()
                     }
@@ -242,8 +217,8 @@ class WorkflowPipeline:
             return {
                 "status": "success",
                 "workflow": workflow.dict(),
-                "explanation": self._generate_explanation(workflow, data_source, selected_operators),
-                "data_source": data_source.dict() if data_source else None,
+                "explanation": self._generate_explanation(workflow, resources, selected_operators),
+                "resources": [resource.model_dump(exclude_none=True) for resource in resources],
                 "selected_operators": selected_operators,
                 "validation_result": validation_result.dict()
             }
@@ -263,7 +238,8 @@ class WorkflowPipeline:
         self,
         user_input: str,
         current_workflow: Workflow,
-        workflow_engine_id: Optional[int] = None
+        workflow_engine_id: Optional[int] = None,
+        tenant_id: int = 0,
     ) -> Dict[str, Any]:
         """
         修改现有工作流（多轮对话）
@@ -304,7 +280,8 @@ class WorkflowPipeline:
             print(f"[WorkflowPipeline] 验证修改后的工作流")
             validation_result = await self.workflow_validation_chain.validate(
                 modified_workflow,
-                workflow_engine_id=workflow_engine_id
+                workflow_engine_id=workflow_engine_id,
+                tenant_id=tenant_id,
             )
 
             if not validation_result.is_valid:
@@ -312,7 +289,8 @@ class WorkflowPipeline:
                 modified_workflow, validation_result = await self.workflow_auto_fixer.auto_fix(
                     modified_workflow,
                     validation_result,
-                    workflow_engine_id=workflow_engine_id
+                    workflow_engine_id=workflow_engine_id,
+                    tenant_id=tenant_id,
                 )
 
             return {
@@ -333,54 +311,29 @@ class WorkflowPipeline:
                 "error_type": type(e).__name__
             }
 
-    def _format_data_source_for_selection(self, data_source: Optional[DataSourceContext]) -> Optional[str]:
-        """
-        格式化数据源信息为文本（用于算子筛选）
-
-        Args:
-            data_source: 数据源上下文
-
-        Returns:
-            格式化的文本
-        """
-        if not data_source:
-            return None
-
-        parts = [
-            f"引擎类型: {data_source.engine_type}",
-            f"引擎名称: {data_source.engine_name}"
-        ]
-
-        location = data_source.location
-        if location.locator:
-            parts.append(f"源资源 locator: {location.locator}")
-        if location.target_parent_locator:
-            parts.append(f"目标父 locator: {location.target_parent_locator}")
-        if location.namespace and location.table:
-            parts.append(f"数据位置: {location.namespace}.{location.table}")
-        elif location.bucket and location.path:
-            parts.append(f"数据位置: {location.bucket}/{location.path}")
-
-        return ", ".join(parts)
+    @staticmethod
+    def _format_resources(resources: list[WorkflowResourceFact]) -> str:
+        return "\n".join(
+            f"- role={resource.role}; locator={resource.locator}; "
+            f"geometry_column={resource.geometry_column or '无'}; crs={resource.crs or '未知'}"
+            for resource in resources
+        )
 
     @staticmethod
     def _workflow_resource_facts_are_verified(
         workflow: Workflow,
-        data_source: DataSourceContext,
+        resources: list[WorkflowResourceFact],
     ) -> bool:
-        source_locator = data_source.location.locator
-        target_parent_locator = data_source.location.target_parent_locator
+        source_locators = {resource.locator for resource in resources}
         for task in workflow.tasks:
-            if task.operator == "load" and task.params.get("locator") != source_locator:
-                return False
-            if task.operator == "save" and task.params.get("target_parent_locator") != target_parent_locator:
+            if task.operator == "load" and task.params.get("locator") not in source_locators:
                 return False
         return True
 
     def _generate_explanation(
         self,
         workflow: Workflow,
-        data_source: Optional[DataSourceContext],
+        resources: list[WorkflowResourceFact],
         selected_operators: list
     ) -> str:
         """
@@ -388,7 +341,7 @@ class WorkflowPipeline:
 
         Args:
             workflow: 生成的工作流
-            data_source: 数据源上下文
+            resources: 已验证的多资源事实
             selected_operators: 选定的算子列表
 
         Returns:
@@ -402,14 +355,12 @@ class WorkflowPipeline:
         for i, task in enumerate(workflow.tasks, 1):
             lines.append(f"{i}. {task.operator}")
 
-        # 数据源信息
-        if data_source:
-            lines.append(f"\n数据源：{data_source.engine_name} ({data_source.engine_type})")
+        lines.append("\n输入资源：" + "、".join(resource.role for resource in resources))
 
         return "\n".join(lines)
 
 
 # 便捷函数：创建 WorkflowPipeline 实例
-def create_workflow_pipeline(llm, enable_data_source_understanding: bool = True):
+def create_workflow_pipeline(llm):
     """创建工作流生成流水线实例"""
-    return WorkflowPipeline(llm, enable_data_source_understanding)
+    return WorkflowPipeline(llm)

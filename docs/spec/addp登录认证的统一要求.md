@@ -1,5 +1,15 @@
 
-**两种访问模式**:
+# ADDP 登录认证的统一要求
+
+## 认证事实与授权上下文
+
+- `system.users` 和 `system.tenants` 是用户、租户和账号状态的唯一事实源。
+- 所有用户 Bearer Token 由 System 解析为 AuthContext；业务模块不自行解析 JWT / OAuth 令牌。
+- `GET /api/v1/system/auth/context` 是 Token 到权威用户/租户授权上下文的唯一接口。
+- `GET /api/v1/system/users/me` 只返回当前用户资料，不作为跨模块 Token 验证接口。
+- 具体字段、租户校验、Scope、缓存和 OAuth 目标见 `docs/spec/addp授权上下文规范.md`。
+
+## 两种访问模式
 
 1. **统一 Console 模式** (推荐给用户):
 
@@ -28,8 +38,9 @@
 2. 后端使用 bcrypt 验证,返回 JWT (HS256,使用 `JWT_SECRET` 签名)
 3. 前端将 token 存储在 localStorage (`auth.js` Pinia store)
 4. Axios 拦截器 (`api/client.js`) 在所有请求中添加 `Authorization: Bearer <token>`
-5. 后端 `AuthMiddleware` 验证 JWT 并将用户上下文注入 Gin context
-6. 受保护的路由通过 `c.Get("user_id")` 访问用户
+5. System `AuthMiddleware` 验证 JWT、回查当前用户和租户，生成 AuthContext
+6. 业务模块公共中间件调用 `/api/v1/system/auth/context`，将 AuthContext 注入请求上下文
+7. 受保护路由通过共享 helper 读取 `user_id`、`tenant_id`、`user_type`、Scope 等字段
 
 ### 前端认证标准规范
 

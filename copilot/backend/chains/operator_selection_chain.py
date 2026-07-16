@@ -130,7 +130,8 @@ class OperatorSelectionChain:
         self,
         query: str,
         data_source_info: Optional[str] = None,
-        workflow_engine_id: Optional[int] = None
+        workflow_engine_id: Optional[int] = None,
+        tenant_id: int = 0,
     ) -> List[str]:
         """
         选择相关算子
@@ -154,7 +155,10 @@ class OperatorSelectionChain:
                 raise ValueError("workflow_engine_id 是算子发现必需上下文")
 
             # 1. 获取指定工作流引擎实例的算子（使用缓存）
-            all_operators = await self.operator_tool._arun(workflow_engine_id=workflow_engine_id)
+            all_operators = await self.operator_tool._arun(
+                workflow_engine_id=workflow_engine_id,
+                tenant_id=tenant_id,
+            )
             print(f"[OperatorSelectionChain] 获取到 {len(all_operators)} 个算子（工作流引擎 ID: {workflow_engine_id}）")
 
             if not all_operators:

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
-	"github.com/addp/common/models"
 	"gorm.io/gorm"
 )
 
@@ -223,30 +222,31 @@ func (r *TaskExecutionRepository) GetRunningExecutions(ctx context.Context, tena
 	return executions, err
 }
 
-// CleanOrphanExecutions 清理孤儿执行记录（超时未完成的）
-func (r *TaskExecutionRepository) CleanOrphanExecutions(ctx context.Context, timeout time.Duration) (int64, error) {
-	result := r.db.WithContext(ctx).
-		Model(&TaskExecution{}).
-		Where("status IN (?, ?) AND created_at < ?",
-			ExecutionStatusPending,
-			ExecutionStatusRunning,
-			time.Now().Add(-timeout)).
-		Updates(map[string]interface{}{
-			"status": ExecutionStatusTimeout,
-			"error_details": models.JSONMap{
-				"message":    "Execution timed out due to worker crash or long-running task",
-				"cleaned_at": time.Now(),
-			},
-		})
-	return result.RowsAffected, result.Error
-}
-
 // DeleteOldRecords 删除旧记录（数据清理）
 func (r *TaskExecutionRepository) DeleteOldRecords(ctx context.Context, tenantID int, beforeDate time.Time) (int64, error) {
 	result := r.db.WithContext(ctx).
 		Where("tenant_id = ? AND created_at < ?", tenantID, beforeDate).
 		Delete(&TaskExecution{})
 	return result.RowsAffected, result.Error
+}
+
+// StartExecution 原子地将待执行记录切换为运行中，并写入真实开始时间。
+func (r *TaskExecutionRepository) StartExecution(ctx context.Context, executionID string, tenantID int, startedAt time.Time) error {
+	result := r.db.WithContext(ctx).
+		Model(&TaskExecution{}).
+		Where("execution_id = ? AND tenant_id = ? AND status = ?", executionID, tenantID, ExecutionStatusPending).
+		Updates(map[string]interface{}{
+			"status":     ExecutionStatusRunning,
+			"started_at": startedAt,
+			"updated_at": startedAt,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("%w: execution_id=%s tenant_id=%d is not pending", commonapi.ErrConflict, executionID, tenantID)
+	}
+	return nil
 }
 
 // UpdateStatus 原子更新状态（防止并发冲突）

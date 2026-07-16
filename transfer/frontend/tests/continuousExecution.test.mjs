@@ -34,7 +34,8 @@ test('merges committed positions with continuous diagnostics', () => {
   assert.deepEqual(rows[0], {
     partition: '0', nextOffset: 42, earliestOffset: 10, latestOffset: 50,
     lagRecords: 8, recoveryHeadroomRecords: 32, sourceRateRecordsPerSecond: null,
-    retentionHorizonSeconds: 3600, health: 'degraded', positionType: 'kafka_offset/v1'
+    retentionHorizonSeconds: 3600, health: 'degraded',
+    checkpointAgeSeconds: null, checkpointHealth: 'unknown', positionType: 'kafka_offset/v1'
   })
   assert.equal(rows[1].nextOffset, null)
   assert.equal(rows[1].health, 'unknown')

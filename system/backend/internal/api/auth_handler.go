@@ -1,26 +1,31 @@
 package api
 
 import (
-	"net/http"
-
 	commoni18n "github.com/addp/common/middleware/i18n"
+	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/config"
+	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
-	sysi18n "github.com/addp/system/i18n"
-	"github.com/addp/system/pkg/utils"
 	"github.com/gin-gonic/gin"
+	"net/http"
 )
 
 type AuthHandler struct {
-	userService *service.UserService
-	cfg         *config.Config
+	userService  *service.UserService
+	tokenService *service.TokenService
+	cfg          *config.Config
 }
 
-func NewAuthHandler(userService *service.UserService, cfg *config.Config) *AuthHandler {
+func NewAuthHandler(
+	userService *service.UserService,
+	tokenService *service.TokenService,
+	cfg *config.Config,
+) *AuthHandler {
 	return &AuthHandler{
-		userService: userService,
-		cfg:         cfg,
+		userService:  userService,
+		tokenService: tokenService,
+		cfg:          cfg,
 	}
 }
 
@@ -48,19 +53,17 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	var tenantID uint
-	if user.TenantID != nil {
-		tenantID = *user.TenantID
-	}
-	token, err := utils.GenerateToken(user.ID, user.Username, tenantID, h.cfg.JWTSecret, h.cfg.TokenExpireMinutes)
+	pair, err := h.tokenService.IssueFirstParty(user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, sysi18n.MsgTokenGenFailed)})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, sysi18n.MsgAccountUnavailable)})
 		return
 	}
+	h.setRefreshCookie(c, pair.RefreshToken)
 
 	c.JSON(http.StatusOK, models.LoginResponse{
-		AccessToken: token,
+		AccessToken: pair.AccessToken,
 		TokenType:   "Bearer",
+		ExpiresIn:   pair.AccessExpiresIn,
 	})
 }
 
@@ -98,45 +101,75 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 // Refresh godoc
 // @Summary      刷新 Token | Refresh token
-// @Description  使用即将过期的 token 获取新的 token | Use expiring token to get a new token
+// @Description  使用 HttpOnly Cookie 中的 Refresh Token 轮换并获取新的 Access Token | Rotate the refresh token from the HttpOnly cookie and issue a new access token
 // @Tags         认证 | Auth
 // @Accept       json
 // @Produce      json
-// @Security     BearerAuth
 // @Success      200 {object} models.LoginResponse
 // @Failure      401 {object} models.ErrorResponse
 // @Router       /refresh [post]
-// Refresh 刷新 JWT Token
-// 接受即将过期或已过期的 token，返回新的 token
 func (h *AuthHandler) Refresh(c *gin.Context) {
-	authHeader := c.GetHeader("Authorization")
-	if authHeader == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, sysi18n.MsgMissingAuthHeader)})
-		return
-	}
-
-	const bearerPrefix = "Bearer "
-	if len(authHeader) < len(bearerPrefix) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidAuthFormat)})
-		return
-	}
-
-	tokenString := authHeader[len(bearerPrefix):]
-
-	claims, err := utils.ParseTokenAllowExpired(tokenString, h.cfg.JWTSecret)
+	refreshToken, err := c.Cookie(refreshCookieName)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.TWithDetail(c, sysi18n.MsgInvalidToken, err.Error())})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidToken)})
 		return
 	}
-
-	newToken, err := utils.GenerateToken(claims.UserID, claims.Username, claims.TenantID, h.cfg.JWTSecret, h.cfg.TokenExpireMinutes)
+	pair, err := h.tokenService.RotateWebRefreshToken(refreshToken)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, sysi18n.MsgTokenRefreshFailed)})
+		h.clearRefreshCookie(c)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidToken)})
 		return
 	}
-
+	h.setRefreshCookie(c, pair.RefreshToken)
 	c.JSON(http.StatusOK, models.LoginResponse{
-		AccessToken: newToken,
+		AccessToken: pair.AccessToken,
 		TokenType:   "Bearer",
+		ExpiresIn:   pair.AccessExpiresIn,
 	})
+}
+
+// Logout godoc
+// @Summary      退出登录 | Logout
+// @Description  撤销当前 Refresh Token Family 并清除 Cookie | Revoke the current refresh token family and clear the cookie
+// @Tags         认证 | Auth
+// @Produce      json
+// @Success      204
+// @Router       /logout [post]
+func (h *AuthHandler) Logout(c *gin.Context) {
+	if refreshToken, err := c.Cookie(refreshCookieName); err == nil {
+		_ = h.tokenService.RevokeRefreshToken(refreshToken)
+	}
+	h.clearRefreshCookie(c)
+	c.Status(http.StatusNoContent)
+}
+
+// Context godoc
+// @Summary      获取授权上下文 | Get authorization context
+// @Description  将当前 Bearer Token 解析为权威用户、租户和授权上下文 | Resolve the current Bearer token into the authoritative user, tenant and authorization context
+// @Tags         认证 | Auth
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {object} models.AuthorizationContext
+// @Failure      401 {object} models.ErrorResponse
+// @Router       /auth/context [get]
+func (h *AuthHandler) Context(c *gin.Context) {
+	value, exists := c.Get(middleware.AuthorizationContextKey)
+	authorizationContext, ok := value.(*models.AuthorizationContext)
+	if !exists || !ok || authorizationContext == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidToken)})
+		return
+	}
+	c.JSON(http.StatusOK, authorizationContext)
+}
+
+const refreshCookieName = "addp_refresh_token"
+
+func (h *AuthHandler) setRefreshCookie(c *gin.Context, token string) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(refreshCookieName, token, h.cfg.RefreshTokenExpireDays*24*60*60, "/api/v1/system", "", h.cfg.Env == "production", true)
+}
+
+func (h *AuthHandler) clearRefreshCookie(c *gin.Context) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(refreshCookieName, "", -1, "/api/v1/system", "", h.cfg.Env == "production", true)
 }

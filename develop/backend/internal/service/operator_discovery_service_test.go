@@ -245,3 +245,128 @@ func TestValidateWorkflowOperatorContractsRejectsDuplicateRuntimeParam(t *testin
 		t.Fatal("validateWorkflowOperatorContracts() error = nil, want duplicate parameter error")
 	}
 }
+
+func TestValidateWorkflowAcceptsPublicOperatorParameters(t *testing.T) {
+	service := newWorkflowValidationTestService(t)
+	result, err := service.ValidateWorkflow(context.Background(), 12, map[string]interface{}{
+		"tasks": []interface{}{
+			map[string]interface{}{
+				"id":         "buffer_1",
+				"operator":   "buffer",
+				"params":     map[string]interface{}{"distance": float64(50)},
+				"depends_on": []interface{}{},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ValidateWorkflow() error = %v", err)
+	}
+	if !result.Valid || len(result.Errors) != 0 {
+		t.Fatalf("ValidateWorkflow() result = %+v, want valid", result)
+	}
+}
+
+func TestValidateWorkflowRejectsUnknownOperatorAndPrivateParameter(t *testing.T) {
+	service := newWorkflowValidationTestService(t)
+	result, err := service.ValidateWorkflow(context.Background(), 12, map[string]interface{}{
+		"tasks": []interface{}{
+			map[string]interface{}{
+				"id":         "unknown_1",
+				"operator":   "missing",
+				"params":     map[string]interface{}{},
+				"depends_on": []interface{}{},
+			},
+			map[string]interface{}{
+				"id":         "buffer_1",
+				"operator":   "buffer",
+				"params":     map[string]interface{}{"connection_info": map[string]interface{}{}},
+				"depends_on": []interface{}{"unknown_1"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ValidateWorkflow() error = %v", err)
+	}
+	if result.Valid {
+		t.Fatalf("ValidateWorkflow() result = %+v, want invalid", result)
+	}
+	codes := map[string]bool{}
+	for _, issue := range result.Errors {
+		codes[issue.Code] = true
+	}
+	for _, code := range []string{"operator_not_found", "required_parameter_missing", "parameter_not_public"} {
+		if !codes[code] {
+			t.Fatalf("ValidateWorkflow() errors = %+v, missing code %s", result.Errors, code)
+		}
+	}
+}
+
+func TestDevExecutorRejectsWorkflowBeforeCreatingExecution(t *testing.T) {
+	executor := &DevExecutor{operatorDiscovery: newWorkflowValidationTestService(t)}
+	err := executor.validateWorkflowBeforeExecution(
+		context.Background(),
+		map[string]interface{}{
+			"workflow_definition": map[string]interface{}{
+				"tasks": []interface{}{
+					map[string]interface{}{
+						"id":         "buffer_1",
+						"operator":   "missing",
+						"params":     map[string]interface{}{},
+						"depends_on": []interface{}{},
+					},
+				},
+			},
+		},
+		map[string]interface{}{"engine_id": float64(12)},
+		3,
+	)
+	if err == nil {
+		t.Fatal("validateWorkflowBeforeExecution() error = nil, want validation failure")
+	}
+}
+
+func TestOperatorDiscoveryRejectsAnotherTenantEngine(t *testing.T) {
+	service := newWorkflowValidationTestService(t)
+	tenantID := uint(9)
+	service.getEngineByID = func(uint) (*commonModels.Engine, error) {
+		engine, _ := newWorkflowValidationTestService(t).getEngineByID(12)
+		engine.TenantID = &tenantID
+		return engine, nil
+	}
+
+	_, err := service.GetOperatorsByWorkflowEngineIDForTenant(context.Background(), 12, 3)
+	if err == nil {
+		t.Fatal("GetOperatorsByWorkflowEngineIDForTenant() error = nil, want access denial")
+	}
+}
+
+func newWorkflowValidationTestService(t *testing.T) *OperatorDiscoveryService {
+	t.Helper()
+	capabilities, err := plugin.MarshalEngineCapabilities(plugin.NewWorkflowCapabilities("acme_workflow", "addp.workflow/v1"))
+	if err != nil {
+		t.Fatalf("MarshalEngineCapabilities() error = %v", err)
+	}
+	capabilitiesJSON := commonModels.JSONString(capabilities)
+	engine := &commonModels.Engine{
+		ID:           12,
+		Name:         "acme workflow",
+		EngineType:   "acme_workflow",
+		IsActive:     true,
+		Capabilities: &capabilitiesJSON,
+	}
+	return &OperatorDiscoveryService{
+		getEngineByID: func(id uint) (*commonModels.Engine, error) {
+			return engine, nil
+		},
+		listWorkflowOperators: func(context.Context, *commonModels.Engine) ([]commonModels.OperatorDescriptor, error) {
+			return []commonModels.OperatorDescriptor{{
+				ID:             "buffer",
+				Name:           "buffer",
+				ExecutionModes: []string{"workflow"},
+				Parameters: []commonModels.ParameterDescriptor{{
+					Name: "distance", Type: "float", Required: true,
+				}},
+			}}, nil
+		},
+	}
+}

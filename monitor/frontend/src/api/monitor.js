@@ -59,3 +59,91 @@ export function checkAllProviderHealth() {
 export function listTaskProviders() {
   return client.get('/monitor/task-providers')
 }
+
+export function listAlerts(params) {
+  return client.get('/monitor/alerts', { params })
+}
+
+export function acknowledgeAlert(id) {
+  return client.post(`/monitor/alerts/${id}/acknowledge`)
+}
+
+export function suppressAlert(id, suppressedUntil) {
+  return client.post(`/monitor/alerts/${id}/suppress`, { suppressed_until: suppressedUntil })
+}
+
+export function listAlertRuleTargets() {
+  return client.get('/monitor/alert-rule-targets')
+}
+
+export function listAlertRules() {
+  return client.get('/monitor/alert-rules')
+}
+
+export function createAlertRule(payload) {
+  return client.post('/monitor/alert-rules', payload)
+}
+
+export function updateAlertRule(id, payload) {
+  return client.patch(`/monitor/alert-rules/${id}`, payload)
+}
+
+export function deleteAlertRule(id) {
+  return client.delete(`/monitor/alert-rules/${id}`)
+}
+
+export function listWebhookDestinations() {
+  return client.get('/monitor/webhook-destinations')
+}
+
+export function createWebhookDestination(payload) {
+  return client.post('/monitor/webhook-destinations', payload)
+}
+
+export function updateWebhookDestination(id, payload) {
+  return client.patch(`/monitor/webhook-destinations/${id}`, payload)
+}
+
+export function testWebhookDestination(id) {
+  return client.post(`/monitor/webhook-destinations/${id}/test`)
+}
+
+export function deleteWebhookDestination(id) {
+  return client.delete(`/monitor/webhook-destinations/${id}`)
+}
+
+export function listWebhookDeliveries(params) {
+  return client.get('/monitor/webhook-deliveries', { params })
+}
+
+export function retryWebhookDelivery(deliveryId) {
+  return client.post(`/monitor/webhook-deliveries/${deliveryId}/retry`)
+}
+
+export function listEmailDestinations() {
+  return client.get('/monitor/email-destinations')
+}
+
+export function createEmailDestination(payload) {
+  return client.post('/monitor/email-destinations', payload)
+}
+
+export function updateEmailDestination(id, payload) {
+  return client.patch(`/monitor/email-destinations/${id}`, payload)
+}
+
+export function testEmailDestination(id) {
+  return client.post(`/monitor/email-destinations/${id}/test`)
+}
+
+export function deleteEmailDestination(id) {
+  return client.delete(`/monitor/email-destinations/${id}`)
+}
+
+export function listEmailDeliveries(params) {
+  return client.get('/monitor/email-deliveries', { params })
+}
+
+export function retryEmailDelivery(deliveryId) {
+  return client.post(`/monitor/email-deliveries/${deliveryId}/retry`)
+}

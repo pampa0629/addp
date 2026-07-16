@@ -32,7 +32,7 @@ type graphTaskProviderExecuteRequest struct {
 
 type graphTaskProviderExecuteResponse struct {
 	ExecutionID string `json:"execution_id"`
-	Status      string `json:"status"`
+	Status      string `json:"status" enums:"pending" example:"pending"`
 }
 
 type graphTaskListItem struct {
@@ -141,6 +141,7 @@ func (h *TaskProviderHandler) GetProviderTask(c *gin.Context) {
 // @Param request body graphTaskProviderExecuteRequest false "TaskProvider 执行请求 | TaskProvider execution request"
 // @Success 202 {object} graphTaskProviderExecuteResponse "执行ID | Execution ID"
 // @Failure 400 {object} models.ErrorResponse
+// @Failure 409 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
 // @Router /tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
@@ -168,7 +169,7 @@ func (h *TaskProviderHandler) ExecuteProviderTask(c *gin.Context) {
 	}
 	triggerType, err := commonExecution.NormalizeTriggerType(req.TriggerType)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondBuildActionError(c, err)
 		return
 	}
 	source := strings.TrimSpace(req.Source)
@@ -195,7 +196,7 @@ func (h *TaskProviderHandler) ExecuteProviderTask(c *gin.Context) {
 	}
 	c.JSON(http.StatusAccepted, graphTaskProviderExecuteResponse{
 		ExecutionID: executionID,
-		Status:      commonExecution.ExecutionStatusRunning,
+		Status:      commonExecution.ExecutionStatusPending,
 	})
 }
 
@@ -226,7 +227,7 @@ func graphTaskProviderListItem(task models.BuildTask) graphTaskListItem {
 		TaskType:    commonExecution.TaskTypeKGBuild,
 		Name:        task.Name,
 		Description: task.Description,
-		Enabled:     task.Status != models.BuildStatusRunning,
+		Enabled:     task.Status != models.BuildStatusRunning && !(task.Status == models.BuildStatusPending && task.ExecutionID != ""),
 		Status:      task.Status,
 		ExecutionID: task.ExecutionID,
 	}

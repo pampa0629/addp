@@ -84,12 +84,14 @@ curl -X POST http://localhost:8087/api/v1/copilot/sql/generate \
 
 # 测试工作流生成
 curl -X POST http://localhost:8087/api/v1/copilot/workflow/generate \
+  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
     "query": "加载数据，计算100米缓冲区，保存结果",
-    "tenant_id": 1,
-    "user_id": 2,
-    "workflow_engine_id": 1
+    "workflow_engine_id": 1,
+    "resources": [
+      {"role": "input", "locator": "addp://engine/8/path/public/roads?type=table&item_id=91"}
+    ]
   }'
 ```
 
@@ -134,9 +136,9 @@ copilot/
 
 ### Workflow Agent 工作流程
 
-1. **接收用户请求**：自然语言工作流描述
+1. **接收用户请求**：通过 `common-python` 调用 System AuthContext 验证 ADDP 用户访问令牌，取得权威用户和租户，并接收自然语言描述、工作流运行时和 owner Tool 已验证的 `resources[]`
 2. **加载对话历史**：获取上下文（如有）
-3. **两阶段生成**：
+3. **两阶段生成**（Copilot 不重复搜索或猜测资源）：
    - 第一阶段：理解需求，规划步骤
    - 第二阶段：生成具体的 DAG 定义
 4. **验证工作流**：检查步骤完整性和依赖关系

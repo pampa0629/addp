@@ -22,6 +22,19 @@ type PublicOperatorDescriptor struct {
 	PublicParameters []commonModels.ParameterDescriptor `json:"public_parameters"`
 }
 
+type WorkflowValidationIssue struct {
+	Code    string `json:"code"`
+	Path    string `json:"path"`
+	Message string `json:"message"`
+}
+
+type WorkflowValidationResult struct {
+	Valid            bool                      `json:"valid"`
+	WorkflowEngineID uint                      `json:"workflow_engine_id"`
+	Errors           []WorkflowValidationIssue `json:"errors"`
+	Warnings         []WorkflowValidationIssue `json:"warnings"`
+}
+
 // NewOperatorDiscoveryService 创建算子发现服务
 func NewOperatorDiscoveryService(systemClient *commonClient.SystemClient) *OperatorDiscoveryService {
 	return &OperatorDiscoveryService{
@@ -32,6 +45,22 @@ func NewOperatorDiscoveryService(systemClient *commonClient.SystemClient) *Opera
 
 // GetOperatorsByWorkflowEngineID 根据具体工作流运行时引擎实例获取算子。
 func (s *OperatorDiscoveryService) GetOperatorsByWorkflowEngineID(ctx context.Context, workflowEngineID uint) ([]PublicOperatorDescriptor, error) {
+	return s.getOperatorsByWorkflowEngineID(ctx, workflowEngineID, nil)
+}
+
+func (s *OperatorDiscoveryService) GetOperatorsByWorkflowEngineIDForTenant(
+	ctx context.Context,
+	workflowEngineID uint,
+	tenantID uint,
+) ([]PublicOperatorDescriptor, error) {
+	return s.getOperatorsByWorkflowEngineID(ctx, workflowEngineID, &tenantID)
+}
+
+func (s *OperatorDiscoveryService) getOperatorsByWorkflowEngineID(
+	ctx context.Context,
+	workflowEngineID uint,
+	tenantID *uint,
+) ([]PublicOperatorDescriptor, error) {
 	if workflowEngineID == 0 {
 		return nil, fmt.Errorf("workflow_engine_id 必须大于 0")
 	}
@@ -42,6 +71,9 @@ func (s *OperatorDiscoveryService) GetOperatorsByWorkflowEngineID(ctx context.Co
 	}
 	if engine == nil {
 		return nil, fmt.Errorf("工作流引擎不存在: %d", workflowEngineID)
+	}
+	if tenantID != nil && *tenantID > 0 && engine.TenantID != nil && *engine.TenantID != *tenantID {
+		return nil, fmt.Errorf("无权访问工作流引擎: %d", workflowEngineID)
 	}
 	if !engine.IsActive {
 		return nil, fmt.Errorf("工作流引擎未启用: %d", workflowEngineID)
@@ -60,6 +92,101 @@ func (s *OperatorDiscoveryService) GetOperatorsByWorkflowEngineID(ctx context.Co
 		return nil, err
 	}
 	return publicWorkflowOperators(engine.EngineType, workflowOperators), nil
+}
+
+// ValidateWorkflow 按目标运行时的 Public Operator Spec 校验候选工作流，不创建 execution。
+func (s *OperatorDiscoveryService) ValidateWorkflow(
+	ctx context.Context,
+	workflowEngineID uint,
+	workflowDefinition map[string]interface{},
+) (*WorkflowValidationResult, error) {
+	return s.validateWorkflow(ctx, workflowEngineID, workflowDefinition, nil)
+}
+
+func (s *OperatorDiscoveryService) ValidateWorkflowForTenant(
+	ctx context.Context,
+	workflowEngineID uint,
+	workflowDefinition map[string]interface{},
+	tenantID uint,
+) (*WorkflowValidationResult, error) {
+	return s.validateWorkflow(ctx, workflowEngineID, workflowDefinition, &tenantID)
+}
+
+func (s *OperatorDiscoveryService) validateWorkflow(
+	ctx context.Context,
+	workflowEngineID uint,
+	workflowDefinition map[string]interface{},
+	tenantID *uint,
+) (*WorkflowValidationResult, error) {
+	result := &WorkflowValidationResult{
+		Valid:            false,
+		WorkflowEngineID: workflowEngineID,
+		Errors:           []WorkflowValidationIssue{},
+		Warnings:         []WorkflowValidationIssue{},
+	}
+	if err := ValidateWorkflowDefinition(workflowDefinition); err != nil {
+		result.Errors = append(result.Errors, WorkflowValidationIssue{
+			Code:    "invalid_definition",
+			Path:    "workflow_definition",
+			Message: err.Error(),
+		})
+		return result, nil
+	}
+
+	operators, err := s.getOperatorsByWorkflowEngineID(ctx, workflowEngineID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	operatorByName := make(map[string]PublicOperatorDescriptor, len(operators)*2)
+	for _, operator := range operators {
+		operatorByName[operator.ID] = operator
+		operatorByName[operator.Name] = operator
+	}
+
+	tasks, _ := workflowTasksFromInterface(workflowDefinition["tasks"])
+	for index, task := range tasks {
+		operatorName, _ := task["operator"].(string)
+		operator, exists := operatorByName[operatorName]
+		operatorPath := fmt.Sprintf("workflow_definition.tasks[%d].operator", index)
+		if !exists {
+			result.Errors = append(result.Errors, WorkflowValidationIssue{
+				Code:    "operator_not_found",
+				Path:    operatorPath,
+				Message: fmt.Sprintf("目标工作流引擎不存在算子: %s", operatorName),
+			})
+			continue
+		}
+
+		params, _ := task["params"].(map[string]interface{})
+		parameterByName := make(map[string]commonModels.ParameterDescriptor, len(operator.PublicParameters))
+		for _, parameter := range operator.PublicParameters {
+			if parameter.ParamType == "ui" {
+				continue
+			}
+			parameterByName[parameter.Name] = parameter
+			if parameter.Required {
+				if _, ok := params[parameter.Name]; !ok {
+					result.Errors = append(result.Errors, WorkflowValidationIssue{
+						Code:    "required_parameter_missing",
+						Path:    fmt.Sprintf("workflow_definition.tasks[%d].params.%s", index, parameter.Name),
+						Message: fmt.Sprintf("算子 %s 缺少必填公开参数: %s", operatorName, parameter.Name),
+					})
+				}
+			}
+		}
+		for name := range params {
+			if _, ok := parameterByName[name]; !ok {
+				result.Errors = append(result.Errors, WorkflowValidationIssue{
+					Code:    "parameter_not_public",
+					Path:    fmt.Sprintf("workflow_definition.tasks[%d].params.%s", index, name),
+					Message: fmt.Sprintf("算子 %s 未声明公开参数: %s", operatorName, name),
+				})
+			}
+		}
+	}
+
+	result.Valid = len(result.Errors) == 0
+	return result, nil
 }
 
 func validateWorkflowOperatorContracts(engineType string, operators []commonModels.OperatorDescriptor) error {

@@ -114,6 +114,7 @@ import StatisticsCard from '@/components/StatisticsCard.vue'
 import ModuleStatusBadge from '@/components/ModuleStatusBadge.vue'
 import ExecutionTable from '@/components/ExecutionTable.vue'
 import { useTheme } from '@common-ui'
+import { executionDetailLocation } from '@/utils/executionNavigation'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -309,8 +310,10 @@ async function refreshExecutionSummary() {
 
 // 查看执行详情
 function handleViewExecution(row) {
-  ElMessage.info(t('monitor.dashboard.view_execution', { id: row.id }))
-  // TODO: 实现详情弹窗或跳转
+  const location = executionDetailLocation(row)
+  if (location) {
+    router.push(location)
+  }
 }
 
 // 跳转到执行列表页

@@ -13,6 +13,9 @@ other = "无效的 Authorization 格式"
 [system.auth.invalid_token]
 other = "无效的 token"
 
+[system.auth.account_unavailable]
+other = "用户或所属租户不可用"
+
 [system.auth.token_refresh_failed]
 other = "生成新 token 失败"
 

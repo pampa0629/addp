@@ -50,6 +50,8 @@ export const SEARCH_INDEX = [
   // 执行监控
   { labelKey: 'console.menus.monitor.dashboard',   module: 'monitor', route: '/monitor/dashboard',  keywords: ['监控仪表盘', '监控', '运行状态', 'monitor', 'dashboard'] },
   { labelKey: 'console.menus.monitor.executions',  module: 'monitor', route: '/monitor/executions', keywords: ['执行记录', '任务历史', 'execution history'] },
+  { labelKey: 'console.menus.monitor.alerts',      module: 'monitor', route: '/monitor/alerts',     keywords: ['告警', '风险', 'alert', 'incident'] },
+  { labelKey: 'console.menus.monitor.notifications', module: 'monitor', route: '/monitor/notifications', keywords: ['Webhook', '邮件', '通知', '投递', 'email', 'notification', 'delivery'] },
   // 资产管理
   { labelKey: 'console.menus.asset.assets',          module: 'asset', route: '/asset/assets',          keywords: ['资产', '数据资产', 'asset'] },
   { labelKey: 'console.menus.asset.categories',      module: 'asset', route: '/asset/categories',      keywords: ['资产目录', '分类', 'category'] },

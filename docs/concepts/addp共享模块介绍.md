@@ -17,6 +17,8 @@
 
 `common-python/addp_common/workflow_runtime` 提供 Python Workflow Runtime 的协议执行核心，包括 workflow definition 校验、DAG 拓扑排序、引用解析、异步 execution 状态和标准错误。它是共享库，不是独立工作流引擎；各运行时仍负责自己的算子注册、内存对象类型和专业执行依赖。
 
+`common-python/addp_common/tools` 提供 `addp.tool-manifest/v1`、Manifest 校验和 ToolExecutor。Python SDK 是唯一 HTTP Client 实现；`addp` CLI、ADDP Agent LangChain Tool Provider 和后续 MCP Adapter 只能调用 ToolExecutor，不得各自维护 HTTP 路径、认证或业务判断。Internal API Key 调用需要租户上下文时，统一通过共享 Client 发送 `X-Tenant-ID`，不得把客户端提交的 tenant 当成已验证身份。
+
 ### 资源树与 locator 共享边界
 
 资源树和 ResourceLocator 是平台级公共契约，但它们分为三层职责：

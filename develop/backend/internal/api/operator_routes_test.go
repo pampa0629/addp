@@ -30,6 +30,18 @@ func TestOperatorRoutesUseWorkflowEngineInstancePathOnly(t *testing.T) {
 	assertRouteStatus(t, router, http.MethodPost, "/api/v1/develop/operators/refresh", http.StatusNotFound)
 }
 
+func TestWorkflowValidationUsesSingleResourcePath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	api := router.Group("/api/v1/develop")
+	api.POST("/workflow-validations", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	assertRouteStatus(t, router, http.MethodPost, "/api/v1/develop/workflow-validations", http.StatusOK)
+	assertRouteStatus(t, router, http.MethodPost, "/api/v1/develop/workflows/validate", http.StatusNotFound)
+}
+
 func assertRouteStatus(t *testing.T, router *gin.Engine, method string, path string, want int) {
 	t.Helper()
 

@@ -34,6 +34,30 @@
       "running": "The task is already running.",
       "invalid_state": "The task cannot be started in its current state."
     },
+    "recovery": {
+      "state": "Recovery State",
+      "reason": "Recovery Reason",
+      "attempt": "Recovery Attempt",
+      "consecutiveFailures": "Consecutive Failures",
+      "backoff": "Recovery Backoff",
+      "nextAttemptAt": "Next Recovery Time",
+      "recoveredFrom": "Recovered From Execution",
+      "noticeDescription": "Reason: {reason}; consecutive failures: {failures}; next recovery: {nextAttempt}. Pause stops automatic recovery; Resume creates a new manual execution.",
+      "states": {
+        "waiting": "Waiting for Recovery",
+        "open": "Recovery Circuit Open",
+        "half_open": "Recovery Probe Running",
+        "ready": "Waiting for Worker",
+        "running": "Recovery Running",
+        "completed": "Recovery Execution Finished"
+      },
+      "reasons": {
+        "worker_shutdown": "Worker Restart",
+        "lease_expired": "Worker Lost or Lease Expired",
+        "execution_failed": "Execution Failed",
+        "unknown": "Unknown"
+      }
+    },
     "dashboard": {
       "totalTasks": "Total Tasks",
       "notExecuted": "Not Executed",
@@ -256,6 +280,7 @@
       "lastCommittedAt": "Last Commit Time",
       "lastEventAt": "Last Event Time",
       "checkpointAge": "Time Since Last Commit",
+      "checkpointHealth": "Checkpoint Health",
       "stopReason": "Stop Reason",
       "partition": "Partition",
       "nextOffset": "Next Message Position",

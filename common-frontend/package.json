@@ -8,7 +8,8 @@
     "basic/src",
     "map/src",
     "dag/src",
-    "graph/src"
+    "graph/src",
+    "agent-ui/src"
   ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

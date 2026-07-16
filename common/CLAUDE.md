@@ -10,6 +10,7 @@
 common/
 ├── api/            # 统一响应、错误和 handler 辅助
 ├── client/         # System、Meta、Asset、Service 等模块客户端
+├── middleware/auth/ # System AuthContext 消费、Gin 上下文注入和租户隔离 helper
 ├── config/         # .env 加载和服务配置
 ├── resourcetree/    # Meta catalog / item 事实到资源树视图的投影和路径定位纯转换
 ├── contentio/      # 基于 Go io 的内容 Ref、Reader、Writer、Lister、RangeReader
@@ -41,6 +42,7 @@ common/
 - `common/client` 只放跨服务 HTTP/API 客户端，不作为 infra PostgreSQL `common` schema 的读写入口。
 - `common` schema 中的共享表应按领域归入 `common/<domain>`，由领域包提供模型、仓储和 `EnsureStore`；执行记录必须复用 `common/execution.TaskExecution`、`common/execution.TaskExecutionRepository` 和 `common/execution.EnsureStore`。
 - API 响应优先复用 `common/api`。
+- 用户 Bearer Token 统一调用 System `/api/v1/system/auth/context`；业务模块不通过 `/users/me` 验证 Token，不自行解析 JWT。
 - `common/sqldialect` 只承载跨 SQL 引擎的基础方言差异；PostGIS 等空间扩展能力归入 `common/spatial`。
 - 空间能力不要默认几何字段名为 `geom`，应通过元数据或调用方参数传入。
 - 修改 `common/` 后通常需要 `./scripts/dev/restart.sh -all` 验证受影响模块。

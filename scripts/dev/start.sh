@@ -1686,6 +1686,49 @@ fi
 if [ "$START_POINTCLOUD_WORKFLOW" = true ]; then
   echo -e "${BLUE}Step 4.4/5: 启动 PointCloud Workflow Engine${NC}"
 
+pointcloud_workflow_source_fingerprint() {
+  {
+    printf '%s\n' "pointcloud-workflow-image-v1"
+    while IFS= read -r file; do
+      printf '%s %s\n' "$file" "$(git hash-object "$file")"
+    done < <(
+      {
+        printf '%s\n' \
+          engines/pointcloud-workflow/Dockerfile \
+          engines/pointcloud-workflow/requirements.txt \
+          engines/pointcloud-workflow/api_server.py \
+          engines/pointcloud-workflow/operators.py \
+          common-python/pyproject.toml
+        find common-python/addp_common -type f \
+          ! -path '*/__pycache__/*' \
+          ! -name '*.pyc'
+      } | LC_ALL=C sort
+    )
+  } | git hash-object --stdin
+}
+
+ensure_pointcloud_workflow_image() {
+  local image="$1"
+  local fingerprint
+  local current_fingerprint
+  fingerprint="$(pointcloud_workflow_source_fingerprint)"
+  current_fingerprint="$(docker image inspect \
+    -f '{{ index .Config.Labels "addp.pointcloud.source-fingerprint" }}' \
+    "$image" 2>/dev/null || true)"
+
+  if [ "$current_fingerprint" = "$fingerprint" ]; then
+    echo "PointCloud Workflow Engine 镜像构建输入未变化，复用现有镜像: $image"
+    return 0
+  fi
+
+  echo "构建 PointCloud Workflow Engine 镜像（构建输入已变化或镜像不存在）..."
+  docker build \
+    --label "addp.pointcloud.source-fingerprint=${fingerprint}" \
+    -f engines/pointcloud-workflow/Dockerfile \
+    -t "$image" \
+    .
+}
+
 start_pointcloud_workflow_engine_process() {
   if ! command -v docker >/dev/null 2>&1; then
     echo -e "${RED}✗ PointCloud Workflow Engine 需要 Docker runtime 承载 PDAL${NC}"
@@ -1699,8 +1742,7 @@ start_pointcloud_workflow_engine_process() {
   local system_port="${SYSTEM_BACKEND_PORT:-8180}"
   local minio_port="${MINIO_API_PORT:-19000}"
 
-  echo "构建 PointCloud Workflow Engine 镜像..."
-  docker build -f engines/pointcloud-workflow/Dockerfile -t "$image" .
+  ensure_pointcloud_workflow_image "$image"
 
   echo "启动 PointCloud Workflow Engine Docker runtime..."
   docker rm -f pointcloud-workflow-engine >/dev/null 2>&1 || true

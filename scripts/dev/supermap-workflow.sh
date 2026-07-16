@@ -41,14 +41,52 @@ if [ -n "${data_dir}" ] && [ ! -d "${data_dir}" ]; then
   exit 1
 fi
 
-echo "  编译 SuperMap Workflow 当前 Java 代码..."
-docker build \
-  --no-cache \
-  --platform "${platform}" \
-  --build-arg "BASE_IMAGE=${base_image}" \
-  -f engines/supermap-workflow/Dockerfile \
-  -t "${image}" \
-  engines/supermap-workflow
+supermap_workflow_source_fingerprint() {
+  local base_image_id="$1"
+  {
+    printf '%s\n' \
+      "supermap-workflow-image-v1" \
+      "base-image=${base_image_id}" \
+      "platform=${platform}"
+    while IFS= read -r file; do
+      printf '%s %s\n' "$file" "$(git hash-object "$file")"
+    done < <(
+      {
+        printf '%s\n' \
+          engines/supermap-workflow/Dockerfile \
+          engines/supermap-workflow/run.sh
+        find engines/supermap-workflow/src -type f
+      } | LC_ALL=C sort
+    )
+  } | git hash-object --stdin
+}
+
+ensure_supermap_workflow_image() {
+  local base_image_id
+  local source_fingerprint
+  local current_fingerprint
+  base_image_id="$(docker image inspect -f '{{.Id}}' "${base_image}")"
+  source_fingerprint="$(supermap_workflow_source_fingerprint "${base_image_id}")"
+  current_fingerprint="$(docker image inspect \
+    -f '{{ index .Config.Labels "addp.supermap.source-fingerprint" }}' \
+    "${image}" 2>/dev/null || true)"
+
+  if [ "${current_fingerprint}" = "${source_fingerprint}" ]; then
+    echo "  SuperMap Workflow Engine 构建输入未变化，复用现有镜像: ${image}"
+    return 0
+  fi
+
+  echo "  编译 SuperMap Workflow 当前 Java 代码（构建输入已变化或镜像不存在）..."
+  docker build \
+    --platform "${platform}" \
+    --build-arg "BASE_IMAGE=${base_image}" \
+    --label "addp.supermap.source-fingerprint=${source_fingerprint}" \
+    -f engines/supermap-workflow/Dockerfile \
+    -t "${image}" \
+    engines/supermap-workflow
+}
+
+ensure_supermap_workflow_image
 
 docker rm -f supermap-workflow-engine >/dev/null 2>&1 || true
 mkdir -p "${output_dir}" .dev-pids

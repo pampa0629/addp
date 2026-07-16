@@ -110,7 +110,8 @@ class WorkflowAutoFixer:
         self,
         workflow: Workflow,
         validation_result: ValidationResult,
-        workflow_engine_id: Optional[int] = None
+        workflow_engine_id: Optional[int] = None,
+        tenant_id: int = 0,
     ) -> tuple[Workflow, ValidationResult]:
         """
         自动修复工作流
@@ -146,7 +147,8 @@ class WorkflowAutoFixer:
                 print(f"[WorkflowAutoFixer] 重新验证修复后的工作流")
                 new_validation = await self.validator.validate(
                     fixed_workflow,
-                    workflow_engine_id=workflow_engine_id
+                    workflow_engine_id=workflow_engine_id,
+                    tenant_id=tenant_id,
                 )
 
                 # 更新当前状态

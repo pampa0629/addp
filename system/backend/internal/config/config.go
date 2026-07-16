@@ -9,14 +9,18 @@ import (
 )
 
 type Config struct {
-	Env                     string
-	ServerAddr              string
-	DatabaseURL             string
-	JWTSecret               string
-	EncryptionKey           []byte
-	TokenExpireMinutes      int
-	ProjectName             string
-	AllowPublicRegistration bool
+	Env                      string
+	ServerAddr               string
+	DatabaseURL              string
+	EncryptionKey            []byte
+	AccessTokenExpireMinutes int
+	RefreshTokenExpireDays   int
+	AuthorizationCodeMinutes int
+	DeviceCodeExpireMinutes  int
+	DevicePollIntervalSecs   int
+	ConsoleURL               string
+	ProjectName              string
+	AllowPublicRegistration  bool
 
 	// PostgreSQL 配置（用于其他模块）
 	PostgresHost     string
@@ -67,34 +71,6 @@ func Load() *Config {
 	// 加载环境配置
 	env := getEnv("ENV", "development")
 
-	// 加载 JWT Secret（CRITICAL: 必须设置且符合安全标准）
-	jwtSecret := getEnv("JWT_SECRET", "your-secret-key-change-in-production")
-
-	// P0-1: 验证 JWT_SECRET 强度
-	if jwtSecret == "" {
-		log.Fatal("FATAL: JWT_SECRET must be set!\n" +
-			"Generate a secure random key with:\n" +
-			"  Method 1: openssl rand -base64 64\n" +
-			"  Method 2: python3 -c \"import secrets; print(secrets.token_urlsafe(64))\"")
-	}
-
-	// P0-1: 验证密钥长度（至少 32 字符 / 256 bits）
-	if len(jwtSecret) < 32 {
-		log.Fatalf("FATAL: JWT_SECRET must be at least 32 characters (256 bits), got %d characters", len(jwtSecret))
-	}
-
-	// P0-1: 生产环境禁止使用默认密钥
-	if env == "production" && strings.Contains(jwtSecret, "change-in-production") {
-		log.Fatal("FATAL: Default JWT_SECRET detected in production environment!\n" +
-			"This is a critical security risk. Generate a new secret immediately.")
-	}
-
-	// 警告：开发环境也应使用强密钥
-	if env == "development" && strings.Contains(jwtSecret, "change-in-production") {
-		log.Println("WARNING: Using default JWT_SECRET in development environment.")
-		log.Println("Consider generating a secure random key for better security.")
-	}
-
 	// 加载加密密钥
 	encryptionKey := loadEncryptionKey()
 
@@ -120,14 +96,18 @@ func Load() *Config {
 	serverAddr := ":" + port
 
 	return &Config{
-		Env:                     env,
-		ServerAddr:              serverAddr,
-		DatabaseURL:             "", // PostgreSQL 不使用此字段
-		JWTSecret:               jwtSecret,
-		EncryptionKey:           encryptionKey,
-		TokenExpireMinutes:      getEnvAsInt("JWT_EXPIRE_MINUTES", 180),
-		ProjectName:             getEnv("PROJECT_NAME", "全域数据平台"),
-		AllowPublicRegistration: getEnvAsBool("ALLOW_PUBLIC_REGISTRATION", false),
+		Env:                      env,
+		ServerAddr:               serverAddr,
+		DatabaseURL:              "", // PostgreSQL 不使用此字段
+		EncryptionKey:            encryptionKey,
+		AccessTokenExpireMinutes: getEnvAsPositiveInt("ACCESS_TOKEN_EXPIRE_MINUTES", 15),
+		RefreshTokenExpireDays:   getEnvAsPositiveInt("REFRESH_TOKEN_EXPIRE_DAYS", 30),
+		AuthorizationCodeMinutes: getEnvAsPositiveInt("OAUTH_CODE_EXPIRE_MINUTES", 5),
+		DeviceCodeExpireMinutes:  getEnvAsPositiveInt("OAUTH_DEVICE_EXPIRE_MINUTES", 10),
+		DevicePollIntervalSecs:   getEnvAsPositiveInt("OAUTH_DEVICE_INTERVAL_SECONDS", 5),
+		ConsoleURL:               strings.TrimSuffix(getEnv("CONSOLE_URL", "http://localhost:5170"), "/"),
+		ProjectName:              getEnv("PROJECT_NAME", "全域数据平台"),
+		AllowPublicRegistration:  getEnvAsBool("ALLOW_PUBLIC_REGISTRATION", false),
 
 		// PostgreSQL 配置
 		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),

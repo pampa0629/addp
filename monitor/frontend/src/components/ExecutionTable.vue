@@ -33,10 +33,11 @@
         </el-tag>
       </template>
     </el-table-column>
-    <el-table-column :label="t('monitor.table.retention_health')" width="120">
+    <el-table-column :label="t('monitor.table.observation_signals')" width="150">
       <template #default="{ row }">
-        <el-tag v-if="continuousHealth(row)" :type="continuousHealthTagType(continuousHealth(row))" size="small">
-          {{ continuousHealthText(continuousHealth(row)) }}
+        <el-tag v-if="continuousPrimarySignal(row)" :type="continuousSignalTagType(continuousPrimarySignal(row).severity)" size="small">
+          {{ continuousSignalText(continuousPrimarySignal(row).code) }}
+          <template v-if="continuousSignals(row).length > 1"> +{{ continuousSignals(row).length - 1 }}</template>
         </el-tag>
         <span v-else>-</span>
       </template>
@@ -48,7 +49,10 @@
     </el-table-column>
     <el-table-column prop="progress" :label="t('monitor.table.progress')" width="120">
       <template #default="{ row }">
-        <el-progress :percentage="row.progress || 0" :status="getProgressStatus(row.status)" />
+        <el-tag v-if="hasContinuousExecutionMetadata(row.metadata)" size="small" type="info">
+          {{ t('monitor.table.continuous') }}
+        </el-tag>
+        <el-progress v-else :percentage="row.progress || 0" :status="getProgressStatus(row.status)" />
       </template>
     </el-table-column>
     <el-table-column prop="created_at" :label="t('monitor.table.created_at')" width="180">
@@ -73,7 +77,7 @@
 
 <script setup>
 import { useI18n } from 'vue-i18n'
-import { continuousHealthTagType, getContinuousDiagnostics, resolveTaskTypeDisplayName } from '@common-ui'
+import { buildContinuousSignals, continuousSignalTagType, hasContinuousExecutionMetadata, resolveTaskTypeDisplayName } from '@common-ui'
 
 const { t } = useI18n()
 
@@ -114,14 +118,18 @@ function getStatusText(status) {
   return textMap[status] || status
 }
 
-function continuousHealth(row) {
-  return getContinuousDiagnostics(row?.metadata).health || ''
+function continuousSignals(row) {
+  return buildContinuousSignals(row?.metadata, row?.status)
 }
 
-function continuousHealthText(health) {
-  const key = `monitor.execution.detail.continuous.health_values.${health}`
+function continuousPrimarySignal(row) {
+  return continuousSignals(row)[0] || null
+}
+
+function continuousSignalText(code) {
+  const key = `monitor.execution.detail.continuous.signals.${code}.title`
   const translated = t(key)
-  return translated === key ? health : translated
+  return translated === key ? code : translated
 }
 
 function getTriggerText(triggerType) {

@@ -226,6 +226,15 @@ const docTemplate = `{
                                 "type": "string"
                             }
                         }
+                    },
+                    "409": {
+                        "description": "任务已有活动 execution | Task already has an active execution",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 }
             }
@@ -652,6 +661,13 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "409": {
+                        "description": "任务已有活动 execution | Task already has an active execution",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
                         "schema": {
@@ -810,7 +826,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "pending"
+                    ],
+                    "example": "pending"
                 }
             }
         },

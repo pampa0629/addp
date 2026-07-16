@@ -3,7 +3,7 @@ ADDP 基础 HTTP 客户端
 
 支持两种认证方式:
 - internal_api_key: 服务间调用 (X-Internal-API-Key)
-- user_token: 用户 JWT token (Authorization: Bearer)
+- user_token: 用户访问令牌 (Authorization: Bearer)
 """
 import httpx
 from typing import Any, Dict, Optional
@@ -17,6 +17,7 @@ class BaseClient:
         base_url: str,
         internal_api_key: Optional[str] = None,
         user_token: Optional[str] = None,
+        tenant_id: Optional[int] = None,
         timeout: float = 30.0,
     ):
         """
@@ -25,7 +26,7 @@ class BaseClient:
         Args:
             base_url: 服务地址,如 http://localhost:8180
             internal_api_key: 内部 API Key (服务间调用)
-            user_token: 用户 JWT token (用户请求)
+            user_token: 用户访问令牌 (用户请求)
             timeout: 请求超时时间(秒)
         """
         self.base_url = base_url.rstrip("/")
@@ -33,6 +34,8 @@ class BaseClient:
 
         if internal_api_key:
             headers["X-Internal-API-Key"] = internal_api_key
+            if tenant_id is not None:
+                headers["X-Tenant-ID"] = str(tenant_id)
         elif user_token:
             headers["Authorization"] = f"Bearer {user_token}"
 

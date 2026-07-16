@@ -75,6 +75,8 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 
 	// 初始化 services
 	userService := service.NewUserService(userRepo)
+	authContextService := service.NewAuthContextService(userRepo, tenantRepo)
+	tokenService := service.NewTokenService(db, authContextService, redisClient, cfg)
 	logService := service.NewLogService(logRepo, userRepo)
 	engineService := service.NewEngineService(engineRepo, userRepo, cfg.EncryptionKey, redisClient)
 	tenantService := service.NewTenantService(tenantRepo, userRepo, db)
@@ -111,15 +113,30 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	api := router.Group("/api/v1/system")
 	{
 		// 认证路由（不需要认证）
-		authHandler := NewAuthHandler(userService, cfg)
+		authHandler := NewAuthHandler(userService, tokenService, cfg)
+		oauthHandler := NewOAuthHandler(tokenService)
 		api.POST("/login", authHandler.Login)
 		api.POST("/register", authHandler.Register)
-		api.POST("/refresh", authHandler.Refresh) // Token 刷新端点
+		api.POST("/refresh", authHandler.Refresh)
+		api.POST("/logout", authHandler.Logout)
+		api.POST("/oauth/device/code", oauthHandler.DeviceCode)
+		api.POST("/oauth/token", oauthHandler.Token)
+		api.POST("/oauth/revoke", oauthHandler.Revoke)
 
 		// 需要认证的路由
 		protected := api.Group("")
-		protected.Use(middleware.AuthMiddleware(cfg))
+		protected.Use(middleware.AuthMiddleware(tokenService))
 		{
+			auth := protected.Group("/auth")
+			{
+				auth.GET("/context", authHandler.Context)
+			}
+			oauth := protected.Group("/oauth")
+			{
+				oauth.POST("/authorizations", oauthHandler.Authorize)
+				oauth.POST("/device/authorizations", oauthHandler.ApproveDevice)
+			}
+
 			// 用户管理
 			users := protected.Group("/users")
 			{

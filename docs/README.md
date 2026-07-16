@@ -42,9 +42,22 @@
 - [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)
 - [国际化体系图](concepts/addp国际化体系图.md)
 - [国际化开发规范](spec/addp国际化开发规范.md)
+- [授权上下文规范](spec/addp授权上下文规范.md)
+- [OAuth 授权规范](spec/addp%20OAuth授权规范.md)
 - [规划文档](plan/)
 - [跟进文档](next/)
 - [技能文档](skills/)
+
+## AI 智能体能力开放主题
+
+处理 ADDP Agent、平台级 Skill、Tool Manifest、Codex / Hermes Agent 接入、Python SDK / CLI、AG-UI、A2UI、智能体受委托身份或操作审批时，建议按以下顺序阅读：
+
+1. [ADDP 智能体能力开放体系专题](next/ADDP智能体能力开放体系专题.md)：确认 `Skill + Tool` 能力模型、Agent Runtime 消费边界、SDK / CLI 单一实现关系、AG-UI / A2UI 分层和分阶段实施路线。
+2. [ADDP Skill 规范](skills/addp-Skill规范.md)：确认平台级 Skill 的目录、粒度、渐进式加载、Tool 依赖、澄清、审批和评测要求。
+3. [ADDP API 设计规范](spec/addp-API设计规范.md)：确认 AI Agent 友好 API、`x-ai-hint`、错误类型和当前服务间认证要求。
+4. [登录认证的统一要求](spec/addp登录认证的统一要求.md)：确认统一登录入口和客户端认证边界。
+5. [授权上下文规范](spec/addp授权上下文规范.md)：确认 AuthContext、用户/租户状态、OAuth Scope、PKCE / Device Flow 和受委托令牌的唯一语义。
+6. [铁路占耕地面积计算 AI 自动化实验](plan/铁路占耕地面积计算-AI自动化实验.md)：作为 `workflow-analysis` Skill 的端到端评测场景。
 
 ## 资源定位、资源树与数据检索主题
 

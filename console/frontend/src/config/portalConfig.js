@@ -126,6 +126,8 @@ export const PAGE_MAPS = {
   monitor: {
     'dashboard': 'dashboard',
     'executions': 'executions',
+    'alerts': 'alerts',
+    'notifications': 'notifications',
     '': 'dashboard',
   },
   standard: {
@@ -300,6 +302,8 @@ export const SIDEBAR_MENUS = {
     items: [
       { index: '/monitor/dashboard',  icon: Monitor, label: 'console.menus.monitor.dashboard' },
       { index: '/monitor/executions', icon: List,    label: 'console.menus.monitor.executions' },
+      { index: '/monitor/alerts',     icon: Warning, label: 'console.menus.monitor.alerts' },
+      { index: '/monitor/notifications', icon: Connection, label: 'console.menus.monitor.notifications' },
     ],
   },
   asset: {

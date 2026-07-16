@@ -142,7 +142,7 @@ func (s *Scheduler) claimAndExecuteDueTask(ctx context.Context, taskID uint, now
 		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
 		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), SourceTaskName: &taskName,
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeScheduled,
-		ExecutionConfig: task.Config, StartedAt: &now, CreatedAt: now, UpdatedAt: now,
+		ExecutionConfig: task.Config, CreatedAt: now, UpdatedAt: now,
 	}
 	claimed, _, err := s.taskRepo.ClaimDueScheduledExecution(ctx, taskID, task.Schedule, now, next, execution, service.IncrementalSourceIdentityForTask(task))
 	if err != nil || claimed == nil {

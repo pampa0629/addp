@@ -7,7 +7,7 @@ show_usage() {
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
-  echo "  -all         强制重新编译所有 Go 模块，并重新编译 SuperMap Java 后重启全部运行时"
+  echo "  -all         强制重新编译所有 Go 模块，按构建输入变化增量构建容器运行时"
   echo "  -system      强制重新编译 System 模块"
   echo "  -manager     强制重新编译 Manager 模块"
   echo "  -meta        强制重新编译 Meta 模块"
@@ -381,6 +381,49 @@ restart_model3d_workflow_service() {
     verify_pidfile_process_alive ".dev-pids/model3d-workflow-engine.pid" "Model3D Workflow Engine" "logs/model3d-workflow-engine.log" "logs/model3d-workflow-engine-stderr.log"
 }
 
+pointcloud_workflow_source_fingerprint() {
+    {
+        printf '%s\n' "pointcloud-workflow-image-v1"
+        while IFS= read -r file; do
+            printf '%s %s\n' "$file" "$(git hash-object "$file")"
+        done < <(
+            {
+                printf '%s\n' \
+                    engines/pointcloud-workflow/Dockerfile \
+                    engines/pointcloud-workflow/requirements.txt \
+                    engines/pointcloud-workflow/api_server.py \
+                    engines/pointcloud-workflow/operators.py \
+                    common-python/pyproject.toml
+                find common-python/addp_common -type f \
+                    ! -path '*/__pycache__/*' \
+                    ! -name '*.pyc'
+            } | LC_ALL=C sort
+        )
+    } | git hash-object --stdin
+}
+
+ensure_pointcloud_workflow_image() {
+    local image="$1"
+    local fingerprint
+    local current_fingerprint
+    fingerprint="$(pointcloud_workflow_source_fingerprint)"
+    current_fingerprint="$(docker image inspect \
+        -f '{{ index .Config.Labels "addp.pointcloud.source-fingerprint" }}' \
+        "$image" 2>/dev/null || true)"
+
+    if [ "$current_fingerprint" = "$fingerprint" ]; then
+        echo "  PointCloud Workflow Engine 镜像构建输入未变化，复用现有镜像: $image"
+        return 0
+    fi
+
+    echo "  构建 PointCloud Workflow Engine 镜像（构建输入已变化或镜像不存在）..."
+    docker build \
+        --label "addp.pointcloud.source-fingerprint=${fingerprint}" \
+        -f engines/pointcloud-workflow/Dockerfile \
+        -t "$image" \
+        .
+}
+
 restart_pointcloud_workflow_service() {
     local port="${POINTCLOUD_WORKFLOW_PORT:-8102}"
     local image="${POINTCLOUD_WORKFLOW_IMAGE:-addp-pointcloud-workflow-engine:dev}"
@@ -398,8 +441,7 @@ restart_pointcloud_workflow_service() {
     docker rm -f pointcloud-workflow-engine >/dev/null 2>&1 || true
     stop_matching_port_process "$port" "PointCloud Workflow Engine" "python.*api_server\\.py|engines/pointcloud-workflow"
 
-    echo "  构建 PointCloud Workflow Engine 镜像..."
-    docker build -f engines/pointcloud-workflow/Dockerfile -t "$image" .
+    ensure_pointcloud_workflow_image "$image"
 
     echo "  启动 PointCloud Workflow Engine Docker runtime..."
     mkdir -p "${work_dir}"

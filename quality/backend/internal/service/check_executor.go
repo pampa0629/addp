@@ -15,35 +15,29 @@ import (
 	"github.com/addp/quality/internal/models"
 	"github.com/addp/quality/internal/repository"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 // CheckExecutor 执行质量检查任务
 type CheckExecutor struct {
-	db            *gorm.DB
 	systemClient  *commonClient.SystemClient
 	ruleAppRepo   *repository.RuleApplicationRepository
 	checkTaskRepo *repository.CheckTaskRepository
 	issueRepo     *repository.IssueRepository
 	sqlGen        *SQLGenerator
-	executionRepo *commonExecution.TaskExecutionRepository
 }
 
 func NewCheckExecutor(
-	db *gorm.DB,
 	systemClient *commonClient.SystemClient,
 	ruleAppRepo *repository.RuleApplicationRepository,
 	checkTaskRepo *repository.CheckTaskRepository,
 	issueRepo *repository.IssueRepository,
 ) *CheckExecutor {
 	return &CheckExecutor{
-		db:            db,
 		systemClient:  systemClient,
 		ruleAppRepo:   ruleAppRepo,
 		checkTaskRepo: checkTaskRepo,
 		issueRepo:     issueRepo,
 		sqlGen:        NewSQLGenerator(),
-		executionRepo: commonExecution.NewTaskExecutionRepository(db),
 	}
 }
 
@@ -89,10 +83,6 @@ func (e *CheckExecutor) RunCheckWithContext(
 	source string,
 	parentExecutionID *string,
 ) (string, error) {
-	task, err := e.checkTaskRepo.Get(taskID, tenantID)
-	if err != nil {
-		return "", fmt.Errorf("task not found: %w", err)
-	}
 	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
 		return "", err
@@ -105,32 +95,37 @@ func (e *CheckExecutor) RunCheckWithContext(
 	executionID := uuid.New().String()
 	now := time.Now()
 
-	// 写入执行记录（pending 状态）
+	// 任务 claim 与 pending execution 创建必须位于同一事务。
 	taskExec := &commonExecution.TaskExecution{
 		ExecutionID:       executionID,
 		TenantID:          int(tenantID),
 		Module:            commonExecution.ModuleQuality,
 		TaskType:          commonExecution.TaskTypeQualityCheck,
 		Source:            normalizedSource,
-		SourceTaskID:      commonExecution.NewSourceTaskIDFromInt(int(taskID)),
-		SourceTaskName:    &task.Name,
 		ParentExecutionID: parentExecutionID,
-		Status:            commonExecution.ExecutionStatusRunning,
+		Status:            commonExecution.ExecutionStatusPending,
 		TriggerType:       normalizedTriggerType,
 		TriggeredBy:       intPtr(int(userID)),
-		StartedAt:         &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
-	if err := e.executionRepo.Create(ctx, taskExec); err != nil {
-		return "", fmt.Errorf("failed to create execution record: %w", err)
+	task, err := e.checkTaskRepo.ClaimExecution(ctx, taskID, tenantID, taskExec)
+	if err != nil {
+		return "", fmt.Errorf("claim quality check execution: %w", err)
 	}
-	e.updateTaskExecutionSummary(taskID, tenantID, executionID, commonExecution.ExecutionStatusRunning, now)
 
 	// 异步执行检查
 	go func() {
+		startedAt := time.Now()
+		if err := e.checkTaskRepo.StartExecution(context.Background(), taskID, tenantID, executionID, startedAt); err != nil {
+			log.Printf("failed to start quality execution %s: %v", executionID, err)
+			return
+		}
+
 		result, issues, execErr := e.doCheck(context.Background(), task)
 
 		completedAt := time.Now()
-		durationMs := completedAt.Sub(now).Milliseconds()
+		durationMs := completedAt.Sub(startedAt).Milliseconds()
 
 		updates := map[string]interface{}{
 			"completed_at":      completedAt,
@@ -140,45 +135,33 @@ func (e *CheckExecutor) RunCheckWithContext(
 		if execErr != nil {
 			log.Printf("quality check execution %s failed: %v", executionID, execErr)
 			updates["status"] = commonExecution.ExecutionStatusFailed
-			updates["error_details"] = commonModels.JSONMap{"error": execErr.Error()}
+			updates["error_details"] = commonModels.JSONMap{"message": execErr.Error()}
 		} else {
-			updates["status"] = commonExecution.ExecutionStatusSuccess
-			updates["metadata"] = executionResultMetadata(result)
-			updates["progress"] = 100
-
 			// 写入问题工单
 			if len(issues) > 0 {
 				for i := range issues {
 					issues[i].ExecutionID = executionID
 				}
 				if bErr := e.issueRepo.BatchCreate(issues); bErr != nil {
-					log.Printf("failed to create issues for execution %s: %v", executionID, bErr)
+					execErr = fmt.Errorf("failed to create quality issues: %w", bErr)
 				}
+			}
+			if execErr != nil {
+				updates["status"] = commonExecution.ExecutionStatusFailed
+				updates["error_details"] = commonModels.JSONMap{"message": execErr.Error()}
+			} else {
+				updates["status"] = commonExecution.ExecutionStatusSuccess
+				updates["metadata"] = executionResultMetadata(result)
+				updates["progress"] = 100
 			}
 		}
 
-		if err := e.executionRepo.UpdateFields(context.Background(), executionID, int(tenantID), updates); err != nil {
+		if err := e.checkTaskRepo.CompleteExecution(context.Background(), taskID, tenantID, executionID, updates, completedAt); err != nil {
 			log.Printf("failed to update execution %s: %v", executionID, err)
-		}
-
-		if status, ok := updates["status"].(string); ok {
-			e.updateTaskExecutionSummary(taskID, tenantID, executionID, status, completedAt)
 		}
 	}()
 
 	return executionID, nil
-}
-
-func (e *CheckExecutor) updateTaskExecutionSummary(taskID, tenantID int64, executionID, status string, runAt time.Time) {
-	if err := e.db.Model(&models.CheckTask{}).
-		Where("id = ? AND tenant_id = ?", taskID, tenantID).
-		Updates(map[string]interface{}{
-			"last_run_at":           runAt,
-			"last_execution_id":     executionID,
-			"last_execution_status": status,
-		}).Error; err != nil {
-		log.Printf("failed to update quality check task %d execution summary: %v", taskID, err)
-	}
 }
 
 func executionResultMetadata(result *ExecutionResult) commonModels.JSONMap {

@@ -1,11 +1,15 @@
 package api
 
 import (
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"strconv"
 
+	commonAPI "github.com/addp/common/api"
 	commonMiddleware "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	graphi18n "github.com/addp/graph/i18n"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
 	"github.com/addp/graph/internal/service"
@@ -157,6 +161,7 @@ func (h *BuildHandler) DeleteTask(c *gin.Context) {
 // @Param        tid path int true "任务 ID | Task ID"
 // @Success      200 {object} models.SuccessResponse
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
 // @Router       /graphs/{id}/build/tasks/{tid}/run [post]
 func (h *BuildHandler) RunTask(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -165,7 +170,7 @@ func (h *BuildHandler) RunTask(c *gin.Context) {
 	userID := commonMiddleware.GetUserID(c)
 
 	if err := h.buildSvc.RunTask(c.Request.Context(), uint(tid), uint(graphID), uint(tenantID), uint(userID)); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondBuildActionError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "任务已启动"})
@@ -180,6 +185,7 @@ func (h *BuildHandler) RunTask(c *gin.Context) {
 // @Param        tid path int true "任务 ID | Task ID"
 // @Success      200 {object} models.SuccessResponse
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse "任务冲突或当前进程不持有运行实例 | Task conflict or runtime not owned by current process"
 // @Router       /graphs/{id}/build/tasks/{tid}/cancel [post]
 func (h *BuildHandler) CancelTask(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -187,7 +193,7 @@ func (h *BuildHandler) CancelTask(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
 
 	if err := h.buildSvc.CancelTask(uint(tid), uint(graphID), uint(tenantID)); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondBuildActionError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "任务已取消"})
@@ -202,6 +208,7 @@ func (h *BuildHandler) CancelTask(c *gin.Context) {
 // @Param        tid path int true "任务 ID | Task ID"
 // @Success      200 {object} models.SuccessResponse
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
 // @Router       /graphs/{id}/build/tasks/{tid}/rerun [post]
 func (h *BuildHandler) RerunTask(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -210,10 +217,22 @@ func (h *BuildHandler) RerunTask(c *gin.Context) {
 	userID := commonMiddleware.GetUserID(c)
 
 	if err := h.buildSvc.RerunTask(c.Request.Context(), uint(tid), uint(graphID), uint(tenantID), uint(userID)); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondBuildActionError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "任务已重新启动"})
+}
+
+func respondBuildActionError(c *gin.Context, err error) {
+	if errors.Is(err, service.ErrBuildRuntimeNotOwned) {
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, graphi18n.MsgTaskRuntimeNotOwned)})
+		return
+	}
+	if errors.Is(err, commonAPI.ErrConflict) {
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, graphi18n.MsgTaskActive)})
+		return
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, graphi18n.MsgTaskRunFailed)})
 }
 
 // ——— 材料管理 ———

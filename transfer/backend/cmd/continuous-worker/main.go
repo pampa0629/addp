@@ -26,8 +26,8 @@ func main() {
 	commonConfig.LoadEnv()
 	cfg := config.Load()
 	logger.Init(logger.Options{Level: envOr("LOG_LEVEL", "info"), Format: "json", FilePath: filepath.Join("logs", "transfer-continuous-worker.log"), AddSource: true, RedirectStdLog: true})
-	if err := cfg.ValidateContinuousRuntimeObservability(); err != nil {
-		log.Fatalf("continuous worker 观测配置无效: %v", err)
+	if err := cfg.ValidateContinuousRuntime(); err != nil {
+		log.Fatalf("continuous worker 配置无效: %v", err)
 	}
 
 	db, err := connectDatabase(cfg)
@@ -42,7 +42,11 @@ func main() {
 		hostname, _ := os.Hostname()
 		owner = fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString())
 	}
-	leaseRepo := repository.NewRuntimeLeaseRepository(db)
+	leaseRepo := repository.NewRuntimeLeaseRepository(db, repository.ContinuousRecoveryPolicy{
+		InitialBackoff: cfg.ContinuousRecoveryInitialBackoff, MaxBackoff: cfg.ContinuousRecoveryMaxBackoff,
+		MaxFailures: cfg.ContinuousRecoveryMaxFailures, CircuitOpenTime: cfg.ContinuousRecoveryCircuitOpenTime,
+		StabilityWindow: cfg.ContinuousRecoveryStabilityWindow,
+	})
 	infraKafkaConnection, err := cfg.InfraKafkaTransferConnectionInfo()
 	if err != nil {
 		log.Fatalf("continuous worker Infra Kafka 配置无效: %v", err)
@@ -56,6 +60,7 @@ func main() {
 		DiagnosticsInterval:      cfg.ContinuousDiagnosticsInterval,
 		RetentionDegradedHorizon: cfg.ContinuousRetentionDegradedHorizon,
 		RetentionCriticalHorizon: cfg.ContinuousRetentionCriticalHorizon,
+		CheckpointStaleAfter:     cfg.ContinuousCheckpointStaleAfter,
 	}
 	supervisor, err := continuous.NewSupervisor(
 		leaseRepo,

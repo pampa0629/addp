@@ -103,7 +103,7 @@
 | `status` | string | 执行状态 |
 | `progress` | integer | 0 到 100 |
 | `current_step` | string | 当前步骤描述 |
-| `trigger_type` | string | `manual` 或 `scheduled` |
+| `trigger_type` | string | `manual`、`scheduled` 或 `event` |
 | `triggered_by` | integer | 触发用户 |
 | `execution_config` | jsonb | 本次执行快照配置 |
 | `metadata` | jsonb | 结果摘要、步骤结果、模块扩展信息 |
@@ -120,6 +120,13 @@
 4. ad-hoc execution 可以没有 `source_task_id`，但必须在 `execution_config` 中保存本次执行所需的完整配置快照。
 5. Orchestrator 子步骤 execution 必须写 `parent_execution_id`。
 6. execution 完成后不得再被重用；重试必须创建新的 execution。
+7. `pending` 只表示 execution 已创建并等待 worker、runner 或 runtime claim，`started_at` 必须为空；`created_at` 是记录创建时间，不能冒充执行开始时间。
+8. execution 真正被执行方领取并开始工作时，必须原子完成 `pending → running` 并写入真实 `started_at`。重复的进度更新不得覆盖 `started_at`。
+9. `success|failed|timeout|cancelled` 终态必须写 `completed_at`；已经进入过 `running` 的 execution 同时必须按 `completed_at - started_at` 写 `execution_time_ms`。失败和超时必须写安全的 `error_details`。
+10. owner 若在执行前排队、跨进程投递或等待 lease，排队时长必须由 `created_at → started_at` 表达，不能提前写 `started_at` 来隐藏排队时间。
+11. owner 任务定义上的最近执行摘要或运行状态若随 execution 状态推进，必须与对应 execution 的 claim、`pending → running` 和终态更新分别位于同一数据库事务；不得先推进公共 execution、再单独更新 owner 表，或反向操作。
+12. 对已有任务定义发起 execution 时，owner 必须在任务定义行锁保护下检查 active execution，并在同一事务创建唯一 pending execution。重跑还必须在该事务中完成运行材料、待处理结果和任务摘要的重置，不能先重置再进入第二次 claim。
+13. 取消操作只有在 owner 能定位并中断真实运行体、等待其停止并由运行体写入 `cancelled` 终态时才能成功；仅修改任务或 execution 状态属于伪取消，必须拒绝。
 
 ## 执行状态枚举
 
@@ -144,6 +151,7 @@
 | --- | --- |
 | `manual` | 用户、API、Console、Orchestrator 或其他模块显式触发一次执行 |
 | `scheduled` | owner 模块调度器按计划触发 |
+| `event` | owner 或平台生命周期事件触发；当前用于 System cleanup 等事件驱动运维执行 |
 
 `source` 记录触发来源模块或入口，例如：
 
@@ -162,6 +170,7 @@
 1. `orchestrator`、`api`、`retry`、`system_immediate` 不得进入 `trigger_type`。
 2. 编排触发下游任务时，`source=orchestrator`，`trigger_type` 仍为 `manual` 或 `scheduled`。
 3. 重试来源应进入 `metadata` 或后续专门重试关联字段，不得扩展 `trigger_type`。
+4. `event` 只表达真实事件触发，不得用来代替 `source`，也不得把普通 API 调用、重试或即时执行伪装成事件。
 
 ## 模块任务类型
 
@@ -267,7 +276,35 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 15. continuous worker 必须由 source Provider 读取每分区 `earliest_offset` 和 `latest_offset`，并以目标已成功应用且已提交的 `next_offset` 计算 `lag_records = latest_offset - next_offset`。consumer fetch position、预取位置或 Kafka consumer group committed offset 不得冒充 Transfer committed position。
 16. retention 恢复余量以 `recovery_headroom_records = next_offset - earliest_offset` 表示。时间余量只能在同一 worker session 内至少存在两次有效 source latest 样本时，按 `recovery_headroom_records / source_rate_records_per_second` 估算；冷启动、无已提交位置、样本时间非正或写入速率为零时必须返回未知，不得伪造为无限安全。
 17. continuous retention health 只允许 `healthy|degraded|critical|unknown`。`next_offset < earliest_offset` 立即为 `critical`；有效时间余量不大于 critical 阈值时为 `critical`，不大于 degraded 阈值时为 `degraded`，其余为 `healthy`；不能完成判定时为 `unknown`。第一版统一服务端默认阈值为 degraded `6h`、critical `1h`，并要求 critical 小于 degraded；阈值是 Transfer runtime 配置，不进入用户任务 JSON。
-18. 观测样本写入 `common.task_executions.metadata.continuous`，至少包含样本时间、总体 health 以及每分区 earliest/latest/committed/lag/headroom/source rate/retention horizon。Transfer 是采集和判定 owner；Monitor 只读取统一 execution metadata 并展示，不直连业务 Kafka，不读取或改写 `transfer.sync_states` 与 `transfer.runtime_leases`。
+18. 观测样本写入 `common.task_executions.metadata.continuous`，至少包含样本时间、总体 retention health、总体 checkpoint health，以及每分区 earliest/latest/committed/lag/headroom/source rate/retention horizon/checkpoint age/checkpoint health。Transfer 是采集和判定 owner；Monitor 只读取统一 execution metadata 并展示，不直连业务 Kafka，不读取或改写 `transfer.sync_states` 与 `transfer.runtime_leases`。
+19. retention health 与 checkpoint health 是两个正交指标。retention health 回答“当前 committed position 是否仍在源保留窗口内，以及按当前写入速率还剩多少恢复时间”；checkpoint health 回答“存在 source lag 时，目标 committed position 是否长期未推进”。checkpoint health 只允许 `healthy|degraded|unknown`：lag 为 0 时为 `healthy`；lag 大于 0 且最近真实 position commit 距采样时间超过部署阈值时为 `degraded`；缺少真实 position commit 时间或无法计算时为 `unknown`。不得用 execution `updated_at`、worker heartbeat、consumer fetch position 或 diagnostics 采样时间冒充 position commit 时间。
+20. `recovery_circuit_state=open`、retention `critical`、retention `degraded`、checkpoint `degraded`、恢复等待和 `half_open` 可以由统一前端归一化为实时观测信号。该信号是 execution metadata 的无状态展示投影，不是新的 task/execution 状态，不写回数据库，也不等同于持久化告警事件或已发送通知。后续若实现通知、确认、抑制和升级策略，必须复用这些 owner 事实并单独定义告警生命周期，不能反向让 Monitor 成为 Transfer runtime owner。
+21. Monitor 可以把最新 active execution 的观测信号物化为持久化告警事件。告警状态只允许 `open|acknowledged|resolved`：新信号打开事件，确认后进入 acknowledged，owner 信号消失或任务无 active execution 后自动 resolved。抑制使用独立 `suppressed_until`，不新增 suppressed 状态；确认和抑制均不改变信号、execution 或任务状态。告警按 `tenant + module + task_type + source_task_id + signal_code` 去重，同一身份同时最多一个未恢复事件；恢复后的同类信号再次出现必须创建新事件，保留历史，不复用旧行。
+22. 告警通知第一版支持 Monitor 通用 Webhook 和平台统一 SMTP Relay 邮件。告警打开、严重级别升级和恢复必须分别产生且只产生一条不可变 `opened|escalated|resolved` lifecycle event；incident 变化、event 及所有启用通知渠道的 per-destination delivery outbox 必须在同一 Infra PostgreSQL 事务提交。各渠道 dispatcher 在事务外发送，并用 `FOR UPDATE SKIP LOCKED`、领取租约、指数退避和最大尝试次数实现至少一次投递；不得在持有数据库行锁时调用外部网络。
+23. Webhook destination 按租户隔离，配置只允许 `name`、`url`、`enabled`、`event_types` 和签名 `secret`。`event_types` 只允许 `opened|escalated|resolved` 且必须非空；secret 必须使用平台 `ENCRYPTION_KEY` 加密，任何 GET/List/Swagger 响应不得返回 secret 明文或密文。默认只允许 HTTPS 公网地址；开发或受管内网接收端必须由部署配置显式允许，不能由任务或普通 API 请求绕过 SSRF 约束。
+24. Webhook payload schema 固定为 `monitor.alert.webhook/v1`，只包含 `delivery_id`、event/incident 稳定身份、告警级别/状态、任务定义身份、execution UUID、生命周期时间和 Console 链接；不得发送业务数据、连接凭据、完整 execution metadata 或 owner 私有状态。请求签名固定为 HMAC-SHA256(`timestamp + "." + raw_body`)，接收方必须按 `delivery_id` 幂等并校验 timestamp 防重放。
+25. 告警确认只记录处理状态，不产生 Webhook lifecycle event。抑制期间生命周期 event 继续保留，但 delivery 记为 `suppressed` 且到期后不补发；恢复后同类信号再次打开会形成新的 incident 和新的 `opened` event。禁用 destination 只影响尚未领取和后续生成的 delivery，已完成投递审计必须保留。
+26. Webhook 测试投递是目标配置运维动作，不得伪造 `opened|escalated|resolved` 告警事件或写入正式 delivery outbox。测试请求使用独立 `monitor.webhook.test/v1` payload，沿用目标 HMAC secret、SSRF 校验和签名 Header，同步返回成功 HTTP 状态；接收端失败统一视为下游调用失败。
+27. 手动重投只允许作用于当前租户的 `dead` delivery。重投必须复用原 `delivery_id` 和 payload，以保持接收端幂等；目标必须仍存在且启用，重新入队时使用目标当前 URL 和 secret。`attempt_count` 保存累计尝试次数，`retry_base_attempt_count` 保存本次重投周期开始时的累计基线，dispatcher 的最大尝试次数和退避只按当前周期计算；每次人工重投递增 `manual_retry_count`。
+28. 删除 Webhook destination 必须在同一事务中取消该目标尚未领取的 `pending` delivery、清除其中的 secret 和重试时间，再删除目标配置。历史 `delivered|dead|suppressed|cancelled` delivery 必须保留；删除时已经领取的 delivery 可以完成当前请求，但删除后不得再生成新 delivery，也不能再人工重投。
+29. Webhook destination 创建、更新、测试、删除及 delivery 人工重投必须复用平台统一 Audit Middleware 写入 System 审计日志。审计请求体必须经过现有敏感字段脱敏，不能记录 secret 明文或密文；Monitor 不新增私有操作审计表。
+30. 邮件 destination 按租户隔离，配置只允许 `name`、`recipients`、`enabled` 和 `event_types`。`recipients` 必须是非空邮箱地址数组，去重后最多 50 个；`event_types` 只允许 `opened|escalated|resolved` 且必须非空。租户 API 不得接收或返回 SMTP host、port、username、password、TLS 模式或发件身份。
+31. 邮件使用独立 `monitor.email_destinations` 和 `monitor.email_deliveries`，不得复用 Webhook destination 或 delivery 表。邮件 delivery 必须冻结目标名称、收件人、主题、纯文本正文和 HTML 正文；内容只包含稳定告警摘要、任务/执行身份和 Console 链接，不得包含业务数据、连接凭据、完整 execution metadata 或 owner 私有状态。
+32. SMTP Relay 属于 Monitor 部署配置。第一版只允许显式 `starttls` 或 `tls`：`starttls` 必须要求服务端成功升级 TLS，`tls` 使用隐式 TLS；不支持明文 SMTP、机会式降级或按端口自动猜测。username/password 必须同时配置或同时为空。SMTP host 为空时邮件 dispatcher 不启动，既有未投递 outbox 保持 `pending`，不得改写为 `suppressed`、`dead` 或已送达。
+33. 邮件 delivery 状态只允许 `pending|delivering|delivered|dead|suppressed|cancelled`。SMTP 调用成功后进入 `delivered`；失败按当前尝试周期指数退避，达到最大尝试次数后进入 `dead`。领取租约过期的 `delivering` delivery 可以由新 worker 重新领取，投递身份不变。
+34. 邮件测试投递是目标配置运维动作，使用独立测试主题和正文，同步验证目标当前收件人及平台 SMTP Relay，不得伪造告警 lifecycle event 或写入正式 delivery outbox。SMTP 未配置或发送失败统一视为下游调用失败。
+35. 邮件人工重投只允许当前租户的 `dead` delivery，必须复用原 `delivery_id`、主题和正文，使用目标当前收件人，并按 `retry_base_attempt_count` 开启新的最大尝试周期；累计 `attempt_count` 和 `manual_retry_count` 必须保留。删除邮件 destination 必须取消该目标尚未领取的 `pending` delivery 并保留历史；删除时已领取的发送可以完成，删除后不得生成新 delivery 或人工重投。
+36. 邮件 destination 创建、更新、测试、删除及 delivery 人工重投必须复用平台统一 Audit Middleware 写入 System 审计日志。Monitor 不建立第二套操作审计，不在普通 API、Swagger、投递记录、日志或审计中暴露 SMTP password。
+37. 通用执行告警只允许消费 `common.task_executions` 公共事实。各 owner 模块负责写入真实 execution 状态、开始/结束时间和安全错误摘要；Monitor 不得读取 owner 任务表、结果表、worker 私有租约或运行时内部状态补判失败。System 只负责 TaskProvider 注册、认证和操作审计，不成为告警事实或规则 owner。
+38. 第一版租户告警规则精确绑定 `tenant + module + task_type + source_task_id`，只允许有稳定任务定义身份且 `parent_execution_id IS NULL` 的根 execution。可配置目标以该任务最新根 execution 的模式为准；最新根 execution 属于 continuous session 时，不得因历史 bounded execution 将该任务继续暴露为通用规则目标。无 `source_task_id` 的 ad-hoc execution、Orchestrator 子 execution 和 System cleanup 子 execution不进入通用规则；父编排失败由 Orchestrator 根 execution 表达。
+39. 通用规则类型固定为 `last_terminal_failed|last_terminal_timeout|consecutive_failures`。最近终态查询只考虑 `success|failed|timeout`，忽略 `cancelled`；`failed` 或 `timeout` 告警只能由后续 `success` 恢复，新的 `pending|running` 不证明任务已经恢复。`consecutive_failures` 的阈值只允许 2 到 20，最近 N 个有效终态全部为 `failed|timeout` 时激活，任一 `success` 中断连续失败序列。
+40. Transfer continuous session 不消费通用 execution 失败规则。Monitor 继续以 `metadata.continuous`、retention、checkpoint 和 recovery circuit owner 事实运行专用 evaluator；不得把自动恢复产生的失败 session 再解释成通用任务失败。Transfer bounded execution 可以使用通用规则；同一任务从 bounded 切换为 continuous 后，通用 evaluator 必须依据最新根 execution 暂停该任务规则，不能继续沿用旧 bounded 终态打开告警。
+41. Monitor 使用 `monitor.alert_rules` 保存租户规则，至少包含稳定 `rule_id` UUID、名称、精确任务身份、规则类型、连续失败阈值、严重级别和启用状态。规则身份进入 incident fingerprint；同一规则和同一任务同时最多一个未恢复 incident。更新规则判定语义、停用或删除规则时，必须先恢复该规则当前未恢复 incident，不能留下永不再评估的活动告警。
+42. Monitor 使用 `monitor.notification_routes` 保存通用规则到 Webhook/邮件 destination 的显式绑定。路由必须按租户校验 destination 存在；同一规则、渠道和目标只能一条。规则没有路由时仍创建不可变 alert event，但不生成 Webhook 或邮件 delivery。删除目标时必须同时删除指向它的未使用路由；历史 incident、event 和 delivery 保留。
+43. 通用规则 evaluator、Transfer continuous evaluator 和后续其他 evaluator 必须先完成各自公共事实查询，再把全部 active signal 交给同一个 incident reconciler。任何 evaluator 查询失败时，不得把该 evaluator 拥有的现有 incident 误恢复；不同 evaluator 不能独立执行全局“缺失即恢复”。
+44. 通用规则 evaluator 使用最终一致的周期扫描即可，第一版不要求 Kafka。若后续使用 PostgreSQL `LISTEN/NOTIFY`，通知只能作为唤醒信号，`common.task_executions` 仍是唯一事实源，周期扫描仍负责丢失唤醒后的收敛。
+45. `created_at`、`updated_at` 或全局固定时长不能单独证明 execution 卡死。运行超时由 owner 按任务自身 deadline 写入 `status=timeout`；在统一 heartbeat/deadline 契约完成前，不实现 `pending_stalled` 或 `running_stalled` 通用规则，也不得启用按创建时间批量改写长任务状态的清理逻辑。
+46. Monitor 的通用告警目标发现和规则创建校验必须与 System 当前已启用 TaskProvider 的非废弃 `task_capabilities[]` 取交集。历史 execution 必须保留审计，但已经不再由 provider 声明的旧 `module + task_type` 不得出现在新规则目标中，也不得继续创建或重新启用规则；不得在 Monitor 硬编码业务任务类型白名单。
 
 continuous task 与 execution 生命周期：
 
@@ -277,9 +314,12 @@ continuous task 与 execution 生命周期：
 3. 每次启动或自动恢复都创建新的 pending execution；一个 execution 对应一个 runtime session，结束后不得重新变回 running。
 4. runtime session 由 `transfer.runtime_leases` 保存 owner instance、execution、lease deadline、heartbeat 和 fencing token；lease 与 `transfer.sync_states` 的业务 position 分离。
 5. 正常总运行时长不触发 timeout。source poll、target apply、position commit 分别使用操作超时；heartbeat 丢失或 lease 过期以 `failed` 结束当前 execution，并在任务 desired state 仍为 running 时创建新 execution 恢复。worker 正常退出时当前 execution 以 `cancelled + stop_reason=worker_shutdown` 结束；新 worker 必须自动创建 recovery execution，继承上一 execution 的 `trigger_type`，并在 metadata 记录 `recovery_reason` 与 `recovered_from_execution_id`。lease 过期恢复同样创建新 execution，并记录 `recovery_reason=lease_expired`；两种情况都不得把旧 execution 重新置为 running。
+   可恢复失败必须立即创建唯一的 pending recovery execution，并通过 deployment-level `recovery_not_before` 控制领取时间；不得依赖 worker 内存 timer，也不得为同一次失败重复创建 execution。worker shutdown 不增加连续失败次数；普通 execution failure 和 lease expiry 增加连续失败次数。`schema_change_blocked`、用户 Pause 和 Stop 不进入自动恢复。
+   自动恢复使用指数退避，达到最大连续失败次数后 circuit 进入 `open`，冷却到期后的 pending execution 被领取时转为 `half_open`。circuit open 是临时恢复治理状态，不复用任务 `status=blocked`；此时任务保持 `desired_state=running`、无合法 runtime lease，实际 `status=idle`。任一目标 position 成功提交，或 session 连续稳定运行达到部署阈值后再发生失败，连续失败计数重置。
+   recovery execution metadata 至少记录不可变的本次恢复审计 `recovery_reason`、`recovered_from_execution_id`、`recovery_attempt`、`recovery_not_before`、`recovery_backoff_seconds`，以及可变运行状态 `recovery_consecutive_failures`、`recovery_circuit_state=closed|open|half_open`。成功提交 position 只重置连续失败计数和 circuit 状态，不得覆盖本次 recovery execution 的 attempt/backoff 审计。退避初值、上限、最大连续失败次数、circuit 冷却时间和稳定运行阈值是 Transfer runtime 部署配置，不进入任务 JSON。
 6. 用户 pause/stop 必须真实停止 poll、完成或放弃当前未提交批次、关闭 source/target session、释放 partition ownership 和 lease，再以 `cancelled` 结束当前 execution，并在 metadata 记录 `stop_reason=paused|stopped`。resume 创建新 execution。
 7. 工作包 2B 真实中断闭环完成时可以恢复 Transfer 私有 task-definition stop 控制入口；但 `supports_cancel` 是整个 `sync` task type 的 TaskProvider 能力，在 bounded execution 也具备真实取消前必须继续为 `false`，不得注册标准 execution cancel endpoint。
-8. continuous execution 不使用 0 到 100 作为主要进度；Monitor 应展示 per-partition next offset、source latest offset、lag、吞吐、last event time、last committed time、checkpoint age、retry/rebalance 和 heartbeat。
+8. continuous execution 不使用 0 到 100 作为主要进度；Monitor 应展示 per-partition next offset、source latest offset、lag、吞吐、last event time、last committed time、checkpoint age/health、retry/rebalance、恢复 circuit 和 heartbeat。Monitor 只消费 owner 写入的统一 execution metadata；不得自行连接 Kafka 或 Transfer 私有表补算这些事实。
 9. Orchestrator v1 不编排 continuous Transfer task。Transfer 的 TaskProvider 任务发现不得把 continuous task 暴露为可选编排步骤，provider execute 入口也必须拒绝 `source=orchestrator` 触发 continuous task；长期服务型 Step 语义进入 Orchestrator v2 专题。
 
 #### Transfer PostgreSQL CDC v1 契约（3A/3B/3C/3D 已完成第一版）

@@ -131,6 +131,13 @@ POST   /api/v1/graph/graphs/:id/expand                   展开节点邻居 (bod
 POST   /api/v1/graph/graphs/:id/path                     最短路径查询 (body: {source_id, target_id})
 ```
 
+### 图谱构建 execution 语义
+
+- 启动时在任务定义行锁保护下检查 active execution，并原子创建 `pending` execution；`pending.started_at` 必须为空。
+- worker 接管时在同一事务推进构建任务和 execution 为 `running`，并写入真实 `started_at`；终态同样在一个事务提交。
+- 重跑只允许终态任务，材料进度、待审核项、任务摘要重置与新 pending execution claim 必须在同一事务完成。
+- 取消只允许当前 Graph Backend 进程持有真实运行句柄时执行；取消请求等待 worker 停止并写入 `cancelled`，无句柄时返回冲突，不修改持久状态。取消中断当前材料时，材料必须恢复为可重跑的 `pending`，不得遗留 `processing` 状态或部分分块进度。
+
 ## 七、开发与调试
 
 ```bash

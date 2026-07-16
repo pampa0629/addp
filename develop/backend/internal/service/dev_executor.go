@@ -23,6 +23,7 @@ type DevExecutor struct {
 	devTaskRepo              *repository.DevTaskRepository
 	taskExecutionRepo        *commonExecution.TaskExecutionRepository // 统一执行记录仓库
 	workflowEngine           *WorkflowEngineService
+	operatorDiscovery        *OperatorDiscoveryService
 	metaClient               *commonClient.MetaClient
 	sqlEngine                *SQLEngineService
 	duckdbService            federatedQueryExecutor
@@ -39,6 +40,7 @@ func NewDevExecutor(
 	devTaskRepo *repository.DevTaskRepository,
 	taskExecutionRepo *commonExecution.TaskExecutionRepository, // 使用统一执行记录仓库
 	workflowEngine *WorkflowEngineService,
+	operatorDiscovery *OperatorDiscoveryService,
 	metaClient *commonClient.MetaClient,
 	sqlEngine *SQLEngineService,
 	duckdbService federatedQueryExecutor,
@@ -49,6 +51,7 @@ func NewDevExecutor(
 		devTaskRepo:              devTaskRepo,
 		taskExecutionRepo:        taskExecutionRepo,
 		workflowEngine:           workflowEngine,
+		operatorDiscovery:        operatorDiscovery,
 		metaClient:               metaClient,
 		sqlEngine:                sqlEngine,
 		duckdbService:            duckdbService,
@@ -65,6 +68,10 @@ func (e *DevExecutor) ExecuteDevTask(
 	userID uint,
 	triggerType string,
 ) (string, error) {
+	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
+	if err != nil {
+		return "", err
+	}
 	// 获取开发任务
 	devTask, err := e.devTaskRepo.FindByID(devTaskID, tenantID)
 	if err != nil {
@@ -74,6 +81,11 @@ func (e *DevExecutor) ExecuteDevTask(
 	// 验证状态
 	if devTask.Status != "active" {
 		return "", fmt.Errorf("开发任务状态为 %s，无法执行", devTask.Status)
+	}
+	if devTask.DevType == commonExecution.TaskTypeWorkflow {
+		if err := e.validateWorkflowBeforeExecution(ctx, devTask.Content, devTask.ExecutionConfig, tenantID); err != nil {
+			return "", err
+		}
 	}
 
 	// 生成执行ID
@@ -88,7 +100,7 @@ func (e *DevExecutor) ExecuteDevTask(
 	}
 
 	// 创建统一执行记录
-	startTime := time.Now()
+	now := time.Now()
 	userIDInt := int(userID)
 
 	execution := &commonExecution.TaskExecution{
@@ -101,12 +113,11 @@ func (e *DevExecutor) ExecuteDevTask(
 		SourceTaskName:  &devTask.Name,
 		Status:          commonExecution.ExecutionStatusPending,
 		Progress:        0,
-		TriggerType:     triggerType,
+		TriggerType:     normalizedTriggerType,
 		TriggeredBy:     &userIDInt,
 		ExecutionConfig: devTaskExecutionRecordConfig(devTask, inputs),
-		StartedAt:       &startTime,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 
 	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
@@ -114,7 +125,7 @@ func (e *DevExecutor) ExecuteDevTask(
 	}
 
 	log.Printf("🚀 [DevExecutor] 开始执行 execution_id=%s source_task_id=%d type=%s trigger=%s",
-		executionID, devTaskID, devTask.DevType, triggerType)
+		executionID, devTaskID, devTask.DevType, normalizedTriggerType)
 
 	// 异步执行任务
 	go e.executeAsync(execution.ID, executionID, devTask, int(tenantID))
@@ -153,6 +164,11 @@ func (e *DevExecutor) ExecuteContent(
 	if err := validateDevTaskExecutionConfig(devType, content, executionConfig); err != nil {
 		return "", err
 	}
+	if devType == commonExecution.TaskTypeWorkflow {
+		if err := e.validateWorkflowBeforeExecution(ctx, content, executionConfig, tenantID); err != nil {
+			return "", err
+		}
+	}
 	if timeout <= 0 {
 		timeout = 300
 	}
@@ -169,7 +185,7 @@ func (e *DevExecutor) ExecuteContent(
 	}
 
 	// 创建统一执行记录
-	startTime := time.Now()
+	now := time.Now()
 	userIDInt := int(userID)
 	recordConfig := commonModels.JSONMap{}
 	for key, value := range executionConfig {
@@ -190,9 +206,8 @@ func (e *DevExecutor) ExecuteContent(
 		TriggerType:     normalizedTriggerType,
 		TriggeredBy:     &userIDInt,
 		ExecutionConfig: recordConfig,
-		StartedAt:       &startTime,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 
 	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
@@ -215,13 +230,69 @@ func (e *DevExecutor) ExecuteContent(
 	return executionID, nil
 }
 
+func (e *DevExecutor) validateWorkflowBeforeExecution(
+	ctx context.Context,
+	content map[string]interface{},
+	executionConfig map[string]interface{},
+	tenantID uint,
+) error {
+	if e.operatorDiscovery == nil {
+		return fmt.Errorf("工作流校验服务不可用")
+	}
+	workflowDefinition, ok := content["workflow_definition"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("工作流定义无效")
+	}
+	workflowEngineID := workflowEngineIDFromExecutionConfig(executionConfig)
+	if workflowEngineID == 0 {
+		return fmt.Errorf("工作流执行必须提供 execution_config.engine_id")
+	}
+	result, err := e.operatorDiscovery.ValidateWorkflowForTenant(
+		ctx,
+		workflowEngineID,
+		workflowDefinition,
+		tenantID,
+	)
+	if err != nil {
+		return err
+	}
+	if result.Valid {
+		return nil
+	}
+	messages := make([]string, 0, len(result.Errors))
+	for _, issue := range result.Errors {
+		messages = append(messages, issue.Message)
+	}
+	return fmt.Errorf("工作流校验失败: %s", strings.Join(messages, "; "))
+}
+
+func workflowEngineIDFromExecutionConfig(executionConfig map[string]interface{}) uint {
+	switch value := executionConfig["engine_id"].(type) {
+	case float64:
+		if value > 0 {
+			return uint(value)
+		}
+	case int:
+		if value > 0 {
+			return uint(value)
+		}
+	case uint:
+		return value
+	}
+	return 0
+}
+
 // executeAsync 异步执行任务（核心执行逻辑）
 func (e *DevExecutor) executeAsync(recordID int64, executionID string, devTask *models.DevTask, tenantID int) {
 	log.Printf("🟢 [DevExecutor] executeAsync 开始: execution_id=%s", executionID)
 	ctx := context.Background()
 	startTime := time.Now()
 
-	// 更新状态为 running
+	// 只有真正进入 worker 后才从 pending 切换为 running 并写 started_at。
+	if err := e.taskExecutionRepo.StartExecution(ctx, executionID, tenantID, startTime); err != nil {
+		log.Printf("❌ [DevExecutor] 启动执行失败: execution_id=%s error=%v", executionID, err)
+		return
+	}
 	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 10, "开始执行")
 
 	var result commonModels.JSONMap
@@ -342,7 +413,7 @@ func (e *DevExecutor) executeWorkflow(ctx context.Context, devTask *models.DevTa
 	if !ok {
 		return nil, "无效的工作流定义"
 	}
-	if err := validateWorkflowDefinition(workflowDef); err != nil {
+	if err := ValidateWorkflowDefinition(workflowDef); err != nil {
 		return nil, err.Error()
 	}
 
@@ -899,7 +970,7 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 
 	// 6. 直接创建执行记录并执行
 	executionID := uuid.New().String()
-	startTime := time.Now()
+	now := time.Now()
 
 	executionInputs := commonModels.JSONMap{
 		"parameters": mergedParams,
@@ -924,9 +995,8 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 		TriggerType:       normalizedTriggerType,
 		TriggeredBy:       &userIDInt,
 		ExecutionConfig:   devTaskExecutionRecordConfig(devTask, executionInputs),
-		StartedAt:         &startTime,
-		CreatedAt:         time.Now(),
-		UpdatedAt:         time.Now(),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 
 	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {

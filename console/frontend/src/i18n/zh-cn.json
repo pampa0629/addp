@@ -80,6 +80,27 @@
       "requestFailed": "请求失败 ({status})",
       "unknown": "未知错误"
     },
+    "oauth": {
+      "client": "客户端",
+      "scope": "授权范围",
+      "failed": "授权请求失败",
+      "invalidRequest": "授权请求参数无效",
+      "authorize": {
+        "title": "授权客户端访问 ADDP",
+        "description": "客户端 {client} 请求代表你访问 ADDP。",
+        "approve": "允许访问"
+      },
+      "device": {
+        "title": "设备授权",
+        "description": "输入 CLI 显示的设备代码并确认授权。",
+        "placeholder": "例如 ABCD-EFGH",
+        "required": "请输入设备代码",
+        "approve": "允许设备",
+        "deny": "拒绝",
+        "approved": "设备已获授权，可以返回 CLI",
+        "denied": "已拒绝设备授权"
+      }
+    },
     "apiDocs": {
       "title": "API 文档",
       "platformCenter": "平台级文档中心",
@@ -269,7 +290,9 @@
       "monitor": {
         "label": "执行监控",
         "dashboard": "监控仪表盘",
-        "executions": "执行记录"
+        "executions": "执行记录",
+        "alerts": "告警事件",
+        "notifications": "告警通知"
       },
       "asset": {
         "label": "资产管理",

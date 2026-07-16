@@ -29,9 +29,12 @@ const (
 	MsgGraphDeleted = "graph.kg.deleted"
 
 	// 构建
-	MsgTaskStarted   = "graph.build.task_started"
-	MsgTaskCancelled = "graph.build.task_cancelled"
-	MsgTaskRestarted = "graph.build.task_restarted"
+	MsgTaskStarted         = "graph.build.task_started"
+	MsgTaskCancelled       = "graph.build.task_cancelled"
+	MsgTaskRestarted       = "graph.build.task_restarted"
+	MsgTaskActive          = "graph.build.task_active"
+	MsgTaskRuntimeNotOwned = "graph.build.task_runtime_not_owned"
+	MsgTaskRunFailed       = "graph.build.task_run_failed"
 
 	// 审核
 	MsgApproved      = "graph.review.approved"

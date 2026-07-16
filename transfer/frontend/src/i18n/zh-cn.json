@@ -34,6 +34,30 @@
       "running": "任务已在运行。",
       "invalid_state": "当前任务状态不允许启动。"
     },
+    "recovery": {
+      "state": "恢复状态",
+      "reason": "恢复原因",
+      "attempt": "本次恢复序号",
+      "consecutiveFailures": "连续失败次数",
+      "backoff": "恢复退避",
+      "nextAttemptAt": "下次恢复时间",
+      "recoveredFrom": "来源执行ID",
+      "noticeDescription": "原因：{reason}；连续失败：{failures}；下次恢复时间：{nextAttempt}。Pause 可中止自动恢复，Resume 将创建新的手动执行。",
+      "states": {
+        "waiting": "等待恢复",
+        "open": "自动恢复已熔断",
+        "half_open": "恢复探测中",
+        "ready": "等待 Worker 领取",
+        "running": "恢复运行中",
+        "completed": "恢复执行已结束"
+      },
+      "reasons": {
+        "worker_shutdown": "Worker 正常重启",
+        "lease_expired": "Worker 失联或租约过期",
+        "execution_failed": "执行失败",
+        "unknown": "未知"
+      }
+    },
     "dashboard": {
       "totalTasks": "总任务数",
       "notExecuted": "未执行",
@@ -256,6 +280,7 @@
       "lastCommittedAt": "最近提交时间",
       "lastEventAt": "最近消息时间",
       "checkpointAge": "距最近提交",
+      "checkpointHealth": "提交健康",
       "stopReason": "停止原因",
       "partition": "分区",
       "nextOffset": "下一消息位置",

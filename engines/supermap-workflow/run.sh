@@ -37,10 +37,27 @@ if [ ! -f "${CLASS_DIR}/com/addp/supermap/workflow/SuperMapWorkflowRuntime.class
   exit 1
 fi
 
+# Objects Java cloud-license already embeds the Log4j SLF4J binding. PDT's full GPA lib set also
+# carries alternate logging stacks and TLog converters that collide when loaded into this runtime.
+gpa_classpath=""
+for jar in "${GPA_LIB_DIR}"/*.jar; do
+  jar_name="$(basename "${jar}")"
+  case "${jar_name}" in
+    logback-*.jar|logstash-logback-*.jar|tlog-*.jar|log4j-slf4j-impl-*.jar)
+      continue
+      ;;
+  esac
+  gpa_classpath="${gpa_classpath:+${gpa_classpath}:}${jar}"
+done
+if [ -z "${gpa_classpath}" ]; then
+  echo "No GPA runtime jars found in ${GPA_LIB_DIR}" >&2
+  exit 1
+fi
+
 read -r -a java_opts <<< "${JAVA_OPTS}"
 
 exec java \
   "${java_opts[@]}" \
   -Djava.library.path="${SUPERMAP_BIN}" \
-  -cp "${CLASS_DIR}:${LIB_DIR}/*:${GPA_LIB_DIR}/*:${SUPERMAP_BIN}/*" \
+  -cp "${CLASS_DIR}:${LIB_DIR}/*:${gpa_classpath}:${SUPERMAP_BIN}/*" \
   "${MAIN_CLASS}"

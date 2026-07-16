@@ -3,6 +3,8 @@ import { createAuthGuard } from '@common-ui'
 import { useAuthStore } from '../store/auth'
 import Dashboard from '../views/Dashboard.vue'
 import ExecutionList from '../views/ExecutionList.vue'
+import AlertList from '../views/AlertList.vue'
+import NotificationList from '../views/NotificationList.vue'
 import Login from '../views/Login.vue'
 
 const routes = [
@@ -25,6 +27,16 @@ const routes = [
     path: '/executions',
     name: 'ExecutionList',
     component: ExecutionList
+  },
+  {
+    path: '/alerts',
+    name: 'AlertList',
+    component: AlertList
+  },
+  {
+    path: '/notifications',
+    name: 'NotificationList',
+    component: NotificationList
   }
 ]
 

@@ -194,7 +194,20 @@ curl -X POST http://localhost:8185/api/v1/develop/task-definitions \
     }
   }'
 
-# 4. 执行工作流
+# 4. 执行前按目标运行时 Public Operator Spec 校验候选 definition
+curl -X POST http://localhost:8185/api/v1/develop/workflow-validations \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workflow_engine_id": 12,
+    "workflow_definition": {
+      "tasks": [
+        {"id": "load_data", "operator": "load", "params": {"locator": "addp://engine/3/path/public/cities?type=table"}, "depends_on": []}
+      ]
+    }
+  }'
+
+# 5. 执行工作流
 curl -X POST http://localhost:8185/api/v1/develop/task-definitions/123/execute \
   -H "Authorization: Bearer <token>" \
   -d '{"parameters": {"input_table": "public.cities"}}'

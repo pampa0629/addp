@@ -1,14 +1,16 @@
 <template>
   <div class="chat-layout">
-    <!-- 左侧会话列表 -->
     <aside class="sidebar">
       <div class="sidebar-header">
-        <el-button type="primary" size="small" @click="createSession" :icon="Plus">{{ t('agent.chat.newSession') }}</el-button>
+        <el-button type="primary" size="small" :icon="Plus" @click="createSession">
+          {{ t('agent.chat.newSession') }}
+        </el-button>
       </div>
       <div class="session-list">
-        <div
+        <button
           v-for="session in sessions"
           :key="session.id"
+          type="button"
           class="session-item"
           :class="{ active: currentSessionId === session.id }"
           @click="switchSession(session.id)"
@@ -23,16 +25,19 @@
             :icon="Delete"
             @click.stop="deleteSession(session.id)"
           />
-        </div>
-        <el-empty v-if="sessions.length === 0" :description="t('agent.chat.noSessions')" :image-size="60" />
+        </button>
+        <el-empty
+          v-if="sessions.length === 0"
+          :description="t('agent.chat.noSessions')"
+          :image-size="60"
+        />
       </div>
     </aside>
 
-    <!-- 主聊天区域 -->
     <main class="chat-main">
-      <div class="messages-area" ref="messagesAreaRef">
-        <div v-if="messages.length === 0" class="empty-hint">
-          <el-icon size="48" color="var(--el-text-color-secondary)"><ChatDotRound /></el-icon>
+      <div ref="messagesAreaRef" class="messages-area">
+        <div v-if="messages.length === 0 && !liveMessage" class="empty-hint">
+          <el-icon size="48"><ChatDotRound /></el-icon>
           <p>{{ t('agent.chat.welcome') }}</p>
           <div class="quick-actions">
             <el-tag
@@ -40,32 +45,48 @@
               :key="hint"
               class="quick-tag"
               @click="sendQuickMessage(hint)"
-            >{{ hint }}</el-tag>
+            >
+              {{ hint }}
+            </el-tag>
           </div>
         </div>
 
-        <div v-for="msg in messages" :key="msg.id" class="message-row" :class="msg.role">
+        <div
+          v-for="message in messages"
+          :key="message.protocol_message_id || message.id"
+          class="message-row"
+          :class="message.role"
+        >
           <div class="message-bubble">
-            <div v-if="msg.role === 'assistant'" class="message-content markdown" v-html="renderMarkdown(msg.content)" />
-            <div v-else class="message-content">{{ msg.content }}</div>
-            <div v-if="msg.dagData" class="dag-container">
-              <DAGViewer :dag-data="msg.dagData" :height="400" />
-            </div>
+            <MessagePartsRenderer
+              :message="message"
+              @action="handleA2UIAction"
+              @error="handlePresentationError"
+            />
           </div>
         </div>
 
-        <!-- 流式输出中的 AI 回复 -->
-        <div v-if="isLoading" class="message-row assistant">
-          <div class="message-bubble">
-            <div class="message-content markdown" v-html="renderMarkdown(streamContent || '...')" />
-            <div v-if="streamDagData" class="dag-container">
-              <DAGViewer :dag-data="streamDagData" :height="400" />
+        <div v-if="liveMessage" class="message-row assistant">
+          <div class="message-bubble live-message">
+            <div v-if="liveTools.length" class="tool-trace">
+              <div v-for="tool in liveTools" :key="tool.id" class="tool-trace-item">
+                <el-icon :class="{ spinning: tool.status === 'running' }"><Loading /></el-icon>
+                <span>{{ tool.name }}</span>
+                <el-tag size="small" :type="tool.status === 'completed' ? 'success' : 'info'">
+                  {{ t(`agent.chat.toolStatus.${tool.status}`) }}
+                </el-tag>
+              </div>
             </div>
+            <MessagePartsRenderer
+              :message="liveMessage"
+              @action="handleA2UIAction"
+              @error="handlePresentationError"
+            />
+            <span v-if="isLoading && liveMessage.parts.length === 0" class="running-indicator">…</span>
           </div>
         </div>
       </div>
 
-      <!-- 输入区域 -->
       <div class="input-area">
         <el-input
           v-model="inputText"
@@ -73,30 +94,44 @@
           :rows="3"
           :placeholder="t('agent.chat.inputPlaceholder')"
           resize="none"
+          :disabled="isLoading"
           @keydown.ctrl.enter="handleSend"
         />
-        <el-button
-          type="primary"
-          :loading="isLoading"
-          @click="handleSend"
-          :icon="Position"
-        >
-          {{ t('agent.chat.send') }}
-        </el-button>
+        <div class="input-actions">
+          <el-tooltip v-if="isLoading" :content="t('agent.chat.cancel')">
+            <el-button
+              :icon="CircleClose"
+              :loading="isCancelling"
+              :aria-label="t('agent.chat.cancel')"
+              @click="cancelActiveRun"
+            />
+          </el-tooltip>
+          <el-tooltip v-if="!isLoading && retryRunId" :content="t('agent.chat.retry')">
+            <el-button
+              :icon="RefreshRight"
+              :aria-label="t('agent.chat.retry')"
+              @click="retryFailedRun"
+            />
+          </el-tooltip>
+          <el-button v-if="!isLoading" type="primary" :icon="Position" @click="handleSend">
+            {{ t('agent.chat.send') }}
+          </el-button>
+        </div>
       </div>
     </main>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
-import { Plus, Delete, ChatDotRound, Position } from '@element-plus/icons-vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { ChatDotRound, CircleClose, Delete, Loading, Plus, Position, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { marked } from 'marked'
+
+import { createAgentClient, replayAgentRunEvents } from '../agent/createAgentClient'
+import { runAPI, sessionAPI } from '../api/index'
+import MessagePartsRenderer from '../components/MessagePartsRenderer.vue'
 import { useAuthStore } from '../store/auth'
-import { sessionAPI } from '../api/index'
-import { DAGViewer } from '@addp/common-frontend/dag'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -106,27 +141,25 @@ const currentSessionId = ref(null)
 const messages = ref([])
 const inputText = ref('')
 const isLoading = ref(false)
-const streamContent = ref('')
-const streamDagData = ref(null)
+const isCancelling = ref(false)
+const liveMessage = ref(null)
+const liveTools = ref([])
 const messagesAreaRef = ref(null)
+const activeRunId = ref(null)
+const retryRunId = ref(null)
 
 const quickHints = computed(() => [
   t('agent.quickHints.viewCatalog'),
   t('agent.quickHints.listSources'),
   t('agent.quickHints.importShapefile'),
-  t('agent.quickHints.runSQL'),
+  t('agent.quickHints.runSQL')
 ])
-
-function renderMarkdown(content) {
-  return marked.parse(content || '')
-}
 
 async function loadSessions() {
   try {
-    const list = await sessionAPI.list()
-    sessions.value = list || []
-  } catch (e) {
-    console.error('加载会话列表失败', e)
+    sessions.value = await sessionAPI.list() || []
+  } catch (error) {
+    console.error('Failed to load sessions', error)
   }
 }
 
@@ -135,35 +168,34 @@ async function createSession() {
     const session = await sessionAPI.create({ title: null })
     sessions.value.unshift(session)
     await switchSession(session.id)
-  } catch (e) {
+    return session.id
+  } catch (error) {
     ElMessage.error(t('agent.chat.createFailed'))
+    return null
   }
 }
 
 async function switchSession(sessionId) {
+  if (isLoading.value) return
   currentSessionId.value = sessionId
-  messages.value = []
   try {
-    const list = await sessionAPI.getMessages(sessionId)
-    messages.value = (list || []).map(m => ({
-      ...m,
-      dagData: m.result_type === 'dag' ? m.result_data : null
-    }))
+    messages.value = await sessionAPI.getMessages(sessionId) || []
     scrollToBottom()
-  } catch (e) {
-    console.error('加载消息历史失败', e)
+  } catch (error) {
+    console.error('Failed to load messages', error)
   }
 }
 
 async function deleteSession(sessionId) {
+  if (isLoading.value) return
   try {
     await sessionAPI.delete(sessionId)
-    sessions.value = sessions.value.filter(s => s.id !== sessionId)
+    sessions.value = sessions.value.filter(session => session.id !== sessionId)
     if (currentSessionId.value === sessionId) {
       currentSessionId.value = null
       messages.value = []
     }
-  } catch (e) {
+  } catch (error) {
     ElMessage.error(t('agent.chat.deleteFailed'))
   }
 }
@@ -173,117 +205,239 @@ async function sendQuickMessage(text) {
   await handleSend()
 }
 
+function startLiveMessage() {
+  liveMessage.value = {
+    id: `live:${crypto.randomUUID()}`,
+    role: 'assistant',
+    content: '',
+    parts: []
+  }
+  liveTools.value = []
+}
+
+function ensureLiveTextPart() {
+  let part = liveMessage.value.parts.find(item => item.type === 'text')
+  if (!part) {
+    part = { type: 'text', text: '' }
+    liveMessage.value.parts.unshift(part)
+  }
+  return part
+}
+
+function applyToolStart(event) {
+  if (!liveTools.value.some(item => item.id === event.toolCallId)) {
+    liveTools.value.push({ id: event.toolCallId, name: event.toolCallName, status: 'running' })
+  }
+  scrollToBottom()
+}
+
+function applyToolResult(event) {
+  const tool = liveTools.value.find(item => item.id === event.toolCallId)
+  if (tool) tool.status = 'completed'
+}
+
+function applyActivity(event) {
+  liveMessage.value.parts.push({
+    type: 'presentation_ref',
+    protocol: 'a2ui',
+    activity_type: event.activityType,
+    surface_id: event.messageId,
+    content: event.content
+  })
+  scrollToBottom()
+}
+
+function applyStateSnapshot(event) {
+  if (event.snapshot?.agentRunId) activeRunId.value = event.snapshot.agentRunId
+}
+
+function applyRunError(event, { notify = true } = {}) {
+  if (event.code !== 'cancelled' && activeRunId.value) retryRunId.value = activeRunId.value
+  if (notify) ElMessage.error(event.message || t('agent.chat.errorReply'))
+}
+
+function applyReplayEvent(event) {
+  switch (event.type) {
+    case 'TEXT_MESSAGE_START':
+      ensureLiveTextPart()
+      break
+    case 'TEXT_MESSAGE_CONTENT':
+      ensureLiveTextPart().text += event.delta || ''
+      break
+    case 'TOOL_CALL_START':
+      applyToolStart(event)
+      break
+    case 'TOOL_CALL_RESULT':
+      applyToolResult(event)
+      break
+    case 'ACTIVITY_SNAPSHOT':
+      applyActivity(event)
+      break
+    case 'STATE_SNAPSHOT':
+      applyStateSnapshot(event)
+      break
+    case 'RUN_ERROR':
+      applyRunError(event)
+      break
+  }
+}
+
+function createSubscriber() {
+  return {
+    onTextMessageContentEvent({ event }) {
+      ensureLiveTextPart().text += event.delta
+      scrollToBottom()
+    },
+    onToolCallStartEvent({ event }) {
+      applyToolStart(event)
+    },
+    onToolCallResultEvent({ event }) {
+      applyToolResult(event)
+    },
+    onActivitySnapshotEvent({ event }) {
+      applyActivity(event)
+    },
+    onStateSnapshotEvent({ event }) {
+      applyStateSnapshot(event)
+    },
+    onRunErrorEvent({ event }) {
+      applyRunError(event)
+    }
+  }
+}
+
+async function replayActiveRun() {
+  if (!activeRunId.value) return false
+  startLiveMessage()
+  await replayAgentRunEvents({
+    agentRunId: activeRunId.value,
+    getAuthStore: () => authStore,
+    onEvent: ({ event }) => applyReplayEvent(event)
+  })
+  return true
+}
+
+async function runAgent({ userMessage = null, resume = null } = {}) {
+  if (!currentSessionId.value || isLoading.value) return
+  isLoading.value = true
+  retryRunId.value = null
+  startLiveMessage()
+
+  const agent = createAgentClient({
+    sessionId: currentSessionId.value,
+    getAuthStore: () => authStore
+  })
+  if (userMessage) agent.addMessage(userMessage)
+
+  let replayed = false
+  try {
+    await agent.runAgent(resume ? { resume } : {}, createSubscriber())
+  } catch (error) {
+    try {
+      replayed = await replayActiveRun()
+    } catch {
+      ElMessage.error(t('agent.chat.sendFailed', { msg: error.message }))
+    }
+  } finally {
+    if (!replayed) {
+      liveMessage.value = null
+      liveTools.value = []
+    }
+    isLoading.value = false
+    isCancelling.value = false
+    activeRunId.value = null
+    await Promise.all([loadSessions(), switchSession(currentSessionId.value)])
+  }
+}
+
+async function cancelActiveRun() {
+  if (!activeRunId.value || isCancelling.value) return
+  isCancelling.value = true
+  try {
+    await runAPI.cancel(activeRunId.value)
+  } catch (error) {
+    ElMessage.error(t('agent.chat.cancelFailed', { msg: error.message }))
+    isCancelling.value = false
+  }
+}
+
+async function retryFailedRun() {
+  if (!retryRunId.value || isLoading.value) return
+  const agentRunId = retryRunId.value
+  isLoading.value = true
+  retryRunId.value = null
+  startLiveMessage()
+  const agent = createAgentClient({
+    sessionId: currentSessionId.value,
+    endpoint: `/api/v1/agent/runs/${agentRunId}/retry`,
+    getAuthStore: () => authStore
+  })
+  try {
+    await agent.runAgent({}, createSubscriber())
+  } catch (error) {
+    retryRunId.value = agentRunId
+    ElMessage.error(t('agent.chat.sendFailed', { msg: error.message }))
+  } finally {
+    liveMessage.value = null
+    liveTools.value = []
+    isLoading.value = false
+    activeRunId.value = null
+    await Promise.all([loadSessions(), switchSession(currentSessionId.value)])
+  }
+}
+
 async function handleSend() {
   const content = inputText.value.trim()
   if (!content || isLoading.value) return
 
-  // 确保有会话
-  if (!currentSessionId.value) {
-    await createSession()
-  }
+  if (!currentSessionId.value && !await createSession()) return
 
-  // 添加用户消息到界面
-  const userMsg = { id: Date.now(), role: 'user', content }
-  messages.value.push(userMsg)
+  retryRunId.value = null
+
+  const protocolMessageId = crypto.randomUUID()
+  messages.value.push({
+    id: `local:${protocolMessageId}`,
+    protocol_message_id: protocolMessageId,
+    role: 'user',
+    content,
+    parts: [{ type: 'text', text: content }]
+  })
   inputText.value = ''
-  isLoading.value = true
-  streamContent.value = ''
-  streamDagData.value = null
-
-  await nextTick()
   scrollToBottom()
 
-  try {
-    const response = await fetch('/api/v1/agent/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authStore.token}`,
-      },
-      body: JSON.stringify({
-        session_id: currentSessionId.value,
-        message: content,
-      }),
-    })
+  await runAgent({
+    userMessage: { id: protocolMessageId, role: 'user', content }
+  })
+}
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
+async function handleA2UIAction(action) {
+  if (action.name !== 'interaction.submit' || isLoading.value) return
+  const interactionId = action.context?.interactionId
+  if (!interactionId) return
+  await runAgent({
+    resume: [{
+      interruptId: interactionId,
+      status: 'resolved',
+      payload: action.context.answer
+    }]
+  })
+}
 
-    // 读取流式响应
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let fullContent = ''
-    let dagData = null
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-
-      const text = decoder.decode(value)
-      const lines = text.split('\n').filter(l => l.trim())
-      for (const line of lines) {
-        try {
-          if (line.startsWith('dag:')) {
-            // DAG 事件
-            dagData = JSON.parse(line.slice(4))
-            streamDagData.value = dagData
-            scrollToBottom()
-          } else if (line.startsWith('0:')) {
-            // 文本事件
-            const chunk = JSON.parse(line.slice(2))
-            fullContent += chunk
-            streamContent.value = fullContent
-            scrollToBottom()
-          }
-        } catch (e) {
-          // 忽略解析错误
-        }
-      }
-    }
-
-    // 流结束，添加完整 AI 消息
-    messages.value.push({
-      id: Date.now() + 1,
-      role: 'assistant',
-      content: fullContent || t('agent.chat.workflowGenerated'),
-      result_type: dagData ? 'dag' : 'text',
-      dagData: dagData,
-    })
-    streamContent.value = ''
-    streamDagData.value = null
-
-    // 更新会话标题
-    const session = sessions.value.find(s => s.id === currentSessionId.value)
-    if (session && !session.title) {
-      session.title = content.slice(0, 30)
-    }
-  } catch (e) {
-    ElMessage.error(t('agent.chat.sendFailed', { msg: e.message }))
-    messages.value.push({
-      id: Date.now() + 1,
-      role: 'assistant',
-      content: t('agent.chat.errorReply'),
-      result_type: 'error',
-    })
-  } finally {
-    isLoading.value = false
-    scrollToBottom()
-  }
+function handlePresentationError(error) {
+  console.error('A2UI rendering failed', error)
+  ElMessage.error(t('agent.chat.presentationFailed'))
 }
 
 function scrollToBottom() {
   nextTick(() => {
-    const el = messagesAreaRef.value
-    if (el) el.scrollTop = el.scrollHeight
+    const element = messagesAreaRef.value
+    if (element) element.scrollTop = element.scrollHeight
   })
 }
 
 onMounted(async () => {
   await loadSessions()
-  if (sessions.value.length > 0) {
-    await switchSession(sessions.value[0].id)
-  }
+  if (sessions.value.length > 0) await switchSession(sessions.value[0].id)
 })
 </script>
 
@@ -297,7 +451,7 @@ onMounted(async () => {
 .sidebar {
   width: 240px;
   background: var(--addp-bg-primary);
-  border-right: 1px solid var(--el-border-color);
+  border-right: 1px solid var(--addp-border-color);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -305,7 +459,7 @@ onMounted(async () => {
 
 .sidebar-header {
   padding: 16px;
-  border-bottom: 1px solid var(--el-border-color);
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .sidebar-header .el-button {
@@ -319,18 +473,21 @@ onMounted(async () => {
 }
 
 .session-item {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
+  border: 0;
   border-radius: 8px;
+  color: var(--addp-text-primary);
+  background: transparent;
   cursor: pointer;
-  position: relative;
-  transition: background 0.2s;
+  text-align: left;
 }
 
 .session-item:hover {
-  background: var(--el-fill-color-light);
+  background: var(--addp-bg-secondary);
 }
 
 .session-item.active {
@@ -340,6 +497,7 @@ onMounted(async () => {
 
 .session-title {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -348,7 +506,6 @@ onMounted(async () => {
 
 .delete-btn {
   opacity: 0;
-  transition: opacity 0.2s;
 }
 
 .session-item:hover .delete-btn {
@@ -357,6 +514,7 @@ onMounted(async () => {
 
 .chat-main {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -372,22 +530,20 @@ onMounted(async () => {
 }
 
 .empty-hint {
-  text-align: center;
   margin: auto;
-  color: var(--el-text-color-secondary);
+  text-align: center;
+  color: var(--addp-text-secondary);
 }
 
 .empty-hint p {
   margin: 16px 0;
-  font-size: 15px;
 }
 
 .quick-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
   justify-content: center;
-  margin-top: 16px;
+  gap: 8px;
 }
 
 .quick-tag {
@@ -396,6 +552,7 @@ onMounted(async () => {
 
 .message-row {
   display: flex;
+  min-width: 0;
 }
 
 .message-row.user {
@@ -407,70 +564,88 @@ onMounted(async () => {
 }
 
 .message-bubble {
-  max-width: 72%;
+  max-width: min(860px, 82%);
+  min-width: 0;
   padding: 12px 16px;
   border-radius: 12px;
   font-size: 14px;
   line-height: 1.6;
+  background: var(--addp-bg-primary);
+  color: var(--addp-text-primary);
+  border: 1px solid var(--addp-border-color-light);
 }
 
 .message-row.user .message-bubble {
   background: var(--el-color-primary);
-  color: #fff;
-  border-bottom-right-radius: 4px;
+  color: var(--el-color-white);
+  border-color: var(--el-color-primary);
 }
 
-.message-row.assistant .message-bubble {
-  background: var(--addp-bg-primary);
-  border: 1px solid var(--el-border-color);
-  border-bottom-left-radius: 4px;
+.live-message {
+  width: min(860px, 82%);
 }
 
-.message-content.markdown :deep(p) {
-  margin: 0 0 8px;
-}
-
-.message-content.markdown :deep(p:last-child) {
-  margin-bottom: 0;
-}
-
-.message-content.markdown :deep(code) {
-  background: var(--el-fill-color);
-  padding: 2px 4px;
-  border-radius: 3px;
-  font-family: monospace;
-}
-
-.message-content.markdown :deep(pre) {
-  background: var(--el-fill-color-darker);
-  padding: 12px;
-  border-radius: 6px;
-  overflow-x: auto;
-}
-
-.dag-container {
-  margin-top: 12px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--addp-bg-secondary);
-}
-
-.input-area {
-  padding: 16px 20px;
-  background: var(--addp-bg-primary);
-  border-top: 1px solid var(--el-border-color);
+.tool-trace {
   display: flex;
-  gap: 12px;
-  align-items: flex-end;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 
-.input-area .el-textarea {
+.tool-trace-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--addp-bg-secondary);
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+}
+
+.tool-trace-item span {
   flex: 1;
 }
 
-.input-area .el-button {
-  align-self: flex-end;
-  height: 64px;
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+.running-indicator {
+  color: var(--addp-text-tertiary);
+}
+
+.input-area {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 16px 20px;
+  border-top: 1px solid var(--addp-border-color);
+  background: var(--addp-bg-primary);
+}
+
+.input-actions {
+  display: flex;
+  align-items: flex-end;
+}
+
+.input-area .el-input {
+  flex: 1;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    width: 200px;
+  }
+
+  .message-bubble,
+  .live-message {
+    max-width: 94%;
+    width: auto;
+  }
 }
 </style>

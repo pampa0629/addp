@@ -31,10 +31,12 @@ class MetadataSearchTool(BaseTool):
 
         async with ManagerClient(
             base_url=settings.get_manager_url(),
-            internal_api_key=settings.internal_api_key
+            internal_api_key=settings.internal_api_key,
+            tenant_id=tenant_id,
         ) as manager_client, MetaClient(
             base_url=settings.get_meta_url(),
-            internal_api_key=settings.internal_api_key
+            internal_api_key=settings.internal_api_key,
+            tenant_id=tenant_id,
         ) as meta_client:
             result = await manager_client.search(
                 q=query,

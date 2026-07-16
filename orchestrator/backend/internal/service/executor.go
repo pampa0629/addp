@@ -487,7 +487,9 @@ func splitPath(path string) []string {
 
 // markFailed 标记执行失败
 func (e *Executor) markFailed(ctx context.Context, executionID uint, err error) error {
-	e.executionService.FinishExecution(ctx, executionID, "failed", err.Error(), nil)
+	if finishErr := e.executionService.FinishExecution(ctx, executionID, commonExecution.ExecutionStatusFailed, err.Error(), nil); finishErr != nil {
+		return fmt.Errorf("%w; persist failed execution state: %v", err, finishErr)
+	}
 	return err
 }
 

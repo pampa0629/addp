@@ -1,7 +1,10 @@
 const clarificationKeys = {
   data_source_not_found: 'develop.workflow.dataSourceNotFound',
   data_source_ambiguous: 'develop.workflow.dataSourceAmbiguous',
-  data_source_unverified: 'develop.workflow.dataSourceUnverified'
+  data_source_unverified: 'develop.workflow.dataSourceUnverified',
+  resource_facts_required: 'develop.workflow.resourceFactsRequired',
+  resource_facts_unverified: 'develop.workflow.resourceFactsUnverified',
+  resource_crs_required: 'develop.workflow.resourceCrsRequired'
 }
 
 export function resolveWorkflowGenerationResult(result) {

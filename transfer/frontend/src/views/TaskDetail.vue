@@ -51,7 +51,7 @@
         <el-descriptions-item :label="t('transfer.taskDetail.taskId')">{{ task.id }}</el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskDetail.taskName')">{{ task.name }}</el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskDetail.status')">
-          <el-tag :type="getTaskStatusTagType(task)">{{ taskDisplayStatus }}</el-tag>
+          <el-tag :type="taskStatusTagType">{{ taskDisplayStatus }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskDetail.batchSize')">{{ task.batch_size }}</el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskDetail.schedule')">
@@ -93,6 +93,16 @@
 				class="schema-blocked-alert"
 			/>
 
+      <el-alert
+        v-if="continuousRecoveryNotice"
+        :title="recoveryStateText(continuousRecoveryNotice)"
+        :description="recoveryNoticeDescription"
+        :type="continuousRecoveryNotice.state === 'open' ? 'error' : 'warning'"
+        :closable="false"
+        show-icon
+        class="schema-blocked-alert"
+      />
+
       <el-divider content-position="left">{{ t('transfer.taskDetail.sourceDataSource') }}</el-divider>
       <el-descriptions :column="2" border>
         <el-descriptions-item
@@ -128,6 +138,19 @@
           </template>
         </el-table-column>
         <el-table-column prop="records_written" :label="t('transfer.taskDetail.recordsWritten')" width="120" />
+        <el-table-column v-if="isContinuousTask" :label="t('transfer.recovery.state')" min-width="190">
+          <template #default="{ row }">
+            <template v-if="executionRecovery(row)">
+              <el-tag :type="continuousRecoveryTagType(executionRecovery(row).state)" size="small">
+                {{ recoveryStateText(executionRecovery(row)) }}
+              </el-tag>
+              <div v-if="['waiting', 'open'].includes(executionRecovery(row).state)" class="recovery-next-at">
+                {{ t('transfer.recovery.nextAttemptAt') }}：{{ formatDate(executionRecovery(row).notBefore) }}
+              </div>
+            </template>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="start_time" :label="t('transfer.taskDetail.startTime')" width="180">
           <template #default="{ row }">
             {{ formatDate(row.start_time) }}
@@ -167,7 +190,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
-import { formatLocatorDisplayPath } from '@addp/common-frontend'
+import { continuousRecoveryTagType, formatLocatorDisplayPath, getContinuousRecovery } from '@addp/common-frontend'
 import { taskAPI, executionAPI } from '@/api/tasks'
 import { formatDate } from '@common-ui'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType, getExecutionTagType, getExecutionLabel } from '@/utils/formatters'
@@ -196,6 +219,17 @@ const continuousStartDisabledMessage = computed(() => continuousStartDisabledRea
 	: '')
 const canStartContinuous = computed(() => continuousStartDisabledReasonCode.value === null)
 const canEditTask = computed(() => task.value?.status !== 'running' && (!isContinuousTask.value || task.value?.desired_state === 'stopped'))
+const latestExecution = computed(() => executions.value[0] || null)
+const latestRecovery = computed(() => latestExecution.value
+  ? getContinuousRecovery(latestExecution.value.metadata, latestExecution.value.status)
+  : null)
+const continuousRecoveryNotice = computed(() => {
+  if (!isContinuousTask.value || task.value?.desired_state !== 'running') return null
+  return ['waiting', 'open', 'half_open', 'ready'].includes(latestRecovery.value?.state) ? latestRecovery.value : null
+})
+const taskStatusTagType = computed(() => continuousRecoveryNotice.value
+  ? continuousRecoveryTagType(continuousRecoveryNotice.value.state)
+  : getTaskStatusTagType(task.value))
 const taskDisplayStatus = computed(() => {
   if (!isContinuousTask.value) return getTaskStatusLabel(task.value)
 	if (isCDCSchemaBlocked.value) return t('transfer.taskDetail.schemaBlocked')
@@ -204,8 +238,16 @@ const taskDisplayStatus = computed(() => {
 		if (isPostgreSQLCDC.value && !task.value?.capture) return t('transfer.taskDetail.continuousNotStarted')
 		return t('transfer.taskDetail.continuousStopped')
 	}
+  if (continuousRecoveryNotice.value) return recoveryStateText(continuousRecoveryNotice.value)
   return t('transfer.taskDetail.continuousRunning')
 })
+const recoveryNoticeDescription = computed(() => continuousRecoveryNotice.value
+  ? t('transfer.recovery.noticeDescription', {
+      reason: recoveryReasonText(continuousRecoveryNotice.value),
+      failures: continuousRecoveryNotice.value.consecutiveFailures,
+      nextAttempt: formatDate(continuousRecoveryNotice.value.notBefore)
+    })
+  : '')
 
 let refreshTimer = null
 
@@ -339,6 +381,19 @@ const retryExecution = async (executionId) => {
   await executionAPI.retry(executionId)
   ElMessage.success(t('transfer.taskDetail.retrySubmitted'))
   loadTask()
+}
+
+const executionRecovery = (execution) => getContinuousRecovery(execution?.metadata, execution?.status)
+
+const recoveryStateText = (recovery) => recovery
+  ? t(`transfer.recovery.states.${recovery.state}`)
+  : '-'
+
+const recoveryReasonText = (recovery) => {
+  const reason = recovery?.reason || 'unknown'
+  const key = `transfer.recovery.reasons.${reason}`
+  const translated = t(key)
+  return translated === key ? reason : translated
 }
 
 const sourceDetails = computed(() => buildEndpointDetails(task.value?.config?.source, 'source'))
@@ -499,6 +554,13 @@ onBeforeUnmount(() => {
 
 .continuous-start-action + .el-button {
   margin-left: 12px;
+}
+
+.recovery-next-at {
+  margin-top: 4px;
+  color: var(--addp-text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .json-dialog-header {

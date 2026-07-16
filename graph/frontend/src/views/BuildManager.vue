@@ -157,7 +157,7 @@ async function handleCancel(task) {
     ElMessage.success(t('graph.build.taskCancelled'))
     await loadTasks()
   } catch (e) {
-    ElMessage.error(t('graph.build.cancelFailed'))
+    ElMessage.error(e.response?.data?.error || t('graph.build.cancelFailed'))
   }
 }
 

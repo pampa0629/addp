@@ -97,6 +97,10 @@ bash scripts/build/build-supermap-workflow-base.sh
 
 基础镜像默认名为 `addp-supermap-workflow-base:local`，包含 Java 17 JDK、完整 SuperMap 组件、GPA/SPS libs、许可和 NFS/SQLite 系统依赖。它不包含 ADDP `SuperMapWorkflowRuntime.java`，因此日常业务代码修改不需要重建基础镜像。
 
+基础镜像保留 PDT scheduler 提供的完整 GPA lib 集合，运行时 classpath 只排除与本运行时冲突的重复日志实现：`logback-*`、`logstash-logback-*`、`tlog-*` 和 `log4j-slf4j-impl-*`。Objects Java 的 cloud-license 组件已经内置同一 Log4j SLF4J binding；不得恢复 `${SUPERMAP_GPA_LIB_DIR}/*` 全量 wildcard，否则会重新引入多 SLF4J binding 和 TLog/Log4j2 converter 冲突。
+
+当前 `gpa-sps-core` 的 `sps-core_en_US.properties` 缺少 `String_Waiting`，英文 locale 下会输出一次资源键缺失警告。这是随附 SPS jar 的资源缺口，不影响 DAG 执行；运行时不通过强制全局 locale 或覆盖 vendor resource bundle 隐藏该问题。
+
 日常启动和重启统一使用：
 
 ```bash
@@ -104,7 +108,7 @@ bash scripts/dev/start.sh -supermap-workflow
 bash scripts/dev/restart.sh -supermap-workflow
 ```
 
-`restart.sh -supermap-workflow` 和 `restart.sh -all` 每次都会基于基础镜像执行无缓存代码镜像构建，在镜像构建阶段重新运行 `javac`，随后替换 8103 容器、等待 healthy 并向 System 注册。Java 编译失败会在旧容器被删除前终止，不会启动携带旧 class 的新容器。
+`restart.sh -supermap-workflow` 和 `restart.sh -all` 会根据 Java 源码、`run.sh`、Dockerfile、基础镜像 ID 和目标平台计算构建指纹。指纹与现有代码镜像一致时直接复用；输入变化或镜像不存在时才在镜像构建阶段重新运行 `javac`。之后脚本会替换 8103 容器、等待 healthy 并向 System 注册。Java 编译失败会在旧容器被删除前终止，不会启动携带旧 class 的新容器。
 
 代码镜像默认名为 `addp-supermap-workflow-engine:dev`。可配置项只保留运行参数：
 

@@ -280,6 +280,11 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
       },
 
       logout() {
+		if (typeof authAPI.logout === 'function') {
+		  authAPI.logout().catch(error => {
+			console.warn(`[${storeName}] remote logout failed:`, error)
+		  })
+		}
         this.setToken(null)
         this.user = null
         this.isLoadingUser = false
@@ -304,6 +309,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
  * @param {Object} config - 配置选项
  * @param {string} config.moduleName - 模块名称 (用于日志)
  * @param {string} config.systemBaseURL - System 服务地址 (用于调用刷新 API)
+ * @param {Function} config.axiosInstance - 用于刷新成功后重试请求的 Axios 实例
  * @param {Function} config.onRefreshFailed - 刷新失败回调 (可选,默认跳转登录页)
  * @returns {Function} Axios response interceptor (success handler, error handler)
  *
@@ -314,15 +320,23 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
  *
  * const [onFulfilled, onRejected] = createRefreshInterceptor(useAuthStore(), {
  *   moduleName: 'Manager',
- *   systemBaseURL: 'http://localhost:8180'
+ *   systemBaseURL: 'http://localhost:8180',
+ *   axiosInstance: client
  * })
  *
  * client.interceptors.response.use(onFulfilled, onRejected)
  */
-export function createRefreshInterceptor(authStoreOrGetter, config = {}) {
+function resolveAuthStore(authStoreOrGetter) {
+  return typeof authStoreOrGetter === 'function'
+    ? authStoreOrGetter()
+    : authStoreOrGetter
+}
+
+function createTokenRefresher(authStoreOrGetter, config = {}) {
   const {
     moduleName = 'Module',
     systemBaseURL = '',
+    fetch: fetchImpl = globalThis.fetch.bind(globalThis),
     onRefreshFailed = () => {
       // iframe 环境下，尝试通知父窗口重新登录
       const isInIframe = window.self !== window.top
@@ -341,19 +355,135 @@ export function createRefreshInterceptor(authStoreOrGetter, config = {}) {
     }
   } = config
 
-  let isRefreshing = false
-  let refreshSubscribers = []
+  let refreshPromise = null
 
-  // 订阅刷新完成事件
-  const subscribeTokenRefresh = (cb) => {
-    refreshSubscribers.push(cb)
+  return async () => {
+    if (refreshPromise) {
+      console.log(`[${moduleName} Auth] Waiting for ongoing token refresh...`)
+      return refreshPromise
+    }
+
+    refreshPromise = (async () => {
+      const authStore = resolveAuthStore(authStoreOrGetter)
+      const refreshURL = `${systemBaseURL.replace(/\/$/, '')}/api/v1/system/refresh`
+      const response = await fetchImpl(refreshURL, {
+        method: 'POST',
+		credentials: 'include',
+        headers: {
+		  'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error(`Refresh failed with status ${response.status}`)
+      }
+
+      const data = await response.json()
+      const newToken = data.access_token
+
+      if (!newToken) {
+        throw new Error('No access_token in refresh response')
+      }
+
+      authStore.setToken(newToken)
+      console.log(`[${moduleName} Auth] Token refreshed successfully`)
+      return newToken
+    })()
+
+    try {
+      return await refreshPromise
+    } catch (refreshError) {
+      console.error(`[${moduleName} Auth] Token refresh failed:`, refreshError)
+      const authStore = resolveAuthStore(authStoreOrGetter)
+      authStore.logout()
+      onRefreshFailed()
+      throw refreshError
+    } finally {
+      refreshPromise = null
+    }
+  }
+}
+
+/**
+ * 创建带 ADDP 认证和 Token 自动刷新的 Fetch。
+ *
+ * 用于 SSE、流式上传等不能通过 Axios 发起的请求。认证行为与
+ * createAPIClient 保持一致：动态读取当前 Token、401 后刷新并只重试一次。
+ */
+export function createAuthenticatedFetch(authStoreOrGetter, config = {}) {
+  const {
+    moduleName,
+    systemBaseURL = '',
+    fetch: fetchImpl = globalThis.fetch.bind(globalThis),
+    onRefreshFailed
+  } = config
+
+  if (!moduleName) {
+    throw new Error('moduleName is required for createAuthenticatedFetch')
   }
 
-  // 通知所有订阅者刷新完成
-  const onRefreshed = (token) => {
-    refreshSubscribers.forEach((cb) => cb(token))
-    refreshSubscribers = []
+  const refreshToken = createTokenRefresher(authStoreOrGetter, {
+    moduleName,
+    systemBaseURL,
+    fetch: fetchImpl,
+    ...(onRefreshFailed ? { onRefreshFailed } : {})
+  })
+
+  return async (input, init = {}) => {
+    const isRequest = typeof Request !== 'undefined' && input instanceof Request
+    const baseHeaders = new Headers(isRequest ? input.headers : undefined)
+    new Headers(init.headers).forEach((value, key) => baseHeaders.set(key, value))
+
+    const requestWithToken = (token) => {
+      const headers = new Headers(baseHeaders)
+      if (token) {
+        headers.set('Authorization', `Bearer ${token}`)
+      } else {
+        headers.delete('Authorization')
+      }
+      return { ...init, headers }
+    }
+
+    const authStore = resolveAuthStore(authStoreOrGetter)
+    const currentToken = authStore.token || localStorage.getItem('token')
+    const retryInput = isRequest ? input.clone() : input
+    const response = await fetchImpl(input, requestWithToken(currentToken))
+
+    if (response.status !== 401) {
+      return response
+    }
+
+    const newToken = await refreshToken()
+    return fetchImpl(retryInput, requestWithToken(newToken))
   }
+}
+
+export function createRefreshInterceptor(authStoreOrGetter, config = {}) {
+  const {
+    moduleName = 'Module',
+    systemBaseURL = '',
+    fetch: fetchImpl,
+    axiosInstance,
+    onRefreshFailed = () => {
+      const isInIframe = window.self !== window.top
+      if (isInIframe) {
+        try {
+          window.top.location.href = '/login'
+        } catch {
+          window.location.href = '/login'
+        }
+      } else {
+        window.location.href = '/login'
+      }
+    }
+  } = config
+
+  const refreshToken = createTokenRefresher(authStoreOrGetter, {
+    moduleName,
+    systemBaseURL,
+    ...(fetchImpl ? { fetch: fetchImpl } : {}),
+    onRefreshFailed
+  })
 
   // 成功响应处理器 (直接透传)
   const onFulfilled = (response) => response
@@ -361,9 +491,7 @@ export function createRefreshInterceptor(authStoreOrGetter, config = {}) {
   // 错误响应处理器 (处理 401 并自动刷新)
   const onRejected = async (error) => {
     // 支持传入函数（懒加载）或直接传入 store 实例
-    const authStore = typeof authStoreOrGetter === 'function'
-      ? authStoreOrGetter()
-      : authStoreOrGetter
+    const authStore = resolveAuthStore(authStoreOrGetter)
 
     const originalRequest = error.config
 
@@ -382,66 +510,14 @@ export function createRefreshInterceptor(authStoreOrGetter, config = {}) {
 
     originalRequest._retry = true
 
-    // 如果已有刷新在进行中,等待刷新完成
-    if (isRefreshing) {
-      console.log(`[${moduleName} RefreshInterceptor] Waiting for ongoing refresh...`)
-      return new Promise((resolve) => {
-        subscribeTokenRefresh((token) => {
-          originalRequest.headers.Authorization = `Bearer ${token}`
-          resolve(error.config.__axiosInstance(originalRequest))
-        })
-      })
-    }
-
-    // 开始刷新流程
-    isRefreshing = true
     console.log(`[${moduleName} RefreshInterceptor] Starting token refresh...`)
 
     try {
-      // 调用 System 的 /api/v1/system/refresh 端点
-      const refreshURL = `${systemBaseURL}/api/v1/system/refresh`
-      const currentToken = authStore.token || localStorage.getItem('token')
-
-      if (!currentToken) {
-        throw new Error('No token available for refresh')
-      }
-
-      const response = await fetch(refreshURL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${currentToken}`
-        }
-      })
-
-      if (!response.ok) {
-        throw new Error(`Refresh failed with status ${response.status}`)
-      }
-
-      const data = await response.json()
-      const newToken = data.access_token
-
-      if (!newToken) {
-        throw new Error('No access_token in refresh response')
-      }
-
-      // 更新 token
-      authStore.setToken(newToken)
-      console.log(`[${moduleName} RefreshInterceptor] Token refreshed successfully`)
-
-      // 通知所有等待的请求
-      onRefreshed(newToken)
-
-      // 重试原请求
+      const newToken = await refreshToken()
       originalRequest.headers.Authorization = `Bearer ${newToken}`
-      return error.config.__axiosInstance(originalRequest)
+      return axiosInstance(originalRequest)
     } catch (refreshError) {
-      console.error(`[${moduleName} RefreshInterceptor] Refresh failed:`, refreshError)
-      authStore.logout()
-      onRefreshFailed()
       return Promise.reject(refreshError)
-    } finally {
-      isRefreshing = false
     }
   }
 
@@ -524,8 +600,10 @@ export function createAuthAPI(client, options = {}) {
 
   const baseAPI = {
     login: (username, password) => {
-      return client.post('/login', { username, password })
+	  return client.post('/login', { username, password }, { withCredentials: true })
     },
+
+	logout: () => client.post('/logout', null, { withCredentials: true }),
 
     getCurrentUser: () => {
       return client.get('/users/me')
@@ -595,14 +673,12 @@ export function createAPIClient(getAuthStore, options = {}) {
     (error) => Promise.reject(error)
   )
 
-  // 2. 保存 axios 实例引用 (供刷新后重试使用)
-  client.interceptors.response.__axiosInstance = client
-
   if (enableRefresh) {
     // 3. 添加 Token 刷新拦截器
     const [refreshOnFulfilled, refreshOnRejected] = createRefreshInterceptor(getAuthStore, {
       moduleName,
       systemBaseURL,
+      axiosInstance: client,
       onRefreshFailed
     })
 

@@ -149,7 +149,7 @@ async function handleCancel() {
     stopPolling()
     await loadTask()
   } catch (e) {
-    ElMessage.error(t('graph.build.cancelFailed'))
+    ElMessage.error(e.response?.data?.error || t('graph.build.cancelFailed'))
   }
 }
 

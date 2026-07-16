@@ -118,8 +118,12 @@ func main() {
 	duckdbService := service.NewDuckDBService(cfg, systemClient, metaClient)
 	log.Printf("✅ DuckDBService 初始化完成")
 
-	// 7. DevExecutor 统一执行器（使用统一执行表）
-	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, metaClient, sqlEngine, duckdbService, jupyterService, notebookExecutionService)
+	// 7. 算子发现与工作流校验服务（动态发现工作流引擎）
+	operatorDiscovery := service.NewOperatorDiscoveryService(systemClient)
+	log.Printf("✅ OperatorDiscoveryService 初始化完成")
+
+	// 8. DevExecutor 统一执行器（执行前复用正式工作流校验）
+	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, duckdbService, jupyterService, notebookExecutionService)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
 
 	cleanupService := service.NewCleanupService(db, redisClient, taskExecutionRepo)
@@ -127,10 +131,6 @@ func main() {
 		log.Printf("Develop 资源回收服务启动失败: %v", err)
 	}
 	defer cleanupService.Stop()
-
-	// 8. 算子发现服务（动态发现工作流引擎）
-	operatorDiscovery := service.NewOperatorDiscoveryService(systemClient)
-	log.Printf("✅ OperatorDiscoveryService 初始化完成")
 
 	// ========== Handler 层 ==========
 	devTaskHandler := api.NewDevTaskHandler(devTaskService)

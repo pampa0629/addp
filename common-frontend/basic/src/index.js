@@ -44,6 +44,7 @@ export {
 export {
   createAuthGuard,
   createAuthInterceptor,
+  createAuthenticatedFetch,
   createRefreshInterceptor,
   createAuthAPI,
   createAPIClient,

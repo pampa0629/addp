@@ -170,21 +170,21 @@
    - ✅ 使用 `commonConfig.LoadEnv()` 自动发现项目根目录的 .env 文件
    - ✅ 继承 `commonConfig.BaseConfig` 复用通用配置字段
    - ✅ 使用 `commonConfig.GetEnv()` 等辅助函数获取环境变量
-   - ✅ 支持从 System 服务获取共享配置（JWT、数据库等）
+   - ✅ 支持从 System 服务获取数据库、加密和内部调用等共享配置
    - ✅ DSN 包含 `search_path` 参数实现 schema 隔离
    - ❌ 禁止硬编码 `godotenv.Load("../../.env")`
    - ❌ 禁止重复定义 BaseConfig 中已有的字段
 
    **配置降级策略**:
-   1. 优先从 System 服务获取共享配置（JWT_SECRET、数据库连接等）
+   1. 优先从 System 服务获取数据库、加密和内部调用等共享配置
    2. 如果 System 服务不可用，降级到本地环境变量
    3. 如果环境变量不存在，使用代码中的默认值
 
 4. **认证**:
 
-   - 重用 System 模块的 JWT 验证逻辑
-   - 从 System 导入 auth 中间件或创建相同的
-   - 从 JWT 声明中提取 user_id 并传递给服务层
+   - 复用 `common/middleware/auth` 调用 System AuthContext API
+   - 从 AuthContext 提取 `user_id`、`tenant_id`、`user_type` 并传递给服务层
+   - 不读取 `JWT_SECRET`，不在模块内自行解析用户 Token
 5. **国际化集成**:
 
    - 注册 `common/middleware/i18n.I18nMiddleware()`

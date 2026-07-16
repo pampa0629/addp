@@ -8,7 +8,10 @@ import (
 	"testing"
 
 	commonExecution "github.com/addp/common/execution"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	graphi18n "github.com/addp/graph/i18n"
 	"github.com/addp/graph/internal/models"
+	"github.com/addp/graph/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -50,6 +53,7 @@ func TestGraphTaskDetailResponseUsesStandardTaskShape(t *testing.T) {
 func TestExecuteProviderTaskRejectsUnknownFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	router.Use(commoni18n.I18nMiddleware())
 	router.POST("/tasks/:task_type/:id/execute", NewTaskProviderHandler(nil, nil).ExecuteProviderTask)
 
 	req := httptest.NewRequest(http.MethodPost, "/tasks/kg_build/1/execute", strings.NewReader(`{"legacy":true}`))
@@ -62,6 +66,28 @@ func TestExecuteProviderTaskRejectsUnknownFields(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "unknown field") {
 		t.Fatalf("body = %s, want unknown field error", w.Body.String())
+	}
+}
+
+func TestRespondBuildActionErrorReturnsRuntimeOwnershipConflict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(commoni18n.I18nMiddleware())
+	router.GET("/test", func(c *gin.Context) {
+		respondBuildActionError(c, service.ErrBuildRuntimeNotOwned)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("Accept-Language", "en")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusConflict, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), graphi18n.MsgTaskRuntimeNotOwned) &&
+		!strings.Contains(w.Body.String(), "does not own the task runtime") {
+		t.Fatalf("body = %s, want runtime ownership error", w.Body.String())
 	}
 }
 

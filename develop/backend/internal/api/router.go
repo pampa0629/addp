@@ -93,12 +93,6 @@ func SetupRouter(
 		})
 	})
 
-	// 公开 API 路由组（无需认证）- 用于按工作流引擎实例发现算子
-	publicAPI := router.Group("/api/v1/develop")
-	{
-		publicAPI.GET("/workflow-engines/:id/operators", operatorHandler.ListOperatorsByWorkflowEngine) // 按工作流引擎实例获取算子
-	}
-
 	// API 路由组（需要认证）
 	api := router.Group("/api/v1/develop")
 	// 添加内部 API 认证中间件（支持 X-Internal-API-Key）
@@ -151,8 +145,10 @@ func SetupRouter(
 		api.GET("/query-modes", engineHandler.ListQueryModes) // 获取 Develop 内置查询模式列表
 
 		// ========== 工作流引擎管理 ==========
-		api.GET("/workflow-engines", engineHandler.ListWorkflowEngines) // 获取工作流引擎列表
-		api.GET("/spark-runtimes", engineHandler.ListSparkRuntimes)     // 获取 Spark 通用引擎资源列表
+		api.GET("/workflow-engines", engineHandler.ListWorkflowEngines)                           // 获取工作流引擎列表
+		api.GET("/workflow-engines/:id/operators", operatorHandler.ListOperatorsByWorkflowEngine) // 按工作流引擎实例获取算子
+		api.POST("/workflow-validations", operatorHandler.ValidateWorkflow)                       // 校验候选工作流，不创建 execution
+		api.GET("/spark-runtimes", engineHandler.ListSparkRuntimes)                               // 获取 Spark 通用引擎资源列表
 
 		// ========== 查询开发 ==========
 		api.GET("/test/:id", queryHandler.TestConnection)                 // 测试数据源连接

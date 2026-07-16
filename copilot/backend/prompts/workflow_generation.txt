@@ -3,7 +3,7 @@
 ## 用户需求
 {query}
 
-## 数据源信息
+## 已验证输入资源
 {data_source_info}
 
 ## 选定的算子及其详细信息
@@ -40,9 +40,9 @@
   - 读取已有表、文件或对象时，load 任务必须使用 `locator`
   - 创建新目标时，save 任务必须使用 `target_parent_locator + target_name`
   - **禁止在算子 params 中填写 `engine_id`、`connection_info`、`schema`、`table`、`path`**，这些是 Develop Backend 执行前派生的运行时参数
-  - 如果"数据源信息"提供了"源资源 locator"，第一个 load 任务直接使用该 locator，不要自己编造
-  - 如果"数据源信息"提供了"目标父 locator"，save 任务使用该 locator；目标名称从用户需求中提取，无法确定时使用清晰的候选名称
-  - 如果没有提供 locator，不要自行拼接 `addp://...`，应只生成不依赖数据源的处理步骤或在 metadata 中标注需要用户补充资源选择
+  - 为每个需要读取的输入资源创建独立 load 任务，locator 必须逐字取自“已验证输入资源”
+  - 禁止使用“已验证输入资源”之外的 locator，也不得自行拼接 `addp://...`
+  - 未提供目标父 locator 时不要生成 save 任务
 
 ### 3. 依赖关系
 - load 任务通常没有依赖（depends_on 为空数组）

@@ -55,6 +55,7 @@ type DataSessionRunner struct {
 	DiagnosticsInterval      time.Duration
 	RetentionDegradedHorizon time.Duration
 	RetentionCriticalHorizon time.Duration
+	CheckpointStaleAfter     time.Duration
 	Now                      func() time.Time
 }
 
@@ -105,7 +106,7 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 	if err := target.PreparePartitionedTableChangeApply(ctx, plan.Target.ConnInfo, plan.Target.Path, applyOptions); err != nil {
 		return fmt.Errorf("prepare continuous target: %w", err)
 	}
-	committed, err := r.committedPositions(ctx, claim.Task.ID, plan.Source.SourceIdentity)
+	committed, committedAtByPartition, err := r.committedPositions(ctx, claim.Task.ID, plan.Source.SourceIdentity)
 	if err != nil {
 		return err
 	}
@@ -144,6 +145,13 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 	if criticalHorizon >= degradedHorizon {
 		return fmt.Errorf("continuous retention critical horizon must be less than degraded horizon")
 	}
+	checkpointStaleAfter := r.CheckpointStaleAfter
+	if checkpointStaleAfter <= 0 {
+		checkpointStaleAfter = 5 * time.Minute
+	}
+	if checkpointStaleAfter <= diagnosticsInterval {
+		return fmt.Errorf("continuous checkpoint stale threshold must be greater than diagnostics interval")
+	}
 
 	partitionStates := map[string]*models.SyncState{}
 	latestSamples := map[string]sourceLatestSample{}
@@ -156,8 +164,8 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 		currentTime := now()
 		if nextDiagnosticsAt.IsZero() || !currentTime.Before(nextDiagnosticsAt) {
 			diagnostics, nextSamples := collectContinuousDiagnostics(
-				ctx, reader, committed, latestSamples,
-				currentTime, degradedHorizon, criticalHorizon,
+				ctx, reader, committed, committedAtByPartition, latestSamples,
+				currentTime, degradedHorizon, criticalHorizon, checkpointStaleAfter,
 			)
 			if err := r.Progress.RecordDiagnostics(ctx, claim, diagnostics); err != nil {
 				return fmt.Errorf("record continuous diagnostics: %w", err)
@@ -246,6 +254,7 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 			committed[group.partition] = result.Position
 			recordsWritten += int64(result.AppliedRecords)
 			committedAt := now()
+			committedAtByPartition[group.partition] = committedAt
 			if err := r.Progress.RecordProgress(ctx, claim, repository.ContinuousProgress{
 				RecordsRead: recordsRead, RecordsWritten: recordsWritten, Partition: group.partition,
 				Position: state.Position, CommittedAt: committedAt, LastEventAt: latestRecordTimestamp(group.records),
@@ -306,14 +315,17 @@ func collectContinuousDiagnostics(
 	ctx context.Context,
 	reader engineplugin.ChangeStreamReader,
 	committed map[string]engineplugin.ChangeStreamPosition,
+	committedAt map[string]time.Time,
 	previous map[string]sourceLatestSample,
 	sampledAt time.Time,
 	degradedHorizon time.Duration,
 	criticalHorizon time.Duration,
+	checkpointStaleAfter time.Duration,
 ) (repository.ContinuousDiagnostics, map[string]sourceLatestSample) {
 	diagnostics := repository.ContinuousDiagnostics{
 		SampledAt: sampledAt, Health: continuousHealthUnknown,
 		DegradedHorizonSeconds: degradedHorizon.Seconds(), CriticalHorizonSeconds: criticalHorizon.Seconds(),
+		CheckpointStaleAfterSeconds: checkpointStaleAfter.Seconds(), CheckpointHealth: continuousHealthUnknown,
 		Partitions: map[string]repository.ContinuousPartitionDiagnostics{},
 	}
 	ranges, err := reader.PositionRanges(ctx)
@@ -323,6 +335,7 @@ func collectContinuousDiagnostics(
 	}
 	nextSamples := make(map[string]sourceLatestSample, len(ranges))
 	overall := continuousHealthHealthy
+	overallCheckpoint := continuousHealthHealthy
 	for _, positionRange := range ranges {
 		partition := positionRange.Partition
 		earliest, earliestErr := kafkaNextOffset(positionRange.Earliest)
@@ -332,7 +345,8 @@ func collectContinuousDiagnostics(
 			return diagnostics, previous
 		}
 		partitionDiagnostics := repository.ContinuousPartitionDiagnostics{
-			Partition: partition, EarliestOffset: earliest, LatestOffset: latest, Health: continuousHealthUnknown,
+			Partition: partition, EarliestOffset: earliest, LatestOffset: latest,
+			Health: continuousHealthUnknown, CheckpointHealth: continuousHealthUnknown,
 		}
 		nextSamples[partition] = sourceLatestSample{Latest: latest, SampledAt: sampledAt}
 		position, hasCommitted := committed[partition]
@@ -350,6 +364,18 @@ func collectContinuousDiagnostics(
 			partitionDiagnostics.NextOffset = &nextOffset
 			partitionDiagnostics.LagRecords = &lag
 			partitionDiagnostics.RecoveryHeadroomRecords = &headroom
+			switch {
+			case lag == 0:
+				partitionDiagnostics.CheckpointHealth = continuousHealthHealthy
+			case !committedAt[partition].IsZero() && !sampledAt.Before(committedAt[partition]):
+				age := sampledAt.Sub(committedAt[partition]).Seconds()
+				partitionDiagnostics.CheckpointAgeSeconds = &age
+				if age > checkpointStaleAfter.Seconds() {
+					partitionDiagnostics.CheckpointHealth = continuousHealthDegraded
+				} else {
+					partitionDiagnostics.CheckpointHealth = continuousHealthHealthy
+				}
+			}
 			switch {
 			case nextOffset < earliest || nextOffset > latest:
 				partitionDiagnostics.Health = continuousHealthCritical
@@ -376,8 +402,10 @@ func collectContinuousDiagnostics(
 		}
 		diagnostics.Partitions[partition] = partitionDiagnostics
 		overall = worseContinuousHealth(overall, partitionDiagnostics.Health)
+		overallCheckpoint = worseContinuousHealth(overallCheckpoint, partitionDiagnostics.CheckpointHealth)
 	}
 	diagnostics.Health = overall
+	diagnostics.CheckpointHealth = overallCheckpoint
 	return diagnostics, nextSamples
 }
 
@@ -405,22 +433,26 @@ func latestRecordTimestamp(records []engineplugin.ChangeRecord) *time.Time {
 	return &latest
 }
 
-func (r *DataSessionRunner) committedPositions(ctx context.Context, taskID uint, sourceIdentity string) (map[string]engineplugin.ChangeStreamPosition, error) {
+func (r *DataSessionRunner) committedPositions(ctx context.Context, taskID uint, sourceIdentity string) (map[string]engineplugin.ChangeStreamPosition, map[string]time.Time, error) {
 	states, err := r.States.List(ctx, taskID, sourceIdentity)
 	if err != nil {
-		return nil, fmt.Errorf("list continuous committed positions: %w", err)
+		return nil, nil, fmt.Errorf("list continuous committed positions: %w", err)
 	}
 	positions := make(map[string]engineplugin.ChangeStreamPosition, len(states))
+	committedAt := make(map[string]time.Time, len(states))
 	for i := range states {
 		position, ok, err := syncStatePosition(&states[i])
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if ok {
 			positions[states[i].Partition] = position
+			if states[i].PositionCommittedAt != nil {
+				committedAt[states[i].Partition] = *states[i].PositionCommittedAt
+			}
 		}
 	}
-	return positions, nil
+	return positions, committedAt, nil
 }
 
 type partitionRecordGroup struct {

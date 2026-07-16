@@ -80,9 +80,28 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.Engine{},
 		&models.Application{},
 		&models.APIKey{},
+		&models.OAuthClient{},
+		&models.RefreshTokenFamily{},
+		&models.RefreshToken{},
+		&models.AccessToken{},
+		&models.OAuthAuthorizationCode{},
+		&models.OAuthDeviceAuthorization{},
 		&models.TaskProvider{},
 		&models.ModuleRegistry{},
 	)
+}
+
+func EnsureBuiltinOAuthClients(db *gorm.DB) error {
+	client := models.OAuthClient{
+		ClientID:          "addp-cli",
+		Name:              "ADDP CLI",
+		ClientType:        models.OAuthClientTypePublic,
+		RedirectURIs:      []string{"http://127.0.0.1:8765/callback"},
+		AllowedScopes:     []string{"addp.api"},
+		DeviceFlowEnabled: true,
+		IsActive:          true,
+	}
+	return db.Where("client_id = ?", client.ClientID).Assign(client).FirstOrCreate(&client).Error
 }
 
 func renameGeoPythonWorkflowEngineType(db *gorm.DB) error {
