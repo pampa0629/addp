@@ -307,7 +307,7 @@ GET /api/service/catalog  ← 获取服务目录（聚合查询/注册/瓦片服
 
 ### 管理端（需 JWT 认证）
 
-所有 `/api/service/*` 路径下的管理操作均需要有效的 JWT Token，且严格按租户隔离：所有查询自动过滤 `tenant_id`。
+所有 `/api/service/*` 路径下的管理操作均需要有效的用户 Access Token，且严格按租户隔离：所有查询自动过滤 `tenant_id`。
 
 ### 公开端（可选认证）
 

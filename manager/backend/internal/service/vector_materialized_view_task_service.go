@@ -217,13 +217,6 @@ func (s *VectorMaterializedViewTaskService) recordVectorMaterializedViewCleanupF
 }
 
 func (s *VectorMaterializedViewTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string) (string, error) {
-	task, err := s.repo.GetTask(ctx, taskID, tenantID)
-	if err != nil {
-		return "", err
-	}
-	if task == nil {
-		return "", ErrTaskNotFound
-	}
 	if s.taskExecRepo == nil {
 		return "", errors.New("task execution repository is required")
 	}
@@ -239,41 +232,45 @@ func (s *VectorMaterializedViewTaskService) Execute(ctx context.Context, taskID 
 	executionID := uuid.New().String()
 	now := time.Now()
 	currentStep := "构建矢量物化视图目标"
-	executionConfig := task.Config.Clone()
-	if executionConfig == nil {
-		executionConfig = commonModels.JSONMap{}
-	}
 	exec := &commonExecution.TaskExecution{
 		ExecutionID:       executionID,
 		TenantID:          int(tenantID),
 		Module:            commonExecution.ModuleManager,
 		TaskType:          commonExecution.TaskTypeVectorMaterializedViewGeneration,
 		Source:            normalizedSource,
-		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(taskID),
-		SourceTaskName:    &task.Name,
 		ParentExecutionID: parentExecutionID,
-		Status:            commonExecution.ExecutionStatusRunning,
+		Status:            commonExecution.ExecutionStatusPending,
 		Progress:          0,
 		CurrentStep:       &currentStep,
 		TriggerType:       normalizedTriggerType,
-		ExecutionConfig:   executionConfig,
-		StartedAt:         &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
-	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
-		return "", err
-	}
-	if err := s.repo.UpdateTaskLastExecution(ctx, taskID, tenantID, executionID, commonExecution.ExecutionStatusRunning, now); err != nil {
+	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec)
+	if err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
+			return "", ErrTaskNotFound
+		}
+		if errors.Is(err, commonapi.ErrConflict) {
+			return "", ErrTaskExecutionBusy
+		}
 		return "", err
 	}
 
-	go s.runVectorMaterializedView(context.Background(), task, executionID, now)
+	go s.runVectorMaterializedView(context.Background(), claimedTask, executionID)
 	return executionID, nil
 }
 
-func (s *VectorMaterializedViewTaskService) runVectorMaterializedView(ctx context.Context, task *models.VectorMaterializedViewTask, executionID string, startedAt time.Time) {
+func (s *VectorMaterializedViewTaskService) runVectorMaterializedView(ctx context.Context, task *models.VectorMaterializedViewTask, executionID string) {
+	startedAt := time.Now()
+	if err := s.repo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
+		logger.L().Warn("领取矢量物化视图 execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
+		return
+	}
 	status := commonExecution.ExecutionStatusSuccess
 	metadata := commonModels.JSONMap{}
 	var errDetails commonModels.JSONMap
+	var resultFields map[string]interface{}
 
 	result, execCfg, plan, err := s.prepareOptimizationResult(ctx, task, executionID)
 	if err == nil {
@@ -294,18 +291,15 @@ func (s *VectorMaterializedViewTaskService) runVectorMaterializedView(ctx contex
 		status = commonExecution.ExecutionStatusFailed
 		errDetails = commonModels.JSONMap{"message": err.Error()}
 		if result != nil {
-			fields := map[string]interface{}{
+			resultFields = map[string]interface{}{
 				"status":            models.VectorMaterializedViewStatusFailed,
 				"error_message":     err.Error(),
 				"last_execution_id": executionID,
 			}
-			if updateErr := s.repo.UpdateResultFields(ctx, result.ID, task.TenantID, fields); updateErr != nil {
-				errDetails["vector_materialized_view_generation_update_error"] = updateErr.Error()
-			}
 		}
 	} else if result != nil {
 		renderExtentSRID := spatial.SRIDWGS84
-		fields := map[string]interface{}{
+		resultFields = map[string]interface{}{
 			"status":             models.VectorMaterializedViewStatusReady,
 			"error_message":      "",
 			"last_execution_id":  executionID,
@@ -314,14 +308,10 @@ func (s *VectorMaterializedViewTaskService) runVectorMaterializedView(ctx contex
 		}
 		if extent, ok := floatSliceFromConfig(metadata["render_extent"]); ok {
 			extentJSON, _ := json.Marshal(extent)
-			fields["render_extent"] = extentJSON
+			resultFields["render_extent"] = extentJSON
 		}
 		if rowCount := int64FromConfig(metadata["row_count_estimate"], 0); rowCount >= 0 {
-			fields["row_count_estimate"] = rowCount
-		}
-		if err := s.repo.UpdateResultFields(ctx, result.ID, task.TenantID, fields); err != nil {
-			status = commonExecution.ExecutionStatusFailed
-			errDetails = commonModels.JSONMap{"message": fmt.Sprintf("update vector materialized view result: %v", err)}
+			resultFields["row_count_estimate"] = rowCount
 		}
 	}
 
@@ -330,7 +320,11 @@ func (s *VectorMaterializedViewTaskService) runVectorMaterializedView(ctx contex
 	if status != commonExecution.ExecutionStatusSuccess {
 		progress = 0
 	}
-	if err := s.taskExecRepo.UpdateFields(ctx, executionID, int(task.TenantID), map[string]interface{}{
+	resultID := uint(0)
+	if result != nil {
+		resultID = result.ID
+	}
+	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, resultID, resultFields, map[string]interface{}{
 		"status":            status,
 		"progress":          progress,
 		"metadata":          metadata,
@@ -338,11 +332,8 @@ func (s *VectorMaterializedViewTaskService) runVectorMaterializedView(ctx contex
 		"completed_at":      completedAt,
 		"execution_time_ms": durationMs,
 		"updated_at":        completedAt,
-	}); err != nil {
-		logger.L().Warn("更新矢量物化视图 execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
-	}
-	if err := s.repo.UpdateTaskLastExecution(ctx, task.ID, task.TenantID, executionID, status, completedAt); err != nil {
-		logger.L().Warn("更新矢量物化视图任务最近执行状态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
+	}, completedAt); err != nil {
+		logger.L().Warn("提交矢量物化视图 execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}
 }
 

@@ -8776,7 +8776,12 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "pending",
+                        "running"
+                    ],
+                    "example": "pending"
                 }
             }
         },

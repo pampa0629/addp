@@ -69,6 +69,7 @@ const (
 	MsgInvalidModel3DTilesResultID = "manager.error.invalid_model3d_tiles_result_id"
 	MsgModel3DTilesResultNotFound  = "manager.error.model3d_tiles_result_not_found"
 	MsgDeleteModel3DTilesFailed    = "manager.error.delete_model3d_tiles_failed"
+	MsgTaskExecutionBusy           = "manager.error.task_execution_busy"
 	MsgModel3DTilesExecutionBusy   = "manager.error.model3d_tiles_execution_busy"
 	MsgModel3DTilesResultDeleted   = "manager.model3d_tiles.result_deleted"
 )

@@ -1101,7 +1101,7 @@ type TaskExecuteRequest struct {
 }
 
 type TaskExecuteResponse struct {
-	Status      string `json:"status"`
+	Status      string `json:"status" enums:"pending,running" example:"pending"`
 	ExecutionID string `json:"execution_id"`
 }
 
@@ -1154,12 +1154,15 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	var executionID string
+	executionStatus := commonExecution.ExecutionStatusRunning
 
 	switch taskType {
 	case commonExecution.TaskTypeVectorTileCacheGeneration:
 		executionID, err = h.tileCacheTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeVectorMaterializedViewGeneration:
 		executionID, err = h.vectorMaterializedViewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeRasterCOGGeneration:
 		executionID, err = h.rasterCOGTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	case commonExecution.TaskTypeRasterMosaicGeneration:
@@ -1186,6 +1189,10 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
+		if errors.Is(err, service.ErrTaskExecutionBusy) {
+			c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, manageri18n.MsgTaskExecutionBusy)})
+			return
+		}
 		if errors.Is(err, service.ErrModel3DTilesTaskExecutionBusy) {
 			c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, manageri18n.MsgModel3DTilesExecutionBusy)})
 			return
@@ -1195,7 +1202,7 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, TaskExecuteResponse{
-		Status:      commonExecution.ExecutionStatusRunning,
+		Status:      executionStatus,
 		ExecutionID: executionID,
 	})
 }

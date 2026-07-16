@@ -20,7 +20,7 @@ ADDP 只保留一套用户和租户事实：
 ```text
 Authorization: Bearer <access_token>
   -> System Token Service
-  -> 验证签名、有效期和撤销状态
+  -> 查询 Token Hash，验证有效期、family 和撤销状态
   -> 回查 system.users / system.tenants
   -> AuthContext
   -> common Go / common-python 认证中间件
@@ -80,13 +80,13 @@ Authorization: Bearer <access_token>
 | `agent_run_id` / `tool_call_id` | 受委托 Agent Tool 调用的可选审计绑定。 |
 | `issued_at` / `expires_at` | 必须为带时区的 ISO 8601 时间。 |
 
-当前第一方 JWT 在 OAuth 签发切换前返回空 `audiences` / `scopes` 和 `client_id=null`；owner 模块不得伪造 Scope。OAuth 令牌实现后这些字段由 System Token Service 权威填充。
+第一方 Web Token 返回空 `audiences` / `scopes` 和 `client_id=null`；OAuth Token 的客户端、audience 和 Scope 由 System Token Service 权威填充。owner 模块不得伪造 Scope。
 
 ## 四、身份和租户校验
 
 System 生成 AuthContext 前必须校验：
 
-1. Token 签名、签名算法和有效期正确。
+1. opaque Token Hash 存在，Access Token 未过期、未撤销且 family 有效。
 2. `user_id` 对应用户存在且 `is_active=true`。
 3. 令牌中租户与用户当前 `tenant_id` 一致。
 4. 非 SuperAdmin 的租户存在且 `is_active=true`。

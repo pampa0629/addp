@@ -93,7 +93,7 @@ type AuditLogCreateRequest struct {
 
 **触发条件**:
 - 所有 **非 GET 请求**(POST/PUT/DELETE/PATCH)
-- 通过认证的请求(有 JWT Token)
+- 通过认证的请求(有用户 Access Token)
 - 排除内部 API 路径(`/internal/*`)
 
 **记录时机**:
@@ -489,7 +489,7 @@ WHERE created_at < NOW() - INTERVAL '90 days';
 **不记录的内容**:
 - 密码原文(仅记录 password 字段存在)
 - 加密密钥
-- JWT Token
+- opaque Access Token
 
 **Details 字段**:
 - 记录完整请求体

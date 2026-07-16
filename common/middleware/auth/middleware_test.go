@@ -84,6 +84,30 @@ func TestSystemAuthMiddlewareRejectsInvalidContext(t *testing.T) {
 	}
 }
 
+func TestSystemAuthMiddlewareValidatesInternalAPIKey(t *testing.T) {
+	t.Setenv("INTERNAL_API_KEY", "expected-internal-key")
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(SystemAuthMiddleware("http://system.invalid"))
+	router.GET("/resource", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	invalidRequest := httptest.NewRequest(http.MethodGet, "/resource", nil)
+	invalidRequest.Header.Set("X-Internal-API-Key", "wrong-key")
+	invalidResponse := httptest.NewRecorder()
+	router.ServeHTTP(invalidResponse, invalidRequest)
+	if invalidResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("invalid internal key status = %d", invalidResponse.Code)
+	}
+
+	validRequest := httptest.NewRequest(http.MethodGet, "/resource", nil)
+	validRequest.Header.Set("X-Internal-API-Key", "expected-internal-key")
+	validResponse := httptest.NewRecorder()
+	router.ServeHTTP(validResponse, validRequest)
+	if validResponse.Code != http.StatusOK {
+		t.Fatalf("valid internal key status = %d, body = %s", validResponse.Code, validResponse.Body.String())
+	}
+}
+
 func TestCachedSystemAuthMiddlewareCapsTTLAtTokenExpiry(t *testing.T) {
 	mini := miniredis.RunT(t)
 	redisClient := redis.NewClient(&redis.Options{Addr: mini.Addr()})

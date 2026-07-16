@@ -69,7 +69,7 @@ docker-compose up -d
 
 - **用户密码**: bcrypt 加密
 - **引擎密码**: AES-256-GCM 加密
-- **认证方式**: JWT (HS256)
+- **认证方式**: opaque Access Token + Refresh Token Family
 
 详细安全机制请查看 [CLAUDE.md#安全机制](./CLAUDE.md#安全机制)
 

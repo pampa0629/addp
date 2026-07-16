@@ -35,7 +35,7 @@
 ### 认证流程
 
 1. 用户提交凭据到 `POST /api/v1/system/login`
-2. 后端使用 bcrypt 验证,返回 JWT (HS256,使用 `JWT_SECRET` 签名)
+2. 后端使用 bcrypt 验证，返回短期 opaque Access Token，并设置 HttpOnly Refresh Token Cookie
 3. 前端将 token 存储在 localStorage (`auth.js` Pinia store)
 4. Axios 拦截器 (`api/client.js`) 在所有请求中添加 `Authorization: Bearer <token>`
 5. System `AuthMiddleware` 验证 JWT、回查当前用户和租户，生成 AuthContext
@@ -268,7 +268,7 @@ export default router
 
 - `GET /api/v1/system/users/me` 在 Gateway 侧属于受 API Key 保护的路由
 - 浏览器前端没有 API Key，不能通过 Gateway 的 API Key 验证层
-- 直接请求 System 后端，只需 JWT Token 即可通过 System 的 JWT 认证
+- 直接请求 System 后端，携带 opaque Access Token 即可通过 System AuthContext 认证
 
 因此，System 后端维护了一个 **CORS 白名单**（`ALLOWED_ORIGINS`），允许各模块前端的开发端口直接发起跨域请求。
 

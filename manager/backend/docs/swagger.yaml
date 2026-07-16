@@ -1910,6 +1910,10 @@ definitions:
       execution_id:
         type: string
       status:
+        enum:
+        - pending
+        - running
+        example: pending
         type: string
     type: object
   internal_api.TaskListItem:

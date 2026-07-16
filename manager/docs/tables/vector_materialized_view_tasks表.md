@@ -90,6 +90,10 @@ DELETE /api/v1/manager/vector_materialized_view_tasks/{id}
 
 当前 `supports_schedule=false`、`supports_cancel=false`。如果需要周期性刷新，应由 Orchestrator 定时编排间接触发已保存任务定义。
 
+执行生命周期遵守平台统一任务规范：在 Infra PostgreSQL 的任务定义行锁内检查 active execution，并在同一事务创建 `pending` execution 和任务摘要；Manager 运行体接管时同事务推进为 `running` 并写真实 `started_at`；完成时以结果记录的 `last_execution_id` 为 fencing 条件，同事务提交结果状态、execution 终态和任务摘要。
+
+物化视图及其索引实际创建在源业务 PostgreSQL，不能与 Infra PostgreSQL 组成跨库事务。业务库 staging/swap 是派生目标构建边界，Infra PostgreSQL 事务是平台状态事实边界：业务库构建成功但 Infra 终态提交失败时不得伪报 success，后续通过同一任务重跑恢复。
+
 ## 五、相关文档
 
 - [快显概念说明](../快显概念说明.md)

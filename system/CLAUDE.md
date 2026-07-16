@@ -203,7 +203,7 @@ frontend/src/
 ### 认证流程
 
 1. 用户通过 `POST /api/v1/system/login` 登录，提交用户名和密码
-2. 后端验证凭证，生成 JWT Token（使用 HS256 算法）
+2. 后端验证凭证，创建 opaque Access Token 和 Refresh Token Family
 3. 前端存储 Token 到 localStorage
 4. 后续请求通过 `Authorization: Bearer <token>` 头部携带 Token
 5. 后端中间件 `AuthMiddleware` 验证 Token 并提取用户信息

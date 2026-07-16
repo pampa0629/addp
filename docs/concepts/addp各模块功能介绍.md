@@ -45,7 +45,7 @@
 - 用户和租户管理（SuperAdmin / Tenant Admin / Regular User）
 - RBAC 权限控制（角色与权限绑定）
 - 引擎注册管理（统一保存连接配置、状态和结构化能力声明）
-- JWT Token 认证与授权
+- opaque Access Token、Refresh Token Family 与 AuthContext
 - 审计日志记录（操作、登录、API 调用）
 - 系统配置和全局参数管理
 - 模块注册表（各模块向 System 声明自身 API 地址和能力）

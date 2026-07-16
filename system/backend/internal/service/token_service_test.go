@@ -145,6 +145,9 @@ func TestDeviceFlowPendingSlowDownAndApproval(t *testing.T) {
 	if err != nil || pair.RefreshToken == "" {
 		t.Fatalf("approved device exchange: pair=%#v err=%v", pair, err)
 	}
+	if _, err := service.ExchangeDeviceCode("addp-cli", device.DeviceCode); !errors.Is(err, ErrExpiredToken) {
+		t.Fatalf("second exchange error = %v", err)
+	}
 }
 
 func redirectQueryValue(t *testing.T, rawURL, key string) string {

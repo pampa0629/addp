@@ -31,7 +31,7 @@ func NewAuthHandler(
 
 // Login godoc
 // @Summary      用户登录 | User login
-// @Description  使用用户名和密码登录，返回 JWT token | Login with username and password, returns JWT token
+// @Description  使用用户名和密码登录，返回 opaque Access Token 并设置 HttpOnly Refresh Token Cookie | Login with username and password, return an opaque access token and set an HttpOnly refresh token cookie
 // @Tags         认证 | Auth
 // @Accept       json
 // @Produce      json

@@ -158,8 +158,11 @@ func (s *TokenService) ExchangeAuthorizationCode(clientID, plainCode, redirectUR
 		if code.UsedAt != nil || !code.ExpiresAt.After(now) || code.ClientID != clientID || code.RedirectURI != redirectURI {
 			return ErrInvalidAuthorizationCode
 		}
-		if code.CodeChallengeMethod != "S256" || pkceChallenge(verifier) != code.CodeChallenge {
+		if len(verifier) < 43 || len(verifier) > 128 || code.CodeChallengeMethod != "S256" || pkceChallenge(verifier) != code.CodeChallenge {
 			return ErrInvalidPKCE
+		}
+		if err := ensureClientActive(tx, clientID); err != nil {
+			return err
 		}
 		usedAt := now
 		if err := tx.Model(&code).Update("used_at", usedAt).Error; err != nil {
@@ -250,6 +253,21 @@ func (s *TokenService) ExchangeDeviceCode(clientID, plainDeviceCode string) (*Is
 		if device.ClientID != clientID || !device.ExpiresAt.After(now) {
 			return ErrExpiredToken
 		}
+		if err := ensureClientActive(tx, clientID); err != nil {
+			return err
+		}
+		switch device.Status {
+		case models.OAuthDeviceStatusDenied:
+			flowErr = ErrAccessDenied
+			return nil
+		case models.OAuthDeviceStatusUsed:
+			flowErr = ErrExpiredToken
+			return nil
+		case models.OAuthDeviceStatusPending, models.OAuthDeviceStatusApproved:
+		default:
+			flowErr = ErrExpiredToken
+			return nil
+		}
 		if device.LastPolledAt != nil && now.Sub(*device.LastPolledAt) < time.Duration(device.IntervalSecs)*time.Second {
 			return ErrSlowDown
 		}
@@ -259,12 +277,6 @@ func (s *TokenService) ExchangeDeviceCode(clientID, plainDeviceCode string) (*Is
 		switch device.Status {
 		case models.OAuthDeviceStatusPending:
 			flowErr = ErrAuthorizationPending
-			return nil
-		case models.OAuthDeviceStatusDenied:
-			flowErr = ErrAccessDenied
-			return nil
-		case models.OAuthDeviceStatusUsed:
-			flowErr = ErrExpiredToken
 			return nil
 		case models.OAuthDeviceStatusApproved:
 			if device.UserID == nil {
@@ -317,6 +329,11 @@ func (s *TokenService) rotateRefreshToken(plainToken string, expectedClientID *s
 		}
 		if !sameClient(family.ClientID, expectedClientID) {
 			return ErrInvalidOAuthClient
+		}
+		if expectedClientID != nil {
+			if err := ensureClientActive(tx, *expectedClientID); err != nil {
+				return err
+			}
 		}
 		var tenantID uint
 		if family.TenantID != nil {
@@ -543,6 +560,17 @@ func sameClient(actual, expected *string) bool {
 		return actual == nil && expected == nil
 	}
 	return *actual == *expected
+}
+
+func ensureClientActive(tx *gorm.DB, clientID string) error {
+	var count int64
+	if err := tx.Model(&models.OAuthClient{}).Where("client_id = ? AND is_active = ?", clientID, true).Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 1 {
+		return ErrInvalidOAuthClient
+	}
+	return nil
 }
 
 func OAuthErrorCode(err error) string {

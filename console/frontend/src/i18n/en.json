@@ -107,7 +107,7 @@
       "helpTitle": "ADDP Platform API Documentation",
       "helpBaseUrl": "Base URL: http://localhost:8000 (Gateway entry)",
       "helpVersionPrefix": "Version prefix: /api/v1/",
-      "helpAuth": "Auth: Bearer Token (JWT)",
+      "helpAuth": "Auth: Bearer opaque access token",
       "helpContentType": "Content-Type: application/json",
       "helpNote": "Note: Auto-generated from Swagger/OpenAPI, each module provides its own",
       "online": "Online",

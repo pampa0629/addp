@@ -47,8 +47,11 @@ func CachedSystemAuthMiddleware(systemURL string, redisClient *redis.Client, cac
 	return func(c *gin.Context) {
 		// 0. Check for internal API key (for service-to-service calls)
 		if internalKey := c.GetHeader("X-Internal-API-Key"); internalKey != "" {
-			// TODO: Validate internal key against environment variable
-			// For now, trust any internal key (in production, add validation)
+			if !validInternalAPIKey(internalKey) {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid internal api key"})
+				c.Abort()
+				return
+			}
 
 			// 从请求头读取 tenant_id（如果提供）
 			tenantID := uint(0)

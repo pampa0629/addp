@@ -274,7 +274,7 @@ mindmap
 - Console iframe Token 传递机制
 - 认证中间件原理（Go 代码）
 - Token 自动刷新机制（JavaScript 代码）
-- 安全特性（bcrypt、签名算法验证、多租户隔离）
+- 安全特性（bcrypt、Token Hash、轮换撤销、多租户隔离）
 
 > Gateway 路由规则和 Console 架构图见：[ADDP 模块架构图](addp模块架构图.md)
 

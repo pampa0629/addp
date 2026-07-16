@@ -1121,7 +1121,7 @@
         },
         "/login": {
             "post": {
-                "description": "使用用户名和密码登录，返回 JWT token | Login with username and password, returns JWT token",
+                "description": "使用用户名和密码登录，返回 opaque Access Token 并设置 HttpOnly Refresh Token Cookie | Login with username and password, return an opaque access token and set an HttpOnly refresh token cookie",
                 "consumes": [
                     "application/json"
                 ],

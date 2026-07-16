@@ -1570,7 +1570,7 @@ func waitForTileCacheTaskExecution(t *testing.T, repo *commonExecution.TaskExecu
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		exec, err := repo.GetByExecutionID(context.Background(), executionID, tenantID)
-		if err == nil && exec.Status != commonExecution.ExecutionStatusRunning {
+		if err == nil && exec.IsCompleted() {
 			return exec
 		}
 		time.Sleep(10 * time.Millisecond)

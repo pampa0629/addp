@@ -176,7 +176,7 @@ graph TB
 
 ## 认证流程
 
-ADDP 使用 **JWT (JSON Web Token)** 实现无状态认证。
+ADDP 使用 System 集中管理的 opaque Access Token 和 Refresh Token Family 实现用户认证。
 
 ```mermaid
 sequenceDiagram
@@ -195,8 +195,8 @@ sequenceDiagram
     System->>System: 6. 验证密码<br/>bcrypt.Compare(password, password_hash)
 
     alt 密码正确
-        System->>System: 7. 生成第一方访问令牌<br/>payload: {user_id, username, tenant_id, exp, iat}
-        System-->>Gateway: 8. 返回 {access_token, token_type}
+        System->>System: 7. 创建 Access Token 与 Refresh Token Family<br/>数据库只保存 Hash
+        System-->>Gateway: 8. 返回 Access Token<br/>设置 HttpOnly Refresh Cookie
         Gateway-->>Frontend: 9. 返回登录成功
         Frontend->>Frontend: 10. 存储 token 到 localStorage
 
@@ -227,7 +227,7 @@ sequenceDiagram
 3. Gateway 转发到 System Backend
 4. System 查询数据库验证用户
 5. 验证密码(使用 bcrypt)
-6. 生成第一方短期访问令牌，包含 `user_id`、`username`、`tenant_id`、`exp`、`iat`
+6. 生成第一方短期 opaque Access Token 和 Refresh Token Family，只保存 Token Hash
 7. 前端存储 Token 到 localStorage
 
 **访问资源阶段**:
@@ -237,33 +237,9 @@ sequenceDiagram
 4. 业务模块从 AuthContext 获取 `user_id`、`user_type`、`tenant_id`，应用租户和资源权限
 5. 返回当前用户有权访问的数据
 
-### JWT Token 结构
+### opaque Token 结构
 
-```json
-{
-  "header": {
-    "alg": "HS256",
-    "typ": "JWT"
-  },
-  "payload": {
-    "user_id": 123,
-    "username": "admin",
-    "tenant_id": 1,
-    "exp": 1708099200,
-    "iat": 1708012800
-  },
-  "signature": "..."
-}
-```
-
-**Payload 字段说明**:
-- `user_id`: 用户 ID
-- `username`: 用户名
-- `tenant_id`: 租户 ID(用于数据隔离)
-- `exp`: 过期时间(默认 24 小时)
-- `iat`: 签发时间
-
-`user_type`、用户/租户当前激活状态不从 JWT 字符串推断，由 System AuthContext 回查 `system.users` / `system.tenants` 后返回。
+Access Token 使用 `addp_at_` 前缀，Refresh Token 使用 `addp_rt_` 前缀。Token 不携带客户端可解析的身份字段；System 根据 Token Hash 查询用户、租户、客户端、Scope、有效期和撤销状态，再生成 AuthContext。
 
 ---
 

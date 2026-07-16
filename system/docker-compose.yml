@@ -14,7 +14,12 @@ services:
       - ENV=production
       - SERVER_ADDR=:8180
       - DATABASE_URL=/app/data/system.db
-      - JWT_SECRET=your-secret-key-change-in-production
+      - ACCESS_TOKEN_EXPIRE_MINUTES=15
+      - REFRESH_TOKEN_EXPIRE_DAYS=30
+      - OAUTH_CODE_EXPIRE_MINUTES=5
+      - OAUTH_DEVICE_EXPIRE_MINUTES=10
+      - OAUTH_DEVICE_INTERVAL_SECONDS=5
+      - CONSOLE_URL=http://localhost:5170
     restart: unless-stopped
 
   frontend:

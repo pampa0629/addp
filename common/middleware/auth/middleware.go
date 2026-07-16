@@ -1,9 +1,11 @@
 package auth
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -48,6 +50,11 @@ func SystemAuthMiddleware(systemURL string) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		if internalKey := c.GetHeader("X-Internal-API-Key"); internalKey != "" {
+			if !validInternalAPIKey(internalKey) {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid internal api key"})
+				c.Abort()
+				return
+			}
 			tenantID := uint(0)
 			var tenantIDPtr *uint
 			if tenantIDStr := c.GetHeader("X-Tenant-ID"); tenantIDStr != "" {
@@ -135,6 +142,15 @@ func SystemAuthMiddleware(systemURL string) gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+func validInternalAPIKey(provided string) bool {
+	expected := strings.TrimSpace(os.Getenv("INTERNAL_API_KEY"))
+	provided = strings.TrimSpace(provided)
+	if expected == "" || provided == "" || len(expected) != len(provided) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(expected), []byte(provided)) == 1
 }
 
 func setAuthorizationContext(c *gin.Context, authorizationContext AuthorizationContext) {

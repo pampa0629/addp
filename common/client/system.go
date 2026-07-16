@@ -21,7 +21,7 @@ import (
 type SystemClient struct {
 	baseURL     string
 	httpClient  *http.Client
-	authToken   string // JWT Token (用于用户认证的 API)
+	authToken   string // 用户 Access Token
 	internalKey string // Internal API Key (用于服务间调用)
 }
 
@@ -53,7 +53,7 @@ func (c *SystemClient) addAuth(req *http.Request) {
 		// 服务间调用使用 Internal API Key
 		req.Header.Set("X-Internal-API-Key", c.internalKey)
 	} else if c.authToken != "" {
-		// 用户调用使用 JWT Token
+		// 用户调用使用 Access Token
 		req.Header.Set("Authorization", "Bearer "+c.authToken)
 	}
 }

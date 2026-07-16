@@ -19,7 +19,7 @@ import (
 type MetaClient struct {
 	baseURL     string
 	httpClient  *http.Client
-	authToken   string // JWT Token (用于用户认证的 API)
+	authToken   string // 用户 Access Token
 	internalKey string // Internal API Key (用于服务间调用)
 	tenantID    *uint  // Tenant ID (用于服务间调用时指定租户)
 }
@@ -150,7 +150,7 @@ func (c *MetaClient) addAuth(req *http.Request) {
 			req.Header.Set("X-Tenant-ID", fmt.Sprintf("%d", *c.tenantID))
 		}
 	} else if c.authToken != "" {
-		// 用户调用使用 JWT Token
+		// 用户调用使用 Access Token
 		req.Header.Set("Authorization", "Bearer "+c.authToken)
 	}
 }

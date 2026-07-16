@@ -40,6 +40,8 @@
 
 除公共字段、最近执行摘要和审计字段外，瓦片缓存生成私有策略应尽量合并到 `config`。只有存在明确查询、排序、唯一约束、权限过滤或生命周期管理需要时，才考虑拆成独立列。
 
+执行生命周期遵守平台统一任务规范：创建 execution 和任务摘要 `pending` 同事务；运行体领取时 execution 与任务摘要同事务推进为 `running` 并写真实 `started_at`；完成时 `manager.vector_tile_cache` 结果、execution 终态和任务摘要同事务提交。`last_execution_id` 同时用于结果终态更新的 fencing，旧 execution 不得覆盖新 execution 的结果。
+
 ## 三、config 语义
 
 ```json

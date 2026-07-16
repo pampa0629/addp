@@ -172,6 +172,9 @@ other = "三维瓦片快显结果不存在"
 [manager.error.delete_model3d_tiles_failed]
 other = "删除三维瓦片快显结果失败"
 
+[manager.error.task_execution_busy]
+other = "该任务已有活动执行，不能重复启动"
+
 [manager.error.model3d_tiles_execution_busy]
 other = "该三维瓦片快显任务正在生成，不能重复执行"
 

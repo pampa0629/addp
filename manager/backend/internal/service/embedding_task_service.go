@@ -17,8 +17,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// ErrTaskNotFound 任务定义不存在
-var ErrTaskNotFound = errors.New("task not found")
+var (
+	// ErrTaskNotFound 任务定义不存在。
+	ErrTaskNotFound = errors.New("task not found")
+	// ErrTaskExecutionBusy 任务已有 pending 或 running execution。
+	ErrTaskExecutionBusy = errors.New("task already has an active execution")
+)
 
 // EmbeddingTaskService 向量化任务定义管理服务
 // 管理 EmbeddingTask 任务定义（CRUD），执行时写入 common.task_executions

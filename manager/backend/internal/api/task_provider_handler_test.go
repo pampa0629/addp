@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
@@ -491,7 +493,7 @@ func TestTaskExecuteRejectsUnknownFields(t *testing.T) {
 func TestTaskExecuteResponseUsesStandardExecutionShape(t *testing.T) {
 	body, err := json.Marshal(TaskExecuteResponse{
 		ExecutionID: "manager-exec-1",
-		Status:      commonExecution.ExecutionStatusRunning,
+		Status:      commonExecution.ExecutionStatusPending,
 	})
 	if err != nil {
 		t.Fatalf("marshal TaskExecuteResponse: %v", err)
@@ -501,7 +503,7 @@ func TestTaskExecuteResponseUsesStandardExecutionShape(t *testing.T) {
 	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("decode response: %v; body=%s", err, body)
 	}
-	if resp["execution_id"] != "manager-exec-1" || resp["status"] != commonExecution.ExecutionStatusRunning {
+	if resp["execution_id"] != "manager-exec-1" || resp["status"] != commonExecution.ExecutionStatusPending {
 		t.Fatalf("response = %#v, want execution_id and status", resp)
 	}
 	for _, legacyField := range []string{"message", "data", "id"} {
@@ -509,6 +511,76 @@ func TestTaskExecuteResponseUsesStandardExecutionShape(t *testing.T) {
 			t.Fatalf("response contains non-standard field %q: %s", legacyField, body)
 		}
 	}
+}
+
+func TestTaskExecuteTileCacheReturnsPendingAndRejectsActiveExecution(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newTaskProviderHandlerTestDB(t)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := service.NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
+	task := &models.TileCacheTask{
+		TenantID: 1,
+		Name:     "tile cache execution contract",
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"target": commonModels.JSONMap{"item_fingerprint": "api-contract-fingerprint"},
+			"tile":   commonModels.JSONMap{"format": "mvt"},
+		},
+	}
+	if err := tileCacheRepo.CreateTask(context.Background(), task); err != nil {
+		t.Fatalf("create tile cache task: %v", err)
+	}
+
+	handler := NewTaskProviderHandler(nil, taskSvc, nil, nil, taskExecRepo)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", uint(1))
+		c.Next()
+	})
+	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+
+	path := "/tasks/" + commonExecution.TaskTypeVectorTileCacheGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
+	first := httptest.NewRecorder()
+	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, path, nil))
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
+	}
+	var accepted TaskExecuteResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &accepted); err != nil {
+		t.Fatalf("decode first execute response: %v", err)
+	}
+	if accepted.ExecutionID == "" || accepted.Status != commonExecution.ExecutionStatusPending {
+		t.Fatalf("first execute response = %#v, want pending execution", accepted)
+	}
+
+	// The in-process worker may finish immediately because no generator is configured.
+	// Create a deterministic pending execution to verify the public conflict mapping.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		exec, err := taskExecRepo.GetByExecutionID(context.Background(), accepted.ExecutionID, 1)
+		if err == nil && exec.IsCompleted() {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	pendingID := "manager-api-active-execution"
+	pending := &commonExecution.TaskExecution{
+		ExecutionID: pendingID, TenantID: 1, Module: commonExecution.ModuleManager,
+		TaskType: commonExecution.TaskTypeVectorTileCacheGeneration, Source: commonExecution.ModuleManager,
+		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if _, err := tileCacheRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending); err != nil {
+		t.Fatalf("claim deterministic pending execution: %v", err)
+	}
+
+	second := httptest.NewRecorder()
+	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
+	if second.Code != http.StatusConflict {
+		t.Fatalf("second execute status = %d, want 409; body=%s", second.Code, second.Body.String())
+	}
+	assertStandardErrorResponse(t, second.Body.Bytes())
 }
 
 func TestDecodeEmbeddingExecutionRequestRejectsUnknownFields(t *testing.T) {

@@ -25,7 +25,7 @@ system = SystemClient(
 )
 engines = await system.list_internal_engines()
 
-# 用户请求 (使用 JWT Token)
+# 用户请求（使用 opaque Access Token）
 develop = DevelopClient(
     base_url="http://localhost:8000",
     user_token="user-access-token"
@@ -56,7 +56,10 @@ results = await manager.search("城市", page_size=10)
 
 ```bash
 export ADDP_BASE_URL=http://localhost:8000
-export ADDP_TOKEN='<user-jwt-token>'
+
+addp auth login
+# 无浏览器或跨设备环境
+addp auth login --device
 
 addp tools list
 addp tools get workflow.validate
@@ -69,8 +72,11 @@ addp tool call data.search --arguments '{"query":"城市","limit":10}'
 
 支持两种认证方式:
 
-1. **服务间调用**: 使用 `internal_api_key` 参数
-2. **用户请求**: 使用 `user_token` 参数
+1. **ADDP 内部服务间调用**: 使用经过服务端校验的 `internal_api_key` 参数；外部 Agent 不得使用
+2. **用户请求**: Web 使用 HttpOnly Refresh Token Cookie，CLI 使用 OS Keychain 保存轮换 Refresh Token
+3. **显式短期 Token**: `--token` / `ADDP_TOKEN` 只用于调用方已经持有短期 Access Token 的自动化环境
+
+CLI 每次执行 Tool 前使用 Keychain 中的 Refresh Token 换取短期 Access Token，并原子保存轮换后的 Refresh Token；Access Token 不持久化。
 
 ## 开发
 

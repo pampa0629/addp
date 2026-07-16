@@ -27,7 +27,7 @@
 
 #### 认证与加密
 
-- **JWT**: `github.com/golang-jwt/jwt/v5@v5.3.0`
+- **用户令牌**: System 生成随机 opaque Token，只保存 SHA-256 Hash
 - **密码学**: `golang.org/x/crypto@v0.43.0`
 
 #### 数据库驱动

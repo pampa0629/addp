@@ -435,13 +435,12 @@ Content-Type: application/json
 ### 6.1 认证机制
 
 **用户访问令牌**:
-- 算法:HS256
-- 签名密钥:`JWT_SECRET` 环境变量，仅 System 读取
+- 格式:`addp_at_` opaque Access Token，只保存 SHA-256 Hash
 - Token 位置:`Authorization: Bearer <token>`
-- Payload 字段:user_id、username、tenant_id、exp、iat
+- 身份字段由 `system.access_tokens` 关联用户并通过 AuthContext 返回
 
 **中间件**:`middleware.AuthMiddleware`
-- 验证 JWT Token 有效性
+- 验证 opaque Access Token Hash、有效期和撤销状态
 - 回查当前用户、租户和激活状态，生成 AuthContext
 - 仅在 System 内部解析 Token；业务模块通过 `/api/v1/system/auth/context` 消费结果
 - 处理 Token 过期和无效情况

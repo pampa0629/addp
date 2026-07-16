@@ -86,3 +86,28 @@ func TestSwaggerAuthorizationContextContract(t *testing.T) {
 		}
 	}
 }
+
+func TestSwaggerOAuthRoutes(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/swagger.json")
+	if err != nil {
+		t.Fatalf("read swagger.json: %v", err)
+	}
+	var document struct {
+		Paths map[string]json.RawMessage `json:"paths"`
+	}
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatalf("decode swagger.json: %v", err)
+	}
+	for _, path := range []string{
+		"/oauth/authorizations",
+		"/oauth/device/code",
+		"/oauth/device/authorizations",
+		"/oauth/token",
+		"/oauth/revoke",
+		"/logout",
+	} {
+		if _, ok := document.Paths[path]; !ok {
+			t.Errorf("swagger missing OAuth route %q", path)
+		}
+	}
+}

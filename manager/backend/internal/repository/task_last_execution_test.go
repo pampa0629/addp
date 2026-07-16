@@ -21,22 +21,6 @@ func TestTaskLastExecutionUpdatesAreTenantScoped(t *testing.T) {
 		wantTenant7 string
 	}{
 		{
-			name:  "tile cache",
-			table: "manager.vector_tile_cache_tasks",
-			update: func() error {
-				return NewTileCacheRepository(db).UpdateTaskLastExecution(ctx, 1, 7, "exec-tenant-7", "running", now)
-			},
-			wantTenant7: "exec-tenant-7",
-		},
-		{
-			name:  "vector materialized view",
-			table: "manager.vector_materialized_view_tasks",
-			update: func() error {
-				return NewVectorMaterializedViewRepository(db).UpdateTaskLastExecution(ctx, 1, 7, "exec-tenant-7", "running", now)
-			},
-			wantTenant7: "exec-tenant-7",
-		},
-		{
 			name:  "raster COG",
 			table: "manager.raster_cog_tasks",
 			update: func() error {

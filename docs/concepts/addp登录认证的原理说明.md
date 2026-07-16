@@ -2,7 +2,7 @@
 
 ## 一、认证流程概述
 
-ADDP 当前由 System 签发第一方 JWT 访问令牌，并以 AuthContext 作为所有业务模块消费身份和授权信息的唯一契约：
+ADDP 当前由 System 签发随机 opaque 访问令牌，并以 AuthContext 作为所有业务模块消费身份和授权信息的唯一契约：
 
 ```
 用户登录 → System 签发访问令牌 → 前端存储 Token → 后续请求携带 Token → System 解析为 AuthContext → 业务模块授权
@@ -11,8 +11,8 @@ ADDP 当前由 System 签发第一方 JWT 访问令牌，并以 AuthContext 作�
 ### 核心组件
 
 **后端 (System 模块)**：
-- `/api/v1/system/login` - 登录接口，返回 JWT Token
-- `/api/v1/system/refresh` - 刷新过期的 Token
+- `/api/v1/system/login` - 登录接口，返回 Access Token 并设置 HttpOnly Refresh Token Cookie
+- `/api/v1/system/refresh` - 轮换 Refresh Token Family 并返回新的 Access Token
 - `/api/v1/system/auth/context` - 验证访问令牌、回查用户和租户，返回权威 AuthContext
 - `AuthMiddleware` - System 内部唯一的用户 Token 解析入口
 
@@ -106,19 +106,14 @@ Vue Router 触发
 【后端 - System】AuthHandler.Login()
     ├─ 从数据库查询用户
     ├─ 验证密码（bcrypt 哈希比对）
-    ├─ 生成 JWT Token (HS256 签名)
-    │   Token 包含：
-    │   {
-    │     "user_id": 2,
-    │     "username": "admin",
-    │     "tenant_id": 1,
-    │     "exp": 1765630000,  // 过期时间（默认 30 分钟后）
-    │     "iat": 1765628200   // 签发时间
-    │   }
+    ├─ 生成随机 opaque Access Token 和 Refresh Token Family
+    ├─ 数据库只保存 Token SHA-256 Hash
+    ├─ Refresh Token 写入 HttpOnly Cookie
     └─ 返回响应：
         {
-          "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjU2MzAwMDAsImlhdCI6MTc2NTYyODIwMH0.xxx",
-          "token_type": "Bearer"
+          "access_token": "addp_at_...",
+          "token_type": "Bearer",
+          "expires_in": 900
         }
     ↓
 【前端】authStore.setToken(access_token)
@@ -127,14 +122,13 @@ Vue Router 触发
 【前端】authStore.fetchUser()
     └─→ GET http://localhost:8180/api/v1/system/users/me
         Headers: {
-          "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          "Authorization": "Bearer addp_at_..."
         }
     ↓
 【后端 - System】AuthMiddleware 验证 Token 并生成 AuthContext
     ├─ 从 Authorization 头提取 Token
-    ├─ 使用 JWT_SECRET 验证签名
-    ├─ 验证过期时间（exp）
-    ├─ 验证签名算法（必须是 HS256）
+    ├─ 对 Token 计算 SHA-256 并查询 system.access_tokens
+    ├─ 验证有效期、family 和撤销状态
     ├─ 回查用户、租户和激活状态
     └─ 将权威身份存入 Gin context:
         c.Set("user_id", 2)
@@ -189,7 +183,7 @@ Vue Router 触发
 │ 第 4 步：Token 过期自动刷新                                      │
 └─────────────────────────────────────────────────────────────────┘
 
-（30 分钟后，Token 过期）
+（Access Token 过期）
 
 用户继续操作，发起 API 请求
     ↓
@@ -201,15 +195,13 @@ Vue Router 触发
     ├─ 检测到 401 状态码
     ├─ 标记 isRefreshing = true
     └─→ POST http://localhost:8180/api/v1/system/refresh
-        Headers: {
-          "Authorization": "Bearer <old_expired_token>"
-        }
+        Credentials: include
     ↓
 【后端 - System】AuthHandler.Refresh()
-    ├─ 使用 ParseTokenAllowExpired() 允许过期的 token
-    │   （但仍验证签名和算法，防止伪造）
-    ├─ 提取原 token 中的用户信息
-    └─ 生成新的 JWT Token
+    ├─ 读取 HttpOnly Refresh Token Cookie
+    ├─ 在事务中将旧 Refresh Token 标记为已使用
+    ├─ 轮换新的 Refresh Token 并更新 Cookie
+    └─ 生成新的短期 Access Token
     ↓
 【前端】收到新 token
     ├─ authStore.setToken(newToken)
@@ -236,7 +228,7 @@ Vue Router 触发
 
 **关键点**：
 - ✅ **所有模块的认证都通过 System 模块完成**（统一的用户、租户事实源和 AuthContext）
-- ✅ 只有 System 持有 `JWT_SECRET` 并解析 Token；业务模块只消费 AuthContext
+- ✅ 只有 System 查询 Token Hash 和生成 AuthContext；业务模块只消费 AuthContext
 - ✅ Meta 和 Develop 是独立的前端应用，各自维护自己的 authStore
 
 ---
@@ -284,7 +276,7 @@ graph TB
 【Console】authStore.login(username, password)
     └─→ POST http://localhost:8180/api/v1/system/login
     ↓
-【System 后端】返回 JWT Token
+【System 后端】返回 opaque Access Token 并设置 Refresh Token Cookie
     ↓
 【Console】存储 token
     ├─ localStorage.setItem('token', token)
@@ -358,26 +350,11 @@ graph TB
 
 ## 五、关键技术点
 
-### 1. JWT Token 结构
+### 1. opaque Token 结构
 
 > Gateway 路由规则和 Console 架构总览见：[ADDP 模块架构图](addp模块架构图.md)
 
-```json
-{
-  "header": {
-    "alg": "HS256",           // 签名算法
-    "typ": "JWT"              // Token 类型
-  },
-  "payload": {
-    "user_id": 2,             // 用户 ID
-    "username": "admin",      // 用户名
-    "tenant_id": 1,           // 租户 ID（多租户隔离）
-    "exp": 1765630000,        // 过期时间（Unix 时间戳）
-    "iat": 1765628200         // 签发时间
-  },
-  "signature": "xxx"          // HS256(base64(header) + "." + base64(payload), JWT_SECRET)
-}
-```
+Access Token 使用 `addp_at_` 前缀，Refresh Token 使用 `addp_rt_` 前缀。Token 本身不携带可解析 claims；System 只保存 SHA-256 Hash，并从数据库关联用户、租户、客户端、Scope、有效期和撤销状态。
 
 ### 2. 认证中间件工作原理
 
@@ -403,7 +380,7 @@ func SystemAuthMiddleware(systemURL string) gin.HandlerFunc {
 }
 ```
 
-上述代码只表达调用边界，实际实现统一位于 `common/middleware/auth`。System 自己的 `AuthMiddleware` 才能读取 `JWT_SECRET`、解析签名并生成 AuthContext；业务模块不得复制这段逻辑。
+上述代码只表达调用边界，实际实现统一位于 `common/middleware/auth`。System 自己的 Token Service 查询 opaque Token Hash 并生成 AuthContext；业务模块不得复制这段逻辑。
 
 ### 3. 前端自动刷新机制
 
@@ -526,23 +503,12 @@ err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)
 - ✅ 自动加盐，防止彩虹表攻击
 - ✅ 计算耗时，防止暴力破解
 
-### 2. Token 签名安全
+### 2. Token 存储与轮换安全
 
-```go
-// 验证签名算法（防止 "none" 算法攻击）
-if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-    return nil, errors.New("invalid signing method")
-}
-
-// 验证具体算法必须是 HS256
-if token.Method.Alg() != "HS256" {
-    return nil, errors.New("unexpected algorithm")
-}
-```
-
-- ✅ 强制验证签名算法，防止 CVE-2015-9235 攻击
-- ✅ 拒绝 `"none"` 算法
-- ✅ 验证 Token 过期时间
+- Access Token 和 Refresh Token 均使用密码学安全随机数。
+- 数据库只保存 SHA-256 Hash，不保存明文。
+- Refresh Token 每次使用后立即轮换；旧 Token 重用时撤销整个 family。
+- Web Refresh Token 仅存于 HttpOnly Cookie，CLI Refresh Token 仅存于 OS Keychain。
 
 ### 3. URL Token 保护
 
@@ -577,7 +543,7 @@ return db.Where("tenant_id = ?", tenantID).Find(&tasks).Error
 **A**: System 是认证中心，负责：
 - 管理用户表（users）
 - 签发和验证用户访问令牌
-- 独占 `JWT_SECRET`，回查用户/租户并生成 AuthContext
+- 独占 Token Hash、Refresh Token Family 和 AuthContext 生成逻辑
 
 所有业务模块通过共享中间件消费同一 AuthContext 契约，不共享签名密钥，也不自行解析 Token。
 
@@ -607,8 +573,8 @@ return db.Where("tenant_id = ?", tenantID).Find(&tasks).Error
 
 **A**:
 ```bash
-# 1. 修改 .env 中的 TOKEN_EXPIRE_MINUTES 为 1 分钟
-TOKEN_EXPIRE_MINUTES=1
+# 1. 修改 .env 中的 ACCESS_TOKEN_EXPIRE_MINUTES 为 1 分钟
+ACCESS_TOKEN_EXPIRE_MINUTES=1
 
 # 2. 重启 System 后端
 cd system/backend && go run cmd/server/main.go
@@ -627,7 +593,7 @@ ADDP 认证系统的核心设计思想：
 2. **Token 自动刷新**：前端拦截器自动处理 401，无需用户手动重新登录
 3. **iframe Token 传递**：Console 统一登录后，通过 URL query 传递 token 到子模块
 4. **多租户隔离**：System 校验当前租户后返回 AuthContext，owner 后端按其中的 tenant_id 过滤数据
-5. **安全优先**：bcrypt 密码加密、签名算法验证、URL token 移除
+5. **安全优先**：bcrypt 密码哈希、Token Hash 存储、Refresh Token 轮换和 URL Token 移除
 
 **推荐使用方式**：
 - ✅ 生产环境：**Console 统一登录** (一次登录，访问所有模块)

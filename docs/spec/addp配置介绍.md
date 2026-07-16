@@ -5,7 +5,7 @@
 
 **集中化的内容**:
 
-1. **授权上下文**: 用户 Token 由 System `/api/v1/system/auth/context` 解析，`JWT_SECRET` 只保留在 System
+1. **授权上下文**: opaque 用户 Token 由 System `/api/v1/system/auth/context` 解析，业务模块不解析 Token
 2. **系统数据库**: PostgreSQL 连接信息 - 系统数据的单一来源
 3. **业务引擎**: System 的 `engines` 表中管理的引擎 - 所有数据源配置
 4. **加密密钥**: `ENCRYPTION_KEY` - 跨服务的一致加密
@@ -261,8 +261,13 @@ QUICK_VIEW_REALTIME_TILE_RETRY_AFTER_SEC=60
 根目录 `.env` 文件 (从 `.env.example` 复制):
 
 ```bash
-# System 签名密钥（只由 System 读取，不通过共享配置下发）
-JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+# System OAuth 用户令牌生命周期
+ACCESS_TOKEN_EXPIRE_MINUTES=15
+REFRESH_TOKEN_EXPIRE_DAYS=30
+OAUTH_CODE_EXPIRE_MINUTES=5
+OAUTH_DEVICE_EXPIRE_MINUTES=10
+OAUTH_DEVICE_INTERVAL_SECONDS=5
+CONSOLE_URL=http://localhost:5170
 
 # PostgreSQL - ADDP 系统数据库
 POSTGRES_PASSWORD=addp_password

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -460,13 +461,6 @@ func (s *TileCacheTaskService) DeleteTileCache(ctx context.Context, id uint, ten
 }
 
 func (s *TileCacheTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string) (string, error) {
-	task, err := s.tileCacheRepo.GetTask(ctx, taskID, tenantID)
-	if err != nil {
-		return "", err
-	}
-	if task == nil {
-		return "", ErrTaskNotFound
-	}
 	if s.taskExecRepo == nil {
 		return "", errors.New("task execution repository is required")
 	}
@@ -481,42 +475,46 @@ func (s *TileCacheTaskService) Execute(ctx context.Context, taskID uint, tenantI
 
 	executionID := uuid.New().String()
 	now := time.Now()
-	executionConfig := task.Config.Clone()
-	if executionConfig == nil {
-		executionConfig = commonModels.JSONMap{}
-	}
 	exec := &commonExecution.TaskExecution{
 		ExecutionID:       executionID,
 		TenantID:          int(tenantID),
 		Module:            commonExecution.ModuleManager,
 		TaskType:          commonExecution.TaskTypeVectorTileCacheGeneration,
 		Source:            normalizedSource,
-		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(taskID),
-		SourceTaskName:    &task.Name,
 		ParentExecutionID: parentExecutionID,
-		Status:            commonExecution.ExecutionStatusRunning,
+		Status:            commonExecution.ExecutionStatusPending,
 		TriggerType:       normalizedTriggerType,
-		ExecutionConfig:   executionConfig,
-		StartedAt:         &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
-	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
-		return "", err
-	}
-	if err := s.tileCacheRepo.UpdateTaskLastExecution(ctx, taskID, tenantID, executionID, commonExecution.ExecutionStatusRunning, now); err != nil {
+	claimedTask, err := s.tileCacheRepo.ClaimExecution(ctx, taskID, tenantID, exec)
+	if err != nil {
+		if errors.Is(err, commonAPI.ErrNotFound) {
+			return "", ErrTaskNotFound
+		}
+		if errors.Is(err, commonAPI.ErrConflict) {
+			return "", ErrTaskExecutionBusy
+		}
 		return "", err
 	}
 
-	go s.runTileCacheGeneration(context.Background(), task, executionID, now)
+	go s.runTileCacheGeneration(context.Background(), claimedTask, executionID)
 	return executionID, nil
 }
 
-func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task *models.TileCacheTask, executionID string, startedAt time.Time) {
+func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task *models.TileCacheTask, executionID string) {
+	startedAt := time.Now()
+	if err := s.tileCacheRepo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
+		logger.L().Warn("领取瓦片缓存 execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
+		return
+	}
 	status := commonExecution.ExecutionStatusSuccess
 	var errDetails commonModels.JSONMap
 	metadata := commonModels.JSONMap{}
 	completedAt := time.Now()
 	resultReadyPersisted := false
 	preserveReadyTileCache := false
+	var tileCacheFields map[string]interface{}
 
 	tileCache, execCfg, cfg, workflowReq, preserveReadyTileCache, err := s.prepareExecutionTileCache(ctx, task, executionID)
 	if err == nil && workflowReq == nil && s.tileGenerator == nil {
@@ -603,11 +601,8 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 					updates["extent_srid"] = resultExtentSRID
 				}
 			}
-			if updateErr := s.tileCacheRepo.UpdateTileCacheFields(ctx, tileCache.ID, task.TenantID, updates); updateErr != nil {
-				err = fmt.Errorf("update tile cache result state: %w", updateErr)
-			} else {
-				resultReadyPersisted = true
-			}
+			tileCacheFields = updates
+			resultReadyPersisted = true
 		}
 	}
 
@@ -615,12 +610,10 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 		status = commonExecution.ExecutionStatusFailed
 		errDetails = commonModels.JSONMap{"message": err.Error()}
 		if tileCache != nil && !resultReadyPersisted && !preserveReadyTileCache {
-			if updateErr := s.tileCacheRepo.UpdateTileCacheFields(ctx, tileCache.ID, task.TenantID, map[string]interface{}{
+			tileCacheFields = map[string]interface{}{
 				"status":            models.TileCacheStatusFailed,
 				"error_message":     err.Error(),
 				"last_execution_id": executionID,
-			}); updateErr != nil {
-				errDetails["vector_tile_cache_update_error"] = updateErr.Error()
 			}
 		}
 	}
@@ -632,7 +625,11 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 		finalProgress = 100
 	}
 	mergeTileCacheProgressMetadata(metadata, progressSink.LastMetadata())
-	if err := s.taskExecRepo.UpdateFields(ctx, executionID, int(task.TenantID), map[string]interface{}{
+	tileCacheID := uint(0)
+	if tileCache != nil {
+		tileCacheID = tileCache.ID
+	}
+	if err := s.tileCacheRepo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, tileCacheID, tileCacheFields, map[string]interface{}{
 		"status":            status,
 		"progress":          finalProgress,
 		"metadata":          metadata,
@@ -640,11 +637,8 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 		"completed_at":      completedAt,
 		"execution_time_ms": durationMs,
 		"updated_at":        completedAt,
-	}); err != nil {
-		logger.L().Warn("更新瓦片缓存 execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
-	}
-	if err := s.tileCacheRepo.UpdateTaskLastExecution(ctx, task.ID, task.TenantID, executionID, status, completedAt); err != nil {
-		logger.L().Warn("更新瓦片缓存任务最近执行状态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
+	}, completedAt); err != nil {
+		logger.L().Warn("提交瓦片缓存 execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}
 }
 
