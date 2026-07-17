@@ -15,6 +15,118 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/approvals/{id}": {
+            "get": {
+                "description": "仅原申请用户可读取审批状态和最小请求摘要，不返回完整 workflow payload。| Only the requesting user can read the approval status and minimal request summary; the full workflow payload is not returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tool Approval"
+                ],
+                "summary": "查询 Tool 审批 | Get Tool approval",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "审批 ID | Approval ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "审批详情 | Approval details",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问审批 | Approval access denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "审批不存在 | Approval not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/approvals/{id}/decision": {
+            "post": {
+                "description": "仅原申请用户使用第一方或 OAuth User Access Token 提交 approved 或 rejected；委托令牌和内部身份不能作出决定。| Only the requesting user may submit approved or rejected with a first-party or OAuth user access token; delegated tokens and internal identities cannot decide.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tool Approval"
+                ],
+                "summary": "决定 Tool 审批 | Decide Tool approval",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "审批 ID | Approval ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "审批决定 | Approval decision",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalDecisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "审批详情 | Approval details",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "决定无效 | Invalid decision",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "无权决定审批 | Approval decision denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "审批不存在 | Approval not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "审批已处理 | Approval already decided",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "审批已过期 | Approval expired",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/assets/discoverable": {
             "get": {
                 "security": [
@@ -289,6 +401,7 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "description": "第一方或 OAuth 用户提交 dev_type、trigger_type、content 和 execution_config 后直接执行。委托 workflow.run 首次提交相同执行内容并返回审批；批准后恢复请求只提交 approval_id 和 request_fingerprint。| First-party or OAuth users submit dev_type, trigger_type, content, and execution_config for direct execution. A delegated workflow.run first submits the same execution content and receives an approval; after approval, the resume request contains only approval_id and request_fingerprint.",
                 "consumes": [
                     "application/json"
                 ],
@@ -314,10 +427,37 @@ const docTemplate = `{
                     "200": {
                         "description": "执行已启动 | Execution started",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionStartedResponse"
+                        }
+                    },
+                    "202": {
+                        "description": "需要在 Develop 完成审批 | Develop approval required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ApprovalRequiredResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "审批身份无效 | Invalid approval identity",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "审批状态冲突 | Approval state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "审批已过期 | Approval expired",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse"
                         }
                     }
                 }
@@ -1645,6 +1785,29 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "github_com_addp_develop_backend_internal_models.ApprovalRequiredResponse": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "interaction_id": {
+                    "type": "string"
+                },
+                "open_url": {
+                    "type": "string"
+                },
+                "request_fingerprint": {
+                    "type": "string"
+                },
+                "request_summary": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_develop_backend_internal_models.CreateDevTaskSwaggerRequest": {
             "type": "object",
             "required": [
@@ -1694,12 +1857,11 @@ const docTemplate = `{
         },
         "github_com_addp_develop_backend_internal_models.CreateExecutionSwaggerRequest": {
             "type": "object",
-            "required": [
-                "dev_type",
-                "execution_config",
-                "trigger_type"
-            ],
             "properties": {
+                "approval_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
                 "content": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContentSwagger"
                 },
@@ -1715,6 +1877,10 @@ const docTemplate = `{
                 "execution_config": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger"
                 },
+                "request_fingerprint": {
+                    "type": "string",
+                    "example": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                },
                 "timeout": {
                     "type": "integer",
                     "example": 300
@@ -1728,6 +1894,10 @@ const docTemplate = `{
                     "example": "manual"
                 }
             }
+        },
+        "github_com_addp_develop_backend_internal_models.DevTaskContent": {
+            "type": "object",
+            "additionalProperties": true
         },
         "github_com_addp_develop_backend_internal_models.DevTaskContentSwagger": {
             "type": "object",
@@ -1870,6 +2040,17 @@ const docTemplate = `{
                 "updated_by": {
                     "type": "integer",
                     "example": 1
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.ExecutionStartedResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
                 }
             }
         },
@@ -2195,6 +2376,75 @@ const docTemplate = `{
                 "updated_by": {
                     "type": "integer",
                     "example": 1
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.ToolApprovalDecisionRequest": {
+            "type": "object",
+            "required": [
+                "decision"
+            ],
+            "properties": {
+                "decision": {
+                    "type": "string",
+                    "enum": [
+                        "approved",
+                        "rejected"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.ToolApprovalErrorBody": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorBody"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.ToolApprovalResponse": {
+            "type": "object",
+            "properties": {
+                "consumed_at": {
+                    "type": "string"
+                },
+                "decided_at": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "request_fingerprint": {
+                    "type": "string"
+                },
+                "request_summary": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent"
+                },
+                "requested_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tool_name": {
+                    "type": "string"
                 }
             }
         },

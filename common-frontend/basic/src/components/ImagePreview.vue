@@ -119,22 +119,13 @@ const isTiffImage = computed(() => {
   )
 })
 
-const withAuthToken = (url) => {
-  if (!url || typeof url !== 'string') return ''
-  if (!url.startsWith('/api/v1/manager/storage-stream')) return url
-  const token = localStorage.getItem('token')
-  if (!token) return url
-  const separator = url.includes('?') ? '&' : '?'
-  return `${url}${separator}token=${encodeURIComponent(token)}`
-}
-
 const imageSrc = computed(() => {
   const rawData = content.value?.data || content.value?.Data || ''
   const encoding = String(content.value?.encoding || content.value?.Encoding || '').toLowerCase()
   if (rawData && encoding === 'base64') {
     return `data:${contentType.value || 'application/octet-stream'};base64,${rawData}`
   }
-  return withAuthToken(imageURL.value)
+  return imageURL.value
 })
 
 const contentMessage = computed(() => content.value?.text || tiffError.value || '图片超出预览限制，无法在线展示')

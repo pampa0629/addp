@@ -82,3 +82,6 @@
 7. `cog.leaf_concurrency` 只对 `detached` 模式生效，默认按运行机器 CPU 预算归一化：逻辑 CPU 小于 8 时为 1，8 到 15 时为 2，16 到 31 时为 4，32 及以上时为 6，上限 8；当前 18 逻辑 CPU 开发机默认值为 4。`in_place` 模式保持串行。
 8. `cog.num_threads` 控制单个 leaf COG 的 GDAL `NUM_THREADS`，默认按 `逻辑 CPU / (leaf_concurrency * 2)` 归一化并限制在 1 到 4；当前 18 逻辑 CPU、`leaf_concurrency=4` 时默认值为 2。
 9. `cog.leaf_retry_attempts` 控制单个 leaf COG 生成和内容级校验失败后的重试次数，默认 2，上限 5。`detached` 模式再次执行同一任务时会复用目标数据集中已存在且内容级校验通过的 leaf COG，用于超时或中断后的恢复。
+10. execution 必须在任务行锁保护下原子创建为 `pending`，`started_at` 为空；运行体领取后再与任务摘要同事务推进为 `running`。同一任务已有 `pending` / `running` execution 时拒绝重复执行。
+11. Mosaic 没有 Manager 私有结果表。终态提交必须在同一 Infra PostgreSQL 事务更新 `common.task_executions` 和任务最近执行摘要；业务存储写入或 Meta scan 已成功但终态事务失败时保留未完成平台状态，由同一任务重跑恢复。
+12. GeoPython Workflow 进度事件只允许更新 `status=running` 的对应 execution；`pending` 和所有终态 execution 均拒绝进度写入。

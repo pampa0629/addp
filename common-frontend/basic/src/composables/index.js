@@ -17,6 +17,14 @@ export {
   createAPIClient,
   createAuthStore
 } from './useAuth'
+export {
+  createIframeAuthCoordinator,
+  getAccessToken,
+  getAccessTokenExpiresAt,
+  setRuntimeAccessToken,
+  clearRuntimeAccessToken,
+  subscribeAccessToken
+} from '../auth/authSession'
 
 // I18n Composables
 export {

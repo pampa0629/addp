@@ -1097,12 +1097,32 @@ type TaskExecuteRequest struct {
 	TriggerType       string                 `json:"trigger_type"`        // manual|scheduled，默认 manual
 	Source            string                 `json:"source"`              // 触发来源模块
 	ParentExecutionID string                 `json:"parent_execution_id"` // 父执行ID（Orchestrator 调用时传入）
-	Parameters        map[string]interface{} `json:"parameters"`          // 执行参数覆盖；当前 Manager provider 不支持
+	Parameters        map[string]interface{} `json:"parameters"`          // Manager 受管当前结果任务仅支持 confirm_existing_result | Managed current-result tasks only support confirm_existing_result
 }
 
 type TaskExecuteResponse struct {
 	Status      string `json:"status" enums:"pending,running" example:"pending"`
 	ExecutionID string `json:"execution_id"`
+}
+
+const existingResultConfirmationRequiredCode = "existing_result_confirmation_required"
+
+func managerResultExecutionConfirmation(parameters map[string]interface{}) (bool, error) {
+	if len(parameters) == 0 {
+		return false, nil
+	}
+	if len(parameters) != 1 {
+		return false, errors.New("Manager result execution parameters only support confirm_existing_result")
+	}
+	value, ok := parameters["confirm_existing_result"]
+	if !ok {
+		return false, errors.New("Manager result execution parameters only support confirm_existing_result")
+	}
+	confirmed, ok := value.(bool)
+	if !ok {
+		return false, errors.New("confirm_existing_result must be a boolean")
+	}
+	return confirmed, nil
 }
 
 // TaskExecute POST /api/v1/manager/tasks/:task_type/:id/execute
@@ -1117,7 +1137,7 @@ type TaskExecuteResponse struct {
 // @Success 202 {object} TaskExecuteResponse "执行ID | Execution ID"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
-// @Failure 409 {object} map[string]interface{} "任务已有活动执行 | Task already has an active execution"
+// @Failure 409 {object} map[string]interface{} "任务已有活动执行或刷新已有结果需要确认 | Active execution or existing result refresh confirmation required"
 // @Router /tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
@@ -1143,7 +1163,14 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	if source == "" {
 		source = commonExecution.ModuleManager
 	}
-	if len(req.Parameters) > 0 {
+	confirmExistingResult := false
+	if managerTaskRequiresResultConfirmation(taskType) {
+		confirmExistingResult, err = managerResultExecutionConfirmation(req.Parameters)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	} else if len(req.Parameters) > 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Manager task provider does not support execution parameter overrides"})
 		return
 	}
@@ -1158,25 +1185,32 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 
 	switch taskType {
 	case commonExecution.TaskTypeVectorTileCacheGeneration:
-		executionID, err = h.tileCacheTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+		executionID, err = h.tileCacheTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
 		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeVectorMaterializedViewGeneration:
-		executionID, err = h.vectorMaterializedViewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+		executionID, err = h.vectorMaterializedViewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
 		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeRasterCOGGeneration:
-		executionID, err = h.rasterCOGTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+		executionID, err = h.rasterCOGTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
+		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeRasterMosaicGeneration:
 		executionID, err = h.rasterMosaicTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeModel3DTilesGeneration:
-		executionID, err = h.model3DTilesTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+		executionID, err = h.model3DTilesTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
+		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeModel3DGLBGeneration:
-		executionID, err = h.model3DGLBTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+		executionID, err = h.model3DGLBTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
+		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeGaussianSplatKSplatGeneration:
-		executionID, err = h.gaussianSplatKSplatTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+		executionID, err = h.gaussianSplatKSplatTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
+		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypePointCloudCOPCGeneration:
-		executionID, err = h.pointCloudCOPCTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+		executionID, err = h.pointCloudCOPCTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
+		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeCADPreviewGeneration:
-		executionID, err = h.cadPreviewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+		executionID, err = h.cadPreviewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
+		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeEmbedding:
 		executionID, err = h.embeddingTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	default:
@@ -1197,6 +1231,13 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, manageri18n.MsgModel3DTilesExecutionBusy)})
 			return
 		}
+		if errors.Is(err, service.ErrExistingResultConfirmationRequired) {
+			c.JSON(http.StatusConflict, gin.H{
+				"error": commoni18n.T(c, manageri18n.MsgExistingResultConfirmationRequired),
+				"code":  existingResultConfirmationRequiredCode,
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -1205,6 +1246,22 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 		Status:      executionStatus,
 		ExecutionID: executionID,
 	})
+}
+
+func managerTaskRequiresResultConfirmation(taskType string) bool {
+	switch taskType {
+	case commonExecution.TaskTypeVectorTileCacheGeneration,
+		commonExecution.TaskTypeVectorMaterializedViewGeneration,
+		commonExecution.TaskTypeRasterCOGGeneration,
+		commonExecution.TaskTypeModel3DGLBGeneration,
+		commonExecution.TaskTypeModel3DTilesGeneration,
+		commonExecution.TaskTypeGaussianSplatKSplatGeneration,
+		commonExecution.TaskTypePointCloudCOPCGeneration,
+		commonExecution.TaskTypeCADPreviewGeneration:
+		return true
+	default:
+		return false
+	}
 }
 
 // ExecutionStatus GET /api/v1/manager/executions/:execution_id

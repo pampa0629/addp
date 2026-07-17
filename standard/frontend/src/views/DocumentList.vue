@@ -283,8 +283,7 @@ const openDetail = async (row) => {
 }
 
 const downloadFile = (row) => {
-  const token = localStorage.getItem('token') || ''
-  const url = documentAPI.downloadUrl(row.id) + (token ? `?token=${encodeURIComponent(token)}` : '')
+  const url = documentAPI.downloadUrl(row.id)
   const a = document.createElement('a')
   a.href = url
   a.download = row.file_name || 'document'

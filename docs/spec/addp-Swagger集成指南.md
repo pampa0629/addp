@@ -102,7 +102,7 @@ go get github.com/swaggo/files@v1.0.1
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
-// @description Type "Bearer" followed by a space and JWT token.
+// @description Type "Bearer" followed by a space and an ADDP User Access Token.
 func main() {
 ```
 

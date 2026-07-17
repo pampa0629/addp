@@ -46,11 +46,15 @@ GET /api/v1/manager/cad-previews/{id}/tiles/{z}/{x}/{y}
 
 接口必须校验当前租户和 `status=ready`。manifest API 注入稳定的 `tile_url_template`；前端使用 OpenLayers 自定义本地二维 projection，不假定 EPSG:3857。
 
-## 四、删除语义
+## 四、execution fencing 与终态提交
+
+开始生成或刷新结果时，`last_execution_id` 必须写入当前 execution。终态只能更新仍由当前 execution 持有的结果行；结果终态、`common.task_executions` 终态和任务摘要必须在同一 Infra PostgreSQL 事务提交，任一 fencing 条件不成立时整笔回滚。
+
+## 五、删除语义
 
 删除结果时，Manager 先删除 `storage_ref` 下的 infra artifact，再将记录标记为 `deleted` 并软删除。不得删除源 CAD 文件、任务定义、execution 历史或 `preview_state`。
 
-## 五、相关文档
+## 六、相关文档
 
 - [CAD 数据支持设计](../../../docs/next/addp-CAD数据支持设计.md)
 - [数据预览语义协议](../数据预览语义协议.md)

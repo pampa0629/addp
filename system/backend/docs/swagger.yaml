@@ -553,6 +553,53 @@ definitions:
     required:
     - name
     type: object
+  github_com_addp_system_internal_models.DelegatedAccessTokenRequest:
+    properties:
+      agent_run_id:
+        maxLength: 100
+        type: string
+      audience:
+        type: string
+      scopes:
+        items:
+          type: string
+        minItems: 1
+        type: array
+      tool_call_id:
+        maxLength: 100
+        type: string
+    required:
+    - agent_run_id
+    - audience
+    - scopes
+    - tool_call_id
+    type: object
+  github_com_addp_system_internal_models.DelegatedAccessTokenResponse:
+    properties:
+      access_token:
+        type: string
+      agent_run_id:
+        example: 7a9f43a7-81f0-4cb4-b545-6bfef53ed922
+        type: string
+      audience:
+        example: develop
+        type: string
+      expires_in:
+        example: 120
+        type: integer
+      scopes:
+        example:
+        - workflow.run
+        items:
+          type: string
+        type: array
+      token_type:
+        example: Bearer
+        type: string
+      tool_call_id:
+        example: call_abc123
+        type: string
+    type: object
   github_com_addp_system_internal_models.DeviceApprovalRequest:
     properties:
       approve:
@@ -1419,6 +1466,44 @@ paths:
       summary: 获取授权上下文 | Get authorization context
       tags:
       - 认证 | Auth
+  /auth/delegations:
+    post:
+      consumes:
+      - application/json
+      description: 为当前用户的一次 ADDP Tool 调用签发绑定 owner audience、稳定 Tool Scope、AgentRun
+        和 ToolCall 的短期 opaque Token | Issue a short-lived opaque token for one ADDP
+        Tool call, bound to the owner audience, stable Tool scope, AgentRun and ToolCall
+      parameters:
+      - description: 委托边界 | Delegation boundary
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.DelegatedAccessTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.DelegatedAccessTokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 签发受委托访问令牌 | Issue delegated access token
+      tags:
+      - 认证 | Auth
   /engines:
     get:
       consumes:
@@ -1763,9 +1848,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: 使用用户名和密码登录，返回 opaque Access Token 并设置 HttpOnly Refresh Token Cookie
-        | Login with username and password, return an opaque access token and set
-        an HttpOnly refresh token cookie
+      description: 使用用户名和密码登录，返回 opaque Access Token，并设置 HttpOnly Refresh Token Cookie
+        与 Owner Path 限定的 Browser Resource Access Ticket Cookie | Login with username
+        and password, return an opaque access token, and set an HttpOnly refresh token
+        cookie plus owner-path browser resource access ticket cookies
       parameters:
       - description: 登录信息 | Login credentials
         in: body
@@ -1793,8 +1879,9 @@ paths:
       - 认证 | Auth
   /logout:
     post:
-      description: 撤销当前 Refresh Token Family 并清除 Cookie | Revoke the current refresh
-        token family and clear the cookie
+      description: 撤销当前 Refresh Token Family，并清除 Refresh Token 与 Browser Resource
+        Access Ticket Cookie | Revoke the current refresh token family and clear the
+        refresh-token and browser-resource-ticket cookies
       produces:
       - application/json
       responses:
@@ -2143,8 +2230,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: 使用 HttpOnly Cookie 中的 Refresh Token 轮换并获取新的 Access Token | Rotate
-        the refresh token from the HttpOnly cookie and issue a new access token
+      description: 使用 HttpOnly Cookie 中的 Refresh Token 轮换 Access Token、Refresh Token
+        和 Browser Resource Access Ticket | Rotate the access token, refresh token,
+        and browser resource access tickets using the refresh token from the HttpOnly
+        cookie
       produces:
       - application/json
       responses:

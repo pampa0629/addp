@@ -17,7 +17,7 @@ description: 设计、解释、校验或执行 ADDP 数据分析工作流。用�
 6. 调用 `workflow.draft.generate` 生成候选 definition，并通过 `resources[]` 传入前述步骤已确认的全部 locator、用途、字段、几何列和 CRS 事实；Copilot 不负责重新搜索数据。也可以根据已确认事实构造候选 definition。
 7. 调用 `workflow.validate`。存在错误时根据错误和 Public Operator Spec 修正后重新校验；未通过正式校验不得执行。
 8. 展示 DAG、关键参数、输入 locator、目标位置和仍需用户决定的事项。
-9. 仅当用户明确要求执行且 owner 策略允许时调用 `workflow.run`。保存返回的 `execution_id`，不要同步等待长任务。
+9. 仅当用户明确要求执行时调用 `workflow.run`。首次返回 `approval_required` 后等待 Develop owner 审批，不得自行重试或把客户端确认当作批准；恢复消息提供 `approval_id + request_fingerprint` 后，再次调用 `workflow.run` 且只提交这两个字段。保存返回的 `execution_id`，不要同步等待长任务。
 10. 调用 `execution.get` 查询状态；返回简短摘要、execution id、ResultRef、locator 或 owner 页面链接。
 
 构造或修复 definition 时读取 [workflow-contract.md](references/workflow-contract.md)。

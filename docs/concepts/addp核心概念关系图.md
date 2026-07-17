@@ -114,7 +114,7 @@ mindmap
       business-postgres
       business-minio
     其他
-      JWT 认证流程
+      Browser AuthSession 与 AuthContext
       gateway 路由机制
       运行模式
         控制台:console
@@ -164,7 +164,7 @@ mindmap
 - 用户类型层次 (SuperAdmin、TenantAdmin、RegularUser)
 - 租户隔离机制 (数据库、对象存储、缓存、API 层隔离)
 - RBAC 权限模型 (基于角色的访问控制)
-- JWT 认证流程
+- opaque User Access Token 与 AuthContext
 
 📄 **[阅读完整文档 →](addp账号与权限体系图.md)**
 
@@ -266,12 +266,12 @@ mindmap
 
 ### 11. [认证与路由](addp登录认证的原理说明.md)
 
-**JWT 认证流程、登录实现详解和 Console Token 传递机制**
+**Browser AuthSession、登录恢复、静默刷新和 Console iframe 认证机制**
 
-- JWT 认证流程（序列图：登录阶段、访问资源阶段）
-- 完整登录流程（4步详解，含代码示例）
-- 三种登录场景（独立模块登录 vs Console 统一登录）
-- Console iframe Token 传递机制
+- opaque Token 与 AuthContext 流程
+- 页面启动恢复、主动刷新和多标签页互斥
+- 独立模块与 Console 统一登录
+- Console iframe `postMessage` 认证机制
 - 认证中间件原理（Go 代码）
 - Token 自动刷新机制（JavaScript 代码）
 - 安全特性（bcrypt、Token Hash、轮换撤销、多租户隔离）
@@ -292,8 +292,8 @@ mindmap
 
 ### 用户与权限
 
-- **[账号与权限体系图](addp账号与权限体系图.md)** - 用户类型、租户隔离、RBAC 权限、JWT 认证
-- **[登录认证原理说明](addp登录认证的原理说明.md)** - JWT 认证流程、登录详解、Token 刷新、安全特性（Gateway 路由与 Console 架构见[模块架构图](addp模块架构图.md)）
+- **[账号与权限体系图](addp账号与权限体系图.md)** - 用户类型、租户隔离、RBAC 权限、AuthContext
+- **[登录认证原理说明](addp登录认证的原理说明.md)** - Browser AuthSession、静默恢复、Token 轮换和 iframe 认证（Gateway 路由与 Console 架构见[模块架构图](addp模块架构图.md)）
 
 ### 数据管理
 

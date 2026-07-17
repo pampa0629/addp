@@ -99,6 +99,7 @@ func TestSwaggerOAuthRoutes(t *testing.T) {
 		t.Fatalf("decode swagger.json: %v", err)
 	}
 	for _, path := range []string{
+		"/auth/delegations",
 		"/oauth/authorizations",
 		"/oauth/device/code",
 		"/oauth/device/authorizations",

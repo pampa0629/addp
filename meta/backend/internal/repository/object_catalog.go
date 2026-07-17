@@ -50,9 +50,19 @@ func (r *ScanRepository) EnsureObjectCatalogPrefixRelativePath(
 	}
 
 	parentPrefix := strings.Trim(prefix, "/")
+	normalizedScanPrefix := strings.Trim(scanPathPrefix, "/")
+	if normalizedScanPrefix != "" {
+		if parentPrefix == "" {
+			return bucketNode, nil, nil
+		}
+		if strings.HasPrefix(normalizedScanPrefix, parentPrefix+"/") {
+			parentNode, err := r.EnsureObjectCatalogPrefixPath(tenantID, engineID, bucketNode, parentPrefix)
+			return parentNode, nil, err
+		}
+	}
 	relative := strings.Trim(parentPrefix, "/")
-	if scanPathPrefix != "" && strings.HasPrefix(relative, strings.Trim(scanPathPrefix, "/")) {
-		relative = strings.TrimPrefix(relative, strings.Trim(scanPathPrefix, "/"))
+	if normalizedScanPrefix != "" && strings.HasPrefix(relative, normalizedScanPrefix) {
+		relative = strings.TrimPrefix(relative, normalizedScanPrefix)
 		relative = strings.Trim(relative, "/")
 	}
 	if relative == "" {

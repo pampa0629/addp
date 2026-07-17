@@ -45,19 +45,21 @@ PostgreSQL `agent` schema 当前包含：
 - `runs`：跨 AG-UI 调用存在的 AgentRun、生命周期和语义检查点；
 - `run_steps`：Tool 调用与 Runtime 控制动作的受限审计记录；
 - `run_events`：可按 sequence 安全回放的 AG-UI 事件投影；
-- `interactions`：服务端持久澄清状态、Schema、选项和回答；
+- `interactions`：服务端持久澄清，或 owner approval 的 ID、open URL、请求指纹、摘要和状态投影；
 - `skill_usage`：Skill 使用统计。
 
 AgentRun 使用唯一语义恢复路线：
 
 1. 新用户目标创建 `agent.runs`，状态进入 `running`。
 2. owner Tool 返回的引擎和 locator 等紧凑事实写入 `checkpoint.observed`，Tool 调用写入 `run_steps`。
-3. 创建澄清时，Interaction 通过 `agent_run_id` 关联 AgentRun，run 状态进入 `waiting`。
-4. 用户回答后，选中的 owner 事实写入 `checkpoint.confirmed`，同一个 AgentRun 重新进入 `running`。
+3. 创建澄清或 owner approval 投影时，Interaction 通过 `agent_run_id` 关联 AgentRun，run 状态进入 `waiting`。
+4. 用户回答澄清后，选中的 owner 事实写入 `checkpoint.confirmed`；用户检查审批时，Agent 使用原始 User Access Token 查询 owner，只有 owner 返回 `approved|consumed` 才完成 Interaction；两种情况都恢复同一个 AgentRun。
 5. Runtime 使用预算化会话历史、增量摘要、Skill 和 AgentCheckpoint 重建模型调用，不序列化 LangChain 内部对象、隐藏推理或完整 Tool 大结果；Tool 结果即使被截断为非 JSON，审计摘要也只记录类型与字节数，不保存原文前缀。
 6. 最终进入 `completed`、`failed` 或 `cancelled`。
 
 AG-UI 请求中的 `runId` 是协议调用标识；AgentRun 是服务端逻辑运行身份。一次 AgentRun 可以经历初始调用和若干次 resume 调用，恢复身份以 Interaction 的 `agent_run_id` 为准。
+
+Interaction resume 沿用 AgentRun 已记录的 Skill 和 Tool 白名单，不重新执行主路由选择；协议调用 ID 可以变化，但业务运行身份和能力边界不变。
 
 断线重连只回放同一 AgentRun 的 `run_events`，并以客户端已处理的 sequence 为游标；事件表不保存 Tool 参数或原始结果。取消仅停止 Agent Runtime 和 pending Interaction，不取消 owner execution；失败重试在同一 AgentRun 内以新的协议调用 ID 追加事件。
 
@@ -78,7 +80,7 @@ AgentRun 可观测事实分为：
 
 上下文唯一预算为最近 20 条消息、单条 6000 字符、消息总计 24000 字符和摘要 2000 字符，从最新消息向前分配。错误字段唯一使用 `error_source=client|runtime|tool|owner|protocol` + `error_code` + 最多 1000 字符的受限 `error_message`，不保留 `error_type`。
 
-写入和破坏性操作的 approval 不归 Agent 持有，后续由业务 owner 模块提供权威 Interaction。
+写入和破坏性操作的 approval 不归 Agent 持有。`workflow.run` 的权威审批由 Develop 持有；Agent 不保存完整 workflow payload，只保存 owner approval 的可恢复投影。`ApprovalRequest` 的“检查审批状态”动作只提交 `{action:"check"}`，不能产生批准事实。
 
 ## 四、前端边界
 
@@ -101,7 +103,9 @@ Agent 的 LangChain Tool 只是一种 Tool Adapter。访问 ADDP API 的 Client 
 
 ## 六、认证
 
-内置 Agent 前端使用 ADDP 现有登录和用户访问令牌。Agent 后端通过 `common-python/addp_common/auth.resolve_authorization_context()` 调用 System `/api/v1/system/auth/context`，不保存 `JWT_SECRET`、不自行解析 JWT，并把原始用户 Token 继续传给 owner 模块 API。owner 模块独立解析同一 AuthContext 并执行租户、资源权限和审批校验；受委托短期 Token 的正式形态后续由 System 规范和实现统一确定。
+内置 Agent 前端使用 ADDP 现有登录和用户访问令牌。Agent 后端通过 `common-python/addp_common/auth.resolve_authorization_context()` 调用 System `/api/v1/system/auth/context`，不保存 `JWT_SECRET`、不自行解析 Token。原始用户 Token 只用于进入 Runtime 和向 System 申请当前 Tool 调用的短期 Delegated Access Token，不再传给 owner 模块 API。
+
+每次平台 Tool 调用必须绑定当前 AgentRun UUID 和 LangChain `tool_call_id`。System 根据 Tool Manifest 的 owner audience 与稳定 Tool 名 Scope 签发 `addp_dat_`；owner 默认拒绝委托令牌，只在对应 Tool 路由完成 audience、Scope、用户、租户、资源权限和审批校验后放行。
 
 AG-UI 流式请求使用 `common-frontend` 的 `createAuthenticatedFetch()`，与普通 Axios Client 共用 Token 刷新核心；Agent 前端不保存静态请求 Token，也不复制刷新逻辑。
 

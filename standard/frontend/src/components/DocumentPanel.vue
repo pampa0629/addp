@@ -177,8 +177,6 @@ const docTypeLabel = (type) => ({
 }[type] || type)
 const docTypeTagType = (type) => ({ national: 'danger', industry: 'warning', internal: 'success', reference: '' }[type] || '')
 
-const getToken = () => localStorage.getItem('token') || ''
-
 const loadDocs = async () => {
   if (!props.entityId) return
   loading.value = true
@@ -196,8 +194,7 @@ const isAlreadyLinked = (docId) => docs.value.some(d => d.id === docId)
 
 const downloadDoc = (doc) => {
   const url = api[props.entityType].downloadUrl(doc.id)
-  const token = getToken()
-  window.open(url + (token ? `?token=${encodeURIComponent(token)}` : ''), '_blank')
+  window.open(url, '_blank')
 }
 
 const unlinkDoc = async (doc) => {

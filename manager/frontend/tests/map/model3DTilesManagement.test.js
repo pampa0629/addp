@@ -9,6 +9,10 @@ const apiSource = readFileSync(
   new URL('../../src/api/quickView.js', import.meta.url),
   'utf8'
 )
+const previewPanelSource = readFileSync(
+  new URL('../../src/components/explorer/PreviewPanel.vue', import.meta.url),
+  'utf8'
+)
 
 describe('model3d tiles management deletion', () => {
   it('provides independent task and result delete actions', () => {
@@ -26,7 +30,15 @@ describe('model3d tiles management deletion', () => {
   it('allows an existing task to generate again through the canonical execute endpoint', () => {
     expect(viewSource).toContain('@click="executeTask(row)"')
     expect(viewSource).toContain('taskExecutionActive(row)')
-    expect(viewSource).toContain('executeModel3DTilesTask(task.id)')
+    expect(viewSource).toContain('useCurrentResultConfirmation')
+    expect(viewSource).toContain('executeWithCurrentResultConfirmation(payload => quickViewAPI.executeModel3DTilesTask(task.id, payload))')
     expect(apiSource).toContain('request.post(`/manager/tasks/model3d_tiles_generation/${id}/execute`')
+  })
+
+  it('maps the shared confirmation payload to the quick-view action contract', () => {
+    expect(previewPanelSource).toContain('const executeConfirmedQuickViewAction')
+    expect(previewPanelSource).toContain('executeWithCurrentResultConfirmation(payload =>')
+    expect(previewPanelSource).toContain('toQuickViewConfirmationPayload(payload)')
+    expect(apiSource).toContain('executeQuickViewAction(locator, action, payload = {})')
   })
 })

@@ -21,7 +21,7 @@ import (
 // for the same token within the TTL window.
 //
 // Architecture:
-// 1. Extract token from Authorization header or query parameter
+// 1. Extract token from Authorization header
 // 2. Check Redis cache using hash(token) as key
 // 3. If cache hit → use cached user info (no System call)
 // 4. If cache miss → call System service, cache result for future requests
@@ -45,6 +45,10 @@ func CachedSystemAuthMiddleware(systemURL string, redisClient *redis.Client, cac
 	}
 
 	return func(c *gin.Context) {
+		if _, ok := GetAuthorizationContext(c); ok {
+			c.Next()
+			return
+		}
 		// 0. Check for internal API key (for service-to-service calls)
 		if internalKey := c.GetHeader("X-Internal-API-Key"); internalKey != "" {
 			if !validInternalAPIKey(internalKey) {
@@ -80,12 +84,6 @@ func CachedSystemAuthMiddleware(systemURL string, redisClient *redis.Client, cac
 		// 1. Extract token (same logic as SystemAuthMiddleware)
 		authHeader := c.GetHeader("Authorization")
 		if strings.TrimSpace(authHeader) == "" {
-			if tokenParam := strings.TrimSpace(c.Query("token")); tokenParam != "" {
-				authHeader = "Bearer " + tokenParam
-				c.Request.Header.Set("Authorization", authHeader)
-			}
-		}
-		if strings.TrimSpace(authHeader) == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
 			c.Abort()
 			return
@@ -111,7 +109,7 @@ func CachedSystemAuthMiddleware(systemURL string, redisClient *redis.Client, cac
 			// Cache hit! Decode and use cached user info
 			var authorizationContext AuthorizationContext
 			if err := json.Unmarshal([]byte(cachedData), &authorizationContext); err == nil &&
-				authorizationContext.ExpiresAt.After(time.Now()) {
+				authorizationContext.ExpiresAt.After(time.Now()) && validAuthorizationContext(authorizationContext) {
 				setAuthorizationContext(c, authorizationContext)
 				c.Next()
 				return
@@ -157,7 +155,7 @@ func CachedSystemAuthMiddleware(systemURL string, redisClient *redis.Client, cac
 			c.Abort()
 			return
 		}
-		if authorizationContext.UserID == 0 || authorizationContext.SubjectType != "user" {
+		if !validAuthorizationContext(authorizationContext) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization context"})
 			c.Abort()
 			return

@@ -57,6 +57,36 @@ def test_workflow_auth_rejects_invalid_token(monkeypatch):
     assert exc_info.value.status_code == 401
 
 
+def test_workflow_tool_auth_requires_delegated_audience_and_scope(monkeypatch):
+    dependency = auth.require_tool_user("copilot", "workflow.draft.generate")
+    valid = AuthorizationContext(
+        user_id=7,
+        tenant_id=3,
+        username="tester",
+        user_type="user",
+        auth_type="delegated_access_token",
+        audiences=("copilot",),
+        scopes=("workflow.draft.generate",),
+    )
+    monkeypatch.setattr(auth, "resolve_authorization_context", AsyncMock(return_value=valid))
+    result = asyncio.run(dependency(HTTPAuthorizationCredentials(scheme="Bearer", credentials="delegated")))
+    assert result == valid
+
+    invalid = AuthorizationContext(
+        user_id=7,
+        tenant_id=3,
+        username="tester",
+        user_type="user",
+        auth_type="delegated_access_token",
+        audiences=("develop",),
+        scopes=("workflow.draft.generate",),
+    )
+    monkeypatch.setattr(auth, "resolve_authorization_context", AsyncMock(return_value=invalid))
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(dependency(HTTPAuthorizationCredentials(scheme="Bearer", credentials="delegated")))
+    assert exc_info.value.status_code == 403
+
+
 def test_workflow_openapi_declares_bearer_auth():
     from main import app
 

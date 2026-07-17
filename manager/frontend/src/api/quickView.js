@@ -7,8 +7,8 @@ export const quickViewAPI = {
     })
   },
 
-  executeQuickViewAction(locator, action) {
-    return request.post('/manager/quick-view/actions', { locator, action })
+  executeQuickViewAction(locator, action, payload = {}) {
+    return request.post('/manager/quick-view/actions', { locator, action, ...payload })
   },
 
   updatePreferredModeByLocator(locator, preferredMode) {

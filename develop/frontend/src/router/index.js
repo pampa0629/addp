@@ -58,6 +58,12 @@ const routes = [
         name: 'ExecutionDetail',
         component: () => import('../views/ExecutionDetail.vue'),
         meta: { requiresAuth: true, title: '执行详情' }
+      },
+      {
+        path: 'approvals/:approval_id',
+        name: 'ApprovalDetail',
+        component: () => import('../views/ApprovalDetail.vue'),
+        meta: { requiresAuth: true, title: 'Tool 审批' }
       }
     ]
   }

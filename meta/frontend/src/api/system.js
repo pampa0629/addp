@@ -1,50 +1,21 @@
-import axios from 'axios'
+import { createAPIClient } from '@common-ui'
+import { useAuthStore } from '../store/auth'
 
-// 创建 System API 客户端
-// 开发环境: 直接访问 System backend (localhost:8180)
-// 生产环境: 通过独立端口访问 System backend (host:8180)
-const systemClient = axios.create({
-  baseURL: import.meta.env.DEV
-    ? 'http://localhost:8180'
-    : `${window.location.protocol}//${window.location.hostname}:8180`,
-  timeout: 30000
+const systemClient = createAPIClient(() => useAuthStore(), {
+  moduleName: 'Meta',
+  baseURL: '/api/v1/system',
+  timeout: 30000,
+  extractData: true
 })
-
-// 请求拦截器
-systemClient.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token')
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
-  },
-  (error) => {
-    return Promise.reject(error)
-  }
-)
-
-// 响应拦截器
-systemClient.interceptors.response.use(
-  (response) => response.data,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Token过期,跳转登录
-      localStorage.removeItem('token')
-      window.location.href = '/meta/login'
-    }
-    return Promise.reject(error)
-  }
-)
 
 export default {
   // 获取引擎列表
   getEngines(params) {
-    return systemClient.get('/api/v1/system/engines', { params })
+    return systemClient.get('/engines', { params })
   },
 
   // 获取单个引擎
   getEngine(id) {
-    return systemClient.get(`/api/v1/system/engines/${id}`)
+    return systemClient.get(`/engines/${id}`)
   }
 }

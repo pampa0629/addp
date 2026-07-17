@@ -9,8 +9,10 @@ import (
 	"strings"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/models"
@@ -115,6 +117,7 @@ type RasterMosaicTaskService struct {
 var (
 	ErrRasterMosaicProgressTargetMismatch = errors.New("raster mosaic progress event target mismatch")
 	ErrRasterMosaicExecutionCompleted     = errors.New("raster mosaic execution is already completed")
+	ErrRasterMosaicExecutionNotRunning    = errors.New("raster mosaic execution is not running")
 )
 
 func NewRasterMosaicTaskService(repo *repository.RasterMosaicRepository, taskExecRepo *commonExecution.TaskExecutionRepository) *RasterMosaicTaskService {
@@ -156,13 +159,6 @@ func (s *RasterMosaicTaskService) Delete(ctx context.Context, id uint, tenantID 
 }
 
 func (s *RasterMosaicTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string) (string, error) {
-	task, err := s.repo.GetTask(ctx, taskID, tenantID)
-	if err != nil {
-		return "", err
-	}
-	if task == nil {
-		return "", ErrTaskNotFound
-	}
 	if s.taskExecRepo == nil {
 		return "", errors.New("task execution repository is required")
 	}
@@ -178,34 +174,32 @@ func (s *RasterMosaicTaskService) Execute(ctx context.Context, taskID uint, tena
 	executionID := uuid.New().String()
 	now := time.Now()
 	currentStep := "生成栅格 mosaic"
-	executionConfig := task.Config.Clone()
-	if executionConfig == nil {
-		executionConfig = commonModels.JSONMap{}
-	}
 	exec := &commonExecution.TaskExecution{
 		ExecutionID:       executionID,
 		TenantID:          int(tenantID),
 		Module:            commonExecution.ModuleManager,
 		TaskType:          commonExecution.TaskTypeRasterMosaicGeneration,
 		Source:            normalizedSource,
-		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(taskID),
-		SourceTaskName:    &task.Name,
 		ParentExecutionID: parentExecutionID,
-		Status:            commonExecution.ExecutionStatusRunning,
+		Status:            commonExecution.ExecutionStatusPending,
 		Progress:          0,
 		CurrentStep:       &currentStep,
 		TriggerType:       normalizedTriggerType,
-		ExecutionConfig:   executionConfig,
-		StartedAt:         &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
-	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
-		return "", err
-	}
-	if err := s.repo.UpdateTaskLastExecution(ctx, taskID, tenantID, executionID, commonExecution.ExecutionStatusRunning, now); err != nil {
+	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec)
+	if err != nil {
+		if errors.Is(err, commonAPI.ErrNotFound) {
+			return "", ErrTaskNotFound
+		}
+		if errors.Is(err, commonAPI.ErrConflict) {
+			return "", ErrTaskExecutionBusy
+		}
 		return "", err
 	}
 
-	go s.runRasterMosaicGeneration(context.Background(), task, executionID, now)
+	go s.runRasterMosaicGeneration(context.Background(), claimedTask, executionID)
 	return executionID, nil
 }
 
@@ -247,6 +241,9 @@ func (s *RasterMosaicTaskService) RecordProgressEvent(ctx context.Context, tenan
 	if exec.IsCompleted() {
 		return ErrRasterMosaicExecutionCompleted
 	}
+	if exec.Status != commonExecution.ExecutionStatusRunning {
+		return ErrRasterMosaicExecutionNotRunning
+	}
 
 	now := time.Now()
 	nextProgress := rasterMosaicProgressPercent(event, exec.Progress)
@@ -269,7 +266,18 @@ func (s *RasterMosaicTaskService) RecordProgressEvent(ctx context.Context, tenan
 	return s.taskExecRepo.UpdateFields(ctx, executionID, int(tenantID), fields)
 }
 
-func (s *RasterMosaicTaskService) runRasterMosaicGeneration(ctx context.Context, task *models.RasterMosaicTask, executionID string, startedAt time.Time) {
+func (s *RasterMosaicTaskService) runRasterMosaicGeneration(ctx context.Context, task *models.RasterMosaicTask, executionID string) {
+	startedAt := time.Now()
+	if err := s.repo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
+		logger.L().Warn("领取栅格 mosaic execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
+		return
+	}
+	s.executeRasterMosaicGeneration(ctx, task, executionID, startedAt)
+}
+
+func (s *RasterMosaicTaskService) executeRasterMosaicGeneration(
+	ctx context.Context, task *models.RasterMosaicTask, executionID string, startedAt time.Time,
+) {
 	status := commonExecution.ExecutionStatusSuccess
 	progress := 100
 	metadata := commonModels.JSONMap{}
@@ -320,7 +328,7 @@ func (s *RasterMosaicTaskService) runRasterMosaicGeneration(ctx context.Context,
 
 	completedAt := time.Now()
 	durationMs := completedAt.Sub(startedAt).Milliseconds()
-	if err := s.taskExecRepo.UpdateFields(ctx, executionID, int(task.TenantID), map[string]interface{}{
+	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, map[string]interface{}{
 		"status":            status,
 		"progress":          progress,
 		"metadata":          metadata,
@@ -328,11 +336,9 @@ func (s *RasterMosaicTaskService) runRasterMosaicGeneration(ctx context.Context,
 		"completed_at":      completedAt,
 		"execution_time_ms": durationMs,
 		"updated_at":        completedAt,
-	}); err != nil {
-		_ = s.repo.UpdateTaskLastExecution(ctx, task.ID, task.TenantID, executionID, commonExecution.ExecutionStatusFailed, completedAt)
-		return
+	}, completedAt); err != nil {
+		logger.L().Warn("提交栅格 mosaic execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}
-	_ = s.repo.UpdateTaskLastExecution(ctx, task.ID, task.TenantID, executionID, status, completedAt)
 }
 
 func rasterMosaicExecutionTimedOut(err error) bool {

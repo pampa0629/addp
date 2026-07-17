@@ -9,12 +9,12 @@
       "owner": "system",
       "risk": "read",
       "approval": {"mode": "none"},
-      "auth": "user_jwt",
+      "auth": {"type": "delegated_access_token", "audience": "system", "required_scopes": ["engine.list"]},
       "permission_enforced_by": "owner",
       "audit": {"mode": "owner"},
       "result_ref": {"mode": "none"},
       "limits": {"max_bytes": 131072},
-      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
       "input_schema": {
         "type": "object",
         "properties": {"capability": {"type": "string", "enum": ["all", "workflow"], "default": "all"}},
@@ -29,12 +29,12 @@
       "owner": "manager",
       "risk": "read",
       "approval": {"mode": "none"},
-      "auth": "user_jwt",
+      "auth": {"type": "delegated_access_token", "audience": "manager", "required_scopes": ["data.search"]},
       "permission_enforced_by": "owner",
       "audit": {"mode": "owner"},
       "result_ref": {"mode": "locator"},
       "limits": {"max_bytes": 131072},
-      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
       "input_schema": {
         "type": "object",
         "properties": {
@@ -53,12 +53,12 @@
       "owner": "meta",
       "risk": "read",
       "approval": {"mode": "none"},
-      "auth": "user_jwt",
+      "auth": {"type": "delegated_access_token", "audience": "meta", "required_scopes": ["resource.ancestors.get"]},
       "permission_enforced_by": "owner",
       "audit": {"mode": "owner"},
       "result_ref": {"mode": "locator"},
       "limits": {"max_bytes": 131072},
-      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
       "input_schema": {
         "type": "object",
         "properties": {
@@ -77,12 +77,12 @@
       "owner": "manager",
       "risk": "read",
       "approval": {"mode": "none"},
-      "auth": "user_jwt",
+      "auth": {"type": "delegated_access_token", "audience": "manager", "required_scopes": ["data.preview"]},
       "permission_enforced_by": "owner",
       "audit": {"mode": "owner"},
       "result_ref": {"mode": "locator"},
       "limits": {"max_bytes": 262144},
-      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
       "input_schema": {
         "type": "object",
         "properties": {
@@ -101,12 +101,12 @@
       "owner": "develop",
       "risk": "read",
       "approval": {"mode": "none"},
-      "auth": "user_jwt",
+      "auth": {"type": "delegated_access_token", "audience": "develop", "required_scopes": ["workflow.operators.list"]},
       "permission_enforced_by": "owner",
       "audit": {"mode": "owner"},
       "result_ref": {"mode": "none"},
       "limits": {"max_bytes": 524288},
-      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
       "input_schema": {
         "type": "object",
         "properties": {"workflow_engine_id": {"type": "integer", "minimum": 1}},
@@ -125,12 +125,12 @@
       "owner": "copilot",
       "risk": "propose",
       "approval": {"mode": "none"},
-      "auth": "user_jwt",
+      "auth": {"type": "delegated_access_token", "audience": "copilot", "required_scopes": ["workflow.draft.generate"]},
       "permission_enforced_by": "owner",
       "audit": {"mode": "owner"},
       "result_ref": {"mode": "none"},
       "limits": {"max_bytes": 262144},
-      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
       "input_schema": {
         "type": "object",
         "properties": {
@@ -168,12 +168,12 @@
       "owner": "develop",
       "risk": "read",
       "approval": {"mode": "none"},
-      "auth": "user_jwt",
+      "auth": {"type": "delegated_access_token", "audience": "develop", "required_scopes": ["workflow.validate"]},
       "permission_enforced_by": "owner",
       "audit": {"mode": "owner"},
       "result_ref": {"mode": "none"},
       "limits": {"max_bytes": 131072},
-      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
       "input_schema": {
         "type": "object",
         "properties": {
@@ -188,27 +188,38 @@
     {
       "name": "workflow.run",
       "version": "1.0.0",
-      "description": "向 Develop 提交已校验的 workflow definition 并创建 execution。",
+      "description": "首次向 Develop 提交已校验的 workflow definition 并创建 owner approval；批准后仅使用 approval_id 与 request_fingerprint 创建 execution。",
       "owner": "develop",
       "risk": "write",
       "approval": {"mode": "owner_policy"},
-      "auth": "user_jwt",
+      "auth": {"type": "delegated_access_token", "audience": "develop", "required_scopes": ["workflow.run"]},
       "permission_enforced_by": "owner",
       "audit": {"mode": "required"},
       "result_ref": {"mode": "execution", "schema": "addp.result-ref/v1"},
       "limits": {"max_bytes": 65536},
-      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "approval_forbidden", "approval_not_found", "approval_not_approved", "approval_rejected", "approval_expired", "approval_request_mismatch", "approval_already_consumed", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
       "input_schema": {
         "type": "object",
         "properties": {
           "workflow_engine_id": {"type": "integer", "minimum": 1},
           "workflow_definition": {"type": "object"},
-          "engine_specific": {"type": "object"}
+          "engine_specific": {"type": "object"},
+          "approval_id": {"type": "string", "format": "uuid"},
+          "request_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
         },
-        "required": ["workflow_engine_id", "workflow_definition"],
+        "oneOf": [
+          {"required": ["workflow_engine_id", "workflow_definition"], "not": {"anyOf": [{"required": ["approval_id"]}, {"required": ["request_fingerprint"]}]}},
+          {"required": ["approval_id", "request_fingerprint"], "not": {"anyOf": [{"required": ["workflow_engine_id"]}, {"required": ["workflow_definition"]}, {"required": ["engine_specific"]}]}}
+        ],
         "additionalProperties": false
       },
-      "output_schema": {"type": "object", "required": ["execution_id"]}
+      "output_schema": {
+        "type": "object",
+        "oneOf": [
+          {"required": ["execution_id"]},
+          {"required": ["status", "interaction_id", "open_url", "request_fingerprint", "request_summary", "expires_at"], "properties": {"status": {"const": "approval_required"}}}
+        ]
+      }
     },
     {
       "name": "execution.get",
@@ -217,12 +228,12 @@
       "owner": "develop",
       "risk": "read",
       "approval": {"mode": "none"},
-      "auth": "user_jwt",
+      "auth": {"type": "delegated_access_token", "audience": "develop", "required_scopes": ["execution.get"]},
       "permission_enforced_by": "owner",
       "audit": {"mode": "owner"},
       "result_ref": {"mode": "execution", "schema": "addp.result-ref/v1"},
       "limits": {"max_bytes": 131072},
-      "errors": ["invalid_arguments", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
       "input_schema": {
         "type": "object",
         "properties": {"execution_id": {"type": "string", "minLength": 1}},

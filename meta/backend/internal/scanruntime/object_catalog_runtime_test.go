@@ -770,6 +770,80 @@ func TestObjectCatalogPrefixScanDeletesStalePrefixConflictingWithWholeItem(t *te
 	}
 }
 
+func TestObjectCatalogPrefixScanKeepsWholeItemAtScanRoot(t *testing.T) {
+	metaenrich.RegisterItemResolvers()
+	reader := objectCatalogScanTestProvider{
+		contentByPath: map[string]string{
+			"addp/mosaics/srtm-e2e/mosaic.addp.json": `{
+				"schema_version":"addp.raster_mosaic.v1",
+				"data_type":"media",
+				"format":"raster_mosaic",
+				"layout":"whole",
+				"refs":{"index":"index/source-index.json","overview":"overviews/overview.cog.tif"},
+				"summary":{"leaf_count":1,"source_count":1,"extent":[15,15,155,60],"source_crs":"EPSG:4326","overview_width":16,"overview_height":8}
+			}`,
+		},
+	}
+	pluginRegisterForTest(t, reader)
+
+	db := openObjectCatalogScanTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
+	resource := &commonModels.Engine{ID: 9, Name: "Object Store", EngineType: reader.Type()}
+
+	rootNode, err := metaRepo.EnsureCatalogRootNode(repo, 1, resource, reader)
+	if err != nil {
+		t.Fatalf("create root node: %v", err)
+	}
+	bucketNode, err := repo.UpsertNode(1, 9, rootNode, "bucket", "addp", strPtr("addp"), metacatalog.ObjectBucketNodeAttributes("addp"))
+	if err != nil {
+		t.Fatalf("create bucket node: %v", err)
+	}
+	mosaicParent, err := repo.EnsureObjectCatalogPrefixPath(1, 9, bucketNode, "mosaics")
+	if err != nil {
+		t.Fatalf("create mosaic parent: %v", err)
+	}
+
+	resources := []metacatalog.StorageResource{
+		objectResourceForTest(9, "addp", "mosaics/srtm-e2e/mosaic.addp.json", 10, "json"),
+		objectResourceForTest(9, "addp", "mosaics/srtm-e2e/index/source-index.json", 10, "json"),
+		objectResourceForTest(9, "addp", "mosaics/srtm-e2e/overviews/overview.cog.tif", 10, "tiff"),
+		objectResourceForTest(9, "addp", "mosaics/srtm-e2e/leaf/a.cog.tif", 10, "tiff"),
+	}
+	stats := map[uint]*scanflow.ObjectCatalogNodeAggregate{}
+	count, _, err := runtime.persistObjectResources(
+		resource,
+		1,
+		9,
+		bucketNode,
+		resources,
+		stats,
+		false,
+		models.ScannedDepthDeep,
+		true,
+		"mosaics/srtm-e2e",
+		map[string]bool{},
+		"object",
+	)
+	if err != nil {
+		t.Fatalf("persistObjectResources() error = %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("persisted count = %d, want one raster mosaic item", count)
+	}
+	if err := repo.HardDeleteInvalidEngineGraph(1, 9); err != nil {
+		t.Fatalf("delete invalid graph: %v", err)
+	}
+
+	item, ok, err := repo.FindItemByFullName(1, 9, "addp/mosaics/srtm-e2e")
+	if err != nil {
+		t.Fatalf("FindItemByFullName() error = %v", err)
+	}
+	if !ok || item.NodeID != mosaicParent.ID {
+		t.Fatalf("mosaic item = %#v, found=%v, want item under mosaic parent %d", item, ok, mosaicParent.ID)
+	}
+}
+
 func shapefileObjectResource(engineID uint, bucket, objectPath string, sizeBytes int64) metacatalog.StorageResource {
 	return metacatalog.StorageResource{
 		RootName:    bucket,

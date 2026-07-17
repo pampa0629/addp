@@ -120,7 +120,7 @@ func TestTileCacheTaskCreateNormalizesTargetIdentity(t *testing.T) {
 	}
 }
 
-func TestTileCacheTaskCreateRejectsDuplicateTargetAndFormat(t *testing.T) {
+func TestTileCacheTaskCreateReusesSemanticIdentity(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
 	taskSvc := NewTileCacheTaskService(tileCacheRepo, nil)
@@ -132,9 +132,22 @@ func TestTileCacheTaskCreateRejectsDuplicateTargetAndFormat(t *testing.T) {
 
 	duplicate := newTileCacheTaskDefinition()
 	duplicate.Name = "重复瓦片缓存生成"
-	err := taskSvc.Create(context.Background(), duplicate)
-	if err == nil || !strings.Contains(err.Error(), "已存在 mvt 瓦片缓存任务") {
-		t.Fatalf("create duplicate error = %v, want duplicate target error", err)
+	duplicate.Description = "更新后的配置"
+	if err := taskSvc.Create(context.Background(), duplicate); err != nil {
+		t.Fatalf("reuse tile cache task: %v", err)
+	}
+	if duplicate.ID != first.ID {
+		t.Fatalf("reused task id = %d, want %d", duplicate.ID, first.ID)
+	}
+	if duplicate.Name != "重复瓦片缓存生成" || duplicate.Description != "更新后的配置" {
+		t.Fatalf("reused task = %#v, want updated mutable fields", duplicate)
+	}
+	items, total, err := tileCacheRepo.ListTasks(context.Background(), first.TenantID, 1, 20)
+	if err != nil {
+		t.Fatalf("list tile cache tasks: %v", err)
+	}
+	if total != 1 || len(items) != 1 {
+		t.Fatalf("task total=%d len=%d, want one semantic task", total, len(items))
 	}
 
 	if err := tileCacheRepo.DeleteTask(context.Background(), first.ID, first.TenantID); err != nil {
@@ -276,7 +289,7 @@ func TestTileCacheExecutionRejectsUnnormalizedTarget(t *testing.T) {
 		t.Fatalf("create unnormalized tile cache task: %v", err)
 	}
 
-	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, false)
 	if err != nil {
 		t.Fatalf("execute tile cache task: %v", err)
 	}
@@ -309,7 +322,7 @@ func TestTileCacheExecutionRejectsFileTargetWithoutWorkflowGenerator(t *testing.
 		t.Fatalf("create file tile cache task: %v", err)
 	}
 
-	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, false)
 	if err != nil {
 		t.Fatalf("execute tile cache task: %v", err)
 	}
@@ -369,7 +382,7 @@ func TestTileCacheGenerationUsesWorkflowGeneratorForFileTarget(t *testing.T) {
 		t.Fatalf("create file tile cache task: %v", err)
 	}
 
-	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, false)
 	if err != nil {
 		t.Fatalf("execute tile cache task: %v", err)
 	}
@@ -600,7 +613,7 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 		t.Fatalf("create tile cache task: %v", err)
 	}
 
-	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, false)
 	if err != nil {
 		t.Fatalf("execute tile cache task: %v", err)
 	}
@@ -715,7 +728,7 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 		t.Fatalf("update tile cache task target with ui-only identity fields: %v", err)
 	}
 
-	secondExecutionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	secondExecutionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, true)
 	if err != nil {
 		t.Fatalf("execute tile cache task second time: %v", err)
 	}
@@ -749,7 +762,7 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 	if err := tileCacheRepo.UpdateTask(context.Background(), task); err != nil {
 		t.Fatalf("update tile cache task tile config: %v", err)
 	}
-	thirdExecutionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	thirdExecutionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, true)
 	if err != nil {
 		t.Fatalf("execute tile cache task third time: %v", err)
 	}
@@ -821,7 +834,7 @@ func TestTileCacheGenerationWithNoNonEmptyTilesMarksResultFailed(t *testing.T) {
 		t.Fatalf("create tile cache task: %v", err)
 	}
 
-	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, false)
 	if err != nil {
 		t.Fatalf("execute tile cache task: %v", err)
 	}
@@ -899,7 +912,7 @@ func TestTileCacheGenerationFailureKeepsLastTileProgress(t *testing.T) {
 		t.Fatalf("create tile cache task: %v", err)
 	}
 
-	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, false)
 	if err != nil {
 		t.Fatalf("execute tile cache task: %v", err)
 	}
@@ -970,7 +983,7 @@ func TestTileCacheGenerationPersistsRenderableWGS84Extent(t *testing.T) {
 		t.Fatalf("create tile cache task: %v", err)
 	}
 
-	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, false)
 	if err != nil {
 		t.Fatalf("execute tile cache task: %v", err)
 	}
@@ -1065,7 +1078,7 @@ func TestTileCacheGenerationUsesIndexed3857Target(t *testing.T) {
 		t.Fatalf("create tile cache task: %v", err)
 	}
 
-	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, false)
 	if err != nil {
 		t.Fatalf("execute tile cache task: %v", err)
 	}
@@ -1166,7 +1179,7 @@ func TestTileCacheGenerationSkipsMetaWhenTaskHasSpatialFacts(t *testing.T) {
 		t.Fatalf("create tile cache task: %v", err)
 	}
 
-	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, false)
 	if err != nil {
 		t.Fatalf("execute tile cache task: %v", err)
 	}
@@ -1225,7 +1238,7 @@ func TestTileCacheGenerationFallsBackToSourceWhenOptimizationTargetMissing(t *te
 		t.Fatalf("create tile cache task: %v", err)
 	}
 
-	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, false)
 	if err != nil {
 		t.Fatalf("execute tile cache task: %v", err)
 	}

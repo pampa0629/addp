@@ -505,6 +505,44 @@
       "taskNotFound": "Task not found",
       "viewNotSupported": "This type does not support viewing details"
     },
+    "approval": {
+      "title": "Tool Execution Approval",
+      "refresh": "Refresh",
+      "requestInfo": "Execution Request",
+      "toolName": "Tool",
+      "workflowEngine": "Workflow Engine ID",
+      "taskCount": "Task Count",
+      "timeout": "Timeout",
+      "requestedAt": "Requested At",
+      "expiresAt": "Expires At",
+      "fingerprint": "Request Fingerprint",
+      "executionId": "Execution ID",
+      "approve": "Approve",
+      "reject": "Reject",
+      "cancel": "Cancel",
+      "confirmTitle": "Confirm Approval Decision",
+      "confirmMessage": "Are you sure you want to {action} this workflow execution?",
+      "decisionSuccess": "Approval decision saved",
+      "notFound": "Unable to Load Approval",
+      "loadFailed": "Failed to load approval",
+      "seconds": "{value} seconds",
+      "status": {
+        "pending": "Pending",
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "expired": "Expired",
+        "consumed": "Executed",
+        "unknown": "Unknown"
+      },
+      "message": {
+        "pending": "Review the request summary before making a decision.",
+        "approved": "Approved. Return to the Agent and check the approval status to continue.",
+        "rejected": "Rejected. This request cannot be executed.",
+        "expired": "Expired. This request cannot be executed.",
+        "consumed": "The approval was consumed and the workflow execution was created.",
+        "unknown": "The approval status is not recognized."
+      }
+    },
     "federated": {
       "title": "Federated Query",
       "refreshSources": "Refresh Sources",

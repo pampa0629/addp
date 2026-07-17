@@ -7,10 +7,12 @@ import (
 	"strings"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
+	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	rastercogref "github.com/addp/manager/internal/cog"
@@ -65,16 +67,15 @@ type GaussianSplatKSplatCleaner interface {
 }
 
 type GaussianSplatKSplatTaskService struct {
-	repo         *repository.GaussianSplatKSplatRepository
-	taskExecRepo *commonExecution.TaskExecutionRepository
-	executor     GaussianSplatKSplatExecutor
-	cleaner      GaussianSplatKSplatCleaner
-	metaClient   *commonClient.MetaClient
-	bucket       string
+	repo       *repository.GaussianSplatKSplatRepository
+	executor   GaussianSplatKSplatExecutor
+	cleaner    GaussianSplatKSplatCleaner
+	metaClient *commonClient.MetaClient
+	bucket     string
 }
 
-func NewGaussianSplatKSplatTaskService(repo *repository.GaussianSplatKSplatRepository, taskExecRepo *commonExecution.TaskExecutionRepository) *GaussianSplatKSplatTaskService {
-	return &GaussianSplatKSplatTaskService{repo: repo, taskExecRepo: taskExecRepo}
+func NewGaussianSplatKSplatTaskService(repo *repository.GaussianSplatKSplatRepository) *GaussianSplatKSplatTaskService {
+	return &GaussianSplatKSplatTaskService{repo: repo}
 }
 
 func (s *GaussianSplatKSplatTaskService) SetExecutor(executor GaussianSplatKSplatExecutor) {
@@ -189,7 +190,7 @@ func (s *GaussianSplatKSplatTaskService) DeleteResult(ctx context.Context, id ui
 	return s.repo.Delete(ctx, id, tenantID)
 }
 
-func (s *GaussianSplatKSplatTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string) (string, error) {
+func (s *GaussianSplatKSplatTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, confirmExistingResult bool) (string, error) {
 	task, err := s.repo.GetTask(ctx, taskID, tenantID)
 	if err != nil {
 		return "", err
@@ -203,9 +204,6 @@ func (s *GaussianSplatKSplatTaskService) Execute(ctx context.Context, taskID uin
 	if err := s.repo.UpdateTask(ctx, task); err != nil {
 		return "", err
 	}
-	if s.taskExecRepo == nil {
-		return "", errors.New("task execution repository is required")
-	}
 	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
 		return "", err
@@ -218,42 +216,48 @@ func (s *GaussianSplatKSplatTaskService) Execute(ctx context.Context, taskID uin
 	executionID := uuid.New().String()
 	now := time.Now()
 	currentStep := "生成 3DGS KSplat 快显"
-	executionConfig := task.Config.Clone()
-	if executionConfig == nil {
-		executionConfig = commonModels.JSONMap{}
-	}
 	exec := &commonExecution.TaskExecution{
 		ExecutionID:       executionID,
 		TenantID:          int(tenantID),
 		Module:            commonExecution.ModuleManager,
 		TaskType:          commonExecution.TaskTypeGaussianSplatKSplatGeneration,
 		Source:            normalizedSource,
-		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(taskID),
-		SourceTaskName:    &task.Name,
 		ParentExecutionID: parentExecutionID,
-		Status:            commonExecution.ExecutionStatusRunning,
+		Status:            commonExecution.ExecutionStatusPending,
 		Progress:          0,
 		CurrentStep:       &currentStep,
 		TriggerType:       normalizedTriggerType,
-		ExecutionConfig:   executionConfig,
-		StartedAt:         &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
-	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
-		return "", err
-	}
-	if err := s.repo.UpdateTaskLastExecution(ctx, taskID, tenantID, executionID, commonExecution.ExecutionStatusRunning, now); err != nil {
+	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec, confirmExistingResult)
+	if err != nil {
+		if errors.Is(err, repository.ErrExistingResultConfirmationRequired) {
+			return "", ErrExistingResultConfirmationRequired
+		}
+		if errors.Is(err, commonAPI.ErrNotFound) {
+			return "", ErrTaskNotFound
+		}
+		if errors.Is(err, commonAPI.ErrConflict) {
+			return "", ErrTaskExecutionBusy
+		}
 		return "", err
 	}
 
-	go s.runGaussianSplatKSplatGeneration(context.Background(), task, executionID, now)
+	go s.runGaussianSplatKSplatGeneration(context.Background(), claimedTask, executionID)
 	return executionID, nil
 }
 
-func (s *GaussianSplatKSplatTaskService) runGaussianSplatKSplatGeneration(ctx context.Context, task *models.GaussianSplatKSplatTask, executionID string, startedAt time.Time) {
+func (s *GaussianSplatKSplatTaskService) runGaussianSplatKSplatGeneration(ctx context.Context, task *models.GaussianSplatKSplatTask, executionID string) {
+	startedAt := time.Now()
+	if err := s.repo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
+		logger.L().Warn("领取 3DGS KSplat execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
+		return
+	}
 	status := commonExecution.ExecutionStatusSuccess
-	progress := 100
 	metadata := commonModels.JSONMap{}
 	var errDetails commonModels.JSONMap
+	var resultFields map[string]interface{}
 
 	result, execCfg, err := s.prepareResult(ctx, task, executionID)
 	var buildResult *GaussianSplatKSplatExecutionResult
@@ -264,46 +268,50 @@ func (s *GaussianSplatKSplatTaskService) runGaussianSplatKSplatGeneration(ctx co
 			buildResult, err = s.executor.BuildGaussianSplatKSplat(ctx, GaussianSplatKSplatExecutionRequest{Task: task, ExecutionID: executionID, Config: execCfg})
 		}
 	}
+	if err == nil && buildResult == nil {
+		err = errors.New("gaussian splat KSplat generation executor returned no result")
+	}
 	if err != nil {
 		status = commonExecution.ExecutionStatusFailed
-		progress = 0
 		errDetails = commonModels.JSONMap{"message": err.Error()}
 		metadata = commonModels.JSONMap{"error": err.Error()}
 		if result != nil {
-			_ = s.repo.UpdateFields(ctx, result.ID, task.TenantID, map[string]interface{}{
-				"status":        models.GaussianSplatKSplatStatusFailed,
-				"error_message": err.Error(),
-			})
+			resultFields = map[string]interface{}{
+				"status":            models.GaussianSplatKSplatStatusFailed,
+				"error_message":     err.Error(),
+				"last_execution_id": executionID,
+			}
 		}
 	} else if result != nil {
 		if buildResult.ContentURL == "" {
 			buildResult.ContentURL = gaussianSplatKSplatContentURL(result.ID)
 		}
-		fields := map[string]interface{}{
+		resultFields = map[string]interface{}{
 			"status":            models.GaussianSplatKSplatStatusReady,
 			"error_message":     "",
 			"last_execution_id": executionID,
 		}
-		applyGaussianSplatKSplatResultFields(fields, buildResult)
-		if err := s.repo.UpdateFields(ctx, result.ID, task.TenantID, fields); err != nil {
-			status = commonExecution.ExecutionStatusFailed
-			progress = 0
-			errDetails = commonModels.JSONMap{"message": fmt.Sprintf("update gaussian splat KSplat result: %v", err)}
-			metadata = errDetails.Clone()
-		} else {
-			metadata = buildResult.Metadata.Clone()
-			if metadata == nil {
-				metadata = commonModels.JSONMap{}
-			}
-			metadata["result_id"] = result.ID
-			metadata["storage_ref"] = buildResult.StorageRef
-			metadata["content_url"] = buildResult.ContentURL
+		applyGaussianSplatKSplatResultFields(resultFields, buildResult)
+		metadata = buildResult.Metadata.Clone()
+		if metadata == nil {
+			metadata = commonModels.JSONMap{}
 		}
+		metadata["result_id"] = result.ID
+		metadata["storage_ref"] = buildResult.StorageRef
+		metadata["content_url"] = buildResult.ContentURL
 	}
 
 	completedAt := time.Now()
+	progress := 100
+	if status != commonExecution.ExecutionStatusSuccess {
+		progress = 0
+	}
 	durationMs := completedAt.Sub(startedAt).Milliseconds()
-	if err := s.taskExecRepo.UpdateFields(ctx, executionID, int(task.TenantID), map[string]interface{}{
+	resultID := uint(0)
+	if result != nil {
+		resultID = result.ID
+	}
+	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, resultID, resultFields, map[string]interface{}{
 		"status":            status,
 		"progress":          progress,
 		"metadata":          metadata,
@@ -311,11 +319,9 @@ func (s *GaussianSplatKSplatTaskService) runGaussianSplatKSplatGeneration(ctx co
 		"completed_at":      completedAt,
 		"execution_time_ms": durationMs,
 		"updated_at":        completedAt,
-	}); err != nil {
-		_ = s.repo.UpdateTaskLastExecution(ctx, task.ID, task.TenantID, executionID, commonExecution.ExecutionStatusFailed, completedAt)
-		return
+	}, completedAt); err != nil {
+		logger.L().Warn("提交 3DGS KSplat execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}
-	_ = s.repo.UpdateTaskLastExecution(ctx, task.ID, task.TenantID, executionID, status, completedAt)
 }
 
 func (s *GaussianSplatKSplatTaskService) prepareResult(ctx context.Context, task *models.GaussianSplatKSplatTask, executionID string) (*models.GaussianSplatKSplat, GaussianSplatKSplatExecutionConfig, error) {

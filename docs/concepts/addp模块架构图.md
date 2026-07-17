@@ -170,7 +170,7 @@ graph TB
 | 模块 | 职责 | 端口 (开发/生产) | 主要技术栈 |
 |------|------|-----------------|-----------|
 | **Console** | 控制台入口,集成所有模块功能 | 5170 / 80 | Vue 3, Vue Router |
-| **System** | 核心系统服务:用户认证、引擎管理、日志 | 8180 / 8180 | Go, Gin, GORM, JWT |
+| **System** | 核心系统服务:用户认证、引擎管理、日志 | 8180 / 8180 | Go, Gin, GORM, opaque Token |
 | **Gateway** | API 网关,请求路由和转发 | 8000 / 8000 | Go, Gin |
 | **Manager** | 数据管理:数据存储目录展示、数据预览、空间快显和瓦片缓存 | 8081 / 8081 | Go, Gin, OpenLayers |
 | **Meta** | 元数据服务:扫描、索引、搜索 | 8082 / 8082 | Go, Gin, Meilisearch, Cron |
@@ -622,7 +622,7 @@ graph TB
 - **独立部署**：适合单个模块独立部署的场景
 - **适用场景**：开发调试，模块独立交付
 
-> 认证细节（iframe Token 传递、Token 刷新机制等）见：[ADDP 登录认证原理说明](addp登录认证的原理说明.md)
+> 认证细节（Browser AuthSession、iframe `postMessage`、静默刷新和多标签页互斥）见：[ADDP 登录认证原理说明](addp登录认证的原理说明.md)
 
 ---
 

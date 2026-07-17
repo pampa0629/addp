@@ -5,6 +5,7 @@ import (
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
+	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/middleware"
@@ -126,10 +127,14 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		// 需要认证的路由
 		protected := api.Group("")
 		protected.Use(middleware.AuthMiddleware(tokenService))
+		protected.Use(middleware.DelegatedAccessPolicy("system", commonAuth.DelegatedRoutePolicy{
+			"GET /api/v1/system/engines": {"engine.list"},
+		}))
 		{
 			auth := protected.Group("/auth")
 			{
 				auth.GET("/context", authHandler.Context)
+				auth.POST("/delegations", authHandler.CreateDelegation)
 			}
 			oauth := protected.Group("/oauth")
 			{

@@ -4,11 +4,35 @@ import unittest
 from ag_ui.core import ActivitySnapshotEvent, RunAgentInput, RunStartedEvent
 from ag_ui.encoder import EventEncoder
 
-from protocol.a2ui import clarification_surface, workflow_dag_surface
+from protocol.a2ui import (
+    approval_request_surface,
+    clarification_surface,
+    map_view_surface,
+    preview_presentations,
+    resource_picker_surface,
+    table_preview_surface,
+    workflow_dag_surface,
+)
 from services.interactions import normalize_options
 
 
 class AGUIProtocolTests(unittest.TestCase):
+    def test_workflow_run_step_projection_does_not_persist_workflow_payload(self):
+        from api.chat import _tool_input_projection
+
+        projection = _tool_input_projection(
+            "workflow.run",
+            {
+                "workflow_engine_id": 20,
+                "workflow_definition": {"tasks": [{"id": "secret-task", "params": {"secret": "value"}}]},
+                "engine_specific": {"runtime_secret": "value"},
+            },
+        )
+        self.assertEqual(projection["workflow_engine_id"], 20)
+        self.assertEqual(projection["task_count"], 1)
+        self.assertNotIn("workflow_definition", projection)
+        self.assertNotIn("engine_specific", projection)
+
     def test_chat_openapi_declares_only_sse_success_response(self):
         from main import app
 
@@ -114,6 +138,127 @@ class AGUIProtocolTests(unittest.TestCase):
         root = operations[1]["updateComponents"]["components"][0]
         self.assertEqual(root["component"], "ClarificationChoice")
         self.assertEqual(root["options"], options)
+
+    def test_owner_approval_surface_only_exposes_projection(self):
+        operations = approval_request_surface(
+            "surface-3",
+            interaction_id="1b842c47-cdf4-4228-af6e-25bfbaa8609b",
+            owner="develop",
+            owner_interaction_id="46ea0d75-b9bc-4b25-8d4a-441947081813",
+            open_url="/develop/approvals/46ea0d75-b9bc-4b25-8d4a-441947081813",
+            request_fingerprint="a" * 64,
+            request_summary={"workflow_engine_id": 20, "task_count": 2},
+            expires_at="2026-07-17T10:15:00Z",
+        )
+        root = operations[1]["updateComponents"]["components"][0]
+        self.assertEqual(root["component"], "ApprovalRequest")
+        self.assertEqual(root["requestSummary"]["task_count"], 2)
+        self.assertNotIn("workflow_definition", root)
+
+    def test_preview_presentations_are_bounded_and_require_explicit_wgs84(self):
+        presentations = preview_presentations(
+            {
+                "columns": ["name", "shape", "details"],
+                "rows": [
+                    {
+                        "name": "railway",
+                        "shape": {
+                            "type": "LineString",
+                            "coordinates": [[104.0, 30.0], [104.1, 30.1]],
+                            "bbox": [104.0, 30.0, 104.1, 30.1],
+                        },
+                        "details": {"secret": "not-a-scalar"},
+                    }
+                ],
+                "total": 2,
+                "geometry_column": "shape",
+                "source_crs": "EPSG:4326",
+            }
+        )
+        self.assertEqual([item["kind"] for item in presentations], ["table_preview", "map_view"])
+        self.assertIsNone(presentations[0]["rows"][0]["shape"])
+        self.assertIsNone(presentations[0]["rows"][0]["details"])
+        self.assertTrue(presentations[0]["truncated"])
+        self.assertEqual(presentations[1]["features"][0]["geometry"]["type"], "LineString")
+        self.assertNotIn("bbox", presentations[1]["features"][0]["geometry"])
+        self.assertEqual(presentations[1]["features"][0]["properties"], {"name": "railway"})
+
+        non_wgs84 = preview_presentations(
+            {
+                "columns": ["shape"],
+                "rows": [{"shape": {"type": "Point", "coordinates": [500000, 3300000]}}],
+                "total": 1,
+                "geometry_column": "shape",
+                "source_crs": "EPSG:32650",
+            }
+        )
+        self.assertEqual([item["kind"] for item in non_wgs84], ["table_preview"])
+
+    def test_new_catalog_surfaces_only_expose_bounded_projection(self):
+        table = table_preview_surface(
+            "surface-table",
+            {"columns": ["name"], "rows": [{"name": "railway"}], "total": 1, "truncated": False},
+        )
+        self.assertEqual(table[1]["updateComponents"]["components"][0]["component"], "TablePreview")
+
+        map_surface = map_view_surface(
+            "surface-map",
+            {
+                "crs": "EPSG:4326",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [104, 30]},
+                        "properties": {},
+                    }
+                ],
+                "height": 360,
+                "truncated": False,
+            },
+        )
+        map_root = map_surface[1]["updateComponents"]["components"][0]
+        self.assertEqual(map_root["component"], "MapView")
+        self.assertNotIn("url", map_root)
+
+        resource = resource_picker_surface(
+            "surface-resource",
+            interaction_id="1b842c47-cdf4-4228-af6e-25bfbaa8609b",
+            prompt="请选择铁路数据",
+            options=[
+                {
+                    "label": "public.railway",
+                    "value": "addp://engine/8/path/public/railway?type=table&item_id=60",
+                    "candidate": {
+                        "locator": "addp://engine/8/path/public/railway?type=table&item_id=60",
+                        "engine_id": 8,
+                        "full_name": "public.railway",
+                        "column_metadata": [{"name": "secret"}],
+                    },
+                }
+            ],
+        )
+        candidate = resource[1]["updateComponents"]["components"][0]["options"][0]["candidate"]
+        self.assertEqual(candidate["full_name"], "public.railway")
+        self.assertNotIn("column_metadata", candidate)
+
+    def test_map_projection_applies_coordinate_limit_to_the_whole_surface(self):
+        coordinates = [[float(index), 30.0] for index in range(1500)]
+        presentations = preview_presentations(
+            {
+                "columns": ["shape"],
+                "rows": [
+                    {"shape": {"type": "LineString", "coordinates": coordinates}},
+                    {"shape": {"type": "LineString", "coordinates": coordinates}},
+                ],
+                "total": 2,
+                "geometry_column": "shape",
+                "source_crs": "EPSG:4326",
+            }
+        )
+
+        map_presentation = presentations[1]
+        self.assertEqual(len(map_presentation["features"]), 1)
+        self.assertTrue(map_presentation["truncated"])
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { getAccessToken } from '@common-ui'
 import Map from 'ol/Map.js'
 import View from 'ol/View.js'
 import TileLayer from 'ol/layer/Tile.js'
@@ -33,7 +34,7 @@ let objectURLs = new Set()
 let loadSerial = 0
 
 function authHeaders() {
-  const token = localStorage.getItem('token')
+  const token = getAccessToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 

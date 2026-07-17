@@ -52,7 +52,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"display_name":              "瓦片缓存生成",
 				"description":               "为空间数据项生成可复用的瓦片缓存结果",
 				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
+				"execution_schema":          managerCurrentResultExecutionSchema(),
 				"supports_schedule":         true,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -78,7 +78,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"display_name":              "矢量物化视图",
 				"description":               "为 PostGIS 空间数据项创建可复用的 3857 矢量物化视图目标",
 				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
+				"execution_schema":          managerCurrentResultExecutionSchema(),
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -91,7 +91,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"display_name":              "栅格快显 COG 生成",
 				"description":               "为 TIFF/GeoTIFF 数据项生成或登记 Manager 受管的 COG",
 				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
+				"execution_schema":          managerCurrentResultExecutionSchema(),
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -117,7 +117,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"display_name":              "分块三维模型瓦片生成",
 				"description":               "将 OSGB Scene 生成 3D Tiles 或 S3M 快显结果并写入 Manager infra MinIO",
 				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
+				"execution_schema":          managerCurrentResultExecutionSchema(),
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -130,7 +130,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"display_name":              "三维模型 GLB 快显生成",
 				"description":               "将 OSGB、glTF、FBX、OBJ、STL 或 IFC 三维模型转换为 Manager 受管的 GLB 快显 artifact",
 				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
+				"execution_schema":          managerCurrentResultExecutionSchema(),
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -143,7 +143,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"display_name":              "3DGS - KSplat 快显生成",
 				"description":               "将 3DGS 高斯泼溅数据转换或发布为 Manager 受管的 KSplat 快显 artifact",
 				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
+				"execution_schema":          managerCurrentResultExecutionSchema(),
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -156,7 +156,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"display_name":              "点云 COPC 快显生成",
 				"description":               "将 LAS、LAZ、E57、PCD 或 XYZ 点云转换为 Manager 受管的 COPC 快显 artifact",
 				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
+				"execution_schema":          managerCurrentResultExecutionSchema(),
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -169,7 +169,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"display_name":              "CAD 栅格预览生成",
 				"description":               "使用 SuperMap 直接渲染 DWG 或 DXF Dataset，生成 Manager 受管的 WebP 瓦片预览 artifact",
 				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
+				"execution_schema":          managerCurrentResultExecutionSchema(),
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -207,6 +207,16 @@ func (s *TaskProviderRegistryService) Register() error {
 	}
 
 	return s.sendRegistration(&registration)
+}
+
+func managerCurrentResultExecutionSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"confirm_existing_result": map[string]interface{}{"type": "boolean"},
+		},
+		"additionalProperties": false,
+	}
 }
 
 // sendRegistration 发送注册请求到 System task_providers API

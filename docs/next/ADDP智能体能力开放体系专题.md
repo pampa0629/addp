@@ -407,7 +407,7 @@ ADDP Vue Renderer 使用官方 `@a2ui/web_core/v0_9` 处理 Surface、组件更�
 
 ### 8.1 内置 Agent
 
-内置 Agent 继续通过 ADDP 登录入口使用。当前用户身份进入 Agent 后，由 System 签发或验证面向下游 owner 模块的短期受委托身份。长期目标至少包含：
+内置 Agent 继续通过 ADDP 登录入口使用。当前用户身份只进入 Agent Runtime；每次 Tool 调用由 System 即时签发面向下游 owner 模块的短期受委托身份，原始 User Access Token 不进入 owner Tool Client。委托令牌至少包含：
 
 - `user_id`；
 - `tenant_id`；
@@ -415,7 +415,9 @@ ADDP Vue Renderer 使用官方 `@a2ui/web_core/v0_9` 处理 Surface、组件更�
 - `audience`；
 - `scope`；
 - `expires_at`；
-- 可选 `run_id` / `tool_call_id`。
+- `agent_run_id` / `tool_call_id`。
+
+`audience` 固定为 Tool owner，Scope 直接使用稳定 Tool 名。owner 对委托令牌默认拒绝，仅 Manifest 对应的精确路由可按 audience + required scopes 放行；第一方 Web 和普通 OAuth API 调用不受该默认拒绝策略影响。
 
 ### 8.2 外部 CLI
 
@@ -446,6 +448,30 @@ addp auth login --device
 ```
 
 真实执行前由 owner 模块校验审批状态、用户、租户、scope、过期时间和一次性使用约束。
+
+`workflow.run` 的审批 owner 固定为 Develop，唯一状态机为：
+
+```text
+Delegated workflow.run（工作流请求）
+  -> Develop 创建 pending approval，不创建 execution
+  -> Agent 保存 owner Interaction 投影并将同一 AgentRun 置为 waiting
+  -> 用户在 Develop 审批页批准或拒绝
+  -> Agent 仅使用原始 User Access Token 查询 Develop 审批状态
+  -> approved 后恢复同一 AgentRun
+  -> Delegated workflow.run（approval_id + request_fingerprint）
+  -> Develop 从 approval 读取原请求，原子消费 approval 并创建 execution
+```
+
+约束如下：
+
+1. Develop 持有审批请求、原始 workflow payload、决定和消费事实；Agent 只保存 `owner_interaction_id`、`open_url`、请求指纹、摘要和状态投影。
+2. Agent 前端的“检查审批状态”动作只表达 `check`，不能提交 `approved=true` 或代替 Develop 作出决定。
+3. 审批 API 只接受第一方或 OAuth User Access Token；Delegated Access Token、内部身份和资源票据都不能批准。
+4. 第一次 `workflow.run` 不携带 `approval_id`，返回 HTTP 202 `approval_required`。第二次只携带 `approval_id + request_fingerprint`，Develop 从自己的审批记录读取原请求，避免 Agent 持久化完整 workflow payload。
+5. 请求指纹为审批原请求 canonical JSON 的 SHA-256；恢复时必须匹配。审批只能由原申请用户在原租户中决定，并且只能消费一次。
+6. 状态固定为 `pending -> approved|rejected|expired -> consumed`；`approved -> consumed` 只发生在 execution 创建成功的同一事务边界内。
+7. approval 默认 15 分钟过期。过期、拒绝、已消费、用户或租户不匹配时均不得创建 execution。
+8. 普通第一方 Web 或 OAuth 用户直接调用 Develop 执行 API 时沿用原用户权限路径，不进入 Agent owner approval 状态机。
 
 ### 8.4 审计
 
@@ -750,18 +776,147 @@ failed --retry--> running
 3. Refresh Token 仅保存 Hash，每次刷新轮换；检测到旧 Token 重用时撤销整个 family。
 4. CLI 使用 OS Keychain 保存 Refresh Token，短期 Access Token 调用 ADDP。
 
+浏览器会话收口决策（2026-07-17）：
+
+1. Web Refresh Token 只保存在 HttpOnly Cookie，Access Token 只保存在 Browser AuthSession 内存，删除 `localStorage.token`。
+2. Browser AuthSession 统一负责启动恢复、到期前主动刷新、401 单次兜底、多标签页互斥和会话广播。
+3. Console 是 iframe 模式下唯一刷新协调者；iframe 通过受信任 `postMessage` 获取 Token，不再使用 URL query。
+4. 预览、地图和下载等特殊调用统一读取运行时 Token Provider；原生资源 URL 通过 System 签发、Owner 路由限定的 HttpOnly Browser Resource Access Ticket 完成无 URL 凭据访问。
+
+实施状态（2026-07-17）：浏览器会话与资源票据主路径已完成。
+
+1. `common-frontend` 已建立统一 Browser AuthSession，Access Token 不再写入 localStorage；启动恢复、主动提前刷新、401 单次兜底和登出广播统一走该实现。
+2. 同源顶层页面使用 Web Locks 互斥刷新并通过 BroadcastChannel 广播 Token；无 Web Locks 时只在 localStorage 保存不含 Token 的短期锁租约。
+3. Console 与模块 iframe 已切换为可信 `postMessage` 协议，同时校验 origin 和 iframe source；Console 模块 URL、新窗口 URL 和路由守卫均已删除 query Token 路径。
+4. System 在第一方登录和 Web Refresh 事务中自动签发、轮换 Manager 与 Standard 的 Owner Path Browser Resource Access Ticket；数据库仅保存 SHA-256 Hash，退出、Family 撤销和 Refresh Token 重用会同步撤销。
+5. `common/middleware/auth` 已删除 query Token 回退，并只在 Owner 明确声明的 GET/HEAD 资源路由消费票据；普通 CRUD、搜索、任务和写 API 仍只接受 Bearer 或内部认证。
+6. 图片、视频、PDF、下载、3D Tiles、GLB 和高斯泼溅等原生资源 URL 已删除 User Access Token；可控 Fetch、地图和加载器调用继续通过运行时 Token Provider 设置 Bearer Header。
+7. Tool Manifest 认证声明已由字符串 `user_jwt` 收敛为结构化 `user_access_token`、`audience` 和 `required_scopes`。
+
+阶段 4.2 自动化与浏览器验收：
+
+1. AuthSession 协议测试覆盖内存恢复、单运行时和双会话并发刷新合并、广播登出、可信 iframe origin/source 和无 Token 模块 URL。
+2. 本机 Playwright 使用 HttpOnly 测试 Cookie 和受控 API 响应验证：首次打开静默恢复；第二同源标签页通过广播获得 Token且不增加 Refresh 次数；System iframe URL 无 Token 且握手后请求携带 Bearer；关闭全部页面后再次打开可重新静默恢复。
+3. 前述 AuthSession 自动化未提交任何账号密码；后续资源票据在线验收仅复用浏览器现有 HttpOnly 会话，不读取 Cookie 或凭据。后端 Refresh Token 轮换与重用检测由 System 自动化测试覆盖。
+4. 开发环境独立打开不同端口的顶层模块不共享同源 Web Locks；Console iframe 集成由 Console 单一刷新者解决，生产统一 origin。该开发边界不应表述为跨 origin 已协调。
+5. 资源票据在线验收使用现有 HttpOnly 会话完成：Console 静默进入 `admin` 首页，独立打开和关闭后重新打开 Manager 均直接进入 `/data-explorer`，未出现登录页；System 日志记录对应 `/refresh` 返回 200。
+6. System 已自动创建 `system.resource_access_tickets`。一次真实 Web Refresh 后，同一 Family 新增 Manager、Standard 两张有效票据，上一组票据被标记撤销，证明资源票据与 Refresh Token 同步轮换。
+7. 使用随后立即清理的临时验收票据请求 Manager `/storage-stream`，直连 Owner 和经 Gateway 均进入业务 Handler 并返回参数缺失 400；同一票据请求普通 `/engines` 返回 401，证明票据只在资源路由白名单生效。
+8. Service `/api/query/:serviceName?token=...` 不再触发用户认证，而是进入公开查询 Handler；全仓运行时代码扫描未发现 query Token 拼接或解析路径。
+
 #### 阶段 4.3：外部 Agent 与受委托执行
 
 1. 使用 Codex 和 Hermes Agent 验证 CLI / SDK 登录、Scope 和租户隔离。
 2. System 增加绑定 audience、Scope、AgentRun / ToolCall 的短期受委托令牌。
 3. owner 模块完成写入/破坏性操作的服务端审批闭环和完整审计。
 
+第一段实施决策（2026-07-17）：
+
+1. System 新增独立 `system.delegated_access_tokens`，使用 `addp_dat_` opaque Token，只保存 Hash，不创建 Refresh Token Family，默认 2 分钟且不超过源 Access Token 有效期。
+2. `POST /api/v1/system/auth/delegations` 只接受源 User Access Token、Manifest 中已注册的 audience + Tool Scope，以及必填 AgentRun / ToolCall 审计绑定；身份、租户、客户端和 `delegated_by` 全部由 System 派生。
+3. Tool Manifest 的 `auth.type` 统一切换为 `delegated_access_token`，`audience` 使用 owner 模块名，`required_scopes` 使用稳定 Tool 名；删除原始 User Access Token 转发路径，不保留双轨。
+4. 内置 Agent 使用持久 AgentRun UUID 和 LangChain 生成的稳定 `tool_call_id`；CLI 可通过参数或环境传入外部 Agent 的 Run / Call ID，未传时为单次命令生成新 ID。
+5. Go owner 使用共享默认拒绝策略：委托令牌只能访问显式注册的 method + route，并强制 audience 和全部 Scope；Copilot 使用同一 AuthContext 语义在依赖层执行等价校验。
+6. 第一段完成全部 read/propose Tool 和 `execution.get` 的受委托执行；`workflow.run` 可以签发绑定其 Tool Scope 的委托令牌，但 Develop 在 owner approval Interaction 完成前保持默认 403。阶段 4.3 第二段只在审批校验后启用该路由，不建立无审批旁路。
+
+第一段实施状态（2026-07-17）：代码与自动化验证已完成。
+
+1. System 已实现 `system.delegated_access_tokens`、`addp_dat_` Hash 存储、2 分钟 TTL、源 Access Token / Family 回查、委托链拒绝和 Family 撤销联动；Swagger 新增 `POST /auth/delegations`。
+2. Tool Manifest 九个 Tool 已全部切换为 `delegated_access_token`，owner audience 与唯一稳定 Tool Scope 由 Pydantic 契约强制一致。
+3. `ToolExecutor` 在每次 Tool 调用前向 System 签发委托令牌，所有 owner SDK Client 只接收 `addp_dat_`；内置 Agent 使用持久 AgentRun UUID 和 LangChain 注入的 ToolCall ID，CLI 支持参数或环境审计绑定。
+4. Common Go 中间件对委托令牌默认拒绝，System 只为 `/auth/context` 保留令牌解析例外；八个 read/propose/status Tool 路由按 audience + Scope 显式放行，其他路由返回 403。`workflow.run` 在 owner approval 完成前同样返回 403。
+5. Common、System、Manager、Meta、Develop 全量 Go 测试通过；Agent 52 项、Common Python 37 项、Copilot 25 项测试通过；System Swagger 49 个公开路由方法覆盖一致。
+6. 当前开发服务由外部启动的旧进程持有，本轮未接管或重启整套环境，因此真实 HTTP 在线签发与跨 Owner 拒绝验收待下一次正常全量重启后执行。
+
+第二段实施决策（2026-07-17）：
+
+1. Develop 新增 `develop.tool_approvals`，持有 `workflow.run` 的原请求、canonical request fingerprint、申请身份、AgentRun / ToolCall 审计绑定、决定和一次性消费事实。
+2. `POST /api/v1/develop/executions` 是 `workflow.run` 的唯一业务入口。委托令牌首次提交工作流时只创建 approval 并返回 202；恢复调用只提交 `approval_id + request_fingerprint`，不新增 `/execute-approved` 等平行执行路由。
+3. Develop 审批 API 固定为 `GET /api/v1/develop/approvals/:id` 和 `POST /api/v1/develop/approvals/:id/decision`，decision 仅允许 `approved|rejected`。
+4. Agent Interaction 只保存 Develop approval 的可恢复投影；用户点击“检查审批状态”后，Agent 使用进入 Runtime 的原始 User Access Token读取 owner 状态，只有 `approved` 才完成本地 Interaction。
+5. 审批完成后恢复原 `AgentRun`，不创建新 Run。恢复上下文只包含 approval ID、请求指纹和 owner 摘要，完整 workflow payload 始终由 Develop 持有。
+6. `workflow.run` 只有在 Develop Handler 强制执行上述审批状态机后才加入委托路由白名单；不保留无审批写入旁路。
+
+第二段实施状态（2026-07-17）：代码与自动化验证已完成。
+
+1. Develop 已实现 `develop.tool_approvals`、15 分钟 TTL、pending/approved/rejected/expired/consumed 状态机、原用户与租户隔离、canonical JSON SHA-256 指纹和一次性消费。
+2. `POST /api/v1/develop/executions` 已加入 `workflow.run` 委托白名单，但 Handler 强制两阶段审批；approval 消费与 `common.task_executions` 创建处于同一数据库事务，事务提交后才启动异步 execution。
+3. Develop 已提供唯一审批查询与 decision API、双语 Swagger、`/develop/approvals/:approval_id` Owner 页面以及中英文文案；页面只展示最小摘要，不返回完整 workflow payload。
+4. Tool Manifest 和 Python SDK 已支持首次 workflow 请求与 `approval_id + request_fingerprint` 恢复两种互斥输入；Owner 稳定审批错误码会原样进入 Tool 错误信封。
+5. Agent 已新增 owner approval Interaction 投影和 A2UI `ApprovalRequest`。客户端只能打开 Develop 页面或提交 `{action:"check"}`；Agent 使用原始 User Access Token 查询 Owner，只有 `approved|consumed` 才恢复原 AgentRun。
+6. Interaction resume 固定沿用 AgentRun 已记录 Skill，不重新路由；`workflow.run` 的完整输入不会写入 Interaction、run step 或 checkpoint，首次 step 只保存引擎 ID、任务数和 engine-specific 存在性摘要。
+7. 自动化已覆盖首次调用不执行、未批准拒绝、用户/租户隔离、指纹不匹配、过期、终态不可逆、单次消费、客户端不能直接批准、同一 AgentRun 恢复和 Owner 投影不保存 workflow payload。
+8. 真实浏览器与跨模块 HTTP 在线闭环已于 2026-07-17 完成：Console 静默进入 `admin`，Agent iframe URL 不含 Token 且无二次登录；Agent 首次 `workflow.run` 创建 pending approval 后进入 waiting，此时 execution 数为 0，pending 状态检查不能恢复。
+9. Develop Owner 页面批准后 execution 数仍为 0；Agent 通过原 Interaction 恢复同一 AgentRun `3b34df4d-bc21-4b80-9b96-b864a25e16b7` 和同一 Skill `workflow-analysis`，第二次 Tool step 只保存 approval ID 与请求指纹，未保存完整 workflow payload。
+10. Develop 在同一事务中将 approval `8e349852-4cb3-47b2-bb3c-230a3626e0d5` 标记为 consumed 并创建唯一 execution `704bcbcc-ecbb-4f2f-a84e-d601eeac1fdd`；关联 execution 精确计数为 1，三节点只读 SuperMap 工作流最终为 success、进度 100。
+11. 新 AgentRun 重放上述 approval 被 AgentRun 绑定优先拒绝，Owner 返回 `approval_forbidden`，execution 数仍为 1；同一原 AgentRun 内的重复消费由自动化覆盖并返回 `approval_already_consumed`。Tool Manifest 已同步声明 `approval_forbidden`，避免 SDK 将稳定 Owner 错误降级为 `owner_api_error`。
+12. Agent 显式重启加载新 Manifest 后，定向在线复验使用新 AgentRun `c656488b-80c9-4bdb-b235-ad8ef580b302` 经 Agent Tool Provider 重放已消费 approval；SDK 保留 Owner HTTP 403 的稳定 `approval_forbidden`，关联 execution 精确计数保持 `1 -> 1`。
+
 ### 阶段 5：扩展与评测
 
-1. 增加地图、表格、资源选择和图谱组件。
-2. 建设铁路占耕地面积等评测场景。
-3. SDK 和 Manifest 稳定后验证 MCP Adapter。
-4. 在有明确价值和隔离模型后再引入受限多智能体委派。
+阶段 5 先建立评测基线，再由评测暴露的真实表现需求驱动 A2UI 扩展。MCP Adapter 和多智能体委派不在本阶段当前主线中。
+
+#### 阶段 5.1：智能体评测基线
+
+唯一场景契约为 `addp.agent-scenario/v1`，目录固定为 `evals/agent-scenarios/<scenario-name>/scenario.yaml`。场景输入不保存账号、Token 或环境私有 ID；执行结果统一归一化为 Runtime 轨迹，至少包含：
+
+- `agent_run_id` 与最终 `status`；
+- 选中的稳定 Skill 名；
+- 按顺序记录的稳定 Tool 名、结果状态和稳定错误码；
+- Interaction 的 kind、owner 和状态；
+- ResultRef 与 owner 副作用计数；
+- 禁止进入轨迹的敏感字段扫描结果。
+
+评测分为两层，但只消费同一场景契约和同一种轨迹格式：
+
+1. 离线确定性层：使用受控 owner 响应和脚本化 Runtime 决策验证状态机、Tool 白名单、Interaction、错误传播和副作用断言；不调用真实 LLM，不受模型采样影响，作为每次变更的基础门禁。
+2. 定向在线层：使用真实 System 委托、owner API 和 Agent Tool Provider 重放相同关键路径，验证跨模块契约；需要运行中的 ADDP 环境和临时用户会话，不把凭据写入 fixture，不作为普通单元测试的前置条件。
+
+首批三个黄金场景固定为：
+
+| 场景 | 核心路径 | 必须断言 |
+| --- | --- | --- |
+| `read-only-query` | 选择 Skill，调用只读 Tool，返回受限摘要 | 只出现 Manifest `risk=read` Tool；无 approval、无 execution、无写副作用。 |
+| `approval-execution` | `workflow.run` 创建 owner approval，批准后恢复同一 AgentRun 并创建 execution | 首次调用进入 waiting 且 execution 为 0；恢复只提交 approval ID 与指纹；同一 AgentRun 最终产生一个 execution ResultRef。 |
+| `rejection-and-forbidden` | owner 拒绝审批，以及其他 AgentRun 重放 approval | 分别保留 `approval_rejected`、`approval_forbidden`；不得产生 ResultRef 或新增 execution；越权重放不得泄露 approval 终态。 |
+
+断言只比较稳定结构，不逐字比较模型回答。任何场景都必须验证禁止 Tool、预期错误码、AgentRun 关系和 owner 副作用；涉及 workflow 审批时额外禁止 `workflow_definition`、`engine_specific`、Token 和样本行进入 Interaction、step 摘要或 checkpoint。
+
+实施顺序：
+
+1. 建立上述三个黄金场景和契约校验器。
+2. 将铁路占耕地面积作为 `workflow-analysis` 业务能力场景接入同一契约。
+3. 根据评测中确认的展示缺口增加 `MapView`、`TablePreview`、`ResourcePicker`，再评估 `GraphView`。
+4. SDK、Manifest 和评测体系稳定后再验证 MCP Adapter；只有出现明确隔离价值后才讨论受限多智能体委派。
+
+实施状态（2026-07-17）：阶段 5.1 基线已完成。
+
+1. `evals/agent-scenarios/evaluator.py` 已实现 `addp.agent-scenario/v1` 的严格契约加载、Agent Runtime 事件轨迹归一化和结构断言；未知字段直接拒绝，不保留旧 `checks` 格式兼容分支。
+2. `read-only-query`、`approval-execution`、`rejection-and-forbidden` 三个黄金场景已落地；铁路占耕地面积场景也已收敛到同一契约，并保留条件澄清与禁止假设断言。
+3. 离线门禁真实经过 `AgentFactory.run` 的 Tool、Interaction、稳定错误和 ResultRef 事件，不调用真实 LLM；同时验证 Manifest Tool 风险、Tool 输入字段、同一/不同 AgentRun、owner 副作用和敏感持久化字段。
+4. 基线自动化共 6 项，覆盖三个正向黄金场景、全场景单一契约、资源歧义 Runtime 正向轨迹，以及错误码降级与 workflow payload 泄漏的反向失败；当前 Agent 后端全量 69 项和 common-python Manifest/Executor 5 项同步通过。
+5. 阶段 5.1 完成时未提前新增表现组件；阶段 5.2 随后只实现由评测确认的三类缺口，仍未推进 MCP Adapter 或多智能体委派。
+
+#### 阶段 5.2：评测驱动的 A2UI 组件
+
+阶段 5.1 暴露出三类稳定表现需求：只读查询需要扫描有界表格，空间分析需要检查有界几何投影，候选不唯一时需要选择 owner Tool 已观察的资源。对应 Catalog 组件固定为 `TablePreview`、`MapView` 和 `ResourcePicker`，不新增第二套组件名。
+
+1. `TablePreview` 只接收 `columns + rows + total + truncated` 的声明式投影，最多 50 列、100 行；单元格只允许 JSON 标量或空值，不加载下一页，不把表格状态写回 LLM 上下文。
+2. `MapView` 只接收已经由 owner/Agent 归一化为 WGS84 的 GeoJSON Feature，最多 200 个；不接受任意 URL、Token、瓦片地址或脚本。首阶段复用共享 OpenLayers 能力并使用无底图要素模式，避免地图 Key 成为 Agent 结果检查前提。
+3. `ResourcePicker` 不是实时资源树浏览器，只接收当前 AgentRun 中 `data.search`、`resource.ancestors.get` 或 `data.preview` 已观察并持久化的最多 50 个 locator 候选。提交动作仍为 `interaction.submit`，服务端继续按 Interaction options 校验，不接受客户端新造 locator。
+4. `reason=data_source_ambiguous` 且所有候选均有稳定 locator 时，唯一 Presentation 为 `ResourcePicker`；其他 clarification 使用 `ClarificationChoice`，不让两种组件并列表达同一交互。
+5. `data.preview` 只有在结果符合 Manifest 上限和组件 Schema 时才生成 `TablePreview`；存在明确 WGS84 Feature 投影时再生成 `MapView`。完整样本、大地图要素或 owner 业务结果仍不得进入 Agent 持久化状态。
+6. 三个组件都是 Presentation 投影，不拥有 Result、Interaction 或资源事实。未知字段、超限数组、非标量表格单元格和非 WGS84 地图输入在 Catalog/后端边界直接拒绝，不做兼容解析。
+
+实施状态（2026-07-17）：阶段 5.2 已完成。
+
+1. `agent/backend/protocol/a2ui.py` 建立 `data.preview -> TablePreview -> MapView` 的唯一有界投影：表格最多 50 列、100 行、字符串 2000 字符；地图最多 200 个 Feature，整个 Surface 最多 5000 个有限坐标值，只保留 WGS84 `type + coordinates` 和最多 50 个标量属性，不透传 URL、Token、bbox 或未知 GeoJSON 字段。
+2. `ResourcePicker` 只由 `reason=data_source_ambiguous` 且全部候选均为当前 AgentRun 已观察 locator 时生成；后端重新投影候选，Catalog 严格校验 `value === candidate.locator`，客户端仍只提交既有 `interaction.submit`，没有实时资源树或客户端自造 locator 路径。
+3. `common-frontend/agent-ui` 注册三个组件并在 A2UI Runtime 渲染前显式执行 Zod Schema；官方 v0.9 Catalog 的函数参数校验不替代组件属性校验，因此没有保留无 Schema 的旁路。`MapView` 复用 `common-frontend/map` 的 OpenLayers `featuresOnly` 模式，无地图 Key 时仍可检查矢量要素。
+4. Presentation 的有界 A2UI Surface 可写入 assistant message part 和安全 `ACTIVITY_SNAPSHOT`，用于历史展示与断线回放；它不进入 AgentCheckpoint、step facts 或 LLM 上下文。原始 Tool 结果在 run event 中仍替换为固定进度文本，step 只保存摘要和紧凑 owner 事实。
+5. 评测契约已加入精确 Presentation 顺序：只读场景为 `TablePreview`，铁路场景为 `TablePreview -> MapView -> WorkflowDag`；资源歧义的脚本化 Runtime 正向轨迹确认产生 `ResourcePicker`，CRS/单位等其他歧义继续只使用 `ClarificationChoice`。
+6. 真实浏览器验证覆盖桌面与 `390 x 844` 移动视口：OpenLayers canvas 和矢量图层可见，移动端 ResourcePicker 无横向越界，TablePreview 只在内部横向滚动，地图保持稳定高度和宽度。最终自动化为 Agent 后端 69 项、Agent 前端 19 项、common-python Manifest 5 项，生产构建、Python 编译和差异检查通过。
+7. 本阶段没有增加 `GraphView`，没有引入 MCP Adapter 或多智能体委派；三者继续等待 SDK、Manifest 与评测体系后续稳定性证据。
 
 ## 十一、PoC 文件级实施清单
 

@@ -342,9 +342,9 @@ export const SIDEBAR_MENUS = {
   },
 }
 
-// ─── 核心纯函数：根据模块名+页面名+token 构建 iframe URL ────────────────────
+// ─── 核心纯函数：根据模块名和页面名构建无认证信息的 iframe URL ─────────────
 
-export function buildModuleUrl(module, page, token) {
+export function buildModuleUrl(module, page) {
   const base = MODULE_URLS[module]
   if (!base) return null
 
@@ -356,9 +356,5 @@ export function buildModuleUrl(module, page, token) {
 
   const url = actualPage ? `${base}/${actualPage}` : base
 
-  if (token) {
-    const sep = url.includes('?') ? '&' : '?'
-    return `${url}${sep}token=${encodeURIComponent(token)}`
-  }
   return url
 }

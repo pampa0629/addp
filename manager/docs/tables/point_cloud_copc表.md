@@ -51,7 +51,13 @@
 
 这些状态属于 artifact state，不属于统一 execution status。
 
-## 四、索引建议
+## 四、execution fencing 与终态提交
+
+开始生成或刷新结果时，`last_execution_id` 必须写入当前 execution。生成终态只能更新 `last_execution_id` 仍等于当前 execution 的结果行；旧 execution 或失去所有权的执行不得覆盖新结果。
+
+结果终态、`common.task_executions` 终态和 `manager.point_cloud_copc_tasks.last_execution_status` 必须在同一 Infra PostgreSQL 事务中提交。进度事件使用 `status=running` 条件更新，终态提交后的迟到事件必须返回冲突。
+
+## 五、索引建议
 
 | 索引名 | 字段 | 说明 |
 | --- | --- | --- |
@@ -62,7 +68,7 @@
 | `idx_point_cloud_copc_status` | `status` | 按结果状态过滤 |
 | `idx_point_cloud_copc_current_unique` | `tenant_id, item_fingerprint` | 同一 item 只保留一个当前 COPC 快显结果 |
 
-## 五、删除语义
+## 六、删除语义
 
 删除 COPC 快显结果时，Manager 必须先按 `storage_ref` 删除 infra MinIO artifact，再将结果状态标记为 `deleted` 并软删除记录。
 
@@ -73,7 +79,7 @@
 3. `common.task_executions` 执行历史。
 4. `manager.preview_state` 中的用户预览偏好和三维相机状态。
 
-## 六、相关文档
+## 七、相关文档
 
 - [三维模型、点云与高斯泼溅预览说明](../三维模型、点云与高斯泼溅预览说明.md)
 - [数据预览语义协议](../数据预览语义协议.md)

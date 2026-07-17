@@ -118,7 +118,7 @@ func (s *TileCacheTaskScheduler) claimAndExecuteDueTask(ctx context.Context, tas
 		return err
 	}
 
-	executionID, err := s.taskService.Execute(ctx, claimed.ID, claimed.TenantID, commonExecution.TriggerTypeScheduled, commonExecution.ModuleManager, nil)
+	executionID, err := s.taskService.Execute(ctx, claimed.ID, claimed.TenantID, commonExecution.TriggerTypeScheduled, commonExecution.ModuleManager, nil, false)
 	if err != nil {
 		return err
 	}

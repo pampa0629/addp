@@ -75,7 +75,7 @@ class DevelopClient(BaseClient):
 
         data: Dict[str, Any] = {
             "dev_type": "workflow",
-            "trigger_type": "api",
+            "trigger_type": "manual",
             "content": {
                 "workflow_definition": workflow,
                 "inputs": {},
@@ -83,6 +83,24 @@ class DevelopClient(BaseClient):
             "execution_config": execution_config,
         }
         return await self.post("/api/v1/develop/executions", json=data)
+
+    async def resume_workflow_run(
+        self,
+        approval_id: str,
+        request_fingerprint: str,
+    ) -> Dict[str, Any]:
+        """消费已批准的 workflow.run approval 并创建 execution。"""
+        return await self.post(
+            "/api/v1/develop/executions",
+            json={
+                "approval_id": approval_id,
+                "request_fingerprint": request_fingerprint,
+            },
+        )
+
+    async def get_tool_approval(self, approval_id: str) -> Dict[str, Any]:
+        """读取当前用户拥有的 Develop Tool approval 投影。"""
+        return await self.get(f"/api/v1/develop/approvals/{approval_id}")
 
     async def get_execution(self, execution_id: str) -> Dict[str, Any]:
         """获取执行详情（含状态和结果）"""

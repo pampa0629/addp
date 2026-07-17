@@ -16,7 +16,7 @@ import { onBeforeUnmount, shallowRef, watch } from 'vue'
 import { MessageProcessor } from '@a2ui/web_core/v0_9'
 
 import A2UIRoot from './A2UIRoot.js'
-import { createAddpCatalog } from './catalog.js'
+import { createAddpCatalog, validateCatalogComponent } from './catalog.js'
 
 const props = defineProps({
   operations: {
@@ -51,9 +51,7 @@ function renderOperations(operations) {
       .filter(entry => entry.surface)
     for (const entry of nextSurfaces) {
       for (const [, component] of entry.surface.componentsModel.entries) {
-        if (!entry.surface.catalog.components.has(component.type)) {
-          throw new Error(`A2UI component is not registered: ${component.type}`)
-        }
+        validateCatalogComponent(entry.surface.catalog, component)
       }
     }
     surfaces.value = nextSurfaces
@@ -69,6 +67,7 @@ onBeforeUnmount(disposeProcessor)
 <style scoped>
 .addp-a2ui-surfaces,
 .addp-a2ui-surface {
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
 }

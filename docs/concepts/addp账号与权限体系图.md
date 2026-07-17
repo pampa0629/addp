@@ -21,7 +21,7 @@ ADDP 采用**多租户架构**,支持不同级别的用户管理和权限控制:
 - **多租户隔离**: 租户间数据完全隔离,资源独立管理
 - **分级用户**: 超级管理员、租户管理员、普通用户三级体系
 - **RBAC 权限**: 基于角色的访问控制,灵活配置
-- **JWT 认证**: 无状态认证,安全高效
+- **集中认证**: System 通过 opaque Token、Refresh Token Family 和 AuthContext 统一认证授权
 
 ---
 
@@ -138,7 +138,7 @@ graph TB
     class DB,Schema1,Schema2,Schema3,Users,Engines,Datasources,Metadata db
     class MinIO,Bucket1,Bucket2,Path1,Path2,Path3,Path4 storage
     class Redis,Key1,Key2,Key3 cache
-    class API,JWT,Middleware,Query api
+    class API,Token,AuthContext,Middleware,Query api
 ```
 
 ### 隔离机制详情

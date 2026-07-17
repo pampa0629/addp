@@ -199,7 +199,7 @@ async def _test_run_workflow_content_uses_execution_config():
         payload = json.loads(request.content)
         assert payload == {
             "dev_type": "workflow",
-            "trigger_type": "api",
+            "trigger_type": "manual",
             "content": {
                 "workflow_definition": workflow,
                 "inputs": {},

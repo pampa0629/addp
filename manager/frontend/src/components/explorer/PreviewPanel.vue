@@ -469,7 +469,7 @@
 
 <script setup>
 import { computed, ref, watch, onUnmounted } from 'vue'
-import { ElMessage, ElNotification } from 'element-plus'
+import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { MagicStick, Download, Location, Collection, Document, View, Refresh, Select, InfoFilled, WarningFilled } from '@element-plus/icons-vue'
@@ -478,6 +478,8 @@ import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import { quickViewAPI } from '@/api/quickView'
+import { useCurrentResultConfirmation } from '@/composables/useCurrentResultConfirmation'
+import { toQuickViewConfirmationPayload } from '@/utils/currentResultConfirmation'
 import ExportDialog from '@/components/explorer/ExportDialog.vue'
 import FlatGeobufQuickView from '@/components/map/FlatGeobufQuickView.vue'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
@@ -534,6 +536,11 @@ import {
 
 const { t } = useI18n()
 const router = useRouter()
+const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
+
+const executeConfirmedQuickViewAction = (locator, action) => executeWithCurrentResultConfirmation(payload => (
+  quickViewAPI.executeQuickViewAction(locator, action, toQuickViewConfirmationPayload(payload))
+))
 
 const props = defineProps({
   selectedNode: {
@@ -580,28 +587,9 @@ let quickViewRequestSeq = 0
 let quickViewStateSaveTimer = 0
 let quickViewStatusLocator = ''
 
-const withAuthToken = (url) => {
-  if (!url || typeof url !== 'string') return ''
-  if (!url.startsWith('/api/') && !url.startsWith('/manager/')) return url
-  const token = localStorage.getItem('token')
-  if (!token) return url
-  try {
-    const parsed = new URL(url, window.location.origin)
-    if (!parsed.searchParams.has('token')) {
-      parsed.searchParams.set('token', token)
-    }
-    return parsed.origin === window.location.origin
-      ? `${parsed.pathname}${parsed.search}${parsed.hash}`
-      : parsed.toString()
-  } catch {
-    const separator = url.includes('?') ? '&' : '?'
-    return `${url}${separator}token=${encodeURIComponent(token)}`
-  }
-}
-
 const downloadFromUrl = (url, fileName) => {
   const link = document.createElement('a')
-  link.href = withAuthToken(url)
+  link.href = url
   link.download = fileName || 'download'
   link.rel = 'noopener'
   document.body.appendChild(link)
@@ -2014,7 +2002,7 @@ const handleGenerateRasterCOG = async () => {
   if (!target || !quickViewStatus.value) return
   rasterCOGGenerationLoading.value = true
   try {
-    const execution = await quickViewAPI.executeQuickViewAction(target.locator, 'generate_raster_cog')
+    const execution = await executeConfirmedQuickViewAction(target.locator, 'generate_raster_cog')
     ElMessage.success(t('manager.spatialPreview.generateRasterCOGSubmitted'))
     const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
     if (executionID) {
@@ -2032,8 +2020,10 @@ const handleGenerateRasterCOG = async () => {
     }
     await loadQuickViewStatus()
   } catch (error) {
-    console.error('提交 栅格快显 COG生成失败:', error)
-    ElMessage.error(t('manager.spatialPreview.generateRasterCOGFailed'))
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('提交 栅格快显 COG生成失败:', error)
+      ElMessage.error(t('manager.spatialPreview.generateRasterCOGFailed'))
+    }
   } finally {
     rasterCOGGenerationLoading.value = false
   }
@@ -2047,7 +2037,7 @@ const handleGenerateModel3DGLB = async () => {
   }
   model3DGLBGenerationLoading.value = true
   try {
-    const execution = await quickViewAPI.executeQuickViewAction(locator, 'generate_model_3d_glb')
+    const execution = await executeConfirmedQuickViewAction(locator, 'generate_model_3d_glb')
     const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
     ElMessage.success(t('manager.explorer.generateModel3DGLBSubmitted'))
     if (executionID) {
@@ -2069,8 +2059,10 @@ const handleGenerateModel3DGLB = async () => {
       activePreviewMode.value = 'map_quick_view'
     }
   } catch (error) {
-    console.error('提交三维模型 GLB 快显生成失败:', error)
-    ElMessage.error(t('manager.explorer.generateModel3DGLBFailed'))
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('提交三维模型 GLB 快显生成失败:', error)
+      ElMessage.error(t('manager.explorer.generateModel3DGLBFailed'))
+    }
   } finally {
     model3DGLBGenerationLoading.value = false
   }
@@ -2084,7 +2076,7 @@ const handleGenerateGaussianSplatKSplat = async () => {
   }
   gaussianSplatKSplatGenerationLoading.value = true
   try {
-    const execution = await quickViewAPI.executeQuickViewAction(locator, 'generate_gaussian_splat_ksplat')
+    const execution = await executeConfirmedQuickViewAction(locator, 'generate_gaussian_splat_ksplat')
     const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
     ElMessage.success(t('manager.explorer.generateGaussianSplatKSplatSubmitted'))
     if (executionID) {
@@ -2106,8 +2098,10 @@ const handleGenerateGaussianSplatKSplat = async () => {
       activePreviewMode.value = 'map_quick_view'
     }
   } catch (error) {
-    console.error('提交 3DGS KSplat 快显生成失败:', error)
-    ElMessage.error(t('manager.explorer.generateGaussianSplatKSplatFailed'))
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('提交 3DGS KSplat 快显生成失败:', error)
+      ElMessage.error(t('manager.explorer.generateGaussianSplatKSplatFailed'))
+    }
   } finally {
     gaussianSplatKSplatGenerationLoading.value = false
   }
@@ -2121,7 +2115,7 @@ const handleGeneratePointCloudCOPC = async () => {
   }
   pointCloudCOPCGenerationLoading.value = true
   try {
-    const execution = await quickViewAPI.executeQuickViewAction(locator, 'generate_point_cloud_copc')
+    const execution = await executeConfirmedQuickViewAction(locator, 'generate_point_cloud_copc')
     const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
     ElMessage.success(t('manager.explorer.generatePointCloudCOPCSubmitted'))
     if (executionID) {
@@ -2143,8 +2137,10 @@ const handleGeneratePointCloudCOPC = async () => {
       activePreviewMode.value = 'map_quick_view'
     }
   } catch (error) {
-    console.error('提交点云 COPC 快显生成失败:', error)
-    ElMessage.error(t('manager.explorer.generatePointCloudCOPCFailed'))
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('提交点云 COPC 快显生成失败:', error)
+      ElMessage.error(t('manager.explorer.generatePointCloudCOPCFailed'))
+    }
   } finally {
     pointCloudCOPCGenerationLoading.value = false
   }
@@ -2158,7 +2154,7 @@ const handleGenerateCADPreview = async () => {
   }
   cadPreviewGenerationLoading.value = true
   try {
-    const execution = await quickViewAPI.executeQuickViewAction(locator, 'generate_cad_preview')
+    const execution = await executeConfirmedQuickViewAction(locator, 'generate_cad_preview')
     const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
     ElMessage.success(t('manager.explorer.generateCADPreviewSubmitted'))
     if (executionID) {
@@ -2179,8 +2175,10 @@ const handleGenerateCADPreview = async () => {
     await loadQuickViewStatus()
     activePreviewMode.value = 'basic_preview'
   } catch (error) {
-    console.error('提交 CAD 栅格瓦片预览生成失败:', error)
-    ElMessage.error(t('manager.explorer.generateCADPreviewFailed'))
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('提交 CAD 栅格瓦片预览生成失败:', error)
+      ElMessage.error(t('manager.explorer.generateCADPreviewFailed'))
+    }
   } finally {
     cadPreviewGenerationLoading.value = false
   }
@@ -2196,7 +2194,7 @@ const handleGenerateModel3DTiles = async (targetFormat) => {
   }
   model3DTilesGenerationLoading.value = true
   try {
-    const execution = await quickViewAPI.executeQuickViewAction(locator, action)
+    const execution = await executeConfirmedQuickViewAction(locator, action)
     const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
     ElMessage.success(t('manager.explorer.generateModel3DTilesSubmitted'))
     if (executionID) {
@@ -2209,8 +2207,10 @@ const handleGenerateModel3DTiles = async (targetFormat) => {
       activePreviewMode.value = 'map_quick_view'
     }
   } catch (error) {
-    console.error('提交分块三维模型瓦片生成失败:', error)
-    ElMessage.error(t('manager.explorer.generateModel3DTilesFailed'))
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('提交分块三维模型瓦片生成失败:', error)
+      ElMessage.error(t('manager.explorer.generateModel3DTilesFailed'))
+    }
   } finally {
     model3DTilesGenerationLoading.value = false
   }

@@ -38,6 +38,7 @@ common-python/
 - 用户 `user_token` 只能通过 `addp_common.auth.resolve_authorization_context()` 调用 System AuthContext API 解析；Python 模块不自行解析 JWT。
 - 客户端 URL 与 API 路径要以各模块当前 `CLAUDE.md`、路由和 Swagger 为准。
 - `tools/manifest.json` 是 AI Tool 契约事实源，`ToolExecutor` 是 Manifest 到 SDK 的唯一执行映射。
+- `ToolExecutor` 每次调用必须使用源 User Access Token 向 System 申请绑定 owner audience、稳定 Tool Scope、AgentRun 和 ToolCall 的短期 Delegated Access Token；owner SDK Client 只能接收该委托令牌。
 - `addp` CLI 和 Agent Tool Provider 只能作为 `ToolExecutor` 的薄 Adapter，不得直接发 HTTP。
 - CLI stdout 必须是单个紧凑 JSON，日志只写 stderr，并保持稳定 exit code。
 - 修改公共客户端后，至少验证直接使用它的 Python 模块。

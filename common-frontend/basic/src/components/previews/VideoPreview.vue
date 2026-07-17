@@ -142,10 +142,6 @@ const videoSrc = computed(() => {
   params.set('engine_id', String(engineId.value))
   params.set('storage_ref', storageRef.value)
 
-  const token = localStorage.getItem('token')
-  if (token) {
-    params.set('token', token)
-  }
   return `/api/v1/manager/storage-stream?${params.toString()}`
 })
 

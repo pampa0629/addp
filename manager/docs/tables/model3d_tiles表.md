@@ -14,7 +14,7 @@
 
 同一租户、源指纹和目标格式只保留一条当前结果。3D Tiles 与 S3M 必须分别登记，某一种格式生成中或失败不影响另一种 ready 结果预览。关联只能读取本表显式字段，不得根据 MinIO 输出目录名称推断。
 
-已有 ready、failed 或 stale 结果时，重复执行关联任务会刷新同一结果记录和受管 MinIO 对象前缀。结果 ID 与任务 ID 保持不变，`last_execution_id`、状态、manifest 和统计更新为最近一次 execution 事实。
+已有 `building`、`ready`、`failed` 或 `stale` 结果时，重复执行关联任务必须先完成服务端强制的本次覆盖确认；确认后覆盖同一结果记录和受管 MinIO 对象前缀。结果 ID 与任务 ID 保持不变，`last_execution_id`、状态、manifest 和统计更新为最近一次 execution 事实。确认只作用于当前 `target_format`，不得把 3D Tiles 的确认用于 S3M，反之亦然。
 
 ready 结果通过 `GET /api/v1/manager/model3d_tiles/:id/assets/*asset_path` 读取。该接口保留相对路径、Content-Type、Range 和租户鉴权，因此预览不依赖转换引擎在线。
 

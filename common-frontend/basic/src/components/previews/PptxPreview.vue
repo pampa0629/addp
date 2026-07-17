@@ -119,6 +119,7 @@
 </template>
 
 <script setup>
+import { getAccessToken } from '../../auth/authSession'
 import { ref, computed, onMounted, watch } from 'vue'
 import { Loading, WarningFilled, Document } from '@element-plus/icons-vue'
 import JSZip from 'jszip'
@@ -208,7 +209,7 @@ const truncatedMessage = computed(() => {
 
 const fetchPptxBytesFromUrl = async (url) => {
   const headers = {}
-  const token = localStorage.getItem('token')
+  const token = getAccessToken()
   if (token) {
     headers.Authorization = `Bearer ${token}`
   }

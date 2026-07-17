@@ -7,19 +7,12 @@ describe('shared ADDP token refresh', () => {
   it('retries an Axios request through its owning client after refresh', async () => {
     const authStore = {
       token: 'expired-token',
-      setToken: vi.fn((token) => { authStore.token = token }),
-      logout: vi.fn()
+      refreshAccessToken: vi.fn(async () => 'fresh-token'),
+      clearLocalSession: vi.fn()
     }
-    const fetchMock = vi.fn(async () => new Response(
-      JSON.stringify({ access_token: 'fresh-token' }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
-    ))
     const axiosInstance = vi.fn(async config => ({ data: 'ok', config }))
     const onRefreshFailed = vi.fn()
     const [, onRejected] = createRefreshInterceptor(() => authStore, {
-      moduleName: 'Test',
-      systemBaseURL: '',
-      fetch: fetchMock,
       axiosInstance,
       onRefreshFailed
     })
@@ -31,8 +24,8 @@ describe('shared ADDP token refresh', () => {
     expect(config._retry).toBe(true)
     expect(config.headers.Authorization).toBe('Bearer fresh-token')
     expect(axiosInstance).toHaveBeenCalledWith(config)
-    expect(authStore.setToken).toHaveBeenCalledWith('fresh-token')
-    expect(authStore.logout).not.toHaveBeenCalled()
+    expect(authStore.refreshAccessToken).toHaveBeenCalledWith({ force: true })
+    expect(authStore.clearLocalSession).not.toHaveBeenCalled()
     expect(onRefreshFailed).not.toHaveBeenCalled()
   })
 })

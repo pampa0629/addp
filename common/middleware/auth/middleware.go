@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+var ErrAuthorizationContextUnavailable = errors.New("authorization context unavailable")
 
 // Context keys used to store authenticated user data.
 const (
@@ -49,6 +52,10 @@ func SystemAuthMiddleware(systemURL string) gin.HandlerFunc {
 	}
 
 	return func(c *gin.Context) {
+		if _, ok := GetAuthorizationContext(c); ok {
+			c.Next()
+			return
+		}
 		if internalKey := c.GetHeader("X-Internal-API-Key"); internalKey != "" {
 			if !validInternalAPIKey(internalKey) {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid internal api key"})
@@ -78,12 +85,6 @@ func SystemAuthMiddleware(systemURL string) gin.HandlerFunc {
 		}
 
 		authHeader := c.GetHeader("Authorization")
-		if strings.TrimSpace(authHeader) == "" {
-			if tokenParam := strings.TrimSpace(c.Query("token")); tokenParam != "" {
-				authHeader = "Bearer " + tokenParam
-				c.Request.Header.Set("Authorization", authHeader)
-			}
-		}
 		if strings.TrimSpace(authHeader) == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
 			c.Abort()
@@ -133,7 +134,7 @@ func SystemAuthMiddleware(systemURL string) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if authorizationContext.UserID == 0 || authorizationContext.SubjectType != "user" {
+		if !validAuthorizationContext(authorizationContext) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization context"})
 			c.Abort()
 			return
@@ -162,4 +163,18 @@ func setAuthorizationContext(c *gin.Context, authorizationContext AuthorizationC
 		c.Set(ContextTenantIDKey, uint(0))
 	}
 	c.Set(ContextAuthorizationContextKey, authorizationContext)
+}
+
+func validAuthorizationContext(authorizationContext AuthorizationContext) bool {
+	if authorizationContext.UserID == 0 || authorizationContext.SubjectType != "user" {
+		return false
+	}
+	if authorizationContext.AuthType != AuthTypeDelegatedAccessToken {
+		return true
+	}
+	return len(authorizationContext.Audiences) == 1 &&
+		len(authorizationContext.Scopes) > 0 &&
+		authorizationContext.DelegatedBy != nil && strings.TrimSpace(*authorizationContext.DelegatedBy) != "" &&
+		authorizationContext.AgentRunID != nil && strings.TrimSpace(*authorizationContext.AgentRunID) != "" &&
+		authorizationContext.ToolCallID != nil && strings.TrimSpace(*authorizationContext.ToolCallID) != ""
 }

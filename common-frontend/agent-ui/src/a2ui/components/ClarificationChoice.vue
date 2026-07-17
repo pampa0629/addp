@@ -52,6 +52,7 @@ onUnmounted(() => subscription.unsubscribe())
 
 <style scoped>
 .clarification-choice {
+  box-sizing: border-box;
   width: 100%;
   padding: 14px;
   border: 1px solid var(--addp-border-color);

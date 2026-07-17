@@ -50,6 +50,14 @@ export {
   createAPIClient,
   createAuthStore
 } from './composables/useAuth'
+export {
+  createIframeAuthCoordinator,
+  getAccessToken,
+  getAccessTokenExpiresAt,
+  setRuntimeAccessToken,
+  clearRuntimeAccessToken,
+  subscribeAccessToken
+} from './auth/authSession'
 
 // Composables - Tree Management
 export { useTreeCache, useTreeLoader } from './composables'

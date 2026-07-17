@@ -4,8 +4,10 @@ import uuid
 from services.interactions import (
     InteractionAnswerError,
     InteractionNotFoundError,
+    InteractionOwnerStateError,
     InteractionStateError,
     create_clarification,
+    create_owner_approval,
     format_resume_message,
     resolve_interaction,
 )
@@ -194,6 +196,97 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                 tenant_id=5,
                 payload={"value": "invented-locator", "label": "invented"},
             )
+
+    async def test_owner_approval_check_only_completes_after_owner_approved(self):
+        from models.interaction import Interaction
+
+        interaction = Interaction(
+            id=uuid.uuid4(),
+            session_id=12,
+            user_id=3,
+            tenant_id=5,
+            agent_run_id=uuid.uuid4(),
+            kind="owner_approval",
+            owner="develop",
+            owner_interaction_id=str(uuid.uuid4()),
+            owner_request_fingerprint="a" * 64,
+            open_url="/develop/approvals/owner-1",
+            request_summary={"task_count": 2},
+            status="pending",
+            prompt="需要审批",
+            options=[],
+        )
+
+        async def pending_loader(_approval_id, _token):
+            return {"status": "pending", "request_fingerprint": "a" * 64}
+
+        with self.assertRaises(InteractionAnswerError):
+            await resolve_interaction(
+                _DB(interaction),
+                interaction_id=str(interaction.id),
+                session_id=12,
+                user_id=3,
+                tenant_id=5,
+                payload={"action": "check", "approved": True},
+                source_token="user-token",
+                owner_approval_loader=pending_loader,
+            )
+
+        with self.assertRaises(InteractionOwnerStateError):
+            await resolve_interaction(
+                _DB(interaction),
+                interaction_id=str(interaction.id),
+                session_id=12,
+                user_id=3,
+                tenant_id=5,
+                payload={"action": "check"},
+                source_token="user-token",
+                owner_approval_loader=pending_loader,
+            )
+        self.assertEqual(interaction.status, "pending")
+
+        async def approved_loader(approval_id, token):
+            self.assertEqual(approval_id, interaction.owner_interaction_id)
+            self.assertEqual(token, "user-token")
+            return {"status": "approved", "request_fingerprint": "a" * 64}
+
+        db = _DB(interaction)
+        resolved = await resolve_interaction(
+            db,
+            interaction_id=str(interaction.id),
+            session_id=12,
+            user_id=3,
+            tenant_id=5,
+            payload={"action": "check"},
+            source_token="user-token",
+            owner_approval_loader=approved_loader,
+        )
+        self.assertIs(resolved, interaction)
+        self.assertEqual(interaction.status, "completed")
+        self.assertEqual(interaction.answer["approval_id"], interaction.owner_interaction_id)
+        self.assertIn("只提交 approval_id=", format_resume_message(interaction))
+
+    async def test_owner_approval_projection_does_not_store_workflow_payload(self):
+        db = _DB()
+        interaction = await create_owner_approval(
+            db,
+            session_id=12,
+            user_id=3,
+            tenant_id=5,
+            agent_run_id=uuid.uuid4(),
+            tool_call_id="workflow-call",
+            owner="develop",
+            owner_interaction_id=str(uuid.uuid4()),
+            open_url="/develop/approvals/owner-1",
+            request_fingerprint="b" * 64,
+            request_summary={"workflow_engine_id": 20, "task_count": 2},
+            expires_at=None,
+        )
+
+        self.assertEqual(interaction.kind, "owner_approval")
+        self.assertEqual(interaction.request_summary["task_count"], 2)
+        self.assertFalse(hasattr(interaction, "request_payload"))
+        self.assertEqual(interaction.response_schema["properties"]["action"], {"const": "check"})
 
 
 if __name__ == "__main__":

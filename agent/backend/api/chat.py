@@ -5,6 +5,7 @@ import copy
 import json
 import logging
 import uuid
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -40,12 +41,22 @@ from models.interaction import Interaction
 from models.message import Message
 from models.run import AgentRun
 from models.session import Session
-from protocol.a2ui import clarification_surface, workflow_dag_surface
+from protocol.a2ui import (
+    approval_request_surface,
+    clarification_surface,
+    map_view_surface,
+    resource_picker_surface,
+    table_preview_surface,
+    workflow_dag_surface,
+)
 from services.interactions import (
     InteractionAnswerError,
     InteractionNotFoundError,
+    InteractionOwnerStateError,
+    InteractionOwnerUnavailableError,
     InteractionStateError,
     create_clarification,
+    create_owner_approval,
     format_resume_message,
     resolve_interaction,
 )
@@ -90,6 +101,31 @@ def _plain_text(content: Any) -> str:
     return ""
 
 
+def _tool_input_projection(tool_name: str, arguments: Any) -> dict[str, Any]:
+    if not isinstance(arguments, dict):
+        return {}
+    if tool_name != "workflow.run":
+        return arguments
+    if arguments.get("approval_id"):
+        return {
+            "approval_id": arguments.get("approval_id"),
+            "request_fingerprint": arguments.get("request_fingerprint"),
+        }
+    workflow = arguments.get("workflow_definition")
+    tasks = workflow.get("tasks") if isinstance(workflow, dict) else None
+    return {
+        "workflow_engine_id": arguments.get("workflow_engine_id"),
+        "task_count": len(tasks) if isinstance(tasks, list) else None,
+        "has_engine_specific": isinstance(arguments.get("engine_specific"), dict),
+    }
+
+
+def _parse_optional_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 async def _get_owned_session(db: AsyncSession, session_id: int, user_id: int) -> Session:
     result = await db.execute(
         select(Session).where(Session.id == session_id, Session.user_id == user_id)
@@ -107,6 +143,7 @@ async def _save_user_input(
     session: Session,
     user_id: int,
     tenant_id: int,
+    source_token: str,
 ) -> list[Interaction]:
     if body.resume:
         resolved_interactions: list[Interaction] = []
@@ -121,6 +158,7 @@ async def _save_user_input(
                     user_id=user_id,
                     tenant_id=tenant_id,
                     payload=entry.payload,
+                    source_token=source_token,
                 )
             except InteractionNotFoundError as exc:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="交互请求不存在") from exc
@@ -128,6 +166,21 @@ async def _save_user_input(
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="交互请求已处理") from exc
             except InteractionAnswerError as exc:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+            except InteractionOwnerStateError as exc:
+                labels = {
+                    "pending": "审批尚未批准",
+                    "rejected": "审批已拒绝",
+                    "expired": "审批已过期",
+                }
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=labels.get(str(exc), f"审批状态不可恢复: {exc}"),
+                ) from exc
+            except InteractionOwnerUnavailableError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Develop 审批状态暂时不可用",
+                ) from exc
 
             resume_text = format_resume_message(interaction)
             db.add(
@@ -240,6 +293,7 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问该会话")
 
     retry_run_id = getattr(request.state, "agent_run_retry_id", None)
+    resumed_from_interaction = False
     try:
         if retry_run_id is not None:
             agent_run = await retry_agent_run(
@@ -256,8 +310,10 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                 session=session,
                 user_id=user_id,
                 tenant_id=tenant_id,
+                source_token=request.state.token,
             )
             if resolved_interactions:
+                resumed_from_interaction = True
                 agent_run = await resume_agent_run(
                     db,
                     interactions=resolved_interactions,
@@ -344,9 +400,11 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                 user_id,
                 tenant_id,
                 request.state.token,
+                str(agent_run_id),
                 session_summary=session_summary,
-            checkpoint=run_checkpoint,
-        ):
+                checkpoint=run_checkpoint,
+                forced_skill_name=(agent_run.skill_name if resumed_from_interaction else None),
+            ):
                 if await request.is_disconnected():
                     async with AsyncSessionLocal() as run_db:
                         async with run_db.begin():
@@ -420,7 +478,10 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                                 step_type="tool_call",
                                 tool_call_id=tool_call_id,
                                 tool_name=str(event.payload["tool_name"]),
-                                input_data=event.payload.get("args") or {},
+                                input_data=_tool_input_projection(
+                                    str(event.payload["tool_name"]),
+                                    event.payload.get("args") or {},
+                                ),
                             )
                             tool_steps[tool_call_id] = step.id
                     yield await emit(
@@ -490,9 +551,17 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                     )
                     continue
 
-                if event.kind == "presentation" and event.payload.get("kind") == "workflow_dag":
+                if event.kind == "presentation":
                     surface_id = f"surface:{uuid.uuid4()}"
-                    operations = workflow_dag_surface(surface_id, event.payload["workflow"])
+                    presentation_kind = event.payload.get("kind")
+                    if presentation_kind == "workflow_dag":
+                        operations = workflow_dag_surface(surface_id, event.payload["workflow"])
+                    elif presentation_kind == "table_preview":
+                        operations = table_preview_surface(surface_id, event.payload)
+                    elif presentation_kind == "map_view":
+                        operations = map_view_surface(surface_id, event.payload)
+                    else:
+                        continue
                     content = {"operations": operations}
                     parts.append(
                         {
@@ -514,18 +583,35 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                     continue
 
                 if event.kind == "interaction_required":
+                    interaction_kind = str(event.payload.get("interaction_kind") or "clarification")
                     async with AsyncSessionLocal() as interaction_db:
                         async with interaction_db.begin():
-                            interaction = await create_clarification(
-                                interaction_db,
-                                session_id=session_id,
-                                user_id=user_id,
-                                tenant_id=tenant_id,
-                                agent_run_id=agent_run_id,
-                                tool_call_id=event.payload.get("tool_call_id"),
-                                prompt=str(event.payload.get("prompt") or "请选择数据源"),
-                                candidates=event.payload.get("candidates") or [],
-                            )
+                            if interaction_kind == "owner_approval":
+                                interaction = await create_owner_approval(
+                                    interaction_db,
+                                    session_id=session_id,
+                                    user_id=user_id,
+                                    tenant_id=tenant_id,
+                                    agent_run_id=agent_run_id,
+                                    tool_call_id=event.payload.get("tool_call_id"),
+                                    owner=str(event.payload.get("owner") or "develop"),
+                                    owner_interaction_id=str(event.payload["owner_interaction_id"]),
+                                    open_url=str(event.payload["open_url"]),
+                                    request_fingerprint=str(event.payload["request_fingerprint"]),
+                                    request_summary=event.payload.get("request_summary") or {},
+                                    expires_at=_parse_optional_datetime(event.payload.get("expires_at")),
+                                )
+                            else:
+                                interaction = await create_clarification(
+                                    interaction_db,
+                                    session_id=session_id,
+                                    user_id=user_id,
+                                    tenant_id=tenant_id,
+                                    agent_run_id=agent_run_id,
+                                    tool_call_id=event.payload.get("tool_call_id"),
+                                    prompt=str(event.payload.get("prompt") or "请选择数据源"),
+                                    candidates=event.payload.get("candidates") or [],
+                                )
                             await set_run_status(
                                 interaction_db,
                                 agent_run_id=agent_run_id,
@@ -536,21 +622,59 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                             interaction_prompt = interaction.prompt
 
                     surface_id = f"surface:{uuid.uuid4()}"
-                    operations = clarification_surface(
-                        surface_id,
-                        interaction_id=interaction_id,
-                        prompt=interaction_prompt,
-                        options=interaction_options,
-                    )
+                    if interaction_kind == "owner_approval":
+                        operations = approval_request_surface(
+                            surface_id,
+                            interaction_id=interaction_id,
+                            owner=interaction.owner,
+                            owner_interaction_id=str(interaction.owner_interaction_id),
+                            open_url=str(interaction.open_url),
+                            request_fingerprint=str(interaction.owner_request_fingerprint),
+                            request_summary=interaction.request_summary or {},
+                            expires_at=(interaction.expires_at.isoformat() if interaction.expires_at else None),
+                        )
+                    else:
+                        if (
+                            event.payload.get("reason") == "data_source_ambiguous"
+                            and interaction_options
+                            and all(
+                                isinstance(option.get("value"), str)
+                                and option["value"].startswith("addp://")
+                                and isinstance(option.get("candidate"), dict)
+                                and option["candidate"].get("locator") == option["value"]
+                                for option in interaction_options
+                            )
+                        ):
+                            operations = resource_picker_surface(
+                                surface_id,
+                                interaction_id=interaction_id,
+                                prompt=interaction_prompt,
+                                options=interaction_options,
+                            )
+                        else:
+                            operations = clarification_surface(
+                                surface_id,
+                                interaction_id=interaction_id,
+                                prompt=interaction_prompt,
+                                options=interaction_options,
+                            )
                     content = {"operations": operations}
                     parts.extend(
                         [
                             {
                                 "type": "interaction_ref",
                                 "interaction_id": interaction_id,
-                                "kind": "clarification",
-                                "owner": "agent",
+                                "kind": interaction_kind,
+                                "owner": interaction.owner,
                                 "status": "pending",
+                                **(
+                                    {
+                                        "owner_interaction_id": interaction.owner_interaction_id,
+                                        "open_url": interaction.open_url,
+                                    }
+                                    if interaction_kind == "owner_approval"
+                                    else {}
+                                ),
                             },
                             {
                                 "type": "presentation_ref",
@@ -582,7 +706,11 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                     )
                     interrupt = Interrupt(
                         id=interaction_id,
-                        reason=str(event.payload.get("reason") or "missing_input"),
+                        reason=(
+                            "owner_approval_required"
+                            if interaction_kind == "owner_approval"
+                            else str(event.payload.get("reason") or "missing_input")
+                        ),
                         message=interaction_prompt,
                         tool_call_id=event.payload.get("tool_call_id"),
                         response_schema=interaction.response_schema,

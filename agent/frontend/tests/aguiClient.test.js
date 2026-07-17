@@ -1,13 +1,17 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createAgentClient, replayAgentRunEvents } from '../src/agent/createAgentClient'
+import { clearRuntimeAccessToken, setRuntimeAccessToken } from '@common-ui'
 
 function sse(event) {
   return `data: ${JSON.stringify(event)}\n\n`
 }
 
 describe('AG-UI client', () => {
+  beforeEach(() => clearRuntimeAccessToken())
+
   it('replays sequenced AgentRun events with ADDP authentication', async () => {
+    setRuntimeAccessToken('test-token')
     const events = []
     const fetchMock = vi.fn(async (_url, init) => {
       expect(init.headers.get('Authorization')).toBe('Bearer test-token')
@@ -24,7 +28,7 @@ describe('AG-UI client', () => {
     await replayAgentRunEvents({
       agentRunId: 'run-1',
       after: 6,
-      getAuthStore: () => ({ token: 'test-token', logout: vi.fn(), setToken: vi.fn() }),
+      getAuthStore: () => ({ token: 'test-token', clearLocalSession: vi.fn(), refreshAccessToken: vi.fn() }),
       fetch: fetchMock,
       onEvent: event => events.push(event)
     })
@@ -37,6 +41,7 @@ describe('AG-UI client', () => {
   })
 
   it('sends the standard RunAgentInput contract with ADDP authentication', async () => {
+    setRuntimeAccessToken('test-token')
     let requestBody
     const fetchMock = vi.fn(async (_url, init) => {
       requestBody = JSON.parse(init.body)
@@ -57,8 +62,8 @@ describe('AG-UI client', () => {
 
     const authStore = {
       token: 'test-token',
-      setToken: vi.fn(),
-      logout: vi.fn()
+      clearLocalSession: vi.fn(),
+      refreshAccessToken: vi.fn()
     }
     const agent = createAgentClient({
       sessionId: 42,
@@ -76,21 +81,18 @@ describe('AG-UI client', () => {
   })
 
   it('refreshes an expired token once and retries the AG-UI request', async () => {
+    setRuntimeAccessToken('expired-token')
     const authStore = {
       token: 'expired-token',
-      setToken: vi.fn((token) => { authStore.token = token }),
-      logout: vi.fn()
+      refreshAccessToken: vi.fn(async () => {
+        authStore.token = 'fresh-token'
+        setRuntimeAccessToken('fresh-token')
+        return 'fresh-token'
+      }),
+      clearLocalSession: vi.fn()
     }
     let chatAttempts = 0
     const fetchMock = vi.fn(async (url, init) => {
-      if (url === '/api/v1/system/refresh') {
-        expect(init.headers.Authorization).toBe('Bearer expired-token')
-        return new Response(JSON.stringify({ access_token: 'fresh-token' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        })
-      }
-
       chatAttempts += 1
       if (chatAttempts === 1) {
         expect(init.headers.get('Authorization')).toBe('Bearer expired-token')
@@ -119,7 +121,7 @@ describe('AG-UI client', () => {
     await agent.runAgent()
 
     expect(chatAttempts).toBe(2)
-    expect(authStore.setToken).toHaveBeenCalledWith('fresh-token')
-    expect(authStore.logout).not.toHaveBeenCalled()
+    expect(authStore.refreshAccessToken).toHaveBeenCalledWith({ force: true })
+    expect(authStore.clearLocalSession).not.toHaveBeenCalled()
   })
 })

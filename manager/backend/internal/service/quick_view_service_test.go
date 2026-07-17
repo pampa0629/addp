@@ -2918,6 +2918,34 @@ func TestModel3DTilesCapabilityChecksOperatorsPerTargetFormat(t *testing.T) {
 	assertNoActions(t, capability.AvailableActions, QuickViewActionGenerateModel3DS3M)
 }
 
+func TestModel3DTilesCapabilityKeepsRefreshActionForReadyResult(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	createModel3DTilesResultTableForTest(t, db)
+	server := newWorkflowOperatorServerForTest(t, "osgb_scene_to_3dtiles")
+	locator := "addp://engine/26/path/site?type=directory"
+	result := &models.Model3DTiles{
+		TenantID: 7, ItemFingerprint: "fp-ready-refresh", Locator: locator, SourceEngineID: 26,
+		SourceFormat: "osgb_scene", TargetFormat: models.Model3DTilesTargetFormat3DTiles,
+		StorageRef: "3d-ref", ManifestRef: "tileset.json", Status: models.Model3DTilesStatusReady,
+		Metadata: commonModels.JSONMap{},
+	}
+	if err := db.Create(result).Error; err != nil {
+		t.Fatalf("create ready result: %v", err)
+	}
+
+	svc := NewQuickViewService(db, nil)
+	svc.SetWorkflowEngineLister(staticWorkflowEngineLister{engines: []commonModels.Engine{workflowEngineForTest(t, server.URL)}})
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), model3DTilesQuickViewSource("fp-ready-refresh", locator))
+	if err != nil {
+		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
+	}
+	info := model3DTilesFormatsByName(t, capability)[models.Model3DTilesTargetFormat3DTiles]
+	if info.Status != models.Model3DTilesStatusReady || info.PreviewURL == "" || !info.CanGenerate || info.UnavailableReason != "" {
+		t.Fatalf("ready 3d tiles capability = %#v, want preview and refresh action", info)
+	}
+	assertActions(t, capability.AvailableActions, QuickViewActionGenerateModel3D3DTiles)
+}
+
 func TestModel3DTilesCapabilityReturnsIndependentReadyResultsWhenEngineDiscoveryFails(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	createModel3DTilesResultTableForTest(t, db)
@@ -2948,8 +2976,11 @@ func TestModel3DTilesCapabilityReturnsIndependentReadyResultsWhenEngineDiscovery
 	formats := model3DTilesFormatsByName(t, capability)
 	for _, targetFormat := range []string{models.Model3DTilesTargetFormat3DTiles, models.Model3DTilesTargetFormatS3M} {
 		formatInfo := formats[targetFormat]
-		if formatInfo.Status != models.Model3DTilesStatusReady || formatInfo.PreviewURL == "" || formatInfo.UnavailableReason != "result_ready" {
+		if formatInfo.Status != models.Model3DTilesStatusReady || formatInfo.PreviewURL == "" {
 			t.Fatalf("%s capability = %#v, want independent ready preview", targetFormat, formatInfo)
+		}
+		if formatInfo.CanGenerate || formatInfo.UnavailableReason != "workflow_engine_list_failed" {
+			t.Fatalf("%s capability = %#v, want refresh disabled while engine discovery fails", targetFormat, formatInfo)
 		}
 	}
 	if !capability.CanUseQuickView || capability.RenderSource != "model3d_3d_tiles" {

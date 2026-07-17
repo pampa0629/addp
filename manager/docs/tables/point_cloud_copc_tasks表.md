@@ -37,6 +37,13 @@
 | `created_by` | integer | 创建人 |
 | `created_at` / `updated_at` / `deleted_at` | timestamp | 生命周期字段 |
 
+执行生命周期遵守以下唯一语义：
+
+1. 启动请求在任务行锁事务内检查同任务是否已有 `pending` 或 `running` execution；存在时返回 HTTP 409。
+2. 启动成功时原子创建 `pending` execution 并推进任务摘要；后台执行器领取后原子进入 `running`。
+3. direct operator 的进度事件只允许更新当前 `running` 的 `point_cloud_copc_generation` execution；`pending`、终态、其他任务类型和其他租户的事件均拒绝。
+4. COPC 结果、execution 终态和任务摘要使用 `last_execution_id` fencing，并在同一 Infra PostgreSQL 事务提交。终态提交后，迟到进度事件不能覆盖终态。
+
 ## 三、config 语义
 
 最小结构：
@@ -83,6 +90,8 @@ DELETE /api/v1/manager/point_cloud_copc_tasks/{id}
 ```
 
 当前 `supports_schedule=false`、`supports_cancel=false`。需要周期性刷新时，应由 Orchestrator 定时编排间接触发已保存任务定义。
+
+`POST .../execute` 接受后返回 HTTP 202、`status=pending` 和新 `execution_id`；同任务已有活跃 execution 时返回 HTTP 409。
 
 ## 五、相关文档
 

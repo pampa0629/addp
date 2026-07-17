@@ -35,6 +35,12 @@ type federatedQueryExecutor interface {
 	ExecuteQuery(ctx context.Context, tenantID uint, sqlStr string, timeout int) (*FederatedQueryResult, error)
 }
 
+type preparedContentExecution struct {
+	execution *commonExecution.TaskExecution
+	devTask   *models.DevTask
+	tenantID  int
+}
+
 // NewDevExecutor 创建开发任务执行器
 func NewDevExecutor(
 	devTaskRepo *repository.DevTaskRepository,
@@ -144,29 +150,59 @@ func (e *DevExecutor) ExecuteContent(
 	triggerType string,
 	timeout int,
 ) (string, error) {
-	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
+	prepared, err := e.prepareContentExecution(
+		ctx,
+		devType,
+		content,
+		executionConfig,
+		tenantID,
+		userID,
+		triggerType,
+		timeout,
+	)
 	if err != nil {
 		return "", err
 	}
+	if err := e.persistPreparedContentExecution(ctx, e.taskExecutionRepo, prepared); err != nil {
+		return "", err
+	}
+	e.startPreparedContentExecution(prepared)
+	return prepared.execution.ExecutionID, nil
+}
+
+func (e *DevExecutor) prepareContentExecution(
+	ctx context.Context,
+	devType string,
+	content map[string]interface{},
+	executionConfig map[string]interface{},
+	tenantID uint,
+	userID uint,
+	triggerType string,
+	timeout int,
+) (*preparedContentExecution, error) {
+	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
+	if err != nil {
+		return nil, err
+	}
 	// 验证 dev_type
 	if devType != "query" && devType != "workflow" && devType != "script" {
-		return "", fmt.Errorf("无效的 dev_type: %s", devType)
+		return nil, fmt.Errorf("无效的 dev_type: %s", devType)
 	}
 	if content == nil {
 		content = map[string]interface{}{}
 	}
 	if executionConfig == nil {
-		return "", fmt.Errorf("临时执行必须提供 execution_config")
+		return nil, fmt.Errorf("临时执行必须提供 execution_config")
 	}
 	if err := validateDevTaskContent(devType, content); err != nil {
-		return "", err
+		return nil, err
 	}
 	if err := validateDevTaskExecutionConfig(devType, content, executionConfig); err != nil {
-		return "", err
+		return nil, err
 	}
 	if devType == commonExecution.TaskTypeWorkflow {
 		if err := e.validateWorkflowBeforeExecution(ctx, content, executionConfig, tenantID); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 	if timeout <= 0 {
@@ -210,12 +246,6 @@ func (e *DevExecutor) ExecuteContent(
 		UpdatedAt:       now,
 	}
 
-	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
-		return "", fmt.Errorf("failed to create execution record: %w", err)
-	}
-
-	log.Printf("🚀 [DevExecutor] 执行临时内容 execution_id=%s type=%s", executionID, devType)
-
 	// 构造临时 DevTask
 	tempItem := &models.DevTask{
 		DevType:         devType,
@@ -224,10 +254,36 @@ func (e *DevExecutor) ExecuteContent(
 		ExecutionConfig: models.DevTaskContent(executionConfig),
 	}
 
-	// 异步执行任务
-	go e.executeAsync(execution.ID, executionID, tempItem, int(tenantID))
+	return &preparedContentExecution{
+		execution: execution,
+		devTask:   tempItem,
+		tenantID:  int(tenantID),
+	}, nil
+}
 
-	return executionID, nil
+func (e *DevExecutor) persistPreparedContentExecution(
+	ctx context.Context,
+	repo *commonExecution.TaskExecutionRepository,
+	prepared *preparedContentExecution,
+) error {
+	if err := repo.Create(ctx, prepared.execution); err != nil {
+		return fmt.Errorf("failed to create execution record: %w", err)
+	}
+	return nil
+}
+
+func (e *DevExecutor) startPreparedContentExecution(prepared *preparedContentExecution) {
+	log.Printf(
+		"🚀 [DevExecutor] 执行临时内容 execution_id=%s type=%s",
+		prepared.execution.ExecutionID,
+		prepared.devTask.DevType,
+	)
+	go e.executeAsync(
+		prepared.execution.ID,
+		prepared.execution.ExecutionID,
+		prepared.devTask,
+		prepared.tenantID,
+	)
 }
 
 func (e *DevExecutor) validateWorkflowBeforeExecution(

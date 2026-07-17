@@ -22,6 +22,8 @@
 
 同租户同 `config.source.item_fingerprint` 只保留一个当前任务定义。
 
+启动请求在任务行锁事务内检查同任务是否已有 `pending` 或 `running` execution；存在时返回 HTTP 409。启动成功时原子创建 `pending` execution 并推进任务摘要，后台执行器领取后进入 `running`。CAD 结果、execution 终态和任务摘要使用 `last_execution_id` fencing，并在同一 Infra PostgreSQL 事务提交。
+
 ## 三、config 语义
 
 ```json
@@ -60,6 +62,8 @@ GET  /api/v1/manager/executions/{execution_id}
 ```
 
 当前 `supports_schedule=false`、`supports_cancel=false`。
+
+`POST .../execute` 接受后返回 HTTP 202、`status=pending` 和新 `execution_id`；同任务已有活跃 execution 时返回 HTTP 409。
 
 ## 五、相关文档
 

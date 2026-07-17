@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import uuid
 from unittest.mock import patch
 
 from addp_common import cli
@@ -39,9 +40,11 @@ def test_tool_call_outputs_result_without_adapter_envelope(capsys):
             assert base_url == "http://gateway"
             assert token == "token"
 
-        async def call(self, name, arguments):
+        async def call(self, name, arguments, *, agent_run_id, tool_call_id):
             assert name == "data.search"
             assert arguments == {"query": "roads"}
+            assert uuid.UUID(agent_run_id)
+            assert uuid.UUID(tool_call_id)
             return {"total": 1, "hits": []}
 
     with patch.object(cli, "ToolExecutor", FakeExecutor):

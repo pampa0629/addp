@@ -3,13 +3,12 @@ package repository
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
-	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -122,91 +121,32 @@ func (r *TileCacheRepository) DisableTaskForCleanup(ctx context.Context, tenantI
 		}).Error
 }
 
-func (r *TileCacheRepository) ClaimExecution(ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution) (*models.TileCacheTask, error) {
+func (r *TileCacheRepository) ClaimExecution(ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, confirmExistingResult bool) (*models.TileCacheTask, error) {
 	var task models.TileCacheTask
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND tenant_id = ?", taskID, tenantID).
-			First(&task).Error; err != nil {
-			return err
-		}
-
-		sourceTaskID := commonExecution.NewSourceTaskIDFromUint(taskID)
-		var activeCount int64
-		if err := tx.Model(&commonExecution.TaskExecution{}).
-			Where(
-				"tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status IN ?",
-				int(tenantID), commonExecution.ModuleManager, commonExecution.TaskTypeVectorTileCacheGeneration,
-				*sourceTaskID, []string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning},
-			).
-			Count(&activeCount).Error; err != nil {
-			return err
-		}
-		if activeCount > 0 {
-			return fmt.Errorf("%w: vector tile cache task %d already has an active execution", commonAPI.ErrConflict, taskID)
-		}
-
-		execution.SourceTaskID = sourceTaskID
-		execution.SourceTaskName = &task.Name
-		execution.ExecutionConfig = task.Config.Clone()
-		if execution.ExecutionConfig == nil {
-			execution.ExecutionConfig = map[string]interface{}{}
-		}
-		if err := tx.Create(execution).Error; err != nil {
-			return err
-		}
-		result := tx.Model(&models.TileCacheTask{}).
-			Where("id = ? AND tenant_id = ?", taskID, tenantID).
-			Updates(map[string]interface{}{
-				"last_execution_id": execution.ExecutionID, "last_execution_status": commonExecution.ExecutionStatusPending,
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: vector tile cache task %d cannot record pending execution %s", commonAPI.ErrConflict, taskID, execution.ExecutionID)
-		}
-		task.LastExecutionID = &execution.ExecutionID
-		status := commonExecution.ExecutionStatusPending
-		task.LastExecutionStatus = &status
-		return nil
+	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
+		TaskModel: &task,
+		TaskType:  commonExecution.TaskTypeVectorTileCacheGeneration,
+		TaskLabel: "vector tile cache",
+		TaskName:  func() string { return task.Name },
+		TaskConfig: func() commonModels.JSONMap {
+			return task.Config
+		},
+		CurrentResultModel:    &models.TileCache{},
+		ConfirmExistingResult: confirmExistingResult,
 	})
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("%w: vector tile cache task %d", commonAPI.ErrNotFound, taskID)
+	if err != nil {
+		return nil, err
 	}
-	return &task, err
+	task.LastExecutionID = &execution.ExecutionID
+	status := commonExecution.ExecutionStatusPending
+	task.LastExecutionStatus = &status
+	return &task, nil
 }
 
 func (r *TileCacheRepository) StartExecution(ctx context.Context, taskID, tenantID uint, executionID string, startedAt time.Time) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&commonExecution.TaskExecution{}).
-			Where("execution_id = ? AND tenant_id = ? AND status = ?", executionID, int(tenantID), commonExecution.ExecutionStatusPending).
-			Updates(map[string]interface{}{
-				"status": commonExecution.ExecutionStatusRunning, "started_at": startedAt, "updated_at": startedAt,
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: vector tile cache execution %s is not pending", commonAPI.ErrConflict, executionID)
-		}
-
-		result = tx.Model(&models.TileCacheTask{}).
-			Where(
-				"id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?",
-				taskID, tenantID, executionID, commonExecution.ExecutionStatusPending,
-			).
-			Updates(map[string]interface{}{
-				"last_run_at": startedAt, "last_execution_status": commonExecution.ExecutionStatusRunning,
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: vector tile cache task %d is not pending for execution %s", commonAPI.ErrConflict, taskID, executionID)
-		}
-		return nil
-	})
+	return newTaskExecutionLifecycle(r.db).Start(
+		ctx, taskID, tenantID, executionID, startedAt, &models.TileCacheTask{}, "vector tile cache",
+	)
 }
 
 func (r *TileCacheRepository) CompleteExecution(
@@ -218,46 +158,13 @@ func (r *TileCacheRepository) CompleteExecution(
 	executionFields map[string]interface{},
 	completedAt time.Time,
 ) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if tileCacheID > 0 && len(tileCacheFields) > 0 {
-			result := tx.Model(&models.TileCache{}).
-				Where("id = ? AND tenant_id = ? AND last_execution_id = ?", tileCacheID, tenantID, executionID).
-				Updates(tileCacheFields)
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected != 1 {
-				return fmt.Errorf("%w: vector tile cache result %d is not owned by execution %s", commonAPI.ErrConflict, tileCacheID, executionID)
-			}
-		}
-
-		result := tx.Model(&commonExecution.TaskExecution{}).
-			Where("execution_id = ? AND tenant_id = ? AND status = ?", executionID, int(tenantID), commonExecution.ExecutionStatusRunning).
-			Updates(executionFields)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: vector tile cache execution %s is not running", commonAPI.ErrConflict, executionID)
-		}
-
-		status, _ := executionFields["status"].(string)
-		result = tx.Model(&models.TileCacheTask{}).
-			Where(
-				"id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?",
-				taskID, tenantID, executionID, commonExecution.ExecutionStatusRunning,
-			).
-			Updates(map[string]interface{}{
-				"last_execution_id": executionID, "last_execution_status": status, "updated_at": completedAt,
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: vector tile cache task %d is not running for execution %s", commonAPI.ErrConflict, taskID, executionID)
-		}
-		return nil
-	})
+	return newTaskExecutionLifecycle(r.db).Complete(ctx, taskID, tenantID, executionID, completedAt, taskExecutionCompletionSpec{
+		TaskModel:       &models.TileCacheTask{},
+		ResultModel:     &models.TileCache{},
+		ResultID:        tileCacheID,
+		ResultFields:    tileCacheFields,
+		ExecutionFields: executionFields,
+	}, "vector tile cache")
 }
 
 func (r *TileCacheRepository) ListTileCacheTasksMissingNextRun(ctx context.Context) ([]models.TileCacheTask, error) {

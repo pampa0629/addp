@@ -15,8 +15,9 @@ var commonLocaleFS embed.FS
 
 // 通用消息 key 常量（common 模块使用）
 const (
-	MsgInvalidID    = "err.invalid_id"
-	MsgUnauthorized = "err.unauthorized"
+	MsgInvalidID     = "err.invalid_id"
+	MsgUnauthorized  = "err.unauthorized"
+	MsgForbidden     = "err.forbidden"
 	MsgInvalidParams = "err.invalid_params"
 )
 

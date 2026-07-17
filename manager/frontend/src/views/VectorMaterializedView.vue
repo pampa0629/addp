@@ -311,6 +311,7 @@ import { openMonitorExecution, parseLocatorSafe, ResourceTree } from '@addp/comm
 import client from '@/api/client'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import { quickViewAPI } from '@/api/quickView'
+import { useCurrentResultConfirmation } from '@/composables/useCurrentResultConfirmation'
 import { formatDateTime } from '@/utils/formatters'
 import {
   executionStatusTagType,
@@ -339,6 +340,7 @@ import {
 } from '@/utils/tileCacheResourceTree'
 
 const { t } = useI18n()
+const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
 const route = useRoute()
 const router = useRouter()
 
@@ -726,13 +728,15 @@ const saveTask = async () => {
 const executeTask = async (task) => {
   executingId.value = task.id
   try {
-    const response = await quickViewAPI.executeOptimizationTask(task.id)
+    const response = await executeWithCurrentResultConfirmation(payload => quickViewAPI.executeOptimizationTask(task.id, payload))
     ElMessage.success(t('manager.vectorMaterializedView.executeSubmitted'))
     await loadTasks()
     await openMonitorExecution(response.execution_id)
   } catch (error) {
-    console.error('执行矢量物化视图任务失败:', error)
-    ElMessage.error(errorMessage(error, t('manager.vectorMaterializedView.executeFailed')))
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('执行矢量物化视图任务失败:', error)
+      ElMessage.error(errorMessage(error, t('manager.vectorMaterializedView.executeFailed')))
+    }
   } finally {
     executingId.value = null
   }
@@ -746,13 +750,15 @@ const refreshStaleResult = async (result) => {
   }
   executingResultId.value = result.id
   try {
-    const response = await quickViewAPI.executeOptimizationTask(result.task_id)
+    const response = await executeWithCurrentResultConfirmation(payload => quickViewAPI.executeOptimizationTask(result.task_id, payload))
     ElMessage.success(t('manager.vectorMaterializedView.refreshSubmitted'))
     await Promise.all([loadTasks(), loadResults()])
     await openMonitorExecution(response.execution_id)
   } catch (error) {
-    console.error('重新执行矢量物化视图失败:', error)
-    ElMessage.error(errorMessage(error, t('manager.vectorMaterializedView.executeFailed')))
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('重新执行矢量物化视图失败:', error)
+      ElMessage.error(errorMessage(error, t('manager.vectorMaterializedView.executeFailed')))
+    }
   } finally {
     executingResultId.value = null
   }

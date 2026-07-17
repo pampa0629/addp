@@ -130,13 +130,14 @@ export function useOpenLayersMap(config, options = {}) {
     return { baseLayer, labelLayer }
   }
 
-  const initMap = (container, baseType) => {
-    if (!['tiandituVector', 'tiandituImage'].includes(baseType)) {
+  const initMap = (container, baseType, initOptions = {}) => {
+    const featuresOnly = initOptions.featuresOnly === true
+    if (!featuresOnly && !['tiandituVector', 'tiandituImage'].includes(baseType)) {
       return null
     }
 
     const tdtKey = config.tdtKey || DEFAULT_TDT_KEY
-    if (!tdtKey) {
+    if (!featuresOnly && !tdtKey) {
       ElMessage.warning('未配置天地图 Key，无法加载天地图底图')
       return null
     }
@@ -199,15 +200,18 @@ export function useOpenLayersMap(config, options = {}) {
     }
 
     // 更新底图图层
-    if (currentBaseType !== baseType) {
-      const { baseLayer, labelLayer } = createBaseLayers(baseType, tdtKey)
+    const layerMode = featuresOnly ? 'featuresOnly' : baseType
+    if (currentBaseType !== layerMode) {
+      const { baseLayer, labelLayer } = featuresOnly
+        ? { baseLayer: null, labelLayer: null }
+        : createBaseLayers(baseType, tdtKey)
       const layers = mapInstance.value.getLayers()
       layers.clear()
       if (baseLayer) layers.push(baseLayer)
       if (labelLayer) layers.push(labelLayer)
       if (vectorLayer.value) layers.push(vectorLayer.value)
       if (highlightLayer.value) layers.push(highlightLayer.value)
-      currentBaseType = baseType
+      currentBaseType = layerMode
     } else {
       const layers = mapInstance.value.getLayers()
       if (vectorLayer.value && !layers.getArray().includes(vectorLayer.value)) {

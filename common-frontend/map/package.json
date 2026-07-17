@@ -6,6 +6,7 @@
   "peerDependencies": {
     "@amap/amap-jsapi-loader": "^1.0.1",
     "ol": "^9.2.4",
+    "proj4": "^2.9.0",
     "vue": "^3.4.0"
   }
 }

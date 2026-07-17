@@ -1,0 +1,53 @@
+schema: addp.agent-scenario/v1
+name: rejection-and-forbidden
+category: rejection_forbidden
+skill: workflow-analysis
+prompt: 验证审批拒绝和其他 AgentRun 重放审批时均不能执行工作流。
+expectations:
+  phases:
+    rejected:
+      status: completed
+      required_tools:
+        - workflow.run
+      forbidden_tools: []
+      required_errors:
+        - approval_rejected
+      tool_input_fields:
+        workflow.run:
+          - approval_id
+          - request_fingerprint
+      interactions: []
+      presentations: []
+      result_refs:
+        count: 0
+        kinds: []
+      owner_effects:
+        approvals_created: 0
+        executions_created: 0
+    replay:
+      status: completed
+      required_tools:
+        - workflow.run
+      forbidden_tools: []
+      required_errors:
+        - approval_forbidden
+      tool_input_fields:
+        workflow.run:
+          - approval_id
+          - request_fingerprint
+      interactions: []
+      presentations: []
+      result_refs:
+        count: 0
+        kinds: []
+      owner_effects:
+        approvals_created: 0
+        executions_created: 0
+  different_agent_run:
+    - [rejected, replay]
+  forbidden_persisted_fields:
+    - authorization
+    - token
+    - sample_rows
+    - workflow_definition
+    - engine_specific

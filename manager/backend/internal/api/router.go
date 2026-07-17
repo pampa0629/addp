@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strings"
 	"time"
 
 	commonClient "github.com/addp/common/client"
@@ -82,6 +83,7 @@ func SetupRouter(
 
 	// API 路由组
 	api := router.Group("/api/v1/manager")
+	api.Use(auth.BrowserResourceAccessMiddleware(cfg.SystemServiceURL, redisClient, "manager", isManagerBrowserResourceRequest))
 	// 使用 Redis 缓存中间件 (TTL: 5分钟, 减少 System 调用 90%)
 	if redisClient != nil {
 		api.Use(auth.CachedSystemAuthMiddleware(cfg.SystemServiceURL, redisClient, 5*time.Minute))
@@ -89,6 +91,10 @@ func SetupRouter(
 		// Fallback: 无缓存模式
 		api.Use(auth.SystemAuthMiddleware(cfg.SystemServiceURL))
 	}
+	api.Use(auth.DelegatedAccessPolicy("manager", auth.DelegatedRoutePolicy{
+		"GET /api/v1/manager/search":  {"data.search"},
+		"GET /api/v1/manager/preview": {"data.preview"},
+	}))
 	// 审计日志中间件（记录到 System 模块）
 	if systemClient != nil {
 		api.Use(audit.AuditMiddleware("manager", systemClient))
@@ -335,4 +341,38 @@ func SetupRouter(
 	}
 
 	return router
+}
+
+func isManagerBrowserResourceRequest(c *gin.Context) bool {
+	path := strings.TrimPrefix(c.Request.URL.Path, "/api/v1/manager")
+	if path == "/storage-stream" || path == "/downloads/file" ||
+		path == "/quick-view/flatgeobuf" || path == "/quick-view/geojson" {
+		return true
+	}
+	if strings.HasPrefix(path, "/storage-assets/") {
+		return true
+	}
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	if len(segments) == 3 && segments[0] == "exports" && segments[2] == "file" {
+		return true
+	}
+	if len(segments) >= 4 && segments[0] == "model3d_tiles" && segments[2] == "assets" {
+		return true
+	}
+	if len(segments) == 5 && segments[0] == "raster_mosaic" && segments[1] == "tiles" {
+		return true
+	}
+	if len(segments) == 3 && segments[2] == "content" {
+		switch segments[0] {
+		case "raster_cog", "model_3d_glb", "gaussian_splat_ksplat", "point_cloud_copc":
+			return true
+		}
+	}
+	if len(segments) == 3 && segments[0] == "cad-previews" && segments[2] == "manifest" {
+		return true
+	}
+	if len(segments) == 6 && segments[0] == "cad-previews" && segments[2] == "tiles" {
+		return true
+	}
+	return len(segments) == 5 && segments[0] == "quick-view" && segments[1] == "tiles"
 }

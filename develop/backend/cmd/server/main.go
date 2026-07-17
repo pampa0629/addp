@@ -125,6 +125,7 @@ func main() {
 	// 8. DevExecutor 统一执行器（执行前复用正式工作流校验）
 	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, duckdbService, jupyterService, notebookExecutionService)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
+	toolApprovalService := service.NewToolApprovalService(db, devExecutor)
 
 	cleanupService := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupService.Start(context.Background()); err != nil {
@@ -134,7 +135,8 @@ func main() {
 
 	// ========== Handler 层 ==========
 	devTaskHandler := api.NewDevTaskHandler(devTaskService)
-	executionHandler := api.NewExecutionHandler(devExecutor)
+	executionHandler := api.NewExecutionHandler(devExecutor, toolApprovalService)
+	toolApprovalHandler := api.NewToolApprovalHandler(toolApprovalService)
 	operatorHandler := api.NewOperatorHandler(operatorDiscovery)
 	engineHandler := api.NewEngineHandler(systemClient)
 	queryHandler := api.NewQueryHandler(sqlEngine, duckdbService)
@@ -158,7 +160,7 @@ func main() {
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, jupyterVenvHandler, devTaskService, systemClient, duckdbHandler)
+	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, toolApprovalHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, jupyterVenvHandler, devTaskService, systemClient, duckdbHandler)
 	log.Printf("✅ 路由设置完成")
 
 	serviceHost := utils.GetServiceHost()

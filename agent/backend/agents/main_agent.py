@@ -242,8 +242,10 @@ async def stream_agent_response(
     user_id: int,
     tenant_id: int,
     token: str,
+    agent_run_id: str,
     session_summary: Optional[str] = None,
     checkpoint: Optional[Dict[str, Any]] = None,
+    forced_skill_name: Optional[str] = None,
 ) -> AsyncIterator[AgentEvent]:
     """
     流式输出 Agent 回复。yield (msg_type, content) 元组。
@@ -264,19 +266,26 @@ async def stream_agent_response(
         "user_id": user_id,
         "tenant_id": tenant_id,
         "token": token,
+        "agent_run_id": agent_run_id,
         "messages": messages,
         "session_summary": session_summary,
         "routed_skill": None,
         "direct_reply": None,
     }
 
-    # 路由节点（单次 LLM 调用，上下文感知）
-    state = await _route_node(state)
+    registry = _get_skill_registry()
+    if forced_skill_name:
+        if forced_skill_name not in registry:
+            raise ValueError(f"AgentRun 记录的 Skill 不存在: {forced_skill_name}")
+        state = {**state, "routed_skill": forced_skill_name, "direct_reply": None}
+        logger.info("[ROUTE] resume 使用 AgentRun 已记录 Skill: %s", forced_skill_name)
+    else:
+        # 路由节点（单次 LLM 调用，上下文感知）
+        state = await _route_node(state)
 
     if state["routed_skill"]:
         # 技能执行路径：AgentFactory 动态构建领域 Agent
         skill_name = state["routed_skill"]
-        registry = _get_skill_registry()
         skill_meta = registry[skill_name]
 
         task_context: TaskContext = {
@@ -286,6 +295,7 @@ async def stream_agent_response(
             "user_id": user_id,
             "tenant_id": tenant_id,
             "token": token,
+            "agent_run_id": agent_run_id,
             "checkpoint": checkpoint or {},
         }
 

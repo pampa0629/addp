@@ -24,3 +24,33 @@ other = "Failed to list workflow engines"
 
 [develop.engine.spark_list_failed]
 other = "Failed to list Spark general engine resources"
+
+[develop.approval.invalid_request]
+other = "Invalid approval request"
+
+[develop.approval.invalid_decision]
+other = "Invalid approval decision"
+
+[develop.approval.forbidden]
+other = "Approval access or decision denied"
+
+[develop.approval.not_found]
+other = "Approval not found"
+
+[develop.approval.expired]
+other = "Approval expired"
+
+[develop.approval.not_approved]
+other = "Approval has not been approved"
+
+[develop.approval.rejected]
+other = "Approval rejected"
+
+[develop.approval.already_consumed]
+other = "Approval already consumed"
+
+[develop.approval.request_mismatch]
+other = "Approval request fingerprint mismatch"
+
+[develop.approval.unavailable]
+other = "Approval service unavailable"

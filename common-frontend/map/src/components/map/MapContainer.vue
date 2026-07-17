@@ -10,6 +10,7 @@
       :preserve-view="preserveView"
       :view-state="viewState"
       :popup-options="mapPopupOptions"
+      :features-only="featuresOnly"
       ref="rendererRef"
       @feature-click="handleFeatureClick"
       @view-state-change="handleViewStateChange"
@@ -51,6 +52,10 @@ const props = defineProps({
   popupOptions: {
     type: Object,
     default: () => ({})
+  },
+  featuresOnly: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -84,6 +89,9 @@ const mapPopupOptions = computed(() => ({
 }))
 
 const mapRenderer = computed(() => {
+  if (props.featuresOnly) {
+    return OpenLayersRenderer
+  }
   if (props.baseMapType === GAODE_BASE_MAP_VALUE) {
     return GaodeMapRenderer
   }
@@ -133,6 +141,7 @@ defineExpose({ focusFeature, showPopup, hidePopup, resize })
   border-radius: 6px;
   overflow: hidden;
   position: relative;
+  background: var(--addp-bg-secondary);
 }
 
 .map-placeholder {

@@ -69,7 +69,7 @@ Service 模块是 ADDP 平台的**统一数据服务门户**，负责将平台�
 客户端请求
   ↓
 Gateway (8000)
-  ├─ API Key 验证 / JWT 认证
+  ├─ API Key 验证 / User Access Token + AuthContext
   ├─ 限流控制（Application 级 + 服务级）
   └─ 转发到 Service 模块 (8086)
      ↓
@@ -83,7 +83,7 @@ Service 模块
 
 1. **复用现有鉴权机制**
    - Service 发布的服务通过 Gateway 统一路由（`/api/service/*`、`/ogc/*`）
-   - 复用 Gateway 的 API Key 认证和 JWT 认证
+   - 复用 Gateway 的 API Key 转发和 User Access Token 主路径
    - 统一的认证策略和日志审计
 
 2. **两层限流结合**
@@ -92,7 +92,7 @@ Service 模块
 
 3. **公开服务支持**
    - Gateway 识别公开服务路径（如 `/ogc/wfs/public_*`）
-   - 公开服务不强制 JWT 认证，但仍受限流保护
+   - 公开服务不强制 User Access Token，但仍受限流保护
    - Service 模块验证服务的 `public_access=true` 标志
 
 **实施步骤**
@@ -105,8 +105,8 @@ Service 模块
 
 步骤 2：Gateway 路由规则扩展
   - 新增路由：/ogc/wfs/{service_name}、/ogc/wmts/{service_name}、/ogc/api/{service_name}
-  - 公开服务：不强制 API Key/JWT 认证
-  - 私有服务：需要 API Key 或 JWT 认证
+  - 公开服务：不强制 API Key/User Access Token 认证
+  - 私有服务：需要 API Key 或 User Access Token
 
 步骤 3：服务级限流配置
   - System 模块的 internal_services 表增加字段：rate_limit_per_minute、rate_limit_per_hour
@@ -152,7 +152,7 @@ Service 模块 (8086)
 **核心特性**
 
 1. **独立鉴权实现**
-   - Service 模块自行验证 JWT token 或 API Key
+   - Service 模块通过 System AuthContext 验证 User Access Token，或按应用身份验证 API Key
    - 从 System 模块获取用户信息和权限
    - 独立的限流逻辑（基于 Redis）
 

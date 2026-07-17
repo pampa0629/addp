@@ -1,5 +1,10 @@
 {
   "manager": {
+    "common": {
+      "currentResultOverwriteTitle": "Confirm Current Result Overwrite",
+      "currentResultOverwriteConfirm": "A current result already exists. Continuing will overwrite its record and Manager-managed physical artifact. Continue?",
+      "currentResultOverwriteButton": "Overwrite"
+    },
     "quickViewDisplay": {
       "unknownEngine": "Unknown engine"
     },
@@ -594,6 +599,7 @@
       "generate": "Generate",
       "executeSubmitted": "Tile quick view generation submitted",
       "executeFailed": "Failed to execute tile quick view generation",
+      "cancel": "Cancel",
       "preview": "Preview",
       "monitor": "Monitor",
       "size": "Size",

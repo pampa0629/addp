@@ -1,0 +1,32 @@
+schema: addp.agent-scenario/v1
+name: read-only-query
+category: read_only_query
+skill: workflow-analysis
+prompt: 查找铁路数据并返回可用数据项摘要，不执行任何写操作。
+expectations:
+  phases:
+    query:
+      status: completed
+      required_tools:
+        - data.search
+        - data.preview
+      forbidden_tools:
+        - workflow.run
+      required_errors: []
+      allowed_tool_risks:
+        - read
+      interactions: []
+      presentations:
+        - TablePreview
+      result_refs:
+        count: 0
+        kinds: []
+      owner_effects:
+        approvals_created: 0
+        executions_created: 0
+  forbidden_persisted_fields:
+    - authorization
+    - token
+    - sample_rows
+    - workflow_definition
+    - engine_specific

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
 )
@@ -27,6 +29,22 @@ func (r *RasterCOGRepository) GetTask(ctx context.Context, id uint, tenantID uin
 	var task models.RasterCOGTask
 	err := r.db.WithContext(ctx).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
+		First(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &task, err
+}
+
+func (r *RasterCOGRepository) GetTaskByItemFingerprint(ctx context.Context, tenantID uint, itemFingerprint string) (*models.RasterCOGTask, error) {
+	itemFingerprint = strings.TrimSpace(itemFingerprint)
+	if itemFingerprint == "" {
+		return nil, nil
+	}
+	var task models.RasterCOGTask
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND config->'target'->>'item_fingerprint' = ?", tenantID, itemFingerprint).
+		Order("updated_at DESC, id DESC").
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -64,15 +82,54 @@ func (r *RasterCOGRepository) DeleteTask(ctx context.Context, id uint, tenantID 
 		Delete(&models.RasterCOGTask{}).Error
 }
 
-func (r *RasterCOGRepository) UpdateTaskLastExecution(ctx context.Context, id uint, tenantID uint, executionID, status string, runAt time.Time) error {
-	return r.db.WithContext(ctx).
-		Model(&models.RasterCOGTask{}).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Updates(map[string]interface{}{
-			"last_execution_id":     executionID,
-			"last_execution_status": status,
-			"last_run_at":           runAt,
-		}).Error
+func (r *RasterCOGRepository) ClaimExecution(
+	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, confirmExistingResult bool,
+) (*models.RasterCOGTask, error) {
+	var task models.RasterCOGTask
+	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
+		TaskModel: &task,
+		TaskType:  commonExecution.TaskTypeRasterCOGGeneration,
+		TaskLabel: "raster COG",
+		TaskName:  func() string { return task.Name },
+		TaskConfig: func() commonModels.JSONMap {
+			return task.Config
+		},
+		CurrentResultModel:    &models.RasterCOG{},
+		ConfirmExistingResult: confirmExistingResult,
+	})
+	if err != nil {
+		return nil, err
+	}
+	task.LastExecutionID = &execution.ExecutionID
+	status := commonExecution.ExecutionStatusPending
+	task.LastExecutionStatus = &status
+	return &task, nil
+}
+
+func (r *RasterCOGRepository) StartExecution(
+	ctx context.Context, taskID, tenantID uint, executionID string, startedAt time.Time,
+) error {
+	return newTaskExecutionLifecycle(r.db).Start(
+		ctx, taskID, tenantID, executionID, startedAt, &models.RasterCOGTask{}, "raster COG",
+	)
+}
+
+func (r *RasterCOGRepository) CompleteExecution(
+	ctx context.Context,
+	taskID, tenantID uint,
+	executionID string,
+	resultID uint,
+	resultFields map[string]interface{},
+	executionFields map[string]interface{},
+	completedAt time.Time,
+) error {
+	return newTaskExecutionLifecycle(r.db).Complete(ctx, taskID, tenantID, executionID, completedAt, taskExecutionCompletionSpec{
+		TaskModel:       &models.RasterCOGTask{},
+		ResultModel:     &models.RasterCOG{},
+		ResultID:        resultID,
+		ResultFields:    resultFields,
+		ExecutionFields: executionFields,
+	}, "raster COG")
 }
 
 func (r *RasterCOGRepository) Create(ctx context.Context, result *models.RasterCOG) error {

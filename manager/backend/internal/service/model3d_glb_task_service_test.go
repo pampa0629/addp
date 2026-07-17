@@ -186,7 +186,7 @@ func TestModel3DGLBTaskRejectsUnsupportedSource(t *testing.T) {
 
 func TestModel3DGLBTaskCreateReusesExistingFingerprintTask(t *testing.T) {
 	db := newModel3DGLBTaskServiceTestDB(t)
-	taskSvc := NewModel3DGLBTaskService(repository.NewModel3DGLBRepository(db), nil)
+	taskSvc := NewModel3DGLBTaskService(repository.NewModel3DGLBRepository(db))
 
 	first := &models.Model3DGLBTask{
 		TenantID: 7,

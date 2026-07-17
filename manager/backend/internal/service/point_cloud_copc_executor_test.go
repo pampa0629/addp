@@ -289,7 +289,7 @@ func TestPointCloudCOPCTaskExecutionMarksResultReady(t *testing.T) {
 	db := newPointCloudCOPCTaskServiceTestDB(t)
 	copcRepo := repository.NewPointCloudCOPCRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
-	taskSvc := NewPointCloudCOPCTaskService(copcRepo, taskExecRepo)
+	taskSvc := NewPointCloudCOPCTaskService(copcRepo)
 	taskSvc.SetBucket("manager")
 	taskSvc.SetExecutor(staticPointCloudCOPCExecutor{result: &PointCloudCOPCExecutionResult{
 		StorageRef: `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/point-cloud-copc/fp/source.copc.laz"}`,
@@ -327,7 +327,7 @@ func TestPointCloudCOPCTaskExecutionMarksResultReady(t *testing.T) {
 	if err := taskSvc.Create(context.Background(), task); err != nil {
 		t.Fatalf("create point cloud COPC generation task: %v", err)
 	}
-	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, false)
 	if err != nil {
 		t.Fatalf("execute point cloud COPC generation task: %v", err)
 	}
@@ -368,7 +368,7 @@ func TestPointCloudCOPCTaskExecutionMarksResultReady(t *testing.T) {
 func TestPointCloudCOPCRecordProgressEventUpdatesExecution(t *testing.T) {
 	db := newPointCloudCOPCTaskServiceTestDB(t)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
-	taskSvc := NewPointCloudCOPCTaskService(repository.NewPointCloudCOPCRepository(db), taskExecRepo)
+	taskSvc := NewPointCloudCOPCTaskService(repository.NewPointCloudCOPCRepository(db))
 	startedAt := time.Now().Add(-2 * time.Second)
 	if err := taskExecRepo.Create(context.Background(), &commonExecution.TaskExecution{
 		TenantID:    7,
@@ -415,7 +415,7 @@ func TestPointCloudCOPCRecordProgressEventUpdatesExecution(t *testing.T) {
 func TestPointCloudCOPCRecordProgressEventRejectsWrongExecution(t *testing.T) {
 	db := newPointCloudCOPCTaskServiceTestDB(t)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
-	taskSvc := NewPointCloudCOPCTaskService(repository.NewPointCloudCOPCRepository(db), taskExecRepo)
+	taskSvc := NewPointCloudCOPCTaskService(repository.NewPointCloudCOPCRepository(db))
 	if err := taskExecRepo.Create(context.Background(), &commonExecution.TaskExecution{
 		TenantID:    7,
 		ExecutionID: "point-cloud-progress-wrong",
@@ -433,6 +433,30 @@ func TestPointCloudCOPCRecordProgressEventRejectsWrongExecution(t *testing.T) {
 	})
 	if !errors.Is(err, ErrPointCloudCOPCProgressTargetMismatch) {
 		t.Fatalf("RecordProgressEvent error = %v, want ErrPointCloudCOPCProgressTargetMismatch", err)
+	}
+}
+
+func TestPointCloudCOPCRecordProgressEventRejectsPendingExecution(t *testing.T) {
+	db := newPointCloudCOPCTaskServiceTestDB(t)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewPointCloudCOPCTaskService(repository.NewPointCloudCOPCRepository(db))
+	if err := taskExecRepo.Create(context.Background(), &commonExecution.TaskExecution{
+		TenantID:    7,
+		ExecutionID: "point-cloud-progress-pending",
+		Module:      commonExecution.ModuleManager,
+		TaskType:    commonExecution.TaskTypePointCloudCOPCGeneration,
+		Source:      commonExecution.ModuleManager,
+		Status:      commonExecution.ExecutionStatusPending,
+		TriggerType: commonExecution.TriggerTypeManual,
+	}); err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	err := taskSvc.RecordProgressEvent(context.Background(), 7, "point-cloud-progress-pending", PointCloudCOPCProgressEvent{
+		Phase: "convert",
+		Event: "progress",
+	})
+	if !errors.Is(err, ErrPointCloudCOPCExecutionNotRunning) {
+		t.Fatalf("RecordProgressEvent error = %v, want ErrPointCloudCOPCExecutionNotRunning", err)
 	}
 }
 
@@ -652,7 +676,7 @@ func waitForPointCloudCOPCTaskExecution(t *testing.T, repo *commonExecution.Task
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		exec, err := repo.GetByExecutionID(context.Background(), executionID, tenantID)
-		if err == nil && exec.Status != commonExecution.ExecutionStatusRunning {
+		if err == nil && exec.IsCompleted() {
 			return exec
 		}
 		time.Sleep(10 * time.Millisecond)

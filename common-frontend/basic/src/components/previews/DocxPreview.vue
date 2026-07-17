@@ -122,6 +122,7 @@
 </template>
 
 <script setup>
+import { getAccessToken } from '../../auth/authSession'
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading, WarningFilled, Document, Download, RefreshRight } from '@element-plus/icons-vue'
@@ -379,7 +380,7 @@ const decodeBase64ToBytes = (base64) => {
 const fetchDocumentBytesFromUrl = async (url) => {
   try {
     const headers = {}
-    const token = localStorage.getItem('token')
+    const token = getAccessToken()
     if (token) {
       headers.Authorization = `Bearer ${token}`
     }

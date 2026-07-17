@@ -94,6 +94,7 @@
 | parent execution id | 父执行 ID | 当前 execution 的父级 execution UUID。 | 用于 Orchestrator 子步骤追踪父编排。 |
 | ad-hoc execution | 一次性执行 | 不依赖持久任务定义、直接按本次配置创建的 execution。 | 可以没有 `source_task_id`，但必须在 `execution_config` 保存完整执行配置。 |
 | artifact state | 产物状态 | 描述派生产物当前是否可用、在哪里、由什么配置生成的状态对象。 | 例如瓦片缓存产物、embedding vectors；不是 execution。 |
+| current result overwrite confirmation | 当前结果覆盖确认 | owner 模块在重复执行将刷新自己拥有生命周期的当前结果前，要求调用方对本次覆盖进行显式授权。 | 请求参数为 `parameters.confirm_existing_result=true`；只授权本次 execution，不改写任务定义。没有当前结果时不要求确认；业务派生数据不适用。 |
 | quick view task | 快显任务 | 为源 data item 生成 Manager 受管快显结果的任务定义。 | 任务归 Manager 私有表；重型转换由对应 Workflow Runtime direct 算子执行。 |
 | quick view result | 快显结果 | Manager 为提升交互预览效率而生成并维护生命周期的 infra artifact。 | 不是业务 data item，不进入 Meta；同一源 item 可以按目标格式关联多个独立结果。 |
 | derived data | 派生数据 | 通过计算或转换从源 data item 生成、写入业务存储并形成独立 Meta item 的数据。 | Develop 工作流输出属于派生数据；Manager infra 快显结果不属于派生 data item。 |
@@ -157,6 +158,7 @@
 | AgentCheckpoint | 智能体检查点 | AgentRun 在可恢复边界保存的语义状态快照。 | 只保存 owner Tool 已观察事实、用户已确认选择、待处理 Interaction 和恢复所需控制状态；不保存模型隐藏推理、完整大结果或框架私有内存对象。 |
 | AgentRunStep | 智能体运行步骤 | AgentRun 中一次可审计的 Tool 调用或 Runtime 控制动作记录。 | 保存稳定 Tool 名称、输入、状态、受限输出摘要、事实投影和时间；不是 owner 模块 execution step。 |
 | AgentRunEvent | 智能体运行事件 | AgentRun 向客户端输出的、可按序重放的安全协议事件记录。 | 以 run 内单调 sequence 排序；仅保存文本、状态、Tool 进度和 Presentation 等可重建投影，不保存 Tool 原始参数、原始结果、模型隐藏推理或框架私有状态。 |
+| Agent Evaluation Scenario | 智能体评测场景 | 以版本化输入、运行轨迹和结构化断言验证 Agent Runtime 行为的可重复评测契约。 | 黄金场景位于 `evals/agent-scenarios/`；断言 Skill、Tool、Interaction、稳定错误、AgentRun/owner 副作用和数据安全边界，不按自然语言逐字匹配。 |
 | ADDP Skill | ADDP 技能 | 面向一类可复用任务的知识与工作方法包，包含触发条件、步骤、反模式和所需 Tool。 | 不绑定单次业务案例、固定数据集或固定参数；`workflow-analysis` 是 Skill，铁路占耕地面积计算是评测场景。 |
 | ADDP Tool | ADDP 工具 | 面向智能体暴露的稳定、受控操作能力。 | Tool 是 AI 能力契约，不等同于任意 HTTP endpoint；业务执行仍归 owner 模块正式 API。 |
 | Tool Manifest | 工具清单 | 声明 ADDP Tool 名称、版本、输入输出 Schema、owner、权限、风险、错误和审计约束的机器可读契约。 | 是 AI Tool 契约事实源；不替代 Swagger，也不自动开放全部 API。 |
@@ -177,6 +179,8 @@
 | OAuth Scope | OAuth 授权范围 | 一枚访问令牌被允许执行的最大能力集合。 | 只能缩小权限，不取代 `user_type`、租户隔离、owner 资源权限或审批。 |
 | User Access Token | 用户访问令牌 | 以当前 ADDP 用户为主体、用于访问业务 API 的短期 Bearer Token。 | 通过 AuthContext 解析；不将客户端参数视为用户或租户事实。 |
 | Refresh Token Family | 刷新令牌族 | 一次用户授权会话中经轮换先后产生的 Refresh Token 链。 | 旧 Refresh Token 重复使用视为泄露信号，必须撤销整个 family。 |
+| Browser AuthSession | 浏览器认证会话 | 浏览器顶层页面持有的前端会话协调器，负责以内存保存 Access Token、通过 HttpOnly Refresh Cookie 静默恢复、跨标签页互斥刷新和 iframe Token 投递。 | Console 模式由 Console 持有；模块独立运行时由模块顶层页面持有。不得把 Access Token 持久化到浏览器存储。 |
+| Browser Resource Access Ticket | 浏览器资源访问票据 | System 基于当前第一方浏览器会话签发、供原生图片、媒体、下载和三维资源请求使用的短期 opaque 凭据。 | 只保存 SHA-256 Hash，通过 HttpOnly、Owner Path 限定 Cookie 传输；只允许对应 Owner 明确声明的 GET/HEAD 资源路由消费，不进入 URL。 |
 | Delegated Access Token | 受委托访问令牌 | System 为 Agent 代表当前用户调用特定 owner 能力签发的短期、限 audience 和 Scope 令牌。 | 不改变原用户和租户；可绑定 AgentRun / ToolCall 用于审计。 |
 
 ## Cleanup 与生命周期

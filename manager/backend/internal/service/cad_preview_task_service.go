@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
+	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	rastercogref "github.com/addp/manager/internal/cog"
@@ -64,15 +66,14 @@ type CADPreviewOptions struct{ TileSize, MaxZoom int }
 const maxCADPreviewTileCount int64 = 25000
 
 type CADPreviewTaskService struct {
-	repo         *repository.CADPreviewRepository
-	taskExecRepo *commonExecution.TaskExecutionRepository
-	executor     CADPreviewExecutor
-	cleaner      CADPreviewCleaner
-	bucket       string
+	repo     *repository.CADPreviewRepository
+	executor CADPreviewExecutor
+	cleaner  CADPreviewCleaner
+	bucket   string
 }
 
-func NewCADPreviewTaskService(repo *repository.CADPreviewRepository, taskExecRepo *commonExecution.TaskExecutionRepository) *CADPreviewTaskService {
-	return &CADPreviewTaskService{repo: repo, taskExecRepo: taskExecRepo}
+func NewCADPreviewTaskService(repo *repository.CADPreviewRepository) *CADPreviewTaskService {
+	return &CADPreviewTaskService{repo: repo}
 }
 
 func (s *CADPreviewTaskService) SetExecutor(v CADPreviewExecutor) { s.executor = v }
@@ -141,16 +142,13 @@ func (s *CADPreviewTaskService) DeleteResult(ctx context.Context, id, tenantID u
 	return s.repo.Delete(ctx, id, tenantID)
 }
 
-func (s *CADPreviewTaskService) Execute(ctx context.Context, taskID, tenantID uint, triggerType, source string, parentExecutionID *string) (string, error) {
+func (s *CADPreviewTaskService) Execute(ctx context.Context, taskID, tenantID uint, triggerType, source string, parentExecutionID *string, confirmExistingResult bool) (string, error) {
 	task, err := s.repo.GetTask(ctx, taskID, tenantID)
 	if err != nil {
 		return "", err
 	}
 	if task == nil {
 		return "", ErrTaskNotFound
-	}
-	if s.taskExecRepo == nil {
-		return "", errors.New("task execution repository is required")
 	}
 	triggerType, err = commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
@@ -163,24 +161,36 @@ func (s *CADPreviewTaskService) Execute(ctx context.Context, taskID, tenantID ui
 	exec := &commonExecution.TaskExecution{
 		ExecutionID: executionID, TenantID: int(tenantID), Module: commonExecution.ModuleManager,
 		TaskType: commonExecution.TaskTypeCADPreviewGeneration, Source: source,
-		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(taskID), SourceTaskName: &task.Name,
-		ParentExecutionID: parentExecutionID, Status: commonExecution.ExecutionStatusRunning,
-		Progress: 0, CurrentStep: &step, TriggerType: triggerType, ExecutionConfig: task.Config.Clone(), StartedAt: &now,
+		ParentExecutionID: parentExecutionID, Status: commonExecution.ExecutionStatusPending,
+		Progress: 0, CurrentStep: &step, TriggerType: triggerType, CreatedAt: now, UpdatedAt: now,
 	}
-	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
+	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec, confirmExistingResult)
+	if err != nil {
+		if errors.Is(err, repository.ErrExistingResultConfirmationRequired) {
+			return "", ErrExistingResultConfirmationRequired
+		}
+		if errors.Is(err, commonAPI.ErrNotFound) {
+			return "", ErrTaskNotFound
+		}
+		if errors.Is(err, commonAPI.ErrConflict) {
+			return "", ErrTaskExecutionBusy
+		}
 		return "", err
 	}
-	if err := s.repo.UpdateTaskLastExecution(ctx, taskID, tenantID, executionID, commonExecution.ExecutionStatusRunning, now); err != nil {
-		return "", err
-	}
-	go s.run(context.Background(), task, executionID, now)
+	go s.run(context.Background(), claimedTask, executionID)
 	return executionID, nil
 }
 
-func (s *CADPreviewTaskService) run(ctx context.Context, task *models.CADPreviewTask, executionID string, startedAt time.Time) {
-	status, progress := commonExecution.ExecutionStatusSuccess, 100
+func (s *CADPreviewTaskService) run(ctx context.Context, task *models.CADPreviewTask, executionID string) {
+	startedAt := time.Now()
+	if err := s.repo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
+		logger.L().Warn("领取 CAD 预览 execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
+		return
+	}
+	status := commonExecution.ExecutionStatusSuccess
 	metadata := commonModels.JSONMap{}
 	var errorDetails commonModels.JSONMap
+	var resultFields map[string]interface{}
 	result, cfg, err := s.prepareResult(ctx, task, executionID)
 	var built *CADPreviewExecutionResult
 	if err == nil {
@@ -190,36 +200,43 @@ func (s *CADPreviewTaskService) run(ctx context.Context, task *models.CADPreview
 			built, err = s.executor.BuildCADPreview(ctx, CADPreviewExecutionRequest{Task: task, ExecutionID: executionID, Config: cfg})
 		}
 	}
+	if err == nil && built == nil {
+		err = errors.New("CAD preview generation executor returned no result")
+	}
 	if err != nil {
-		status, progress = commonExecution.ExecutionStatusFailed, 0
+		status = commonExecution.ExecutionStatusFailed
 		errorDetails, metadata = commonModels.JSONMap{"message": err.Error()}, commonModels.JSONMap{"error": err.Error()}
 		if result != nil {
-			_ = s.repo.UpdateFields(ctx, result.ID, task.TenantID, map[string]interface{}{"status": models.CADPreviewStatusFailed, "error_message": err.Error()})
+			resultFields = map[string]interface{}{"status": models.CADPreviewStatusFailed, "error_message": err.Error(), "last_execution_id": executionID}
 		}
 	} else if result != nil {
-		fields := map[string]interface{}{
+		resultFields = map[string]interface{}{
 			"status": models.CADPreviewStatusReady, "error_message": "", "last_execution_id": executionID,
 			"storage_ref": built.StorageRef, "manifest_ref": built.ManifestRef, "thumbnail_ref": built.ThumbnailRef,
 			"tile_count": built.TileCount, "tile_size": built.TileSize, "min_zoom": built.MinZoom, "max_zoom": built.MaxZoom,
 			"bounds": built.Bounds, "metadata": built.Metadata,
 		}
-		if err = s.repo.UpdateFields(ctx, result.ID, task.TenantID, fields); err != nil {
-			status, progress = commonExecution.ExecutionStatusFailed, 0
-			errorDetails = commonModels.JSONMap{"message": err.Error()}
-		} else {
-			metadata = built.Metadata.Clone()
-			if metadata == nil {
-				metadata = commonModels.JSONMap{}
-			}
-			metadata["result_id"], metadata["manifest_url"] = result.ID, cadPreviewManifestURL(result.ID)
+		metadata = built.Metadata.Clone()
+		if metadata == nil {
+			metadata = commonModels.JSONMap{}
 		}
+		metadata["result_id"], metadata["manifest_url"] = result.ID, cadPreviewManifestURL(result.ID)
 	}
 	completedAt := time.Now()
-	_ = s.taskExecRepo.UpdateFields(ctx, executionID, int(task.TenantID), map[string]interface{}{
+	progress := 100
+	if status != commonExecution.ExecutionStatusSuccess {
+		progress = 0
+	}
+	resultID := uint(0)
+	if result != nil {
+		resultID = result.ID
+	}
+	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, resultID, resultFields, map[string]interface{}{
 		"status": status, "progress": progress, "metadata": metadata, "error_details": errorDetails,
 		"completed_at": completedAt, "execution_time_ms": completedAt.Sub(startedAt).Milliseconds(), "updated_at": completedAt,
-	})
-	_ = s.repo.UpdateTaskLastExecution(ctx, task.ID, task.TenantID, executionID, status, completedAt)
+	}, completedAt); err != nil {
+		logger.L().Warn("提交 CAD 预览 execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
+	}
 }
 
 func (s *CADPreviewTaskService) prepareResult(ctx context.Context, task *models.CADPreviewTask, executionID string) (*models.CADPreview, CADPreviewExecutionConfig, error) {

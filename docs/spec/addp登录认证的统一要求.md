@@ -1,328 +1,190 @@
-
 # ADDP 登录认证的统一要求
 
-## 认证事实与授权上下文
+更新日期：2026-07-17
+
+## 一、认证事实与唯一主路径
 
 - `system.users` 和 `system.tenants` 是用户、租户和账号状态的唯一事实源。
-- 所有用户 Bearer Token 由 System 解析为 AuthContext；业务模块不自行解析 JWT / OAuth 令牌。
-- `GET /api/v1/system/auth/context` 是 Token 到权威用户/租户授权上下文的唯一接口。
-- `GET /api/v1/system/users/me` 只返回当前用户资料，不作为跨模块 Token 验证接口。
-- 具体字段、租户校验、Scope、缓存和 OAuth 目标见 `docs/spec/addp授权上下文规范.md`。
+- System 只签发随机 opaque 用户访问令牌，不签发或解析用户 JWT。
+- `GET /api/v1/system/auth/context` 是用户访问令牌到权威 AuthContext 的唯一接口。
+- 业务模块不解析令牌，不从 `/users/me` 推断身份，只消费 AuthContext。
+- Web、CLI 和外部 Agent 的令牌模型见 `docs/spec/addp OAuth授权规范.md`。
 
-## 两种访问模式
+浏览器请求的唯一认证主线为：
 
-1. **统一 Console 模式** (推荐给用户):
-
-   - 单一入口: http://localhost:5170 (dev) 或 http://localhost:8000 (prod)
-   - 集成导航,包含所有模块
-   - 模块前端在 console 的 iframe 中加载
-   - 一次登录访问所有模块
-2. **独立模块模式** (用于独立部署):
-
-   - 直接访问每个模块前端
-   - System: http://localhost:5173, Manager: http://localhost:5174
-   - 每个模块有自己的登录
-   - 适合独立部署单个模块
-
-**前端关键原则**:
-
-- Console 提供统一的用户体验和一致的导航
-- 模块前端保持独立,可以独立部署
-- 所有前端共享 JWT 认证模式 (token 存储在 localStorage)
-- Console 和模块可以独立认证
-- 在生产环境,所有请求通过 Gateway (8000) 路由
-
-### 认证流程
-
-1. 用户提交凭据到 `POST /api/v1/system/login`
-2. 后端使用 bcrypt 验证，返回短期 opaque Access Token，并设置 HttpOnly Refresh Token Cookie
-3. 前端将 token 存储在 localStorage (`auth.js` Pinia store)
-4. Axios 拦截器 (`api/client.js`) 在所有请求中添加 `Authorization: Bearer <token>`
-5. System `AuthMiddleware` 验证 JWT、回查当前用户和租户，生成 AuthContext
-6. 业务模块公共中间件调用 `/api/v1/system/auth/context`，将 AuthContext 注入请求上下文
-7. 受保护路由通过共享 helper 读取 `user_id`、`tenant_id`、`user_type`、Scope 等字段
-
-### 前端认证标准规范
-
-**重要**: 所有模块前端必须遵循以下标准化认证模式,确保一致性并避免常见错误。
-
-#### 0. 目录结构规范
-
-**所有模块必须使用统一的目录结构**（使用单数 `store/`，不是 `stores/`）:
-
-```
-{module}/frontend/src/
-├── api/
-│   ├── auth.js       # 认证 API（使用独立 systemClient）
-│   └── client.js     # 业务 API 客户端
-├── store/            # ✅ 使用单数 store（不是 stores/）
-│   └── auth.js       # 认证 Store
-└── router/
-    └── index.js      # 路由配置 + 认证守卫
+```text
+HttpOnly Refresh Token Cookie
+  -> Browser AuthSession 静默恢复或轮换
+  -> 内存 User Access Token
+  -> Authorization: Bearer <access_token>
+  -> System AuthContext
+  -> owner 模块权限校验
 ```
 
-- ❌ 错误：`src/stores/auth.js`
-- ✅ 正确：`src/store/auth.js`
+禁止保留 JWT、本地持久化 Access Token或 URL query Token 等平行路径。
 
-#### 1. 认证 API (`api/auth.js`)
+## 二、浏览器令牌存储
 
-**所有模块必须使用独立的 System 客户端进行认证**,而不是模块自己的 API 客户端:
+### 2.1 Refresh Token
 
-```javascript
-import axios from 'axios'
-import { createAuthAPI } from '@common-ui'
+Web Refresh Token 只能存放在 System 设置的 HttpOnly Cookie 中：
 
-// ✅ 正确: 创建专用的 System 客户端用于认证
-const systemClient = axios.create({
-  baseURL: import.meta.env.DEV ? 'http://localhost:8180/api/v1/system' : '/api/v1/system',
-  timeout: 10000
-})
+- JavaScript 不可读取；
+- `SameSite=Lax`；
+- Path 为 `/api/v1/system`；
+- 生产环境 `Secure=true`；
+- 每次刷新都轮换；
+- 重用旧 Refresh Token 时撤销整个 Refresh Token Family。
 
-// 基础模块 (Meta, Transfer, Orchestrator, Develop)
-export const authAPI = createAuthAPI(systemClient)
+### 2.2 Access Token
 
-// 带注册功能的模块 (Manager, System, Console)
-export const authAPI = createAuthAPI(systemClient, {
-  includeRegister: true
-})
+Access Token 只能保存在当前 JavaScript 运行时内存中：
+
+- 不写入 `localStorage`、`sessionStorage`、IndexedDB 或持久化 Pinia 插件；
+- 不进入 iframe URL、下载 URL、浏览器历史、Referrer 或日志；
+- 页面刷新或新开标签页后，通过 Browser AuthSession 静默恢复；
+- 用户资料可以按现有规则缓存，但缓存资料不代表已认证状态。
+
+### 2.3 Browser Resource Access Ticket
+
+无法设置 Authorization Header 的原生图片、媒体、下载和三维资源请求统一使用 Browser Resource Access Ticket：
+
+- System 在第一方 Web 登录和 Refresh Token 轮换事务中签发；
+- 使用 `addp_rat_` 前缀的随机 opaque 值，数据库只保存 SHA-256 Hash；
+- 与当前 Refresh Token Family 关联，退出、Family 撤销或旧 Refresh Token 重用时同步撤销；
+- 有效期不超过当前 User Access Token，默认 15 分钟；
+- 通过 `addp_resource_access_ticket` HttpOnly Cookie 传输，不返回给 JavaScript；
+- 每个 Owner 使用独立 Path，例如 Manager 为 `/api/v1/manager`、Standard 为 `/api/v1/standard`；
+- Owner 只允许明确声明的 GET/HEAD 资源路由消费，普通业务 API 不接受该票据；
+- 不进入 URL、浏览器历史、Referrer、日志或前端持久化存储。
+
+## 三、Browser AuthSession
+
+`common-frontend` 提供唯一 Browser AuthSession 实现。Console 和所有模块前端必须通过共享能力完成：
+
+1. 应用启动时恢复现有 Cookie 会话；
+2. 将 Access Token 仅保存在内存；
+3. 根据 `expires_in` 在到期前主动刷新；
+4. 401 时只执行一次兜底刷新和请求重试；
+5. 多个并发请求共享同一个刷新 Promise；
+6. 同 origin 多标签页只允许一个刷新请求；
+7. 广播 Token 更新、会话失效和退出事件；
+8. Refresh 失败时区分无会话、网络故障和服务不可用，不因瞬时网络错误直接清除会话。
+
+顶层页面通过 HttpOnly Cookie 调用：
+
+```text
+POST /api/v1/system/refresh
+credentials: include
 ```
 
-**为什么需要独立客户端?**
-- 认证请求必须发送到 System 后端 (端口 8180)
-- 模块自己的 `client` 指向自己的后端 (例如 Meta → 8082)
-- 混用会导致登录时出现 404 错误
+生产环境必须经当前 origin 的 Gateway 路径访问，不直接拼接 System `8180` 端口。
 
-**常见错误避免:**
-- ❌ `import client from './client'` - 错误! 这指向模块后端
-- ❌ 使用模块的 client 进行认证 - 登录会 404 失败
-- ✅ 始终创建独立的 `systemClient` 用于认证
+## 四、多标签页协调
 
-#### 2. API 客户端 (`api/client.js`)
+Refresh Token Family 采用严格轮换。两个标签页同时提交同一旧 Refresh Token 会触发重用检测，因此跨标签页刷新互斥是安全要求，不是可选优化。
 
-**所有模块必须使用 `createAPIClient()` 工厂函数** 以获得一致的拦截器和错误处理:
+同 origin 页面统一使用：
 
-```javascript
-import { createAPIClient } from '@common-ui'
-import { useAuthStore } from '../store/auth'
+- Web Locks API：锁名固定为 `addp-auth-refresh`，保证单一刷新者；
+- BroadcastChannel：频道固定为 `addp-auth-session`，广播 Access Token、过期时间、退出和失效事件；
+- 不支持 Web Locks 时，在 BroadcastChannel 上使用带租约和超时的刷新主节点协议。
 
-// 标准配置 (Meta, Transfer, Orchestrator, Service, Monitor)
-const client = createAPIClient(() => useAuthStore(), {
-  moduleName: 'Meta'
-})
+收到其他标签页的新 Access Token 后，本标签页只更新内存状态，不再次调用 Refresh API。
 
-// 自定义超时 (Develop - SQL 查询需要 5 分钟)
-const client = createAPIClient(() => useAuthStore(), {
-  moduleName: 'Develop',
-  timeout: 300000
-})
+用户主动退出时，当前页面调用 System `/logout`，随后广播退出事件。其他标签页必须立即清空内存状态并进入登录页。
 
-// 自定义超时 (Manager - 瓦片缓存生成任务需要查询大表)
-const client = createAPIClient(() => useAuthStore(), {
-  moduleName: 'Manager',
-  timeout: 60000
-})
+## 五、Console 与 iframe
 
-export default client
+Console 是 iframe 模式下唯一的浏览器会话协调者。
+
+```text
+Console Browser AuthSession
+  -> iframe 加载，不携带 Token
+  -> iframe 发送 addp-auth-ready
+  -> Console 校验 event.origin 和 event.source
+  -> Console 发送 addp-auth-token
+  -> iframe 只在内存中保存 Token
 ```
 
-**`createAPIClient()` 提供的功能:**
-- 通过请求拦截器自动注入 JWT token
-- 401 错误时自动刷新 token
-- 自动提取 `response.data`
-- 所有模块的错误处理一致
-- 开发/生产环境自动处理
+约束：
 
-**常见错误避免:**
-- ❌ 手动创建 axios 实例并自定义拦截器
-- ❌ 在各模块中重复拦截器逻辑
-- ❌ 忘记提取 `response.data`
-- ❌ 添加 iframe 检测逻辑修改 baseURL（不需要，iframe 内相对路径相对于 iframe 的 origin）
-- ✅ 始终使用 `createAPIClient()` 工厂函数
+- 开发环境和生产环境使用同一套 `postMessage` 协议；
+- Console 根据模块配置生成允许的 origin，不使用 `*`；
+- iframe 必须验证父窗口 origin 和消息来源；
+- Console 刷新 Access Token 后向当前受信任 iframe 推送更新；
+- iframe 不把父级 Token 写入任何持久存储；
+- iframe 中的模块刷新页面后重新发起握手；
+- iframe 等待认证期间保持初始化状态，不跳转到模块登录页；
+- 模块作为顶层页面独立运行时，由自身 Browser AuthSession 通过 Cookie 恢复会话。
 
-#### 3. 认证 Store (`store/auth.js`)
+旧的 `?token=` iframe 参数和路由守卫 query Token 解析必须删除。
 
-**所有模块必须使用 `createAuthStore()` 工厂函数** 以避免 getter 覆盖 bug:
+## 六、登录、恢复和退出体验
 
-```javascript
-import { defineStore } from 'pinia'
-import { createAuthStore } from '@common-ui'
-import { authAPI } from '../api/auth'
+### 6.1 登录
 
-// 标准配置 (所有模块)
-export const useAuthStore = defineStore('meta-auth',
-  createAuthStore('meta-auth', authAPI, {
-    persistUser: true  // 所有模块必须设为 true
-  })
-)
+1. 用户提交用户名和密码到 System `/login`；
+2. System 返回短期 Access Token并设置 Refresh Cookie；
+3. Browser AuthSession 将 Access Token 保存到内存；
+4. 前端读取 `/users/me` 作为当前用户资料；
+5. Console 进入用户原计划访问的页面。
 
-// 带自定义 getters (按需使用)
-export const useAuthStore = defineStore('develop-auth',
-  createAuthStore('develop-auth', authAPI, {
-    persistUser: true,
-    extraGetters: {
-      username: (state) => state.user?.username || ''
-    }
-  })
-)
+### 6.2 启动恢复
 
-// 带自定义 actions (高级用法，按需使用)
-export const useAuthStore = defineStore('custom-auth',
-  createAuthStore('custom-auth', authAPI, {
-    persistUser: true,
-    extraActions: {
-      async customAction() {
-        // 自定义逻辑
-      }
-    }
-  })
-)
-```
+页面启动时先进入 `initializing` 状态：
 
-**关键规则:**
-- ✅ **必须使用 `persistUser: true`** - 在 localStorage 中缓存用户信息
-- ✅ **使用 `extraGetters` 添加自定义 getters** - 安全合并，不覆盖基础 getters
-- ✅ **使用 `extraActions` 添加自定义 actions** - 安全合并，不覆盖基础 actions
-- ❌ **永远不要使用 `createAuthStoreConfig`** - 已废弃，有覆盖 bug 风险
+- 内存中已有 Token：直接验证或加载用户资料；
+- 顶层页面无 Token：通过 Refresh Cookie 静默恢复；
+- iframe 无 Token：等待父 Console 握手；
+- 无有效 Cookie：进入匿名状态并跳转登录；
+- 临时网络故障：显示可重试的加载或错误状态，不伪装成退出登录。
 
-**为什么 `persistUser: true` 是必需的:**
-- 没有它,页面刷新后用户信息会丢失
-- 每次刷新都会额外调用 `/users/me` 请求
-- 用户体验差 (加载状态、闪烁)
-- 所有模块必须保持一致的行为
+### 6.3 静默刷新
 
-**getter 覆盖 bug (永远不要这样做):**
-```javascript
-// ❌ 错误 - 这会覆盖所有基础 getters 包括 isAuthenticated
-export const useAuthStore = defineStore('develop-auth', {
-  state: () => ({ token: null, user: null }),
-  getters: {
-    username: (state) => state.user?.username || ''  // 覆盖了 isAuthenticated!
-  }
-})
+- 正常路径在 Access Token 到期前刷新；
+- 401 只作为兜底；
+- 刷新成功后自动重试原请求；
+- 整个过程不打断用户当前操作；
+- Refresh Token Family 默认固定 30 天，达到最终有效期后必须重新登录。
 
-// ✅ 正确 - 使用 createAuthStore 和 extraGetters
-export const useAuthStore = defineStore('develop-auth',
-  createAuthStore('develop-auth', authAPI, {
-    persistUser: true,
-    extraGetters: {
-      username: (state) => state.user?.username || ''
-    }
-  })
-)
-```
+## 七、前端共享能力要求
 
-#### 4. 路由守卫 (`router/index.js`)
+所有模块必须使用：
 
-**所有模块必须使用 `createAuthGuard()` 工厂函数**:
+- `createAuthStore()`：内存 Token 和认证状态；
+- `createAuthGuard()`：等待 Browser AuthSession 初始化后再决定放行或跳转；
+- `createAPIClient()`：动态注入内存 Token、刷新和单次重试；
+- `createAuthenticatedFetch()`：SSE、流式请求和无法使用 Axios 的场景；
+- 统一运行时 Token Provider：预览、地图、下载等特殊调用读取当前内存 Token。
+- 原生资源 URL 直接使用无凭据 URL，由浏览器自动携带 Owner Path 限定的 HttpOnly Resource Access Ticket Cookie。
 
-```javascript
-import { createRouter, createWebHistory } from 'vue-router'
-import { createAuthGuard } from '@common-ui'
-import { useAuthStore } from '../store/auth'
+模块不得：
 
-const router = createRouter({
-  history: createWebHistory(import.meta.env.DEV ? '/' : '/meta/'),
-  routes
-})
+- 直接读写 `localStorage.token`；
+- 自建刷新 Promise、刷新定时器或多标签页协议；
+- 在 URL 中拼接用户 Access Token；
+- 在 URL 中拼接 Browser Resource Access Ticket；
+- 在 iframe 中自行调用 Refresh API，与父 Console 争用 Refresh Token；
+- 在生产环境直连 `localhost:8180` 或 `{hostname}:8180`。
 
-router.beforeEach(createAuthGuard(useAuthStore, {
-  moduleName: 'Meta',
-  loginRouteName: 'Login'
-}))
+## 八、部署与 Cookie 边界
 
-export default router
-```
+- 生产环境推荐统一 origin，通过 Nginx/Gateway 访问 Console、模块前端和 `/api`。
+- 开发环境各前端端口不同，但 hostname 相同；System CORS 必须允许已分配的开发 origin，并允许 credentials。
+- Cookie 不按端口隔离，但按 hostname 隔离；`localhost` 与 `127.0.0.1` 不共享会话。
+- 不同域名、浏览器 Profile、设备和无痕会话默认独立登录。
+- 不通过扩大 Cookie Domain 来模拟跨部署 SSO；需要跨域 SSO 时另行设计正式身份协议。
 
-**`createAuthGuard()` 处理的内容:**
-- Token 验证和用户加载
-- 登录页重定向
-- Query token 处理 (Console iframe 模式)
-- 开发/生产环境路径规范化
+## 九、完成检查
 
-#### 5. 模块命名规范
-
-**Store 名称必须使用模块前缀:**
-```javascript
-// ✅ 正确的命名
-'develop-auth'      // Develop 模块
-'meta-auth'         // Meta 模块
-'manager-auth'      // Manager 模块
-'transfer-auth'     // Transfer 模块
-'orchestrator-auth' // Orchestrator 模块
-'system-auth'       // System 模块
-'console-auth'       // Console 模块
-'service-auth'      // Service 模块
-'monitor-auth'      // Monitor 模块
-```
-
-**为什么这很重要:**
-- 防止 Pinia store 名称冲突
-- 调试更容易 (清晰的模块归属)
-- 与 localStorage key 命名保持一致
-
-#### 6. 认证请求路由说明
-
-**为什么模块直接请求 System 后端而不通过 Gateway？**
-
-在开发模式下，`api/auth.js` 使用绝对 URL `http://localhost:8180/api/v1/system` 直接请求 System 后端，而不通过 Gateway（8000）。原因：
-
-- `GET /api/v1/system/users/me` 在 Gateway 侧属于受 API Key 保护的路由
-- 浏览器前端没有 API Key，不能通过 Gateway 的 API Key 验证层
-- 直接请求 System 后端，携带 opaque Access Token 即可通过 System AuthContext 认证
-
-因此，System 后端维护了一个 **CORS 白名单**（`ALLOWED_ORIGINS`），允许各模块前端的开发端口直接发起跨域请求。
-
-**Console 的特殊处理**：Console 使用相对路径 `/api/v1/system`，经 Vite proxy → Gateway → System。因为请求从浏览器角度看是"同源"（都是 `localhost:5170`），无 CORS 问题。
-
-#### 7. 新增模块时的必做步骤
-
-**新增模块前端后，必须将其开发端口加入 System 的 CORS 白名单，否则认证请求会被浏览器拦截（CORS 错误）。**
-
-**步骤**：编辑根目录 `.env`，在 `ALLOWED_ORIGINS` 末尾追加新模块的前端开发端口：
-
-```bash
-# .env
-ALLOWED_ORIGINS=...,http://localhost:<新模块前端端口>
-```
-
-**当前已注册的端口**（参考 `docs/spec/addp端口分配.md`）：
-
-| 模块 | 前端端口 |
-|------|---------|
-| console | 5170 |
-| system | 5173 |
-| manager | 5174 |
-| meta | 5175 |
-| transfer | 5176 |
-| orchestrator | 5177 |
-| develop | 5178 |
-| monitor | 5179 |
-| service | 5180 |
-| standard | 5181 |
-| modeling | 5182 |
-| quality | 5183 |
-| asset | 5184 |
-| portal | 5185 |
-| agent | 5186 |
-| graph | 5187 |
-
-修改 `.env` 后需重启 system 服务：`./scripts/dev/restart.sh -system`
-
-#### 8. 总结检查清单
-
-创建或更新模块前端时,确保:
-
-- [ ] **`.env` 的 `ALLOWED_ORIGINS` 中已添加新模块前端的开发端口**（最容易漏掉！）
-- [ ] `api/auth.js` 使用独立的 `systemClient` (不是模块的 client)
-- [ ] `api/client.js` 使用 `createAPIClient()` 工厂函数，无 iframe 检测等特殊 baseURL 逻辑
-- [ ] 认证 Store 文件位于 `store/auth.js`（单数，不是 `stores/`）
-- [ ] `store/auth.js` 使用 `createAuthStore()` 工厂函数（不是 `createAuthStoreConfig`）
-- [ ] 所有模块都设置 `persistUser: true`
-- [ ] Router 使用 `createAuthGuard()` 工厂函数（支持 Console iframe 的 `?token=` 传递）
-- [ ] Store 名称遵循 `{module}-auth` 约定
-- [ ] 没有手动的拦截器代码 (使用工厂函数)
-- [ ] 没有手动的 getter/action 合并 (使用 `extraGetters`/`extraActions`)
-
-**详细实现请参考:**
-- [common-frontend/basic/src/composables/useAuth.js](common-frontend/basic/src/composables/useAuth.js) - 工厂函数
-- 任意模块的 `api/`, `store/`, `router/` 目录作为参考实现
+- [ ] Access Token 未写入任何浏览器持久化存储。
+- [ ] Console iframe URL 和新窗口 URL 不包含用户 Access Token。
+- [ ] 图片、媒体、下载和三维资源 URL 不包含 User Access Token 或 Resource Access Ticket。
+- [ ] Resource Access Ticket 只在 Owner 明确允许的 GET/HEAD 资源路由生效。
+- [ ] iframe 使用受信任 origin 的认证握手。
+- [ ] 页面刷新、新标签页和浏览器重启可在有效 Family 内静默恢复。
+- [ ] 多标签页同时到期不会触发 Refresh Token 重用撤销。
+- [ ] 401 只重试一次，不形成刷新循环。
+- [ ] 用户退出会同步到其他标签页和 iframe。
+- [ ] Console、一个 iframe 模块和一个独立模块完成自动化或在线验收。

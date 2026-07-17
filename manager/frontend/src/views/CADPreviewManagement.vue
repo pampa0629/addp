@@ -214,11 +214,13 @@ import { Refresh } from '@element-plus/icons-vue'
 import { ResourceTreePicker, openMonitorExecution, parseLocatorSafe } from '@addp/common-frontend'
 import { quickViewAPI } from '../api/quickView'
 import { useQuickViewResourceDisplay } from '../composables/useQuickViewResourceDisplay'
+import { useCurrentResultConfirmation } from '../composables/useCurrentResultConfirmation'
 import { formatBytes, formatDateTime } from '../utils/formatters'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
 const { displayText, engineName, loadQuickViewEngines, resourcePath } = useQuickViewResourceDisplay(t)
 
 const activeTab = ref(route.query.tab === 'results' ? 'results' : 'tasks')
@@ -433,12 +435,12 @@ const saveTask = async () => {
 const executeTask = async (task) => {
   executingId.value = task.id
   try {
-    const response = unwrapPayload(await quickViewAPI.executeCADPreviewTask(task.id))
+    const response = unwrapPayload(await executeWithCurrentResultConfirmation(payload => quickViewAPI.executeCADPreviewTask(task.id, payload)))
     ElMessage.success(t('manager.cadPreviewManagement.executeSubmitted'))
     await loadTasks()
     if (response.execution_id) await openMonitorExecution(response.execution_id)
   } catch (error) {
-    ElMessage.error(errorMessage(error, t('manager.cadPreviewManagement.executeFailed')))
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(errorMessage(error, t('manager.cadPreviewManagement.executeFailed')))
   } finally {
     executingId.value = null
   }

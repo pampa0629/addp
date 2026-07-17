@@ -22,11 +22,64 @@ import (
 
 const testRasterWorkflowEngineType = "tenant_raster_workflow"
 
+func TestRasterCOGTaskCreateReusesSemanticIdentity(t *testing.T) {
+	db := newRasterCOGTaskServiceTestDB(t)
+	repo := repository.NewRasterCOGRepository(db)
+	svc := NewRasterCOGTaskService(repo)
+	first := newRasterCOGTaskDefinition()
+	if err := svc.Create(context.Background(), first); err != nil {
+		t.Fatalf("create first raster COG task: %v", err)
+	}
+
+	duplicate := newRasterCOGTaskDefinition()
+	duplicate.Name = "更新后的 COG 任务"
+	duplicate.Description = "复用语义身份"
+	if err := svc.Create(context.Background(), duplicate); err != nil {
+		t.Fatalf("reuse raster COG task: %v", err)
+	}
+	if duplicate.ID != first.ID {
+		t.Fatalf("reused task id = %d, want %d", duplicate.ID, first.ID)
+	}
+	if duplicate.Name != "更新后的 COG 任务" || duplicate.Description != "复用语义身份" {
+		t.Fatalf("reused task = %#v, want updated mutable fields", duplicate)
+	}
+	items, total, err := repo.ListTasks(context.Background(), first.TenantID, 1, 20)
+	if err != nil {
+		t.Fatalf("list raster COG tasks: %v", err)
+	}
+	if total != 1 || len(items) != 1 {
+		t.Fatalf("task total=%d len=%d, want one semantic task", total, len(items))
+	}
+}
+
+func newRasterCOGTaskDefinition() *models.RasterCOGTask {
+	return &models.RasterCOGTask{
+		TenantID: 7,
+		Name:     "生成 COG",
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"target": commonModels.JSONMap{
+				"source_engine_id": 26,
+				"locator":          "addp://engine/26/path/rasters/large.tif?type=file&item_id=100",
+			},
+			"raster": commonModels.JSONMap{
+				"source_profile":    "geotiff",
+				"source_size_bytes": int64(900 * 1024 * 1024),
+				"width":             int64(120000),
+				"height":            int64(80000),
+				"band_count":        int64(3),
+				"extent":            []float64{110, 20, 120, 30},
+				"extent_srid":       4326,
+			},
+		},
+	}
+}
+
 func TestRasterCOGTaskExecuteRecordsFailedExecutionWhenExecutorUnavailable(t *testing.T) {
 	db := newRasterCOGTaskServiceTestDB(t)
 	cogRepo := repository.NewRasterCOGRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
-	taskSvc := NewRasterCOGTaskService(cogRepo, taskExecRepo)
+	taskSvc := NewRasterCOGTaskService(cogRepo)
 
 	task := &models.RasterCOGTask{
 		TenantID: 7,
@@ -62,7 +115,7 @@ func TestRasterCOGTaskExecuteRecordsFailedExecutionWhenExecutorUnavailable(t *te
 		t.Fatalf("normalized result = %#v, want storage_ref", task.Config["result"])
 	}
 
-	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, false)
 	if err != nil {
 		t.Fatalf("execute raster COG generation task: %v", err)
 	}
@@ -96,7 +149,7 @@ func TestRasterCOGTaskExecuteRecordsFailedExecutionWhenExecutorUnavailable(t *te
 
 func TestRasterCOGTaskRejectsLegacyArtifactConfig(t *testing.T) {
 	db := newRasterCOGTaskServiceTestDB(t)
-	taskSvc := NewRasterCOGTaskService(repository.NewRasterCOGRepository(db), commonExecution.NewTaskExecutionRepository(db))
+	taskSvc := NewRasterCOGTaskService(repository.NewRasterCOGRepository(db))
 
 	err := taskSvc.Create(context.Background(), &models.RasterCOGTask{
 		TenantID: 7,
@@ -120,7 +173,7 @@ func TestRasterCOGTaskRejectsLegacyArtifactConfig(t *testing.T) {
 func TestRasterCOGPrepareResultReturnsUpdatedExistingResult(t *testing.T) {
 	db := newRasterCOGTaskServiceTestDB(t)
 	cogRepo := repository.NewRasterCOGRepository(db)
-	taskSvc := NewRasterCOGTaskService(cogRepo, commonExecution.NewTaskExecutionRepository(db))
+	taskSvc := NewRasterCOGTaskService(cogRepo)
 
 	task := &models.RasterCOGTask{
 		TenantID: 7,
@@ -514,7 +567,7 @@ func TestManagerRasterCOGExecutorRejectsOperatorWithoutDirectMode(t *testing.T) 
 	}
 }
 
-func TestRasterCOGTaskMarksResultFailedWhenReadyUpdateFails(t *testing.T) {
+func TestRasterCOGTaskKeepsRunningStateWhenAtomicCompletionFails(t *testing.T) {
 	db := newRasterCOGTaskServiceTestDB(t)
 	if err := db.Exec(`CREATE TRIGGER manager.fail_cog_ready_update
 		BEFORE UPDATE OF status ON raster_cog
@@ -526,7 +579,7 @@ func TestRasterCOGTaskMarksResultFailedWhenReadyUpdateFails(t *testing.T) {
 	}
 	cogRepo := repository.NewRasterCOGRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
-	taskSvc := NewRasterCOGTaskService(cogRepo, taskExecRepo)
+	taskSvc := NewRasterCOGTaskService(cogRepo)
 	taskSvc.SetExecutor(staticRasterCOGExecutor{result: &RasterCOGExecutionResult{
 		StorageRef: `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/cog/fp/large.cog.tif"}`,
 		FileName:   "large.cog.tif",
@@ -558,13 +611,26 @@ func TestRasterCOGTaskMarksResultFailedWhenReadyUpdateFails(t *testing.T) {
 	if err := taskSvc.Create(context.Background(), task); err != nil {
 		t.Fatalf("create raster COG generation task: %v", err)
 	}
-	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
-	if err != nil {
-		t.Fatalf("execute raster COG generation task: %v", err)
+	executionID := "raster-cog-atomic-completion-failure"
+	createdAt := time.Now()
+	execution := &commonExecution.TaskExecution{
+		ExecutionID: executionID, TenantID: int(task.TenantID), Module: commonExecution.ModuleManager,
+		TaskType: commonExecution.TaskTypeRasterCOGGeneration, Source: commonExecution.ModuleManager,
+		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
+		CreatedAt: createdAt, UpdatedAt: createdAt,
 	}
-	exec := waitForRasterCOGTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
-	if exec.Status != commonExecution.ExecutionStatusFailed {
-		t.Fatalf("execution status = %s, want failed", exec.Status)
+	claimedTask, err := cogRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, execution, false)
+	if err != nil {
+		t.Fatalf("claim raster COG generation task: %v", err)
+	}
+	taskSvc.runRasterCOGGeneration(context.Background(), claimedTask, executionID)
+
+	exec, err := taskExecRepo.GetByExecutionID(context.Background(), executionID, int(task.TenantID))
+	if err != nil {
+		t.Fatalf("load execution: %v", err)
+	}
+	if exec.Status != commonExecution.ExecutionStatusRunning || exec.CompletedAt != nil {
+		t.Fatalf("execution status=%s completed_at=%v, want running without terminal commit", exec.Status, exec.CompletedAt)
 	}
 	results, total, err := cogRepo.List(context.Background(), repository.RasterCOGFilter{TenantID: task.TenantID, Page: 1, PageSize: 20})
 	if err != nil {
@@ -573,11 +639,18 @@ func TestRasterCOGTaskMarksResultFailedWhenReadyUpdateFails(t *testing.T) {
 	if total != 1 || len(results) != 1 {
 		t.Fatalf("results total=%d len=%d, want 1", total, len(results))
 	}
-	if results[0].Status != models.RasterCOGStatusFailed {
-		t.Fatalf("result status = %s, want failed", results[0].Status)
+	if results[0].Status != models.RasterCOGStatusBuilding {
+		t.Fatalf("result status = %s, want building after atomic rollback", results[0].Status)
 	}
-	if !strings.Contains(results[0].ErrorMessage, "ready update failed") {
-		t.Fatalf("result error = %q, want update failure", results[0].ErrorMessage)
+	if results[0].ErrorMessage != "" {
+		t.Fatalf("result error = %q, want unchanged building result", results[0].ErrorMessage)
+	}
+	storedTask, err := cogRepo.GetTask(context.Background(), task.ID, task.TenantID)
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if storedTask.LastExecutionStatus == nil || *storedTask.LastExecutionStatus != commonExecution.ExecutionStatusRunning {
+		t.Fatalf("task last status = %v, want running after atomic rollback", storedTask.LastExecutionStatus)
 	}
 }
 
@@ -688,7 +761,7 @@ func waitForRasterCOGTaskExecution(t *testing.T, repo *commonExecution.TaskExecu
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		exec, err := repo.GetByExecutionID(context.Background(), executionID, tenantID)
-		if err == nil && exec.Status != commonExecution.ExecutionStatusRunning {
+		if err == nil && exec.IsCompleted() {
 			return exec
 		}
 		time.Sleep(10 * time.Millisecond)

@@ -26,6 +26,10 @@ class Interaction(Base):
         index=True,
     )
     tool_call_id = Column(String(100), nullable=True)
+    owner_interaction_id = Column(String(100), nullable=True, index=True)
+    owner_request_fingerprint = Column(String(64), nullable=True)
+    open_url = Column(Text, nullable=True)
+    request_summary = Column(JSONB, nullable=False, default=dict)
     kind = Column(String(50), nullable=False, default="clarification")
     owner = Column(String(50), nullable=False, default="agent")
     status = Column(String(30), nullable=False, default="pending", index=True)

@@ -63,7 +63,7 @@ const modelURL = computed(() => {
   return content.value?.url || objectData.value?.url || ''
 })
 
-const sourceURL = computed(() => withAuthToken(modelURL.value))
+const sourceURL = computed(() => modelURL.value)
 const modelSourceFormat = computed(() => String(
   modelInfo.value?.format ||
   metadata.value?.format ||
@@ -95,25 +95,6 @@ const summaryItems = computed(() => {
   if (info.triangle_count) items.push({ label: 'Triangles', value: Number(info.triangle_count).toLocaleString() })
   return items
 })
-
-function withAuthToken(url) {
-  if (!url || typeof url !== 'string') return ''
-  if (!url.startsWith('/api/') && !url.startsWith('/manager/')) return url
-  const token = localStorage.getItem('token')
-  if (!token) return url
-  try {
-    const parsed = new URL(url, window.location.origin)
-    if (!parsed.searchParams.has('token')) {
-      parsed.searchParams.set('token', token)
-    }
-    return parsed.origin === window.location.origin
-      ? `${parsed.pathname}${parsed.search}${parsed.hash}`
-      : parsed.toString()
-  } catch {
-    const separator = url.includes('?') ? '&' : '?'
-    return `${url}${separator}token=${encodeURIComponent(token)}`
-  }
-}
 
 function ensureScene() {
   const el = viewportRef.value

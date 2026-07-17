@@ -1,0 +1,55 @@
+schema: addp.agent-scenario/v1
+name: approval-execution
+category: approval_execution
+skill: workflow-analysis
+prompt: 运行已经正式校验的工作流，并在 owner 批准后继续执行。
+expectations:
+  phases:
+    request:
+      status: waiting
+      required_tools:
+        - workflow.run
+      forbidden_tools: []
+      required_errors: []
+      tool_input_fields:
+        workflow.run:
+          - workflow_definition
+          - workflow_engine_id
+      interactions:
+        - kind: owner_approval
+          owner: develop
+          status: pending
+      presentations: []
+      result_refs:
+        count: 0
+        kinds: []
+      owner_effects:
+        approvals_created: 1
+        executions_created: 0
+    resume:
+      status: completed
+      required_tools:
+        - workflow.run
+      forbidden_tools: []
+      required_errors: []
+      tool_input_fields:
+        workflow.run:
+          - approval_id
+          - request_fingerprint
+      interactions: []
+      presentations: []
+      result_refs:
+        count: 1
+        kinds:
+          - execution
+      owner_effects:
+        approvals_created: 0
+        executions_created: 1
+  same_agent_run:
+    - [request, resume]
+  forbidden_persisted_fields:
+    - authorization
+    - token
+    - sample_rows
+    - workflow_definition
+    - engine_specific

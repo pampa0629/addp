@@ -26,6 +26,7 @@ from agents.checkpoint import (
 )
 from agents.events import AgentEvent, text_event
 from agents.result_refs import build_result_ref
+from protocol.a2ui import preview_presentations
 from tools.langchain_tools import create_agent_tools, stable_tool_name
 from utils.llm import get_llm
 
@@ -78,6 +79,8 @@ def _runtime_instructions() -> str:
 - 每次只询问当前阻塞流程的一个问题；恢复后再处理下一个待确认事项。
 - options 必须来自 Tool 返回的候选或明确的口径选项，不得虚构 locator、引擎或字段事实。
 - AgentCheckpoint 中的 observed 事实可以直接复用，除非事实缺失或本次操作明确要求刷新；confirmed 选择视为用户已经完成，不得重复澄清。
+- `workflow.run` 返回 `approval_required` 时当前 run 必须暂停，不能重试或把客户端确认当作批准。
+- 恢复消息提供 approval_id 和 request_fingerprint 时，再次调用 `workflow.run` 且只提交这两个字段。
 """
 
 
@@ -114,6 +117,7 @@ class AgentFactory:
         user_request = task_context["user_request"]
         context_summary = task_context["context_summary"]
         token = task_context["token"]
+        agent_run_id = task_context["agent_run_id"]
         checkpoint = normalize_checkpoint(task_context.get("checkpoint"))
 
         # 构建用户输入（注入对话背景）
@@ -126,7 +130,7 @@ class AgentFactory:
             human_input = f"{human_input}\n\n{persisted_context}"
 
         # 只创建白名单内的工具（隔离）
-        all_tools = create_agent_tools(token)
+        all_tools = create_agent_tools(token, agent_run_id)
         all_tool_map = {stable_tool_name(tool): tool for tool in all_tools}
         platform_tools = [all_tool_map[name] for name in allowed_tool_names if name in all_tool_map]
         tools = [*platform_tools, _clarification_tool()]
@@ -233,6 +237,7 @@ class AgentFactory:
                 tool_failed = False
                 tool_error_source = None
                 tool_error_code = None
+                owner_approval_request = None
                 if tool_fn is None:
                     tool_result = f"错误：工具 `{tool_name}` 不在该 Skill 的白名单内"
                     tool_failed = True
@@ -241,8 +246,13 @@ class AgentFactory:
                     logger.error("[FACTORY:%s] 工具不在白名单: %s", skill_name, tool_name)
                 else:
                     try:
-                        raw = await tool_fn.ainvoke(tool_args)
-                        tool_result = str(raw)
+                        raw = await tool_fn.ainvoke({
+                            "name": tool_fn.name,
+                            "args": tool_args,
+                            "id": tc["id"],
+                            "type": "tool_call",
+                        })
+                        tool_result = str(getattr(raw, "content", raw))
                         preview = tool_result[:200] + ("..." if len(tool_result) > 200 else "")
                         logger.info("[FACTORY:%s] 工具结果（前200字符）: %s", skill_name, preview)
 
@@ -256,7 +266,8 @@ class AgentFactory:
                                 tool_error_code = str(parsed_result["error"].get("code") or "tool_error")
                                 tool_error_source = (
                                     "owner"
-                                    if tool_error_code in {
+                                    if tool_error_code.startswith("approval_")
+                                    or tool_error_code in {
                                         "owner_api_error",
                                         "owner_api_unavailable",
                                         "invalid_owner_response",
@@ -279,6 +290,23 @@ class AgentFactory:
                                     kind="result_ref",
                                     payload={"result_ref": result_ref},
                                 )
+                            if stable_name == "data.preview":
+                                for presentation in preview_presentations(parsed_result):
+                                    yield AgentEvent(kind="presentation", payload=presentation)
+                            if (
+                                stable_name == "workflow.run"
+                                and isinstance(parsed_result, dict)
+                                and parsed_result.get("status") == "approval_required"
+                            ):
+                                owner_approval_request = {
+                                    "interaction_kind": "owner_approval",
+                                    "owner": "develop",
+                                    "owner_interaction_id": parsed_result.get("interaction_id"),
+                                    "open_url": parsed_result.get("open_url"),
+                                    "request_fingerprint": parsed_result.get("request_fingerprint"),
+                                    "request_summary": parsed_result.get("request_summary") or {},
+                                    "expires_at": parsed_result.get("expires_at"),
+                                }
 
                         if stable_name == "workflow.validate":
                             try:
@@ -328,6 +356,15 @@ class AgentFactory:
                 )
 
                 lc_messages.append(ToolMessage(content=tool_result, tool_call_id=tc["id"]))
+                if owner_approval_request is not None:
+                    yield AgentEvent(
+                        kind="interaction_required",
+                        payload={
+                            "tool_call_id": tc["id"],
+                            **owner_approval_request,
+                        },
+                    )
+                    return
         else:
             logger.warning("[FACTORY:%s] 达到最大迭代次数 %d", skill_name, max_iterations)
 

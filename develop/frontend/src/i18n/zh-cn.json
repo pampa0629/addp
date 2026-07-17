@@ -517,6 +517,44 @@
       "taskNotFound": "未找到指定任务",
       "viewNotSupported": "该类型暂不支持查看详情"
     },
+    "approval": {
+      "title": "Tool 执行审批",
+      "refresh": "刷新",
+      "requestInfo": "执行请求",
+      "toolName": "Tool",
+      "workflowEngine": "工作流引擎 ID",
+      "taskCount": "任务数",
+      "timeout": "超时时间",
+      "requestedAt": "申请时间",
+      "expiresAt": "过期时间",
+      "fingerprint": "请求指纹",
+      "executionId": "Execution ID",
+      "approve": "批准",
+      "reject": "拒绝",
+      "cancel": "取消",
+      "confirmTitle": "确认审批决定",
+      "confirmMessage": "确定要{action}这次工作流执行吗？",
+      "decisionSuccess": "审批决定已保存",
+      "notFound": "无法读取审批",
+      "loadFailed": "审批加载失败",
+      "seconds": "{value} 秒",
+      "status": {
+        "pending": "待审批",
+        "approved": "已批准",
+        "rejected": "已拒绝",
+        "expired": "已过期",
+        "consumed": "已执行",
+        "unknown": "未知状态"
+      },
+      "message": {
+        "pending": "请核对请求摘要后作出决定。",
+        "approved": "审批已批准，请返回智能体检查审批状态并继续执行。",
+        "rejected": "审批已拒绝，本次请求不能执行。",
+        "expired": "审批已过期，本次请求不能执行。",
+        "consumed": "审批已消费，工作流 execution 已创建。",
+        "unknown": "审批状态不可识别。"
+      }
+    },
     "federated": {
       "title": "联邦查询",
       "refreshSources": "刷新数据源",

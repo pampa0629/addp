@@ -37,6 +37,13 @@ IFC 必须通过 `model3d_workflow.ifc_to_glb` 专用 operator 生成 GLB，不�
 | `created_by` | integer | 创建人 |
 | `created_at` / `updated_at` / `deleted_at` | timestamp | 生命周期字段 |
 
+执行生命周期遵守以下唯一语义：
+
+1. 启动请求在任务行锁事务内检查同任务是否已有 `pending` 或 `running` execution；存在时返回 HTTP 409，不创建第二个 execution。
+2. 启动成功时原子创建 `common.task_executions.status=pending`，同时把任务摘要推进为 `pending`；此时 `started_at` 必须为空。
+3. Manager 后台执行器领取成功后，原子推进 execution 和任务摘要为 `running`，并写入 `started_at` / `last_run_at`。
+4. 结果状态、execution 终态和任务摘要在同一 Infra PostgreSQL 事务中提交；任务摘要必须以 `last_execution_id` fencing，不能被旧 execution 回写覆盖。
+
 ## 三、config 语义
 
 最小结构：
@@ -85,6 +92,8 @@ DELETE /api/v1/manager/model_3d_glb_tasks/{id}
 ```
 
 当前 `supports_schedule=false`、`supports_cancel=false`。需要周期性刷新时，应由 Orchestrator 定时编排间接触发已保存任务定义。
+
+`POST .../execute` 接受后返回 HTTP 202、`status=pending` 和新 `execution_id`；同任务已有活跃 execution 时返回 HTTP 409。
 
 ## 五、相关文档
 

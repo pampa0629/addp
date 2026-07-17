@@ -88,12 +88,35 @@ def test_workflow_swagger_schema_requires_standard_task_fields():
     assert task["properties"]["depends_on"]["items"]["type"] == "string"
 
 
-def test_create_and_execution_swagger_requests_mark_required_fields():
+def test_create_and_execution_swagger_requests_expose_conditional_execution_fields():
     spec = load_spec()
     create = definition(spec, "CreateDevTaskSwaggerRequest")
     execution = definition(spec, "CreateExecutionSwaggerRequest")
 
     for field in ("name", "dev_type", "content"):
         assert field in create["required"]
-    for field in ("dev_type", "trigger_type", "execution_config"):
-        assert field in execution["required"]
+    for field in (
+        "dev_type",
+        "trigger_type",
+        "execution_config",
+        "approval_id",
+        "request_fingerprint",
+    ):
+        assert field in execution["properties"]
+    assert "required" not in execution
+
+
+def test_tool_approval_swagger_contract_exposes_owner_projection_and_single_decision_route():
+    spec = load_spec()
+    approval_get = spec["paths"]["/approvals/{id}"]["get"]
+    approval_decision = spec["paths"]["/approvals/{id}/decision"]["post"]
+
+    get_ref = approval_get["responses"]["200"]["schema"]["$ref"]
+    decision_ref = approval_decision["responses"]["200"]["schema"]["$ref"]
+    assert ref_name(get_ref) == "ToolApprovalResponse"
+    assert ref_name(decision_ref) == "ToolApprovalResponse"
+
+    approval = definition(spec, "ToolApprovalResponse")
+    for field in ("id", "status", "request_fingerprint", "request_summary"):
+        assert field in approval["properties"]
+    assert "request_payload" not in approval["properties"]

@@ -34,6 +34,10 @@ const props = defineProps({
   popupOptions: {
     type: Object,
     default: () => ({})
+  },
+  featuresOnly: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -53,7 +57,7 @@ const setupMap = async () => {
   await nextTick()
 
   if (!isInitialized) {
-    const result = initMap(mapContainer.value, props.baseType)
+    const result = initMap(mapContainer.value, props.baseType, { featuresOnly: props.featuresOnly })
     if (result) {
       isInitialized = true
     }
@@ -85,7 +89,7 @@ watch(
 )
 
 watch(
-  () => props.baseType,
+  () => [props.baseType, props.featuresOnly],
   () => {
     // 底图类型变化时重新初始化
     if (mapContainer.value) {

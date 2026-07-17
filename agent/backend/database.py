@@ -113,6 +113,22 @@ async def init_db():
             "CREATE INDEX IF NOT EXISTS idx_agent_interactions_agent_run_id "
             "ON agent.interactions (agent_run_id)"
         ))
+        await conn.execute(text(
+            "ALTER TABLE agent.interactions ADD COLUMN IF NOT EXISTS owner_interaction_id VARCHAR(100)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE agent.interactions ADD COLUMN IF NOT EXISTS owner_request_fingerprint VARCHAR(64)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE agent.interactions ADD COLUMN IF NOT EXISTS open_url TEXT"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE agent.interactions ADD COLUMN IF NOT EXISTS request_summary JSONB NOT NULL DEFAULT '{}'::jsonb"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_agent_interactions_owner_interaction_id "
+            "ON agent.interactions (owner_interaction_id)"
+        ))
 
 
 async def get_db():

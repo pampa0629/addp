@@ -99,7 +99,8 @@ func (h *TaskProviderHandler) recordRasterMosaicProgressEvent(c *gin.Context, te
 			c.JSON(http.StatusNotFound, gin.H{"error": "执行记录不存在"})
 		case errors.Is(err, service.ErrRasterMosaicProgressTargetMismatch):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		case errors.Is(err, service.ErrRasterMosaicExecutionCompleted):
+		case errors.Is(err, service.ErrRasterMosaicExecutionCompleted),
+			errors.Is(err, service.ErrRasterMosaicExecutionNotRunning):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -169,6 +170,8 @@ func (h *TaskProviderHandler) recordPointCloudCOPCProgressEvent(c *gin.Context, 
 		case errors.Is(err, service.ErrPointCloudCOPCProgressTargetMismatch):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case errors.Is(err, service.ErrPointCloudCOPCExecutionCompleted):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case errors.Is(err, service.ErrPointCloudCOPCExecutionNotRunning):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

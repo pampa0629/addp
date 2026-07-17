@@ -26,6 +26,8 @@
 
 数据探查一次只能选择一个 `target_format` 生成，不提供“生成全部”。任务语义身份为 `tenant_id + config.source.item_fingerprint + config.target_format`；重复创建同一语义任务时更新并返回原任务 ID，`3d_tiles` 与 `s3m` 分别保留独立任务。
 
-已有任务可重复执行。每次执行创建新 execution，并刷新同一 `target_format` 的当前结果；不需要先删除 ready 结果，也不另建“更新任务”。同一任务有 `pending` 或 `running` execution 时不得并发再次执行。
+已有任务可重复执行。每次执行创建新 execution，并覆盖同一 `target_format` 的当前结果；不需要先删除结果，也不另建“更新任务”。但已有该格式的未删除结果时，执行必须经过用户显式确认：第一次请求不携带确认参数，服务端返回 HTTP 409、`code=existing_result_confirmation_required`，且不创建 execution；用户确认后，同一路由以 `parameters.confirm_existing_result=true` 重试。该参数只授权本次覆盖，不写入任务定义，不允许被其他 Manager 任务消费。
+
+确认由服务端强制，不能只依赖前端弹窗。Manager 管理页和数据探查入口收到上述 409 后显示确认框，只有用户确认才重试；Orchestrator 等无人值守调用在已有结果时不得自动确认。同一任务有 `pending` 或 `running` execution 时仍返回任务忙冲突，不进入覆盖确认流程。
 
 任务定义通过 `DELETE /api/v1/manager/model3d_tiles_tasks/:id` 独立删除。删除任务不级联删除已生成结果、源 item 或 execution 历史；需要清理受管瓦片时，必须再删除对应 `manager.model3d_tiles` 结果。

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strings"
 	"time"
 
 	commonAuth "github.com/addp/common/middleware/auth"
@@ -79,6 +80,7 @@ func SetupRouter(
 	assetDiscHandler := newAssetDiscoverableHandler(db)
 
 	api := router.Group("/api/v1/standard")
+	api.Use(commonAuth.BrowserResourceAccessMiddleware(systemURL, redisClient, "standard", isStandardBrowserResourceRequest))
 	if redisClient != nil {
 		api.Use(commonAuth.CachedSystemAuthMiddleware(systemURL, redisClient, 5*time.Minute))
 	} else {
@@ -230,4 +232,10 @@ func SetupRouter(
 	})
 
 	return router
+}
+
+func isStandardBrowserResourceRequest(c *gin.Context) bool {
+	path := strings.TrimPrefix(c.Request.URL.Path, "/api/v1/standard")
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	return len(segments) == 3 && segments[0] == "documents" && segments[2] == "download"
 }

@@ -531,7 +531,7 @@ CORS 中间件处理
   ↓
 System 服务验证用户名密码
   ↓
-返回 JWT Token
+返回短期 opaque Access Token，并设置 HttpOnly Refresh Token Cookie
 ```
 
 ## 架构决策

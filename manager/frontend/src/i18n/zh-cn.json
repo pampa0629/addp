@@ -1,5 +1,10 @@
 {
   "manager": {
+    "common": {
+      "currentResultOverwriteTitle": "确认覆盖当前结果",
+      "currentResultOverwriteConfirm": "已有当前结果。继续执行将覆盖当前结果记录和 Manager 受管物理产物，是否继续？",
+      "currentResultOverwriteButton": "确认覆盖"
+    },
     "quickViewDisplay": {
       "unknownEngine": "未知引擎"
     },
@@ -594,6 +599,7 @@
       "generate": "生成",
       "executeSubmitted": "瓦片快显生成已提交",
       "executeFailed": "执行瓦片快显生成失败",
+      "cancel": "取消",
       "preview": "预览",
       "monitor": "监控",
       "size": "大小",

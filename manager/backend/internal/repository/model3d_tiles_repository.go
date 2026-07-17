@@ -6,10 +6,11 @@ import (
 	"strings"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // Model3DTilesRepository 维护分块三维模型瓦片任务定义和受管结果。
@@ -136,45 +137,45 @@ func (r *Model3DTilesRepository) CreateTask(ctx context.Context, task *models.Mo
 	return r.db.WithContext(ctx).Create(task).Error
 }
 
-func (r *Model3DTilesRepository) CreateExecutionIfIdle(ctx context.Context, taskID, tenantID uint, exec *commonExecution.TaskExecution, runAt time.Time) (bool, error) {
-	active := false
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var task models.Model3DTilesTask
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND tenant_id = ?", taskID, tenantID).
-			First(&task).Error; err != nil {
-			return err
-		}
-
-		var activeCount int64
-		if err := tx.Model(&commonExecution.TaskExecution{}).
-			Where(
-				"tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status IN ?",
-				int(tenantID),
-				commonExecution.ModuleManager,
-				commonExecution.TaskTypeModel3DTilesGeneration,
-				commonExecution.NewSourceTaskIDFromUint(taskID),
-				[]string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning},
-			).
-			Count(&activeCount).Error; err != nil {
-			return err
-		}
-		if activeCount > 0 {
-			active = true
-			return nil
-		}
-		if err := tx.Create(exec).Error; err != nil {
-			return err
-		}
-		return tx.Model(&models.Model3DTilesTask{}).
-			Where("id = ? AND tenant_id = ?", taskID, tenantID).
-			Updates(map[string]interface{}{
-				"last_execution_id":     exec.ExecutionID,
-				"last_execution_status": exec.Status,
-				"last_run_at":           runAt,
-			}).Error
+func (r *Model3DTilesRepository) ClaimExecution(
+	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, confirmExistingResult bool,
+) (*models.Model3DTilesTask, error) {
+	var task models.Model3DTilesTask
+	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
+		TaskModel: &task, TaskType: commonExecution.TaskTypeModel3DTilesGeneration, TaskLabel: "model3d tiles",
+		TaskName: func() string { return task.Name }, TaskConfig: func() commonModels.JSONMap { return task.Config },
+		CurrentResultModel: &models.Model3DTiles{}, ConfirmExistingResult: confirmExistingResult,
 	})
-	return active, err
+	if err != nil {
+		return nil, err
+	}
+	task.LastExecutionID = &execution.ExecutionID
+	status := commonExecution.ExecutionStatusPending
+	task.LastExecutionStatus = &status
+	return &task, nil
+}
+
+func (r *Model3DTilesRepository) StartExecution(ctx context.Context, taskID, tenantID uint, executionID string, startedAt time.Time) error {
+	return newTaskExecutionLifecycle(r.db).Start(ctx, taskID, tenantID, executionID, startedAt, &models.Model3DTilesTask{}, "model3d tiles")
+}
+
+func (r *Model3DTilesRepository) CompleteExecution(
+	ctx context.Context, taskID, tenantID uint, executionID string, resultID uint,
+	resultFields, executionFields map[string]interface{}, completedAt time.Time,
+) error {
+	return newTaskExecutionLifecycle(r.db).Complete(ctx, taskID, tenantID, executionID, completedAt, taskExecutionCompletionSpec{
+		TaskModel: &models.Model3DTilesTask{}, ResultModel: &models.Model3DTiles{}, ResultID: resultID,
+		ResultFields: resultFields, ExecutionFields: executionFields,
+	}, "model3d tiles")
+}
+
+func (r *Model3DTilesRepository) GetExecution(ctx context.Context, executionID string, tenantID uint) (*commonExecution.TaskExecution, error) {
+	var execution commonExecution.TaskExecution
+	err := r.db.WithContext(ctx).Where("execution_id = ? AND tenant_id = ?", executionID, int(tenantID)).First(&execution).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, commonAPI.ErrNotFound
+	}
+	return &execution, err
 }
 
 func (r *Model3DTilesRepository) GetTask(ctx context.Context, id uint, tenantID uint) (*models.Model3DTilesTask, error) {
@@ -216,15 +217,4 @@ func (r *Model3DTilesRepository) DeleteTask(ctx context.Context, id uint, tenant
 	return r.db.WithContext(ctx).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
 		Delete(&models.Model3DTilesTask{}).Error
-}
-
-func (r *Model3DTilesRepository) UpdateTaskLastExecution(ctx context.Context, id uint, tenantID uint, executionID, status string, runAt time.Time) error {
-	return r.db.WithContext(ctx).
-		Model(&models.Model3DTilesTask{}).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Updates(map[string]interface{}{
-			"last_execution_id":     executionID,
-			"last_execution_status": status,
-			"last_run_at":           runAt,
-		}).Error
 }

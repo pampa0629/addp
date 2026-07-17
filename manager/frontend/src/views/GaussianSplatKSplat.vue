@@ -315,11 +315,13 @@ import { InfoFilled, Refresh } from '@element-plus/icons-vue'
 import { ResourceTreePicker, openMonitorExecution, parseLocatorSafe } from '@addp/common-frontend'
 import { quickViewAPI } from '../api/quickView'
 import { useQuickViewResourceDisplay } from '../composables/useQuickViewResourceDisplay'
+import { useCurrentResultConfirmation } from '../composables/useCurrentResultConfirmation'
 import { formatBytes, formatDateTime } from '../utils/formatters'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
 const { displayText, engineName, loadQuickViewEngines, resourcePath } = useQuickViewResourceDisplay(t)
 
 const activeTab = ref(route.query.tab === 'results' ? 'results' : 'tasks')
@@ -694,7 +696,7 @@ const saveTask = async () => {
 const executeTask = async (task) => {
   executingId.value = task.id
   try {
-    const response = await quickViewAPI.executeGaussianSplatKSplatTask(task.id)
+    const response = await executeWithCurrentResultConfirmation(payload => quickViewAPI.executeGaussianSplatKSplatTask(task.id, payload))
     const executionID = response?.execution_id || response?.data?.execution_id
     ElMessage.success(t('manager.gaussianSplatKSplat.executeSubmitted'))
     await loadTasks()
@@ -702,7 +704,7 @@ const executeTask = async (task) => {
       await openMonitorExecution(executionID)
     }
   } catch (error) {
-    ElMessage.error(errorMessage(error, t('manager.gaussianSplatKSplat.executeFailed')))
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(errorMessage(error, t('manager.gaussianSplatKSplat.executeFailed')))
   } finally {
     executingId.value = null
   }

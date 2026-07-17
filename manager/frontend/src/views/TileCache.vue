@@ -430,6 +430,7 @@ import client from '../api/client'
 import { dataExplorerAPI } from '../api/dataExplorer'
 import { quickViewAPI } from '../api/quickView'
 import { useTileCacheExecutionStats } from '../composables/useTileCacheExecutionStats'
+import { useCurrentResultConfirmation } from '../composables/useCurrentResultConfirmation'
 import { formatDateTime } from '../utils/formatters'
 import {
   executionIDFromExecution,
@@ -464,6 +465,7 @@ import {
 } from '../utils/tileCacheResourceTree'
 
 const { t } = useI18n()
+const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
 const route = useRoute()
 const router = useRouter()
 
@@ -1132,16 +1134,19 @@ const saveTask = async () => {
 const executeTask = async (task) => {
   executingId.value = task.id
   try {
-    const response = await client.post(`/manager/tasks/vector_tile_cache_generation/${task.id}/execute`, {
+    const response = await executeWithCurrentResultConfirmation(payload => client.post(`/manager/tasks/vector_tile_cache_generation/${task.id}/execute`, {
       trigger_type: 'manual',
-      source: 'manager'
-    })
+      source: 'manager',
+      ...payload
+    }))
     ElMessage.success(t('manager.tileCache.executeSubmitted'))
     await loadTasks()
     await openMonitorExecution(response.execution_id)
   } catch (error) {
-    console.error('执行瓦片缓存任务失败:', error)
-    ElMessage.error(errorMessage(error, t('manager.tileCache.executeFailed')))
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('执行瓦片缓存任务失败:', error)
+      ElMessage.error(errorMessage(error, t('manager.tileCache.executeFailed')))
+    }
   } finally {
     executingId.value = null
   }

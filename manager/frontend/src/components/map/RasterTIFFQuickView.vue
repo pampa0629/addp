@@ -75,6 +75,7 @@
 </template>
 
 <script setup>
+import { getAccessToken } from '@common-ui'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fromUrl as tiffFromUrl } from 'geotiff'
@@ -320,7 +321,7 @@ function createSelectedBaseLayers() {
 }
 
 function createRasterSourceOptions() {
-  return rasterGeoTIFFSourceOptions(renderSource.value, localStorage.getItem('token') || '')
+  return rasterGeoTIFFSourceOptions(renderSource.value, getAccessToken() || '')
 }
 
 async function selectSmallestImage(tiff) {
@@ -502,7 +503,7 @@ function updateRasterMosaicStyleURL(url) {
 function createRasterMosaicTileLoadFunction() {
   return (tile, src) => {
     const image = tile.getImage()
-    const token = localStorage.getItem('token') || ''
+    const token = getAccessToken() || ''
     fetch(src, {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     })

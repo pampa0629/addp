@@ -1151,8 +1151,6 @@ func (s *QuickViewService) applyModel3DTilesCapability(ctx context.Context, capa
 				info.GeometryCompression = strings.TrimSpace(commonJSON.InterfaceString(tilesFacts["geometry_compression"]))
 				info.S3MVersion = strings.TrimSpace(commonJSON.InterfaceString(tilesFacts["s3m_version"]))
 				info.PreviewURL = model3DTilesAssetURL(result.ID, result.ManifestRef, result.LastExecutionID)
-				info.CanGenerate = false
-				info.UnavailableReason = "result_ready"
 				if !capability.CanUseQuickView {
 					capability.CanUseQuickView = true
 					capability.Status = QuickViewStatusAvailable

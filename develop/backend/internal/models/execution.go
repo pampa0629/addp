@@ -32,11 +32,13 @@ func (r *ExecutionResult) Scan(value interface{}) error {
 
 // CreateExecutionRequest 创建执行请求
 type CreateExecutionRequest struct {
-	DevType         string                 `json:"dev_type" binding:"required,oneof=query workflow script"`
-	TriggerType     string                 `json:"trigger_type" binding:"required,oneof=manual scheduled"`
-	Content         map[string]interface{} `json:"content"` // 执行内容（对于临时执行）
-	ExecutionConfig map[string]interface{} `json:"execution_config" binding:"required"`
-	Timeout         int                    `json:"timeout"`
+	DevType            string                 `json:"dev_type" binding:"omitempty,oneof=query workflow script"`
+	TriggerType        string                 `json:"trigger_type" binding:"omitempty,oneof=manual scheduled"`
+	Content            map[string]interface{} `json:"content"` // 执行内容（对于临时执行）
+	ExecutionConfig    map[string]interface{} `json:"execution_config"`
+	Timeout            int                    `json:"timeout"`
+	ApprovalID         string                 `json:"approval_id,omitempty" binding:"omitempty,uuid"`
+	RequestFingerprint string                 `json:"request_fingerprint,omitempty" binding:"omitempty,len=64,hexadecimal"`
 }
 
 // UpdateExecutionRequest 更新执行状态请求

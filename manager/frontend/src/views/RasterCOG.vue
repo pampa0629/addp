@@ -183,6 +183,7 @@ import { InfoFilled, Refresh } from '@element-plus/icons-vue'
 import { openMonitorExecution, parseLocatorSafe } from '@addp/common-frontend'
 import { quickViewAPI } from '../api/quickView'
 import { useQuickViewResourceDisplay } from '../composables/useQuickViewResourceDisplay'
+import { useCurrentResultConfirmation } from '../composables/useCurrentResultConfirmation'
 import { formatBytes, formatDateTime } from '../utils/formatters'
 import {
   rasterCOGExecutionStatusTagType,
@@ -197,6 +198,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
 const { displayText, engineName, loadQuickViewEngines } = useQuickViewResourceDisplay(t)
 
 const activeTab = ref(route.query.tab === 'results' ? 'results' : 'tasks')
@@ -313,13 +315,15 @@ const loadResults = async () => {
 const executeTask = async (task) => {
   executingId.value = task.id
   try {
-    const response = await quickViewAPI.executeRasterCOGTask(task.id)
+    const response = await executeWithCurrentResultConfirmation(payload => quickViewAPI.executeRasterCOGTask(task.id, payload))
     ElMessage.success(t('manager.rasterCOG.executeSubmitted'))
     await loadTasks()
     await openMonitorExecution(response.execution_id)
   } catch (error) {
-    console.error('执行 COG 生成任务失败:', error)
-    ElMessage.error(errorMessage(error, t('manager.rasterCOG.executeFailed')))
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('执行 COG 生成任务失败:', error)
+      ElMessage.error(errorMessage(error, t('manager.rasterCOG.executeFailed')))
+    }
   } finally {
     executingId.value = null
   }

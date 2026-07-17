@@ -65,9 +65,10 @@ Console 根据菜单选择动态加载对应模块：
 
 ### 认证机制
 
-- Console 和各模块都使用相同的 JWT token
-- Token 存储在 localStorage
-- Console 登录后，各模块自动共享认证状态
+- Refresh Token 只保存在 System 设置的 HttpOnly Cookie
+- Access Token 只保存在 Browser AuthSession 内存
+- Console 登录后，通过受信任 `postMessage` 向 iframe 投递短期 Access Token
+- 页面刷新和新标签页通过 Cookie 静默恢复，多标签页刷新由共享锁协调
 - 各模块也可以独立登录（standalone 模式）
 
 ## 与模块的关系

@@ -1,10 +1,10 @@
 """将 ADDP Tool Manifest 适配为 LangChain StructuredTool。"""
 
 import json
-from typing import Any
+from typing import Annotated, Any
 
 from addp_common.tools import ToolExecutionError, ToolExecutor, load_manifest
-from langchain_core.tools import StructuredTool
+from langchain_core.tools import InjectedToolCallId, StructuredTool
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from config import settings
@@ -39,6 +39,7 @@ def _arguments_model(tool_name: str, schema: dict[str, Any]) -> type[BaseModel]:
                 min_length=property_schema.get("minLength"),
             ),
         )
+    fields["tool_call_id"] = (Annotated[str, InjectedToolCallId], ...)
     return create_model(
         f"{tool_name.replace('.', '_').title()}Arguments",
         __config__=ConfigDict(extra="forbid"),
@@ -54,7 +55,7 @@ def stable_tool_name(tool: StructuredTool) -> str:
     return str((getattr(tool, "metadata", None) or {}).get("addp_tool_name") or tool.name)
 
 
-def create_agent_tools(token: str) -> list[StructuredTool]:
+def create_agent_tools(token: str, agent_run_id: str) -> list[StructuredTool]:
     executor = ToolExecutor(settings.get_gateway_url(), token)
     tools: list[StructuredTool] = []
 
@@ -62,8 +63,14 @@ def create_agent_tools(token: str) -> list[StructuredTool]:
         stable_name = definition.name
 
         async def call_tool(_stable_name=stable_name, **arguments):
+            tool_call_id = str(arguments.pop("tool_call_id"))
             try:
-                result = await executor.call(_stable_name, arguments)
+                result = await executor.call(
+                    _stable_name,
+                    arguments,
+                    agent_run_id=agent_run_id,
+                    tool_call_id=tool_call_id,
+                )
             except ToolExecutionError as exc:
                 result = exc.as_dict()
             return json.dumps(result, ensure_ascii=False, separators=(",", ":"))

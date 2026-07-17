@@ -29,6 +29,28 @@ class SystemClient(BaseClient):
             raise ValueError("system authorization context must contain user_id")
         return response
 
+    async def create_delegation(
+        self,
+        *,
+        audience: str,
+        scopes: List[str],
+        agent_run_id: str,
+        tool_call_id: str,
+    ) -> Dict[str, Any]:
+        """Issue one short-lived delegated token for an ADDP Tool call."""
+        response = await self.post(
+            "/api/v1/system/auth/delegations",
+            json={
+                "audience": audience,
+                "scopes": scopes,
+                "agent_run_id": agent_run_id,
+                "tool_call_id": tool_call_id,
+            },
+        )
+        if not isinstance(response, dict) or not str(response.get("access_token") or "").startswith("addp_dat_"):
+            raise ValueError("system delegation response must contain a delegated access token")
+        return response
+
     async def list_internal_engines(self, tenant_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """通过服务间接口获取引擎列表"""
         params = {"tenant_id": tenant_id} if tenant_id else None

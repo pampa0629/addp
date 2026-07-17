@@ -64,6 +64,7 @@ func SetupRouter(
 	db *gorm.DB,
 	devTaskHandler *DevTaskHandler,
 	executionHandler *ExecutionHandler,
+	toolApprovalHandler *ToolApprovalHandler,
 	operatorHandler *OperatorHandler,
 	engineHandler *EngineHandler,
 	queryHandler *QueryHandler,
@@ -99,6 +100,12 @@ func SetupRouter(
 	api.Use(internalAPIKeyMiddleware(cfg.InternalAPIKey))
 	// 使用包装后的认证中间件（支持跳过已通过内部认证的请求）
 	api.Use(systemAuthMiddlewareWrapper(cfg.SystemServiceURL))
+	api.Use(commonAuth.DelegatedAccessPolicy("develop", commonAuth.DelegatedRoutePolicy{
+		"GET /api/v1/develop/workflow-engines/:id/operators": {"workflow.operators.list"},
+		"POST /api/v1/develop/workflow-validations":          {"workflow.validate"},
+		"POST /api/v1/develop/executions":                    {"workflow.run"},
+		"GET /api/v1/develop/executions/:execution_id":       {"execution.get"},
+	}))
 	// 审计日志中间件（记录到 System 模块）
 	if systemClient != nil {
 		api.Use(audit.AuditMiddleware("develop", systemClient))
@@ -135,6 +142,13 @@ func SetupRouter(
 			executions.GET("/:execution_id", executionHandler.GetExecution)          // 获取执行详情
 			executions.GET("/:execution_id/logs", executionHandler.GetExecutionLogs) // 获取执行日志
 			executions.POST("/:execution_id/retry", executionHandler.RetryExecution) // 重试执行
+		}
+
+		// ========== 委托 Tool 审批 ==========
+		approvals := api.Group("/approvals")
+		{
+			approvals.GET("/:id", toolApprovalHandler.GetApproval)
+			approvals.POST("/:id/decision", toolApprovalHandler.DecideApproval)
 		}
 
 		// ========== 引擎管理 ==========

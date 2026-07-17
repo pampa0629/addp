@@ -107,7 +107,7 @@ const formatInfo = computed(() => mergeFormatInfo(
 const storageInfo = computed(() => attributes.value?.storage || {})
 
 const splatURL = computed(() => content.value?.url || objectData.value?.url || '')
-const sourceURL = computed(() => withAuthToken(splatURL.value))
+const sourceURL = computed(() => splatURL.value)
 const sourceFormat = computed(() => String(
   metadata.value?.format ||
   gaussianInfo.value?.format ||
@@ -165,25 +165,6 @@ function mergeFormatInfo(base, override) {
     }
   }
   return result
-}
-
-function withAuthToken(url) {
-  if (!url || typeof url !== 'string') return ''
-  if (!url.startsWith('/api/') && !url.startsWith('/manager/')) return url
-  const token = localStorage.getItem('token')
-  if (!token) return url
-  try {
-    const parsed = new URL(url, window.location.origin)
-    if (!parsed.searchParams.has('token')) {
-      parsed.searchParams.set('token', token)
-    }
-    return parsed.origin === window.location.origin
-      ? `${parsed.pathname}${parsed.search}${parsed.hash}`
-      : parsed.toString()
-  } catch {
-    const separator = url.includes('?') ? '&' : '?'
-    return `${url}${separator}token=${encodeURIComponent(token)}`
-  }
 }
 
 async function loadGaussianSplats3D() {

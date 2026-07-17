@@ -1,20 +1,90 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/addp/common/datatype"
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	commonSpatial "github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
+	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
+
+func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testing.T) {
+	db := newTaskProviderHandlerTestDB(t)
+	repo := repository.NewModel3DGLBRepository(db)
+	taskSvc := service.NewModel3DGLBTaskService(repo)
+	locator := "addp://engine/26/path/models/building.ifc?type=file&item_id=77"
+	fingerprint := commonModels.GenerateItemFingerprint(26, "models/building.ifc")
+	task := &models.Model3DGLBTask{
+		TenantID: 7,
+		Name:     "GLB quick-view action confirmation",
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"source": commonModels.JSONMap{
+				"item_locator": locator, "source_engine_id": uint(26),
+				"item_fingerprint": fingerprint, "item_id": uint(77), "format": "ifc",
+			},
+			"result": commonModels.JSONMap{},
+		},
+	}
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("create model 3d GLB task: %v", err)
+	}
+	result := &models.Model3DGLB{
+		TenantID: 7, ItemFingerprint: fingerprint, TaskID: &task.ID,
+		Locator: locator, SourceEngineID: 26, SourceFormat: "ifc",
+		StorageRef: "managed-result", Status: models.Model3DGLBStatusReady,
+		Metadata: commonModels.JSONMap{},
+	}
+	if err := db.Create(result).Error; err != nil {
+		t.Fatalf("create current model 3d GLB result: %v", err)
+	}
+	handler := &QuickViewHandler{model3DGLBTaskSvc: taskSvc}
+	capability := &service.QuickViewCapability{
+		TenantID: 7, ItemFingerprint: fingerprint, Locator: locator,
+		SourceKind: service.QuickViewSourceKindModel3D,
+	}
+	source := service.QuickViewSource{
+		EngineID: 26,
+		Model3D:  &service.Model3DGLBSource{Format: "ifc", SourceSizeBytes: 1024},
+	}
+
+	if _, _, err := handler.createAndExecuteModel3DGLBTask(context.Background(), 1, capability, source, false); !errors.Is(err, service.ErrExistingResultConfirmationRequired) {
+		t.Fatalf("unconfirmed quick-view action error = %v", err)
+	}
+	var count int64
+	if err := db.Model(&commonExecution.TaskExecution{}).Count(&count).Error; err != nil {
+		t.Fatalf("count unconfirmed executions: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("unconfirmed quick-view action created %d executions", count)
+	}
+
+	reusedTaskID, executionID, err := handler.createAndExecuteModel3DGLBTask(context.Background(), 1, capability, source, true)
+	if err != nil {
+		t.Fatalf("confirmed quick-view action: %v", err)
+	}
+	if reusedTaskID != task.ID || executionID == "" {
+		t.Fatalf("confirmed quick-view action task=%d execution=%q, want task %d", reusedTaskID, executionID, task.ID)
+	}
+	if err := db.Model(&commonExecution.TaskExecution{}).Count(&count).Error; err != nil {
+		t.Fatalf("count confirmed executions: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("confirmed quick-view action execution count = %d, want 1", count)
+	}
+}
 
 func TestQuickViewFeatureCollectionConvertsWKTToGeoJSON(t *testing.T) {
 	itemID := uint(99)

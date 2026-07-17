@@ -78,6 +78,7 @@ Develop 作为一个 TaskProvider 注册到 System，声明 `query`、`workflow`
 
 - [dev_tasks表](frontend/docs/tables/dev_tasks表.md) - 开发任务定义表,支持 query/workflow/script
 - Develop 执行记录统一写入 `common.task_executions`，不再维护 Develop 私有执行记录表。
+- [tool_approvals表](frontend/docs/tables/tool_approvals表.md) - Develop 持有的委托 Tool 审批与一次性消费事实。
 
 **重要**：修改表结构或API时，必须同步更新对应的单表文档。
 

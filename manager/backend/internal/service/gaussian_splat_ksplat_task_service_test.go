@@ -155,7 +155,7 @@ func TestGaussianSplatKSplatTaskEnrichesBoundsFromMetaItem(t *testing.T) {
 			},
 		},
 	}
-	svc := NewGaussianSplatKSplatTaskService(nil, nil)
+	svc := NewGaussianSplatKSplatTaskService(nil)
 	svc.SetMetaClient(commonClient.NewMetaClientWithInternalKey(metaServer.URL, "internal-key"))
 
 	if err := svc.enrichGaussianSplatKSplatTaskSourceFacts(context.Background(), task); err != nil {

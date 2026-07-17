@@ -104,7 +104,7 @@ backend/
 │   ├── repository/     # 数据访问层
 │   └── service/        # 业务逻辑层
 └── pkg/                # 可对外暴露的工具包
-    └── utils/          # 工具函数（JWT、密码加密等）
+    └── utils/          # 密码等通用工具
 ```
 
 **分层设计**:
@@ -184,6 +184,11 @@ frontend/src/
 | engines | system | 引擎配置表，含加密连接信息 |
 | applications | system | 外部应用表 |
 | api_keys | system | 应用 API Key 表（存储 SHA256 hash） |
+| refresh_token_families | system | 浏览器和 OAuth Refresh Token Family |
+| refresh_tokens | system | 轮换 Refresh Token Hash |
+| access_tokens | system | 短期 User Access Token Hash |
+| delegated_access_tokens | system | Agent Tool 短期受委托访问令牌 Hash 与审计绑定 |
+| resource_access_tickets | system | Owner Path 浏览器资源票据 Hash |
 | module_registry | (public) | 模块注册表，供 Gateway 动态路由 |
 | task_providers | (public) | 任务提供者表，供 Orchestrator 调用 |
 
@@ -195,6 +200,8 @@ frontend/src/
 - [tenants表](docs/tables/tenants表.md) - 租户表,多租户隔离
 - [audit_logs表](docs/tables/audit_logs表.md) - 审计日志表,操作审计和追溯
 - [engines表](docs/tables/engines表.md) - 引擎配置表,引擎连接管理
+- [resource_access_tickets表](docs/tables/resource_access_tickets表.md) - 浏览器原生资源访问票据
+- [delegated_access_tokens表](docs/tables/delegated_access_tokens表.md) - Agent Tool 短期受委托访问令牌
 
 **重要**:修改表结构或 API 时,必须同步更新对应的单表文档。
 
@@ -203,11 +210,12 @@ frontend/src/
 ### 认证流程
 
 1. 用户通过 `POST /api/v1/system/login` 登录，提交用户名和密码
-2. 后端验证凭证，创建 opaque Access Token 和 Refresh Token Family
-3. 前端存储 Token 到 localStorage
-4. 后续请求通过 `Authorization: Bearer <token>` 头部携带 Token
-5. 后端中间件 `AuthMiddleware` 验证 Token 并提取用户信息
-6. Token 过期后可通过 `POST /api/v1/system/refresh` 刷新
+2. 后端验证凭证，创建 Refresh Token Family、opaque Access Token、Refresh Token 和 Owner Resource Access Ticket
+3. Access Token 只返回给 Browser AuthSession 内存；Refresh Token 和 Resource Ticket 只通过 HttpOnly Cookie 下发
+4. 普通 API 通过 `Authorization: Bearer <token>` 携带 Access Token
+5. 原生图片、媒体、下载和三维资源使用干净 URL，由浏览器携带 Owner Path Resource Ticket Cookie
+6. System `/auth/context` 解析 Token 并回查当前用户、租户状态，Owner 模块继续执行租户和资源权限校验
+7. Access Token 到期前通过 `POST /api/v1/system/refresh` 静默轮换；退出或 Refresh Token 重用时撤销整个 Family
 
 ### 数据库设计
 

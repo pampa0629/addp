@@ -42,6 +42,7 @@ import { defaults as defaultInteractions, MouseWheelZoom } from 'ol/interaction.
 import { defaults as defaultControls, ZoomToExtent } from 'ol/control.js'
 import { unByKey } from 'ol/Observable.js'
 import client from '@/api/client'
+import { getAccessToken } from '@common-ui'
 import { useMvtGridDebug } from '@/composables/useMvtGridDebug'
 import { useVectorTileRenderStatus } from '@/composables/useVectorTileRenderStatus'
 import {
@@ -100,7 +101,7 @@ const { createVectorTileLayer, cleanup: cleanupTileLoader } = useVectorTileLoade
 const { mapConfig, loadMapConfig } = useMapConfig()
 
 const apiBase = computed(() => client.defaults.baseURL)
-const token = () => localStorage.getItem('token') || ''
+const token = () => getAccessToken() || ''
 const {
   createGridLayer,
   updateGrid: updateMvtGrid,

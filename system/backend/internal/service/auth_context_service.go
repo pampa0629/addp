@@ -91,3 +91,36 @@ func (s *AuthContextService) ResolveAccessToken(token *models.AccessToken) (*mod
 		ExpiresAt:   token.ExpiresAt,
 	}, nil
 }
+
+func (s *AuthContextService) ResolveDelegatedAccessToken(token *models.DelegatedAccessToken) (*models.AuthorizationContext, error) {
+	if token == nil || token.ExpiresAt.IsZero() || token.CreatedAt.IsZero() {
+		return nil, ErrInvalidAuthorizationIdentity
+	}
+	var tenantID uint
+	if token.TenantID != nil {
+		tenantID = *token.TenantID
+	}
+	user, err := s.ValidateIdentity(token.UserID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	delegatedBy := token.DelegatedBy
+	agentRunID := token.AgentRunID
+	toolCallID := token.ToolCallID
+	return &models.AuthorizationContext{
+		SubjectType: models.SubjectTypeUser,
+		UserID:      user.ID,
+		Username:    user.Username,
+		UserType:    user.UserType,
+		TenantID:    user.TenantID,
+		AuthType:    models.AuthTypeDelegatedAccessToken,
+		ClientID:    token.ClientID,
+		Audiences:   []string{token.Audience},
+		Scopes:      []string(token.Scopes),
+		DelegatedBy: &delegatedBy,
+		AgentRunID:  &agentRunID,
+		ToolCallID:  &toolCallID,
+		IssuedAt:    token.CreatedAt,
+		ExpiresAt:   token.ExpiresAt,
+	}, nil
+}

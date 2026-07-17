@@ -24,3 +24,33 @@ other = "获取工作流引擎失败"
 
 [develop.engine.spark_list_failed]
 other = "获取 Spark 通用引擎资源失败"
+
+[develop.approval.invalid_request]
+other = "审批请求无效"
+
+[develop.approval.invalid_decision]
+other = "审批决定无效"
+
+[develop.approval.forbidden]
+other = "无权访问或决定该审批"
+
+[develop.approval.not_found]
+other = "审批不存在"
+
+[develop.approval.expired]
+other = "审批已过期"
+
+[develop.approval.not_approved]
+other = "审批尚未批准"
+
+[develop.approval.rejected]
+other = "审批已拒绝"
+
+[develop.approval.already_consumed]
+other = "审批已消费"
+
+[develop.approval.request_mismatch]
+other = "审批请求指纹不匹配"
+
+[develop.approval.unavailable]
+other = "审批服务不可用"

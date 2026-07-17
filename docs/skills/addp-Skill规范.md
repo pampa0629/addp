@@ -283,6 +283,8 @@ evals/agent-scenarios/
 - 写操作是否经过服务端审批；
 - 输出是否使用稳定引用并控制上下文大小。
 
+所有场景统一使用 `addp.agent-scenario/v1`。评测器只断言稳定 Skill、Tool、Interaction、错误码、AgentRun 关系、ResultRef 和 owner 副作用，不逐字匹配模型回答。普通门禁使用不调用真实 LLM 的离线确定性轨迹；真实环境定向复验消费同一契约，不保存账号、Token 或环境私有 ID。
+
 ## 十一、验证清单
 
 新增或修改 Skill 时至少验证：

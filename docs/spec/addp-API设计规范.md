@@ -568,10 +568,10 @@ type User struct {
 
 ### 8.1 认证方式
 
-**（1）用户认证（JWT）**
+**（1）用户认证（User Access Token）**
 
 ```http
-Authorization: Bearer <jwt_token>
+Authorization: Bearer <access_token>
 ```
 
 **（2）内部服务认证（API Key）**
@@ -585,6 +585,10 @@ X-Internal-API-Key: <secret_key>
 ```http
 X-API-Key: <app_api_key>
 ```
+
+**（4）浏览器原生资源认证（Browser Resource Access Ticket）**
+
+图片、媒体、下载和三维加载器等无法设置 Authorization Header 的请求，可以由 Owner 明确允许的 GET/HEAD 资源路由读取 System 下发的 HttpOnly Resource Access Ticket Cookie。普通 CRUD、搜索、任务和写入 API 不接受该 Cookie；任何 API 都不得接受 `?token=` User Access Token。
 
 ### 8.2 认证失败响应
 
@@ -610,7 +614,7 @@ X-API-Key: <app_api_key>
 
 ```
 POST /api/v1/system/refresh
-Authorization: Bearer <expired_token>
+Cookie: addp_refresh_token=<http_only_refresh_token>
 ```
 
 响应：
@@ -618,8 +622,9 @@ Authorization: Bearer <expired_token>
 ```json
 // HTTP 200 OK
 {
-  "access_token": "new_jwt_token",
-  "token_type": "Bearer"
+  "access_token": "addp_at_...",
+  "token_type": "Bearer",
+  "expires_in": 900
 }
 ```
 
@@ -655,7 +660,7 @@ r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 ```go
 // @Summary 用户登录
-// @Description 用户登录获取 JWT token
+// @Description 用户登录获取短期 opaque Access Token，并设置 HttpOnly Refresh Token Cookie
 // @Tags 认证
 // @Accept json
 // @Produce json
@@ -711,7 +716,7 @@ http://localhost:8091/docs                 # Copilot 模块（FastAPI）
 3. **Tags** - 分组标签，对应功能模块
 4. **请求参数** - 路径参数、Query 参数、Body 参数的类型和说明
 5. **响应示例** - 成功和失败的响应结构
-6. **认证要求** - 是否需要 JWT（`@Security BearerAuth`）
+6. **认证要求** - 是否需要 User Access Token（`@Security BearerAuth`）
 
 ---
 
@@ -1110,15 +1115,13 @@ async def chat(request: ChatRequest): ...
 
 ### 13.3 agent 调用其他模块的认证
 
-agent 调用其他模块（develop、meta、manager 等）时，统一使用内部 API Key 认证：
+Agent 代表用户调用 owner 模块时，统一使用 System 签发或验证的 User Access Token；不得使用内部 API Key 模拟用户身份：
 
 ```python
-headers = {
-    "X-Internal-API-Key": settings.INTERNAL_API_KEY
-}
+headers = {"Authorization": f"Bearer {user_access_token}"}
 ```
 
-不得使用用户 JWT token 代理调用，避免权限混淆。
+内部 API Key 只用于明确的服务身份调用，不能携带或提升用户、租户和 Scope 权限。
 
 ---
 

@@ -1,11 +1,12 @@
 import axios from 'axios'
+import { getAccessToken } from '../auth/authSession.js'
 import { parseLocator } from '../types/resourceLocator.js'
 import { getEngineFamily } from '../utils/engineDisplay.js'
 
 const createAuthenticatedAxios = () => {
   const instance = axios.create()
   instance.interceptors.request.use((config) => {
-    const token = localStorage.getItem('token')
+    const token = getAccessToken()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }

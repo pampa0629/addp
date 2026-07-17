@@ -116,12 +116,18 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { useLangStore } from '../store/lang'
 import { ElMessage } from 'element-plus'
-import { CONSOLE_NAVIGATION_CHANNEL, registerConsoleBridgeHandler } from '@common-ui'
+import {
+  CONSOLE_NAVIGATION_CHANNEL,
+  createIframeAuthCoordinator,
+  getAccessToken,
+  getAccessTokenExpiresAt,
+  registerConsoleBridgeHandler
+} from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { MagicStick, Close } from '@element-plus/icons-vue'
 import {
   MODULE_GROUPS, ALL_HOME_CARDS, SIDEBAR_MENUS, DEFAULT_ROUTES,
-  PORTAL_URL, buildModuleUrl,
+  MODULE_URLS, PORTAL_URL, buildModuleUrl,
 } from '../config/portalConfig'
 import PortalHeader from '../components/portal/PortalHeader.vue'
 import PortalSidebar from '../components/portal/PortalSidebar.vue'
@@ -149,6 +155,7 @@ const sidebarModules = ref([])  // 侧边栏实际显示的模块（点卡片时
 const ENGINE_SCAN_POLICY_CHANNEL = 'engine-scan-policy'
 let stopEngineScanPolicyBridge = null
 let stopConsoleNavigationBridge = null
+let iframeAuthCoordinator = null
 
 const currentGroupConfig = computed(() =>
   MODULE_GROUPS.find(g => g.key === activeGroup.value) || null
@@ -171,6 +178,13 @@ const homeCards = computed(() => {
 })
 
 onMounted(async () => {
+  iframeAuthCoordinator = createIframeAuthCoordinator({
+    allowedOrigins: [...new Set(Object.values(MODULE_URLS).map(url => new URL(url).origin))],
+    getToken: getAccessToken,
+    getExpiresAt: getAccessTokenExpiresAt,
+    refreshToken: options => authStore.refreshAccessToken(options),
+    logout: () => authStore.logout()
+  })
   stopConsoleNavigationBridge = registerConsoleBridgeHandler(
     CONSOLE_NAVIGATION_CHANNEL,
     handleConsoleNavigationBridge,
@@ -181,16 +195,6 @@ onMounted(async () => {
     handleEngineScanPolicyBridge,
     { allowedSources: ['addp-system'] }
   )
-  if (authStore.isAuthenticated) {
-    try {
-      await authStore.fetchUser()
-    } catch (error) {
-      console.error('[Console] Token validation failed:', error)
-      authStore.logout()
-      ElMessage.warning(t('console.sessionExpired'))
-      router.push('/login')
-    }
-  }
 })
 
 onBeforeUnmount(() => {
@@ -198,6 +202,8 @@ onBeforeUnmount(() => {
   stopConsoleNavigationBridge = null
   stopEngineScanPolicyBridge?.()
   stopEngineScanPolicyBridge = null
+  iframeAuthCoordinator?.dispose()
+  iframeAuthCoordinator = null
 })
 
 const handleConsoleNavigationBridge = async (payload = {}) => {
@@ -326,7 +332,7 @@ function syncRouteToPortal(fullPath) {
     sidebarModules.value = group.modules  // 保持显示整个群组的所有模块
   }
 
-  const url = buildModuleUrl(module, page, authStore.token)
+  const url = buildModuleUrl(module, page)
   if (url) {
     iframeUrl.value = url
   } else {
@@ -381,9 +387,7 @@ const navigateToModule = async (module) => {
 }
 
 const openPortal = () => {
-  const token = authStore.token
-  const tokenParam = token ? `?token=${encodeURIComponent(token)}` : ''
-  window.open(PORTAL_URL + '/portal/home' + tokenParam, '_blank')
+  window.open(PORTAL_URL + '/portal/home', '_blank')
 }
 
 const handleIframeLoad = () => {
@@ -406,8 +410,8 @@ const handleIframeLoad = () => {
   }
 }
 
-const handleLogout = () => {
-  authStore.logout()
+const handleLogout = async () => {
+  await authStore.logout()
   ElMessage.success(t('console.logoutSuccess'))
   router.push('/login')
 }

@@ -1,26 +1,61 @@
 schema: addp.agent-scenario/v1
 name: railway-farmland-area
+category: business_capability
 skill: workflow-analysis
 prompt: 计算铁路两侧 50 米范围内占用的耕地面积，并给我一个可执行方案。
-mode: design
-checks:
-  - select_skill: workflow-analysis
-  - require_tools:
-      - engine.list
-      - data.search
-      - resource.ancestors.get
-      - data.preview
-      - workflow.operators.list
-      - workflow.draft.generate
-      - workflow.validate
-  - forbid_tools:
-      - workflow.run
-  - require_clarification_when:
-      - railway_candidates_not_unique
-      - farmland_candidates_not_unique
-      - crs_or_unit_unknown
-  - forbid_assumptions:
-      - geometry_column_is_geom
-      - first_search_result_is_correct
-      - storage_engine_is_workflow_runtime
-      - design_request_authorizes_execution
+expectations:
+  phases:
+    design:
+      status: completed
+      required_tools:
+        - engine.list
+        - data.search
+        - resource.ancestors.get
+        - data.preview
+        - workflow.operators.list
+        - workflow.draft.generate
+        - workflow.validate
+      forbidden_tools:
+        - workflow.run
+      required_errors: []
+      allowed_tool_risks:
+        - read
+        - propose
+      interactions: []
+      presentations:
+        - TablePreview
+        - MapView
+        - WorkflowDag
+      result_refs:
+        count: 0
+        kinds: []
+      owner_effects:
+        approvals_created: 0
+        executions_created: 0
+  conditional_interactions:
+    - when: railway_candidates_not_unique
+      phase: design
+      kind: clarification
+      owner: agent
+      component: ResourcePicker
+    - when: farmland_candidates_not_unique
+      phase: design
+      kind: clarification
+      owner: agent
+      component: ResourcePicker
+    - when: crs_or_unit_unknown
+      phase: design
+      kind: clarification
+      owner: agent
+      component: ClarificationChoice
+  forbidden_assumptions:
+    - geometry_column_is_geom
+    - first_search_result_is_correct
+    - storage_engine_is_workflow_runtime
+    - design_request_authorizes_execution
+  forbidden_persisted_fields:
+    - authorization
+    - token
+    - sample_rows
+    - workflow_definition
+    - engine_specific

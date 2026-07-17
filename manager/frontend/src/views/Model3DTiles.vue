@@ -150,11 +150,13 @@ import { InfoFilled, Refresh } from '@element-plus/icons-vue'
 import { openMonitorExecution } from '@addp/common-frontend'
 import { quickViewAPI } from '../api/quickView'
 import { useQuickViewResourceDisplay } from '../composables/useQuickViewResourceDisplay'
+import { useCurrentResultConfirmation } from '../composables/useCurrentResultConfirmation'
 import { formatBytes, formatDateTime } from '../utils/formatters'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
 const { displayText, engineName, loadQuickViewEngines, resourcePath } = useQuickViewResourceDisplay(t)
 const activeTab = ref(route.query.tab === 'results' ? 'results' : 'tasks')
 const tasks = ref([])
@@ -244,12 +246,12 @@ const taskDeleteDisabled = (task) => taskExecutionActive(task)
 const executeTask = async (task) => {
   executingId.value = task.id
   try {
-    const response = unwrapPayload(await quickViewAPI.executeModel3DTilesTask(task.id))
+    const response = unwrapPayload(await executeWithCurrentResultConfirmation(payload => quickViewAPI.executeModel3DTilesTask(task.id, payload)))
     ElMessage.success(t('manager.model3DTiles.executeSubmitted'))
     await loadTasks()
     if (response?.execution_id) await openMonitorExecution(response.execution_id)
   } catch (error) {
-    ElMessage.error(errorMessage(error, t('manager.model3DTiles.executeFailed')))
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(errorMessage(error, t('manager.model3DTiles.executeFailed')))
   } finally {
     executingId.value = null
   }

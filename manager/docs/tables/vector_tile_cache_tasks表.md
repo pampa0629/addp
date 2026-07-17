@@ -85,6 +85,8 @@
 
 `target` 的主身份是 `source_engine_id + locator + item_fingerprint`。`schema/table` 只表达数据库表型 item 的 PG 执行事实；文件、对象等非表型空间 item 不应为了生成瓦片缓存伪造 `schema/table`。`source_kind` 来自 ResourceLocator 的 `type`，`full_name` 来自 ResourceLocator 解析后的稳定路径，并用于统一计算 `item_fingerprint`。
 
+任务语义身份固定为 `tenant_id + target.item_fingerprint + tile.format`。同一语义身份的重复创建必须复用原任务 ID，并更新名称、描述、启用状态、计划字段和规范化配置；不得返回“任务已存在”，也不得新建重复任务。PostgreSQL 使用仅覆盖未软删除任务的部分唯一索引 `idx_vector_tile_cache_tasks_source_format_unique` 作为并发防线；先查后插命中该索引时必须回查并复用原任务。
+
 非表型空间 item 的 MVT 生成由 GeoPython Workflow 的 `vector_to_mvt_tiles` 算子执行。`options.simplification`、`options.simplification_max_zoom`、`options.mvt_extent`、`options.mvt_buffer`、`options.max_tile_size_bytes`、`options.max_features` 直接控制 GDAL MVT 创建参数；`options.num_threads` 控制 GDAL_NUM_THREADS；`options.publish_concurrency` 控制生成后向对象存储发布瓦片的并发度。默认值面向空间快显质量，避免 GDAL 默认单瓦片 500KB 限制过早导致降精度或丢要素。
 
 以上是语义示例，不是最终 API schema。

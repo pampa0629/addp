@@ -6,6 +6,9 @@ import (
 	"strings"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
+	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
 )
@@ -80,15 +83,87 @@ func (r *PointCloudCOPCRepository) DeleteTask(ctx context.Context, id uint, tena
 		Delete(&models.PointCloudCOPCTask{}).Error
 }
 
-func (r *PointCloudCOPCRepository) UpdateTaskLastExecution(ctx context.Context, id uint, tenantID uint, executionID, status string, runAt time.Time) error {
-	return r.db.WithContext(ctx).
-		Model(&models.PointCloudCOPCTask{}).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Updates(map[string]interface{}{
-			"last_execution_id":     executionID,
-			"last_execution_status": status,
-			"last_run_at":           runAt,
-		}).Error
+func (r *PointCloudCOPCRepository) ClaimExecution(
+	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, confirmExistingResult bool,
+) (*models.PointCloudCOPCTask, error) {
+	var task models.PointCloudCOPCTask
+	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
+		TaskModel: &task,
+		TaskType:  commonExecution.TaskTypePointCloudCOPCGeneration,
+		TaskLabel: "point cloud COPC",
+		TaskName:  func() string { return task.Name },
+		TaskConfig: func() commonModels.JSONMap {
+			return task.Config
+		},
+		CurrentResultModel:    &models.PointCloudCOPC{},
+		ConfirmExistingResult: confirmExistingResult,
+	})
+	if err != nil {
+		return nil, err
+	}
+	task.LastExecutionID = &execution.ExecutionID
+	status := commonExecution.ExecutionStatusPending
+	task.LastExecutionStatus = &status
+	return &task, nil
+}
+
+func (r *PointCloudCOPCRepository) StartExecution(
+	ctx context.Context, taskID, tenantID uint, executionID string, startedAt time.Time,
+) error {
+	return newTaskExecutionLifecycle(r.db).Start(
+		ctx, taskID, tenantID, executionID, startedAt, &models.PointCloudCOPCTask{}, "point cloud COPC",
+	)
+}
+
+func (r *PointCloudCOPCRepository) CompleteExecution(
+	ctx context.Context,
+	taskID, tenantID uint,
+	executionID string,
+	resultID uint,
+	resultFields map[string]interface{},
+	executionFields map[string]interface{},
+	completedAt time.Time,
+) error {
+	return newTaskExecutionLifecycle(r.db).Complete(ctx, taskID, tenantID, executionID, completedAt, taskExecutionCompletionSpec{
+		TaskModel:       &models.PointCloudCOPCTask{},
+		ResultModel:     &models.PointCloudCOPC{},
+		ResultID:        resultID,
+		ResultFields:    resultFields,
+		ExecutionFields: executionFields,
+	}, "point cloud COPC")
+}
+
+func (r *PointCloudCOPCRepository) GetExecution(
+	ctx context.Context, tenantID uint, executionID string,
+) (*commonExecution.TaskExecution, error) {
+	var execution commonExecution.TaskExecution
+	err := r.db.WithContext(ctx).
+		Where("execution_id = ? AND tenant_id = ?", executionID, int(tenantID)).
+		First(&execution).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, commonAPI.ErrNotFound
+	}
+	return &execution, err
+}
+
+func (r *PointCloudCOPCRepository) UpdateRunningExecutionProgress(
+	ctx context.Context, tenantID uint, executionID string, fields map[string]interface{},
+) error {
+	result := r.db.WithContext(ctx).
+		Model(&commonExecution.TaskExecution{}).
+		Where(
+			"execution_id = ? AND tenant_id = ? AND module = ? AND task_type = ? AND status = ?",
+			executionID, int(tenantID), commonExecution.ModuleManager,
+			commonExecution.TaskTypePointCloudCOPCGeneration, commonExecution.ExecutionStatusRunning,
+		).
+		Updates(fields)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return commonAPI.ErrConflict
+	}
+	return nil
 }
 
 func (r *PointCloudCOPCRepository) Create(ctx context.Context, result *models.PointCloudCOPC) error {

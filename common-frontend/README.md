@@ -205,13 +205,15 @@ import {
 
 - 使用官方 `@a2ui/web_core/v0_9` 处理 A2UI Surface；
 - 使用 `addp.catalog/v1` 注册受信任 Vue 组件；
-- 当前包含 `WorkflowDag` 和 `ClarificationChoice`；
+- 当前包含 `WorkflowDag`、`ClarificationChoice`、`ApprovalRequest`、`MapView`、`TablePreview` 和 `ResourcePicker`；
 - 未注册组件会被拒绝，不执行 Agent 生成的任意前端代码；
 - A2UI wrapper 只映射声明式 props 和 action，业务事实仍通过 ResultRef / Interaction 访问 owner API。
 
+`MapView` 只渲染最多 200 个 WGS84 GeoJSON Feature，不接受 URL；`TablePreview` 只渲染最多 50 列、100 行 JSON 标量；`ResourcePicker` 只允许提交当前 Interaction 已持久化的 locator 候选，不等同于实时 `ResourceTreePicker`。
+
 消费模块必须在自己的 `package.json` 中声明 `@a2ui/web_core`、Vue、Element Plus 和 Zod 依赖，`common-frontend` 不保存独立 `node_modules`。
 
-AG-UI 等基于 Fetch 的流式客户端必须使用共享 `createAuthenticatedFetch()`，以便动态注入当前 JWT，并在 401 后通过 System 刷新 Token。模块内不得复制刷新和重试逻辑。
+AG-UI 等基于 Fetch 的流式客户端必须使用共享 `createAuthenticatedFetch()`，以便动态注入 Browser AuthSession 内存中的 User Access Token，并执行统一的主动刷新、401 单次重试和多标签页协调。模块内不得复制 Token 持久化、刷新或重试逻辑。
 
 ```javascript
 import { A2UISurface } from '@addp/common-frontend/agent-ui'

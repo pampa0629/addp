@@ -52,5 +52,5 @@ PORT=8102 python api_server.py
 
 ```bash
 python -m pip install -r engines/pointcloud-workflow/requirements-dev.txt
-PYTHONPATH=engines/pointcloud-workflow:engines/docs pytest engines/pointcloud-workflow
+PYTHONPATH=common-python:engines/pointcloud-workflow:engines/docs pytest engines/pointcloud-workflow
 ```

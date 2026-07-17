@@ -223,6 +223,46 @@ class _OwnerErrorTool:
         )
 
 
+class _WorkflowApprovalTool:
+    name = "workflow__run"
+    metadata = {"addp_tool_name": "workflow.run"}
+
+    async def ainvoke(self, _args):
+        return json.dumps(
+            {
+                "status": "approval_required",
+                "interaction_id": "46ea0d75-b9bc-4b25-8d4a-441947081813",
+                "open_url": "/develop/approvals/46ea0d75-b9bc-4b25-8d4a-441947081813",
+                "request_fingerprint": "a" * 64,
+                "request_summary": {"workflow_engine_id": 20, "task_count": 2},
+                "expires_at": "2026-07-17T10:15:00Z",
+            },
+            ensure_ascii=False,
+        )
+
+
+class _PreviewTool:
+    name = "data__preview"
+    metadata = {"addp_tool_name": "data.preview"}
+
+    async def ainvoke(self, _args):
+        return json.dumps(
+            {
+                "columns": ["name", "shape"],
+                "rows": [
+                    {
+                        "name": "railway",
+                        "shape": {"type": "Point", "coordinates": [104.0, 30.0]},
+                    }
+                ],
+                "total": 1,
+                "geometry_column": "shape",
+                "source_crs": "EPSG:4326",
+            },
+            ensure_ascii=False,
+        )
+
+
 class _ScriptedResponse:
     def __init__(self, *, tool_calls=None, content=""):
         self.tool_calls = tool_calls or []
@@ -279,6 +319,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
             "user_id": 1,
             "tenant_id": 1,
             "token": "token",
+            "agent_run_id": "run-1",
         }
         with (
             patch("graph.factory.create_agent_tools", return_value=[_EngineListTool()]),
@@ -387,6 +428,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
             "user_id": 1,
             "tenant_id": 1,
             "token": "token",
+            "agent_run_id": "run-1",
             "checkpoint": checkpoint,
         }
         with (
@@ -466,6 +508,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
             "user_id": 1,
             "tenant_id": 1,
             "token": "token",
+            "agent_run_id": "run-1",
         }
         with (
             patch("graph.factory.create_agent_tools", return_value=[_EmptyWorkflowTool()]),
@@ -524,6 +567,30 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(presentations[0].payload["kind"], "workflow_dag")
         self.assertEqual(presentations[0].payload["workflow"], _WORKFLOW_DEFINITION)
 
+    async def test_data_preview_emits_table_then_map_presentations(self):
+        events = await self._run_workflow_events(
+            tools=[_PreviewTool()],
+            responses=[
+                _ScriptedResponse(
+                    tool_calls=[
+                        {
+                            "id": "preview-1",
+                            "name": "data__preview",
+                            "args": {
+                                "locator": "addp://engine/8/path/public/railway?type=table&item_id=60",
+                                "limit": 10,
+                            },
+                        }
+                    ]
+                ),
+                _ScriptedResponse(content="预览完成"),
+            ],
+            allowed_tool_names=["data.preview"],
+        )
+
+        presentations = [event.payload["kind"] for event in events if event.kind == "presentation"]
+        self.assertEqual(presentations, ["table_preview", "map_view"])
+
     async def test_tool_exception_emits_error_result_for_failed_step_audit(self):
         events = await self._run_workflow_events(
             tools=[_FailingTool()],
@@ -572,6 +639,31 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tool_result.payload["error_source"], "owner")
         self.assertEqual(tool_result.payload["error_code"], "owner_api_unavailable")
 
+    async def test_workflow_approval_pauses_run_with_owner_projection(self):
+        events = await self._run_workflow_events(
+            tools=[_WorkflowApprovalTool()],
+            responses=[
+                _ScriptedResponse(
+                    tool_calls=[{
+                        "id": "workflow-run-1",
+                        "name": "workflow__run",
+                        "args": {
+                            "workflow_engine_id": 20,
+                            "workflow_definition": _WORKFLOW_DEFINITION,
+                        },
+                    }]
+                )
+            ],
+            allowed_tool_names=["workflow.run"],
+        )
+
+        self.assertEqual([event.kind for event in events], ["tool_start", "tool_result", "interaction_required"])
+        interaction = events[-1].payload
+        self.assertEqual(interaction["interaction_kind"], "owner_approval")
+        self.assertEqual(interaction["owner"], "develop")
+        self.assertEqual(interaction["request_summary"]["task_count"], 2)
+        self.assertNotIn("workflow_definition", interaction)
+
     async def _run_workflow_events(self, *, tools, responses, allowed_tool_names):
         context = {
             "skill_name": "workflow-analysis",
@@ -580,6 +672,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
             "user_id": 1,
             "tenant_id": 1,
             "token": "token",
+            "agent_run_id": "run-1",
         }
         with (
             patch("graph.factory.create_agent_tools", return_value=tools),

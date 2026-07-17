@@ -393,6 +393,17 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_vector_tile_cache_tasks_source_format_unique
+		ON manager.vector_tile_cache_tasks (
+			tenant_id,
+			(config->'target'->>'item_fingerprint'),
+			(LOWER(COALESCE(config->'tile'->>'format', 'mvt')))
+		)
+		WHERE deleted_at IS NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
 		UPDATE common.task_executions
 		SET metadata = jsonb_set(
 			metadata,
@@ -633,6 +644,13 @@ func ensureRasterCOGSchema(db *gorm.DB) error {
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_raster_cog_current_unique
 		ON manager.raster_cog (tenant_id, item_fingerprint)
 		WHERE deleted_at IS NULL AND status <> 'deleted'
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_raster_cog_tasks_source_unique
+		ON manager.raster_cog_tasks (tenant_id, (config->'target'->>'item_fingerprint'))
+		WHERE deleted_at IS NULL
 	`).Error; err != nil {
 		return err
 	}

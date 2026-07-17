@@ -52,7 +52,7 @@ results = await manager.search("城市", page_size=10)
 
 ## Tool 与 CLI
 
-`addp_common.tools.manifest.json` 定义稳定 Tool 契约，`ToolExecutor` 只通过上述 SDK Client 调用 owner API。安装后可供 Codex 等本地 Agent 使用：
+`addp_common.tools.manifest.json` 定义稳定 Tool 契约。`ToolExecutor` 在每次 Tool 调用前使用当前 User Access Token 向 System 申请绑定 owner audience、稳定 Tool Scope、AgentRun 和 ToolCall 的短期 Delegated Access Token，随后只通过持有该委托令牌的 SDK Client 调用 owner API。安装后可供 Codex 等本地 Agent 使用：
 
 ```bash
 export ADDP_BASE_URL=http://localhost:8000
@@ -64,9 +64,13 @@ addp auth login --device
 addp tools list
 addp tools get workflow.validate
 addp tool call data.search --arguments '{"query":"城市","limit":10}'
+# 外部 Agent 可显式传入稳定审计绑定
+addp tool call workflow.validate --agent-run-id <run-id> --tool-call-id <call-id> --arguments '{...}'
 ```
 
 成功响应的 stdout 是 Tool 结果紧凑 JSON；失败响应也是标准错误 JSON，并返回非零 exit code。
+
+`workflow.run` 使用 Develop owner approval 的两阶段单一路线：首次输入 `workflow_engine_id + workflow_definition`，返回 `approval_required`；批准后再次调用时只输入 `approval_id + request_fingerprint`。SDK 不保存审批事实或完整 workflow payload，恢复调用由 Develop 从自己的审批记录读取原请求并一次性消费。
 
 ## 认证方式
 
@@ -76,7 +80,7 @@ addp tool call data.search --arguments '{"query":"城市","limit":10}'
 2. **用户请求**: Web 使用 HttpOnly Refresh Token Cookie，CLI 使用 OS Keychain 保存轮换 Refresh Token
 3. **显式短期 Token**: `--token` / `ADDP_TOKEN` 只用于调用方已经持有短期 Access Token 的自动化环境
 
-CLI 每次执行 Tool 前使用 Keychain 中的 Refresh Token 换取短期 Access Token，并原子保存轮换后的 Refresh Token；Access Token 不持久化。
+CLI 每次执行 Tool 前使用 Keychain 中的 Refresh Token 换取短期 User Access Token，并原子保存轮换后的 Refresh Token；User Access Token 不持久化。ToolExecutor 再按调用即时换取不可刷新、默认 2 分钟的 Delegated Access Token，原始 User Access Token 不进入 owner Client。
 
 ## 开发
 

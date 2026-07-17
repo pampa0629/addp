@@ -241,7 +241,7 @@ cat logs/gateway.log | grep "Rate limit exceeded"
 
 ## 常见问题排查
 
-### 1. JWT token 问题
+### 1. User Access Token 问题
 
 **症状**：
 - 用户登录后访问 API 返回 401 Unauthorized
@@ -249,31 +249,27 @@ cat logs/gateway.log | grep "Rate limit exceeded"
 
 **排查步骤**：
 
-1. **检查 JWT_SECRET 配置**
+1. **检查 System Token 和 Refresh Cookie 配置**
    ```bash
-   # 查看 .env 文件
-   cat .env | grep JWT_SECRET
-
-   # 确保所有模块使用相同的 JWT_SECRET
-   # System、Gateway、Manager、Meta、Transfer、Develop、Service 等
+   grep -E 'ACCESS_TOKEN_EXPIRE_MINUTES|REFRESH_TOKEN_EXPIRE_DAYS' .env
+   # 业务模块不配置或解析用户 Token 密钥
    ```
 
-2. **检查 token 是否过期**
+2. **检查 AuthContext 解析是否正常**
    ```bash
-   # 使用 jwt.io 解码 token，查看 exp 字段
-   # 或使用命令行工具
-   echo "your_token_here" | cut -d '.' -f 2 | base64 -d | jq
+   curl -H 'Authorization: Bearer addp_at_...' \
+     http://localhost:8180/api/v1/system/auth/context
    ```
 
 3. **检查 System 模块是否正常**
    ```bash
-   # System 模块负责生成 JWT token
+   # System 模块负责 opaque Token、Refresh Token Family 和 AuthContext
    curl http://localhost:8180/health
    ```
 
 **解决方案**：
-- 确保所有模块的 `JWT_SECRET` 一致
-- 如果 token 过期，重新登录获取新 token
+- 确认 System 数据库和 Redis 可用，业务模块能访问 `/auth/context`
+- Access Token 过期时由 Browser AuthSession 使用 HttpOnly Refresh Cookie 静默刷新
 - 检查 System 模块日志：`tail -f logs/system-backend.log`
 
 ---

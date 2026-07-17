@@ -15,6 +15,7 @@
 <script setup>
 import { computed, markRaw, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { getAccessToken } from '@common-ui'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import GiroInstance from '@giro3d/giro3d/core/Instance.js'
@@ -136,7 +137,7 @@ const summaryItems = computed(() => {
 })
 
 function authHeaders() {
-  const token = localStorage.getItem('token') || ''
+  const token = getAccessToken() || ''
   return token ? { Authorization: token.toLowerCase().startsWith('bearer ') ? token : `Bearer ${token}` } : {}
 }
 

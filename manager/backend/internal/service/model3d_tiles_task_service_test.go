@@ -18,7 +18,7 @@ func TestModel3DTilesTaskServiceReusesSemanticTaskIdentity(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	createModel3DTilesTaskTableForTest(t, db)
 	repo := repository.NewModel3DTilesRepository(db)
-	svc := NewModel3DTilesTaskService(repo, nil)
+	svc := NewModel3DTilesTaskService(repo)
 	svc.SetBucket("manager")
 
 	first := newModel3DTilesTaskForTest("S3M 快显", "fp-reuse", models.Model3DTilesTargetFormatS3M)
@@ -59,7 +59,7 @@ func TestModel3DTilesTaskServiceRepeatedExecutionRefreshesCurrentResult(t *testi
 	createModel3DTilesResultTableForTest(t, db)
 	repo := repository.NewModel3DTilesRepository(db)
 	execRepo := commonExecution.NewTaskExecutionRepository(db)
-	svc := NewModel3DTilesTaskService(repo, execRepo)
+	svc := NewModel3DTilesTaskService(repo)
 	svc.SetBucket("manager")
 	svc.SetExecutor(staticModel3DTilesExecutor{})
 	task := newModel3DTilesTaskForTest("S3M 快显", "fp-repeat", models.Model3DTilesTargetFormatS3M)
@@ -67,7 +67,7 @@ func TestModel3DTilesTaskServiceRepeatedExecutionRefreshesCurrentResult(t *testi
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	firstExecutionID, err := svc.Execute(context.Background(), task.ID, task.TenantID, "manual", "manager", nil)
+	firstExecutionID, err := svc.Execute(context.Background(), task.ID, task.TenantID, "manual", "manager", nil, false)
 	if err != nil {
 		t.Fatalf("first Execute() error = %v", err)
 	}
@@ -77,9 +77,24 @@ func TestModel3DTilesTaskServiceRepeatedExecutionRefreshesCurrentResult(t *testi
 		t.Fatalf("first result = %#v, %v", firstResult, err)
 	}
 
-	secondExecutionID, err := svc.Execute(context.Background(), task.ID, task.TenantID, "manual", "manager", nil)
+	var executionCountBefore int64
+	if err := db.Model(&commonExecution.TaskExecution{}).Count(&executionCountBefore).Error; err != nil {
+		t.Fatalf("count executions before unconfirmed refresh: %v", err)
+	}
+	if _, err := svc.Execute(context.Background(), task.ID, task.TenantID, "manual", "manager", nil, false); !errors.Is(err, ErrExistingResultConfirmationRequired) {
+		t.Fatalf("unconfirmed refresh Execute() error = %v", err)
+	}
+	var executionCountAfter int64
+	if err := db.Model(&commonExecution.TaskExecution{}).Count(&executionCountAfter).Error; err != nil {
+		t.Fatalf("count executions after unconfirmed refresh: %v", err)
+	}
+	if executionCountAfter != executionCountBefore {
+		t.Fatalf("unconfirmed refresh created execution: before=%d after=%d", executionCountBefore, executionCountAfter)
+	}
+
+	secondExecutionID, err := svc.Execute(context.Background(), task.ID, task.TenantID, "manual", "manager", nil, true)
 	if err != nil {
-		t.Fatalf("second Execute() error = %v", err)
+		t.Fatalf("confirmed refresh Execute() error = %v", err)
 	}
 	waitForModel3DTilesExecution(t, execRepo, secondExecutionID, int(task.TenantID))
 	secondResult, err := repo.GetCurrentResult(context.Background(), task.TenantID, "fp-repeat", models.Model3DTilesTargetFormatS3M)
@@ -103,7 +118,7 @@ func TestModel3DTilesTaskServiceRejectsConcurrentExecution(t *testing.T) {
 	createModel3DTilesResultTableForTest(t, db)
 	repo := repository.NewModel3DTilesRepository(db)
 	execRepo := commonExecution.NewTaskExecutionRepository(db)
-	svc := NewModel3DTilesTaskService(repo, execRepo)
+	svc := NewModel3DTilesTaskService(repo)
 	svc.SetBucket("manager")
 	executor := &blockingModel3DTilesExecutor{started: make(chan struct{}), release: make(chan struct{})}
 	svc.SetExecutor(executor)
@@ -112,12 +127,12 @@ func TestModel3DTilesTaskServiceRejectsConcurrentExecution(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	firstExecutionID, err := svc.Execute(context.Background(), task.ID, task.TenantID, "manual", "manager", nil)
+	firstExecutionID, err := svc.Execute(context.Background(), task.ID, task.TenantID, "manual", "manager", nil, false)
 	if err != nil {
 		t.Fatalf("first Execute() error = %v", err)
 	}
 	<-executor.started
-	if _, err := svc.Execute(context.Background(), task.ID, task.TenantID, "manual", "manager", nil); !errors.Is(err, ErrModel3DTilesTaskExecutionBusy) {
+	if _, err := svc.Execute(context.Background(), task.ID, task.TenantID, "manual", "manager", nil, false); !errors.Is(err, ErrModel3DTilesTaskExecutionBusy) {
 		t.Fatalf("concurrent Execute() error = %v", err)
 	}
 	close(executor.release)
@@ -197,7 +212,7 @@ func waitForModel3DTilesExecution(t *testing.T, repo *commonExecution.TaskExecut
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		exec, err := repo.GetByExecutionID(context.Background(), executionID, tenantID)
-		if err == nil && exec.Status != commonExecution.ExecutionStatusRunning {
+		if err == nil && exec.IsCompleted() {
 			return exec
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -258,7 +273,7 @@ func TestModel3DTilesTaskServiceDeletesManagedResultAndArtifact(t *testing.T) {
 		t.Fatalf("create result: %v", err)
 	}
 	cleaner := &recordingModel3DTilesCleaner{}
-	svc := NewModel3DTilesTaskService(repo, nil)
+	svc := NewModel3DTilesTaskService(repo)
 	svc.SetCleaner(cleaner)
 
 	if err := svc.DeleteResult(context.Background(), result.ID, result.TenantID); err != nil {
@@ -292,7 +307,7 @@ func TestModel3DTilesTaskServiceKeepsResultWhenArtifactCleanupFails(t *testing.T
 		t.Fatalf("create result: %v", err)
 	}
 	cleanupErr := errors.New("cleanup failed")
-	svc := NewModel3DTilesTaskService(repo, nil)
+	svc := NewModel3DTilesTaskService(repo)
 	svc.SetCleaner(&recordingModel3DTilesCleaner{err: cleanupErr})
 
 	if err := svc.DeleteResult(context.Background(), result.ID, result.TenantID); !errors.Is(err, cleanupErr) {
@@ -330,7 +345,7 @@ func TestModel3DTilesTaskServiceListsManagedResultsByFormatAndStatus(t *testing.
 		}
 	}
 
-	results, total, err := NewModel3DTilesTaskService(repo, nil).ListResults(context.Background(), repository.Model3DTilesFilter{
+	results, total, err := NewModel3DTilesTaskService(repo).ListResults(context.Background(), repository.Model3DTilesFilter{
 		TenantID: 7, TargetFormat: "s3m", Status: "ready", Q: "baita", Page: 1, PageSize: 20,
 	})
 	if err != nil {

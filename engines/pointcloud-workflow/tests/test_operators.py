@@ -147,6 +147,52 @@ def test_progress_callback_is_separate_from_access_plan(tmp_path, monkeypatch):
     ]
 
 
+def test_container_runtime_rewrites_localhost_target_endpoint_before_publish(tmp_path, monkeypatch):
+    source = tmp_path / "source.xyz"
+    source.write_text("0 0 0\n", encoding="utf-8")
+    target = tmp_path / "source.copc.laz"
+    pdal = tmp_path / "pdal"
+    pdal.write_text("#!/bin/sh\n", encoding="utf-8")
+    pdal.chmod(0o755)
+    plan = mounted_plan(source, target, "xyz")
+    plan["target"]["access"] = {
+        "method": "object_store",
+        "endpoint": "127.0.0.1:19000",
+        "access_key": "manager-ak",
+        "secret_key": "manager-sk",
+        "bucket": "manager",
+        "object": "tenant_1/source.copc.laz",
+        "use_ssl": False,
+    }
+    published = {}
+
+    def fake_runner(command, timeout_seconds):
+        Path(command[3]).write_bytes(b"copc")
+        return CommandResult(returncode=0)
+
+    def fake_publish(path, access_plan):
+        published["endpoint"] = access_plan["target"]["access"]["endpoint"]
+        return {
+            "object_uri": "s3://manager/tenant_1/source.copc.laz",
+            "object_name": "tenant_1/source.copc.laz",
+            "uploaded_bytes": path.stat().st_size,
+        }
+
+    monkeypatch.setattr(operators, "publish_target_file", fake_publish)
+    invoke_operator(
+        "xyz_to_copc",
+        {"access_plan": plan},
+        runner=fake_runner,
+        env={
+            "POINTCLOUD_PDAL_BIN": str(pdal),
+            "POINTCLOUD_OBJECT_STORE_LOCALHOST_ENDPOINT": "host.docker.internal:19000",
+        },
+    )
+
+    assert published["endpoint"] == "host.docker.internal:19000"
+    assert plan["target"]["access"]["endpoint"] == "127.0.0.1:19000"
+
+
 def test_legacy_pcd_header_is_normalized_without_mutating_source(tmp_path):
     source = tmp_path / "legacy.pcd"
     source.write_text("VERSION .5\nFIELDS x y z\nDATA ascii\n0 0 0\n", encoding="utf-8")

@@ -17,7 +17,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { TilesRenderer } from '3d-tiles-renderer/three'
 import { ReorientationPlugin } from '3d-tiles-renderer/three/plugins'
 import { patchGLBMissingMaterialExtensions } from '@/utils/gltfCompatibility'
-import { buildTilesetSource, resolveTileResourceURL, withAuthToken } from '@/utils/threeDTilesPreviewUrl'
+import { buildTilesetSource, resolveTileResourceURL } from '@/utils/threeDTilesPreviewUrl'
 
 const props = defineProps({
   data: {

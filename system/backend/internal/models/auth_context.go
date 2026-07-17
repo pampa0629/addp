@@ -6,6 +6,8 @@ const (
 	SubjectTypeUser               = "user"
 	AuthTypeFirstPartyAccessToken = "first_party_access_token"
 	AuthTypeOAuthAccessToken      = "oauth_access_token"
+	AuthTypeResourceAccessTicket  = "resource_access_ticket"
+	AuthTypeDelegatedAccessToken  = "delegated_access_token"
 )
 
 // AuthorizationContext is the canonical projection of an authenticated user access token.

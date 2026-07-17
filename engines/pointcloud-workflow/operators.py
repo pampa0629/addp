@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import copy
 import json
 import shutil
 import subprocess
@@ -213,7 +214,7 @@ def point_cloud_to_copc(
             metadata={"output_size_bytes": target_file.stat().st_size},
             force=True,
         )
-        publish_result = publish_target_file(target_file, access_plan)
+        publish_result = publish_target_file(target_file, _publish_access_plan(access_plan, env))
         reporter.emit(
             "publish",
             "completed",
@@ -532,6 +533,20 @@ def _rewrite_localhost_endpoint(values: dict[str, str], env: dict[str, str] | No
     rewritten = _publish_endpoint(endpoint, env)
     if rewritten:
         values["AWS_S3_ENDPOINT"] = rewritten
+
+
+def _publish_access_plan(access_plan: dict[str, Any], env: dict[str, str] | None = None) -> dict[str, Any]:
+    target = _required_object(access_plan, "target")
+    access = target.get("access")
+    if not isinstance(access, dict) or access.get("method") != "object_store":
+        return access_plan
+    endpoint = _text(access.get("endpoint"))
+    rewritten = _publish_endpoint(endpoint, env)
+    if not rewritten or rewritten == endpoint:
+        return access_plan
+    publish_plan = copy.deepcopy(access_plan)
+    publish_plan["target"]["access"]["endpoint"] = rewritten
+    return publish_plan
 
 
 def _command_failure_details(command: list[str], result: CommandResult, work_dir: Path | None) -> str:

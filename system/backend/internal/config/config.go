@@ -9,18 +9,20 @@ import (
 )
 
 type Config struct {
-	Env                      string
-	ServerAddr               string
-	DatabaseURL              string
-	EncryptionKey            []byte
-	AccessTokenExpireMinutes int
-	RefreshTokenExpireDays   int
-	AuthorizationCodeMinutes int
-	DeviceCodeExpireMinutes  int
-	DevicePollIntervalSecs   int
-	ConsoleURL               string
-	ProjectName              string
-	AllowPublicRegistration  bool
+	Env                               string
+	ServerAddr                        string
+	DatabaseURL                       string
+	EncryptionKey                     []byte
+	AccessTokenExpireMinutes          int
+	DelegatedAccessTokenExpireMinutes int
+	ResourceAccessTicketExpireMinutes int
+	RefreshTokenExpireDays            int
+	AuthorizationCodeMinutes          int
+	DeviceCodeExpireMinutes           int
+	DevicePollIntervalSecs            int
+	ConsoleURL                        string
+	ProjectName                       string
+	AllowPublicRegistration           bool
 
 	// PostgreSQL 配置（用于其他模块）
 	PostgresHost     string
@@ -96,18 +98,20 @@ func Load() *Config {
 	serverAddr := ":" + port
 
 	return &Config{
-		Env:                      env,
-		ServerAddr:               serverAddr,
-		DatabaseURL:              "", // PostgreSQL 不使用此字段
-		EncryptionKey:            encryptionKey,
-		AccessTokenExpireMinutes: getEnvAsPositiveInt("ACCESS_TOKEN_EXPIRE_MINUTES", 15),
-		RefreshTokenExpireDays:   getEnvAsPositiveInt("REFRESH_TOKEN_EXPIRE_DAYS", 30),
-		AuthorizationCodeMinutes: getEnvAsPositiveInt("OAUTH_CODE_EXPIRE_MINUTES", 5),
-		DeviceCodeExpireMinutes:  getEnvAsPositiveInt("OAUTH_DEVICE_EXPIRE_MINUTES", 10),
-		DevicePollIntervalSecs:   getEnvAsPositiveInt("OAUTH_DEVICE_INTERVAL_SECONDS", 5),
-		ConsoleURL:               strings.TrimSuffix(getEnv("CONSOLE_URL", "http://localhost:5170"), "/"),
-		ProjectName:              getEnv("PROJECT_NAME", "全域数据平台"),
-		AllowPublicRegistration:  getEnvAsBool("ALLOW_PUBLIC_REGISTRATION", false),
+		Env:                               env,
+		ServerAddr:                        serverAddr,
+		DatabaseURL:                       "", // PostgreSQL 不使用此字段
+		EncryptionKey:                     encryptionKey,
+		AccessTokenExpireMinutes:          getEnvAsPositiveInt("ACCESS_TOKEN_EXPIRE_MINUTES", 15),
+		DelegatedAccessTokenExpireMinutes: getEnvAsPositiveInt("DELEGATED_ACCESS_TOKEN_EXPIRE_MINUTES", 2),
+		ResourceAccessTicketExpireMinutes: getEnvAsPositiveInt("RESOURCE_ACCESS_TICKET_EXPIRE_MINUTES", 15),
+		RefreshTokenExpireDays:            getEnvAsPositiveInt("REFRESH_TOKEN_EXPIRE_DAYS", 30),
+		AuthorizationCodeMinutes:          getEnvAsPositiveInt("OAUTH_CODE_EXPIRE_MINUTES", 5),
+		DeviceCodeExpireMinutes:           getEnvAsPositiveInt("OAUTH_DEVICE_EXPIRE_MINUTES", 10),
+		DevicePollIntervalSecs:            getEnvAsPositiveInt("OAUTH_DEVICE_INTERVAL_SECONDS", 5),
+		ConsoleURL:                        strings.TrimSuffix(getEnv("CONSOLE_URL", "http://localhost:5170"), "/"),
+		ProjectName:                       getEnv("PROJECT_NAME", "全域数据平台"),
+		AllowPublicRegistration:           getEnvAsBool("ALLOW_PUBLIC_REGISTRATION", false),
 
 		// PostgreSQL 配置
 		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),

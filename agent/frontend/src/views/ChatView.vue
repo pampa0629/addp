@@ -127,6 +127,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { ChatDotRound, CircleClose, Delete, Loading, Plus, Position, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { resolveTaskOwnerUrl } from '@common-ui'
 
 import { createAgentClient, replayAgentRunEvents } from '../agent/createAgentClient'
 import { runAPI, sessionAPI } from '../api/index'
@@ -336,6 +337,9 @@ async function runAgent({ userMessage = null, resume = null } = {}) {
     try {
       replayed = await replayActiveRun()
     } catch {
+      replayed = false
+    }
+    if (!replayed) {
       ElMessage.error(t('agent.chat.sendFailed', { msg: error.message }))
     }
   } finally {
@@ -411,6 +415,12 @@ async function handleSend() {
 }
 
 async function handleA2UIAction(action) {
+  if (action.name === 'owner.open') {
+    const openUrl = action.context?.openUrl
+    const resolved = resolveTaskOwnerUrl(openUrl)
+    if (resolved) window.open(resolved, '_blank', 'noopener,noreferrer')
+    return
+  }
   if (action.name !== 'interaction.submit' || isLoading.value) return
   const interactionId = action.context?.interactionId
   if (!interactionId) return

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
 )
@@ -80,15 +82,54 @@ func (r *Model3DGLBRepository) DeleteTask(ctx context.Context, id uint, tenantID
 		Delete(&models.Model3DGLBTask{}).Error
 }
 
-func (r *Model3DGLBRepository) UpdateTaskLastExecution(ctx context.Context, id uint, tenantID uint, executionID, status string, runAt time.Time) error {
-	return r.db.WithContext(ctx).
-		Model(&models.Model3DGLBTask{}).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Updates(map[string]interface{}{
-			"last_execution_id":     executionID,
-			"last_execution_status": status,
-			"last_run_at":           runAt,
-		}).Error
+func (r *Model3DGLBRepository) ClaimExecution(
+	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, confirmExistingResult bool,
+) (*models.Model3DGLBTask, error) {
+	var task models.Model3DGLBTask
+	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
+		TaskModel: &task,
+		TaskType:  commonExecution.TaskTypeModel3DGLBGeneration,
+		TaskLabel: "model 3d GLB",
+		TaskName:  func() string { return task.Name },
+		TaskConfig: func() commonModels.JSONMap {
+			return task.Config
+		},
+		CurrentResultModel:    &models.Model3DGLB{},
+		ConfirmExistingResult: confirmExistingResult,
+	})
+	if err != nil {
+		return nil, err
+	}
+	task.LastExecutionID = &execution.ExecutionID
+	status := commonExecution.ExecutionStatusPending
+	task.LastExecutionStatus = &status
+	return &task, nil
+}
+
+func (r *Model3DGLBRepository) StartExecution(
+	ctx context.Context, taskID, tenantID uint, executionID string, startedAt time.Time,
+) error {
+	return newTaskExecutionLifecycle(r.db).Start(
+		ctx, taskID, tenantID, executionID, startedAt, &models.Model3DGLBTask{}, "model 3d GLB",
+	)
+}
+
+func (r *Model3DGLBRepository) CompleteExecution(
+	ctx context.Context,
+	taskID, tenantID uint,
+	executionID string,
+	resultID uint,
+	resultFields map[string]interface{},
+	executionFields map[string]interface{},
+	completedAt time.Time,
+) error {
+	return newTaskExecutionLifecycle(r.db).Complete(ctx, taskID, tenantID, executionID, completedAt, taskExecutionCompletionSpec{
+		TaskModel:       &models.Model3DGLBTask{},
+		ResultModel:     &models.Model3DGLB{},
+		ResultID:        resultID,
+		ResultFields:    resultFields,
+		ExecutionFields: executionFields,
+	}, "model 3d GLB")
 }
 
 func (r *Model3DGLBRepository) Create(ctx context.Context, result *models.Model3DGLB) error {

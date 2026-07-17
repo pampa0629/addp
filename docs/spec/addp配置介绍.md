@@ -40,8 +40,8 @@ import (
     commonClient "github.com/addp/common/client"
 )
 
-// 使用 JWT token 创建客户端
-client := commonClient.NewSystemClient(systemURL, jwtToken)
+// 使用当前请求的短期 User Access Token 创建客户端
+client := commonClient.NewSystemClient(systemURL, userAccessToken)
 
 // 列出所有引擎
 engines, err := client.ListEngines("postgresql")
@@ -263,11 +263,17 @@ QUICK_VIEW_REALTIME_TILE_RETRY_AFTER_SEC=60
 ```bash
 # System OAuth 用户令牌生命周期
 ACCESS_TOKEN_EXPIRE_MINUTES=15
+DELEGATED_ACCESS_TOKEN_EXPIRE_MINUTES=2
+RESOURCE_ACCESS_TICKET_EXPIRE_MINUTES=15
 REFRESH_TOKEN_EXPIRE_DAYS=30
 OAUTH_CODE_EXPIRE_MINUTES=5
 OAUTH_DEVICE_EXPIRE_MINUTES=10
 OAUTH_DEVICE_INTERVAL_SECONDS=5
 CONSOLE_URL=http://localhost:5170
+
+# 开发环境各前端通过 credentials 调用 System 登录和静默刷新。
+# 必须覆盖 Console 和所有独立模块前端端口。
+ALLOWED_ORIGINS=http://localhost:5170,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:5177,http://localhost:5178,http://localhost:5179,http://localhost:5180,http://localhost:5181,http://localhost:5182,http://localhost:5183,http://localhost:5184,http://localhost:5185,http://localhost:5186,http://localhost:5187
 
 # PostgreSQL - ADDP 系统数据库
 POSTGRES_PASSWORD=addp_password
@@ -383,7 +389,7 @@ curl -X POST http://localhost:8180/api/v1/system/login \
 - `POST /api/v1/system/login` - 登录
 - `POST /api/v1/system/register` - 注册
 
-**受保护** (需要 JWT):
+**受保护**（需要 User Access Token）:
 
 - `GET /api/v1/system/users/me` - 当前用户
 - `GET /api/v1/system/users` - 列出用户

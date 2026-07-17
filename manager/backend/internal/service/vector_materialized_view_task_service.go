@@ -216,7 +216,7 @@ func (s *VectorMaterializedViewTaskService) recordVectorMaterializedViewCleanupF
 	}
 }
 
-func (s *VectorMaterializedViewTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string) (string, error) {
+func (s *VectorMaterializedViewTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, confirmExistingResult bool) (string, error) {
 	if s.taskExecRepo == nil {
 		return "", errors.New("task execution repository is required")
 	}
@@ -246,8 +246,11 @@ func (s *VectorMaterializedViewTaskService) Execute(ctx context.Context, taskID 
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec)
+	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec, confirmExistingResult)
 	if err != nil {
+		if errors.Is(err, repository.ErrExistingResultConfirmationRequired) {
+			return "", ErrExistingResultConfirmationRequired
+		}
 		if errors.Is(err, commonapi.ErrNotFound) {
 			return "", ErrTaskNotFound
 		}

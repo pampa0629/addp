@@ -77,10 +77,10 @@ Authorization: Bearer <access_token>
 | `audiences` | 令牌允许访问的目标服务。 |
 | `scopes` | 令牌权限上限；不取代 `user_type` 和 owner 资源权限。 |
 | `delegated_by` | 受委托令牌的委托方，否则为 `null`。 |
-| `agent_run_id` / `tool_call_id` | 受委托 Agent Tool 调用的可选审计绑定。 |
+| `agent_run_id` / `tool_call_id` | Delegated Access Token 必填的 Agent Tool 审计绑定；其他令牌为 `null`。 |
 | `issued_at` / `expires_at` | 必须为带时区的 ISO 8601 时间。 |
 
-第一方 Web Token 返回空 `audiences` / `scopes` 和 `client_id=null`；OAuth Token 的客户端、audience 和 Scope 由 System Token Service 权威填充。owner 模块不得伪造 Scope。
+第一方 Web Token 返回空 `audiences` / `scopes` 和 `client_id=null`；OAuth Token 的客户端、audience 和 Scope 由 System Token Service 权威填充。Delegated Access Token 返回唯一 owner audience、稳定 Tool 名 Scope、源客户端和 AgentRun / ToolCall 审计绑定。owner 模块不得伪造 Scope。
 
 ## 四、身份和租户校验
 
@@ -108,7 +108,9 @@ System 生成 AuthContext 前必须校验：
   ∩ 必要的服务端审批已完成
 ```
 
-Scope 只能缩小权限。例如普通用户获得 `workflow.execute` Scope 后，仍只能访问其租户内、owner 模块允许的资源。
+Scope 只能缩小权限。例如普通用户获得 `workflow.run` Scope 后，仍只能访问其租户内、Develop 允许的资源，并满足 owner 的审批策略。
+
+委托令牌使用默认拒绝策略：owner 模块收到 `auth_type=delegated_access_token` 时，只有当前路由与 Token Manifest 中该 Tool 的 owner、audience 和 required scopes 完全匹配才可继续；委托令牌不能访问同一模块的其他普通 API。
 
 ## 六、共享中间件
 

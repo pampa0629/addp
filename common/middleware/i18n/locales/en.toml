@@ -1,5 +1,6 @@
 "err.invalid_id"             = "Invalid ID parameter"
 "err.unauthorized"           = "Unauthorized"
+"err.forbidden"              = "Forbidden"
 "err.token_gen_failed"       = "Failed to generate token"
 "err.register_disabled"      = "Registration is disabled"
 "err.missing_auth_header"    = "Missing Authorization header"

@@ -74,7 +74,7 @@ func TestManagerProgressEndpointRecordsPointCloudCOPCEvent(t *testing.T) {
 		t.Fatalf("create execution: %v", err)
 	}
 	handler := NewTaskProviderHandler(nil, nil, nil, nil, taskExecRepo)
-	handler.SetPointCloudCOPCTaskService(service.NewPointCloudCOPCTaskService(repository.NewPointCloudCOPCRepository(db), taskExecRepo))
+	handler.SetPointCloudCOPCTaskService(service.NewPointCloudCOPCTaskService(repository.NewPointCloudCOPCRepository(db)))
 
 	cfg := &config.Config{}
 	cfg.InternalAPIKey = "secret"

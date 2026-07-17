@@ -22,6 +22,14 @@ class AuthorizationContext:
     expires_at: datetime | None = None
 
 
+def allows_delegated_tool(context: AuthorizationContext, audience: str, required_scopes: tuple[str, ...]) -> bool:
+    if context.auth_type != "delegated_access_token":
+        return True
+    return audience in context.audiences and bool(required_scopes) and all(
+        scope in context.scopes for scope in required_scopes
+    )
+
+
 def _parse_time(value: object, field_name: str) -> datetime:
     if not isinstance(value, str) or not value:
         raise ValueError(f"authorization context {field_name} must be an ISO 8601 string")
@@ -48,7 +56,7 @@ async def resolve_authorization_context(system_url: str, token: str) -> Authoriz
     if user_type != "super_admin" and (tenant_id is None or tenant_id <= 0):
         raise ValueError("tenant user authorization context must contain tenant_id")
 
-    return AuthorizationContext(
+    context = AuthorizationContext(
         user_id=user_id,
         tenant_id=tenant_id,
         username=str(data.get("username") or ""),
@@ -64,3 +72,13 @@ async def resolve_authorization_context(system_url: str, token: str) -> Authoriz
         issued_at=_parse_time(data.get("issued_at"), "issued_at"),
         expires_at=_parse_time(data.get("expires_at"), "expires_at"),
     )
+    if context.auth_type == "delegated_access_token":
+        if (
+            len(context.audiences) != 1
+            or not context.scopes
+            or not context.delegated_by
+            or not context.agent_run_id
+            or not context.tool_call_id
+        ):
+            raise ValueError("delegated authorization context must contain audience, scopes and audit binding")
+    return context

@@ -23,6 +23,7 @@ onUnmounted(() => subscription.unsubscribe())
 
 <style scoped>
 .workflow-dag-presentation {
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
   overflow: hidden;

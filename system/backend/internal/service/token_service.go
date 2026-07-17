@@ -34,13 +34,16 @@ var (
 	ErrAccessDenied             = errors.New("access denied")
 	ErrExpiredToken             = errors.New("expired token")
 	ErrUnsupportedGrantType     = errors.New("unsupported grant type")
+	ErrInvalidDelegation        = errors.New("invalid delegation")
 )
 
 type IssuedTokenPair struct {
-	AccessToken     string
-	RefreshToken    string
-	AccessExpiresIn int
-	Scope           string
+	AccessToken                   string
+	RefreshToken                  string
+	AccessExpiresIn               int
+	Scope                         string
+	ResourceAccessTickets         map[string]string
+	ResourceAccessTicketExpiresIn int
 }
 
 type TokenService struct {
@@ -67,6 +70,23 @@ func (s *TokenService) IssueFirstParty(user *models.User) (*IssuedTokenPair, err
 }
 
 func (s *TokenService) ResolveAccessToken(plainToken string) (*models.AuthorizationContext, error) {
+	if strings.HasPrefix(plainToken, "addp_rat_") {
+		return s.resolveResourceAccessTicket(plainToken)
+	}
+	if strings.HasPrefix(plainToken, "addp_dat_") {
+		return s.resolveDelegatedAccessToken(plainToken)
+	}
+	if !strings.HasPrefix(plainToken, "addp_at_") {
+		return nil, ErrInvalidAccessToken
+	}
+	token, err := s.loadActiveAccessToken(plainToken)
+	if err != nil {
+		return nil, err
+	}
+	return s.authContextService.ResolveAccessToken(token)
+}
+
+func (s *TokenService) loadActiveAccessToken(plainToken string) (*models.AccessToken, error) {
 	if !strings.HasPrefix(plainToken, "addp_at_") {
 		return nil, ErrInvalidAccessToken
 	}
@@ -77,6 +97,147 @@ func (s *TokenService) ResolveAccessToken(plainToken string) (*models.Authorizat
 	now := s.now()
 	if token.RevokedAt != nil || !token.ExpiresAt.After(now) {
 		return nil, ErrInvalidAccessToken
+	}
+	var family models.RefreshTokenFamily
+	if err := s.db.First(&family, "id = ?", token.FamilyID).Error; err != nil || family.RevokedAt != nil || !family.ExpiresAt.After(now) {
+		return nil, ErrInvalidAccessToken
+	}
+	return &token, nil
+}
+
+func (s *TokenService) IssueDelegatedAccessToken(sourcePlainToken string, req *models.DelegatedAccessTokenRequest) (*models.DelegatedAccessTokenResponse, error) {
+	source, err := s.loadActiveAccessToken(sourcePlainToken)
+	if err != nil {
+		return nil, err
+	}
+	if source.AuthType != models.AuthTypeFirstPartyAccessToken && source.AuthType != models.AuthTypeOAuthAccessToken {
+		return nil, ErrInvalidDelegation
+	}
+
+	audience := strings.TrimSpace(req.Audience)
+	agentRunID := strings.TrimSpace(req.AgentRunID)
+	toolCallID := strings.TrimSpace(req.ToolCallID)
+	if audience == "" || agentRunID == "" || toolCallID == "" || len(agentRunID) > 100 || len(toolCallID) > 100 {
+		return nil, ErrInvalidDelegation
+	}
+	scopes := normalizeScopeValues(req.Scopes)
+	if len(scopes) == 0 {
+		return nil, ErrInvalidScope
+	}
+	for _, scope := range scopes {
+		if !models.IsDelegatedToolScopeAllowed(audience, scope) {
+			return nil, ErrInvalidScope
+		}
+	}
+	if source.AuthType == models.AuthTypeOAuthAccessToken && !contains(source.Scopes, "addp.api") {
+		for _, scope := range scopes {
+			if !contains(source.Scopes, scope) {
+				return nil, ErrInvalidScope
+			}
+		}
+	}
+
+	var tenantID uint
+	if source.TenantID != nil {
+		tenantID = *source.TenantID
+	}
+	if _, err := s.authContextService.ValidateIdentity(source.UserID, tenantID); err != nil {
+		return nil, err
+	}
+
+	now := s.now()
+	expiresAt := now.Add(time.Duration(s.delegatedAccessTokenExpireMinutes()) * time.Minute)
+	if source.ExpiresAt.Before(expiresAt) {
+		expiresAt = source.ExpiresAt
+	}
+	if !expiresAt.After(now) {
+		return nil, ErrInvalidAccessToken
+	}
+	plainToken, err := randomToken("addp_dat_")
+	if err != nil {
+		return nil, err
+	}
+	delegatedBy := "addp-web"
+	if source.ClientID != nil && strings.TrimSpace(*source.ClientID) != "" {
+		delegatedBy = *source.ClientID
+	}
+	token := models.DelegatedAccessToken{
+		ID:                  uuid.NewString(),
+		TokenHash:           hashToken(plainToken),
+		SourceAccessTokenID: source.ID,
+		UserID:              source.UserID,
+		TenantID:            source.TenantID,
+		ClientID:            source.ClientID,
+		DelegatedBy:         delegatedBy,
+		Audience:            audience,
+		Scopes:              scopes,
+		AgentRunID:          agentRunID,
+		ToolCallID:          toolCallID,
+		ExpiresAt:           expiresAt,
+	}
+	if err := s.db.Create(&token).Error; err != nil {
+		return nil, err
+	}
+	expiresIn := int((expiresAt.Sub(now) + time.Second - 1) / time.Second)
+	return &models.DelegatedAccessTokenResponse{
+		AccessToken: plainToken,
+		TokenType:   "Bearer",
+		ExpiresIn:   expiresIn,
+		Audience:    audience,
+		Scopes:      []string(token.Scopes),
+		AgentRunID:  agentRunID,
+		ToolCallID:  toolCallID,
+	}, nil
+}
+
+func (s *TokenService) resolveDelegatedAccessToken(plainToken string) (*models.AuthorizationContext, error) {
+	var token models.DelegatedAccessToken
+	if err := s.db.Where("token_hash = ?", hashToken(plainToken)).First(&token).Error; err != nil {
+		return nil, ErrInvalidAccessToken
+	}
+	now := s.now()
+	if token.RevokedAt != nil || !token.ExpiresAt.After(now) {
+		return nil, ErrInvalidAccessToken
+	}
+	var source models.AccessToken
+	if err := s.db.First(&source, "id = ?", token.SourceAccessTokenID).Error; err != nil || source.RevokedAt != nil || !source.ExpiresAt.After(now) {
+		return nil, ErrInvalidAccessToken
+	}
+	if source.UserID != token.UserID || !sameUint(source.TenantID, token.TenantID) || !sameClient(source.ClientID, token.ClientID) {
+		return nil, ErrInvalidAccessToken
+	}
+	var family models.RefreshTokenFamily
+	if err := s.db.First(&family, "id = ?", source.FamilyID).Error; err != nil || family.RevokedAt != nil || !family.ExpiresAt.After(now) {
+		return nil, ErrInvalidAccessToken
+	}
+	return s.authContextService.ResolveDelegatedAccessToken(&token)
+}
+
+func (s *TokenService) resolveResourceAccessTicket(plainToken string) (*models.AuthorizationContext, error) {
+	var ticket models.ResourceAccessTicket
+	if err := s.db.Where("token_hash = ?", hashToken(plainToken)).First(&ticket).Error; err != nil {
+		return nil, ErrInvalidAccessToken
+	}
+	now := s.now()
+	if ticket.RevokedAt != nil || !ticket.ExpiresAt.After(now) {
+		return nil, ErrInvalidAccessToken
+	}
+	var family models.RefreshTokenFamily
+	if err := s.db.First(&family, "id = ?", ticket.FamilyID).Error; err != nil {
+		return nil, ErrInvalidAccessToken
+	}
+	if family.AuthType != models.AuthTypeFirstPartyAccessToken || family.RevokedAt != nil || !family.ExpiresAt.After(now) {
+		return nil, ErrInvalidAccessToken
+	}
+	token := models.AccessToken{
+		UserID:    family.UserID,
+		TenantID:  family.TenantID,
+		ClientID:  family.ClientID,
+		AuthType:  models.AuthTypeResourceAccessTicket,
+		Audiences: []string{ticket.Owner},
+		Scopes:    []string{models.BrowserResourceAccessScope},
+		ExpiresAt: ticket.ExpiresAt,
+		CreatedAt: ticket.CreatedAt,
 	}
 	return s.authContextService.ResolveAccessToken(&token)
 }
@@ -309,6 +470,7 @@ func (s *TokenService) rotateRefreshToken(plainToken string, expectedClientID *s
 	var result *IssuedTokenPair
 	var familyID string
 	reuseDetected := false
+	rotatedResourceTickets := false
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		var token models.RefreshToken
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("token_hash = ?", hashToken(plainToken)).First(&token).Error; err != nil {
@@ -330,6 +492,7 @@ func (s *TokenService) rotateRefreshToken(plainToken string, expectedClientID *s
 		if !sameClient(family.ClientID, expectedClientID) {
 			return ErrInvalidOAuthClient
 		}
+		rotatedResourceTickets = family.AuthType == models.AuthTypeFirstPartyAccessToken
 		if expectedClientID != nil {
 			if err := ensureClientActive(tx, *expectedClientID); err != nil {
 				return err
@@ -356,8 +519,10 @@ func (s *TokenService) rotateRefreshToken(plainToken string, expectedClientID *s
 		result = pair
 		return nil
 	})
-	if reuseDetected && err == nil {
+	if err == nil && (rotatedResourceTickets || reuseDetected) {
 		s.invalidateFamilyAccessTokens(familyID)
+	}
+	if reuseDetected && err == nil {
 		return nil, ErrRefreshTokenReuse
 	}
 	return result, err
@@ -432,12 +597,62 @@ func (s *TokenService) issueTokensForFamilyTx(tx *gorm.DB, family *models.Refres
 	if err := tx.Create(&access).Error; err != nil {
 		return nil, "", err
 	}
+	resourceAccessTickets := map[string]string{}
+	resourceAccessTicketExpiresIn := 0
+	if family.AuthType == models.AuthTypeFirstPartyAccessToken {
+		if err := tx.Model(&models.ResourceAccessTicket{}).
+			Where("family_id = ? AND revoked_at IS NULL", family.ID).
+			Update("revoked_at", now).Error; err != nil {
+			return nil, "", err
+		}
+		ticketExpiry := now.Add(time.Duration(s.resourceAccessTicketExpireMinutes()) * time.Minute)
+		if access.ExpiresAt.Before(ticketExpiry) {
+			ticketExpiry = access.ExpiresAt
+		}
+		if family.ExpiresAt.Before(ticketExpiry) {
+			ticketExpiry = family.ExpiresAt
+		}
+		resourceAccessTicketExpiresIn = int((ticketExpiry.Sub(now) + time.Second - 1) / time.Second)
+		for _, owner := range models.BrowserResourceAccessOwners {
+			plainTicket, err := randomToken("addp_rat_")
+			if err != nil {
+				return nil, "", err
+			}
+			ticket := models.ResourceAccessTicket{
+				ID:        uuid.NewString(),
+				TokenHash: hashToken(plainTicket),
+				FamilyID:  family.ID,
+				Owner:     owner,
+				ExpiresAt: ticketExpiry,
+			}
+			if err := tx.Create(&ticket).Error; err != nil {
+				return nil, "", err
+			}
+			resourceAccessTickets[owner] = plainTicket
+		}
+	}
 	return &IssuedTokenPair{
-		AccessToken:     accessPlain,
-		RefreshToken:    refreshPlain,
-		AccessExpiresIn: s.cfg.AccessTokenExpireMinutes * 60,
-		Scope:           strings.Join([]string(family.Scopes), " "),
+		AccessToken:                   accessPlain,
+		RefreshToken:                  refreshPlain,
+		AccessExpiresIn:               s.cfg.AccessTokenExpireMinutes * 60,
+		Scope:                         strings.Join([]string(family.Scopes), " "),
+		ResourceAccessTickets:         resourceAccessTickets,
+		ResourceAccessTicketExpiresIn: resourceAccessTicketExpiresIn,
 	}, refreshID, nil
+}
+
+func (s *TokenService) resourceAccessTicketExpireMinutes() int {
+	if s.cfg.ResourceAccessTicketExpireMinutes > 0 {
+		return s.cfg.ResourceAccessTicketExpireMinutes
+	}
+	return s.cfg.AccessTokenExpireMinutes
+}
+
+func (s *TokenService) delegatedAccessTokenExpireMinutes() int {
+	if s.cfg.DelegatedAccessTokenExpireMinutes > 0 {
+		return s.cfg.DelegatedAccessTokenExpireMinutes
+	}
+	return 2
 }
 
 func (s *TokenService) validateClientRequest(clientID, redirectURI, scope string, device bool) (*models.OAuthClient, []string, error) {
@@ -475,10 +690,30 @@ func (s *TokenService) invalidateFamilyAccessTokens(familyID string) {
 	if s.redis == nil || familyID == "" {
 		return
 	}
-	var hashes []string
-	if err := s.db.Model(&models.AccessToken{}).Where("family_id = ?", familyID).Pluck("token_hash", &hashes).Error; err != nil {
+	var accessTokens []models.AccessToken
+	if err := s.db.Select("id", "token_hash").Where("family_id = ?", familyID).Find(&accessTokens).Error; err != nil {
 		return
 	}
+	hashes := make([]string, 0, len(accessTokens))
+	accessTokenIDs := make([]string, 0, len(accessTokens))
+	for _, token := range accessTokens {
+		hashes = append(hashes, token.TokenHash)
+		accessTokenIDs = append(accessTokenIDs, token.ID)
+	}
+	if len(accessTokenIDs) > 0 {
+		var delegatedHashes []string
+		if err := s.db.Model(&models.DelegatedAccessToken{}).
+			Where("source_access_token_id IN ?", accessTokenIDs).
+			Pluck("token_hash", &delegatedHashes).Error; err != nil {
+			return
+		}
+		hashes = append(hashes, delegatedHashes...)
+	}
+	var resourceHashes []string
+	if err := s.db.Model(&models.ResourceAccessTicket{}).Where("family_id = ?", familyID).Pluck("token_hash", &resourceHashes).Error; err != nil {
+		return
+	}
+	hashes = append(hashes, resourceHashes...)
 	keys := make([]string, 0, len(hashes))
 	for _, hash := range hashes {
 		keys = append(keys, "auth:context:"+hash)
@@ -495,7 +730,17 @@ func revokeFamily(tx *gorm.DB, familyID, reason string, now time.Time) error {
 	if err := tx.Model(&models.RefreshToken{}).Where("family_id = ? AND revoked_at IS NULL", familyID).Update("revoked_at", now).Error; err != nil {
 		return err
 	}
-	return tx.Model(&models.AccessToken{}).Where("family_id = ? AND revoked_at IS NULL", familyID).Update("revoked_at", now).Error
+	if err := tx.Model(&models.AccessToken{}).Where("family_id = ? AND revoked_at IS NULL", familyID).Update("revoked_at", now).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&models.DelegatedAccessToken{}).
+		Where("source_access_token_id IN (?) AND revoked_at IS NULL",
+			tx.Model(&models.AccessToken{}).Select("id").Where("family_id = ?", familyID),
+		).
+		Update("revoked_at", now).Error; err != nil {
+		return err
+	}
+	return tx.Model(&models.ResourceAccessTicket{}).Where("family_id = ? AND revoked_at IS NULL", familyID).Update("revoked_at", now).Error
 }
 
 func randomToken(prefix string) (string, error) {
@@ -522,6 +767,31 @@ func randomUserCode() (string, error) {
 func hashToken(token string) string {
 	hash := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(hash[:])
+}
+
+func normalizeScopeValues(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func sameUint(left, right *uint) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func pkceChallenge(verifier string) string {

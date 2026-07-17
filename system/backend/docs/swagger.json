@@ -602,6 +602,63 @@
                 }
             }
         },
+        "/auth/delegations": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "为当前用户的一次 ADDP Tool 调用签发绑定 owner audience、稳定 Tool Scope、AgentRun 和 ToolCall 的短期 opaque Token | Issue a short-lived opaque token for one ADDP Tool call, bound to the owner audience, stable Tool scope, AgentRun and ToolCall",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Auth"
+                ],
+                "summary": "签发受委托访问令牌 | Issue delegated access token",
+                "parameters": [
+                    {
+                        "description": "委托边界 | Delegation boundary",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.DelegatedAccessTokenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.DelegatedAccessTokenResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/engines": {
             "get": {
                 "security": [
@@ -1121,7 +1178,7 @@
         },
         "/login": {
             "post": {
-                "description": "使用用户名和密码登录，返回 opaque Access Token 并设置 HttpOnly Refresh Token Cookie | Login with username and password, return an opaque access token and set an HttpOnly refresh token cookie",
+                "description": "使用用户名和密码登录，返回 opaque Access Token，并设置 HttpOnly Refresh Token Cookie 与 Owner Path 限定的 Browser Resource Access Ticket Cookie | Login with username and password, return an opaque access token, and set an HttpOnly refresh token cookie plus owner-path browser resource access ticket cookies",
                 "consumes": [
                     "application/json"
                 ],
@@ -1167,7 +1224,7 @@
         },
         "/logout": {
             "post": {
-                "description": "撤销当前 Refresh Token Family 并清除 Cookie | Revoke the current refresh token family and clear the cookie",
+                "description": "撤销当前 Refresh Token Family，并清除 Refresh Token 与 Browser Resource Access Ticket Cookie | Revoke the current refresh token family and clear the refresh-token and browser-resource-ticket cookies",
                 "produces": [
                     "application/json"
                 ],
@@ -1707,7 +1764,7 @@
         },
         "/refresh": {
             "post": {
-                "description": "使用 HttpOnly Cookie 中的 Refresh Token 轮换并获取新的 Access Token | Rotate the refresh token from the HttpOnly cookie and issue a new access token",
+                "description": "使用 HttpOnly Cookie 中的 Refresh Token 轮换 Access Token、Refresh Token 和 Browser Resource Access Ticket | Rotate the access token, refresh token, and browser resource access tickets using the refresh token from the HttpOnly cookie",
                 "consumes": [
                     "application/json"
                 ],
@@ -3168,6 +3225,72 @@
                 },
                 "rate_limit_per_minute": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.DelegatedAccessTokenRequest": {
+            "type": "object",
+            "required": [
+                "agent_run_id",
+                "audience",
+                "scopes",
+                "tool_call_id"
+            ],
+            "properties": {
+                "agent_run_id": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "audience": {
+                    "type": "string"
+                },
+                "scopes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tool_call_id": {
+                    "type": "string",
+                    "maxLength": 100
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.DelegatedAccessTokenResponse": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "type": "string"
+                },
+                "agent_run_id": {
+                    "type": "string",
+                    "example": "7a9f43a7-81f0-4cb4-b545-6bfef53ed922"
+                },
+                "audience": {
+                    "type": "string",
+                    "example": "develop"
+                },
+                "expires_in": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "workflow.run"
+                    ]
+                },
+                "token_type": {
+                    "type": "string",
+                    "example": "Bearer"
+                },
+                "tool_call_id": {
+                    "type": "string",
+                    "example": "call_abc123"
                 }
             }
         },

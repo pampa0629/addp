@@ -25,10 +25,25 @@
       "errorReply": "抱歉，发生了错误，请重试。",
       "workflowGenerated": "已生成工作流",
       "presentationFailed": "界面内容渲染失败",
+      "presentation": {
+        "mapTruncated": "地图仅展示受限要素样本",
+        "tableSummary": "显示 {visible} / {total} 行",
+        "truncated": "仅展示受限样本",
+        "nullValue": "空值"
+      },
       "resultRef": {
         "unknownStatus": "状态未知",
         "loadFailed": "执行状态读取失败",
         "openExecution": "打开执行详情"
+      },
+      "approval": {
+        "title": "工作流执行需要审批",
+        "pending": "待审批",
+        "workflowEngine": "工作流引擎 ID",
+        "taskCount": "任务数",
+        "expiresAt": "过期时间",
+        "openOwner": "打开 Develop 审批页",
+        "checkStatus": "检查审批状态"
       },
       "toolStatus": {
         "running": "执行中",

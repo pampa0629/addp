@@ -70,9 +70,11 @@ agent.messages    -- 对话历史（AG-UI message id + 有序 parts）
 agent.runs        -- AgentRun 生命周期、checkpoint、运行/上下文指标与错误归因
 agent.run_steps   -- Tool / Runtime 步骤审计、紧凑事实投影与错误归因
 agent.run_events  -- 可按 sequence 安全回放的 AG-UI 事件投影
-agent.interactions -- 服务端持久澄清
+agent.interactions -- 服务端持久澄清与 owner approval 投影
 agent.skill_usage -- Skill 使用统计
 ```
+
+阶段 5 的 Agent 评测场景唯一目录为仓库根 `evals/agent-scenarios/`，统一使用 `addp.agent-scenario/v1`。离线门禁通过脚本化 Runtime 决策和受控 owner 响应消费真实结构化事件，不调用真实 LLM；定向在线层消费同一契约，凭据和环境私有 ID 不进入 fixture。
 
 `messages` 不再使用 `result_type + result_data`。表现内容通过 `presentation_ref` 引用 A2UI Surface，澄清状态通过 `interaction_ref` 引用 `agent.interactions`。
 
@@ -82,8 +84,11 @@ agent.skill_usage -- Skill 使用统计
 - 响应为 `text/event-stream`，事件使用 AG-UI 编码。
 - A2UI 通过 AG-UI Activity 传输，当前 Catalog 为 `addp.catalog/v1`。
 - `request_clarification` 是 Agent Runtime 私有的暂停控制能力，不属于平台 Tool Manifest；触发后必须创建持久 Interaction，并以 AG-UI interrupt 和 A2UI `ClarificationChoice` 返回。
+- `workflow.run` 返回 `approval_required` 时，Agent 只保存 Develop approval ID、open URL、请求指纹和摘要，以 A2UI `ApprovalRequest` 暂停当前 AgentRun。客户端只能打开 Owner 页面或提交 `{action:"check"}`；Agent 必须使用原始 User Access Token 查询 Develop，只有 `approved|consumed` 才恢复同一 AgentRun。
+- `workflow.run` 的完整 workflow payload 不得写入 `agent.interactions`、`agent.run_steps` 或 checkpoint。首次 Tool step 只保存引擎 ID、任务数和是否存在 engine-specific 配置；恢复调用只保存 approval ID 与请求指纹。
 - 工作流引擎澄清选项必须来自当前 run 的 `engine.list`；资源澄清 locator 必须来自当前 run 的 `data.search`、`resource.ancestors.get` 或 `data.preview`。Runtime 使用 owner Tool 事实重建选项，未经观察的候选返回 `clarification_option_not_observed`，不得创建 Interaction。
 - AgentRun 跨初始 AG-UI 调用和 Interaction resume 调用存在；恢复身份只使用 Interaction 的 `agent_run_id`，不得按新的协议 `runId` 创建第二个 AgentRun。
+- Interaction resume 必须沿用该 AgentRun 已记录的 Skill，不重新交给路由模型选择，避免批准后偏离原 Tool 白名单或退化为直接回复。
 - 断线重连按 `agent.run_events` 的 run 内 sequence 回放；事件不得保存 Tool 参数或原始结果。取消只停止内置 Agent Runtime 和 pending Interaction，不取消 owner execution；失败重试在同一 AgentRun 中追加新的协议调用事件。
 - `agent.run_events` 的 SSE 使用标准 `id` 字段承载 run 内 sequence；客户端用 `after` 回放未处理的安全事件。
 - AgentCheckpoint 只保存 owner Tool 紧凑事实和用户已确认选择，不保存模型隐藏推理、框架私有内存、完整样本行或大 Tool 结果。
@@ -100,6 +105,7 @@ agent.skill_usage -- Skill 使用统计
 
 - ADDP API Client 统一来自 `common-python/addp_common/client`。
 - Agent 通过 `common-python/addp_common/auth.resolve_authorization_context()` 消费 System AuthContext，不保存 `JWT_SECRET` 或私有 JWT 解析逻辑。
+- 原始 User Access Token 只进入 Agent Runtime 和 System 委托签发接口；每次平台 Tool 使用当前 AgentRun UUID 与 LangChain `tool_call_id` 换取短期 Delegated Access Token，owner Client 不接收原始 Token。
 - A2UI Vue Renderer 位于 `common-frontend/agent-ui`。
 - 平台级 Skill 唯一目录为仓库根目录 `skills/`，Agent 从 `agents/addp.yaml` 装配 Tool Manifest 中的稳定 Tool。
 - Agent Tool Provider 是 `common-python` `ToolExecutor` 的 LangChain 薄 Adapter，不直接调用模块 API Client。

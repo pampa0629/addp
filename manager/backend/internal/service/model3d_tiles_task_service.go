@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
+	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	rastercogref "github.com/addp/manager/internal/cog"
@@ -63,15 +65,14 @@ type Model3DTilesSourceConfig struct {
 type Model3DTilesResultConfig struct{ StorageRef string }
 
 type Model3DTilesTaskService struct {
-	repo         *repository.Model3DTilesRepository
-	taskExecRepo *commonExecution.TaskExecutionRepository
-	executor     Model3DTilesExecutor
-	cleaner      Model3DTilesArtifactCleaner
-	bucket       string
+	repo     *repository.Model3DTilesRepository
+	executor Model3DTilesExecutor
+	cleaner  Model3DTilesArtifactCleaner
+	bucket   string
 }
 
-func NewModel3DTilesTaskService(repo *repository.Model3DTilesRepository, taskExecRepo *commonExecution.TaskExecutionRepository) *Model3DTilesTaskService {
-	return &Model3DTilesTaskService{repo: repo, taskExecRepo: taskExecRepo}
+func NewModel3DTilesTaskService(repo *repository.Model3DTilesRepository) *Model3DTilesTaskService {
+	return &Model3DTilesTaskService{repo: repo}
 }
 
 func (s *Model3DTilesTaskService) SetExecutor(executor Model3DTilesExecutor) {
@@ -173,17 +174,10 @@ func (s *Model3DTilesTaskService) reuseExistingTask(ctx context.Context, task *m
 	return nil
 }
 
-func (s *Model3DTilesTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string) (string, error) {
-	task, err := s.repo.GetTask(ctx, taskID, tenantID)
-	if err != nil {
-		return "", err
-	}
-	if task == nil {
-		return "", ErrTaskNotFound
-	}
-	if s.taskExecRepo == nil {
-		return "", errors.New("task execution repository is required")
-	}
+func (s *Model3DTilesTaskService) Execute(
+	ctx context.Context, taskID uint, tenantID uint, triggerType string, source string,
+	parentExecutionID *string, confirmExistingResult bool,
+) (string, error) {
 	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
 		return "", err
@@ -196,60 +190,56 @@ func (s *Model3DTilesTaskService) Execute(ctx context.Context, taskID uint, tena
 	executionID := uuid.New().String()
 	now := time.Now()
 	currentStep := "生成分块三维模型瓦片"
-	executionConfig := task.Config.Clone()
-	if executionConfig == nil {
-		executionConfig = commonModels.JSONMap{}
-	}
 	exec := &commonExecution.TaskExecution{
 		ExecutionID:       executionID,
 		TenantID:          int(tenantID),
 		Module:            commonExecution.ModuleManager,
 		TaskType:          commonExecution.TaskTypeModel3DTilesGeneration,
 		Source:            normalizedSource,
-		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(taskID),
-		SourceTaskName:    &task.Name,
 		ParentExecutionID: parentExecutionID,
-		Status:            commonExecution.ExecutionStatusRunning,
+		Status:            commonExecution.ExecutionStatusPending,
 		Progress:          0,
 		CurrentStep:       &currentStep,
 		TriggerType:       normalizedTriggerType,
-		ExecutionConfig:   executionConfig,
-		StartedAt:         &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
-	active, err := s.repo.CreateExecutionIfIdle(ctx, taskID, tenantID, exec, now)
+	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec, confirmExistingResult)
 	if err != nil {
+		if errors.Is(err, repository.ErrExistingResultConfirmationRequired) {
+			return "", ErrExistingResultConfirmationRequired
+		}
+		if errors.Is(err, commonAPI.ErrNotFound) {
+			return "", ErrTaskNotFound
+		}
+		if errors.Is(err, commonAPI.ErrConflict) {
+			return "", ErrModel3DTilesTaskExecutionBusy
+		}
 		return "", err
 	}
-	if active {
-		return "", ErrModel3DTilesTaskExecutionBusy
-	}
-
-	result, cfg, err := s.prepareModel3DTilesResult(ctx, task, executionID)
-	if err != nil {
-		completedAt := time.Now()
-		_ = s.taskExecRepo.UpdateFields(ctx, executionID, int(tenantID), map[string]interface{}{
-			"status": commonExecution.ExecutionStatusFailed, "error_details": commonModels.JSONMap{"message": err.Error()},
-			"completed_at": completedAt, "updated_at": completedAt,
-		})
-		_ = s.repo.UpdateTaskLastExecution(ctx, taskID, tenantID, executionID, commonExecution.ExecutionStatusFailed, completedAt)
-		return "", err
-	}
-	go s.runModel3DTilesGeneration(context.Background(), task, result, cfg, executionID, now)
+	go s.runModel3DTilesGeneration(context.Background(), claimedTask, executionID)
 	return executionID, nil
 }
 
-func (s *Model3DTilesTaskService) runModel3DTilesGeneration(ctx context.Context, task *models.Model3DTilesTask, artifact *models.Model3DTiles, cfg Model3DTilesExecutionConfig, executionID string, startedAt time.Time) {
+func (s *Model3DTilesTaskService) runModel3DTilesGeneration(ctx context.Context, task *models.Model3DTilesTask, executionID string) {
+	startedAt := time.Now()
+	if err := s.repo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
+		logger.L().Warn("领取分块三维模型瓦片 execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
+		return
+	}
 	status := commonExecution.ExecutionStatusSuccess
 	progress := 100
 	metadata := commonModels.JSONMap{}
 	var errDetails commonModels.JSONMap
 
-	var err error
+	artifact, cfg, err := s.prepareModel3DTilesResult(ctx, task, executionID)
 	var result *Model3DTilesExecutionResult
-	if s.executor == nil {
-		err = errors.New("model 3d tiles generation executor is not configured")
-	} else {
-		result, err = s.executor.BuildModel3DTiles(ctx, Model3DTilesExecutionRequest{Task: task, ExecutionID: executionID, Config: cfg})
+	if err == nil {
+		if s.executor == nil {
+			err = errors.New("model 3d tiles generation executor is not configured")
+		} else {
+			result, err = s.executor.BuildModel3DTiles(ctx, Model3DTilesExecutionRequest{Task: task, ExecutionID: executionID, Config: cfg})
+		}
 	}
 	if err == nil && result == nil {
 		err = errors.New("model3d tiles generation returned no result")
@@ -272,25 +262,31 @@ func (s *Model3DTilesTaskService) runModel3DTilesGeneration(ctx context.Context,
 		progress = s.model3DTilesExistingExecutionProgress(ctx, executionID, int(task.TenantID))
 		errDetails = commonModels.JSONMap{"message": err.Error()}
 	}
-	artifactFields := map[string]interface{}{"last_execution_id": executionID, "updated_at": time.Now()}
-	if err != nil {
-		artifactFields["status"] = models.Model3DTilesStatusFailed
-		artifactFields["error_message"] = err.Error()
-	} else {
-		artifactFields["status"] = models.Model3DTilesStatusReady
-		artifactFields["error_message"] = ""
-		artifactFields["storage_ref"] = result.StorageRef
-		artifactFields["manifest_ref"] = result.ManifestRef
-		artifactFields["file_count"] = result.FileCount
-		artifactFields["size_bytes"] = result.SizeBytes
-		artifactFields["metadata"] = metadata
+	var artifactFields map[string]interface{}
+	if artifact != nil {
+		artifactFields = map[string]interface{}{"last_execution_id": executionID, "updated_at": time.Now()}
+		if err != nil {
+			artifactFields["status"] = models.Model3DTilesStatusFailed
+			artifactFields["error_message"] = err.Error()
+		} else {
+			artifactFields["status"] = models.Model3DTilesStatusReady
+			artifactFields["error_message"] = ""
+			artifactFields["storage_ref"] = result.StorageRef
+			artifactFields["manifest_ref"] = result.ManifestRef
+			artifactFields["file_count"] = result.FileCount
+			artifactFields["size_bytes"] = result.SizeBytes
+			artifactFields["metadata"] = metadata
+		}
 	}
-	_ = s.repo.UpdateResultFields(ctx, artifact.ID, task.TenantID, artifactFields)
-	metadata = s.mergeModel3DTilesExistingExecutionMetadata(ctx, executionID, int(task.TenantID), metadata)
+	metadata = s.mergeModel3DTilesExistingExecutionMetadata(ctx, executionID, task.TenantID, metadata)
 
 	completedAt := time.Now()
 	durationMs := completedAt.Sub(startedAt).Milliseconds()
-	if err := s.taskExecRepo.UpdateFields(ctx, executionID, int(task.TenantID), map[string]interface{}{
+	artifactID := uint(0)
+	if artifact != nil {
+		artifactID = artifact.ID
+	}
+	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, artifactID, artifactFields, map[string]interface{}{
 		"status":            status,
 		"progress":          progress,
 		"metadata":          metadata,
@@ -298,11 +294,9 @@ func (s *Model3DTilesTaskService) runModel3DTilesGeneration(ctx context.Context,
 		"completed_at":      completedAt,
 		"execution_time_ms": durationMs,
 		"updated_at":        completedAt,
-	}); err != nil {
-		_ = s.repo.UpdateTaskLastExecution(ctx, task.ID, task.TenantID, executionID, commonExecution.ExecutionStatusFailed, completedAt)
-		return
+	}, completedAt); err != nil {
+		logger.L().Warn("提交分块三维模型瓦片 execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}
-	_ = s.repo.UpdateTaskLastExecution(ctx, task.ID, task.TenantID, executionID, status, completedAt)
 }
 
 func model3DTilesExecutionTimedOut(err error) bool {
@@ -319,10 +313,10 @@ func model3DTilesExecutionTimedOut(err error) bool {
 }
 
 func (s *Model3DTilesTaskService) model3DTilesExistingExecutionProgress(ctx context.Context, executionID string, tenantID int) int {
-	if s == nil || s.taskExecRepo == nil {
+	if s == nil || s.repo == nil {
 		return 0
 	}
-	exec, err := s.taskExecRepo.GetByExecutionID(ctx, executionID, tenantID)
+	exec, err := s.repo.GetExecution(ctx, executionID, uint(tenantID))
 	if err != nil || exec == nil {
 		return 0
 	}
@@ -335,14 +329,14 @@ func (s *Model3DTilesTaskService) model3DTilesExistingExecutionProgress(ctx cont
 	return exec.Progress
 }
 
-func (s *Model3DTilesTaskService) mergeModel3DTilesExistingExecutionMetadata(ctx context.Context, executionID string, tenantID int, metadata commonModels.JSONMap) commonModels.JSONMap {
+func (s *Model3DTilesTaskService) mergeModel3DTilesExistingExecutionMetadata(ctx context.Context, executionID string, tenantID uint, metadata commonModels.JSONMap) commonModels.JSONMap {
 	if metadata == nil {
 		metadata = commonModels.JSONMap{}
 	}
-	if s == nil || s.taskExecRepo == nil {
+	if s == nil || s.repo == nil {
 		return metadata
 	}
-	exec, err := s.taskExecRepo.GetByExecutionID(ctx, executionID, tenantID)
+	exec, err := s.repo.GetExecution(ctx, executionID, tenantID)
 	if err != nil || exec.Metadata == nil {
 		return metadata
 	}

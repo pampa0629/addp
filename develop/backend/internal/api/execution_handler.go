@@ -1,12 +1,14 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
+	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	developi18n "github.com/addp/develop/backend/i18n"
 	"github.com/addp/develop/backend/internal/models"
@@ -16,13 +18,15 @@ import (
 
 // ExecutionHandler 执行记录API处理器
 type ExecutionHandler struct {
-	devExecutor *service.DevExecutor
+	devExecutor     *service.DevExecutor
+	approvalService *service.ToolApprovalService
 }
 
 // NewExecutionHandler 创建执行记录处理器
-func NewExecutionHandler(devExecutor *service.DevExecutor) *ExecutionHandler {
+func NewExecutionHandler(devExecutor *service.DevExecutor, approvalService *service.ToolApprovalService) *ExecutionHandler {
 	return &ExecutionHandler{
-		devExecutor: devExecutor,
+		devExecutor:     devExecutor,
+		approvalService: approvalService,
 	}
 }
 
@@ -77,16 +81,77 @@ func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 
 // ExecuteContent 执行临时内容（不创建开发任务）
 // @Summary 执行临时内容 | Execute temporary content
+// @Description 第一方或 OAuth 用户提交 dev_type、trigger_type、content 和 execution_config 后直接执行。委托 workflow.run 首次提交相同执行内容并返回审批；批准后恢复请求只提交 approval_id 和 request_fingerprint。| First-party or OAuth users submit dev_type, trigger_type, content, and execution_config for direct execution. A delegated workflow.run first submits the same execution content and receives an approval; after approval, the resume request contains only approval_id and request_fingerprint.
 // @Tags Execution
 // @Accept json
 // @Produce json
 // @Param body body models.CreateExecutionSwaggerRequest true "执行请求 | Execution request"
-// @Success 200 {object} map[string]string "执行已启动 | Execution started"
+// @Success 200 {object} models.ExecutionStartedResponse "执行已启动 | Execution started"
+// @Success 202 {object} models.ApprovalRequiredResponse "需要在 Develop 完成审批 | Develop approval required"
+// @Failure 400 {object} models.ToolApprovalErrorResponse "请求无效 | Invalid request"
+// @Failure 403 {object} models.ToolApprovalErrorResponse "审批身份无效 | Invalid approval identity"
+// @Failure 409 {object} models.ToolApprovalErrorResponse "审批状态冲突 | Approval state conflict"
+// @Failure 410 {object} models.ToolApprovalErrorResponse "审批已过期 | Approval expired"
 // @Router /executions [post]
 func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 	var req models.CreateExecutionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	authContext, ok := commonAuth.GetAuthorizationContext(c)
+	if !ok {
+		writeToolApprovalError(c, serviceError("approval_forbidden", "缺少认证上下文"))
+		return
+	}
+	if authContext.AuthType == commonAuth.AuthTypeDelegatedAccessToken {
+		if h.approvalService == nil {
+			writeToolApprovalError(c, serviceError("approval_unavailable", "审批服务不可用"))
+			return
+		}
+		if req.ApprovalID == "" {
+			approval, err := h.approvalService.CreateWorkflowRunApproval(c.Request.Context(), authContext, req)
+			if err != nil {
+				writeToolApprovalError(c, err)
+				return
+			}
+			c.JSON(http.StatusAccepted, models.ApprovalRequiredResponse{
+				Status:             "approval_required",
+				InteractionID:      approval.ID.String(),
+				OpenURL:            "/develop/approvals/" + approval.ID.String(),
+				RequestFingerprint: approval.RequestFingerprint,
+				RequestSummary:     approval.RequestSummary,
+				ExpiresAt:          approval.ExpiresAt,
+			})
+			return
+		}
+		if req.DevType != "" || req.TriggerType != "" || req.Content != nil || req.ExecutionConfig != nil || req.Timeout != 0 {
+			writeToolApprovalError(c, serviceError("approval_invalid_request", "恢复 workflow.run 只允许 approval_id 和 request_fingerprint"))
+			return
+		}
+		executionID, err := h.approvalService.ConsumeWorkflowRunApproval(
+			c.Request.Context(),
+			authContext,
+			req.ApprovalID,
+			req.RequestFingerprint,
+		)
+		if err != nil {
+			writeToolApprovalError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, models.ExecutionStartedResponse{
+			Message:     commoni18n.T(c, developi18n.MsgExecutionStarted),
+			ExecutionID: executionID,
+		})
+		return
+	}
+	if req.ApprovalID != "" || req.RequestFingerprint != "" {
+		writeToolApprovalError(c, serviceError("approval_invalid_request", "approval_id 只用于受委托 workflow.run 恢复"))
+		return
+	}
+	if req.DevType == "" || req.TriggerType == "" || req.ExecutionConfig == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "dev_type、trigger_type 和 execution_config 为必填字段"})
 		return
 	}
 
@@ -108,9 +173,43 @@ func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":      commoni18n.T(c, developi18n.MsgExecutionStarted),
-		"execution_id": executionID,
+	c.JSON(http.StatusOK, models.ExecutionStartedResponse{
+		Message:     commoni18n.T(c, developi18n.MsgExecutionStarted),
+		ExecutionID: executionID,
+	})
+}
+
+func serviceError(code, message string) error {
+	return &service.ToolApprovalError{Code: code, Message: message}
+}
+
+func writeToolApprovalError(c *gin.Context, err error) {
+	var approvalErr *service.ToolApprovalError
+	if !errors.As(err, &approvalErr) {
+		c.JSON(http.StatusInternalServerError, models.ToolApprovalErrorResponse{
+			Error: models.ToolApprovalErrorBody{Code: "approval_internal_error", Message: err.Error()},
+		})
+		return
+	}
+	statusCode := http.StatusConflict
+	switch approvalErr.Code {
+	case "approval_invalid_request", "approval_invalid_decision":
+		statusCode = http.StatusBadRequest
+	case "approval_forbidden":
+		statusCode = http.StatusForbidden
+	case "approval_not_found":
+		statusCode = http.StatusNotFound
+	case "approval_expired":
+		statusCode = http.StatusGone
+	case "approval_unavailable":
+		statusCode = http.StatusServiceUnavailable
+	}
+	message := approvalErr.Message
+	if messageID := developi18n.ToolApprovalErrorMessageID(approvalErr.Code); messageID != "" {
+		message = commoni18n.T(c, messageID)
+	}
+	c.JSON(statusCode, models.ToolApprovalErrorResponse{
+		Error: models.ToolApprovalErrorBody{Code: approvalErr.Code, Message: message},
 	})
 }
 

@@ -37,6 +37,13 @@
 | `created_by` | integer | 创建人 |
 | `created_at` / `updated_at` / `deleted_at` | timestamp | 生命周期字段 |
 
+执行生命周期遵守以下唯一语义：
+
+1. 执行前可从 Meta 补全源边界事实，完成后把最终任务配置保存到任务定义。
+2. 启动请求在任务行锁事务内检查同任务是否已有 `pending` 或 `running` execution；存在时返回 HTTP 409，不创建第二个 execution。
+3. 启动成功时原子创建 `common.task_executions.status=pending`，把最终任务配置锁定为 `execution_config` 快照，并把任务摘要推进为 `pending`；此时 `started_at` 必须为空。
+4. Manager 后台执行器领取后原子推进为 `running`；结果状态、execution 终态和任务摘要使用 `last_execution_id` fencing，并在同一 Infra PostgreSQL 事务提交。
+
 ## 三、config 语义
 
 最小结构：
@@ -87,6 +94,8 @@ DELETE /api/v1/manager/gaussian_splat_ksplat_tasks/{id}
 ```
 
 当前 `supports_schedule=false`、`supports_cancel=false`。需要周期性刷新时，应由 Orchestrator 定时编排间接触发已保存任务定义。
+
+`POST .../execute` 接受后返回 HTTP 202、`status=pending` 和新 `execution_id`；同任务已有活跃 execution 时返回 HTTP 409。
 
 ## 五、相关文档
 

@@ -3509,6 +3509,13 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "409": {
+                        "description": "任务已有活动执行或覆盖已有结果需要确认 | Active execution or existing result overwrite confirmation required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
                         "schema": {
@@ -5118,7 +5125,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "任务已有活动执行 | Task already has an active execution",
+                        "description": "任务已有活动执行或刷新已有结果需要确认 | Active execution or existing result refresh confirmation required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7870,6 +7877,9 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
+                "confirm_existing_result": {
+                    "type": "boolean"
+                },
                 "locator": {
                     "type": "string"
                 }
@@ -8751,7 +8761,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "parameters": {
-                    "description": "执行参数覆盖；当前 Manager provider 不支持",
+                    "description": "Manager 受管当前结果任务仅支持 confirm_existing_result | Managed current-result tasks only support confirm_existing_result",
                     "type": "object",
                     "additionalProperties": true
                 },

@@ -36,7 +36,8 @@ class TaskContext(TypedDict):
     context_summary: str     # 最近 N 轮历史摘要（由主 Agent 提供）
     user_id: int
     tenant_id: int
-    token: str               # JWT token，用于 ADDP API 调用
+    token: str               # User Access Token，仅用于解析身份和申请委托令牌
+    agent_run_id: str        # 持久 AgentRun UUID，用于委托令牌审计绑定
     checkpoint: NotRequired[Dict[str, Any]]  # addp.agent-checkpoint/v1 语义检查点
 
 

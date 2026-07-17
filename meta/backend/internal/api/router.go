@@ -55,6 +55,9 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		// Fallback: 无缓存模式
 		api.Use(auth.SystemAuthMiddleware(cfg.SystemServiceURL))
 	}
+	api.Use(auth.DelegatedAccessPolicy("meta", auth.DelegatedRoutePolicy{
+		"GET /api/v1/meta/resource-tree/:engine_id/ancestors": {"resource.ancestors.get"},
+	}))
 	// 审计日志中间件（记录到 System 模块）
 	if systemClient != nil {
 		api.Use(audit.AuditMiddleware("meta", systemClient))

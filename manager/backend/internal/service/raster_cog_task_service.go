@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	rastercogref "github.com/addp/manager/internal/cog"
@@ -85,18 +87,16 @@ type RasterCOGTargetResultConfig struct {
 }
 
 type RasterCOGTaskService struct {
-	repo         *repository.RasterCOGRepository
-	taskExecRepo *commonExecution.TaskExecutionRepository
-	executor     RasterCOGExecutor
-	cleaner      RasterCOGCleaner
-	bucket       string
+	repo     *repository.RasterCOGRepository
+	executor RasterCOGExecutor
+	cleaner  RasterCOGCleaner
+	bucket   string
 }
 
-func NewRasterCOGTaskService(repo *repository.RasterCOGRepository, taskExecRepo *commonExecution.TaskExecutionRepository) *RasterCOGTaskService {
+func NewRasterCOGTaskService(repo *repository.RasterCOGRepository) *RasterCOGTaskService {
 	return &RasterCOGTaskService{
-		repo:         repo,
-		taskExecRepo: taskExecRepo,
-		bucket:       "manager",
+		repo:   repo,
+		bucket: "manager",
 	}
 }
 
@@ -118,7 +118,47 @@ func (s *RasterCOGTaskService) Create(ctx context.Context, task *models.RasterCO
 	if err := normalizeRasterCOGTask(task, s.bucket); err != nil {
 		return err
 	}
-	return s.repo.CreateTask(ctx, task)
+	cfg, err := normalizeRasterCOGTaskConfig(task.Config, s.bucket, task.TenantID)
+	if err != nil {
+		return err
+	}
+	existing, err := s.repo.GetTaskByItemFingerprint(ctx, task.TenantID, cfg.Target.ItemFingerprint)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		return s.reuseExistingTask(ctx, task, existing)
+	}
+	if err := s.repo.CreateTask(ctx, task); err != nil {
+		if strings.Contains(err.Error(), "idx_raster_cog_tasks_source_unique") {
+			existing, lookupErr := s.repo.GetTaskByItemFingerprint(ctx, task.TenantID, cfg.Target.ItemFingerprint)
+			if lookupErr != nil {
+				return lookupErr
+			}
+			if existing != nil {
+				return s.reuseExistingTask(ctx, task, existing)
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *RasterCOGTaskService) reuseExistingTask(ctx context.Context, task, existing *models.RasterCOGTask) error {
+	existing.Name = task.Name
+	existing.Description = task.Description
+	existing.Enabled = task.Enabled
+	existing.Schedule = task.Schedule
+	existing.NextRunAt = task.NextRunAt
+	existing.Config = task.Config.Clone()
+	if existing.CreatedBy == nil {
+		existing.CreatedBy = task.CreatedBy
+	}
+	if err := s.repo.UpdateTask(ctx, existing); err != nil {
+		return err
+	}
+	*task = *existing
+	return nil
 }
 
 func (s *RasterCOGTaskService) GetByID(ctx context.Context, id uint, tenantID uint) (*models.RasterCOGTask, error) {
@@ -167,17 +207,7 @@ func (s *RasterCOGTaskService) DeleteResult(ctx context.Context, id uint, tenant
 	return s.repo.Delete(ctx, id, tenantID)
 }
 
-func (s *RasterCOGTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string) (string, error) {
-	task, err := s.repo.GetTask(ctx, taskID, tenantID)
-	if err != nil {
-		return "", err
-	}
-	if task == nil {
-		return "", ErrTaskNotFound
-	}
-	if s.taskExecRepo == nil {
-		return "", errors.New("task execution repository is required")
-	}
+func (s *RasterCOGTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, confirmExistingResult bool) (string, error) {
 	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
 		return "", err
@@ -190,41 +220,48 @@ func (s *RasterCOGTaskService) Execute(ctx context.Context, taskID uint, tenantI
 	executionID := uuid.New().String()
 	now := time.Now()
 	currentStep := "生成栅格快显 COG"
-	executionConfig := task.Config.Clone()
-	if executionConfig == nil {
-		executionConfig = commonModels.JSONMap{}
-	}
 	exec := &commonExecution.TaskExecution{
 		ExecutionID:       executionID,
 		TenantID:          int(tenantID),
 		Module:            commonExecution.ModuleManager,
 		TaskType:          commonExecution.TaskTypeRasterCOGGeneration,
 		Source:            normalizedSource,
-		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(taskID),
-		SourceTaskName:    &task.Name,
 		ParentExecutionID: parentExecutionID,
-		Status:            commonExecution.ExecutionStatusRunning,
+		Status:            commonExecution.ExecutionStatusPending,
 		Progress:          0,
 		CurrentStep:       &currentStep,
 		TriggerType:       normalizedTriggerType,
-		ExecutionConfig:   executionConfig,
-		StartedAt:         &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
-	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
-		return "", err
-	}
-	if err := s.repo.UpdateTaskLastExecution(ctx, taskID, tenantID, executionID, commonExecution.ExecutionStatusRunning, now); err != nil {
+	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec, confirmExistingResult)
+	if err != nil {
+		if errors.Is(err, repository.ErrExistingResultConfirmationRequired) {
+			return "", ErrExistingResultConfirmationRequired
+		}
+		if errors.Is(err, commonAPI.ErrNotFound) {
+			return "", ErrTaskNotFound
+		}
+		if errors.Is(err, commonAPI.ErrConflict) {
+			return "", ErrTaskExecutionBusy
+		}
 		return "", err
 	}
 
-	go s.runRasterCOGGeneration(context.Background(), task, executionID, now)
+	go s.runRasterCOGGeneration(context.Background(), claimedTask, executionID)
 	return executionID, nil
 }
 
-func (s *RasterCOGTaskService) runRasterCOGGeneration(ctx context.Context, task *models.RasterCOGTask, executionID string, startedAt time.Time) {
+func (s *RasterCOGTaskService) runRasterCOGGeneration(ctx context.Context, task *models.RasterCOGTask, executionID string) {
+	startedAt := time.Now()
+	if err := s.repo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
+		logger.L().Warn("领取栅格 COG execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
+		return
+	}
 	status := commonExecution.ExecutionStatusSuccess
 	metadata := commonModels.JSONMap{}
 	var errDetails commonModels.JSONMap
+	var resultFields map[string]interface{}
 
 	rasterCOG, execCfg, err := s.prepareResult(ctx, task, executionID)
 	var buildResult *RasterCOGExecutionResult
@@ -247,29 +284,20 @@ func (s *RasterCOGTaskService) runRasterCOGGeneration(ctx context.Context, task 
 		status = commonExecution.ExecutionStatusFailed
 		errDetails = commonModels.JSONMap{"message": err.Error()}
 		if rasterCOG != nil {
-			_ = s.repo.UpdateFields(ctx, rasterCOG.ID, task.TenantID, map[string]interface{}{
+			resultFields = map[string]interface{}{
 				"status":            models.RasterCOGStatusFailed,
 				"error_message":     err.Error(),
 				"last_execution_id": executionID,
-			})
+			}
 		}
 	} else if rasterCOG != nil {
-		fields := map[string]interface{}{
+		resultFields = map[string]interface{}{
 			"status":            models.RasterCOGStatusReady,
 			"error_message":     "",
 			"last_execution_id": executionID,
 			"metadata":          metadata,
 		}
-		applyRasterCOGResultFields(fields, buildResult)
-		if err := s.repo.UpdateFields(ctx, rasterCOG.ID, task.TenantID, fields); err != nil {
-			status = commonExecution.ExecutionStatusFailed
-			errDetails = commonModels.JSONMap{"message": fmt.Sprintf("update raster COG result: %v", err)}
-			_ = s.repo.UpdateFields(ctx, rasterCOG.ID, task.TenantID, map[string]interface{}{
-				"status":            models.RasterCOGStatusFailed,
-				"error_message":     fmt.Sprintf("update raster COG result: %v", err),
-				"last_execution_id": executionID,
-			})
-		}
+		applyRasterCOGResultFields(resultFields, buildResult)
 	}
 
 	progress := 100
@@ -277,7 +305,11 @@ func (s *RasterCOGTaskService) runRasterCOGGeneration(ctx context.Context, task 
 		progress = 0
 	}
 	durationMs := completedAt.Sub(startedAt).Milliseconds()
-	if err := s.taskExecRepo.UpdateFields(ctx, executionID, int(task.TenantID), map[string]interface{}{
+	resultID := uint(0)
+	if rasterCOG != nil {
+		resultID = rasterCOG.ID
+	}
+	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, resultID, resultFields, map[string]interface{}{
 		"status":            status,
 		"progress":          progress,
 		"metadata":          metadata,
@@ -285,12 +317,9 @@ func (s *RasterCOGTaskService) runRasterCOGGeneration(ctx context.Context, task 
 		"completed_at":      completedAt,
 		"execution_time_ms": durationMs,
 		"updated_at":        completedAt,
-	}); err != nil {
-		// execution 更新失败只能记录到任务最近状态；不能在后台 goroutine 中向调用方返回。
-		_ = s.repo.UpdateTaskLastExecution(ctx, task.ID, task.TenantID, executionID, commonExecution.ExecutionStatusFailed, completedAt)
-		return
+	}, completedAt); err != nil {
+		logger.L().Warn("提交栅格 COG execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}
-	_ = s.repo.UpdateTaskLastExecution(ctx, task.ID, task.TenantID, executionID, status, completedAt)
 }
 
 func (s *RasterCOGTaskService) prepareResult(ctx context.Context, task *models.RasterCOGTask, executionID string) (*models.RasterCOG, RasterCOGExecutionConfig, error) {

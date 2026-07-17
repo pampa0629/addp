@@ -2,6 +2,7 @@ package api
 
 import (
 	"strconv"
+	"strings"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
@@ -49,21 +50,8 @@ func SetupRouter(
 	})
 
 	// 查询服务端点（支持公开访问，handler内部会检查权限）
-	// 可选认证：有 token 就解析注入 tenant_id，没有就跳过（公开服务仍可访问）
-	optionalAuth := func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			if tokenParam := c.Query("token"); tokenParam != "" {
-				authHeader = "Bearer " + tokenParam
-				c.Request.Header.Set("Authorization", authHeader)
-			}
-		}
-		if authHeader != "" {
-			authMiddleware.SystemAuthMiddleware(cfg.SystemServiceURL)(c)
-			return
-		}
-		c.Next()
-	}
+	// 可选认证：有 Bearer Header 就解析 AuthContext，没有就按公开访问处理。
+	optionalAuth := optionalSystemAuth(cfg.SystemServiceURL)
 	router.GET("/api/query/:serviceName", optionalAuth, queryServiceHandler.QueryData)
 
 	// 图查询服务执行端点（支持公开访问）
@@ -98,7 +86,7 @@ func SetupRouter(
 	api := router.Group("/api/v1/service")
 	assetDiscHandler := newAssetDiscoverableHandler(db)
 	{
-		// 内部服务调用支持（X-Internal-API-Key 跳过 JWT 认证）
+		// 内部服务调用支持（X-Internal-API-Key 跳过用户 Bearer 认证）
 		api.Use(func(c *gin.Context) {
 			if apiKey := c.GetHeader("X-Internal-API-Key"); apiKey != "" {
 				tenantID := uint(0)
@@ -115,7 +103,7 @@ func SetupRouter(
 			}
 			c.Next()
 		})
-		// JWT 认证（内部 API Key 已通过时仍需阻止未认证请求）
+		// 用户 Bearer 认证（内部 API Key 已通过时跳过）
 		api.Use(func(c *gin.Context) {
 			if c.GetHeader("X-Internal-API-Key") != "" {
 				c.Next()
@@ -204,4 +192,15 @@ func SetupRouter(
 	}
 
 	return router
+}
+
+func optionalSystemAuth(systemURL string) gin.HandlerFunc {
+	systemAuth := authMiddleware.SystemAuthMiddleware(systemURL)
+	return func(c *gin.Context) {
+		if strings.TrimSpace(c.GetHeader("Authorization")) == "" {
+			c.Next()
+			return
+		}
+		systemAuth(c)
+	}
 }

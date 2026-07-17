@@ -341,12 +341,12 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
 		service.NewTileCacheTaskService(tileCacheRepo, nil),
 		service.NewVectorMaterializedViewTaskService(qvoRepo, nil),
-		service.NewRasterCOGTaskService(cogRepo, nil),
+		service.NewRasterCOGTaskService(cogRepo),
 		nil,
 	)
-	handler.SetModel3DTilesTaskService(service.NewModel3DTilesTaskService(model3DTilesRepo, nil))
-	handler.SetModel3DGLBTaskService(service.NewModel3DGLBTaskService(model3DGLBRepo, nil))
-	handler.SetGaussianSplatKSplatTaskService(service.NewGaussianSplatKSplatTaskService(gaussianSplatKSplatRepo, nil))
+	handler.SetModel3DTilesTaskService(service.NewModel3DTilesTaskService(model3DTilesRepo))
+	handler.SetModel3DGLBTaskService(service.NewModel3DGLBTaskService(model3DGLBRepo))
+	handler.SetGaussianSplatKSplatTaskService(service.NewGaussianSplatKSplatTaskService(gaussianSplatKSplatRepo))
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -513,6 +513,124 @@ func TestTaskExecuteResponseUsesStandardExecutionShape(t *testing.T) {
 	}
 }
 
+func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newTaskProviderHandlerTestDB(t)
+	repo := repository.NewModel3DTilesRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	task := &models.Model3DTilesTask{
+		TenantID: 1, Name: "model3d tiles confirmation contract", Enabled: true,
+		Config: commonModels.JSONMap{
+			"source": commonModels.JSONMap{
+				"item_locator": "addp://engine/11/path/models/site?type=item&item_id=46", "source_engine_id": uint(11),
+				"item_fingerprint": "model3d-tiles-api-confirmation", "item_id": uint(46), "format": "osgb_scene",
+			},
+			"target_format": models.Model3DTilesTargetFormat3DTiles,
+		},
+	}
+	if err := repo.CreateTask(context.Background(), task); err != nil {
+		t.Fatalf("create model3d tiles task: %v", err)
+	}
+
+	handler := NewTaskProviderHandler(nil, nil, nil, nil, taskExecRepo)
+	handler.SetModel3DTilesTaskService(service.NewModel3DTilesTaskService(repo))
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", uint(1))
+		c.Next()
+	})
+	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+	path := "/tasks/" + commonExecution.TaskTypeModel3DTilesGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
+
+	first := executeTaskProviderRequest(t, router, path, ``)
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
+	}
+	var accepted TaskExecuteResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &accepted); err != nil {
+		t.Fatalf("decode first response: %v", err)
+	}
+	waitForTaskProviderExecutionCompletion(t, taskExecRepo, accepted.ExecutionID, 1)
+
+	var countBefore int64
+	if err := db.Model(&commonExecution.TaskExecution{}).Count(&countBefore).Error; err != nil {
+		t.Fatalf("count executions before rejected refresh: %v", err)
+	}
+	unconfirmed := executeTaskProviderRequest(t, router, path, `{}`)
+	if unconfirmed.Code != http.StatusConflict {
+		t.Fatalf("unconfirmed execute status = %d, want 409; body=%s", unconfirmed.Code, unconfirmed.Body.String())
+	}
+	var confirmationError struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+	}
+	if err := json.Unmarshal(unconfirmed.Body.Bytes(), &confirmationError); err != nil {
+		t.Fatalf("decode confirmation error: %v", err)
+	}
+	if confirmationError.Code != existingResultConfirmationRequiredCode || confirmationError.Error == "" {
+		t.Fatalf("confirmation error = %#v", confirmationError)
+	}
+	var countAfter int64
+	if err := db.Model(&commonExecution.TaskExecution{}).Count(&countAfter).Error; err != nil {
+		t.Fatalf("count executions after rejected refresh: %v", err)
+	}
+	if countAfter != countBefore {
+		t.Fatalf("rejected refresh created execution: before=%d after=%d", countBefore, countAfter)
+	}
+
+	for _, body := range []string{
+		`{"parameters":{"confirm_existing_result":"true"}}`,
+		`{"parameters":{"confirm_existing_result":true,"unknown":true}}`,
+	} {
+		invalid := executeTaskProviderRequest(t, router, path, body)
+		if invalid.Code != http.StatusBadRequest {
+			t.Fatalf("invalid parameters status = %d, want 400; body=%s", invalid.Code, invalid.Body.String())
+		}
+	}
+
+	confirmed := executeTaskProviderRequest(t, router, path, `{"parameters":{"confirm_existing_result":true}}`)
+	if confirmed.Code != http.StatusAccepted {
+		t.Fatalf("confirmed execute status = %d, want 202; body=%s", confirmed.Code, confirmed.Body.String())
+	}
+	var confirmedResponse TaskExecuteResponse
+	if err := json.Unmarshal(confirmed.Body.Bytes(), &confirmedResponse); err != nil {
+		t.Fatalf("decode confirmed response: %v", err)
+	}
+	if confirmedResponse.ExecutionID == "" || confirmedResponse.Status != commonExecution.ExecutionStatusPending || confirmedResponse.ExecutionID == accepted.ExecutionID {
+		t.Fatalf("confirmed response = %#v", confirmedResponse)
+	}
+}
+
+func executeTaskProviderRequest(t *testing.T, router *gin.Engine, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	var reader *strings.Reader
+	if body == "" {
+		reader = strings.NewReader("")
+	} else {
+		reader = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(http.MethodPost, path, reader)
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func waitForTaskProviderExecutionCompletion(t *testing.T, repo *commonExecution.TaskExecutionRepository, executionID string, tenantID int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		exec, err := repo.GetByExecutionID(context.Background(), executionID, tenantID)
+		if err == nil && exec.IsCompleted() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("execution %s did not complete", executionID)
+}
+
 func TestTaskExecuteTileCacheReturnsPendingAndRejectsActiveExecution(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newTaskProviderHandlerTestDB(t)
@@ -571,10 +689,378 @@ func TestTaskExecuteTileCacheReturnsPendingAndRejectsActiveExecution(t *testing.
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
-	if _, err := tileCacheRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending); err != nil {
+	if _, err := tileCacheRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending, false); err != nil {
 		t.Fatalf("claim deterministic pending execution: %v", err)
 	}
 
+	second := httptest.NewRecorder()
+	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
+	if second.Code != http.StatusConflict {
+		t.Fatalf("second execute status = %d, want 409; body=%s", second.Code, second.Body.String())
+	}
+	assertStandardErrorResponse(t, second.Body.Bytes())
+}
+
+func TestTaskExecuteRasterCOGReturnsPendingAndRejectsActiveExecution(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newTaskProviderHandlerTestDB(t)
+	cogRepo := repository.NewRasterCOGRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := service.NewRasterCOGTaskService(cogRepo)
+	task := &models.RasterCOGTask{
+		TenantID: 1,
+		Name:     "raster COG execution contract",
+		Enabled:  true,
+		Config:   commonModels.JSONMap{"invalid": true},
+	}
+	if err := cogRepo.CreateTask(context.Background(), task); err != nil {
+		t.Fatalf("create raster COG task: %v", err)
+	}
+
+	handler := NewTaskProviderHandler(nil, nil, nil, taskSvc, taskExecRepo)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", uint(1))
+		c.Next()
+	})
+	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+
+	path := "/tasks/" + commonExecution.TaskTypeRasterCOGGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
+	first := httptest.NewRecorder()
+	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, path, nil))
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
+	}
+	var accepted TaskExecuteResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &accepted); err != nil {
+		t.Fatalf("decode first execute response: %v", err)
+	}
+	if accepted.ExecutionID == "" || accepted.Status != commonExecution.ExecutionStatusPending {
+		t.Fatalf("first execute response = %#v, want pending execution", accepted)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		exec, err := taskExecRepo.GetByExecutionID(context.Background(), accepted.ExecutionID, 1)
+		if err == nil && exec.IsCompleted() {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	pending := &commonExecution.TaskExecution{
+		ExecutionID: "manager-api-raster-cog-active", TenantID: 1, Module: commonExecution.ModuleManager,
+		TaskType: commonExecution.TaskTypeRasterCOGGeneration, Source: commonExecution.ModuleManager,
+		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if _, err := cogRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending, false); err != nil {
+		t.Fatalf("claim deterministic pending execution: %v", err)
+	}
+
+	second := httptest.NewRecorder()
+	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
+	if second.Code != http.StatusConflict {
+		t.Fatalf("second execute status = %d, want 409; body=%s", second.Code, second.Body.String())
+	}
+	assertStandardErrorResponse(t, second.Body.Bytes())
+}
+
+func TestTaskExecuteRasterMosaicReturnsPendingAndRejectsActiveExecution(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newTaskProviderHandlerTestDB(t)
+	mosaicRepo := repository.NewRasterMosaicRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := service.NewRasterMosaicTaskService(mosaicRepo, taskExecRepo)
+	task := &models.RasterMosaicTask{
+		TenantID: 1,
+		Name:     "raster mosaic execution contract",
+		Enabled:  true,
+		Config:   commonModels.JSONMap{"invalid": true},
+	}
+	if err := mosaicRepo.CreateTask(context.Background(), task); err != nil {
+		t.Fatalf("create raster mosaic task: %v", err)
+	}
+
+	handler := NewTaskProviderHandler(nil, nil, nil, nil, taskExecRepo, taskSvc)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", uint(1))
+		c.Next()
+	})
+	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+
+	path := "/tasks/" + commonExecution.TaskTypeRasterMosaicGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
+	first := httptest.NewRecorder()
+	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, path, nil))
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
+	}
+	var accepted TaskExecuteResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &accepted); err != nil {
+		t.Fatalf("decode first execute response: %v", err)
+	}
+	if accepted.ExecutionID == "" || accepted.Status != commonExecution.ExecutionStatusPending {
+		t.Fatalf("first execute response = %#v, want pending execution", accepted)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		exec, err := taskExecRepo.GetByExecutionID(context.Background(), accepted.ExecutionID, 1)
+		if err == nil && exec.IsCompleted() {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	pending := &commonExecution.TaskExecution{
+		ExecutionID: "manager-api-raster-mosaic-active", TenantID: 1, Module: commonExecution.ModuleManager,
+		TaskType: commonExecution.TaskTypeRasterMosaicGeneration, Source: commonExecution.ModuleManager,
+		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if _, err := mosaicRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending); err != nil {
+		t.Fatalf("claim deterministic pending execution: %v", err)
+	}
+
+	second := httptest.NewRecorder()
+	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
+	if second.Code != http.StatusConflict {
+		t.Fatalf("second execute status = %d, want 409; body=%s", second.Code, second.Body.String())
+	}
+	assertStandardErrorResponse(t, second.Body.Bytes())
+}
+
+func TestTaskExecuteModel3DGLBReturnsPendingAndRejectsActiveExecution(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newTaskProviderHandlerTestDB(t)
+	glbRepo := repository.NewModel3DGLBRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := service.NewModel3DGLBTaskService(glbRepo)
+	task := &models.Model3DGLBTask{
+		TenantID: 1,
+		Name:     "model 3d GLB execution contract",
+		Enabled:  true,
+		Config:   commonModels.JSONMap{"invalid": true},
+	}
+	if err := glbRepo.CreateTask(context.Background(), task); err != nil {
+		t.Fatalf("create model 3d GLB task: %v", err)
+	}
+
+	handler := NewTaskProviderHandler(nil, nil, nil, nil, taskExecRepo)
+	handler.SetModel3DGLBTaskService(taskSvc)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", uint(1))
+		c.Next()
+	})
+	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+
+	path := "/tasks/" + commonExecution.TaskTypeModel3DGLBGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
+	first := httptest.NewRecorder()
+	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, path, nil))
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
+	}
+	var accepted TaskExecuteResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &accepted); err != nil {
+		t.Fatalf("decode first execute response: %v", err)
+	}
+	if accepted.ExecutionID == "" || accepted.Status != commonExecution.ExecutionStatusPending {
+		t.Fatalf("first execute response = %#v, want pending execution", accepted)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		exec, err := taskExecRepo.GetByExecutionID(context.Background(), accepted.ExecutionID, 1)
+		if err == nil && exec.IsCompleted() {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	pending := &commonExecution.TaskExecution{
+		ExecutionID: "manager-api-model-3d-glb-active", TenantID: 1, Module: commonExecution.ModuleManager,
+		TaskType: commonExecution.TaskTypeModel3DGLBGeneration, Source: commonExecution.ModuleManager,
+		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if _, err := glbRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending, false); err != nil {
+		t.Fatalf("claim deterministic pending execution: %v", err)
+	}
+
+	second := httptest.NewRecorder()
+	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
+	if second.Code != http.StatusConflict {
+		t.Fatalf("second execute status = %d, want 409; body=%s", second.Code, second.Body.String())
+	}
+	assertStandardErrorResponse(t, second.Body.Bytes())
+}
+
+func TestTaskExecuteGaussianSplatKSplatReturnsPendingAndRejectsActiveExecution(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newTaskProviderHandlerTestDB(t)
+	ksplatRepo := repository.NewGaussianSplatKSplatRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := service.NewGaussianSplatKSplatTaskService(ksplatRepo)
+	task := &models.GaussianSplatKSplatTask{
+		TenantID: 1,
+		Name:     "gaussian splat KSplat execution contract",
+		Enabled:  true,
+		Config:   commonModels.JSONMap{"invalid": true},
+	}
+	if err := ksplatRepo.CreateTask(context.Background(), task); err != nil {
+		t.Fatalf("create gaussian splat KSplat task: %v", err)
+	}
+
+	handler := NewTaskProviderHandler(nil, nil, nil, nil, taskExecRepo)
+	handler.SetGaussianSplatKSplatTaskService(taskSvc)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", uint(1))
+		c.Next()
+	})
+	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+
+	path := "/tasks/" + commonExecution.TaskTypeGaussianSplatKSplatGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
+	first := httptest.NewRecorder()
+	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, path, nil))
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
+	}
+	var accepted TaskExecuteResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &accepted); err != nil {
+		t.Fatalf("decode first execute response: %v", err)
+	}
+	if accepted.ExecutionID == "" || accepted.Status != commonExecution.ExecutionStatusPending {
+		t.Fatalf("first execute response = %#v, want pending execution", accepted)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		exec, err := taskExecRepo.GetByExecutionID(context.Background(), accepted.ExecutionID, 1)
+		if err == nil && exec.IsCompleted() {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	pending := &commonExecution.TaskExecution{
+		ExecutionID: "manager-api-gaussian-splat-ksplat-active", TenantID: 1, Module: commonExecution.ModuleManager,
+		TaskType: commonExecution.TaskTypeGaussianSplatKSplatGeneration, Source: commonExecution.ModuleManager,
+		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if _, err := ksplatRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending, false); err != nil {
+		t.Fatalf("claim deterministic pending execution: %v", err)
+	}
+
+	second := httptest.NewRecorder()
+	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
+	if second.Code != http.StatusConflict {
+		t.Fatalf("second execute status = %d, want 409; body=%s", second.Code, second.Body.String())
+	}
+	assertStandardErrorResponse(t, second.Body.Bytes())
+}
+
+func TestTaskExecutePointCloudCOPCReturnsPendingAndRejectsActiveExecution(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newTaskProviderHandlerTestDB(t)
+	copcRepo := repository.NewPointCloudCOPCRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := service.NewPointCloudCOPCTaskService(copcRepo)
+	task := &models.PointCloudCOPCTask{
+		TenantID: 1, Name: "point cloud COPC execution contract", Enabled: true,
+		Config: commonModels.JSONMap{"invalid": true},
+	}
+	if err := copcRepo.CreateTask(context.Background(), task); err != nil {
+		t.Fatalf("create point cloud COPC task: %v", err)
+	}
+	handler := NewTaskProviderHandler(nil, nil, nil, nil, taskExecRepo)
+	handler.SetPointCloudCOPCTaskService(taskSvc)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("tenant_id", uint(1)); c.Next() })
+	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+	path := "/tasks/" + commonExecution.TaskTypePointCloudCOPCGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
+
+	first := httptest.NewRecorder()
+	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, path, nil))
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
+	}
+	var accepted TaskExecuteResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &accepted); err != nil {
+		t.Fatalf("decode first execute response: %v", err)
+	}
+	if accepted.ExecutionID == "" || accepted.Status != commonExecution.ExecutionStatusPending {
+		t.Fatalf("first execute response = %#v, want pending execution", accepted)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		exec, err := taskExecRepo.GetByExecutionID(context.Background(), accepted.ExecutionID, 1)
+		if err == nil && exec.IsCompleted() {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	pending := &commonExecution.TaskExecution{
+		ExecutionID: "manager-api-point-cloud-copc-active", TenantID: 1, Module: commonExecution.ModuleManager,
+		TaskType: commonExecution.TaskTypePointCloudCOPCGeneration, Source: commonExecution.ModuleManager,
+		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if _, err := copcRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending, false); err != nil {
+		t.Fatalf("claim deterministic pending execution: %v", err)
+	}
+	second := httptest.NewRecorder()
+	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
+	if second.Code != http.StatusConflict {
+		t.Fatalf("second execute status = %d, want 409; body=%s", second.Code, second.Body.String())
+	}
+	assertStandardErrorResponse(t, second.Body.Bytes())
+}
+
+func TestTaskExecuteCADPreviewReturnsPendingAndRejectsActiveExecution(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newTaskProviderHandlerTestDB(t)
+	cadRepo := repository.NewCADPreviewRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := service.NewCADPreviewTaskService(cadRepo)
+	task := &models.CADPreviewTask{TenantID: 1, Name: "CAD preview execution contract", Enabled: true, Config: commonModels.JSONMap{"invalid": true}}
+	if err := cadRepo.CreateTask(context.Background(), task); err != nil {
+		t.Fatalf("create CAD preview task: %v", err)
+	}
+	handler := NewTaskProviderHandler(nil, nil, nil, nil, taskExecRepo)
+	handler.SetCADPreviewTaskService(taskSvc)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("tenant_id", uint(1)); c.Next() })
+	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+	path := "/tasks/" + commonExecution.TaskTypeCADPreviewGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
+	first := httptest.NewRecorder()
+	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, path, nil))
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
+	}
+	var accepted TaskExecuteResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &accepted); err != nil {
+		t.Fatalf("decode first execute response: %v", err)
+	}
+	if accepted.ExecutionID == "" || accepted.Status != commonExecution.ExecutionStatusPending {
+		t.Fatalf("first execute response = %#v, want pending execution", accepted)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		exec, err := taskExecRepo.GetByExecutionID(context.Background(), accepted.ExecutionID, 1)
+		if err == nil && exec.IsCompleted() {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	pending := &commonExecution.TaskExecution{
+		ExecutionID: "manager-api-cad-preview-active", TenantID: 1, Module: commonExecution.ModuleManager,
+		TaskType: commonExecution.TaskTypeCADPreviewGeneration, Source: commonExecution.ModuleManager,
+		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if _, err := cadRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending, false); err != nil {
+		t.Fatalf("claim deterministic pending execution: %v", err)
+	}
 	second := httptest.NewRecorder()
 	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
 	if second.Code != http.StatusConflict {
@@ -684,6 +1170,14 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		)`).Error; err != nil {
 		t.Fatalf("create vector_tile_cache_tasks table: %v", err)
 	}
+	if err := db.Exec(`CREATE TABLE manager.vector_tile_cache (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		task_id INTEGER,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create vector_tile_cache table: %v", err)
+	}
 	if err := db.Exec(`CREATE TABLE manager.embedding_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
@@ -740,6 +1234,33 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create raster_cog_tasks table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.raster_cog (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		task_id INTEGER,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create raster_cog table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.raster_mosaic_tasks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		name TEXT NOT NULL,
+		description TEXT,
+		enabled BOOLEAN,
+		last_execution_id TEXT,
+		last_execution_status TEXT,
+		last_run_at DATETIME,
+		next_run_at DATETIME,
+		schedule TEXT,
+		created_by INTEGER,
+		config JSON,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create raster_mosaic_tasks table: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE manager.model3d_tiles_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -798,6 +1319,33 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create gaussian_splat_ksplat_tasks table: %v", err)
 	}
+	if err := db.Exec(`CREATE TABLE manager.point_cloud_copc_tasks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		name TEXT NOT NULL,
+		description TEXT,
+		enabled BOOLEAN,
+		last_execution_id TEXT,
+		last_execution_status TEXT,
+		last_run_at DATETIME,
+		next_run_at DATETIME,
+		schedule TEXT,
+		created_by INTEGER,
+		config JSON,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create point_cloud_copc_tasks table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.cad_preview_tasks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
+		description TEXT, enabled BOOLEAN, last_execution_id TEXT, last_execution_status TEXT,
+		last_run_at DATETIME, next_run_at DATETIME, schedule TEXT, created_by INTEGER, config JSON,
+		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create cad_preview_tasks table: %v", err)
+	}
 	if err := db.Exec(`CREATE TABLE manager.model_3d_glb (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
@@ -823,6 +1371,15 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create model_3d_glb table: %v", err)
 	}
+	if err := db.Exec(`CREATE TABLE manager.model3d_tiles (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
+		item_id INTEGER, locator TEXT, task_id INTEGER, last_execution_id TEXT, source_engine_id INTEGER,
+		source_format TEXT, source_size_bytes INTEGER, target_format TEXT, storage_ref TEXT,
+		manifest_ref TEXT, file_count INTEGER, size_bytes INTEGER, status TEXT, metadata JSON,
+		error_message TEXT, created_by INTEGER, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create model3d_tiles table: %v", err)
+	}
 	if err := db.Exec(`CREATE TABLE manager.gaussian_splat_ksplat (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
@@ -847,6 +1404,41 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create gaussian_splat_ksplat table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.point_cloud_copc (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		item_fingerprint TEXT NOT NULL,
+		item_id INTEGER,
+		locator TEXT,
+		task_id INTEGER,
+		last_execution_id TEXT,
+		source_engine_id INTEGER NOT NULL,
+		source_format TEXT NOT NULL,
+		source_size_bytes INTEGER,
+		storage_ref TEXT NOT NULL,
+		file_name TEXT,
+		size_bytes INTEGER,
+		content_url TEXT,
+		status TEXT NOT NULL,
+		metadata JSON,
+		error_message TEXT,
+		created_by INTEGER,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create point_cloud_copc table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.cad_previews (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
+		item_id INTEGER, locator TEXT, task_id INTEGER, last_execution_id TEXT, source_engine_id INTEGER,
+		source_format TEXT, source_size_bytes INTEGER, storage_ref TEXT, manifest_ref TEXT, thumbnail_ref TEXT,
+		tile_count INTEGER, tile_size INTEGER, min_zoom INTEGER, max_zoom INTEGER, bounds JSON,
+		status TEXT, metadata JSON, error_message TEXT, created_by INTEGER,
+		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create cad_previews table: %v", err)
 	}
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
 		t.Fatalf("attach common schema: %v", err)

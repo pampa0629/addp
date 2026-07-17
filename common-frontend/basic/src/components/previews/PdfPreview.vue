@@ -197,26 +197,6 @@ const fileName = computed(() => {
   return props.data?.object?.path?.split('/').pop() || 'document.pdf'
 })
 
-const withAuthToken = (url) => {
-  if (!url || typeof url !== 'string') return ''
-  const token = localStorage.getItem('token')
-  if (!token) return url
-  if (!url.startsWith('/api/')) return url
-  try {
-    const parsed = new URL(url, window.location.origin)
-    if (parsed.searchParams.has('token')) {
-      return url
-    }
-    parsed.searchParams.set('token', token)
-    return parsed.origin === window.location.origin
-      ? `${parsed.pathname}${parsed.search}${parsed.hash}`
-      : parsed.toString()
-  } catch {
-    const separator = url.includes('?') ? '&' : '?'
-    return `${url}${separator}token=${encodeURIComponent(token)}`
-  }
-}
-
 /**
  * 加载 PDF.js 库
  */
@@ -314,7 +294,7 @@ const buildPdfUrl = () => {
     props.data?.downloadUrl ||
     ''
   if (url) {
-    return withAuthToken(url)
+    return url
   }
 
   const base64Data = content.pdf_data || content.data
@@ -339,7 +319,7 @@ const buildPdfUrl = () => {
   const path = object.path
   const engineId = props.data?.engineId || object.engine_id
   if (path && engineId) {
-    return withAuthToken(`/api/preview/download?engine_id=${engineId}&path=${encodeURIComponent(path)}`)
+    return `/api/preview/download?engine_id=${engineId}&path=${encodeURIComponent(path)}`
   }
 
   return null

@@ -10,13 +10,14 @@ import (
 )
 
 type taskProviderTaskCapability struct {
-	Type                    string `json:"type"`
-	SupportsSchedule        bool   `json:"supports_schedule"`
-	SupportsCancel          bool   `json:"supports_cancel"`
-	SupportsInlineExecution bool   `json:"supports_inline_execution"`
-	CreateURL               string `json:"create_url"`
-	EditURL                 string `json:"edit_url"`
-	Deprecated              bool   `json:"deprecated"`
+	Type                    string                 `json:"type"`
+	SupportsSchedule        bool                   `json:"supports_schedule"`
+	SupportsCancel          bool                   `json:"supports_cancel"`
+	SupportsInlineExecution bool                   `json:"supports_inline_execution"`
+	CreateURL               string                 `json:"create_url"`
+	EditURL                 string                 `json:"edit_url"`
+	Deprecated              bool                   `json:"deprecated"`
+	ExecutionSchema         map[string]interface{} `json:"execution_schema"`
 }
 
 func TestTaskProviderRegistryVectorMaterializedViewCapability(t *testing.T) {
@@ -111,6 +112,25 @@ func TestTaskProviderRegistryVectorMaterializedViewCapability(t *testing.T) {
 	}
 	if cog.Deprecated {
 		t.Fatal("raster_cog_generation deprecated = true, want false")
+	}
+
+	for _, taskType := range []string{
+		"vector_tile_cache_generation", "vector_materialized_view_generation", "raster_cog_generation",
+		"model_3d_glb_generation", "model3d_tiles_generation", "gaussian_splat_ksplat_generation",
+		"point_cloud_copc_generation", "cad_preview_generation",
+	} {
+		capability := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, taskType)
+		properties, _ := capability.ExecutionSchema["properties"].(map[string]interface{})
+		confirmation, _ := properties["confirm_existing_result"].(map[string]interface{})
+		if confirmation["type"] != "boolean" || capability.ExecutionSchema["additionalProperties"] != false {
+			t.Fatalf("%s execution_schema = %#v", taskType, capability.ExecutionSchema)
+		}
+	}
+	for _, taskType := range []string{"raster_mosaic_generation", "embedding"} {
+		capability := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, taskType)
+		if _, exists := capability.ExecutionSchema["properties"]; exists || capability.ExecutionSchema["additionalProperties"] != false {
+			t.Fatalf("%s execution_schema = %#v, want empty closed object", taskType, capability.ExecutionSchema)
+		}
 	}
 }
 

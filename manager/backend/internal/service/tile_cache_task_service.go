@@ -400,10 +400,47 @@ func (s *TileCacheTaskService) Create(ctx context.Context, task *models.TileCach
 	if err := normalizeTileCacheTask(task); err != nil {
 		return err
 	}
-	if err := s.ensureUniqueTileCacheTaskTarget(ctx, task, 0); err != nil {
+	identity, format, err := tileCacheTaskSemanticIdentity(task.Config)
+	if err != nil {
 		return err
 	}
-	return s.tileCacheRepo.CreateTask(ctx, task)
+	existing, err := s.tileCacheRepo.GetTaskByTargetFingerprintAndFormat(ctx, task.TenantID, identity.ItemFingerprint, format, 0)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		return s.reuseExistingTask(ctx, task, existing)
+	}
+	if err := s.tileCacheRepo.CreateTask(ctx, task); err != nil {
+		if strings.Contains(err.Error(), "idx_vector_tile_cache_tasks_source_format_unique") {
+			existing, lookupErr := s.tileCacheRepo.GetTaskByTargetFingerprintAndFormat(ctx, task.TenantID, identity.ItemFingerprint, format, 0)
+			if lookupErr != nil {
+				return lookupErr
+			}
+			if existing != nil {
+				return s.reuseExistingTask(ctx, task, existing)
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *TileCacheTaskService) reuseExistingTask(ctx context.Context, task, existing *models.TileCacheTask) error {
+	existing.Name = task.Name
+	existing.Description = task.Description
+	existing.Enabled = task.Enabled
+	existing.Schedule = task.Schedule
+	existing.NextRunAt = task.NextRunAt
+	existing.Config = task.Config.Clone()
+	if existing.CreatedBy == nil {
+		existing.CreatedBy = task.CreatedBy
+	}
+	if err := s.tileCacheRepo.UpdateTask(ctx, existing); err != nil {
+		return err
+	}
+	*task = *existing
+	return nil
 }
 
 func (s *TileCacheTaskService) GetByID(ctx context.Context, id uint, tenantID uint) (*models.TileCacheTask, error) {
@@ -460,7 +497,7 @@ func (s *TileCacheTaskService) DeleteTileCache(ctx context.Context, id uint, ten
 	return nil
 }
 
-func (s *TileCacheTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string) (string, error) {
+func (s *TileCacheTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, confirmExistingResult bool) (string, error) {
 	if s.taskExecRepo == nil {
 		return "", errors.New("task execution repository is required")
 	}
@@ -487,8 +524,11 @@ func (s *TileCacheTaskService) Execute(ctx context.Context, taskID uint, tenantI
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	claimedTask, err := s.tileCacheRepo.ClaimExecution(ctx, taskID, tenantID, exec)
+	claimedTask, err := s.tileCacheRepo.ClaimExecution(ctx, taskID, tenantID, exec, confirmExistingResult)
 	if err != nil {
+		if errors.Is(err, repository.ErrExistingResultConfirmationRequired) {
+			return "", ErrExistingResultConfirmationRequired
+		}
 		if errors.Is(err, commonAPI.ErrNotFound) {
 			return "", ErrTaskNotFound
 		}
@@ -1141,6 +1181,19 @@ func (s *TileCacheTaskService) ensureUniqueTileCacheTaskTarget(ctx context.Conte
 		return fmt.Errorf("该数据项已存在 %s 瓦片缓存任务：%s", format, existing.Name)
 	}
 	return nil
+}
+
+func tileCacheTaskSemanticIdentity(config commonModels.JSONMap) (tileCacheTaskTargetIdentity, string, error) {
+	identity, err := readTileCacheTaskTargetIdentity(config)
+	if err != nil {
+		return tileCacheTaskTargetIdentity{}, "", err
+	}
+	tile, _ := asJSONMap(config["tile"])
+	format := strings.ToLower(stringFromConfig(tile["format"]))
+	if format == "" {
+		format = "mvt"
+	}
+	return identity, format, nil
 }
 
 type tileCacheTaskTargetIdentity struct {

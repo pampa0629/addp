@@ -10,13 +10,14 @@ from typing import Optional, Dict, Any
 from pipelines.workflow_pipeline import WorkflowPipeline
 from services.llm_service import llm_service
 from addp_common.auth import AuthorizationContext
-from dependencies.auth import require_user
+from dependencies.auth import require_tool_user
 from models.workflow_models import WorkflowResourceFact
 
 # TODO: Copilot 暂时不需要保存对话历史，注释掉以避免数据库依赖
 # from services.memory_service import memory_service
 
 router = APIRouter()
+require_workflow_draft_tool = require_tool_user("copilot", "workflow.draft.generate")
 
 # 全局 Pipeline 实例（延迟初始化）
 _workflow_pipeline: Optional[WorkflowPipeline] = None
@@ -76,7 +77,7 @@ class WorkflowGenerationResponse(BaseModel):
 )
 async def generate_workflow(
     request: WorkflowGenerationRequest,
-    user: AuthorizationContext = Depends(require_user),
+    user: AuthorizationContext = Depends(require_workflow_draft_tool),
 ):
     """
     生成工作流（基于 WorkflowPipeline）

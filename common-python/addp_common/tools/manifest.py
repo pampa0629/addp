@@ -15,7 +15,7 @@ class ToolDefinition(BaseModel):
     owner: str
     risk: Literal["read", "propose", "write"]
     approval: dict[str, Any]
-    auth: Literal["user_jwt"]
+    auth: "ToolAuth"
     permission_enforced_by: Literal["owner"]
     audit: dict[str, Any]
     result_ref: dict[str, Any]
@@ -23,6 +23,22 @@ class ToolDefinition(BaseModel):
     errors: list[str]
     input_schema: dict[str, Any]
     output_schema: dict[str, Any]
+
+    @model_validator(mode="after")
+    def validate_delegated_auth_boundary(self):
+        if self.auth.audience != self.owner:
+            raise ValueError(f"tool {self.name} auth audience must equal owner")
+        if self.auth.required_scopes != [self.name]:
+            raise ValueError(f"tool {self.name} required_scopes must contain only the stable tool name")
+        return self
+
+
+class ToolAuth(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["delegated_access_token"]
+    audience: Literal["system", "manager", "meta", "develop", "copilot"]
+    required_scopes: list[str]
 
 
 class ToolManifest(BaseModel):

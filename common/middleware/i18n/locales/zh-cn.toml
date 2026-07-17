@@ -1,5 +1,6 @@
 "err.invalid_id"             = "无效的ID参数"
 "err.unauthorized"           = "未授权"
+"err.forbidden"              = "无权访问该资源"
 "err.token_gen_failed"       = "生成令牌失败"
 "err.register_disabled"      = "注册功能已关闭"
 "err.missing_auth_header"    = "缺少 Authorization 头"

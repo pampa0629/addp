@@ -25,10 +25,25 @@
       "errorReply": "Sorry, an error occurred. Please try again.",
       "workflowGenerated": "Workflow generated",
       "presentationFailed": "Failed to render interface content",
+      "presentation": {
+        "mapTruncated": "Map shows a bounded feature sample",
+        "tableSummary": "Showing {visible} / {total} rows",
+        "truncated": "Bounded sample only",
+        "nullValue": "NULL"
+      },
       "resultRef": {
         "unknownStatus": "Unknown status",
         "loadFailed": "Failed to load execution status",
         "openExecution": "Open execution details"
+      },
+      "approval": {
+        "title": "Workflow execution requires approval",
+        "pending": "Pending",
+        "workflowEngine": "Workflow Engine ID",
+        "taskCount": "Task Count",
+        "expiresAt": "Expires At",
+        "openOwner": "Open Develop approval",
+        "checkStatus": "Check approval status"
       },
       "toolStatus": {
         "running": "Running",

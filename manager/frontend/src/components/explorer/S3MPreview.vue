@@ -9,6 +9,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { getAccessToken } from '@common-ui'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { s3mCameraFitDistanceForBox } from '@/lib/supermap-s3m/three/S3MThreeCamera.js'
@@ -176,7 +177,7 @@ function updateCameraClipPlanes(force = false) {
 }
 
 function authHeaders() {
-  const token = localStorage.getItem('token')
+  const token = getAccessToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 

@@ -3,6 +3,7 @@ import asyncio
 import json
 import os
 import sys
+import uuid
 from typing import Any
 
 import keyring
@@ -52,6 +53,8 @@ def _parser() -> argparse.ArgumentParser:
     call_parser = tool_commands.add_parser("call")
     call_parser.add_argument("name")
     call_parser.add_argument("--arguments", default="{}")
+    call_parser.add_argument("--agent-run-id", default=os.getenv("ADDP_AGENT_RUN_ID"))
+    call_parser.add_argument("--tool-call-id", default=os.getenv("ADDP_TOOL_CALL_ID"))
 
     auth = groups.add_parser("auth")
     auth_commands = auth.add_subparsers(dest="command", required=True)
@@ -115,7 +118,12 @@ async def _run(args: argparse.Namespace) -> int:
         return EXIT_USAGE
 
     try:
-        result = await ToolExecutor(args.base_url, user_token).call(args.name, arguments)
+        result = await ToolExecutor(args.base_url, user_token).call(
+            args.name,
+            arguments,
+            agent_run_id=getattr(args, "agent_run_id", None) or str(uuid.uuid4()),
+            tool_call_id=getattr(args, "tool_call_id", None) or str(uuid.uuid4()),
+        )
     except ToolExecutionError as exc:
         _write_json(exc.as_dict())
         return EXIT_TOOL_NOT_FOUND if exc.code == "tool_not_found" else EXIT_EXECUTION_FAILED

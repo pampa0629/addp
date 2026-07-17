@@ -5,6 +5,8 @@ import (
 	"errors"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
 )
@@ -63,13 +65,45 @@ func (r *RasterMosaicRepository) DeleteTask(ctx context.Context, id uint, tenant
 		Delete(&models.RasterMosaicTask{}).Error
 }
 
-func (r *RasterMosaicRepository) UpdateTaskLastExecution(ctx context.Context, id uint, tenantID uint, executionID, status string, runAt time.Time) error {
-	return r.db.WithContext(ctx).
-		Model(&models.RasterMosaicTask{}).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Updates(map[string]interface{}{
-			"last_execution_id":     executionID,
-			"last_execution_status": status,
-			"last_run_at":           runAt,
-		}).Error
+func (r *RasterMosaicRepository) ClaimExecution(
+	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution,
+) (*models.RasterMosaicTask, error) {
+	var task models.RasterMosaicTask
+	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
+		TaskModel: &task,
+		TaskType:  commonExecution.TaskTypeRasterMosaicGeneration,
+		TaskLabel: "raster mosaic",
+		TaskName:  func() string { return task.Name },
+		TaskConfig: func() commonModels.JSONMap {
+			return task.Config
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	task.LastExecutionID = &execution.ExecutionID
+	status := commonExecution.ExecutionStatusPending
+	task.LastExecutionStatus = &status
+	return &task, nil
+}
+
+func (r *RasterMosaicRepository) StartExecution(
+	ctx context.Context, taskID, tenantID uint, executionID string, startedAt time.Time,
+) error {
+	return newTaskExecutionLifecycle(r.db).Start(
+		ctx, taskID, tenantID, executionID, startedAt, &models.RasterMosaicTask{}, "raster mosaic",
+	)
+}
+
+func (r *RasterMosaicRepository) CompleteExecution(
+	ctx context.Context,
+	taskID, tenantID uint,
+	executionID string,
+	executionFields map[string]interface{},
+	completedAt time.Time,
+) error {
+	return newTaskExecutionLifecycle(r.db).Complete(ctx, taskID, tenantID, executionID, completedAt, taskExecutionCompletionSpec{
+		TaskModel:       &models.RasterMosaicTask{},
+		ExecutionFields: executionFields,
+	}, "raster mosaic")
 }

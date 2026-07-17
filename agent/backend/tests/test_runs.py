@@ -4,6 +4,7 @@ import unittest
 from services.runs import (
     ERROR_MESSAGE_MAX_LENGTH,
     complete_run_step,
+    resume_agent_run,
     retry_agent_run,
     set_run_status,
     summarize_tool_result,
@@ -86,6 +87,50 @@ class _EntityDB:
 
 
 class AgentRunLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_owner_approval_resumes_the_same_waiting_agent_run(self):
+        import uuid
+
+        from models.interaction import Interaction
+        from models.run import AgentRun
+
+        run = AgentRun(
+            session_id=12,
+            user_id=3,
+            tenant_id=5,
+            initial_protocol_run_id="initial-1",
+            status="waiting",
+            checkpoint={},
+        )
+        run.id = uuid.uuid4()
+        interaction = Interaction(
+            session_id=12,
+            user_id=3,
+            tenant_id=5,
+            agent_run_id=run.id,
+            kind="owner_approval",
+            owner="develop",
+            status="completed",
+            prompt="需要审批",
+            answer={
+                "status": "approved",
+                "approval_id": str(uuid.uuid4()),
+                "request_fingerprint": "a" * 64,
+            },
+        )
+        db = _DB(run)
+
+        resumed = await resume_agent_run(
+            db,
+            interactions=[interaction],
+            session_id=12,
+            user_id=3,
+            tenant_id=5,
+        )
+
+        self.assertIs(resumed, run)
+        self.assertEqual(resumed.id, interaction.agent_run_id)
+        self.assertEqual(resumed.status, "running")
+
     async def test_retry_reuses_failed_agent_run(self):
         from models.run import AgentRun
 
