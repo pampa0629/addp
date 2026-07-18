@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -19,6 +20,26 @@ import (
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
+
+func TestExecuteQuickViewActionRejectsLegacyAndInvalidExistingResultAction(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := &QuickViewHandler{}
+	router := gin.New()
+	router.POST("/quick-view/actions", handler.ExecuteQuickViewAction)
+
+	for _, body := range []string{
+		`{"locator":"addp://engine/1/path/public/roads?type=table&item_id=1","action":"generate_vector_tile_cache","confirm_existing_result":true}`,
+		`{"locator":"addp://engine/1/path/public/roads?type=table&item_id=1","action":"generate_vector_tile_cache","existing_result_action":"keep"}`,
+	} {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/quick-view/actions", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("body=%s status=%d, want 400; response=%s", body, response.Code, response.Body.String())
+		}
+	}
+}
 
 func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testing.T) {
 	db := newTaskProviderHandlerTestDB(t)
@@ -60,7 +81,7 @@ func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testin
 		Model3D:  &service.Model3DGLBSource{Format: "ifc", SourceSizeBytes: 1024},
 	}
 
-	if _, _, err := handler.createAndExecuteModel3DGLBTask(context.Background(), 1, capability, source, false); !errors.Is(err, service.ErrExistingResultConfirmationRequired) {
+	if _, _, err := handler.createAndExecuteModel3DGLBTask(context.Background(), 1, capability, source, false); !errors.Is(err, service.ErrExistingResultActionRequired) {
 		t.Fatalf("unconfirmed quick-view action error = %v", err)
 	}
 	var count int64

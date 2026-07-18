@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agents.checkpoint import confirm_selection, new_checkpoint, normalize_checkpoint
+from agents.checkpoint import confirm_selection, new_checkpoint, normalize_checkpoint, validate_checkpoint_size
 from models.interaction import Interaction
 from models.run import AgentRun
 from models.run_event import AgentRunEvent
@@ -16,6 +16,7 @@ from services.interactions import cancel_pending_interactions
 
 
 ERROR_MESSAGE_MAX_LENGTH = 1000
+STEP_FACTS_MAX_BYTES = 128 * 1024
 
 
 class AgentRunNotFoundError(Exception):
@@ -69,6 +70,13 @@ def summarize_tool_result(content: str) -> str:
 
 def _limit_error_message(error_message: str | None) -> str | None:
     return error_message[:ERROR_MESSAGE_MAX_LENGTH] if error_message else None
+
+
+def _bounded_step_facts(facts: dict[str, Any]) -> dict[str, Any]:
+    encoded = json.dumps(facts, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(encoded) > STEP_FACTS_MAX_BYTES:
+        raise ValueError(f"step facts exceed {STEP_FACTS_MAX_BYTES} bytes")
+    return copy.deepcopy(facts)
 
 
 async def create_agent_run(
@@ -138,6 +146,7 @@ async def resume_agent_run(
     checkpoint = normalize_checkpoint(run.checkpoint)
     for interaction in interactions:
         confirm_selection(checkpoint, interaction.answer)
+    validate_checkpoint_size(checkpoint)
     run.checkpoint = checkpoint
     run.status = "running"
     run.error_source = None
@@ -205,7 +214,9 @@ async def update_run_checkpoint(
     run = await db.get(AgentRun, agent_run_id)
     if run is None:
         raise AgentRunNotFoundError
-    run.checkpoint = normalize_checkpoint(checkpoint)
+    normalized = normalize_checkpoint(checkpoint)
+    validate_checkpoint_size(normalized)
+    run.checkpoint = normalized
     await db.flush()
 
 
@@ -287,7 +298,7 @@ async def complete_run_step(
     step.status = status
     step.output_summary = output_summary[:2000] if output_summary else None
     if facts:
-        step.facts = copy.deepcopy(facts)
+        step.facts = _bounded_step_facts(facts)
     step.error_source = error_source
     step.error_code = error_code
     step.error_message = _limit_error_message(error_message)
@@ -304,7 +315,7 @@ async def attach_step_facts(
     step = await db.get(AgentRunStep, step_id)
     if step is None:
         raise AgentRunNotFoundError
-    step.facts = copy.deepcopy(facts)
+    step.facts = _bounded_step_facts(facts)
     await db.flush()
 
 

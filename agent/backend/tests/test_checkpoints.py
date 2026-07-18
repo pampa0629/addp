@@ -1,6 +1,7 @@
 import unittest
 
 from agents.checkpoint import (
+    CHECKPOINT_MAX_BYTES,
     CHECKPOINT_SCHEMA,
     canonicalize_clarification_options,
     capture_owner_facts,
@@ -8,6 +9,7 @@ from agents.checkpoint import (
     confirm_selection,
     new_checkpoint,
     normalize_checkpoint,
+    validate_checkpoint_size,
 )
 
 
@@ -118,6 +120,16 @@ class AgentCheckpointTests(unittest.TestCase):
         self.assertEqual(fact["geometry_column"], "geom")
         self.assertEqual(fact["source_crs"], "EPSG:32650")
         self.assertNotIn("rows", fact)
+
+    def test_checkpoint_rejects_total_payload_over_byte_limit(self):
+        checkpoint = new_checkpoint()
+        checkpoint["observed"]["resources"]["addp://engine/1/path/large"] = {
+            "locator": "addp://engine/1/path/large",
+            "name": "x" * CHECKPOINT_MAX_BYTES,
+        }
+
+        with self.assertRaisesRegex(ValueError, "agent checkpoint exceeds"):
+            validate_checkpoint_size(checkpoint)
 
 
 if __name__ == "__main__":

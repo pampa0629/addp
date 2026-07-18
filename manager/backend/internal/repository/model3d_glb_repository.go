@@ -83,7 +83,7 @@ func (r *Model3DGLBRepository) DeleteTask(ctx context.Context, id uint, tenantID
 }
 
 func (r *Model3DGLBRepository) ClaimExecution(
-	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, confirmExistingResult bool,
+	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool,
 ) (*models.Model3DGLBTask, error) {
 	var task models.Model3DGLBTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
@@ -94,8 +94,8 @@ func (r *Model3DGLBRepository) ClaimExecution(
 		TaskConfig: func() commonModels.JSONMap {
 			return task.Config
 		},
-		CurrentResultModel:    &models.Model3DGLB{},
-		ConfirmExistingResult: confirmExistingResult,
+		CurrentResultModel:      &models.Model3DGLB{},
+		OverwriteExistingResult: overwriteExistingResult,
 	})
 	if err != nil {
 		return nil, err

@@ -4,6 +4,13 @@ from typing import Any
 
 
 CHECKPOINT_SCHEMA = "addp.agent-checkpoint/v1"
+CHECKPOINT_MAX_BYTES = 256 * 1024
+
+
+def validate_checkpoint_size(checkpoint: dict[str, Any]) -> None:
+    encoded = json.dumps(checkpoint, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(encoded) > CHECKPOINT_MAX_BYTES:
+        raise ValueError(f"agent checkpoint exceeds {CHECKPOINT_MAX_BYTES} bytes")
 
 
 def new_checkpoint() -> dict[str, Any]:

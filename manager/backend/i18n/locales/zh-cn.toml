@@ -178,8 +178,8 @@ other = "该任务已有活动执行，不能重复启动"
 [manager.error.model3d_tiles_execution_busy]
 other = "该三维瓦片快显任务正在生成，不能重复执行"
 
-[manager.error.existing_result_confirmation_required]
-other = "已有当前结果，继续执行将覆盖当前受管产物，请确认后继续"
+[manager.error.existing_result_action_required]
+other = "已有当前结果，本次执行必须明确选择覆盖已有结果"
 
 [manager.model3d_tiles.result_deleted]
 other = "三维瓦片快显结果已删除"

@@ -38,7 +38,7 @@ describe('model3d tiles management deletion', () => {
   it('maps the shared confirmation payload to the quick-view action contract', () => {
     expect(previewPanelSource).toContain('const executeConfirmedQuickViewAction')
     expect(previewPanelSource).toContain('executeWithCurrentResultConfirmation(payload =>')
-    expect(previewPanelSource).toContain('toQuickViewConfirmationPayload(payload)')
+    expect(previewPanelSource).toContain('toQuickViewExistingResultPayload(payload)')
     expect(apiSource).toContain('executeQuickViewAction(locator, action, payload = {})')
   })
 })

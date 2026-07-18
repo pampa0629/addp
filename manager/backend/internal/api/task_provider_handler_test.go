@@ -556,19 +556,19 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 	if err := db.Model(&commonExecution.TaskExecution{}).Count(&countBefore).Error; err != nil {
 		t.Fatalf("count executions before rejected refresh: %v", err)
 	}
-	unconfirmed := executeTaskProviderRequest(t, router, path, `{}`)
-	if unconfirmed.Code != http.StatusConflict {
-		t.Fatalf("unconfirmed execute status = %d, want 409; body=%s", unconfirmed.Code, unconfirmed.Body.String())
+	withoutAction := executeTaskProviderRequest(t, router, path, `{}`)
+	if withoutAction.Code != http.StatusConflict {
+		t.Fatalf("execute without action status = %d, want 409; body=%s", withoutAction.Code, withoutAction.Body.String())
 	}
-	var confirmationError struct {
+	var actionError struct {
 		Error string `json:"error"`
 		Code  string `json:"code"`
 	}
-	if err := json.Unmarshal(unconfirmed.Body.Bytes(), &confirmationError); err != nil {
-		t.Fatalf("decode confirmation error: %v", err)
+	if err := json.Unmarshal(withoutAction.Body.Bytes(), &actionError); err != nil {
+		t.Fatalf("decode action error: %v", err)
 	}
-	if confirmationError.Code != existingResultConfirmationRequiredCode || confirmationError.Error == "" {
-		t.Fatalf("confirmation error = %#v", confirmationError)
+	if actionError.Code != existingResultActionRequiredCode || actionError.Error == "" {
+		t.Fatalf("action error = %#v", actionError)
 	}
 	var countAfter int64
 	if err := db.Model(&commonExecution.TaskExecution{}).Count(&countAfter).Error; err != nil {
@@ -579,8 +579,10 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 	}
 
 	for _, body := range []string{
-		`{"parameters":{"confirm_existing_result":"true"}}`,
-		`{"parameters":{"confirm_existing_result":true,"unknown":true}}`,
+		`{"parameters":{"confirm_existing_result":true}}`,
+		`{"parameters":{"existing_result_action":true}}`,
+		`{"parameters":{"existing_result_action":"overwrite","unknown":true}}`,
+		`{"parameters":{"existing_result_action":"keep"}}`,
 	} {
 		invalid := executeTaskProviderRequest(t, router, path, body)
 		if invalid.Code != http.StatusBadRequest {
@@ -588,16 +590,27 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 		}
 	}
 
-	confirmed := executeTaskProviderRequest(t, router, path, `{"parameters":{"confirm_existing_result":true}}`)
-	if confirmed.Code != http.StatusAccepted {
-		t.Fatalf("confirmed execute status = %d, want 202; body=%s", confirmed.Code, confirmed.Body.String())
+	overwrite := executeTaskProviderRequest(t, router, path, `{"trigger_type":"scheduled","source":"orchestrator","parent_execution_id":"pipeline-exec","parameters":{"existing_result_action":"overwrite"}}`)
+	if overwrite.Code != http.StatusAccepted {
+		t.Fatalf("overwrite execute status = %d, want 202; body=%s", overwrite.Code, overwrite.Body.String())
 	}
-	var confirmedResponse TaskExecuteResponse
-	if err := json.Unmarshal(confirmed.Body.Bytes(), &confirmedResponse); err != nil {
-		t.Fatalf("decode confirmed response: %v", err)
+	var overwriteResponse TaskExecuteResponse
+	if err := json.Unmarshal(overwrite.Body.Bytes(), &overwriteResponse); err != nil {
+		t.Fatalf("decode overwrite response: %v", err)
 	}
-	if confirmedResponse.ExecutionID == "" || confirmedResponse.Status != commonExecution.ExecutionStatusPending || confirmedResponse.ExecutionID == accepted.ExecutionID {
-		t.Fatalf("confirmed response = %#v", confirmedResponse)
+	if overwriteResponse.ExecutionID == "" || overwriteResponse.Status != commonExecution.ExecutionStatusPending || overwriteResponse.ExecutionID == accepted.ExecutionID {
+		t.Fatalf("overwrite response = %#v", overwriteResponse)
+	}
+	waitForTaskProviderExecutionCompletion(t, taskExecRepo, overwriteResponse.ExecutionID, 1)
+	overwriteExecution, err := taskExecRepo.GetByExecutionID(context.Background(), overwriteResponse.ExecutionID, 1)
+	if err != nil {
+		t.Fatalf("load scheduled overwrite execution: %v", err)
+	}
+	if overwriteExecution.TriggerType != commonExecution.TriggerTypeScheduled || overwriteExecution.Source != commonExecution.ModuleOrchestrator {
+		t.Fatalf("scheduled overwrite execution = %#v", overwriteExecution)
+	}
+	if overwriteExecution.ParentExecutionID == nil || *overwriteExecution.ParentExecutionID != "pipeline-exec" {
+		t.Fatalf("scheduled overwrite parent_execution_id = %#v", overwriteExecution.ParentExecutionID)
 	}
 }
 
@@ -1085,6 +1098,23 @@ func TestDecodeEmbeddingExecutionRequestRejectsUnknownFields(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("error = %v, want unknown field error", err)
+	}
+}
+
+func TestDecodeTileCacheTaskRequestRejectsScheduleFields(t *testing.T) {
+	for _, body := range []string{
+		`{"name":"tile cache","schedule":"0 * * * *","config":{}}`,
+		`{"name":"tile cache","next_run_at":"2026-07-17T12:00:00Z","config":{}}`,
+	} {
+		gin.SetMode(gin.TestMode)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/vector_tile_cache_tasks", strings.NewReader(body))
+
+		_, err := decodeTileCacheTaskRequest(c)
+		if err == nil || !strings.Contains(err.Error(), "unknown field") {
+			t.Fatalf("decode tile cache task body %s error = %v, want unknown field", body, err)
+		}
 	}
 }
 

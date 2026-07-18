@@ -26,8 +26,8 @@ type TileCacheTask struct {
 	Description string `gorm:"type:text" json:"description,omitempty"`
 	Enabled     bool   `json:"enabled"`
 
-	Schedule            string     `gorm:"size:255;index:idx_vector_tile_cache_tasks_schedule,priority:2" json:"schedule,omitempty"`
-	NextRunAt           *time.Time `gorm:"index:idx_vector_tile_cache_tasks_schedule,priority:1" json:"next_run_at,omitempty"`
+	Schedule            string     `gorm:"size:255" json:"-"`
+	NextRunAt           *time.Time `json:"-"`
 	LastRunAt           *time.Time `json:"last_run_at,omitempty"`
 	LastExecutionID     *string    `gorm:"size:36;index:idx_vector_tile_cache_tasks_last_execution" json:"last_execution_id,omitempty"`
 	LastExecutionStatus *string    `gorm:"size:50" json:"last_execution_status,omitempty"`

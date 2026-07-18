@@ -60,6 +60,7 @@ from services.interactions import (
     format_resume_message,
     resolve_interaction,
 )
+from services.messages import bounded_message_parts
 from services.run_events import append_run_event
 from services.runs import (
     AgentRunNotFoundError,
@@ -189,7 +190,7 @@ async def _save_user_input(
                     role="user",
                     content=resume_text,
                     protocol_message_id=f"resume:{interaction.id}",
-                    parts=[{"type": "text", "text": resume_text}],
+                    parts=bounded_message_parts([{"type": "text", "text": resume_text}]),
                 )
             )
             resolved_interactions.append(interaction)
@@ -219,7 +220,7 @@ async def _save_user_input(
             role="user",
             content=content,
             protocol_message_id=latest.id,
-            parts=[{"type": "text", "text": content}],
+            parts=bounded_message_parts([{"type": "text", "text": content}]),
         )
     )
     if not session.title:
@@ -264,7 +265,7 @@ async def _save_assistant_message(
                     role="assistant",
                     content=content,
                     protocol_message_id=message_id,
-                    parts=parts,
+                    parts=bounded_message_parts(parts),
                 )
             )
     asyncio.create_task(maybe_update_summary(session_id))

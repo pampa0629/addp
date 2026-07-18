@@ -3510,7 +3510,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "任务已有活动执行或覆盖已有结果需要确认 | Active execution or existing result overwrite confirmation required",
+                        "description": "任务已有活动执行或缺少已有结果动作 | Active execution or existing result action required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5125,7 +5125,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "任务已有活动执行或刷新已有结果需要确认 | Active execution or existing result refresh confirmation required",
+                        "description": "任务已有活动执行或缺少已有结果动作 | Active execution or existing result action required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7877,8 +7877,11 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
-                "confirm_existing_result": {
-                    "type": "boolean"
+                "existing_result_action": {
+                    "type": "string",
+                    "enum": [
+                        "overwrite"
+                    ]
                 },
                 "locator": {
                     "type": "string"
@@ -8761,7 +8764,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "parameters": {
-                    "description": "Manager 受管当前结果任务仅支持 confirm_existing_result | Managed current-result tasks only support confirm_existing_result",
+                    "description": "Manager 受管当前结果任务仅支持 existing_result_action=overwrite | Managed current-result tasks only support existing_result_action=overwrite",
                     "type": "object",
                     "additionalProperties": true
                 },
@@ -8858,12 +8861,6 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
-                },
-                "next_run_at": {
-                    "type": "string"
-                },
-                "schedule": {
-                    "type": "string"
                 }
             }
         },
@@ -8898,12 +8895,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
-                    "type": "string"
-                },
-                "next_run_at": {
-                    "type": "string"
-                },
-                "schedule": {
                     "type": "string"
                 },
                 "target": {

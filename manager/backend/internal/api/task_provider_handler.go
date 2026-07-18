@@ -141,8 +141,6 @@ type TileCacheTaskRequest struct {
 	Name        string               `json:"name"`
 	Description string               `json:"description,omitempty"`
 	Enabled     *bool                `json:"enabled,omitempty"`
-	Schedule    string               `json:"schedule,omitempty"`
-	NextRunAt   *time.Time           `json:"next_run_at,omitempty"`
 	Config      commonModels.JSONMap `json:"config"`
 }
 
@@ -172,8 +170,6 @@ type TileCacheTaskResponse struct {
 	Name                string                       `json:"name"`
 	Description         string                       `json:"description,omitempty"`
 	Enabled             bool                         `json:"enabled"`
-	Schedule            string                       `json:"schedule,omitempty"`
-	NextRunAt           *time.Time                   `json:"next_run_at,omitempty"`
 	LastRunAt           *time.Time                   `json:"last_run_at,omitempty"`
 	LastExecutionID     *string                      `json:"last_execution_id,omitempty"`
 	LastExecutionStatus *string                      `json:"last_execution_status,omitempty"`
@@ -1097,7 +1093,7 @@ type TaskExecuteRequest struct {
 	TriggerType       string                 `json:"trigger_type"`        // manual|scheduled，默认 manual
 	Source            string                 `json:"source"`              // 触发来源模块
 	ParentExecutionID string                 `json:"parent_execution_id"` // 父执行ID（Orchestrator 调用时传入）
-	Parameters        map[string]interface{} `json:"parameters"`          // Manager 受管当前结果任务仅支持 confirm_existing_result | Managed current-result tasks only support confirm_existing_result
+	Parameters        map[string]interface{} `json:"parameters"`          // Manager 受管当前结果任务仅支持 existing_result_action=overwrite | Managed current-result tasks only support existing_result_action=overwrite
 }
 
 type TaskExecuteResponse struct {
@@ -1105,24 +1101,38 @@ type TaskExecuteResponse struct {
 	ExecutionID string `json:"execution_id"`
 }
 
-const existingResultConfirmationRequiredCode = "existing_result_confirmation_required"
+const (
+	existingResultActionOverwrite    = "overwrite"
+	existingResultActionRequiredCode = "existing_result_action_required"
+)
 
-func managerResultExecutionConfirmation(parameters map[string]interface{}) (bool, error) {
+func managerResultExecutionOverwrite(parameters map[string]interface{}) (bool, error) {
 	if len(parameters) == 0 {
 		return false, nil
 	}
 	if len(parameters) != 1 {
-		return false, errors.New("Manager result execution parameters only support confirm_existing_result")
+		return false, errors.New("Manager result execution parameters only support existing_result_action=overwrite")
 	}
-	value, ok := parameters["confirm_existing_result"]
+	value, ok := parameters["existing_result_action"]
 	if !ok {
-		return false, errors.New("Manager result execution parameters only support confirm_existing_result")
+		return false, errors.New("Manager result execution parameters only support existing_result_action=overwrite")
 	}
-	confirmed, ok := value.(bool)
+	action, ok := value.(string)
 	if !ok {
-		return false, errors.New("confirm_existing_result must be a boolean")
+		return false, errors.New("existing_result_action must be a string")
 	}
-	return confirmed, nil
+	return existingResultActionAllowsOverwrite(action)
+}
+
+func existingResultActionAllowsOverwrite(action string) (bool, error) {
+	action = strings.TrimSpace(action)
+	if action == "" {
+		return false, nil
+	}
+	if action != existingResultActionOverwrite {
+		return false, errors.New("existing_result_action must be overwrite")
+	}
+	return true, nil
 }
 
 // TaskExecute POST /api/v1/manager/tasks/:task_type/:id/execute
@@ -1137,7 +1147,7 @@ func managerResultExecutionConfirmation(parameters map[string]interface{}) (bool
 // @Success 202 {object} TaskExecuteResponse "执行ID | Execution ID"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
-// @Failure 409 {object} map[string]interface{} "任务已有活动执行或刷新已有结果需要确认 | Active execution or existing result refresh confirmation required"
+// @Failure 409 {object} map[string]interface{} "任务已有活动执行或缺少已有结果动作 | Active execution or existing result action required"
 // @Router /tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
@@ -1163,9 +1173,9 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	if source == "" {
 		source = commonExecution.ModuleManager
 	}
-	confirmExistingResult := false
-	if managerTaskRequiresResultConfirmation(taskType) {
-		confirmExistingResult, err = managerResultExecutionConfirmation(req.Parameters)
+	overwriteExistingResult := false
+	if managerTaskRequiresExistingResultAction(taskType) {
+		overwriteExistingResult, err = managerResultExecutionOverwrite(req.Parameters)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -1185,31 +1195,31 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 
 	switch taskType {
 	case commonExecution.TaskTypeVectorTileCacheGeneration:
-		executionID, err = h.tileCacheTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
+		executionID, err = h.tileCacheTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeVectorMaterializedViewGeneration:
-		executionID, err = h.vectorMaterializedViewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
+		executionID, err = h.vectorMaterializedViewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeRasterCOGGeneration:
-		executionID, err = h.rasterCOGTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
+		executionID, err = h.rasterCOGTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeRasterMosaicGeneration:
 		executionID, err = h.rasterMosaicTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeModel3DTilesGeneration:
-		executionID, err = h.model3DTilesTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
+		executionID, err = h.model3DTilesTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeModel3DGLBGeneration:
-		executionID, err = h.model3DGLBTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
+		executionID, err = h.model3DGLBTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeGaussianSplatKSplatGeneration:
-		executionID, err = h.gaussianSplatKSplatTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
+		executionID, err = h.gaussianSplatKSplatTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypePointCloudCOPCGeneration:
-		executionID, err = h.pointCloudCOPCTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
+		executionID, err = h.pointCloudCOPCTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeCADPreviewGeneration:
-		executionID, err = h.cadPreviewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, confirmExistingResult)
+		executionID, err = h.cadPreviewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeEmbedding:
 		executionID, err = h.embeddingTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
@@ -1231,10 +1241,10 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, manageri18n.MsgModel3DTilesExecutionBusy)})
 			return
 		}
-		if errors.Is(err, service.ErrExistingResultConfirmationRequired) {
+		if errors.Is(err, service.ErrExistingResultActionRequired) {
 			c.JSON(http.StatusConflict, gin.H{
-				"error": commoni18n.T(c, manageri18n.MsgExistingResultConfirmationRequired),
-				"code":  existingResultConfirmationRequiredCode,
+				"error": commoni18n.T(c, manageri18n.MsgExistingResultActionRequired),
+				"code":  existingResultActionRequiredCode,
 			})
 			return
 		}
@@ -1248,7 +1258,7 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	})
 }
 
-func managerTaskRequiresResultConfirmation(taskType string) bool {
+func managerTaskRequiresExistingResultAction(taskType string) bool {
 	switch taskType {
 	case commonExecution.TaskTypeVectorTileCacheGeneration,
 		commonExecution.TaskTypeVectorMaterializedViewGeneration,
@@ -1541,8 +1551,6 @@ func (h *TaskProviderHandler) CreateTileCacheTask(c *gin.Context) {
 		Name:        strings.TrimSpace(req.Name),
 		Description: strings.TrimSpace(req.Description),
 		Enabled:     enabled,
-		Schedule:    strings.TrimSpace(req.Schedule),
-		NextRunAt:   req.NextRunAt,
 		Config:      req.Config,
 		CreatedBy:   &userID,
 	}
@@ -1597,8 +1605,8 @@ func (h *TaskProviderHandler) UpdateTileCacheTask(c *gin.Context) {
 	if req.Enabled != nil {
 		existing.Enabled = *req.Enabled
 	}
-	existing.Schedule = strings.TrimSpace(req.Schedule)
-	existing.NextRunAt = req.NextRunAt
+	existing.Schedule = ""
+	existing.NextRunAt = nil
 	existing.Config = req.Config
 
 	if err := h.tileCacheTaskSvc.Update(c.Request.Context(), existing); err != nil {
@@ -3418,8 +3426,6 @@ func tileCacheTaskResponse(task *models.TileCacheTask) TileCacheTaskResponse {
 		Name:                task.Name,
 		Description:         task.Description,
 		Enabled:             task.Enabled,
-		Schedule:            task.Schedule,
-		NextRunAt:           task.NextRunAt,
 		LastRunAt:           task.LastRunAt,
 		LastExecutionID:     task.LastExecutionID,
 		LastExecutionStatus: task.LastExecutionStatus,

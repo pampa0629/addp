@@ -36,4 +36,11 @@ describe('tileCacheTaskForm', () => {
       item_fingerprint: 'fp-a2'
     })
   })
+
+  it('does not expose owner schedule fields', () => {
+    const form = createDefaultTileCacheTaskForm()
+    expect(form).not.toHaveProperty('schedule')
+    expect(createTileCacheTaskPayload(form)).not.toHaveProperty('schedule')
+    expect(createTileCacheTaskPayload(form)).not.toHaveProperty('next_run_at')
+  })
 })

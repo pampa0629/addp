@@ -1312,8 +1312,10 @@ definitions:
     properties:
       action:
         type: string
-      confirm_existing_result:
-        type: boolean
+      existing_result_action:
+        enum:
+        - overwrite
+        type: string
       locator:
         type: string
     required:
@@ -1895,8 +1897,8 @@ definitions:
     properties:
       parameters:
         additionalProperties: true
-        description: Manager 受管当前结果任务仅支持 confirm_existing_result | Managed current-result
-          tasks only support confirm_existing_result
+        description: Manager 受管当前结果任务仅支持 existing_result_action=overwrite | Managed
+          current-result tasks only support existing_result_action=overwrite
         type: object
       parent_execution_id:
         description: 父执行ID（Orchestrator 调用时传入）
@@ -1961,10 +1963,6 @@ definitions:
         type: boolean
       name:
         type: string
-      next_run_at:
-        type: string
-      schedule:
-        type: string
     type: object
   internal_api.TileCacheTaskResponse:
     properties:
@@ -1987,10 +1985,6 @@ definitions:
       last_run_at:
         type: string
       name:
-        type: string
-      next_run_at:
-        type: string
-      schedule:
         type: string
       target:
         $ref: '#/definitions/internal_api.TileCacheTaskTargetResponse'
@@ -4470,8 +4464,8 @@ paths:
             additionalProperties: true
             type: object
         "409":
-          description: 任务已有活动执行或覆盖已有结果需要确认 | Active execution or existing result overwrite
-            confirmation required
+          description: 任务已有活动执行或缺少已有结果动作 | Active execution or existing result action
+            required
           schema:
             additionalProperties: true
             type: object
@@ -5568,8 +5562,8 @@ paths:
             additionalProperties: true
             type: object
         "409":
-          description: 任务已有活动执行或刷新已有结果需要确认 | Active execution or existing result refresh
-            confirmation required
+          description: 任务已有活动执行或缺少已有结果动作 | Active execution or existing result action
+            required
           schema:
             additionalProperties: true
             type: object

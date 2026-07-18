@@ -88,7 +88,7 @@ PUT    /api/v1/manager/vector_materialized_view_tasks/{id}
 DELETE /api/v1/manager/vector_materialized_view_tasks/{id}
 ```
 
-当前 `supports_schedule=false`、`supports_cancel=false`。如果需要周期性刷新，应由 Orchestrator 定时编排间接触发已保存任务定义。
+当前 `supports_schedule=false`、`supports_cancel=false`。如果需要周期性刷新，应由 Orchestrator 定时编排间接触发已保存任务定义，并由用户在 Step 参数中显式配置 `existing_result_action=overwrite`。
 
 执行生命周期遵守平台统一任务规范：在 Infra PostgreSQL 的任务定义行锁内检查 active execution，并在同一事务创建 `pending` execution 和任务摘要；Manager 运行体接管时同事务推进为 `running` 并写真实 `started_at`；完成时以结果记录的 `last_execution_id` 为 fencing 条件，同事务提交结果状态、execution 终态和任务摘要。
 

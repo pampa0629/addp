@@ -22,6 +22,7 @@ _REPLAYABLE_EVENT_TYPES = {
     "RUN_FINISHED",
     "RUN_ERROR",
 }
+RUN_EVENT_MAX_BYTES = 512 * 1024
 
 
 def replay_payload(event_payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -33,6 +34,9 @@ def replay_payload(event_payload: dict[str, Any]) -> dict[str, Any] | None:
     payload = copy.deepcopy(event_payload)
     if event_type == "TOOL_CALL_RESULT":
         payload["content"] = "工具调用已完成；详情见运行审计"
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(encoded) > RUN_EVENT_MAX_BYTES:
+        raise ValueError(f"run event exceeds {RUN_EVENT_MAX_BYTES} bytes")
     return payload
 
 

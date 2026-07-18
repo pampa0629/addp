@@ -14,17 +14,17 @@ import (
 )
 
 type taskExecutionClaimSpec struct {
-	TaskModel             interface{}
-	TaskType              string
-	TaskLabel             string
-	TaskName              func() string
-	TaskConfig            func() commonModels.JSONMap
-	CurrentResultModel    interface{}
-	ConfirmExistingResult bool
-	BeforeCreate          func(*gorm.DB) error
+	TaskModel               interface{}
+	TaskType                string
+	TaskLabel               string
+	TaskName                func() string
+	TaskConfig              func() commonModels.JSONMap
+	CurrentResultModel      interface{}
+	OverwriteExistingResult bool
+	BeforeCreate            func(*gorm.DB) error
 }
 
-var ErrExistingResultConfirmationRequired = errors.New("existing result requires confirmation")
+var ErrExistingResultActionRequired = errors.New("existing result action is required")
 
 type taskExecutionCompletionSpec struct {
 	TaskModel       interface{}
@@ -69,7 +69,7 @@ func (l taskExecutionLifecycle) Claim(
 		if activeCount > 0 {
 			return fmt.Errorf("%w: %s task %d already has an active execution", commonAPI.ErrConflict, spec.TaskLabel, taskID)
 		}
-		if spec.CurrentResultModel != nil && !spec.ConfirmExistingResult {
+		if spec.CurrentResultModel != nil && !spec.OverwriteExistingResult {
 			var currentResultCount int64
 			if err := tx.Model(spec.CurrentResultModel).
 				Where("tenant_id = ? AND task_id = ?", tenantID, taskID).
@@ -77,7 +77,7 @@ func (l taskExecutionLifecycle) Claim(
 				return err
 			}
 			if currentResultCount > 0 {
-				return fmt.Errorf("%w: %s task %d", ErrExistingResultConfirmationRequired, spec.TaskLabel, taskID)
+				return fmt.Errorf("%w: %s task %d", ErrExistingResultActionRequired, spec.TaskLabel, taskID)
 			}
 		}
 		if spec.BeforeCreate != nil {

@@ -280,7 +280,7 @@ graph LR
 
 ## Worker 运行时
 
-ADDP 平台的部分模块拥有独立的 Worker 运行时进程,用于处理异步任务和后台作业。Manager 当前没有独立 Worker；PostGIS + MVT 主路径中的瓦片缓存生成由 Manager Backend 内部的任务服务和调度器执行 `vector_tile_cache_generation`，矢量物化视图由 Manager Backend 在手动或 Orchestrator 编排触发时执行 `vector_materialized_view_generation`。若后续格式实现需要 Manager 进程内重计算、多执行器并发或独立资源隔离，应先把文档和任务运行时统一切换到 Manager Worker 或 GIS 执行引擎，再实现代码，不保留 Backend 与 Worker 双轨。
+ADDP 平台的部分模块拥有独立的 Worker 运行时进程,用于处理异步任务和后台作业。Manager 当前没有独立 Worker；PostGIS + MVT 主路径中的瓦片缓存生成和矢量物化视图均由 Manager Backend 在手动或 Orchestrator 编排触发时执行。Manager 受管当前结果任务不启动 owner scheduler；Embedding 的逐 item 调度器独立保留。若后续格式实现需要 Manager 进程内重计算、多执行器并发或独立资源隔离，应先把文档和任务运行时统一切换到 Manager Worker 或 GIS 执行引擎，再实现代码，不保留 Backend 与 Worker 双轨。
 
 ```mermaid
 graph TB
@@ -302,9 +302,9 @@ graph TB
 
     subgraph "Manager 模块"
         MB2[Manager Backend<br/>:8081]
-        TCS[TileCacheTaskScheduler<br/>vector_tile_cache_generation]
+        TCT[TileCacheTask<br/>vector_tile_cache_generation]
         QVO[VectorMaterializedViewTask<br/>vector_materialized_view_generation]
-        MB2 --> TCS
+        MB2 --> TCT
         MB2 --> QVO
     end
 
@@ -319,7 +319,7 @@ graph TB
     MB --> PostgreSQL2[(PostgreSQL)]
     MW --> PostgreSQL2
     MB2 --> PostgreSQL3[(PostgreSQL)]
-    TCS --> PostgreSQL3
+    TCT --> PostgreSQL3
     QVO --> PostgreSQL3
 
     classDef backend fill:#f3e5f5,stroke:#4a148c
@@ -329,7 +329,7 @@ graph TB
 
     class TB,MB,MB2 backend
     class TW,TCW,MW worker
-    class TCS,QVO scheduler
+    class TCT,QVO scheduler
     class Redis,Redis2,PostgreSQL,PostgreSQL2,PostgreSQL3 infra
 ```
 
@@ -340,14 +340,14 @@ graph TB
 | **Transfer Bounded Worker** | Transfer | 处理 snapshot 和 watermark bounded `sync` execution，handler 完成后释放 Asynq slot | Go, Asynq, Redis |
 | **Transfer Continuous Worker** | Transfer | 一个进程承载多个 continuous runtime session，按 task claim lease，并在 session 内受限处理 partition | Go, DB lease, Kafka client |
 | **Meta Worker** | Meta | 异步处理元数据扫描和索引任务,支持定时调度 | Go, Asynq, Redis |
-| **TileCacheTaskScheduler** | Manager | 在 Manager Backend 内按 `manager.vector_tile_cache_tasks.next_run_at` 触发 `vector_tile_cache_generation`，执行记录写入 `common.task_executions` | Go, DB claim |
+| **TileCacheTask** | Manager | 在 Manager Backend 内按手动请求或 Orchestrator 编排触发 `vector_tile_cache_generation`，执行记录写入 `common.task_executions` | Go, TaskProvider API |
 | **VectorMaterializedViewTask** | Manager | 在 Manager Backend 内按用户手动或 Orchestrator 编排触发执行 `vector_materialized_view_generation`，创建或刷新 Manager 管理的 3857 矢量物化视图目标 | Go, TaskProvider API |
 
 **运行时说明**:
 - **Asynq 队列**: 当前用于 Transfer、Meta 等独立 Worker 场景。
 - **Continuous supervisor**: Transfer continuous worker 直接 claim pending execution 和 `transfer.runtime_leases`；同一 task 同一时刻只有一个合法 owner，不把长期 session 投递为 Asynq job。
 - **CDC capture supervisor**: PostgreSQL CDC v1 契约已由工作包 3A 冻结，Infra Kafka/Kafka Connect 开发部署已由 3B 完成。后续 capture supervisor 作为 Transfer 独立捕获控制角色通过 Kafka Connect REST 管理 Debezium connector；它不嵌入 continuous worker，也不把 Infra Kafka 注册为 System Engine。
-- **DB claim 调度**: Manager 瓦片缓存任务通过 `enabled + schedule + next_run_at` 轮询并 claim 到期任务；矢量物化视图当前 `supports_schedule=false`，不由 Manager 自身定时调度。
+- **Manager 受管结果调度边界**: 瓦片缓存、矢量物化视图等受管当前结果任务均为 `supports_schedule=false`，不由 Manager 自身定时调度；周期性刷新由 Orchestrator 显式携带本次覆盖确认触发。Embedding 的逐 item owner scheduler 独立保留。
 - **执行记录**: 各模块执行状态统一写入 `common.task_executions`。
 - **结果状态**: Manager 瓦片缓存结果状态写入 `manager.vector_tile_cache`，矢量物化视图结果状态写入 `manager.vector_materialized_view`，不由 execution 替代。
 - **未来切换条件**: 当瓦片生成或矢量物化视图构建的主要计算不再由 PostGIS 承担，或 Manager API 响应因后台生成受影响，或需要多个执行器并行消费同一类任务时，对应任务类型应切换到唯一的 Manager Worker 或 GIS 执行引擎运行时。

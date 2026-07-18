@@ -93,7 +93,7 @@ PUT    /api/v1/manager/gaussian_splat_ksplat_tasks/{id}
 DELETE /api/v1/manager/gaussian_splat_ksplat_tasks/{id}
 ```
 
-当前 `supports_schedule=false`、`supports_cancel=false`。需要周期性刷新时，应由 Orchestrator 定时编排间接触发已保存任务定义。
+当前 `supports_schedule=false`、`supports_cancel=false`。需要周期性刷新时，应由 Orchestrator 定时编排间接触发已保存任务定义，并由用户在 Step 参数中显式配置 `existing_result_action=overwrite`。
 
 `POST .../execute` 接受后返回 HTTP 202、`status=pending` 和新 `execution_id`；同任务已有活跃 execution 时返回 HTTP 409。
 

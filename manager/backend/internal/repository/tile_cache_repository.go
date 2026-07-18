@@ -11,7 +11,6 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // TileCacheRepository 维护瓦片缓存任务定义和产物状态。
@@ -121,7 +120,7 @@ func (r *TileCacheRepository) DisableTaskForCleanup(ctx context.Context, tenantI
 		}).Error
 }
 
-func (r *TileCacheRepository) ClaimExecution(ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, confirmExistingResult bool) (*models.TileCacheTask, error) {
+func (r *TileCacheRepository) ClaimExecution(ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool) (*models.TileCacheTask, error) {
 	var task models.TileCacheTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
 		TaskModel: &task,
@@ -131,8 +130,8 @@ func (r *TileCacheRepository) ClaimExecution(ctx context.Context, taskID, tenant
 		TaskConfig: func() commonModels.JSONMap {
 			return task.Config
 		},
-		CurrentResultModel:    &models.TileCache{},
-		ConfirmExistingResult: confirmExistingResult,
+		CurrentResultModel:      &models.TileCache{},
+		OverwriteExistingResult: overwriteExistingResult,
 	})
 	if err != nil {
 		return nil, err
@@ -165,62 +164,6 @@ func (r *TileCacheRepository) CompleteExecution(
 		ResultFields:    tileCacheFields,
 		ExecutionFields: executionFields,
 	}, "vector tile cache")
-}
-
-func (r *TileCacheRepository) ListTileCacheTasksMissingNextRun(ctx context.Context) ([]models.TileCacheTask, error) {
-	var tasks []models.TileCacheTask
-	err := r.db.WithContext(ctx).
-		Where("enabled = ? AND schedule <> '' AND next_run_at IS NULL", true).
-		Find(&tasks).Error
-	return tasks, err
-}
-
-func (r *TileCacheRepository) UpdateTileCacheTaskNextRun(ctx context.Context, id uint, nextRunAt *time.Time) error {
-	return r.db.WithContext(ctx).
-		Model(&models.TileCacheTask{}).
-		Where("id = ?", id).
-		Updates(map[string]interface{}{"next_run_at": nextRunAt}).Error
-}
-
-func (r *TileCacheRepository) ListDueTileCacheTaskIDs(ctx context.Context, now time.Time, limit int) ([]uint, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	var taskIDs []uint
-	err := r.db.WithContext(ctx).
-		Model(&models.TileCacheTask{}).
-		Where("enabled = ? AND schedule <> '' AND next_run_at IS NOT NULL AND next_run_at <= ?", true, now).
-		Order("next_run_at ASC").
-		Limit(limit).
-		Pluck("id", &taskIDs).Error
-	return taskIDs, err
-}
-
-func (r *TileCacheRepository) ClaimDueTileCacheTask(ctx context.Context, taskID uint, schedule string, now time.Time, nextRunAt *time.Time) (*models.TileCacheTask, error) {
-	var claimed *models.TileCacheTask
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var task models.TileCacheTask
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where("id = ? AND enabled = ? AND schedule = ? AND next_run_at IS NOT NULL AND next_run_at <= ?", taskID, true, schedule, now).
-			First(&task).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil
-			}
-			return err
-		}
-
-		if err := tx.Model(&models.TileCacheTask{}).
-			Where("id = ?", task.ID).
-			Updates(map[string]interface{}{
-				"next_run_at": nextRunAt,
-			}).Error; err != nil {
-			return err
-		}
-
-		claimed = &task
-		return nil
-	})
-	return claimed, err
 }
 
 type TileCacheFilter struct {

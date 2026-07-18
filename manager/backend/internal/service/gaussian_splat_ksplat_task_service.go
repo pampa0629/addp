@@ -190,7 +190,7 @@ func (s *GaussianSplatKSplatTaskService) DeleteResult(ctx context.Context, id ui
 	return s.repo.Delete(ctx, id, tenantID)
 }
 
-func (s *GaussianSplatKSplatTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, confirmExistingResult bool) (string, error) {
+func (s *GaussianSplatKSplatTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, overwriteExistingResult bool) (string, error) {
 	task, err := s.repo.GetTask(ctx, taskID, tenantID)
 	if err != nil {
 		return "", err
@@ -230,10 +230,10 @@ func (s *GaussianSplatKSplatTaskService) Execute(ctx context.Context, taskID uin
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec, confirmExistingResult)
+	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
 	if err != nil {
-		if errors.Is(err, repository.ErrExistingResultConfirmationRequired) {
-			return "", ErrExistingResultConfirmationRequired
+		if errors.Is(err, repository.ErrExistingResultActionRequired) {
+			return "", ErrExistingResultActionRequired
 		}
 		if errors.Is(err, commonAPI.ErrNotFound) {
 			return "", ErrTaskNotFound

@@ -28,11 +28,6 @@
                 {{ row.tile?.min_zoom ?? 0 }} - {{ row.tile?.max_zoom ?? 18 }}
               </template>
             </el-table-column>
-            <el-table-column :label="t('manager.tileCache.schedule')" min-width="140" show-overflow-tooltip>
-              <template #default="{ row }">
-                <ScheduleDisplay :cron="row.schedule" :empty-text="t('manager.tileCache.manualOnly')" />
-              </template>
-            </el-table-column>
             <el-table-column :label="t('manager.tileCache.enabled')" width="100">
               <template #default="{ row }">
                 <el-tag :type="row.enabled ? 'success' : 'info'">
@@ -305,11 +300,6 @@
             />
           </el-select>
         </el-form-item>
-
-        <div class="form-section-title">{{ t('manager.tileCache.scheduleSettings') }}</div>
-        <el-form-item :label="t('manager.tileCache.schedule')">
-          <ScheduleConfig v-model="form.schedule" :allow-custom-cron="false" />
-        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="formDialogVisible = false">{{ t('manager.tileCache.cancel') }}</el-button>
@@ -362,9 +352,6 @@
         </el-descriptions-item>
         <el-descriptions-item :label="t('manager.tileCache.lastExecutionId')" :span="2">
           {{ selectedTask.last_execution_id || '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item :label="t('manager.tileCache.schedule')">
-          <ScheduleDisplay :cron="selectedTask.schedule" :empty-text="t('manager.tileCache.manualOnly')" />
         </el-descriptions-item>
       </el-descriptions>
 
@@ -425,7 +412,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, InfoFilled, Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { openMonitorExecution, parseLocatorSafe, ResourceTree, ScheduleConfig, ScheduleDisplay } from '@addp/common-frontend'
+import { openMonitorExecution, parseLocatorSafe, ResourceTree } from '@addp/common-frontend'
 import client from '../api/client'
 import { dataExplorerAPI } from '../api/dataExplorer'
 import { quickViewAPI } from '../api/quickView'

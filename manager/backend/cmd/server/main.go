@@ -265,10 +265,6 @@ func main() {
 	if err := embeddingTaskScheduler.Start(context.Background()); err != nil {
 		logger.L().Warn("向量化任务调度器启动失败", "error", err)
 	}
-	tileCacheTaskScheduler := service.NewTileCacheTaskScheduler(tileCacheTaskSvc)
-	if err := tileCacheTaskScheduler.Start(context.Background()); err != nil {
-		logger.L().Warn("瓦片缓存任务调度器启动失败", "error", err)
-	}
 	cleanupSvc := service.NewCleanupService(
 		redisClient,
 		metaClient,
@@ -483,7 +479,6 @@ func main() {
 			scanEventHandler.Stop()
 		}
 		embeddingTaskScheduler.Stop()
-		tileCacheTaskScheduler.Stop()
 		cleanupSvc.Stop()
 
 		if err := mvtService.Close(); err != nil {

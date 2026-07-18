@@ -81,7 +81,7 @@ func TestModel3DTilesTaskServiceRepeatedExecutionRefreshesCurrentResult(t *testi
 	if err := db.Model(&commonExecution.TaskExecution{}).Count(&executionCountBefore).Error; err != nil {
 		t.Fatalf("count executions before unconfirmed refresh: %v", err)
 	}
-	if _, err := svc.Execute(context.Background(), task.ID, task.TenantID, "manual", "manager", nil, false); !errors.Is(err, ErrExistingResultConfirmationRequired) {
+	if _, err := svc.Execute(context.Background(), task.ID, task.TenantID, "manual", "manager", nil, false); !errors.Is(err, ErrExistingResultActionRequired) {
 		t.Fatalf("unconfirmed refresh Execute() error = %v", err)
 	}
 	var executionCountAfter int64

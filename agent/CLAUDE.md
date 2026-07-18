@@ -76,6 +76,23 @@ agent.skill_usage -- Skill 使用统计
 
 阶段 5 的 Agent 评测场景唯一目录为仓库根 `evals/agent-scenarios/`，统一使用 `addp.agent-scenario/v1`。离线门禁通过脚本化 Runtime 决策和受控 owner 响应消费真实结构化事件，不调用真实 LLM；定向在线层消费同一契约，凭据和环境私有 ID 不进入 fixture。
 
+定向在线评测唯一入口为 `evals/agent-scenarios/online_runner.py`，只经过生产 `ToolExecutor` 验证真实委托和 Owner API，不调用 LLM。Token 仅来自 `ADDP_TOKEN` 或现有 OAuth 登录，workflow 输入和证据 JSON 必须放在 ADDP 仓库外。示例：
+
+```bash
+python evals/agent-scenarios/online_runner.py \
+  --output /tmp/addp-read-only-evidence.json \
+  read-only --query railway \
+  --locator 'addp://engine/8/path/public/railway?type=table&item_id=60'
+```
+
+审批场景依次运行 `approval-request`、在 Develop Owner 页面明确批准或拒绝，再运行 `approval-resume` 或 `approval-rejection`；Runner 不自动决定审批。
+
+统一评测门禁唯一入口为 `evals/agent-scenarios/gate.py`。默认运行全部场景契约、Agent 评测与持久化测试、common-python 全量测试和 Agent 前端测试；`--require-online` 额外要求三个黄金场景的仓库外在线证据，并重新使用场景 `evaluate_trace` 校验。报告 Schema 固定为 `addp.agent-evaluation-gate/v1`，报告输出也必须位于仓库外。
+
+```bash
+python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.json
+```
+
 `messages` 不再使用 `result_type + result_data`。表现内容通过 `presentation_ref` 引用 A2UI Surface，澄清状态通过 `interaction_ref` 引用 `agent.interactions`。
 
 ## 协议约束
@@ -92,6 +109,7 @@ agent.skill_usage -- Skill 使用统计
 - 断线重连按 `agent.run_events` 的 run 内 sequence 回放；事件不得保存 Tool 参数或原始结果。取消只停止内置 Agent Runtime 和 pending Interaction，不取消 owner execution；失败重试在同一 AgentRun 中追加新的协议调用事件。
 - `agent.run_events` 的 SSE 使用标准 `id` 字段承载 run 内 sequence；客户端用 `after` 回放未处理的安全事件。
 - AgentCheckpoint 只保存 owner Tool 紧凑事实和用户已确认选择，不保存模型隐藏推理、框架私有内存、完整样本行或大 Tool 结果。
+- 持久化总量门禁固定为：单个 replayable run event 512 KiB、单条 message parts 2 MiB、AgentCheckpoint 256 KiB、单个 step facts 128 KiB；超限直接拒绝，不截取 JSON 前缀或转存旁路字段。
 - `run_steps.output_summary` 只保存状态、计数、类型和结果字节数等受限摘要；即使 Tool 结果被截断为非 JSON，也不得回退保存原文前缀。可复用 owner 事实写入 `run_steps.facts` 和 run checkpoint。
 - Runtime 上下文从最新消息向前分配：最近 20 条、单条 6000 字符、消息总计 24000 字符、历史摘要 2000 字符。摘要以 `sessions.summary_message_id` 增量推进，不重复压缩全部历史。
 - `runs.metrics` 只保存可由 step/event 验证的结构指标，`runs.context_metrics` 只保存预算事实；Provider 没有返回时不估算 token usage。

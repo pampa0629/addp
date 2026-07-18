@@ -57,6 +57,29 @@ func TestValidateStepTaskReferencesAcceptsDeclaredExecutionSchemaParameters(t *t
 	}
 }
 
+func TestValidateStepTaskReferencesAcceptsExistingResultOverwriteAndRejectsLegacyConfirmation(t *testing.T) {
+	executionSchema := `{"type":"object","properties":{"existing_result_action":{"type":"string","enum":["overwrite"]}},"additionalProperties":false}`
+	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
+		"manager": taskProviderForTest("manager", taskCapabilitiesForTest("vector_tile_cache_generation", false, executionSchema)),
+	})
+
+	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
+		ID: "tile", Name: "Tile", Provider: "manager", TaskType: "vector_tile_cache_generation", TaskID: 1,
+		Parameters: map[string]interface{}{"existing_result_action": "overwrite"},
+	}})
+	if err != nil {
+		t.Fatalf("overwrite step validation error = %v, want nil", err)
+	}
+
+	err = registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
+		ID: "tile", Name: "Tile", Provider: "manager", TaskType: "vector_tile_cache_generation", TaskID: 1,
+		Parameters: map[string]interface{}{"confirm_existing_result": true},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "parameters.confirm_existing_result is not allowed") {
+		t.Fatalf("legacy confirmation validation error = %v", err)
+	}
+}
+
 func TestValidateStepTaskReferencesValidatesParametersForRepeatedTaskType(t *testing.T) {
 	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
 		"meta": taskProviderForTest("meta", taskCapabilitiesForTest("scan", false, `{"type":"object","additionalProperties":false}`)),

@@ -304,6 +304,17 @@ describe('ADDP A2UI renderer', () => {
         ],
         truncated: true
       }
+    },
+    {
+      component: {
+        component: 'TablePreview',
+        columns: Array.from({ length: 50 }, (_, index) => `column_${index}`),
+        rows: Array.from({ length: 100 }, () => Object.fromEntries(
+          Array.from({ length: 50 }, (_, index) => [`column_${index}`, 'x'.repeat(2000)])
+        )),
+        total: 100,
+        truncated: false
+      }
     }
   ])('rejects unsafe or over-limit presentation %#', async ({ component }) => {
     const wrapper = mount(A2UISurface, {

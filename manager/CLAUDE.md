@@ -13,7 +13,7 @@ Manager 模块负责数据探查、数据预览、混合检索、空间快显和
 - `manager.raster_cog_tasks`：栅格快显 COG生成任务定义，TaskProvider `task_type=raster_cog_generation`，当前不声明标准取消和自身定时调度能力。
 - `manager.raster_mosaic_tasks`：栅格 mosaic 生成任务定义，TaskProvider `task_type=raster_mosaic_generation`，从资源树 node 创建，结果写入用户选择的业务存储并形成 `raster_mosaic` 业务 item；Manager 不登记或拥有 mosaic 长期产物。
 - `manager.vector_tile_cache`：瓦片缓存结果状态，表达瓦片缓存是否可用、存储引用、格式、范围、层级和最近执行。
-- `manager.vector_tile_cache_tasks`：瓦片缓存生成任务定义，TaskProvider `task_type=vector_tile_cache_generation`。MVT 只是 `config.tile.format=mvt`，不是任务类型。
+- `manager.vector_tile_cache_tasks`：瓦片缓存生成任务定义，TaskProvider `task_type=vector_tile_cache_generation`，当前不声明标准取消和自身定时调度能力。MVT 只是 `config.tile.format=mvt`，不是任务类型。
 - `manager.point_cloud_copc`：点云 COPC 快显结果，只登记 Manager 生成并拥有生命周期的 infra MinIO COPC artifact；源 `format=copc` item 直接基础预览，不进入该表。
 - `manager.point_cloud_copc_tasks`：点云 COPC 快显任务定义，TaskProvider `task_type=point_cloud_copc_generation`，源必须是 `format=las|laz|e57|pcd|xyz` 的 point_cloud item。
 - `manager.cad_previews`：二维 DWG / DXF 的受管栅格瓦片预览结果，记录 manifest、thumbnail、瓦片范围和 Manager infra MinIO 引用。
@@ -92,6 +92,7 @@ manager/
 - CAD 栅格预览任务统一使用 `manager.cad_preview_tasks` / `cad_preview_generation`；源必须是 `data_type=cad + layout=single + format=dwg|dxf`。后端只把 ready artifact 的受控 manifest URL 交给 `frontend_renderer=cad`，不得把源 CAD `storage-stream` URL 交给 CAD renderer。
 - 分块三维模型瓦片任务统一使用 `manager.model3d_tiles_tasks` / `model3d_tiles_generation`，结果统一进入 `manager.model3d_tiles`；`target_format=3d_tiles` 调用 `osgb_scene_to_3dtiles`，`target_format=s3m` 调用 `osgb_scene_to_s3m`。不得恢复写业务存储并触发 Meta scan 的旧 Manager 路径。
 - Manager 受管快显任务的语义身份统一为 `tenant_id + item_fingerprint + artifact_variant`。重复创建必须复用原任务 ID，重复执行必须新建 execution 并刷新同一当前结果；`item_id`、`locator`、`source_engine_id` 只作执行与回查事实。派生变体、并发唯一约束和业务派生任务的例外见 `manager/docs/快显实现规范.md`。
+- Manager 受管当前结果任务统一不启动自身定时调度，但允许 Orchestrator 定时 Pipeline 调用。周期性刷新由用户在 Step 参数中显式配置 `existing_result_action=overwrite`；Manager 不得按 scheduled 来源自动补充已有结果动作。Embedding 的逐 item 调度语义独立保留。
 - COG 生成只能由 Manager 任务执行器派生 GDAL 参数后，通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 GeoPython Workflow；不得退回构造单节点 workflow 或直接拼接 GeoPython Workflow 私有 HTTP。
 - 瓦片缓存生成任务不得隐式创建 3857 物化视图、空间索引或执行准备动作；需要性能准备时必须显式执行矢量物化视图任务。
 - 自动识别的外部 3857 目标只能只读消费，不写入 `manager.vector_materialized_view`，也不获得 Manager 删除、刷新或 stale 生命周期。

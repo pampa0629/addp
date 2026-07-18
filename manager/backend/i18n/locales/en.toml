@@ -178,8 +178,8 @@ other = "This task already has an active execution"
 [manager.error.model3d_tiles_execution_busy]
 other = "This model3d tiles quick view task already has an active execution"
 
-[manager.error.existing_result_confirmation_required]
-other = "A current result already exists. Confirm to overwrite the current managed artifact"
+[manager.error.existing_result_action_required]
+other = "A current result already exists. This execution must explicitly choose to overwrite it"
 
 [manager.model3d_tiles.result_deleted]
 other = "Model3d tiles quick view result deleted"

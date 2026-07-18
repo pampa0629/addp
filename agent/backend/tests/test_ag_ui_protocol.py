@@ -260,6 +260,21 @@ class AGUIProtocolTests(unittest.TestCase):
         self.assertEqual(len(map_presentation["features"]), 1)
         self.assertTrue(map_presentation["truncated"])
 
+    def test_surface_rejects_total_payload_over_byte_limit(self):
+        with self.assertRaisesRegex(ValueError, "A2UI surface exceeds"):
+            table_preview_surface(
+                "surface-large",
+                {
+                    "columns": [f"column_{index}" for index in range(50)],
+                    "rows": [
+                        {f"column_{index}": "x" * 2000 for index in range(50)}
+                        for _ in range(100)
+                    ],
+                    "total": 100,
+                    "truncated": False,
+                },
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

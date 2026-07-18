@@ -1,6 +1,6 @@
 # ADDP 智能体能力开放体系专题
 
-更新时间：2026-07-16
+更新时间：2026-07-18
 
 状态：已完成架构决策，进入分阶段实施。本文是实现期间的专题事实源；稳定概念同步进入术语表，完成实现后再将协议和开发约束拆入正式规范。
 
@@ -918,6 +918,47 @@ failed --retry--> running
 6. 真实浏览器验证覆盖桌面与 `390 x 844` 移动视口：OpenLayers canvas 和矢量图层可见，移动端 ResourcePicker 无横向越界，TablePreview 只在内部横向滚动，地图保持稳定高度和宽度。最终自动化为 Agent 后端 69 项、Agent 前端 19 项、common-python Manifest 5 项，生产构建、Python 编译和差异检查通过。
 7. 本阶段没有增加 `GraphView`，没有引入 MCP Adapter 或多智能体委派；三者继续等待 SDK、Manifest 与评测体系后续稳定性证据。
 
+#### 阶段 5.3：评测体系稳定化
+
+阶段 5.3 不扩展 Tool、Catalog 或 Agent Runtime，而是把阶段 5.1/5.2 已有契约变成可重复的离线门禁、定向在线证据和持久化安全边界。
+
+1. 定向在线入口固定为 `evals/agent-scenarios/online_runner.py`。它不调用真实 LLM，也不绕过能力层，直接经过与内置 Agent 相同的 `ToolExecutor -> System delegated access -> owner API` 主线，验证 Manifest 输入输出 Schema、委托 audience/scope、AgentRun/ToolCall 审计绑定和稳定 owner 错误码。
+2. 在线证据唯一 Schema 为 `addp.agent-online-evidence/v1`，只保存场景名、稳定 Skill、归一化 phase、owner 副作用计数，以及继续审批所需的 approval ID、请求指纹和 owner open URL；不保存 Access Token、Delegated Access Token、workflow definition 或原始 Tool 结果。证据是一次环境验收记录，不是业务事实或长期 fixture。
+3. 在线入口只提供四条显式路径：`read-only`、`approval-request`、`approval-resume`、`approval-rejection`。审批请求与批准/拒绝由 Owner 页面分开完成；Runner 不自动批准、不轮询修改状态、不选择搜索第一项，也不把 rejection/replay 合并为隐藏副作用。`approval-rejection` 在任何 `workflow.run` 前先通过用户身份读取 Develop approval，只有 Owner 状态严格为 `rejected` 才继续，避免误消费已批准 approval 并创建 execution。
+4. `approval-request` 可为 `approval-execution` 或 `rejection-and-forbidden` 创建待处理 owner approval；输出证据必须写到仓库外临时目录。`approval-resume` 复用证据中的原 AgentRun；`approval-rejection` 先用原 AgentRun 验证 `approval_rejected`，再用新 AgentRun 验证 `approval_forbidden`。
+5. A2UI 历史与断线重放必须消费同一个有界 Surface：assistant message `presentation_ref.content` 与 `ACTIVITY_SNAPSHOT.content` 逐结构一致。Tool 参数不进入 run event，原始 Tool 结果继续替换为固定文本。
+6. 持久化边界分别设硬上限：单个 replayable run event 512 KiB、单条 message parts 2 MiB、AgentCheckpoint 256 KiB、单个 step facts 128 KiB。超限值在对应落库边界直接拒绝，不截取 JSON 前缀、不旁路保存到其他字段。
+7. 离线评测继续由普通测试门禁执行；定向在线评测要求运行中的 ADDP、短期 `ADDP_TOKEN` 或已有 OAuth 登录和显式环境资源参数，不成为普通单元测试前置条件。在线输出不得写入仓库，失败必须保留稳定 Tool/Owner 错误归因。
+
+完成标准：三个黄金场景均有可重复的离线轨迹；只读、批准恢复、拒绝和跨 AgentRun 重放均可按显式命令生成同 Schema 在线证据；A2UI message/replay 一致；四类持久化对象均有超限反向测试。阶段 5.3 仍不推进 `GraphView`、MCP Adapter 或多智能体委派。
+
+实施状态（2026-07-18）：代码、离线门禁和三个黄金场景的定向在线验收均已完成。
+
+1. 新增唯一在线入口 `evals/agent-scenarios/online_runner.py` 和 `addp.agent-online-evidence/v1`。`read-only`、`approval-request`、`approval-resume`、`approval-rejection` 均直接复用生产 `ToolExecutor`；稳定 Owner 错误码原样进入 stdout 错误 envelope，不降级为 Python 异常文本。
+2. `read-only` 必须显式提供本次 `data.search` 已观察的 locator；审批输入、阶段证据和最终证据必须位于仓库外。证据读写两端递归拒绝 Token、Authorization、workflow definition、engine-specific 和 sample rows，不保存原始 Tool 结果。
+3. 审批确定性测试覆盖“请求后等待 Owner”“批准后同 AgentRun 仅提交 approval ID 与指纹并产生一个 execution ResultRef”“拒绝后原 AgentRun 返回 `approval_rejected`、新 AgentRun 返回 `approval_forbidden`”。拒绝路径还验证 Owner 状态不是 `rejected` 时零 Tool 调用停止；Runner 不提供自动审批 API。
+4. `ACTIVITY_SNAPSHOT` 与 assistant message `presentation_ref` 已通过实际服务函数验证保存同一 A2UI Surface；A2UI 后端 Surface 和前端 Catalog 都增加 500 KiB 总字节门禁，为 512 KiB run-event envelope 预留确定空间，组件字段上限不再成为唯一体积防线。
+5. 落库边界已增加独立硬限制和反向测试：run event 512 KiB、message parts 2 MiB、AgentCheckpoint 256 KiB、step facts 128 KiB。所有超限均在写入前拒绝，不截取 JSON 前缀。
+6. 当前自动化为 Agent 后端 87 项、Agent 前端 20 项、common-python 全量 39 项；Agent 前端生产构建、Python 编译和差异检查通过。
+7. 定向在线验收使用正式 Device Authorization Flow 和短期 OAuth Access Token，证据全部写入仓库外临时目录。只读场景显式选择本次 `data.search` 已观察的 `addp://engine/8/path/public/railway?type=table&item_id=60`，真实执行 `data.search -> data.preview`，产生一个 `TablePreview`，审批和 execution 数均为 0。
+8. 审批执行场景使用经 `workflow.validate valid=true`、零错误和零警告的单任务 GeoPython 工作流。Owner 页面明确批准后，`approval-resume` 以同一 AgentRun 只提交 approval ID 与请求指纹，精确创建一个 Develop execution，并产生一个 `addp.result-ref/v1` execution ResultRef。
+9. 拒绝与越权场景使用独立 approval。Owner 页面明确拒绝后，原 AgentRun 恢复稳定返回 `approval_rejected`；新的 AgentRun 重放同一 approval 稳定返回 `approval_forbidden`。两个阶段均无 ResultRef，新增 execution 数均为 0，证明 AgentRun 绑定优先于终态泄露。
+10. CLI/OAuth 在线验收必须串行执行。Refresh Token Family 严格轮换下，并行命令可能同时读取同一 Refresh Token，后到请求会触发重用检测并撤销整个 family；在线 Runner、CLI Tool 和 OAuth 刷新不得并行。macOS Keychain 不可用时，本轮只在单一保持进程内使用 Device Flow 返回的短期 Access Token，未把 Token 写入仓库、临时文件或证据。
+11. 阶段 5.3 没有新增 `GraphView`，没有推进 MCP Adapter 或多智能体委派；后两项继续等待 SDK、Manifest 与评测门禁积累稳定性证据。
+
+#### 阶段 5.4：统一评测门禁与结果聚合
+
+阶段 5.4 把分散的场景契约、离线自动化和仓库外在线证据收敛为一个可供开发与 CI 调用的门禁入口，不新增第二套评测 DSL、证据 Schema 或测试路线。
+
+1. 唯一入口为 `evals/agent-scenarios/gate.py`，输出唯一报告 Schema `addp.agent-evaluation-gate/v1`。报告只保存 run ID、模式、场景名、Skill、离线/在线状态、检查项状态和稳定失败原因，不复制 Tool 结果、在线 trace、approval 上下文或任何 Token。
+2. 默认 `offline` 模式发现并严格加载全部 `addp.agent-scenario/v1`，同时运行 Agent 评测与持久化门禁、common-python 全量测试和 Agent 前端测试。任何场景契约或检查项失败时报告 `status=failed`，进程退出码为 1。
+3. `--require-online` 模式在相同离线门禁之上，要求 `read-only-query`、`approval-execution`、`rejection-and-forbidden` 三个黄金场景都提供仓库外 `addp.agent-online-evidence/v1`。每份证据重新交给同一个 `evaluate_trace`，不信任证据自报的 `status`。
+4. 在线证据使用重复 `--online scenario=path` 显式绑定，不扫描临时目录、不按文件名猜测、不接受仓库内路径。门禁报告通过 `--output` 写入仓库外；不提供把在线证据或报告转存为长期 fixture 的路径。
+5. 业务能力场景 `railway-farmland-area` 当前只纳入离线场景契约与 Runtime 门禁，不伪造尚未实施的独立在线 Runner。后续只有出现明确业务在线验收价值时，才扩展同一 Runner 和同一门禁映射。
+6. 门禁只编排已有测试和证据评估，不重启服务、不执行 OAuth 登录、不调用真实 LLM，也不发起新的 owner Tool；在线 Tool/OAuth 生成证据仍由阶段 5.3 入口严格串行完成。
+
+实施状态（2026-07-18）：统一入口、严格报告和离线/在线两种模式已完成。默认门禁汇总 4 个场景契约与 3 组自动化检查；在线模式重新验证阶段 5.3 的 3 份黄金证据。阶段 5.4 仍不推进 `GraphView`、MCP Adapter 或多智能体委派。
+
 ## 十一、PoC 文件级实施清单
 
 以下是阶段 1 已落地的文件级主路径，不保留候选双轨。
@@ -949,6 +990,8 @@ failed --retry--> running
 | `agent/backend/tests/test_result_refs.py` | 验证 execution ResultRef 和 locator 候选不被误升级。 |
 | `agent/backend/tests/test_context.py` | 验证最新优先、单消息/总字符上限、摘要截断和可观测指标。 |
 | `agent/backend/tests/test_summary.py` | 验证增量摘要水位只向前推进，不重复压缩已摘要消息。 |
+| `evals/agent-scenarios/gate.py` | 统一发现全部场景、运行离线门禁、重新验证仓库外在线证据并输出 `addp.agent-evaluation-gate/v1`。 |
+| `agent/backend/tests/test_agent_evaluation_gate.py` | 验证场景发现、缺失在线证据失败和仓库外证据边界。 |
 
 `agent/backend/api/chat.py` 中 `0:` / `dag:` 输出和旧前端解析已删除，不保留旧 endpoint 的兼容分支。
 

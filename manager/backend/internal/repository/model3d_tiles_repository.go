@@ -138,13 +138,13 @@ func (r *Model3DTilesRepository) CreateTask(ctx context.Context, task *models.Mo
 }
 
 func (r *Model3DTilesRepository) ClaimExecution(
-	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, confirmExistingResult bool,
+	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool,
 ) (*models.Model3DTilesTask, error) {
 	var task models.Model3DTilesTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
 		TaskModel: &task, TaskType: commonExecution.TaskTypeModel3DTilesGeneration, TaskLabel: "model3d tiles",
 		TaskName: func() string { return task.Name }, TaskConfig: func() commonModels.JSONMap { return task.Config },
-		CurrentResultModel: &models.Model3DTiles{}, ConfirmExistingResult: confirmExistingResult,
+		CurrentResultModel: &models.Model3DTiles{}, OverwriteExistingResult: overwriteExistingResult,
 	})
 	if err != nil {
 		return nil, err

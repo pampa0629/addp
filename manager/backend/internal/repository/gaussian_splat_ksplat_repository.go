@@ -83,7 +83,7 @@ func (r *GaussianSplatKSplatRepository) DeleteTask(ctx context.Context, id uint,
 }
 
 func (r *GaussianSplatKSplatRepository) ClaimExecution(
-	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, confirmExistingResult bool,
+	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool,
 ) (*models.GaussianSplatKSplatTask, error) {
 	var task models.GaussianSplatKSplatTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
@@ -94,8 +94,8 @@ func (r *GaussianSplatKSplatRepository) ClaimExecution(
 		TaskConfig: func() commonModels.JSONMap {
 			return task.Config
 		},
-		CurrentResultModel:    &models.GaussianSplatKSplat{},
-		ConfirmExistingResult: confirmExistingResult,
+		CurrentResultModel:      &models.GaussianSplatKSplat{},
+		OverwriteExistingResult: overwriteExistingResult,
 	})
 	if err != nil {
 		return nil, err

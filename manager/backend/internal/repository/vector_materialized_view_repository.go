@@ -88,7 +88,7 @@ func (r *VectorMaterializedViewRepository) DisableTaskForCleanup(ctx context.Con
 }
 
 func (r *VectorMaterializedViewRepository) ClaimExecution(
-	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, confirmExistingResult bool,
+	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool,
 ) (*models.VectorMaterializedViewTask, error) {
 	var task models.VectorMaterializedViewTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
@@ -99,8 +99,8 @@ func (r *VectorMaterializedViewRepository) ClaimExecution(
 		TaskConfig: func() commonModels.JSONMap {
 			return task.Config
 		},
-		CurrentResultModel:    &models.VectorMaterializedView{},
-		ConfirmExistingResult: confirmExistingResult,
+		CurrentResultModel:      &models.VectorMaterializedView{},
+		OverwriteExistingResult: overwriteExistingResult,
 	})
 	if err != nil {
 		return nil, err

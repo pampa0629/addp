@@ -74,6 +74,11 @@ func TestTaskProviderRegistryVectorMaterializedViewCapability(t *testing.T) {
 		t.Fatalf("schema_version = %q, want task.capabilities/v1", capabilities.SchemaVersion)
 	}
 
+	tileCache := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, "vector_tile_cache_generation")
+	if tileCache.SupportsSchedule {
+		t.Fatal("vector_tile_cache_generation supports_schedule = true, want false")
+	}
+
 	quickView := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, "vector_materialized_view_generation")
 	if quickView.SupportsSchedule {
 		t.Fatal("vector_materialized_view_generation supports_schedule = true, want false")
@@ -121,8 +126,9 @@ func TestTaskProviderRegistryVectorMaterializedViewCapability(t *testing.T) {
 	} {
 		capability := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, taskType)
 		properties, _ := capability.ExecutionSchema["properties"].(map[string]interface{})
-		confirmation, _ := properties["confirm_existing_result"].(map[string]interface{})
-		if confirmation["type"] != "boolean" || capability.ExecutionSchema["additionalProperties"] != false {
+		action, _ := properties["existing_result_action"].(map[string]interface{})
+		enum, _ := action["enum"].([]interface{})
+		if action["type"] != "string" || len(enum) != 1 || enum[0] != "overwrite" || capability.ExecutionSchema["additionalProperties"] != false {
 			t.Fatalf("%s execution_schema = %#v", taskType, capability.ExecutionSchema)
 		}
 	}

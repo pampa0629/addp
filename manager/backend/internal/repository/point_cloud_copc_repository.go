@@ -84,7 +84,7 @@ func (r *PointCloudCOPCRepository) DeleteTask(ctx context.Context, id uint, tena
 }
 
 func (r *PointCloudCOPCRepository) ClaimExecution(
-	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, confirmExistingResult bool,
+	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool,
 ) (*models.PointCloudCOPCTask, error) {
 	var task models.PointCloudCOPCTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
@@ -95,8 +95,8 @@ func (r *PointCloudCOPCRepository) ClaimExecution(
 		TaskConfig: func() commonModels.JSONMap {
 			return task.Config
 		},
-		CurrentResultModel:    &models.PointCloudCOPC{},
-		ConfirmExistingResult: confirmExistingResult,
+		CurrentResultModel:      &models.PointCloudCOPC{},
+		OverwriteExistingResult: overwriteExistingResult,
 	})
 	if err != nil {
 		return nil, err

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	commoni18n "github.com/addp/common/middleware/i18n"
@@ -93,9 +94,9 @@ type UpdatePreviewStateRequest struct {
 }
 
 type ExecuteQuickViewActionRequest struct {
-	Locator               string `json:"locator" binding:"required"`
-	Action                string `json:"action" binding:"required"`
-	ConfirmExistingResult bool   `json:"confirm_existing_result"`
+	Locator              string `json:"locator" binding:"required"`
+	Action               string `json:"action" binding:"required"`
+	ExistingResultAction string `json:"existing_result_action,omitempty" enums:"overwrite"`
 }
 
 type ExecuteQuickViewActionResponse struct {
@@ -144,13 +145,13 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
-// @Failure 409 {object} map[string]interface{} "任务已有活动执行或覆盖已有结果需要确认 | Active execution or existing result overwrite confirmation required"
+// @Failure 409 {object} map[string]interface{} "任务已有活动执行或缺少已有结果动作 | Active execution or existing result action required"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /quick-view/actions [post]
 // @Security BearerAuth
 func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 	var req ExecuteQuickViewActionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil {
 		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidRequestBody, err.Error())
 		return
 	}
@@ -162,6 +163,11 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 	action := strings.TrimSpace(req.Action)
 	if action == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "quick view action is required"})
+		return
+	}
+	overwriteExistingResult, err := existingResultActionAllowsOverwrite(req.ExistingResultAction)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -188,38 +194,38 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 	switch action {
 	case service.QuickViewActionGenerateTileCache:
 		taskType = commonExecution.TaskTypeVectorTileCacheGeneration
-		taskID, executionID, err = h.createAndExecuteTileCacheTask(c.Request.Context(), userID, capability, source, req.ConfirmExistingResult)
+		taskID, executionID, err = h.createAndExecuteTileCacheTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
 	case service.QuickViewActionGenerateRasterCOG:
 		taskType = commonExecution.TaskTypeRasterCOGGeneration
-		taskID, executionID, err = h.createAndExecuteRasterCOGTask(c.Request.Context(), userID, capability, source, req.ConfirmExistingResult)
+		taskID, executionID, err = h.createAndExecuteRasterCOGTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
 	case service.QuickViewActionGenerateModel3DGLB:
 		taskType = commonExecution.TaskTypeModel3DGLBGeneration
-		taskID, executionID, err = h.createAndExecuteModel3DGLBTask(c.Request.Context(), userID, capability, source, req.ConfirmExistingResult)
+		taskID, executionID, err = h.createAndExecuteModel3DGLBTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
 	case service.QuickViewActionGenerateGaussianSplatKSplat:
 		taskType = commonExecution.TaskTypeGaussianSplatKSplatGeneration
-		taskID, executionID, err = h.createAndExecuteGaussianSplatKSplatTask(c.Request.Context(), userID, capability, source, req.ConfirmExistingResult)
+		taskID, executionID, err = h.createAndExecuteGaussianSplatKSplatTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
 	case service.QuickViewActionGeneratePointCloudCOPC:
 		taskType = commonExecution.TaskTypePointCloudCOPCGeneration
-		taskID, executionID, err = h.createAndExecutePointCloudCOPCTask(c.Request.Context(), userID, capability, source, req.ConfirmExistingResult)
+		taskID, executionID, err = h.createAndExecutePointCloudCOPCTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
 	case service.QuickViewActionGenerateCADPreview:
 		taskType = commonExecution.TaskTypeCADPreviewGeneration
-		taskID, executionID, err = h.createAndExecuteCADPreviewTask(c.Request.Context(), userID, capability, source, req.ConfirmExistingResult)
+		taskID, executionID, err = h.createAndExecuteCADPreviewTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
 	case service.QuickViewActionGenerateModel3D3DTiles, service.QuickViewActionGenerateModel3DS3M:
 		taskType = commonExecution.TaskTypeModel3DTilesGeneration
 		targetFormat := models.Model3DTilesTargetFormat3DTiles
 		if action == service.QuickViewActionGenerateModel3DS3M {
 			targetFormat = models.Model3DTilesTargetFormatS3M
 		}
-		taskID, executionID, err = h.createAndExecuteModel3DTilesTask(c.Request.Context(), userID, capability, source, targetFormat, req.ConfirmExistingResult)
+		taskID, executionID, err = h.createAndExecuteModel3DTilesTask(c.Request.Context(), userID, capability, source, targetFormat, overwriteExistingResult)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported quick view action: " + action})
 		return
 	}
 	if err != nil {
-		if errors.Is(err, service.ErrExistingResultConfirmationRequired) {
+		if errors.Is(err, service.ErrExistingResultActionRequired) {
 			c.JSON(http.StatusConflict, gin.H{
-				"error": commoni18n.T(c, manageri18n.MsgExistingResultConfirmationRequired),
-				"code":  existingResultConfirmationRequiredCode,
+				"error": commoni18n.T(c, manageri18n.MsgExistingResultActionRequired),
+				"code":  existingResultActionRequiredCode,
 			})
 			return
 		}
@@ -663,7 +669,7 @@ func (h *QuickViewHandler) quickViewSourceForLocator(ctx context.Context, tenant
 	return source, nil
 }
 
-func (h *QuickViewHandler) createAndExecuteModel3DGLBTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, confirmExistingResult bool) (uint, string, error) {
+func (h *QuickViewHandler) createAndExecuteModel3DGLBTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
 	if h.model3DGLBTaskSvc == nil {
 		return 0, "", errors.New("model 3d GLB task service is not initialized")
 	}
@@ -681,7 +687,7 @@ func (h *QuickViewHandler) createAndExecuteModel3DGLBTask(ctx context.Context, u
 	if err := h.model3DGLBTaskSvc.Create(ctx, &task); err != nil {
 		return 0, "", err
 	}
-	executionID, err := h.model3DGLBTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, confirmExistingResult)
+	executionID, err := h.model3DGLBTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
 	if err != nil {
 		return task.ID, "", err
 	}
@@ -690,7 +696,7 @@ func (h *QuickViewHandler) createAndExecuteModel3DGLBTask(ctx context.Context, u
 
 func (h *QuickViewHandler) createAndExecuteModel3DTilesTask(
 	ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource,
-	targetFormat string, confirmExistingResult bool,
+	targetFormat string, overwriteExistingResult bool,
 ) (uint, string, error) {
 	if h.model3DTilesTaskSvc == nil {
 		return 0, "", errors.New("model3d tiles task service is not initialized")
@@ -707,7 +713,7 @@ func (h *QuickViewHandler) createAndExecuteModel3DTilesTask(
 		return 0, "", err
 	}
 	executionID, err := h.model3DTilesTaskSvc.Execute(
-		ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, confirmExistingResult,
+		ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult,
 	)
 	if err != nil {
 		return task.ID, "", err
@@ -715,7 +721,7 @@ func (h *QuickViewHandler) createAndExecuteModel3DTilesTask(
 	return task.ID, executionID, nil
 }
 
-func (h *QuickViewHandler) createAndExecuteRasterCOGTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, confirmExistingResult bool) (uint, string, error) {
+func (h *QuickViewHandler) createAndExecuteRasterCOGTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
 	if h.rasterCOGTaskSvc == nil {
 		return 0, "", errors.New("raster COG task service is not initialized")
 	}
@@ -733,14 +739,14 @@ func (h *QuickViewHandler) createAndExecuteRasterCOGTask(ctx context.Context, us
 	if err := h.rasterCOGTaskSvc.Create(ctx, &task); err != nil {
 		return 0, "", err
 	}
-	executionID, err := h.rasterCOGTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, confirmExistingResult)
+	executionID, err := h.rasterCOGTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
 	if err != nil {
 		return task.ID, "", err
 	}
 	return task.ID, executionID, nil
 }
 
-func (h *QuickViewHandler) createAndExecuteGaussianSplatKSplatTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, confirmExistingResult bool) (uint, string, error) {
+func (h *QuickViewHandler) createAndExecuteGaussianSplatKSplatTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
 	if h.gaussianSplatKSplatTaskSvc == nil {
 		return 0, "", errors.New("gaussian splat KSplat task service is not initialized")
 	}
@@ -758,14 +764,14 @@ func (h *QuickViewHandler) createAndExecuteGaussianSplatKSplatTask(ctx context.C
 	if err := h.gaussianSplatKSplatTaskSvc.Create(ctx, &task); err != nil {
 		return 0, "", err
 	}
-	executionID, err := h.gaussianSplatKSplatTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, confirmExistingResult)
+	executionID, err := h.gaussianSplatKSplatTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
 	if err != nil {
 		return task.ID, "", err
 	}
 	return task.ID, executionID, nil
 }
 
-func (h *QuickViewHandler) createAndExecutePointCloudCOPCTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, confirmExistingResult bool) (uint, string, error) {
+func (h *QuickViewHandler) createAndExecutePointCloudCOPCTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
 	if h.pointCloudCOPCTaskSvc == nil {
 		return 0, "", errors.New("point cloud COPC task service is not initialized")
 	}
@@ -783,14 +789,14 @@ func (h *QuickViewHandler) createAndExecutePointCloudCOPCTask(ctx context.Contex
 	if err := h.pointCloudCOPCTaskSvc.Create(ctx, &task); err != nil {
 		return 0, "", err
 	}
-	executionID, err := h.pointCloudCOPCTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, confirmExistingResult)
+	executionID, err := h.pointCloudCOPCTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
 	if err != nil {
 		return task.ID, "", err
 	}
 	return task.ID, executionID, nil
 }
 
-func (h *QuickViewHandler) createAndExecuteCADPreviewTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, confirmExistingResult bool) (uint, string, error) {
+func (h *QuickViewHandler) createAndExecuteCADPreviewTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
 	if h.cadPreviewTaskSvc == nil {
 		return 0, "", errors.New("CAD preview task service is not initialized")
 	}
@@ -808,7 +814,7 @@ func (h *QuickViewHandler) createAndExecuteCADPreviewTask(ctx context.Context, u
 	if err := h.cadPreviewTaskSvc.Create(ctx, &task); err != nil {
 		return 0, "", err
 	}
-	executionID, err := h.cadPreviewTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, confirmExistingResult)
+	executionID, err := h.cadPreviewTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
 	if err != nil {
 		return task.ID, "", err
 	}
@@ -844,7 +850,7 @@ func cadPreviewTaskConfigFromQuickView(capability *service.QuickViewCapability, 
 	}, nil
 }
 
-func (h *QuickViewHandler) createAndExecuteTileCacheTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, confirmExistingResult bool) (uint, string, error) {
+func (h *QuickViewHandler) createAndExecuteTileCacheTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
 	if h.tileCacheTaskSvc == nil {
 		return 0, "", errors.New("vector tile cache task service is not initialized")
 	}
@@ -862,7 +868,7 @@ func (h *QuickViewHandler) createAndExecuteTileCacheTask(ctx context.Context, us
 	if err := h.tileCacheTaskSvc.Create(ctx, &task); err != nil {
 		return 0, "", err
 	}
-	executionID, err := h.tileCacheTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, confirmExistingResult)
+	executionID, err := h.tileCacheTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
 	if err != nil {
 		return task.ID, "", err
 	}

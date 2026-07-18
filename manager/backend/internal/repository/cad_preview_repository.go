@@ -57,13 +57,13 @@ func (r *CADPreviewRepository) ListTasks(ctx context.Context, tenantID uint, pag
 }
 
 func (r *CADPreviewRepository) ClaimExecution(
-	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, confirmExistingResult bool,
+	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool,
 ) (*models.CADPreviewTask, error) {
 	var task models.CADPreviewTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
 		TaskModel: &task, TaskType: commonExecution.TaskTypeCADPreviewGeneration, TaskLabel: "CAD preview",
 		TaskName: func() string { return task.Name }, TaskConfig: func() commonModels.JSONMap { return task.Config },
-		CurrentResultModel: &models.CADPreview{}, ConfirmExistingResult: confirmExistingResult,
+		CurrentResultModel: &models.CADPreview{}, OverwriteExistingResult: overwriteExistingResult,
 	})
 	if err != nil {
 		return nil, err

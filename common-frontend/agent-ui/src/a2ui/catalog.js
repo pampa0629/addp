@@ -9,6 +9,7 @@ import TablePreview from './components/TablePreview.vue'
 import WorkflowDag from './components/WorkflowDag.vue'
 
 export const ADDP_A2UI_CATALOG_ID = 'addp.catalog/v1'
+const A2UI_COMPONENT_MAX_BYTES = 500 * 1024
 
 const WorkflowDagApi = {
   name: 'WorkflowDag',
@@ -135,6 +136,9 @@ export function validateCatalogComponent(catalog, component) {
   const result = implementation.schema.safeParse(component.properties)
   if (!result.success) {
     throw new Error(`A2UI component validation failed: ${component.type}: ${result.error.message}`)
+  }
+  if (new TextEncoder().encode(JSON.stringify(component.properties)).length > A2UI_COMPONENT_MAX_BYTES) {
+    throw new Error(`A2UI component validation failed: ${component.type}: component exceeds ${A2UI_COMPONENT_MAX_BYTES} bytes`)
   }
 }
 

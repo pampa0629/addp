@@ -358,6 +358,16 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 	if err := db.AutoMigrate(&models.TileCacheTask{}, &models.TileCache{}, &models.PreviewState{}); err != nil {
 		return err
 	}
+	if err := db.Exec(`
+		UPDATE manager.vector_tile_cache_tasks
+		SET schedule = '', next_run_at = NULL
+		WHERE COALESCE(schedule, '') <> '' OR next_run_at IS NOT NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_vector_tile_cache_tasks_schedule`).Error; err != nil {
+		return err
+	}
 	if err := normalizePreviewStateViewState(db); err != nil {
 		return err
 	}

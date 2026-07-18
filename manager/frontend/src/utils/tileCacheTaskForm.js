@@ -3,7 +3,6 @@ export function createDefaultTileCacheTaskForm() {
     name: '',
     description: '',
     enabled: true,
-    schedule: '',
     config: {
       target: { item_id: undefined, item_fingerprint: '', locator: '', source_engine_id: undefined, source_kind: '', full_name: '', schema: '', table: '' },
       tile: {
@@ -29,7 +28,6 @@ export function createTileCacheTaskFormFromTask(task = null) {
   next.name = task.name || ''
   next.description = task.description || ''
   next.enabled = task.enabled !== false
-  next.schedule = task.schedule || ''
   next.config = {
     ...next.config,
     ...(task.config || {}),
@@ -45,7 +43,6 @@ export function createTileCacheTaskPayload(form) {
   const payload = JSON.parse(JSON.stringify(form))
   payload.name = String(payload.name || '').trim()
   payload.description = String(payload.description || '').trim()
-  payload.schedule = String(payload.schedule || '').trim()
   payload.config.tile.format = 'mvt'
   payload.config.tile.target_srid = 3857
   if (!payload.config.target.item_id) {

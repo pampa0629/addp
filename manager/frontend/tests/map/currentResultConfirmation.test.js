@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   executeWithCurrentResultConfirmation,
   requiresCurrentResultConfirmation,
-  toQuickViewConfirmationPayload
+  toQuickViewExistingResultPayload
 } from '../../src/utils/currentResultConfirmation.js'
 
 describe('current result confirmation', () => {
   it('retries once with the canonical execution parameter after confirmation', async () => {
-    const error = { response: { status: 409, data: { code: 'existing_result_confirmation_required' } } }
+    const error = { response: { status: 409, data: { code: 'existing_result_action_required' } } }
     const execute = vi.fn()
       .mockRejectedValueOnce(error)
       .mockResolvedValueOnce({ execution_id: 'exec-2' })
@@ -15,7 +15,7 @@ describe('current result confirmation', () => {
 
     await expect(executeWithCurrentResultConfirmation(execute, confirm)).resolves.toEqual({ execution_id: 'exec-2' })
     expect(execute).toHaveBeenNthCalledWith(1, {})
-    expect(execute).toHaveBeenNthCalledWith(2, { parameters: { confirm_existing_result: true } })
+    expect(execute).toHaveBeenNthCalledWith(2, { parameters: { existing_result_action: 'overwrite' } })
     expect(confirm).toHaveBeenCalledTimes(1)
   })
 
@@ -26,8 +26,8 @@ describe('current result confirmation', () => {
   })
 
   it('maps the standard execution parameter to the quick-view action DTO', () => {
-    expect(toQuickViewConfirmationPayload({})).toEqual({ confirm_existing_result: false })
-    expect(toQuickViewConfirmationPayload({ parameters: { confirm_existing_result: true } }))
-      .toEqual({ confirm_existing_result: true })
+    expect(toQuickViewExistingResultPayload({})).toEqual({})
+    expect(toQuickViewExistingResultPayload({ parameters: { existing_result_action: 'overwrite' } }))
+      .toEqual({ existing_result_action: 'overwrite' })
   })
 })

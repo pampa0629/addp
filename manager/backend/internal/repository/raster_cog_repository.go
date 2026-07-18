@@ -83,7 +83,7 @@ func (r *RasterCOGRepository) DeleteTask(ctx context.Context, id uint, tenantID 
 }
 
 func (r *RasterCOGRepository) ClaimExecution(
-	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, confirmExistingResult bool,
+	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool,
 ) (*models.RasterCOGTask, error) {
 	var task models.RasterCOGTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
@@ -94,8 +94,8 @@ func (r *RasterCOGRepository) ClaimExecution(
 		TaskConfig: func() commonModels.JSONMap {
 			return task.Config
 		},
-		CurrentResultModel:    &models.RasterCOG{},
-		ConfirmExistingResult: confirmExistingResult,
+		CurrentResultModel:      &models.RasterCOG{},
+		OverwriteExistingResult: overwriteExistingResult,
 	})
 	if err != nil {
 		return nil, err

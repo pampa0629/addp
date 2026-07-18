@@ -866,6 +866,73 @@ func TestIntegrationPostgresManagerManagedTaskSemanticIdentityIndexes(t *testing
 	}
 }
 
+func TestIntegrationPostgresManagerDisablesTileCacheOwnerSchedule(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	db, err := gorm.Open(postgres.Open(managerTileCacheRepositoryIntegrationDSN()), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open PostgreSQL: %v", err)
+	}
+	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS manager").Error; err != nil {
+		t.Fatalf("create manager schema: %v", err)
+	}
+	if err := commonExecution.EnsureStore(db); err != nil {
+		t.Fatalf("ensure common execution store: %v", err)
+	}
+	if err := ensureTileCacheStateSchema(db); err != nil {
+		t.Fatalf("ensure initial tile cache schema: %v", err)
+	}
+
+	tenantID := uint(time.Now().UnixNano()%100000000 + 940000000)
+	nextRunAt := time.Now().Add(time.Hour)
+	task := &models.TileCacheTask{
+		TenantID:  tenantID,
+		Name:      "legacy scheduled tile cache",
+		Enabled:   true,
+		Schedule:  "0 * * * *",
+		NextRunAt: &nextRunAt,
+		Config: commonModels.JSONMap{
+			"target": commonModels.JSONMap{"item_fingerprint": fmt.Sprintf("manager-schedule-%d", tenantID)},
+			"tile":   commonModels.JSONMap{"format": "mvt"},
+		},
+	}
+	t.Cleanup(func() {
+		_ = db.Unscoped().Where("tenant_id = ?", tenantID).Delete(&models.TileCacheTask{}).Error
+	})
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("create historical scheduled tile cache task: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_vector_tile_cache_tasks_schedule
+		ON manager.vector_tile_cache_tasks (enabled, next_run_at)
+	`).Error; err != nil {
+		t.Fatalf("create historical schedule index: %v", err)
+	}
+
+	if err := ensureTileCacheStateSchema(db); err != nil {
+		t.Fatalf("normalize tile cache schedule state: %v", err)
+	}
+	var refreshed models.TileCacheTask
+	if err := db.Unscoped().First(&refreshed, task.ID).Error; err != nil {
+		t.Fatalf("reload normalized tile cache task: %v", err)
+	}
+	if refreshed.Schedule != "" || refreshed.NextRunAt != nil {
+		t.Fatalf("normalized schedule=%q next_run_at=%v, want empty and nil", refreshed.Schedule, refreshed.NextRunAt)
+	}
+	var scheduleIndexCount int64
+	if err := db.Raw(`
+		SELECT COUNT(*)
+		FROM pg_indexes
+		WHERE schemaname = 'manager' AND indexname = 'idx_vector_tile_cache_tasks_schedule'
+	`).Scan(&scheduleIndexCount).Error; err != nil {
+		t.Fatalf("count tile cache schedule index: %v", err)
+	}
+	if scheduleIndexCount != 0 {
+		t.Fatalf("tile cache schedule index count = %d, want 0", scheduleIndexCount)
+	}
+}
+
 func managerTileCacheRepositoryIntegrationDSN() string {
 	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		managerTileCacheRepositoryIntegrationEnv("ADDP_TEST_POSTGRES_HOST", "localhost"),

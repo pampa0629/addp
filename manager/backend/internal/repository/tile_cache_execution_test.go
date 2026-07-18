@@ -117,7 +117,7 @@ func TestTileCacheExecutionRequiresConfirmationForCurrentResult(t *testing.T) {
 	}
 
 	unconfirmed := newTileCacheRepositoryTestExecution("manager-tile-confirmation-required", int(task.TenantID), time.Now())
-	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, unconfirmed, false); !errors.Is(err, ErrExistingResultConfirmationRequired) {
+	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, unconfirmed, false); !errors.Is(err, ErrExistingResultActionRequired) {
 		t.Fatalf("unconfirmed ClaimExecution error = %v", err)
 	}
 	var executionCount int64
@@ -784,7 +784,7 @@ func TestModel3DTilesExecutionRequiresConfirmationAndFencesResult(t *testing.T) 
 		t.Fatalf("count executions before rejected refresh: %v", err)
 	}
 	unconfirmed := newManagerRepositoryTestExecution("manager-model3d-tiles-unconfirmed", 20, commonExecution.TaskTypeModel3DTilesGeneration, completedAt)
-	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, unconfirmed, false); !errors.Is(err, ErrExistingResultConfirmationRequired) {
+	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, unconfirmed, false); !errors.Is(err, ErrExistingResultActionRequired) {
 		t.Fatalf("unconfirmed ClaimExecution error = %v", err)
 	}
 	var countAfter int64

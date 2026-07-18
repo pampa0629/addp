@@ -176,7 +176,7 @@ func (s *Model3DTilesTaskService) reuseExistingTask(ctx context.Context, task *m
 
 func (s *Model3DTilesTaskService) Execute(
 	ctx context.Context, taskID uint, tenantID uint, triggerType string, source string,
-	parentExecutionID *string, confirmExistingResult bool,
+	parentExecutionID *string, overwriteExistingResult bool,
 ) (string, error) {
 	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
@@ -204,10 +204,10 @@ func (s *Model3DTilesTaskService) Execute(
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec, confirmExistingResult)
+	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
 	if err != nil {
-		if errors.Is(err, repository.ErrExistingResultConfirmationRequired) {
-			return "", ErrExistingResultConfirmationRequired
+		if errors.Is(err, repository.ErrExistingResultActionRequired) {
+			return "", ErrExistingResultActionRequired
 		}
 		if errors.Is(err, commonAPI.ErrNotFound) {
 			return "", ErrTaskNotFound

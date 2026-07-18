@@ -15,7 +15,6 @@ import (
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
-	commonScheduler "github.com/addp/common/scheduler"
 	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/mvt"
@@ -24,7 +23,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const tileCacheTaskSchedulePollInterval = time.Minute
 const tileCacheProgressUpdateMinInterval = 2 * time.Second
 
 type TileCacheGenerator interface {
@@ -430,8 +428,8 @@ func (s *TileCacheTaskService) reuseExistingTask(ctx context.Context, task, exis
 	existing.Name = task.Name
 	existing.Description = task.Description
 	existing.Enabled = task.Enabled
-	existing.Schedule = task.Schedule
-	existing.NextRunAt = task.NextRunAt
+	existing.Schedule = ""
+	existing.NextRunAt = nil
 	existing.Config = task.Config.Clone()
 	if existing.CreatedBy == nil {
 		existing.CreatedBy = task.CreatedBy
@@ -497,7 +495,7 @@ func (s *TileCacheTaskService) DeleteTileCache(ctx context.Context, id uint, ten
 	return nil
 }
 
-func (s *TileCacheTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, confirmExistingResult bool) (string, error) {
+func (s *TileCacheTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, overwriteExistingResult bool) (string, error) {
 	if s.taskExecRepo == nil {
 		return "", errors.New("task execution repository is required")
 	}
@@ -524,10 +522,10 @@ func (s *TileCacheTaskService) Execute(ctx context.Context, taskID uint, tenantI
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	claimedTask, err := s.tileCacheRepo.ClaimExecution(ctx, taskID, tenantID, exec, confirmExistingResult)
+	claimedTask, err := s.tileCacheRepo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
 	if err != nil {
-		if errors.Is(err, repository.ErrExistingResultConfirmationRequired) {
-			return "", ErrExistingResultConfirmationRequired
+		if errors.Is(err, repository.ErrExistingResultActionRequired) {
+			return "", ErrExistingResultActionRequired
 		}
 		if errors.Is(err, commonAPI.ErrNotFound) {
 			return "", ErrTaskNotFound
@@ -1138,25 +1136,15 @@ func normalizeTileCacheTask(task *models.TileCacheTask) error {
 	if len(task.Config) == 0 {
 		return errors.New("tile cache task config is required")
 	}
+	if task.Schedule != "" || task.NextRunAt != nil {
+		return errors.New("vector tile cache generation task does not support schedule")
+	}
 	if _, ok := task.Config["preparation"]; ok {
 		return errors.New("tile cache task config.preparation has been removed; create a vector_materialized_view_generation task instead")
 	}
 	if _, err := normalizeTileCacheTaskTarget(task.Config); err != nil {
 		return err
 	}
-	if task.Schedule == "" {
-		task.NextRunAt = nil
-		return nil
-	}
-	builder := commonScheduler.NewExpressionBuilder()
-	if err := builder.Validate(task.Schedule); err != nil {
-		return fmt.Errorf("invalid tile cache task schedule: %w", err)
-	}
-	nextRunAt, err := builder.NextRunTime(task.Schedule, tileCacheScheduleNow())
-	if err != nil {
-		return fmt.Errorf("calculate tile cache task next_run_at: %w", err)
-	}
-	task.NextRunAt = &nextRunAt
 	return nil
 }
 
@@ -1412,8 +1400,4 @@ func floatSliceFromConfig(value interface{}) ([]float64, bool) {
 	default:
 		return nil, false
 	}
-}
-
-func tileCacheScheduleNow() time.Time {
-	return time.Now()
 }

@@ -53,7 +53,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"description":               "为空间数据项生成可复用的瓦片缓存结果",
 				"definition_schema":         map[string]interface{}{"type": "object"},
 				"execution_schema":          managerCurrentResultExecutionSchema(),
-				"supports_schedule":         true,
+				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
 				"create_url":                "/manager/spatial-quick-view/vector-tile-cache?tab=tasks",
@@ -213,7 +213,10 @@ func managerCurrentResultExecutionSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"confirm_existing_result": map[string]interface{}{"type": "boolean"},
+			"existing_result_action": map[string]interface{}{
+				"type": "string",
+				"enum": []string{"overwrite"},
+			},
 		},
 		"additionalProperties": false,
 	}

@@ -289,18 +289,18 @@ func TestExecuteWithTaskProviderPassesTenantHeader(t *testing.T) {
 	assert.Equal(t, "7", statusTenantHeader)
 }
 
-func TestExecuteWithTaskProviderDoesNotForwardOwnerScheduleFields(t *testing.T) {
+func TestExecuteWithTaskProviderForwardsScheduledExistingResultActionWithoutOwnerScheduleFields(t *testing.T) {
 	var executePayload map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/v1/transfer/tasks/sync/42/execute":
+		case "/api/v1/manager/tasks/vector_tile_cache_generation/42/execute":
 			if err := json.NewDecoder(r.Body).Decode(&executePayload); err != nil {
 				t.Fatalf("decode execute payload: %v", err)
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
 			_ = json.NewEncoder(w).Encode(map[string]string{"execution_id": "child-exec"})
-		case "/api/v1/transfer/executions/child-exec":
+		case "/api/v1/manager/executions/child-exec":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"execution_id": "child-exec",
@@ -315,12 +315,16 @@ func TestExecuteWithTaskProviderDoesNotForwardOwnerScheduleFields(t *testing.T) 
 	executor := &Executor{
 		taskProviderRegistry: &TaskProviderRegistry{
 			providers: map[string]*commonModels.TaskProvider{
-				"transfer": {
-					ModuleName:          "transfer",
+				"manager": {
+					ModuleName:          "manager",
 					BaseURL:             server.URL,
-					TaskExecuteEndpoint: "/api/v1/transfer/tasks/{task_type}/{id}/execute",
-					TaskStatusEndpoint:  "/api/v1/transfer/executions/{execution_id}",
-					Capabilities:        jsonStringPtr(taskCapabilitiesForTest("sync", false, `{"type":"object"}`)),
+					TaskExecuteEndpoint: "/api/v1/manager/tasks/{task_type}/{id}/execute",
+					TaskStatusEndpoint:  "/api/v1/manager/executions/{execution_id}",
+					Capabilities: jsonStringPtr(taskCapabilitiesForTest(
+						"vector_tile_cache_generation",
+						false,
+						`{"type":"object","properties":{"existing_result_action":{"type":"string","enum":["overwrite"]}},"additionalProperties":false}`,
+					)),
 				},
 			},
 			cacheTTL:    time.Hour,
@@ -330,8 +334,8 @@ func TestExecuteWithTaskProviderDoesNotForwardOwnerScheduleFields(t *testing.T) 
 
 	result, err := executor.executeWithTaskProvider(
 		context.Background(),
-		&models.Step{Provider: "transfer", TaskType: "sync", TaskID: 42, Timeout: 10},
-		map[string]interface{}{"batch_size": float64(1000)},
+		&models.Step{Provider: "manager", TaskType: "vector_tile_cache_generation", TaskID: 42, Timeout: 10},
+		map[string]interface{}{"existing_result_action": "overwrite"},
 		time.Now(),
 		"parent-exec",
 		"scheduled",
@@ -343,6 +347,7 @@ func TestExecuteWithTaskProviderDoesNotForwardOwnerScheduleFields(t *testing.T) 
 	assert.Equal(t, "scheduled", executePayload["trigger_type"])
 	assert.Equal(t, "orchestrator", executePayload["source"])
 	assert.Equal(t, "parent-exec", executePayload["parent_execution_id"])
+	assert.Equal(t, map[string]interface{}{"existing_result_action": "overwrite"}, executePayload["parameters"])
 	assert.NotContains(t, executePayload, "schedule")
 	assert.NotContains(t, executePayload, "enabled")
 	assert.NotContains(t, executePayload, "next_run_at")

@@ -3,6 +3,8 @@ import unittest
 
 from services.runs import (
     ERROR_MESSAGE_MAX_LENGTH,
+    STEP_FACTS_MAX_BYTES,
+    attach_step_facts,
     complete_run_step,
     resume_agent_run,
     retry_agent_run,
@@ -212,6 +214,28 @@ class AgentRunLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(step.error_message), ERROR_MESSAGE_MAX_LENGTH)
         self.assertEqual(db.flush_count, 1)
+
+    async def test_step_facts_reject_total_payload_over_byte_limit(self):
+        from models.run_step import AgentRunStep
+
+        step = AgentRunStep(
+            agent_run_id=__import__("uuid").uuid4(),
+            sequence=1,
+            step_type="tool_call",
+            status="running",
+            protocol_invocation_id="initial-1",
+        )
+        step.id = __import__("uuid").uuid4()
+        db = _EntityDB(step)
+
+        with self.assertRaisesRegex(ValueError, "step facts exceed"):
+            await attach_step_facts(
+                db,
+                step_id=step.id,
+                facts={"resources": [{"name": "x" * STEP_FACTS_MAX_BYTES}]},
+            )
+
+        self.assertEqual(db.flush_count, 0)
 
 
 if __name__ == "__main__":

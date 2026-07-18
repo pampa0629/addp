@@ -10,6 +10,7 @@ TABLE_MAX_ROWS = 100
 MAP_MAX_FEATURES = 200
 MAP_MAX_COORDINATE_VALUES = 5000
 PRESENTATION_STRING_MAX_LENGTH = 2000
+A2UI_SURFACE_MAX_BYTES = 500 * 1024
 _GEOJSON_GEOMETRY_TYPES = {
     "Point",
     "MultiPoint",
@@ -21,7 +22,7 @@ _GEOJSON_GEOMETRY_TYPES = {
 
 
 def _surface(surface_id: str, component: dict[str, Any]) -> list[dict[str, Any]]:
-    return [
+    operations = [
         {
             "version": A2UI_VERSION,
             "createSurface": {"surfaceId": surface_id, "catalogId": CATALOG_ID},
@@ -34,6 +35,10 @@ def _surface(surface_id: str, component: dict[str, Any]) -> list[dict[str, Any]]
             },
         },
     ]
+    encoded = json.dumps(operations, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(encoded) > A2UI_SURFACE_MAX_BYTES:
+        raise ValueError(f"A2UI surface exceeds {A2UI_SURFACE_MAX_BYTES} bytes")
+    return operations
 
 
 def workflow_dag_surface(surface_id: str, workflow: dict[str, Any]) -> list[dict[str, Any]]:

@@ -94,7 +94,7 @@
 | parent execution id | 父执行 ID | 当前 execution 的父级 execution UUID。 | 用于 Orchestrator 子步骤追踪父编排。 |
 | ad-hoc execution | 一次性执行 | 不依赖持久任务定义、直接按本次配置创建的 execution。 | 可以没有 `source_task_id`，但必须在 `execution_config` 保存完整执行配置。 |
 | artifact state | 产物状态 | 描述派生产物当前是否可用、在哪里、由什么配置生成的状态对象。 | 例如瓦片缓存产物、embedding vectors；不是 execution。 |
-| current result overwrite confirmation | 当前结果覆盖确认 | owner 模块在重复执行将刷新自己拥有生命周期的当前结果前，要求调用方对本次覆盖进行显式授权。 | 请求参数为 `parameters.confirm_existing_result=true`；只授权本次 execution，不改写任务定义。没有当前结果时不要求确认；业务派生数据不适用。 |
+| existing result action | 已有结果动作 | 调用方在执行会刷新 owner 受管当前结果时显式声明的动作；当前只允许 `overwrite`。 | TaskProvider 请求参数为 `parameters.existing_result_action=overwrite`。前端人工执行时先二次确认再提交；Orchestrator 可将该动作保存为 Step 参数并在定时 Pipeline 中逐次提交。没有当前结果时可省略；业务派生数据不适用。 |
 | quick view task | 快显任务 | 为源 data item 生成 Manager 受管快显结果的任务定义。 | 任务归 Manager 私有表；重型转换由对应 Workflow Runtime direct 算子执行。 |
 | quick view result | 快显结果 | Manager 为提升交互预览效率而生成并维护生命周期的 infra artifact。 | 不是业务 data item，不进入 Meta；同一源 item 可以按目标格式关联多个独立结果。 |
 | derived data | 派生数据 | 通过计算或转换从源 data item 生成、写入业务存储并形成独立 Meta item 的数据。 | Develop 工作流输出属于派生数据；Manager infra 快显结果不属于派生 data item。 |
@@ -210,7 +210,7 @@
 | preview state | 预览状态 | Manager 中记录某个 data item 的用户预览模式偏好和交互视角状态。 | 目标落点为 `manager.preview_state`；不依赖快显产物是否存在。快显能力、推荐结果和不可用原因由能力 API 动态合成。 |
 | tile cache | 瓦片缓存 | 面向地图浏览生成并保存的一组瓦片数据。 | 格式可以是 MVT、栅格瓦片、预渲染图片瓦片或后续扩展格式。 |
 | tile cache result | 瓦片缓存结果 | 某个 data item 生成后的瓦片缓存结果状态。 | 目标落点为 `manager.vector_tile_cache`；属于结果状态，不是 execution。 |
-| tile cache generation task | 瓦片缓存生成任务 | Manager 中可执行、可调度、可编排的瓦片缓存生成任务定义。 | 后续目标落点为 `manager.vector_tile_cache_tasks`，TaskProvider `task_type=vector_tile_cache_generation`。 |
+| tile cache generation task | 瓦片缓存生成任务 | Manager 中可执行、可编排的瓦片缓存生成任务定义；当前不支持任务自身定时调度。 | 目标落点为 `manager.vector_tile_cache_tasks`，TaskProvider `task_type=vector_tile_cache_generation`。周期性刷新只能由显式携带本次覆盖确认的 Orchestrator 编排触发。 |
 | storage ref | 存储引用 | 指向外部或内部存储位置的稳定引用。 | 上层逻辑消费存储引用，不应硬编码 bucket、prefix 或对象路径规则。 |
 | contentio.Ref | 内容引用 | 一个已确定 content 的定位器，不携带凭据。 | 需要多个 content 时使用 refs 数组。 |
 | contentio.Reader | 内容读取器 | 按内容引用打开单个 content 并读取轻量状态的统一抽象。 | 由编排层基于 engine capability 构造。 |

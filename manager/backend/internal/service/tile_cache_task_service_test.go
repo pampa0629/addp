@@ -18,75 +18,22 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestTileCacheTaskSchedulerClaimsDueTaskAndCreatesScheduledExecution(t *testing.T) {
-	db := newTileCacheTaskServiceTestDB(t)
-	tileCacheRepo := repository.NewTileCacheRepository(db)
-	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
-	taskSvc := NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
-	scheduler := NewTileCacheTaskScheduler(taskSvc)
-
-	task := newTileCacheTaskDefinition()
-	task.Schedule = "* * * * *"
-	dueAt := time.Now().Add(-time.Minute)
-	task.NextRunAt = &dueAt
-	if err := taskSvc.Create(context.Background(), task); err != nil {
-		t.Fatalf("create tile cache task: %v", err)
-	}
-	task.NextRunAt = &dueAt
-	if err := tileCacheRepo.UpdateTask(context.Background(), task); err != nil {
-		t.Fatalf("mark tile cache task due: %v", err)
-	}
-
-	scheduler.runDueScheduledTasks(context.Background())
-
-	var executions []*commonExecution.TaskExecution
-	if err := db.Where("module = ? AND task_type = ?", commonExecution.ModuleManager, commonExecution.TaskTypeVectorTileCacheGeneration).Find(&executions).Error; err != nil {
-		t.Fatalf("list executions: %v", err)
-	}
-	if len(executions) != 1 {
-		t.Fatalf("execution count = %d, want 1", len(executions))
-	}
-	exec := waitForTileCacheTaskExecution(t, taskExecRepo, executions[0].ExecutionID, int(task.TenantID))
-	if exec.TriggerType != commonExecution.TriggerTypeScheduled {
-		t.Fatalf("trigger_type = %s, want scheduled", exec.TriggerType)
-	}
-	if exec.Status != commonExecution.ExecutionStatusFailed {
-		t.Fatalf("status = %s, want failed because tile generator is unavailable", exec.Status)
-	}
-
-	refreshed, err := tileCacheRepo.GetTask(context.Background(), task.ID, task.TenantID)
-	if err != nil {
-		t.Fatalf("load task: %v", err)
-	}
-	if refreshed.NextRunAt == nil || !refreshed.NextRunAt.After(dueAt) {
-		t.Fatalf("next_run_at = %#v, want after %s", refreshed.NextRunAt, dueAt)
-	}
-	if refreshed.LastExecutionID == nil || *refreshed.LastExecutionID != exec.ExecutionID {
-		t.Fatalf("last_execution_id = %#v, want %s", refreshed.LastExecutionID, exec.ExecutionID)
-	}
-	if refreshed.LastExecutionStatus == nil || *refreshed.LastExecutionStatus != commonExecution.ExecutionStatusFailed {
-		t.Fatalf("last_execution_status = %#v, want failed", refreshed.LastExecutionStatus)
-	}
-}
-
-func TestTileCacheTaskCreateValidatesScheduleAndSetsNextRun(t *testing.T) {
+func TestTileCacheTaskCreateRejectsSchedule(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
 	taskSvc := NewTileCacheTaskService(tileCacheRepo, nil)
 
-	task := newTileCacheTaskDefinition()
-	task.Schedule = "* * * * *"
-	if err := taskSvc.Create(context.Background(), task); err != nil {
-		t.Fatalf("create scheduled tile cache task: %v", err)
-	}
-	if task.NextRunAt == nil {
-		t.Fatal("next_run_at is nil, want calculated next run")
+	scheduled := newTileCacheTaskDefinition()
+	scheduled.Schedule = "* * * * *"
+	if err := taskSvc.Create(context.Background(), scheduled); err == nil || !strings.Contains(err.Error(), "does not support schedule") {
+		t.Fatalf("create scheduled tile cache task error = %v, want schedule rejection", err)
 	}
 
-	invalid := newTileCacheTaskDefinition()
-	invalid.Schedule = "not a cron"
-	if err := taskSvc.Create(context.Background(), invalid); err == nil {
-		t.Fatal("create invalid scheduled tile cache task succeeded, want error")
+	nextRun := newTileCacheTaskDefinition()
+	nextRunAt := time.Now().Add(time.Hour)
+	nextRun.NextRunAt = &nextRunAt
+	if err := taskSvc.Create(context.Background(), nextRun); err == nil || !strings.Contains(err.Error(), "does not support schedule") {
+		t.Fatalf("create tile cache task with next_run_at error = %v, want schedule rejection", err)
 	}
 }
 

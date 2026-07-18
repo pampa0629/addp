@@ -479,7 +479,7 @@ import client from '@/api/client'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import { quickViewAPI } from '@/api/quickView'
 import { useCurrentResultConfirmation } from '@/composables/useCurrentResultConfirmation'
-import { toQuickViewConfirmationPayload } from '@/utils/currentResultConfirmation'
+import { toQuickViewExistingResultPayload } from '@/utils/currentResultConfirmation'
 import ExportDialog from '@/components/explorer/ExportDialog.vue'
 import FlatGeobufQuickView from '@/components/map/FlatGeobufQuickView.vue'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
@@ -539,7 +539,7 @@ const router = useRouter()
 const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
 
 const executeConfirmedQuickViewAction = (locator, action) => executeWithCurrentResultConfirmation(payload => (
-  quickViewAPI.executeQuickViewAction(locator, action, toQuickViewConfirmationPayload(payload))
+  quickViewAPI.executeQuickViewAction(locator, action, toQuickViewExistingResultPayload(payload))
 ))
 
 const props = defineProps({
