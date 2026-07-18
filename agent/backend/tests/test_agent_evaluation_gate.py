@@ -1,7 +1,9 @@
+import hashlib
 import json
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -15,8 +17,11 @@ from gate import GateFailure, build_report  # noqa: E402
 class AgentEvaluationGateTests(unittest.TestCase):
     def test_offline_contract_gate_discovers_all_scenarios(self):
         report = build_report(EVAL_ROOT)
-        self.assertEqual(report["schema"], "addp.agent-evaluation-gate/v1")
+        self.assertEqual(report["schema"], "addp.agent-evaluation-gate/v2")
         self.assertEqual(report["status"], "passed")
+        self.assertEqual(set(report["source"]), {"revision", "worktree_dirty"})
+        self.assertEqual(len(report["source"]["revision"]), 40)
+        self.assertIsInstance(report["source"]["worktree_dirty"], bool)
         self.assertEqual(
             [entry["name"] for entry in report["scenarios"]],
             [
@@ -28,7 +33,13 @@ class AgentEvaluationGateTests(unittest.TestCase):
         )
         self.assertTrue(all(entry["offline"] == "passed" for entry in report["scenarios"]))
         self.assertTrue(all(entry["online"] == "not_provided" for entry in report["scenarios"]))
-        self.assertEqual(report["checks"], [{"name": "scenario_contracts", "status": "passed", "count": 4}])
+        self.assertTrue(all(entry["online_evidence"] is None for entry in report["scenarios"]))
+        self.assertTrue(all(len(entry["contract_sha256"]) == 64 for entry in report["scenarios"]))
+        self.assertEqual(
+            {key: value for key, value in report["checks"][0].items() if key != "duration_ms"},
+            {"name": "scenario_contracts", "status": "passed", "count": 4},
+        )
+        self.assertGreaterEqual(report["checks"][0]["duration_ms"], 0)
 
     def test_require_online_rejects_missing_golden_evidence(self):
         report = build_report(EVAL_ROOT, require_online=True)
@@ -37,6 +48,18 @@ class AgentEvaluationGateTests(unittest.TestCase):
             [entry["online"] for entry in report["scenarios"] if entry["name"] in {"read-only-query", "approval-execution", "rejection-and-forbidden"}],
             ["missing", "missing", "missing"],
         )
+
+    def test_require_online_rejects_missing_golden_scenario_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            scenario_root = Path(directory)
+            for name in ("approval-execution", "railway-farmland-area", "read-only-query"):
+                (scenario_root / name).symlink_to(EVAL_ROOT / name, target_is_directory=True)
+            report = build_report(scenario_root, require_online=True)
+            self.assertEqual(report["status"], "failed")
+            self.assertIn(
+                "rejection-and-forbidden.offline: 缺少黄金场景契约",
+                report["failures"],
+            )
 
     def test_online_evidence_path_must_stay_outside_repository(self):
         with self.assertRaises(GateFailure):
@@ -65,13 +88,97 @@ class AgentEvaluationGateTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            report = build_report(EVAL_ROOT, {"read-only-query": path})
+            report = build_report(
+                EVAL_ROOT,
+                {"read-only-query": path},
+                now=datetime(2026, 7, 18, 0, 0, tzinfo=timezone.utc),
+            )
             self.assertEqual(report["status"], "failed")
             self.assertEqual(
                 next(entry["online"] for entry in report["scenarios"] if entry["name"] == "read-only-query"),
                 "failed",
             )
             self.assertIn("禁止字段", report["failures"][0])
+
+    def test_online_evidence_rejects_stale_created_at(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_read_only_evidence(Path(directory), "2026-07-16T11:59:59Z")
+            report = build_report(
+                EVAL_ROOT,
+                {"read-only-query": path},
+                now=datetime(2026, 7, 17, 12, 0, tzinfo=timezone.utc),
+            )
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(
+                next(entry["online"] for entry in report["scenarios"] if entry["name"] == "read-only-query"),
+                "stale",
+            )
+
+    def test_online_evidence_adds_only_audit_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_read_only_evidence(Path(directory), "2026-07-17T12:00:00Z")
+            report = build_report(
+                EVAL_ROOT,
+                {"read-only-query": path},
+                now=datetime(2026, 7, 17, 12, 0, tzinfo=timezone.utc),
+            )
+            entry = next(entry for entry in report["scenarios"] if entry["name"] == "read-only-query")
+            self.assertEqual(
+                entry["online_evidence"],
+                {
+                    "created_at": "2026-07-17T12:00:00+00:00",
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                },
+            )
+            serialized = json.dumps(report)
+            for forbidden in ("approval_id", "request_fingerprint", "open_url", '"trace"', "agent_run_id"):
+                self.assertNotIn(forbidden, serialized)
+
+    def test_source_identity_is_strict(self):
+        with self.assertRaises(GateFailure):
+            build_report(
+                EVAL_ROOT,
+                source={"revision": "z" * 40, "worktree_dirty": False},
+            )
+
+    def test_online_evidence_rejects_future_created_at(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_read_only_evidence(Path(directory), "2026-07-17T12:05:01Z")
+            report = build_report(
+                EVAL_ROOT,
+                {"read-only-query": path},
+                now=datetime(2026, 7, 17, 12, 0, tzinfo=timezone.utc),
+            )
+            self.assertEqual(report["status"], "failed")
+            self.assertIn("未来时钟偏差", report["failures"][0])
+
+    def test_online_evidence_requires_timezone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_read_only_evidence(Path(directory), "2026-07-17T12:00:00")
+            report = build_report(
+                EVAL_ROOT,
+                {"read-only-query": path},
+                now=datetime(2026, 7, 17, 12, 0, tzinfo=timezone.utc),
+            )
+            self.assertEqual(report["status"], "failed")
+            self.assertIn("必须包含时区", report["failures"][0])
+
+    def _write_read_only_evidence(self, directory: Path, created_at: str) -> Path:
+        path = directory / "read-only.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "schema": "addp.agent-online-evidence/v1",
+                    "scenario": "read-only-query",
+                    "skill": "workflow-analysis",
+                    "created_at": created_at,
+                    "approval": None,
+                    "trace": {"skill": "workflow-analysis", "phases": []},
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
 
 
 if __name__ == "__main__":

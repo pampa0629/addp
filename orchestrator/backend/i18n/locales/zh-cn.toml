@@ -37,5 +37,143 @@ other = "模块 API 返回错误"
 [orchestrator.error.parse_response_failed]
 other = "解析响应失败"
 
+[orchestrator.error.invalid_orchestration_json]
+other = "请求体不是有效的编排定义"
+
+[orchestrator.error.tenant_context_required]
+other = "当前身份未绑定租户，无法访问编排资源"
+
+[orchestrator.error.unsupported_step_field]
+other = "编排步骤不支持字段 {{.Field}}"
+
+[orchestrator.error.steps_required]
+other = "编排至少需要一个步骤"
+
+[orchestrator.error.step_field_required]
+other = "第 {{.StepNumber}} 个步骤缺少{{.Field}}"
+
+[orchestrator.error.step_duplicate_id]
+other = "步骤 ID {{.StepID}} 重复"
+
+[orchestrator.error.step_dependency_empty]
+other = "第 {{.StepNumber}} 个步骤的依赖项不能为空"
+
+[orchestrator.error.step_dependency_unknown]
+other = "第 {{.StepNumber}} 个步骤依赖不存在的步骤 {{.Reference}}"
+
+[orchestrator.error.step_template_unknown]
+other = "第 {{.StepNumber}} 个步骤的执行参数引用了不存在的步骤 {{.Reference}}"
+
+[orchestrator.error.step_template_self_reference]
+other = "第 {{.StepNumber}} 个步骤不能在执行参数中引用自身"
+
+[orchestrator.error.step_template_missing_dependency]
+other = "第 {{.StepNumber}} 个步骤的执行参数引用了步骤 {{.Reference}}，但未将其声明为依赖"
+
+[orchestrator.error.step_circular_dependency]
+other = "编排步骤存在循环依赖：{{.StepID}}"
+
+[orchestrator.error.orchestration_reference_self]
+other = "编排 {{.OrchestrationID}} 不能引用自身"
+
+[orchestrator.error.orchestration_reference_cycle]
+other = "编排引用形成循环：{{.Path}}"
+
+[orchestrator.error.orchestration_reference_not_found]
+other = "引用的编排 {{.OrchestrationID}} 不存在"
+
+[orchestrator.error.orchestration_reference_validation_failed]
+other = "无法校验编排引用"
+
+[orchestrator.error.schedule_invalid]
+other = "调度表达式 {{.Expression}} 无效"
+
+[orchestrator.step_field.id]
+other = "步骤 ID"
+
+[orchestrator.step_field.name]
+other = "步骤名称"
+
+[orchestrator.step_field.provider]
+other = "任务提供者"
+
+[orchestrator.step_field.task_type]
+other = "任务类型"
+
+[orchestrator.step_field.task_id]
+other = "任务 ID"
+
+[orchestrator.error.step_task_missing_reference]
+other = "第 {{.StepNumber}} 个步骤必须指定任务提供者和任务类型"
+
+[orchestrator.error.step_task_provider_unavailable]
+other = "第 {{.StepNumber}} 个步骤引用的任务提供者 {{.Provider}} 不可用"
+
+[orchestrator.error.step_task_capabilities_invalid]
+other = "第 {{.StepNumber}} 个步骤引用的任务提供者 {{.Provider}} 能力声明无效"
+
+[orchestrator.error.step_task_type_undeclared]
+other = "第 {{.StepNumber}} 个步骤引用的任务类型 {{.TaskType}} 未由任务提供者 {{.Provider}} 声明"
+
+[orchestrator.error.step_task_type_deprecated]
+other = "第 {{.StepNumber}} 个步骤引用的任务类型 {{.TaskType}} 已停用"
+
+[orchestrator.error.step_parameter_schema_invalid]
+other = "第 {{.StepNumber}} 个步骤引用的任务类型能力声明无效"
+
+[orchestrator.error.step_parameter_invalid]
+other = "第 {{.StepNumber}} 个步骤的执行参数无效"
+
+[orchestrator.error.step_parameter_required]
+other = "第 {{.StepNumber}} 个步骤缺少必填执行参数 {{.Path}}"
+
+[orchestrator.error.step_parameter_enum]
+other = "第 {{.StepNumber}} 个步骤的执行参数 {{.Path}} 必须是以下值之一：{{.Allowed}}"
+
+[orchestrator.error.step_parameter_type]
+other = "第 {{.StepNumber}} 个步骤的执行参数 {{.Path}} 必须是{{.Expected}}"
+
+[orchestrator.error.step_parameter_additional]
+other = "第 {{.StepNumber}} 个步骤不允许执行参数 {{.Path}}"
+
+[orchestrator.error.step_parameter_minimum]
+other = "第 {{.StepNumber}} 个步骤的执行参数 {{.Path}} 不能小于 {{.Limit}}"
+
+[orchestrator.error.step_parameter_maximum]
+other = "第 {{.StepNumber}} 个步骤的执行参数 {{.Path}} 不能大于 {{.Limit}}"
+
+[orchestrator.error.step_parameter_min_items]
+other = "第 {{.StepNumber}} 个步骤的执行参数 {{.Path}} 至少需要 {{.Limit}} 项"
+
+[orchestrator.error.step_parameter_max_items]
+other = "第 {{.StepNumber}} 个步骤的执行参数 {{.Path}} 最多允许 {{.Limit}} 项"
+
+[orchestrator.error.step_parameter_min_length]
+other = "第 {{.StepNumber}} 个步骤的执行参数 {{.Path}} 至少需要 {{.Limit}} 个字符"
+
+[orchestrator.error.step_parameter_max_length]
+other = "第 {{.StepNumber}} 个步骤的执行参数 {{.Path}} 最多允许 {{.Limit}} 个字符"
+
+[orchestrator.parameter_type.object]
+other = "对象"
+
+[orchestrator.parameter_type.array]
+other = "数组"
+
+[orchestrator.parameter_type.string]
+other = "字符串"
+
+[orchestrator.parameter_type.number]
+other = "数值"
+
+[orchestrator.parameter_type.integer]
+other = "整数"
+
+[orchestrator.parameter_type.boolean]
+other = "布尔值"
+
+[orchestrator.parameter_type.null]
+other = "空值"
+
 [orchestrator.success.deleted]
 other = "删除成功"

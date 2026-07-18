@@ -608,14 +608,15 @@ TaskProvider 注册时必须使用 `task.capabilities/v1` schema，并声明稳�
 5. provider 顶层私有扩展字段必须使用 `x_` 前缀，例如 `x_owner_features`；未加 `x_` 前缀的未知顶层字段必须被 System 注册入口拒绝，避免与未来标准字段冲突。`task_capabilities[]` 内部只允许本文列出的标准字段，不允许私有扩展字段；任务类型级扩展需要先修订 capabilities 规范。
 6. `definition_schema` 和 `execution_schema` 当前必须声明为 JSON 对象 schema，最小值为 `{ "type": "object" }`。System 注册入口必须校验平台 v1 可理解的 JSON Schema 子集：允许 `type`、`title`、`description`、`properties`、`required`、`enum`、`default`、`additionalProperties`、`items`、`minimum`、`maximum`、`minLength`、`maxLength`、`minItems`、`maxItems`、`format`；不得使用 `$ref`、`oneOf`、`anyOf`、`allOf`、`not` 等复杂组合或远程引用。字段级 schema 可逐步细化，但 Orchestrator 不得自行猜测 owner 私有定义。
 7. 不支持执行参数覆盖的 provider，应在对应 `task_type.execution_schema` 声明 `{ "type": "object", "additionalProperties": false }`，并在执行入口拒绝非空 `parameters`，不得静默忽略。
-8. `supports_inline_execution` 在 `task.capabilities/v1` 中必须为 `false`。内联执行需要新的 endpoint、执行配置 schema 和 Orchestrator Step 模型，必须作为后续专题设计，不得只通过 capabilities 布尔值打开。
-9. `supports_cancel` 与 `task_cancel_endpoint` 必须双向一致：任一任务类型声明 `supports_cancel=true` 时 provider 必须注册标准取消 endpoint；没有任务类型支持取消时 provider 不得注册 `task_cancel_endpoint`。模块内部已有取消 API 不等于 TaskProvider 标准取消能力。
-10. Orchestrator 可以缓存 TaskProvider capabilities，但必须能从 System 刷新。
-11. `create_url` / `edit_url` 应使用 Console 路由形式，可包含模块内深层路径和 query，例如 `/transfer/tasks/:id/edit`、`/develop/workflow?action=edit&id=:id`、`/graph/graphs/:graph_id/build/tasks/:id`；前端负责替换 `:id` / `{id}` / `:task_id` / `{task_id}` / `:graph_id` / `{graph_id}`。
-12. 模块新增或删除任务类型时，必须更新自身 capabilities、文档和 Swagger。
-13. `deprecated=true` 的 task type 不再作为可用任务类型处理。Orchestrator 保存和执行编排时都必须拒绝引用 deprecated task type；ADDP 当前不为废弃任务类型保留兼容迁移路径。历史 execution 查询只按既有 execution 记录展示，不要求 owner 继续提供可编辑任务定义入口。
+8. Orchestrator Step 参数编辑必须以 `execution_schema` 为唯一能力来源。闭合对象中声明的标量 `properties` 应渲染为结构化控件，`enum` 渲染为选择控件；闭合空对象显示无执行参数；开放对象、对象/数组等复杂字段，以及无法由结构化控件无损表达的模板值，统一使用对象 JSON 编辑。三种模式互斥，不得同时维护两份可提交参数，也不得按 `provider` 或 `task_type` 硬编码表单能力。
+9. `supports_inline_execution` 在 `task.capabilities/v1` 中必须为 `false`。内联执行需要新的 endpoint、执行配置 schema 和 Orchestrator Step 模型，必须作为后续专题设计，不得只通过 capabilities 布尔值打开。
+10. `supports_cancel` 与 `task_cancel_endpoint` 必须双向一致：任一任务类型声明 `supports_cancel=true` 时 provider 必须注册标准取消 endpoint；没有任务类型支持取消时 provider 不得注册 `task_cancel_endpoint`。模块内部已有取消 API 不等于 TaskProvider 标准取消能力。
+11. Orchestrator 可以缓存 TaskProvider capabilities，但必须能从 System 刷新。
+12. `create_url` / `edit_url` 应使用 Console 路由形式，可包含模块内深层路径和 query，例如 `/transfer/tasks/:id/edit`、`/develop/workflow?action=edit&id=:id`、`/graph/graphs/:graph_id/build/tasks/:id`；前端负责替换 `:id` / `{id}` / `:task_id` / `{task_id}` / `:graph_id` / `{graph_id}`。
+13. 模块新增或删除任务类型时，必须更新自身 capabilities、文档和 Swagger。
+14. `deprecated=true` 的 task type 不再作为可用任务类型处理。Orchestrator 保存和执行编排时都必须拒绝引用 deprecated task type；ADDP 当前不为废弃任务类型保留兼容迁移路径。历史 execution 查询只按既有 execution 记录展示，不要求 owner 继续提供可编辑任务定义入口。
 
-`common/taskprovider` 是 TaskProvider 契约的公共解析和校验边界，负责校验 `task.capabilities/v1` 与标准任务列表响应 `{items,total,page,page_size}`。System 注册入口、Monitor provider health、Orchestrator 编排保存和执行前校验必须复用该公共能力，不得在各模块重复维护一套 capabilities 或任务发现响应校验逻辑。owner 模块负责生成自身 capabilities 并实现标准 endpoint；`common/taskprovider` 不访问 System 注册表，不调用 owner 模块，也不处理执行调度。
+`common/taskprovider` 是 TaskProvider 契约的公共解析和校验边界，负责校验 `task.capabilities/v1`、标准任务列表响应 `{items,total,page,page_size}` 和 `execution_schema` 参数实例。System 注册入口、Monitor provider health、Orchestrator 编排保存和执行前校验必须复用该公共能力，不得在各模块重复维护一套 capabilities、任务发现响应或 schema 实例校验逻辑。owner 模块负责生成自身 capabilities 并实现标准 endpoint；`common/taskprovider` 不访问 System 注册表，不调用 owner 模块，也不处理执行调度。
 
 当前不应默认打开任何模块的 `supports_cancel=true`。标准取消能力必须先在专题中确认 worker 中断、资源清理、状态一致落库、重复取消幂等和可观测诊断等前置条件，再单独更新对应模块能力声明。
 
@@ -650,12 +651,14 @@ Step v1 只允许以下字段：
 4. 编排触发下游任务时，`trigger_type` 只能是 `manual` 或 `scheduled`。
 5. Orchestration 自身执行记录 `module=orchestrator`、`task_type=orchestration`。
 6. Orchestrator 子步骤 execution 必须写 `parent_execution_id`。
-7. 保存和执行编排时，Orchestrator 必须校验 `provider + task_type` 已由 capabilities 声明且未 deprecated；如果 `execution_schema.additionalProperties=false`，还应拒绝 schema 未声明的 Step `parameters`。该校验只是平台侧轻量预校验，最终参数校验仍由 owner 执行入口负责。
+7. 保存和执行编排时，Orchestrator 必须校验 `provider + task_type` 已由 capabilities 声明且未 deprecated，并按 `execution_schema` 校验 Step `parameters` 的 `required`、类型、`enum`、额外字段、长度、数量和数值范围。保存阶段允许参数值是完整模板字符串；执行阶段必须在模板解析后使用真实值再次严格校验，再调用 owner。schema 实例校验错误必须保留稳定 rule、参数 path 和约束值，由 Orchestrator Service 包装 Step 上下文，HTTP 层按 `Accept-Language` 映射为用户可读消息，不得直接把公共校验器的英文诊断作为 API 文案。该平台校验不替代 owner 执行入口的最终领域校验。
 8. Orchestrator 可以把已保存的编排定义作为 `orchestration` 任务暴露给任务库，但保存编排时必须校验编排定义之间的引用图，不得直接引用自身，也不得通过多层 `orchestrator/orchestration` 引用形成递归执行。
 9. Step 的 `depends_on` 表示当前步骤依赖的前置步骤，也是参数模板允许读取的显式数据依赖范围；执行器必须先执行依赖步骤，再执行当前步骤。缺失依赖、循环依赖、模板隐式依赖或模板自引用必须导致编排保存或执行失败，不得静默跳过。
 10. 参数模板只支持完整字符串引用，格式为 `{{step_id.field.path}}` 或 `{{step_id}}`；不支持局部字符串插值，也不做隐式类型转换。运行时模板路径解析不到值时，当前 Step 必须失败。
 11. v1 不支持并行执行、分支或条件、Step 级重试策略、人工确认步骤，也不得通过 `condition`、`retry`、`approval`、`parallel`、`branch` 或其他私有 Step 字段提前打开这些控制流能力。后续如需要，必须作为 Orchestrator 执行模型 v2 专题设计，明确状态机、失败语义、资源隔离、审计、UI 表达和迁移边界。
 12. Monitor 回跳任务定义时应使用 TaskProvider capabilities 中对应 `task_type.edit_url`，不得硬编码 `module + task_type` 映射。
+13. Orchestrator Create/Update 必须使用严格 JSON 解码并拒绝未知字段；Step 结构、DAG、模板依赖、TaskProvider 引用、编排递归引用和调度表达式校验必须返回稳定的结构化领域错误，由同一 Handler 校验路径按 `Accept-Language` 映射为 `{error}` 响应，不得直接暴露 Go、JSON、Cron 或 Repository 的原始英文错误。
+14. 编排定义和执行记录是租户资源。HTTP 请求的租户只能来自 System AuthContext；普通用户使用 AuthContext 的非零 `tenant_id`，内部服务调用必须使用已验证的 Internal API Key 和 `X-Tenant-ID`。SuperAdmin 的空租户、客户端 query/body `tenant_id` 和缺失租户上下文均不得解释为租户 1 或全租户访问。Create/Update 请求只允许用户可编辑字段，Get/Update/Delete/Execute 和执行查询必须在 Repository 或统一执行仓储中同时限定资源 ID 与租户 ID；跨租户访问统一表现为资源不存在。
 
 ### 编排调度与子任务自身调度
 

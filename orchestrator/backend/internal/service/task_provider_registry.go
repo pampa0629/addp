@@ -115,7 +115,7 @@ func (r *TaskProviderRegistry) ValidateStepTaskReferences(ctx context.Context, s
 		providerName := strings.TrimSpace(step.Provider)
 		taskType := strings.TrimSpace(step.TaskType)
 		if providerName == "" || taskType == "" {
-			return fmt.Errorf("steps[%d].provider and task_type are required", i)
+			return &StepTaskValidationError{Code: StepTaskMissingReference, StepIndex: i, Provider: providerName, TaskType: taskType}
 		}
 
 		key := providerName + "\x00" + taskType
@@ -123,23 +123,23 @@ func (r *TaskProviderRegistry) ValidateStepTaskReferences(ctx context.Context, s
 		if !exists {
 			provider, err := r.GetProvider(ctx, providerName)
 			if err != nil {
-				return fmt.Errorf("steps[%d] provider %q is not registered: %w", i, providerName, err)
+				return &StepTaskValidationError{Code: StepTaskProviderUnavailable, StepIndex: i, Provider: providerName, TaskType: taskType, Cause: err}
 			}
 
 			taskTypeCapability, err = providerTaskCapability(provider, taskType)
 			if err != nil {
-				return fmt.Errorf("steps[%d] provider %q capabilities invalid: %w", i, providerName, err)
+				return &StepTaskValidationError{Code: StepTaskCapabilitiesInvalid, StepIndex: i, Provider: providerName, TaskType: taskType, Cause: err}
 			}
 			capabilityCache[key] = taskTypeCapability
 		}
 		if taskTypeCapability == nil {
-			return fmt.Errorf("steps[%d] task_type %q is not declared by provider %q", i, taskType, providerName)
+			return &StepTaskValidationError{Code: StepTaskTypeUndeclared, StepIndex: i, Provider: providerName, TaskType: taskType}
 		}
 		if taskTypeCapability.Deprecated {
-			return fmt.Errorf("steps[%d] task_type %q of provider %q is deprecated", i, taskType, providerName)
+			return &StepTaskValidationError{Code: StepTaskTypeDeprecated, StepIndex: i, Provider: providerName, TaskType: taskType}
 		}
-		if err := validateStepParametersByExecutionSchema(step, taskTypeCapability.ExecutionSchema); err != nil {
-			return fmt.Errorf("steps[%d] %w", i, err)
+		if err := validateStepParametersByExecutionSchema(step, taskTypeCapability.ExecutionSchema, true); err != nil {
+			return &StepTaskValidationError{Code: StepTaskParametersInvalid, StepIndex: i, Provider: providerName, TaskType: taskType, Cause: err}
 		}
 
 	}
@@ -161,31 +161,8 @@ func providerTaskCapability(provider *commonModels.TaskProvider, taskType string
 	return capabilities.CapabilityFor(taskType), nil
 }
 
-func validateStepParametersByExecutionSchema(step models.Step, executionSchema map[string]interface{}) error {
-	if len(step.Parameters) == 0 {
-		return nil
-	}
-	if executionSchema == nil {
-		return fmt.Errorf("task_type %q does not declare execution_schema for parameter validation", step.TaskType)
-	}
-
-	additionalProperties, exists := executionSchema["additionalProperties"]
-	if !exists {
-		return nil
-	}
-	allowAdditional, ok := additionalProperties.(bool)
-	if !ok || allowAdditional {
-		return nil
-	}
-
-	properties := map[string]interface{}{}
-	if rawProperties, ok := executionSchema["properties"].(map[string]interface{}); ok {
-		properties = rawProperties
-	}
-	for key := range step.Parameters {
-		if _, declared := properties[key]; !declared {
-			return fmt.Errorf("parameters.%s is not allowed by provider %q task_type %q execution_schema", key, step.Provider, step.TaskType)
-		}
-	}
-	return nil
+func validateStepParametersByExecutionSchema(step models.Step, executionSchema map[string]interface{}, allowTemplateStrings bool) error {
+	return taskprovider.ValidateExecutionParameters(executionSchema, step.Parameters, taskprovider.ParameterValidationOptions{
+		AllowTemplateStrings: allowTemplateStrings,
+	})
 }

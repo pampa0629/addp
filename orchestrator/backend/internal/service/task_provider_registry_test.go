@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -40,6 +41,13 @@ func TestValidateStepTaskReferencesRejectsParametersDisallowedByExecutionSchema(
 	if !strings.Contains(err.Error(), "parameters.force is not allowed") {
 		t.Fatalf("error = %q, want parameters.force is not allowed", err.Error())
 	}
+	var stepErr *StepTaskValidationError
+	if !errors.As(err, &stepErr) {
+		t.Fatalf("error = %T %v, want *StepTaskValidationError", err, err)
+	}
+	if stepErr.Code != StepTaskParametersInvalid || stepErr.StepIndex != 0 || stepErr.Provider != "meta" || stepErr.TaskType != "scan" {
+		t.Fatalf("step validation error = %#v", stepErr)
+	}
 }
 
 func TestValidateStepTaskReferencesAcceptsDeclaredExecutionSchemaParameters(t *testing.T) {
@@ -54,6 +62,51 @@ func TestValidateStepTaskReferencesAcceptsDeclaredExecutionSchemaParameters(t *t
 
 	if err != nil {
 		t.Fatalf("ValidateStepTaskReferences() error = %v, want nil", err)
+	}
+}
+
+func TestValidateStepTaskReferencesAllowsTemplatesAndRejectsInvalidConstants(t *testing.T) {
+	executionSchema := `{
+		"type":"object",
+		"properties":{
+			"mode":{"type":"string","enum":["basic","deep"]},
+			"limit":{"type":"integer","minimum":1,"maximum":1000}
+		},
+		"required":["mode"],
+		"additionalProperties":false
+	}`
+	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
+		"develop": taskProviderForTest("develop", taskCapabilitiesForTest("query", false, executionSchema)),
+	})
+
+	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
+		ID: "query", Name: "Query", Provider: "develop", TaskType: "query", TaskID: 1,
+		Parameters: map[string]interface{}{"mode": "{{scan.mode}}", "limit": "{{scan.limit}}"},
+	}})
+	if err != nil {
+		t.Fatalf("template parameters validation error = %v, want nil", err)
+	}
+
+	tests := []struct {
+		name       string
+		parameters map[string]interface{}
+		want       string
+	}{
+		{name: "required", parameters: map[string]interface{}{}, want: "parameters.mode is required"},
+		{name: "enum", parameters: map[string]interface{}{"mode": "wide"}, want: "parameters.mode must be one of"},
+		{name: "type", parameters: map[string]interface{}{"mode": "basic", "limit": "100"}, want: "parameters.limit must be integer"},
+		{name: "range", parameters: map[string]interface{}{"mode": "basic", "limit": 1001}, want: "parameters.limit must be less than or equal to 1000"},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
+				ID: "query", Name: "Query", Provider: "develop", TaskType: "query", TaskID: 1,
+				Parameters: testCase.parameters,
+			}})
+			if err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("error = %v, want containing %q", err, testCase.want)
+			}
+		})
 	}
 }
 

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	commonExecution "github.com/addp/common/execution"
@@ -18,6 +19,12 @@ func TestExecutionLifecycleUsesRealStartAndTerminalTimes(t *testing.T) {
 		t.Fatalf("insert orchestration: %v", err)
 	}
 	service := NewExecutionService(db, repository.NewOrchestrationRepository(db))
+	if _, err := service.CreateExecution(context.Background(), 11, 8, commonExecution.TriggerTypeManual); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("cross-tenant CreateExecution error = %v, want record not found", err)
+	}
+	if _, err := service.CreateExecution(context.Background(), 11, 0, commonExecution.TriggerTypeManual); err == nil {
+		t.Fatal("tenant-less CreateExecution error is nil")
+	}
 	parentExecutionID := "parent-1"
 	execution, err := service.CreateExecutionWithContext(
 		context.Background(), 11, 7, commonExecution.TriggerTypeManual,
@@ -34,6 +41,21 @@ func TestExecutionLifecycleUsesRealStartAndTerminalTimes(t *testing.T) {
 	}
 	if execution.ParentExecutionID == nil || *execution.ParentExecutionID != parentExecutionID {
 		t.Fatalf("parent_execution_id = %v, want %s", execution.ParentExecutionID, parentExecutionID)
+	}
+	if _, err := service.GetExecution(context.Background(), uint(execution.ID), 0); err == nil {
+		t.Fatal("tenant-less GetExecution error is nil")
+	}
+	if _, err := service.GetExecutionByExecutionID(context.Background(), execution.ExecutionID, 0); err == nil {
+		t.Fatal("tenant-less GetExecutionByExecutionID error is nil")
+	}
+	if _, err := service.GetExecution(context.Background(), uint(execution.ID), 8); err == nil {
+		t.Fatal("cross-tenant GetExecution error is nil")
+	}
+	if _, err := service.GetExecutionByExecutionID(context.Background(), execution.ExecutionID, 8); err == nil {
+		t.Fatal("cross-tenant GetExecutionByExecutionID error is nil")
+	}
+	if _, err := service.getExecutionInternal(context.Background(), uint(execution.ID)); err != nil {
+		t.Fatalf("getExecutionInternal: %v", err)
 	}
 
 	if err := service.UpdateStatus(context.Background(), uint(execution.ID), commonExecution.ExecutionStatusRunning); err != nil {

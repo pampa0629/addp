@@ -54,6 +54,13 @@ func TestValidateNoRecursiveOrchestrationReferencesRejectsNestedCycle(t *testing
 	if !strings.Contains(err.Error(), "7 -> 8 -> 7") {
 		t.Fatalf("error = %q, want cycle path", err.Error())
 	}
+	var validationErr *OrchestrationReferenceValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("error = %T %v, want *OrchestrationReferenceValidationError", err, err)
+	}
+	if validationErr.Code != OrchestrationReferenceCycle || len(validationErr.Path) != 3 {
+		t.Fatalf("reference validation error = %#v", validationErr)
+	}
 }
 
 func TestValidateNoRecursiveOrchestrationReferencesAcceptsAcyclicReferences(t *testing.T) {

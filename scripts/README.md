@@ -417,6 +417,22 @@ scripts/utils/
 
 **用途**: 通用工具函数、批量操作、验证检查
 
+### test/ - 测试与发布门禁
+
+```bash
+scripts/test/
+├── agent-evaluation-gate.sh  # Agent 离线/发布统一评测门禁
+└── verify-operator-api.sh    # 工作流算子 API 定向验证
+```
+
+Agent 默认离线门禁使用 `make test-agent-eval`，并已包含在根 `make test`。人工发布验收使用 `make test-agent-eval-release`，需要显式提供三份仓库外在线证据路径；脚本不自动执行 OAuth 登录或生成在线证据。输出统一为仓库外 `addp.agent-evaluation-gate/v2`，外部发布流程可归档其中的源码版本、契约/证据摘要和检查耗时，脚本自身不维护历史记录。
+
+两份归档报告使用 `make compare-agent-eval` 比较，需要显式提供 `ADDP_AGENT_EVAL_BASELINE` 和 `ADDP_AGENT_EVAL_CURRENT`，结果通过 `ADDP_AGENT_EVAL_REPORT` 写到仓库外。比较只读取严格 v2 报告，输出 `addp.agent-evaluation-comparison/v1`，不重跑测试、不读取在线证据、不设置耗时阈值。
+
+正式发布基线使用 `make compare-agent-eval-release`，复用相同环境变量，但强制 baseline/current 均为 clean、passed 的 `online_required` 报告且不存在回归。普通 dirty/离线报告只用于开发比较；脚本不自动选择、归档或更新 baseline。
+
+阶段 5 封板后，上述四个 Make 目标与 `scripts/test/agent-evaluation-gate.sh` 是唯一标准入口；不新增旁路脚本、仓库内报告归档或兼容旧 Schema 的命令。
+
 ---
 
 ## 使用场景对比

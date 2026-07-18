@@ -25,8 +25,8 @@ func (r *OrchestrationRepository) Create(orch *models.Orchestration) error {
 	return r.db.Create(orch).Error
 }
 
-// GetByID 根据 ID 获取编排
-func (r *OrchestrationRepository) GetByID(id uint) (*models.Orchestration, error) {
+// GetByIDInternal loads by globally unique ID for the owner scheduler only.
+func (r *OrchestrationRepository) GetByIDInternal(id uint) (*models.Orchestration, error) {
 	var orch models.Orchestration
 	if err := r.db.First(&orch, id).Error; err != nil {
 		return nil, err
@@ -127,14 +127,31 @@ func (r *OrchestrationRepository) ClaimDue(ctx context.Context, id uint, schedul
 	return claimed, err
 }
 
-// Update 更新编排
-func (r *OrchestrationRepository) Update(orch *models.Orchestration) error {
-	return r.db.Save(orch).Error
+// UpdateForTenant updates only user-editable orchestration fields within one tenant.
+func (r *OrchestrationRepository) UpdateForTenant(orch *models.Orchestration) error {
+	result := r.db.Model(&models.Orchestration{}).
+		Where("id = ? AND tenant_id = ?", orch.ID, orch.TenantID).
+		Select("name", "description", "steps", "enabled", "schedule", "next_run_at", "updated_at").
+		Updates(orch)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
-// Delete 删除编排
-func (r *OrchestrationRepository) Delete(id uint) error {
-	return r.db.Delete(&models.Orchestration{}, id).Error
+// DeleteForTenant soft-deletes an orchestration only within one tenant.
+func (r *OrchestrationRepository) DeleteForTenant(id, tenantID uint) error {
+	result := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Orchestration{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // 注意：ExecutionRepository 已废弃，现在使用统一的 ExecutionService

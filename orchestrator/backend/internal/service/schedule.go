@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -21,11 +20,11 @@ func ApplyOrchestrationSchedule(orch *models.Orchestration, now time.Time) error
 
 	builder := commonScheduler.NewExpressionBuilder()
 	if err := builder.Validate(orch.Schedule); err != nil {
-		return fmt.Errorf("invalid orchestration schedule: %w", err)
+		return &ScheduleValidationError{Code: ScheduleExpressionInvalid, Expression: orch.Schedule, Cause: err}
 	}
 	next, err := builder.NextRunTime(orch.Schedule, now)
 	if err != nil {
-		return fmt.Errorf("calculate orchestration next_run_at: %w", err)
+		return &ScheduleValidationError{Code: ScheduleNextRunFailed, Expression: orch.Schedule, Cause: err}
 	}
 	orch.NextRunAt = &next
 	return nil

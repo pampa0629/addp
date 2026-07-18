@@ -118,7 +118,7 @@ func (s *Scheduler) runDue(ctx context.Context) {
 }
 
 func (s *Scheduler) claimAndExecute(ctx context.Context, id uint, now time.Time) error {
-	orch, err := s.orchRepo.GetByID(id)
+	orch, err := s.orchRepo.GetByIDInternal(id)
 	if err != nil || orch == nil {
 		return err
 	}
@@ -134,7 +134,7 @@ func (s *Scheduler) claimAndExecute(ctx context.Context, id uint, now time.Time)
 }
 
 func (s *Scheduler) triggerOrchestration(ctx context.Context, orchID uint) error {
-	orch, err := s.orchRepo.GetByID(orchID)
+	orch, err := s.orchRepo.GetByIDInternal(orchID)
 	if err != nil || !orch.Enabled {
 		return err
 	}

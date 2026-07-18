@@ -41,8 +41,11 @@ func (s *ExecutionService) CreateExecution(ctx context.Context, orchestrationID,
 
 // CreateExecutionWithContext 创建带标准 TaskProvider 上下文的编排执行记录。
 func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orchestrationID, tenantID uint, triggerType, source string, parentExecutionID *string, triggeredBy uint) (*commonExecution.TaskExecution, error) {
+	if tenantID == 0 {
+		return nil, fmt.Errorf("tenant_id is required")
+	}
 	// 获取编排信息
-	orch, err := s.orchRepo.GetByID(orchestrationID)
+	orch, err := s.orchRepo.GetByIDAndTenant(orchestrationID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("orchestration not found: %w", err)
 	}
@@ -92,6 +95,9 @@ func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orche
 
 // GetExecution 获取执行记录
 func (s *ExecutionService) GetExecution(ctx context.Context, id, tenantID uint) (*commonExecution.TaskExecution, error) {
+	if tenantID == 0 {
+		return nil, fmt.Errorf("tenant_id is required")
+	}
 	// 从统一表获取执行记录
 	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), int(tenantID))
 	if err != nil {
@@ -111,6 +117,9 @@ func (s *ExecutionService) GetExecution(ctx context.Context, id, tenantID uint) 
 
 // GetExecutionByExecutionID 按全局 execution_id 获取 Orchestrator 执行记录。
 func (s *ExecutionService) GetExecutionByExecutionID(ctx context.Context, executionID string, tenantID uint) (*commonExecution.TaskExecution, error) {
+	if tenantID == 0 {
+		return nil, fmt.Errorf("tenant_id is required")
+	}
 	execution, err := s.taskExecutionRepo.GetByExecutionID(ctx, executionID, int(tenantID))
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -124,10 +133,22 @@ func (s *ExecutionService) GetExecutionByExecutionID(ctx context.Context, execut
 	return execution, nil
 }
 
+// getExecutionInternal 按全局主键读取执行，仅供 Orchestrator 内部执行循环推进状态。
+func (s *ExecutionService) getExecutionInternal(ctx context.Context, id uint) (*commonExecution.TaskExecution, error) {
+	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0)
+	if err != nil {
+		return nil, err
+	}
+	if execution.Module != commonExecution.ModuleOrchestrator {
+		return nil, fmt.Errorf("execution not found")
+	}
+	return execution, nil
+}
+
 // UpdateStatus 更新执行状态
 func (s *ExecutionService) UpdateStatus(ctx context.Context, id uint, status string) error {
 	// 获取执行记录
-	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0)
+	execution, err := s.getExecutionInternal(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -152,7 +173,7 @@ func (s *ExecutionService) UpdateStatus(ctx context.Context, id uint, status str
 
 // UpdateCurrentStep 更新当前步骤
 func (s *ExecutionService) UpdateCurrentStep(ctx context.Context, id uint, currentStep string) error {
-	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0)
+	execution, err := s.getExecutionInternal(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -164,7 +185,7 @@ func (s *ExecutionService) UpdateCurrentStep(ctx context.Context, id uint, curre
 
 // UpdateStepResults 更新步骤结果
 func (s *ExecutionService) UpdateStepResults(ctx context.Context, id uint, stepResults models.StepResults) error {
-	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0)
+	execution, err := s.getExecutionInternal(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -189,7 +210,7 @@ func (s *ExecutionService) UpdateStepResults(ctx context.Context, id uint, stepR
 			if parseErr != nil {
 				return parseErr
 			}
-			orch, err := s.orchRepo.GetByID(orchestrationID)
+			orch, err := s.orchRepo.GetByIDAndTenant(orchestrationID, uint(execution.TenantID))
 			if err == nil && len(orch.Steps) > 0 {
 				progress = int(float64(len(stepResults)) / float64(len(orch.Steps)) * 100)
 			}
@@ -204,7 +225,7 @@ func (s *ExecutionService) UpdateStepResults(ctx context.Context, id uint, stepR
 
 // FinishExecution 完成执行（成功或失败）
 func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status, errorMsg string, stepResults models.StepResults) error {
-	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0)
+	execution, err := s.getExecutionInternal(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -225,7 +246,7 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status,
 		for k, v := range stepResults {
 			stepResultsMap[k] = v
 		}
-		execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0)
+		execution, err := s.getExecutionInternal(ctx, id)
 		if err != nil {
 			return err
 		}

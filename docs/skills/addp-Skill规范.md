@@ -2,7 +2,7 @@
 
 本文定义 ADDP 面向不同 Agent Runtime 的平台级 Skill 规范。Skill 与 ADDP 内置 Agent 解耦，同一个 Skill 应能被 ADDP Agent、Codex、Hermes Agent 等运行时消费。
 
-智能体能力整体架构见 `docs/next/ADDP智能体能力开放体系专题.md`。
+Tool 契约、交互协议和评测分别见 `docs/spec/addp智能体Tool开放规范.md`、`docs/spec/addp智能体交互协议规范.md`、`docs/spec/addp智能体评测规范.md`。专题文档只保留架构决策和实施历史。
 
 ## 一、Skill 定位
 
@@ -299,8 +299,11 @@ evals/agent-scenarios/
 
 ## 十二、相关文档
 
-- `docs/next/ADDP智能体能力开放体系专题.md`
 - `docs/concepts/addp术语表.md`
+- `docs/spec/addp智能体Tool开放规范.md`
+- `docs/spec/addp智能体交互协议规范.md`
+- `docs/spec/addp智能体评测规范.md`
 - `docs/spec/addp-API设计规范.md`
 - `docs/spec/addp登录认证的统一要求.md`
 - `common-python/CLAUDE.md`
+- `docs/next/ADDP智能体能力开放体系专题.md`

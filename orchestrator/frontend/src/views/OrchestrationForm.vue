@@ -137,6 +137,7 @@ import { Check, Clock, Close, Document } from '@element-plus/icons-vue'
 import DAGEditor from '../components/DAGEditor.vue'
 import TaskPanel from '../components/TaskPanel.vue'
 import orchestrationAPI from '../api/orchestration'
+import { buildOrchestrationPayload } from '../utils/orchestrationPayload'
 import { ScheduleConfig, ScheduleDisplay, useResizable } from '@common-ui'
 
 const { t } = useI18n()
@@ -195,7 +196,7 @@ watch(() => form.steps, (newSteps) => {
 async function loadOrchestration(id) {
   try {
     const data = await orchestrationAPI.get(id)
-    Object.assign(form, data)
+    Object.assign(form, buildOrchestrationPayload(data))
   } catch (error) {
     ElMessage.error(t('orchestrator.orchestrationForm.loadFailed'))
   }
@@ -260,11 +261,12 @@ function confirmScheduleDialog() {
 async function persistForm() {
   saving.value = true
   try {
+    const payload = buildOrchestrationPayload(form)
     if (isEdit.value) {
-      await orchestrationAPI.update(route.params.id, form)
+      await orchestrationAPI.update(route.params.id, payload)
       ElMessage.success(t('orchestrator.orchestrationForm.updateSuccess'))
     } else {
-      await orchestrationAPI.create(form)
+      await orchestrationAPI.create(payload)
       ElMessage.success(t('orchestrator.orchestrationForm.createSuccess'))
     }
     router.push('/orchestrations')

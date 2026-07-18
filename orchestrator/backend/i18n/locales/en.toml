@@ -37,5 +37,143 @@ other = "Module API returned an error"
 [orchestrator.error.parse_response_failed]
 other = "Failed to parse response"
 
+[orchestrator.error.invalid_orchestration_json]
+other = "Request body is not a valid orchestration definition"
+
+[orchestrator.error.tenant_context_required]
+other = "The current identity is not bound to a tenant and cannot access orchestration resources"
+
+[orchestrator.error.unsupported_step_field]
+other = "Orchestration steps do not support field {{.Field}}"
+
+[orchestrator.error.steps_required]
+other = "An orchestration must contain at least one step"
+
+[orchestrator.error.step_field_required]
+other = "Step {{.StepNumber}} is missing {{.Field}}"
+
+[orchestrator.error.step_duplicate_id]
+other = "Step ID {{.StepID}} is duplicated"
+
+[orchestrator.error.step_dependency_empty]
+other = "Step {{.StepNumber}} contains an empty dependency"
+
+[orchestrator.error.step_dependency_unknown]
+other = "Step {{.StepNumber}} depends on unknown step {{.Reference}}"
+
+[orchestrator.error.step_template_unknown]
+other = "Execution parameters for step {{.StepNumber}} reference unknown step {{.Reference}}"
+
+[orchestrator.error.step_template_self_reference]
+other = "Step {{.StepNumber}} cannot reference itself in execution parameters"
+
+[orchestrator.error.step_template_missing_dependency]
+other = "Execution parameters for step {{.StepNumber}} reference step {{.Reference}}, but it is not declared as a dependency"
+
+[orchestrator.error.step_circular_dependency]
+other = "Orchestration steps contain a circular dependency at {{.StepID}}"
+
+[orchestrator.error.orchestration_reference_self]
+other = "Orchestration {{.OrchestrationID}} cannot reference itself"
+
+[orchestrator.error.orchestration_reference_cycle]
+other = "Orchestration references form a cycle: {{.Path}}"
+
+[orchestrator.error.orchestration_reference_not_found]
+other = "Referenced orchestration {{.OrchestrationID}} does not exist"
+
+[orchestrator.error.orchestration_reference_validation_failed]
+other = "Failed to validate orchestration references"
+
+[orchestrator.error.schedule_invalid]
+other = "Schedule expression {{.Expression}} is invalid"
+
+[orchestrator.step_field.id]
+other = "a step ID"
+
+[orchestrator.step_field.name]
+other = "a step name"
+
+[orchestrator.step_field.provider]
+other = "a task provider"
+
+[orchestrator.step_field.task_type]
+other = "a task type"
+
+[orchestrator.step_field.task_id]
+other = "a task ID"
+
+[orchestrator.error.step_task_missing_reference]
+other = "Step {{.StepNumber}} must specify a task provider and task type"
+
+[orchestrator.error.step_task_provider_unavailable]
+other = "Task provider {{.Provider}} referenced by step {{.StepNumber}} is unavailable"
+
+[orchestrator.error.step_task_capabilities_invalid]
+other = "Task provider {{.Provider}} referenced by step {{.StepNumber}} has an invalid capability declaration"
+
+[orchestrator.error.step_task_type_undeclared]
+other = "Task type {{.TaskType}} referenced by step {{.StepNumber}} is not declared by provider {{.Provider}}"
+
+[orchestrator.error.step_task_type_deprecated]
+other = "Task type {{.TaskType}} referenced by step {{.StepNumber}} is deprecated"
+
+[orchestrator.error.step_parameter_schema_invalid]
+other = "The task type capability declaration referenced by step {{.StepNumber}} is invalid"
+
+[orchestrator.error.step_parameter_invalid]
+other = "Execution parameters for step {{.StepNumber}} are invalid"
+
+[orchestrator.error.step_parameter_required]
+other = "Step {{.StepNumber}} is missing required execution parameter {{.Path}}"
+
+[orchestrator.error.step_parameter_enum]
+other = "Execution parameter {{.Path}} for step {{.StepNumber}} must be one of: {{.Allowed}}"
+
+[orchestrator.error.step_parameter_type]
+other = "Execution parameter {{.Path}} for step {{.StepNumber}} must be {{.Expected}}"
+
+[orchestrator.error.step_parameter_additional]
+other = "Execution parameter {{.Path}} is not allowed for step {{.StepNumber}}"
+
+[orchestrator.error.step_parameter_minimum]
+other = "Execution parameter {{.Path}} for step {{.StepNumber}} cannot be less than {{.Limit}}"
+
+[orchestrator.error.step_parameter_maximum]
+other = "Execution parameter {{.Path}} for step {{.StepNumber}} cannot be greater than {{.Limit}}"
+
+[orchestrator.error.step_parameter_min_items]
+other = "Execution parameter {{.Path}} for step {{.StepNumber}} must contain at least {{.Limit}} items"
+
+[orchestrator.error.step_parameter_max_items]
+other = "Execution parameter {{.Path}} for step {{.StepNumber}} must contain no more than {{.Limit}} items"
+
+[orchestrator.error.step_parameter_min_length]
+other = "Execution parameter {{.Path}} for step {{.StepNumber}} must contain at least {{.Limit}} characters"
+
+[orchestrator.error.step_parameter_max_length]
+other = "Execution parameter {{.Path}} for step {{.StepNumber}} must contain no more than {{.Limit}} characters"
+
+[orchestrator.parameter_type.object]
+other = "an object"
+
+[orchestrator.parameter_type.array]
+other = "an array"
+
+[orchestrator.parameter_type.string]
+other = "a string"
+
+[orchestrator.parameter_type.number]
+other = "a number"
+
+[orchestrator.parameter_type.integer]
+other = "an integer"
+
+[orchestrator.parameter_type.boolean]
+other = "a boolean"
+
+[orchestrator.parameter_type.null]
+other = "null"
+
 [orchestrator.success.deleted]
 other = "Deleted successfully"

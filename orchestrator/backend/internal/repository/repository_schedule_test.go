@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +11,52 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestOrchestrationRepositoryEnforcesTenantOnCRUD(t *testing.T) {
+	db := newOrchestrationScheduleTestDB(t)
+	repo := NewOrchestrationRepository(db)
+
+	tenantSeven := models.Orchestration{TenantID: 7, Name: "tenant-seven", Steps: models.Steps{{ID: "s1", Name: "step", Provider: "meta", TaskType: "scan", TaskID: 1}}}
+	tenantEight := models.Orchestration{TenantID: 8, Name: "tenant-eight", Steps: models.Steps{{ID: "s1", Name: "step", Provider: "meta", TaskType: "scan", TaskID: 1}}}
+	if err := repo.Create(&tenantSeven); err != nil {
+		t.Fatalf("create tenant seven: %v", err)
+	}
+	if err := repo.Create(&tenantEight); err != nil {
+		t.Fatalf("create tenant eight: %v", err)
+	}
+
+	listed, err := repo.List(7)
+	if err != nil || len(listed) != 1 || listed[0].ID != tenantSeven.ID {
+		t.Fatalf("tenant seven list = %#v, error = %v", listed, err)
+	}
+	if _, err := repo.GetByIDAndTenant(tenantSeven.ID, 8); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("cross-tenant get error = %v, want record not found", err)
+	}
+
+	attackUpdate := tenantSeven
+	attackUpdate.TenantID = 8
+	attackUpdate.Name = "cross-tenant-update"
+	if err := repo.UpdateForTenant(&attackUpdate); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("cross-tenant update error = %v, want record not found", err)
+	}
+	unchanged, err := repo.GetByIDAndTenant(tenantSeven.ID, 7)
+	if err != nil || unchanged.Name != "tenant-seven" {
+		t.Fatalf("tenant seven after cross update = %#v, error = %v", unchanged, err)
+	}
+
+	if err := repo.DeleteForTenant(tenantSeven.ID, 8); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("cross-tenant delete error = %v, want record not found", err)
+	}
+	if _, err := repo.GetByIDAndTenant(tenantSeven.ID, 7); err != nil {
+		t.Fatalf("tenant seven should remain after cross delete: %v", err)
+	}
+	if err := repo.DeleteForTenant(tenantSeven.ID, 7); err != nil {
+		t.Fatalf("tenant delete: %v", err)
+	}
+	if _, err := repo.GetByIDAndTenant(tenantSeven.ID, 7); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("deleted tenant get error = %v, want record not found", err)
+	}
+}
 
 func TestClaimDueAdvancesNextRunAt(t *testing.T) {
 	db := newOrchestrationScheduleTestDB(t)
@@ -46,7 +94,7 @@ func TestClaimDueAdvancesNextRunAt(t *testing.T) {
 		t.Fatalf("claimed = %#v, want orchestration %d", claimed, orch.ID)
 	}
 
-	refreshed, err := repo.GetByID(orch.ID)
+	refreshed, err := repo.GetByIDInternal(orch.ID)
 	if err != nil {
 		t.Fatalf("GetByID() error = %v", err)
 	}
@@ -57,7 +105,8 @@ func TestClaimDueAdvancesNextRunAt(t *testing.T) {
 
 func newOrchestrationScheduleTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

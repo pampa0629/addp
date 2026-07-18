@@ -10,6 +10,8 @@ Agent 模块是 ADDP 平台的**自然语言交互入口**，用户通过对话�
 - **端口**: Backend 8190（开发）| Frontend 5186（开发）
 - **数据库**: PostgreSQL `agent` schema
 
+平台级 Tool、交互和评测契约分别以 `docs/spec/addp智能体Tool开放规范.md`、`docs/spec/addp智能体交互协议规范.md`、`docs/spec/addp智能体评测规范.md` 为事实源；本文只记录 Agent 模块实现和运行约束。
+
 ## 目录结构
 
 ```
@@ -87,11 +89,21 @@ python evals/agent-scenarios/online_runner.py \
 
 审批场景依次运行 `approval-request`、在 Develop Owner 页面明确批准或拒绝，再运行 `approval-resume` 或 `approval-rejection`；Runner 不自动决定审批。
 
-统一评测门禁唯一入口为 `evals/agent-scenarios/gate.py`。默认运行全部场景契约、Agent 评测与持久化测试、common-python 全量测试和 Agent 前端测试；`--require-online` 额外要求三个黄金场景的仓库外在线证据，并重新使用场景 `evaluate_trace` 校验。报告 Schema 固定为 `addp.agent-evaluation-gate/v1`，报告输出也必须位于仓库外。
+统一评测门禁唯一入口为 `evals/agent-scenarios/gate.py`。默认运行全部场景契约、Agent 评测与持久化测试、common-python 全量测试和 Agent 前端测试；`--require-online` 额外要求三个黄金场景的仓库外在线证据，并重新使用场景 `evaluate_trace` 校验。报告 Schema 固定为 `addp.agent-evaluation-gate/v2`，报告输出也必须位于仓库外。v2 记录 Git revision、脏工作区标志、场景契约摘要、在线证据摘要和检查耗时，但不得记录证据路径、approval/AgentRun 标识或 trace；历史归档由外部发布流程负责。
 
 ```bash
 python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.json
 ```
+
+仓库标准入口为 `make test-agent-eval`；根 `make test` 已包含该离线门禁。人工发布验收使用 `make test-agent-eval-release`，并显式提供 `ADDP_AGENT_READ_ONLY_EVIDENCE`、`ADDP_AGENT_APPROVAL_EVIDENCE`、`ADDP_AGENT_REJECTION_EVIDENCE` 三份仓库外证据。在线证据固定 24 小时有效，未来时间只容忍 5 分钟时钟偏差。
+
+两份已归档 v2 报告使用 `make compare-agent-eval` 只读比较，并显式提供 `ADDP_AGENT_EVAL_BASELINE`、`ADDP_AGENT_EVAL_CURRENT`。比较结果 Schema 为 `addp.agent-evaluation-comparison/v1`；场景/检查删除、passed 状态退化或当前报告失败才返回回归，契约摘要变化和检查耗时差值只用于审查，不设置阈值。比较不重跑门禁、不读取在线证据，也不保存输入路径或证据摘要。
+
+正式发布基线比较使用 `make compare-agent-eval-release`。baseline 和 current 必须都是显式指定的仓库外 `online_required + passed + worktree_dirty=false` 报告，且普通回归比较通过；否则结果为 `regressed|blocked` 并返回非零。dirty 或 offline 报告仍可用于普通开发比较，但不能成为正式 baseline。归档对象和 baseline 指针由外部发布系统持有，比较器不扫描目录、不选择最新文件、不自动更新 baseline，也不重新按当前时间判定历史在线证据过期。
+
+阶段 5 已封板。当前评测协议固定为 `addp.agent-scenario/v1`、`addp.agent-online-evidence/v1`、`addp.agent-evaluation-gate/v2` 和 `addp.agent-evaluation-comparison/v1`；A2UI 继续使用 `addp.catalog/v1`。破坏性修改必须升级版本并删除旧解析路径。`GraphView`、趋势 UI/阈值、外部归档自动化、MCP Adapter 和多智能体委派只有在专题文档规定的真实场景或外部系统条件满足后才能重新启动。
+
+评测 Schema、门禁、比较和正式发布资格的完整规则见 `docs/spec/addp智能体评测规范.md`；本文不另设评测契约。
 
 `messages` 不再使用 `result_type + result_data`。表现内容通过 `presentation_ref` 引用 A2UI Surface，澄清状态通过 `interaction_ref` 引用 `agent.interactions`。
 
@@ -149,3 +161,13 @@ AGENT_FE_PORT=5186
 - 后端日志: `logs/agent-backend.log`
 - 后端错误: `logs/agent-backend-stderr.log`
 - 前端日志: `logs/agent-frontend.log`
+
+## 相关文档
+
+- `docs/spec/addp智能体Tool开放规范.md`
+- `docs/spec/addp智能体交互协议规范.md`
+- `docs/spec/addp智能体评测规范.md`
+- `docs/skills/addp-Skill规范.md`
+- `docs/spec/addp OAuth授权规范.md`
+- `agent/docs/agent模块设计共识.md`
+- `docs/next/ADDP智能体能力开放体系专题.md`

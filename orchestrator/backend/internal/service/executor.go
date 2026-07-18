@@ -51,7 +51,7 @@ func (e *Executor) ExecuteAsync(executionID uint) {
 
 // executeSync 同步执行编排
 func (e *Executor) executeSync(ctx context.Context, executionID uint) error {
-	execution, err := e.executionService.GetExecution(ctx, executionID, 0)
+	execution, err := e.executionService.getExecutionInternal(ctx, executionID)
 	if err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func (e *Executor) executeSync(ctx context.Context, executionID uint) error {
 	if err != nil {
 		return err
 	}
-	orch, err := e.orchRepo.GetByID(orchestrationID)
+	orch, err := e.orchRepo.GetByIDAndTenant(orchestrationID, uint(execution.TenantID))
 	if err != nil {
 		return err
 	}
@@ -277,7 +277,7 @@ func validateProviderStepExecutable(provider *commonModels.TaskProvider, step *m
 	}
 	stepForValidation := *step
 	stepForValidation.Parameters = resolvedParams
-	return validateStepParametersByExecutionSchema(stepForValidation, taskTypeCapability.ExecutionSchema)
+	return validateStepParametersByExecutionSchema(stepForValidation, taskTypeCapability.ExecutionSchema, false)
 }
 
 func extractProviderExecutionID(respData map[string]interface{}) string {

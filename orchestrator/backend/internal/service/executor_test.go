@@ -433,6 +433,52 @@ func TestExecuteWithTaskProviderRejectsDisallowedParametersBeforeHTTPCall(t *tes
 	assert.False(t, called)
 }
 
+func TestExecuteWithTaskProviderStrictlyValidatesResolvedParametersBeforeHTTPCall(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	executionSchema := `{
+		"type":"object",
+		"properties":{"limit":{"type":"integer","minimum":1,"maximum":1000}},
+		"required":["limit"],
+		"additionalProperties":false
+	}`
+	executor := &Executor{
+		taskProviderRegistry: &TaskProviderRegistry{
+			providers: map[string]*commonModels.TaskProvider{
+				"develop": {
+					ModuleName:          "develop",
+					BaseURL:             server.URL,
+					TaskExecuteEndpoint: "/api/v1/develop/tasks/{task_type}/{id}/execute",
+					TaskStatusEndpoint:  "/api/v1/develop/executions/{execution_id}",
+					Capabilities:        jsonStringPtr(taskCapabilitiesForTest("query", false, executionSchema)),
+				},
+			},
+			cacheTTL:    time.Hour,
+			lastRefresh: time.Now(),
+		},
+	}
+
+	result, err := executor.executeWithTaskProvider(
+		context.Background(),
+		&models.Step{Provider: "develop", TaskType: "query", TaskID: 42, Timeout: 10},
+		map[string]interface{}{"limit": "100"},
+		time.Now(),
+		"parent-exec",
+		"manual",
+		7,
+	)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "parameters.limit must be integer")
+	assert.Equal(t, "failed", result.Status)
+	assert.False(t, called)
+}
+
 func TestExtractProviderExecutionID(t *testing.T) {
 	tests := []struct {
 		name string

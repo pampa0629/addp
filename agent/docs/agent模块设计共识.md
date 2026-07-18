@@ -2,7 +2,7 @@
 
 更新时间：2026-07-15
 
-本文只记录 Agent 模块内部边界。平台级 Skill、Tool、SDK、AG-UI、A2UI、认证和外部 Agent 架构以 `docs/next/ADDP智能体能力开放体系专题.md` 为事实源。
+本文只记录 Agent 模块内部边界。平台级 Tool、AG-UI / A2UI 和评测契约分别以 `docs/spec/addp智能体Tool开放规范.md`、`docs/spec/addp智能体交互协议规范.md`、`docs/spec/addp智能体评测规范.md` 为事实源；Skill 与认证分别引用各自既有规范。专题文档只保留架构决策和实施历史。
 
 ## 一、模块定位
 
@@ -113,10 +113,14 @@ AG-UI 流式请求使用 `common-frontend` 的 `createAuthenticatedFetch()`，�
 
 ## 七、相关文档
 
-- `docs/next/ADDP智能体能力开放体系专题.md`
+- `docs/spec/addp智能体Tool开放规范.md`
+- `docs/spec/addp智能体交互协议规范.md`
+- `docs/spec/addp智能体评测规范.md`
 - `docs/skills/addp-Skill规范.md`
 - `docs/concepts/addp术语表.md`
+- `docs/spec/addp OAuth授权规范.md`
 - `docs/spec/addp-API设计规范.md`
 - `docs/spec/addp登录认证的统一要求.md`
 - `common-python/CLAUDE.md`
 - `common-frontend/README.md`
+- `docs/next/ADDP智能体能力开放体系专题.md`

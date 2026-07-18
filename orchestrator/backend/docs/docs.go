@@ -52,6 +52,12 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "403": {
+                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -87,6 +93,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/execution.TaskExecution"
                         }
                     },
+                    "403": {
+                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -118,6 +130,18 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "403": {
+                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "执行不存在 | Execution not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -143,6 +167,12 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "403": {
+                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
                     }
                 }
             },
@@ -152,6 +182,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "严格解析编排定义并拒绝未知字段，统一校验 Step、DAG、模板依赖、任务引用、递归引用和调度表达式 | Strictly parse the orchestration definition, reject unknown fields, and validate steps, DAG, template dependencies, task references, recursive references, and schedule expressions",
                 "consumes": [
                     "application/json"
                 ],
@@ -169,7 +200,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.Orchestration"
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.OrchestrationDefinitionRequest"
                         }
                     }
                 ],
@@ -179,6 +210,18 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "编排定义或执行参数无效 | Invalid orchestration definition or execution parameters",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     }
                 }
@@ -205,6 +248,18 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "403": {
+                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "编排不存在 | Orchestration not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
                     }
                 }
             },
@@ -214,6 +269,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "严格解析编排定义并拒绝未知字段，统一校验 Step、DAG、模板依赖、任务引用、递归引用和调度表达式 | Strictly parse the orchestration definition, reject unknown fields, and validate steps, DAG, template dependencies, task references, recursive references, and schedule expressions",
                 "consumes": [
                     "application/json"
                 ],
@@ -238,7 +294,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.Orchestration"
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.OrchestrationDefinitionRequest"
                         }
                     }
                 ],
@@ -248,6 +304,24 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "编排定义或执行参数无效 | Invalid orchestration definition or execution parameters",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "编排不存在 | Orchestration not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     }
                 }
@@ -271,6 +345,18 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "编排不存在 | Orchestration not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     }
                 }
@@ -297,6 +383,18 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "403": {
+                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "编排不存在 | Orchestration not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -321,6 +419,18 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "编排不存在 | Orchestration not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     }
                 }
@@ -417,6 +527,12 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "403": {
+                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -486,6 +602,12 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "403": {
+                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -550,6 +672,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     },
                     "404": {
@@ -691,40 +819,25 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_orchestrator_internal_models.Orchestration": {
+        "github_com_addp_orchestrator_internal_models.ErrorResponse": {
             "type": "object",
             "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "deleted_at": {
-                    "$ref": "#/definitions/gorm.DeletedAt"
-                },
+                "error": {
+                    "type": "string",
+                    "example": "请求参数错误"
+                }
+            }
+        },
+        "github_com_addp_orchestrator_internal_models.OrchestrationDefinitionRequest": {
+            "type": "object",
+            "properties": {
                 "description": {
                     "type": "string"
                 },
                 "enabled": {
                     "type": "boolean"
                 },
-                "id": {
-                    "type": "integer"
-                },
-                "last_execution_id": {
-                    "type": "string"
-                },
-                "last_execution_status": {
-                    "type": "string"
-                },
-                "last_run_at": {
-                    "type": "string"
-                },
                 "name": {
-                    "type": "string"
-                },
-                "next_run_at": {
                     "type": "string"
                 },
                 "schedule": {
@@ -735,12 +848,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.Step"
                     }
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
                 }
             }
         },
@@ -838,18 +945,6 @@ const docTemplate = `{
                 "timeout": {
                     "description": "超时秒数",
                     "type": "integer"
-                }
-            }
-        },
-        "gorm.DeletedAt": {
-            "type": "object",
-            "properties": {
-                "time": {
-                    "type": "string"
-                },
-                "valid": {
-                    "description": "Valid is true if Time is not NULL",
-                    "type": "boolean"
                 }
             }
         },

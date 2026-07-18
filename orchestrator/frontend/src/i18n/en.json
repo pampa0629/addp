@@ -178,7 +178,29 @@
       "ownerTaskUrlMissing": "Task definition URL is not configured",
       "ownerTaskContextMissing": "Task definition URL is missing required context",
       "timeoutLabel": "Timeout (s)",
-      "parametersLabel": "Parameters (JSON)",
+      "parametersLabel": "Execution Parameters",
+      "parametersJsonLabel": "Execution Parameters (JSON)",
+      "parameterSelectPlaceholder": "Select",
+      "noExecutionParameters": "This task has no execution parameters",
+      "booleanTrue": "Yes",
+      "booleanFalse": "No",
+      "parameterFields": {
+        "existing_result_action": "Existing Result Handling"
+      },
+      "parameterValues": {
+        "overwrite": "Overwrite"
+      },
+      "parameterValidation": {
+        "required": "Select or enter {field}",
+        "enum": "{field} is not an allowed value",
+        "minLength": "{field} must contain at least {limit} characters",
+        "maxLength": "{field} must contain no more than {limit} characters",
+        "integer": "{field} must be an integer",
+        "number": "{field} must be a number",
+        "minimum": "{field} cannot be less than {limit}",
+        "maximum": "{field} cannot be greater than {limit}",
+        "boolean": "{field} must be Yes or No"
+      },
       "saveConfigBtn": "Save",
       "cancelBtn": "Cancel",
       "loopDetected": "Cannot create circular dependency",
@@ -191,7 +213,8 @@
       "taskAdded": "Task added: {name}",
       "addNodeFailed": "Failed to add node: {error}",
       "configSaved": "Configuration saved",
-      "jsonError": "Invalid JSON format"
+      "jsonError": "Invalid JSON format",
+      "jsonObjectError": "Execution parameters must be a JSON object"
     }
   }
 }

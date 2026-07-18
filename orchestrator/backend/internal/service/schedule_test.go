@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -34,5 +35,18 @@ func TestApplyOrchestrationScheduleClearsNextRunAtWhenDisabled(t *testing.T) {
 	}
 	if orch.NextRunAt != nil {
 		t.Fatalf("next_run_at = %#v, want nil", orch.NextRunAt)
+	}
+}
+
+func TestApplyOrchestrationScheduleReturnsStructuredValidationError(t *testing.T) {
+	orch := &models.Orchestration{Enabled: true, Schedule: "not-a-cron"}
+	err := ApplyOrchestrationSchedule(orch, time.Now())
+
+	var validationErr *ScheduleValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("error = %T %v, want *ScheduleValidationError", err, err)
+	}
+	if validationErr.Code != ScheduleExpressionInvalid || validationErr.Expression != "not-a-cron" {
+		t.Fatalf("schedule validation error = %#v", validationErr)
 	}
 }

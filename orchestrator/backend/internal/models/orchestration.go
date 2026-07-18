@@ -3,7 +3,6 @@ package models
 import (
 	"database/sql/driver"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -27,6 +26,23 @@ type Orchestration struct {
 	CreatedAt           time.Time      `json:"created_at"`
 	UpdatedAt           time.Time      `json:"updated_at"`
 	DeletedAt           gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+}
+
+// OrchestrationDefinitionRequest contains only user-editable orchestration fields.
+type OrchestrationDefinitionRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Steps       Steps  `json:"steps"`
+	Enabled     bool   `json:"enabled"`
+	Schedule    string `json:"schedule"`
+}
+
+func (r OrchestrationDefinitionRequest) ApplyTo(orch *Orchestration) {
+	orch.Name = r.Name
+	orch.Description = r.Description
+	orch.Steps = r.Steps
+	orch.Enabled = r.Enabled
+	orch.Schedule = r.Schedule
 }
 
 func (Orchestration) TableName() string {
@@ -82,7 +98,7 @@ func (s *Step) UnmarshalJSON(data []byte) error {
 	}
 	for key := range raw {
 		if _, ok := allowed[key]; !ok {
-			return fmt.Errorf("unsupported orchestration step field %q", key)
+			return &StepDecodeError{Code: StepDecodeUnsupportedField, Field: key}
 		}
 	}
 
@@ -98,34 +114,34 @@ func (s *Step) UnmarshalJSON(data []byte) error {
 // ValidateSteps 校验 Orchestrator Step 只能引用已有 TaskProvider 任务。
 func ValidateSteps(steps Steps) error {
 	if len(steps) == 0 {
-		return fmt.Errorf("steps is required")
+		return &StepValidationError{Code: StepValidationStepsRequired, StepIndex: -1}
 	}
 
 	seen := map[string]struct{}{}
 	for i, step := range steps {
 		if strings.TrimSpace(step.ID) == "" {
-			return fmt.Errorf("steps[%d].id is required", i)
+			return &StepValidationError{Code: StepValidationIDRequired, StepIndex: i}
 		}
 		if _, exists := seen[step.ID]; exists {
-			return fmt.Errorf("duplicate step id %q", step.ID)
+			return &StepValidationError{Code: StepValidationDuplicateID, StepIndex: i, StepID: step.ID}
 		}
 		seen[step.ID] = struct{}{}
 
 		if strings.TrimSpace(step.Name) == "" {
-			return fmt.Errorf("steps[%d].name is required", i)
+			return &StepValidationError{Code: StepValidationNameRequired, StepIndex: i, StepID: step.ID}
 		}
 		if strings.TrimSpace(step.Provider) == "" {
-			return fmt.Errorf("steps[%d].provider is required", i)
+			return &StepValidationError{Code: StepValidationProviderRequired, StepIndex: i, StepID: step.ID}
 		}
 		if strings.TrimSpace(step.TaskType) == "" {
-			return fmt.Errorf("steps[%d].task_type is required", i)
+			return &StepValidationError{Code: StepValidationTaskTypeRequired, StepIndex: i, StepID: step.ID}
 		}
 		if step.TaskID == 0 {
-			return fmt.Errorf("steps[%d].task_id is required", i)
+			return &StepValidationError{Code: StepValidationTaskIDRequired, StepIndex: i, StepID: step.ID}
 		}
 		for _, depID := range step.DependsOn {
 			if strings.TrimSpace(depID) == "" {
-				return fmt.Errorf("steps[%d].depends_on contains empty step id", i)
+				return &StepValidationError{Code: StepValidationDependencyEmpty, StepIndex: i, StepID: step.ID}
 			}
 		}
 	}
@@ -133,7 +149,7 @@ func ValidateSteps(steps Steps) error {
 	for i, step := range steps {
 		for _, depID := range step.DependsOn {
 			if _, exists := seen[depID]; !exists {
-				return fmt.Errorf("steps[%d].depends_on references unknown step %q", i, depID)
+				return &StepValidationError{Code: StepValidationDependencyUnknown, StepIndex: i, StepID: step.ID, Reference: depID}
 			}
 		}
 		if err := validateStepTemplateReferences(i, step, seen); err != nil {
@@ -156,13 +172,13 @@ func validateStepTemplateReferences(index int, step Step, knownSteps map[string]
 
 	for _, ref := range collectTemplateStepReferences(step.Parameters) {
 		if _, exists := knownSteps[ref]; !exists {
-			return fmt.Errorf("steps[%d].parameters references unknown step %q", index, ref)
+			return &StepValidationError{Code: StepValidationTemplateUnknownStep, StepIndex: index, StepID: step.ID, Reference: ref}
 		}
 		if ref == step.ID {
-			return fmt.Errorf("steps[%d].parameters cannot reference itself", index)
+			return &StepValidationError{Code: StepValidationTemplateSelfReference, StepIndex: index, StepID: step.ID, Reference: ref}
 		}
 		if _, exists := dependencies[ref]; !exists {
-			return fmt.Errorf("steps[%d].parameters references step %q but depends_on does not include it", index, ref)
+			return &StepValidationError{Code: StepValidationTemplateMissingDependency, StepIndex: index, StepID: step.ID, Reference: ref}
 		}
 	}
 	return nil
@@ -221,7 +237,7 @@ func validateStepDAG(steps Steps) error {
 	var visit func(string) error
 	visit = func(stepID string) error {
 		if visiting[stepID] {
-			return fmt.Errorf("steps contains circular dependency at %q", stepID)
+			return &StepValidationError{Code: StepValidationCircularDependency, StepIndex: -1, StepID: stepID}
 		}
 		if visited[stepID] {
 			return nil

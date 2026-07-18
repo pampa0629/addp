@@ -52,12 +52,16 @@
 
 处理 ADDP Agent、平台级 Skill、Tool Manifest、Codex / Hermes Agent 接入、Python SDK / CLI、AG-UI、A2UI、智能体受委托身份或操作审批时，建议按以下顺序阅读：
 
-1. [ADDP 智能体能力开放体系专题](next/ADDP智能体能力开放体系专题.md)：确认 `Skill + Tool` 能力模型、Agent Runtime 消费边界、SDK / CLI 单一实现关系、AG-UI / A2UI 分层和分阶段实施路线。
-2. [ADDP Skill 规范](skills/addp-Skill规范.md)：确认平台级 Skill 的目录、粒度、渐进式加载、Tool 依赖、澄清、审批和评测要求。
-3. [ADDP API 设计规范](spec/addp-API设计规范.md)：确认 AI Agent 友好 API、`x-ai-hint`、错误类型和当前服务间认证要求。
-4. [登录认证的统一要求](spec/addp登录认证的统一要求.md)：确认统一登录入口和客户端认证边界。
-5. [授权上下文规范](spec/addp授权上下文规范.md)：确认 AuthContext、用户/租户状态、OAuth Scope、PKCE / Device Flow 和受委托令牌的唯一语义。
-6. [铁路占耕地面积计算 AI 自动化实验](plan/铁路占耕地面积计算-AI自动化实验.md)：作为 `workflow-analysis` Skill 的端到端评测场景。
+1. [术语表](concepts/addp术语表.md)：统一 Agent Runtime、AgentRun、Skill、Tool、ResultRef、Interaction、Presentation 和评测术语。
+2. [智能体 Tool 开放规范](spec/addp智能体Tool开放规范.md)：确认 Tool Manifest、ToolExecutor、Python SDK、CLI 和 Adapter 的唯一能力开放路径。
+3. [ADDP Skill 规范](skills/addp-Skill规范.md)：确认平台级 Skill 的目录、粒度、渐进式加载和 Tool 引用。
+4. [智能体交互协议规范](spec/addp智能体交互协议规范.md)：确认 AgentRun、AG-UI、消息 parts、Interaction、ResultRef、Presentation 和 A2UI Catalog。
+5. [智能体评测规范](spec/addp智能体评测规范.md)：确认场景、在线证据、统一门禁、报告比较和正式发布评测基线。
+6. [授权上下文规范](spec/addp授权上下文规范.md)与 [OAuth 授权规范](spec/addp%20OAuth授权规范.md)：确认 AuthContext、OAuth Scope、委托身份和 owner 写审批。
+7. [ADDP API 设计规范](spec/addp-API设计规范.md)：确认 AI Agent 友好 API、`x-ai-hint` 和错误格式。
+8. [Agent 模块说明](../agent/CLAUDE.md)、[common-python 模块说明](../common-python/CLAUDE.md)与 [common-frontend 说明](../common-frontend/README.md)：查看当前实现。
+9. [ADDP 智能体能力开放体系专题](next/ADDP智能体能力开放体系专题.md)：查看架构决策、阶段实施历史和延期条件。
+10. [铁路占耕地面积计算 AI 自动化实验](plan/铁路占耕地面积计算-AI自动化实验.md)：查看 `workflow-analysis` 的业务实验背景。
 
 ## 资源定位、资源树与数据检索主题
 

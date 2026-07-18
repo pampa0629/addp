@@ -80,7 +80,68 @@
           <el-input-number v-model="currentNode.timeout" :min="0" :max="3600"></el-input-number>
         </el-form-item>
 
-        <el-form-item :label="t('orchestrator.dagEditor.parametersLabel')">
+        <template v-if="parameterEditorMode === 'structured'">
+          <el-divider content-position="left">{{ t('orchestrator.dagEditor.parametersLabel') }}</el-divider>
+          <el-form-item
+            v-for="field in parameterFields"
+            :key="field.name"
+            :label="parameterFieldLabel(field)"
+            :required="field.required"
+          >
+            <el-select
+              v-if="Array.isArray(field.schema.enum)"
+              v-model="structuredParameters[field.name]"
+              clearable
+              :placeholder="t('orchestrator.dagEditor.parameterSelectPlaceholder')"
+            >
+              <el-option
+                v-for="option in field.schema.enum"
+                :key="String(option)"
+                :label="parameterValueLabel(option)"
+                :value="option"
+              />
+            </el-select>
+            <el-select
+              v-else-if="field.schema.type === 'boolean' && !usesBooleanSwitch(field)"
+              v-model="structuredParameters[field.name]"
+              clearable
+              :placeholder="t('orchestrator.dagEditor.parameterSelectPlaceholder')"
+            >
+              <el-option :label="t('orchestrator.dagEditor.booleanTrue')" :value="true" />
+              <el-option :label="t('orchestrator.dagEditor.booleanFalse')" :value="false" />
+            </el-select>
+            <el-switch
+              v-else-if="field.schema.type === 'boolean'"
+              v-model="structuredParameters[field.name]"
+              :active-text="t('orchestrator.dagEditor.booleanTrue')"
+              :inactive-text="t('orchestrator.dagEditor.booleanFalse')"
+            />
+            <el-input-number
+              v-else-if="field.schema.type === 'integer' || field.schema.type === 'number'"
+              v-model="structuredParameters[field.name]"
+              :min="field.schema.minimum"
+              :max="field.schema.maximum"
+              :step="field.schema.type === 'integer' ? 1 : 0.1"
+              :precision="field.schema.type === 'integer' ? 0 : undefined"
+              controls-position="right"
+            />
+            <el-input
+              v-else
+              v-model="structuredParameters[field.name]"
+              :minlength="field.schema.minLength"
+              :maxlength="field.schema.maxLength"
+              :show-word-limit="field.schema.maxLength !== undefined"
+            />
+            <div v-if="field.schema.description" class="parameter-description">
+              {{ field.schema.description }}
+            </div>
+          </el-form-item>
+        </template>
+
+        <el-form-item
+          v-else-if="parameterEditorMode === 'json'"
+          :label="t('orchestrator.dagEditor.parametersJsonLabel')"
+        >
           <el-input
             type="textarea"
             v-model="parametersStr"
@@ -88,6 +149,13 @@
             placeholder='{"key": "value"}'
           ></el-input>
         </el-form-item>
+
+        <el-empty
+          v-else
+          :description="t('orchestrator.dagEditor.noExecutionParameters')"
+          :image-size="48"
+          class="empty-parameters"
+        />
 
         <el-form-item>
           <el-button type="primary" @click="saveNodeConfig">{{ t('orchestrator.dagEditor.saveConfigBtn') }}</el-button>
@@ -99,7 +167,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Connection, Delete, DocumentDelete, Edit } from '@element-plus/icons-vue'
@@ -107,8 +175,16 @@ import { buildTaskOwnerUrl } from '@addp/common-frontend'
 import { useDAGCore, useLoopDetection, useDAGSelection, useDAGEdgeMode, generateColor } from '@addp/common-frontend/dag'
 import modulesApi from '../api/modules'
 import taskProvidersAPI from '../api/taskProviders'
+import {
+  activeTaskCapabilityMetadata,
+  createParameterDraft,
+  executionParameterMode,
+  executionSchemaFields,
+  serializeParameterDraft,
+  validateParameterDraft
+} from '../utils/executionSchemaForm'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 
 const props = defineProps({
   initialSteps: {
@@ -123,11 +199,19 @@ const container = ref(null)
 const drawerVisible = ref(false)
 const currentNode = ref({})
 const parametersStr = ref('')
+const structuredParameters = ref({})
 const taskTypeEditUrlIndex = ref(new Map())
 const taskContextIndex = ref(new Map())
+const executionSchemaIndex = ref(new Map())
 
 // 使用 composables
 const { graph, initGraph, loadData } = useDAGCore(container, {
+  layout: {
+    type: 'dagre',
+    rankdir: 'LR',
+    nodesep: 48,
+    ranksep: 96
+  },
   modes: {
     default: ['drag-canvas', 'drag-node', 'click-select'],
     addEdge: ['drag-canvas', 'click-select', 'create-edge']
@@ -177,6 +261,20 @@ const ownerTaskButtonTooltip = computed(() => {
   }
   return t('orchestrator.dagEditor.ownerTaskContextMissing')
 })
+const currentExecutionSchema = computed(() => {
+  return executionSchemaIndex.value.get(taskTypeIndexKey(currentNode.value?.provider, currentNode.value?.taskType)) || null
+})
+const parameterEditorMode = computed(() => executionParameterMode(
+  currentExecutionSchema.value,
+  currentNode.value?.parameters || {}
+))
+const parameterFields = computed(() => executionSchemaFields(currentExecutionSchema.value))
+
+watch(currentExecutionSchema, () => {
+  if (drawerVisible.value) {
+    syncParameterEditors(currentNode.value?.parameters || {})
+  }
+})
 
 onMounted(async () => {
   initGraph()
@@ -214,13 +312,27 @@ function handleNodeClick(evt) {
     graphId: resolveNodeGraphId(model),
     editUrl: resolveNodeEditUrl(model)
   }
-  parametersStr.value = JSON.stringify(model.parameters || {}, null, 2)
+  syncParameterEditors(model.parameters || {})
   drawerVisible.value = true
 }
 
 function saveNodeConfig() {
   try {
-    const params = JSON.parse(parametersStr.value || '{}')
+    let params = {}
+    if (parameterEditorMode.value === 'structured') {
+      const validationError = validateParameterDraft(currentExecutionSchema.value, structuredParameters.value)
+      if (validationError) {
+        ElMessage.error(parameterValidationMessage(validationError))
+        return
+      }
+      params = serializeParameterDraft(currentExecutionSchema.value, structuredParameters.value)
+    } else if (parameterEditorMode.value === 'json') {
+      params = JSON.parse(parametersStr.value || '{}')
+      if (!params || typeof params !== 'object' || Array.isArray(params)) {
+        ElMessage.error(t('orchestrator.dagEditor.jsonObjectError'))
+        return
+      }
+    }
     currentNode.value.parameters = params
 
     graph.value.updateItem(currentNode.value.id, {
@@ -234,6 +346,36 @@ function saveNodeConfig() {
   } catch (error) {
     ElMessage.error(t('orchestrator.dagEditor.jsonError'))
   }
+}
+
+function syncParameterEditors(parameters) {
+  parametersStr.value = JSON.stringify(parameters || {}, null, 2)
+  structuredParameters.value = createParameterDraft(currentExecutionSchema.value, parameters || {})
+}
+
+function parameterFieldLabel(field) {
+  const localeKey = `orchestrator.dagEditor.parameterFields.${field.name}`
+  if (te(localeKey)) return t(localeKey)
+  return field.schema.title || field.name
+}
+
+function parameterValueLabel(value) {
+  const localeKey = `orchestrator.dagEditor.parameterValues.${String(value)}`
+  return te(localeKey) ? t(localeKey) : String(value)
+}
+
+function usesBooleanSwitch(field) {
+  return field.required || Object.prototype.hasOwnProperty.call(field.schema, 'default')
+}
+
+function parameterValidationMessage(error) {
+  return t(`orchestrator.dagEditor.parameterValidation.${error.reason}`, {
+    field: parameterFieldLabel(parameterFields.value.find(field => field.name === error.field) || {
+      name: error.field,
+      schema: {}
+    }),
+    limit: error.limit
+  })
 }
 
 function handleToggleEdgeMode() {
@@ -413,21 +555,19 @@ async function loadTaskProviderRuntimeMetadata() {
     const providers = await taskProvidersAPI.list()
     const editUrlIndex = new Map()
     const contextIndex = new Map()
+    const schemaIndex = new Map()
 
     const taskListRequests = []
     providers.forEach(provider => {
       const moduleName = provider.module_name
       const capabilities = parseCapabilities(provider.capabilities)
       const taskCapabilities = Array.isArray(capabilities.task_capabilities) ? capabilities.task_capabilities : []
-      taskCapabilities
-        .filter(item => hasValue(item?.type) && !item.deprecated && hasValue(item?.edit_url))
+      activeTaskCapabilityMetadata(taskCapabilities)
         .forEach(item => {
-          editUrlIndex.set(taskTypeIndexKey(moduleName, item.type), item.edit_url)
-        })
-
-      taskCapabilities
-        .filter(item => hasValue(item?.type) && !item.deprecated)
-        .forEach(item => {
+          if (item.editUrl) {
+            editUrlIndex.set(taskTypeIndexKey(moduleName, item.type), item.editUrl)
+          }
+          schemaIndex.set(taskTypeIndexKey(moduleName, item.type), item.executionSchema)
           taskListRequests.push(
             modulesApi.listTasksByModule(moduleName, { task_type: item.type })
               .then(data => {
@@ -450,6 +590,7 @@ async function loadTaskProviderRuntimeMetadata() {
     await Promise.all(taskListRequests)
     taskTypeEditUrlIndex.value = editUrlIndex
     taskContextIndex.value = contextIndex
+    executionSchemaIndex.value = schemaIndex
   } catch (error) {
     console.error('加载任务提供者运行态元数据失败:', error)
   }
@@ -536,6 +677,18 @@ defineExpose({
 .toolbar-tips {
   flex: 1;
   max-width: 600px;
+}
+
+.parameter-description {
+  width: 100%;
+  margin-top: 4px;
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.empty-parameters {
+  padding: 16px 0;
 }
 
 .tips-text {

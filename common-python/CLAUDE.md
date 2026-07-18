@@ -59,5 +59,8 @@ pytest
 
 - `common-python/README.md`
 - `common-python/common-python实施报告.md`
+- `docs/spec/addp智能体Tool开放规范.md`
+- `docs/spec/addp智能体评测规范.md`
+- `docs/spec/addp OAuth授权规范.md`
 - `agent/CLAUDE.md`
 - `copilot/CLAUDE.md`

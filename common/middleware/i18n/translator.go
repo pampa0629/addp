@@ -56,12 +56,22 @@ func loadFS(b *goi18n.Bundle, fs embed.FS, dir string) {
 // T 根据 gin context 中的语言偏好翻译消息 ID。
 // 若 key 不存在则 fallback 到 zh-cn，再不存在则返回 key 本身。
 func T(c *gin.Context, messageID string) string {
+	return localize(c, messageID, nil)
+}
+
+// TWithData translates a message ID with go-i18n template data.
+func TWithData(c *gin.Context, messageID string, templateData map[string]interface{}) string {
+	return localize(c, messageID, templateData)
+}
+
+func localize(c *gin.Context, messageID string, templateData map[string]interface{}) string {
 	lang := GetLang(c)
 	localizer := goi18n.NewLocalizer(getBundle(), lang)
-	msg, err := localizer.Localize(&goi18n.LocalizeConfig{MessageID: messageID})
+	config := &goi18n.LocalizeConfig{MessageID: messageID, TemplateData: templateData}
+	msg, err := localizer.Localize(config)
 	if err != nil {
 		localizer = goi18n.NewLocalizer(getBundle(), LangZhCN)
-		msg, err = localizer.Localize(&goi18n.LocalizeConfig{MessageID: messageID})
+		msg, err = localizer.Localize(config)
 		if err != nil {
 			return messageID
 		}

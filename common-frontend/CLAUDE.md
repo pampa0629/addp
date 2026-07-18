@@ -38,5 +38,6 @@ cd manager/frontend && npm run build
 - `common-frontend/README.md`
 - `common-frontend/docs/ARCHITECTURE.md`
 - `common-frontend/docs/addp前端风格设计规范.md`
-- `common-frontend/README.md`
+- `docs/spec/addp智能体交互协议规范.md`
+- `docs/spec/addp智能体评测规范.md`
 - `common-frontend/basic/composables/AUTH_USAGE_GUIDE.md`

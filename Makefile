@@ -1,4 +1,4 @@
-.PHONY: help init dev build up down logs clean test dev-all \
+.PHONY: help init dev build up down logs clean test test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release dev-all \
         build-backend build-frontend build-debug build-release clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
@@ -419,7 +419,19 @@ clean-all: clean ## 清理所有数据（包括 Docker volumes 和数据库）
 		echo "$(YELLOW)操作已取消$(NC)"; \
 	fi
 
-test: ## 运行所有测试
+test-agent-eval: ## 运行 Agent 统一离线评测门禁
+	@bash scripts/test/agent-evaluation-gate.sh offline
+
+test-agent-eval-release: ## 使用三份新鲜在线证据运行 Agent 发布门禁
+	@bash scripts/test/agent-evaluation-gate.sh release
+
+compare-agent-eval: ## 比较两份仓库外 Agent v2 评测报告
+	@bash scripts/test/agent-evaluation-gate.sh compare
+
+compare-agent-eval-release: ## 按正式发布基线策略比较两份 Agent v2 报告
+	@bash scripts/test/agent-evaluation-gate.sh compare-release
+
+test: test-agent-eval ## 运行所有测试
 	@echo "$(GREEN)运行测试...$(NC)"
 	@cd system/backend && go test ./...
 	@if [ -d manager/backend ]; then cd manager/backend && go test ./...; fi

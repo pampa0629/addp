@@ -201,7 +201,7 @@ import {
 
 ### Agent UI 协议组件
 
-`agent-ui/` 提供 ADDP Agent 界面的共享协议适配层：
+`agent-ui/` 提供 ADDP Agent 界面的共享协议适配层，完整协议、安全上限和降级规则见 `docs/spec/addp智能体交互协议规范.md`：
 
 - 使用官方 `@a2ui/web_core/v0_9` 处理 A2UI Surface；
 - 使用 `addp.catalog/v1` 注册受信任 Vue 组件；
@@ -210,6 +210,8 @@ import {
 - A2UI wrapper 只映射声明式 props 和 action，业务事实仍通过 ResultRef / Interaction 访问 owner API。
 
 `MapView` 只渲染最多 200 个 WGS84 GeoJSON Feature，不接受 URL；`TablePreview` 只渲染最多 50 列、100 行 JSON 标量；`ResourcePicker` 只允许提交当前 Interaction 已持久化的 locator 候选，不等同于实时 `ResourceTreePicker`。
+
+组件扩展必须由 `docs/spec/addp智能体评测规范.md` 中的稳定场景驱动；当前未开放 `GraphView`，不得只为展示愿景注册空组件。
 
 消费模块必须在自己的 `package.json` 中声明 `@a2ui/web_core`、Vue、Element Plus 和 Zod 依赖，`common-frontend` 不保存独立 `node_modules`。
 

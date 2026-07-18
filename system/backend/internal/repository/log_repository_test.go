@@ -16,7 +16,7 @@ func TestLogRepositoryApplyFiltersIncludesResourceIdentity(t *testing.T) {
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  "",
 		PreferSimpleProtocol: true,
-	}), &gorm.Config{DryRun: true})
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true})
 	if err != nil {
 		t.Fatalf("open dry run db: %v", err)
 	}

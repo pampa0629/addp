@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -115,6 +116,26 @@ func TestValidateStepsAcceptsTaskProviderReference(t *testing.T) {
 	}
 }
 
+func TestOrchestrationDefinitionRequestAppliesOnlyEditableFields(t *testing.T) {
+	createdBy := uint(9)
+	orch := Orchestration{ID: 42, TenantID: 7, Name: "old", CreatedBy: &createdBy}
+	request := OrchestrationDefinitionRequest{
+		Name:        "new",
+		Description: "description",
+		Steps:       Steps{{ID: "scan", Name: "Scan", Provider: "meta", TaskType: "scan", TaskID: 1}},
+		Enabled:     true,
+		Schedule:    "0 2 * * *",
+	}
+	request.ApplyTo(&orch)
+
+	if orch.ID != 42 || orch.TenantID != 7 || orch.CreatedBy == nil || *orch.CreatedBy != 9 {
+		t.Fatalf("server-owned fields changed: %#v", orch)
+	}
+	if orch.Name != "new" || !orch.Enabled || orch.Schedule != "0 2 * * *" {
+		t.Fatalf("editable fields not applied: %#v", orch)
+	}
+}
+
 func TestValidateStepsRejectsUnknownDependency(t *testing.T) {
 	err := ValidateSteps(Steps{
 		{
@@ -134,6 +155,13 @@ func TestValidateStepsRejectsUnknownDependency(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "missing") {
 		t.Fatalf("error = %q, want missing dependency name", err.Error())
+	}
+	var validationErr *StepValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("error = %T %v, want *StepValidationError", err, err)
+	}
+	if validationErr.Code != StepValidationDependencyUnknown || validationErr.StepIndex != 0 || validationErr.Reference != "missing" {
+		t.Fatalf("step validation error = %#v", validationErr)
 	}
 }
 

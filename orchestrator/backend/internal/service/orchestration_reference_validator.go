@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"strings"
 
 	commonExecution "github.com/addp/common/execution"
@@ -15,7 +14,7 @@ type OrchestrationLookup interface {
 // ValidateNoRecursiveOrchestrationReferences 校验编排定义之间不会形成递归执行。
 func ValidateNoRecursiveOrchestrationReferences(lookup OrchestrationLookup, currentID uint, tenantID uint, steps models.Steps) error {
 	if lookup == nil {
-		return fmt.Errorf("orchestration lookup is required")
+		return &OrchestrationReferenceValidationError{Code: OrchestrationReferenceLookupUnavailable}
 	}
 
 	validator := orchestrationReferenceValidator{
@@ -28,7 +27,7 @@ func ValidateNoRecursiveOrchestrationReferences(lookup OrchestrationLookup, curr
 
 	for _, refID := range referencedOrchestrationIDs(steps) {
 		if currentID > 0 && refID == currentID {
-			return fmt.Errorf("orchestration %d cannot reference itself", currentID)
+			return &OrchestrationReferenceValidationError{Code: OrchestrationReferenceSelf, OrchestrationID: currentID}
 		}
 		if err := validator.visit(refID, []uint{currentID}); err != nil {
 			return err
@@ -47,10 +46,10 @@ type orchestrationReferenceValidator struct {
 
 func (v *orchestrationReferenceValidator) visit(orchestrationID uint, path []uint) error {
 	if v.currentID > 0 && orchestrationID == v.currentID {
-		return fmt.Errorf("orchestration reference cycle detected: %s", formatOrchestrationReferencePath(append(path, orchestrationID)))
+		return &OrchestrationReferenceValidationError{Code: OrchestrationReferenceCycle, OrchestrationID: orchestrationID, Path: append(path, orchestrationID)}
 	}
 	if v.visiting[orchestrationID] {
-		return fmt.Errorf("orchestration reference cycle detected: %s", formatOrchestrationReferencePath(append(path, orchestrationID)))
+		return &OrchestrationReferenceValidationError{Code: OrchestrationReferenceCycle, OrchestrationID: orchestrationID, Path: append(path, orchestrationID)}
 	}
 	if v.visited[orchestrationID] {
 		return nil
@@ -58,7 +57,7 @@ func (v *orchestrationReferenceValidator) visit(orchestrationID uint, path []uin
 
 	orch, err := v.lookup.GetByIDAndTenant(orchestrationID, v.tenantID)
 	if err != nil {
-		return fmt.Errorf("referenced orchestration %d not found", orchestrationID)
+		return &OrchestrationReferenceValidationError{Code: OrchestrationReferenceNotFound, OrchestrationID: orchestrationID, Cause: err}
 	}
 
 	v.visiting[orchestrationID] = true
@@ -86,15 +85,4 @@ func referencedOrchestrationIDs(steps models.Steps) []uint {
 		ids = append(ids, step.TaskID)
 	}
 	return ids
-}
-
-func formatOrchestrationReferencePath(ids []uint) string {
-	parts := make([]string, 0, len(ids))
-	for _, id := range ids {
-		if id == 0 {
-			continue
-		}
-		parts = append(parts, fmt.Sprintf("%d", id))
-	}
-	return strings.Join(parts, " -> ")
 }

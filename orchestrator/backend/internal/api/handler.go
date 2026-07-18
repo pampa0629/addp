@@ -16,7 +16,6 @@ import (
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
-	_ "github.com/addp/orchestrator/i18n"
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
@@ -67,47 +66,42 @@ func NewOrchestrationHandler(
 
 // Create 创建编排
 // @Summary 创建编排 | Create orchestration
+// @Description 严格解析编排定义并拒绝未知字段，统一校验 Step、DAG、模板依赖、任务引用、递归引用和调度表达式 | Strictly parse the orchestration definition, reject unknown fields, and validate steps, DAG, template dependencies, task references, recursive references, and schedule expressions
 // @Tags Orchestrator
 // @Accept json
 // @Produce json
-// @Param orchestration body models.Orchestration true "编排定义，steps 必须使用 provider/task_type/task_id 任务引用 | Orchestration definition, steps must use provider/task_type/task_id task references"
+// @Param orchestration body models.OrchestrationDefinitionRequest true "编排定义，steps 必须使用 provider/task_type/task_id 任务引用 | Orchestration definition, steps must use provider/task_type/task_id task references"
 // @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} models.ErrorResponse "编排定义或执行参数无效 | Invalid orchestration definition or execution parameters"
+// @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Router /orchestrations [post]
 // @Security BearerAuth
 func (h *OrchestrationHandler) Create(c *gin.Context) {
-	var req models.Orchestration
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	var input models.OrchestrationDefinitionRequest
+	if !bindOrchestrationRequest(c, &input) {
+		return
+	}
+	tenantID, ok := requireTenantID(c)
+	if !ok {
 		return
 	}
 
-	// TODO: 从 JWT 中提取 tenant_id
-	req.ID = 0
-	req.TenantID = 1
+	orch := models.Orchestration{TenantID: tenantID}
+	input.ApplyTo(&orch)
+	if userID := commonAuth.GetUserID(c); userID > 0 {
+		orch.CreatedBy = &userID
+	}
 
-	if err := models.ValidateSteps(req.Steps); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if err := h.taskProviderRegistry.ValidateStepTaskReferences(c.Request.Context(), req.Steps); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if err := service.ValidateNoRecursiveOrchestrationReferences(h.orchRepo, req.ID, req.TenantID, req.Steps); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if err := service.ApplyOrchestrationSchedule(&req, time.Now()); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !h.validateOrchestrationDefinition(c, &orch) {
 		return
 	}
 
-	if err := h.orchRepo.Create(&req); err != nil {
+	if err := h.orchRepo.Create(&orch); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusCreated, req)
+	c.JSON(http.StatusCreated, orch)
 }
 
 // List 列出编排
@@ -115,11 +109,14 @@ func (h *OrchestrationHandler) Create(c *gin.Context) {
 // @Tags Orchestrator
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Router /orchestrations [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) List(c *gin.Context) {
-	// TODO: 从 JWT 中提取 tenant_id
-	tenantID := uint(1)
+	tenantID, ok := requireTenantID(c)
+	if !ok {
+		return
+	}
 
 	orchs, err := h.orchRepo.List(tenantID)
 	if err != nil {
@@ -135,6 +132,8 @@ func (h *OrchestrationHandler) List(c *gin.Context) {
 // @Tags Orchestrator
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
+// @Failure 404 {object} models.ErrorResponse "编排不存在 | Orchestration not found"
 // @Router /orchestrations/{id} [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) Get(c *gin.Context) {
@@ -144,7 +143,11 @@ func (h *OrchestrationHandler) Get(c *gin.Context) {
 		return
 	}
 
-	orch, err := h.orchRepo.GetByID(uint(id))
+	tenantID, ok := requireTenantID(c)
+	if !ok {
+		return
+	}
+	orch, err := h.orchRepo.GetByIDAndTenant(uint(id), tenantID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "orchestrator.error.orchestration_not_found")})
 		return
@@ -155,12 +158,16 @@ func (h *OrchestrationHandler) Get(c *gin.Context) {
 
 // Update 更新编排
 // @Summary 更新编排 | Update orchestration
+// @Description 严格解析编排定义并拒绝未知字段，统一校验 Step、DAG、模板依赖、任务引用、递归引用和调度表达式 | Strictly parse the orchestration definition, reject unknown fields, and validate steps, DAG, template dependencies, task references, recursive references, and schedule expressions
 // @Tags Orchestrator
 // @Accept json
 // @Produce json
 // @Param id path int true "编排 ID | Orchestration ID"
-// @Param orchestration body models.Orchestration true "编排定义，steps 必须使用 provider/task_type/task_id 任务引用 | Orchestration definition, steps must use provider/task_type/task_id task references"
+// @Param orchestration body models.OrchestrationDefinitionRequest true "编排定义，steps 必须使用 provider/task_type/task_id 任务引用 | Orchestration definition, steps must use provider/task_type/task_id task references"
 // @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} models.ErrorResponse "编排定义或执行参数无效 | Invalid orchestration definition or execution parameters"
+// @Failure 404 {object} models.ErrorResponse "编排不存在 | Orchestration not found"
+// @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Router /orchestrations/{id} [put]
 // @Security BearerAuth
 func (h *OrchestrationHandler) Update(c *gin.Context) {
@@ -170,45 +177,32 @@ func (h *OrchestrationHandler) Update(c *gin.Context) {
 		return
 	}
 
-	orch, err := h.orchRepo.GetByID(uint(id))
+	tenantID, ok := requireTenantID(c)
+	if !ok {
+		return
+	}
+	orch, err := h.orchRepo.GetByIDAndTenant(uint(id), tenantID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "orchestrator.error.orchestration_not_found")})
 		return
 	}
 
-	var req models.Orchestration
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	var input models.OrchestrationDefinitionRequest
+	if !bindOrchestrationRequest(c, &input) {
+		return
+	}
+	input.ApplyTo(orch)
+
+	if !h.validateOrchestrationDefinition(c, orch) {
 		return
 	}
 
-	// 保留原有字段
-	req.ID = orch.ID
-	req.TenantID = orch.TenantID
-
-	if err := models.ValidateSteps(req.Steps); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if err := h.taskProviderRegistry.ValidateStepTaskReferences(c.Request.Context(), req.Steps); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if err := service.ValidateNoRecursiveOrchestrationReferences(h.orchRepo, req.ID, req.TenantID, req.Steps); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if err := service.ApplyOrchestrationSchedule(&req, time.Now()); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := h.orchRepo.Update(&req); err != nil {
+	if err := h.orchRepo.UpdateForTenant(orch); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, req)
+	c.JSON(http.StatusOK, orch)
 }
 
 // Delete 删除编排
@@ -216,6 +210,8 @@ func (h *OrchestrationHandler) Update(c *gin.Context) {
 // @Tags Orchestrator
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
+// @Failure 404 {object} models.ErrorResponse "编排不存在 | Orchestration not found"
 // @Router /orchestrations/{id} [delete]
 // @Security BearerAuth
 func (h *OrchestrationHandler) Delete(c *gin.Context) {
@@ -225,8 +221,12 @@ func (h *OrchestrationHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.orchRepo.Delete(uint(id)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	tenantID, ok := requireTenantID(c)
+	if !ok {
+		return
+	}
+	if err := h.orchRepo.DeleteForTenant(uint(id), tenantID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "orchestrator.error.orchestration_not_found")})
 		return
 	}
 
@@ -238,6 +238,8 @@ func (h *OrchestrationHandler) Delete(c *gin.Context) {
 // @Tags Orchestrator
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
+// @Failure 404 {object} models.ErrorResponse "编排不存在 | Orchestration not found"
 // @Router /orchestrations/{id}/execute [post]
 // @Security BearerAuth
 func (h *OrchestrationHandler) Execute(c *gin.Context) {
@@ -247,7 +249,11 @@ func (h *OrchestrationHandler) Execute(c *gin.Context) {
 		return
 	}
 
-	orch, err := h.orchRepo.GetByID(uint(id))
+	tenantID, ok := requireTenantID(c)
+	if !ok {
+		return
+	}
+	orch, err := h.orchRepo.GetByIDAndTenant(uint(id), tenantID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "orchestrator.error.orchestration_not_found")})
 		return
@@ -255,7 +261,15 @@ func (h *OrchestrationHandler) Execute(c *gin.Context) {
 
 	// 使用统一执行服务创建执行记录
 	ctx := c.Request.Context()
-	execution, err := h.executionService.CreateExecution(ctx, orch.ID, orch.TenantID, commonExecution.TriggerTypeManual)
+	execution, err := h.executionService.CreateExecutionWithContext(
+		ctx,
+		orch.ID,
+		tenantID,
+		commonExecution.TriggerTypeManual,
+		commonExecution.ModuleOrchestrator,
+		nil,
+		commonAuth.GetUserID(c),
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -275,6 +289,8 @@ func (h *OrchestrationHandler) Execute(c *gin.Context) {
 // @Tags Orchestrator
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
+// @Failure 404 {object} models.ErrorResponse "编排不存在 | Orchestration not found"
 // @Router /orchestrations/{id}/executions [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) ListExecutions(c *gin.Context) {
@@ -284,8 +300,14 @@ func (h *OrchestrationHandler) ListExecutions(c *gin.Context) {
 		return
 	}
 
-	// TODO: 从 JWT 中提取 tenant_id
-	tenantID := uint(1)
+	tenantID, ok := requireTenantID(c)
+	if !ok {
+		return
+	}
+	if _, err := h.orchRepo.GetByIDAndTenant(uint(id), tenantID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "orchestrator.error.orchestration_not_found")})
+		return
+	}
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -317,11 +339,14 @@ func (h *OrchestrationHandler) ListExecutions(c *gin.Context) {
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
 // @Success 200 {object} map[string]interface{}
+// @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Router /executions [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) ListAllExecutions(c *gin.Context) {
-	// TODO: 从 JWT 中提取 tenant_id
-	tenantID := uint(1)
+	tenantID, ok := requireTenantID(c)
+	if !ok {
+		return
+	}
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -351,6 +376,8 @@ func (h *OrchestrationHandler) ListAllExecutions(c *gin.Context) {
 // @Tags Orchestrator
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
+// @Failure 404 {object} models.ErrorResponse "执行不存在 | Execution not found"
 // @Router /orch-executions/{id} [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
@@ -360,8 +387,10 @@ func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 		return
 	}
 
-	// TODO: 从 JWT 中提取 tenant_id
-	tenantID := uint(1)
+	tenantID, ok := requireTenantID(c)
+	if !ok {
+		return
+	}
 
 	ctx := c.Request.Context()
 	exec, err := h.executionService.GetExecution(ctx, uint(id), tenantID)
@@ -406,6 +435,7 @@ func (h *OrchestrationHandler) ListTaskProviders(c *gin.Context) {
 // @Param page_size query int false "每页数量 | Page size" default(100)
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]interface{}
+// @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Failure 502 {object} map[string]interface{}
@@ -415,6 +445,10 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 	moduleName := strings.TrimSpace(c.Query("module_name"))
 	if moduleName == "" || moduleName == commonExecution.ModuleOrchestrator {
 		h.ListProviderOrchestrationTasks(c)
+		return
+	}
+	tenantID, ok := requireTenantID(c)
+	if !ok {
 		return
 	}
 
@@ -442,7 +476,7 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 	// 3. 传递请求中的查询参数（page, page_size, task_type 等）
 	queryParams := url.Values{}
 	for key, values := range c.Request.URL.Query() {
-		if key != "module_name" && len(values) > 0 {
+		if key != "module_name" && key != "tenant_id" && len(values) > 0 {
 			queryParams.Set(key, values[0])
 		}
 	}
@@ -470,6 +504,10 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 	// 传递 Authorization 头（如果存在）
 	if authHeader := c.GetHeader("Authorization"); authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
+	}
+	if internalAPIKey := c.GetHeader("X-Internal-API-Key"); internalAPIKey != "" {
+		req.Header.Set("X-Internal-API-Key", internalAPIKey)
+		req.Header.Set("X-Tenant-ID", strconv.FormatUint(uint64(tenantID), 10))
 	}
 
 	resp, err := h.httpClient.Do(req)
@@ -529,9 +567,9 @@ func (h *OrchestrationHandler) ListProviderOrchestrationTasks(c *gin.Context) {
 		return
 	}
 
-	tenantID := commonAuth.GetTenantID(c)
-	if tenantID == 0 {
-		tenantID = 1
+	tenantID, ok := requireTenantID(c)
+	if !ok {
+		return
 	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "100"))
@@ -569,6 +607,7 @@ func (h *OrchestrationHandler) ListProviderOrchestrationTasks(c *gin.Context) {
 // @Param id path int true "编排 ID | Orchestration ID"
 // @Success 200 {object} models.ProviderOrchestrationTask
 // @Failure 400 {object} map[string]interface{}
+// @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} map[string]interface{}
 // @Router /tasks/{task_type}/{id} [get]
 // @Security BearerAuth
@@ -583,9 +622,9 @@ func (h *OrchestrationHandler) GetProviderOrchestrationTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := commonAuth.GetTenantID(c)
-	if tenantID == 0 {
-		tenantID = 1
+	tenantID, ok := requireTenantID(c)
+	if !ok {
+		return
 	}
 	orch, err := h.orchRepo.GetByIDAndTenant(uint(id), tenantID)
 	if err != nil {
@@ -606,6 +645,7 @@ func (h *OrchestrationHandler) GetProviderOrchestrationTask(c *gin.Context) {
 // @Param request body orchestrationTaskProviderExecuteRequest false "TaskProvider 执行请求 | TaskProvider execution request"
 // @Success 202 {object} orchestrationTaskProviderExecuteResponse
 // @Failure 400 {object} map[string]interface{}
+// @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Router /tasks/{task_type}/{id}/execute [post]
@@ -631,9 +671,9 @@ func (h *OrchestrationHandler) ExecuteProviderOrchestrationTask(c *gin.Context) 
 		return
 	}
 
-	tenantID := commonAuth.GetTenantID(c)
-	if tenantID == 0 {
-		tenantID = 1
+	tenantID, ok := requireTenantID(c)
+	if !ok {
+		return
 	}
 	if _, err := h.orchRepo.GetByIDAndTenant(uint(id), tenantID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "orchestrator.error.orchestration_not_found")})
@@ -677,13 +717,14 @@ func (h *OrchestrationHandler) ExecuteProviderOrchestrationTask(c *gin.Context) 
 // @Produce json
 // @Param execution_id path string true "执行 UUID | Execution UUID"
 // @Success 200 {object} commonExecution.TaskExecution
+// @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} map[string]interface{}
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) GetProviderExecution(c *gin.Context) {
-	tenantID := commonAuth.GetTenantID(c)
-	if tenantID == 0 {
-		tenantID = 1
+	tenantID, ok := requireTenantID(c)
+	if !ok {
+		return
 	}
 	exec, err := h.executionService.GetExecutionByExecutionID(c.Request.Context(), c.Param("execution_id"), tenantID)
 	if err != nil {
@@ -762,47 +803,6 @@ func (h *OrchestrationHandler) ensureDisplayNames(items interface{}) []interface
 		}
 
 		result[i] = itemMap
-	}
-
-	return result
-}
-
-// replaceTemplateVars 替换模板变量（如 {{.TenantID}}）
-// 支持的变量：
-// - {{.TenantID}} - 从请求中获取租户 ID（优先从 query，其次从 JWT）
-// - {{.UserID}} - 从 JWT 中获取用户 ID
-// - {{.Page}} - 从请求中获取page参数
-// - {{.PageSize}} - 从请求中获取page_size参数
-func replaceTemplateVars(template string, c *gin.Context) string {
-	result := template
-
-	// 替换 {{.TenantID}}
-	if strings.Contains(result, "{{.TenantID}}") {
-		tenantID := c.Query("tenant_id")
-		if tenantID == "" {
-			// TODO: 从 JWT 中提取 tenant_id
-			tenantID = "1" // 默认值
-		}
-		result = strings.ReplaceAll(result, "{{.TenantID}}", tenantID)
-	}
-
-	// 替换 {{.UserID}}
-	if strings.Contains(result, "{{.UserID}}") {
-		// TODO: 从 JWT 中提取 user_id
-		userID := "1" // 默认值
-		result = strings.ReplaceAll(result, "{{.UserID}}", userID)
-	}
-
-	// 替换 {{.Page}}
-	if strings.Contains(result, "{{.Page}}") {
-		page := c.DefaultQuery("page", "1")
-		result = strings.ReplaceAll(result, "{{.Page}}", page)
-	}
-
-	// 替换 {{.PageSize}}
-	if strings.Contains(result, "{{.PageSize}}") {
-		pageSize := c.DefaultQuery("page_size", "20")
-		result = strings.ReplaceAll(result, "{{.PageSize}}", pageSize)
 	}
 
 	return result
