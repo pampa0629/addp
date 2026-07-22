@@ -805,33 +805,40 @@ definitions:
       token_type:
         type: string
     type: object
-  github_com_addp_system_internal_models.OAuthAuthorizationRequest:
+  github_com_addp_system_internal_models.OAuthAuthorizationDecisionRequest:
     properties:
-      client_id:
-        type: string
-      code_challenge:
-        type: string
-      code_challenge_method:
-        type: string
       decision:
         enum:
         - approved
         - rejected
         type: string
-      redirect_uri:
+      request_id:
+        type: string
+    required:
+    - decision
+    - request_id
+    type: object
+  github_com_addp_system_internal_models.OAuthAuthorizationRequestCreatedResponse:
+    properties:
+      expires_in:
+        type: integer
+      request_id:
+        type: string
+      request_secret:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.OAuthAuthorizationRequestView:
+    properties:
+      client_id:
+        type: string
+      client_name:
+        type: string
+      expires_at:
+        type: string
+      request_id:
         type: string
       scope:
         type: string
-      state:
-        type: string
-    required:
-    - client_id
-    - code_challenge
-    - code_challenge_method
-    - decision
-    - redirect_uri
-    - scope
-    - state
     type: object
   github_com_addp_system_internal_models.OAuthAuthorizationResponse:
     properties:
@@ -2083,22 +2090,153 @@ paths:
       summary: 获取日志趋势 | Get log trends
       tags:
       - 日志管理 | Log Management
+  /oauth/authorization_requests:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: 校验公共客户端、动态 loopback Redirect URI、Scope 和 PKCE，并创建五分钟有效的一次性浏览器授权请求
+        | Validate the public client, dynamic loopback redirect URI, scope, and PKCE,
+        then create a one-time browser authorization request valid for five minutes
+      parameters:
+      - description: OAuth Client ID
+        in: formData
+        name: client_id
+        required: true
+        type: string
+      - description: Redirect URI
+        in: formData
+        name: redirect_uri
+        required: true
+        type: string
+      - description: OAuth Scope
+        in: formData
+        name: scope
+        type: string
+      - description: PKCE challenge
+        in: formData
+        name: code_challenge
+        required: true
+        type: string
+      - description: PKCE challenge method
+        enum:
+        - S256
+        in: formData
+        name: code_challenge_method
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationRequestCreatedResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      summary: 创建 OAuth 授权请求 | Create OAuth authorization request
+      tags:
+      - OAuth
+  /oauth/authorization_requests/{request_id}:
+    delete:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: 使用只向 CLI 返回一次的请求凭据幂等取消待处理授权请求 | Idempotently cancel a pending authorization
+        request using the request secret returned once to the CLI
+      parameters:
+      - description: Authorization Request ID
+        in: path
+        name: request_id
+        required: true
+        type: string
+      - description: Bearer Authorization Request Secret
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      summary: 取消 OAuth 授权请求 | Cancel OAuth authorization request
+      tags:
+      - OAuth
+    get:
+      description: 向当前已认证用户返回 System 已校验的待处理客户端和 Scope；失效请求不返回原始授权参数 | Return the
+        pending client and scope already validated by System to the authenticated
+        user; unavailable requests do not expose original authorization parameters
+      parameters:
+      - description: Authorization Request ID
+        in: path
+        name: request_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationRequestView'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "410":
+          description: Gone
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取 OAuth 授权请求 | Get OAuth authorization request
+      tags:
+      - OAuth
   /oauth/authorizations:
     post:
       consumes:
       - application/json
-      description: 校验当前用户、OAuth Client、Redirect URI（原生应用 loopback URI 按 RFC 8252 仅允许动态端口）、Scope
-        和 PKCE；批准时签发一次性 Authorization Code，拒绝时返回 access_denied 回跳 | Validate the current
-        user, OAuth client, redirect URI (native-app loopback URIs allow only a dynamic
-        port under RFC 8252), scope and PKCE; issue a one-time authorization code
-        when approved or return an access_denied redirect when rejected
+      description: 锁定短期 Authorization Request，复核当前用户、客户端和授权边界；批准时签发一次性 Authorization
+        Code，拒绝时返回 access_denied 回跳 | Lock the short-lived authorization request and
+        revalidate the current user, client, and authorization boundary; issue a one-time
+        authorization code when approved or return an access_denied redirect when
+        rejected
       parameters:
-      - description: 授权请求 | Authorization request
+      - description: 授权决定 | Authorization decision
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationRequest'
+          $ref: '#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationDecisionRequest'
       produces:
       - application/json
       responses:
@@ -2116,6 +2254,10 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "403":
           description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "410":
+          description: Gone
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "429":

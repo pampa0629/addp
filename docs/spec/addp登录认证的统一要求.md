@@ -1,10 +1,10 @@
 # ADDP 登录认证的统一要求
 
-更新日期：2026-07-17
+更新日期：2026-07-22
 
 ## 一、认证事实与唯一主路径
 
-- `system.users` 和 `system.tenants` 是用户、租户和账号状态的唯一事实源。
+- System IAM 是 User、账号、外部身份、Tenant Membership、Role 和会话状态的唯一逻辑事实源。
 - System 只签发随机 opaque 用户访问令牌，不签发或解析用户 JWT。
 - `GET /api/v1/system/auth/context` 是用户访问令牌到权威 AuthContext 的唯一接口。
 - 业务模块不解析令牌，不从 `/users/me` 推断身份，只消费 AuthContext。
@@ -22,6 +22,13 @@ HttpOnly Refresh Token Cookie
 ```
 
 禁止保留 JWT、本地持久化 Access Token或 URL query Token 等平行路径。
+
+每枚 User Access Token 必须绑定且只能绑定一种会话模式：
+
+- `platform`：进入 Platform Realm，不携带当前 Tenant，也不激活 Tenant 权限；
+- `tenant`：绑定一个有效 Tenant Membership 和唯一当前 Tenant，不携带平台角色权限。
+
+切换 Tenant 或切换平台/租户模式时必须重新建立授权上下文，不能在一个 AuthContext 中合并多个 Tenant 或混合平台与 Tenant 权限。
 
 ## 二、浏览器令牌存储
 
@@ -125,10 +132,14 @@ Console Browser AuthSession
 ### 6.1 登录
 
 1. 用户提交用户名和密码到 System `/login`；
-2. System 返回短期 Access Token并设置 Refresh Cookie；
-3. Browser AuthSession 将 Access Token 保存到内存；
-4. 前端读取 `/users/me` 作为当前用户资料；
-5. Console 进入用户原计划访问的页面。
+2. System 验证 User、Local Account、认证策略和必要 MFA；
+3. 登录流程选择 Platform Realm 或一个有效 Tenant Membership；
+4. System 返回绑定该会话模式的短期 Access Token，并设置 Refresh Cookie；
+5. Browser AuthSession 将 Access Token 保存到内存；
+6. 前端读取 `/users/me` 作为当前用户资料；
+7. Console 进入所选平台或 Tenant 上下文中的原计划页面。
+
+用户只有一个可用业务 Tenant 时可以由产品流程直接选择；存在多个 Tenant Membership 时必须让用户明确选择。平台角色不能作为默认方式悄然进入某个 Tenant。
 
 ### 6.2 启动恢复
 
@@ -187,4 +198,5 @@ Console Browser AuthSession
 - [ ] 多标签页同时到期不会触发 Refresh Token 重用撤销。
 - [ ] 401 只重试一次，不形成刷新循环。
 - [ ] 用户退出会同步到其他标签页和 iframe。
+- [ ] Access Token 只绑定 `platform` 或一个当前 Tenant，上下文切换后旧权限不会继续生效。
 - [ ] Console、一个 iframe 模块和一个独立模块完成自动化或在线验收。

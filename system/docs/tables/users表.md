@@ -1,5 +1,7 @@
 # users 表结构和 API 说明
 
+> 本文记录当前表和 API 实现。IAM 目标模型以 `docs/concepts/addp账号与权限体系图.md` 为准；`user_type` 和 User 单一 `tenant_id` 将由 User、Tenant Membership、Role Assignment 等目标模型一次性替换，不得继续扩展旧权限分支。
+
 ## 一、表结构概览
 
 `system.users` 表是 ADDP 平台的用户管理核心表,负责存储用户认证信息和基本资料。支持三种用户类型(SuperAdmin、TenantAdmin、User),实现多租户隔离和基于角色的权限控制。

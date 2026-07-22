@@ -2,30 +2,24 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   authorizationDecisionRequest,
+  authorizationRequestId,
   redirectToAuthorizationResult
 } from '../src/oauth/authorization'
 
 describe('OAuth authorization decision', () => {
-  const query = {
-    client_id: 'addp-cli',
-    redirect_uri: 'http://127.0.0.1:43123/callback',
-    scope: 'addp.api',
-    state: 'state-1',
-    code_challenge: 'challenge',
-    code_challenge_method: 'S256'
-  }
+  const query = { request_id: 'request-1' }
 
-  it('builds one canonical request for approval and rejection', () => {
-    expect(authorizationDecisionRequest(query, 'approved')).toEqual({
-      client_id: 'addp-cli',
-      redirect_uri: 'http://127.0.0.1:43123/callback',
-      scope: 'addp.api',
-      state: 'state-1',
-      code_challenge: 'challenge',
-      code_challenge_method: 'S256',
+  it('accepts only the server-managed request id from the browser query', () => {
+    expect(authorizationRequestId(query)).toBe('request-1')
+    expect(() => authorizationRequestId({})).toThrow('oauth_authorization_request_missing')
+  })
+
+  it('builds one canonical decision request for approval and rejection', () => {
+    expect(authorizationDecisionRequest('request-1', 'approved')).toEqual({
+      request_id: 'request-1',
       decision: 'approved'
     })
-    expect(authorizationDecisionRequest(query, 'rejected').decision).toBe('rejected')
+    expect(authorizationDecisionRequest('request-1', 'rejected').decision).toBe('rejected')
   })
 
   it('redirects using the already-unwrapped API response', () => {

@@ -2,10 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> IAM 目标模型以 `docs/concepts/addp账号与权限体系图.md` 和 `docs/spec/addp授权上下文规范.md` 为准。下文三级 `user_type`、单一 `users.tenant_id` 和默认 `SuperAdmin` 仅描述当前实现差距，不是可继续扩展的契约；目标实施必须一次性替换，不保留双轨。
+
 ## 项目概述
 
 **全域数据平台 (All Domain Data Platform)** 是企业级数据平台的核心能力模块，提供基础系统功能：
-- 多租户账号管理（超级管理员、租户管理员、普通用户）
+- 统一 IAM（全局 User、Tenant Membership、组织、角色、权限和平台三员分立；当前实现尚待迁移）
 - 日志管理（审计日志存储和查询、统计分析、导出）
 - 引擎管理（通用引擎连接、扩展运行时注册与能力展示，含 Schema/表枚举）
 - 应用管理（外部应用注册、API Key 管理）
@@ -21,7 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 多租户架构
 
-### 用户体系（三级权限）
+### 当前用户体系实现差距（待一次性删除）
 
 1. **超级管理员 (SuperAdmin)**
    - 系统唯一，默认账号 `SuperAdmin`，默认密码 `20251001#SuperAdmin`
@@ -184,6 +186,7 @@ frontend/src/
 | engines | system | 引擎配置表，含加密连接信息 |
 | applications | system | 外部应用表 |
 | api_keys | system | 应用 API Key 表（存储 SHA256 hash） |
+| oauth_authorization_requests | system | 浏览器授权前的短期已校验请求、取消凭据 Hash 和一次性状态 |
 | refresh_token_families | system | 浏览器和 OAuth Refresh Token Family |
 | refresh_tokens | system | 轮换 Refresh Token Hash |
 | access_tokens | system | 短期 User Access Token Hash |

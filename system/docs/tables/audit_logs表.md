@@ -1,5 +1,7 @@
 # audit_logs 表结构和 API 说明
 
+> 本文记录当前表和 API 实现。IAM 目标审计边界以 `docs/concepts/addp账号与权限体系图.md` 为准；SuperAdmin 全局查看语义将由平台审计管理员和独立 Statistics Permission 替换，平台运维角色不得因此获得 Tenant 业务明细权限。
+
 ## 一、表结构概览
 
 `system.audit_logs` 表是 ADDP 平台的审计日志表,负责自动记录所有用户操作(非 GET 请求)。支持按租户隔离查询,用于安全审计、操作回溯和合规检查。

@@ -130,6 +130,8 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		api.POST("/register", authHandler.Register)
 		api.POST("/refresh", authHandler.Refresh)
 		api.POST("/logout", authHandler.Logout)
+		api.POST("/oauth/authorization_requests", oauthPublicRateLimit, oauthHandler.CreateAuthorizationRequest)
+		api.DELETE("/oauth/authorization_requests/:request_id", oauthPublicRateLimit, oauthHandler.CancelAuthorizationRequest)
 		api.POST("/oauth/device/code", oauthPublicRateLimit, oauthHandler.DeviceCode)
 		api.POST("/oauth/token", oauthPublicRateLimit, oauthHandler.Token)
 		api.POST("/oauth/revoke", oauthPublicRateLimit, oauthHandler.Revoke)
@@ -149,6 +151,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			oauth := protected.Group("/oauth")
 			{
 				oauthUserRateLimit := middleware.OAuthUserRateLimitMiddleware(redisClient, int64(cfg.OAuthUserRateLimitPerMinute))
+				oauth.GET("/authorization_requests/:request_id", oauthHandler.GetAuthorizationRequest)
 				oauth.POST("/authorizations", oauthUserRateLimit, oauthHandler.Authorize)
 				oauth.POST("/device/authorizations", oauthUserRateLimit, oauthHandler.ApproveDevice)
 			}

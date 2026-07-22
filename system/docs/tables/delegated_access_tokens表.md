@@ -1,5 +1,7 @@
 # delegated_access_tokens 表
 
+> 本文记录当前表和 API 实现。目标 Delegated Access Token 必须继承 Principal、互斥会话模式、唯一当前 Tenant Membership 和 Role/Permission 授权事实；具体字段随目标 AuthContext Schema 一次性替换。
+
 ## 一、定位
 
 `system.delegated_access_tokens` 保存 Delegated Access Token 的服务端事实。每张票据只代表当前用户的一次 ADDP Tool 调用边界，不创建 Refresh Token Family，不可刷新，也不替代第一方 Web 或 OAuth User Access Token。

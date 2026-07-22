@@ -90,7 +90,7 @@ func TestLoggerMiddlewareUsesStableOAuthFailureEventBeforeHandler(t *testing.T) 
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication_required"})
 	})
 	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/system/oauth/authorizations", strings.NewReader(`{"state":"secret"}`)))
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/system/oauth/authorizations", strings.NewReader(`{"request_id":"secret"}`)))
 
 	var stored models.AuditLog
 	deadline := time.Now().Add(time.Second)

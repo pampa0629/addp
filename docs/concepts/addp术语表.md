@@ -176,9 +176,30 @@
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
-| AuthContext | 授权上下文 | System 对一枚访问令牌完成验证并回查当前用户、租户后生成的权威身份与授权投影。 | 是 Go/Python 模块消费用户身份的唯一契约；`/users/me` 不是 Token 验证接口。 |
+| IAM | 身份与访问管理 | 管理主体身份、认证方式、成员关系、角色、权限、会话和访问治理的统一体系。 | System 是 ADDP 唯一 IAM 逻辑权威；业务资源授权和最终判断仍归对应 owner 模块。 |
+| Platform Realm | 平台管理身份域 | 承载 ADDP 平台运维、安全管理、审计和 Tenant 生命周期管理的身份域。 | 不属于任意 Tenant；平台管理权不自动产生 Tenant 业务数据权限。 |
+| Tenant | 租户 | ADDP 中企业、学校、研究机构或独立业务主体的数据与权限最高隔离边界。 | 不等于 Department、Project Group 或外部 IdP 组织。 |
+| User | 用户 | ADDP 内部的自然人身份，是审计、授权和资源归属的稳定主体。 | User 不等于登录账号；同一 User 可以拥有多个 Tenant Membership。 |
+| Local Account | 本地账号 | 由 ADDP 管理的登录标识和本地凭据。 | 是 User 的一种登录账号，不是 User 本身。 |
+| External Identity | 外部身份 | 外部 IdP 中通过 `issuer + subject` 唯一标识、并映射到 ADDP User 的身份。 | 邮箱不是外部身份的永久唯一键；外部 Token 不直接进入业务模块。 |
+| Tenant Membership | 租户成员关系 | User 或 Service Principal 进入某个 Tenant 的有效关系。 | 一个主体可有多个 Membership，但一次业务会话只能选择一个当前 Tenant。 |
+| Principal | 授权主体 | 一次请求中接受授权判断的主体，可以是 User 或 Service Principal。 | 不等于 OAuth Client、Department、Project Group 或 Role。 |
+| Service Principal | 服务主体 | 应用、自动化任务或工作负载使用的非人 Principal。 | 不伪装成 User，不使用用户密码，也不得持有平台三员角色。 |
+| Authentication Method | 认证方式 | 主体证明身份的方法，例如本地密码、Passkey、MFA、外部 IdP 或工作负载认证。 | CLI Authorization Code + PKCE 和 Device Flow 是登录交互通道，不是独立用户体系。 |
+| Permission | 权限 | ADDP 产品定义的稳定、最小功能动作。 | Tenant 可以组合 Permission 创建 Role，但不能创造任意 Permission 字符串。 |
+| Role | 角色 | Permission 的命名集合。 | Role 本身不表达业务资源实例；具体作用范围由 Role Assignment 和 owner Resource Grant / Policy 决定。 |
+| Role Assignment | 角色分配 | 将 Role 赋予 Principal，并声明 Platform、Tenant、Department 或 Project Group Scope 的授权事实。 | 不使用 `user_type` 同时表达身份类别和完整权限。 |
+| Department | 部门 | Tenant 内表达稳定组织归属的层级组织单元。 | 一个 User 可有一个主部门和多个附加部门；父子部门权限默认不继承。 |
+| Project Group | 项目组 | Tenant 内面向跨部门协作的成员集合。 | 严格属于单个 Tenant，第一阶段不嵌套，不改变成员的 Department 归属。 |
+| Resource Grant | 资源授权 | owner 模块将特定资源动作显式授予 User、Department、Project Group、Role 主体集合或 Service Principal 的事实。 | 最终资源访问判断仍由 owner 执行；Asset 的授权记录可以是授权来源。 |
+| Explicit Deny | 显式拒绝 | 对特定主体、动作、资源或条件明确拒绝的授权规则。 | 优先于 Allow，用于密级数据和例外隔离。 |
+| Platform Three Administrators | 平台三员 | Platform System Administrator、Platform Security Administrator、Platform Audit Administrator 三个内置、互斥的平台管理角色。 | 替代永久 `super_admin`；不存在可合并三种职责的全权角色。 |
+| Break-glass Grant | 紧急访问授权 | 在紧急处置中经双人批准产生的限定动作、限定时长且全程审计的临时授权。 | 不是常驻 root，不能删除审计记录或静默修改平台三员规则。 |
+| Platform Statistics Viewer | 平台统计查看者 | 读取已发布跨租户聚合指标的独立平台只读角色。 | 不自动包含在平台三员角色中，不授予 Tenant 业务明细访问权。 |
+| AuthContext | 授权上下文 | System 对访问令牌完成验证并基于当前 Principal、会话模式、Tenant Membership、Role Assignment 和客户端约束生成的权威身份与授权投影。 | 是 Go/Python 模块消费主体事实的唯一契约；不包含主体可访问的全部资源列表，`/users/me` 不是 Token 验证接口。 |
 | OAuth Client | OAuth 客户端 | 代表 `addp-cli`、Codex 或 Hermes 等请求用户授权的客户端软件。 | 不是 ADDP 用户或租户；公共客户端使用 PKCE / Device Flow，不内置 Client Secret。 |
-| OAuth Scope | OAuth 授权范围 | 一枚访问令牌被允许执行的最大能力集合。 | 只能缩小权限，不取代 `user_type`、租户隔离、owner 资源权限或审批。 |
+| OAuth Authorization Request | OAuth 授权请求 | OAuth Client 在打开浏览器前向 System 创建的短期、一次性授权上下文，持有已校验的 Client、redirect URI、Scope 和 PKCE challenge。 | 浏览器只携带随机 `request_id`；取消凭据只在客户端内存保存，System 只保存其 Hash。它不是 Authorization Code 或用户会话。 |
+| OAuth Scope | OAuth 授权范围 | 一枚访问令牌被允许执行的最大能力集合。 | 只能缩小权限，不取代 Tenant Membership、Role Permission、owner 资源权限或审批。 |
 | User Access Token | 用户访问令牌 | 以当前 ADDP 用户为主体、用于访问业务 API 的短期 Bearer Token。 | 通过 AuthContext 解析；不将客户端参数视为用户或租户事实。 |
 | Refresh Token Family | 刷新令牌族 | 一次用户授权会话中经轮换先后产生的 Refresh Token 链。 | 旧 Refresh Token 重复使用视为泄露信号，必须撤销整个 family。 |
 | Browser AuthSession | 浏览器认证会话 | 浏览器顶层页面持有的前端会话协调器，负责以内存保存 Access Token、通过 HttpOnly Refresh Cookie 静默恢复、跨标签页互斥刷新和 iframe Token 投递。 | Console 模式由 Console 持有；模块独立运行时由模块顶层页面持有。不得把 Access Token 持久化到浏览器存储。 |

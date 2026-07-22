@@ -21,16 +21,16 @@ func TestOAuthUserRateLimitPreservesJSONAndReturnsOAuth429(t *testing.T) {
 	router.Use(func(c *gin.Context) { c.Set("user_id", uint(42)); c.Next() })
 	router.POST("/api/v1/system/oauth/authorizations", OAuthUserRateLimitMiddleware(client, 1), func(c *gin.Context) {
 		var request struct {
-			ClientID string `json:"client_id"`
+			RequestID string `json:"request_id"`
 		}
-		if err := c.ShouldBindJSON(&request); err != nil || request.ClientID != "addp-cli" {
+		if err := c.ShouldBindJSON(&request); err != nil || request.RequestID != "request-1" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "body_lost"})
 			return
 		}
 		c.Status(http.StatusNoContent)
 	})
 
-	body := []byte(`{"client_id":"addp-cli"}`)
+	body := []byte(`{"request_id":"request-1"}`)
 	first := performJSONRateLimitRequest(router, body)
 	if first.Code != http.StatusNoContent {
 		t.Fatalf("first status = %d, body = %s", first.Code, first.Body.String())

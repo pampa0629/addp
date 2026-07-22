@@ -23,21 +23,22 @@ import (
 )
 
 var (
-	ErrInvalidAccessToken           = errors.New("invalid access token")
-	ErrInvalidRefreshToken          = errors.New("invalid refresh token")
-	ErrRefreshTokenReuse            = errors.New("refresh token reuse detected")
-	ErrInvalidOAuthClient           = errors.New("invalid oauth client")
-	ErrInvalidRedirectURI           = errors.New("invalid redirect uri")
-	ErrInvalidScope                 = errors.New("invalid scope")
-	ErrInvalidPKCE                  = errors.New("invalid pkce")
-	ErrInvalidAuthorizationCode     = errors.New("invalid authorization code")
-	ErrInvalidAuthorizationDecision = errors.New("invalid authorization decision")
-	ErrAuthorizationPending         = errors.New("authorization pending")
-	ErrSlowDown                     = errors.New("slow down")
-	ErrAccessDenied                 = errors.New("access denied")
-	ErrExpiredToken                 = errors.New("expired token")
-	ErrUnsupportedGrantType         = errors.New("unsupported grant type")
-	ErrInvalidDelegation            = errors.New("invalid delegation")
+	ErrInvalidAccessToken              = errors.New("invalid access token")
+	ErrInvalidRefreshToken             = errors.New("invalid refresh token")
+	ErrRefreshTokenReuse               = errors.New("refresh token reuse detected")
+	ErrInvalidOAuthClient              = errors.New("invalid oauth client")
+	ErrInvalidRedirectURI              = errors.New("invalid redirect uri")
+	ErrInvalidScope                    = errors.New("invalid scope")
+	ErrInvalidPKCE                     = errors.New("invalid pkce")
+	ErrInvalidAuthorizationCode        = errors.New("invalid authorization code")
+	ErrInvalidAuthorizationDecision    = errors.New("invalid authorization decision")
+	ErrAuthorizationRequestUnavailable = errors.New("authorization request unavailable")
+	ErrAuthorizationPending            = errors.New("authorization pending")
+	ErrSlowDown                        = errors.New("slow down")
+	ErrAccessDenied                    = errors.New("access denied")
+	ErrExpiredToken                    = errors.New("expired token")
+	ErrUnsupportedGrantType            = errors.New("unsupported grant type")
+	ErrInvalidDelegation               = errors.New("invalid delegation")
 )
 
 type IssuedTokenPair struct {
@@ -47,6 +48,12 @@ type IssuedTokenPair struct {
 	Scope                         string
 	ResourceAccessTickets         map[string]string
 	ResourceAccessTicketExpiresIn int
+}
+
+type AuthorizationDecisionResult struct {
+	RedirectURL string
+	ClientID    string
+	Scope       string
 }
 
 type TokenService struct {
@@ -287,44 +294,165 @@ func (s *TokenService) revokeRefreshToken(refreshToken string, expectedClientID 
 	return err
 }
 
-func (s *TokenService) DecideAuthorization(userID uint, req *models.OAuthAuthorizationRequest) (string, error) {
-	if req.Decision != models.OAuthAuthorizationDecisionApproved && req.Decision != models.OAuthAuthorizationDecisionRejected {
-		return "", ErrInvalidAuthorizationDecision
-	}
-	client, scopes, err := s.validateClientRequest(req.ClientID, req.RedirectURI, req.Scope, false)
+func (s *TokenService) CreateAuthorizationRequest(clientID, redirectURI, scope, codeChallenge, codeChallengeMethod string) (*models.OAuthAuthorizationRequestCreatedResponse, error) {
+	client, scopes, err := s.validateClientRequest(clientID, redirectURI, scope, false)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if req.CodeChallengeMethod != "S256" || req.CodeChallenge == "" {
-		return "", ErrInvalidPKCE
+	if codeChallengeMethod != "S256" || !validPKCEChallenge(codeChallenge) {
+		return nil, ErrInvalidPKCE
+	}
+	requestSecret, err := randomToken("addp_ars_")
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	expiresIn := s.cfg.AuthorizationCodeMinutes * 60
+	request := models.OAuthAuthorizationRequest{
+		ID:                  uuid.NewString(),
+		RequestSecretHash:   hashToken(requestSecret),
+		ClientID:            client.ClientID,
+		RedirectURI:         redirectURI,
+		Scopes:              scopes,
+		CodeChallenge:       codeChallenge,
+		CodeChallengeMethod: "S256",
+		Status:              models.OAuthAuthorizationRequestPending,
+		ExpiresAt:           now.Add(time.Duration(expiresIn) * time.Second),
+	}
+	if err := s.db.Create(&request).Error; err != nil {
+		return nil, err
+	}
+	return &models.OAuthAuthorizationRequestCreatedResponse{
+		RequestID:     request.ID,
+		RequestSecret: requestSecret,
+		ExpiresIn:     expiresIn,
+	}, nil
+}
+
+func (s *TokenService) GetAuthorizationRequest(requestID string) (*models.OAuthAuthorizationRequestView, error) {
+	var request models.OAuthAuthorizationRequest
+	if err := s.db.First(&request, "id = ?", requestID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrAuthorizationRequestUnavailable
+		}
+		return nil, err
+	}
+	if !s.authorizationRequestPending(&request) {
+		return nil, ErrAuthorizationRequestUnavailable
+	}
+	var client models.OAuthClient
+	if err := s.db.First(&client, "client_id = ? AND is_active = ?", request.ClientID, true).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrAuthorizationRequestUnavailable
+		}
+		return nil, err
+	}
+	return &models.OAuthAuthorizationRequestView{
+		RequestID:  request.ID,
+		ClientID:   request.ClientID,
+		ClientName: client.Name,
+		Scope:      strings.Join([]string(request.Scopes), " "),
+		ExpiresAt:  request.ExpiresAt,
+	}, nil
+}
+
+func (s *TokenService) CancelAuthorizationRequest(requestID, requestSecret string) (string, string, bool, error) {
+	var clientID, scope string
+	cancelled := false
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var request models.OAuthAuthorizationRequest
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND request_secret_hash = ?", requestID, hashToken(requestSecret)).First(&request).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrAuthorizationRequestUnavailable
+			}
+			return err
+		}
+		clientID = request.ClientID
+		scope = strings.Join([]string(request.Scopes), " ")
+		if request.Status != models.OAuthAuthorizationRequestPending {
+			return nil
+		}
+		now := s.now()
+		if err := tx.Model(&request).Updates(map[string]any{
+			"status":       models.OAuthAuthorizationRequestCancelled,
+			"completed_at": now,
+		}).Error; err != nil {
+			return err
+		}
+		cancelled = true
+		return nil
+	})
+	return clientID, scope, cancelled, err
+}
+
+func (s *TokenService) DecideAuthorization(userID uint, req *models.OAuthAuthorizationDecisionRequest) (*AuthorizationDecisionResult, error) {
+	if req.Decision != models.OAuthAuthorizationDecisionApproved && req.Decision != models.OAuthAuthorizationDecisionRejected {
+		return nil, ErrInvalidAuthorizationDecision
 	}
 	user, err := s.authContextService.ValidateIdentity(userID, s.userTenantID(userID))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if req.Decision == models.OAuthAuthorizationDecisionRejected {
-		return authorizationRedirect(req.RedirectURI, req.State, "error", "access_denied")
-	}
-	plainCode, err := randomToken("addp_ac_")
-	if err != nil {
-		return "", err
-	}
-	code := models.OAuthAuthorizationCode{
-		ID:                  uuid.NewString(),
-		CodeHash:            hashToken(plainCode),
-		ClientID:            client.ClientID,
-		UserID:              user.ID,
-		TenantID:            user.TenantID,
-		RedirectURI:         req.RedirectURI,
-		Scopes:              scopes,
-		CodeChallenge:       req.CodeChallenge,
-		CodeChallengeMethod: "S256",
-		ExpiresAt:           s.now().Add(time.Duration(s.cfg.AuthorizationCodeMinutes) * time.Minute),
-	}
-	if err := s.db.Create(&code).Error; err != nil {
-		return "", err
-	}
-	return authorizationRedirect(req.RedirectURI, req.State, "code", plainCode)
+	var result *AuthorizationDecisionResult
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		var request models.OAuthAuthorizationRequest
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&request, "id = ?", req.RequestID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrAuthorizationRequestUnavailable
+			}
+			return err
+		}
+		if !s.authorizationRequestPending(&request) {
+			return ErrAuthorizationRequestUnavailable
+		}
+		client, scopes, err := validateClientRequestDB(tx, request.ClientID, request.RedirectURI, strings.Join([]string(request.Scopes), " "), false)
+		if err != nil || request.CodeChallengeMethod != "S256" || !validPKCEChallenge(request.CodeChallenge) {
+			return ErrAuthorizationRequestUnavailable
+		}
+		now := s.now()
+		status := models.OAuthAuthorizationRequestRejected
+		resultName, resultValue := "error", "access_denied"
+		if req.Decision == models.OAuthAuthorizationDecisionApproved {
+			plainCode, err := randomToken("addp_ac_")
+			if err != nil {
+				return err
+			}
+			code := models.OAuthAuthorizationCode{
+				ID:                  uuid.NewString(),
+				CodeHash:            hashToken(plainCode),
+				ClientID:            client.ClientID,
+				UserID:              user.ID,
+				TenantID:            user.TenantID,
+				RedirectURI:         request.RedirectURI,
+				Scopes:              scopes,
+				CodeChallenge:       request.CodeChallenge,
+				CodeChallengeMethod: "S256",
+				ExpiresAt:           now.Add(time.Duration(s.cfg.AuthorizationCodeMinutes) * time.Minute),
+			}
+			if err := tx.Create(&code).Error; err != nil {
+				return err
+			}
+			status, resultName, resultValue = models.OAuthAuthorizationRequestApproved, "code", plainCode
+		}
+		if err := tx.Model(&request).Updates(map[string]any{"status": status, "completed_at": now}).Error; err != nil {
+			return err
+		}
+		redirectURL, err := authorizationRedirect(request.RedirectURI, request.ID, resultName, resultValue)
+		if err != nil {
+			return err
+		}
+		result = &AuthorizationDecisionResult{
+			RedirectURL: redirectURL,
+			ClientID:    request.ClientID,
+			Scope:       strings.Join(scopes, " "),
+		}
+		return nil
+	})
+	return result, err
+}
+
+func (s *TokenService) authorizationRequestPending(request *models.OAuthAuthorizationRequest) bool {
+	return request.Status == models.OAuthAuthorizationRequestPending && request.ExpiresAt.After(s.now())
 }
 
 func authorizationRedirect(rawRedirectURI, state, resultName, resultValue string) (string, error) {
@@ -687,8 +815,12 @@ func (s *TokenService) delegatedAccessTokenExpireMinutes() int {
 }
 
 func (s *TokenService) validateClientRequest(clientID, redirectURI, scope string, device bool) (*models.OAuthClient, []string, error) {
+	return validateClientRequestDB(s.db, clientID, redirectURI, scope, device)
+}
+
+func validateClientRequestDB(db *gorm.DB, clientID, redirectURI, scope string, device bool) (*models.OAuthClient, []string, error) {
 	var client models.OAuthClient
-	if err := s.db.First(&client, "client_id = ? AND is_active = ?", clientID, true).Error; err != nil {
+	if err := db.First(&client, "client_id = ? AND is_active = ?", clientID, true).Error; err != nil {
 		return nil, nil, ErrInvalidOAuthClient
 	}
 	if device && !client.DeviceFlowEnabled {
@@ -707,6 +839,11 @@ func (s *TokenService) validateClientRequest(clientID, redirectURI, scope string
 		}
 	}
 	return &client, scopes, nil
+}
+
+func validPKCEChallenge(challenge string) bool {
+	decoded, err := base64.RawURLEncoding.DecodeString(challenge)
+	return err == nil && len(decoded) == sha256.Size
 }
 
 func redirectURIAllowed(registeredURIs []string, requestedURI string) bool {
@@ -927,6 +1064,8 @@ func OAuthErrorCode(err error) string {
 		return "access_denied"
 	case errors.Is(err, ErrExpiredToken):
 		return "expired_token"
+	case errors.Is(err, ErrAuthorizationRequestUnavailable):
+		return "authorization_request_expired"
 	case errors.Is(err, ErrInvalidOAuthClient):
 		return "invalid_client"
 	case errors.Is(err, ErrUnsupportedGrantType):

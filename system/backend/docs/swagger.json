@@ -1531,6 +1531,196 @@
                 }
             }
         },
+        "/oauth/authorization_requests": {
+            "post": {
+                "description": "校验公共客户端、动态 loopback Redirect URI、Scope 和 PKCE，并创建五分钟有效的一次性浏览器授权请求 | Validate the public client, dynamic loopback redirect URI, scope, and PKCE, then create a one-time browser authorization request valid for five minutes",
+                "consumes": [
+                    "application/x-www-form-urlencoded"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OAuth"
+                ],
+                "summary": "创建 OAuth 授权请求 | Create OAuth authorization request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth Client ID",
+                        "name": "client_id",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Redirect URI",
+                        "name": "redirect_uri",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "OAuth Scope",
+                        "name": "scope",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "PKCE challenge",
+                        "name": "code_challenge",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "S256"
+                        ],
+                        "type": "string",
+                        "description": "PKCE challenge method",
+                        "name": "code_challenge_method",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationRequestCreatedResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/oauth/authorization_requests/{request_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "向当前已认证用户返回 System 已校验的待处理客户端和 Scope；失效请求不返回原始授权参数 | Return the pending client and scope already validated by System to the authenticated user; unavailable requests do not expose original authorization parameters",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OAuth"
+                ],
+                "summary": "获取 OAuth 授权请求 | Get OAuth authorization request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Authorization Request ID",
+                        "name": "request_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationRequestView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "使用只向 CLI 返回一次的请求凭据幂等取消待处理授权请求 | Idempotently cancel a pending authorization request using the request secret returned once to the CLI",
+                "consumes": [
+                    "application/x-www-form-urlencoded"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OAuth"
+                ],
+                "summary": "取消 OAuth 授权请求 | Cancel OAuth authorization request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Authorization Request ID",
+                        "name": "request_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer Authorization Request Secret",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/oauth/authorizations": {
             "post": {
                 "security": [
@@ -1538,7 +1728,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "校验当前用户、OAuth Client、Redirect URI（原生应用 loopback URI 按 RFC 8252 仅允许动态端口）、Scope 和 PKCE；批准时签发一次性 Authorization Code，拒绝时返回 access_denied 回跳 | Validate the current user, OAuth client, redirect URI (native-app loopback URIs allow only a dynamic port under RFC 8252), scope and PKCE; issue a one-time authorization code when approved or return an access_denied redirect when rejected",
+                "description": "锁定短期 Authorization Request，复核当前用户、客户端和授权边界；批准时签发一次性 Authorization Code，拒绝时返回 access_denied 回跳 | Lock the short-lived authorization request and revalidate the current user, client, and authorization boundary; issue a one-time authorization code when approved or return an access_denied redirect when rejected",
                 "consumes": [
                     "application/json"
                 ],
@@ -1551,12 +1741,12 @@
                 "summary": "处理 OAuth 授权决定 | Handle OAuth authorization decision",
                 "parameters": [
                     {
-                        "description": "授权请求 | Authorization request",
+                        "description": "授权决定 | Authorization decision",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationRequest"
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationDecisionRequest"
                         }
                     }
                 ],
@@ -1581,6 +1771,12 @@
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
@@ -3681,27 +3877,13 @@
                 }
             }
         },
-        "github_com_addp_system_internal_models.OAuthAuthorizationRequest": {
+        "github_com_addp_system_internal_models.OAuthAuthorizationDecisionRequest": {
             "type": "object",
             "required": [
-                "client_id",
-                "code_challenge",
-                "code_challenge_method",
                 "decision",
-                "redirect_uri",
-                "scope",
-                "state"
+                "request_id"
             ],
             "properties": {
-                "client_id": {
-                    "type": "string"
-                },
-                "code_challenge": {
-                    "type": "string"
-                },
-                "code_challenge_method": {
-                    "type": "string"
-                },
                 "decision": {
                     "type": "string",
                     "enum": [
@@ -3709,13 +3891,41 @@
                         "rejected"
                     ]
                 },
-                "redirect_uri": {
+                "request_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.OAuthAuthorizationRequestCreatedResponse": {
+            "type": "object",
+            "properties": {
+                "expires_in": {
+                    "type": "integer"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "request_secret": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.OAuthAuthorizationRequestView": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string"
+                },
+                "client_name": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "request_id": {
                     "type": "string"
                 },
                 "scope": {
-                    "type": "string"
-                },
-                "state": {
                     "type": "string"
                 }
             }

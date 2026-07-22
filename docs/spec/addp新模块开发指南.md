@@ -182,9 +182,10 @@
 
 4. **认证**:
 
-   - 复用 `common/middleware/auth` 调用 System AuthContext API
-   - 从 AuthContext 提取 `user_id`、`tenant_id`、`user_type` 并传递给服务层
-   - 不读取 `JWT_SECRET`，不在模块内自行解析用户 Token
+	- 复用 `common/middleware/auth` 调用 System AuthContext API
+	- 从 AuthContext 读取 Principal、会话模式、唯一当前 Tenant、Scope 和必要授权事实并传递给服务层
+	- 使用稳定 Permission 执行功能授权，禁止新增 `user_type` helper 或角色名称硬编码分支
+	- 不读取 `JWT_SECRET`，不在模块内自行解析用户 Token
 5. **国际化集成**:
 
    - 注册 `common/middleware/i18n.I18nMiddleware()`

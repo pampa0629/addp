@@ -100,6 +100,8 @@ func TestSwaggerOAuthRoutes(t *testing.T) {
 	}
 	for _, path := range []string{
 		"/auth/delegations",
+		"/oauth/authorization_requests",
+		"/oauth/authorization_requests/{request_id}",
 		"/oauth/authorizations",
 		"/oauth/device/code",
 		"/oauth/device/authorizations",

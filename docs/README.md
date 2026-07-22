@@ -16,18 +16,20 @@
 ## 推荐阅读顺序
 
 1. [核心概念总览](concepts/addp核心概念关系图.md)
-2. [模块架构图](concepts/addp模块架构图.md)
-3. [国际化体系图](concepts/addp国际化体系图.md)
-4. [开发原则](spec/addp开发原则.md)
-5. [国际化开发规范](spec/addp国际化开发规范.md)
-6. [部署和开发步骤](guide/addp部署和开发步骤.md)
-7. [常见故障排查](guide/addp常见故障排查.md)
+2. [账号与权限体系](concepts/addp账号与权限体系图.md)
+3. [模块架构图](concepts/addp模块架构图.md)
+4. [国际化体系图](concepts/addp国际化体系图.md)
+5. [开发原则](spec/addp开发原则.md)
+6. [国际化开发规范](spec/addp国际化开发规范.md)
+7. [部署和开发步骤](guide/addp部署和开发步骤.md)
+8. [常见故障排查](guide/addp常见故障排查.md)
 
 ## 常用入口
 
 - [概念文档](concepts/)
 - [规范文档](spec/)
 - [术语表](concepts/addp术语表.md)
+- [账号与权限体系](concepts/addp账号与权限体系图.md)
 - [元数据体系图](concepts/addp元数据体系图.md)
 - [数据项体系图](concepts/addp数据项体系图.md)
 - [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)

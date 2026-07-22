@@ -1,5 +1,7 @@
 # Engines 表结构和 API 说明
 
+> 本文记录当前表和 API 实现。IAM 目标授权边界以 `docs/concepts/addp账号与权限体系图.md` 为准；文中的 SuperAdmin 跨 Tenant 访问语义属于待替换实现差距，平台角色不自动获得 Tenant 引擎访问权。
+
 ## 一、表结构概览
 
 `system.engines` 表是 ADDP 平台的核心表，用于管理所有类型的数据引擎（数据库、对象存储、计算引擎等）。采用多租户隔离设计，支持灵活的能力声明和扩展机制。

@@ -337,7 +337,7 @@ docker-compose up -d
 在 `.env` 文件中添加以下配置:
 
 ```bash
-# 启用默认租户和租户管理员账户创建
+# 启用默认租户和开发用本地管理员账户创建
 ENABLE_DEFAULT_TENANT=true
 
 # 可选: 自定义默认账户信息
@@ -360,16 +360,13 @@ DEFAULT_ADMIN_EMAIL=admin@addp.com
 使用默认账户登录:
 
 ```bash
-# 使用超级管理员登录
-curl -X POST http://localhost:8180/api/v1/system/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "SuperAdmin", "password": "20251001#SuperAdmin"}'
-
-# 使用租户管理员登录
+# 使用开发用本地管理员账户登录
 curl -X POST http://localhost:8180/api/v1/system/login \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "123456"}'
 ```
+
+目标 IAM 不创建常驻 `SuperAdmin` 默认账号。平台系统管理员、安全管理员和审计管理员必须通过受控初始化与角色任命流程建立，不能通过环境变量写入共享默认密码。
 
 **初始化位置**: `system/backend/internal/repository/database.go`
 

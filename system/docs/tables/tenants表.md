@@ -1,5 +1,7 @@
 # tenants 表结构和 API 说明
 
+> 本文记录当前表和 API 实现。IAM 目标模型以 `docs/concepts/addp账号与权限体系图.md` 为准；Tenant 是最高业务隔离边界，不等于组织部门，SuperAdmin 和创建 Tenant 时绑定单一 TenantAdmin 的流程均为待替换实现差距。
+
 ## 一、表结构概览
 
 `system.tenants` 表是 ADDP 平台的多租户管理核心表,负责存储租户(组织)信息。每个租户代表一个独立的组织或企业,拥有独立的用户、资源和数据空间,实现数据隔离和权限控制。

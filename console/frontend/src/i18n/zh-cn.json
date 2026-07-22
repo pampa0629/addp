@@ -88,7 +88,8 @@
       "authorize": {
         "title": "授权客户端访问 ADDP",
         "description": "客户端 {client} 请求代表你访问 ADDP。",
-        "approve": "允许访问"
+        "approve": "允许访问",
+        "expired": "授权请求已失效，请重新从 CLI 发起登录。"
       },
       "device": {
         "title": "设备授权",

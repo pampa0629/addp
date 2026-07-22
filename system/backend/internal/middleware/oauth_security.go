@@ -65,6 +65,8 @@ func IsOAuthSecurityPath(path string) bool {
 
 func oauthFailureEvent(path string) string {
 	switch {
+	case strings.Contains(path, "/authorization_requests"):
+		return "oauth.authorization_request.failed"
 	case strings.HasSuffix(path, "/authorizations") && strings.Contains(path, "/device/"):
 		return "oauth.device.authorization.failed"
 	case strings.HasSuffix(path, "/authorizations"):

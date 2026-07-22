@@ -261,14 +261,14 @@ DELETE /api/v1/system/users/:id       # 删除用户
 ### 3.4 子资源设计
 
 ```
-GET    /api/v1/system/tenants/:id/users        # 获取租户下的用户列表
-POST   /api/v1/system/tenants/:id/users        # 为租户创建用户
-DELETE /api/v1/system/tenants/:id/users/:uid   # 删除租户下的某个用户
+GET    /api/v1/{module}/{parents}/:parent_id/{children}           # 获取父资源下的子资源
+POST   /api/v1/{module}/{parents}/:parent_id/{children}           # 创建父子关系或子资源
+DELETE /api/v1/{module}/{parents}/:parent_id/{children}/:child_id # 删除父子关系或子资源
 ```
 
 **规则：**
 - 子资源深度建议不超过 2 层
-- 超过 2 层时考虑使用查询参数：`GET /api/v1/system/users?tenant_id=1`
+- 超过 2 层时考虑使用查询参数：`GET /api/v1/{module}/{children}?parent_id=1`
 
 ### 3.5 特殊操作的 RESTful 化
 
@@ -557,8 +557,12 @@ type User struct {
 ```json
 {
   "engine_type": "postgresql",   // ✅ 推荐
-  "user_type": "tenant_admin",   // ✅ 推荐
-  "status": 1                    // ❌ 不推荐
+  "status": "active"             // ✅ 推荐
+}
+
+// ❌ 不推荐
+{
+  "status": 1
 }
 ```
 

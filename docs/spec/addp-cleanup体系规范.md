@@ -274,7 +274,7 @@ cleanup 分为两个动作，支持手动、事件驱动和定时触发：
 
 | 触发方式 | 适用场景 | 约束 |
 | --- | --- | --- |
-| `manual` | 租户管理员或系统管理员主动排查和治理。 | 可发起 scan；execute 必须基于已完成 scan；当前 HTTP 手动入口必须绑定明确租户范围。 |
+| `manual` | 具有对应 Cleanup Permission 的 Tenant 主体主动排查和治理。 | 可发起 scan；execute 必须基于已完成 scan；当前 HTTP 手动入口必须使用 `tenant` 会话模式并绑定明确 Tenant。 |
 | `event` | engine deleted / disabled、tenant deleted、item deleted、source facts changed、config version changed 等生命周期事件。 | 默认只自动 scan 或低风险状态标记，不默认执行高风险 physical cleanup。 |
 | `scheduled` | 周期性发现历史残留、事件漏处理或外部漂移。 | 只负责发现和审计摘要；高风险 execute 仍需显式确认或策略授权。 |
 
@@ -282,7 +282,7 @@ cleanup 分为两个动作，支持手动、事件驱动和定时触发：
 
 - execute 必须基于明确的 `based_on_scan`。
 - execute 不应绕过 scan 重新解释另一套范围。
-- SuperAdmin 不得以 `tenant_id=0` 发起租户级手动资源回收；全局资源回收必须另行定义显式 `global` scope、权限和审计语义。
+- `platform` 会话模式不得发起 Tenant 级手动资源回收；全局资源回收必须另行定义显式 Platform Scope、Permission 和审计语义。
 - execute 请求必须携带管理员确认语义。当前 HTTP API 使用 `confirmed=true` 表示管理员已核对 scan 结果、影响范围和 cleanup mode；`physical_cleanup` 或 `risk_level=high` 的 execute 还必须提供确认文本 `CONFIRM`。
 - 确认文本只用于证明显式确认，不应作为业务密钥保存；审计日志只记录是否提供了确认文本、确认时间、风险等级和影响摘要。
 - executor 可以在 execute 前做幂等复查，但复查结果必须在 result 中报告。
@@ -453,13 +453,13 @@ cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
 验收前提：
 
 - Gateway、System、Meta、Monitor、Redis、PostgreSQL 已启动。
-- 默认租户管理员 `admin / 123456` 可登录，JWT 中 `tenant_id=1`。
-- SuperAdmin `SuperAdmin / 20251001#SuperAdmin` 可登录，JWT 中 `tenant_id=0`。
+- 已准备具有 Cleanup Permission、绑定明确当前 Tenant 的 `tenant` 模式 User Access Token。
+- 已准备一个 `platform` 模式 User Access Token，用于验证平台权限不能绕过 Tenant 上下文。
 
 验收项：
 
-1. SuperAdmin 调用 `POST /api/v1/system/admin/cleanup/scan` 必须返回 HTTP 400，错误信息说明手动资源回收必须在明确租户范围内发起；`Accept-Language: zh-cn` 和 `Accept-Language: en` 都必须返回对应语言。
-2. 租户管理员以 `{"scope":["meta"]}` 调用 `POST /api/v1/system/admin/cleanup/scan` 后，`GET /api/v1/system/admin/cleanup/tasks/{task_id}` 必须最终返回 `completed` 或 `completed_with_errors`。
+1. `platform` 模式 Token 调用 `POST /api/v1/system/admin/cleanup/scan` 必须返回 HTTP 403，错误信息说明该入口要求明确 Tenant 上下文；`Accept-Language: zh-cn` 和 `Accept-Language: en` 都必须返回对应语言。
+2. 具有 Cleanup Permission 的 `tenant` 模式 Token 以 `{"scope":["meta"]}` 调用 `POST /api/v1/system/admin/cleanup/scan` 后，`GET /api/v1/system/admin/cleanup/tasks/{task_id}` 必须最终返回 `completed` 或 `completed_with_errors`。
 3. scan 结果必须包含 `task.execution_id`、`task.expected_modules=["meta"]` 和 `results.meta`。
 4. System 审计日志必须能通过 `entity_type=cleanup&entity_id={task_id}` 查到 `cleanup.scan.created`；完成后还应查到 `cleanup.completed` 或 `cleanup.failed`。
 5. Monitor 必须能通过 `GET /api/v1/monitor/executions/by-execution-id/{execution_id}/tree` 查到 `module=system, task_type=cleanup` 的父 execution，以及 `module=meta, task_type=cleanup_executor` 的子 execution。
@@ -469,22 +469,17 @@ cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
 ```bash
 BASE=http://localhost:8000/api/v1
 
-ADMIN_TOKEN=$(curl -sS -X POST "$BASE/system/login" \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"123456"}' | jq -r .access_token)
-
-SUPER_TOKEN=$(curl -sS -X POST "$BASE/system/login" \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"SuperAdmin","password":"20251001#SuperAdmin"}' | jq -r .access_token)
+: "${TENANT_ACCESS_TOKEN:?需要 tenant 模式且具有 Cleanup Permission 的 Access Token}"
+: "${PLATFORM_ACCESS_TOKEN:?需要 platform 模式 Access Token}"
 
 curl -sS -w '\n%{http_code}\n' -X POST "$BASE/system/admin/cleanup/scan" \
-  -H "Authorization: Bearer $SUPER_TOKEN" \
+  -H "Authorization: Bearer $PLATFORM_ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
   -H 'Accept-Language: zh-cn' \
   -d '{"scope":["meta"]}'
 
 TASK_ID=$(curl -sS -X POST "$BASE/system/admin/cleanup/scan" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Authorization: Bearer $TENANT_ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"scope":["meta"]}' | jq -r .task_id)
 

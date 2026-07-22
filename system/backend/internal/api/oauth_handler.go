@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/models"
@@ -20,42 +21,148 @@ func NewOAuthHandler(tokenService *service.TokenService) *OAuthHandler {
 	return &OAuthHandler{tokenService: tokenService}
 }
 
+// CreateAuthorizationRequest godoc
+// @Summary      创建 OAuth 授权请求 | Create OAuth authorization request
+// @Description  校验公共客户端、动态 loopback Redirect URI、Scope 和 PKCE，并创建五分钟有效的一次性浏览器授权请求 | Validate the public client, dynamic loopback redirect URI, scope, and PKCE, then create a one-time browser authorization request valid for five minutes
+// @Tags         OAuth
+// @Accept       application/x-www-form-urlencoded
+// @Produce      json
+// @Param        client_id formData string true "OAuth Client ID"
+// @Param        redirect_uri formData string true "Redirect URI"
+// @Param        scope formData string false "OAuth Scope"
+// @Param        code_challenge formData string true "PKCE challenge"
+// @Param        code_challenge_method formData string true "PKCE challenge method" Enums(S256)
+// @Success      201 {object} models.OAuthAuthorizationRequestCreatedResponse
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      429 {object} models.ErrorResponse
+// @Failure      503 {object} models.ErrorResponse
+// @Router       /oauth/authorization_requests [post]
+func (h *OAuthHandler) CreateAuthorizationRequest(c *gin.Context) {
+	clientID, scope := c.PostForm("client_id"), c.PostForm("scope")
+	response, err := h.tokenService.CreateAuthorizationRequest(
+		clientID,
+		c.PostForm("redirect_uri"),
+		scope,
+		c.PostForm("code_challenge"),
+		c.PostForm("code_challenge_method"),
+	)
+	if err != nil {
+		errorCode := service.OAuthErrorCode(err)
+		if errors.Is(err, service.ErrInvalidPKCE) {
+			errorCode = "invalid_request"
+		}
+		middleware.SetOAuthSecurityAudit(c, "oauth.authorization_request.failed", "failed", clientID, "", "", scope, errorCode)
+		c.JSON(oauthRequestErrorStatus(err, http.StatusBadRequest), gin.H{"error": errorCode})
+		return
+	}
+	middleware.SetOAuthSecurityAudit(c, "oauth.authorization_request.created", "created", clientID, "", "", scope, "")
+	c.JSON(http.StatusCreated, response)
+}
+
+// GetAuthorizationRequest godoc
+// @Summary      获取 OAuth 授权请求 | Get OAuth authorization request
+// @Description  向当前已认证用户返回 System 已校验的待处理客户端和 Scope；失效请求不返回原始授权参数 | Return the pending client and scope already validated by System to the authenticated user; unavailable requests do not expose original authorization parameters
+// @Tags         OAuth
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request_id path string true "Authorization Request ID"
+// @Success      200 {object} models.OAuthAuthorizationRequestView
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      410 {object} models.ErrorResponse
+// @Failure      429 {object} models.ErrorResponse
+// @Failure      503 {object} models.ErrorResponse
+// @Router       /oauth/authorization_requests/{request_id} [get]
+func (h *OAuthHandler) GetAuthorizationRequest(c *gin.Context) {
+	response, err := h.tokenService.GetAuthorizationRequest(c.Param("request_id"))
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, service.ErrAuthorizationRequestUnavailable) {
+			status = http.StatusGone
+		}
+		c.JSON(status, gin.H{"error": service.OAuthErrorCode(err)})
+		return
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+// CancelAuthorizationRequest godoc
+// @Summary      取消 OAuth 授权请求 | Cancel OAuth authorization request
+// @Description  使用只向 CLI 返回一次的请求凭据幂等取消待处理授权请求 | Idempotently cancel a pending authorization request using the request secret returned once to the CLI
+// @Tags         OAuth
+// @Accept       application/x-www-form-urlencoded
+// @Produce      json
+// @Param        request_id path string true "Authorization Request ID"
+// @Param        Authorization header string true "Bearer Authorization Request Secret"
+// @Success      204
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      429 {object} models.ErrorResponse
+// @Failure      503 {object} models.ErrorResponse
+// @Router       /oauth/authorization_requests/{request_id} [delete]
+func (h *OAuthHandler) CancelAuthorizationRequest(c *gin.Context) {
+	requestSecret := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
+	clientID, scope, cancelled, err := h.tokenService.CancelAuthorizationRequest(c.Param("request_id"), requestSecret)
+	if err != nil {
+		errorCode := service.OAuthErrorCode(err)
+		middleware.SetOAuthSecurityAudit(c, "oauth.authorization_request.failed", "failed", "", "", "", "", errorCode)
+		c.JSON(oauthRequestErrorStatus(err, http.StatusBadRequest), gin.H{"error": errorCode})
+		return
+	}
+	event, result := "oauth.authorization_request.cancel_ignored", "ignored"
+	if cancelled {
+		event, result = "oauth.authorization_request.cancelled", "cancelled"
+	}
+	middleware.SetOAuthSecurityAudit(c, event, result, clientID, "", "", scope, "")
+	c.Status(http.StatusNoContent)
+}
+
 // Authorize godoc
 // @Summary      处理 OAuth 授权决定 | Handle OAuth authorization decision
-// @Description  校验当前用户、OAuth Client、Redirect URI（原生应用 loopback URI 按 RFC 8252 仅允许动态端口）、Scope 和 PKCE；批准时签发一次性 Authorization Code，拒绝时返回 access_denied 回跳 | Validate the current user, OAuth client, redirect URI (native-app loopback URIs allow only a dynamic port under RFC 8252), scope and PKCE; issue a one-time authorization code when approved or return an access_denied redirect when rejected
+// @Description  锁定短期 Authorization Request，复核当前用户、客户端和授权边界；批准时签发一次性 Authorization Code，拒绝时返回 access_denied 回跳 | Lock the short-lived authorization request and revalidate the current user, client, and authorization boundary; issue a one-time authorization code when approved or return an access_denied redirect when rejected
 // @Tags         OAuth
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        request body models.OAuthAuthorizationRequest true "授权请求 | Authorization request"
+// @Param        request body models.OAuthAuthorizationDecisionRequest true "授权决定 | Authorization decision"
 // @Success      200 {object} models.OAuthAuthorizationResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      401 {object} models.ErrorResponse
 // @Failure      403 {object} models.ErrorResponse
+// @Failure      410 {object} models.ErrorResponse
 // @Failure      429 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
 // @Router       /oauth/authorizations [post]
 func (h *OAuthHandler) Authorize(c *gin.Context) {
-	var req models.OAuthAuthorizationRequest
+	var req models.OAuthAuthorizationDecisionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		middleware.SetOAuthSecurityAudit(c, "oauth.authorization.failed", "failed", "", "", "", "", "invalid_request")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
 		return
 	}
 	userID := c.GetUint("user_id")
-	redirectURL, err := h.tokenService.DecideAuthorization(userID, &req)
+	result, err := h.tokenService.DecideAuthorization(userID, &req)
 	if err != nil {
 		errorCode := service.OAuthErrorCode(err)
-		middleware.SetOAuthSecurityAudit(c, "oauth.authorization.failed", "failed", req.ClientID, "", req.Decision, req.Scope, errorCode)
-		c.JSON(http.StatusBadRequest, gin.H{"error": errorCode})
+		middleware.SetOAuthSecurityAudit(c, "oauth.authorization.failed", "failed", "", "", req.Decision, "", errorCode)
+		status := oauthRequestErrorStatus(err, http.StatusGone)
+		c.JSON(status, gin.H{"error": errorCode})
 		return
 	}
 	event := "oauth.authorization.approved"
 	if req.Decision == models.OAuthAuthorizationDecisionRejected {
 		event = "oauth.authorization.rejected"
 	}
-	middleware.SetOAuthSecurityAudit(c, event, req.Decision, req.ClientID, "", req.Decision, req.Scope, "")
-	c.JSON(http.StatusOK, models.OAuthAuthorizationResponse{RedirectURL: redirectURL})
+	middleware.SetOAuthSecurityAudit(c, event, req.Decision, result.ClientID, "", req.Decision, result.Scope, "")
+	c.JSON(http.StatusOK, models.OAuthAuthorizationResponse{RedirectURL: result.RedirectURL})
+}
+
+func oauthRequestErrorStatus(err error, unavailableStatus int) int {
+	if errors.Is(err, service.ErrAuthorizationRequestUnavailable) {
+		return unavailableStatus
+	}
+	if service.OAuthErrorCode(err) == "server_error" {
+		return http.StatusInternalServerError
+	}
+	return http.StatusBadRequest
 }
 
 // DeviceCode godoc

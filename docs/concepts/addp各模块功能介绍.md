@@ -12,7 +12,7 @@
 - 微服务架构，模块化设计
 - 多租户隔离，资源独立管理
 - 插件化引擎系统，通过 provider 和 `engine.capabilities/v1` 声明能力
-- 统一认证和权限管理（JWT + RBAC）
+- 统一认证和权限管理（opaque Token、IAM、RBAC 与资源策略）
 - 可视化工作流编排
 
 ---
@@ -39,11 +39,13 @@
 
 ### 2. System（核心系统）
 
-**职责定位**：平台核心服务，提供用户认证、引擎管理、日志审计
+**职责定位**：平台核心服务和唯一 IAM 逻辑权威，提供身份认证、组织与通用授权事实、引擎管理和日志审计
 
 **核心能力**：
-- 用户和租户管理（SuperAdmin / Tenant Admin / Regular User）
-- RBAC 权限控制（角色与权限绑定）
+- 全局 User、Local Account、External Identity、Tenant Membership 和 Service Principal 管理
+- Department、Project Group、Permission、Role 和 Role Assignment 管理
+- 平台系统管理员、安全管理员和审计管理员三员分立
+- 统一 AuthContext；业务资源 Grant / Policy 和最终授权判断归 owner 模块
 - 引擎注册管理（统一保存连接配置、状态和结构化能力声明）
 - opaque Access Token、Refresh Token Family 与 AuthContext
 - 审计日志记录（操作、登录、API 调用）

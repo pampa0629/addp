@@ -1,6 +1,6 @@
 # ADDP 登录认证原理说明
 
-更新日期：2026-07-17
+更新日期：2026-07-22
 
 ## 一、整体模型
 
@@ -31,7 +31,7 @@ flowchart LR
     Resource -->|allowed GET / HEAD only| API
 ```
 
-Access Token 不携带可解析 claims。System 对 Token 计算 SHA-256、查询 `system.access_tokens`、验证 Family 和有效期，再回查用户与租户后生成 AuthContext。
+Access Token 不携带可解析 claims。System 对 Token 计算 SHA-256、查询 `system.access_tokens`、验证 Family 和有效期，再回查 Principal、会话模式、当前 Tenant Membership 和授权事实后生成 AuthContext。每枚 Token 只绑定 Platform Realm 或一个当前 Tenant。
 
 ## 二、为什么 Access Token 只放内存
 
@@ -56,7 +56,10 @@ sequenceDiagram
 
     U->>F: 输入用户名和密码
     F->>S: POST /api/v1/system/login
-    S-->>F: Access Token + Set-Cookie Refresh Token
+    S-->>F: 返回可进入的 Platform / Tenant 上下文
+    U->>F: 选择 Platform Realm 或一个 Tenant
+    F->>S: 建立所选上下文
+    S-->>F: 上下文绑定 Access Token + Set-Cookie Refresh Token
     F->>F: Access Token 保存到内存
     F->>S: GET /api/v1/system/users/me
     S-->>F: 当前用户资料
@@ -83,6 +86,8 @@ sequenceDiagram
 ```
 
 因此，内存 Token 不意味着刷新页面后重新登录。只要 Refresh Token Family 有效，页面可以静默恢复。
+
+静默恢复只能恢复 Token Family 当前绑定的会话模式和唯一当前 Tenant，不能因 User 后续获得其他 Tenant Membership 而自动合并权限。切换 Tenant 或切换平台/租户模式时需要重新建立授权上下文，并使旧上下文 Token 失效或停止使用。
 
 ## 四、静默刷新
 
@@ -144,6 +149,8 @@ Tab B -> refresh(R1) -> R1 已使用，System 撤销整个 Family
 | 页面刷新 | 进入短暂初始化状态，Cookie 有效时静默恢复。 |
 | 新开同一 ADDP 标签页 | 优先复用其他标签页的内存 Token，否则在锁内静默刷新。 |
 | Console 切换模块 | iframe 完成认证握手，用户无需登录。 |
+| 切换 Tenant | 重新建立目标 Tenant 的授权上下文，不合并两个 Tenant 的权限。 |
+| 切换平台/租户模式 | 重新建立互斥上下文，平台角色与 Tenant Role 不同时激活。 |
 | 独立打开模块 | 模块使用同一 Cookie 静默恢复。 |
 | 浏览器重启 | 持久 Refresh Cookie 和 Family 有效时静默恢复。 |
 | 网络暂时中断 | 保留未知状态并允许重试，不立即当作退出。 |
@@ -168,7 +175,7 @@ System login / refresh
   -> System AuthContext 返回 resource_access_ticket 身份
 ```
 
-票据与当前 Refresh Token Family 关联，有效期不超过 User Access Token；退出、Family 撤销或 Refresh Token 重用时同步失效。Owner 仍执行原有租户和资源权限校验，票据只解决浏览器无法设置 Header 的传输问题，不扩大授权范围。
+票据与当前 Refresh Token Family 和会话模式关联，有效期不超过 User Access Token；退出、上下文切换、Family 撤销或 Refresh Token 重用时同步失效。Owner 仍执行当前 Tenant、Role Permission 和资源权限校验，票据只解决浏览器无法设置 Header 的传输问题，不扩大授权范围。
 
 ## 九、实现归属
 

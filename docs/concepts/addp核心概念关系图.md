@@ -23,7 +23,7 @@ mindmap
       console:控制台
       gateway:网关路由
       system:系统配置管理
-      核心数据流转模块        
+      核心数据流转模块
         transfer:数据传输
         meta:元数据
         manager:数据管理
@@ -51,13 +51,20 @@ mindmap
         按来源: 注册/内置
       engine.capabilities/v1
     账号与权限
-      用户类型
-        SuperAdmin 系统级
-        TenantAdmin 租户级
-        RegularUser 普通用户
-      租户隔离
-        tenant_id 隔离
-        数据库/对象存储/缓存
+      全局 User
+        Local Account
+        External Identity
+        Tenant Membership
+      组织
+        Department 层级组织
+        Project Group 跨部门协作
+      授权
+        Role 与 Permission
+        Resource Grant 与 Policy
+        显式 Deny
+      平台治理
+        平台三员分立
+        聚合统计独立授权
     元数据体系
       数据层次结构
         数据节点 Node
@@ -159,11 +166,13 @@ mindmap
 
 ### 3. [账号与权限](addp账号与权限体系图.md)
 
-**用户类型、租户隔离机制和权限控制模型**
+**统一身份、Tenant 隔离、组织关系和权限控制模型**
 
-- 用户类型层次 (SuperAdmin、TenantAdmin、RegularUser)
-- 租户隔离机制 (数据库、对象存储、缓存、API 层隔离)
-- RBAC 权限模型 (基于角色的访问控制)
+- 全局 User 与 Tenant Membership
+- Local Account、External Identity 和 Service Principal
+- Department、Project Group 和 Tenant 隔离
+- Role / Permission 与 owner Resource Grant / Policy
+- 平台三员分立和跨租户聚合统计授权
 - opaque User Access Token 与 AuthContext
 
 📄 **[阅读完整文档 →](addp账号与权限体系图.md)**
@@ -292,7 +301,7 @@ mindmap
 
 ### 用户与权限
 
-- **[账号与权限体系图](addp账号与权限体系图.md)** - 用户类型、租户隔离、RBAC 权限、AuthContext
+- **[账号与权限体系](addp账号与权限体系图.md)** - User、Tenant Membership、组织、角色、资源授权和 AuthContext
 - **[登录认证原理说明](addp登录认证的原理说明.md)** - Browser AuthSession、静默恢复、Token 轮换和 iframe 认证（Gateway 路由与 Console 架构见[模块架构图](addp模块架构图.md)）
 
 ### 数据管理

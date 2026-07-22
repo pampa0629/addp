@@ -658,7 +658,7 @@ Step v1 只允许以下字段：
 11. v1 不支持并行执行、分支或条件、Step 级重试策略、人工确认步骤，也不得通过 `condition`、`retry`、`approval`、`parallel`、`branch` 或其他私有 Step 字段提前打开这些控制流能力。后续如需要，必须作为 Orchestrator 执行模型 v2 专题设计，明确状态机、失败语义、资源隔离、审计、UI 表达和迁移边界。
 12. Monitor 回跳任务定义时应使用 TaskProvider capabilities 中对应 `task_type.edit_url`，不得硬编码 `module + task_type` 映射。
 13. Orchestrator Create/Update 必须使用严格 JSON 解码并拒绝未知字段；Step 结构、DAG、模板依赖、TaskProvider 引用、编排递归引用和调度表达式校验必须返回稳定的结构化领域错误，由同一 Handler 校验路径按 `Accept-Language` 映射为 `{error}` 响应，不得直接暴露 Go、JSON、Cron 或 Repository 的原始英文错误。
-14. 编排定义和执行记录是租户资源。HTTP 请求的租户只能来自 System AuthContext；普通用户使用 AuthContext 的非零 `tenant_id`，内部服务调用必须使用已验证的 Internal API Key 和 `X-Tenant-ID`。SuperAdmin 的空租户、客户端 query/body `tenant_id` 和缺失租户上下文均不得解释为租户 1 或全租户访问。Create/Update 请求只允许用户可编辑字段，Get/Update/Delete/Execute 和执行查询必须在 Repository 或统一执行仓储中同时限定资源 ID 与租户 ID；跨租户访问统一表现为资源不存在。
+14. 编排定义和执行记录是 Tenant 资源。用户 HTTP 请求必须使用 System AuthContext 的 `tenant` 会话模式和唯一当前 Tenant；内部服务调用必须使用已验证的 Internal API Key 和 `X-Tenant-ID`。`platform` 模式、客户端 query/body `tenant_id` 和缺失 Tenant 上下文均不得解释为默认 Tenant 或全 Tenant 访问。Create/Update 请求只允许用户可编辑字段，Get/Update/Delete/Execute 和执行查询必须在 Repository 或统一执行仓储中同时限定资源 ID 与 Tenant ID；跨 Tenant 访问统一表现为资源不存在。
 
 ### 编排调度与子任务自身调度
 

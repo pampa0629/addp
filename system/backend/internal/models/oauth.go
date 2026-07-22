@@ -11,6 +11,10 @@ const (
 
 	OAuthAuthorizationDecisionApproved = "approved"
 	OAuthAuthorizationDecisionRejected = "rejected"
+	OAuthAuthorizationRequestPending   = "pending"
+	OAuthAuthorizationRequestApproved  = "approved"
+	OAuthAuthorizationRequestRejected  = "rejected"
+	OAuthAuthorizationRequestCancelled = "cancelled"
 
 	OAuthDeviceStatusPending  = "pending"
 	OAuthDeviceStatusApproved = "approved"
@@ -31,6 +35,23 @@ type OAuthClient struct {
 }
 
 func (OAuthClient) TableName() string { return "system.oauth_clients" }
+
+type OAuthAuthorizationRequest struct {
+	ID                  string         `gorm:"primaryKey;type:uuid" json:"request_id"`
+	RequestSecretHash   string         `gorm:"type:char(64);not null" json:"-"`
+	ClientID            string         `gorm:"type:varchar(100);not null;index" json:"client_id"`
+	RedirectURI         string         `gorm:"type:text;not null" json:"redirect_uri"`
+	Scopes              pq.StringArray `gorm:"type:text[];not null" json:"scopes"`
+	CodeChallenge       string         `gorm:"type:varchar(128);not null" json:"-"`
+	CodeChallengeMethod string         `gorm:"type:varchar(10);not null" json:"-"`
+	Status              string         `gorm:"type:varchar(20);not null;index" json:"status"`
+	ExpiresAt           time.Time      `gorm:"not null;index" json:"expires_at"`
+	CompletedAt         *time.Time     `json:"completed_at"`
+	CreatedAt           time.Time      `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt           time.Time      `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+func (OAuthAuthorizationRequest) TableName() string { return "system.oauth_authorization_requests" }
 
 type OAuthAuthorizationCode struct {
 	ID                  string         `gorm:"primaryKey;type:uuid" json:"id"`
@@ -123,14 +144,23 @@ type TokenResponse struct {
 	Scope        string `json:"scope,omitempty"`
 }
 
-type OAuthAuthorizationRequest struct {
-	ClientID            string `json:"client_id" binding:"required"`
-	RedirectURI         string `json:"redirect_uri" binding:"required"`
-	Scope               string `json:"scope" binding:"required"`
-	State               string `json:"state" binding:"required"`
-	CodeChallenge       string `json:"code_challenge" binding:"required"`
-	CodeChallengeMethod string `json:"code_challenge_method" binding:"required"`
-	Decision            string `json:"decision" binding:"required,oneof=approved rejected"`
+type OAuthAuthorizationDecisionRequest struct {
+	RequestID string `json:"request_id" binding:"required"`
+	Decision  string `json:"decision" binding:"required,oneof=approved rejected"`
+}
+
+type OAuthAuthorizationRequestCreatedResponse struct {
+	RequestID     string `json:"request_id"`
+	RequestSecret string `json:"request_secret"`
+	ExpiresIn     int    `json:"expires_in"`
+}
+
+type OAuthAuthorizationRequestView struct {
+	RequestID  string    `json:"request_id"`
+	ClientID   string    `json:"client_id"`
+	ClientName string    `json:"client_name"`
+	Scope      string    `json:"scope"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 type OAuthAuthorizationResponse struct {

@@ -1,15 +1,15 @@
 <template>
   <main class="oauth-page">
-    <section class="oauth-panel">
+    <section v-loading="loadingRequest" class="oauth-panel">
       <el-icon class="oauth-icon"><Connection /></el-icon>
       <h1>{{ t('console.oauth.authorize.title') }}</h1>
-      <p>{{ t('console.oauth.authorize.description', { client: clientId }) }}</p>
-      <dl>
+      <p v-if="authorizationRequest">{{ t('console.oauth.authorize.description', { client: clientName }) }}</p>
+      <dl v-if="authorizationRequest">
         <div><dt>{{ t('console.oauth.client') }}</dt><dd>{{ clientId }}</dd></div>
         <div><dt>{{ t('console.oauth.scope') }}</dt><dd>{{ scope }}</dd></div>
       </dl>
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
-      <div class="actions">
+      <div v-if="authorizationRequest" class="actions">
         <el-button :icon="Close" :disabled="loading" @click="submit('rejected')">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :icon="Check" :loading="loading" @click="approve">
           {{ t('console.oauth.authorize.approve') }}
@@ -20,31 +20,60 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { Check, Close, Connection } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { oauthAPI } from '../api/oauth'
 import {
   authorizationDecisionRequest,
+  authorizationRequestId,
   redirectToAuthorizationResult
 } from '../oauth/authorization'
 
 const route = useRoute()
 const { t } = useI18n()
+const loadingRequest = ref(true)
 const loading = ref(false)
 const error = ref('')
-const clientId = computed(() => String(route.query.client_id || ''))
-const scope = computed(() => String(route.query.scope || 'addp.api'))
+const requestId = ref('')
+const authorizationRequest = ref(null)
+const clientId = computed(() => authorizationRequest.value?.client_id || '')
+const clientName = computed(() => authorizationRequest.value?.client_name || clientId.value)
+const scope = computed(() => authorizationRequest.value?.scope || '')
+
+onMounted(async () => {
+  try {
+    requestId.value = authorizationRequestId(route.query)
+  } catch {
+    error.value = t('console.oauth.invalidRequest')
+    loadingRequest.value = false
+    return
+  }
+  try {
+    authorizationRequest.value = await oauthAPI.getAuthorizationRequest(requestId.value)
+  } catch (requestError) {
+    error.value = requestError.response?.status === 410
+      ? t('console.oauth.authorize.expired')
+      : t('console.oauth.failed')
+  } finally {
+    loadingRequest.value = false
+  }
+})
 
 async function submit(decision) {
   loading.value = true
   error.value = ''
   try {
-    const response = await oauthAPI.authorize(authorizationDecisionRequest(route.query, decision))
+    const response = await oauthAPI.authorize(authorizationDecisionRequest(requestId.value, decision))
     redirectToAuthorizationResult(response, (url) => window.location.assign(url))
   } catch (requestError) {
-    error.value = requestError.response?.data?.error || t('console.oauth.failed')
+    error.value = requestError.response?.status === 410
+      ? t('console.oauth.authorize.expired')
+      : t('console.oauth.failed')
+    if (requestError.response?.status === 410) {
+      authorizationRequest.value = null
+    }
   } finally {
     loading.value = false
   }

@@ -60,6 +60,7 @@ func createTokenTestTables(t *testing.T, db *gorm.DB) {
 		`CREATE TABLE system.access_tokens (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, family_id TEXT NOT NULL, user_id INTEGER NOT NULL, tenant_id INTEGER, client_id TEXT, auth_type TEXT NOT NULL, audiences TEXT NOT NULL, scopes TEXT NOT NULL, expires_at DATETIME NOT NULL, revoked_at DATETIME, created_at DATETIME)`,
 		`CREATE TABLE system.delegated_access_tokens (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, source_access_token_id TEXT NOT NULL, user_id INTEGER NOT NULL, tenant_id INTEGER, client_id TEXT, delegated_by TEXT NOT NULL, audience TEXT NOT NULL, scopes TEXT NOT NULL, agent_run_id TEXT NOT NULL, tool_call_id TEXT NOT NULL, expires_at DATETIME NOT NULL, revoked_at DATETIME, created_at DATETIME)`,
 		`CREATE TABLE system.resource_access_tickets (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, family_id TEXT NOT NULL, owner TEXT NOT NULL, expires_at DATETIME NOT NULL, revoked_at DATETIME, created_at DATETIME)`,
+		`CREATE TABLE system.oauth_authorization_requests (id TEXT PRIMARY KEY, request_secret_hash TEXT NOT NULL, client_id TEXT NOT NULL, redirect_uri TEXT NOT NULL, scopes TEXT NOT NULL, code_challenge TEXT NOT NULL, code_challenge_method TEXT NOT NULL, status TEXT NOT NULL, expires_at DATETIME NOT NULL, completed_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE system.oauth_authorization_codes (id TEXT PRIMARY KEY, code_hash TEXT NOT NULL UNIQUE, client_id TEXT NOT NULL, user_id INTEGER NOT NULL, tenant_id INTEGER, redirect_uri TEXT NOT NULL, scopes TEXT NOT NULL, code_challenge TEXT NOT NULL, code_challenge_method TEXT NOT NULL, expires_at DATETIME NOT NULL, used_at DATETIME, created_at DATETIME)`,
 		`CREATE TABLE system.oauth_device_authorizations (id TEXT PRIMARY KEY, device_code_hash TEXT NOT NULL UNIQUE, user_code_hash TEXT NOT NULL UNIQUE, client_id TEXT NOT NULL, user_id INTEGER, tenant_id INTEGER, scopes TEXT NOT NULL, status TEXT NOT NULL, interval_secs INTEGER NOT NULL, last_polled_at DATETIME, expires_at DATETIME NOT NULL, created_at DATETIME, updated_at DATETIME)`,
 	}
@@ -142,13 +143,21 @@ func TestAuthorizationCodeRequiresS256AndIsSingleUse(t *testing.T) {
 	_, service, user := newTokenServiceTestDB(t)
 	verifier := "a-valid-pkce-verifier-with-more-than-forty-three-characters-123"
 	redirectURI := "http://127.0.0.1:43123/callback"
-	redirectURL, err := service.DecideAuthorization(user.ID, &models.OAuthAuthorizationRequest{
-		ClientID: "addp-cli", RedirectURI: redirectURI, Scope: "addp.api", State: "state", CodeChallenge: pkceChallenge(verifier), CodeChallengeMethod: "S256", Decision: models.OAuthAuthorizationDecisionApproved,
+	request, err := service.CreateAuthorizationRequest("addp-cli", redirectURI, "addp.api", pkceChallenge(verifier), "S256")
+	if err != nil {
+		t.Fatalf("create authorization request: %v", err)
+	}
+	decision, err := service.DecideAuthorization(user.ID, &models.OAuthAuthorizationDecisionRequest{
+		RequestID: request.RequestID,
+		Decision:  models.OAuthAuthorizationDecisionApproved,
 	})
 	if err != nil {
 		t.Fatalf("create authorization code: %v", err)
 	}
-	code := redirectQueryValue(t, redirectURL, "code")
+	if got := redirectQueryValue(t, decision.RedirectURL, "state"); got != request.RequestID {
+		t.Fatalf("redirect state = %q, want request id", got)
+	}
+	code := redirectQueryValue(t, decision.RedirectURL, "code")
 	pair, err := service.ExchangeAuthorizationCode("addp-cli", code, redirectURI, verifier)
 	if err != nil {
 		t.Fatalf("exchange authorization code: %v", err)
@@ -164,19 +173,22 @@ func TestAuthorizationCodeRequiresS256AndIsSingleUse(t *testing.T) {
 func TestAuthorizationRejectionUsesValidatedRedirectWithoutIssuingCode(t *testing.T) {
 	db, service, user := newTokenServiceTestDB(t)
 	verifier := "a-valid-pkce-verifier-with-more-than-forty-three-characters-123"
-	request := &models.OAuthAuthorizationRequest{
-		ClientID: "addp-cli", RedirectURI: "http://127.0.0.1:43124/callback", Scope: "addp.api", State: "state", CodeChallenge: pkceChallenge(verifier), CodeChallengeMethod: "S256", Decision: models.OAuthAuthorizationDecisionRejected,
+	request, err := service.CreateAuthorizationRequest("addp-cli", "http://127.0.0.1:43124/callback", "addp.api", pkceChallenge(verifier), "S256")
+	if err != nil {
+		t.Fatalf("create authorization request: %v", err)
 	}
-
-	redirectURL, err := service.DecideAuthorization(user.ID, request)
+	decision, err := service.DecideAuthorization(user.ID, &models.OAuthAuthorizationDecisionRequest{
+		RequestID: request.RequestID,
+		Decision:  models.OAuthAuthorizationDecisionRejected,
+	})
 	if err != nil {
 		t.Fatalf("reject authorization: %v", err)
 	}
-	if got := redirectQueryValue(t, redirectURL, "error"); got != "access_denied" {
+	if got := redirectQueryValue(t, decision.RedirectURL, "error"); got != "access_denied" {
 		t.Fatalf("redirect error = %q, want access_denied", got)
 	}
-	if got := redirectQueryValue(t, redirectURL, "state"); got != "state" {
-		t.Fatalf("redirect state = %q, want state", got)
+	if got := redirectQueryValue(t, decision.RedirectURL, "state"); got != request.RequestID {
+		t.Fatalf("redirect state = %q, want request id", got)
 	}
 	var count int64
 	if err := db.Model(&models.OAuthAuthorizationCode{}).Count(&count).Error; err != nil {
@@ -186,9 +198,42 @@ func TestAuthorizationRejectionUsesValidatedRedirectWithoutIssuingCode(t *testin
 		t.Fatalf("authorization code count = %d, want 0", count)
 	}
 
-	request.RedirectURI = "https://attacker.example/callback"
-	if _, err := service.DecideAuthorization(user.ID, request); !errors.Is(err, ErrInvalidRedirectURI) {
+	if _, err := service.CreateAuthorizationRequest("addp-cli", "https://attacker.example/callback", "addp.api", pkceChallenge(verifier), "S256"); !errors.Is(err, ErrInvalidRedirectURI) {
 		t.Fatalf("invalid rejection redirect error = %v, want ErrInvalidRedirectURI", err)
+	}
+}
+
+func TestAuthorizationRequestCanBeCancelledAndExpires(t *testing.T) {
+	db, service, user := newTokenServiceTestDB(t)
+	verifier := "a-valid-pkce-verifier-with-more-than-forty-three-characters-123"
+	request, err := service.CreateAuthorizationRequest("addp-cli", "http://127.0.0.1:43125/callback", "addp.api", pkceChallenge(verifier), "S256")
+	if err != nil {
+		t.Fatalf("create authorization request: %v", err)
+	}
+	var stored models.OAuthAuthorizationRequest
+	if err := db.First(&stored, "id = ?", request.RequestID).Error; err != nil {
+		t.Fatalf("load authorization request: %v", err)
+	}
+	if stored.RequestSecretHash == request.RequestSecret || stored.RequestSecretHash != hashToken(request.RequestSecret) {
+		t.Fatal("authorization request secret was not stored as a hash")
+	}
+	if _, _, cancelled, err := service.CancelAuthorizationRequest(request.RequestID, request.RequestSecret); err != nil || !cancelled {
+		t.Fatalf("cancel authorization request: %v", err)
+	}
+	if _, _, cancelled, err := service.CancelAuthorizationRequest(request.RequestID, request.RequestSecret); err != nil || cancelled {
+		t.Fatalf("idempotent cancel authorization request: %v", err)
+	}
+	if _, err := service.DecideAuthorization(user.ID, &models.OAuthAuthorizationDecisionRequest{RequestID: request.RequestID, Decision: models.OAuthAuthorizationDecisionApproved}); !errors.Is(err, ErrAuthorizationRequestUnavailable) {
+		t.Fatalf("decide cancelled request error = %v", err)
+	}
+
+	expired, err := service.CreateAuthorizationRequest("addp-cli", "http://127.0.0.1:43126/callback", "addp.api", pkceChallenge(verifier), "S256")
+	if err != nil {
+		t.Fatalf("create expiring authorization request: %v", err)
+	}
+	service.now = func() time.Time { return stored.ExpiresAt.Add(time.Second) }
+	if _, err := service.GetAuthorizationRequest(expired.RequestID); !errors.Is(err, ErrAuthorizationRequestUnavailable) {
+		t.Fatalf("get expired authorization request error = %v", err)
 	}
 }
 

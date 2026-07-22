@@ -5,6 +5,8 @@
 
 Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段设计问题。
 
+> IAM 的目标概念以 [ADDP 账号与权限体系](addp账号与权限体系图.md) 为准。本文不再展示旧 `user_type` 和 User 单 Tenant 表结构；User、Tenant Membership、External Identity、Department、Project Group、Role 等具体字段与关系将在下一阶段数据模型设计后补入。
+
 ---
 
 ## 一、中英文对照表
@@ -26,7 +28,12 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 | 中文     | 英文标识符  | 说明                                                             |
 | -------- | ----------- | ---------------------------------------------------------------- |
 | 租户     | Tenant      | 平台顶级隔离单元，所有业务对象都归属于某个租户                   |
-| 用户     | User        | 属于某个租户的操作主体，user_type 区分 super_admin/tenant_admin/user |
+| 用户     | User        | ADDP 内部自然人身份；目标上通过 Tenant Membership 加入一个或多个 Tenant，不再以 user_type 表达权限 |
+| 租户成员关系 | TenantMembership | User 或 Service Principal 进入某个 Tenant 的有效关系；一次业务会话只选择一个当前 Tenant |
+| 外部身份 | ExternalIdentity | 外部 IdP 的 `issuer + subject` 到 ADDP User 的稳定映射 |
+| 部门 | Department | Tenant 内表达稳定组织归属的层级组织单元 |
+| 项目组 | ProjectGroup | Tenant 内表达跨部门协作的成员集合 |
+| 角色分配 | RoleAssignment | 将 Role 赋予 Principal，并声明 Platform、Tenant、Department 或 Project Group Scope |
 | 引擎     | Engine      | 数据源和计算资源的统一抽象，通过 capabilities 声明具体能力       |
 | 模块     | Module      | ADDP 微服务单元；可选择性地声明任务能力，成为任务提供者          |
 | 应用     | Application | API 访问控制单元，属于某个租户，持有多个 APIKey                  |
@@ -207,7 +214,9 @@ Service 模块有三个相互独立的子系统：
 
 ---
 
-### 2.1 系统核心对象图（System 模块）
+### 2.1 系统非 IAM 核心对象图（System 模块）
+
+> 本图只保留当前不依赖 IAM 目标数据模型的 System 对象。IAM 实体字段和数据库关系待专项数据模型确认后一次性加入。
 
 ```mermaid
 erDiagram
@@ -215,19 +224,6 @@ erDiagram
         uint id PK
         string name
         string description
-        bool is_active
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    User {
-        uint id PK
-        uint tenant_id FK "super_admin 时为 null"
-        string username
-        string email
-        string password_hash
-        string full_name
-        string user_type "super_admin | tenant_admin | user"
         bool is_active
         timestamp created_at
         timestamp updated_at
@@ -303,7 +299,6 @@ erDiagram
         timestamp created_at
     }
 
-    Tenant ||--o{ User : "拥有"
     Tenant ||--o{ Engine : "注册"
     Tenant ||--o{ Application : "拥有"
     Application ||--o{ APIKey : "持有"
@@ -1177,7 +1172,6 @@ graph LR
     %% ── System ──
     subgraph SYS["System"]
         Tenant
-        User
         Engine
         Application
         APIKey
@@ -1249,7 +1243,6 @@ graph LR
     end
 
     %% System 内部
-    Tenant --> User
     Tenant --> Engine
     Tenant --> Application
     Application --> APIKey
@@ -1337,7 +1330,7 @@ graph LR
 
 ```mermaid
 graph TD
-    SYS["System\nTenant / User / Engine / Module / TaskProvider"]
+    SYS["System\nIAM / Tenant / Engine / Module / TaskProvider"]
     META["Meta\nDataNode / DataItem / ScanTask"]
     TRF["Transfer\nTransferTask / FieldMapping"]
     DEV["Develop\nDevTask"]

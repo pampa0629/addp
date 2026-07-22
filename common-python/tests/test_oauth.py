@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -23,6 +24,17 @@ class FakeResponse:
             "access_token": "addp_at_new",
             "refresh_token": "addp_rt_new",
             "scope": "addp.api",
+        }
+
+
+class AuthorizationRequestResponse:
+    status_code = 201
+
+    def json(self):
+        return {
+            "request_id": "authorization-request-1",
+            "request_secret": "addp_ars_secret",
+            "expires_in": 300,
         }
 
 
@@ -59,15 +71,22 @@ async def test_browser_login_uses_available_dynamic_loopback_port(monkeypatch):
 
     opened_redirect_uri = None
     token_redirect_uri = None
+    opened_query = None
     stored = []
 
     def open_browser(authorization_url):
-        nonlocal opened_redirect_uri
+        nonlocal opened_query
         query = urllib.parse.parse_qs(urllib.parse.urlparse(authorization_url).query)
-        opened_redirect_uri = query["redirect_uri"][0]
-        callback_query = urllib.parse.urlencode({"code": "addp_ac_test", "state": query["state"][0]})
+        opened_query = query
+        callback_query = urllib.parse.urlencode({"code": "addp_ac_test", "state": query["request_id"][0]})
         with urllib.request.urlopen(opened_redirect_uri + "?" + callback_query, timeout=2) as response:
-            assert response.status == 204
+            body = response.read().decode()
+            assert response.status == 200
+            assert response.headers["Cache-Control"] == "no-store"
+            assert response.headers["Referrer-Policy"] == "no-referrer"
+            assert "ADDP 授权响应已接收" in body
+            assert "addp_ac_test" not in body
+            assert query["request_id"][0] not in body
         return True
 
     class BrowserLoginAsyncClient:
@@ -81,7 +100,17 @@ async def test_browser_login_uses_available_dynamic_loopback_port(monkeypatch):
             return False
 
         async def post(self, _url, data):
-            nonlocal token_redirect_uri
+            nonlocal opened_redirect_uri, token_redirect_uri
+            if _url.endswith("/oauth/authorization_requests"):
+                opened_redirect_uri = data["redirect_uri"]
+                assert data == {
+                    "client_id": "addp-cli",
+                    "redirect_uri": opened_redirect_uri,
+                    "scope": "addp.api",
+                    "code_challenge": data["code_challenge"],
+                    "code_challenge_method": "S256",
+                }
+                return AuthorizationRequestResponse()
             token_redirect_uri = data["redirect_uri"]
             assert data["code"] == "addp_ac_test"
             return FakeResponse()
@@ -100,9 +129,115 @@ async def test_browser_login_uses_available_dynamic_loopback_port(monkeypatch):
     assert parsed_redirect.hostname == "127.0.0.1"
     assert parsed_redirect.port not in (None, 8765)
     assert parsed_redirect.path == "/callback"
+    assert opened_query == {"request_id": ["authorization-request-1"]}
     assert token_redirect_uri == opened_redirect_uri
     assert result == oauth.LoginResult(client_id="addp-cli", scope="addp.api")
     assert stored == [("http://localhost:8000", "addp_rt_new")]
+
+
+@pytest.mark.asyncio
+async def test_browser_login_cancels_server_request_when_browser_cannot_open(monkeypatch):
+    cancelled = []
+
+    class BrowserUnavailableAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, _url, data):
+            return AuthorizationRequestResponse()
+
+        async def delete(self, url, headers):
+            cancelled.append((url, headers))
+
+    monkeypatch.setattr(oauth.httpx, "AsyncClient", BrowserUnavailableAsyncClient)
+    monkeypatch.setattr(oauth.webbrowser, "open", lambda _url: False)
+
+    with pytest.raises(oauth.OAuthLoginError, match="browser_open_failed"):
+        await oauth.browser_login("http://localhost:8000", "http://localhost:5170")
+
+    assert cancelled == [(
+        "http://localhost:8000/api/v1/system/oauth/authorization_requests/authorization-request-1",
+        {"Authorization": "Bearer addp_ars_secret"},
+    )]
+
+
+@pytest.mark.asyncio
+async def test_callback_ignores_other_paths_until_valid_callback():
+    callback = oauth._CallbackServer("expected-state")
+    callback.start()
+
+    with pytest.raises(urllib.error.HTTPError) as not_found:
+        urllib.request.urlopen(callback.redirect_uri.replace("/callback", "/favicon.ico"), timeout=2)
+    assert not_found.value.code == 404
+
+    callback_url = callback.redirect_uri + "?" + urllib.parse.urlencode({
+        "code": "addp_ac_expected",
+        "state": "expected-state",
+    })
+    with urllib.request.urlopen(callback_url, timeout=2) as response:
+        assert response.status == 200
+
+    assert await callback.wait_for_code(timeout_seconds=1) == "addp_ac_expected"
+
+
+@pytest.mark.asyncio
+async def test_callback_rejects_state_mismatch_without_reflecting_secrets():
+    callback = oauth._CallbackServer("expected-state")
+    callback.start()
+    callback_url = callback.redirect_uri + "?" + urllib.parse.urlencode({
+        "code": "addp_ac_secret",
+        "state": "unexpected-state",
+    })
+
+    with pytest.raises(urllib.error.HTTPError) as failed:
+        urllib.request.urlopen(callback_url, timeout=2)
+    body = failed.value.read().decode()
+    assert failed.value.code == 400
+    assert "addp_ac_secret" not in body
+    assert "unexpected-state" not in body
+
+    with pytest.raises(oauth.OAuthLoginError, match="state_mismatch"):
+        await callback.wait_for_code(timeout_seconds=1)
+
+
+@pytest.mark.asyncio
+async def test_callback_returns_authorization_error_to_cli_only():
+    callback = oauth._CallbackServer("expected-state")
+    callback.start()
+    callback_url = callback.redirect_uri + "?" + urllib.parse.urlencode({
+        "error": "access_denied",
+        "state": "expected-state",
+    })
+
+    request = urllib.request.Request(callback_url, headers={"Accept-Language": "en"})
+    with pytest.raises(urllib.error.HTTPError) as failed:
+        urllib.request.urlopen(request, timeout=2)
+    body = failed.value.read().decode()
+    assert failed.value.code == 400
+    assert "Authorization failed" in body
+    assert "access_denied" not in body
+
+    with pytest.raises(oauth.OAuthLoginError, match="access_denied"):
+        await callback.wait_for_code(timeout_seconds=1)
+
+
+@pytest.mark.asyncio
+async def test_callback_timeout_closes_loopback_listener():
+    callback = oauth._CallbackServer("expected-state")
+    callback.start()
+    callback_address = ("127.0.0.1", callback.server.server_port)
+
+    with pytest.raises(oauth.OAuthLoginError, match="authorization_timeout"):
+        await callback.wait_for_code(timeout_seconds=0.01)
+
+    with pytest.raises(OSError):
+        socket.create_connection(callback_address, timeout=0.2)
 
 
 @pytest.mark.asyncio

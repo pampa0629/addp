@@ -1,16 +1,19 @@
 const stringValue = (value) => String(value || '')
 
-export function authorizationDecisionRequest(query, decision) {
+export function authorizationRequestId(query) {
+  const requestId = stringValue(query.request_id).trim()
+  if (!requestId) {
+    throw new Error('oauth_authorization_request_missing')
+  }
+  return requestId
+}
+
+export function authorizationDecisionRequest(requestId, decision) {
   if (decision !== 'approved' && decision !== 'rejected') {
     throw new Error('oauth_authorization_decision_invalid')
   }
   return {
-    client_id: stringValue(query.client_id),
-    redirect_uri: stringValue(query.redirect_uri),
-    scope: stringValue(query.scope || 'addp.api'),
-    state: stringValue(query.state),
-    code_challenge: stringValue(query.code_challenge),
-    code_challenge_method: stringValue(query.code_challenge_method),
+    request_id: stringValue(requestId),
     decision
   }
 }

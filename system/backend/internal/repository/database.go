@@ -84,6 +84,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.Application{},
 		&models.APIKey{},
 		&models.OAuthClient{},
+		&models.OAuthAuthorizationRequest{},
 		&models.RefreshTokenFamily{},
 		&models.RefreshToken{},
 		&models.AccessToken{},
