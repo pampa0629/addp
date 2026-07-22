@@ -1,12 +1,12 @@
 # ADDP OAuth 授权规范
 
-更新日期：2026-07-17
+更新日期：2026-07-22
 
 状态：阶段 4.3 正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准。
 
 ## 一、统一令牌模型
 
-ADDP 的 Web、CLI 和 OAuth 客户端统一使用随机 opaque 用户令牌。业务模块不解析令牌，只调用 System AuthContext。
+ADDP 的 Web、CLI 和 OAuth 客户端统一使用随机 opaque 用户令牌。System 是 ADDP 唯一的身份、会话、OAuth Client 和 AuthContext 权威，不拆分第二个 ADDP Auth Server；业务模块不解析令牌，只调用 System AuthContext。未来接入企业 IdP 时，由 System 完成外部身份到 ADDP 用户、租户和 opaque 会话的映射，外部 IdP Token 不直接进入业务模块。
 
 - Access Token：`addp_at_` 前缀，32 字节随机值，只保存 SHA-256 Hash，默认有效期 15 分钟。
 - Refresh Token：`addp_rt_` 前缀，32 字节随机值，只保存 SHA-256 Hash，默认有效期 30 天。
@@ -25,9 +25,9 @@ OAuth Client 独立存储在 `system.oauth_clients`，不复用 `applications` �
 
 | client_id | 用途 | redirect URI | Device Flow |
 | --- | --- | --- | --- |
-| `addp-cli` | ADDP CLI、Codex、Hermes 等本地 Agent | `http://127.0.0.1:8765/callback` | 允许 |
+| `addp-cli` | ADDP CLI、Codex、Hermes 等本地 Agent | `http://127.0.0.1/callback`（运行时使用随机端口） | 允许 |
 
-公共客户端不配置 Client Secret。Authorization Code Flow 只接受 PKCE `S256`，redirect URI 必须与客户端注册值完全一致。
+公共客户端不配置 Client Secret。Authorization Code Flow 只接受 PKCE `S256`。非 loopback redirect URI 必须与客户端注册值完全一致；原生应用 loopback redirect URI 按 RFC 8252 允许请求在已注册 URI 的 IP 字面量 host 上使用运行时随机端口，但 `scheme`、IP 字面量、path、query 和 fragment 必须与注册值一致。ADDP CLI 固定绑定 `127.0.0.1`，不得使用 `localhost`、非 loopback IP、任意域名、路径前缀或通配符。授权时使用的完整动态 redirect URI 必须原样用于 Authorization Code 兑换。
 
 ## 三、Refresh Token Family
 
@@ -63,13 +63,13 @@ Refresh Token 严格轮换要求同 origin 多标签页通过 Web Locks 和 Broa
 
 ## 五、Authorization Code + PKCE
 
-CLI 生成 `code_verifier`、S256 `code_challenge` 和随机 `state`，打开 Console `/oauth/authorize`。Console 使用当前 ADDP Access Token 调用：
+CLI 先在 `127.0.0.1` 绑定随机空闲端口，再生成 `code_verifier`、S256 `code_challenge` 和随机 `state`，以完整动态 redirect URI 打开 Console `/oauth/authorize`。Console 使用当前 ADDP Access Token 调用同一个授权决定接口：
 
 ```text
 POST /api/v1/system/oauth/authorizations
 ```
 
-System 校验用户、客户端、redirect URI、Scope 和 PKCE 后返回重定向 URL。Authorization Code 只能使用一次。CLI 再以 `grant_type=authorization_code`、`client_id`、`code`、`redirect_uri` 和 `code_verifier` 调用 `/oauth/token`。
+请求必须携带 `decision=approved|rejected`。System 对两种决定都先校验用户、客户端、redirect URI、Scope 和 PKCE：批准时签发 Authorization Code 并返回带 `code` 和 `state` 的重定向 URL；拒绝时不签发 Code，返回带 `error=access_denied` 和 `state` 的重定向 URL。Console 不得直接信任 query 中的 `redirect_uri` 自行跳转。Authorization Code 只能使用一次。CLI 再以 `grant_type=authorization_code`、`client_id`、`code`、`redirect_uri` 和 `code_verifier` 调用 `/oauth/token`。
 
 ## 六、Device Authorization Flow
 
@@ -83,7 +83,35 @@ System 校验用户、客户端、redirect URI、Scope 和 PKCE 后返回重定�
 
 `POST /oauth/token` 支持 `authorization_code`、`urn:ietf:params:oauth:grant-type:device_code` 和 `refresh_token` 三种 grant。
 
-OAuth 成功响应包含 `access_token`、`token_type=Bearer`、`expires_in`、`refresh_token` 和 `scope`。CLI 只把 Refresh Token 保存到 OS Keychain；每次命令执行前刷新并原子更新轮换后的 Refresh Token。
+OAuth 成功响应包含 `access_token`、`token_type=Bearer`、`expires_in`、`refresh_token` 和 `scope`。CLI 只把 Refresh Token 保存到 OS Keychain；每次命令执行前必须按 ADDP Base URL 获取跨进程互斥锁，再完成读取旧 Refresh Token、调用刷新接口和原子更新新 Refresh Token，避免并行命令把正常竞争误判为重用攻击。
+
+### 7.1 OAuth 安全审计
+
+System 审计日志是 OAuth 安全事件的唯一持久化落点，不另建 OAuth 日志表，也不经跨模块审计 API 回写自身。每个 OAuth POST 请求只生成一条结构化审计记录，`entity_type=oauth_security_event`，`entity_id` 使用稳定事件名：
+
+- `oauth.authorization.approved|rejected|failed`；
+- `oauth.device.code.issued|failed`；
+- `oauth.device.authorization.approved|rejected|failed`；
+- `oauth.token.issued|failed|refresh_reuse_detected`；
+- `oauth.token.revoked|revoke_ignored`；
+- `oauth.rate_limit.exceeded|unavailable`。
+
+审计详情只允许保存事件名、结果、`client_id`、grant type、decision、scope 和稳定 OAuth error code。不得保存或部分保留 Access Token、Refresh Token、Authorization Code、Device Code、User Code、PKCE verifier/challenge、state、Cookie、Authorization Header 或原始请求体。IP、User-Agent、Request ID、HTTP 状态、用户和租户身份继续使用统一审计字段。Refresh Token 重用必须记录高风险事件并保持 HTTP 响应为 `invalid_grant`，不能向客户端泄露 family、用户或攻击判定细节。
+
+历史通用审计记录中已经落盘的 OAuth 原始请求体、query 和错误详情必须在 System 启动迁移中清空；迁移后只保留上述结构化安全事件，不保留旧日志格式兼容分支。
+
+### 7.2 OAuth 端点限流
+
+OAuth 限流状态统一存放在 Infra Redis，保证多个 System 实例共享同一计数；Redis 不可用时 OAuth 端点失败关闭，不得回退到进程内计数。固定一分钟窗口的默认上限如下：
+
+| 端点 | 默认上限 | 限流键 |
+| --- | ---: | --- |
+| `/oauth/token`、`/oauth/device/code`、`/oauth/revoke` | 60 次/分钟 | endpoint + client IP + `client_id` |
+| `/oauth/authorizations`、`/oauth/device/authorizations` | 30 次/分钟 | endpoint + 当前 `user_id`；请求包含 `client_id` 时同时纳入 |
+
+超限统一返回 HTTP 429、`error=temporarily_unavailable`、`Retry-After` 和标准限流响应头，并写入 `oauth.rate_limit.exceeded`；Redis 计数失败返回 HTTP 503、同一 OAuth error，并写入 `oauth.rate_limit.unavailable`。Device Flow 自身的轮询 `slow_down` 规则继续生效，它与端点级滥用防护是同一路径上的两层约束，不是替代关系。
+
+限流 IP 必须来自 Gin 受信代理配置。System 默认只信任 loopback 代理；容器或生产反向代理网段必须通过 `TRUSTED_PROXIES` 显式声明，禁止信任任意来源提交的转发头。
 
 ## 八、AuthContext 映射
 
@@ -152,9 +180,12 @@ Agent 不保存完整 workflow 审批 payload。approval 默认 15 分钟过期�
 ## 十、禁止事项
 
 - 保存任何 Token、Authorization Code 或 Device Code 明文。
+- 把 OAuth 表单或 JSON 原始请求体写入通用审计日志，或在安全事件中保存 Code、Token、User Code、PKCE、state、Cookie 和 Authorization Header。
+- OAuth 限流在 Redis 不可用时回退为单实例内存计数，或直接信任任意来源的 `X-Forwarded-For`。
 - 公共客户端内置 Client Secret。
 - 支持 PKCE `plain`。
-- redirect URI 前缀匹配、通配符或回退 URI。
+- redirect URI 前缀匹配、通配符或回退 URI；RFC 8252 规定的 loopback IP 动态端口是唯一例外，不能放宽 scheme、host、path、query 或 fragment。
+- Console 在未经 System 校验的情况下直接跳转客户端提交的 redirect URI。
 - 同时保留 JWT 刷新和 Refresh Token Family 两条路径。
 - 使用 API Key、`INTERNAL_API_KEY` 或 Scope 模拟用户身份提升。
 - Agent Tool Client 把原始 User Access Token 直接传给 owner 模块。

@@ -31,13 +31,16 @@ func LoggerMiddleware(logService *service.LogService) gin.HandlerFunc {
 		// ✅ 1. 记录开始时间
 		startTime := time.Now()
 
-		// ✅ 2. 生成 request_id
-		requestID := uuid.New().String()
-		c.Set("request_id", requestID) // 可在业务代码中使用
+		// ✅ 2. 复用统一请求 ID；独立使用中间件时才生成。
+		requestID := c.GetString("request_id")
+		if requestID == "" {
+			requestID = uuid.New().String()
+			c.Set("request_id", requestID)
+		}
 
-		// 3. 读取请求体
+		// OAuth security endpoints never persist their raw body: it may contain codes, tokens, or PKCE material.
 		var requestBody string
-		if c.Request.Body != nil {
+		if c.Request.Body != nil && !IsOAuthSecurityPath(c.Request.URL.Path) {
 			bodyBytes, err := io.ReadAll(c.Request.Body)
 			if err == nil {
 				requestBody = string(bodyBytes)
@@ -84,6 +87,16 @@ func LoggerMiddleware(logService *service.LogService) gin.HandlerFunc {
 			c.Request.URL.Path,
 			requestBody,
 		)
+		if IsOAuthSecurityPath(c.Request.URL.Path) {
+			entityType = "oauth_security_event"
+			audit := ResolveOAuthSecurityAudit(c)
+			entityID = audit.Event
+			requestBody = OAuthSecurityAuditJSON(c)
+		}
+		queryParams := c.Request.URL.RawQuery
+		if IsOAuthSecurityPath(c.Request.URL.Path) {
+			queryParams = ""
+		}
 
 		// ✅ 9. 确定日志级别
 		logLevel := "INFO"
@@ -91,6 +104,9 @@ func LoggerMiddleware(logService *service.LogService) gin.HandlerFunc {
 			logLevel = "ERROR"
 		} else if statusCode >= 400 {
 			logLevel = "WARN"
+		}
+		if audit, ok := OAuthSecurityAuditFromContext(c); ok && audit.Event == "oauth.token.refresh_reuse_detected" {
+			logLevel = "ERROR"
 		}
 
 		// ✅ 10. 提取错误信息 (从 context 或响应)
@@ -102,6 +118,9 @@ func LoggerMiddleware(logService *service.LogService) gin.HandlerFunc {
 				errorMessage = msg
 			}
 		}
+		if IsOAuthSecurityPath(c.Request.URL.Path) {
+			errorMessage = ""
+		}
 
 		// ✅ 11. 构建审计日志
 		auditLog := &models.AuditLog{
@@ -110,17 +129,17 @@ func LoggerMiddleware(logService *service.LogService) gin.HandlerFunc {
 			TenantID:     tenantID,
 			HTTPMethod:   c.Request.Method,
 			ResourcePath: c.Request.URL.Path,
-			HTTPStatus:   statusCode,           // ✅ 必填
-			DurationMs:   int(duration),        // ✅ 必填
+			HTTPStatus:   statusCode,    // ✅ 必填
+			DurationMs:   int(duration), // ✅ 必填
 			EntityType:   entityType,
 			EntityID:     entityID,
 			RequestBody:  utils.MaskSensitiveData(requestBody),
-			QueryParams:  c.Request.URL.RawQuery,
+			QueryParams:  queryParams,
 			UserAgent:    c.Request.UserAgent(),
 			IPAddress:    c.ClientIP(),
 			LogLevel:     logLevel,
 			ErrorMessage: errorMessage,
-			RequestID:    requestID,            // ✅ 必填
+			RequestID:    requestID, // ✅ 必填
 			ModuleName:   "system",
 		}
 

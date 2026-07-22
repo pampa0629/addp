@@ -7,7 +7,7 @@
 Gateway 是 ADDP 平台的**统一 API 入口**，负责：
 
 1. **API Key 认证** - 基于三层缓存的验证机制（本地 5分钟 → Redis 1小时 → System API）
-2. **请求路由** - 按模块前缀转发到 7 个后端服务（System、Manager、Meta、Transfer、Develop、Service、Copilot）
+2. **请求路由** - System 使用 `SYSTEM_URL` bootstrap，其他模块按注册表动态发现
 3. **限流控制** - 基于 Redis 令牌桶算法，按应用 ID 独立限流
 4. **访问日志** - 异步记录所有 API 访问到 PostgreSQL
 5. **透明代理** - 按 `/api/v1/:module/*path` 保持模块路径原样转发
@@ -90,7 +90,8 @@ Gateway 不使用 `common/client/system.go`，原因：
 gateway/
 ├── cmd/gateway/main.go          # 入口文件
 ├── internal/
-│   ├── config/config.go         # 配置管理（7 个服务地址）
+│   ├── config/config.go         # System bootstrap、刷新周期和基础设施配置
+│   ├── module_discovery.go      # 从 System 注册表动态发现模块
 │   ├── router/router.go         # 路由配置和中间件链
 │   ├── proxy/proxy.go           # HTTP 透明代理
 │   ├── middleware/
@@ -132,54 +133,27 @@ gateway/
 - [access_logger.go](internal/middleware/access_logger.go) - 异步访问日志
 
 ### 路由和代理
-- [router.go](internal/router/router.go) - 路由配置，7 个服务映射，中间件链
+- [router.go](internal/router/router.go) - System bootstrap、动态模块路由和中间件链
 - [proxy.go](internal/proxy/proxy.go) - HTTP 透明代理
 
 ### 专用客户端
 - [system_client.go](pkg/client/system_client.go) - System API Key 验证客户端（100 行）
 
 ### 配置管理
-- [config.go](internal/config/config.go) - 环境变量加载，7 个服务地址 + DB + Redis
+- [config.go](internal/config/config.go) - 环境变量加载，System bootstrap + DB + Redis
 
 ## 🔧 常见开发场景
 
-### 场景 1：添加新的后端服务路由
+### 场景 1：添加新的后端模块
 
 **需求**：添加 Analytics 模块路由
 
 **步骤**：
 
-1. **在 config.go 添加服务 URL**：
-   ```go
-   type Config struct {
-       // ... 现有配置
-       AnalyticsServiceURL string // 新增
-   }
-
-   func Load() *Config {
-       return &Config{
-           // ... 现有配置
-           AnalyticsServiceURL: getEnv("ANALYTICS_SERVICE_URL", "http://localhost:8088"),
-       }
-   }
-   ```
-
-2. **在 router.go 创建代理和路由**：
-   ```go
-   // 创建代理
-   analyticsProxy := proxy.NewServiceProxy(cfg.AnalyticsServiceURL)
-
-   // 配置路由
-   analyticsGroup := api.Group("/analytics")
-   {
-       analyticsGroup.Any("/reports", analyticsProxy.Handle)
-       analyticsGroup.Any("/reports/*path", analyticsProxy.Handle)
-       analyticsGroup.Any("/dashboards", analyticsProxy.Handle)
-       analyticsGroup.Any("/dashboards/*path", analyticsProxy.Handle)
-   }
-   ```
-
-3. **更新文档**：
+1. Analytics 后端暴露 `/api/v1/analytics/**`。
+2. 模块启动后调用 System `/api/v1/internal/modules/register`，并持续发送心跳。
+3. Gateway 下一次刷新注册表后自动获得该模块代理；无需增加 URL 配置或修改路由代码。
+4. **更新文档**：
    - [docs/gateway架构说明.md](docs/gateway架构说明.md) - 路由规则表
    - [README.md](README.md) - 路由规则表
 
@@ -257,21 +231,6 @@ gateway/
    - 修改 System 模块中的应用配置
    - 或等待 1 分钟让计数器自动重置
 
-### 场景 4：添加新模块路由
-
-**需求**：新模块 Analytics 需要通过 Gateway 访问
-
-**步骤**：
-
-```go
-// 在硬编码 fallback 中添加 analyticsProxy，并在动态路由 fallback switch 中处理 "analytics"。
-// Analytics 后端必须暴露 /api/v1/analytics/... 路由。
-
-// 效果：
-// 请求: GET /api/v1/analytics/reports/1
-// 转发: GET http://analytics-backend/api/v1/analytics/reports/1
-```
-
 ## ⚠️ 注意事项
 
 ### 1. 不要修改专用 SystemClient
@@ -303,8 +262,9 @@ gateway/
 
 ### System 模块
 - **API**: `/api/v1/internal/api-keys/validate` - API Key 验证
+- **API**: `/api/v1/internal/modules` - 模块发现
 - **认证**: `X-Internal-API-Key` 头部
-- **用途**: 验证外部 API Key，返回应用信息和限流配额
+- **用途**: 提供 System bootstrap、验证外部 API Key，并作为模块注册表权威
 
 ### Redis（addp-infra-redis）
 - **缓存**: API Key 验证结果（1 小时 TTL）

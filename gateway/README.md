@@ -17,7 +17,7 @@
 ### 前置要求
 
 - Go 1.21+
-- 至少一个后端服务运行中（System、Manager、Meta 或 Transfer）
+- System 后端运行中；其他模块通过 System 注册表发现
 
 ### 运行网关
 
@@ -41,15 +41,9 @@ Gateway 根据 URL 路径前缀自动路由请求：
 
 | 请求路径 | 目标服务 | 服务地址 | 认证要求 | 转发方式 | 用途 |
 |---------|---------|---------|---------|---------|-----|
-| `POST /api/v1/system/login` | System | http://localhost:8180 | **公开** | 透明转发 | 用户登录 |
-| `POST /api/v1/system/register` | System | http://localhost:8180 | **公开** | 透明转发 | 用户注册 |
-| `/api/v1/system/*` | System | http://localhost:8180 | API Key | 透明转发 | 用户、租户、引擎、日志 |
-| `/api/v1/manager/*` | Manager | http://localhost:8081 | API Key | 透明转发 | 数据管理、预览、上传下载 |
-| `/api/v1/meta/*` | Meta | http://localhost:8082 | API Key | 透明转发 | 元数据扫描和资源树 |
-| `/api/v1/transfer/*` | Transfer | http://localhost:8083 | API Key | 透明转发 | 数据同步和格式转换 |
-| `/api/v1/develop/*` | Develop | http://localhost:8185 | API Key | 透明转发 | SQL、工作流、Notebook |
-| `/api/v1/service/*` | Service | http://localhost:8086 | API Key | 透明转发 | 数据服务 |
-| `/api/v1/copilot/*` | Copilot | http://localhost:8087 | API Key | 透明转发 | AI 助手 |
+| `/api/v1/system/*` | System | `SYSTEM_URL` | 由 System 端点决定 | 透明转发 | 登录、会话、OAuth、AuthContext 和系统管理 |
+| `/api/v1/{module}/*` | 注册模块 | System 模块注册表 | Bearer Token 或 API Key | 动态透明转发 | 自动支持所有状态为 `up` 的模块 |
+| `/api/query/*`、`/ogc/*`、`/wmts/*`、`/tiles/*` | Service | System 模块注册表 | 由 Service 端点决定 | 动态透明转发 | 数据服务公开协议入口 |
 
 ### 转发说明
 
@@ -70,14 +64,9 @@ Gateway 使用 `/api/v1/:module/*path` 提取模块名，并将完整请求路�
 # 网关端口
 PORT=8000
 
-# 后端服务地址（7 个服务）
+# System bootstrap 和模块发现
 SYSTEM_URL=http://localhost:8180
-MANAGER_URL=http://localhost:8081
-META_URL=http://localhost:8082
-TRANSFER_URL=http://localhost:8083
-DEVELOP_URL=http://localhost:8185
-SERVICE_URL=http://localhost:8086
-COPILOT_URL=http://localhost:8087
+MODULE_REFRESH_INTERVAL=30s
 
 # 数据库配置（用于访问日志）
 POSTGRES_HOST=localhost
@@ -123,14 +112,14 @@ Gateway 三层缓存验证：
 - 支持服务级别访问控制
 - 自动限流和访问日志
 
-### 2. JWT Token 认证（用于内部模块调用）
+### 2. Bearer Token 认证
 
 ```
 前端/模块发送请求携带 Authorization: Bearer <token>
   ↓
 Gateway 透明传递认证信息
   ↓
-后端服务验证 JWT Token
+后端服务通过 System AuthContext 验证 opaque Token
 ```
 
 ## 🌐 访问方式
@@ -196,7 +185,8 @@ Gateway 完整保留并转发：
 
 检查：
 - 目标后端服务是否启动
-- 服务地址配置是否正确（`SYSTEM_URL` 等）
+- System 的 `SYSTEM_URL` 是否正确
+- 目标模块是否已注册、心跳是否正常且状态为 `up`
 - 网络连接是否正常
 
 ### 3. CORS 错误？

@@ -1,6 +1,6 @@
 # ADDP 授权上下文规范
 
-更新日期：2026-07-16
+更新日期：2026-07-21
 
 状态：正式规范。本规范定义 ADDP 用户访问令牌的唯一解析结果和模块消费路径；OAuth PKCE、Device Flow 和 Refresh Token Family 见 `docs/spec/addp OAuth授权规范.md`。
 
@@ -111,6 +111,8 @@ System 生成 AuthContext 前必须校验：
 Scope 只能缩小权限。例如普通用户获得 `workflow.run` Scope 后，仍只能访问其租户内、Develop 允许的资源，并满足 owner 的审批策略。
 
 委托令牌使用默认拒绝策略：owner 模块收到 `auth_type=delegated_access_token` 时，只有当前路由与 Token Manifest 中该 Tool 的 owner、audience 和 required scopes 完全匹配才可继续；委托令牌不能访问同一模块的其他普通 API。
+
+Browser Resource Access Ticket 同样使用默认拒绝策略。System 的 `GET /api/v1/system/auth/context` 是仅用于 Owner 解析票据的基础设施例外；System 的其他用户、租户、OAuth、引擎和管理 API 必须拒绝 `auth_type=resource_access_ticket`。Owner 只在自身明确声明的 GET/HEAD 原生资源路由接受对应 audience 和 `resource:read` Scope，不能把票据当作普通 User Access Token。
 
 ## 六、共享中间件
 

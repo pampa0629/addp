@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"time"
 
 	commonClient "github.com/addp/common/client"
@@ -43,24 +44,10 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	rateLimiterMiddleware := middleware.NewRateLimiterMiddleware(redisClient)
 	accessLoggerMiddleware := middleware.NewAccessLoggerMiddleware(db)
 
-	// 初始化模块发现（如果启用）
-	var moduleDiscovery *internal.ModuleDiscovery
-	if cfg.ModuleRegistryEnabled {
-		log.Println("🔍 启用模块发现，从 System 加载模块列表...")
-
-		// 创建用于模块发现的 System 客户端
-		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		moduleDiscovery = internal.NewModuleDiscovery(registryClient, cfg.ModuleRefreshInterval)
-
-		// 启动模块发现
-		if err := moduleDiscovery.Start(cfg.ModuleRefreshInterval); err != nil {
-			log.Printf("⚠️ 模块发现启动失败，回退到硬编码路由: %v", err)
-			moduleDiscovery = nil // 回退到硬编码路由
-		} else {
-			log.Println("✅ 模块发现已启动")
-		}
-	} else {
-		log.Println("ℹ️  模块发现已禁用，使用硬编码路由")
+	registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+	moduleDiscovery := internal.NewModuleDiscovery(registryClient)
+	if err := moduleDiscovery.Start(cfg.ModuleRefreshInterval); err != nil {
+		log.Printf("模块注册表初次加载失败，将按刷新间隔继续重试: %v", err)
 	}
 
 	// 健康检查（无需鉴权）
@@ -78,256 +65,59 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 			"version": "1.0.0",
 		}
 
-		// 如果启用了模块发现，显示动态模块列表
-		if moduleDiscovery != nil {
-			modules := moduleDiscovery.GetModules()
-			moduleMap := make(map[string]string)
-			for name, info := range modules {
+		modules := moduleDiscovery.GetModules()
+		moduleMap := map[string]string{"system": cfg.SystemServiceURL}
+		for name, info := range modules {
+			if name != "system" {
 				moduleMap[name] = info.ModuleURL
 			}
-			response["modules"] = moduleMap
-			response["module_discovery"] = "enabled"
-		} else {
-			// 使用硬编码服务列表
-			response["services"] = gin.H{
-				"system":   cfg.SystemServiceURL,
-				"manager":  cfg.ManagerServiceURL,
-				"meta":     cfg.MetaServiceURL,
-				"transfer": cfg.TransferServiceURL,
-				"develop":  cfg.DevelopServiceURL,
-				"service":  cfg.ServiceServiceURL,
-				"copilot":  cfg.CopilotServiceURL,
-				"monitor":  cfg.MonitorServiceURL,
-				"standard": cfg.StandardServiceURL,
-				"model":    cfg.ModelServiceURL,
-				"quality":  cfg.QualityServiceURL,
-				"asset":    cfg.AssetServiceURL,
-				"portal":   cfg.PortalServiceURL,
-				"agent":    cfg.AgentServiceURL,
-				"graph":    cfg.GraphServiceURL,
-			}
-			response["module_discovery"] = "disabled"
 		}
+		response["modules"] = moduleMap
 
 		c.JSON(200, response)
 	})
 
-	// 创建硬编码代理（作为 fallback）
+	// System 是模块注册表和认证上下文的 bootstrap 权威。
 	systemProxy := proxy.NewServiceProxy(cfg.SystemServiceURL)
-	managerProxy := proxy.NewServiceProxy(cfg.ManagerServiceURL)
-	metaProxy := proxy.NewServiceProxy(cfg.MetaServiceURL)
-	transferProxy := proxy.NewServiceProxy(cfg.TransferServiceURL)
-	developProxy := proxy.NewServiceProxy(cfg.DevelopServiceURL)
-	serviceProxy := proxy.NewServiceProxy(cfg.ServiceServiceURL)
-	copilotProxy := proxy.NewServiceProxy(cfg.CopilotServiceURL)
-	monitorProxy := proxy.NewServiceProxy(cfg.MonitorServiceURL)
-	standardProxy := proxy.NewServiceProxy(cfg.StandardServiceURL)
-	modelProxy := proxy.NewServiceProxy(cfg.ModelServiceURL)
-	qualityProxy := proxy.NewServiceProxy(cfg.QualityServiceURL)
-	assetProxy := proxy.NewServiceProxy(cfg.AssetServiceURL)
-	portalProxy := proxy.NewServiceProxy(cfg.PortalServiceURL)
-	agentProxy := proxy.NewServiceProxy(cfg.AgentServiceURL)
-	graphProxy := proxy.NewServiceProxy(cfg.GraphServiceURL)
-
-	// ============ 公开路由（无需鉴权）============
-	// 注意：这些路由必须在通配符路由之前定义，避免冲突
-	public := router.Group("/api/v1")
-	{
-		// System 模块的认证接口（登录、注册）
-		if moduleDiscovery != nil {
-			public.POST("/system/login", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("system"); err == nil {
-					p.Handle(c)
-				} else {
-					systemProxy.Handle(c) // fallback
-				}
-			})
-			public.POST("/system/register", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("system"); err == nil {
-					p.Handle(c)
-				} else {
-					systemProxy.Handle(c) // fallback
-				}
-			})
-
-		} else {
-			public.POST("/system/login", systemProxy.Handle)
-			public.POST("/system/register", systemProxy.Handle)
-		}
-	}
+	serviceHandler := registeredModuleHandler("service", moduleDiscovery)
 
 	// 查询服务数据访问端点（公开，无需 API Key，认证由 Service 模块内部判断）
 	// 注意：使用 /api/query 而非 /api/v1/query，与 Service 模块路由保持一致
-	if moduleDiscovery != nil {
-		router.GET("/api/query/:serviceName", func(c *gin.Context) {
-			if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-				p.Handle(c)
-			} else {
-				serviceProxy.Handle(c)
-			}
-		})
-		router.POST("/api/gquery/:serviceName", func(c *gin.Context) {
-			if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-				p.Handle(c)
-			} else {
-				serviceProxy.Handle(c)
-			}
-		})
-	} else {
-		router.GET("/api/query/:serviceName", serviceProxy.Handle)
-		router.POST("/api/gquery/:serviceName", serviceProxy.Handle)
-	}
+	router.GET("/api/query/:serviceName", serviceHandler)
+	router.POST("/api/gquery/:serviceName", serviceHandler)
 
 	// OGC API Features 公开路由（不需要 API Key 认证）
 	ogc := router.Group("/ogc")
 	{
-		if moduleDiscovery != nil {
-			// Landing Page
-			ogc.GET("/features/:serviceName", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-					p.Handle(c)
-				} else {
-					serviceProxy.Handle(c) // fallback
-				}
-			})
-			// Conformance
-			ogc.GET("/features/:serviceName/conformance", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-					p.Handle(c)
-				} else {
-					serviceProxy.Handle(c) // fallback
-				}
-			})
-			// Collections
-			ogc.GET("/features/:serviceName/collections", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-					p.Handle(c)
-				} else {
-					serviceProxy.Handle(c) // fallback
-				}
-			})
-			// Items
-			ogc.GET("/features/:serviceName/collections/:collectionId/items", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-					p.Handle(c)
-				} else {
-					serviceProxy.Handle(c) // fallback
-				}
-			})
-			// Single Item
-			ogc.GET("/features/:serviceName/collections/:collectionId/items/:featureId", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-					p.Handle(c)
-				} else {
-					serviceProxy.Handle(c) // fallback
-				}
-			})
-		} else {
-			// Fallback 到硬编码路由
-			ogc.GET("/features/:serviceName", serviceProxy.Handle)
-			ogc.GET("/features/:serviceName/conformance", serviceProxy.Handle)
-			ogc.GET("/features/:serviceName/collections", serviceProxy.Handle)
-			ogc.GET("/features/:serviceName/collections/:collectionId/items", serviceProxy.Handle)
-			ogc.GET("/features/:serviceName/collections/:collectionId/items/:featureId", serviceProxy.Handle)
-		}
+		ogc.GET("/features/:serviceName", serviceHandler)
+		ogc.GET("/features/:serviceName/conformance", serviceHandler)
+		ogc.GET("/features/:serviceName/collections", serviceHandler)
+		ogc.GET("/features/:serviceName/collections/:collectionId/items", serviceHandler)
+		ogc.GET("/features/:serviceName/collections/:collectionId/items/:featureId", serviceHandler)
 	}
 
 	// WMTS 公开路由（不需要 API Key 认证，认证由 Service 模块内部判断）
 	wmts := router.Group("/wmts")
 	{
-		if moduleDiscovery != nil {
-			wmts.GET("/:serviceName", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-					p.Handle(c)
-				} else {
-					serviceProxy.Handle(c) // fallback
-				}
-			})
-		} else {
-			// Fallback 到硬编码路由
-			wmts.GET("/:serviceName", serviceProxy.Handle)
-		}
+		wmts.GET("/:serviceName", serviceHandler)
 	}
 
 	// OGC Tiles API 公开路由（添加到 ogc 组之外，避免路径冲突）
 	ogcTiles := router.Group("/ogc/tiles")
 	{
-		if moduleDiscovery != nil {
-			// Landing Page
-			ogcTiles.GET("/:serviceName", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-					p.Handle(c)
-				} else {
-					serviceProxy.Handle(c) // fallback
-				}
-			})
-			// Conformance
-			ogcTiles.GET("/:serviceName/conformance", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-					p.Handle(c)
-				} else {
-					serviceProxy.Handle(c) // fallback
-				}
-			})
-			// TileMatrixSets
-			ogcTiles.GET("/:serviceName/tileMatrixSets", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-					p.Handle(c)
-				} else {
-					serviceProxy.Handle(c) // fallback
-				}
-			})
-			// TileMatrixSet Detail
-			ogcTiles.GET("/:serviceName/tileMatrixSets/:tileMatrixSetId", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-					p.Handle(c)
-				} else {
-					serviceProxy.Handle(c) // fallback
-				}
-			})
-			// Tilesets
-			ogcTiles.GET("/:serviceName/tiles", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-					p.Handle(c)
-				} else {
-					serviceProxy.Handle(c) // fallback
-				}
-			})
-			// Single Tile
-			ogcTiles.GET("/:serviceName/tiles/:layer/:tileMatrixSetId/:tileMatrix/:tileRow/:tileCol", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-					p.Handle(c)
-				} else {
-					serviceProxy.Handle(c) // fallback
-				}
-			})
-		} else {
-			// Fallback 到硬编码路由
-			ogcTiles.GET("/:serviceName", serviceProxy.Handle)
-			ogcTiles.GET("/:serviceName/conformance", serviceProxy.Handle)
-			ogcTiles.GET("/:serviceName/tileMatrixSets", serviceProxy.Handle)
-			ogcTiles.GET("/:serviceName/tileMatrixSets/:tileMatrixSetId", serviceProxy.Handle)
-			ogcTiles.GET("/:serviceName/tiles", serviceProxy.Handle)
-			ogcTiles.GET("/:serviceName/tiles/:layer/:tileMatrixSetId/:tileMatrix/:tileRow/:tileCol", serviceProxy.Handle)
-		}
+		ogcTiles.GET("/:serviceName", serviceHandler)
+		ogcTiles.GET("/:serviceName/conformance", serviceHandler)
+		ogcTiles.GET("/:serviceName/tileMatrixSets", serviceHandler)
+		ogcTiles.GET("/:serviceName/tileMatrixSets/:tileMatrixSetId", serviceHandler)
+		ogcTiles.GET("/:serviceName/tiles", serviceHandler)
+		ogcTiles.GET("/:serviceName/tiles/:layer/:tileMatrixSetId/:tileMatrix/:tileRow/:tileCol", serviceHandler)
 	}
 
 	// XYZ Tiles 公开路由（不需要 API Key 认证，认证由 Service 模块内部判断）
 	// 注意：Gin 不支持 :y.:format 语法，使用 /*yformat 通配符，由 Service 后端解析
 	tiles := router.Group("/tiles")
 	{
-		if moduleDiscovery != nil {
-			tiles.GET("/:serviceName/:layerName/:z/:x/*yformat", func(c *gin.Context) {
-				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
-					p.Handle(c)
-				} else {
-					serviceProxy.Handle(c) // fallback
-				}
-			})
-		} else {
-			// Fallback 到硬编码路由
-			tiles.GET("/:serviceName/:layerName/:z/:x/*yformat", serviceProxy.Handle)
-		}
+		tiles.GET("/:serviceName/:layerName/:z/:x/*yformat", serviceHandler)
 	}
 
 	// ============ 受保护的路由（需要 API Key 鉴权）============
@@ -336,197 +126,48 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	api.Use(rateLimiterMiddleware.Handler())  // 限流
 	api.Use(accessLoggerMiddleware.Handler()) // 访问日志
 	{
-		// 如果启用了模块发现，使用动态路由
-		if moduleDiscovery != nil {
-			log.Println("✅ 使用动态路由")
-
-			// 动态路由：自动支持所有注册的模块
-			api.Any("/:module", func(c *gin.Context) {
-				moduleName := c.Param("module")
-
-				// 从模块发现获取代理
-				p, err := moduleDiscovery.GetProxy(moduleName)
-				if err != nil {
-					// Fallback 到硬编码路由
-					switch moduleName {
-					case "system":
-						systemProxy.Handle(c)
-					case "manager":
-						managerProxy.Handle(c)
-					case "meta":
-						metaProxy.Handle(c)
-					case "transfer":
-						transferProxy.Handle(c)
-					case "develop":
-						developProxy.Handle(c)
-					case "service":
-						serviceProxy.Handle(c)
-					case "copilot":
-						copilotProxy.Handle(c)
-					case "monitor":
-						monitorProxy.Handle(c)
-					case "standard":
-						standardProxy.Handle(c)
-					case "model":
-						modelProxy.Handle(c)
-					case "quality":
-						qualityProxy.Handle(c)
-					case "asset":
-						assetProxy.Handle(c)
-					case "portal":
-						portalProxy.Handle(c)
-					case "agent":
-						agentProxy.Handle(c)
-					case "graph":
-						graphProxy.Handle(c)
-					default:
-						c.JSON(503, gin.H{
-							"error": fmt.Sprintf("模块 %s 不可用", moduleName),
-						})
-					}
-					return
-				}
-
-				p.Handle(c)
-			})
-
-			api.Any("/:module/*path", func(c *gin.Context) {
-				moduleName := c.Param("module")
-
-				// 从模块发现获取代理
-				p, err := moduleDiscovery.GetProxy(moduleName)
-				if err != nil {
-					// Fallback 到硬编码路由
-					switch moduleName {
-					case "system":
-						systemProxy.Handle(c)
-					case "manager":
-						managerProxy.Handle(c)
-					case "meta":
-						metaProxy.Handle(c)
-					case "transfer":
-						transferProxy.Handle(c)
-					case "develop":
-						developProxy.Handle(c)
-					case "service":
-						serviceProxy.Handle(c)
-					case "copilot":
-						copilotProxy.Handle(c)
-					case "monitor":
-						monitorProxy.Handle(c)
-					case "standard":
-						standardProxy.Handle(c)
-					case "model":
-						modelProxy.Handle(c)
-					case "quality":
-						qualityProxy.Handle(c)
-					case "asset":
-						assetProxy.Handle(c)
-					case "portal":
-						portalProxy.Handle(c)
-					case "agent":
-						agentProxy.Handle(c)
-					case "graph":
-						graphProxy.Handle(c)
-					default:
-						c.JSON(503, gin.H{
-							"error": fmt.Sprintf("模块 %s 不可用", moduleName),
-						})
-					}
-					return
-				}
-
-				p.Handle(c)
-			})
-		} else {
-			// 使用硬编码路由（原有逻辑保持不变）
-			log.Println("ℹ️  使用硬编码路由")
-
-			// System 模块 - 排除公开路由（login、register），其他全部转发
-			systemGroup := api.Group("/system")
-			{
-				systemGroup.Any("/users", systemProxy.Handle)
-				systemGroup.Any("/users/*path", systemProxy.Handle)
-				systemGroup.Any("/tenants", systemProxy.Handle)
-				systemGroup.Any("/tenants/*path", systemProxy.Handle)
-				systemGroup.Any("/engines", systemProxy.Handle)
-				systemGroup.Any("/engines/*path", systemProxy.Handle)
-				systemGroup.Any("/logs", systemProxy.Handle)
-				systemGroup.Any("/logs/*path", systemProxy.Handle)
-				systemGroup.Any("/applications", systemProxy.Handle)
-				systemGroup.Any("/applications/*path", systemProxy.Handle)
-				systemGroup.Any("/api-docs/*path", systemProxy.Handle)
-				systemGroup.Any("/admin/*path", systemProxy.Handle)
-			}
-
-			// Manager 模块
-			api.Any("/manager", managerProxy.Handle)
-			api.Any("/manager/*path", managerProxy.Handle)
-
-			// Meta 模块
-			api.Any("/meta", metaProxy.Handle)
-			api.Any("/meta/*path", metaProxy.Handle)
-
-			// Transfer 模块
-			api.Any("/transfer", transferProxy.Handle)
-			api.Any("/transfer/*path", transferProxy.Handle)
-
-			// Develop 模块
-			api.Any("/develop", developProxy.Handle)
-			api.Any("/develop/*path", developProxy.Handle)
-
-			// Service 模块
-			api.Any("/service", serviceProxy.Handle)
-			api.Any("/service/*path", serviceProxy.Handle)
-
-			// Copilot 模块
-			api.Any("/copilot", copilotProxy.Handle)
-			api.Any("/copilot/*path", copilotProxy.Handle)
-
-			// Monitor 模块
-			api.Any("/monitor", monitorProxy.Handle)
-			api.Any("/monitor/*path", monitorProxy.Handle)
-
-			// Standard 模块
-			api.Any("/standard", standardProxy.Handle)
-			api.Any("/standard/*path", standardProxy.Handle)
-
-			// Model 模块
-			api.Any("/model", modelProxy.Handle)
-			api.Any("/model/*path", modelProxy.Handle)
-
-			// Quality 模块
-			api.Any("/quality", qualityProxy.Handle)
-			api.Any("/quality/*path", qualityProxy.Handle)
-
-			// Asset 模块
-			api.Any("/asset", assetProxy.Handle)
-			api.Any("/asset/*path", assetProxy.Handle)
-
-			// Portal 模块
-			api.Any("/portal", portalProxy.Handle)
-			api.Any("/portal/*path", portalProxy.Handle)
-
-			// Agent 模块
-			api.Any("/agent", agentProxy.Handle)
-			api.Any("/agent/*path", agentProxy.Handle)
-
-			// Graph 模块
-			api.Any("/graph", graphProxy.Handle)
-			api.Any("/graph/*path", graphProxy.Handle)
-
-			// 内部 API（跨模块调用）
-			internalGroup := api.Group("/internal")
-			{
-				internalGroup.Any("/engines", systemProxy.Handle)
-				internalGroup.Any("/engines/*path", systemProxy.Handle)
-				internalGroup.Any("/users/*path", systemProxy.Handle)
-				internalGroup.Any("/tenants/*path", systemProxy.Handle)
-			}
-		}
+		registerModuleRoutes(api, systemProxy, moduleDiscovery)
 	}
 
 	return router
+}
+
+type moduleProxyLookup interface {
+	GetProxy(moduleName string) (*proxy.ServiceProxy, error)
+}
+
+func registerModuleRoutes(api *gin.RouterGroup, systemProxy *proxy.ServiceProxy, discovery moduleProxyLookup) {
+	handler := moduleRouteHandler(systemProxy, discovery)
+	api.Any("/:module", handler)
+	api.Any("/:module/*path", handler)
+}
+
+func moduleRouteHandler(systemProxy *proxy.ServiceProxy, discovery moduleProxyLookup) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		moduleName := c.Param("module")
+		if moduleName == "system" {
+			systemProxy.Handle(c)
+			return
+		}
+		proxyRegisteredModule(c, moduleName, discovery)
+	}
+}
+
+func registeredModuleHandler(moduleName string, discovery moduleProxyLookup) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		proxyRegisteredModule(c, moduleName, discovery)
+	}
+}
+
+func proxyRegisteredModule(c *gin.Context, moduleName string, discovery moduleProxyLookup) {
+	p, err := discovery.GetProxy(moduleName)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": fmt.Sprintf("module %s is unavailable", moduleName),
+		})
+		return
+	}
+	p.Handle(c)
 }
 
 // initDatabase 初始化数据库连接

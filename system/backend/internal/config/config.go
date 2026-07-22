@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -20,6 +21,8 @@ type Config struct {
 	AuthorizationCodeMinutes          int
 	DeviceCodeExpireMinutes           int
 	DevicePollIntervalSecs            int
+	OAuthPublicRateLimitPerMinute     int
+	OAuthUserRateLimitPerMinute       int
 	ConsoleURL                        string
 	ProjectName                       string
 	AllowPublicRegistration           bool
@@ -67,6 +70,17 @@ type Config struct {
 
 	// CORS 配置
 	AllowedOrigins []string // CORS 白名单
+	TrustedProxies []string // 允许提供客户端 IP 转发头的反向代理 IP/CIDR
+}
+
+func (c *Config) ValidateTrustedProxies() error {
+	for _, proxy := range c.TrustedProxies {
+		switch strings.TrimSpace(proxy) {
+		case "*", "0.0.0.0/0", "::/0":
+			return errors.New("TRUSTED_PROXIES 不得信任全网段")
+		}
+	}
+	return nil
 }
 
 func Load() *Config {
@@ -92,6 +106,7 @@ func Load() *Config {
 		allowedOrigins[i] = strings.TrimSpace(origin)
 	}
 	log.Printf("✅ CORS AllowedOrigins: %v", allowedOrigins)
+	trustedProxies := splitAndTrim(getEnv("TRUSTED_PROXIES", "127.0.0.1,::1"))
 
 	// 读取端口配置（统一使用 {MODULE}_BACKEND_PORT 格式）
 	port := getEnv("SYSTEM_BACKEND_PORT", "8180")
@@ -109,6 +124,8 @@ func Load() *Config {
 		AuthorizationCodeMinutes:          getEnvAsPositiveInt("OAUTH_CODE_EXPIRE_MINUTES", 5),
 		DeviceCodeExpireMinutes:           getEnvAsPositiveInt("OAUTH_DEVICE_EXPIRE_MINUTES", 10),
 		DevicePollIntervalSecs:            getEnvAsPositiveInt("OAUTH_DEVICE_INTERVAL_SECONDS", 5),
+		OAuthPublicRateLimitPerMinute:     getEnvAsPositiveInt("OAUTH_PUBLIC_RATE_LIMIT_PER_MINUTE", 60),
+		OAuthUserRateLimitPerMinute:       getEnvAsPositiveInt("OAUTH_USER_RATE_LIMIT_PER_MINUTE", 30),
 		ConsoleURL:                        strings.TrimSuffix(getEnv("CONSOLE_URL", "http://localhost:5170"), "/"),
 		ProjectName:                       getEnv("PROJECT_NAME", "全域数据平台"),
 		AllowPublicRegistration:           getEnvAsBool("ALLOW_PUBLIC_REGISTRATION", false),
@@ -156,7 +173,19 @@ func Load() *Config {
 
 		// CORS 配置
 		AllowedOrigins: allowedOrigins,
+		TrustedProxies: trustedProxies,
 	}
+}
+
+func splitAndTrim(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
 
 func getEnv(key, defaultValue string) string {

@@ -80,7 +80,7 @@ addp tool call workflow.validate --agent-run-id <run-id> --tool-call-id <call-id
 2. **用户请求**: Web 使用 HttpOnly Refresh Token Cookie，CLI 使用 OS Keychain 保存轮换 Refresh Token
 3. **显式短期 Token**: `--token` / `ADDP_TOKEN` 只用于调用方已经持有短期 Access Token 的自动化环境
 
-CLI 每次执行 Tool 前使用 Keychain 中的 Refresh Token 换取短期 User Access Token，并原子保存轮换后的 Refresh Token；User Access Token 不持久化。ToolExecutor 再按调用即时换取不可刷新、默认 2 分钟的 Delegated Access Token，原始 User Access Token 不进入 owner Client。
+CLI Browser Login 按 RFC 8252 在 `127.0.0.1` 绑定随机空闲端口，并在授权与 Code 兑换阶段使用同一个完整 redirect URI。CLI 每次执行 Tool 前按 ADDP Base URL 获取跨进程锁，再使用 Keychain 中的 Refresh Token 换取短期 User Access Token，并原子保存轮换后的 Refresh Token；User Access Token 不持久化。ToolExecutor 再按调用即时换取不可刷新、默认 2 分钟的 Delegated Access Token，原始 User Access Token 不进入 owner Client。
 
 Tool 与 Adapter 变更至少运行 common-python 全量测试和 `make test-agent-eval`；场景与发布门禁规则见 `docs/spec/addp智能体评测规范.md`。
 

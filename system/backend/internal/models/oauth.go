@@ -9,6 +9,9 @@ import (
 const (
 	OAuthClientTypePublic = "public"
 
+	OAuthAuthorizationDecisionApproved = "approved"
+	OAuthAuthorizationDecisionRejected = "rejected"
+
 	OAuthDeviceStatusPending  = "pending"
 	OAuthDeviceStatusApproved = "approved"
 	OAuthDeviceStatusDenied   = "denied"
@@ -127,6 +130,7 @@ type OAuthAuthorizationRequest struct {
 	State               string `json:"state" binding:"required"`
 	CodeChallenge       string `json:"code_challenge" binding:"required"`
 	CodeChallengeMethod string `json:"code_challenge_method" binding:"required"`
+	Decision            string `json:"decision" binding:"required,oneof=approved rejected"`
 }
 
 type OAuthAuthorizationResponse struct {

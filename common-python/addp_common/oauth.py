@@ -3,17 +3,19 @@ import base64
 import hashlib
 import http.server
 import secrets
+import tempfile
 import threading
 import urllib.parse
 import webbrowser
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 import keyring
+from filelock import AsyncFileLock, Timeout
 
 
 CLIENT_ID = "addp-cli"
-REDIRECT_URI = "http://127.0.0.1:8765/callback"
 KEYRING_SERVICE = "addp-cli"
 DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 
@@ -30,6 +32,14 @@ class LoginResult:
 
 def _token_endpoint(base_url: str) -> str:
     return base_url.rstrip("/") + "/api/v1/system/oauth/token"
+
+
+def _refresh_lock_path(base_url: str) -> Path:
+    normalized_base_url = base_url.rstrip("/")
+    digest = hashlib.sha256(normalized_base_url.encode()).hexdigest()
+    lock_dir = Path(tempfile.gettempdir()) / "addp-cli"
+    lock_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return lock_dir / f"oauth-refresh-{digest}.lock"
 
 
 def _refresh_token(base_url: str) -> str | None:
@@ -52,24 +62,28 @@ def has_login(base_url: str) -> bool:
 
 
 async def refresh_access_token(base_url: str) -> str:
-    refresh_token = _refresh_token(base_url)
-    if not refresh_token:
-        raise OAuthLoginError("authentication_required")
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        response = await client.post(
-            _token_endpoint(base_url),
-            data={
-                "grant_type": "refresh_token",
-                "client_id": CLIENT_ID,
-                "refresh_token": refresh_token,
-            },
-        )
-    if response.status_code != 200:
-        delete_refresh_token(base_url)
-        raise OAuthLoginError(response.json().get("error", "invalid_grant"))
-    payload = response.json()
-    _store_refresh_token(base_url, payload["refresh_token"])
-    return payload["access_token"]
+    try:
+        async with AsyncFileLock(_refresh_lock_path(base_url), timeout=30):
+            refresh_token = _refresh_token(base_url)
+            if not refresh_token:
+                raise OAuthLoginError("authentication_required")
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(
+                    _token_endpoint(base_url),
+                    data={
+                        "grant_type": "refresh_token",
+                        "client_id": CLIENT_ID,
+                        "refresh_token": refresh_token,
+                    },
+                )
+            if response.status_code != 200:
+                delete_refresh_token(base_url)
+                raise OAuthLoginError(response.json().get("error", "invalid_grant"))
+            payload = response.json()
+            _store_refresh_token(base_url, payload["refresh_token"])
+            return payload["access_token"]
+    except Timeout as exc:
+        raise OAuthLoginError("refresh_lock_timeout") from exc
 
 
 async def browser_login(base_url: str, console_url: str, scope: str = "addp.api") -> LoginResult:
@@ -78,11 +92,12 @@ async def browser_login(base_url: str, console_url: str, scope: str = "addp.api"
     state = secrets.token_urlsafe(24)
     callback = _CallbackServer(state)
     callback.start()
+    redirect_uri = callback.redirect_uri
 
     query = urllib.parse.urlencode({
         "response_type": "code",
         "client_id": CLIENT_ID,
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "scope": scope,
         "state": state,
         "code_challenge": challenge,
@@ -98,7 +113,7 @@ async def browser_login(base_url: str, console_url: str, scope: str = "addp.api"
                 "grant_type": "authorization_code",
                 "client_id": CLIENT_ID,
                 "code": code,
-                "redirect_uri": REDIRECT_URI,
+                "redirect_uri": redirect_uri,
                 "code_verifier": verifier,
             },
         )
@@ -176,7 +191,7 @@ class _CallbackHandler(http.server.BaseHTTPRequestHandler):
 
 class _HTTPCallbackServer(http.server.HTTPServer):
     def __init__(self, expected_state: str):
-        super().__init__(("127.0.0.1", 8765), _CallbackHandler)
+        super().__init__(("127.0.0.1", 0), _CallbackHandler)
         self.expected_state = expected_state
         self.code = ""
         self.error = ""
@@ -189,6 +204,10 @@ class _CallbackServer:
 
     def start(self) -> None:
         threading.Thread(target=self.server.handle_request, daemon=True).start()
+
+    @property
+    def redirect_uri(self) -> str:
+        return f"http://127.0.0.1:{self.server.server_port}/callback"
 
     async def wait_for_code(self) -> str:
         completed = await asyncio.to_thread(self.server.completed.wait, 300)

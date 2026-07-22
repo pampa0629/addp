@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"time"
 
+	"context"
+	"encoding/json"
 	"github.com/addp/gateway/internal/cache"
 	"github.com/addp/gateway/pkg/client"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
-	"context"
-	"encoding/json"
 )
 
 // APIKeyAuthMiddleware API Key 验证中间件
@@ -44,7 +44,7 @@ func (m *APIKeyAuthMiddleware) Handler() gin.HandlerFunc {
 		// 检查请求头中的 API Key
 		apiKey := c.GetHeader("X-API-Key")
 		if apiKey == "" {
-			// 没有 API Key，跳过验证（可能是内部 JWT 认证）
+			// 没有 API Key 时透明传递，由目标模块处理 Bearer Token 或公开访问。
 			c.Next()
 			return
 		}

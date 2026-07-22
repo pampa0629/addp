@@ -9,6 +9,7 @@
 - [config/loader.go](common/config/loader.go) - 集中式配置加载,带回退
 - `common/jsonmap` - decoded JSON map 的通用读取工具,不承载 `meta_item.attributes` 业务规范
 - `common/taskprovider` - `task.capabilities/v1`、标准任务列表响应和 `execution_schema` 参数实例校验；校验失败返回包含稳定 rule、path 和约束值的结构化错误，Orchestrator 保存阶段可允许完整模板字符串，模板解析后必须严格复验
+- `common/middleware/ratelimit` - Redis 原子固定窗口限流能力，供认证等多实例安全边界复用；Redis 不可用时由调用方定义失败关闭响应，不提供进程内存回退路径
 - `common/contentio` - 基于 Go `io` 的内容定位与读写抽象，负责 `Ref`、`Reader`、`Writer`、`Lister`、`RangeReader` 和 `Stat`
 - `common/format` - 通用文件格式、FormatDescriptor、格式信息、format plugin、info provider、content reader 和 writer/provider
 - `common/dataitem` - 候选内容集合到 data item 组织结果的通用解析能力，供 Meta 扫描和 Manager 容器动态预览复用；当前已落地 `ResolveItems()`、single / multi / whole 规则派生、related refs 还原 helper 和基础忽略策略

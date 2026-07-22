@@ -33,7 +33,7 @@ func newTokenServiceTestDB(t *testing.T) (*gorm.DB, *TokenService, *models.User)
 	if err := db.Create(user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	client := models.OAuthClient{ClientID: "addp-cli", Name: "ADDP CLI", ClientType: models.OAuthClientTypePublic, RedirectURIs: []string{"http://127.0.0.1:8765/callback"}, AllowedScopes: []string{"addp.api"}, DeviceFlowEnabled: true, IsActive: true}
+	client := models.OAuthClient{ClientID: "addp-cli", Name: "ADDP CLI", ClientType: models.OAuthClientTypePublic, RedirectURIs: []string{"http://127.0.0.1/callback"}, AllowedScopes: []string{"addp.api"}, DeviceFlowEnabled: true, IsActive: true}
 	if err := db.Create(&client).Error; err != nil {
 		t.Fatalf("create oauth client: %v", err)
 	}
@@ -141,22 +141,120 @@ func TestRefreshTokenRotationAndReuseRevokesFamily(t *testing.T) {
 func TestAuthorizationCodeRequiresS256AndIsSingleUse(t *testing.T) {
 	_, service, user := newTokenServiceTestDB(t)
 	verifier := "a-valid-pkce-verifier-with-more-than-forty-three-characters-123"
-	redirectURL, err := service.CreateAuthorizationCode(user.ID, &models.OAuthAuthorizationRequest{
-		ClientID: "addp-cli", RedirectURI: "http://127.0.0.1:8765/callback", Scope: "addp.api", State: "state", CodeChallenge: pkceChallenge(verifier), CodeChallengeMethod: "S256",
+	redirectURI := "http://127.0.0.1:43123/callback"
+	redirectURL, err := service.DecideAuthorization(user.ID, &models.OAuthAuthorizationRequest{
+		ClientID: "addp-cli", RedirectURI: redirectURI, Scope: "addp.api", State: "state", CodeChallenge: pkceChallenge(verifier), CodeChallengeMethod: "S256", Decision: models.OAuthAuthorizationDecisionApproved,
 	})
 	if err != nil {
 		t.Fatalf("create authorization code: %v", err)
 	}
 	code := redirectQueryValue(t, redirectURL, "code")
-	pair, err := service.ExchangeAuthorizationCode("addp-cli", code, "http://127.0.0.1:8765/callback", verifier)
+	pair, err := service.ExchangeAuthorizationCode("addp-cli", code, redirectURI, verifier)
 	if err != nil {
 		t.Fatalf("exchange authorization code: %v", err)
 	}
 	if len(pair.ResourceAccessTickets) != 0 || pair.ResourceAccessTicketExpiresIn != 0 {
 		t.Fatalf("OAuth token exchange issued browser resource tickets: %#v", pair)
 	}
-	if _, err := service.ExchangeAuthorizationCode("addp-cli", code, "http://127.0.0.1:8765/callback", verifier); !errors.Is(err, ErrInvalidAuthorizationCode) {
+	if _, err := service.ExchangeAuthorizationCode("addp-cli", code, redirectURI, verifier); !errors.Is(err, ErrInvalidAuthorizationCode) {
 		t.Fatalf("second exchange error = %v", err)
+	}
+}
+
+func TestAuthorizationRejectionUsesValidatedRedirectWithoutIssuingCode(t *testing.T) {
+	db, service, user := newTokenServiceTestDB(t)
+	verifier := "a-valid-pkce-verifier-with-more-than-forty-three-characters-123"
+	request := &models.OAuthAuthorizationRequest{
+		ClientID: "addp-cli", RedirectURI: "http://127.0.0.1:43124/callback", Scope: "addp.api", State: "state", CodeChallenge: pkceChallenge(verifier), CodeChallengeMethod: "S256", Decision: models.OAuthAuthorizationDecisionRejected,
+	}
+
+	redirectURL, err := service.DecideAuthorization(user.ID, request)
+	if err != nil {
+		t.Fatalf("reject authorization: %v", err)
+	}
+	if got := redirectQueryValue(t, redirectURL, "error"); got != "access_denied" {
+		t.Fatalf("redirect error = %q, want access_denied", got)
+	}
+	if got := redirectQueryValue(t, redirectURL, "state"); got != "state" {
+		t.Fatalf("redirect state = %q, want state", got)
+	}
+	var count int64
+	if err := db.Model(&models.OAuthAuthorizationCode{}).Count(&count).Error; err != nil {
+		t.Fatalf("count authorization codes: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("authorization code count = %d, want 0", count)
+	}
+
+	request.RedirectURI = "https://attacker.example/callback"
+	if _, err := service.DecideAuthorization(user.ID, request); !errors.Is(err, ErrInvalidRedirectURI) {
+		t.Fatalf("invalid rejection redirect error = %v, want ErrInvalidRedirectURI", err)
+	}
+}
+
+func TestOAuthRevokeRequiresMatchingClient(t *testing.T) {
+	_, tokenService, user := newTokenServiceTestDB(t)
+	clientID := "addp-cli"
+	pair, err := tokenService.issueNewFamily(
+		user.ID, user.TenantID, &clientID, models.AuthTypeOAuthAccessToken, []string{"addp-api"}, []string{"addp.api"},
+	)
+	if err != nil {
+		t.Fatalf("issue OAuth family: %v", err)
+	}
+	if err := tokenService.RevokeOAuthRefreshToken(pair.RefreshToken, "other-client"); !errors.Is(err, ErrInvalidOAuthClient) {
+		t.Fatalf("mismatched client error = %v", err)
+	}
+	if _, err := tokenService.RotateOAuthRefreshToken(pair.RefreshToken, clientID); err != nil {
+		t.Fatalf("mismatched revoke changed family: %v", err)
+	}
+
+	pair, err = tokenService.issueNewFamily(
+		user.ID, user.TenantID, &clientID, models.AuthTypeOAuthAccessToken, []string{"addp-api"}, []string{"addp.api"},
+	)
+	if err != nil {
+		t.Fatalf("issue second OAuth family: %v", err)
+	}
+	if err := tokenService.RevokeOAuthRefreshToken(pair.RefreshToken, clientID); err != nil {
+		t.Fatalf("revoke OAuth family: %v", err)
+	}
+	if _, err := tokenService.RotateOAuthRefreshToken(pair.RefreshToken, clientID); !errors.Is(err, ErrInvalidRefreshToken) {
+		t.Fatalf("revoked refresh error = %v", err)
+	}
+}
+
+func TestRedirectURIAllowsOnlyRFC8252LoopbackPortVariation(t *testing.T) {
+	registered := []string{
+		"http://127.0.0.1/callback",
+		"http://[::1]/callback",
+		"http://127.0.0.1/callback?channel=cli",
+		"https://client.example/callback",
+	}
+	tests := []struct {
+		name      string
+		requested string
+		allowed   bool
+	}{
+		{name: "dynamic loopback port", requested: "http://127.0.0.1:43123/callback", allowed: true},
+		{name: "dynamic IPv6 loopback port", requested: "http://[::1]:43123/callback", allowed: true},
+		{name: "matching registered query", requested: "http://127.0.0.1:43123/callback?channel=cli", allowed: true},
+		{name: "exact non-loopback", requested: "https://client.example/callback", allowed: true},
+		{name: "localhost hostname", requested: "http://localhost:43123/callback"},
+		{name: "different loopback IP", requested: "http://127.0.0.2:43123/callback"},
+		{name: "https loopback", requested: "https://127.0.0.1:43123/callback"},
+		{name: "different path", requested: "http://127.0.0.1:43123/other"},
+		{name: "query added", requested: "http://127.0.0.1:43123/callback?next=/admin"},
+		{name: "userinfo added", requested: "http://user@127.0.0.1:43123/callback"},
+		{name: "fragment added", requested: "http://127.0.0.1:43123/callback#fragment"},
+		{name: "invalid port", requested: "http://127.0.0.1:70000/callback"},
+		{name: "non-loopback port variation", requested: "https://client.example:43123/callback"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := redirectURIAllowed(registered, test.requested); got != test.allowed {
+				t.Fatalf("redirectURIAllowed(%q) = %v, want %v", test.requested, got, test.allowed)
+			}
+		})
 	}
 }
 

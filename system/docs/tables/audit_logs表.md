@@ -12,6 +12,8 @@
 - **资源关联**:记录操作对象类型和 ID
 - **安全审计**:支持按用户、时间、操作类型查询
 
+OAuth 端点是特殊安全边界：不得保存原始请求体、query 或错误详情，只保存 `entity_type=oauth_security_event` 的结构化事件。事件详情仅包含稳定事件名、结果、`client_id`、grant type、decision、scope 和 OAuth error code，不得包含 Token、Code、User Code、PKCE、state、Cookie 或 Authorization Header。
+
 ---
 
 ## 二、表结构定义

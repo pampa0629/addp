@@ -28,7 +28,6 @@ require (
 	github.com/twmb/franz-go v1.20.1
 	github.com/twmb/franz-go/pkg/kadm v1.17.1
 	github.com/twpayne/go-geom v1.6.1
-	github.com/ulule/limiter/v3 v3.11.2
 	github.com/vmware/go-nfs-client v0.0.0-20190605212624-d43b92724c1b
 	github.com/xuri/excelize/v2 v2.10.0
 	go.mongodb.org/mongo-driver v1.11.4

@@ -1545,7 +1545,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "使用当前用户身份签发一次性 PKCE Authorization Code | Issue a one-time PKCE authorization code for the current user",
+                "description": "校验当前用户、OAuth Client、Redirect URI（原生应用 loopback URI 按 RFC 8252 仅允许动态端口）、Scope 和 PKCE；批准时签发一次性 Authorization Code，拒绝时返回 access_denied 回跳 | Validate the current user, OAuth client, redirect URI (native-app loopback URIs allow only a dynamic port under RFC 8252), scope and PKCE; issue a one-time authorization code when approved or return an access_denied redirect when rejected",
                 "consumes": [
                     "application/json"
                 ],
@@ -1555,7 +1555,7 @@ const docTemplate = `{
                 "tags": [
                     "OAuth"
                 ],
-                "summary": "批准 OAuth 授权 | Approve OAuth authorization",
+                "summary": "处理 OAuth 授权决定 | Handle OAuth authorization decision",
                 "parameters": [
                     {
                         "description": "授权请求 | Authorization request",
@@ -1579,6 +1579,30 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -1590,6 +1614,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "使用当前用户身份批准或拒绝待处理的 User Code | Approve or reject a pending user code with the current user identity",
                 "consumes": [
                     "application/json"
                 ],
@@ -1620,12 +1645,31 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
                     }
                 }
             }
         },
         "/oauth/device/code": {
             "post": {
+                "description": "为允许 Device Flow 的公共客户端创建短期 Device Code 和 User Code | Create a short-lived device code and user code for a public client allowed to use Device Flow",
                 "consumes": [
                     "application/x-www-form-urlencoded"
                 ],
@@ -1663,12 +1707,25 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
                     }
                 }
             }
         },
         "/oauth/revoke": {
             "post": {
+                "description": "使用 Refresh Token 撤销对应的整个 OAuth Refresh Token Family | Revoke the complete OAuth refresh-token family identified by a refresh token",
                 "consumes": [
                     "application/x-www-form-urlencoded"
                 ],
@@ -1682,6 +1739,13 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
+                        "description": "OAuth Client ID",
+                        "name": "client_id",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
                         "description": "Refresh Token",
                         "name": "token",
                         "in": "formData",
@@ -1691,12 +1755,25 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK"
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
                     }
                 }
             }
         },
         "/oauth/token": {
             "post": {
+                "description": "处理 Authorization Code、Device Code 或 Refresh Token grant，并返回严格轮换的 opaque Token | Handle authorization-code, device-code, or refresh-token grants and return strictly rotated opaque tokens",
                 "consumes": [
                     "application/x-www-form-urlencoded"
                 ],
@@ -1762,6 +1839,18 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
@@ -3605,6 +3694,7 @@ const docTemplate = `{
                 "client_id",
                 "code_challenge",
                 "code_challenge_method",
+                "decision",
                 "redirect_uri",
                 "scope",
                 "state"
@@ -3618,6 +3708,13 @@ const docTemplate = `{
                 },
                 "code_challenge_method": {
                     "type": "string"
+                },
+                "decision": {
+                    "type": "string",
+                    "enum": [
+                        "approved",
+                        "rejected"
+                    ]
                 },
                 "redirect_uri": {
                     "type": "string"

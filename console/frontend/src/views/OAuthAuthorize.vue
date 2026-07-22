@@ -10,7 +10,7 @@
       </dl>
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
       <div class="actions">
-        <el-button :icon="Close" @click="cancel">{{ t('common.cancel') }}</el-button>
+        <el-button :icon="Close" :disabled="loading" @click="submit('rejected')">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :icon="Check" :loading="loading" @click="approve">
           {{ t('console.oauth.authorize.approve') }}
         </el-button>
@@ -25,6 +25,10 @@ import { useRoute } from 'vue-router'
 import { Check, Close, Connection } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { oauthAPI } from '../api/oauth'
+import {
+  authorizationDecisionRequest,
+  redirectToAuthorizationResult
+} from '../oauth/authorization'
 
 const route = useRoute()
 const { t } = useI18n()
@@ -33,26 +37,12 @@ const error = ref('')
 const clientId = computed(() => String(route.query.client_id || ''))
 const scope = computed(() => String(route.query.scope || 'addp.api'))
 
-function redirectWithError(code) {
-  const redirect = new URL(String(route.query.redirect_uri || ''))
-  redirect.searchParams.set('error', code)
-  redirect.searchParams.set('state', String(route.query.state || ''))
-  window.location.assign(redirect.toString())
-}
-
-async function approve() {
+async function submit(decision) {
   loading.value = true
   error.value = ''
   try {
-    const response = await oauthAPI.authorize({
-      client_id: clientId.value,
-      redirect_uri: String(route.query.redirect_uri || ''),
-      scope: scope.value,
-      state: String(route.query.state || ''),
-      code_challenge: String(route.query.code_challenge || ''),
-      code_challenge_method: String(route.query.code_challenge_method || '')
-    })
-    window.location.assign(response.data.redirect_url)
+    const response = await oauthAPI.authorize(authorizationDecisionRequest(route.query, decision))
+    redirectToAuthorizationResult(response, (url) => window.location.assign(url))
   } catch (requestError) {
     error.value = requestError.response?.data?.error || t('console.oauth.failed')
   } finally {
@@ -60,12 +50,8 @@ async function approve() {
   }
 }
 
-function cancel() {
-  try {
-    redirectWithError('access_denied')
-  } catch {
-    error.value = t('console.oauth.invalidRequest')
-  }
+function approve() {
+  return submit('approved')
 }
 </script>
 

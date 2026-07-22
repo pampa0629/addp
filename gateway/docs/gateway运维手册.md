@@ -179,7 +179,7 @@ curl http://localhost:8000/
 {
   "message": "全域数据平台 API Gateway",
   "version": "1.0.0",
-  "services": {
+  "modules": {
     "system": "http://localhost:8180",
     "manager": "http://localhost:8081",
     "meta": "http://localhost:8082",
@@ -205,7 +205,7 @@ curl -X GET http://localhost:8000/api/v1/manager/engines \
 
 # 测试无 API Key
 curl -X GET http://localhost:8000/api/v1/manager/engines
-# 响应: 正常处理（跳过 API Key 验证，可能依赖 JWT）
+# 响应: 透明转发，由目标模块验证 Bearer Token 或判断是否允许公开访问
 ```
 
 ### 测试限流
@@ -293,10 +293,12 @@ cat logs/gateway.log | grep "Rate limit exceeded"
    curl http://localhost:8082/health  # Meta
    ```
 
-2. **检查 Gateway 配置**
+2. **检查 System bootstrap 和模块注册表**
    ```bash
-   # 查看 Gateway 配置的服务 URL
-   cat .env | grep SERVICE_URL
+   # Gateway 只静态配置 System；其他模块地址来自 System 注册表
+   grep SYSTEM_URL .env
+   curl -H "X-Internal-API-Key: ${INTERNAL_API_KEY}" \
+     http://localhost:8180/api/v1/internal/modules
    ```
 
 3. **检查网络连接**
@@ -307,7 +309,7 @@ cat logs/gateway.log | grep "Rate limit exceeded"
 
 **解决方案**：
 - 启动未运行的后端服务：`bash scripts/dev/start.sh -<模块名>`
-- 修正 Gateway 配置中的服务 URL
+- 修正 `SYSTEM_URL`，或恢复目标模块的注册和心跳
 - 检查防火墙或网络配置
 
 ---

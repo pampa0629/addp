@@ -7,8 +7,10 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"net"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,20 +23,21 @@ import (
 )
 
 var (
-	ErrInvalidAccessToken       = errors.New("invalid access token")
-	ErrInvalidRefreshToken      = errors.New("invalid refresh token")
-	ErrRefreshTokenReuse        = errors.New("refresh token reuse detected")
-	ErrInvalidOAuthClient       = errors.New("invalid oauth client")
-	ErrInvalidRedirectURI       = errors.New("invalid redirect uri")
-	ErrInvalidScope             = errors.New("invalid scope")
-	ErrInvalidPKCE              = errors.New("invalid pkce")
-	ErrInvalidAuthorizationCode = errors.New("invalid authorization code")
-	ErrAuthorizationPending     = errors.New("authorization pending")
-	ErrSlowDown                 = errors.New("slow down")
-	ErrAccessDenied             = errors.New("access denied")
-	ErrExpiredToken             = errors.New("expired token")
-	ErrUnsupportedGrantType     = errors.New("unsupported grant type")
-	ErrInvalidDelegation        = errors.New("invalid delegation")
+	ErrInvalidAccessToken           = errors.New("invalid access token")
+	ErrInvalidRefreshToken          = errors.New("invalid refresh token")
+	ErrRefreshTokenReuse            = errors.New("refresh token reuse detected")
+	ErrInvalidOAuthClient           = errors.New("invalid oauth client")
+	ErrInvalidRedirectURI           = errors.New("invalid redirect uri")
+	ErrInvalidScope                 = errors.New("invalid scope")
+	ErrInvalidPKCE                  = errors.New("invalid pkce")
+	ErrInvalidAuthorizationCode     = errors.New("invalid authorization code")
+	ErrInvalidAuthorizationDecision = errors.New("invalid authorization decision")
+	ErrAuthorizationPending         = errors.New("authorization pending")
+	ErrSlowDown                     = errors.New("slow down")
+	ErrAccessDenied                 = errors.New("access denied")
+	ErrExpiredToken                 = errors.New("expired token")
+	ErrUnsupportedGrantType         = errors.New("unsupported grant type")
+	ErrInvalidDelegation            = errors.New("invalid delegation")
 )
 
 type IssuedTokenPair struct {
@@ -251,6 +254,17 @@ func (s *TokenService) RotateOAuthRefreshToken(refreshToken, clientID string) (*
 }
 
 func (s *TokenService) RevokeRefreshToken(refreshToken string) error {
+	return s.revokeRefreshToken(refreshToken, nil)
+}
+
+func (s *TokenService) RevokeOAuthRefreshToken(refreshToken, clientID string) error {
+	if strings.TrimSpace(clientID) == "" {
+		return ErrInvalidOAuthClient
+	}
+	return s.revokeRefreshToken(refreshToken, &clientID)
+}
+
+func (s *TokenService) revokeRefreshToken(refreshToken string, expectedClientID *string) error {
 	var familyID string
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		var token models.RefreshToken
@@ -258,6 +272,13 @@ func (s *TokenService) RevokeRefreshToken(refreshToken string) error {
 			return ErrInvalidRefreshToken
 		}
 		familyID = token.FamilyID
+		var family models.RefreshTokenFamily
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&family, "id = ?", familyID).Error; err != nil {
+			return ErrInvalidRefreshToken
+		}
+		if !sameClient(family.ClientID, expectedClientID) {
+			return ErrInvalidOAuthClient
+		}
 		return revokeFamily(tx, familyID, "user_logout", s.now())
 	})
 	if err == nil {
@@ -266,7 +287,10 @@ func (s *TokenService) RevokeRefreshToken(refreshToken string) error {
 	return err
 }
 
-func (s *TokenService) CreateAuthorizationCode(userID uint, req *models.OAuthAuthorizationRequest) (string, error) {
+func (s *TokenService) DecideAuthorization(userID uint, req *models.OAuthAuthorizationRequest) (string, error) {
+	if req.Decision != models.OAuthAuthorizationDecisionApproved && req.Decision != models.OAuthAuthorizationDecisionRejected {
+		return "", ErrInvalidAuthorizationDecision
+	}
 	client, scopes, err := s.validateClientRequest(req.ClientID, req.RedirectURI, req.Scope, false)
 	if err != nil {
 		return "", err
@@ -277,6 +301,9 @@ func (s *TokenService) CreateAuthorizationCode(userID uint, req *models.OAuthAut
 	user, err := s.authContextService.ValidateIdentity(userID, s.userTenantID(userID))
 	if err != nil {
 		return "", err
+	}
+	if req.Decision == models.OAuthAuthorizationDecisionRejected {
+		return authorizationRedirect(req.RedirectURI, req.State, "error", "access_denied")
 	}
 	plainCode, err := randomToken("addp_ac_")
 	if err != nil {
@@ -297,13 +324,17 @@ func (s *TokenService) CreateAuthorizationCode(userID uint, req *models.OAuthAut
 	if err := s.db.Create(&code).Error; err != nil {
 		return "", err
 	}
-	redirect, err := url.Parse(req.RedirectURI)
+	return authorizationRedirect(req.RedirectURI, req.State, "code", plainCode)
+}
+
+func authorizationRedirect(rawRedirectURI, state, resultName, resultValue string) (string, error) {
+	redirect, err := url.Parse(rawRedirectURI)
 	if err != nil {
 		return "", ErrInvalidRedirectURI
 	}
 	query := redirect.Query()
-	query.Set("code", plainCode)
-	query.Set("state", req.State)
+	query.Set(resultName, resultValue)
+	query.Set("state", state)
 	redirect.RawQuery = query.Encode()
 	return redirect.String(), nil
 }
@@ -663,7 +694,7 @@ func (s *TokenService) validateClientRequest(clientID, redirectURI, scope string
 	if device && !client.DeviceFlowEnabled {
 		return nil, nil, ErrInvalidOAuthClient
 	}
-	if !device && !contains(client.RedirectURIs, redirectURI) {
+	if !device && !redirectURIAllowed(client.RedirectURIs, redirectURI) {
 		return nil, nil, ErrInvalidRedirectURI
 	}
 	scopes := normalizeScopes(scope)
@@ -676,6 +707,49 @@ func (s *TokenService) validateClientRequest(clientID, redirectURI, scope string
 		}
 	}
 	return &client, scopes, nil
+}
+
+func redirectURIAllowed(registeredURIs []string, requestedURI string) bool {
+	requested, err := parseOAuthRedirectURI(requestedURI)
+	if err != nil {
+		return false
+	}
+	for _, registeredURI := range registeredURIs {
+		registered, err := parseOAuthRedirectURI(registeredURI)
+		if err != nil {
+			continue
+		}
+		if registeredURI == requestedURI {
+			return true
+		}
+		if rfc8252LoopbackRedirectMatch(registered, requested) {
+			return true
+		}
+	}
+	return false
+}
+
+func parseOAuthRedirectURI(rawURI string) (*url.URL, error) {
+	parsed, err := url.ParseRequestURI(rawURI)
+	if err != nil || !parsed.IsAbs() || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
+		return nil, ErrInvalidRedirectURI
+	}
+	return parsed, nil
+}
+
+func rfc8252LoopbackRedirectMatch(registered, requested *url.URL) bool {
+	registeredIP := net.ParseIP(registered.Hostname())
+	requestedIP := net.ParseIP(requested.Hostname())
+	if registered.Scheme != "http" || requested.Scheme != "http" ||
+		registeredIP == nil || !registeredIP.IsLoopback() ||
+		requestedIP == nil || !requestedIP.IsLoopback() ||
+		registered.Hostname() != requested.Hostname() || registered.Port() != "" ||
+		registered.EscapedPath() != requested.EscapedPath() ||
+		registered.RawQuery != requested.RawQuery || registered.ForceQuery != requested.ForceQuery {
+		return false
+	}
+	port, err := strconv.Atoi(requested.Port())
+	return err == nil && port >= 1 && port <= 65535
 }
 
 func (s *TokenService) userTenantID(userID uint) uint {
@@ -859,7 +933,7 @@ func OAuthErrorCode(err error) string {
 		return "unsupported_grant_type"
 	case errors.Is(err, ErrInvalidScope):
 		return "invalid_scope"
-	case errors.Is(err, ErrInvalidRedirectURI):
+	case errors.Is(err, ErrInvalidRedirectURI), errors.Is(err, ErrInvalidAuthorizationDecision):
 		return "invalid_request"
 	case errors.Is(err, ErrInvalidAuthorizationCode), errors.Is(err, ErrInvalidRefreshToken), errors.Is(err, ErrInvalidPKCE), errors.Is(err, ErrRefreshTokenReuse):
 		return "invalid_grant"

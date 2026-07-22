@@ -813,6 +813,11 @@ definitions:
         type: string
       code_challenge_method:
         type: string
+      decision:
+        enum:
+        - approved
+        - rejected
+        type: string
       redirect_uri:
         type: string
       scope:
@@ -823,6 +828,7 @@ definitions:
     - client_id
     - code_challenge
     - code_challenge_method
+    - decision
     - redirect_uri
     - scope
     - state
@@ -2081,8 +2087,11 @@ paths:
     post:
       consumes:
       - application/json
-      description: 使用当前用户身份签发一次性 PKCE Authorization Code | Issue a one-time PKCE authorization
-        code for the current user
+      description: 校验当前用户、OAuth Client、Redirect URI（原生应用 loopback URI 按 RFC 8252 仅允许动态端口）、Scope
+        和 PKCE；批准时签发一次性 Authorization Code，拒绝时返回 access_denied 回跳 | Validate the current
+        user, OAuth client, redirect URI (native-app loopback URIs allow only a dynamic
+        port under RFC 8252), scope and PKCE; issue a one-time authorization code
+        when approved or return an access_denied redirect when rejected
       parameters:
       - description: 授权请求 | Authorization request
         in: body
@@ -2101,15 +2110,33 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 批准 OAuth 授权 | Approve OAuth authorization
+      summary: 处理 OAuth 授权决定 | Handle OAuth authorization decision
       tags:
       - OAuth
   /oauth/device/authorizations:
     post:
       consumes:
       - application/json
+      description: 使用当前用户身份批准或拒绝待处理的 User Code | Approve or reject a pending user
+        code with the current user identity
       parameters:
       - description: 设备授权确认 | Device authorization approval
         in: body
@@ -2126,6 +2153,18 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 批准设备授权 | Approve device authorization
@@ -2135,6 +2174,8 @@ paths:
     post:
       consumes:
       - application/x-www-form-urlencoded
+      description: 为允许 Device Flow 的公共客户端创建短期 Device Code 和 User Code | Create a short-lived
+        device code and user code for a public client allowed to use Device Flow
       parameters:
       - description: OAuth Client ID
         in: formData
@@ -2156,6 +2197,14 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       summary: 创建设备授权 | Create device authorization
       tags:
       - OAuth
@@ -2163,7 +2212,14 @@ paths:
     post:
       consumes:
       - application/x-www-form-urlencoded
+      description: 使用 Refresh Token 撤销对应的整个 OAuth Refresh Token Family | Revoke the
+        complete OAuth refresh-token family identified by a refresh token
       parameters:
+      - description: OAuth Client ID
+        in: formData
+        name: client_id
+        required: true
+        type: string
       - description: Refresh Token
         in: formData
         name: token
@@ -2174,6 +2230,14 @@ paths:
       responses:
         "200":
           description: OK
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       summary: 撤销 OAuth Token | Revoke OAuth token
       tags:
       - OAuth
@@ -2181,6 +2245,9 @@ paths:
     post:
       consumes:
       - application/x-www-form-urlencoded
+      description: 处理 Authorization Code、Device Code 或 Refresh Token grant，并返回严格轮换的
+        opaque Token | Handle authorization-code, device-code, or refresh-token grants
+        and return strictly rotated opaque tokens
       parameters:
       - description: OAuth grant type
         in: formData
@@ -2221,6 +2288,14 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.TokenResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       summary: 兑换 OAuth Token | Exchange OAuth token

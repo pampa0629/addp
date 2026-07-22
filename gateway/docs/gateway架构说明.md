@@ -222,7 +222,7 @@ Response
 
 ## 模块注册与动态路由
 
-Gateway 支持两种路由模式：**硬编码路由**（默认）和**动态路由**（基于模块注册表）。
+Gateway 只保留一条模块路由主路径：System 使用配置中的 `SYSTEM_URL` 作为模块注册表的 bootstrap 目标，所有 `/api/v1/system/**` 请求透明转发到该目标；其他模块统一通过 System 模块注册表动态发现，不保留硬编码模块 fallback。
 
 ### 模块注册表（system.module_registry）
 
@@ -271,8 +271,8 @@ Gateway 支持两种路由模式：**硬编码路由**（默认）和**动态路
 
 ```
 1. Gateway 启动
-   - 检查环境变量：MODULE_REGISTRY_ENABLED=true
-   - 如果启用，创建 ModuleDiscovery 实例
+   - 使用 `SYSTEM_URL` 创建 System bootstrap 代理
+   - 创建其他模块使用的 ModuleDiscovery 实例
    ↓
 2. 初始化模块列表
    - 调用 System API: GET /api/v1/internal/modules?status=up
@@ -290,12 +290,13 @@ Gateway 支持两种路由模式：**硬编码路由**（默认）和**动态路
      - 模块下线（status='down'） → 删除代理
    ↓
 5. 请求路由
-   - 客户端请求：GET /api/v1/manager/engines
+   - `/api/v1/system/**` 始终使用 System bootstrap 代理
+   - 其他请求示例：GET /api/v1/manager/engines
    - Gateway 提取 module_name = "manager"
    - 从 ModuleDiscovery 获取对应的 ServiceProxy
    - 如果模块存在且 status='up' → 转发请求
    - 如果模块不存在或 status='down' → 返回 503 Service Unavailable
-   - Fallback 机制：如果模块发现失败，使用硬编码路由
+   - 模块不存在、状态为 down 或模块发现暂时不可用时返回 503，不绕过注册表使用硬编码地址
 ```
 
 ### 动态路由的核心价值
@@ -311,15 +312,10 @@ Gateway 支持两种路由模式：**硬编码路由**（默认）和**动态路
 
 ### 配置示例
 
-**启用动态路由**（`.env`）：
+**System bootstrap 与动态路由**（`.env`）：
 ```bash
-MODULE_REGISTRY_ENABLED=true        # 启用模块发现
+SYSTEM_URL=http://localhost:8180    # System bootstrap 唯一目标
 MODULE_REFRESH_INTERVAL=30s         # 刷新间隔（默认 30 秒）
-```
-
-**硬编码路由**（默认，无需模块注册）：
-```bash
-MODULE_REGISTRY_ENABLED=false       # 禁用模块发现（使用硬编码路由）
 ```
 
 ## 路由规则
@@ -328,15 +324,9 @@ MODULE_REGISTRY_ENABLED=false       # 禁用模块发现（使用硬编码路由
 
 | 路由前缀 | 目标服务 | 端口 | 认证要求 | 转发方式 | 说明 |
 |---------|---------|------|---------|---------|-----|
-| `POST /api/v1/system/login` | System | 8180 | **公开** | 透明转发 | 用户登录 |
-| `POST /api/v1/system/register` | System | 8180 | **公开** | 透明转发 | 用户注册 |
-| `/api/v1/system/*` | System | 8180 | API Key | 透明转发 | 用户、租户、引擎、日志管理 |
-| `/api/v1/manager/*` | Manager | 8081 | API Key | 透明转发 | 数据管理、预览、上传下载 |
-| `/api/v1/meta/*` | Meta | 8082 | API Key | 透明转发 | 元数据扫描、资源树 |
-| `/api/v1/transfer/*` | Transfer | 8083 | API Key | 透明转发 | 数据同步、格式转换 |
-| `/api/v1/develop/*` | Develop | 8185 | API Key | 透明转发 | SQL 执行、工作流 |
-| `/api/v1/service/*` | Service | 8086 | API Key | 透明转发 | 数据服务、OGC 标准 |
-| `/api/v1/copilot/*` | Copilot | 8087 | API Key | 透明转发 | AI 助手 |
+| `/api/v1/system/*` | System bootstrap | 8180 | 由 System 按具体端点认证 | 透明转发 | 登录、会话、OAuth、AuthContext、用户、租户、引擎和日志 |
+| `/api/v1/{module}/*` | System 注册表中的活跃模块 | 动态发现 | Bearer Token 或 API Key | 透明转发 | 自动覆盖 Manager、Meta、Transfer、Develop、Service、Copilot 等所有注册模块 |
+| `/api/query/*`、`/ogc/*`、`/wmts/*`、`/tiles/*` | Service | 动态发现 | 由 Service 端点决定 | 透明转发 | 数据服务公开协议入口 |
 
 ### 透明代理示例
 

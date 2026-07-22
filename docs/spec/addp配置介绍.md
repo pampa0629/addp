@@ -269,7 +269,13 @@ REFRESH_TOKEN_EXPIRE_DAYS=30
 OAUTH_CODE_EXPIRE_MINUTES=5
 OAUTH_DEVICE_EXPIRE_MINUTES=10
 OAUTH_DEVICE_INTERVAL_SECONDS=5
+OAUTH_PUBLIC_RATE_LIMIT_PER_MINUTE=60
+OAUTH_USER_RATE_LIMIT_PER_MINUTE=30
 CONSOLE_URL=http://localhost:5170
+
+# System 只信任这些反向代理提供的客户端 IP 转发头；逗号分隔 IP 或 CIDR。
+# 容器/生产环境必须显式加入实际 Gateway/Nginx 网段，禁止配置 0.0.0.0/0 或 ::/0。
+TRUSTED_PROXIES=127.0.0.1,::1
 
 # 开发环境各前端通过 credentials 调用 System 登录和静默刷新。
 # 必须覆盖 Console 和所有独立模块前端端口。

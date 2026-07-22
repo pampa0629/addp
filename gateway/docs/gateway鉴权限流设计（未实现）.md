@@ -143,7 +143,7 @@ Service 模块
 客户端请求
   ↓
 Service 模块 (8086)
-  ├─ JWT 验证 / API Key 验证（独立实现）
+  ├─ 通过 System AuthContext 验证 opaque Token / 验证 API Key
   ├─ 限流控制（独立实现）
   ├─ 服务访问权限验证
   └─ 返回服务响应
@@ -289,6 +289,8 @@ Gateway 订阅消息，刷新本地缓存
 ---
 
 ## 服务注册与发现改造计划
+
+> 本节是历史方案记录，服务注册与发现已经按 `system.module_registry` 落地。当前有效实现与约束以 `gateway/docs/gateway架构说明.md` 为准：System 使用 `SYSTEM_URL` bootstrap，其他模块只通过注册表发现，不允许静态 URL 或硬编码路由回退。
 
 ### 当前架构的局限性
 

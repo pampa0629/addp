@@ -8,12 +8,11 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/gateway/internal/proxy"
-	"github.com/gin-gonic/gin"
 )
 
 // ModuleDiscovery 模块发现管理器
 type ModuleDiscovery struct {
-	systemClient  *client.SystemClient
+	systemClient  moduleLister
 	modules       map[string]*client.ModuleInfo  // moduleName -> ModuleInfo
 	proxies       map[string]*proxy.ServiceProxy // moduleName -> proxy
 	mu            sync.RWMutex
@@ -22,8 +21,12 @@ type ModuleDiscovery struct {
 	cancel        context.CancelFunc
 }
 
+type moduleLister interface {
+	GetModules() ([]*client.ModuleInfo, error)
+}
+
 // NewModuleDiscovery 创建模块发现管理器
-func NewModuleDiscovery(systemClient *client.SystemClient, refreshInterval time.Duration) *ModuleDiscovery {
+func NewModuleDiscovery(systemClient moduleLister) *ModuleDiscovery {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &ModuleDiscovery{
@@ -37,12 +40,7 @@ func NewModuleDiscovery(systemClient *client.SystemClient, refreshInterval time.
 
 // Start 启动模块发现（加载模块列表并定期刷新）
 func (md *ModuleDiscovery) Start(refreshInterval time.Duration) error {
-	// 首次加载模块列表
-	if err := md.refreshModules(); err != nil {
-		return fmt.Errorf("初始化模块列表失败: %w", err)
-	}
-
-	// 启动定期刷新
+	initialErr := md.refreshModules()
 	md.refreshTicker = time.NewTicker(refreshInterval)
 	go func() {
 		for {
@@ -58,6 +56,9 @@ func (md *ModuleDiscovery) Start(refreshInterval time.Duration) error {
 		}
 	}()
 
+	if initialErr != nil {
+		return fmt.Errorf("初始化模块列表失败: %w", initialErr)
+	}
 	return nil
 }
 
@@ -134,21 +135,4 @@ func (md *ModuleDiscovery) GetModules() map[string]*client.ModuleInfo {
 	}
 
 	return result
-}
-
-// HandleDynamicRoute 动态路由处理器（供 SetupRouter 使用）
-func (md *ModuleDiscovery) HandleDynamicRoute(c *gin.Context) {
-	moduleName := c.Param("module")
-
-	// 从模块发现获取代理
-	p, err := md.GetProxy(moduleName)
-	if err != nil {
-		c.JSON(503, gin.H{
-			"error": fmt.Sprintf("模块 %s 不可用", moduleName),
-		})
-		return
-	}
-
-	// 转发请求
-	p.Handle(c)
 }

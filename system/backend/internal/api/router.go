@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/logger"
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	requestidmiddleware "github.com/addp/common/middleware/requestid"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/repository"
@@ -22,6 +23,12 @@ import (
 
 func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	router := gin.Default()
+	if err := cfg.ValidateTrustedProxies(); err != nil {
+		panic(err)
+	}
+	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		panic(fmt.Errorf("配置受信代理失败: %w", err))
+	}
 
 	// 初始化 Redis 客户端（可选，用于事件通知）
 	var redisClient *redis.Client
@@ -90,6 +97,8 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	engineService = engineService.WithCleanupOrchestrator(cleanupOrchestratorService)
 	tenantService = tenantService.WithCleanupOrchestrator(cleanupOrchestratorService)
 
+	// 请求 ID 必须先于审计和限流生成，确保安全事件可追踪。
+	router.Use(requestidmiddleware.RequestIDMiddleware())
 	// 日志中间件
 	router.Use(middleware.LoggerMiddleware(logService))
 
@@ -116,18 +125,19 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		// 认证路由（不需要认证）
 		authHandler := NewAuthHandler(userService, tokenService, cfg)
 		oauthHandler := NewOAuthHandler(tokenService)
+		oauthPublicRateLimit := middleware.OAuthPublicRateLimitMiddleware(redisClient, int64(cfg.OAuthPublicRateLimitPerMinute))
 		api.POST("/login", authHandler.Login)
 		api.POST("/register", authHandler.Register)
 		api.POST("/refresh", authHandler.Refresh)
 		api.POST("/logout", authHandler.Logout)
-		api.POST("/oauth/device/code", oauthHandler.DeviceCode)
-		api.POST("/oauth/token", oauthHandler.Token)
-		api.POST("/oauth/revoke", oauthHandler.Revoke)
+		api.POST("/oauth/device/code", oauthPublicRateLimit, oauthHandler.DeviceCode)
+		api.POST("/oauth/token", oauthPublicRateLimit, oauthHandler.Token)
+		api.POST("/oauth/revoke", oauthPublicRateLimit, oauthHandler.Revoke)
 
 		// 需要认证的路由
 		protected := api.Group("")
 		protected.Use(middleware.AuthMiddleware(tokenService))
-		protected.Use(middleware.DelegatedAccessPolicy("system", commonAuth.DelegatedRoutePolicy{
+		protected.Use(middleware.TokenTypePolicy("system", commonAuth.DelegatedRoutePolicy{
 			"GET /api/v1/system/engines": {"engine.list"},
 		}))
 		{
@@ -138,8 +148,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			}
 			oauth := protected.Group("/oauth")
 			{
-				oauth.POST("/authorizations", oauthHandler.Authorize)
-				oauth.POST("/device/authorizations", oauthHandler.ApproveDevice)
+				oauthUserRateLimit := middleware.OAuthUserRateLimitMiddleware(redisClient, int64(cfg.OAuthUserRateLimitPerMinute))
+				oauth.POST("/authorizations", oauthUserRateLimit, oauthHandler.Authorize)
+				oauth.POST("/device/authorizations", oauthUserRateLimit, oauthHandler.ApproveDevice)
 			}
 
 			// 用户管理
