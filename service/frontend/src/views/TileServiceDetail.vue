@@ -103,8 +103,12 @@
                 {{ row.layer_config?.source?.schema }}.{{ row.layer_config?.source?.table }}
               </code>
             </div>
-            <div v-else style="font-size: 12px">
-              <code>{{ row.layer_config?.tile_path }}</code>
+            <div v-else class="static-source-summary">
+              <code>{{ row.layer_config?.source?.locator }}</code>
+              <span>
+                {{ String(row.layer_config?.source_snapshot?.tile_format || '').toUpperCase() }}
+                · {{ row.layer_config?.source_snapshot?.min_zoom }}-{{ row.layer_config?.source_snapshot?.max_zoom }}
+              </span>
             </div>
           </template>
         </el-table-column>
@@ -329,22 +333,33 @@
 
         <!-- 静态图层配置 -->
         <template v-else-if="layerForm.layer_type === 'static'">
-          <el-form-item :label="t('service.tile.tilePathLabel')">
-            <el-input v-model="layerForm.layer_config.tile_path" :placeholder="t('service.tile.tilePathPlaceholder')" />
+          <el-form-item :label="t('service.tile.tileDatasetLabel')">
+            <ResourceTreePicker
+              :api-base-url="metaApiBaseUrl"
+              :engine-types="TILE_PYRAMID_ENGINE_TYPES"
+              mode="item"
+              :node-filter="isTilePyramidVisibleNode"
+              :selectable-filter="isTilePyramidNode"
+              :show-selection-summary="true"
+              :engine-multiple="true"
+              :select-all-engines-by-default="true"
+              :search-selectable-only="true"
+              :show-disabled-label="false"
+              :show-count="false"
+              @update:model-value="handleLayerTileSelection"
+            />
           </el-form-item>
-          <el-form-item :label="t('service.tile.tileFormatLabel')">
-            <el-select v-model="layerForm.layer_config.format">
-              <el-option label="MVT" value="mvt" />
-              <el-option label="PNG" value="png" />
-              <el-option label="JPEG" value="jpeg" />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="t('service.tile.minZoomLabel')">
-            <el-input-number v-model="layerForm.layer_config.zoom_range[0]" :min="0" :max="22" />
-          </el-form-item>
-          <el-form-item :label="t('service.tile.maxZoomLabel')">
-            <el-input-number v-model="layerForm.layer_config.zoom_range[1]" :min="0" :max="22" />
-          </el-form-item>
+          <el-descriptions v-if="layerFormTileMetadata" :column="3" border size="small">
+            <el-descriptions-item :label="t('service.tile.tileFormatLabel')">
+              {{ layerFormTileMetadata.tileFormat.toUpperCase() }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('service.tile.zoomRangeLabel')">
+              {{ layerFormTileMetadata.minZoom }} - {{ layerFormTileMetadata.maxZoom }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('service.tile.tileMatrixSetLabel')">
+              {{ layerFormTileMetadata.tileMatrixSet }}
+            </el-descriptions-item>
+          </el-descriptions>
         </template>
 
         <el-form-item :label="t('service.tile.enabledStatusLabel')">
@@ -370,7 +385,15 @@ import tileServiceAPI from '@/api/tileService'
 import { TilePreview } from '@common-ui-map'
 import { copyToClipboard } from '../utils/serviceHelper'
 import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
-import { NATIVE_TABLE_ENGINE_TYPES, isNativeTableNode, isNativeTableVisibleNode } from '@/utils/resourceSelection'
+import {
+  NATIVE_TABLE_ENGINE_TYPES,
+  TILE_PYRAMID_ENGINE_TYPES,
+  defaultTileLayerName,
+  isNativeTableNode,
+  isNativeTableVisibleNode,
+  isTilePyramidNode,
+  isTilePyramidVisibleNode
+} from '@/utils/resourceSelection'
 
 const router = useRouter()
 const route = useRoute()
@@ -386,6 +409,7 @@ let mapInstance = null
 const layerDialogVisible = ref(false)
 const layerDialogMode = ref('add') // 'add' or 'edit'
 const layerFormSpatialMetadata = ref(null) // 空间字段元数据
+const layerFormTileMetadata = ref(null)
 const layerForm = ref({
   layer_name: '',
   title: '',
@@ -408,10 +432,7 @@ const layerForm = ref({
     cache: {
       enabled: true,
       ttl: 3600
-    },
-    tile_path: '',
-    format: 'mvt',
-    zoom_range: [0, 18]
+    }
   }
 })
 
@@ -675,6 +696,15 @@ const showAddLayerDialog = () => {
 const showEditLayerDialog = (layer) => {
   layerDialogMode.value = 'edit'
   layerForm.value = JSON.parse(JSON.stringify(layer)) // 深拷贝
+  const snapshot = layer.layer_config?.source_snapshot
+  layerFormTileMetadata.value = snapshot
+    ? {
+        tileFormat: String(snapshot.tile_format || ''),
+        minZoom: Number(snapshot.min_zoom),
+        maxZoom: Number(snapshot.max_zoom),
+        tileMatrixSet: String(snapshot.tile_matrix_set || '')
+      }
+    : null
   layerDialogVisible.value = true
 }
 
@@ -701,13 +731,11 @@ const resetLayerForm = () => {
       cache: {
         enabled: true,
         ttl: 3600
-      },
-      tile_path: '',
-      format: 'mvt',
-      zoom_range: [0, 18]
+      }
     }
   }
   layerFormSpatialMetadata.value = null
+  layerFormTileMetadata.value = null
 }
 
 // 处理表选择（ResourceTreePicker 回调）
@@ -756,6 +784,32 @@ const handleLayerTableSelection = async (selection) => {
   } else {
     layerFormSpatialMetadata.value = { hasGeometry: false }
     ElMessage.warning(t('service.tile.noSpatialWarning'))
+  }
+}
+
+const handleLayerTileSelection = async (selection) => {
+  layerForm.value.layer_config = { source: { locator: '' } }
+  layerFormTileMetadata.value = null
+  if (!selection) return
+  const itemId = selection.identity?.item_id
+  const locator = selection.identity?.locator || ''
+  if (!itemId || !locator) return
+  try {
+    const item = await tileServiceAPI.getMetaItem(itemId)
+    const info = item?.attributes?.format_info?.tile_pyramid
+    if (!info) throw new Error(t('service.tile.invalidTileDataset'))
+    layerForm.value.layer_config = { source: { locator } }
+    layerFormTileMetadata.value = {
+      tileFormat: String(info.tile_format || ''),
+      minZoom: Number(info.min_zoom),
+      maxZoom: Number(info.max_zoom),
+      tileMatrixSet: String(info.tile_matrix_set || '')
+    }
+    const label = selection.display?.label || item.name || ''
+    if (!layerForm.value.layer_name) layerForm.value.layer_name = defaultTileLayerName(label, itemId)
+    if (!layerForm.value.title) layerForm.value.title = label
+  } catch (error) {
+    ElMessage.error(error.response?.data?.error || error.message)
   }
 }
 
@@ -852,7 +906,7 @@ onMounted(() => {
   align-items: flex-start;
   margin-bottom: 24px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .header-left {
@@ -918,7 +972,7 @@ code {
   border-radius: 3px;
   font-family: 'Courier New', monospace;
   font-size: 13px;
-  color: #e83e8c;
+  color: var(--el-color-primary);
 }
 
 .code-example {
@@ -947,8 +1001,8 @@ code {
 
 /* 空间字段信息展示 */
 .geometry-info {
-  background: #e8f5e9;
-  border: 1px solid #4caf50;
+  background: var(--el-color-success-light-9);
+  border: 1px solid var(--el-color-success-light-5);
   border-radius: 4px;
   padding: 15px;
   margin-bottom: 15px;
@@ -956,7 +1010,7 @@ code {
 
 .geometry-info p {
   margin: 0 0 10px 0;
-  color: #2e7d32;
+  color: var(--el-color-success);
   font-weight: 500;
 }
 
@@ -968,10 +1022,28 @@ code {
 
 .geometry-info ul li {
   padding: 4px 0;
-  color: #555;
+  color: var(--addp-text-secondary);
 }
 
 .geometry-info ul li strong {
-  color: #2e7d32;
+  color: var(--el-color-success);
+}
+
+.static-source-summary {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.static-source-summary code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.static-source-summary span {
+  color: var(--addp-text-secondary);
 }
 </style>

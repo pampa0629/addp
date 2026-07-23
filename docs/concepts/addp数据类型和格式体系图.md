@@ -46,7 +46,7 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 |---|---|---|---|
 | `table` | 原生表格引擎：PostgreSQL、MySQL、Doris、ClickHouse、Spark SQL。动态 schema 引擎：MongoDB collection。文件 / 对象承载：NFS、S3、MinIO。 | `csv`、`tsv`、records `json` / JSON Lines、`geojson`、`shapefile`、`parquet`、`orc`、`avro`。容器 child 可归一为 table：Excel sheet、SQLite table / view、GeoPackage layer / table、ZIP 内部表格文件。 | 表格数据可以来自引擎原生 catalog leaf，也可以来自文件格式。空间语义通过 `capabilities.spatial` 表达，不新增空间表 data type。Iceberg 属于规范层 whole table 示例，当前未作为内置 format descriptor 注册。 |
 | `document` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 document catalog 引擎。 | `pdf`、`docx`、`pptx`、`wps`、`text`、`markdown`、文档型 `json`。ZIP 内部文档文件可作为 container child 被识别。 | MongoDB query 可以返回 document 形态结果，但 MongoDB collection data item 在当前语义中仍按动态 schema 记录集合归为 `table`。 |
-| `media` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 media catalog 引擎。 | 图片：`image`、`jpeg`、`png`、`gif`、`tiff`、`webp`、`bmp`、`svg`、`avif`、`heic`。栅格数据集：`raster_mosaic`。视频：`video`、`mp4`、`mov`、`mkv`、`avi`、`webm`。音频：`audio`、`mp3`、`wav`、`flac`、`aac`、`ogg`。ZIP 内部媒体文件可作为 container child 被识别。 | `jpeg`、`png`、`gif`、`tiff`、`image` 当前有图片媒体信息 provider；`raster_mosaic` 表示由 manifest、index、leaf COG 和 overview COG 组成的 whole-scope 栅格镶嵌数据集；其他媒体格式当前主要提供格式身份、MIME / 扩展名识别和 raw / range / stream 内容承载。 |
+| `media` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 media catalog 引擎。 | 图片：`image`、`jpeg`、`png`、`gif`、`tiff`、`webp`、`bmp`、`svg`、`avif`、`heic`。地图数据集：`tile_pyramid`、`raster_mosaic`。视频：`video`、`mp4`、`mov`、`mkv`、`avi`、`webm`。音频：`audio`、`mp3`、`wav`、`flac`、`aac`、`ogg`。ZIP 内部媒体文件可作为 container child 被识别。 | `tile_pyramid` 表示由 `tiles.addp.json` 和二维瓦片组成的 whole-scope 地图数据集；`raster_mosaic` 表示由 manifest、index、leaf COG 和 overview COG 组成的 whole-scope 栅格镶嵌数据集。MVT、PNG、JPEG、WebP 等瓦片编码进入 `format_info.tile_pyramid.tile_format`。 |
 | `container` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 container catalog 引擎；目录、prefix、bucket 只是 catalog / storage 形态，不是 `container` data type。 | `excel`、`sqlite`、`geopackage`、`zip`。 | 容器 item 先记录轻量 children；进入某个 child 后，再按 child 自身格式归一为 `table`、`document`、`media`、`unknown` 等类型。JSON 作为 container 仍是概念可表达方向，当前内置 JSON plugin 未提供容器信息 provider。 |
 | `graph` | 原生图引擎：Neo4j。 | 当前没有内置 graph 文件格式 descriptor。 | RDF、GraphML、GEXF、图结构 JSON 仍是概念层典型来源；进入内置主线前需要先补 format descriptor、provider 和扫描规则。 |
 | `cad` | 文件 / 对象承载：NFS、S3、MinIO；解析、渲染和导入使用 SuperMap iObjects。 | 当前内置：`dwg`、`dxf`。 | DWG、DXF 源 item 保留 CAD 语义，不因 entity 可投影为记录而归为 `table`。Meta deep scan 和 Manager 预览均通过 `supermap_workflow` direct operator；CAD→GIS 输出是新的 `table + capabilities.spatial` item。 |
@@ -227,6 +227,7 @@ PLY 是内容敏感格式：同一个 `format=ply` 可以根据 header 分别落
 - GeoJSON = `data_type=table` + `layout=single` + `format=geojson`，当 feature 实际包含 geometry 时再附加 `capabilities.spatial`。
 - GeoTIFF = `data_type=media` + `layout=single` + `format=tiff` + `capabilities.spatial`。
 - Raster mosaic = `data_type=media` + `layout=whole` + `format=raster_mosaic` + `capabilities.spatial`。
+- 二维瓦片金字塔 = `data_type=media` + `layout=whole` + `format=tile_pyramid`；瓦片编码、模板、层级和矩阵集进入 `format_info.tile_pyramid`。
 - Excel = `data_type=container` + `layout=single` + `format=excel`。
 - Iceberg = `data_type=table` + `layout=whole` + `format=iceberg`。
 - GLB = `data_type=model_3d` + `layout=single` + `format=glb`。

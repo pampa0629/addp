@@ -74,14 +74,10 @@ Service 模块将服务分为三大类：
 - 缓存策略：可选启用瓦片缓存到 MinIO
 
 **静态图层 (layer_type='static')**
-- 子类型1：外部静态瓦片 (tile_source='external')
-  - 用户已准备好的瓦片文件
-  - 通过存储引擎路径注册
-  - 支持格式：MVT、PNG、JPEG
-- 子类型2：内部缓存瓦片 (tile_source='internal')
-  - 由动态图层缓存生成
-  - 存储在 MinIO `service` bucket
-  - 支持格式：MVT、PNG、JPEG
+- 数据源：通过资源树选择 `data_type=media + format=tile_pyramid + layout=whole` 的业务 item
+- 工作原理：发布时由 Meta 校验 item 并冻结格式、瓦片模板、层级、矩阵集和源指纹快照；请求时通过 System engine provider 读取业务存储中的瓦片
+- 支持格式：MVT、PNG、JPEG、WebP；由 item manifest 自动识别，不在表单中手工指定
+- 禁止输入裸存储路径、URL 模板或 Manager infra `storage_ref`
 
 #### 协议支持
 
@@ -317,20 +313,24 @@ CREATE TABLE service.tile_service_layers (
       "style": {...}
     }
 
-    layer_config 结构（静态图层 - 外部）：
+    layer_config 结构（静态图层）：
     {
-      "source": "external",
-      "tile_path": "s3://my-bucket/tiles/basemap",
-      "format": "png",
-      "zoom_range": [0, 18]
-    }
-
-    layer_config 结构（静态图层 - 内部缓存）：
-    {
-      "source": "internal",
-      "tile_path": "service/{service_id}/{layer_id}",
-      "format": "mvt",
-      "zoom_range": [0, 22]
+      "source": {
+        "locator": "addp://engine/9/path/addp/tiles/roads?type=object&item_id=101",
+        "engine_id": 9,
+        "item_id": 101
+      },
+      "source_snapshot": {
+        "fingerprint": "...",
+        "scope_path": "addp/tiles/roads",
+        "tile_format": "mvt",
+        "tile_template": "tiles/z{z}/{x}_{y}.mvt.gz",
+        "content_type": "application/vnd.mapbox-vector-tile",
+        "content_encoding": "gzip",
+        "min_zoom": 4,
+        "max_zoom": 18,
+        "tile_matrix_set": "WebMercatorQuad"
+      }
     }
     */
 
@@ -662,7 +662,7 @@ GET /ogc/tiles/beijing_map/road/12/3421/1532
 **Step 1**: 添加第一个图层
 - 选择图层类型：动态图层 / 静态图层
 - 动态图层：选择引擎、Schema、Table，自动检测空间字段
-- 静态图层：指定瓦片路径、格式、缩放范围
+- 静态图层：从资源树选择 `tile_pyramid` item，格式和缩放范围由 Meta 自动识别
 - 配置缓存策略
 
 **Step 2**: 配置地图服务
@@ -715,7 +715,7 @@ GET /ogc/tiles/beijing_map/road/12/3421/1532
 **决策**：
 - 格式：MVT（矢量）、PNG/JPEG（栅格）
 - 协议：XYZ Tiles、OGC Tiles API、TMS
-- 第一阶段：动态图层仅支持 MVT，静态图层支持所有格式
+- 第一阶段：动态图层仅支持 MVT；静态图层支持 `tile_pyramid` manifest 声明的 MVT、PNG、JPEG、WebP
 
 **理由**：
 - MVT 是格式不是协议

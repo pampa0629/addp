@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -140,10 +141,11 @@ func (h *TileEndpointHandler) GetXYZTile(c *gin.Context) {
 	// 5. 根据图层类型处理
 	var tileData []byte
 	var fromCache bool
+	var staticTile *service.StaticTile
 
 	if layer.LayerType == "static" {
 		// 静态瓦片：从 MinIO 读取
-		tileData, err = h.staticTileService.GetStaticTile(ctx, layer, z, x, y, format)
+		staticTile, err = h.staticTileService.GetStaticTile(ctx, tileService.TenantID, layer, z, x, y, format)
 		fromCache = true
 		if err != nil {
 			logger.L().Error("读取静态瓦片失败",
@@ -151,9 +153,14 @@ func (h *TileEndpointHandler) GetXYZTile(c *gin.Context) {
 				"layer_name", layerName,
 				"z", z, "x", x, "y", y,
 				"error", err)
+			if errors.Is(err, service.ErrStaticTileOutOfRange) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Tile not found"})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get tile"})
 			return
 		}
+		tileData = staticTile.Data
 	} else if layer.LayerType == "dynamic" {
 		// 动态瓦片：检查缓存 → 实时生成 → 保存缓存
 
@@ -233,6 +240,12 @@ func (h *TileEndpointHandler) GetXYZTile(c *gin.Context) {
 	// 6. 返回瓦片
 	c.Header("X-Cache", map[bool]string{true: "HIT", false: "MISS"}[fromCache])
 	contentType := getContentType(format)
+	if staticTile != nil {
+		contentType = staticTile.ContentType
+		if staticTile.ContentEncoding != "" {
+			c.Header("Content-Encoding", staticTile.ContentEncoding)
+		}
+	}
 	c.Data(http.StatusOK, contentType, tileData)
 
 	logger.L().Debug("瓦片请求成功",

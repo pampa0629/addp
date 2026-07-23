@@ -51,6 +51,7 @@
 | ZIP | `single` | `container` | `zip` | 压缩包 entry 先写入 `type_info.container.children` |
 | 图片 | `single` 或 TIFF sidecar `multi` | `media` | `jpeg` / `png` / `gif` / `tiff` / `image` | GPS 或 GeoTIFF 空间语义进入 spatial |
 | Raster mosaic | `whole` | `media` | `raster_mosaic` | 由 `mosaic.addp.json` manifest 声明的栅格镶嵌数据集 |
+| 二维瓦片金字塔 | `whole` | `media` | `tile_pyramid` | 由 `tiles.addp.json` manifest 声明的二维地图瓦片数据集 |
 | 视频 | `single` | `media` | `mp4` / `mov` / `mkv` / `avi` / `webm` / `video` | 第一阶段以元信息和 range / stream 播放为主 |
 | 音频 | `single` | `media` | `mp3` / `wav` / `flac` / `aac` / `ogg` / `audio` | 第一阶段以元信息和 range / stream 播放为主 |
 | PDF | `single` | `document` | `pdf` | 文档元信息和提取状态分区写入 |
@@ -1163,6 +1164,36 @@ GIF、WebP、TIFF 等多帧或多页图片仍表达为 `kind=image`。动图播�
 - 不得把所有图片都视为空间数据。
 - 不得把 GeoTIFF 表达为新的基础数据类型。
 - 不得把 COG 表达为新的基础 `format`；COG 只能作为 `format_info.tiff.profile=cog` 或 Manager COG 生成结果表达。
+
+## 二维瓦片金字塔
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `whole` |
+| `data_type` | `media` |
+| `format` | `tile_pyramid` |
+| 主资源 | whole scope 根目录或 prefix，`tiles.addp.json` 是 manifest，不是 `full_name` |
+
+`tile_pyramid` 表示已经生成完成、可按二维瓦片坐标直接读取的数据集。Meta 只能在读取并校验 `tiles.addp.json` 后形成 item；不得仅根据数字目录、`.mvt.gz`、`.png` 等文件名猜测瓦片金字塔。manifest schema 固定为 `addp.tile_pyramid.v1`，必须声明 `scheme=xyz`、`tile_format`、`tile_template`、`min_zoom` 和 `max_zoom`。`tile_template` 必须同时包含 `{z}`、`{x}`、`{y}`，并且只能解析到当前 whole scope 内部。
+
+第一版支持 `tile_format=mvt|png|jpeg|webp`。MVT 可以使用 `content_encoding=gzip`；发布端必须在响应中保留对应 `Content-Encoding`，不得把 `.mvt.gz` 当普通未压缩 MVT 返回。瓦片矩阵集第一版固定为 `WebMercatorQuad`，坐标语义固定为 XYZ。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout=whole`、`data_type=media`、`format=tile_pyramid`、`scope_exclusive=true`、`claim_policy=whole_scope`，`refs` 只记录 manifest |
+| `storage` | whole scope 根范围的 `physical_path`、总大小等存储事实 |
+| `format_info.tile_pyramid` | `manifest_ref`、`tile_kind`、`tile_format`、`scheme`、`tile_matrix_set`、`tile_template`、`content_type`、`content_encoding`、`min_zoom`、`max_zoom`、`tile_count` |
+| `capabilities.spatial` | manifest 明确提供的 CRS 与 extent；没有可靠空间范围时不猜测 |
+
+### 消费要求
+
+Service 发布静态二维瓦片时只接受 `format=tile_pyramid + layout=whole` 的 ResourceLocator。发布时从 Meta attributes 生成依赖快照；运行时从 System 获取当前存储连接，通过 engine provider 读取 manifest 声明的瓦片路径。不得保存裸存储路径、存储凭据，或直接引用 Manager infra 快显缓存。
+
+Manager infra 中的瓦片缓存只有显式复制到业务存储、生成规范 `tiles.addp.json` 并经 Meta 扫描后，才成为可发布的 `tile_pyramid` data item。
 
 ## Raster mosaic
 

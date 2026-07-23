@@ -1,6 +1,6 @@
 # ADDP OAuth 授权规范
 
-更新日期：2026-07-22
+更新日期：2026-07-23
 
 状态：阶段 4.3 正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准。
 
@@ -15,6 +15,7 @@ ADDP 的 Web、CLI 和 OAuth 客户端统一使用随机 opaque 用户令牌。S
 - Device Code：`addp_dc_` 前缀，只保存 Hash，默认有效期 10 分钟。
 - User Code：8 位易输入字符，服务端只保存规范化值的 Hash。
 - Delegated Access Token：`addp_dat_` 前缀，32 字节随机值，只保存 SHA-256 Hash，默认有效期 2 分钟且不得超过源 Access Token 剩余有效期。
+- Context Selection Ticket：`addp_cst_` 前缀，随机部分不少于 32 字节，只保存 SHA-256 Hash，默认有效期 5 分钟且只能成功消费一次；它是第一方登录临时凭据，不是 OAuth Token。
 
 System 不再签发或解析用户 JWT；旧的“允许过期 Access Token 调 `/refresh`”路径删除。
 
@@ -57,6 +58,10 @@ OAuth Client 独立存储在 `system.oauth_clients`，不复用 `applications` �
 `POST /api/v1/system/refresh` 只读取该 Cookie，不接受旧 Access Token。响应返回新的 Access Token，并轮换 Cookie 中的 Refresh Token。
 
 `POST /api/v1/system/logout` 撤销当前 family 并清除 Cookie。
+
+登录认证完成后若存在多个可进入 Context，System 不签发业务 Token，而是返回 Context Selection Ticket 和经 System 计算的 Platform / Tenant 选项。浏览器使用该 Ticket 调用唯一端点 `POST /api/v1/system/auth/context-selections`；客户端只提交 Platform 判别值或 Tenant Membership ID，不能提交 Principal、Tenant、Role 或 Permission。只有一个可用 Context 时可以直接创建 Family，没有可用 Context 时拒绝登录。
+
+浏览器切换 Context 使用 `GET /api/v1/system/auth/context-options` 和 `POST /api/v1/system/auth/context-switches`。切换必须原子撤销当前 Browser Family 并创建绑定目标 Context 的新 Family，不得原地修改 Family；切换只影响当前 Browser Family，不改变既有 CLI / OAuth Family。进入 Platform Context 时必须满足 AAL2 或先完成 step-up。
 
 浏览器 Access Token 只保存在 Browser AuthSession 内存中，不进入 `localStorage`、`sessionStorage`、IndexedDB、iframe URL 或下载 URL。页面启动、刷新和新标签页通过 HttpOnly Refresh Cookie 静默恢复。
 
@@ -137,7 +142,7 @@ OAuth 限流状态统一存放在 Infra Redis，保证多个 System 实例共享
 
 ## 八、AuthContext 映射
 
-第一方 Web Token返回 `auth_type=first_party_access_token`、`client_id=null`、空 audiences/scopes。OAuth Token 返回 `auth_type=oauth_access_token`、真实 `client_id`、`audiences=["addp-api"]` 和批准的 scopes。
+第一方 Web Token 在 `addp.auth_context/v1` 中返回 `token.type=first_party_access_token`、`client.client_id=addp-web`、`client.audiences=["addp.api"]`、`client.scope_mode=unrestricted` 和空 scopes。OAuth Token 返回 `token.type=oauth_access_token`、真实 `client_id`、`client.audiences=["addp.api"]`、`client.scope_mode=restricted` 和批准的 scopes。
 
 Scope 仍只能缩小权限；owner 模块对 Delegated Access Token 的 audience、Scope 和路由默认拒绝已在阶段 4.3 第一段完成，写入审批由阶段 4.3 第二段完成。
 

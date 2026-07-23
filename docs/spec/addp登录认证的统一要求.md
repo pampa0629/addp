@@ -28,7 +28,7 @@ HttpOnly Refresh Token Cookie
 - `platform`：进入 Platform Realm，不携带当前 Tenant，也不激活 Tenant 权限；
 - `tenant`：绑定一个有效 Tenant Membership 和唯一当前 Tenant，不携带平台角色权限。
 
-切换 Tenant 或切换平台/租户模式时必须重新建立授权上下文，不能在一个 AuthContext 中合并多个 Tenant 或混合平台与 Tenant 权限。
+切换 Tenant 或切换平台/租户模式时必须原子撤销当前 Browser Token Family 并创建绑定目标 Context 的新 Family，不能原地修改 Family，也不能在一个 AuthContext 中合并多个 Tenant 或混合平台与 Tenant 权限。浏览器切换不改变既有 CLI / OAuth Family；授权事实版本变化仍会使相关 Principal 的旧 Family 失效。
 
 ## 二、浏览器令牌存储
 
@@ -94,6 +94,7 @@ Refresh Token Family 采用严格轮换。两个标签页同时提交同一旧 R
 同 origin 页面统一使用：
 
 - Web Locks API：锁名固定为 `addp-auth-refresh`，保证单一刷新者；
+- Context Switch 使用独立 Web Lock `addp-auth-context-switch`，并与 refresh 遵守统一锁顺序；
 - BroadcastChannel：频道固定为 `addp-auth-session`，广播 Access Token、过期时间、退出和失效事件；
 - 不支持 Web Locks 时，在 BroadcastChannel 上使用带租约和超时的刷新主节点协议。
 
@@ -133,13 +134,15 @@ Console Browser AuthSession
 
 1. 用户提交用户名和密码到 System `/login`；
 2. System 验证 User、Local Account、认证策略和必要 MFA；
-3. 登录流程选择 Platform Realm 或一个有效 Tenant Membership；
-4. System 返回绑定该会话模式的短期 Access Token，并设置 Refresh Cookie；
-5. Browser AuthSession 将 Access Token 保存到内存；
-6. 前端读取 `/users/me` 作为当前用户资料；
-7. Console 进入所选平台或 Tenant 上下文中的原计划页面。
+3. System 计算可进入的 Platform Realm 和有效 Tenant Membership；
+4. 没有可用 Context 时拒绝登录；只有一个选项时可以直接创建绑定该 Context 的 Browser Token Family；
+5. 多于一个选项时返回 5 分钟、单次消费的 `addp_cst_` Context Selection Ticket，不签发业务 Access Token 或 Refresh Token；
+6. 浏览器只在内存保存 Ticket，并调用 `POST /api/v1/system/auth/context-selections` 提交 Platform 判别值或 Tenant Membership ID；
+7. System 重新校验 Principal、认证强度和目标 Context，在单个事务中消费 Ticket 并创建 Browser Token Family；
+8. System 返回短期 Access Token 并设置 Refresh Cookie，Browser AuthSession 只把 Access Token 保存到内存；
+9. 前端读取 `/users/me` 作为当前用户资料，Console 进入所选 Context 中的原计划页面。
 
-用户只有一个可用业务 Tenant 时可以由产品流程直接选择；存在多个 Tenant Membership 时必须让用户明确选择。平台角色不能作为默认方式悄然进入某个 Tenant。
+Context Selection Ticket 只保存 Hash，不能进入 Cookie、URL、浏览器历史、持久化存储或日志。客户端不得提交或决定 Principal、Tenant、Role、Permission、授权版本。平台选项不能静默转换为任一 Tenant，Tenant 选项也不能自动激活平台权限。
 
 ### 6.2 启动恢复
 
@@ -158,6 +161,21 @@ Console Browser AuthSession
 - 刷新成功后自动重试原请求；
 - 整个过程不打断用户当前操作；
 - Refresh Token Family 默认固定 30 天，达到最终有效期后必须重新登录。
+
+### 6.4 上下文切换
+
+第一方浏览器使用唯一目标端点：
+
+```text
+GET  /api/v1/system/auth/context-options
+POST /api/v1/system/auth/context-switches
+```
+
+两个端点都要求当前第一方 Web Access Token；切换还要求同一 Family 的 Refresh Token Cookie。进入 Platform Context 时 User 认证强度至少为 AAL2，否则先返回 `step_up_required`。
+
+切换事务必须：锁定当前 Browser Family，复核目标 Context 和授权版本，撤销旧 Family 及派生 Resource Access Ticket，创建新 Family 和新票据，写入旧 / 新 Context 审计，最后返回新内存 Access Token。事务失败时旧 Family 保持有效。切换成功后通过 `addp-auth-session` 广播 `context_changed`；其他标签页和 iframe 必须清空旧 Context 的业务缓存并采用新 Token。
+
+CLI / OAuth Client 不能调用 Context Switch 修改既有 Family。它们需要另一个 Context 时必须重新执行用户授权，并永久绑定批准时选择的 Context。
 
 ## 七、前端共享能力要求
 
@@ -199,4 +217,6 @@ Console Browser AuthSession
 - [ ] 401 只重试一次，不形成刷新循环。
 - [ ] 用户退出会同步到其他标签页和 iframe。
 - [ ] Access Token 只绑定 `platform` 或一个当前 Tenant，上下文切换后旧权限不会继续生效。
+- [ ] 多 Context 登录在选择前不签发业务 Token，Selection Ticket 过期、重放和并发消费均失败。
+- [ ] Browser Context Switch 撤销旧 Web Family，但不改变既有 CLI / OAuth Family。
 - [ ] Console、一个 iframe 模块和一个独立模块完成自动化或在线验收。

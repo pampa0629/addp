@@ -115,25 +115,33 @@
               :placeholder="$t('service.tile.layerDescPlaceholder')"
             />
           </el-form-item>
-          <el-form-item :label="$t('service.tile.tilePathLabel')" required>
-            <el-input v-model="form.tilePath" :placeholder="$t('service.tile.tilePathPlaceholder')" />
-            <div class="help-text">{{ $t('service.tile.tilePathHelp') }}</div>
+          <el-form-item :label="$t('service.tile.tileDatasetLabel')" required>
+            <ResourceTreePicker
+              :api-base-url="metaApiBaseUrl"
+              :engine-types="tilePyramidEngineTypes"
+              mode="item"
+              :node-filter="isTilePyramidVisibleNode"
+              :selectable-filter="isTilePyramidNode"
+              :show-selection-summary="true"
+              :engine-multiple="true"
+              :select-all-engines-by-default="true"
+              :search-selectable-only="true"
+              :show-disabled-label="false"
+              :show-count="false"
+              @update:model-value="handleTilePyramidSelection"
+            />
           </el-form-item>
-          <el-form-item :label="$t('service.tile.tileFormatLabel')" required>
-            <el-select v-model="form.format" class="full-width-control">
-              <el-option label="MVT (Mapbox Vector Tile)" value="mvt" />
-              <el-option label="PNG" value="png" />
-              <el-option label="JPEG" value="jpeg" />
-            </el-select>
-          </el-form-item>
-          <div class="form-row">
-            <el-form-item :label="$t('service.tile.minZoomLabel')" required>
-              <el-input-number v-model="form.minZoom" :min="0" :max="22" controls-position="right" />
-            </el-form-item>
-            <el-form-item :label="$t('service.tile.maxZoomLabel')" required>
-              <el-input-number v-model="form.maxZoom" :min="0" :max="22" controls-position="right" />
-            </el-form-item>
-          </div>
+          <el-descriptions v-if="staticTileMetadata" :column="3" border size="small" class="tile-metadata">
+            <el-descriptions-item :label="$t('service.tile.tileFormatLabel')">
+              {{ staticTileMetadata.tileFormat.toUpperCase() }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="$t('service.tile.zoomRangeLabel')">
+              {{ staticTileMetadata.minZoom }} - {{ staticTileMetadata.maxZoom }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="$t('service.tile.tileMatrixSetLabel')">
+              {{ staticTileMetadata.tileMatrixSet }}
+            </el-descriptions-item>
+          </el-descriptions>
         </el-form>
       </div>
 
@@ -265,7 +273,15 @@ import tileServiceAPI from '@/api/tileService'
 import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
 import { ElMessage } from 'element-plus'
 import { DocumentCopy } from '@element-plus/icons-vue'
-import { NATIVE_TABLE_ENGINE_TYPES, isNativeTableNode, isNativeTableVisibleNode } from '@/utils/resourceSelection'
+import {
+  NATIVE_TABLE_ENGINE_TYPES,
+  TILE_PYRAMID_ENGINE_TYPES,
+  defaultTileLayerName,
+  isNativeTableNode,
+  isNativeTableVisibleNode,
+  isTilePyramidNode,
+  isTilePyramidVisibleNode
+} from '@/utils/resourceSelection'
 
 export default {
   name: 'TileServiceForm',
@@ -295,10 +311,7 @@ export default {
         geomColumn: '',
         srid: 4326,
         // 静态图层
-        tilePath: '',
-        format: 'mvt',
-        minZoom: 0,
-        maxZoom: 18
+        staticLocator: ''
       },
       protocols: {
         xyz: { enabled: true },
@@ -306,6 +319,7 @@ export default {
         tms: { enabled: false }
       },
       spatialMetadata: null,
+      staticTileMetadata: null,
       submitting: false,
       createdService: null
     }
@@ -319,11 +333,16 @@ export default {
     },
     nativeTableEngineTypes() {
       return NATIVE_TABLE_ENGINE_TYPES
+    },
+    tilePyramidEngineTypes() {
+      return TILE_PYRAMID_ENGINE_TYPES
     }
   },
   methods: {
     isNativeTableNode,
     isNativeTableVisibleNode,
+    isTilePyramidNode,
+    isTilePyramidVisibleNode,
     // 处理表选择（ResourceTreePicker 回调）
     async handleTableSelection(selection) {
       console.log('[TileServiceForm] Table selection:', selection)
@@ -373,6 +392,34 @@ export default {
       }
     },
 
+    async handleTilePyramidSelection(selection) {
+      this.form.staticLocator = ''
+      this.staticTileMetadata = null
+      if (!selection) return
+
+      const itemId = selection.identity?.item_id
+      const locator = selection.identity?.locator || ''
+      if (!itemId || !locator) return
+
+      try {
+        const item = await tileServiceAPI.getMetaItem(itemId)
+        const info = item?.attributes?.format_info?.tile_pyramid
+        if (!info) throw new Error(this.$t('service.tile.invalidTileDataset'))
+        this.form.staticLocator = locator
+        this.staticTileMetadata = {
+          tileFormat: String(info.tile_format || ''),
+          minZoom: Number(info.min_zoom),
+          maxZoom: Number(info.max_zoom),
+          tileMatrixSet: String(info.tile_matrix_set || '')
+        }
+        const label = selection.display?.label || item.name || ''
+        if (!this.form.layerName) this.form.layerName = defaultTileLayerName(label, itemId)
+        if (!this.form.layerTitle) this.form.layerTitle = label
+      } catch (error) {
+        ElMessage.error(error.response?.data?.error || error.message)
+      }
+    },
+
     validateStep0() {
       if (!this.form.layerName || !this.form.layerTitle) {
         return false
@@ -380,7 +427,7 @@ export default {
       if (this.layerType === 'dynamic') {
         return this.form.locator && this.form.geomColumn
       } else {
-        return this.form.tilePath && this.form.format
+        return this.form.staticLocator && this.staticTileMetadata
       }
     },
 
@@ -429,10 +476,9 @@ export default {
               }
             }
           : {
-              source: 'external',
-              tile_path: this.form.tilePath,
-              format: this.form.format,
-              zoom_range: [this.form.minZoom, this.form.maxZoom]
+              source: {
+                locator: this.form.staticLocator
+              }
             }
 
         // 构建请求数据
@@ -497,16 +543,15 @@ export default {
         table: '',
         geomColumn: '',
         srid: 4326,
-        tilePath: '',
-        format: 'mvt',
-        minZoom: 0,
-        maxZoom: 18
+        staticLocator: ''
       }
       this.protocols = {
         xyz: { enabled: true },
         ogc_tiles: { enabled: false },
         tms: { enabled: false }
       }
+      this.spatialMetadata = null
+      this.staticTileMetadata = null
     },
 
     async copyToClipboard(text) {
@@ -620,6 +665,10 @@ export default {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 24px;
+}
+
+.tile-metadata {
+  margin-top: 8px;
 }
 
 .form-row {

@@ -10,6 +10,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	_ "github.com/addp/common/engine/plugins/builtin/general"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonScheduler "github.com/addp/common/scheduler"
@@ -107,7 +108,7 @@ func main() {
 	registeredServiceService := serviceInternal.NewRegisteredServiceService(registeredServiceRepo, cfg.GatewayURL)
 
 	// 瓦片服务使用 Gateway URL 作为服务端点的基础地址
-	tileServiceService := serviceInternal.NewTileServiceService(tileServiceRepo, cfg.GatewayURL)
+	tileServiceService := serviceInternal.NewTileServiceService(tileServiceRepo, metaClient, cfg.GatewayURL)
 
 	// 初始化 MinIO 客户端（用于瓦片存储）
 	minioClient, err := minio.New(cfg.MinioEndpoint, &minio.Options{
@@ -124,7 +125,7 @@ func main() {
 	minioBucket := "service"
 
 	// 初始化瓦片相关服务
-	staticTileService := serviceInternal.NewStaticTileService(minioClient, minioBucket)
+	staticTileService := serviceInternal.NewStaticTileService(systemClient)
 	dynamicTileService := serviceInternal.NewDynamicTileService(systemClient)
 	tileCacheService := serviceInternal.NewTileCacheService(minioClient, minioBucket, "tiles")
 	cleanupService := serviceInternal.NewCleanupService(db, redisClient, taskExecutionRepo)

@@ -99,5 +99,9 @@ export default {
   // 跨模块 API: 获取存储引擎列表（来自 System 模块）
   getStorageEngines() {
     return client.get('/system/engines')
+  },
+
+  getMetaItem(itemId) {
+    return client.get(`/meta/items/${itemId}`)
   }
 }

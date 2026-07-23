@@ -2,93 +2,127 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 
+	enginePlugin "github.com/addp/common/engine/plugin"
+	commonJSON "github.com/addp/common/jsonmap"
+	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
+	"github.com/addp/common/tilepyramid"
 	"github.com/addp/service/internal/models"
-	"github.com/minio/minio-go/v7"
 )
 
-// ============================================================================
-// StaticTileService 静态瓦片服务
-// ============================================================================
+var ErrStaticTileOutOfRange = errors.New("static tile coordinates are outside the published range")
 
-// StaticTileService 处理静态瓦片的读取
+type StaticTileEngineClient interface {
+	GetEngine(engineID uint) (*commonModels.Engine, error)
+}
+
+type StaticTile struct {
+	Data            []byte
+	ContentType     string
+	ContentEncoding string
+}
+
 type StaticTileService struct {
-	minioClient *minio.Client
-	bucket      string
+	systemClient StaticTileEngineClient
 }
 
-// NewStaticTileService 创建静态瓦片服务实例
-func NewStaticTileService(minioClient *minio.Client, bucket string) *StaticTileService {
-	return &StaticTileService{
-		minioClient: minioClient,
-		bucket:      bucket,
-	}
+func NewStaticTileService(systemClient StaticTileEngineClient) *StaticTileService {
+	return &StaticTileService{systemClient: systemClient}
 }
 
-// GetStaticTile 从 MinIO 读取静态瓦片
 func (s *StaticTileService) GetStaticTile(
 	ctx context.Context,
+	tenantID uint,
 	layer *models.TileServiceLayer,
 	z, x, y int,
-	format string,
-) ([]byte, error) {
-	// 1. 解析 layer_config
-	config := layer.LayerConfig
-	if config == nil {
-		return nil, fmt.Errorf("layer config is nil")
+	requestedFormat string,
+) (*StaticTile, error) {
+	if s == nil || s.systemClient == nil {
+		return nil, errors.New("system client is required for static tile access")
 	}
-
-	source, ok := config["source"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid source in layer config")
+	if layer == nil || layer.LayerConfig == nil {
+		return nil, errors.New("static tile layer config is required")
 	}
-
-	tilePath, ok := config["tile_path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid tile_path in layer config")
+	source := commonJSON.InterfaceMap(layer.LayerConfig["source"])
+	snapshot := commonJSON.InterfaceMap(layer.LayerConfig["source_snapshot"])
+	locatorValue := strings.TrimSpace(commonJSON.InterfaceString(source["locator"]))
+	if locatorValue == "" || snapshot == nil {
+		return nil, errors.New("static tile source locator and snapshot are required")
 	}
-
-	// 2. 验证缩放级别
-	if zoomRange, ok := config["zoom_range"].([]interface{}); ok {
-		if len(zoomRange) == 2 {
-			minZoom := int(zoomRange[0].(float64))
-			maxZoom := int(zoomRange[1].(float64))
-			if z < minZoom || z > maxZoom {
-				return nil, fmt.Errorf("zoom level %d out of range [%d, %d]", z, minZoom, maxZoom)
-			}
-		}
-	}
-
-	// 3. 构建瓦片路径
-	var objectName string
-	if source == "external" {
-		// 外部静态瓦片：从指定的 MinIO 路径读取
-		objectName = fmt.Sprintf("%s/%d/%d/%d.%s", tilePath, z, x, y, format)
-	} else if source == "internal" {
-		// 内部缓存瓦片：从 service bucket 读取
-		objectName = fmt.Sprintf("%s/%d/%d/%d.%s", tilePath, z, x, y, format)
-	} else {
-		return nil, fmt.Errorf("unsupported source type: %s", source)
-	}
-
-	// 4. 从 MinIO 读取
-	object, err := s.minioClient.GetObject(ctx, s.bucket, objectName, minio.GetObjectOptions{})
+	loc, err := resourcetree.ParseURI(locatorValue)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get object from MinIO: %w", err)
+		return nil, fmt.Errorf("parse static tile source locator: %w", err)
 	}
-	defer object.Close()
-
-	// 5. 读取数据
-	data, err := io.ReadAll(object)
+	tileFormat := normalizeTileFormat(commonJSON.InterfaceString(snapshot["tile_format"]))
+	if normalizeTileFormat(requestedFormat) != tileFormat {
+		return nil, fmt.Errorf("requested format %q does not match published format %q", requestedFormat, tileFormat)
+	}
+	minZoom := int(commonJSON.InterfaceInt64(snapshot["min_zoom"]))
+	maxZoom := int(commonJSON.InterfaceInt64(snapshot["max_zoom"]))
+	if z < minZoom || z > maxZoom || x < 0 || y < 0 {
+		return nil, ErrStaticTileOutOfRange
+	}
+	tilePath, err := tilepyramid.ResolveTilePath(commonJSON.InterfaceString(snapshot["tile_template"]), z, x, y)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read tile data: %w", err)
+		return nil, fmt.Errorf("resolve static tile path: %w", err)
 	}
 
+	engine, err := s.systemClient.GetEngine(loc.EngineID)
+	if err != nil {
+		return nil, fmt.Errorf("get static tile engine %d: %w", loc.EngineID, err)
+	}
+	if engine == nil || engine.ID != loc.EngineID || engine.TenantID == nil || *engine.TenantID != tenantID {
+		return nil, errors.New("static tile engine is outside the service tenant")
+	}
+	pl, err := enginePlugin.Get(engine.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	modelProvider, ok := pl.(enginePlugin.CatalogModelProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %s does not expose a catalog model", engine.EngineType)
+	}
+	contentReader, ok := pl.(enginePlugin.ContentReadableProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %s does not support content reads", engine.EngineType)
+	}
+	tileLocator := &resourcetree.ResourceLocator{
+		EngineID: loc.EngineID,
+		Path:     append(append([]string(nil), loc.Path...), strings.Split(tilePath, "/")...),
+		Type:     loc.Type,
+	}
+	providerPath, err := resourcetree.ProviderCatalogPathFromLocator(modelProvider.CatalogModel(), tileLocator)
+	if err != nil {
+		return nil, fmt.Errorf("build static tile provider path: %w", err)
+	}
+	reader, err := contentReader.OpenContent(ctx, enginePlugin.ConnectionInfo(engine.ConnectionInfo), providerPath, enginePlugin.ReadOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("open static tile content: %w", err)
+	}
+	defer reader.Close()
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("read static tile content: %w", err)
+	}
 	if len(data) == 0 {
-		return nil, fmt.Errorf("empty tile data")
+		return nil, errors.New("static tile content is empty")
 	}
+	return &StaticTile{
+		Data:            data,
+		ContentType:     tilepyramid.ContentType(tileFormat, commonJSON.InterfaceString(snapshot["content_type"])),
+		ContentEncoding: strings.ToLower(strings.TrimSpace(commonJSON.InterfaceString(snapshot["content_encoding"]))),
+	}, nil
+}
 
-	return data, nil
+func normalizeTileFormat(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "jpg" {
+		return "jpeg"
+	}
+	return value
 }

@@ -1,8 +1,8 @@
 # ADDP 授权上下文规范
 
-更新日期：2026-07-22
+更新日期：2026-07-23
 
-状态：正式目标规范。本规范定义 ADDP 访问令牌的唯一解析语义和模块消费路径；AuthContext 的具体 JSON Schema 在目标 IAM 数据模型和 Permission 目录确定后补充，现有 `user_type` 响应结构不是目标契约。
+状态：正式目标规范。本规范定义 ADDP 访问令牌的唯一解析语义和模块消费路径；目标 JSON 契约固定为 `addp.auth_context/v1`，完整 Schema 和示例见 `docs/next/addp-IAM AuthContext契约设计.md`，现有 `user_type` 响应结构不是目标契约。
 
 ## 一、目标
 
@@ -46,23 +46,25 @@ GET /api/v1/system/auth/context
 Authorization: Bearer <access_token>
 ```
 
-AuthContext 必须表达以下语义组，具体字段名和 JSON 结构由后续契约设计一次性确定：
+AuthContext 根对象固定包含：
 
-| 语义组 | 必要内容 | 约束 |
+| 字段 | 必要内容 | 约束 |
 | --- | --- | --- |
-| Principal | Principal 类型和稳定 ID；User 场景包含必要的用户标识投影 | Principal 只能来自 System 当前事实，不能信任客户端参数 |
-| Context | `platform` 或 `tenant` 会话模式 | 两种模式互斥，不存在同时激活平台和 Tenant 权限的上下文 |
-| Tenant | 当前 Tenant、Tenant Membership 及有效状态 | 只在 `tenant` 模式存在；一次上下文只能有一个当前 Tenant |
-| Authorization Facts | 当前模式下必要的 Role Assignment / Permission 投影及授权事实版本 | 不返回其他 Tenant 权限，不包含主体可访问的全部资源列表 |
-| Organization Facts | 当前 Tenant 的 Department / Project Group 关系版本或引用 | 具体成员关系由 owner 按需查询，不能跨 Tenant 合并 |
-| Authentication | 认证方式、认证时间、MFA 强度和必要的 step-up 事实 | 平台三员和其他高权限操作必须能判断强认证要求 |
-| Client Limits | 令牌类型、OAuth Client、audience 和 Scope | audience / Scope 只能缩小能力 |
-| Delegation | 委托方、AgentRun、ToolCall 和用途绑定 | 仅受委托令牌存在，不能改变原 Principal 和当前 Tenant |
-| Lifetime | 签发时间和过期时间 | 使用带时区的 ISO 8601 时间 |
+| `schema_version` | 固定值 `addp.auth_context/v1` | 不按客户端协商或返回双 Schema |
+| `principal` | `user | service_principal` 和稳定 Principal ID | 不返回 username、email 或 Local Account |
+| `context` | `platform` 或 `tenant` 判别联合 | Tenant 模式必须包含唯一 Tenant 和 Tenant Membership |
+| `authentication` | 认证方法、AAL、认证时间和 step-up 有效期 | User 进入 Platform Context 至少为 AAL2 |
+| `client` | 显式 Client、audience、`scope_mode` 和 Scope | Scope 只能缩小能力；第一方 Web 固定为 `addp-web` |
+| `organization` | 当前 Tenant 的直接 Department / Project Group Membership | Platform Context 为空；Department 祖先不代表默认继承 |
+| `authorization` | 授权版本和当前有效 Role Assignment | 每个 Assignment 携带 Permission、Scope、来源和有效期 |
+| `token` | Token 类型、签发时间和过期时间 | 使用带时区的 ISO 8601 时间 |
+| `delegation` | 委托 Client、AgentRun 和 ToolCall | 只在 Delegated Token 存在，其他 Token 为 `null` |
+
+所有 IAM bigint ID 在 JSON 中使用非零十进制字符串，避免 JavaScript Number 精度丢失。响应对象和嵌套对象拒绝未知字段；数组使用契约规定的稳定排序。
 
 平台管理上下文不得通过空 Tenant 表示“所有 Tenant”。它只激活当前 Principal 被分配的平台角色。Tenant 业务上下文必须绑定一个有效 Tenant Membership，且只投影当前 Tenant 内的角色和组织事实。
 
-第一方 Web、OAuth 和 Delegated Access Token 都解析为同一 AuthContext 语义。OAuth Token 的客户端、audience 和 Scope 由 System 权威填充；Delegated Access Token 还必须包含唯一 owner audience、稳定 Tool Scope 和 AgentRun / ToolCall 审计绑定。
+第一方 Web、OAuth、Service Principal、Browser Resource Access Ticket 和 Delegated Access Token 都解析为同一 AuthContext 语义。第一方 Web 固定返回 `client_id=addp-web`、`audiences=[addp.api]`、`scope_mode=unrestricted` 和空 Scope；OAuth Token 返回真实 Client、`addp.api` audience、`scope_mode=restricted` 和批准 Scope；Delegated Access Token 还必须包含唯一 owner audience、稳定 Tool Scope 和 AgentRun / ToolCall 审计绑定。
 
 ## 四、身份和上下文校验
 
@@ -73,10 +75,10 @@ System 生成 AuthContext 前必须校验：
 3. 会话模式只能是 `platform` 或 `tenant`；
 4. `tenant` 模式绑定的 Tenant 和 Tenant Membership 均存在且有效；
 5. `platform` 模式不携带当前 Tenant，也不激活任何 Tenant Role、Department、Project Group 或资源授权；
-6. Role Assignment、外部身份状态、组织关系和授权事实版本没有失效；
+6. Token 的 `issued_authorization_version` 等于 Principal 当前 `authorization_version`，Role Assignment、外部身份状态和组织关系没有失效；
 7. OAuth Client、audience、Scope、认证强度和委托绑定满足令牌类型要求。
 
-任一校验失败均不返回部分 AuthContext。User、Tenant Membership、Role Assignment 或相关身份事实失效时，必须使已有 AuthContext 缓存失效。
+任一校验失败均不返回部分 AuthContext。User、Tenant Membership、Role Assignment 或相关身份事实失效时，在同一授权变更事务中递增 Principal 授权版本并撤销受影响 Token Family。
 
 ## 五、权限计算
 
@@ -120,7 +122,7 @@ Browser Resource Access Ticket 同样使用默认拒绝策略。System 的 AuthC
 - 提供 Principal、会话模式、当前 Tenant、client、audience、Scope、认证强度和授权事实的统一 helper；
 - 不提供或新增基于 `user_type` 的授权 helper。
 
-缓存 Key 只使用 Token SHA-256，不保存明文 Token。实际缓存时间不得超过 Access Token 剩余有效期；授权事实版本变化必须主动失效。
+第一阶段不跨请求缓存 AuthContext。System 每次解析都回查 Token、Principal、Membership、授权版本和当前有效 Assignment；`common/middleware/auth` 不保留 `CachedSystemAuthMiddleware` 或其他旧缓存旁路。以后只有性能证据证明必要时，才能引入带签发版本校验和可靠失效协议的单一路径缓存。
 
 ### 6.2 Python
 
@@ -151,7 +153,7 @@ OAuth 数据模型不复用 `system.applications/api_keys`：API Key 表达应�
 
 当前代码和部分 System 表/API文档仍使用 `users.user_type` 与 `users.tenant_id`。它们是待替换的实现差距，不构成兼容契约。实施目标 IAM 时必须同步完成：
 
-1. 确定 AuthContext JSON Schema 和共享 Go/Python 类型；
+1. 将已确认的 v1 JSON Schema 落为 `common/authorization/schemas/auth-context-v1.schema.json`，生成或校验共享 Go/Python/TypeScript 类型；
 2. 将所有调用方一次性迁移到新契约；
 3. 删除 `user_type` 字段、helper、条件分支和旧文档；
 4. 删除 `tenant_id=null` / `tenant_id=0` 的平台全权语义；

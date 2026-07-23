@@ -16,6 +16,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/common/rastermosaic"
+	"github.com/addp/common/tilepyramid"
 	"github.com/addp/meta/internal/metaattr"
 )
 
@@ -106,6 +107,13 @@ func appendResolvedCommonItems(ctx context.Context, input DirectoryResolveInput,
 		var itemAttributes map[string]interface{}
 		if item.Layout == format.LayoutWhole && item.Format == string(format.FormatRasterMosaic) {
 			attrs, ok := rasterMosaicManifestAttributes(ctx, input, item)
+			if !ok {
+				continue
+			}
+			itemAttributes = attrs
+		}
+		if item.Layout == format.LayoutWhole && item.Format == string(format.FormatTilePyramid) {
+			attrs, ok := tilePyramidManifestAttributes(ctx, input, item)
 			if !ok {
 				continue
 			}
@@ -608,6 +616,76 @@ func rasterMosaicManifestAttributes(ctx context.Context, input DirectoryResolveI
 	}
 	if spatial := rasterMosaicSpatialAttributes(manifest); len(spatial) > 0 {
 		attrs["capabilities"] = map[string]interface{}{"spatial": spatial}
+	}
+	return attrs, true
+}
+
+func tilePyramidManifestAttributes(ctx context.Context, input DirectoryResolveInput, item dataitem.ResolvedItem) (map[string]interface{}, bool) {
+	if input.ContentReader == nil {
+		return nil, false
+	}
+	manifestPath := ""
+	for _, ref := range item.RefList {
+		if ref.Role == "manifest" && ref.Path != "" {
+			manifestPath = ref.Path
+			break
+		}
+	}
+	if manifestPath == "" {
+		return nil, false
+	}
+	reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, resolveCatalogPath(input.EngineID, manifestPath, input.CatalogPathFor), plugin.ReadOptions{Length: 1 << 20})
+	if err != nil {
+		return nil, false
+	}
+	defer reader.Close()
+
+	manifest, err := tilepyramid.DecodeManifest(reader, 1<<20)
+	if err != nil {
+		return nil, false
+	}
+	manifestRef := strings.TrimPrefix(strings.TrimPrefix(manifestPath, strings.Trim(item.ScopePath, "/")), "/")
+	if manifestRef == "" {
+		manifestRef = tilepyramid.ManifestFileName
+	}
+	formatInfo := map[string]interface{}{
+		"manifest_ref":            manifestRef,
+		"manifest_schema_version": manifest.SchemaVersion,
+		"tile_kind":               manifest.TileKind,
+		"tile_format":             manifest.TileFormat,
+		"scheme":                  manifest.Scheme,
+		"tile_matrix_set":         manifest.TileMatrixSet,
+		"tile_template":           manifest.TileTemplate,
+		"content_type":            manifest.ContentType,
+		"min_zoom":                manifest.MinZoom,
+		"max_zoom":                manifest.MaxZoom,
+	}
+	if manifest.ContentEncoding != "" {
+		formatInfo["content_encoding"] = manifest.ContentEncoding
+	}
+	if manifest.TileCount > 0 {
+		formatInfo["tile_count"] = manifest.TileCount
+	}
+	attrs := map[string]interface{}{
+		"format_info": map[string]interface{}{
+			string(format.FormatTilePyramid): formatInfo,
+		},
+	}
+	if manifest.Spatial != nil {
+		spatial := map[string]interface{}{}
+		if manifest.Spatial.SRID > 0 {
+			spatial["srid"] = manifest.Spatial.SRID
+			spatial["extent_srid"] = manifest.Spatial.SRID
+		}
+		if manifest.Spatial.CRSRef != "" {
+			spatial["crs_ref"] = manifest.Spatial.CRSRef
+		}
+		if len(manifest.Spatial.Extent) == 4 {
+			spatial["extent"] = append([]float64(nil), manifest.Spatial.Extent...)
+		}
+		if len(spatial) > 0 {
+			attrs["capabilities"] = map[string]interface{}{"spatial": spatial}
+		}
 	}
 	return attrs, true
 }

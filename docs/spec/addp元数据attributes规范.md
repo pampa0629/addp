@@ -30,6 +30,8 @@
 
 Manager infra 中的 GLB、3D Tiles、S3M、COPC、KSplat、COG 等快显结果不是 data item，不写入源 item 或虚构目标 item 的 attributes。源 item、源指纹、目标格式、任务、execution 与快显结果的关系由 Manager 对应结果表显式保存；不得通过输出目录名推断。Develop 工作流写入业务存储并经 Meta 扫描形成的目标才是派生 data item，其 attributes 仍只描述该目标 item 自身的标准事实。
 
+Manager infra 中的 MVT 快显缓存同样不是 data item。只有把完整瓦片集合复制到业务存储、生成 `addp.tile_pyramid.v1` 的 `tiles.addp.json` 并经 Meta 扫描后，才形成 `data_type=media + format=tile_pyramid + layout=whole` 的业务 data item。
+
 旧 attributes 字段、旧分区和平铺字段不保留兼容读取或兼容写入。旧数据应删除后重新 meta 扫描生成新结构；仍依赖旧结构的代码应尽早暴露并修正。
 
 空分区不落库：`storage`、`type_info`、`format_info`、`access_index`、`capabilities` 等标准分区只有在包含实际事实时才写入。空对象、空字符串和只包含空对象的命名空间应在 normalizer 中删除。空数组可以作为显式事实保留，例如 `type_info.container.children: []` 表示容器已解析但没有子项。
@@ -369,6 +371,21 @@ TIFF / GeoTIFF 的 CRS、extent、transform 等跨格式空间事实写入 `capa
 | `cog_validation` | COG 内容级校验摘要。不得只根据后缀或文件名判定 COG。 |
 
 Raster mosaic 的 CRS、extent、分辨率范围等跨格式空间事实写入 `capabilities.spatial`。`format_info.raster_mosaic` 只保存 manifest、index、overview、leaf 组织和 COG 校验摘要等格式私有事实。
+
+### format_info.tile_pyramid
+
+`format_info.tile_pyramid` 表达二维瓦片金字塔的格式层事实，受控字段为：
+
+- `manifest_ref`：固定入口 `tiles.addp.json`。
+- `tile_kind`：`vector` 或 `raster`。
+- `tile_format`：`mvt`、`png`、`jpeg` 或 `webp`。
+- `scheme`：第一版固定 `xyz`。
+- `tile_matrix_set`：第一版固定 `WebMercatorQuad`。
+- `tile_template`：whole scope 内部相对模板，必须包含 `{z}`、`{x}`、`{y}`。
+- `content_type`、`content_encoding`：HTTP 内容语义；MVT gzip 使用 `content_encoding=gzip`。
+- `min_zoom`、`max_zoom`、`tile_count`：manifest 声明并经校验的层级和数量摘要。
+
+extent、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `format_info.tile_pyramid`。不得把单个瓦片对象列表、存储凭据、Manager `storage_ref` 或 Service URL 写入 attributes。
 
 ## capabilities 命名空间
 

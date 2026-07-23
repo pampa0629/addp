@@ -46,6 +46,7 @@ import (
 	_ "github.com/addp/common/format/plugins/pdf"
 	_ "github.com/addp/common/format/plugins/pptx"
 	_ "github.com/addp/common/format/plugins/text"
+	_ "github.com/addp/common/format/plugins/tilepyramid"
 	_ "github.com/addp/common/format/plugins/tiles3d"
 	_ "github.com/addp/common/format/plugins/wps"
 

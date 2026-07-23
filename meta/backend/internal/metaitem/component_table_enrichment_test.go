@@ -149,6 +149,45 @@ func TestCommonDataItemResolverAdaptsRasterMosaicWholeScope(t *testing.T) {
 	}
 }
 
+func TestCommonDataItemResolverAdaptsTilePyramidWholeScope(t *testing.T) {
+	d := &commonDataItemResolver{}
+	files := []StorageFileRef{
+		{Name: "tiles.addp.json", Path: "tiles/roads/tiles.addp.json", Size: 10},
+		{Name: "427_209.mvt.gz", Path: "tiles/roads/tiles/z9/427_209.mvt.gz", Size: 20},
+	}
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+		ContentReader: refMapContentReader{content: map[string][]byte{
+			"tiles/roads/tiles.addp.json": []byte(`{"schema_version":"addp.tile_pyramid.v1","data_type":"media","format":"tile_pyramid","layout":"whole","dataset_name":"roads","tile_kind":"vector","tile_format":"mvt","scheme":"xyz","tile_matrix_set":"WebMercatorQuad","tile_template":"tiles/z{z}/{x}_{y}.mvt.gz","content_encoding":"gzip","min_zoom":9,"max_zoom":18,"tile_count":1,"spatial":{"srid":4326,"crs_ref":"EPSG:4326","extent":[120,30,121,31]}}`),
+		}},
+		DirPath:        "tiles/roads",
+		Files:          files[:1],
+		RecursiveFiles: files,
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if !result.Exclusive || len(result.Items) != 1 {
+		t.Fatalf("result = %#v, want one exclusive item", result)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutWhole || item.DataType != datatype.Media || item.Format != string(format.FormatTilePyramid) {
+		t.Fatalf("item = %#v", item)
+	}
+	info := commonJSON.Section(item.Attributes, "format_info.tile_pyramid")
+	if info["tile_template"] != "tiles/z{z}/{x}_{y}.mvt.gz" || commonJSON.InterfaceInt64(info["max_zoom"]) != 18 {
+		t.Fatalf("format_info.tile_pyramid = %#v", info)
+	}
+	spatial := commonJSON.Section(item.Attributes, "capabilities.spatial")
+	if commonJSON.InterfaceInt64(spatial["srid"]) != 4326 {
+		t.Fatalf("capabilities.spatial = %#v", spatial)
+	}
+	for _, file := range files {
+		if !result.Claims[file.Path] {
+			t.Fatalf("claims = %#v, want %s claimed", result.Claims, file.Path)
+		}
+	}
+}
+
 func TestCommonDataItemResolverRejectsRasterMosaicManifestByNameOnly(t *testing.T) {
 	d := &commonDataItemResolver{}
 	files := []StorageFileRef{

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 
+	commonClient "github.com/addp/common/client"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
 )
@@ -13,14 +15,16 @@ import (
 // ============================================================================
 
 type TileServiceService struct {
-	repo    *repository.TileServiceRepository
-	baseURL string // 服务的基础URL（用于构建端点）
+	repo       *repository.TileServiceRepository
+	metaClient *commonClient.MetaClient
+	baseURL    string // 服务的基础URL（用于构建端点）
 }
 
-func NewTileServiceService(repo *repository.TileServiceRepository, baseURL string) *TileServiceService {
+func NewTileServiceService(repo *repository.TileServiceRepository, metaClient *commonClient.MetaClient, baseURL string) *TileServiceService {
 	return &TileServiceService{
-		repo:    repo,
-		baseURL: baseURL,
+		repo:       repo,
+		metaClient: metaClient,
+		baseURL:    baseURL,
 	}
 }
 
@@ -43,7 +47,7 @@ func (s *TileServiceService) CreateService(req *models.CreateTileServiceRequest,
 	if req.FirstLayer == nil {
 		return nil, errors.New("first_layer is required")
 	}
-	if err := s.validateLayerConfig(req.FirstLayer.LayerType, req.FirstLayer.LayerConfig); err != nil {
+	if err := s.normalizeLayerConfig(tenantID, req.FirstLayer.LayerType, req.FirstLayer.LayerConfig); err != nil {
 		return nil, fmt.Errorf("invalid first layer config: %w", err)
 	}
 
@@ -54,7 +58,11 @@ func (s *TileServiceService) CreateService(req *models.CreateTileServiceRequest,
 	}
 
 	// 4. 构建协议配置
-	protocols := s.buildProtocolsConfig(req.Protocols)
+	tileFormat := "mvt"
+	if req.FirstLayer.LayerType == "static" {
+		tileFormat = commonJSON.StringFromSections(req.FirstLayer.LayerConfig, "tile_format", "source_snapshot")
+	}
+	protocols := s.buildProtocolsConfig(req.Protocols, tileFormat)
 
 	// 5. 创建服务模型
 	service := &models.TileService{
@@ -227,7 +235,7 @@ func (s *TileServiceService) DeleteService(id uint) error {
 // AddLayer 为服务添加新图层
 func (s *TileServiceService) AddLayer(serviceID uint, req *models.CreateTileLayerRequest) (*models.TileServiceLayerDTO, error) {
 	// 1. 验证服务是否存在
-	_, err := s.repo.GetServiceByID(serviceID)
+	serviceModel, err := s.repo.GetServiceByID(serviceID)
 	if err != nil {
 		return nil, fmt.Errorf("service not found: %w", err)
 	}
@@ -242,7 +250,7 @@ func (s *TileServiceService) AddLayer(serviceID uint, req *models.CreateTileLaye
 	}
 
 	// 3. 验证图层配置
-	if err := s.validateLayerConfig(req.LayerType, req.LayerConfig); err != nil {
+	if err := s.normalizeLayerConfig(serviceModel.TenantID, req.LayerType, req.LayerConfig); err != nil {
 		return nil, fmt.Errorf("invalid layer config: %w", err)
 	}
 
@@ -315,7 +323,11 @@ func (s *TileServiceService) UpdateLayer(layerID uint, req *models.UpdateTileLay
 	}
 	if req.LayerConfig != nil {
 		// 验证新配置
-		if err := s.validateLayerConfig(layer.LayerType, req.LayerConfig); err != nil {
+		serviceModel, err := s.repo.GetServiceByID(layer.ServiceID)
+		if err != nil {
+			return nil, fmt.Errorf("get layer service failed: %w", err)
+		}
+		if err := s.normalizeLayerConfig(serviceModel.TenantID, layer.LayerType, req.LayerConfig); err != nil {
 			return nil, fmt.Errorf("invalid layer config: %w", err)
 		}
 		updates["layer_config"] = req.LayerConfig
@@ -353,8 +365,8 @@ func (s *TileServiceService) DeleteLayer(layerID uint) error {
 // 辅助方法
 // ============================================================================
 
-// validateLayerConfig 验证图层配置
-func (s *TileServiceService) validateLayerConfig(layerType string, config map[string]interface{}) error {
+// normalizeLayerConfig 校验图层配置，并把静态来源收敛为后端生成的发布快照。
+func (s *TileServiceService) normalizeLayerConfig(tenantID uint, layerType string, config map[string]interface{}) error {
 	// 验证图层类型
 	if layerType != "dynamic" && layerType != "static" {
 		return errors.New("layer_type must be 'dynamic' or 'static'")
@@ -384,32 +396,24 @@ func (s *TileServiceService) validateLayerConfig(layerType string, config map[st
 		}
 	}
 
-	// 静态图层验证
 	if layerType == "static" {
-		requiredFields := []string{"source", "tile_path", "format", "zoom_range"}
-		for _, field := range requiredFields {
-			if _, ok := config[field]; !ok {
-				return fmt.Errorf("static layer missing required field: %s", field)
-			}
-		}
-
-		// 验证 zoom_range 格式
-		zoomRange, ok := config["zoom_range"].([]interface{})
-		if !ok || len(zoomRange) != 2 {
-			return errors.New("zoom_range must be an array of 2 numbers [minZoom, maxZoom]")
-		}
+		return s.normalizeStaticTileSource(tenantID, config)
 	}
 
 	return nil
 }
 
 // buildProtocolsConfig 构建协议配置
-func (s *TileServiceService) buildProtocolsConfig(userProtocols map[string]interface{}) models.JSONB {
+func (s *TileServiceService) buildProtocolsConfig(userProtocols map[string]interface{}, tileFormat string) models.JSONB {
+	tileFormat = normalizeTileFormat(tileFormat)
+	if tileFormat == "" {
+		tileFormat = "mvt"
+	}
 	// 默认协议配置
 	protocols := map[string]interface{}{
 		"xyz": map[string]interface{}{
 			"enabled": true,
-			"formats": []string{"mvt"},
+			"formats": []string{tileFormat},
 		},
 		"ogc_tiles": map[string]interface{}{
 			"enabled": false,
@@ -423,7 +427,15 @@ func (s *TileServiceService) buildProtocolsConfig(userProtocols map[string]inter
 	// 用户自定义的协议配置覆盖默认值
 	if userProtocols != nil {
 		for k, v := range userProtocols {
-			protocols[k] = v
+			current := commonJSON.InterfaceMap(protocols[k])
+			incoming := commonJSON.InterfaceMap(v)
+			if current == nil || incoming == nil {
+				protocols[k] = v
+				continue
+			}
+			for field, value := range incoming {
+				current[field] = value
+			}
 		}
 	}
 

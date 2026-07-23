@@ -63,6 +63,12 @@ func TestDetectFormat(t *testing.T) {
 			want:     FormatRasterMosaic,
 		},
 		{
+			name:     "Tile pyramid manifest by exact file name",
+			filename: "tiles.addp.json",
+			peek:     nil,
+			want:     FormatTilePyramid,
+		},
+		{
 			name:     "Shapefile index component is not full shapefile format",
 			filename: "data.shx",
 			peek:     nil,
