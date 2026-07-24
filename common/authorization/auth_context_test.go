@@ -60,6 +60,55 @@ func TestValidatePermissionKey(t *testing.T) {
 	}
 }
 
+func TestValidateOwnerModuleName(t *testing.T) {
+	for _, owner := range []string{"manager", "common_frontend", "module2"} {
+		if err := ValidateOwnerModuleName(owner); err != nil {
+			t.Fatalf("ValidateOwnerModuleName(%q) error = %v", owner, err)
+		}
+	}
+	for _, owner := range []string{"", "Manager", "manager-api", " manager"} {
+		if err := ValidateOwnerModuleName(owner); err == nil {
+			t.Fatalf("ValidateOwnerModuleName(%q) accepted invalid owner", owner)
+		}
+	}
+}
+
+func TestCloneAuthContextReturnsDetachedCopy(t *testing.T) {
+	source := validTenantAuthContext()
+	validUntil := source.Authorization.RoleAssignments[0].ValidFrom.Add(time.Hour)
+	source.Authentication.StepUpExpiresAt = &validUntil
+	source.Authorization.RoleAssignments[0].ValidUntil = &validUntil
+	source.Delegation = &DelegationFacts{
+		DelegatedByClientID: "addp-cli",
+		AgentRunID:          "run-1",
+		ToolCallID:          "call-1",
+	}
+
+	clone := CloneAuthContext(source)
+	clone.Authentication.Methods[0] = "external_idp"
+	*clone.Authentication.StepUpExpiresAt = clone.Authentication.StepUpExpiresAt.Add(time.Hour)
+	*clone.Context.TenantID = "99"
+	*clone.Client.ClientID = "changed-client"
+	clone.Client.Audiences[0] = "changed-audience"
+	clone.Organization.Departments[0].AncestorIDs[0] = "99"
+	clone.Authorization.RoleAssignments[0].Permissions[0] = "changed.permission.read"
+	*clone.Authorization.RoleAssignments[0].Scope.TenantID = "99"
+	*clone.Authorization.RoleAssignments[0].ValidUntil = clone.Authorization.RoleAssignments[0].ValidUntil.Add(time.Hour)
+	clone.Delegation.AgentRunID = "changed-run"
+
+	if source.Authentication.Methods[0] != "password" ||
+		*source.Context.TenantID != "3" || *source.Client.ClientID != "addp-web" ||
+		source.Client.Audiences[0] != "addp.api" ||
+		source.Organization.Departments[0].AncestorIDs[0] != "4" ||
+		source.Authorization.RoleAssignments[0].Permissions[0] != "manager.content.read" ||
+		*source.Authorization.RoleAssignments[0].Scope.TenantID != "3" ||
+		source.Delegation.AgentRunID != "run-1" ||
+		source.Authentication.StepUpExpiresAt.Equal(*clone.Authentication.StepUpExpiresAt) ||
+		source.Authorization.RoleAssignments[0].ValidUntil.Equal(*clone.Authorization.RoleAssignments[0].ValidUntil) {
+		t.Fatalf("source AuthContext was mutated: %#v", source)
+	}
+}
+
 func TestValidateAuthContextRejectsCrossConstraintAndOrderingViolations(t *testing.T) {
 	for _, testCase := range []struct {
 		name   string
@@ -94,6 +143,39 @@ func TestValidateAuthContextRejectsCrossConstraintAndOrderingViolations(t *testi
 			testCase.mutate(&authContext)
 			if err := ValidateAuthContext(authContext); err == nil {
 				t.Fatal("ValidateAuthContext() error = nil")
+			}
+		})
+	}
+}
+
+func TestValidateAuthContextResourceTicketConstraints(t *testing.T) {
+	authContext := validTenantAuthContext()
+	authContext.Token.Type = "resource_access_ticket"
+	authContext.Client.Audiences = []string{"manager"}
+	authContext.Client.ScopeMode = "restricted"
+	authContext.Client.Scopes = []string{BrowserResourceAccessScope}
+	if err := ValidateAuthContext(authContext); err != nil {
+		t.Fatalf("ValidateAuthContext(resource ticket) error = %v", err)
+	}
+
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*AuthContext)
+	}{
+		{name: "multiple audiences", mutate: func(value *AuthContext) { value.Client.Audiences = []string{"manager", "meta"} }},
+		{name: "platform audience", mutate: func(value *AuthContext) { value.Client.Audiences = []string{"addp.api"} }},
+		{name: "wrong scope", mutate: func(value *AuthContext) { value.Client.Scopes = []string{"manager.content.read"} }},
+		{name: "unrestricted", mutate: func(value *AuthContext) { value.Client.ScopeMode = "unrestricted"; value.Client.Scopes = nil }},
+		{name: "service principal", mutate: func(value *AuthContext) {
+			value.Principal.Type = "service_principal"
+			value.Organization.Departments = []DepartmentMembership{}
+		}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			candidate := CloneAuthContext(authContext)
+			testCase.mutate(&candidate)
+			if err := ValidateAuthContext(candidate); err == nil {
+				t.Fatal("ValidateAuthContext() accepted invalid Resource Ticket constraints")
 			}
 		})
 	}

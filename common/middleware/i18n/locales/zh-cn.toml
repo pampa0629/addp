@@ -10,6 +10,8 @@
 "err.log_not_found"          = "日志不存在"
 "err.export_failed"          = "导出失败"
 "err.invalid_params"         = "无效的请求参数"
+"err.method_not_allowed"     = "请求方法不允许"
+"err.authorization_service_unavailable" = "授权服务暂时不可用"
 "err.audit_log_create_failed"= "创建审计日志失败"
 "err.module_not_found"       = "模块不存在"
 "msg.module_registered"      = "模块注册成功"

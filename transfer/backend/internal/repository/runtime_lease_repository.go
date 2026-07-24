@@ -59,6 +59,8 @@ type ContinuousDiagnostics struct {
 type ContinuousSchemaChange struct {
 	DetectedAt         time.Time `json:"detected_at"`
 	Scope              string    `json:"scope"`
+	SourcePartition    string    `json:"source_partition"`
+	SourceOffset       int64     `json:"source_offset"`
 	MissingFields      []string  `json:"missing_fields,omitempty"`
 	UnexpectedFields   []string  `json:"unexpected_fields,omitempty"`
 	IncompatibleFields []string  `json:"incompatible_fields,omitempty"`
@@ -551,9 +553,38 @@ func (r *RuntimeLeaseRepository) RecordSchemaChange(ctx context.Context, claim R
 		}
 		continuousMeta["schema_change"] = change
 		metadata["continuous"] = continuousMeta
-		return tx.Model(&execution).Updates(map[string]interface{}{
+		if err := tx.Model(&execution).Updates(map[string]interface{}{
 			"metadata": metadata, "updated_at": change.DetectedAt,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		var resource models.CaptureResource
+		if err := tx.Where("task_id = ? AND tenant_id = ?", claim.Task.ID, claim.Task.TenantID).
+			Order("generation DESC").First(&resource).Error; err != nil {
+			return fmt.Errorf("load capture generation for schema change: %w", err)
+		}
+		var pending models.SchemaChangeRequest
+		err := tx.Where("capture_resource_id = ? AND status = ?", resource.ID, models.SchemaChangeRequestPending).
+			First(&pending).Error
+		if err == nil {
+			if pending.ExecutionID == claim.Execution.ExecutionID &&
+				pending.SourcePartition == change.SourcePartition && pending.SourceOffset == change.SourceOffset {
+				return nil
+			}
+			return ErrSchemaChangeRequestConflict
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		request := models.SchemaChangeRequest{
+			TaskID: claim.Task.ID, TenantID: claim.Task.TenantID, CaptureResourceID: resource.ID,
+			Generation: resource.Generation, ExecutionID: claim.Execution.ExecutionID,
+			SourcePartition: change.SourcePartition, SourceOffset: change.SourceOffset,
+			Scope: change.Scope, Diff: schemaChangeDiff(change), ApprovedMappings: models.JSONMap{},
+			FromRevision: resource.SchemaRevision, ToRevision: resource.SchemaRevision + 1,
+			Status: models.SchemaChangeRequestPending, DetectedAt: change.DetectedAt,
+		}
+		return tx.Create(&request).Error
 	})
 }
 

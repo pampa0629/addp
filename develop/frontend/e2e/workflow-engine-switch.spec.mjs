@@ -79,19 +79,47 @@ test('shows validation details near the header while still allowing draft saves'
   await openSavedWorkflow(page)
 
   const validation = page.locator('.header-validation')
+  await expect(validation).toHaveCount(0)
+  expect(backend.validationRequests).toBe(0)
+  await expect(page.getByRole('button', { name: '执行', exact: true })).toBeEnabled()
+
+  await addOperator(page, 'Category A', 'Operator A')
+  await expect(validation).toHaveCount(0)
+  expect(backend.validationRequests).toBe(0)
+
+  const executeButton = page.getByRole('button', { name: '执行', exact: true })
+  await executeButton.click()
+  await expect.poll(() => backend.validationRequests).toBe(1)
   await expect(validation).toContainText('工作流存在 1 个错误')
   await expect(validation).toContainText(validationError.message)
   await expect(page.locator('.validation-bar')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '执行', exact: true })).toBeDisabled()
+  await expect(executeButton).toBeDisabled()
   await expect(primarySaveButton(page)).toBeEnabled()
+  await expect(page.getByRole('dialog', { name: '执行工作流', exact: true })).toHaveCount(0)
 
   await validation.getByRole('button').click()
-  const issue = page.locator('.validation-popover').getByRole('button', { name: validationError.message, exact: true })
+  const issueGroup = page.locator('.validation-group').filter({ hasText: 'Operator A · operator_a_1' })
+  await expect(issueGroup).toHaveCount(1)
+  await expect(issueGroup.locator('.validation-item-param')).toHaveText('source')
+  const issue = issueGroup.getByRole('button', { name: validationError.message, exact: true })
   await expect(issue).toBeVisible()
+  await issue.click()
+
+  const focusedField = page.locator('.param-field[data-param-name="source"]')
+  await expect(focusedField).toBeVisible()
+  await expect(focusedField).toHaveClass(/is-validation-target/)
+  await expect(focusedField.locator('.el-form-item__error')).toHaveText(validationError.message)
+  await expect(focusedField.locator('input')).toBeFocused()
+  await focusedField.locator('input').fill('draft source')
+  await expect(validation).toHaveCount(0)
+  await expect(executeButton).toBeEnabled()
 
   await primarySaveButton(page).click()
   await expect.poll(() => backend.updates.length).toBe(1)
-  expect(backend.updates[0].payload.content.workflow_definition.tasks).toHaveLength(1)
+  await expect.poll(() => backend.validationRequests).toBe(2)
+  await expect(validation).toContainText(validationError.message)
+  await expect(executeButton).toBeDisabled()
+  expect(backend.updates[0].payload.content.workflow_definition.tasks).toHaveLength(2)
 })
 
 async function openSavedWorkflow(page) {
@@ -137,7 +165,13 @@ async function installMockBackend(page, { validationErrors = [] } = {}) {
   let validationRequests = 0
   const task = createSavedTask()
   const operatorsByEngine = {
-    [ENGINE_A.id]: [createOperator('operator_a', 'Operator A', 'Category A', ENGINE_A.engine_type)],
+    [ENGINE_A.id]: [createOperator(
+      'operator_a',
+      'Operator A',
+      'Category A',
+      ENGINE_A.engine_type,
+      [{ name: 'source', type: 'string', required: false, description: 'Source input' }]
+    )],
     [ENGINE_B.id]: [createOperator('operator_b', 'Operator B', 'Category B', ENGINE_B.engine_type)]
   }
 
@@ -224,7 +258,7 @@ function createSavedTask() {
   }
 }
 
-function createOperator(name, displayName, category, engineType) {
+function createOperator(name, displayName, category, engineType, publicParameters = []) {
   return {
     id: name,
     name,
@@ -235,7 +269,7 @@ function createOperator(name, displayName, category, engineType) {
     description: `${displayName} description`,
     execution_modes: ['workflow'],
     parameters: [],
-    public_parameters: [],
+    public_parameters: publicParameters,
     output_ports: [{ name: 'default', type: 'number', is_default: true }]
   }
 }

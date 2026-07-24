@@ -116,7 +116,7 @@ func TestIntegrationPostgresAtomicTaskClaimAndSyncStateCAS(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}, &models.CaptureResource{},
-		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{},
+		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{}, &models.SchemaChangeRequest{},
 	); err != nil {
 		t.Fatalf("migrate transfer integration models: %v", err)
 	}

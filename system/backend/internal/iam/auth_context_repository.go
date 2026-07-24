@@ -8,12 +8,13 @@ import (
 	"github.com/lib/pq"
 )
 
-type AccessTokenAuthSnapshot struct {
-	TokenID                       int64
-	TokenFamilyID                 int64
-	TokenExpiresAt                time.Time
-	TokenRevokedAt                *time.Time
-	TokenCreatedAt                time.Time
+type SessionCredentialAuthSnapshot struct {
+	CredentialID                  int64
+	CredentialFamilyID            int64
+	CredentialExpiresAt           time.Time
+	CredentialRevokedAt           *time.Time
+	CredentialCreatedAt           time.Time
+	CredentialOwner               *string
 	FamilyPrincipalID             int64
 	FamilyContextType             ContextType
 	FamilyTenantMembershipID      *int64
@@ -70,15 +71,16 @@ type RoleAssignmentPermissionProjection struct {
 func (r *Repository) GetAccessTokenAuthSnapshot(
 	ctx context.Context,
 	tokenHash string,
-) (*AccessTokenAuthSnapshot, error) {
-	var snapshot AccessTokenAuthSnapshot
+) (*SessionCredentialAuthSnapshot, error) {
+	var snapshot SessionCredentialAuthSnapshot
 	result := r.db.WithContext(ctx).Raw(`
 		SELECT
-			access_token.id AS token_id,
-			access_token.family_id AS token_family_id,
-			access_token.expires_at AS token_expires_at,
-			access_token.revoked_at AS token_revoked_at,
-			access_token.created_at AS token_created_at,
+			access_token.id AS credential_id,
+			access_token.family_id AS credential_family_id,
+			access_token.expires_at AS credential_expires_at,
+			access_token.revoked_at AS credential_revoked_at,
+			access_token.created_at AS credential_created_at,
+			NULL::text AS credential_owner,
 			family.principal_id AS family_principal_id,
 			family.context_type AS family_context_type,
 			family.tenant_membership_id AS family_tenant_membership_id,
@@ -109,6 +111,59 @@ func (r *Repository) GetAccessTokenAuthSnapshot(
 		LEFT JOIN system.tenant_memberships membership ON membership.id = family.tenant_membership_id
 		LEFT JOIN system.tenants tenant ON tenant.id = membership.tenant_id
 		WHERE access_token.token_hash = ?
+	`, tokenHash).Scan(&snapshot)
+	if result.Error != nil {
+		return nil, wrapRepositoryError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return nil, commonapi.ErrNotFound
+	}
+	return &snapshot, nil
+}
+
+func (r *Repository) GetResourceAccessTicketAuthSnapshot(
+	ctx context.Context,
+	tokenHash string,
+) (*SessionCredentialAuthSnapshot, error) {
+	var snapshot SessionCredentialAuthSnapshot
+	result := r.db.WithContext(ctx).Raw(`
+		SELECT
+			ticket.id AS credential_id,
+			ticket.family_id AS credential_family_id,
+			ticket.expires_at AS credential_expires_at,
+			ticket.revoked_at AS credential_revoked_at,
+			ticket.created_at AS credential_created_at,
+			ticket.owner AS credential_owner,
+			family.principal_id AS family_principal_id,
+			family.context_type AS family_context_type,
+			family.tenant_membership_id AS family_tenant_membership_id,
+			family.issued_authorization_version AS family_authorization_version,
+			family.client_id AS family_client_id,
+			family.auth_type AS family_auth_type,
+			family.audiences AS family_audiences,
+			family.scopes AS family_scopes,
+			family.authentication_methods AS family_authentication_methods,
+			family.assurance_level AS family_assurance_level,
+			family.authenticated_at AS family_authenticated_at,
+			family.step_up_expires_at AS family_step_up_expires_at,
+			family.expires_at AS family_expires_at,
+			family.revoked_at AS family_revoked_at,
+			principal.principal_type,
+			principal.status AS principal_status,
+			principal.authorization_version AS principal_authorization_version,
+			membership.id AS tenant_membership_id,
+			membership.tenant_id,
+			membership.status AS tenant_membership_status,
+			membership.joined_at AS tenant_membership_joined_at,
+			membership.expires_at AS tenant_membership_expires_at,
+			tenant.status AS tenant_status,
+			transaction_timestamp() AS database_time
+		FROM system.resource_access_tickets ticket
+		JOIN system.refresh_token_families family ON family.id = ticket.family_id
+		JOIN system.principals principal ON principal.id = family.principal_id
+		LEFT JOIN system.tenant_memberships membership ON membership.id = family.tenant_membership_id
+		LEFT JOIN system.tenants tenant ON tenant.id = membership.tenant_id
+		WHERE ticket.token_hash = ?
 	`, tokenHash).Scan(&snapshot)
 	if result.Error != nil {
 		return nil, wrapRepositoryError(result.Error)

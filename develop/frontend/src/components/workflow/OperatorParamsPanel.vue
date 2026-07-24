@@ -1,5 +1,5 @@
 <template>
-  <div class="operator-params-panel">
+  <div ref="panelRef" class="operator-params-panel">
     <div v-if="!operator" class="empty-state">
       <el-empty :description="t('develop.operatorParams.selectNode')" :image-size="100" />
     </div>
@@ -44,7 +44,12 @@
             <template v-for="param in effectiveParameters" :key="param.name">
               <!-- 特殊处理：资源树选择器 -->
               <template v-if="param.ui_type === 'resource_tree_picker'">
-                <div class="data-source-section">
+                <div
+                  class="data-source-section param-field"
+                  :class="{ 'is-validation-target': highlightedParamName === param.name }"
+                  :data-param-name="param.name"
+                  :aria-invalid="resourceValidationMessages(param).length || highlightedParamName === param.name ? 'true' : undefined"
+                >
                   <h4 class="subsection-title">{{ param.name || t('develop.operatorParams.dataSourceSelect') }}</h4>
                   <p v-if="param.description" class="subsection-description">
                     {{ param.description }}
@@ -61,11 +66,24 @@
                       {{ resourcePickerCurrentLocator(param) ? t('develop.operatorParams.changeResource') : t('develop.operatorParams.selectResource') }}
                     </el-button>
                   </div>
+                  <ul
+                    v-if="resourceValidationMessages(param).length"
+                    class="resource-validation-errors"
+                    role="alert"
+                  >
+                    <li v-for="message in resourceValidationMessages(param)" :key="message">
+                      {{ message }}
+                    </li>
+                  </ul>
 
                   <el-form-item
                     v-if="resourceGeometryColumns(param).length > 0"
                     :label="t('develop.operatorParams.geometryColumn')"
-                    class="geometry-column-field"
+                    class="geometry-column-field param-field"
+                    :class="{ 'is-validation-target': highlightedParamName === resourceBindingGeometryColumnParam(param) }"
+                    :data-param-name="resourceBindingGeometryColumnParam(param)"
+                    :aria-invalid="validationMessageFor(resourceBindingGeometryColumnParam(param)) || highlightedParamName === resourceBindingGeometryColumnParam(param) ? 'true' : undefined"
+                    :error="validationMessageFor(resourceBindingGeometryColumnParam(param))"
                   >
                     <el-select
                       v-model="formData[resourceBindingGeometryColumnParam(param)]"
@@ -88,7 +106,11 @@
                   <el-form-item
                     v-if="isTargetResourcePicker(param)"
                     :label="targetNameLabel(param)"
-                    class="target-name-field"
+                    class="target-name-field param-field"
+                    :class="{ 'is-validation-target': highlightedParamName === resourceBindingNameParam(param) }"
+                    :data-param-name="resourceBindingNameParam(param)"
+                    :aria-invalid="validationMessageFor(resourceBindingNameParam(param)) || highlightedParamName === resourceBindingNameParam(param) ? 'true' : undefined"
+                    :error="validationMessageFor(resourceBindingNameParam(param))"
                   >
                     <el-input
                       v-model="formData[resourceBindingNameParam(param)]"
@@ -108,6 +130,11 @@
                 v-else
                 :label="param.name"
                 :required="param.required"
+                class="param-field"
+                :class="{ 'is-validation-target': highlightedParamName === param.name }"
+                :data-param-name="param.name"
+                :aria-invalid="validationMessageFor(param.name) || highlightedParamName === param.name ? 'true' : undefined"
+                :error="validationMessageFor(param.name)"
               >
                 <template #label>
                   <div class="param-label">
@@ -186,17 +213,19 @@
 </template>
 
 <script setup>
-import { ref, watch, computed, nextTick } from 'vue'
+import { ref, watch, computed, nextTick, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionFilled, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { parseLocatorSafe, ResourceTreePicker } from '@addp/common-frontend'
 import { isWorkflowInputParameter } from '@/utils/workflowInputBindings'
+import { validationMessagesForParams } from '@/utils/workflowValidationIssues'
 import {
   applyResourceBindingSelection,
   clearResourceBindingSelection,
   collectResourceBindingParams,
   geometryColumnFactsFromSelection,
+  getResourceBinding,
   isResourceDataTypeSupported,
   isResourceFormatSupported,
   isTargetResourceBinding,
@@ -225,17 +254,24 @@ const props = defineProps({
   initialParams: {
     type: Object,
     default: () => ({})
+  },
+  validationIssues: {
+    type: Array,
+    default: () => []
   }
 })
 
 const emit = defineEmits(['update'])
 
 const formData = ref({})
+const panelRef = ref(null)
+const highlightedParamName = ref('')
 const resourcePickerDialogVisible = ref(false)
 const resourcePickerDialogParam = ref(null)
 const resourcePickerDraftSelection = ref(null)
 const resourceGeometryColumnsByParam = ref({})
 let syncingFromProps = false
+let highlightTimer = null
 
 // 使用工作流引擎返回的结构化参数定义。
 const effectiveParameters = computed(() => {
@@ -304,12 +340,15 @@ watch(() => props.initialParams, (newParams) => {
 
 // 监听 operator 变化,重置表单
 watch(() => props.operator, () => {
+  clearParamHighlight()
   syncingFromProps = true
   formData.value = { ...props.initialParams }
   nextTick(() => {
     syncingFromProps = false
   })
 }, { deep: true })
+
+watch(() => props.nodeId, clearParamHighlight)
 
 watch(formData, () => {
   if (!syncingFromProps) {
@@ -519,6 +558,78 @@ const resetParams = () => {
   formData.value = { ...props.initialParams }
   ElMessage.info(t('develop.operatorParams.resetSuccess'))
 }
+
+async function focusParam(paramName) {
+  if (!paramName) return false
+  await nextTick()
+
+  let targetName = paramName
+  let target = findParamElement(targetName)
+  if (!target) {
+    const resourceParameter = effectiveParameters.value.find(param => (
+      param.ui_type === 'resource_tree_picker' && resourceBindingFieldNames(param).includes(paramName)
+    ))
+    targetName = resourceParameter?.name || ''
+    target = findParamElement(targetName)
+  }
+  if (!target) return false
+
+  highlightedParamName.value = targetName
+  await nextTick()
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  const focusable = target.querySelector(
+    'input:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )
+  focusable?.focus({ preventScroll: true })
+
+  clearTimeout(highlightTimer)
+  highlightTimer = setTimeout(() => {
+    if (highlightedParamName.value === targetName) highlightedParamName.value = ''
+  }, 2400)
+  return true
+}
+
+function findParamElement(paramName) {
+  if (!paramName || !panelRef.value) return null
+  return [...panelRef.value.querySelectorAll('[data-param-name]')]
+    .find(element => element.dataset.paramName === paramName) || null
+}
+
+function resourceBindingFieldNames(param) {
+  const binding = getResourceBinding(param) || {}
+  return [
+    binding.locator_param,
+    binding.parent_locator_param,
+    binding.name_param,
+    binding.type_param,
+    binding.geometry_column_param
+  ].filter(Boolean)
+}
+
+function validationMessageFor(paramName) {
+  return validationMessagesForParams(props.validationIssues, [paramName])[0] || ''
+}
+
+function resourceValidationMessages(param) {
+  const binding = getResourceBinding(param) || {}
+  const fieldNames = [
+    param.name,
+    binding.locator_param,
+    binding.parent_locator_param,
+    binding.type_param
+  ]
+  if (resourceGeometryColumns(param).length === 0) fieldNames.push(binding.geometry_column_param)
+  return validationMessagesForParams(props.validationIssues, fieldNames)
+}
+
+function clearParamHighlight() {
+  clearTimeout(highlightTimer)
+  highlightedParamName.value = ''
+}
+
+onBeforeUnmount(clearParamHighlight)
+
+defineExpose({ focusParam })
 </script>
 
 <style scoped>
@@ -537,6 +648,21 @@ const resetParams = () => {
 
 .params-form {
   height: 100%;
+}
+
+.param-field.is-validation-target {
+  outline: 2px solid var(--el-color-danger);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.resource-validation-errors {
+  margin: 8px 0 0;
+  padding: 0;
+  color: var(--el-color-danger);
+  font-size: 12px;
+  line-height: 1.5;
+  list-style: none;
 }
 
 .section {

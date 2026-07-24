@@ -31,6 +31,8 @@ type ChangeEvent struct {
 
 type SchemaChangeError struct {
 	Scope              string
+	SourcePartition    string
+	SourceOffset       int64
 	MissingFields      []string
 	UnexpectedFields   []string
 	IncompatibleFields []string

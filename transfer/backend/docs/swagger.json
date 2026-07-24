@@ -949,7 +949,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "bounded 任务关闭自身定时调度；continuous 任务将 desired_state 置为 paused 并通知 runtime 取消当前 execution；schema drift blocked CDC 只能 Stop。| Disable a bounded task schedule, or set a continuous task desired_state to paused and request runtime cancellation. Schema-drift-blocked CDC can only be stopped.",
+                "description": "bounded 任务关闭自身定时调度；continuous 任务将 desired_state 置为 paused 并通知 runtime 取消当前 execution；schema drift blocked CDC 需先检查专用结构变更请求。| Disable a bounded task schedule, or set a continuous task desired_state to paused and request runtime cancellation. A schema-drift-blocked CDC task must use the dedicated schema change request first.",
                 "produces": [
                     "application/json"
                 ],
@@ -1104,7 +1104,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "bounded 任务恢复自身定时调度；continuous 任务创建新的 pending execution 并从 committed position 恢复；schema drift blocked CDC 不支持恢复，必须 Stop 后新建任务和目标表。| Re-enable a bounded task schedule, or create a new pending continuous execution that resumes from committed position. Schema-drift-blocked CDC cannot resume and must be stopped and recreated with a new target table.",
+                "description": "bounded 任务恢复自身定时调度；continuous 任务创建新的 pending execution 并从 committed position 恢复；schema drift blocked CDC 必须先完成可用的 additive 审批，其他变化只能 Stop 后新建任务和目标表。| Re-enable a bounded task schedule, or create a new pending continuous execution that resumes from committed position. A schema-drift-blocked CDC task must first complete an eligible additive approval; other changes require stopping and recreating the task with a new target table.",
                 "produces": [
                     "application/json"
                 ],
@@ -1161,6 +1161,149 @@
                 }
             }
         },
+        "/task-definitions/{id}/schema-change": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前 task/generation 最新的 schema change request。只有当前阻塞消息实际包含的新增 nullable 非 geometry 字段可审批；其他变化保持不可恢复阻塞。| Return the latest schema change request for the current task/generation. Only nullable non-geometry fields present in the blocked record are approvable; other changes remain unrecoverable.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "任务管理 | Task Management"
+                ],
+                "summary": "获取 CDC 结构变更请求 | Get CDC schema change request",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.SchemaChangeRequestView"
+                        }
+                    },
+                    "404": {
+                        "description": "任务或结构变更请求不存在 | Task or schema change request not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/task-definitions/{id}/schema-change/approve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "显式确认全部新增源字段的目标映射，幂等新增 PostgreSQL nullable 列并提交新的 mapping revision。成功后任务进入 paused，必须使用既有 Resume API 从原 committed offset 恢复。| Explicitly approve target mappings for every added source field, idempotently add nullable PostgreSQL columns, and commit a new mapping revision. The task becomes paused and must be resumed through the existing Resume API from the original committed offset.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "任务管理 | Task Management"
+                ],
+                "summary": "审批 CDC additive 结构变更 | Approve CDC additive schema change",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "新增字段映射 | Added field mappings",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.ApproveSchemaChangeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.SchemaChangeRequestView"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "任务或结构变更请求不存在 | Task or schema change request not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "变化不可 additive 或审批与当前事实冲突 | Change is not additive or approval conflicts with current facts",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "结构变更控制面不可用 | Schema change control unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/task-definitions/{id}/start": {
             "post": {
                 "security": [
@@ -1168,7 +1311,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "启动任务执行并创建执行记录；数据库 CDC 首次启动会先创建并确认 capture generation，普通中断恢复时复用同一 generation；schema drift blocked 任务不得再次启动。| Start task execution and create an execution record. Database CDC provisions and verifies its capture generation before the first runtime session and reuses that generation for normal interruption recovery; schema-drift-blocked tasks cannot be started again.",
+                "description": "启动任务执行并创建执行记录；数据库 CDC 首次启动会先创建并确认 capture generation，普通中断恢复时复用同一 generation；schema drift blocked 任务必须先完成可用的 additive 审批，否则只能 Stop。| Start task execution and create an execution record. Database CDC provisions and verifies its capture generation before the first runtime session and reuses that generation for normal interruption recovery. A schema-drift-blocked task must first complete an eligible additive approval or be stopped.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1520,6 +1663,21 @@
         }
     },
     "definitions": {
+        "github_com_addp_transfer_internal_models.ApproveSchemaChangeRequest": {
+            "type": "object",
+            "required": [
+                "fields"
+            ],
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_transfer_internal_models.SchemaChangeField"
+                    }
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.CaptureStatus": {
             "type": "string",
             "enum": [
@@ -1794,6 +1952,107 @@
                 }
             }
         },
+        "github_com_addp_transfer_internal_models.SchemaChangeField": {
+            "type": "object",
+            "required": [
+                "source",
+                "target",
+                "target_type"
+            ],
+            "properties": {
+                "nullable": {
+                    "type": "boolean"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                },
+                "target_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.SchemaChangeRequestStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "applied"
+            ],
+            "x-enum-varnames": [
+                "SchemaChangeRequestPending",
+                "SchemaChangeRequestApplied"
+            ]
+        },
+        "github_com_addp_transfer_internal_models.SchemaChangeRequestView": {
+            "type": "object",
+            "properties": {
+                "applied_at": {
+                    "type": "string"
+                },
+                "approvable": {
+                    "type": "boolean"
+                },
+                "approval_blocked_reason": {
+                    "type": "string"
+                },
+                "approved_mappings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_transfer_internal_models.SchemaChangeField"
+                    }
+                },
+                "detected_at": {
+                    "type": "string"
+                },
+                "diff": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.JSONMap"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "from_revision": {
+                    "type": "integer"
+                },
+                "generation": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "metadata_scan_execution_id": {
+                    "type": "string"
+                },
+                "metadata_scan_status": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "source_offset": {
+                    "type": "integer"
+                },
+                "source_partition": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.SchemaChangeRequestStatus"
+                },
+                "suggested_fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_transfer_internal_models.SchemaChangeField"
+                    }
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "to_revision": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.StopTaskRequest": {
             "type": "object",
             "properties": {
@@ -1997,14 +2256,14 @@
                 "blocked"
             ],
             "x-enum-comments": {
-                "TaskStatusBlocked": "运行被不可恢复条件阻塞，只允许终止或重建",
+                "TaskStatusBlocked": "运行被 schema change 阻塞，禁止直接启动或恢复",
                 "TaskStatusIdle": "空闲（未执行或执行完成）",
                 "TaskStatusRunning": "执行中"
             },
             "x-enum-descriptions": [
                 "空闲（未执行或执行完成）",
                 "执行中",
-                "运行被不可恢复条件阻塞，只允许终止或重建"
+                "运行被 schema change 阻塞，禁止直接启动或恢复"
             ],
             "x-enum-varnames": [
                 "TaskStatusIdle",

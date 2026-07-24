@@ -60,7 +60,7 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	}
 	if err := infraDB.AutoMigrate(
 		&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}, &models.CaptureResource{},
-		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{},
+		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{}, &models.SchemaChangeRequest{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -129,8 +129,9 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	if err != nil {
 		t.Fatal(err)
 	}
+	capturePlanResolver := capture.NewDatabasePlanResolver(resolver)
 	captureSupervisor, err := capture.NewSupervisor(
-		captureRepo, capture.NewDatabasePlanResolver(resolver), connectClient, topicAdmin,
+		captureRepo, capturePlanResolver, connectClient, topicAdmin,
 		capture.DatabaseSourceResources{}, capture.SupervisorConfig{
 			TopicRetention: time.Hour, TopicReplication: 1,
 			ConnectLoopbackHost: cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_LOOPBACK_HOST", "host.docker.internal"),
@@ -153,6 +154,7 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	taskService.SetEngineResolver(resolver)
 	taskService.SetExecutionService(executionService)
 	taskService.SetCaptureControl(captureSupervisor)
+	taskService.SetSchemaChangeInspector(capturePlanResolver)
 	apiRouter := cdcDataAPIRouter(taskService, uint(700000+suffix%90000), 700001)
 	task := cdcDataCreateTaskViaAPI(t, apiRouter, cdcDataTaskConfig(schema, sourceTable, targetTable))
 	defer cleanupCDCDataInfraRows(infraDB, task.ID)
@@ -320,6 +322,72 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	}
 	cancelSecond()
 
+	change := cdcDataGetSchemaChangeViaAPI(t, apiRouter, task.ID)
+	if !change.Approvable || change.SourcePartition != "0" || change.SourceOffset < committed ||
+		len(change.SuggestedFields) != 1 || change.SuggestedFields[0].Source != "schema_drift" ||
+		change.SuggestedFields[0].TargetType != "string" || !change.SuggestedFields[0].Nullable {
+		t.Fatalf("PostgreSQL additive schema request=%#v", change)
+	}
+	change = cdcDataApproveSchemaChangeViaAPI(t, apiRouter, task.ID, models.SchemaChangeField{
+		Source: "schema_drift", Target: "schema_drift", TargetType: "string", Nullable: true,
+	})
+	if change.Status != models.SchemaChangeRequestApplied || change.ToRevision != change.FromRevision+1 ||
+		change.MetadataScanStatus != "failed" {
+		t.Fatalf("applied PostgreSQL schema request=%#v", change)
+	}
+	repeated := cdcDataApproveSchemaChangeViaAPI(t, apiRouter, task.ID, models.SchemaChangeField{
+		Source: "schema_drift", Target: "schema_drift", TargetType: "string", Nullable: true,
+	})
+	if repeated.ID != change.ID || repeated.Status != models.SchemaChangeRequestApplied {
+		t.Fatalf("idempotent PostgreSQL schema approval=%#v, want request %d", repeated, change.ID)
+	}
+	if err := infraDB.First(&blockedTask, task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if blockedTask.Status != models.TaskStatusIdle || blockedTask.DesiredState != models.TaskDesiredStatePaused {
+		t.Fatalf("approved task status=%q desired=%q", blockedTask.Status, blockedTask.DesiredState)
+	}
+	var targetColumnExists bool
+	if err := businessDB.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema=$1 AND table_name=$2 AND column_name='schema_drift' AND is_nullable='YES'
+		)`, schema, targetTable).Scan(&targetColumnExists); err != nil || !targetColumnExists {
+		t.Fatalf("PostgreSQL additive target column exists=%v err=%v", targetColumnExists, err)
+	}
+
+	resumeExecution := mysqlCDCResumeTaskViaAPI(t, apiRouter, task.ID)
+	resumeClaim, err := leaseRepo.ClaimNext(ctx, "cdc-worker-c", time.Now(), 30*time.Second)
+	if err != nil || resumeClaim == nil || resumeClaim.Execution.ExecutionID != resumeExecution.ExecutionID {
+		t.Fatalf("schema resume claim=%#v err=%v", resumeClaim, err)
+	}
+	resumeCtx, cancelResume := context.WithCancel(ctx)
+	resumeDone := make(chan error, 1)
+	go func() { resumeDone <- runner.Run(resumeCtx, *resumeClaim) }()
+	waitCDCDataRow(t, ctx, resumeDone, businessDB, schema, targetTable, 2, "blocked", true)
+	var resumedValue string
+	if err := businessDB.QueryRowContext(ctx, `SELECT schema_drift FROM `+pq.QuoteIdentifier(schema)+`.`+pq.QuoteIdentifier(targetTable)+` WHERE id=2`).Scan(&resumedValue); err != nil || resumedValue != "new field" {
+		t.Fatalf("resumed PostgreSQL additive value=%q err=%v", resumedValue, err)
+	}
+	if _, err := businessDB.ExecContext(ctx, `INSERT INTO `+pq.QuoteIdentifier(schema)+`.`+pq.QuoteIdentifier(sourceTable)+` (
+		id, name, amount, business_date, business_time, changed_at, changed_at_tz, enabled, payload, ref, schema_drift
+	) VALUES (
+		3, 'after-additive', 3.5000, DATE '2024-03-04', TIME '05:06:07.008',
+		TIMESTAMP '2024-03-04 05:06:07.008', TIMESTAMPTZ '2024-03-04 05:06:07.008900+08', true,
+		'{"after":true}'::jsonb, '550e8400-e29b-41d4-a716-446655440002'::uuid, 'continued'
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	waitCDCDataRow(t, ctx, resumeDone, businessDB, schema, targetTable, 3, "after-additive", true)
+	mysqlCDCPauseTaskViaAPI(t, apiRouter, task.ID)
+	cancelResume()
+	if err := <-resumeDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("schema resumed runner error=%v", err)
+	}
+	if err := leaseRepo.Finish(context.Background(), *resumeClaim, commonExecution.ExecutionStatusCancelled, "paused", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
 	cdcDataStopTaskViaAPI(t, apiRouter, task.ID, task.Name)
 	captureStopped = true
 	assertCDCDataCaptureCleanup(t, ctx, businessDB, captureRepo, connectClient, task, resource)
@@ -338,8 +406,36 @@ func cdcDataAPIRouter(taskService *service.TaskService, tenantID, userID uint) *
 	router.POST("/api/v1/transfer/task-definitions/:id/start", handler.StartTask)
 	router.POST("/api/v1/transfer/task-definitions/:id/pause", handler.PauseTask)
 	router.POST("/api/v1/transfer/task-definitions/:id/resume", handler.ResumeTask)
+	router.GET("/api/v1/transfer/task-definitions/:id/schema-change", handler.GetSchemaChange)
+	router.POST("/api/v1/transfer/task-definitions/:id/schema-change/approve", handler.ApproveSchemaChange)
 	router.POST("/api/v1/transfer/task-definitions/:id/stop", handler.StopTask)
 	return router
+}
+
+func cdcDataGetSchemaChangeViaAPI(t *testing.T, router http.Handler, taskID uint) models.SchemaChangeRequestView {
+	t.Helper()
+	response := cdcDataAPIRequest(t, router, http.MethodGet, fmt.Sprintf("/api/v1/transfer/task-definitions/%d/schema-change", taskID), nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("get schema change API status=%d body=%s", response.Code, response.Body.String())
+	}
+	var result models.SchemaChangeRequestView
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func cdcDataApproveSchemaChangeViaAPI(t *testing.T, router http.Handler, taskID uint, fields ...models.SchemaChangeField) models.SchemaChangeRequestView {
+	t.Helper()
+	response := cdcDataAPIRequest(t, router, http.MethodPost, fmt.Sprintf("/api/v1/transfer/task-definitions/%d/schema-change/approve", taskID), models.ApproveSchemaChangeRequest{Fields: fields})
+	if response.Code != http.StatusOK {
+		t.Fatalf("approve schema change API status=%d body=%s", response.Code, response.Body.String())
+	}
+	var result models.SchemaChangeRequestView
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	return result
 }
 
 func cdcDataCreateTaskViaAPI(t *testing.T, router http.Handler, config models.JSONMap) models.TransferTask {

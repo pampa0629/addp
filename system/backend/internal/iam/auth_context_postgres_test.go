@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -141,6 +142,12 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 		if _, err := commonauth.DecodeAuthContext(bytes.NewReader(encoded)); err != nil {
 			t.Fatalf("decode projected tenant AuthContext: %v", err)
 		}
+		managerTicket := session.ResourceAccessTickets["manager"]
+		resourceContext, err := authContextService.ResolveAuthContext(ctx, managerTicket)
+		if err != nil {
+			t.Fatalf("resolve manager Resource Ticket AuthContext: %v", err)
+		}
+		assertResourceTicketAuthContext(t, resourceContext, resolved, "manager")
 
 		rotated, err := tokenService.RotateBrowserRefreshToken(ctx, RotateBrowserRefreshTokenInput{
 			RefreshToken: session.RefreshToken,
@@ -154,11 +161,30 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 			authContextService,
 			ctx,
 			session.AccessToken,
-			AccessTokenInvalidTokenRevoked,
+			CredentialInvalidTokenRevoked,
+		)
+		assertCredentialReason(
+			t,
+			authContextService,
+			ctx,
+			managerTicket,
+			CredentialInvalidTokenRevoked,
 		)
 		if _, err := authContextService.ResolveFirstPartyAccessToken(ctx, rotated.AccessToken); err != nil {
 			t.Fatalf("resolve replacement access token: %v", err)
 		}
+		rotatedAccessContext, err := authContextService.ResolveAuthContext(ctx, rotated.AccessToken)
+		if err != nil {
+			t.Fatalf("dispatch replacement access token: %v", err)
+		}
+		rotatedResourceContext, err := authContextService.ResolveResourceAccessTicket(
+			ctx,
+			rotated.ResourceAccessTickets["manager"],
+		)
+		if err != nil {
+			t.Fatalf("resolve replacement resource ticket: %v", err)
+		}
+		assertResourceTicketAuthContext(t, rotatedResourceContext, rotatedAccessContext, "manager")
 	})
 
 	t.Run("platform projection is isolated and version mismatch is unauthorized", func(t *testing.T) {
@@ -217,12 +243,132 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 			authContextService,
 			ctx,
 			selection.Session.AccessToken,
-			AccessTokenInvalidAuthorizationVersion,
+			CredentialInvalidAuthorizationVersion,
 		)
 	})
 
-	assertAccessTokenReason(t, authContextService, ctx, "invalid", AccessTokenInvalidFormat)
-	assertAccessTokenReason(t, authContextService, ctx, "addp_at_unknown", AccessTokenInvalidNotFound)
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*testing.T, resourceTicketInvalidationFixture)
+	}{
+		{
+			name: "family revoked",
+			mutate: func(t *testing.T, fixture resourceTicketInvalidationFixture) {
+				t.Helper()
+				if err := db.Model(&RefreshTokenFamily{}).Where("id = ?", fixture.FamilyID).Updates(map[string]any{
+					"revoked_at":     currentTime,
+					"revoked_reason": "auth_context_test",
+				}).Error; err != nil {
+					t.Fatalf("revoke Resource Ticket family: %v", err)
+				}
+			},
+		},
+		{
+			name: "authorization version changed",
+			mutate: func(t *testing.T, fixture resourceTicketInvalidationFixture) {
+				t.Helper()
+				if err := db.Model(&Principal{}).Where("id = ?", fixture.PrincipalID).
+					Update("authorization_version", gorm.Expr("authorization_version + 1")).Error; err != nil {
+					t.Fatalf("increment Resource Ticket authorization version: %v", err)
+				}
+			},
+		},
+		{
+			name: "tenant membership suspended",
+			mutate: func(t *testing.T, fixture resourceTicketInvalidationFixture) {
+				t.Helper()
+				if err := db.Model(&TenantMembership{}).Where("id = ?", fixture.TenantMembershipID).
+					Update("status", TenantMembershipStatusSuspended).Error; err != nil {
+					t.Fatalf("suspend Resource Ticket membership: %v", err)
+				}
+			},
+		},
+		{
+			name: "tenant suspended",
+			mutate: func(t *testing.T, fixture resourceTicketInvalidationFixture) {
+				t.Helper()
+				if err := db.Model(&Tenant{}).Where("id = ?", fixture.TenantID).
+					Update("status", TenantStatusSuspended).Error; err != nil {
+					t.Fatalf("suspend Resource Ticket tenant: %v", err)
+				}
+			},
+		},
+	} {
+		t.Run("resource ticket rejects "+testCase.name, func(t *testing.T) {
+			fixture := issueResourceTicketInvalidationFixture(
+				t,
+				ctx,
+				identityService,
+				membershipService,
+				selectionService,
+				db,
+				currentTime,
+				strings.ReplaceAll(testCase.name, " ", "-"),
+			)
+			if _, err := authContextService.ResolveResourceAccessTicket(ctx, fixture.Ticket); err != nil {
+				t.Fatalf("resolve Resource Ticket before invalidation: %v", err)
+			}
+			testCase.mutate(t, fixture)
+			_, err := authContextService.ResolveResourceAccessTicket(ctx, fixture.Ticket)
+			if !errors.Is(err, commonapi.ErrUnauthorized) {
+				t.Fatalf("resolve invalidated Resource Ticket error = %v, want unauthorized", err)
+			}
+		})
+	}
+
+	assertCredentialReason(t, authContextService, ctx, "invalid", CredentialInvalidFormat)
+	assertCredentialReason(t, authContextService, ctx, "addp_at_unknown", CredentialInvalidNotFound)
+	assertCredentialReason(t, authContextService, ctx, "addp_rat_", CredentialInvalidFormat)
+	assertCredentialReason(t, authContextService, ctx, "addp_rat_unknown", CredentialInvalidNotFound)
+}
+
+type resourceTicketInvalidationFixture struct {
+	PrincipalID        int64
+	TenantID           int64
+	TenantMembershipID int64
+	FamilyID           int64
+	Ticket             string
+}
+
+func issueResourceTicketInvalidationFixture(
+	t *testing.T,
+	ctx context.Context,
+	identityService *IdentityService,
+	membershipService *TenantMembershipService,
+	selectionService *ContextSelectionService,
+	db *gorm.DB,
+	now time.Time,
+	suffix string,
+) resourceTicketInvalidationFixture {
+	t.Helper()
+	audit := AuditMetadata{RequestID: stringPointer("resource-ticket-" + suffix)}
+	user := createContextSelectionUser(t, ctx, identityService, "resource-ticket-"+suffix, audit)
+	tenant := createContextSelectionTenant(t, ctx, membershipService, "resource-ticket-"+suffix, audit)
+	membership := establishContextSelectionMembership(t, ctx, membershipService, tenant.ID, user.PrincipalID, audit)
+	selection, err := selectionService.BeginContextSelection(ctx, BeginContextSelectionInput{
+		PrincipalID: user.PrincipalID,
+		Authentication: SessionAuthentication{
+			Methods:         []string{"password"},
+			AssuranceLevel:  AssuranceLevelAAL1,
+			AuthenticatedAt: now.Add(-time.Minute),
+		},
+		Audit: audit,
+	})
+	if err != nil || selection.Session == nil {
+		t.Fatalf("issue Resource Ticket invalidation fixture: selection=%#v error=%v", selection, err)
+	}
+	ticket := selection.Session.ResourceAccessTickets["manager"]
+	var stored ResourceAccessTicket
+	if err := db.Where("token_hash = ?", hashOpaqueToken(ticket)).First(&stored).Error; err != nil {
+		t.Fatalf("read Resource Ticket invalidation fixture: %v", err)
+	}
+	return resourceTicketInvalidationFixture{
+		PrincipalID:        user.PrincipalID,
+		TenantID:           tenant.ID,
+		TenantMembershipID: membership.Membership.ID,
+		FamilyID:           stored.FamilyID,
+		Ticket:             ticket,
+	}
 }
 
 func assertTenantAuthContext(
@@ -284,24 +430,72 @@ func assertTenantAuthContext(
 	}
 }
 
+func assertResourceTicketAuthContext(
+	t *testing.T,
+	resourceContext *commonauth.AuthContext,
+	accessContext *commonauth.AuthContext,
+	owner string,
+) {
+	t.Helper()
+	if resourceContext == nil || accessContext == nil {
+		t.Fatalf("resource/access AuthContext must not be nil: resource=%#v access=%#v", resourceContext, accessContext)
+	}
+	if !reflect.DeepEqual(resourceContext.Principal, accessContext.Principal) ||
+		!reflect.DeepEqual(resourceContext.Context, accessContext.Context) ||
+		!reflect.DeepEqual(resourceContext.Authentication, accessContext.Authentication) ||
+		!reflect.DeepEqual(resourceContext.Organization, accessContext.Organization) ||
+		!reflect.DeepEqual(resourceContext.Authorization, accessContext.Authorization) {
+		t.Fatalf("resource ticket did not inherit browser family facts: resource=%#v access=%#v", resourceContext, accessContext)
+	}
+	if resourceContext.Client.ClientID == nil || *resourceContext.Client.ClientID != "addp-web" ||
+		!reflect.DeepEqual(resourceContext.Client.Audiences, []string{owner}) ||
+		resourceContext.Client.ScopeMode != "restricted" ||
+		!reflect.DeepEqual(resourceContext.Client.Scopes, []string{commonauth.BrowserResourceAccessScope}) ||
+		resourceContext.Token.Type != "resource_access_ticket" || resourceContext.Delegation != nil ||
+		resourceContext.Token.ExpiresAt.After(accessContext.Token.ExpiresAt) {
+		t.Fatalf("resource ticket constraints = client:%#v token:%#v delegation:%#v",
+			resourceContext.Client, resourceContext.Token, resourceContext.Delegation)
+	}
+	if err := commonauth.ValidateAuthContext(*resourceContext); err != nil {
+		t.Fatalf("validate Resource Ticket AuthContext: %v", err)
+	}
+}
+
 func assertAccessTokenReason(
 	t *testing.T,
 	service *AuthContextService,
 	ctx context.Context,
 	accessToken string,
-	want AccessTokenInvalidReason,
+	want CredentialInvalidReason,
 ) {
 	t.Helper()
 	_, err := service.ResolveFirstPartyAccessToken(ctx, accessToken)
+	assertCredentialValidationError(t, err, want)
+}
+
+func assertCredentialReason(
+	t *testing.T,
+	service *AuthContextService,
+	ctx context.Context,
+	credential string,
+	want CredentialInvalidReason,
+) {
+	t.Helper()
+	_, err := service.ResolveAuthContext(ctx, credential)
+	assertCredentialValidationError(t, err, want)
+}
+
+func assertCredentialValidationError(t *testing.T, err error, want CredentialInvalidReason) {
+	t.Helper()
 	if !errors.Is(err, commonapi.ErrUnauthorized) {
-		t.Fatalf("resolve access token error = %v, want unauthorized", err)
+		t.Fatalf("resolve credential error = %v, want unauthorized", err)
 	}
-	var validationError *AccessTokenValidationError
+	var validationError *CredentialValidationError
 	if !errors.As(err, &validationError) || validationError.Reason != want {
-		t.Fatalf("resolve access token reason = %#v, want %s", validationError, want)
+		t.Fatalf("resolve credential reason = %#v, want %s", validationError, want)
 	}
 	if err.Error() != commonapi.ErrUnauthorized.Error() {
-		t.Fatalf("access token error leaked internal reason: %q", err.Error())
+		t.Fatalf("credential error leaked internal reason: %q", err.Error())
 	}
 }
 

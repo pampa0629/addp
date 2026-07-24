@@ -165,6 +165,18 @@ func TestIAMAuthHandlerContract(t *testing.T) {
 		if contextRecorder.Code != http.StatusOK || runtime.authContextToken != "addp_at_access" {
 			t.Fatalf("context status=%d token=%q", contextRecorder.Code, runtime.authContextToken)
 		}
+		resourceHeaders := map[string]string{"Authorization": "Bearer addp_rat_manager"}
+		resourceRecorder := performIAMJSONRequest(
+			t,
+			router,
+			http.MethodGet,
+			"/api/v1/system/auth/context",
+			nil,
+			resourceHeaders,
+		)
+		if resourceRecorder.Code != http.StatusOK || runtime.authContextToken != "addp_rat_manager" {
+			t.Fatalf("resource context status=%d token=%q", resourceRecorder.Code, runtime.authContextToken)
+		}
 		optionsRecorder := performIAMJSONRequest(t, router, http.MethodGet, "/api/v1/system/auth/context-options", nil, headers)
 		var response IAMContextOptionsResponse
 		decodeIAMResponse(t, optionsRecorder, &response)
@@ -315,7 +327,7 @@ func (runtime *fakeIAMAuthRuntime) ConsumeContextSelection(
 	return runtime.selectionSession, runtime.selectionErr
 }
 
-func (runtime *fakeIAMAuthRuntime) ResolveFirstPartyAccessToken(
+func (runtime *fakeIAMAuthRuntime) ResolveAuthContext(
 	_ context.Context,
 	accessToken string,
 ) (*commonauth.AuthContext, error) {

@@ -25,20 +25,34 @@ assert.match(editor, /await executeWorkflowTask\(currentTaskId\.value, inputs\)/
 assert.match(editor, /validateWorkflowDefinition\(/)
 assert.match(editor, /getClientValidationIssues\(\)/)
 assert.match(editor, /class="header-validation"/)
+assert.match(editor, /v-if="hasValidationStatus"/)
 assert.match(editor, /v-model:visible="validationPopoverVisible"/)
+assert.match(editor, /v-for="group in validationIssueGroups"/)
+assert.match(editor, /class="validation-group-title"/)
+assert.match(editor, /class="validation-item-param"/)
+assert.match(editor, /ref="paramsPanelRef"/)
+assert.match(editor, /:validation-issues="selectedNodeValidationIssues"/)
+assert.match(editor, /paramsPanelRef\.value\?\.focusParam\(validationIssueParamName\(issue\)\)/)
 assert.match(editor, /const canExecute = computed/)
-assert.match(editor, /validationResult\.value\?\.valid === true/)
+const canExecuteSource = editor.match(/const canExecute = computed\([\s\S]*?\n\)\)/)?.[0] || ''
+assert.doesNotMatch(canExecuteSource, /validationResult/)
+assert.match(canExecuteSource, /validationErrors\.value\.length === 0/)
 assert.doesNotMatch(editor, /class="validation-bar"/)
+assert.doesNotMatch(editor, /scheduleValidation|validationTimer/)
 const handleSaveSource = editor.match(/async function handleSave\(\) \{[\s\S]*?\n\}/)?.[0] || ''
 const confirmSaveSource = editor.match(/async function confirmSave\(\) \{[\s\S]*?\n\}/)?.[0] || ''
 const saveAndSwitchSource = editor.match(/async function saveAndSwitchEngine\(\) \{[\s\S]*?\n\}/)?.[0] || ''
-assert.doesNotMatch(handleSaveSource, /validateCurrentWorkflow/)
-assert.doesNotMatch(confirmSaveSource, /validateCurrentWorkflow/)
+assert.match(handleSaveSource, /validateCurrentWorkflow/)
+assert.match(confirmSaveSource, /validateCurrentWorkflow/)
 assert.doesNotMatch(saveAndSwitchSource, /validateCurrentWorkflow/)
 assert.doesNotMatch(editor, /createTemporaryWorkflowTask|tempWorkflowPrefix/)
 
 assert.match(paramsPanel, /defineEmits\(\['update'\]\)/)
 assert.match(paramsPanel, /watch\(formData/)
+assert.match(paramsPanel, /:data-param-name="param\.name"/)
+assert.match(paramsPanel, /:error="validationMessageFor\(param\.name\)"/)
+assert.match(paramsPanel, /resourceValidationMessages\(param\)/)
+assert.match(paramsPanel, /defineExpose\(\{ focusParam \}\)/)
 assert.doesNotMatch(paramsPanel, /saveParams|develop\.operatorParams\.saveParams/)
 assert.match(operatorPalette, /hasDistinctText\(operator\.description, operator\.displayName, operator\.name\)/)
 

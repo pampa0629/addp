@@ -30,7 +30,7 @@ type iamContextSelectionService interface {
 }
 
 type iamAuthContextService interface {
-	ResolveFirstPartyAccessToken(context.Context, string) (*commonauth.AuthContext, error)
+	ResolveAuthContext(context.Context, string) (*commonauth.AuthContext, error)
 }
 
 type iamContextOptionsService interface {
@@ -162,7 +162,7 @@ func (h *IAMAuthHandler) Context(c *gin.Context) {
 		respondIAMError(c, commonapi.ErrUnauthorized)
 		return
 	}
-	authContext, err := h.authContextService.ResolveFirstPartyAccessToken(c.Request.Context(), accessToken)
+	authContext, err := h.authContextService.ResolveAuthContext(c.Request.Context(), accessToken)
 	if err != nil {
 		respondIAMError(c, err)
 		return

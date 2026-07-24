@@ -1,8 +1,8 @@
 # Transfer 任务语义、增量同步与持续运行时设计
 
-更新时间：2026-07-24
+更新时间：2026-07-25
 
-状态：阶段 0/1、工作包 2A-2D、3A-3E、4A-4F 已完成。业务 Kafka DLQ、只读管理、payload availability、task-owned cleanup 与 task-private runtime/control state 生命周期治理、隔离目标 bounded replay v1，以及 PostgreSQL/MySQL 数据库 CDC 已完成公开 API、Console 操作闭环和真实全生命周期 E2E；Oracle CDC 已明确延期，不进入当前实施序列。
+状态：阶段 0/1、工作包 2A-2D、3A-3E、4A-4G 已完成。业务 Kafka DLQ、只读管理、payload availability、task-owned cleanup 与 task-private runtime/control state 生命周期治理、隔离目标 bounded replay v1，以及 PostgreSQL/MySQL 数据库 CDC 与人工 additive schema migration 已完成公开 API、Console 操作闭环和真实全生命周期 E2E；Oracle CDC 已明确延期，不进入当前实施序列。
 
 本文整理 Transfer 全量、批增量、Kafka 流式源、数据库 CDC 和持续运行时的概念与推荐技术路线。bounded/watermark、业务 Kafka continuous、业务 Kafka DLQ、隔离目标 bounded replay，以及 PostgreSQL/MySQL CDC v1 已完成；Oracle CDC 已延期，自动 DDL 仍未实现。
 
@@ -1004,7 +1004,7 @@ Debezium connector 名称、slot、publication、内部 topic、consumer group �
 
 ### 13.4 MySQL CDC v1（工作包 3E 已完成）
 
-MySQL CDC 沿用 PostgreSQL CDC 的公开任务形态、Infra Kafka、ChangeEvent、目标 monotonic apply、execution/state 与 lifecycle 契约，source locator 指向 MySQL table，捕获实现使用 Debezium MySQL Connector。v1 固定 MySQL 8.0 单表、稳定非空主键、initial snapshot、ROW/FULL binlog、严格 schema drift 阻塞和 PostgreSQL 新目标表；公开 API、`continuous.database_cdc` capability 与 Console 共用唯一数据库 CDC 路线，不增加 provider 字段或 MySQL 专用 endpoint。
+MySQL CDC 沿用 PostgreSQL CDC 的公开任务形态、Infra Kafka、ChangeEvent、目标 monotonic apply、execution/state 与 lifecycle 契约，source locator 指向 MySQL table，捕获实现使用 Debezium MySQL Connector。v1 固定 MySQL 8.0 单表、稳定非空主键、initial snapshot、ROW/FULL binlog、默认严格 schema drift 阻塞和 PostgreSQL 新目标表；公开 API、`continuous.database_cdc` capability、人工 additive migration 与 Console 共用唯一数据库 CDC 路线，不增加 provider 字段或 MySQL 专用 endpoint。
 
 ### 13.5 Oracle CDC（延期）
 
@@ -1070,7 +1070,7 @@ MySQL CDC 沿用 PostgreSQL CDC 的公开任务形态、Infra Kafka、ChangeEven
 1. 已冻结 PostgreSQL 单表、稳定主键、Debezium `initial` snapshot 和 PostgreSQL 新目标表的唯一第一版范围。
 2. 已冻结 schemaless JSON Debezium envelope：`r -> snapshot/upsert`、`c|u -> upsert`、`d -> delete`，tombstone/truncate/message 事件严格拒绝。
 3. 已冻结 Kafka Connect capture position 与 Transfer committed position 的双位点 owner 边界。
-4. 已冻结 `upsert_delete`、目标 ledger 原子应用、strict schema drift、resume-only 和不提供 replay/DLQ/自动 DDL。
+4. 已冻结 `upsert_delete`、目标 ledger 原子应用、默认 strict schema drift、resume-only 和不提供 replay/DLQ/自动 DDL；后续工作包 4G 只增加专用人工 additive migration，不改变任务配置策略。
 5. 已冻结 pause 保持 connector 捕获、stop 不可逆清理 capture resource、重新同步必须新建任务和新目标表；Stop API 与 Console 都必须显式高危确认。
 
 ### 工作包 3B：Infra Kafka 与 Kafka Connect 部署（已完成第一版）
@@ -1147,6 +1147,16 @@ MySQL CDC 沿用 PostgreSQL CDC 的公开任务形态、Infra Kafka、ChangeEven
 5. 直接 Delete 在该事务中 soft-delete task definition，System physical cleanup 在同一事务 unscoped delete。两者继续保留统一 execution、目标业务数据、目标 apply ledger 和 replay 隔离结果。
 6. `TRANSFER_CONTINUOUS_RUNTIME_STOP_TIMEOUT|POLL_INTERVAL` 是所有 continuous stop/cleanup 的唯一部署策略；不保留 capture-scoped 旧环境变量或 fallback。
 7. 已移除 task definition 与 DLQ 索引的独立删除入口；单元测试覆盖 soft/physical delete、四类私有状态、execution 终态化和 runtime guard 整体回滚，真实 PostgreSQL 验证同事务删除及 active lease 回滚。Transfer 全量 Go 测试/vet、关键包 race、前端测试/build、Swagger 25 路由覆盖和差异检查均通过。
+
+### 工作包 4G：人工确认 additive schema migration（已完成）
+
+1. 保持 Debezium schemaless JSON 与默认严格阻塞，不增加自动 DDL 或 task-level schema evolution 开关。只有当前阻塞消息实际出现的新增 nullable 非 geometry 字段可以进入人工 additive request；missing、incompatible、主键、非 nullable、geometry 和协议变化仍不可恢复。
+2. `transfer.schema_change_requests` 保存 task/generation/execution、Kafka partition/offset、schema diff、from/to mapping revision、审批字段和 applied 审计；同一 generation 同时只允许一个 pending request，physical cleanup 随 capture generation 级联删除。
+3. 唯一审批 API 为 `POST /task-definitions/:id/schema-change/approve`。请求必须逐字段提交 source/target/`target_type`/`nullable=true` 并完整覆盖 pending unexpected fields；普通 UpdateTask 继续拒绝修改已创建 generation 的 CDC config。
+4. 服务端重新读取源表，验证既有 mapping/主键未变化、审批字段仍存在且 nullable、类型受 provider v1 支持；目标 PostgreSQL 复用 `PartitionedTableChangeApplyProvider.Prepare...` 的既有安全 schema evolution，只新增 nullable 列，不建立私有 DDL。
+5. 外部目标 DDL 与 Infra PostgreSQL 通过 request/task 行锁和幂等 retry 收敛：目标列已存在时必须完全兼容；Infra 事务提交时追加 mapping、递增 generation `schema_revision`、标记 request applied，并把 task 置为 paused。审批不隐式恢复，用户通过既有 Resume 从原 committed offset 创建新 execution。
+6. DDL 成功后触发目标表 Meta deep scan；扫描失败不回滚 schema revision，但必须记录为可观测结果。真实 PostgreSQL/MySQL CDC E2E 必须验证 blocked offset 未推进、审批后目标加列、Resume 重放当前消息、后续数据继续同步，以及不安全变化继续被拒绝。
+7. 已完成：新增 `GET /task-definitions/:id/schema-change` 和唯一审批 API，Console 任务详情提供逐字段确认；repository/service/API/source inspection、cleanup 和前端行为测试已覆盖。真实 PostgreSQL 与 MySQL CDC E2E 均验证 pending request、blocked offset 不推进、审批、重复审批幂等、目标加列、任务进入 paused、Resume 重放阻塞消息、后续同步和 Stop cleanup；Swagger 27 个公开路由覆盖一致。
 
 ### 工作包 3E：MySQL CDC（已完成）
 
@@ -1299,7 +1309,7 @@ DLQ 不保存伪造的“已回放”状态，也不作为完整 replay source�
 
 分析：如果 stop 后删除 connector/slot 再直接 resume，会产生无法补齐的捕获空档；如果重新 snapshot 只做 upsert，又无法删除目标中已经不存在于源端的残留行。若为了 resume 让已 stop 的任务永久保持捕获，stop 就失去真实资源终止语义。
 
-结论：第一版 source 支持 PostgreSQL 或 MySQL 8.0 有稳定主键的单表，使用 Debezium `initial` snapshot，经单 partition Infra Kafka data topic 写入不存在的 PostgreSQL 新目标表。snapshot/c/u/d 归一化为 snapshot/upsert/delete，目标固定 `upsert_delete`，schema drift 固定 fail。
+结论：第一版 source 支持 PostgreSQL 或 MySQL 8.0 有稳定主键的单表，使用 Debezium `initial` snapshot，经单 partition Infra Kafka data topic 写入不存在的 PostgreSQL 新目标表。snapshot/c/u/d 归一化为 snapshot/upsert/delete，目标固定 `upsert_delete`，schema drift 默认严格阻塞；只有人工确认的 additive migration 可在原 generation 恢复。
 
 - pause 只停止目标应用，connector 继续捕获并推进源日志位置；resume 在 capture healthy 且 Kafka committed position 未过期时无损恢复。
 - 正常 pause 的主要资源代价是 Infra Kafka backlog、磁盘和 retention；connector/Kafka 故障时还必须分别观测 PostgreSQL WAL 或 MySQL binlog 保留风险。
@@ -1317,7 +1327,11 @@ DLQ 不保存伪造的“已回放”状态，也不作为完整 replay source�
 
 分析：Schema change 决定目标是否能继续应用，Meta scan 只负责识别变化后的事实。二者不能互相替代，也不能通过忽略未知字段维持假成功。
 
-结论：第一版只使用固定 `fail` 路线，不增加 `manual|additive` 任务配置开关。检测到字段增删、主键变化、类型不兼容或 envelope/source 结构变化时阻塞 partition、保存 schema diff，并以 `schema_change_blocked` 结束 execution；任务进入 `status=blocked`，禁止 start/resume/retry。由于 capture generation 创建后配置不可修改且第一版不能跳过当前消息，唯一处理方式是 Stop 旧任务并创建新任务、新目标表重新 initial snapshot。自动 DDL、安全 additive evolution、schema change request 和可恢复 generation migration 后置。
+结论：默认仍是严格 `fail`，不增加 `manual|additive` 任务配置开关。检测到 schema change 时先阻塞 partition、保存 schema diff，并以 `schema_change_blocked` 结束 execution；任务进入 `status=blocked`，当前消息和 committed offset 不推进。
+
+唯一原 generation 恢复路线是人工确认 additive migration：只接受当前阻塞消息实际包含的新增 nullable 非 geometry 字段，服务端持久化 pending request，用户逐字段确认目标映射后，服务端重新验证源事实并复用目标 Provider 的安全 schema evolution。审批完成后 mapping revision 与 task config 在 Infra 事务内更新，任务进入 paused，用户再通过既有 Resume 从原 committed offset 恢复。
+
+字段删除、类型或主键变化、非 nullable/geometry 新增、envelope/source 漂移继续不可恢复，只能 Stop 后新建任务和目标表。真正全自动 DDL 仍后置；若未来需要，必须先采用能把 schema version 与每条 Kafka record/offset 绑定的内部 envelope，不能通过运行时查询最新源 schema 猜测历史消息结构。
 
 ### 16.15 何时评估 Flink
 

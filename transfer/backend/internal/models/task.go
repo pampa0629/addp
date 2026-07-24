@@ -72,7 +72,7 @@ type TaskStatus string
 const (
 	TaskStatusIdle    TaskStatus = "idle"    // 空闲（未执行或执行完成）
 	TaskStatusRunning TaskStatus = "running" // 执行中
-	TaskStatusBlocked TaskStatus = "blocked" // 运行被不可恢复条件阻塞，只允许终止或重建
+	TaskStatusBlocked TaskStatus = "blocked" // 运行被 schema change 阻塞，禁止直接启动或恢复
 )
 
 // TaskDesiredState 是 continuous runtime 的用户期望状态。
@@ -191,6 +191,7 @@ type CaptureResource struct {
 	TopicCreated                bool                       `gorm:"not null;default:false" json:"topic_created"`
 	ConnectorCreated            bool                       `gorm:"not null;default:false" json:"connector_created"`
 	ResourceVersion             uint64                     `gorm:"not null;default:1" json:"resource_version"`
+	SchemaRevision              uint64                     `gorm:"not null;default:1;check:chk_transfer_capture_schema_revision,schema_revision >= 1" json:"schema_revision"`
 	LastObservedAt              *time.Time                 `json:"last_observed_at,omitempty"`
 	StoppedAt                   *time.Time                 `json:"stopped_at,omitempty"`
 	CreatedAt                   time.Time                  `gorm:"autoCreateTime" json:"created_at"`
@@ -223,6 +224,75 @@ type MySQLCaptureResource struct {
 }
 
 func (MySQLCaptureResource) TableName() string { return "transfer.mysql_capture_resources" }
+
+type SchemaChangeRequestStatus string
+
+const (
+	SchemaChangeRequestPending SchemaChangeRequestStatus = "pending"
+	SchemaChangeRequestApplied SchemaChangeRequestStatus = "applied"
+)
+
+// SchemaChangeRequest 是一个 capture generation 内人工 additive mapping revision 的私有控制事实。
+type SchemaChangeRequest struct {
+	ID                      uint                      `gorm:"primaryKey" json:"id"`
+	TaskID                  uint                      `gorm:"not null;index" json:"task_id"`
+	TenantID                uint                      `gorm:"not null;index" json:"tenant_id"`
+	CaptureResourceID       uint                      `gorm:"not null;index;uniqueIndex:uq_transfer_schema_change_pending_generation,where:status = 'pending';uniqueIndex:uq_transfer_schema_change_revision" json:"-"`
+	CaptureResource         CaptureResource           `gorm:"foreignKey:CaptureResourceID;references:ID;constraint:OnDelete:CASCADE" json:"-"`
+	Generation              uint64                    `gorm:"not null" json:"generation"`
+	ExecutionID             string                    `gorm:"type:varchar(36);not null" json:"execution_id"`
+	SourcePartition         string                    `gorm:"type:varchar(255);not null" json:"source_partition"`
+	SourceOffset            int64                     `gorm:"not null;check:chk_transfer_schema_change_source_offset,source_offset >= 0" json:"source_offset"`
+	Scope                   string                    `gorm:"type:varchar(255);not null" json:"scope"`
+	Diff                    JSONMap                   `gorm:"type:jsonb;not null" json:"diff"`
+	ApprovedMappings        JSONMap                   `gorm:"type:jsonb;not null;default:'{}'" json:"approved_mappings,omitempty"`
+	FromRevision            uint64                    `gorm:"not null;check:chk_transfer_schema_change_from_revision,from_revision >= 1" json:"from_revision"`
+	ToRevision              uint64                    `gorm:"not null;uniqueIndex:uq_transfer_schema_change_revision;check:chk_transfer_schema_change_to_revision,to_revision = from_revision + 1" json:"to_revision"`
+	Status                  SchemaChangeRequestStatus `gorm:"type:varchar(20);not null;index;check:chk_transfer_schema_change_status,status IN ('pending','applied')" json:"status"`
+	AppliedBy               *uint                     `json:"applied_by,omitempty"`
+	DetectedAt              time.Time                 `gorm:"not null" json:"detected_at"`
+	AppliedAt               *time.Time                `json:"applied_at,omitempty"`
+	MetadataScanStatus      string                    `gorm:"type:varchar(20)" json:"metadata_scan_status,omitempty"`
+	MetadataScanExecutionID string                    `gorm:"type:varchar(36)" json:"metadata_scan_execution_id,omitempty"`
+	MetadataScanError       string                    `gorm:"type:text" json:"-"`
+	CreatedAt               time.Time                 `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt               time.Time                 `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+func (SchemaChangeRequest) TableName() string { return "transfer.schema_change_requests" }
+
+type SchemaChangeField struct {
+	Source     string `json:"source" binding:"required"`
+	Target     string `json:"target" binding:"required"`
+	TargetType string `json:"target_type" binding:"required"`
+	Nullable   bool   `json:"nullable"`
+}
+
+type ApproveSchemaChangeRequest struct {
+	Fields []SchemaChangeField `json:"fields" binding:"required,min=1,dive"`
+}
+
+type SchemaChangeRequestView struct {
+	ID                      uint                      `json:"id"`
+	TaskID                  uint                      `json:"task_id"`
+	Generation              uint64                    `json:"generation"`
+	ExecutionID             string                    `json:"execution_id"`
+	SourcePartition         string                    `json:"source_partition"`
+	SourceOffset            int64                     `json:"source_offset"`
+	Scope                   string                    `json:"scope"`
+	Diff                    JSONMap                   `json:"diff"`
+	SuggestedFields         []SchemaChangeField       `json:"suggested_fields,omitempty"`
+	ApprovedMappings        []SchemaChangeField       `json:"approved_mappings,omitempty"`
+	Approvable              bool                      `json:"approvable"`
+	ApprovalBlockedReason   string                    `json:"approval_blocked_reason,omitempty"`
+	FromRevision            uint64                    `json:"from_revision"`
+	ToRevision              uint64                    `json:"to_revision"`
+	Status                  SchemaChangeRequestStatus `json:"status"`
+	DetectedAt              time.Time                 `json:"detected_at"`
+	AppliedAt               *time.Time                `json:"applied_at,omitempty"`
+	MetadataScanStatus      string                    `json:"metadata_scan_status,omitempty"`
+	MetadataScanExecutionID string                    `json:"metadata_scan_execution_id,omitempty"`
+}
 
 // CaptureSummary 是任务 API 可展示的捕获状态；内部资源名称和连接身份不对外暴露。
 type CaptureSummary struct {

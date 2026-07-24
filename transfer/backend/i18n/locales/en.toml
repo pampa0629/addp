@@ -41,7 +41,25 @@ other = "This database change synchronization task is permanently stopped and ca
 other = "The database change capture control plane is unavailable"
 
 [transfer.cdc.schema_change_blocked]
-other = "A source schema change permanently blocked the current synchronization generation. The task can only be permanently stopped; then create a new task and target table."
+other = "A source schema change blocked synchronization. Review the schema change request. Only added nullable non-spatial fields can be manually approved; other changes require a permanent stop and a new task."
+
+[transfer.schema_change.invalid]
+other = "Invalid schema change approval. Submit source, target, target_type, and nullable=true for every added field."
+
+[transfer.schema_change.not_found]
+other = "This task has no schema change request."
+
+[transfer.schema_change.not_additive]
+other = "This schema change is not an approvable nullable non-spatial field addition. Permanently stop it and create a new task and target table."
+
+[transfer.schema_change.conflict]
+other = "The approval conflicts with the current source, target, mapping revision, or pending request. Refresh and retry."
+
+[transfer.schema_change.unavailable]
+other = "The schema change control plane is unavailable."
+
+[transfer.schema_change.internal_error]
+other = "Failed to process the schema change request."
 
 [transfer.replay.invalid]
 other = "Invalid replay request. Only business Kafka record/json tasks with blocking failure policy, explicit partition offset ranges, and a new isolated PostgreSQL target are supported."

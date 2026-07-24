@@ -22,6 +22,12 @@ const (
 	MsgDeadLetterInternal        = "transfer.dead_letter.internal_error"
 	MsgTaskDeleteRequiresStopped = "transfer.task.delete_requires_stopped"
 	MsgTaskDeleteCleanupFailed   = "transfer.task.delete_cleanup_failed"
+	MsgSchemaChangeInvalid       = "transfer.schema_change.invalid"
+	MsgSchemaChangeNotFound      = "transfer.schema_change.not_found"
+	MsgSchemaChangeNotAdditive   = "transfer.schema_change.not_additive"
+	MsgSchemaChangeConflict      = "transfer.schema_change.conflict"
+	MsgSchemaChangeUnavailable   = "transfer.schema_change.unavailable"
+	MsgSchemaChangeInternal      = "transfer.schema_change.internal_error"
 )
 
 func init() {

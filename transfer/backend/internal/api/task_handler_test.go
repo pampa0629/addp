@@ -58,6 +58,25 @@ func TestReplayTaskRejectsTaskConfigOverrides(t *testing.T) {
 	}
 }
 
+func TestApproveSchemaChangeRejectsUnknownAndEmptyFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, body := range []string{
+		`{}`,
+		`{"fields":[]}`,
+		`{"fields":[{"source":"added","target":"added","target_type":"string","nullable":true,"legacy":true}]}`,
+	} {
+		router := gin.New()
+		router.POST("/task-definitions/:id/schema-change/approve", NewTaskHandler(nil).ApproveSchemaChange)
+		request := httptest.NewRequest(http.MethodPost, "/task-definitions/1/schema-change/approve", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("body=%s status=%d response=%s", body, response.Code, response.Body.String())
+		}
+	}
+}
+
 func TestRespondReplayTaskErrorDoesNotExposeInternalDetails(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

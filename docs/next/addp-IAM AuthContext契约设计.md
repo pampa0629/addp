@@ -1,8 +1,8 @@
 # ADDP IAM AuthContext 契约设计
 
-更新日期：2026-07-24
+更新日期：2026-07-25
 
-状态：技术设计已确认，唯一 JSON Schema、共享 Go 类型、第一方 Web Access Token 投影和 System 目标 Gin Middleware 已实现；目标 Middleware 尚未注册，OAuth、Service Principal、Resource Ticket、Delegated Token、API、Swagger 和 `main` 尚未切换。本文在已确认的 IAM 目标数据模型和 Permission / Role 矩阵之上，确定 AuthContext JSON Schema、登录上下文选择、浏览器上下文切换、授权版本失效和共享类型边界。
+状态：技术设计已确认，唯一 JSON Schema、共享 Go 类型、第一方 Web Access Token 与 Browser Resource Access Ticket 投影、System 目标 Gin Middleware、Common 目标 HTTP 消费器和 Resource Ticket 路由级 Guard 已实现；三个目标 Middleware/Guard 均尚未注册。OAuth、Service Principal、Delegated Token、API、Swagger 和 `main` 尚未切换。本文在已确认的 IAM 目标数据模型和 Permission / Role 矩阵之上，确定 AuthContext JSON Schema、登录上下文选择、浏览器上下文切换、授权版本失效和共享类型边界。
 
 ## 一、目标与边界
 
@@ -410,6 +410,7 @@ System 生成响应时还必须验证：
 - Department 与 Project Group 只包含当前有效的直接 Membership；
 - Service Principal 的 Department 数组始终为空；
 - `first_party_access_token` 和 `resource_access_ticket` 的 `client_id` 固定为 `addp-web`；
+- `resource_access_ticket` 必须只有一个 owner audience、`scope_mode=restricted`、唯一 `resource:read` Scope，并继承所属第一方 Browser Family 的 Principal、Context、认证事实和授权版本；
 - `oauth_access_token` 必须具有真实 OAuth `client_id`，且 `scope_mode=restricted`；
 - `delegated_access_token` 必须只有一个 owner audience、非空 Scope 和非空 `delegation`；
 - 非 Delegated Token 的 `delegation` 必须为 `null`；
@@ -648,6 +649,55 @@ Service Principal 不伪装成 User，不返回用户认证强度，也不进入
 ```
 
 Delegated Token 继承源 Principal、Context、认证事实和授权版本。它只缩小 audience、Scope、有效期和允许路由，不能更换 Principal、Tenant 或扩张 Permission。
+
+### 5.5 Browser Resource Access Ticket
+
+```json
+{
+  "schema_version": "addp.auth_context/v1",
+  "principal": { "type": "user", "id": "12" },
+  "context": {
+    "type": "tenant",
+    "tenant_id": "3",
+    "tenant_membership_id": "28"
+  },
+  "authentication": {
+    "methods": ["password"],
+    "assurance_level": "aal1",
+    "authenticated_at": "2026-07-22T08:00:00Z",
+    "step_up_expires_at": null
+  },
+  "client": {
+    "client_id": "addp-web",
+    "audiences": ["manager"],
+    "scope_mode": "restricted",
+    "scopes": ["resource:read"]
+  },
+  "organization": { "departments": [], "project_groups": [] },
+  "authorization": {
+    "authorization_version": "42",
+    "role_assignments": [
+      {
+        "assignment_id": "402",
+        "role_key": "tenant.data_viewer",
+        "scope": { "type": "tenant", "tenant_id": "3" },
+        "permissions": ["manager.content.read"],
+        "source_type": "manual",
+        "valid_from": "2026-07-01T00:00:00Z",
+        "valid_until": null
+      }
+    ]
+  },
+  "token": {
+    "type": "resource_access_ticket",
+    "issued_at": "2026-07-22T08:03:00Z",
+    "expires_at": "2026-07-22T08:15:00Z"
+  },
+  "delegation": null
+}
+```
+
+Resource Ticket 只替换当前凭据的 Token 与 Client 约束；Principal、Context、认证事实、组织事实、授权版本和 Role Assignment 与所属第一方 Browser Family 的当前投影一致。owner audience 和 `resource:read` 只负责收窄可访问路由，不能授予新的 Permission。
 
 ## 六、登录上下文选择
 
@@ -907,6 +957,46 @@ System 当前生产路径仍依赖旧平铺 Context Key，必须在同一次 Rou
 
 在上述依赖和 `common/middleware/auth` 的旧平铺 Schema 尚未一次性迁移前，不得把目标 Middleware 局部挂入生产 Router，也不得保留新旧 Context Key 双写。
 
+### 9.2 Common 目标 HTTP 消费器实施边界
+
+`common/middleware/auth.NewMiddleware` 已实现但尚未注册到任何业务模块 Router，当前边界固定为：
+
+- 使用结构化 URL 构造唯一 `GET /api/v1/system/auth/context` 请求，只转发规范化 Bearer Token、`Accept-Language` 和 `X-Request-ID`，不转发 Cookie、内部 API Key 或其他调用方身份头；
+- 使用 `common/authorization.DecodeAuthContext` 严格校验 `addp.auth_context/v1`、必填可空字段、未知字段、交叉约束和多 JSON 文档，响应体上限为 1 MiB；
+- System 明确返回 401 时映射为 401 `error_code=authentication_required`；网络错误、非 200/401 状态、超大响应或不符合 Schema 的响应统一映射为 503 `error_code=authorization_service_unavailable`，不透传下游错误正文；
+- 第一阶段每个请求都回查 System，不使用 Redis 或进程内 AuthContext 缓存，保证 Principal 停用、Membership 失效和授权版本变化立即生效；
+- 只注入不可变的规范 AuthContext，不写入 `user_id`、`username`、`user_type`、单一 `tenant_id` 或旧 `authorization_context` Key；
+- `PrincipalFromGin`、`AuthSessionContextFromGin`、`HasRolePermission`、`HasAllRolePermissions` 和 `RolePermissionScopes` 只读取规范 AuthContext；其中 Role Permission helper 只表达功能 Allow 候选，不能替代 OAuth Scope、audience、Assignment Scope 与 owner Resource Policy；
+- `common/authorization.CloneAuthContext` 是 Go 端唯一深拷贝实现，System 本地 Middleware 和跨模块 HTTP Middleware 不再各自维护复制逻辑。
+
+目标 Resource Ticket Guard 使用独立构造器并保持未注册，边界固定为：
+
+- 直接挂载到 owner 明确允许的 GET/HEAD 原生资源路由，挂载本身就是白名单，不保留运行时 matcher；
+- 只读取 `addp_resource_access_ticket` Cookie；请求出现任意 `Authorization` Header 时返回 401，不定义双凭据优先级；
+- 每次请求调用同一个 System `/auth/context`，不使用 Redis 或进程内缓存，不转发其他 Cookie、内部 API Key或调用方身份头；
+- 严格校验 `resource_access_ticket + addp-web + [owner] + restricted + [resource:read] + delegation=null`；
+- required Permission 必须非空、无重复、合法且按 all-of 判断；该结果只表达 Role Permission Allow 候选，owner Handler 继续执行 Assignment Scope 和资源 Policy。
+
+截至 2026-07-25 的生产代码静态扫描显示，除 Common 自身旧实现外，业务模块仍有 137 次旧 helper 调用和 16 次导出旧 Context Key 引用：
+
+| 模块 | 旧 helper / 导出 Key 命中 | 现有认证入口与迁移重点 |
+| --- | ---: | --- |
+| Asset | 35 | Cached / 非 Cached 双分支；全部 Tenant / User 参数改为规范 Context |
+| Develop | 8 | 自定义内部认证跳过包装、Delegated Policy 和旧 Context Key 必须共同删除 |
+| Graph | 27 | 必选与 Optional Auth 两个入口；图谱构建的 Tenant / Principal 读取统一迁移 |
+| Manager | 13 | 普通 Bearer、Cached 和 Resource Ticket 三类入口；资源 Policy 必须保留 owner 边界 |
+| Meta | 40 | Cached、Tenant Isolation 和 Delegated Policy；扫描与资源树链路是最大迁移面之一 |
+| Monitor | 3 | Cached 分支和直接旧 Key 注入 |
+| Orchestrator | 4 | Cached 分支及旧 AuthorizationContext 投影 |
+| Portal | 17 | Cached 分支及 Tenant / User helper |
+| Quality | 2 | Cached 分支及 Tenant / User helper |
+| Service | 4 | Optional Auth、内部调用跳过和旧 AuthorizationContext 投影 |
+| Model / Standard / Transfer | 0 | Router 已接入旧 Middleware；仍存在直接字符串 Key 读取，不能按零工作量处理 |
+
+另一次直接字符串扫描发现 `c.Get("user_id" | "tenant_id" | "username" | "authorization_context")` 等热点：Manager 93、Develop 39、Transfer 27、Service 21、System 11、Monitor 7、Graph 3、Model 2、Standard 2。该结果与上表可能重叠，只用于定位迁移风险，不能机械相加。所有调用必须按事实用途分别改成 Principal、当前 Context、Assignment Scope 或 owner 资源关系，不得建立返回 `uint(0)` 的兼容 helper。
+
+在 System 目标 `/auth/context`、Common 消费器、各 owner Handler 和 Token Policy 可以同批切换前，旧 `SystemAuthMiddleware`、`CachedSystemAuthMiddleware`、`TenantIsolationMiddleware`、`AuthorizationContext` DTO 与平铺 helper 保持现有生产状态；切换提交必须一次性删除这些旧定义和所有调用方，不能在新 Middleware 中双写旧 Key。
+
 ## 十、错误语义
 
 沿用 ADDP `{error}` 格式，并通过可选 `error_code` 提供稳定机器语义；生产环境不返回内部失效原因。Request ID 使用统一响应头和审计字段，不在各模块另造格式。
@@ -990,6 +1080,8 @@ System 审计必须区分 expired、revoked、version_mismatch、membership_inac
 - First-party Web 固定 `addp-web + addp.api + unrestricted`；
 - OAuth Token 固定真实 Client、批准 Scope 和 `restricted`；
 - Delegated Token 只有一个 owner audience，且审计绑定完整；
+- Resource Ticket 固定 `addp-web + 唯一 owner audience + restricted + resource:read`，轮换后的旧票据立即返回 401；
+- Resource Ticket Guard 拒绝非 GET/HEAD、缺失 Cookie、任何 Authorization Header、owner 不匹配、Scope 不匹配和 Role Permission 不足；
 - AuthContext Schema 解码失败时 owner 返回 503，不降级为匿名或旧字段解析；
 - 401、403、404 和 503 符合 ADDP API 规范且不泄露跨 Tenant 资源。
 
@@ -1002,7 +1094,7 @@ System 审计必须区分 expired、revoked、version_mismatch、membership_inac
 3. `docs/spec/addp OAuth授权规范.md` 已把第一方 `client_id=null` 改为 `addp-web`，并统一 audience 为 `addp.api`；
 4. IAM 目标数据模型已加入 Context Selection Ticket 临时记录及索引约束。
 
-后续在 owner 接口设计完成、Fosite ADR 通过后，再一次性实现 Schema、数据库和调用方迁移。实现时同步 Swagger、前端调用方和所有契约测试，并删除旧 AuthContext。
+当前已完成 Schema、核心 IAM 数据库、第一方 Browser Session、Access Token / Resource Ticket AuthContext 投影和 Common 目标消费器，但尚未切换生产 Router。后续必须按 owner 调用方迁移批次同步 Swagger、前端调用方和契约测试，并在切换时删除旧 AuthContext、缓存中间件和旧 Resource Ticket 路径；OAuth/OIDC 继续按已接受的 Fosite ADR 和 Storage Adapter 设计推进。
 
 ## 十四、已确认的技术决策
 

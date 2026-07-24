@@ -168,9 +168,10 @@ func main() {
 		if err != nil {
 			log.Fatalf("初始化 Kafka Connect client 失败: %v", err)
 		}
+		capturePlanResolver := capture.NewDatabasePlanResolver(planner.NewSystemEngineResolver(systemClient))
 		captureSupervisor, err := capture.NewSupervisor(
 			transferRepo.NewCaptureRepository(db),
-			capture.NewDatabasePlanResolver(planner.NewSystemEngineResolver(systemClient)),
+			capturePlanResolver,
 			connectClient, topicAdmin, capture.DatabaseSourceResources{},
 			capture.SupervisorConfig{
 				TopicRetention: cfg.CaptureTopicRetention, TopicRetentionBytes: cfg.CaptureTopicRetentionBytes,
@@ -188,6 +189,7 @@ func main() {
 			log.Fatalf("初始化 Transfer capture supervisor 失败: %v", err)
 		}
 		taskService.SetCaptureControl(captureSupervisor)
+		taskService.SetSchemaChangeInspector(capturePlanResolver)
 		cleanupService.SetCaptureControl(captureSupervisor)
 		captureCtx, cancelCapture := context.WithCancel(context.Background())
 		defer cancelCapture()
@@ -289,6 +291,7 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&models.CaptureResource{},
 		&models.PostgreSQLCaptureResource{},
 		&models.MySQLCaptureResource{},
+		&models.SchemaChangeRequest{},
 	); err != nil {
 		return nil, fmt.Errorf("auto-migrate transfer models: %w", err)
 	}

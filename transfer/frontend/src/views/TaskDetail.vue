@@ -76,15 +76,23 @@
         </template>
       </el-descriptions>
 
-			<el-alert
-				v-if="isCDCSchemaBlocked"
-				:title="t('transfer.taskDetail.schemaBlockedTitle')"
-				:description="t('transfer.taskDetail.schemaBlockedDescription')"
-				type="error"
-				:closable="false"
-				show-icon
-				class="schema-blocked-alert"
-			/>
+			<div v-if="isCDCSchemaBlocked" class="schema-change-panel">
+				<el-alert
+					:title="schemaChange?.approvable ? t('transfer.taskDetail.schemaAdditiveTitle') : t('transfer.taskDetail.schemaBlockedTitle')"
+					:description="schemaChange?.approvable ? t('transfer.taskDetail.schemaAdditiveDescription') : t('transfer.taskDetail.schemaBlockedDescription')"
+					:type="schemaChange?.approvable ? 'warning' : 'error'"
+					:closable="false"
+					show-icon
+				/>
+				<el-button
+					v-if="schemaChange?.approvable"
+					type="primary"
+					:loading="schemaChangeLoading"
+					@click="openSchemaChangeDialog"
+				>
+					{{ t('transfer.taskDetail.reviewSchemaChange') }}
+				</el-button>
+			</div>
 
 			<el-alert
 				v-else-if="captureHealthWarning"
@@ -263,6 +271,34 @@
       <pre class="json-pre">{{ formattedConfig }}</pre>
     </el-dialog>
 
+		<el-dialog v-model="schemaChangeDialogVisible" :title="t('transfer.taskDetail.schemaChangeDialogTitle')" width="760px">
+			<el-alert
+				:title="t('transfer.taskDetail.schemaChangeConfirmNotice')"
+				type="warning"
+				:closable="false"
+				show-icon
+				class="schema-change-dialog-alert"
+			/>
+			<el-table :data="schemaChangeFields" stripe>
+				<el-table-column prop="source" :label="t('transfer.taskDetail.sourceField')" min-width="160" />
+				<el-table-column :label="t('transfer.taskDetail.targetField')" min-width="180">
+					<template #default="{ row }">
+						<el-input v-model="row.target" />
+					</template>
+				</el-table-column>
+				<el-table-column prop="target_type" :label="t('transfer.taskDetail.fieldType')" min-width="120" />
+				<el-table-column :label="t('transfer.taskDetail.nullable')" width="100">
+					<template #default><el-tag type="success">true</el-tag></template>
+				</el-table-column>
+			</el-table>
+			<template #footer>
+				<el-button @click="schemaChangeDialogVisible = false">{{ t('transfer.taskDetail.cancel') }}</el-button>
+				<el-button type="primary" :loading="schemaChangeSubmitting" @click="submitSchemaChange">
+					{{ t('transfer.taskDetail.applySchemaChange') }}
+				</el-button>
+			</template>
+		</el-dialog>
+
     <el-dialog v-model="deadLetterDetailVisible" :title="t('transfer.taskDetail.deadLetterDetail')" width="760px">
       <el-descriptions v-if="deadLetterDetail" :column="2" border>
         <el-descriptions-item :label="t('transfer.taskDetail.deadLetterIdentity')" :span="2">
@@ -342,6 +378,7 @@ import { formatDate } from '@common-ui'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType, getExecutionTagType, getExecutionLabel } from '@/utils/formatters'
 import { buildCDCStopRequest, continuousStartDisabledReason, getCDCCaptureHealthWarning, isCDCSchemaBlocked as isCDCSchemaBlockedTask, isDatabaseCDCTask } from '@/utils/cdcTask.mjs'
 import { parseTransferLocator } from '@/utils/resourceLocator'
+import { buildSchemaChangeApproval } from '@/utils/schemaChange.mjs'
 
 const { t } = useI18n()
 
@@ -360,6 +397,11 @@ const deadLetterDetailVisible = ref(false)
 const deadLetterDetail = ref(null)
 const replayDialogVisible = ref(false)
 const replaySubmitting = ref(false)
+const schemaChange = ref(null)
+const schemaChangeLoading = ref(false)
+const schemaChangeDialogVisible = ref(false)
+const schemaChangeSubmitting = ref(false)
+const schemaChangeFields = ref([])
 const deadLetterFilters = ref({
   source_partition: '',
   error_category: '',
@@ -455,10 +497,63 @@ const loadTask = async () => {
       deadLetters.value = []
       deadLetterTotal.value = 0
     }
+		if (isCDCSchemaBlocked.value) {
+			await loadSchemaChange()
+		} else {
+			schemaChange.value = null
+		}
     syncAutoRefresh()
   } finally {
     loading.value = false
   }
+}
+
+const loadSchemaChange = async () => {
+	if (!route.params.id || !isCDCSchemaBlocked.value) return
+	schemaChangeLoading.value = true
+	try {
+		schemaChange.value = await taskAPI.schemaChange(route.params.id)
+	} catch (error) {
+		if (error?.response?.status !== 404) console.error('加载结构变更请求失败:', error)
+		schemaChange.value = null
+	} finally {
+		schemaChangeLoading.value = false
+	}
+}
+
+const openSchemaChangeDialog = () => {
+	schemaChangeFields.value = (schemaChange.value?.suggested_fields || []).map((field) => ({ ...field }))
+	schemaChangeDialogVisible.value = true
+}
+
+const submitSchemaChange = async () => {
+	const approval = buildSchemaChangeApproval(schemaChangeFields.value)
+	if (!approval) {
+		ElMessage.warning(t('transfer.taskDetail.schemaChangeInvalid'))
+		return
+	}
+	try {
+		await ElMessageBox.confirm(
+			t('transfer.taskDetail.schemaChangeConfirm'),
+			t('transfer.taskDetail.schemaChangeDialogTitle'),
+			{
+				confirmButtonText: t('transfer.taskDetail.applySchemaChange'),
+				cancelButtonText: t('transfer.taskDetail.cancel'),
+				type: 'warning'
+			}
+		)
+		schemaChangeSubmitting.value = true
+		const result = await taskAPI.approveSchemaChange(route.params.id, approval)
+		schemaChangeDialogVisible.value = false
+		ElMessage.success(result?.metadata_scan_status === 'failed'
+			? t('transfer.taskDetail.schemaChangeAppliedScanFailed')
+			: t('transfer.taskDetail.schemaChangeApplied'))
+		await loadTask()
+	} catch (error) {
+		if (error !== 'cancel') console.error('审批结构变更失败:', error)
+	} finally {
+		schemaChangeSubmitting.value = false
+	}
 }
 
 const handleExecute = async () => {
@@ -816,6 +911,22 @@ onBeforeUnmount(() => {
 
 .schema-blocked-alert {
 	margin-top: 16px;
+}
+
+.schema-change-panel {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: center;
+	margin-top: 16px;
+}
+
+.schema-change-panel .el-alert {
+	flex: 1 1 520px;
+}
+
+.schema-change-dialog-alert {
+	margin-bottom: 16px;
 }
 
 .dead-letter-notice,

@@ -29,7 +29,7 @@ func TestTaskResourceRepositorySoftDeletesTaskPrivateStateAndCancelsActiveExecut
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats != (TaskPrivateStateDeleteStats{DeadLetters: 1, SyncStates: 1, RuntimeLeases: 1, CaptureResources: 1, CancelledExecutions: 2}) {
+	if stats != (TaskPrivateStateDeleteStats{DeadLetters: 1, SyncStates: 1, RuntimeLeases: 1, SchemaChangeRequests: 1, CaptureResources: 1, CancelledExecutions: 2}) {
 		t.Fatalf("delete stats = %#v", stats)
 	}
 	assertTaskResourceCounts(t, db, 11, 0, 0, 0, 0, 3)
@@ -134,6 +134,7 @@ func newTaskResourceRepositoryTestDB(t *testing.T) *gorm.DB {
 			lease_until DATETIME NOT NULL
 		)`,
 		`CREATE TABLE transfer.capture_resources (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, task_id INTEGER NOT NULL)`,
+		`CREATE TABLE transfer.schema_change_requests (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, task_id INTEGER NOT NULL)`,
 		`CREATE TABLE common.task_executions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, execution_id TEXT NOT NULL,
 			module TEXT NOT NULL, task_type TEXT NOT NULL, source_task_id TEXT, status TEXT NOT NULL,
@@ -168,6 +169,7 @@ func seedTaskResourceFixture(
 		{`INSERT INTO transfer.sync_states (id, task_id) VALUES (?, ?)`, []interface{}{taskID, taskID}},
 		{`INSERT INTO transfer.runtime_leases (id, task_id, owner_instance_id, lease_until) VALUES (?, ?, ?, ?)`, []interface{}{taskID, taskID, leaseOwner, leaseUntil}},
 		{`INSERT INTO transfer.capture_resources (id, tenant_id, task_id) VALUES (?, ?, ?)`, []interface{}{taskID, tenantID, taskID}},
+		{`INSERT INTO transfer.schema_change_requests (id, tenant_id, task_id) VALUES (?, ?, ?)`, []interface{}{taskID, tenantID, taskID}},
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement.query, statement.args...).Error; err != nil {
@@ -220,6 +222,7 @@ func assertTaskResourceCounts(t *testing.T, db *gorm.DB, taskID uint, deadLetter
 		{name: "transfer.dead_letters", want: deadLetters},
 		{name: "transfer.sync_states", want: syncStates},
 		{name: "transfer.runtime_leases", want: runtimeLeases},
+		{name: "transfer.schema_change_requests", want: captureResources},
 		{name: "transfer.capture_resources", want: captureResources},
 		{name: "common.task_executions", want: executions},
 	}

@@ -317,7 +317,7 @@ func (s *IdentityService) RotateCurrentUserPassword(
 		if err != nil {
 			return err
 		}
-		if lockedSnapshot.TokenID != snapshot.TokenID || lockedSnapshot.FamilyPrincipalID != principal.ID {
+		if lockedSnapshot.CredentialID != snapshot.CredentialID || lockedSnapshot.FamilyPrincipalID != principal.ID {
 			return commonapi.ErrUnauthorized
 		}
 		rotated, outcomeErr, err = s.rotatePasswordTx(ctx, tx, principal, input, newPasswordHash)

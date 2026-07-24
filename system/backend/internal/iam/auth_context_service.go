@@ -13,32 +13,32 @@ import (
 	commonauth "github.com/addp/common/authorization"
 )
 
-type AccessTokenInvalidReason string
+type CredentialInvalidReason string
 
 const (
-	AccessTokenInvalidFormat               AccessTokenInvalidReason = "invalid_format"
-	AccessTokenInvalidNotFound             AccessTokenInvalidReason = "not_found"
-	AccessTokenInvalidTokenExpired         AccessTokenInvalidReason = "token_expired"
-	AccessTokenInvalidTokenRevoked         AccessTokenInvalidReason = "token_revoked"
-	AccessTokenInvalidFamilyExpired        AccessTokenInvalidReason = "family_expired"
-	AccessTokenInvalidFamilyRevoked        AccessTokenInvalidReason = "family_revoked"
-	AccessTokenInvalidPrincipalInactive    AccessTokenInvalidReason = "principal_inactive"
-	AccessTokenInvalidAuthorizationVersion AccessTokenInvalidReason = "authorization_version_mismatch"
-	AccessTokenInvalidContext              AccessTokenInvalidReason = "context_invalid"
-	AccessTokenInvalidMembershipInactive   AccessTokenInvalidReason = "tenant_membership_inactive"
-	AccessTokenInvalidTenantInactive       AccessTokenInvalidReason = "tenant_inactive"
-	AccessTokenInvalidUnsupportedTokenType AccessTokenInvalidReason = "unsupported_token_type"
+	CredentialInvalidFormat               CredentialInvalidReason = "invalid_format"
+	CredentialInvalidNotFound             CredentialInvalidReason = "not_found"
+	CredentialInvalidTokenExpired         CredentialInvalidReason = "token_expired"
+	CredentialInvalidTokenRevoked         CredentialInvalidReason = "token_revoked"
+	CredentialInvalidFamilyExpired        CredentialInvalidReason = "family_expired"
+	CredentialInvalidFamilyRevoked        CredentialInvalidReason = "family_revoked"
+	CredentialInvalidPrincipalInactive    CredentialInvalidReason = "principal_inactive"
+	CredentialInvalidAuthorizationVersion CredentialInvalidReason = "authorization_version_mismatch"
+	CredentialInvalidContext              CredentialInvalidReason = "context_invalid"
+	CredentialInvalidMembershipInactive   CredentialInvalidReason = "tenant_membership_inactive"
+	CredentialInvalidTenantInactive       CredentialInvalidReason = "tenant_inactive"
+	CredentialInvalidUnsupportedTokenType CredentialInvalidReason = "unsupported_token_type"
 )
 
-type AccessTokenValidationError struct {
-	Reason AccessTokenInvalidReason
+type CredentialValidationError struct {
+	Reason CredentialInvalidReason
 }
 
-func (e *AccessTokenValidationError) Error() string {
+func (e *CredentialValidationError) Error() string {
 	return commonapi.ErrUnauthorized.Error()
 }
 
-func (e *AccessTokenValidationError) Unwrap() error {
+func (e *CredentialValidationError) Unwrap() error {
 	return commonapi.ErrUnauthorized
 }
 
@@ -53,6 +53,20 @@ func NewAuthContextService(repository *Repository) (*AuthContextService, error) 
 	return &AuthContextService{repository: repository}, nil
 }
 
+func (s *AuthContextService) ResolveAuthContext(
+	ctx context.Context,
+	credential string,
+) (*commonauth.AuthContext, error) {
+	switch {
+	case strings.HasPrefix(credential, "addp_at_"):
+		return s.ResolveFirstPartyAccessToken(ctx, credential)
+	case strings.HasPrefix(credential, "addp_rat_"):
+		return s.ResolveResourceAccessTicket(ctx, credential)
+	default:
+		return nil, invalidCredential(CredentialInvalidFormat)
+	}
+}
+
 func (s *AuthContextService) ResolveFirstPartyAccessToken(
 	ctx context.Context,
 	accessToken string,
@@ -61,9 +75,57 @@ func (s *AuthContextService) ResolveFirstPartyAccessToken(
 		return nil, fmt.Errorf("%w: AuthContext service is required", commonapi.ErrBadRequest)
 	}
 
+	return s.resolveSessionCredential(ctx, func(tx *Repository) (*SessionCredentialAuthSnapshot, error) {
+		return resolveFirstPartyAccessTokenSnapshot(ctx, tx, accessToken)
+	}, func(snapshot *SessionCredentialAuthSnapshot) credentialProjection {
+		clientID := snapshot.FamilyClientID
+		return credentialProjection{
+			TokenType: "first_party_access_token",
+			ClientID:  clientID,
+			Audiences: append(make([]string, 0, len(snapshot.FamilyAudiences)), snapshot.FamilyAudiences...),
+			ScopeMode: "unrestricted",
+			Scopes:    append(make([]string, 0, len(snapshot.FamilyScopes)), snapshot.FamilyScopes...),
+		}
+	})
+}
+
+func (s *AuthContextService) ResolveResourceAccessTicket(
+	ctx context.Context,
+	resourceAccessTicket string,
+) (*commonauth.AuthContext, error) {
+	if s == nil || s.repository == nil {
+		return nil, fmt.Errorf("%w: AuthContext service is required", commonapi.ErrBadRequest)
+	}
+	return s.resolveSessionCredential(ctx, func(tx *Repository) (*SessionCredentialAuthSnapshot, error) {
+		return resolveResourceAccessTicketSnapshot(ctx, tx, resourceAccessTicket)
+	}, func(snapshot *SessionCredentialAuthSnapshot) credentialProjection {
+		clientID := "addp-web"
+		return credentialProjection{
+			TokenType: "resource_access_ticket",
+			ClientID:  clientID,
+			Audiences: []string{*snapshot.CredentialOwner},
+			ScopeMode: "restricted",
+			Scopes:    []string{commonauth.BrowserResourceAccessScope},
+		}
+	})
+}
+
+type credentialProjection struct {
+	TokenType string
+	ClientID  string
+	Audiences []string
+	ScopeMode string
+	Scopes    []string
+}
+
+func (s *AuthContextService) resolveSessionCredential(
+	ctx context.Context,
+	loadSnapshot func(*Repository) (*SessionCredentialAuthSnapshot, error),
+	projectCredential func(*SessionCredentialAuthSnapshot) credentialProjection,
+) (*commonauth.AuthContext, error) {
 	var authContext *commonauth.AuthContext
 	err := s.repository.ReadOnlyRepeatableReadTransaction(ctx, func(tx *Repository) error {
-		snapshot, err := resolveFirstPartyAccessTokenSnapshot(ctx, tx, accessToken)
+		snapshot, err := loadSnapshot(tx)
 		if err != nil {
 			return err
 		}
@@ -135,10 +197,11 @@ func (s *AuthContextService) ResolveFirstPartyAccessToken(
 			return err
 		}
 
-		clientID := snapshot.FamilyClientID
+		projection := projectCredential(snapshot)
+		clientID := projection.ClientID
 		methods := append(make([]string, 0, len(snapshot.FamilyAuthenticationMethods)), snapshot.FamilyAuthenticationMethods...)
-		audiences := append(make([]string, 0, len(snapshot.FamilyAudiences)), snapshot.FamilyAudiences...)
-		scopes := append(make([]string, 0, len(snapshot.FamilyScopes)), snapshot.FamilyScopes...)
+		audiences := append(make([]string, 0, len(projection.Audiences)), projection.Audiences...)
+		scopes := append(make([]string, 0, len(projection.Scopes)), projection.Scopes...)
 		sort.Strings(methods)
 		sort.Strings(audiences)
 		sort.Strings(scopes)
@@ -166,7 +229,7 @@ func (s *AuthContextService) ResolveFirstPartyAccessToken(
 			Client: commonauth.ClientConstraints{
 				ClientID:  &clientID,
 				Audiences: audiences,
-				ScopeMode: "unrestricted",
+				ScopeMode: projection.ScopeMode,
 				Scopes:    scopes,
 			},
 			Organization: organization,
@@ -175,13 +238,13 @@ func (s *AuthContextService) ResolveFirstPartyAccessToken(
 				RoleAssignments:      assignments,
 			},
 			Token: commonauth.TokenFacts{
-				Type:      "first_party_access_token",
-				IssuedAt:  snapshot.TokenCreatedAt.UTC(),
-				ExpiresAt: snapshot.TokenExpiresAt.UTC(),
+				Type:      projection.TokenType,
+				IssuedAt:  snapshot.CredentialCreatedAt.UTC(),
+				ExpiresAt: snapshot.CredentialExpiresAt.UTC(),
 			},
 		}
 		if err := commonauth.ValidateAuthContext(*candidate); err != nil {
-			return fmt.Errorf("project first-party AuthContext: %w", err)
+			return fmt.Errorf("project %s AuthContext: %w", projection.TokenType, err)
 		}
 		authContext = candidate
 		return nil
@@ -196,17 +259,17 @@ func resolveFirstPartyAccessTokenSnapshot(
 	ctx context.Context,
 	repository *Repository,
 	accessToken string,
-) (*AccessTokenAuthSnapshot, error) {
+) (*SessionCredentialAuthSnapshot, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("%w: IAM repository is required", commonapi.ErrBadRequest)
 	}
 	if !strings.HasPrefix(accessToken, "addp_at_") || len(accessToken) == len("addp_at_") {
-		return nil, invalidAccessToken(AccessTokenInvalidFormat)
+		return nil, invalidCredential(CredentialInvalidFormat)
 	}
 	snapshot, err := repository.GetAccessTokenAuthSnapshot(ctx, hashOpaqueToken(accessToken))
 	if err != nil {
 		if errors.Is(err, commonapi.ErrNotFound) {
-			return nil, invalidAccessToken(AccessTokenInvalidNotFound)
+			return nil, invalidCredential(CredentialInvalidNotFound)
 		}
 		return nil, err
 	}
@@ -216,63 +279,108 @@ func resolveFirstPartyAccessTokenSnapshot(
 	return snapshot, nil
 }
 
-func validateFirstPartyAccessTokenSnapshot(snapshot *AccessTokenAuthSnapshot) error {
+func resolveResourceAccessTicketSnapshot(
+	ctx context.Context,
+	repository *Repository,
+	resourceAccessTicket string,
+) (*SessionCredentialAuthSnapshot, error) {
+	if repository == nil {
+		return nil, fmt.Errorf("%w: IAM repository is required", commonapi.ErrBadRequest)
+	}
+	if !strings.HasPrefix(resourceAccessTicket, "addp_rat_") || len(resourceAccessTicket) == len("addp_rat_") {
+		return nil, invalidCredential(CredentialInvalidFormat)
+	}
+	snapshot, err := repository.GetResourceAccessTicketAuthSnapshot(ctx, hashOpaqueToken(resourceAccessTicket))
+	if err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
+			return nil, invalidCredential(CredentialInvalidNotFound)
+		}
+		return nil, err
+	}
+	if err := validateResourceAccessTicketSnapshot(snapshot); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
+}
+
+func validateFirstPartyAccessTokenSnapshot(snapshot *SessionCredentialAuthSnapshot) error {
+	if err := validateFirstPartyBrowserCredentialSnapshot(snapshot); err != nil {
+		return err
+	}
+	if snapshot.CredentialOwner != nil || len(snapshot.FamilyAudiences) != 1 ||
+		snapshot.FamilyAudiences[0] != "addp.api" || len(snapshot.FamilyScopes) != 0 {
+		return invalidCredential(CredentialInvalidContext)
+	}
+	return nil
+}
+
+func validateResourceAccessTicketSnapshot(snapshot *SessionCredentialAuthSnapshot) error {
+	if err := validateFirstPartyBrowserCredentialSnapshot(snapshot); err != nil {
+		return err
+	}
+	if snapshot.CredentialOwner == nil || commonauth.ValidateOwnerModuleName(*snapshot.CredentialOwner) != nil ||
+		len(snapshot.FamilyAudiences) != 1 || snapshot.FamilyAudiences[0] != "addp.api" ||
+		len(snapshot.FamilyScopes) != 0 {
+		return invalidCredential(CredentialInvalidContext)
+	}
+	return nil
+}
+
+func validateFirstPartyBrowserCredentialSnapshot(snapshot *SessionCredentialAuthSnapshot) error {
 	if snapshot == nil {
-		return invalidAccessToken(AccessTokenInvalidNotFound)
+		return invalidCredential(CredentialInvalidNotFound)
 	}
 	now := snapshot.DatabaseTime
-	if snapshot.TokenRevokedAt != nil {
-		return invalidAccessToken(AccessTokenInvalidTokenRevoked)
+	if snapshot.CredentialRevokedAt != nil {
+		return invalidCredential(CredentialInvalidTokenRevoked)
 	}
-	if !snapshot.TokenExpiresAt.After(now) {
-		return invalidAccessToken(AccessTokenInvalidTokenExpired)
+	if !snapshot.CredentialExpiresAt.After(now) {
+		return invalidCredential(CredentialInvalidTokenExpired)
 	}
 	if snapshot.FamilyRevokedAt != nil {
-		return invalidAccessToken(AccessTokenInvalidFamilyRevoked)
+		return invalidCredential(CredentialInvalidFamilyRevoked)
 	}
 	if !snapshot.FamilyExpiresAt.After(now) {
-		return invalidAccessToken(AccessTokenInvalidFamilyExpired)
+		return invalidCredential(CredentialInvalidFamilyExpired)
 	}
 	if snapshot.PrincipalStatus != PrincipalStatusActive {
-		return invalidAccessToken(AccessTokenInvalidPrincipalInactive)
+		return invalidCredential(CredentialInvalidPrincipalInactive)
 	}
 	if snapshot.PrincipalType != PrincipalTypeUser || snapshot.FamilyAuthType != "first_party" || snapshot.FamilyClientID != "addp-web" {
-		return invalidAccessToken(AccessTokenInvalidUnsupportedTokenType)
+		return invalidCredential(CredentialInvalidUnsupportedTokenType)
 	}
 	if snapshot.FamilyAuthorizationVersion != snapshot.PrincipalAuthorizationVersion {
-		return invalidAccessToken(AccessTokenInvalidAuthorizationVersion)
+		return invalidCredential(CredentialInvalidAuthorizationVersion)
 	}
-	if snapshot.TokenCreatedAt.After(now) || snapshot.FamilyAuthenticatedAt.After(now) {
-		return invalidAccessToken(AccessTokenInvalidContext)
-	}
-	if len(snapshot.FamilyAudiences) != 1 || snapshot.FamilyAudiences[0] != "addp.api" || len(snapshot.FamilyScopes) != 0 {
-		return invalidAccessToken(AccessTokenInvalidContext)
+	if snapshot.CredentialCreatedAt.After(now) || snapshot.FamilyAuthenticatedAt.After(now) ||
+		snapshot.CredentialExpiresAt.After(snapshot.FamilyExpiresAt) {
+		return invalidCredential(CredentialInvalidContext)
 	}
 	if snapshot.FamilyStepUpExpiresAt != nil && snapshot.FamilyStepUpExpiresAt.After(snapshot.FamilyExpiresAt) {
-		return invalidAccessToken(AccessTokenInvalidContext)
+		return invalidCredential(CredentialInvalidContext)
 	}
 
 	switch snapshot.FamilyContextType {
 	case ContextTypePlatform:
 		if snapshot.FamilyTenantMembershipID != nil || snapshot.TenantMembershipID != nil ||
 			(snapshot.FamilyAssuranceLevel != AssuranceLevelAAL2 && snapshot.FamilyAssuranceLevel != AssuranceLevelAAL3) {
-			return invalidAccessToken(AccessTokenInvalidContext)
+			return invalidCredential(CredentialInvalidContext)
 		}
 	case ContextTypeTenant:
 		if snapshot.FamilyTenantMembershipID == nil || snapshot.TenantMembershipID == nil || snapshot.TenantID == nil ||
 			*snapshot.FamilyTenantMembershipID != *snapshot.TenantMembershipID {
-			return invalidAccessToken(AccessTokenInvalidContext)
+			return invalidCredential(CredentialInvalidContext)
 		}
 		if snapshot.TenantMembershipStatus == nil || *snapshot.TenantMembershipStatus != TenantMembershipStatusActive ||
 			snapshot.TenantMembershipJoinedAt == nil || snapshot.TenantMembershipJoinedAt.After(now) ||
 			(snapshot.TenantMembershipExpiresAt != nil && !snapshot.TenantMembershipExpiresAt.After(now)) {
-			return invalidAccessToken(AccessTokenInvalidMembershipInactive)
+			return invalidCredential(CredentialInvalidMembershipInactive)
 		}
 		if snapshot.TenantStatus == nil || *snapshot.TenantStatus != TenantStatusActive {
-			return invalidAccessToken(AccessTokenInvalidTenantInactive)
+			return invalidCredential(CredentialInvalidTenantInactive)
 		}
 	default:
-		return invalidAccessToken(AccessTokenInvalidContext)
+		return invalidCredential(CredentialInvalidContext)
 	}
 	return nil
 }
@@ -343,8 +451,8 @@ func buildAssignmentScope(row RoleAssignmentPermissionProjection) (commonauth.As
 	return scope, nil
 }
 
-func invalidAccessToken(reason AccessTokenInvalidReason) error {
-	return &AccessTokenValidationError{Reason: reason}
+func invalidCredential(reason CredentialInvalidReason) error {
+	return &CredentialValidationError{Reason: reason}
 }
 
 func formatIAMID(value int64) string {

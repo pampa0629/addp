@@ -1,6 +1,6 @@
 # Transfer 模块基本概念及配置说明
 
-更新时间：2026-07-12
+更新时间：2026-07-25
 
 本文档定义 Transfer 稳定任务配置、执行状态、bounded snapshot 主链路、PostgreSQL watermark bounded incremental 第一版规则，以及 continuous/Kafka 契约与当前实现边界。旧版顶层 `mode`、`target.policy.write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
 
@@ -22,7 +22,7 @@
 | `batch_size` | 批大小；config 内未声明时作为 planner 默认值。 |
 | `enabled` | 定时任务是否启用。 |
 | `auto_scan_metadata` | 成功后是否触发 Meta deep scan，默认 true。 |
-| `status` | 任务实际状态：`idle`、`running`、`blocked`；`blocked` 当前用于不可恢复的数据库 CDC schema drift。 |
+| `status` | 任务实际状态：`idle`、`running`、`blocked`；`blocked` 当前用于数据库 CDC schema drift，审批成功后收敛为 `idle`。 |
 | `progress` | 任务进度百分比。 |
 
 任务状态只表达当前任务是否正在运行；成功或失败等结果在统一执行记录中查看。
@@ -271,7 +271,7 @@ continuous worker 是 Transfer 独立进程角色，不使用 Asynq。`desired_s
 
 业务 Kafka bounded replay 使用唯一 `POST /task-definitions/:id/replay`。请求只能提交显式 per-partition `[start_offset,end_offset)` 与新 PostgreSQL 目标的 `parent_locator + name`；source、mapping、key、policy 和原目标全部继承 owner task 且不可覆盖。API 在创建 execution 前冻结并校验请求时 retention、拒绝原目标或已有目标；bounded worker 再次校验 retention 和目标不存在后，以 execution-scoped apply identity 写入隔离表。replay 不读写 `transfer.sync_states`、主 lease、主 apply identity、主目标或任务 `desired_state/status/last_execution*`，因此可与主 continuous runtime 并行。
 
-resume 前必须确认 committed `next_offset` 仍在 Kafka partition 的保留范围内。若 retention 已删除该位置，任务明确失败并要求人工决定如何处理，不能自动跳到 earliest。PostgreSQL 目标锁等待必须响应 context 取消；取消事务不得留下业务行或目标 ledger 的半提交状态。数据库 CDC 遇到未知字段、缺失必填字段或类型不兼容时，当前 execution 失败且任务进入 `blocked`；业务 Kafka record 路线按显式 `block|dead_letter` 处理确定性记录错误，但不复用 CDC 的不可恢复 generation 语义。
+resume 前必须确认 committed `next_offset` 仍在 Kafka partition 的保留范围内。若 retention 已删除该位置，任务明确失败并要求人工决定如何处理，不能自动跳到 earliest。PostgreSQL 目标锁等待必须响应 context 取消；取消事务不得留下业务行或目标 ledger 的半提交状态。数据库 CDC 遇到 schema drift 时，当前 execution 失败且任务进入 `blocked`；业务 Kafka record 路线按显式 `block|dead_letter` 处理确定性记录错误，不复用 CDC 的 schema change request 语义。
 
 continuous worker 每隔 `TRANSFER_CONTINUOUS_DIAGNOSTICS_INTERVAL`（默认 `15s`）读取每分区 earliest/latest offset，用目标已成功应用的 committed `next_offset` 计算 lag 和 retention 恢复余量。时间余量使用连续 latest 样本的增长率估算；冷启动、无 committed position 或写入速率为零时显示 unknown。默认 degraded/critical 阈值由 `TRANSFER_CONTINUOUS_RETENTION_DEGRADED_HORIZON=6h` 和 `TRANSFER_CONTINUOUS_RETENTION_CRITICAL_HORIZON=1h` 统一控制。`transfer.sync_states.position_committed_at` 单独保存真实 position commit 时间；只有存在 source lag 且 commit age 超过 `TRANSFER_CONTINUOUS_CHECKPOINT_STALE_AFTER=5m` 时 checkpoint health 才进入 degraded，lag 为 0 时保持 healthy。所有阈值均不进入任务 JSON。诊断结果写入 `common.task_executions.metadata.continuous.diagnostics`，Monitor 只读取 execution metadata，不直连业务 Kafka或 Transfer 私有状态表。
 
@@ -301,7 +301,9 @@ Debezium 的 geometry 属性名是 `wkb`，真实 PostGIS connector 可能在该
 
 MySQL CDC 固定支持 MySQL 8.0、有稳定非空主键的单表、`log_bin=ON`、`binlog_format=ROW`、`binlog_row_image=FULL` 和非零 server id。v1 接受有符号整数、字符/文本、Decimal、浮点、毫秒精度日期时间、JSON 和 binary/BLOB；拒绝 unsigned、`TINYINT(1)`/BOOL、BIT、ENUM/SET、YEAR、空间类型、超过毫秒的时间精度和 zero date。每个 generation 拥有唯一 connector server id、data topic 和 `cleanup.policy=delete + retention.ms=-1` 的 schema-history topic，Stop 时统一清理。
 
-类型不兼容与字段增删、envelope/source 结构变化一样进入 `schema_change_blocked`，execution metadata 会记录 missing/unexpected/incompatible 字段，当前 Kafka 消息不会被跳过。任务同时进入 `status=blocked`，禁止再次启动、恢复或重试；connector 在用户 Stop 前仍会继续采集，因此 backlog、Kafka retention 和磁盘风险继续存在。第一版唯一处理方式是永久停止旧任务，再创建新任务和新目标表重新初始化，不支持“调整目标后原地恢复”。
+类型不兼容与字段增删、envelope/source 结构变化一样进入 `schema_change_blocked`，execution metadata 会记录 missing/unexpected/incompatible 字段，当前 Kafka 消息不会被跳过。任务同时进入 `status=blocked`，禁止直接启动、恢复或重试；connector 仍会继续采集，因此 backlog、Kafka retention 和磁盘风险继续存在。
+
+原 capture generation 的唯一恢复路线是人工确认 additive migration。`GET /task-definitions/:id/schema-change` 返回当前请求与服务端重新检查后的建议字段；只有当前阻塞消息实际包含、源表中仍存在、允许 NULL、不是主键且不是 geometry 的新增字段可审批。`POST /task-definitions/:id/schema-change/approve` 必须逐字段提交 `source`、`target`、`target_type` 和 `nullable=true`，完整覆盖本次新增字段。服务端复用 `PartitionedTableChangeApplyProvider` 幂等新增目标列，追加唯一 field mapping、递增 generation schema revision，并把任务收敛为 `status=idle, desired_state=paused`；审批不会隐式恢复，用户需通过既有 Resume 从原 committed offset 继续。删除字段、类型或主键变化、非 nullable/geometry 新增以及协议变化仍只能永久 Stop 后创建新任务和新目标表。
 
 `pause` 停止目标应用，但 connector 继续把 PostgreSQL WAL 或 MySQL binlog 变化写入 Infra Kafka并推进捕获位置。正常 pause 的主要代价是 Kafka backlog、磁盘和 retention 窗口；connector/Kafka 故障时还必须分别观测 PostgreSQL slot/WAL 或 MySQL binlog 保留风险。resume 只在 committed position 尚未过期时保证无损。
 
@@ -311,7 +313,7 @@ continuous task 初始同样保存 `desired_state=stopped`，所以该字段只�
 
 完整配置、envelope、schema drift、目标原子应用和资源 owner 约束以 [ADDP 任务体系规范](../../docs/spec/addp任务体系规范.md) 的“Transfer 数据库 CDC v1 契约”为准。Oracle、多表、无主键、数据库 CDC replay/DLQ、Schema Registry、Avro、Protobuf、自动 DDL 和 truncate 事件均未进入当前实现；业务 Kafka 的 DLQ 与 bounded replay 已公开。
 
-capture supervisor 已通过 Kafka Connect REST 和 Infra Kafka admin API 管理任务级 generation，状态登记在 `transfer.capture_resources`。continuous worker 从登记的内部 topic/group 消费 Debezium 3.6 schemaless JSON，严格处理 `r/c/u/d`，并在协议或 schema 变化时以 `schema_change_blocked` 阻塞而不推进 offset。公开任务配置仍不出现这些内部名称。
+capture supervisor 已通过 Kafka Connect REST 和 Infra Kafka admin API 管理任务级 generation，状态登记在 `transfer.capture_resources`。continuous worker 从登记的内部 topic/group 消费 Debezium 3.6 schemaless JSON，严格处理 `r/c/u/d`，并在协议或 schema 变化时以 `schema_change_blocked` 阻塞而不推进 offset。人工 additive request 和 revision 审计保存在 `transfer.schema_change_requests`；公开任务配置仍不出现这些内部名称或 schema evolution 开关。
 
 ## 十、Checkpoint、进度和重试
 

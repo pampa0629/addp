@@ -23,13 +23,15 @@ System 在第一方 Web 登录和每次 Web Refresh Token 轮换事务中，为�
 1. 第一方登录创建 Refresh Token Family、Access Token 和每个 Owner 的 Resource Access Ticket。
 2. Web Refresh 在同一事务内撤销旧票据并创建新票据。
 3. 票据有效期不超过 `RESOURCE_ACCESS_TICKET_EXPIRE_MINUTES`、当前 Access Token 和 Family 的剩余有效期。
-4. 退出、Refresh Token 重用或 Family 撤销时，所有关联票据同步撤销并清除 Redis AuthContext 缓存。
+4. 退出、Refresh Token 轮换、重用或 Family 撤销时，所有关联票据同步撤销；第一阶段不缓存 Resource Ticket AuthContext。
 5. OAuth Authorization Code、Device Flow 和 OAuth Refresh Token 不创建浏览器资源票据。
 
 ## 四、安全边界
 
 - Cookie 名称固定为 `addp_resource_access_ticket`，每个 Owner 使用独立 Path，例如 `/api/v1/manager`。
 - JavaScript 不可读取票据，响应 JSON 不返回票据。
-- Owner 先校验 GET/HEAD 和路由白名单，再解析 Cookie；普通 API 不接受票据。
-- AuthContext 必须为 `auth_type=resource_access_ticket`，audience 必须包含当前 Owner，scope 必须包含 `resource:read`。
-- Owner Handler 仍按 AuthContext 执行租户隔离和资源权限校验。
+- Owner 只在挂载 Resource Ticket Guard 的 GET/HEAD 路由解析 Cookie，Guard 挂载本身就是白名单；普通 API 不接受票据。
+- 同一路由出现 `Authorization` Header 时统一拒绝，不定义 Bearer 与 Ticket Cookie 的优先级。
+- AuthContext 固定为 `token.type=resource_access_ticket`、`client.client_id=addp-web`、`client.audiences=[owner]`、`client.scope_mode=restricted`、`client.scopes=[resource:read]` 和 `delegation=null`。
+- Principal、Context、认证、组织、授权版本和 Role Assignment 从所属第一方 Browser Family 的当前事实投影。
+- Guard 校验声明的 Role Permission all-of 候选；Owner Handler 仍按 Assignment Scope、租户隔离、资源归属、Grant、Policy 和 Explicit Deny 完成最终判断。

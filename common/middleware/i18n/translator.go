@@ -15,10 +15,12 @@ var commonLocaleFS embed.FS
 
 // 通用消息 key 常量（common 模块使用）
 const (
-	MsgInvalidID     = "err.invalid_id"
-	MsgUnauthorized  = "err.unauthorized"
-	MsgForbidden     = "err.forbidden"
-	MsgInvalidParams = "err.invalid_params"
+	MsgInvalidID                       = "err.invalid_id"
+	MsgUnauthorized                    = "err.unauthorized"
+	MsgForbidden                       = "err.forbidden"
+	MsgInvalidParams                   = "err.invalid_params"
+	MsgMethodNotAllowed                = "err.method_not_allowed"
+	MsgAuthorizationServiceUnavailable = "err.authorization_service_unavailable"
 )
 
 // Bundle 是全局翻译 Bundle，各模块可通过 RegisterBundle 注册自己的翻译文件。

@@ -43,7 +43,7 @@ func TestIntegrationPostgresTaskPrivateStateDeletionTransaction(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&models.TransferTask{}, &models.DeadLetter{}, &models.SyncState{}, &models.RuntimeLease{}, &models.CaptureResource{},
-		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{},
+		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{}, &models.SchemaChangeRequest{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestIntegrationPostgresTaskPrivateStateDeletionTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats != (TaskPrivateStateDeleteStats{DeadLetters: 1, SyncStates: 1, RuntimeLeases: 1, CaptureResources: 1, CancelledExecutions: 2}) {
+	if stats != (TaskPrivateStateDeleteStats{DeadLetters: 1, SyncStates: 1, RuntimeLeases: 1, SchemaChangeRequests: 1, CaptureResources: 1, CancelledExecutions: 2}) {
 		t.Fatalf("PostgreSQL delete stats = %#v", stats)
 	}
 	assertPostgresTaskPrivateStateCounts(t, db, cleanable, 0, 0)
@@ -145,6 +145,14 @@ func createPostgresTaskResourceFixture(t *testing.T, db *gorm.DB, now, leaseUnti
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Create(&models.SchemaChangeRequest{
+		TaskID: task.ID, TenantID: task.TenantID, CaptureResourceID: capture.ID, Generation: 1,
+		ExecutionID: "schema-" + suffix, SourcePartition: "0", SourceOffset: 10, Scope: "Debezium after",
+		Diff: models.JSONMap{"unexpected_fields": []string{"added"}}, ApprovedMappings: models.JSONMap{},
+		FromRevision: 1, ToRevision: 2, Status: models.SchemaChangeRequestPending, DetectedAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 	startedAt := now.Add(-2 * time.Minute)
 	statuses := []struct {
 		name      string
@@ -187,6 +195,7 @@ func assertPostgresTaskPrivateStateCounts(t *testing.T, db *gorm.DB, task models
 		{model: &models.DeadLetter{}, where: "tenant_id = ? AND task_id = ?", args: []interface{}{task.TenantID, task.ID}},
 		{model: &models.SyncState{}, where: "task_id = ?", args: []interface{}{task.ID}},
 		{model: &models.RuntimeLease{}, where: "task_id = ?", args: []interface{}{task.ID}},
+		{model: &models.SchemaChangeRequest{}, where: "tenant_id = ? AND task_id = ?", args: []interface{}{task.TenantID, task.ID}},
 		{model: &models.CaptureResource{}, where: "tenant_id = ? AND task_id = ?", args: []interface{}{task.TenantID, task.ID}},
 	}
 	for _, query := range queries {

@@ -219,6 +219,7 @@
       "validationFailed": "Workflow has {count} errors",
       "validationWarnings": "Workflow has {count} warnings",
       "validationUnavailable": "Workflow validation is temporarily unavailable",
+      "workflowLevelIssue": "Workflow",
       "viewIssues": "View issues",
       "leaveConfirm": "This workflow has unsaved changes. Leave anyway?"
     },

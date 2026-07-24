@@ -100,6 +100,7 @@ func createCaptureRepositoryTestTables(t *testing.T, db *gorm.DB) {
 			topic_created BOOLEAN NOT NULL DEFAULT FALSE,
 			connector_created BOOLEAN NOT NULL DEFAULT FALSE,
 			resource_version INTEGER NOT NULL DEFAULT 1,
+			schema_revision INTEGER NOT NULL DEFAULT 1,
 			last_observed_at DATETIME,
 			stopped_at DATETIME,
 			created_at DATETIME,

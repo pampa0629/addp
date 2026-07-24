@@ -10,6 +10,8 @@
 "err.log_not_found"          = "Log not found"
 "err.export_failed"          = "Export failed"
 "err.invalid_params"         = "Invalid request parameters"
+"err.method_not_allowed"     = "Method not allowed"
+"err.authorization_service_unavailable" = "Authorization service is temporarily unavailable"
 "err.audit_log_create_failed"= "Failed to create audit log"
 "err.module_not_found"       = "Module not found"
 "msg.module_registered"      = "Module registered successfully"

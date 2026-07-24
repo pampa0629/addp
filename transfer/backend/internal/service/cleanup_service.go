@@ -48,29 +48,31 @@ type TaskOwnedCleanupConfig struct {
 }
 
 type TaskOwnedResourceCleanupResult struct {
-	CaptureCleaned           bool
-	DeadLetterTopicCleaned   bool
-	DeletedDeadLetterRecords int64
-	DeletedSyncStates        int64
-	DeletedRuntimeLeases     int64
-	DeletedCaptureResources  int64
-	CancelledExecutions      int64
+	CaptureCleaned              bool
+	DeadLetterTopicCleaned      bool
+	DeletedDeadLetterRecords    int64
+	DeletedSyncStates           int64
+	DeletedRuntimeLeases        int64
+	DeletedSchemaChangeRequests int64
+	DeletedCaptureResources     int64
+	CancelledExecutions         int64
 }
 
 type TransferCleanupStats struct {
-	TaskDefinitions          int      `json:"task_definitions"`
-	DisabledTaskDefinitions  int      `json:"disabled_task_definitions,omitempty"`
-	DeletedTaskDefinitions   int      `json:"deleted_task_definitions,omitempty"`
-	CaptureResources         int      `json:"capture_resources,omitempty"`
-	CleanedCaptureResources  int      `json:"cleaned_capture_resources,omitempty"`
-	DeadLetterTopics         int      `json:"dead_letter_topics,omitempty"`
-	CleanedDeadLetterTopics  int      `json:"cleaned_dead_letter_topics,omitempty"`
-	DeletedDeadLetterRecords int64    `json:"deleted_dead_letter_records,omitempty"`
-	DeletedSyncStates        int64    `json:"deleted_sync_states,omitempty"`
-	DeletedRuntimeLeases     int64    `json:"deleted_runtime_leases,omitempty"`
-	DeletedCaptureResources  int64    `json:"deleted_capture_resources,omitempty"`
-	CancelledExecutions      int64    `json:"cancelled_executions,omitempty"`
-	Errors                   []string `json:"errors,omitempty"`
+	TaskDefinitions             int      `json:"task_definitions"`
+	DisabledTaskDefinitions     int      `json:"disabled_task_definitions,omitempty"`
+	DeletedTaskDefinitions      int      `json:"deleted_task_definitions,omitempty"`
+	CaptureResources            int      `json:"capture_resources,omitempty"`
+	CleanedCaptureResources     int      `json:"cleaned_capture_resources,omitempty"`
+	DeadLetterTopics            int      `json:"dead_letter_topics,omitempty"`
+	CleanedDeadLetterTopics     int      `json:"cleaned_dead_letter_topics,omitempty"`
+	DeletedDeadLetterRecords    int64    `json:"deleted_dead_letter_records,omitempty"`
+	DeletedSyncStates           int64    `json:"deleted_sync_states,omitempty"`
+	DeletedRuntimeLeases        int64    `json:"deleted_runtime_leases,omitempty"`
+	DeletedSchemaChangeRequests int64    `json:"deleted_schema_change_requests,omitempty"`
+	DeletedCaptureResources     int64    `json:"deleted_capture_resources,omitempty"`
+	CancelledExecutions         int64    `json:"cancelled_executions,omitempty"`
+	Errors                      []string `json:"errors,omitempty"`
 }
 
 func (s *TransferCleanupService) SetCaptureControl(control CaptureControl) {
@@ -153,6 +155,7 @@ func (s *TransferCleanupService) DeleteTaskAndOwnedResources(ctx context.Context
 	result.DeletedDeadLetterRecords = deleted.DeadLetters
 	result.DeletedSyncStates = deleted.SyncStates
 	result.DeletedRuntimeLeases = deleted.RuntimeLeases
+	result.DeletedSchemaChangeRequests = deleted.SchemaChangeRequests
 	result.DeletedCaptureResources = deleted.CaptureResources
 	result.CancelledExecutions = deleted.CancelledExecutions
 	return result, nil
@@ -383,6 +386,7 @@ func (s *TransferCleanupService) ExecuteCleanup(ctx context.Context, tenantID ui
 			stats.DeletedDeadLetterRecords += cleaned.DeletedDeadLetterRecords
 			stats.DeletedSyncStates += cleaned.DeletedSyncStates
 			stats.DeletedRuntimeLeases += cleaned.DeletedRuntimeLeases
+			stats.DeletedSchemaChangeRequests += cleaned.DeletedSchemaChangeRequests
 			stats.DeletedCaptureResources += cleaned.DeletedCaptureResources
 			stats.CancelledExecutions += cleaned.CancelledExecutions
 			stats.DeletedTaskDefinitions++

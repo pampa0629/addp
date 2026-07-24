@@ -9,6 +9,7 @@ import (
 	"time"
 
 	commonAPI "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	"github.com/addp/transfer/internal/config"
@@ -24,6 +25,10 @@ var ErrUnsupportedTaskType = errors.New("unsupported transfer task_type")
 var ErrDeadLetterNotFound = errors.New("transfer dead-letter record not found")
 var ErrTaskDeleteRequiresStopped = errors.New("transfer task must be stopped before deletion")
 var ErrTaskDeleteCleanupFailed = errors.New("transfer task-owned resource cleanup failed")
+var ErrSchemaChangeNotFound = errors.New("schema change request not found")
+var ErrSchemaChangeNotAdditive = errors.New("schema change is not eligible for additive migration")
+var ErrSchemaChangeApprovalConflict = errors.New("schema change approval conflicts with current source or mapping")
+var ErrSchemaChangeControlUnavailable = errors.New("schema change control is unavailable")
 
 // TaskQueue 任务队列接口（避免循环依赖）
 type TaskQueue interface {
@@ -40,6 +45,10 @@ type CaptureControl interface {
 	HasStopInitiatedGeneration(ctx context.Context, taskID, tenantID uint) (bool, error)
 }
 
+type SchemaChangeInspector interface {
+	InspectAdditiveFields(ctx context.Context, task *models.TransferTask, sourceFields []string) ([]models.SchemaChangeField, error)
+}
+
 type TaskExecutionEngine interface {
 	ExecuteTask(ctx context.Context, taskID, executionID uint) error
 	PrepareReplayExecution(ctx context.Context, taskConfig map[string]interface{}, request ReplayExecutionRequest, executionApplyIdentity string) (*ReplayExecutionPreparation, error)
@@ -50,6 +59,7 @@ type TaskService struct {
 	db               *gorm.DB
 	taskRepo         *repository.TaskRepository
 	deadLetterRepo   *repository.DeadLetterRepository
+	schemaChangeRepo *repository.SchemaChangeRequestRepository
 	executionService *ExecutionService // 使用统一执行服务
 	executionEngine  TaskExecutionEngine
 	cfg              *config.Config
@@ -57,6 +67,8 @@ type TaskService struct {
 	captureControl   CaptureControl
 	taskCleanup      TaskOwnedResourceCleanup
 	engineResolver   planner.EngineResolver
+	schemaInspector  SchemaChangeInspector
+	metaClient       *commonClient.MetaClient
 	logger           *slog.Logger
 }
 
@@ -72,6 +84,10 @@ func (s *TaskService) SetEngineResolver(resolver planner.EngineResolver) {
 	s.engineResolver = resolver
 }
 
+func (s *TaskService) SetSchemaChangeInspector(inspector SchemaChangeInspector) {
+	s.schemaInspector = inspector
+}
+
 // NewTaskService 创建任务服务
 func NewTaskService(
 	db *gorm.DB,
@@ -79,15 +95,20 @@ func NewTaskService(
 	cfg *config.Config,
 	taskQueue TaskQueue,
 ) *TaskService {
-	return &TaskService{
-		db:              db,
-		taskRepo:        repository.NewTaskRepository(db),
-		deadLetterRepo:  repository.NewDeadLetterRepository(db),
-		executionEngine: executionEngine,
-		taskQueue:       taskQueue,
-		cfg:             cfg,
-		logger:          logger.With("component", "task_service"),
+	service := &TaskService{
+		db:               db,
+		taskRepo:         repository.NewTaskRepository(db),
+		deadLetterRepo:   repository.NewDeadLetterRepository(db),
+		schemaChangeRepo: repository.NewSchemaChangeRequestRepository(db),
+		executionEngine:  executionEngine,
+		taskQueue:        taskQueue,
+		cfg:              cfg,
+		logger:           logger.With("component", "task_service"),
 	}
+	if cfg != nil && strings.TrimSpace(cfg.MetaServiceURL) != "" && strings.TrimSpace(cfg.InternalAPIKey) != "" {
+		service.metaClient = commonClient.NewMetaClientWithInternalKey(cfg.MetaServiceURL, cfg.InternalAPIKey)
+	}
+	return service
 }
 
 // ListDeadLetters 返回认证租户下 owner task 的安全 DLQ 控制索引。

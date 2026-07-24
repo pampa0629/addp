@@ -64,7 +64,7 @@ AuthContext 根对象固定包含：
 
 平台管理上下文不得通过空 Tenant 表示“所有 Tenant”。它只激活当前 Principal 被分配的平台角色。Tenant 业务上下文必须绑定一个有效 Tenant Membership，且只投影当前 Tenant 内的角色和组织事实。
 
-第一方 Web、OAuth、Service Principal、Browser Resource Access Ticket 和 Delegated Access Token 都解析为同一 AuthContext 语义。第一方 Web 固定返回 `client_id=addp-web`、`audiences=[addp.api]`、`scope_mode=unrestricted` 和空 Scope；OAuth Token 返回真实 Client、`addp.api` audience、`scope_mode=restricted` 和批准 Scope；Delegated Access Token 还必须包含唯一 owner audience、稳定 Tool Scope 和 AgentRun / ToolCall 审计绑定。
+第一方 Web、OAuth、Service Principal、Browser Resource Access Ticket 和 Delegated Access Token 都解析为同一 AuthContext 语义。第一方 Web 固定返回 `client_id=addp-web`、`audiences=[addp.api]`、`scope_mode=unrestricted` 和空 Scope；Browser Resource Access Ticket 固定返回 `token.type=resource_access_ticket`、`client_id=addp-web`、`audiences=[owner]`、`scope_mode=restricted`、`scopes=[resource:read]` 和 `delegation=null`，其 Principal、Context、认证事实、组织事实、授权版本和 Role Assignment 必须从所属第一方 Browser Family 的当前事实投影；OAuth Token 返回真实 Client、`addp.api` audience、`scope_mode=restricted` 和批准 Scope；Delegated Access Token 还必须包含唯一 owner audience、稳定 Tool Scope 和 AgentRun / ToolCall 审计绑定。
 
 ## 四、身份和上下文校验
 
@@ -109,7 +109,7 @@ Principal 有效
 
 委托令牌使用默认拒绝策略：owner 模块收到 Delegated Access Token 时，只有当前路由与 Token Manifest 中该 Tool 的 owner、audience 和 required scopes 完全匹配才可继续；委托令牌不能访问同一模块的其他普通 API。
 
-Browser Resource Access Ticket 同样使用默认拒绝策略。System 的 AuthContext 接口是仅供 Owner 解析票据的基础设施例外；System 的其他身份、Tenant、OAuth、引擎和管理 API 必须拒绝该票据。Owner 只在自身明确声明的 GET/HEAD 原生资源路由接受对应 audience 和 `resource:read` Scope。
+Browser Resource Access Ticket 同样使用默认拒绝策略。System 的 AuthContext 接口是仅供 Owner 解析票据的基础设施例外；System 的其他身份、Tenant、OAuth、引擎和管理 API 必须拒绝该票据。Owner 只在挂载 Resource Ticket Guard 的 GET/HEAD 原生资源路由读取 `addp_resource_access_ticket` Cookie；Guard 挂载本身就是路由白名单，不再接收运行时 matcher。该路由不得同时接受 `Authorization` Header 和 Ticket Cookie，出现 `Authorization` Header 时统一拒绝，避免歧义凭据优先级。Guard 必须校验 `token.type=resource_access_ticket`、唯一 owner audience、`scope_mode=restricted`、唯一 `resource:read` Scope 以及声明的 Role Permission all-of 候选；最终 Assignment Scope、资源归属、Grant、Policy 和 Explicit Deny 仍由 owner Handler 判断。
 
 ## 六、共享中间件
 
@@ -122,7 +122,7 @@ Browser Resource Access Ticket 同样使用默认拒绝策略。System 的 AuthC
 - 提供 Principal、会话模式、当前 Tenant、client、audience、Scope、认证强度和授权事实的统一 helper；
 - 不提供或新增基于 `user_type` 的授权 helper。
 
-第一阶段不跨请求缓存 AuthContext。System 每次解析都回查 Token、Principal、Membership、授权版本和当前有效 Assignment；`common/middleware/auth` 不保留 `CachedSystemAuthMiddleware` 或其他旧缓存旁路。以后只有性能证据证明必要时，才能引入带签发版本校验和可靠失效协议的单一路径缓存。
+第一阶段不跨请求缓存任何 Access Token 或 Resource Ticket AuthContext。System 每次解析都回查 Token/Ticket、Family、Principal、Membership、授权版本和当前有效 Assignment；`common/middleware/auth` 不保留 `CachedSystemAuthMiddleware` 或其他旧缓存旁路。以后只有性能证据证明必要时，才能引入带签发版本校验和可靠失效协议的单一路径缓存。
 
 ### 6.2 Python
 
@@ -161,4 +161,4 @@ OAuth 数据模型不复用 `system.applications/api_keys`：API Key 表达应�
 
 不允许旧 AuthContext 与新 AuthContext 按客户端、路由或配置双轨共存。
 
-当前 IAM Runtime 基础阶段已落地唯一 `auth-context-v1.schema.json`、共享 Go 类型和第一方 Web Access Token 投影。该投影只接受 `auth_type=first_party`、`client_id=addp-web` 的 User Access Token；OAuth、Service Principal、Resource Ticket 和 Delegated Token 在对应协议 Runtime 完成前统一拒绝，不借用第一方路径、不构造缺失事实。API、共享中间件和旧认证入口仍须在调用方准备完成后一次性切换。
+当前 IAM Runtime 基础阶段已落地唯一 `auth-context-v1.schema.json`、共享 Go 类型和第一方 Web Access Token 投影。Browser Resource Access Ticket 使用所属第一方 Browser Family 的同一身份与授权投影，并用 owner audience 和 `resource:read` 额外收窄；OAuth、Service Principal 和 Delegated Token 在对应协议 Runtime 完成前统一拒绝，不借用第一方路径、不构造缺失事实。API、共享中间件和旧认证入口仍须在调用方准备完成后一次性切换。

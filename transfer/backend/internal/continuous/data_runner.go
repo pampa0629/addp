@@ -222,6 +222,7 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 					if recorder, ok := r.Progress.(ContinuousSchemaChangeStore); ok {
 						if recordErr := recorder.RecordSchemaChange(ctx, claim, repository.ContinuousSchemaChange{
 							DetectedAt: now(), Scope: schemaErr.Scope,
+							SourcePartition: schemaErr.SourcePartition, SourceOffset: schemaErr.SourceOffset,
 							MissingFields:      append([]string(nil), schemaErr.MissingFields...),
 							UnexpectedFields:   append([]string(nil), schemaErr.UnexpectedFields...),
 							IncompatibleFields: append([]string(nil), schemaErr.IncompatibleFields...),
@@ -578,6 +579,11 @@ func mapPartitionRecords(records []engineplugin.ChangeRecord, start engineplugin
 			err = fmt.Errorf("unsupported continuous envelope %q", plan.Envelope)
 		}
 		if err != nil {
+			var schemaErr *SchemaChangeError
+			if errors.As(err, &schemaErr) {
+				schemaErr.SourcePartition = record.Partition
+				schemaErr.SourceOffset = record.Offset
+			}
 			return nil, fmt.Errorf("offset %d: %w", record.Offset, err)
 		}
 		changes = append(changes, engineplugin.PartitionedTableChange{

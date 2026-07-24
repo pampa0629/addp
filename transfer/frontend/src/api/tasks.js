@@ -72,6 +72,14 @@ export const taskAPI = {
     return client.post(`/transfer/task-definitions/${id}/replay`, data)
   },
 
+  schemaChange(id) {
+    return client.get(`/transfer/task-definitions/${id}/schema-change`)
+  },
+
+  approveSchemaChange(id, data) {
+    return client.post(`/transfer/task-definitions/${id}/schema-change/approve`, data)
+  },
+
   // 字段映射写入任务 config.transforms[]，不再提供独立 mappings API。
 }
 

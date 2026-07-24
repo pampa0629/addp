@@ -59,7 +59,7 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 	}
 	if err := infraDB.AutoMigrate(
 		&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}, &models.CaptureResource{},
-		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{},
+		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{}, &models.SchemaChangeRequest{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -145,8 +145,9 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	capturePlanResolver := capture.NewDatabasePlanResolver(resolver)
 	captureSupervisor, err := capture.NewSupervisor(
-		captureRepo, capture.NewDatabasePlanResolver(resolver), connectClient, topicAdmin,
+		captureRepo, capturePlanResolver, connectClient, topicAdmin,
 		capture.DatabaseSourceResources{}, capture.SupervisorConfig{
 			TopicRetention:               time.Hour,
 			TopicReplication:             1,
@@ -173,6 +174,7 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 	taskService.SetEngineResolver(resolver)
 	taskService.SetExecutionService(executionService)
 	taskService.SetCaptureControl(captureSupervisor)
+	taskService.SetSchemaChangeInspector(capturePlanResolver)
 	apiRouter := cdcDataAPIRouter(taskService, uint(800000+suffix%90000), 800001)
 	task := cdcDataCreateTaskViaAPI(t, apiRouter, mysqlCDCDataTaskConfig(sourceDatabase, sourceTable, targetSchema, targetTable))
 	defer cleanupCDCDataInfraRows(infraDB, task.ID)
@@ -312,16 +314,72 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	change := cdcDataGetSchemaChangeViaAPI(t, apiRouter, task.ID)
+	if !change.Approvable || len(change.SuggestedFields) != 1 ||
+		change.SuggestedFields[0].Source != "schema_drift" || change.SuggestedFields[0].TargetType != "string" {
+		t.Fatalf("MySQL additive schema request=%#v", change)
+	}
+	change = cdcDataApproveSchemaChangeViaAPI(t, apiRouter, task.ID, models.SchemaChangeField{
+		Source: "schema_drift", Target: "schema_drift", TargetType: "string", Nullable: true,
+	})
+	if change.Status != models.SchemaChangeRequestApplied || change.MetadataScanStatus != "failed" {
+		t.Fatalf("applied MySQL schema request=%#v", change)
+	}
+	fourthExecution := mysqlCDCResumeTaskViaAPI(t, apiRouter, task.ID)
+	fourthClaim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-d", time.Now(), 30*time.Second)
+	if err != nil || fourthClaim == nil || fourthClaim.Execution.ExecutionID != fourthExecution.ExecutionID {
+		t.Fatalf("schema resume claim=%#v err=%v", fourthClaim, err)
+	}
+	fourthCtx, cancelFourth := context.WithCancel(ctx)
+	fourthDone := make(chan error, 1)
+	go func() { fourthDone <- runner.Run(fourthCtx, *fourthClaim) }()
+	waitCDCDataRow(t, ctx, fourthDone, targetDB, targetSchema, targetTable, 4, "blocked", true)
+	var additiveValue string
+	if err := targetDB.QueryRowContext(ctx, `SELECT schema_drift FROM `+pq.QuoteIdentifier(targetSchema)+`.`+pq.QuoteIdentifier(targetTable)+` WHERE id=4`).Scan(&additiveValue); err != nil || additiveValue != "new-field" {
+		t.Fatalf("resumed MySQL additive value=%q err=%v", additiveValue, err)
+	}
+	if _, err := rootDB.ExecContext(ctx, "INSERT INTO "+mysqlCDCQuoteIdentifier(sourceDatabase)+"."+mysqlCDCQuoteIdentifier(sourceTable)+` (
+		id, name, amount, business_date, business_time, changed_at, changed_timestamp, payload, binary_payload, score, schema_drift
+	) VALUES (5, 'after-additive', 5.5000, '2024-05-06', '07:08:09.010', '2024-05-06 07:08:09.010',
+		'2024-05-06 07:08:09.010', JSON_OBJECT('after', true), X'05', 55.5, 'continued')`); err != nil {
+		t.Fatal(err)
+	}
+	waitCDCDataRow(t, ctx, fourthDone, targetDB, targetSchema, targetTable, 5, "after-additive", true)
+	mysqlCDCPauseTaskViaAPI(t, apiRouter, task.ID)
+	cancelFourth()
+	if err := <-fourthDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("MySQL additive runner error=%v", err)
+	}
+	if err := leaseRepo.Finish(context.Background(), *fourthClaim, commonExecution.ExecutionStatusCancelled, "paused", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	committedAfterAdditive := mysqlCDCCommittedOffset(t, ctx, stateRepo, task.ID, resource.SourceIdentity)
+	if _, err := rootDB.ExecContext(ctx, "INSERT INTO "+mysqlCDCQuoteIdentifier(sourceDatabase)+"."+mysqlCDCQuoteIdentifier(sourceTable)+` (
+		id, name, amount, business_date, business_time, changed_at, changed_timestamp, payload, binary_payload, score, schema_drift
+	) VALUES (6, 'retention-backlog', 6.5000, '2024-06-07', '08:09:10.011', '2024-06-07 08:09:10.011',
+		'2024-06-07 08:09:10.011', JSON_OBJECT('retention', true), X'06', 66.5, 'backlog')`); err != nil {
+		t.Fatal(err)
+	}
+
 	adminClient, err := mysqlCDCKafkaAdminClient()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer adminClient.Close()
 	admin := kadm.NewClient(adminClient)
-	mysqlCDCExpireCommittedPosition(t, ctx, admin, resource.TopicName, committedBeforeDrift)
-	retentionErr := runner.Run(ctx, *thirdClaim)
+	mysqlCDCExpireCommittedPosition(t, ctx, admin, resource.TopicName, committedAfterAdditive)
+	fifthExecution := mysqlCDCResumeTaskViaAPI(t, apiRouter, task.ID)
+	fifthClaim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-e", time.Now(), 30*time.Second)
+	if err != nil || fifthClaim == nil || fifthClaim.Execution.ExecutionID != fifthExecution.ExecutionID {
+		t.Fatalf("retention claim=%#v err=%v", fifthClaim, err)
+	}
+	retentionErr := runner.Run(ctx, *fifthClaim)
 	if retentionErr == nil || !strings.Contains(retentionErr.Error(), "no longer retained") {
 		t.Fatalf("expired MySQL CDC committed position error=%v", retentionErr)
+	}
+	mysqlCDCPauseTaskViaAPI(t, apiRouter, task.ID)
+	if err := leaseRepo.Finish(context.Background(), *fifthClaim, commonExecution.ExecutionStatusFailed, "retention_unavailable", retentionErr.Error(), time.Now()); err != nil {
+		t.Fatal(err)
 	}
 
 	cdcDataStopTaskViaAPI(t, apiRouter, task.ID, task.Name)
@@ -491,16 +549,25 @@ func mysqlCDCKafkaAdminClient() (*kgo.Client, error) {
 
 func mysqlCDCExpireCommittedPosition(t *testing.T, ctx context.Context, admin *kadm.Client, topic string, committed int64) {
 	t.Helper()
-	ends, err := admin.ListEndOffsets(ctx, topic)
-	end, ok := ends.Lookup(topic, 0)
-	if err != nil || !ok || end.Err != nil || end.Offset <= committed {
-		t.Fatalf("MySQL CDC end offset=%#v ok=%v err=%v committed=%d", end, ok, err, committed)
+	deadline := time.Now().Add(10 * time.Second)
+	var end kadm.ListedOffset
+	for {
+		ends, err := admin.ListEndOffsets(ctx, topic)
+		listed, ok := ends.Lookup(topic, 0)
+		if err == nil && ok && listed.Err == nil && listed.Offset > committed {
+			end = listed
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("MySQL CDC end offset=%#v ok=%v err=%v committed=%d", listed, ok, err, committed)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 	deleted, err := admin.DeleteRecords(ctx, kadm.OffsetsList{{Topic: topic, Partition: 0, At: end.Offset}}.Offsets())
 	if err != nil || deleted.Error() != nil {
 		t.Fatalf("expire MySQL CDC records: response=%v err=%v", deleted.Error(), err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline = time.Now().Add(5 * time.Second)
 	for {
 		starts, listErr := admin.ListStartOffsets(ctx, topic)
 		start, found := starts.Lookup(topic, 0)

@@ -13,7 +13,10 @@ import (
 	"time"
 )
 
-const AuthContextSchemaVersion = "addp.auth_context/v1"
+const (
+	AuthContextSchemaVersion   = "addp.auth_context/v1"
+	BrowserResourceAccessScope = "resource:read"
+)
 
 //go:embed schemas/auth-context-v1.schema.json
 var authContextSchemaFS embed.FS
@@ -272,6 +275,66 @@ func ValidatePermissionKey(permission string) error {
 		return fmt.Errorf("permission %q is invalid", permission)
 	}
 	return nil
+}
+
+// ValidateOwnerModuleName validates the canonical module owner identifier used
+// by audiences, permission manifests, and browser resource access tickets.
+func ValidateOwnerModuleName(owner string) error {
+	if !moduleNamePattern.MatchString(owner) {
+		return fmt.Errorf("owner module %q is invalid", owner)
+	}
+	return nil
+}
+
+// CloneAuthContext returns a deep copy of the shared AuthContext contract.
+func CloneAuthContext(source AuthContext) AuthContext {
+	clone := source
+	clone.Authentication.Methods = append([]string(nil), source.Authentication.Methods...)
+	clone.Authentication.StepUpExpiresAt = cloneTime(source.Authentication.StepUpExpiresAt)
+	clone.Client.ClientID = cloneString(source.Client.ClientID)
+	clone.Client.Audiences = append([]string(nil), source.Client.Audiences...)
+	clone.Client.Scopes = append([]string(nil), source.Client.Scopes...)
+	clone.Context.TenantID = cloneString(source.Context.TenantID)
+	clone.Context.TenantMembershipID = cloneString(source.Context.TenantMembershipID)
+	clone.Organization.Departments = append([]DepartmentMembership(nil), source.Organization.Departments...)
+	for index := range clone.Organization.Departments {
+		clone.Organization.Departments[index].AncestorIDs = append(
+			[]string(nil),
+			source.Organization.Departments[index].AncestorIDs...,
+		)
+	}
+	clone.Organization.ProjectGroups = append([]ProjectGroupMembership(nil), source.Organization.ProjectGroups...)
+	clone.Authorization.RoleAssignments = append([]RoleAssignment(nil), source.Authorization.RoleAssignments...)
+	for index := range clone.Authorization.RoleAssignments {
+		sourceAssignment := source.Authorization.RoleAssignments[index]
+		assignment := &clone.Authorization.RoleAssignments[index]
+		assignment.Scope.TenantID = cloneString(sourceAssignment.Scope.TenantID)
+		assignment.Scope.DepartmentID = cloneString(sourceAssignment.Scope.DepartmentID)
+		assignment.Scope.ProjectGroupID = cloneString(sourceAssignment.Scope.ProjectGroupID)
+		assignment.Permissions = append([]string(nil), sourceAssignment.Permissions...)
+		assignment.ValidUntil = cloneTime(sourceAssignment.ValidUntil)
+	}
+	if source.Delegation != nil {
+		delegation := *source.Delegation
+		clone.Delegation = &delegation
+	}
+	return clone
+}
+
+func cloneString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
+}
+
+func cloneTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }
 
 func validateAuthSessionContext(sessionContext AuthSessionContext) error {
@@ -534,8 +597,12 @@ func validateAuthContextCrossConstraints(authContext AuthContext) error {
 			return fmt.Errorf("first-party access token requires addp-web unrestricted client")
 		}
 	case "resource_access_ticket":
-		if authContext.Client.ClientID == nil || *authContext.Client.ClientID != "addp-web" {
-			return fmt.Errorf("resource access ticket requires addp-web client")
+		if authContext.Principal.Type != "user" || authContext.Client.ClientID == nil ||
+			*authContext.Client.ClientID != "addp-web" || authContext.Client.ScopeMode != "restricted" ||
+			len(authContext.Client.Audiences) != 1 || len(authContext.Client.Scopes) != 1 ||
+			authContext.Client.Scopes[0] != BrowserResourceAccessScope ||
+			ValidateOwnerModuleName(authContext.Client.Audiences[0]) != nil {
+			return fmt.Errorf("resource access ticket requires a user, addp-web, one owner audience, and resource:read scope")
 		}
 	case "oauth_access_token":
 		if authContext.Client.ClientID == nil || authContext.Client.ScopeMode != "restricted" {

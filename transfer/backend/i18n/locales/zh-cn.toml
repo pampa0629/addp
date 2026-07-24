@@ -41,7 +41,25 @@ other = "该数据库变更同步任务已永久停止，不能再次启动或�
 other = "数据库变更捕获控制面当前不可用"
 
 [transfer.cdc.schema_change_blocked]
-other = "源表结构变化已永久阻塞当前同步 generation；当前任务只能永久停止，请停止旧任务后创建新任务和新目标表"
+other = "源表结构变化已阻塞当前同步；请检查结构变更请求。只有新增 nullable 非空间字段可人工审批恢复，其他变化必须永久停止后新建任务"
+
+[transfer.schema_change.invalid]
+other = "结构变更审批请求无效，必须完整提交全部新增字段的 source、target、target_type 和 nullable=true"
+
+[transfer.schema_change.not_found]
+other = "当前任务没有结构变更请求"
+
+[transfer.schema_change.not_additive]
+other = "该结构变化不属于可恢复的新增 nullable 非空间字段，只能永久停止后新建任务和目标表"
+
+[transfer.schema_change.conflict]
+other = "结构变更审批与当前源表、目标表、mapping revision 或 pending request 不一致，请刷新后重试"
+
+[transfer.schema_change.unavailable]
+other = "结构变更控制面当前不可用"
+
+[transfer.schema_change.internal_error]
+other = "处理结构变更请求失败"
 
 [transfer.replay.invalid]
 other = "回放请求无效；仅支持业务 Kafka record/json 严格阻塞任务、显式分区 offset 范围和新的 PostgreSQL 隔离目标"

@@ -56,7 +56,7 @@
         </div>
       </div>
 
-      <div v-if="hasValidWorkflow" class="header-validation">
+      <div v-if="hasValidationStatus" class="header-validation">
         <el-popover
           v-if="validationIssues.length"
           v-model:visible="validationPopoverVisible"
@@ -80,16 +80,32 @@
             </button>
           </template>
           <div class="validation-list">
-            <button
-              v-for="issue in validationIssues"
-              :key="`${issue.code}:${issue.path}`"
-              type="button"
-              class="validation-item"
-              @click="focusValidationIssue(issue)"
+            <div
+              v-for="group in validationIssueGroups"
+              :key="group.key"
+              class="validation-group"
+              role="group"
+              :aria-label="group.label"
             >
-              <el-icon><WarningFilled /></el-icon>
-              <span>{{ issue.message }}</span>
-            </button>
+              <div class="validation-group-title" :title="group.label">{{ group.label }}</div>
+              <button
+                v-for="issue in group.issues"
+                :key="`${issue.severity}:${issue.code}:${issue.path}`"
+                type="button"
+                class="validation-item"
+                :aria-label="issue.message"
+                @click="focusValidationIssue(issue)"
+              >
+                <el-icon v-if="issue.severity === 'error'" class="validation-item-icon is-error">
+                  <CircleCloseFilled />
+                </el-icon>
+                <el-icon v-else class="validation-item-icon is-warning"><WarningFilled /></el-icon>
+                <span class="validation-item-content">
+                  <span v-if="issue.paramLabel" class="validation-item-param">{{ issue.paramLabel }}</span>
+                  <span class="validation-item-message">{{ issue.message }}</span>
+                </span>
+              </button>
+            </div>
           </div>
         </el-popover>
 
@@ -188,10 +204,12 @@
         </div>
         <div class="panel-body params-panel-body">
           <OperatorParamsPanel
+            ref="paramsPanelRef"
             :node-id="selectedNode.id"
             :operator="selectedNode.operator"
             :public-parameters="selectedNode.publicParameters"
             :initial-params="selectedNode.params"
+            :validation-issues="selectedNodeValidationIssues"
             @update="handleParamsUpdate"
           />
         </div>
@@ -354,7 +372,9 @@ import {
 } from '@/utils/workflowDevTaskPayload'
 import { findInvalidOperatorMetadata } from '@/utils/operatorMetadataContract'
 import { resolveWorkflowGenerationResult } from '@/utils/workflowGenerationResult.mjs'
+import { getResourceBinding } from '@/utils/workflowResourceBindings'
 import { hasDistinctText } from '@/utils/displayText'
+import { groupValidationIssues, validationIssueParamName } from '@/utils/workflowValidationIssues'
 import { openMonitorExecution } from '@addp/common-frontend'
 
 const route = useRoute()
@@ -371,6 +391,7 @@ const operatorsLoading = ref(false)
 const operatorLoadError = ref('')
 
 const canvasRef = ref(null)
+const paramsPanelRef = ref(null)
 const fileInputRef = ref(null)
 const workflowData = ref({ tasks: [] })
 const editorLayout = ref({})
@@ -401,7 +422,7 @@ const validating = ref(false)
 const validationResult = ref(null)
 const validationRequestError = ref('')
 const validationPopoverVisible = ref(false)
-let validationTimer = null
+let validationRevision = 0
 
 const aiDialogOpen = ref(false)
 const aiQuery = ref('')
@@ -415,10 +436,18 @@ const pendingWorkflowEngine = computed(() => (
 ))
 const validationErrors = computed(() => validationResult.value?.errors || [])
 const validationWarnings = computed(() => validationResult.value?.warnings || [])
+const hasValidationStatus = computed(() => Boolean(
+  validating.value || validationResult.value || validationRequestError.value
+))
 const validationIssues = computed(() => [
   ...mapValidationIssues(validationErrors.value, 'error'),
   ...mapValidationIssues(validationWarnings.value, 'warning')
 ])
+const validationIssueGroups = computed(() => groupValidationIssues(validationIssues.value))
+const selectedNodeValidationIssues = computed(() => {
+  const nodeId = selectedNode.value?.id
+  return nodeId ? validationIssues.value.filter(issue => issue.nodeId === nodeId) : []
+})
 const validationStatusClass = computed(() => {
   if (validationErrors.value.length) return 'is-error'
   if (validationWarnings.value.length) return 'is-warning'
@@ -440,7 +469,8 @@ const canExecute = computed(() => Boolean(
   canSave.value &&
   (!needsSparkRuntime() || sparkRuntimeId.value) &&
   !validating.value &&
-  validationResult.value?.valid === true
+  validationErrors.value.length === 0 &&
+  !validationRequestError.value
 ))
 const saveDialogTitle = computed(() => saveAsMode.value
   ? t('develop.workflow.saveAsDialogTitle')
@@ -449,7 +479,7 @@ const saveDialogTitle = computed(() => saveAsMode.value
 function handleWorkflowUpdate(workflow) {
   workflowData.value = workflow
   if (workflow.tasks.length === 0) editorLayout.value = {}
-  scheduleValidation()
+  resetValidationState()
 }
 
 function handleLayoutUpdate(layout) {
@@ -564,8 +594,7 @@ async function applyEngineSwitch(engineId) {
   engineSwitchDialogVisible.value = false
   canvasRef.value?.clearGraph()
   selectedNode.value = null
-  validationResult.value = null
-  validationRequestError.value = ''
+  resetValidationState()
   currentTaskId.value = null
   currentTaskName.value = ''
   currentTask.value = null
@@ -620,7 +649,7 @@ async function handleSave() {
     openSaveDialog(false)
     return
   }
-  await saveCurrentTask()
+  if (await saveCurrentTask()) await validateCurrentWorkflow()
 }
 
 function openSaveDialog(asCopy) {
@@ -677,6 +706,8 @@ async function confirmSave() {
     openExecuteDialog()
   } else if (action === 'switchEngine') {
     await applyEngineSwitch(pendingWorkflowEngineId.value)
+  } else {
+    await validateCurrentWorkflow()
   }
 }
 
@@ -785,7 +816,7 @@ async function handleClear() {
     await ElMessageBox.confirm(t('develop.workflow.clearConfirmMsg'), t('develop.workflow.clearConfirmTitle'), { type: 'warning' })
     canvasRef.value?.clearGraph()
     selectedNode.value = null
-    validationResult.value = null
+    resetValidationState()
     ElMessage.success(t('develop.workflow.clearSuccess'))
   } catch {
     // 用户取消
@@ -833,7 +864,7 @@ async function handleFileChange(event) {
     workflowData.value = workflow
     editorLayout.value = {}
     selectedNode.value = null
-    scheduleValidation()
+    resetValidationState()
     ElMessage.success(t('develop.workflow.importSuccess'))
   } catch (error) {
     ElMessage.error(t('develop.workflow.importFailed') + error.message)
@@ -842,28 +873,29 @@ async function handleFileChange(event) {
   }
 }
 
-function scheduleValidation() {
-  clearTimeout(validationTimer)
+function resetValidationState() {
+  validationRevision += 1
+  validating.value = false
   validationPopoverVisible.value = false
   validationResult.value = null
   validationRequestError.value = ''
-  if (!hasValidWorkflow.value || !workflowEngineId.value) return
-  validationTimer = setTimeout(() => validateCurrentWorkflow({ silent: true }), 500)
 }
 
-async function validateCurrentWorkflow({ silent = false } = {}) {
+async function validateCurrentWorkflow() {
   if (!hasValidWorkflow.value || !workflowEngineId.value) return false
+  const revision = ++validationRevision
   validating.value = true
   validationRequestError.value = ''
   const clientErrors = canvasRef.value?.getClientValidationIssues() || []
   if (clientErrors.length) {
+    if (revision !== validationRevision) return false
     validationResult.value = {
       valid: false,
       errors: clientErrors,
       warnings: []
     }
     validating.value = false
-    if (!silent) ElMessage.warning(t('develop.workflow.validationFailed', { count: clientErrors.length }))
+    ElMessage.warning(t('develop.workflow.validationFailed', { count: clientErrors.length }))
     return false
   }
   try {
@@ -871,22 +903,24 @@ async function validateCurrentWorkflow({ silent = false } = {}) {
       workflowEngineId.value,
       canvasRef.value?.getWorkflow() || workflowData.value
     )
+    if (revision !== validationRevision) return false
     const errors = deduplicateIssues(result.errors || [])
     validationResult.value = {
       ...result,
       valid: errors.length === 0,
       errors
     }
-    if (errors.length && !silent) {
+    if (errors.length) {
       ElMessage.warning(t('develop.workflow.validationFailed', { count: errors.length }))
     }
     return errors.length === 0
   } catch (error) {
+    if (revision !== validationRevision) return false
     validationRequestError.value = error.response?.data?.error || error.message
-    if (!silent) ElMessage.error(t('develop.workflow.validationUnavailable'))
+    ElMessage.error(t('develop.workflow.validationUnavailable'))
     return false
   } finally {
-    validating.value = false
+    if (revision === validationRevision) validating.value = false
   }
 }
 
@@ -904,17 +938,62 @@ function mapValidationIssues(issues, severity) {
   return issues.map(issue => {
     const match = String(issue.path || '').match(/tasks\[(\d+)\]/)
     const index = match ? Number(match[1]) : -1
+    const task = index >= 0 ? workflowData.value.tasks[index] : null
+    const paramName = validationIssueParamName(issue)
     return {
       ...issue,
       severity,
-      nodeId: index >= 0 ? workflowData.value.tasks[index]?.id : null
+      paramName,
+      paramLabel: validationIssueParamLabel(task, paramName),
+      nodeId: task?.id || null,
+      nodeLabel: validationIssueNodeLabel(task)
     }
   })
 }
 
-function focusValidationIssue(issue) {
+function validationIssueNodeLabel(task) {
+  if (!task) return t('develop.workflow.workflowLevelIssue')
+  const operator = workflowOperatorDefinition(task.operator)
+  const displayName = operator?.display_name || operator?.displayName || task.operator
+  return `${displayName} · ${task.id}`
+}
+
+function validationIssueParamLabel(task, paramName) {
+  if (!task || !paramName) return paramName
+  const parameters = workflowOperatorDefinition(task.operator)?.public_parameters || []
+  const resourceParameter = parameters.find(parameter => {
+    if (parameter.ui_type !== 'resource_tree_picker') return false
+    const binding = getResourceBinding(parameter) || {}
+    return [
+      binding.locator_param,
+      binding.parent_locator_param,
+      binding.name_param,
+      binding.type_param,
+      binding.geometry_column_param
+    ].includes(paramName)
+  })
+  if (resourceParameter) return formatValidationParamLabel(resourceParameter, paramName)
+
+  const directParameter = parameters.find(parameter => parameter.name === paramName)
+  return directParameter ? formatValidationParamLabel(directParameter, paramName) : paramName
+}
+
+function formatValidationParamLabel(parameter, paramName) {
+  const displayName = parameter.display_name || parameter.displayName || parameter.name
+  return hasDistinctText(displayName, paramName) ? `${displayName} (${paramName})` : paramName
+}
+
+function workflowOperatorDefinition(operatorName) {
+  return operators.value.find(operator => operator.name === operatorName || operator.id === operatorName)
+}
+
+async function focusValidationIssue(issue) {
   validationPopoverVisible.value = false
-  if (issue.nodeId) canvasRef.value?.selectNode(issue.nodeId)
+  if (!issue.nodeId) return
+  canvasRef.value?.selectNode(issue.nodeId)
+  rightPanelCollapsed.value = false
+  await nextTick()
+  await paramsPanelRef.value?.focusParam(validationIssueParamName(issue))
 }
 
 function editorStateSignature() {
@@ -954,7 +1033,7 @@ async function loadTask(taskId) {
     workflowData.value = task.content.workflow_definition
     await nextTick()
     markSaved()
-    scheduleValidation()
+    resetValidationState()
   } catch (error) {
     ElMessage.error(t('develop.workflow.loadTaskFailed') + (error.response?.data?.error || error.message))
   }
@@ -995,7 +1074,7 @@ async function generateWorkflow() {
     editorLayout.value = {}
     selectedNode.value = null
     aiDialogOpen.value = false
-    scheduleValidation()
+    resetValidationState()
     ElMessage.success(t('develop.workflow.generateSuccess', { count: resolved.workflow.tasks.length }))
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || error.message || t('develop.workflow.generateFailed'))
@@ -1036,7 +1115,6 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  clearTimeout(validationTimer)
   window.removeEventListener('beforeunload', handleBeforeUnload)
 })
 
@@ -1280,6 +1358,22 @@ function firstQueryValue(value) {
   overflow: auto;
 }
 
+.validation-group + .validation-group {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--addp-border-color);
+}
+
+.validation-group-title {
+  padding: 4px;
+  overflow: hidden;
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .validation-item {
   width: 100%;
   padding: 9px 4px;
@@ -1297,6 +1391,37 @@ function firstQueryValue(value) {
 
 .validation-item:hover {
   background: var(--addp-bg-secondary);
+}
+
+.validation-item-icon {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.validation-item-icon.is-error {
+  color: var(--el-color-danger);
+}
+
+.validation-item-icon.is-warning {
+  color: var(--el-color-warning);
+}
+
+.validation-item-content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.validation-item-param {
+  color: var(--addp-text-secondary);
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 11px;
+}
+
+.validation-item-message {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .open-inspector {

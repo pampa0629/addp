@@ -219,7 +219,7 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 
 // StartTask 启动任务
 // @Summary 启动任务 | Start task
-// @Description 启动任务执行并创建执行记录；数据库 CDC 首次启动会先创建并确认 capture generation，普通中断恢复时复用同一 generation；schema drift blocked 任务不得再次启动。| Start task execution and create an execution record. Database CDC provisions and verifies its capture generation before the first runtime session and reuses that generation for normal interruption recovery; schema-drift-blocked tasks cannot be started again.
+// @Description 启动任务执行并创建执行记录；数据库 CDC 首次启动会先创建并确认 capture generation，普通中断恢复时复用同一 generation；schema drift blocked 任务必须先完成可用的 additive 审批，否则只能 Stop。| Start task execution and create an execution record. Database CDC provisions and verifies its capture generation before the first runtime session and reuses that generation for normal interruption recovery. A schema-drift-blocked task must first complete an eligible additive approval or be stopped.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
@@ -280,6 +280,64 @@ func (h *TaskHandler) ReplayTask(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusAccepted, execution)
+}
+
+// GetSchemaChange 获取当前数据库 CDC schema change request。
+// @Summary 获取 CDC 结构变更请求 | Get CDC schema change request
+// @Description 返回当前 task/generation 最新的 schema change request。只有当前阻塞消息实际包含的新增 nullable 非 geometry 字段可审批；其他变化保持不可恢复阻塞。| Return the latest schema change request for the current task/generation. Only nullable non-geometry fields present in the blocked record are approvable; other changes remain unrecoverable.
+// @Tags         任务管理 | Task Management
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} models.SchemaChangeRequestView
+// @Failure 404 {object} map[string]string "任务或结构变更请求不存在 | Task or schema change request not found"
+// @Failure 500 {object} map[string]string "服务器内部错误 | Internal server error"
+// @Router /task-definitions/{id}/schema-change [get]
+// @Security BearerAuth
+func (h *TaskHandler) GetSchemaChange(c *gin.Context) {
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	request, err := h.taskService.GetSchemaChange(c.Request.Context(), id, c.GetUint("tenant_id"))
+	if err != nil {
+		respondSchemaChangeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, request)
+}
+
+// ApproveSchemaChange 审批数据库 CDC additive schema migration。
+// @Summary 审批 CDC additive 结构变更 | Approve CDC additive schema change
+// @Description 显式确认全部新增源字段的目标映射，幂等新增 PostgreSQL nullable 列并提交新的 mapping revision。成功后任务进入 paused，必须使用既有 Resume API 从原 committed offset 恢复。| Explicitly approve target mappings for every added source field, idempotently add nullable PostgreSQL columns, and commit a new mapping revision. The task becomes paused and must be resumed through the existing Resume API from the original committed offset.
+// @Tags         任务管理 | Task Management
+// @Accept json
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Param request body models.ApproveSchemaChangeRequest true "新增字段映射 | Added field mappings"
+// @Success 200 {object} models.SchemaChangeRequestView
+// @Failure 400 {object} map[string]string "请求格式无效 | Invalid request"
+// @Failure 404 {object} map[string]string "任务或结构变更请求不存在 | Task or schema change request not found"
+// @Failure 409 {object} map[string]string "变化不可 additive 或审批与当前事实冲突 | Change is not additive or approval conflicts with current facts"
+// @Failure 503 {object} map[string]string "结构变更控制面不可用 | Schema change control unavailable"
+// @Failure 500 {object} map[string]string "服务器内部错误 | Internal server error"
+// @Router /task-definitions/{id}/schema-change/approve [post]
+// @Security BearerAuth
+func (h *TaskHandler) ApproveSchemaChange(c *gin.Context) {
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	var request models.ApproveSchemaChangeRequest
+	if err := commonAPI.BindOptionalJSONStrict(c, &request); err != nil || len(request.Fields) == 0 {
+		commonAPI.BadRequestError(c, i18nmiddleware.T(c, transferI18n.MsgSchemaChangeInvalid))
+		return
+	}
+	result, err := h.taskService.ApproveSchemaChange(c.Request.Context(), id, c.GetUint("tenant_id"), c.GetUint("user_id"), request)
+	if err != nil {
+		respondSchemaChangeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // ListDeadLetters 获取 owner task 的 DLQ 控制索引。
@@ -478,7 +536,7 @@ func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
 
 // PauseTask 暂停任务
 // @Summary 暂停任务 | Pause task
-// @Description bounded 任务关闭自身定时调度；continuous 任务将 desired_state 置为 paused 并通知 runtime 取消当前 execution；schema drift blocked CDC 只能 Stop。| Disable a bounded task schedule, or set a continuous task desired_state to paused and request runtime cancellation. Schema-drift-blocked CDC can only be stopped.
+// @Description bounded 任务关闭自身定时调度；continuous 任务将 desired_state 置为 paused 并通知 runtime 取消当前 execution；schema drift blocked CDC 需先检查专用结构变更请求。| Disable a bounded task schedule, or set a continuous task desired_state to paused and request runtime cancellation. A schema-drift-blocked CDC task must use the dedicated schema change request first.
 // @Tags         任务管理 | Task Management
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
@@ -506,7 +564,7 @@ func (h *TaskHandler) PauseTask(c *gin.Context) {
 
 // ResumeTask 恢复任务
 // @Summary 恢复任务 | Resume task
-// @Description bounded 任务恢复自身定时调度；continuous 任务创建新的 pending execution 并从 committed position 恢复；schema drift blocked CDC 不支持恢复，必须 Stop 后新建任务和目标表。| Re-enable a bounded task schedule, or create a new pending continuous execution that resumes from committed position. Schema-drift-blocked CDC cannot resume and must be stopped and recreated with a new target table.
+// @Description bounded 任务恢复自身定时调度；continuous 任务创建新的 pending execution 并从 committed position 恢复；schema drift blocked CDC 必须先完成可用的 additive 审批，其他变化只能 Stop 后新建任务和目标表。| Re-enable a bounded task schedule, or create a new pending continuous execution that resumes from committed position. A schema-drift-blocked CDC task must first complete an eligible additive approval; other changes require stopping and recreating the task with a new target table.
 // @Tags         任务管理 | Task Management
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
@@ -671,4 +729,28 @@ func respondDeadLetterError(c *gin.Context, err error) {
 		return
 	}
 	commonAPI.InternalServerError(c, i18nmiddleware.T(c, transferI18n.MsgDeadLetterInternal))
+}
+
+func respondSchemaChangeError(c *gin.Context, err error) {
+	if errors.Is(err, commonAPI.ErrNotFound) {
+		commonAPI.NotFoundError(c, i18nmiddleware.T(c, transferI18n.MsgTaskNotFound))
+		return
+	}
+	if errors.Is(err, service.ErrSchemaChangeNotFound) || errors.Is(err, repository.ErrSchemaChangeRequestNotFound) {
+		commonAPI.NotFoundError(c, i18nmiddleware.T(c, transferI18n.MsgSchemaChangeNotFound))
+		return
+	}
+	if errors.Is(err, service.ErrSchemaChangeNotAdditive) {
+		c.JSON(http.StatusConflict, gin.H{"error": i18nmiddleware.T(c, transferI18n.MsgSchemaChangeNotAdditive)})
+		return
+	}
+	if errors.Is(err, service.ErrSchemaChangeApprovalConflict) || errors.Is(err, repository.ErrSchemaChangeRequestConflict) {
+		c.JSON(http.StatusConflict, gin.H{"error": i18nmiddleware.T(c, transferI18n.MsgSchemaChangeConflict)})
+		return
+	}
+	if errors.Is(err, service.ErrSchemaChangeControlUnavailable) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": i18nmiddleware.T(c, transferI18n.MsgSchemaChangeUnavailable)})
+		return
+	}
+	commonAPI.InternalServerError(c, i18nmiddleware.T(c, transferI18n.MsgSchemaChangeInternal))
 }

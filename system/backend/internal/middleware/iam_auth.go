@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"time"
 
 	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
@@ -52,7 +51,7 @@ func NewIAMAuthenticationMiddleware(resolver IAMAuthContextResolver) (gin.Handle
 			abortIAMInternalError(c)
 			return
 		}
-		c.Set(iamAuthContextKey, cloneIAMAuthContext(*authContext))
+		c.Set(iamAuthContextKey, commonauth.CloneAuthContext(*authContext))
 		c.Next()
 	}, nil
 }
@@ -131,7 +130,7 @@ func IAMAuthContextFromGin(c *gin.Context) (commonauth.AuthContext, bool) {
 	if !exists || !valid {
 		return commonauth.AuthContext{}, false
 	}
-	return cloneIAMAuthContext(authContext), true
+	return commonauth.CloneAuthContext(authContext), true
 }
 
 func iamAccessToken(header string) string {
@@ -161,54 +160,4 @@ func abortIAMInternalError(c *gin.Context) {
 		Error:     commoni18n.T(c, sysi18n.MsgInternalError),
 		ErrorCode: "internal_error",
 	})
-}
-
-func cloneIAMAuthContext(source commonauth.AuthContext) commonauth.AuthContext {
-	clone := source
-	clone.Authentication.Methods = append([]string(nil), source.Authentication.Methods...)
-	clone.Authentication.StepUpExpiresAt = cloneIAMTime(source.Authentication.StepUpExpiresAt)
-	clone.Client.ClientID = cloneIAMString(source.Client.ClientID)
-	clone.Client.Audiences = append([]string(nil), source.Client.Audiences...)
-	clone.Client.Scopes = append([]string(nil), source.Client.Scopes...)
-	clone.Context.TenantID = cloneIAMString(source.Context.TenantID)
-	clone.Context.TenantMembershipID = cloneIAMString(source.Context.TenantMembershipID)
-	clone.Organization.Departments = append([]commonauth.DepartmentMembership(nil), source.Organization.Departments...)
-	for index := range clone.Organization.Departments {
-		clone.Organization.Departments[index].AncestorIDs = append(
-			[]string(nil),
-			source.Organization.Departments[index].AncestorIDs...,
-		)
-	}
-	clone.Organization.ProjectGroups = append([]commonauth.ProjectGroupMembership(nil), source.Organization.ProjectGroups...)
-	clone.Authorization.RoleAssignments = append([]commonauth.RoleAssignment(nil), source.Authorization.RoleAssignments...)
-	for index := range clone.Authorization.RoleAssignments {
-		sourceAssignment := source.Authorization.RoleAssignments[index]
-		assignment := &clone.Authorization.RoleAssignments[index]
-		assignment.Scope.TenantID = cloneIAMString(sourceAssignment.Scope.TenantID)
-		assignment.Scope.DepartmentID = cloneIAMString(sourceAssignment.Scope.DepartmentID)
-		assignment.Scope.ProjectGroupID = cloneIAMString(sourceAssignment.Scope.ProjectGroupID)
-		assignment.Permissions = append([]string(nil), sourceAssignment.Permissions...)
-		assignment.ValidUntil = cloneIAMTime(sourceAssignment.ValidUntil)
-	}
-	if source.Delegation != nil {
-		delegation := *source.Delegation
-		clone.Delegation = &delegation
-	}
-	return clone
-}
-
-func cloneIAMString(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	clone := *value
-	return &clone
-}
-
-func cloneIAMTime(value *time.Time) *time.Time {
-	if value == nil {
-		return nil
-	}
-	clone := *value
-	return &clone
 }

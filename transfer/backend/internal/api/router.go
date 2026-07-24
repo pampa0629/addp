@@ -105,19 +105,21 @@ func SetupRouter(
 
 	taskDefinitions := protected.Group("/task-definitions")
 	{
-		taskDefinitions.POST("", taskHandler.CreateTask)                              // 创建任务
-		taskDefinitions.GET("/statistics", taskHandler.GetTaskStatistics)             // 获取任务统计
-		taskDefinitions.GET("/:id", taskHandler.GetTask)                              // 获取任务详情
-		taskDefinitions.PUT("/:id", taskHandler.UpdateTask)                           // 更新任务
-		taskDefinitions.DELETE("/:id", taskHandler.DeleteTask)                        // 删除任务
-		taskDefinitions.POST("/:id/start", taskHandler.StartTask)                     // 启动任务
-		taskDefinitions.POST("/:id/replay", taskHandler.ReplayTask)                   // 创建 bounded replay execution
-		taskDefinitions.GET("/:id/dead-letters", taskHandler.ListDeadLetters)         // 查询 DLQ 控制索引
-		taskDefinitions.GET("/:id/dead-letters/:identity", taskHandler.GetDeadLetter) // 查询单条 DLQ 控制索引
-		taskDefinitions.POST("/:id/pause", taskHandler.PauseTask)                     // 暂停任务
-		taskDefinitions.POST("/:id/resume", taskHandler.ResumeTask)                   // 恢复任务
-		taskDefinitions.POST("/:id/stop", taskHandler.StopTask)                       // 停止 continuous runtime
-		taskDefinitions.GET("/:id/executions", executionHandler.GetTaskExecutions)    // 获取任务的执行记录
+		taskDefinitions.POST("", taskHandler.CreateTask)                                    // 创建任务
+		taskDefinitions.GET("/statistics", taskHandler.GetTaskStatistics)                   // 获取任务统计
+		taskDefinitions.GET("/:id", taskHandler.GetTask)                                    // 获取任务详情
+		taskDefinitions.PUT("/:id", taskHandler.UpdateTask)                                 // 更新任务
+		taskDefinitions.DELETE("/:id", taskHandler.DeleteTask)                              // 删除任务
+		taskDefinitions.POST("/:id/start", taskHandler.StartTask)                           // 启动任务
+		taskDefinitions.POST("/:id/replay", taskHandler.ReplayTask)                         // 创建 bounded replay execution
+		taskDefinitions.GET("/:id/schema-change", taskHandler.GetSchemaChange)              // 查询当前 CDC schema change request
+		taskDefinitions.POST("/:id/schema-change/approve", taskHandler.ApproveSchemaChange) // 审批 additive schema migration
+		taskDefinitions.GET("/:id/dead-letters", taskHandler.ListDeadLetters)               // 查询 DLQ 控制索引
+		taskDefinitions.GET("/:id/dead-letters/:identity", taskHandler.GetDeadLetter)       // 查询单条 DLQ 控制索引
+		taskDefinitions.POST("/:id/pause", taskHandler.PauseTask)                           // 暂停任务
+		taskDefinitions.POST("/:id/resume", taskHandler.ResumeTask)                         // 恢复任务
+		taskDefinitions.POST("/:id/stop", taskHandler.StopTask)                             // 停止 continuous runtime
+		taskDefinitions.GET("/:id/executions", executionHandler.GetTaskExecutions)          // 获取任务的执行记录
 	}
 
 	// 执行记录路由

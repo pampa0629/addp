@@ -269,7 +269,7 @@ func testIAMAuthContext() commonauth.AuthContext {
 
 func withIAMAuthContext(authContext commonauth.AuthContext) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Set(iamAuthContextKey, cloneIAMAuthContext(authContext))
+		c.Set(iamAuthContextKey, commonauth.CloneAuthContext(authContext))
 		c.Next()
 	}
 }

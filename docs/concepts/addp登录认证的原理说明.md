@@ -175,7 +175,9 @@ System login / refresh
   -> System AuthContext 返回 resource_access_ticket 身份
 ```
 
-票据与当前 Refresh Token Family 和会话模式关联，有效期不超过 User Access Token；退出、上下文切换、Family 撤销或 Refresh Token 重用时同步失效。Owner 仍执行当前 Tenant、Role Permission 和资源权限校验，票据只解决浏览器无法设置 Header 的传输问题，不扩大授权范围。
+票据与当前 Refresh Token Family 和会话模式关联，有效期不超过 User Access Token；退出、上下文切换、Family 撤销、Refresh Token 轮换或重用时同步失效。System 从票据回溯所属第一方 Browser Family，并投影与 User Access Token 相同的 Principal、Context、认证、组织和 Role Assignment；票据自身只把 client 约束收窄为对应 owner audience 和唯一 `resource:read` Scope。
+
+Owner 将 Resource Ticket Guard 直接挂在允许的 GET/HEAD 原生资源路由上，挂载即白名单。该 Guard 只读取 `addp_resource_access_ticket` Cookie，不接受 `Authorization` Header 与 Cookie 同时参与认证，不缓存 AuthContext，并校验 owner audience、Scope 和路由声明的 Role Permission all-of 候选。Owner Handler 仍执行 Assignment Scope、当前 Tenant、资源归属、Grant、Policy 和 Explicit Deny；票据只解决浏览器无法设置 Header 的传输问题，不扩大授权范围。
 
 ## 九、实现归属
 

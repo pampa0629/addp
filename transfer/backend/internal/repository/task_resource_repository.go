@@ -23,11 +23,12 @@ const (
 )
 
 type TaskPrivateStateDeleteStats struct {
-	DeadLetters         int64
-	SyncStates          int64
-	RuntimeLeases       int64
-	CaptureResources    int64
-	CancelledExecutions int64
+	DeadLetters          int64
+	SyncStates           int64
+	RuntimeLeases        int64
+	SchemaChangeRequests int64
+	CaptureResources     int64
+	CancelledExecutions  int64
 }
 
 type TaskResourceRepository struct {
@@ -88,6 +89,7 @@ func (r *TaskResourceRepository) DeleteTaskAndPrivateState(
 			{model: &models.DeadLetter{}, where: "tenant_id = ? AND task_id = ?", args: []interface{}{tenantID, taskID}, count: &stats.DeadLetters},
 			{model: &models.SyncState{}, where: "task_id = ?", args: []interface{}{taskID}, count: &stats.SyncStates},
 			{model: &models.RuntimeLease{}, where: "task_id = ?", args: []interface{}{taskID}, count: &stats.RuntimeLeases},
+			{model: &models.SchemaChangeRequest{}, where: "tenant_id = ? AND task_id = ?", args: []interface{}{tenantID, taskID}, count: &stats.SchemaChangeRequests},
 			{model: &models.CaptureResource{}, where: "tenant_id = ? AND task_id = ?", args: []interface{}{tenantID, taskID}, count: &stats.CaptureResources},
 		}
 		for _, deletion := range deletes {
