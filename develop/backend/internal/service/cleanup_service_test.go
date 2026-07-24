@@ -96,6 +96,7 @@ func newDevelopCleanupTestDB(t *testing.T) *gorm.DB {
 			dev_type TEXT NOT NULL,
 			content JSON NOT NULL,
 			execution_config JSON,
+			editor_layout JSON NOT NULL DEFAULT '{}',
 			timeout INTEGER,
 			description TEXT,
 			tags TEXT,

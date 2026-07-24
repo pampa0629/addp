@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -20,16 +19,30 @@ import (
 
 // TileEndpointHandler 处理瓦片服务的公开端点
 type TileEndpointHandler struct {
-	tileServiceService *service.TileServiceService
-	staticTileService  *service.StaticTileService
+	tileServiceService tileServiceLookup
+	staticTileService  staticTileReader
 	dynamicTileService *service.DynamicTileService
 	tileCacheService   *service.TileCacheService
 }
 
+type tileServiceLookup interface {
+	GetServiceModelByName(serviceName string) (*models.TileService, error)
+}
+
+type staticTileReader interface {
+	GetStaticTile(
+		ctx context.Context,
+		tenantID uint,
+		layer *models.TileServiceLayer,
+		z, x, y int,
+		requestedFormat string,
+	) (*service.StaticTile, error)
+}
+
 // NewTileEndpointHandler 创建瓦片端点处理器
 func NewTileEndpointHandler(
-	tileServiceService *service.TileServiceService,
-	staticTileService *service.StaticTileService,
+	tileServiceService tileServiceLookup,
+	staticTileService staticTileReader,
 	dynamicTileService *service.DynamicTileService,
 	tileCacheService *service.TileCacheService,
 ) *TileEndpointHandler {
@@ -52,6 +65,8 @@ func NewTileEndpointHandler(
 // @Param y path int true "瓦片 Y 坐标 | Tile Y coordinate"
 // @Param format path string true "瓦片格式 (mvt, png, jpg) | Tile format (mvt, png, jpg)"
 // @Success 200 {file} binary "瓦片数据 | Tile data"
+// @Failure 401 {object} map[string]string "需要认证 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @Router /tiles/{serviceName}/{layerName}/{z}/{x}/{y}.{format} [get]
 func (h *TileEndpointHandler) GetXYZTile(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -105,20 +120,8 @@ func (h *TileEndpointHandler) GetXYZTile(c *gin.Context) {
 	}
 
 	// 3. 检查访问权限
-	if !tileService.PublicAccess {
-		// 非公开服务需要 JWT 认证
-		_, exists := c.Get("tenant_id")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
-			return
-		}
-
-		// 验证租户权限
-		userTenantID, _ := c.Get("tenant_id")
-		if userTenantID.(uint) != tileService.TenantID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
-			return
-		}
+	if !requireJSONServiceAccess(c, tileService.PublicAccess, tileService.TenantID) {
+		return
 	}
 
 	// 4. 查找图层
@@ -153,10 +156,6 @@ func (h *TileEndpointHandler) GetXYZTile(c *gin.Context) {
 				"layer_name", layerName,
 				"z", z, "x", x, "y", y,
 				"error", err)
-			if errors.Is(err, service.ErrStaticTileOutOfRange) {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Tile not found"})
-				return
-			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get tile"})
 			return
 		}

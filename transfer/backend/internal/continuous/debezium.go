@@ -46,9 +46,20 @@ func (e *SchemaChangeError) Error() string {
 }
 
 func decodePostgreSQLDebeziumRecord(record engineplugin.ChangeRecord, plan *planner.ContinuousPlan) (*ChangeEvent, error) {
-	if plan == nil || plan.CDC == nil || plan.Envelope != planner.ContinuousEnvelopePostgreSQLDebezium {
+	if plan == nil || plan.CDC == nil || plan.CDC.Provider != "postgresql" || plan.Envelope != planner.ContinuousEnvelopePostgreSQLDebezium {
 		return nil, fmt.Errorf("PostgreSQL Debezium adapter requires a CDC continuous plan")
 	}
+	return decodeDatabaseDebeziumRecord(record, plan, validatePostgreSQLDebeziumSource)
+}
+
+func decodeMySQLDebeziumRecord(record engineplugin.ChangeRecord, plan *planner.ContinuousPlan) (*ChangeEvent, error) {
+	if plan == nil || plan.CDC == nil || plan.CDC.Provider != "mysql" || plan.Envelope != planner.ContinuousEnvelopeMySQLDebezium {
+		return nil, fmt.Errorf("MySQL Debezium adapter requires a CDC continuous plan")
+	}
+	return decodeDatabaseDebeziumRecord(record, plan, validateMySQLDebeziumSource)
+}
+
+func decodeDatabaseDebeziumRecord(record engineplugin.ChangeRecord, plan *planner.ContinuousPlan, validateSource func(json.RawMessage, *planner.DatabaseCDCSourcePlan, string) error) (*ChangeEvent, error) {
 	value := bytes.TrimSpace(record.Value)
 	if len(value) == 0 || bytes.Equal(value, []byte("null")) {
 		return nil, fmt.Errorf("Debezium tombstone records are not supported")
@@ -73,12 +84,36 @@ func decodePostgreSQLDebeziumRecord(record engineplugin.ChangeRecord, plan *plan
 	if op != "r" && op != "c" && op != "u" && op != "d" {
 		return nil, fmt.Errorf("unsupported Debezium operation %q", op)
 	}
-	if err := validateDebeziumSource(envelope["source"], plan.CDC); err != nil {
+	if err := validateSource(envelope["source"], plan.CDC, op); err != nil {
 		return nil, err
 	}
 	keyRow, err := decodeAndMapDebeziumKey(record.Key, plan)
 	if err != nil {
 		return nil, err
+	}
+	if plan.CDC.Provider == "mysql" {
+		before, err := decodeNullableJSONObject(envelope["before"], "Debezium before")
+		if err != nil {
+			return nil, err
+		}
+		if op == "r" || op == "c" {
+			if before != nil {
+				return nil, fmt.Errorf("MySQL Debezium operation %q requires null before", op)
+			}
+		} else {
+			if before == nil {
+				return nil, fmt.Errorf("MySQL Debezium operation %q requires full before object", op)
+			}
+			beforeRow, err := mapCDCSourceRow(before, plan)
+			if err != nil {
+				return nil, err
+			}
+			for _, key := range plan.Target.Keys {
+				if !reflect.DeepEqual(beforeRow[key], keyRow[key]) {
+					return nil, fmt.Errorf("Debezium record key does not match before field %q", key)
+				}
+			}
+		}
 	}
 	if op == "d" {
 		after, err := decodeNullableJSONObject(envelope["after"], "Debezium after")
@@ -113,7 +148,7 @@ func decodePostgreSQLDebeziumRecord(record engineplugin.ChangeRecord, plan *plan
 	return &ChangeEvent{Operation: operation, Row: row}, nil
 }
 
-func validateDebeziumSource(raw json.RawMessage, expected *planner.PostgreSQLCDCSourcePlan) error {
+func validatePostgreSQLDebeziumSource(raw json.RawMessage, expected *planner.DatabaseCDCSourcePlan, _ string) error {
 	source, err := decodeRawJSONObject(raw, "Debezium source")
 	if err != nil {
 		return incompatibleSchemaField("Debezium envelope", "source")
@@ -140,6 +175,57 @@ func validateDebeziumSource(raw json.RawMessage, expected *planner.PostgreSQLCDC
 	}
 	if database != expected.Database || schema != expected.Schema || table != expected.Table {
 		return fmt.Errorf("Debezium source table identity %s.%s.%s does not match expected %s.%s.%s", database, schema, table, expected.Database, expected.Schema, expected.Table)
+	}
+	return nil
+}
+
+func validateMySQLDebeziumSource(raw json.RawMessage, expected *planner.DatabaseCDCSourcePlan, op string) error {
+	source, err := decodeRawJSONObject(raw, "Debezium source")
+	if err != nil {
+		return incompatibleSchemaField("Debezium envelope", "source")
+	}
+	allowed := []string{"version", "connector", "name", "ts_ms", "snapshot", "db", "sequence", "ts_us", "ts_ns", "table", "server_id", "gtid", "file", "pos", "row", "thread", "query"}
+	if err := validateObjectFields(source, []string{"connector", "snapshot", "db", "table", "server_id", "file", "pos", "row"}, allowed, "Debezium source"); err != nil {
+		return err
+	}
+	var connector, database, table, file string
+	if err := json.Unmarshal(source["connector"], &connector); err != nil || connector != "mysql" {
+		return incompatibleSchemaField("Debezium source", "connector")
+	}
+	if err := json.Unmarshal(source["db"], &database); err != nil {
+		return incompatibleSchemaField("Debezium source", "db")
+	}
+	if err := json.Unmarshal(source["table"], &table); err != nil {
+		return incompatibleSchemaField("Debezium source", "table")
+	}
+	if err := json.Unmarshal(source["file"], &file); err != nil || strings.TrimSpace(file) == "" {
+		return incompatibleSchemaField("Debezium source", "file")
+	}
+	numbers := make(map[string]int64, 3)
+	for _, field := range []string{"server_id", "pos", "row"} {
+		var number json.Number
+		if err := json.Unmarshal(source[field], &number); err != nil {
+			return incompatibleSchemaField("Debezium source", field)
+		}
+		value, err := number.Int64()
+		if err != nil || value < 0 {
+			return incompatibleSchemaField("Debezium source", field)
+		}
+		numbers[field] = value
+	}
+	var snapshot string
+	if err := json.Unmarshal(source["snapshot"], &snapshot); err != nil {
+		return incompatibleSchemaField("Debezium source", "snapshot")
+	}
+	if op == "r" {
+		if numbers["server_id"] != 0 || (snapshot != "true" && snapshot != "last") {
+			return incompatibleSchemaField("Debezium source", "snapshot")
+		}
+	} else if numbers["server_id"] == 0 || snapshot != "false" {
+		return incompatibleSchemaField("Debezium source", "server_id")
+	}
+	if database != expected.Database || table != expected.Table {
+		return fmt.Errorf("Debezium source table identity %s.%s does not match expected %s.%s", database, table, expected.Database, expected.Table)
 	}
 	return nil
 }
@@ -174,7 +260,7 @@ func decodeAndMapDebeziumKey(raw []byte, plan *planner.ContinuousPlan) (map[stri
 		if value == nil {
 			return nil, incompatibleSchemaField("Debezium record key", sourceKey)
 		}
-		converted, err := coerceContinuousValue(value, mapping.Type)
+		converted, err := coerceDatabaseCDCValue(value, mapping, plan)
 		if err != nil {
 			return nil, incompatibleSchemaField("Debezium record key", sourceKey)
 		}
@@ -207,7 +293,7 @@ func mapCDCSourceRow(source map[string]interface{}, plan *planner.ContinuousPlan
 		if mapping.Type == datatype.FieldTypeGeometry {
 			converted, err = coercePostgreSQLCDCGeometry(value, mapping.Source, plan.CDC.SpatialInfo)
 		} else {
-			converted, err = coerceContinuousValue(value, mapping.Type)
+			converted, err = coerceDatabaseCDCValue(value, mapping, plan)
 		}
 		if err != nil {
 			schemaErr := incompatibleSchemaField("Debezium after", mapping.Source)
@@ -217,6 +303,24 @@ func mapCDCSourceRow(source map[string]interface{}, plan *planner.ContinuousPlan
 		row[mapping.Target] = converted
 	}
 	return row, nil
+}
+
+func coerceDatabaseCDCValue(value interface{}, mapping planner.ContinuousFieldPlan, plan *planner.ContinuousPlan) (interface{}, error) {
+	if mapping.Type == datatype.FieldTypeBytes {
+		if plan == nil || plan.CDC == nil || plan.CDC.Provider != "mysql" {
+			return nil, fmt.Errorf("bytes CDC values are only supported by MySQL v1")
+		}
+		encoded, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("MySQL CDC binary field %q must be base64 text", mapping.Source)
+		}
+		decoded, err := base64.StdEncoding.Strict().DecodeString(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("MySQL CDC binary field %q is not valid base64", mapping.Source)
+		}
+		return decoded, nil
+	}
+	return coerceContinuousValue(value, mapping.Type)
 }
 
 func coercePostgreSQLCDCGeometry(value interface{}, fieldName string, spatialInfo *datatype.SpatialInfo) ([]byte, error) {

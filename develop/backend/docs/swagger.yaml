@@ -32,6 +32,8 @@ definitions:
       display_name:
         example: 城市缓冲区工作流
         type: string
+      editor_layout:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger'
       execution_config:
         $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger'
       name:
@@ -77,6 +79,36 @@ definitions:
         - scheduled
         example: manual
         type: string
+    type: object
+  github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger:
+    properties:
+      nodes:
+        additionalProperties:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DAGEditorNodePositionSwagger'
+        type: object
+      viewport:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DAGEditorViewportSwagger'
+    type: object
+  github_com_addp_develop_backend_internal_models.DAGEditorNodePositionSwagger:
+    properties:
+      x:
+        example: 120
+        type: number
+      "y":
+        example: 240
+        type: number
+    type: object
+  github_com_addp_develop_backend_internal_models.DAGEditorViewportSwagger:
+    properties:
+      translate_x:
+        example: 0
+        type: number
+      translate_y:
+        example: 0
+        type: number
+      zoom:
+        example: 1
+        type: number
     type: object
   github_com_addp_develop_backend_internal_models.DevTaskContent:
     additionalProperties: true
@@ -142,6 +174,8 @@ definitions:
       display_name:
         example: 城市缓冲区工作流
         type: string
+      editor_layout:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger'
       execution_config:
         $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger'
       id:
@@ -378,6 +412,8 @@ definitions:
       display_name:
         example: 城市缓冲区工作流
         type: string
+      editor_layout:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger'
       execution_config:
         $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger'
       id:
@@ -483,6 +519,8 @@ definitions:
       display_name:
         example: 城市缓冲区工作流
         type: string
+      editor_layout:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger'
       execution_config:
         $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger'
       name:

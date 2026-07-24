@@ -43,6 +43,8 @@ func NewEngineHandler(engineService *service.EngineService) *EngineHandler {
 // @Param        request body models.EngineCreateRequest true "引擎信息 | Engine info"
 // @Success      201 {object} models.Engine
 // @Failure      400 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine.create"]
 // @Router       /engines [post]
 func (h *EngineHandler) Create(c *gin.Context) {
 	var req models.EngineCreateRequest
@@ -81,6 +83,8 @@ func (h *EngineHandler) Create(c *gin.Context) {
 // @Param        include_builtin query bool false "是否包含内置引擎 | Whether to include builtin engines" default(true)
 // @Success      200 {object} object{data=[]models.Engine,total=int,page=int,page_size=int}
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine.read"]
 // @Router       /engines [get]
 func (h *EngineHandler) List(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
@@ -123,6 +127,8 @@ func splitCommaSeparatedQuery(value string) []string {
 // @Success      200 {object} models.EngineResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine.read"]
 // @Router       /engines/{id} [get]
 func (h *EngineHandler) GetByID(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
@@ -151,6 +157,8 @@ func (h *EngineHandler) GetByID(c *gin.Context) {
 // @Success      200 {object} models.EngineResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine.update"]
 // @Router       /engines/{id} [put]
 func (h *EngineHandler) Update(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
@@ -188,6 +196,8 @@ func (h *EngineHandler) Update(c *gin.Context) {
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      403 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine.execute"]
 // @Router       /engines/{id}/spatial-workspaces/{ecosystem}/{kind}/enable [post]
 func (h *EngineHandler) EnableSpatialWorkspace(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
@@ -221,6 +231,8 @@ func (h *EngineHandler) EnableSpatialWorkspace(c *gin.Context) {
 // @Success      200 {object} models.SuccessResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine.delete"]
 // @Router       /engines/{id} [delete]
 func (h *EngineHandler) Delete(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
@@ -265,6 +277,8 @@ func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
 // @Success      200 {object} models.EngineConnectionTestResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine.execute"]
 // @Router       /engines/{id}/test [post]
 func (h *EngineHandler) TestConnection(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
@@ -321,6 +335,8 @@ func (h *EngineHandler) TestConnection(c *gin.Context) {
 // @Param        request body models.EngineCreateRequest true "引擎信息 | Engine info"
 // @Success      200 {object} models.EngineConnectionTestResponse
 // @Failure      400 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine.execute"]
 // @Router       /engines/test-connection [post]
 func (h *EngineHandler) TestConnectionBeforeCreate(c *gin.Context) {
 	var req models.EngineCreateRequest
@@ -534,6 +550,8 @@ func toEngineDetailResponse(engine *models.Engine) engineResponse {
 // @Failure 401 {object} models.ErrorResponse
 // @Failure 404 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine.read"]
 // @Router /engines/{id}/catalog/children [post]
 func (h *EngineHandler) ListCatalogChildren(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")

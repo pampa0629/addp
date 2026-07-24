@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
 )
@@ -52,6 +53,10 @@ func (s *DevTaskService) CreateDevTask(req *models.CreateDevTaskRequest, tenantI
 	}
 
 	// 创建开发任务
+	editorLayout := req.EditorLayout
+	if editorLayout == nil {
+		editorLayout = commonModels.JSONMap{}
+	}
 	item := &models.DevTask{
 		TenantID:        tenantID,
 		Name:            req.Name,
@@ -59,6 +64,7 @@ func (s *DevTaskService) CreateDevTask(req *models.CreateDevTaskRequest, tenantI
 		DevType:         req.DevType,
 		Content:         req.Content,
 		ExecutionConfig: req.ExecutionConfig,
+		EditorLayout:    editorLayout,
 		Timeout:         req.Timeout,
 		Description:     req.Description,
 		Tags:            req.Tags,
@@ -123,6 +129,9 @@ func (s *DevTaskService) UpdateDevTask(id uint, req *models.UpdateDevTaskRequest
 	}
 	if req.ExecutionConfig != nil {
 		item.ExecutionConfig = req.ExecutionConfig
+	}
+	if req.EditorLayout != nil {
+		item.EditorLayout = req.EditorLayout
 	}
 	if req.Timeout > 0 {
 		item.Timeout = req.Timeout

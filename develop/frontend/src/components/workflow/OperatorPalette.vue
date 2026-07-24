@@ -38,12 +38,20 @@
               @click="handleOperatorClick(operator)"
             >
               <div class="operator-header">
-                <span class="operator-name">{{ operator.name }}</span>
+                <div class="operator-title">
+                  <span class="operator-name">{{ operator.displayName }}</span>
+                  <span v-if="operator.displayName !== operator.name" class="operator-code">{{ operator.name }}</span>
+                </div>
                 <el-tooltip placement="right" :show-after="300">
                   <template #content>
                     <div class="operator-help">
-                      <h4>{{ operator.name }}</h4>
-                      <p class="description">{{ operator.description }}</p>
+                      <h4>{{ operator.displayName }}</h4>
+                      <p
+                        v-if="hasDistinctText(operator.description, operator.displayName, operator.name)"
+                        class="description"
+                      >
+                        {{ operator.description }}
+                      </p>
                       <div class="params-section" v-if="operator.params && Object.keys(operator.params).length > 0">
                         <h5>{{ t('develop.operatorPalette.params') }}:</h5>
                         <ul>
@@ -57,7 +65,12 @@
                   <el-icon class="info-icon"><InfoFilled /></el-icon>
                 </el-tooltip>
               </div>
-              <div class="operator-description">{{ operator.description }}</div>
+              <div
+                v-if="hasDistinctText(operator.description, operator.displayName, operator.name)"
+                class="operator-description"
+              >
+                {{ operator.description }}
+              </div>
             </div>
           </div>
         </el-collapse-item>
@@ -83,12 +96,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { InfoFilled } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
-import * as operatorApi from '@/api/operator'
-import { findInvalidOperatorMetadata } from '@/utils/operatorMetadataContract'
+import { hasDistinctText } from '@/utils/displayText'
 
 const { t } = useI18n()
 
@@ -97,16 +108,25 @@ const props = defineProps({
   workflowEngineId: {
     type: [Number, String],
     default: null,
+  },
+  operators: {
+    type: Array,
+    default: () => []
+  },
+  loading: {
+    type: Boolean,
+    default: false
+  },
+  loadError: {
+    type: String,
+    default: ''
   }
 })
 
 const emit = defineEmits(['operator-click', 'operator-drag'])
 
 // Data
-const loading = ref(false)
-const loadError = ref('')
 const searchQuery = ref('')
-const operators = ref([]) // 从后端获取的算子列表 (数组格式,符合 common 标准)
 // 默认收拢所有分类，用户可以按需展开
 const activeCategories = ref([])
 
@@ -130,51 +150,12 @@ const categoryIcons = {
   '数据筛选': '🔍'
 }
 
-// 加载算子列表
-const loadOperators = async () => {
-  loading.value = true
-  loadError.value = ''
-  try {
-    if (!props.workflowEngineId) {
-      operators.value = []
-      return
-    }
-
-    const res = await operatorApi.listOperatorsByWorkflowEngine(props.workflowEngineId)
-    // API client 已自动提取 response.data,所以 res 就是后端返回的数据对象
-    // 后端返回格式: {status, operators: [], count}
-    if (!Array.isArray(res.operators)) {
-      throw new Error(t('develop.operatorPalette.invalidMetadata'))
-    }
-
-    const invalidOperator = findInvalidOperatorMetadata(res.operators)
-    if (invalidOperator) {
-      throw new Error(t('develop.operatorPalette.invalidOperatorMetadata', {
-        name: invalidOperator?.name || '-'
-      }))
-    }
-
-    operators.value = res.operators
-  } catch (error) {
-    console.error('[OperatorPalette] 加载失败:', error)
-    loadError.value = t('develop.operatorPalette.loadFailed') + (error.response?.data?.error || error.message)
-    ElMessage.error(loadError.value)
-  } finally {
-    loading.value = false
-  }
-}
-
-// 监听工作流引擎实例变化，自动重新加载算子
-watch(() => props.workflowEngineId, () => {
-  loadOperators()
-})
-
 // 分类后的算子列表
 const categorizedOperators = computed(() => {
   const categories = {}
 
   // 按工作流引擎声明的分组目录组织算子。
-  operators.value.forEach((op) => {
+  props.operators.forEach((op) => {
     const categoryPath = op.category_path
     const categoryName = categoryPath.join(' / ')
     const categoryIcon = categoryIcons[categoryPath[0]] || '📝'
@@ -196,7 +177,7 @@ const categorizedOperators = computed(() => {
 
     categories[categoryName].operators.push({
       name: op.name,
-      displayName: op.display_name,
+      displayName: op.display_name || op.name,
       description: op.description,
       params: params,
       category: categoryName,
@@ -232,10 +213,23 @@ const filteredCategories = computed(() => {
       ...category,
       operators: category.operators.filter(op =>
         op.name.toLowerCase().includes(query) ||
+        op.displayName.toLowerCase().includes(query) ||
         op.description.toLowerCase().includes(query)
       )
     }))
     .filter(category => category.operators.length > 0)
+})
+
+watch(categorizedOperators, categories => {
+  if (activeCategories.value.length === 0 && categories.length > 0) {
+    activeCategories.value = [categories[0].name]
+  }
+}, { immediate: true })
+
+watch(searchQuery, query => {
+  if (query.trim()) {
+    activeCategories.value = filteredCategories.value.map(category => category.name)
+  }
 })
 
 // 拖拽开始
@@ -257,9 +251,6 @@ const handleOperatorClick = (operator) => {
   emit('operator-click', operator)
 }
 
-onMounted(() => {
-  loadOperators()
-})
 </script>
 
 <style scoped>
@@ -311,7 +302,7 @@ onMounted(() => {
   background: var(--addp-bg-secondary);
   border: 1px solid var(--addp-border-color);
   border-radius: 4px;
-  cursor: move;
+  cursor: pointer;
   transition: all 0.2s;
 }
 
@@ -332,10 +323,26 @@ onMounted(() => {
   margin-bottom: 4px;
 }
 
+.operator-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .operator-name {
   font-weight: 600;
   color: var(--addp-text-primary);
   font-size: 14px;
+}
+
+.operator-code {
+  overflow: hidden;
+  color: var(--addp-text-tertiary);
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .info-icon {

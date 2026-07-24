@@ -1,0 +1,310 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://addp.local/schemas/auth-context-v1.json",
+  "title": "ADDP AuthContext v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "principal",
+    "context",
+    "authentication",
+    "client",
+    "organization",
+    "authorization",
+    "token",
+    "delegation"
+  ],
+  "properties": {
+    "schema_version": { "const": "addp.auth_context/v1" },
+    "principal": { "$ref": "#/$defs/principal" },
+    "context": { "$ref": "#/$defs/context" },
+    "authentication": { "$ref": "#/$defs/authentication" },
+    "client": { "$ref": "#/$defs/client" },
+    "organization": { "$ref": "#/$defs/organization" },
+    "authorization": { "$ref": "#/$defs/authorization" },
+    "token": { "$ref": "#/$defs/token" },
+    "delegation": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/delegation" }
+      ]
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "principal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "enum": ["user", "service_principal"] },
+        "id": { "$ref": "#/$defs/id" }
+      }
+    },
+    "context": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": { "const": "platform" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "tenant_id", "tenant_membership_id"],
+          "properties": {
+            "type": { "const": "tenant" },
+            "tenant_id": { "$ref": "#/$defs/id" },
+            "tenant_membership_id": { "$ref": "#/$defs/id" }
+          }
+        }
+      ]
+    },
+    "authentication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["methods", "assurance_level", "authenticated_at", "step_up_expires_at"],
+      "properties": {
+        "methods": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "password",
+              "totp",
+              "webauthn",
+              "external_idp",
+              "recovery_code",
+              "service_secret",
+              "private_key_jwt",
+              "mtls"
+            ]
+          }
+        },
+        "assurance_level": {
+          "enum": ["aal1", "aal2", "aal3", "not_applicable"]
+        },
+        "authenticated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "step_up_expires_at": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "format": "date-time" }
+          ]
+        }
+      }
+    },
+    "client": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["client_id", "audiences", "scope_mode", "scopes"],
+      "properties": {
+        "client_id": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "audiences": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "scope_mode": {
+          "enum": ["unrestricted", "restricted"]
+        },
+        "scopes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "scope_mode": { "const": "unrestricted" } },
+            "required": ["scope_mode"]
+          },
+          "then": {
+            "properties": { "scopes": { "maxItems": 0 } }
+          },
+          "else": {
+            "properties": { "scopes": { "minItems": 1 } }
+          }
+        }
+      ]
+    },
+    "organization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["departments", "project_groups"],
+      "properties": {
+        "departments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/departmentMembership" }
+        },
+        "project_groups": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/projectGroupMembership" }
+        }
+      }
+    },
+    "departmentMembership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["membership_id", "department_id", "membership_type", "relation_role", "ancestor_ids"],
+      "properties": {
+        "membership_id": { "$ref": "#/$defs/id" },
+        "department_id": { "$ref": "#/$defs/id" },
+        "membership_type": { "enum": ["primary", "additional"] },
+        "relation_role": { "enum": ["member", "leader"] },
+        "ancestor_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/id" }
+        }
+      }
+    },
+    "projectGroupMembership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["membership_id", "project_group_id", "relation_role"],
+      "properties": {
+        "membership_id": { "$ref": "#/$defs/id" },
+        "project_group_id": { "$ref": "#/$defs/id" },
+        "relation_role": { "enum": ["member", "leader", "coordinator"] }
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authorization_version", "role_assignments"],
+      "properties": {
+        "authorization_version": { "$ref": "#/$defs/id" },
+        "role_assignments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/roleAssignment" }
+        }
+      }
+    },
+    "roleAssignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assignment_id",
+        "role_key",
+        "scope",
+        "permissions",
+        "source_type",
+        "valid_from",
+        "valid_until"
+      ],
+      "properties": {
+        "assignment_id": { "$ref": "#/$defs/id" },
+        "role_key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+        },
+        "scope": { "$ref": "#/$defs/assignmentScope" },
+        "permissions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){2}$"
+          }
+        },
+        "source_type": {
+          "enum": ["manual", "idp_mapping", "bootstrap", "break_glass"]
+        },
+        "valid_from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "valid_until": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "format": "date-time" }
+          ]
+        }
+      }
+    },
+    "assignmentScope": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": { "type": { "const": "platform" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "tenant_id"],
+          "properties": {
+            "type": { "const": "tenant" },
+            "tenant_id": { "$ref": "#/$defs/id" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "tenant_id", "department_id"],
+          "properties": {
+            "type": { "const": "department" },
+            "tenant_id": { "$ref": "#/$defs/id" },
+            "department_id": { "$ref": "#/$defs/id" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "tenant_id", "project_group_id"],
+          "properties": {
+            "type": { "const": "project_group" },
+            "tenant_id": { "$ref": "#/$defs/id" },
+            "project_group_id": { "$ref": "#/$defs/id" }
+          }
+        }
+      ]
+    },
+    "token": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "issued_at", "expires_at"],
+      "properties": {
+        "type": {
+          "enum": [
+            "first_party_access_token",
+            "oauth_access_token",
+            "service_access_token",
+            "resource_access_ticket",
+            "delegated_access_token"
+          ]
+        },
+        "issued_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "delegation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["delegated_by_client_id", "agent_run_id", "tool_call_id"],
+      "properties": {
+        "delegated_by_client_id": { "type": "string", "minLength": 1 },
+        "agent_run_id": { "type": "string", "minLength": 1 },
+        "tool_call_id": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 )
 
 func TestStepRejectsLegacyEngineIdentifierField(t *testing.T) {
@@ -123,8 +124,11 @@ func TestOrchestrationDefinitionRequestAppliesOnlyEditableFields(t *testing.T) {
 		Name:        "new",
 		Description: "description",
 		Steps:       Steps{{ID: "scan", Name: "Scan", Provider: "meta", TaskType: "scan", TaskID: 1}},
-		Enabled:     true,
-		Schedule:    "0 2 * * *",
+		EditorLayout: commonModels.JSONMap{
+			"nodes": map[string]interface{}{"scan": map[string]interface{}{"x": 10, "y": 20}},
+		},
+		Enabled:  true,
+		Schedule: "0 2 * * *",
 	}
 	request.ApplyTo(&orch)
 
@@ -133,6 +137,9 @@ func TestOrchestrationDefinitionRequestAppliesOnlyEditableFields(t *testing.T) {
 	}
 	if orch.Name != "new" || !orch.Enabled || orch.Schedule != "0 2 * * *" {
 		t.Fatalf("editable fields not applied: %#v", orch)
+	}
+	if orch.EditorLayout["nodes"] == nil {
+		t.Fatalf("editor layout not applied: %#v", orch.EditorLayout)
 	}
 }
 

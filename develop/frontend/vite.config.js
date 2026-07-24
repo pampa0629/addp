@@ -2,6 +2,8 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
+const isE2E = process.env.ADDP_E2E === '1'
+
 export default defineConfig({
   plugins: [
     vue()
@@ -44,7 +46,7 @@ export default defineConfig({
     port: 5178,
     strictPort: true,
     host: '0.0.0.0',
-    hmr: {
+    hmr: isE2E ? false : {
       protocol: 'ws',
       host: 'localhost',
       port: 5178,

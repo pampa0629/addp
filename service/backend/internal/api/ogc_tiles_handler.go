@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/addp/common/logger"
-	"github.com/addp/service/internal/service"
+	"github.com/addp/service/internal/models"
 	"github.com/gin-gonic/gin"
 )
 
@@ -16,13 +16,13 @@ import (
 
 // OGCTilesHandler 处理 OGC Tiles API 请求
 type OGCTilesHandler struct {
-	tileServiceService  *service.TileServiceService
+	tileServiceService  tileServiceLookup
 	tileEndpointHandler *TileEndpointHandler
 }
 
 // NewOGCTilesHandler 创建 OGC Tiles API 处理器
 func NewOGCTilesHandler(
-	tileServiceService *service.TileServiceService,
+	tileServiceService tileServiceLookup,
 	tileEndpointHandler *TileEndpointHandler,
 ) *OGCTilesHandler {
 	return &OGCTilesHandler{
@@ -41,27 +41,16 @@ func NewOGCTilesHandler(
 // @Produce json
 // @Param serviceName path string true "服务名称 | Service name"
 // @Success 200 {object} map[string]interface{} "Landing Page | Landing Page"
+// @Failure 401 {object} map[string]string "需要认证 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @Router /ogc/tiles/{serviceName} [get]
 func (h *OGCTilesHandler) GetLandingPage(c *gin.Context) {
 	serviceName := c.Param("serviceName")
 	host := c.Request.Host
 
-	// 查询服务（验证存在性）
-	tileService, err := h.tileServiceService.GetServiceModelByName(serviceName)
-	if err != nil {
-		logger.L().Error("OGC Tiles 服务未找到",
-			"service_name", serviceName,
-			"error", err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+	tileService, ok := h.getAuthorizedService(c, serviceName)
+	if !ok {
 		return
-	}
-
-	// 检查访问权限
-	if !tileService.PublicAccess {
-		if _, exists := c.Get("tenant_id"); !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
-			return
-		}
 	}
 
 	// 构建 Landing Page
@@ -112,8 +101,14 @@ func (h *OGCTilesHandler) GetLandingPage(c *gin.Context) {
 // @Produce json
 // @Param serviceName path string true "服务名称 | Service name"
 // @Success 200 {object} map[string]interface{} "符合性声明 | Conformance declaration"
+// @Failure 401 {object} map[string]string "需要认证 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @Router /ogc/tiles/{serviceName}/conformance [get]
 func (h *OGCTilesHandler) GetConformance(c *gin.Context) {
+	if _, ok := h.getAuthorizedService(c, c.Param("serviceName")); !ok {
+		return
+	}
+
 	conformance := map[string]interface{}{
 		"conformsTo": []string{
 			"http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/core",
@@ -140,10 +135,15 @@ func (h *OGCTilesHandler) GetConformance(c *gin.Context) {
 // @Produce json
 // @Param serviceName path string true "服务名称 | Service name"
 // @Success 200 {object} map[string]interface{} "瓦片矩阵集列表 | Tile Matrix Set list"
+// @Failure 401 {object} map[string]string "需要认证 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @Router /ogc/tiles/{serviceName}/tileMatrixSets [get]
 func (h *OGCTilesHandler) GetTileMatrixSets(c *gin.Context) {
 	host := c.Request.Host
 	serviceName := c.Param("serviceName")
+	if _, ok := h.getAuthorizedService(c, serviceName); !ok {
+		return
+	}
 
 	tileMatrixSets := map[string]interface{}{
 		"tileMatrixSets": []map[string]interface{}{
@@ -177,8 +177,14 @@ func (h *OGCTilesHandler) GetTileMatrixSets(c *gin.Context) {
 // @Param serviceName path string true "服务名称 | Service name"
 // @Param tileMatrixSetId path string true "瓦片矩阵集 ID | Tile Matrix Set ID"
 // @Success 200 {object} map[string]interface{} "瓦片矩阵集详情 | Tile Matrix Set details"
+// @Failure 401 {object} map[string]string "需要认证 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @Router /ogc/tiles/{serviceName}/tileMatrixSets/{tileMatrixSetId} [get]
 func (h *OGCTilesHandler) GetTileMatrixSet(c *gin.Context) {
+	if _, ok := h.getAuthorizedService(c, c.Param("serviceName")); !ok {
+		return
+	}
+
 	tileMatrixSetId := c.Param("tileMatrixSetId")
 
 	if tileMatrixSetId != "WebMercatorQuad" {
@@ -228,24 +234,16 @@ func (h *OGCTilesHandler) GetTileMatrixSet(c *gin.Context) {
 // @Produce json
 // @Param serviceName path string true "服务名称 | Service name"
 // @Success 200 {object} map[string]interface{} "瓦片集列表 | Tileset list"
+// @Failure 401 {object} map[string]string "需要认证 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @Router /ogc/tiles/{serviceName}/tiles [get]
 func (h *OGCTilesHandler) GetTilesets(c *gin.Context) {
 	serviceName := c.Param("serviceName")
 	host := c.Request.Host
 
-	// 查询服务
-	tileService, err := h.tileServiceService.GetServiceModelByName(serviceName)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+	tileService, ok := h.getAuthorizedService(c, serviceName)
+	if !ok {
 		return
-	}
-
-	// 检查访问权限
-	if !tileService.PublicAccess {
-		if _, exists := c.Get("tenant_id"); !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
-			return
-		}
 	}
 
 	// 构建瓦片集列表
@@ -299,6 +297,8 @@ func (h *OGCTilesHandler) GetTilesets(c *gin.Context) {
 // @Param tileRow path string true "瓦片行 | Tile row"
 // @Param tileCol path string true "瓦片列 | Tile column"
 // @Success 200 {file} application/vnd.mapbox-vector-tile "瓦片数据 | Tile data"
+// @Failure 401 {object} map[string]string "需要认证 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @Router /ogc/tiles/{serviceName}/tiles/{layer}/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol} [get]
 func (h *OGCTilesHandler) GetTile(c *gin.Context) {
 	serviceName := c.Param("serviceName")
@@ -349,4 +349,19 @@ func (h *OGCTilesHandler) GetTile(c *gin.Context) {
 		"service_name", serviceName,
 		"layer_name", layerName,
 		"z", z, "x", x, "y", y)
+}
+
+func (h *OGCTilesHandler) getAuthorizedService(c *gin.Context, serviceName string) (*models.TileService, bool) {
+	tileService, err := h.tileServiceService.GetServiceModelByName(serviceName)
+	if err != nil {
+		logger.L().Error("OGC Tiles 服务未找到",
+			"service_name", serviceName,
+			"error", err)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+		return nil, false
+	}
+	if !requireJSONServiceAccess(c, tileService.PublicAccess, tileService.TenantID) {
+		return nil, false
+	}
+	return tileService, true
 }

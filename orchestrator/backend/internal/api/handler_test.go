@@ -232,6 +232,7 @@ func TestOrchestrationHandlersHideCrossTenantResources(t *testing.T) {
 		name TEXT NOT NULL,
 		description TEXT,
 		steps JSON NOT NULL,
+		editor_layout JSON NOT NULL DEFAULT '{}',
 		enabled BOOLEAN,
 		schedule TEXT,
 		last_run_at DATETIME,

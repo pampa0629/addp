@@ -2,7 +2,7 @@
 
 更新日期：2026-07-23
 
-状态：阶段 4.3 正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准。
+状态：阶段 4.3 正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准；OAuth/OIDC 协议引擎目标路线已确认，运行代码尚待一次性切换。
 
 ## 一、统一令牌模型
 
@@ -20,6 +20,16 @@ ADDP 的 Web、CLI 和 OAuth 客户端统一使用随机 opaque 用户令牌。S
 System 不再签发或解析用户 JWT；旧的“允许过期 Access Token 调 `/refresh`”路径删除。
 
 每枚 User Access Token 必须绑定 `platform` 会话模式或一个有效 Tenant Membership 对应的 `tenant` 会话模式。OAuth Client 不得通过 authorize、token 或 delegation 请求提交任意 `tenant_id` 或平台角色；授权结果继承用户在批准时选择的唯一当前上下文。
+
+### 1.1 协议引擎实现约束
+
+System 内嵌 ADDP 受控 Fosite 派生版本，作为 Authorization Code、PKCE、Device Flow、OAuth Refresh、Revocation 和 OIDC 的唯一协议引擎。目标版本、证据和治理要求见 [ADDP IAM OAuth/OIDC 协议引擎 ADR](../next/addp-IAM%20OAuth-OIDC协议引擎ADR.md)。
+
+System 仍是 ADDP 唯一 Auth Server 和 IAM 事实权威，不新增独立认证服务。Fosite 不负责账号、MFA、Tenant Context、Role Permission、owner Resource Grant、页面或外部 IdP 身份映射；这些事实由 System 计算后通过 Authentication / Consent Bridge 写入 Fosite Session。
+
+现有 `request_id` 托管授权交互继续作为浏览器安全边界，但 Client、redirect URI、Scope、PKCE、grant、Code/Device/Refresh 状态和 OAuth error 只能由同一个 Fosite Provider 处理。不得继续保留 `TokenService` 自研协议状态机，不得以正式版缺少 Device Flow 为由按 grant type 分流到自研 Handler。
+
+OIDC ID Token 是发给 OIDC Client 的签名身份断言，不是 ADDP API Access Token。System 不签发用户 JWT 的边界是：ADDP API Access Token 始终为 opaque Token；业务模块不得接受 ID Token 或外部 IdP Token 作为 Bearer Access Token。
 
 ## 二、客户端与授权
 
@@ -105,6 +115,10 @@ CLI loopback listener 必须保持运行，直到收到有效 `/callback`、收�
 4. CLI 按 interval 调用 `/oauth/token`，使用 Device Code grant。
 5. pending 返回 `authorization_pending`；过快返回 `slow_down`；批准后只成功兑换一次。
 
+Fosite RFC 8628 Handler 必须注入 ADDP PostgreSQL `DeviceRateLimitStrategy`，不能使用默认的空限速实现。每次合法轮询原子更新下一次允许时间；过快轮询返回 `slow_down`，并把当前及后续轮询 interval 增加 5 秒。该协议限速与 Redis 端点滥用防护同时生效，但使用不同状态和错误语义。
+
+已兑换 Device Code 再次提交时，必须使用原 Device Request ID 撤销其关联 Token Family；不得使用本次 Token 请求新生成的 Request ID 导致撤销落空。
+
 ## 七、Token API
 
 `POST /oauth/token` 支持 `authorization_code`、`urn:ietf:params:oauth:grant-type:device_code` 和 `refresh_token` 三种 grant。
@@ -113,7 +127,7 @@ OAuth 成功响应包含 `access_token`、`token_type=Bearer`、`expires_in`、`
 
 ### 7.1 OAuth 安全审计
 
-System 审计日志是 OAuth 安全事件的唯一持久化落点，不另建 OAuth 日志表，也不经跨模块审计 API 回写自身。每个 OAuth 非 GET 请求只生成一条结构化审计记录，`entity_type=oauth_security_event`，`entity_id` 使用稳定事件名：
+System 的 `system.audit_logs` 是 OAuth 安全事件的唯一持久化落点，不另建 OAuth 日志表，也不经跨模块审计 API 回写自身。每个 OAuth 非 GET 请求只生成一条结构化审计记录，`event_name` 与 `entity_id` 使用同一个稳定事件名，`entity_type=oauth_security_event`：
 
 - `oauth.authorization_request.created|cancelled|cancel_ignored|failed`；
 - `oauth.authorization.approved|rejected|failed`；
@@ -123,9 +137,11 @@ System 审计日志是 OAuth 安全事件的唯一持久化落点，不另建 OA
 - `oauth.token.revoked|revoke_ignored`；
 - `oauth.rate_limit.exceeded|unavailable`。
 
-审计详情只允许保存事件名、结果、`client_id`、grant type、decision、scope 和稳定 OAuth error code。不得保存或部分保留 Access Token、Refresh Token、Authorization Code、Device Code、User Code、PKCE verifier/challenge、state、Cookie、Authorization Header 或原始请求体。IP、User-Agent、Request ID、HTTP 状态、Principal 和当前平台或 Tenant 上下文继续使用统一审计字段。Refresh Token 重用必须记录高风险事件并保持 HTTP 响应为 `invalid_grant`，不能向客户端泄露 family、用户或攻击判定细节。
+审计详情只允许保存 `client_id`、`grant_type`、`decision`、`scope` 和稳定 `error_code`；事件名、结果与风险等级进入统一列，不在 JSON 中复制。不得保存或部分保留 Access Token、Refresh Token、Authorization Code、Device Code、User Code、PKCE verifier/challenge、state、Cookie、Authorization Header、原始请求体或原始 query。IP、User-Agent、Request ID、HTTP 状态、Principal 和当前平台或 Tenant 上下文继续使用统一审计字段。尚未建立 AuthContext 的 OAuth 失败使用 `context_type=NULL`，不得伪装成 Platform Context。Refresh Token 重用必须记录 `risk_level=high` 事件并保持 HTTP 响应为 `invalid_grant`，不能向客户端泄露 family、用户或攻击判定细节。
 
-历史通用审计记录中已经落盘的 OAuth 原始请求体、query 和错误详情必须在 System 启动迁移中清空；迁移后只保留上述结构化安全事件，不保留旧日志格式兼容分支。
+OAuth Request、Code、Device Authorization、Token Family 和撤销状态的成功转换，必须与对应安全审计事件在同一个 PostgreSQL 事务提交；状态转换成功但审计丢失，或审计成功但协议状态回滚，均视为事务失败。纯前置校验失败没有待修改的协议事实时，仍写入一条统一审计事件。
+
+首次切换目标 IAM 时必须按统一破坏性迁移规则重建开发环境 `system` Schema；runner 拒绝旧 IAM Schema，不在 System 启动路径读取或清理旧审计列。需要保留历史审计的环境必须先走独立审批的离线脱敏、归档和导入设计，运行时不保留旧日志格式兼容分支。
 
 ### 7.2 OAuth 端点限流
 

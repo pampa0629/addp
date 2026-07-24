@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://addp.local/schemas/builtin-role-manifest-v1.schema.json",
+  "title": "ADDP Builtin Role Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "manifest_version",
+    "roles"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "addp.builtin_roles/v1"
+    },
+    "manifest_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/role"
+      }
+    }
+  },
+  "$defs": {
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "role_type",
+        "name_i18n_key",
+        "description_i18n_key",
+        "allowed_scope_types",
+        "allowed_principal_types",
+        "permissions"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^(platform|tenant)\\.[a-z][a-z0-9_]*$"
+        },
+        "role_type": {
+          "enum": ["platform_builtin", "tenant_builtin"]
+        },
+        "name_i18n_key": {
+          "type": "string",
+          "pattern": "^roles\\.(platform|tenant)\\.[a-z][a-z0-9_]*\\.name$"
+        },
+        "description_i18n_key": {
+          "type": "string",
+          "pattern": "^roles\\.(platform|tenant)\\.[a-z][a-z0-9_]*\\.description$"
+        },
+        "allowed_scope_types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["platform", "tenant", "department", "project_group"]
+          }
+        },
+        "allowed_principal_types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["user", "service_principal"]
+          }
+        },
+        "permissions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
+          }
+        }
+      }
+    }
+  }
+}

@@ -6,10 +6,11 @@ export function createDefaultTileCacheTaskForm() {
     config: {
       target: { item_id: undefined, item_fingerprint: '', locator: '', source_engine_id: undefined, source_kind: '', full_name: '', schema: '', table: '' },
       tile: {
-        format: 'mvt',
+        archive_format: 'pmtiles',
+        tile_type: 'mvt',
         tile_matrix_set: 'WebMercatorQuad',
         min_zoom: 0,
-        max_zoom: 18,
+        max_zoom: 12,
         source_srid: 0,
         target_srid: 3857,
         extent_srid: 0,
@@ -43,7 +44,8 @@ export function createTileCacheTaskPayload(form) {
   const payload = JSON.parse(JSON.stringify(form))
   payload.name = String(payload.name || '').trim()
   payload.description = String(payload.description || '').trim()
-  payload.config.tile.format = 'mvt'
+  payload.config.tile.archive_format = 'pmtiles'
+  payload.config.tile.tile_type = 'mvt'
   payload.config.tile.target_srid = 3857
   if (!payload.config.target.item_id) {
     delete payload.config.target.item_id

@@ -64,7 +64,12 @@ type TableTransferTaskConfigDoc struct {
 }
 
 type TransferRuntimeDoc struct {
-	Boundary string `json:"boundary" example:"bounded" enums:"bounded,continuous"`
+	Boundary      string                    `json:"boundary" example:"bounded" enums:"bounded,continuous"`
+	RecordFailure *TransferRecordFailureDoc `json:"record_failure,omitempty"`
+}
+
+type TransferRecordFailureDoc struct {
+	Mode string `json:"mode" example:"block" enums:"block,dead_letter"`
 }
 
 type TransferLoadDoc struct {

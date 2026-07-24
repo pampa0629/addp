@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://addp.local/schemas/permission-manifest-v1.schema.json",
+  "title": "ADDP Permission Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "owner_module",
+    "manifest_version",
+    "permissions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "addp.permission_manifest/v1"
+    },
+    "owner_module": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "manifest_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "permissions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/permission"
+      }
+    }
+  },
+  "$defs": {
+    "permission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "allowed_scope_types",
+        "risk_level",
+        "tenant_customizable",
+        "delegable",
+        "status",
+        "name_i18n_key",
+        "description_i18n_key"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
+        },
+        "allowed_scope_types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["platform", "tenant", "department", "project_group"]
+          }
+        },
+        "risk_level": {
+          "enum": ["low", "medium", "high", "critical"]
+        },
+        "tenant_customizable": {
+          "type": "boolean"
+        },
+        "delegable": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": ["active", "disabled"]
+        },
+        "name_i18n_key": {
+          "type": "string",
+          "pattern": "^permissions\\.[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.name$"
+        },
+        "description_i18n_key": {
+          "type": "string",
+          "pattern": "^permissions\\.[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.description$"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1897 @@
+{
+  "components": {
+    "schemas": {
+      "ActivityMessage": {
+        "additionalProperties": true,
+        "description": "An activity progress message emitted between chat messages.",
+        "properties": {
+          "activityType": {
+            "title": "Activitytype",
+            "type": "string"
+          },
+          "content": {
+            "additionalProperties": true,
+            "title": "Content",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "const": "activity",
+            "default": "activity",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "activityType",
+          "content"
+        ],
+        "title": "ActivityMessage",
+        "type": "object"
+      },
+      "AgentRunActionResponse": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "AgentRunActionResponse",
+        "type": "object"
+      },
+      "AgentRunResponse": {
+        "properties": {
+          "checkpoint": {
+            "additionalProperties": true,
+            "title": "Checkpoint",
+            "type": "object"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "context_metrics": {
+            "additionalProperties": true,
+            "title": "Context Metrics",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "error_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Source"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "initial_protocol_run_id": {
+            "title": "Initial Protocol Run Id",
+            "type": "string"
+          },
+          "metrics": {
+            "additionalProperties": true,
+            "title": "Metrics",
+            "type": "object"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "integer"
+          },
+          "skill_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Name"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/AgentRunStepResponse"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "status",
+          "initial_protocol_run_id",
+          "skill_name",
+          "checkpoint",
+          "metrics",
+          "context_metrics",
+          "error_source",
+          "error_code",
+          "error_message",
+          "created_at",
+          "updated_at",
+          "completed_at",
+          "steps"
+        ],
+        "title": "AgentRunResponse",
+        "type": "object"
+      },
+      "AgentRunStepResponse": {
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "error_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Source"
+          },
+          "facts": {
+            "additionalProperties": true,
+            "title": "Facts",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "input": {
+            "additionalProperties": true,
+            "title": "Input",
+            "type": "object"
+          },
+          "output_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Summary"
+          },
+          "protocol_invocation_id": {
+            "title": "Protocol Invocation Id",
+            "type": "string"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "step_type": {
+            "title": "Step Type",
+            "type": "string"
+          },
+          "tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Call Id"
+          },
+          "tool_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Name"
+          }
+        },
+        "required": [
+          "id",
+          "sequence",
+          "step_type",
+          "status",
+          "protocol_invocation_id",
+          "tool_call_id",
+          "tool_name",
+          "input",
+          "output_summary",
+          "facts",
+          "error_source",
+          "error_code",
+          "error_message",
+          "started_at",
+          "completed_at"
+        ],
+        "title": "AgentRunStepResponse",
+        "type": "object"
+      },
+      "AssistantMessage": {
+        "additionalProperties": true,
+        "description": "An assistant message.",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "encryptedValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryptedvalue"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "role": {
+            "const": "assistant",
+            "default": "assistant",
+            "title": "Role",
+            "type": "string"
+          },
+          "toolCalls": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ToolCall"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Toolcalls"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "AssistantMessage",
+        "type": "object"
+      },
+      "AudioInputContent": {
+        "additionalProperties": true,
+        "description": "An audio input content fragment.",
+        "properties": {
+          "metadata": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "source": {
+            "discriminator": {
+              "mapping": {
+                "data": "#/components/schemas/InputContentDataSource",
+                "url": "#/components/schemas/InputContentUrlSource"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InputContentDataSource"
+              },
+              {
+                "$ref": "#/components/schemas/InputContentUrlSource"
+              }
+            ],
+            "title": "Source"
+          },
+          "type": {
+            "const": "audio",
+            "default": "audio",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "AudioInputContent",
+        "type": "object"
+      },
+      "BinaryInputContent": {
+        "additionalProperties": true,
+        "description": "A deprecated binary payload reference in a multimodal user message.",
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "mimeType": {
+            "title": "Mimetype",
+            "type": "string"
+          },
+          "type": {
+            "const": "binary",
+            "default": "binary",
+            "title": "Type",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "mimeType"
+        ],
+        "title": "BinaryInputContent",
+        "type": "object"
+      },
+      "Context": {
+        "additionalProperties": true,
+        "description": "Additional context for the agent.",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "value"
+        ],
+        "title": "Context",
+        "type": "object"
+      },
+      "DeveloperMessage": {
+        "additionalProperties": true,
+        "description": "A developer message.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "encryptedValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryptedvalue"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "role": {
+            "const": "developer",
+            "default": "developer",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "content"
+        ],
+        "title": "DeveloperMessage",
+        "type": "object"
+      },
+      "DocumentInputContent": {
+        "additionalProperties": true,
+        "description": "A document input content fragment.",
+        "properties": {
+          "metadata": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "source": {
+            "discriminator": {
+              "mapping": {
+                "data": "#/components/schemas/InputContentDataSource",
+                "url": "#/components/schemas/InputContentUrlSource"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InputContentDataSource"
+              },
+              {
+                "$ref": "#/components/schemas/InputContentUrlSource"
+              }
+            ],
+            "title": "Source"
+          },
+          "type": {
+            "const": "document",
+            "default": "document",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "DocumentInputContent",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error": {
+            "title": "Error",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "FunctionCall": {
+        "additionalProperties": true,
+        "description": "Name and arguments of a function call.",
+        "properties": {
+          "arguments": {
+            "title": "Arguments",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "arguments"
+        ],
+        "title": "FunctionCall",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ImageInputContent": {
+        "additionalProperties": true,
+        "description": "An image input content fragment.",
+        "properties": {
+          "metadata": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "source": {
+            "discriminator": {
+              "mapping": {
+                "data": "#/components/schemas/InputContentDataSource",
+                "url": "#/components/schemas/InputContentUrlSource"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InputContentDataSource"
+              },
+              {
+                "$ref": "#/components/schemas/InputContentUrlSource"
+              }
+            ],
+            "title": "Source"
+          },
+          "type": {
+            "const": "image",
+            "default": "image",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "ImageInputContent",
+        "type": "object"
+      },
+      "InputContentDataSource": {
+        "additionalProperties": true,
+        "description": "Inline base64-encoded source.",
+        "properties": {
+          "mimeType": {
+            "title": "Mimetype",
+            "type": "string"
+          },
+          "type": {
+            "const": "data",
+            "default": "data",
+            "title": "Type",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "mimeType"
+        ],
+        "title": "InputContentDataSource",
+        "type": "object"
+      },
+      "InputContentUrlSource": {
+        "additionalProperties": true,
+        "description": "URL-referenced source.",
+        "properties": {
+          "mimeType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mimetype"
+          },
+          "type": {
+            "const": "url",
+            "default": "url",
+            "title": "Type",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "InputContentUrlSource",
+        "type": "object"
+      },
+      "ReasoningMessage": {
+        "additionalProperties": true,
+        "description": "A reasoning message containing the agent's internal reasoning process.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "encryptedValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryptedvalue"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "const": "reasoning",
+            "default": "reasoning",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "content"
+        ],
+        "title": "ReasoningMessage",
+        "type": "object"
+      },
+      "ResumeEntry": {
+        "additionalProperties": true,
+        "description": "A per-interrupt response in the resume array of a RunAgentInput.",
+        "properties": {
+          "interruptId": {
+            "title": "Interruptid",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "status": {
+            "enum": [
+              "resolved",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "interruptId",
+          "status"
+        ],
+        "title": "ResumeEntry",
+        "type": "object"
+      },
+      "RetryAgentRunInput": {
+        "properties": {
+          "runId": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Runid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId"
+        ],
+        "title": "RetryAgentRunInput",
+        "type": "object"
+      },
+      "RunAgentInput": {
+        "additionalProperties": true,
+        "description": "Input for running an agent.",
+        "properties": {
+          "context": {
+            "items": {
+              "$ref": "#/components/schemas/Context"
+            },
+            "title": "Context",
+            "type": "array"
+          },
+          "forwardedProps": {
+            "title": "Forwardedprops"
+          },
+          "messages": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "activity": "#/components/schemas/ActivityMessage",
+                  "assistant": "#/components/schemas/AssistantMessage",
+                  "developer": "#/components/schemas/DeveloperMessage",
+                  "reasoning": "#/components/schemas/ReasoningMessage",
+                  "system": "#/components/schemas/SystemMessage",
+                  "tool": "#/components/schemas/ToolMessage",
+                  "user": "#/components/schemas/UserMessage"
+                },
+                "propertyName": "role"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/DeveloperMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/SystemMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/AssistantMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/UserMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/ActivityMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/ReasoningMessage"
+                }
+              ]
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "parentRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parentrunid"
+          },
+          "resume": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ResumeEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume"
+          },
+          "runId": {
+            "title": "Runid",
+            "type": "string"
+          },
+          "state": {
+            "title": "State"
+          },
+          "threadId": {
+            "title": "Threadid",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/Tool"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "threadId",
+          "runId",
+          "state",
+          "messages",
+          "tools",
+          "context",
+          "forwardedProps"
+        ],
+        "title": "RunAgentInput",
+        "type": "object"
+      },
+      "SessionCreate": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "SessionCreate",
+        "type": "object"
+      },
+      "SystemMessage": {
+        "additionalProperties": true,
+        "description": "A system message.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "encryptedValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryptedvalue"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "role": {
+            "const": "system",
+            "default": "system",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "content"
+        ],
+        "title": "SystemMessage",
+        "type": "object"
+      },
+      "TextInputContent": {
+        "additionalProperties": true,
+        "description": "A text fragment in a multimodal user message.",
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "text",
+            "default": "text",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "TextInputContent",
+        "type": "object"
+      },
+      "Tool": {
+        "additionalProperties": true,
+        "description": "A tool definition.",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parameters": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "Tool",
+        "type": "object"
+      },
+      "ToolCall": {
+        "additionalProperties": true,
+        "description": "A tool call, modelled after OpenAI tool calls.",
+        "properties": {
+          "encryptedValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryptedvalue"
+          },
+          "function": {
+            "$ref": "#/components/schemas/FunctionCall"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "function",
+            "default": "function",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "function"
+        ],
+        "title": "ToolCall",
+        "type": "object"
+      },
+      "ToolMessage": {
+        "additionalProperties": true,
+        "description": "A tool result message.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "encryptedValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryptedvalue"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "const": "tool",
+            "default": "tool",
+            "title": "Role",
+            "type": "string"
+          },
+          "toolCallId": {
+            "title": "Toolcallid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "content",
+          "toolCallId"
+        ],
+        "title": "ToolMessage",
+        "type": "object"
+      },
+      "UserMessage": {
+        "additionalProperties": true,
+        "description": "A user message supporting text or multimodal content.",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "discriminator": {
+                    "mapping": {
+                      "audio": "#/components/schemas/AudioInputContent",
+                      "binary": "#/components/schemas/BinaryInputContent",
+                      "document": "#/components/schemas/DocumentInputContent",
+                      "image": "#/components/schemas/ImageInputContent",
+                      "text": "#/components/schemas/TextInputContent",
+                      "video": "#/components/schemas/VideoInputContent"
+                    },
+                    "propertyName": "type"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TextInputContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImageInputContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AudioInputContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/VideoInputContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DocumentInputContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/BinaryInputContent"
+                    }
+                  ]
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Content"
+          },
+          "encryptedValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryptedvalue"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "role": {
+            "const": "user",
+            "default": "user",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "content"
+        ],
+        "title": "UserMessage",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VideoInputContent": {
+        "additionalProperties": true,
+        "description": "A video input content fragment.",
+        "properties": {
+          "metadata": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "source": {
+            "discriminator": {
+              "mapping": {
+                "data": "#/components/schemas/InputContentDataSource",
+                "url": "#/components/schemas/InputContentUrlSource"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InputContentDataSource"
+              },
+              {
+                "$ref": "#/components/schemas/InputContentUrlSource"
+              }
+            ],
+            "title": "Source"
+          },
+          "type": {
+            "const": "video",
+            "default": "video",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "VideoInputContent",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "description": "ADDP JWT：Authorization: Bearer <token>",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "ADDP 平台智能体服务 | ADDP Platform Agent Service",
+    "title": "ADDP Agent Service",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/agent/chat": {
+      "post": {
+        "description": "接收标准 AG-UI RunAgentInput，并以 text/event-stream 返回 AG-UI 事件。",
+        "operationId": "chat_api_v1_agent_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunAgentInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "运行智能体 | Run Agent",
+        "tags": [
+          "对话 | Chat"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.run.create",
+          "agent.run.execute"
+        ],
+        "x-ai-hint": "使用 threadId 指定已有 ADDP Agent 会话；messages 中最后一条 user 消息是本次新输入。"
+      }
+    },
+    "/api/v1/agent/runs/{agent_run_id}": {
+      "get": {
+        "description": "返回当前用户拥有的 AgentRun、语义检查点和受限步骤审计记录。",
+        "operationId": "get_agent_run_api_v1_agent_runs__agent_run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "AgentRun 不存在 | Agent run not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "获取智能体运行 | Get agent run",
+        "tags": [
+          "智能体运行 | Agent Runs"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.run.read"
+        ],
+        "x-ai-hint": "agent_run_id 来自 AG-UI STATE_SNAPSHOT.agentRunId；该资源不是 owner 模块 execution。"
+      }
+    },
+    "/api/v1/agent/runs/{agent_run_id}/cancel": {
+      "post": {
+        "description": "取消内置 Agent Runtime 和待处理 Interaction，不取消 owner 模块 execution。",
+        "operationId": "cancel_owned_agent_run_api_v1_agent_runs__agent_run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "取消智能体运行 | Cancel agent run",
+        "tags": [
+          "智能体运行 | Agent Runs"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.run.cancel"
+        ],
+        "x-ai-hint": "只允许 running 或 waiting 的 AgentRun；cancelled 是终态。"
+      }
+    },
+    "/api/v1/agent/runs/{agent_run_id}/events": {
+      "get": {
+        "description": "按 AgentRun 内 sequence 回放当前用户可见的安全 AG-UI 事件。",
+        "operationId": "replay_agent_run_events_api_v1_agent_runs__agent_run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "重放智能体运行事件 | Replay agent run events",
+        "tags": [
+          "智能体运行 | Agent Runs"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.run.read"
+        ],
+        "x-ai-hint": "after 是客户端最后已处理的 AgentRunEvent sequence；Tool 参数和原始结果不会出现在重放流中。"
+      }
+    },
+    "/api/v1/agent/runs/{agent_run_id}/retry": {
+      "post": {
+        "description": "仅重试失败的 AgentRun，并以新的协议调用 ID 返回 AG-UI SSE；不会创建第二个 AgentRun。",
+        "operationId": "retry_chat_api_v1_agent_runs__agent_run_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetryAgentRunInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "重试智能体运行 | Retry agent run",
+        "tags": [
+          "对话 | Chat"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.run.execute"
+        ],
+        "x-ai-hint": "runId 是本次重试的协议调用 ID；仅接受 failed AgentRun，取消态不允许重试。"
+      }
+    },
+    "/api/v1/agent/sessions": {
+      "get": {
+        "description": "获取当前用户的会话列表",
+        "operationId": "list_sessions_api_v1_agent_sessions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "获取会话列表 | List Sessions",
+        "tags": [
+          "会话管理 | Sessions"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.session.read"
+        ]
+      },
+      "post": {
+        "description": "创建新会话",
+        "operationId": "create_session_api_v1_agent_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "创建会话 | Create Session",
+        "tags": [
+          "会话管理 | Sessions"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.session.create"
+        ]
+      }
+    },
+    "/api/v1/agent/sessions/{session_id}": {
+      "delete": {
+        "description": "删除会话",
+        "operationId": "delete_session_api_v1_agent_sessions__session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "删除会话 | Delete Session",
+        "tags": [
+          "会话管理 | Sessions"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.session.delete"
+        ]
+      },
+      "get": {
+        "description": "获取会话详情",
+        "operationId": "get_session_api_v1_agent_sessions__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "获取会话详情 | Get Session",
+        "tags": [
+          "会话管理 | Sessions"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.session.read"
+        ]
+      }
+    },
+    "/api/v1/agent/sessions/{session_id}/messages": {
+      "get": {
+        "operationId": "get_messages_api_v1_agent_sessions__session_id__messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "获取会话消息 | List Session Messages",
+        "tags": [
+          "对话 | Chat"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.session.read"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "健康检查 | Health Check",
+        "x-addp-auth-mode": "public"
+      }
+    }
+  }
+}

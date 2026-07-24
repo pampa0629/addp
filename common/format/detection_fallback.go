@@ -44,6 +44,7 @@ var fallbackIdentifications = []fallbackIdentification{
 	{FormatORC, ".orc", "application/orc", datatype.Table},
 	{FormatAvro, ".avro", "application/avro", datatype.Table},
 	{FormatZIP, ".zip", "application/zip", datatype.Container},
+	{FormatPMTiles, ".pmtiles", "application/vnd.pmtiles", datatype.Media},
 	{FormatMP4, ".mp4", "video/mp4", datatype.Media},
 	{FormatAVI, ".avi", "video/x-msvideo", datatype.Media},
 	{FormatMOV, ".mov", "video/quicktime", datatype.Media},

@@ -1,8 +1,8 @@
 # ADDP IAM AuthContext 契约设计
 
-更新日期：2026-07-23
+更新日期：2026-07-24
 
-状态：技术设计已确认。本文在已确认的 IAM 目标数据模型和 Permission / Role 矩阵之上，确定 AuthContext JSON Schema、登录上下文选择、浏览器上下文切换、授权版本失效和共享类型边界；不修改当前 API、Swagger、数据库或运行代码。
+状态：技术设计已确认，唯一 JSON Schema、共享 Go 类型、第一方 Web Access Token 投影和 System 目标 Gin Middleware 已实现；目标 Middleware 尚未注册，OAuth、Service Principal、Resource Ticket、Delegated Token、API、Swagger 和 `main` 尚未切换。本文在已确认的 IAM 目标数据模型和 Permission / Role 矩阵之上，确定 AuthContext JSON Schema、登录上下文选择、浏览器上下文切换、授权版本失效和共享类型边界。
 
 ## 一、目标与边界
 
@@ -404,7 +404,7 @@ AuthContext 不返回：
 
 System 生成响应时还必须验证：
 
-- User 进入 Platform Context 时 `assurance_level` 至少为 `aal2`；Service Principal 只能持有 `human_only=false` 的 Platform Role；
+- User 进入 Platform Context 时 `assurance_level` 至少为 `aal2`；Principal 类型必须属于 Role 的 `allowed_principal_types`，平台三员只允许 User；
 - Platform Context 的组织数组为空，Role Assignment Scope 只能为 Platform；
 - Tenant Context 中所有 Tenant、Department 和 Project Group ID 必须属于当前 Tenant；
 - Department 与 Project Group 只包含当前有效的直接 Membership；
@@ -670,7 +670,7 @@ Platform 选项不能被静默转换为任一 Tenant，Tenant 选项也不能自
 - 随机值前缀固定为 `addp_cst_`，随机部分不少于 32 字节；
 - 只向当前登录客户端返回一次，System 只保存 SHA-256 Hash；
 - 默认有效期 5 分钟，只能成功消费一次；
-- 绑定 Principal、认证方法、认证强度、认证时间和可选上下文快照；
+- 绑定 Principal、认证方法、认证强度、认证时间、step-up 期限和可选上下文快照；
 - 绑定第一方 Web 登录事务，不是 Access Token、Refresh Token 或 OAuth Authorization Code；
 - 不写 Cookie、URL、浏览器历史、持久化存储、日志或审计详情；
 - 票据消费时重新校验 Principal、Membership、Platform Assignment 和 MFA，不信任快照继续有效；
@@ -707,6 +707,17 @@ Authorization: Bearer <addp_cst_...>
 
 显示用 Tenant code / name 只出现在选择响应，不进入 AuthContext 安全判断。选项固定 Platform 在前，Tenant 按 `tenant_code + tenant_id` 排序。
 
+Runtime 实现边界固定为：
+
+- `ContextSelectionService` 在一个事务中锁定 Principal，计算 Platform/Tenant 选项；单一选项直接调用统一 `TokenFamilyService`，多选项只创建 Ticket 与不可变选项快照；
+- Ticket、Access Token、Refresh Token 和 Resource Access Ticket 的随机部分均不少于 32 字节，数据库只保存完整明文 Token 的 SHA-256 Hash；
+- 第一方 Browser Family 固定 `client_id=addp-web`、`auth_type=first_party`、`audiences=[addp.api]`、空 Scope，并保存认证方法、AAL 和认证时间；
+- Access Token 默认 15 分钟，Family 与 Refresh Token 固定最终有效期默认 30 天，Context Selection Ticket 默认 5 分钟；所有派生票据有效期都被 Source Access Token 和 Family 最终时间截断；
+- Browser Resource Access Ticket owner 列表由发布期 Permission/路由聚合结果注入 Session 配置，不在 System Runtime 硬编码模块名；每个 owner 生成独立 `addp_rat_` 值；
+- `TokenFamilyService` 是第一方 Web 和后续 Fosite Adapter 共用的唯一 Family Repository/Service 边界；本段只开放第一方 Browser 签发，不创建第二套 Token 表或签发器；
+- `iam.context_selection.ticket_issued` 只记录选项数量和过期时间，不记录 Ticket、Token Hash 或选择秘密；
+- `iam.browser_session.issued` 以 Token Family 为审计实体，记录 `direct | context_selection` 签发模式、Context、认证强度和派生票据数量，绝不记录任何明文 Token、Hash 或 Cookie。
+
 目标选择请求只提交选项的判别键：
 
 ```json
@@ -719,6 +730,8 @@ Authorization: Bearer <addp_cst_...>
 ```
 
 客户端不提交 `principal_id`、Role、Permission、`authorization_version` 或可被信任的 `tenant_id`。System 从 Membership 重新解析 Tenant。
+
+消费实现必须先根据 Ticket Hash 只读定位 Principal，再按 `Principal -> Context Selection Ticket -> Tenant Membership / Platform Assignment -> Token Family` 顺序加锁和复核。Ticket 消费标记、Family、Access Token、Refresh Token、各 owner Resource Access Ticket 和 `iam.browser_session.issued` 审计在同一事务提交；任何一步失败时 Ticket 保持未消费，也不留下 Token 事实。并发消费只能一个事务成功。
 
 ### 6.3 OAuth 与 Device Flow
 
@@ -753,6 +766,10 @@ POST /api/v1/system/auth/context-switches
 
 若进入 Platform Context 时当前认证强度不足，System 返回 step-up 要求；完成 MFA 后继续同一个受控切换事务，不允许前端伪造新的认证强度。
 
+`context-options` 必须从当前有效 Access Token 的 Family 读取 Principal 和认证事实，再查询当前有效 Platform Assignment 与 Tenant Membership。响应返回全部有效 Context，并为每项提供 `current` 和 `requires_step_up`；Platform 固定排在 Tenant 之前，Tenant 按 Code、ID 稳定排序。当前只有 AAL1 但具备平台角色时，Platform 仍作为 `requires_step_up=true` 的选项返回；它不是授权结果，Context Switch 仍必须在事务内复核 AAL2/AAL3。客户端不得提交或推导 Principal ID、Tenant ID、Role 或 Permission。
+
+HTTP Adapter 对内部 `int64` IAM ID 统一投影为十进制字符串。登录使用 `next_action=session_issued|select_context` 判别联合；Context Selection、Refresh 和 Context Switch 复用唯一 Access Token 响应结构。选择请求只接受 `context_type` 与 Tenant 场景下的 `tenant_membership_id`，不得接受 `tenant_id`。`step_up_required` 使用 HTTP 403 和稳定 `error_code`；其他 Runtime 错误按 ADDP API 规范映射且不暴露内部细节。Adapter 在未完成 System 启动、Router、Swagger、前端和旧认证删除的一次性切换前不得注册为并行公开路由。
+
 ### 7.2 原子切换
 
 切换成功必须在一个数据库事务中：
@@ -765,7 +782,9 @@ POST /api/v1/system/auth/context-switches
 6. 写入包含旧 / 新 Context、认证强度和 Request ID 的审计事件；
 7. 提交后返回新内存 Access Token。
 
-不允许在原 Family 上 UPDATE `context_type` 或 `tenant_membership_id`。事务失败时旧 Family 保持有效，不出现半切换状态。
+目标 Context 必须与当前 Context 不同。新 Family 继承原 Family 的认证方法、认证强度、认证时间、step-up 期限和固定最终 `expires_at`；不得因切换重新起算 Family TTL。不允许在原 Family 上 UPDATE `context_type` 或 `tenant_membership_id`。事务失败时旧 Family 保持有效，不出现半切换状态。
+
+context switch 使用 `Principal -> 目标 Tenant Membership / Tenant（Tenant 目标时）-> Token Family -> Refresh Token -> Access Token -> Resource Access Ticket` 锁序；refresh 省略目标 Context 锁，但其余相对顺序一致。两个请求都在开始时读取到当前凭据时，只允许先获得锁的事务成功；等待方发现状态已经转换后返回可重试冲突或统一未授权，不创建第二个 Family，也不把该锁竞争记录为 Refresh Token 重用。
 
 ### 7.3 多标签页和 iframe
 
@@ -793,7 +812,7 @@ Web Locks 的上下文切换锁固定为 `addp-auth-context-switch`。切换与 
 
 ### 8.1 版本来源
 
-`principals.authorization_version` 是每个 Principal 单调递增的 bigint。Token Family 和 Access Token 保存 `issued_authorization_version`；AuthContext 返回当前版本的十进制字符串。
+`principals.authorization_version` 是每个 Principal 单调递增的 bigint。Token Family 保存唯一的 `issued_authorization_version`，Access Token、Refresh Token、Delegated Access Token 和 Resource Access Ticket 只引用或派生自该 Family，不重复授权版本；AuthContext 返回当前版本的十进制字符串。
 
 解析 Token 时必须满足：
 
@@ -852,21 +871,47 @@ common/authorization/schemas/auth-context-v1.schema.json
 
 | 位置 | 职责 |
 | --- | --- |
-| `common/authorization` | JSON Schema、Permission 清单、生成器和跨语言契约测试事实源 |
+| `common/authorization` | AuthContext / Permission Manifest JSON Schema、校验器、共享授权类型和跨语言契约测试工具；不保存业务 Permission 清单 |
 | `system/backend` | 查询 IAM 事实、验证交叉约束并生成 AuthContext |
 | `common/middleware/auth` | 解析并注入不可变 Go AuthContext，提供 Principal / Context / Permission / Scope helper |
 | `common-python/addp_common/auth.py` | 解析同一 Schema 为不可变 Python 类型 |
 | `common-frontend` | 只读 TypeScript 类型、上下文选择和 Browser AuthSession；不自行计算后端授权 |
 | Gateway | 验证入口是否已认证和基础 audience；不从 URL 推断业务 Permission |
-| owner 模块 | 使用 Permission 常量、Assignment Scope 和 Resource Policy 做最终判断 |
+| owner 模块 | 拥有自身 Permission Manifest 和生成常量，使用 Assignment Scope 和 Resource Policy 做最终判断 |
 
 生成代码不得提交 `UserType`、`is_super_admin`、`tenant_id=0` 或兼容旧字段的 helper。前端可以根据 Permission 投影隐藏不可用入口，但后端仍是安全执行点。
 
+### 9.1 System 目标 Middleware 实施边界
+
+System 目标 Gin Middleware 已实现但尚未注册生产 Router，当前边界固定为：
+
+- 只接受 `Authorization: Bearer <access_token>`，通过 `AuthContextService.ResolveFirstPartyAccessToken` 生成并再次校验唯一 AuthContext；
+- 只向 Gin Context 注入规范 AuthContext，不再投影 `user_id`、`username`、`user_type`、单一 `tenant_id` 或旧 `authorization_context` Key；
+- 提供 `authenticated`、`self` 和 `permission` 三类守卫；`self` 只允许当前 User，多个 required Permission 固定按 all-of 计算；
+- Permission 守卫只判断当前 AuthContext 中的功能 Allow 候选，owner Handler / Policy 仍必须按 Assignment Scope、资源归属、Grant 和 Explicit Deny 完成最终授权；
+- Access Token 无效统一返回 401 `error_code=authentication_required`，Permission 不足统一返回 403 `error_code=permission_denied`，内部解析错误不暴露数据库或校验细节；
+- 路由配置中的 Permission Key 必须通过 `common/authorization.ValidatePermissionKey` 校验，并优先使用 owner 发布期生成常量。
+
+System 当前生产路径仍依赖旧平铺 Context Key，必须在同一次 Router 切换中共同迁移或删除：
+
+| 旧依赖 | 当前用途 | 目标处理 |
+| --- | --- | --- |
+| `internal/middleware/auth.go` | 注入 `user_id`、`username`、`tenant_id` 和旧 `AuthorizationContext` | 删除，由目标 IAM Middleware 唯一替代 |
+| `internal/middleware/logger.go` | 从旧 Key 构造旧审计日志 User/Tenant 字段 | 改为读取规范 Principal / Context；IAM 安全事实继续使用事务内 Audit Writer |
+| `internal/middleware/oauth_security.go` | 用旧 `user_id` 生成 OAuth 幂等键 | 随 Fosite Adapter 改为规范 Principal ID |
+| `internal/middleware/token_type_policy.go` | 读取旧 `models.AuthorizationContext` | 删除；目标 Token 类型、audience、Scope 守卫基于规范 AuthContext |
+| `internal/api/application_handler.go` | 两处读取旧 `tenant_id` | 改为 Context 与 Permission，再执行 Tenant 资源边界 |
+| `internal/api/cleanup_handler.go` | 读取旧 `tenant_id` / `user_id` | 改为 Context、Principal 与 owner 资源策略 |
+| `internal/api/oauth_handler.go` | 两处读取旧 `user_id` | 随 Fosite Adapter 改为规范 Principal ID |
+| `internal/api/auth_handler.go` | `/auth/context` 返回旧 `models.AuthorizationContext` | 删除旧 Handler，由目标 IAM Adapter 返回规范 AuthContext |
+
+在上述依赖和 `common/middleware/auth` 的旧平铺 Schema 尚未一次性迁移前，不得把目标 Middleware 局部挂入生产 Router，也不得保留新旧 Context Key 双写。
+
 ## 十、错误语义
 
-沿用 ADDP `{error}` 格式，并通过可选 `error_type` 提供稳定机器语义；生产环境不返回内部失效原因。Request ID 使用统一响应头和审计字段，不在各模块另造格式。
+沿用 ADDP `{error}` 格式，并通过可选 `error_code` 提供稳定机器语义；生产环境不返回内部失效原因。Request ID 使用统一响应头和审计字段，不在各模块另造格式。
 
-| 场景 | HTTP | `error_type` | 对外语义 |
+| 场景 | HTTP | `error_code` | 对外语义 |
 | --- | ---: | --- | --- |
 | Access Token 缺失、无效、过期、撤销或授权版本不匹配 | 401 | `authentication_required` | 未登录或会话已失效 |
 | Context Selection Ticket 无效、过期或已消费 | 401 | `context_selection_invalid` | 登录选择已失效，请重新登录 |
@@ -883,7 +928,7 @@ common/authorization/schemas/auth-context-v1.schema.json
 ```json
 {
   "error": "需要完成增强认证",
-  "error_type": "step_up_required"
+  "error_code": "step_up_required"
 }
 ```
 
@@ -974,4 +1019,4 @@ System 审计必须区分 expired、revoked、version_mismatch、membership_inac
 9. **Family 隔离**：浏览器切换不影响已有 CLI / OAuth Family，授权事实版本变化才跨 Family 失效。
 10. **授权版本**：第一阶段每次解析回查版本和当前事实，不跨请求缓存 AuthContext。
 11. **共享事实源**：确认后以 `common/authorization/schemas/auth-context-v1.schema.json` 生成或校验 Go、Python、TypeScript 类型。
-12. **错误语义**：沿用 `{error}`，使用可选稳定 `error_type` 区分选择、上下文、权限、step-up 和服务不可用。
+12. **错误语义**：沿用 `{error}`，使用可选稳定 `error_code` 区分选择、上下文、权限、step-up 和服务不可用。

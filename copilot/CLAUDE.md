@@ -75,11 +75,10 @@ curl http://localhost:8087/health
 
 # 测试 SQL 生成
 curl -X POST http://localhost:8087/api/v1/copilot/sql/generate \
+  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "查询所有人口大于100万的城市",
-    "tenant_id": 1,
-    "user_id": 2
+    "query": "查询所有人口大于100万的城市"
   }'
 
 # 测试工作流生成
@@ -99,6 +98,8 @@ curl -X POST http://localhost:8087/api/v1/copilot/workflow/generate \
 
 ```
 copilot/
+├── authorization/
+│   └── permissions.yaml       # Copilot owner Permission Manifest
 ├── backend/
 │   ├── main.py              # FastAPI 应用入口
 │   ├── config.py            # 配置管理
@@ -109,7 +110,9 @@ copilot/
 │   │   └── llm_config.py    # LLM配置模型
 │   ├── api/                 # API 路由
 │   │   ├── sql_agent_api.py      # SQL 生成 API
-│   │   └── workflow_agent_api.py # 工作流生成 API
+│   │   ├── workflow_agent_api.py # 工作流生成 API
+│   │   ├── kg_extract_api.py     # Graph 内部单 chunk 抽取 API
+│   │   └── navigate_api.py       # 导航建议 API
 │   ├── agents/              # AI Agent 实现
 │   │   ├── sql_agent.py     # SQL Agent
 │   │   └── workflow_agent.py # Workflow Agent
@@ -121,6 +124,24 @@ copilot/
     ├── tables/              # 单表文档
     └── 数据库架构.md        # 架构文档
 ```
+
+## IAM Permission 所有权
+
+Copilot 是以下首批 Permission 的唯一 owner：
+
+- `copilot.sql.execute`
+- `copilot.workflow.execute`
+
+机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Copilot 服务启动时的 Module Registry 注册和心跳只描述服务可用性，不向 System 动态注册 Permission。
+
+Copilot Permission 只授予“生成候选结果”，不授予候选 SQL、Workflow 或图谱结果的保存、发布或执行权限。真正业务操作仍由 Develop、Graph 等事实 owner 使用自身 Permission 和 Resource Policy 最终校验。
+
+当前授权边界：
+
+- `/sql/generate` 从 System AuthContext 取得 Principal 和 Tenant，请求体禁止 `tenant_id/user_id`，目标 Permission 为 `copilot.sql.execute`。
+- `/workflow/generate` 使用 `workflow.draft.generate` Tool Scope，并唯一映射到可委托的 `copilot.workflow.execute`。
+- `/kg-build/extract` 只是 Graph 后端的内部单 chunk 调用，使用 `X-Internal-API-Key`，不消费 User Permission。由于当前没有真实用户级图谱候选生成入口，未发布的 `copilot.knowledge_graph.execute` 已从 Manifest 和 `tenant.ai_user` 删除。
+- `/navigate/guide` 只要求已认证 User，不读取客户端提交的身份，也不借用其他业务 Permission。
 
 ## 核心功能实现
 

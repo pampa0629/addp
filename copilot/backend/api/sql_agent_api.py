@@ -1,10 +1,13 @@
 """
 SQL 生成 API 路由
 """
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List, Dict
 
+from addp_common.auth import AuthorizationContext
+from authorization_permissions_generated import COPILOT_SQL_EXECUTE
+from dependencies.auth import require_tenant_user
 from services.sql_service import sql_service
 # TODO: Copilot 暂时不需要保存对话历史，注释掉以避免数据库依赖
 # from services.memory_service import memory_service
@@ -25,11 +28,11 @@ class DataSourceCandidate(BaseModel):
 
 class SQLGenerationRequest(BaseModel):
     """SQL 生成请求"""
+    model_config = ConfigDict(extra="forbid")
+
     query: str
     conversation_id: Optional[int] = None
     engine_id: Optional[int] = None
-    tenant_id: int
-    user_id: int
 
 
 class SQLGenerationResponse(BaseModel):
@@ -41,8 +44,19 @@ class SQLGenerationResponse(BaseModel):
     conversation_id: int
 
 
-@router.post("/sql/generate", response_model=SQLGenerationResponse, summary="生成 SQL | Generate SQL")
-async def generate_sql(request: SQLGenerationRequest):
+@router.post(
+    "/sql/generate",
+    response_model=SQLGenerationResponse,
+    summary="生成 SQL | Generate SQL",
+    openapi_extra={
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [COPILOT_SQL_EXECUTE],
+    },
+)
+async def generate_sql(
+    request: SQLGenerationRequest,
+    user: AuthorizationContext = Depends(require_tenant_user),
+):
     """
     生成 SQL 语句
 
@@ -52,7 +66,7 @@ async def generate_sql(request: SQLGenerationRequest):
         # 1. 匹配数据源
         match_result = await metadata_matcher.match_datasources(
             query=request.query,
-            tenant_id=request.tenant_id,
+            tenant_id=user.tenant_id,
             engine_id=request.engine_id
         )
 
@@ -67,15 +81,15 @@ async def generate_sql(request: SQLGenerationRequest):
             query=request.query,
             datasources=match_result.candidates,
             memory=None,  # 不使用对话历史
-            tenant_id=request.tenant_id
+            tenant_id=user.tenant_id
         )
 
         # 4. 保存对话历史
         # TODO: Copilot 暂时不需要保存对话历史
         # conversation_id = await memory_service.save_message(
         #     conversation_id=request.conversation_id,
-        #     tenant_id=request.tenant_id,
-        #     user_id=request.user_id,
+        #     tenant_id=user.tenant_id,
+        #     user_id=user.user_id,
         #     user_message=request.query,
         #     assistant_message=result["sql"],
         #     metadata={

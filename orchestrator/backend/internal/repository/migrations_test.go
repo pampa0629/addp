@@ -135,6 +135,7 @@ func ensureOrchestratorMigrationTestTables(t *testing.T, db *gorm.DB) {
 			name VARCHAR(128) NOT NULL,
 			description VARCHAR(512),
 			steps JSONB NOT NULL,
+			editor_layout JSONB NOT NULL DEFAULT '{}'::jsonb,
 			enabled BOOLEAN NOT NULL DEFAULT false,
 			schedule VARCHAR(128),
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

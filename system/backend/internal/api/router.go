@@ -165,7 +165,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 				users.GET("/me", userHandler.Me)
 				users.GET("/:id", userHandler.GetByID)
 				users.PUT("/:id", userHandler.Update)
-				users.PUT("/:id/change-password", userHandler.ChangePassword)
+				users.PUT("/me/password", userHandler.ChangeOwnPassword)
 				users.DELETE("/:id", userHandler.Delete)
 			}
 

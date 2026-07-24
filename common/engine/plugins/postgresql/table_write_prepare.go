@@ -30,12 +30,26 @@ func (p *PostgreSQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugi
 }
 
 func createPostgresTableIfNotExists(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) error {
+	return createPostgresTable(ctx, db, schema, table, fields, spatialInfo, true)
+}
+
+func createPostgresTable(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, ifNotExists bool) error {
 	if len(fields) == 0 {
 		return fmt.Errorf("postgresql table write prepare requires table fields")
 	}
 	dialect := sqldialect.ForEngine("postgresql")
-	if _, err := db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+dialect.QuoteIdentifier(schema)); err != nil {
-		return fmt.Errorf("create postgresql schema %s: %w", schema, err)
+	if ifNotExists {
+		if _, err := db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+dialect.QuoteIdentifier(schema)); err != nil {
+			return fmt.Errorf("create postgresql schema %s: %w", schema, err)
+		}
+	} else {
+		var schemaExists bool
+		if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name=$1)`, schema).Scan(&schemaExists); err != nil {
+			return fmt.Errorf("check postgresql target schema %s: %w", schema, err)
+		}
+		if !schemaExists {
+			return fmt.Errorf("postgresql replay target schema %s does not exist", schema)
+		}
 	}
 
 	writeFields := postgresWriteFields(fields)
@@ -54,9 +68,16 @@ func createPostgresTableIfNotExists(ctx context.Context, db *sql.DB, schema, tab
 		definitions = append(definitions, "PRIMARY KEY ("+strings.Join(primaryKeys, ", ")+")")
 	}
 
-	createSQL := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s)", dialect.QualifiedTable(schema, table), strings.Join(definitions, ", "))
+	createPrefix := "CREATE TABLE "
+	if ifNotExists {
+		createPrefix = "CREATE TABLE IF NOT EXISTS "
+	}
+	createSQL := fmt.Sprintf("%s%s (%s)", createPrefix, dialect.QualifiedTable(schema, table), strings.Join(definitions, ", "))
 	if _, err := db.ExecContext(ctx, createSQL); err != nil {
 		return fmt.Errorf("create postgresql table %s.%s: %w", schema, table, err)
+	}
+	if !ifNotExists {
+		return nil
 	}
 	if err := evolvePostgresTableSchema(ctx, db, schema, table, writeFields, spatialInfo); err != nil {
 		return err

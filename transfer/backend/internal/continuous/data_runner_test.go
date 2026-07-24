@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
 	commonSpatial "github.com/addp/common/spatial"
+	"github.com/addp/transfer/internal/deadletter"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
@@ -97,7 +99,7 @@ func TestDataSessionRunnerConsumesRegisteredPostgreSQLCDCGeneration(t *testing.T
 	runner := &DataSessionRunner{
 		Resolver: resolver, States: states, Progress: progress,
 		Captures: &fakeCaptureStore{resource: &models.CaptureResource{
-			TaskID: 42, TenantID: 7, Status: models.CaptureStatusRunning,
+			TaskID: 42, TenantID: 7, SourceType: models.CaptureSourcePostgreSQL, Status: models.CaptureStatusRunning,
 			TopicName: "__addp_cdc.7.42.1", ConsumerGroup: "__addp_cdc_consumer.7.42.1",
 			SourceIdentity: "addp://engine/12/path/public/orders?type=table",
 			SourceDatabase: "business", SourceSchema: "public", SourceTable: "orders",
@@ -144,6 +146,61 @@ func TestDataSessionRunnerConsumesRegisteredPostgreSQLCDCGeneration(t *testing.T
 	}
 }
 
+func TestDataSessionRunnerConsumesRegisteredMySQLCDCGeneration(t *testing.T) {
+	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
+	resolver := planner.StaticEngineResolver{
+		12: {Type: "mysql"},
+		20: {Type: "postgresql", ConnInfo: plugin.ConnectionInfo{"host": "unused"}, Capabilities: &targetCaps},
+	}
+	reader := &fakeChangeStreamReader{batch: &plugin.ChangeRecordBatch{Records: []plugin.ChangeRecord{{
+		Topic: "__addp_cdc.7.42.1", Partition: "0", Offset: 0, Key: []byte(`{"id":2}`),
+		Value:    []byte(mysqlDebeziumEnvelope("r", `null`, `{"id":2,"payload":""}`, "business", "orders")),
+		Position: kafkaOffsetPosition("0", 1),
+	}}}}
+	source := &fakeChangeStreamProvider{reader: reader}
+	target := &fakeChangeApplyProvider{}
+	progress := &fakeContinuousProgressStore{committed: make(chan repository.ContinuousProgress, 1)}
+	runner := &DataSessionRunner{
+		Resolver: resolver, States: &fakeContinuousStateStore{target: target}, Progress: progress,
+		Captures: &fakeCaptureStore{resource: &models.CaptureResource{
+			TaskID: 42, TenantID: 7, SourceType: models.CaptureSourceMySQL, Status: models.CaptureStatusRunning,
+			TopicName: "__addp_cdc.7.42.1", ConsumerGroup: "__addp_cdc_consumer.7.42.1",
+			SourceIdentity: "addp://engine/12/path/business/orders?type=table",
+			SourceDatabase: "business", SourceTable: "orders", TopicCreated: true, ConnectorCreated: true,
+		}},
+		InfraKafkaConnection: plugin.ConnectionInfo{"bootstrap_servers": "infra"}, PollTimeout: time.Millisecond,
+		GetPlugin: func(engineType string) (plugin.EnginePlugin, error) {
+			if engineType == "kafka" {
+				return source, nil
+			}
+			return target, nil
+		},
+	}
+	claim := continuousRunnerClaim()
+	claim.Task.TenantID = 7
+	claim.Task.BatchSize = 100
+	claim.Task.Config = mysqlCDCRunnerConfig()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runner.Run(ctx, claim) }()
+	select {
+	case <-progress.committed:
+		if len(target.lastBatch.Changes) != 1 || target.lastBatch.Changes[0].Operation != plugin.TableChangeOperationUpsert {
+			t.Fatalf("MySQL CDC target batch = %#v", target.lastBatch)
+		}
+		payload, ok := target.lastBatch.Changes[0].Row["payload"].([]byte)
+		if !ok || len(payload) != 0 {
+			t.Fatalf("MySQL CDC empty BLOB = %#v", target.lastBatch.Changes[0].Row["payload"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("MySQL CDC runner did not commit progress")
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v", err)
+	}
+}
+
 func TestDataSessionRunnerRecordsIncompatiblePostgreSQLCDCSchemaField(t *testing.T) {
 	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
 	resolver := planner.StaticEngineResolver{
@@ -160,7 +217,7 @@ func TestDataSessionRunnerRecordsIncompatiblePostgreSQLCDCSchemaField(t *testing
 	runner := &DataSessionRunner{
 		Resolver: resolver, States: &fakeContinuousStateStore{target: target}, Progress: progress,
 		Captures: &fakeCaptureStore{resource: &models.CaptureResource{
-			TaskID: 42, TenantID: 7, Status: models.CaptureStatusRunning,
+			TaskID: 42, TenantID: 7, SourceType: models.CaptureSourcePostgreSQL, Status: models.CaptureStatusRunning,
 			TopicName: "__addp_cdc.7.42.1", ConsumerGroup: "__addp_cdc_consumer.7.42.1",
 			SourceIdentity: "addp://engine/12/path/public/orders?type=table",
 			SourceDatabase: "business", SourceSchema: "public", SourceTable: "orders",
@@ -215,6 +272,140 @@ func TestDecodeAndMapRecordRejectsUnknownAndMissingRequiredFields(t *testing.T) 
 	}
 }
 
+func TestDecodeAndMapRecordUsesStableUnknownFieldError(t *testing.T) {
+	plan := &planner.ContinuousPlan{
+		Mappings:   []planner.ContinuousFieldPlan{{Source: "id", Target: "id", Type: "int", Nullable: false}},
+		SourceKeys: []string{"id"}, Target: planner.ContinuousTargetPlan{Keys: []string{"id"}},
+	}
+	for index := 0; index < 20; index++ {
+		_, err := decodeAndMapRecord(plugin.ChangeRecord{Value: []byte(`{"id":1,"z":true,"a":true}`)}, plan)
+		var dataErr *RecordDataError
+		if !errors.As(err, &dataErr) || dataErr.Message != `unknown source field "a"` {
+			t.Fatalf("stable unknown-field error = %#v", dataErr)
+		}
+	}
+}
+
+func TestDataSessionRunnerDeadLettersThenSkipsThenCommits(t *testing.T) {
+	events := []string{}
+	reader := &fakeChangeStreamReader{batch: &plugin.ChangeRecordBatch{Records: []plugin.ChangeRecord{
+		{Topic: "orders.events", Partition: "0", Offset: 4, Value: []byte(`{"id":"bad","name":"invalid"}`), Position: kafkaOffsetPosition("0", 5)},
+		{Topic: "orders.events", Partition: "0", Offset: 5, Value: []byte(`{"id":7,"name":"valid"}`), Position: kafkaOffsetPosition("0", 6)},
+	}}}
+	target := &fakeChangeApplyProvider{events: &events}
+	states := &fakeContinuousStateStore{target: target, events: &events}
+	progress := &fakeContinuousProgressStore{committed: make(chan repository.ContinuousProgress, 1)}
+	recorder := &fakeDeadLetterRecorder{events: &events}
+	runner := continuousTestRunner(reader, target, states, progress)
+	runner.DeadLetters = recorder
+	claim := continuousRunnerClaim()
+	claim.Task.Config["runtime"].(map[string]interface{})["record_failure"] = map[string]interface{}{"mode": "dead_letter"}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runner.Run(ctx, claim) }()
+	select {
+	case <-progress.committed:
+		if len(target.lastBatch.Changes) != 2 || target.lastBatch.Changes[0].Operation != plugin.TableChangeOperationSkip ||
+			target.lastBatch.Changes[0].Row != nil || target.lastBatch.Changes[1].Operation != plugin.TableChangeOperationUpsert {
+			t.Fatalf("dead-letter target batch = %#v", target.lastBatch)
+		}
+		if got := recorder.request.Error; got.Code != "incompatible_field_type" || got.Category != recordErrorCategoryTypeConversion {
+			t.Fatalf("dead-letter error = %#v", got)
+		}
+		if want := []string{"dead_letter", "apply", "commit"}; fmt.Sprint(events) != fmt.Sprint(want) {
+			t.Fatalf("operation order = %v, want %v", events, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("dead-letter runner did not commit progress")
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v", err)
+	}
+}
+
+func TestDataSessionRunnerDeadLetterFailureDoesNotApplyOrCommit(t *testing.T) {
+	events := []string{}
+	reader := &fakeChangeStreamReader{batch: &plugin.ChangeRecordBatch{Records: []plugin.ChangeRecord{{
+		Topic: "orders.events", Partition: "0", Offset: 4, Value: []byte(`not-json`), Position: kafkaOffsetPosition("0", 5),
+	}}}}
+	target := &fakeChangeApplyProvider{events: &events}
+	states := &fakeContinuousStateStore{target: target, events: &events}
+	runner := continuousTestRunner(reader, target, states, &fakeContinuousProgressStore{committed: make(chan repository.ContinuousProgress, 1)})
+	runner.DeadLetters = &fakeDeadLetterRecorder{events: &events, err: errors.New("DLQ unavailable")}
+	claim := continuousRunnerClaim()
+	claim.Task.Config["runtime"].(map[string]interface{})["record_failure"] = map[string]interface{}{"mode": "dead_letter"}
+
+	err := runner.Run(context.Background(), claim)
+	if err == nil || target.applied || states.commitCalls != 0 {
+		t.Fatalf("Run() error=%v applied=%v commits=%d", err, target.applied, states.commitCalls)
+	}
+	if want := []string{"dead_letter"}; fmt.Sprint(events) != fmt.Sprint(want) {
+		t.Fatalf("operation order = %v, want %v", events, want)
+	}
+}
+
+func TestDataSessionRunnerTargetFailureAfterDeadLetterDoesNotCommit(t *testing.T) {
+	events := []string{}
+	reader := &fakeChangeStreamReader{batch: &plugin.ChangeRecordBatch{Records: []plugin.ChangeRecord{{
+		Topic: "orders.events", Partition: "0", Offset: 4, Value: []byte(`not-json`), Position: kafkaOffsetPosition("0", 5),
+	}}}}
+	target := &fakeChangeApplyProvider{events: &events, applyErr: errors.New("target unavailable")}
+	states := &fakeContinuousStateStore{target: target, events: &events}
+	runner := continuousTestRunner(reader, target, states, &fakeContinuousProgressStore{committed: make(chan repository.ContinuousProgress, 1)})
+	runner.DeadLetters = &fakeDeadLetterRecorder{events: &events}
+	claim := continuousRunnerClaim()
+	claim.Task.Config["runtime"].(map[string]interface{})["record_failure"] = map[string]interface{}{"mode": "dead_letter"}
+
+	err := runner.Run(context.Background(), claim)
+	if err == nil || states.commitCalls != 0 {
+		t.Fatalf("Run() error=%v commits=%d", err, states.commitCalls)
+	}
+	if want := []string{"dead_letter", "apply"}; fmt.Sprint(events) != fmt.Sprint(want) {
+		t.Fatalf("operation order = %v, want %v", events, want)
+	}
+}
+
+func TestDataSessionRunnerCASFailureOccursAfterDeadLetterAndSkip(t *testing.T) {
+	events := []string{}
+	reader := &fakeChangeStreamReader{batch: &plugin.ChangeRecordBatch{Records: []plugin.ChangeRecord{{
+		Topic: "orders.events", Partition: "0", Offset: 4, Value: []byte(`not-json`), Position: kafkaOffsetPosition("0", 5),
+	}}}}
+	target := &fakeChangeApplyProvider{events: &events}
+	states := &fakeContinuousStateStore{target: target, events: &events, commitErr: errors.New("fenced")}
+	runner := continuousTestRunner(reader, target, states, &fakeContinuousProgressStore{committed: make(chan repository.ContinuousProgress, 1)})
+	runner.DeadLetters = &fakeDeadLetterRecorder{events: &events}
+	claim := continuousRunnerClaim()
+	claim.Task.Config["runtime"].(map[string]interface{})["record_failure"] = map[string]interface{}{"mode": "dead_letter"}
+
+	err := runner.Run(context.Background(), claim)
+	if err == nil || states.commitCalls != 1 {
+		t.Fatalf("Run() error=%v commits=%d", err, states.commitCalls)
+	}
+	if want := []string{"dead_letter", "apply", "commit"}; fmt.Sprint(events) != fmt.Sprint(want) {
+		t.Fatalf("operation order = %v, want %v", events, want)
+	}
+}
+
+func continuousTestRunner(reader *fakeChangeStreamReader, target *fakeChangeApplyProvider, states *fakeContinuousStateStore, progress *fakeContinuousProgressStore) *DataSessionRunner {
+	sourceCaps := (&kafka.KafkaPlugin{}).Capabilities()
+	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
+	return &DataSessionRunner{
+		Resolver: planner.StaticEngineResolver{
+			30: {Type: "kafka", ConnInfo: plugin.ConnectionInfo{"bootstrap_servers": "unused"}, Capabilities: &sourceCaps},
+			8:  {Type: "postgresql", ConnInfo: plugin.ConnectionInfo{"host": "unused"}, Capabilities: &targetCaps},
+		},
+		States: states, Progress: progress, PollTimeout: time.Millisecond,
+		GetPlugin: func(engineType string) (plugin.EnginePlugin, error) {
+			if engineType == "kafka" {
+				return &fakeChangeStreamProvider{reader: reader}, nil
+			}
+			return target, nil
+		},
+	}
+}
+
 func continuousRunnerClaim() repository.RuntimeLeaseClaim {
 	return repository.RuntimeLeaseClaim{
 		Task: models.TransferTask{
@@ -227,7 +418,7 @@ func continuousRunnerClaim() repository.RuntimeLeaseClaim {
 
 func continuousRunnerConfig() models.JSONMap {
 	return models.JSONMap{
-		"runtime": map[string]interface{}{"boundary": "continuous"},
+		"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}},
 		"load":    map[string]interface{}{"mode": "incremental", "change_detection": map[string]interface{}{"type": "kafka"}},
 		"source": map[string]interface{}{
 			"locator": "addp://engine/30/path/orders.events?type=topic", "representation": "native",
@@ -252,7 +443,7 @@ func continuousRunnerConfig() models.JSONMap {
 
 func postgresqlCDCRunnerConfig() models.JSONMap {
 	return models.JSONMap{
-		"runtime": map[string]interface{}{"boundary": "continuous"},
+		"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}},
 		"load": map[string]interface{}{
 			"mode": "incremental", "change_detection": map[string]interface{}{"type": "cdc", "bootstrap": "initial_snapshot"},
 		},
@@ -277,6 +468,16 @@ func postgresqlCDCGeometryRunnerConfig() models.JSONMap {
 	transform := config["transforms"].([]interface{})[0].(map[string]interface{})
 	transform["fields"] = append(transform["fields"].([]interface{}), map[string]interface{}{
 		"source": "shape", "target": "geometry", "target_type": "geometry", "nullable": true,
+	})
+	return config
+}
+
+func mysqlCDCRunnerConfig() models.JSONMap {
+	config := postgresqlCDCRunnerConfig()
+	config["source"].(map[string]interface{})["locator"] = "addp://engine/12/path/business/orders?type=table"
+	transform := config["transforms"].([]interface{})[0].(map[string]interface{})
+	transform["fields"] = append(transform["fields"].([]interface{}), map[string]interface{}{
+		"source": "payload", "target": "payload", "target_type": "bytes", "nullable": true,
 	})
 	return config
 }
@@ -342,6 +543,8 @@ type fakeChangeApplyProvider struct {
 	applied        bool
 	prepareOptions plugin.PartitionedTableChangeApplyOptions
 	lastBatch      *plugin.PartitionedTableChangeBatch
+	events         *[]string
+	applyErr       error
 }
 
 func (p *fakeChangeApplyProvider) Type() string                                       { return "postgresql" }
@@ -366,14 +569,23 @@ func (p *fakeChangeApplyProvider) PreparePartitionedTableChangeApply(_ context.C
 	return nil
 }
 func (p *fakeChangeApplyProvider) ApplyPartitionedTableChanges(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, batch *plugin.PartitionedTableChangeBatch, _ plugin.PartitionedTableChangeApplyOptions) (*plugin.PartitionedTableChangeApplyResult, error) {
+	if p.events != nil {
+		*p.events = append(*p.events, "apply")
+	}
 	p.applied = true
 	p.lastBatch = batch
+	if p.applyErr != nil {
+		return nil, p.applyErr
+	}
 	return &plugin.PartitionedTableChangeApplyResult{AppliedRecords: 1, SkippedRecords: 1, Position: batch.EndPosition}, nil
 }
 
 type fakeContinuousStateStore struct {
 	target          *fakeChangeApplyProvider
 	committedOffset int64
+	events          *[]string
+	commitErr       error
+	commitCalls     int
 }
 
 func (s *fakeContinuousStateStore) List(context.Context, uint, string) ([]models.SyncState, error) {
@@ -383,8 +595,15 @@ func (s *fakeContinuousStateStore) ClaimContinuousPartition(context.Context, uin
 	return &models.SyncState{ID: 1, TaskID: 42, Partition: "0", PositionType: plugin.ChangeStreamPositionTypeKafkaOffset, PositionVersion: plugin.ChangeStreamPositionVersionV1}, nil
 }
 func (s *fakeContinuousStateStore) CommitContinuousPosition(_ context.Context, _, _ uint, _ uint64, _ uint64, _ string, position models.JSONMap, _ string) error {
+	s.commitCalls++
+	if s.events != nil {
+		*s.events = append(*s.events, "commit")
+	}
 	if !s.target.applied {
 		return errors.New("position committed before target apply")
+	}
+	if s.commitErr != nil {
+		return s.commitErr
 	}
 	state := &models.SyncState{Partition: "0", Position: position}
 	parsed, _, err := syncStatePosition(state)
@@ -393,6 +612,23 @@ func (s *fakeContinuousStateStore) CommitContinuousPosition(_ context.Context, _
 	}
 	s.committedOffset, err = kafkaNextOffset(parsed)
 	return err
+}
+
+type fakeDeadLetterRecorder struct {
+	events  *[]string
+	err     error
+	request deadletter.RecordRequest
+}
+
+func (r *fakeDeadLetterRecorder) Record(_ context.Context, request deadletter.RecordRequest) (*models.DeadLetter, error) {
+	if r.events != nil {
+		*r.events = append(*r.events, "dead_letter")
+	}
+	r.request = request
+	if r.err != nil {
+		return nil, r.err
+	}
+	return &models.DeadLetter{Identity: "dead-letter"}, nil
 }
 
 type fakeContinuousProgressStore struct {

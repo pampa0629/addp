@@ -11,13 +11,18 @@ var localeFS embed.FS
 
 // 消息 key 常量
 const (
-	MsgTokenGenFailed     = "system.auth.token_gen_failed"
-	MsgRegisterDisabled   = "system.auth.register_disabled"
-	MsgMissingAuthHeader  = "system.auth.missing_auth_header"
-	MsgInvalidAuthFormat  = "system.auth.invalid_auth_format"
-	MsgInvalidToken       = "system.auth.invalid_token"
-	MsgAccountUnavailable = "system.auth.account_unavailable"
-	MsgTokenRefreshFailed = "system.auth.token_refresh_failed"
+	MsgTokenGenFailed         = "system.auth.token_gen_failed"
+	MsgRegisterDisabled       = "system.auth.register_disabled"
+	MsgMissingAuthHeader      = "system.auth.missing_auth_header"
+	MsgInvalidAuthFormat      = "system.auth.invalid_auth_format"
+	MsgInvalidToken           = "system.auth.invalid_token"
+	MsgAccountUnavailable     = "system.auth.account_unavailable"
+	MsgTokenRefreshFailed     = "system.auth.token_refresh_failed"
+	MsgStepUpRequired         = "system.auth.step_up_required"
+	MsgSessionConflict        = "system.auth.session_conflict"
+	MsgInternalError          = "system.auth.internal_error"
+	MsgInvalidCurrentPassword = "system.auth.invalid_current_password"
+	MsgPasswordUnchanged      = "system.auth.password_unchanged"
 
 	MsgLogNotFound          = "system.log.not_found"
 	MsgExportFailed         = "system.log.export_failed"

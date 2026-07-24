@@ -9,6 +9,7 @@
 - **MinIO**：业务对象存储，端口 9002-9003
 - **ClickHouse** 🆕：高性能列式存储 OLAP，端口 9000, 8123
 - **MongoDB** 🆕：文档型 NoSQL 数据库，端口 27017
+- **MySQL 8.0**：业务关系库和 CDC 测试源，端口 3306
 - **Apache Doris**：实时分析数据库，端口 9030, 8030
 - **Apache Spark**：分布式计算引擎，端口 7077, 8088, 10000
 
@@ -47,6 +48,9 @@ bash scripts/start.sh -clickhouse
 # 只启动 MongoDB
 bash scripts/start.sh -mongodb
 
+# 只启动 MySQL，并幂等初始化专用 CDC 用户
+bash scripts/start.sh -mysql
+
 # 启动 ClickHouse + MongoDB
 bash scripts/start.sh -clickhouse -mongodb
 
@@ -76,6 +80,9 @@ business/
 │
 ├── mongodb/                        # MongoDB 配置
 │   └── init.sh                     # MongoDB 初始化脚本
+│
+├── mysql/                          # MySQL 配置与测试数据
+│   └── init-cdc.sh                 # 专用 CDC 用户幂等初始化
 │
 ├── doris/                          # Apache Doris 配置
 │   └── init.sh                     # Doris 集群初始化
@@ -119,6 +126,8 @@ bash scripts/start.sh
 
 **功能**：检查配置、检测架构、启动服务、验证健康状态、安装 PostGIS
 **特性**：幂等执行（可重复运行）
+
+启用 MySQL 时，脚本还会在数据库 ready 后执行 `mysql/init-cdc.sh`。该脚本每次都创建或更新 `${MYSQL_CDC_USER:-addp_cdc}@%`，并将权限收敛为 Debezium 所需的最小权限集，因此已有数据卷也会生效。连接 MySQL CDC Engine 时使用 `.env` 中的 `MYSQL_CDC_USER` 和 `MYSQL_CDC_PASSWORD`，不要使用 root。
 
 ### scripts/stop.sh - 停止服务
 

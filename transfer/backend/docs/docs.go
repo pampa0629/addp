@@ -22,7 +22,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回 Transfer 当前可用于表格传输的格式能力，来源于 common format descriptor 与已加载 plugin 的接口实现状态 | Returns table transfer format capabilities backed by common format descriptors and loaded plugin implementations",
+                "description": "返回 Transfer 当前可用的格式能力、业务 Kafka continuous 能力和数据库 CDC 支持矩阵。| Returns available Transfer format capabilities, business Kafka continuous features, and the database CDC support matrix.",
                 "produces": [
                     "application/json"
                 ],
@@ -429,7 +429,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建 bounded、业务 Kafka continuous 或 PostgreSQL CDC 任务。配置必须使用 runtime.boundary、load.mode、load.change_detection 和 target.policy.apply_mode；CDC 第一版固定为 PostgreSQL 单表 initial_snapshot 和 PostgreSQL 新目标表 upsert_delete。旧 mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka continuous, or PostgreSQL CDC task using runtime.boundary, load.mode, load.change_detection, and target.policy.apply_mode. CDC v1 is limited to a single PostgreSQL table with initial_snapshot and a new PostgreSQL upsert_delete target. Legacy mode/write_mode fields are rejected.",
+                "description": "创建 bounded、业务 Kafka continuous 或数据库 CDC 任务。业务 Kafka continuous 必须显式使用 runtime.record_failure.mode=block|dead_letter；dead_letter 只处理确定性记录级数据错误。CDC 第一版支持 PostgreSQL/MySQL 单表 initial_snapshot、block 和 PostgreSQL 新目标表 upsert_delete。旧 mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka continuous, or database CDC task. Business Kafka continuous tasks must explicitly use runtime.record_failure.mode=block|dead_letter; dead_letter only handles deterministic record-level data errors. CDC v1 supports a single PostgreSQL or MySQL table with initial_snapshot, block policy, and a new PostgreSQL upsert_delete target. Legacy mode/write_mode fields are rejected.",
                 "consumes": [
                     "application/json"
                 ],
@@ -656,7 +656,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "删除指定的任务及相关执行记录 | Delete a specific task and its execution records",
+                "description": "删除指定任务。运行中的任务必须先停止；删除前会清理 task-owned capture/DLQ 资源，但保留统一 execution 历史和目标业务数据。| Delete a task. Running tasks must be stopped first; task-owned capture/DLQ resources are cleaned before deletion, while unified execution history and target business data are retained.",
                 "consumes": [
                     "application/json"
                 ],
@@ -695,8 +695,193 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "409": {
+                        "description": "任务仍在运行 | Task is still running",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "500": {
                         "description": "服务器错误 | Server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "任务资源清理不可用或失败 | Task resource cleanup unavailable or failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/task-definitions/{id}/dead-letters": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "分页查询当前租户 owner task 的安全 DLQ 控制索引。只返回源位置、稳定错误、execution 与观测审计事实，不返回 Infra Kafka payload reference 或原始 key/value/headers。| List safe DLQ control-index records for the current tenant's owner task. Only source position, stable error, execution, and observation audit facts are returned; Infra Kafka payload references and raw key/value/headers are never exposed.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "死信管理 | Dead-letter Management"
+                ],
+                "summary": "获取任务死信记录 | List task dead-letter records",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页大小，最大100 | Page size, max 100",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "源分区精确过滤 | Exact source partition filter",
+                        "name": "source_partition",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "错误分类精确过滤 | Exact error category filter",
+                        "name": "error_category",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "错误码精确过滤 | Exact error code filter",
+                        "name": "error_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "payload 可用状态精确过滤 | Exact payload availability filter",
+                        "name": "payload_available",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "死信记录分页结果 | Paginated dead-letter records",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.DeadLetterListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "查询参数无效 | Invalid query parameters",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/task-definitions/{id}/dead-letters/{identity}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按 identity 获取当前租户 owner task 下的安全 DLQ 控制索引详情。DLQ 不是 replay source，本接口不读取原始 payload。| Get a safe DLQ control-index detail by identity under the current tenant's owner task. DLQ is not a replay source and this endpoint does not read raw payload.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "死信管理 | Dead-letter Management"
+                ],
+                "summary": "获取死信记录详情 | Get dead-letter record detail",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "死信记录 UUID | Dead-letter record UUID",
+                        "name": "identity",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "死信记录详情 | Dead-letter record detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.DeadLetterView"
+                        }
+                    },
+                    "400": {
+                        "description": "标识无效 | Invalid identity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "任务或死信记录不存在 | Task or dead-letter record not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -828,6 +1013,97 @@ const docTemplate = `{
                 }
             }
         },
+        "/task-definitions/{id}/replay": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从 owner task 的原业务 Kafka topic 按显式半开 partition/offset 范围读取，创建独立 bounded execution，并只写入不存在的新 PostgreSQL 隔离表。请求不能覆盖 source、mapping、key、policy 或原目标；replay 不修改主任务状态、主水位或主目标。| Read explicit half-open partition/offset ranges from the owner task's original business Kafka topic, create an independent bounded execution, and write only to a new non-existing isolated PostgreSQL table. The request cannot override source, mapping, key, policy, or the owner target; replay does not change the owner task state, committed position, or target.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "任务管理 | Task Management"
+                ],
+                "summary": "创建 Kafka bounded replay | Create Kafka bounded replay",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "回放范围与新目标 | Replay ranges and new target",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.ReplayTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "已创建独立回放执行 | Independent replay execution created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.TaskExecution"
+                        }
+                    },
+                    "400": {
+                        "description": "请求不符合 bounded replay v1 契约 | Request violates the bounded replay v1 contract",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "范围超出保留边界或目标已存在 | Range is outside retention or target already exists",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "回放运行时不可用 | Replay runtime unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/task-definitions/{id}/resume": {
             "post": {
                 "security": [
@@ -899,7 +1175,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "启动任务执行并创建执行记录；PostgreSQL CDC 首次启动会先创建并确认 capture generation，普通中断恢复时复用同一 generation；schema drift blocked 任务不得再次启动。| Start task execution and create an execution record. PostgreSQL CDC provisions and verifies its capture generation before the first runtime session and reuses that generation for normal interruption recovery; schema-drift-blocked tasks cannot be started again.",
+                "description": "启动任务执行并创建执行记录；数据库 CDC 首次启动会先创建并确认 capture generation，普通中断恢复时复用同一 generation；schema drift blocked 任务不得再次启动。| Start task execution and create an execution record. Database CDC provisions and verifies its capture generation before the first runtime session and reuses that generation for normal interruption recovery; schema-drift-blocked tasks cannot be started again.",
                 "consumes": [
                     "application/json"
                 ],
@@ -963,7 +1239,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "普通业务 Kafka continuous stop 保留 committed position；PostgreSQL CDC stop 是不可逆终态，必须提交 confirmed=true 且 confirmation_text 与任务名称完全一致，并删除 ADDP-owned connector、slot、publication 和 CDC topic。| Business Kafka continuous stop keeps committed positions. PostgreSQL CDC stop is irreversible and requires confirmed=true plus confirmation_text exactly matching the task name; ADDP-owned connector, slot, publication, and CDC topic are deleted.",
+                "description": "普通业务 Kafka continuous stop 保留 committed position；数据库 CDC stop 是不可逆终态，必须提交 confirmed=true 且 confirmation_text 与任务名称完全一致，并删除 ADDP-owned connector、provider 专属捕获资源、内部 topic、group 和 ACL。| Business Kafka continuous stop keeps committed positions. Database CDC stop is irreversible and requires confirmed=true plus confirmation_text exactly matching the task name; ADDP-owned connector, provider-specific capture resources, internal topics, group, and ACLs are deleted.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1323,6 +1599,76 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_transfer_internal_models.DeadLetterListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_transfer_internal_models.DeadLetterView"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.DeadLetterView": {
+            "type": "object",
+            "properties": {
+                "error_category": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "first_execution_id": {
+                    "type": "string"
+                },
+                "first_observed_at": {
+                    "type": "string"
+                },
+                "identity": {
+                    "type": "string"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_observed_at": {
+                    "type": "string"
+                },
+                "occurrence_count": {
+                    "type": "integer"
+                },
+                "payload_available": {
+                    "type": "boolean"
+                },
+                "source_offset": {
+                    "type": "integer"
+                },
+                "source_partition": {
+                    "type": "string"
+                },
+                "source_timestamp": {
+                    "type": "string"
+                },
+                "source_topic": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.ExecutionStatus": {
             "type": "string",
             "enum": [
@@ -1408,6 +1754,50 @@ const docTemplate = `{
             "properties": {
                 "time.Time": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.ReplayOffsetRangeRequest": {
+            "type": "object",
+            "properties": {
+                "end_offset": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "partition": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "start_offset": {
+                    "type": "integer",
+                    "example": 10
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.ReplayTargetRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "orders_replay"
+                },
+                "parent_locator": {
+                    "type": "string",
+                    "example": "addp://engine/8/path/replay_schema?type=schema\u0026node_id=12"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.ReplayTaskRequest": {
+            "type": "object",
+            "properties": {
+                "ranges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_transfer_internal_models.ReplayOffsetRangeRequest"
+                    }
+                },
+                "target": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.ReplayTargetRequest"
                 }
             }
         },
@@ -1763,6 +2153,19 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_transfer_internal_models.TransferRecordFailureDoc": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "block",
+                        "dead_letter"
+                    ],
+                    "example": "block"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.TransferRuntimeDoc": {
             "type": "object",
             "properties": {
@@ -1773,6 +2176,9 @@ const docTemplate = `{
                         "continuous"
                     ],
                     "example": "bounded"
+                },
+                "record_failure": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferRecordFailureDoc"
                 }
             }
         },
@@ -2048,9 +2454,29 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.TransferBusinessKafkaCapabilities": {
+            "type": "object",
+            "properties": {
+                "bounded_replay": {
+                    "$ref": "#/definitions/internal_api.TransferReplayCapability"
+                },
+                "dead_letters": {
+                    "$ref": "#/definitions/internal_api.TransferDeadLetterCapability"
+                },
+                "record_failure_modes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "internal_api.TransferCapabilitiesResponse": {
             "type": "object",
             "properties": {
+                "continuous": {
+                    "$ref": "#/definitions/internal_api.TransferContinuousCapabilities"
+                },
                 "raw_copy_formats": {
                     "type": "array",
                     "items": {
@@ -2062,6 +2488,63 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/internal_api.TransferTableFormatSupport"
                     }
+                }
+            }
+        },
+        "internal_api.TransferContinuousCapabilities": {
+            "type": "object",
+            "properties": {
+                "business_kafka": {
+                    "$ref": "#/definitions/internal_api.TransferBusinessKafkaCapabilities"
+                },
+                "database_cdc": {
+                    "$ref": "#/definitions/internal_api.TransferDatabaseCDCCapability"
+                }
+            }
+        },
+        "internal_api.TransferDatabaseCDCCapability": {
+            "type": "object",
+            "properties": {
+                "apply_mode": {
+                    "type": "string"
+                },
+                "bootstrap": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "target": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.TransferDeadLetterCapability": {
+            "type": "object",
+            "properties": {
+                "detail_endpoint": {
+                    "type": "string"
+                },
+                "exposes_payload": {
+                    "type": "boolean"
+                },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "list_endpoint": {
+                    "type": "string"
+                },
+                "supported": {
+                    "type": "boolean"
                 }
             }
         },
@@ -2085,6 +2568,23 @@ const docTemplate = `{
                 },
                 "value": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.TransferReplayCapability": {
+            "type": "object",
+            "properties": {
+                "endpoint": {
+                    "type": "string"
+                },
+                "owner_record_failure_modes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "supported": {
+                    "type": "boolean"
                 }
             }
         },

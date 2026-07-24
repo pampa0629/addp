@@ -29,6 +29,38 @@ assert.deepEqual(
   mod.applyWorkflowInputRefs({
     params: {},
     parameters: [
+      { name: 'left_df', type: 'dataframe', param_type: 'input', required: true },
+      { name: 'right_df', type: 'dataframe', param_type: 'input', required: true }
+    ],
+    inputEdges: [
+      { sourceId: 'regions', sourcePort: 'default', sourceType: 'dataframe', targetParam: 'right_df' },
+      { sourceId: 'roads', sourcePort: 'default', sourceType: 'dataframe', targetParam: 'left_df' }
+    ]
+  }),
+  {
+    right_df: { $ref: 'regions' },
+    left_df: { $ref: 'roads' }
+  }
+)
+
+assert.throws(
+  () => mod.applyWorkflowInputRefs({
+    params: {},
+    parameters: [{ name: 'input_gdf', type: 'geodataframe', param_type: 'input' }],
+    inputEdges: [{
+      sourceId: 'count',
+      sourcePort: 'default',
+      sourceType: 'number',
+      targetParam: 'input_gdf'
+    }]
+  }),
+  /not compatible/
+)
+
+assert.deepEqual(
+  mod.applyWorkflowInputRefs({
+    params: {},
+    parameters: [
       { name: 'input_gdf', type: 'object', required: true },
       { name: 'mask_gdf', type: 'object', required: true }
     ],

@@ -27,6 +27,7 @@
 | `dev_type` | VARCHAR(50) | NOT NULL, INDEXED | Develop 内部类型：'query'、'workflow'、'script'；TaskProvider 对外映射为 `task_type` |
 | `content` | JSONB | NOT NULL | 开发任务内容（SQL、工作流定义等），推荐结构见下文 |
 | `execution_config` | JSONB | | 执行配置（引擎、参数等），推荐结构见下文 |
+| `editor_layout` | JSONB | NOT NULL, DEFAULT `{}` | DAG 编辑器节点坐标和视口，仅用于展示，不参与执行 |
 | `timeout` | INTEGER | DEFAULT 300 | 超时时间（秒） |
 | `description` | TEXT | | 描述信息 |
 | `tags` | TEXT[] | | 标签数组（用于分类和搜索） |
@@ -94,6 +95,23 @@
 ```
 
 `workflow_definition.tasks[]` 必须遵循工作流计算引擎接口规范：每个任务显式包含 `id`、`operator`、`params`、`depends_on`，无依赖时 `depends_on` 写空数组 `[]`。
+
+工作流编辑器布局单独保存在顶层 `editor_layout`：
+
+```json
+{
+  "nodes": {
+    "load_1": { "x": 120, "y": 240 }
+  },
+  "viewport": {
+    "zoom": 1,
+    "translate_x": 0,
+    "translate_y": 0
+  }
+}
+```
+
+`editor_layout` 是纯展示状态。TaskProvider 执行器只读取 `content.workflow_definition` 和 `execution_config`，不得读取 `editor_layout`。
 
 ### 2.4 推荐的 ExecutionConfig 结构
 

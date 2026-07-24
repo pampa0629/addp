@@ -114,7 +114,7 @@ Manager 不得：
 - 删除自动识别的外部 3857 物化视图、外部表或外部索引。
 - 通过 Meta attributes 或硬编码 MinIO prefix 反推自身产物位置。
 
-Manager 删除瓦片对象时必须从 `manager.vector_tile_cache.storage_ref` 解析存储位置，不得硬编码 `manager/mvt-tiles/<fingerprint>` 或旧 quick view 字段。
+Manager 删除瓦片对象时必须从 `manager.vector_tile_cache.storage_ref` 解析单个 PMTiles 对象位置，不得硬编码存储路径。
 
 ### 5. Transfer 和其他模块
 

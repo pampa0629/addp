@@ -16,6 +16,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
+	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"gorm.io/datatypes"
@@ -1574,11 +1575,55 @@ func TestQuickViewCapabilityRecommendsZoomFromCGCS20003DegreeGaussKrugerExtent(t
 	if capability.RenderFacts == nil || capability.RenderFacts.ZoomRecommendation == nil {
 		t.Fatalf("render_facts = %#v, want zoom recommendation", capability.RenderFacts)
 	}
-	if capability.RenderFacts.ZoomRecommendation.MinZoom != 9 || capability.RenderFacts.ZoomRecommendation.MaxZoom != 18 {
-		t.Fatalf("zoom recommendation = %#v, want 9-18", capability.RenderFacts.ZoomRecommendation)
+	if capability.RenderFacts.ZoomRecommendation.MinZoom != 9 || capability.RenderFacts.ZoomRecommendation.MaxZoom != 16 {
+		t.Fatalf("zoom recommendation = %#v, want 9-16", capability.RenderFacts.ZoomRecommendation)
 	}
 	if capability.RenderFacts.ZoomRecommendation.Status != "estimated" {
 		t.Fatalf("zoom status = %q, want estimated", capability.RenderFacts.ZoomRecommendation.Status)
+	}
+	if capability.RenderFacts.ZoomRecommendation.EstimatedTileCount != 3_771 || capability.RenderFacts.ZoomRecommendation.TileBudget != 10_000 {
+		t.Fatalf("zoom recommendation budget = %#v, want estimated_tile_count=3771 tile_budget=10000", capability.RenderFacts.ZoomRecommendation)
+	}
+}
+
+func TestQuickViewCapabilityLimitsFarmlandDefaultZoomByCandidateTileBudget(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2_000})
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: commonModels.GenerateItemFingerprint(8, "public.farmland"),
+			Locator:         "addp://engine/8/path/public/farmland?type=table&item_id=55",
+		},
+		EngineID:         8,
+		Schema:           "public",
+		Table:            "farmland",
+		CanTile:          true,
+		DirectFlatGeobuf: true,
+		SpatialMeta: &SpatialMetadataResult{
+			GeomColumn:       "geom",
+			GeometryColumns:  []string{"geom"},
+			SRID:             32650,
+			ExtentSRID:       32650,
+			RenderExtent:     []float64{108.55648171959794, 24.52585476646484, 114.3433679860587, 30.244050172136756},
+			RenderExtentSRID: spatial.SRIDWGS84,
+			RecordCount:      127,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build quick view capability: %v", err)
+	}
+	if capability.QuickView.MinZoom != 4 || capability.QuickView.MaxZoom != 12 {
+		t.Fatalf("quick_view zoom = %d-%d, want 4-12", capability.QuickView.MinZoom, capability.QuickView.MaxZoom)
+	}
+	recommendation := capability.RenderFacts.ZoomRecommendation
+	if recommendation == nil {
+		t.Fatal("zoom recommendation is nil")
+	}
+	if recommendation.EstimatedTileCount != 6_751 || recommendation.TileBudget != 10_000 {
+		t.Fatalf("zoom recommendation = %#v, want estimated_tile_count=6751 tile_budget=10000", recommendation)
 	}
 }
 
@@ -2511,6 +2556,20 @@ func TestQuickViewCapabilityUsesLatestReadyTileCacheResult(t *testing.T) {
 	}
 	if capability.DefaultTileCacheID == nil || *capability.DefaultTileCacheID != latestReady.ID {
 		t.Fatalf("default_vector_tile_cache_id = %#v, want latest ready tile cache result %d", capability.DefaultTileCacheID, latestReady.ID)
+	}
+}
+
+func TestRenderInfoFromTileCachePreservesSourceSpatialFacts(t *testing.T) {
+	info := renderInfoFromTileCache(11, "public", "farmland", &models.TileCache{
+		TileFormat: "mvt",
+	}, &SpatialMetadataResult{
+		GeomColumn:  "shape",
+		SRID:        32650,
+		RecordCount: 73090,
+	})
+
+	if info.GeometryColumn != "shape" || info.SourceSRID != 32650 || info.RecordCount != 73090 {
+		t.Fatalf("cached tile source facts = geometry:%q srid:%d rows:%d", info.GeometryColumn, info.SourceSRID, info.RecordCount)
 	}
 }
 

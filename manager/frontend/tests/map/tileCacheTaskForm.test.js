@@ -3,6 +3,7 @@ import {
   createDefaultTileCacheTaskForm,
   createTileCacheTaskPayload
 } from '../../src/utils/tileCacheTaskForm'
+import { calculateTileRangeEstimate } from '../../src/utils/vectorTileEstimate'
 
 describe('tileCacheTaskForm', () => {
   it('keeps locator source kind and full name for file targets', () => {
@@ -42,5 +43,24 @@ describe('tileCacheTaskForm', () => {
     expect(form).not.toHaveProperty('schedule')
     expect(createTileCacheTaskPayload(form)).not.toHaveProperty('schedule')
     expect(createTileCacheTaskPayload(form)).not.toHaveProperty('next_run_at')
+  })
+
+  it('uses a safe default zoom and estimates the farmland candidate tile range', () => {
+    const form = createDefaultTileCacheTaskForm()
+    expect(form.config.tile.max_zoom).toBe(12)
+
+    expect(calculateTileRangeEstimate({
+      extent: [108.55648171959794, 24.52585476646484, 114.3433679860587, 30.244050172136756],
+      extentSRID: 4326,
+      minZoom: 4,
+      maxZoom: 12
+    })).toEqual({ supported: true, tileCount: 6751 })
+
+    expect(calculateTileRangeEstimate({
+      extent: [108.55648171959794, 24.52585476646484, 114.3433679860587, 30.244050172136756],
+      extentSRID: 4326,
+      minZoom: 4,
+      maxZoom: 13
+    })).toEqual({ supported: true, tileCount: 26287 })
   })
 })

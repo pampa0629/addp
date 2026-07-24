@@ -153,9 +153,17 @@ TRANSFER_CONTINUOUS_RECOVERY_MAX_BACKOFF=1m
 TRANSFER_CONTINUOUS_RECOVERY_MAX_CONSECUTIVE_FAILURES=5
 TRANSFER_CONTINUOUS_RECOVERY_CIRCUIT_OPEN_DURATION=5m
 TRANSFER_CONTINUOUS_RECOVERY_STABILITY_WINDOW=5m
+
+# DLQ payload availability 低频核验。仅属于 Transfer 部署治理，不进入任务 JSON。
+TRANSFER_DLQ_RECONCILE_INTERVAL=1m
+TRANSFER_DLQ_RECONCILE_BATCH_SIZE=100
+TRANSFER_DLQ_RECONCILE_TIMEOUT=10s
+TRANSFER_DLQ_RECONCILE_FETCH_MAX_BYTES=10485760
 ```
 
 critical 阈值必须小于 degraded 阈值；checkpoint 停滞阈值必须大于 diagnostics 采样间隔。恢复初始退避不得大于最大退避，最大连续失败次数必须为正，circuit 冷却时间和稳定运行阈值必须为正。这些阈值是 Transfer runtime 统一运维策略，不写入用户 task config，也不按任务开放第二条判定路径。
+
+DLQ reconciler 的 interval、timeout、batch size 和 fetch bytes 必须为正；batch size 最大 1000，fetch bytes 不得超过 Kafka 客户端的 `int32` 上限。reconciler 只核验 Infra Kafka 精确 payload reference 并以 CAS 收敛 `payload_available`，不读取业务 Kafka、不提交消费位点，也不把原始 payload 写入日志或 API。
 
 Monitor 每隔以下时间评估最新 active execution 的公共 metadata，将观测信号物化为告警事件。该配置属于 Monitor 部署策略，不进入任务 JSON；Monitor 不因此读取 Transfer 私有表或业务 Kafka。
 
@@ -225,6 +233,10 @@ KAFKA_CONNECT_USERNAME=
 KAFKA_CONNECT_PASSWORD=
 KAFKA_CONNECT_TIMEOUT=15s
 KAFKA_CONNECT_LOOPBACK_HOST=host.docker.internal
+KAFKA_CONNECT_BOOTSTRAP_SERVERS=kafka:29092
+KAFKA_CONNECT_KAFKA_USERNAME=connect
+KAFKA_CONNECT_KAFKA_SECURITY_PROTOCOL=sasl_plaintext
+KAFKA_CONNECT_KAFKA_TLS_CA_CERT_FILE=
 KAFKA_CONNECT_GROUP_ID=addp-connect-cluster
 KAFKA_CONNECT_CONFIG_TOPIC=__addp_connect_configs
 KAFKA_CONNECT_OFFSET_TOPIC=__addp_connect_offsets
@@ -233,11 +245,23 @@ KAFKA_CONNECT_STATUS_TOPIC=__addp_connect_status
 TRANSFER_CAPTURE_PROVISIONING_TIMEOUT=60s
 TRANSFER_CAPTURE_STATUS_POLL_INTERVAL=1s
 TRANSFER_CAPTURE_MONITOR_INTERVAL=15s
-TRANSFER_CAPTURE_RUNTIME_STOP_TIMEOUT=45s
-TRANSFER_CAPTURE_RUNTIME_STOP_POLL_INTERVAL=250ms
+TRANSFER_CONTINUOUS_RUNTIME_STOP_TIMEOUT=45s
+TRANSFER_CONTINUOUS_RUNTIME_STOP_POLL_INTERVAL=250ms
 ```
 
-生产环境必须显式设置 `INFRA_KAFKA_CDC_RETENTION_BYTES`，并按峰值写入速率、7 天恢复窗口、副本因子和安全余量校验磁盘容量；time/bytes 任一边界先到都会删除旧 segment。开发状态脚本按 75%/85% 展示 degraded/critical 磁盘水位。凭据分别由 infra admin、Kafka Connect 和 Transfer consumer 使用，不复用业务 Kafka Engine 凭据。单机开发 Compose 使用仅限本机和 Docker 网络的 `SASL_PLAINTEXT/PLAIN`；生产必须切换到 `SASL_SSL` 或等价 TLS，并把 Connect REST 保持在内部网络。`KAFKA_CONNECT_LOOPBACK_HOST` 只用于 Connect 容器访问登记为 localhost/loopback 的开发业务库，不改写远程数据库主机。capture supervisor 已负责显式创建单分区 CDC topic、托管 connector、登记 generation/resource、监控状态和幂等 stop/cleanup；PostgreSQL CDC 产品入口仍需等待 3D 数据面闭环，不能仅凭控制面存在就开放 capability。
+生产环境必须显式设置 `INFRA_KAFKA_CDC_RETENTION_BYTES`，并按峰值写入速率、7 天恢复窗口、副本因子和安全余量校验磁盘容量；time/bytes 任一边界先到都会删除旧 segment。开发状态脚本按 75%/85% 展示 degraded/critical 磁盘水位。凭据分别由 infra admin、Kafka Connect 和 Transfer consumer 使用，不复用业务 Kafka Engine 凭据。单机开发 Compose 使用仅限本机和 Docker 网络的 `SASL_PLAINTEXT/PLAIN`；生产必须切换到 `SASL_SSL` 或等价 TLS，并把 Connect REST 保持在内部网络。`KAFKA_CONNECT_LOOPBACK_HOST` 只用于 Connect 容器访问登记为 localhost/loopback 的开发业务库，不改写远程数据库主机。capture supervisor 已负责显式创建单分区 CDC topic、托管 connector、登记 generation/resource、监控状态和幂等 stop/cleanup。
+
+Business MySQL 作为本地 CDC 测试源时使用独立配置文件 `business/.env`：
+
+```bash
+MYSQL_ROOT_PASSWORD=change-in-production
+MYSQL_DATABASE=business
+MYSQL_PORT=3306
+MYSQL_CDC_USER=addp_cdc
+MYSQL_CDC_PASSWORD=change-in-production
+```
+
+`MYSQL_CDC_USER` 只允许字母、数字和下划线，`MYSQL_CDC_PASSWORD` 不得为空且不得与 root 密码复用。`business/scripts/start.sh -mysql` 在 MySQL ready 后每次执行专用账号初始化，因此已有 volume 也会更新密码并把权限收敛到 Debezium 所需集合；不要把 root 凭据登记为 System MySQL Engine。Business Compose 显式固定非零 server id、binlog、ROW format 和 FULL row image。
 
 ### Manager 快显与动态 MVT 配置
 

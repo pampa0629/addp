@@ -1,511 +1,100 @@
-# audit_logs 表结构和 API 说明
+# audit_logs 表结构说明
 
-> 本文记录当前表和 API 实现。IAM 目标审计边界以 `docs/concepts/addp账号与权限体系图.md` 为准；SuperAdmin 全局查看语义将由平台审计管理员和独立 Statistics Permission 替换，平台运维角色不得因此获得 Tenant 业务明细权限。
+更新日期：2026-07-24
 
-## 一、表结构概览
+状态：IAM 目标表契约；运行时查询 API 与中间件尚待随 IAM Runtime 一次性切换，不保留旧 `user_id / username / request_body / query_params` 兼容字段。
 
-`system.audit_logs` 表是 ADDP 平台的审计日志表,负责自动记录所有用户操作(非 GET 请求)。支持按租户隔离查询,用于安全审计、操作回溯和合规检查。
+## 一、定位
 
-### 核心功能
+`system.audit_logs` 是 ADDP 的统一追加式审计事实表，也是 IAM 与 OAuth 安全事件的唯一持久化落点。它同时容纳：
 
-- **自动记录**:通过中间件自动捕获所有 POST/PUT/DELETE 操作
-- **租户隔离**:按 tenant_id 隔离日志记录和查询
-- **操作追溯**:记录操作用户、时间、IP、请求详情
-- **资源关联**:记录操作对象类型和 ID
-- **安全审计**:支持按用户、时间、操作类型查询
+- 身份、Membership、Role、授权版本、Token 撤销和 Bootstrap 等领域安全事件；
+- OAuth 协议状态转换与安全失败；
+- 各模块经过脱敏的通用 HTTP 操作事件。
 
-OAuth 端点是特殊安全边界：不得保存原始请求体、query 或错误详情，只保存 `entity_type=oauth_security_event` 的结构化事件。事件详情仅包含稳定事件名、结果、`client_id`、grant type、decision、scope 和 OAuth error code，不得包含 Token、Code、User Code、PKCE、state、Cookie 或 Authorization Header。
+不建立 IAM 专用表或 OAuth 专用表。访问日志、应用调试日志和错误堆栈不属于该表。
 
----
+## 二、目标字段
 
-## 二、表结构定义
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | bigint identity | PK | 事件 ID |
+| `principal_id` | bigint | nullable, FK -> `principals.id` | 行为 Principal；匿名或未建立身份时为空 |
+| `principal_type` | text | nullable, `user \| service_principal` | Principal 类型快照，非空时必须与 Principal 一致 |
+| `context_type` | text | nullable, `platform \| tenant` | 已建立的 AuthContext；空不是 Platform Context |
+| `tenant_id` | bigint | nullable, FK -> `tenants.id` | Tenant Context 必填，其他情况为空 |
+| `event_name` | text | not null | 稳定事件名 |
+| `result` | text | not null | `succeeded \| failed \| denied \| ignored` |
+| `risk_level` | text | not null | `low \| medium \| high \| critical` |
+| `module_name` | text | not null | 事件 owner 模块 |
+| `http_method` | text | nullable | HTTP 方法，非 HTTP 事件为空 |
+| `resource_path` | text | nullable | 不含 query 的路由路径 |
+| `http_status` | integer | nullable | `100..599` |
+| `request_id` | text | nullable | 请求追踪 ID |
+| `ip_address` | inet | nullable | 客户端 IP |
+| `user_agent` | text | nullable | 客户端 User-Agent |
+| `entity_type` | text | nullable | 业务实体类型 |
+| `entity_id` | text | nullable | 业务实体稳定 ID |
+| `details` | jsonb | not null, default `{}` | 结构化、脱敏且可供审计管理员读取的对象 |
+| `created_at` | timestamptz | not null | 数据库生成的事件时间 |
 
-### 2.1 核心字段
+约束关系：
 
-| 字段名 | 类型 | 约束 | 说明 |
-|--------|------|------|------|
-| `id` | SERIAL | PRIMARY KEY | 日志唯一标识 |
-| `user_id` | INTEGER | FK → users.id, NULLABLE, INDEXED | 操作用户 ID(匿名操作为 NULL) |
-| `username` | VARCHAR(255) | | 用户名快照(冗余存储,防止用户删除) |
-| `tenant_id` | INTEGER | FK → tenants.id, NULLABLE, INDEXED | 租户 ID(SuperAdmin 操作为 NULL) |
-| `action` | VARCHAR(255) | NOT NULL | 操作类型(HTTP 方法 + 路径) |
-| `engine_type` | VARCHAR(255) | | 操作对象类型(engine/user/tenant/task 等) |
-| `engine_id` | VARCHAR(255) | | 操作对象 ID |
-| `details` | TEXT | | 操作详情(JSON 格式,包含请求体) |
-| `ip_address` | VARCHAR(255) | | 客户端 IP 地址 |
-| `created_at` | TIMESTAMP | DEFAULT NOW(), INDEXED | 操作时间 |
+```text
+platform -> tenant_id is null
+tenant   -> tenant_id is not null
+null     -> tenant_id is null
 
-### 2.2 数据库索引
-
-| 索引名 | 字段 | 类型 | 说明 |
-|--------|------|------|------|
-| `idx_audit_logs_user` | `user_id` | 普通索引 | 按用户查询优化 |
-| `idx_audit_logs_tenant` | `tenant_id` | 普通索引 | 租户隔离查询优化 |
-| `idx_audit_logs_created` | `created_at` | 普通索引 | 按时间降序查询优化 |
-
-### 2.3 外键关系
-
-| 字段 | 引用表 | 说明 |
-|------|--------|------|
-| `user_id` | `system.users.id` | 操作用户(可为 NULL) |
-| `tenant_id` | `system.tenants.id` | 操作租户(SuperAdmin 为 NULL) |
-
----
-
-## 三、Go 模型定义
-
-### 3.1 AuditLog 模型
-
-```go
-package models
-
-type AuditLog struct {
-    ID           uint      `gorm:"primaryKey" json:"id"`
-    UserID       *uint     `gorm:"index" json:"user_id"`
-    Username     string    `json:"username"`
-    TenantID     *uint     `gorm:"index" json:"tenant_id"`
-    Action       string    `gorm:"not null" json:"action"`
-    EngineType   string    `json:"engine_type"`   // 改名为 EntityType 更合适
-    EngineID     string    `json:"engine_id"`     // 改名为 EntityID 更合适
-    Details      string    `gorm:"type:text" json:"details"`
-    IPAddress    string    `json:"ip_address"`
-    CreatedAt    time.Time `gorm:"index" json:"created_at"`
-}
+principal_id is null -> principal_type is null
+principal_id is set  -> principal_type is set and matches principals.principal_type
 ```
 
-**注意**:
-- `EngineType` 和 `EngineID` 字段命名历史遗留,实际用于记录任意资源类型
-- 建议未来重构为 `EntityType` 和 `EntityID`
+`context_type=NULL` 用于登录失败、OAuth 前置失败或纯内部安全事件，表示事件发生时不存在已建立的授权上下文。事件来源由 `module_name` 和 `event_name` 表达，不新增 `anonymous` 或 `internal` 会话模式。
 
-### 3.2 请求 DTO
+## 三、写入与事务
 
-```go
-// 创建日志请求(内部使用)
-type AuditLogCreateRequest struct {
-    Action     string `json:"action" binding:"required"`
-    EngineType string `json:"engine_type"`
-    EngineID   string `json:"engine_id"`
-    Details    string `json:"details"`
-}
-```
+身份、Membership、Role、授权版本、Token Family 撤销、Bootstrap 和 OAuth 状态转换必须在修改权威事实的同一个 PostgreSQL 事务内 INSERT 审计事件。审计写入失败时整个业务事务回滚。
 
----
+通用 HTTP 操作事件可以在请求完成后写入，但不得替代领域安全事件。同一安全事实只产生一条领域事件，避免中间件和 Service 双写。
 
-## 四、自动记录机制
+表只允许追加：目标 DDL 无条件拒绝 UPDATE / DELETE / TRUNCATE。归档可以先只读导出；需要物理保留清理时，必须先完成独立的分区、归档校验和数据库职责设计，不能给普通运行时路径预留开关。生产环境最终拆分 migration owner、runtime writer、audit reader 和 maintenance 角色。
 
-### 4.1 中间件实现
+## 四、脱敏白名单
 
-**触发条件**:
-- 所有 **非 GET 请求**(POST/PUT/DELETE/PATCH)
-- 通过认证的请求(有用户 Access Token)
-- 排除内部 API 路径(`/internal/*`)
+`details` 采用白名单构造，不接受整段请求体、query 或错误对象。任何位置都禁止保存：
 
-**记录时机**:
-- 请求处理**之后**
-- 获取响应状态码
-- 提取请求体和用户信息
+- 密码、密码 Hash、MFA Secret、Client Secret；
+- Access Token、Refresh Token、Delegated Token、Resource Ticket；
+- Authorization Code、Device Code、User Code；
+- PKCE verifier/challenge、OAuth state；
+- Cookie、Authorization Header；
+- 原始 OAuth 请求体、原始 query、可能包含安全材料的错误堆栈。
 
-**实现位置**:`system/backend/internal/middleware/logger.go`
+OAuth 事件的 `details` 仅允许 `client_id`、`grant_type`、`decision`、`scope` 和稳定 `error_code`。事件名、结果和风险等级使用独立列。
 
-### 4.2 记录字段映射
+## 五、索引
 
-| 字段 | 来源 | 说明 |
-|------|------|------|
-| `user_id` | JWT Payload | 从 Context 提取 |
-| `username` | JWT Payload | 从 Context 提取 |
-| `tenant_id` | JWT Payload | 从 Context 提取(SuperAdmin 为 NULL) |
-| `action` | HTTP Request | `{METHOD} {PATH}`,如 `POST /api/v1/system/engines` |
-| `engine_type` | 请求体 | 根据路径推断或从请求体提取 |
-| `engine_id` | 请求体/URL | 从 URL 参数或响应提取 |
-| `details` | 请求体 | JSON 序列化的请求体 |
-| `ip_address` | HTTP Request | `c.ClientIP()` |
-| `created_at` | 自动 | 数据库默认值 |
+| 索引 | 字段与谓词 | 用途 |
+| --- | --- | --- |
+| `idx_audit_logs_created_at` | `(created_at DESC, id DESC)` | 全局时间线与稳定分页 |
+| `idx_audit_logs_tenant_created_at` | `(tenant_id, created_at DESC, id DESC) WHERE tenant_id IS NOT NULL` | Tenant 审计时间线 |
+| `idx_audit_logs_principal_created_at` | `(principal_id, created_at DESC, id DESC) WHERE principal_id IS NOT NULL` | Principal 行为追溯和 FK |
+| `idx_audit_logs_event_created_at` | `(event_name, created_at DESC, id DESC)` | 安全事件检索 |
+| `idx_audit_logs_request_id` | `(request_id) WHERE request_id IS NOT NULL` | 请求链路定位 |
+| `idx_audit_logs_entity` | `(entity_type, entity_id, created_at DESC) WHERE entity_type IS NOT NULL AND entity_id IS NOT NULL` | 实体历史追溯 |
+| `idx_audit_logs_high_risk_created_at` | `(risk_level, created_at DESC, id DESC) WHERE risk_level IN ('high', 'critical')` | 高风险事件时间线与告警扫描 |
 
-### 4.3 示例中间件代码
+## 六、查询授权
 
-```go
-func LoggerMiddleware(logService *service.LogService, userRepo *repository.UserRepository) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        // 跳过 GET 请求和内部 API
-        if c.Request.Method == "GET" || strings.HasPrefix(c.Request.URL.Path, "/internal") {
-            c.Next()
-            return
-        }
+- 平台审计管理员：按独立 Permission 查询、导出平台和跨 Tenant 审计事实；只读，不能修改原始记录。
+- Tenant 审计角色：只读取当前 Tenant 范围，必须使用 Tenant AuthContext。
+- 平台系统管理员和平台安全管理员：不因管理职责自动获得原始审计内容读取权。
+- 普通 User、Service Principal 和 owner 模块：仅能通过受控写入接口追加其职责内事件，不能直接枚举审计事实。
 
-        // 读取请求体
-        var bodyBytes []byte
-        if c.Request.Body != nil {
-            bodyBytes, _ = io.ReadAll(c.Request.Body)
-            c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-        }
+查询范围由 `principal_id + context_type + tenant_id` 和 Permission 决定，不再使用旧 `user_type` 或 `tenant_id=NULL` 推断全局权限。
 
-        // 处理请求
-        c.Next()
+## 七、相关规范
 
-        // 提取用户信息
-        userID, _ := c.Get("user_id")
-        username, _ := c.Get("username")
-        tenantID, _ := c.Get("tenant_id")
-
-        // 创建日志记录
-        log := models.AuditLog{
-            UserID:     getUserIDPointer(userID),
-            Username:   username.(string),
-            TenantID:   getTenantIDPointer(tenantID),
-            Action:     fmt.Sprintf("%s %s", c.Request.Method, c.Request.URL.Path),
-            Details:    string(bodyBytes),
-            IPAddress:  c.ClientIP(),
-        }
-
-        // 异步保存日志
-        go logService.CreateLog(&log)
-    }
-}
-```
-
----
-
-## 五、API 端点说明
-
-### 5.1 GET /api/v1/system/logs - 查询审计日志
-
-**权限**:
-- TenantAdmin:查看本租户日志
-- SuperAdmin:查看所有租户日志
-
-**请求头**:
-
-```
-Authorization: Bearer <jwt_token>
-```
-
-**查询参数**:
-- `page`(可选):页码,默认 1
-- `page_size`(可选):每页条数,默认 20
-- `user_id`(可选):按用户过滤
-
-**响应**(200 OK):
-
-```json
-{
-  "logs": [
-    {
-      "id": 100,
-      "user_id": 2,
-      "username": "admin",
-      "tenant_id": 1,
-      "action": "POST /api/v1/system/engines",
-      "engine_type": "engine",
-      "engine_id": "5",
-      "details": "{\"name\":\"PostgreSQL-测试\",\"engine_type\":\"postgresql\"}",
-      "ip_address": "127.0.0.1",
-      "created_at": "2026-01-01T10:30:00Z"
-    },
-    {
-      "id": 99,
-      "user_id": 2,
-      "username": "admin",
-      "tenant_id": 1,
-      "action": "PUT /api/v1/system/users/3",
-      "engine_type": "user",
-      "engine_id": "3",
-      "details": "{\"full_name\":\"新名字\"}",
-      "ip_address": "127.0.0.1",
-      "created_at": "2026-01-01T10:25:00Z"
-    }
-  ],
-  "total": 2,
-  "page": 1,
-  "page_size": 20
-}
-```
-
-**租户隔离**:
-- TenantAdmin 自动过滤 `WHERE tenant_id = <当前租户>`
-- SuperAdmin 可查看所有日志(包括 tenant_id=NULL 的系统操作)
-
----
-
-### 5.2 GET /api/v1/system/logs/:id - 获取指定日志
-
-**权限**:本租户用户 / SuperAdmin
-
-**响应**(200 OK):
-
-```json
-{
-  "id": 100,
-  "user_id": 2,
-  "username": "admin",
-  "tenant_id": 1,
-  "action": "POST /api/v1/system/engines",
-  "engine_type": "engine",
-  "engine_id": "5",
-  "details": "{\"name\":\"PostgreSQL-测试\",\"engine_type\":\"postgresql\",\"connection_info\":{\"host\":\"localhost\",\"port\":\"5432\"}}",
-  "ip_address": "127.0.0.1",
-  "created_at": "2026-01-01T10:30:00Z"
-}
-```
-
-**响应**(403 Forbidden):
-
-```json
-{
-  "error": "无权限访问此日志"
-}
-```
-
----
-
-## 六、记录场景示例
-
-### 6.1 创建引擎
-
-**操作**:
-
-```bash
-curl -X POST http://localhost:8180/api/v1/system/engines \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "PostgreSQL-测试",
-    "engine_type": "postgresql",
-    "connection_info": {"host": "localhost"}
-  }'
-```
-
-**生成日志**:
-
-```json
-{
-  "user_id": 2,
-  "username": "admin",
-  "tenant_id": 1,
-  "action": "POST /api/v1/system/engines",
-  "engine_type": "engine",
-  "engine_id": "5",
-  "details": "{\"name\":\"PostgreSQL-测试\",\"engine_type\":\"postgresql\"}",
-  "ip_address": "192.168.1.100"
-}
-```
-
----
-
-### 6.2 更新用户信息
-
-**操作**:
-
-```bash
-curl -X PUT http://localhost:8180/api/v1/system/users/3 \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"full_name": "新名字"}'
-```
-
-**生成日志**:
-
-```json
-{
-  "user_id": 2,
-  "username": "admin",
-  "tenant_id": 1,
-  "action": "PUT /api/v1/system/users/3",
-  "engine_type": "user",
-  "engine_id": "3",
-  "details": "{\"full_name\":\"新名字\"}",
-  "ip_address": "192.168.1.100"
-}
-```
-
----
-
-### 6.3 删除租户(SuperAdmin)
-
-**操作**:
-
-```bash
-curl -X DELETE http://localhost:8180/api/tenants/2 \
-  -H "Authorization: Bearer $SUPERADMIN_TOKEN"
-```
-
-**生成日志**:
-
-```json
-{
-  "user_id": 1,
-  "username": "SuperAdmin",
-  "tenant_id": null,
-  "action": "DELETE /api/tenants/2",
-  "engine_type": "tenant",
-  "engine_id": "2",
-  "details": "{}",
-  "ip_address": "192.168.1.100"
-}
-```
-
----
-
-## 七、使用示例
-
-### 7.1 查询所有日志
-
-```bash
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-
-curl "http://localhost:8180/api/v1/system/logs?page=1&page_size=20" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
----
-
-### 7.2 查询指定用户的操作日志
-
-```bash
-curl "http://localhost:8180/api/v1/system/logs?user_id=2&page=1&page_size=50" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
----
-
-### 7.3 查询特定时间段的日志(SQL)
-
-```sql
--- 查询最近 24 小时的日志
-SELECT * FROM system.audit_logs
-WHERE created_at > NOW() - INTERVAL '24 hours'
-  AND tenant_id = 1
-ORDER BY created_at DESC;
-```
-
----
-
-### 7.4 统计操作类型分布(SQL)
-
-```sql
--- 统计各操作类型的次数
-SELECT
-  SPLIT_PART(action, ' ', 1) AS method,
-  COUNT(*) AS count
-FROM system.audit_logs
-WHERE tenant_id = 1
-  AND created_at > NOW() - INTERVAL '7 days'
-GROUP BY method
-ORDER BY count DESC;
-```
-
-**结果**:
-
-```
-method | count
--------+------
-POST   | 150
-PUT    | 80
-DELETE | 20
-```
-
----
-
-## 八、权限控制
-
-### 8.1 查询权限
-
-| 用户类型 | 查询范围 | 说明 |
-|---------|---------|------|
-| SuperAdmin | 所有日志 | 包括所有租户和系统操作 |
-| TenantAdmin | 本租户日志 | 仅查看 tenant_id=<当前租户> 的日志 |
-| User | 无权限 | 普通用户不能查看审计日志 |
-
-### 8.2 自动隔离
-
-**中间件实现**:
-
-```go
-func (h *LogHandler) List(c *gin.Context) {
-    userType := c.GetString("user_type")
-    tenantID := c.GetUint("tenant_id")
-
-    // 构建查询条件
-    query := h.logService.GetDB()
-
-    // 非 SuperAdmin 自动过滤租户
-    if userType != "super_admin" {
-        query = query.Where("tenant_id = ?", tenantID)
-    }
-
-    // 继续处理...
-}
-```
-
----
-
-## 九、数据保留策略
-
-### 9.1 推荐策略
-
-| 环境 | 保留期 | 清理方式 |
-|------|-------|---------|
-| 开发环境 | 30 天 | 自动清理脚本 |
-| 测试环境 | 90 天 | 自动清理脚本 |
-| 生产环境 | 1 年 | 归档到对象存储 |
-| 合规要求 | 3-7 年 | 归档到冷存储 |
-
-### 9.2 清理脚本示例
-
-```sql
--- 删除 90 天前的日志
-DELETE FROM system.audit_logs
-WHERE created_at < NOW() - INTERVAL '90 days';
-```
-
-**建议**:
-- 使用定时任务(Cron)执行清理
-- 清理前先归档到 MinIO/S3
-- 重要租户的日志单独保留
-
----
-
-## 十、重要说明
-
-### 10.1 字段命名历史遗留
-
-**当前命名**:
-- `engine_type`:实际用于存储任意资源类型(engine/user/tenant/task 等)
-- `engine_id`:实际用于存储任意资源 ID
-
-**建议重构**:
-- 改名为 `entity_type` 和 `entity_id`
-- 兼容旧数据(保留字段,添加新字段)
-
-### 10.2 性能优化
-
-**索引使用**:
-- 按时间查询:使用 `idx_audit_logs_created`
-- 按用户查询:使用 `idx_audit_logs_user`
-- 按租户查询:使用 `idx_audit_logs_tenant`
-
-**查询优化**:
-- 避免全表扫描
-- 使用分页查询
-- 添加时间范围限制
-
-### 10.3 敏感信息处理
-
-**不记录的内容**:
-- 密码原文(仅记录 password 字段存在)
-- 加密密钥
-- opaque Access Token
-
-**Details 字段**:
-- 记录完整请求体
-- 敏感字段应在业务层过滤
-- 建议添加脱敏逻辑
-
----
-
-## 十一、相关文档
-
-- [users 表](./users表.md) - 用户表,记录操作用户
-- [tenants 表](./tenants表.md) - 租户表,日志按租户隔离
-- [engines 表](./engines表.md) - 引擎配置表,操作被记录
-- [数据库架构](../数据库架构.md) - System 模块整体架构
-- [System 模块说明](../../system/CLAUDE.md) - 模块整体架构和设计理念
+- [IAM 目标数据模型设计](../../../docs/next/addp-IAM目标数据模型设计.md)
+- [ADDP OAuth 授权规范](../../../docs/spec/addp%20OAuth授权规范.md)
+- [ADDP 授权上下文规范](../../../docs/spec/addp授权上下文规范.md)

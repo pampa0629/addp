@@ -1137,6 +1137,9 @@ paths:
       summary: 创建资源回收执行任务 | Create resource reclaim execution task
       tags:
       - Resource Reclaim
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.cleanup.execute
   /admin/cleanup/history:
     get:
       description: 获取当前租户的资源回收任务历史记录 | Get resource reclaim task history for current
@@ -1171,6 +1174,9 @@ paths:
       summary: 获取资源回收任务历史 | Get resource reclaim task history
       tags:
       - Resource Reclaim
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.cleanup.read
   /admin/cleanup/scan:
     post:
       consumes:
@@ -1209,6 +1215,9 @@ paths:
       summary: 创建资源回收评估任务 | Create resource reclaim assessment task
       tags:
       - Resource Reclaim
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.cleanup.execute
   /admin/cleanup/tasks/{task_id}:
     get:
       description: 查询指定资源回收任务的执行状态和结果 | Query execution status and results of a specified
@@ -1247,6 +1256,9 @@ paths:
       summary: 查询资源回收任务状态 | Get resource reclaim task status
       tags:
       - Resource Reclaim
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.cleanup.read
   /applications:
     get:
       produces:
@@ -1266,6 +1278,9 @@ paths:
       summary: 获取应用列表 | List applications
       tags:
       - 应用管理 | Application Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.application.read
     post:
       consumes:
       - application/json
@@ -1292,6 +1307,9 @@ paths:
       summary: 创建应用 | Create application
       tags:
       - 应用管理 | Application Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.application.create
   /applications/{id}:
     delete:
       parameters:
@@ -1316,6 +1334,9 @@ paths:
       summary: 删除应用 | Delete application
       tags:
       - 应用管理 | Application Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.application.delete
     get:
       parameters:
       - description: 应用ID | Application ID
@@ -1339,6 +1360,9 @@ paths:
       summary: 获取应用详情 | Get application detail
       tags:
       - 应用管理 | Application Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.application.read
     put:
       consumes:
       - application/json
@@ -1370,6 +1394,9 @@ paths:
       summary: 更新应用 | Update application
       tags:
       - 应用管理 | Application Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.application.update
   /applications/{id}/keys:
     get:
       parameters:
@@ -1395,6 +1422,9 @@ paths:
       summary: 获取 API Key 列表 | List API keys
       tags:
       - 应用管理 | Application Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.api_key.read
     post:
       consumes:
       - application/json
@@ -1426,6 +1456,9 @@ paths:
       summary: 生成 API Key | Generate API key
       tags:
       - 应用管理 | Application Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.api_key.create
   /applications/{id}/keys/{key_id}:
     delete:
       parameters:
@@ -1459,6 +1492,9 @@ paths:
       summary: 撤销 API Key | Revoke API key
       tags:
       - 应用管理 | Application Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.api_key.revoke
   /auth/context:
     get:
       description: 将当前 Bearer Token 解析为权威用户、租户和授权上下文 | Resolve the current Bearer
@@ -1479,6 +1515,7 @@ paths:
       summary: 获取授权上下文 | Get authorization context
       tags:
       - 认证 | Auth
+      x-addp-auth-mode: authenticated
   /auth/delegations:
     post:
       consumes:
@@ -1517,6 +1554,7 @@ paths:
       summary: 签发受委托访问令牌 | Issue delegated access token
       tags:
       - 认证 | Auth
+      x-addp-auth-mode: authenticated
   /engines:
     get:
       consumes:
@@ -1580,6 +1618,9 @@ paths:
       summary: 获取引擎列表 | List engines
       tags:
       - 引擎管理 | Engine Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine.read
     post:
       consumes:
       - application/json
@@ -1609,6 +1650,9 @@ paths:
       summary: 创建引擎 | Create engine
       tags:
       - 引擎管理 | Engine Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine.create
   /engines/{id}:
     delete:
       parameters:
@@ -1637,6 +1681,9 @@ paths:
       summary: 删除引擎 | Delete engine
       tags:
       - 引擎管理 | Engine Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine.delete
     get:
       parameters:
       - description: 引擎ID | Engine ID
@@ -1664,6 +1711,9 @@ paths:
       summary: 获取引擎详情 | Get engine detail
       tags:
       - 引擎管理 | Engine Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine.read
     put:
       consumes:
       - application/json
@@ -1699,6 +1749,9 @@ paths:
       summary: 更新引擎 | Update engine
       tags:
       - 引擎管理 | Engine Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine.update
   /engines/{id}/catalog/children:
     post:
       consumes:
@@ -1747,6 +1800,9 @@ paths:
       summary: 列出实时 catalog 子节点 | List live catalog children
       tags:
       - 引擎管理 | Engine Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine.read
   /engines/{id}/spatial-workspaces/{ecosystem}/{kind}/enable:
     post:
       consumes:
@@ -1795,6 +1851,9 @@ paths:
       summary: 启用空间工作区 | Enable spatial workspace
       tags:
       - 引擎管理 | Engine Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine.execute
   /engines/{id}/test:
     post:
       consumes:
@@ -1830,6 +1889,9 @@ paths:
       summary: 测试已有引擎连接 | Test existing engine connection
       tags:
       - 引擎管理 | Engine Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine.execute
   /engines/test-connection:
     post:
       consumes:
@@ -1857,6 +1919,9 @@ paths:
       summary: 创建前测试连接 | Test connection before create
       tags:
       - 引擎管理 | Engine Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine.execute
   /login:
     post:
       consumes:
@@ -1890,6 +1955,7 @@ paths:
       summary: 用户登录 | User login
       tags:
       - 认证 | Auth
+      x-addp-auth-mode: public
   /logout:
     post:
       description: 撤销当前 Refresh Token Family，并清除 Refresh Token 与 Browser Resource
@@ -1903,6 +1969,7 @@ paths:
       summary: 退出登录 | Logout
       tags:
       - 认证 | Auth
+      x-addp-auth-mode: authenticated
   /logs:
     get:
       consumes:
@@ -2146,6 +2213,7 @@ paths:
       summary: 创建 OAuth 授权请求 | Create OAuth authorization request
       tags:
       - OAuth
+      x-addp-auth-mode: public
   /oauth/authorization_requests/{request_id}:
     delete:
       consumes:
@@ -2183,6 +2251,7 @@ paths:
       summary: 取消 OAuth 授权请求 | Cancel OAuth authorization request
       tags:
       - OAuth
+      x-addp-auth-mode: public
     get:
       description: 向当前已认证用户返回 System 已校验的待处理客户端和 Scope；失效请求不返回原始授权参数 | Return the
         pending client and scope already validated by System to the authenticated
@@ -2221,6 +2290,7 @@ paths:
       summary: 获取 OAuth 授权请求 | Get OAuth authorization request
       tags:
       - OAuth
+      x-addp-auth-mode: authenticated
   /oauth/authorizations:
     post:
       consumes:
@@ -2273,6 +2343,7 @@ paths:
       summary: 处理 OAuth 授权决定 | Handle OAuth authorization decision
       tags:
       - OAuth
+      x-addp-auth-mode: authenticated
   /oauth/device/authorizations:
     post:
       consumes:
@@ -2312,6 +2383,7 @@ paths:
       summary: 批准设备授权 | Approve device authorization
       tags:
       - OAuth
+      x-addp-auth-mode: authenticated
   /oauth/device/code:
     post:
       consumes:
@@ -2350,6 +2422,7 @@ paths:
       summary: 创建设备授权 | Create device authorization
       tags:
       - OAuth
+      x-addp-auth-mode: public
   /oauth/revoke:
     post:
       consumes:
@@ -2383,6 +2456,7 @@ paths:
       summary: 撤销 OAuth Token | Revoke OAuth token
       tags:
       - OAuth
+      x-addp-auth-mode: public
   /oauth/token:
     post:
       consumes:
@@ -2443,6 +2517,7 @@ paths:
       summary: 兑换 OAuth Token | Exchange OAuth token
       tags:
       - OAuth
+      x-addp-auth-mode: public
   /refresh:
     post:
       consumes:
@@ -2465,6 +2540,7 @@ paths:
       summary: 刷新 Token | Refresh token
       tags:
       - 认证 | Auth
+      x-addp-auth-mode: public
   /register:
     post:
       consumes:
@@ -2496,6 +2572,7 @@ paths:
       summary: 用户注册 | User registration
       tags:
       - 认证 | Auth
+      x-addp-auth-mode: public
   /tenants:
     get:
       parameters:
@@ -2536,6 +2613,9 @@ paths:
       summary: 获取租户列表 | List tenants
       tags:
       - 租户管理 | Tenant Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.tenant.read
     post:
       consumes:
       - application/json
@@ -2562,6 +2642,9 @@ paths:
       summary: 创建租户 | Create tenant
       tags:
       - 租户管理 | Tenant Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.tenant.create
   /tenants/{id}:
     delete:
       parameters:
@@ -2617,6 +2700,9 @@ paths:
       summary: 获取租户详情 | Get tenant detail
       tags:
       - 租户管理 | Tenant Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.tenant.read
     put:
       consumes:
       - application/json
@@ -2652,6 +2738,9 @@ paths:
       summary: 更新租户 | Update tenant
       tags:
       - 租户管理 | Tenant Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.tenant.update
   /users:
     get:
       consumes:
@@ -2812,16 +2901,33 @@ paths:
       summary: 更新用户 | Update user
       tags:
       - 用户管理 | User Management
-  /users/{id}/change-password:
+  /users/me:
+    get:
+      consumes:
+      - application/json
+      description: 获取当前登录用户的详细信息 | Get detailed info of the currently logged-in user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.User'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取当前用户信息 | Get current user info
+      tags:
+      - 用户管理 | User Management
+      x-addp-auth-mode: self
+  /users/me/password:
     put:
       consumes:
       - application/json
       parameters:
-      - description: 用户ID | User ID
-        in: path
-        name: id
-        required: true
-        type: integer
       - description: 密码修改请求 | Change password request
         in: body
         name: request
@@ -2845,30 +2951,10 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 修改用户密码 | Change user password
+      summary: 修改当前用户密码 | Change current user password
       tags:
       - 用户管理 | User Management
-  /users/me:
-    get:
-      consumes:
-      - application/json
-      description: 获取当前登录用户的详细信息 | Get detailed info of the currently logged-in user
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.User'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 获取当前用户信息 | Get current user info
-      tags:
-      - 用户管理 | User Management
+      x-addp-auth-mode: self
 securityDefinitions:
   BearerAuth:
     description: Type "Bearer" followed by a space and an ADDP opaque access token.

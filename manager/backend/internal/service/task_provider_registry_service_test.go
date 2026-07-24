@@ -78,6 +78,13 @@ func TestTaskProviderRegistryVectorMaterializedViewCapability(t *testing.T) {
 	if tileCache.SupportsSchedule {
 		t.Fatal("vector_tile_cache_generation supports_schedule = true, want false")
 	}
+	vectorTileSet := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, "vector_tile_set_generation")
+	if vectorTileSet.CreateURL != "/manager/spatial-tasks/vector-tiles?create=1" {
+		t.Fatalf("vector_tile_set_generation create_url = %q, want spatial tasks page", vectorTileSet.CreateURL)
+	}
+	if vectorTileSet.EditURL != "/manager/spatial-tasks/vector-tiles?task_id=:id" {
+		t.Fatalf("vector_tile_set_generation edit_url = %q, want spatial tasks edit page", vectorTileSet.EditURL)
+	}
 
 	quickView := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, "vector_materialized_view_generation")
 	if quickView.SupportsSchedule {
@@ -132,7 +139,7 @@ func TestTaskProviderRegistryVectorMaterializedViewCapability(t *testing.T) {
 			t.Fatalf("%s execution_schema = %#v", taskType, capability.ExecutionSchema)
 		}
 	}
-	for _, taskType := range []string{"raster_mosaic_generation", "embedding"} {
+	for _, taskType := range []string{"vector_tile_set_generation", "raster_mosaic_generation", "embedding"} {
 		capability := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, taskType)
 		if _, exists := capability.ExecutionSchema["properties"]; exists || capability.ExecutionSchema["additionalProperties"] != false {
 			t.Fatalf("%s execution_schema = %#v, want empty closed object", taskType, capability.ExecutionSchema)

@@ -48,18 +48,18 @@ func (r *TileCacheRepository) GetTileCacheTaskByID(ctx context.Context, id uint)
 	return &task, err
 }
 
-func (r *TileCacheRepository) GetTaskByTargetFingerprintAndFormat(ctx context.Context, tenantID uint, itemFingerprint, tileFormat string, excludeTaskID uint) (*models.TileCacheTask, error) {
+func (r *TileCacheRepository) GetTaskByTargetFingerprintAndProfile(ctx context.Context, tenantID uint, itemFingerprint, profileHash string, excludeTaskID uint) (*models.TileCacheTask, error) {
 	itemFingerprint = strings.TrimSpace(itemFingerprint)
-	tileFormat = strings.TrimSpace(strings.ToLower(tileFormat))
-	if itemFingerprint == "" || tileFormat == "" {
+	profileHash = strings.TrimSpace(profileHash)
+	if itemFingerprint == "" || profileHash == "" {
 		return nil, nil
 	}
 	query := r.db.WithContext(ctx).
 		Where(
-			"tenant_id = ? AND config -> 'target' ->> 'item_fingerprint' = ? AND LOWER(COALESCE(config -> 'tile' ->> 'format', 'mvt')) = ?",
+			"tenant_id = ? AND config -> 'target' ->> 'item_fingerprint' = ? AND config ->> 'profile_hash' = ?",
 			tenantID,
 			itemFingerprint,
-			tileFormat,
+			profileHash,
 		)
 	if excludeTaskID > 0 {
 		query = query.Where("id <> ?", excludeTaskID)
@@ -181,14 +181,14 @@ func (r *TileCacheRepository) CreateTileCache(ctx context.Context, artifact *mod
 	return r.db.WithContext(ctx).Create(artifact).Error
 }
 
-func (r *TileCacheRepository) GetTileCacheByFingerprintAndFormat(ctx context.Context, tenantID uint, itemFingerprint, tileFormat string) (*models.TileCache, error) {
+func (r *TileCacheRepository) GetTileCacheByFingerprintAndProfile(ctx context.Context, tenantID uint, itemFingerprint, profileHash string) (*models.TileCache, error) {
 	var artifact models.TileCache
 	err := r.db.WithContext(ctx).
 		Where(
-			"tenant_id = ? AND item_fingerprint = ? AND tile_format = ?",
+			"tenant_id = ? AND item_fingerprint = ? AND profile_hash = ?",
 			tenantID,
 			strings.TrimSpace(itemFingerprint),
-			strings.TrimSpace(tileFormat),
+			strings.TrimSpace(profileHash),
 		).
 		First(&artifact).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -207,6 +207,15 @@ func (r *TileCacheRepository) GetLatestReadyTileCacheByFingerprint(ctx context.C
 		Where("tenant_id = ? AND item_fingerprint = ? AND status = ?", tenantID, itemFingerprint, models.TileCacheStatusReady).
 		Order("updated_at DESC").
 		First(&artifact).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &artifact, err
+}
+
+func (r *TileCacheRepository) GetReusableTileCache(ctx context.Context, tenantID uint, itemFingerprint, sourceVersion, profileHash string) (*models.TileCache, error) {
+	var artifact models.TileCache
+	err := r.db.WithContext(ctx).Where("tenant_id = ? AND item_fingerprint = ? AND source_version = ? AND profile_hash = ? AND status = ?", tenantID, strings.TrimSpace(itemFingerprint), strings.TrimSpace(sourceVersion), strings.TrimSpace(profileHash), models.TileCacheStatusReady).Order("updated_at DESC").First(&artifact).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}

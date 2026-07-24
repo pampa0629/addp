@@ -149,6 +149,35 @@ func TestBuildRawCopyFormatCapabilitiesExposeNonTableSingleFormats(t *testing.T)
 	}
 }
 
+func TestBuildContinuousCapabilitiesPublishesDeadLetterAndBoundedReplay(t *testing.T) {
+	continuous := buildContinuousCapabilities()
+	if len(continuous.DatabaseCDC.Sources) != 2 || continuous.DatabaseCDC.Sources[0] != "postgresql" || continuous.DatabaseCDC.Sources[1] != "mysql" ||
+		continuous.DatabaseCDC.Target != "postgresql" || len(continuous.DatabaseCDC.Bootstrap) != 1 || continuous.DatabaseCDC.Bootstrap[0] != "initial_snapshot" ||
+		continuous.DatabaseCDC.ApplyMode != "upsert_delete" {
+		t.Fatalf("database CDC capability = %#v", continuous.DatabaseCDC)
+	}
+	capabilities := continuous.BusinessKafka
+	if !containsString(capabilities.RecordFailureModes, "block") || !containsString(capabilities.RecordFailureModes, "dead_letter") {
+		t.Fatalf("record failure modes = %#v", capabilities.RecordFailureModes)
+	}
+	if !capabilities.DeadLetters.Supported || capabilities.DeadLetters.ExposesPayload ||
+		capabilities.DeadLetters.ListEndpoint != "/api/v1/transfer/task-definitions/{id}/dead-letters" ||
+		capabilities.DeadLetters.DetailEndpoint != "/api/v1/transfer/task-definitions/{id}/dead-letters/{identity}" {
+		t.Fatalf("dead-letter capability = %#v", capabilities.DeadLetters)
+	}
+	for _, filter := range []string{"source_partition", "error_category", "error_code", "payload_available"} {
+		if !containsString(capabilities.DeadLetters.Filters, filter) {
+			t.Fatalf("dead-letter filters = %#v, missing %q", capabilities.DeadLetters.Filters, filter)
+		}
+	}
+	if !capabilities.BoundedReplay.Supported || capabilities.BoundedReplay.Endpoint != "/api/v1/transfer/task-definitions/{id}/replay" {
+		t.Fatalf("bounded replay capability = %#v", capabilities.BoundedReplay)
+	}
+	if len(capabilities.BoundedReplay.OwnerRecordFailureModes) != 1 || capabilities.BoundedReplay.OwnerRecordFailureModes[0] != "block" {
+		t.Fatalf("bounded replay owner modes = %#v", capabilities.BoundedReplay.OwnerRecordFailureModes)
+	}
+}
+
 type transferCapabilityReaderOnlyPlugin struct {
 	formatType format.FormatType
 }

@@ -16,6 +16,8 @@ Agent 模块是 ADDP 平台的**自然语言交互入口**，用户通过对话�
 
 ```
 agent/
+├── authorization/
+│   └── permissions.yaml  # Agent owner Permission Manifest
 ├── backend/
 │   ├── agents/          # Agent 核心逻辑与结构化内部事件
 │   ├── protocol/        # AG-UI / A2UI 协议适配
@@ -63,6 +65,25 @@ bash scripts/dev/restart.sh -agent
 | GET | /api/v1/agent/runs/:id/events?after=:sequence | 按 sequence 回放安全 AG-UI 事件（SSE） |
 | POST | /api/v1/agent/runs/:id/cancel | 取消 Agent Runtime 和 pending Interaction |
 | POST | /api/v1/agent/runs/:id/retry | 重试失败 AgentRun（AG-UI SSE） |
+
+## IAM Permission 所有权
+
+Agent 是以下 Permission 的唯一 owner：
+
+- `agent.session.*`
+- `agent.run.*`
+
+机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Agent 服务启动时的 Module Registry 注册和心跳只描述服务可用性，不向 System 动态注册 Permission。
+
+路由与 Permission 语义映射固定如下：
+
+- Session 列表、详情和消息历史使用 `agent.session.read`，创建和删除分别使用 `agent.session.create/delete`。
+- `/chat` 是单一 AG-UI Operation，新建和 Interaction resume 统一按 all-of 校验 `agent.run.create + agent.run.execute`；独立的失败重试路由只继续已有 AgentRun，校验 `agent.run.execute`。
+- AgentRun 详情和事件回放使用 `agent.run.read`，取消使用 `agent.run.cancel`。
+
+Session 和 AgentRun 当前都只允许所有者访问。Role Permission 只提供功能 Allow 候选，不取代 owner 对 `user_id + tenant_id` 归属的最终资源判断。
+
+`delegable` 当前统一保守为 `false`。Agent 调用其他 owner Tool 时使用对方 owner 的 Tool Scope 和短期 Delegated Access Token，不把 `agent.run.*` 当作业务 Tool 权限。
 
 ## 数据库 Schema
 

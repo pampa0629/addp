@@ -23,13 +23,18 @@ type ResourceStore interface {
 }
 
 type SupervisorConfig struct {
-	TopicRetention      time.Duration
-	TopicRetentionBytes int64
-	TopicReplication    int16
-	ConnectLoopbackHost string
-	ProvisioningTimeout time.Duration
-	StatusPollInterval  time.Duration
-	MonitorInterval     time.Duration
+	TopicRetention               time.Duration
+	TopicRetentionBytes          int64
+	TopicReplication             int16
+	ConnectLoopbackHost          string
+	ConnectBootstrapServers      string
+	ConnectKafkaUsername         string
+	ConnectKafkaPassword         string
+	ConnectKafkaSecurityProtocol string
+	ConnectKafkaTLSCACertFile    string
+	ProvisioningTimeout          time.Duration
+	StatusPollInterval           time.Duration
+	MonitorInterval              time.Duration
 }
 
 func (c SupervisorConfig) Validate() error {
@@ -39,7 +44,7 @@ func (c SupervisorConfig) Validate() error {
 	return nil
 }
 
-// Supervisor 是 PostgreSQL CDC 捕获资源的唯一 lifecycle owner。
+// Supervisor 是数据库 CDC 捕获资源的唯一 lifecycle owner。
 // pause 不调用 Kafka Connect pause：它只停止目标应用，connector 必须继续捕获。
 type Supervisor struct {
 	store   ResourceStore
@@ -74,7 +79,7 @@ func (s *Supervisor) Start(ctx context.Context, task *models.TransferTask) (*mod
 		spatialInfo = models.JSONMap(payload)
 	}
 	resource, err := s.store.BeginGeneration(ctx, repository.CaptureIdentity{
-		TaskID: task.ID, TenantID: task.TenantID, SourceIdentity: plan.SourceIdentity,
+		TaskID: task.ID, TenantID: task.TenantID, SourceType: plan.SourceType, SourceIdentity: plan.SourceIdentity,
 		SourceConnectionFingerprint: plan.SourceConnectionFingerprint,
 		SourceEngineID:              plan.SourceEngineID, SourceDatabase: plan.SourceDatabase,
 		SourceSchema: plan.SourceSchema, SourceTable: plan.SourceTable,
@@ -99,10 +104,33 @@ func (s *Supervisor) Start(ctx context.Context, task *models.TransferTask) (*mod
 		s.fail(ctx, resource, err)
 		return nil, err
 	}
+	if resource.SourceType == models.CaptureSourceMySQL {
+		if resource.MySQL == nil || strings.TrimSpace(resource.MySQL.SchemaHistoryTopicName) == "" || !resource.MySQL.SchemaHistoryTopicOwned {
+			err := fmt.Errorf("MySQL capture generation is missing owned schema history topic")
+			s.fail(ctx, resource, err)
+			return nil, err
+		}
+		if err := s.topics.EnsureTopic(ctx, TopicSpec{
+			Name: resource.MySQL.SchemaHistoryTopicName, Partitions: 1,
+			ReplicationFactor: s.config.TopicReplication, CleanupPolicy: "delete", RetentionMillis: -1,
+		}); err != nil {
+			s.fail(ctx, resource, err)
+			return nil, err
+		}
+		if err := s.topics.EnsureSchemaHistoryAccess(ctx, resource.MySQL.SchemaHistoryTopicName); err != nil {
+			s.fail(ctx, resource, err)
+			return nil, err
+		}
+	}
 	if err := s.advance(ctx, resource, map[string]interface{}{"status": models.CaptureStatusProvisioning, "topic_created": true, "connector_error": ""}); err != nil {
 		return nil, err
 	}
-	if err := s.connect.PutConfig(ctx, resource.ConnectorName, buildConnectorConfig(plan, resource, s.config.ConnectLoopbackHost)); err != nil {
+	connectorConfig, err := buildConnectorConfig(plan, resource, s.config)
+	if err != nil {
+		s.fail(ctx, resource, err)
+		return nil, err
+	}
+	if err := s.connect.PutConfig(ctx, resource.ConnectorName, connectorConfig); err != nil {
 		s.fail(ctx, resource, err)
 		return nil, err
 	}
@@ -203,7 +231,12 @@ func (s *Supervisor) Stop(ctx context.Context, task *models.TransferTask) error 
 	groupErr := s.topics.DeleteConsumerGroup(ctx, resource.ConsumerGroup)
 	topicErr := s.topics.DeleteTopic(ctx, resource.TopicName)
 	aclErr := s.topics.DeleteAccess(ctx, resource.TopicName, resource.ConsumerGroup)
-	cleanupErr := errors.Join(connectorErr, sourceErr, groupErr, topicErr, aclErr)
+	var historyTopicErr, historyACLErr error
+	if resource.SourceType == models.CaptureSourceMySQL && resource.MySQL != nil && resource.MySQL.SchemaHistoryTopicOwned {
+		historyTopicErr = s.topics.DeleteTopic(ctx, resource.MySQL.SchemaHistoryTopicName)
+		historyACLErr = s.topics.DeleteSchemaHistoryAccess(ctx, resource.MySQL.SchemaHistoryTopicName)
+	}
+	cleanupErr := errors.Join(connectorErr, sourceErr, groupErr, topicErr, aclErr, historyTopicErr, historyACLErr)
 	if cleanupErr != nil {
 		s.cleanupFail(ctx, resource, cleanupErr)
 		return cleanupErr

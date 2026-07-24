@@ -233,9 +233,9 @@ frontend/src/
 - 字段: `id`, `name`, `description`, `is_active`, `created_at`
 
 **system.audit_logs 表**:
-- 记录所有非 GET 请求的操作日志
-- 字段: `id`, `user_id`, `tenant_id`, `action`, `method`, `path`, `ip_address`, `created_at`
-- 自动关联租户，支持按租户过滤日志
+- IAM、OAuth 和通用操作审计的唯一追加式事实表
+- 目标字段使用 `principal_id`, `principal_type`, `context_type`, `tenant_id`, `event_name`, `result`, `risk_level`, `details`, `created_at` 等
+- 身份、授权、Token 撤销和 OAuth 状态转换必须与权威事实同事务写入；普通运行时路径不得 UPDATE / DELETE / TRUNCATE
 
 **system.engines 表**:
 - 存储各类引擎连接信息 (数据库、对象存储等)
@@ -285,9 +285,9 @@ frontend/src/
    - 在 `internal/api/router.go` 注册路由（注意路由前缀为 `/api/v1/system/`）
 
 2. **数据库迁移**:
-   - 修改 `internal/models/` 中的模型结构
-   - 在 `repository/database.go` 的 `AutoMigrate` 中添加新模型
-   - 重启应用自动执行迁移
+   - IAM 表以 `docs/next/addp-IAM目标数据模型设计.md` 和 `docs/next/addp-IAM PostgreSQL迁移与首批DDL设计.md` 为准，必须使用显式版本化 SQL，不得加入 `AutoMigrate`。
+   - 非 IAM 表当前仍使用 `AutoMigrate`，后续迁移方案另行设计；不得借此改写 IAM 表或旧账号/OAuth 数据。
+   - 迁移 runner 成功后才允许执行非 IAM 初始化，不能在启动过程中用表存在性或默认数据兜底。
 
 3. **前端添加新页面**:
    - 在 `src/views/` 创建 Vue 组件
@@ -358,7 +358,7 @@ frontend/src/
 - `GET /api/v1/system/users` - 获取用户列表（租户管理员仅看本租户）
 - `GET /api/v1/system/users/:id` - 获取指定用户
 - `PUT /api/v1/system/users/:id` - 更新用户
-- `PUT /api/v1/system/users/:id/change-password` - 修改密码
+- `PUT /api/v1/system/users/me/password` - 修改当前用户密码
 - `DELETE /api/v1/system/users/:id` - 删除用户（SuperAdmin 不可删除）
 
 ### 租户管理（仅超级管理员）

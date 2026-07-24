@@ -85,8 +85,14 @@ func TestValidateExecutionParametersAllowsTemplatesOnlyBeforeResolution(t *testi
 	if err := ValidateExecutionParameters(schema, parameters, ParameterValidationOptions{AllowTemplateStrings: true}); err != nil {
 		t.Fatalf("template validation error = %v, want nil", err)
 	}
-	if err := ValidateExecutionParameters(schema, parameters, ParameterValidationOptions{}); err == nil || !strings.Contains(err.Error(), "parameters.mode must be one of") {
-		t.Fatalf("strict validation error = %v, want enum rejection", err)
+	for iteration := 0; iteration < 100; iteration++ {
+		err := ValidateExecutionParameters(schema, parameters, ParameterValidationOptions{})
+		var validationErr *ParameterValidationError
+		if !errors.As(err, &validationErr) ||
+			validationErr.Rule != ParameterRuleType ||
+			validationErr.Path != "parameters.limit" {
+			t.Fatalf("strict validation error = %#v, want stable parameters.limit type rejection", validationErr)
+		}
 	}
 }
 

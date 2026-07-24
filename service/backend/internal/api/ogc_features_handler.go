@@ -409,9 +409,6 @@ func ogcCRSURI(crsRef string) string {
 
 // getAndValidateService 通用服务查找和权限验证逻辑
 func (h *OGCFeaturesHandler) getAndValidateService(c *gin.Context, serviceName string) (*models.QueryService, error) {
-	// 从 JWT token 中获取租户 ID（如果是公开服务则可能没有）
-	tenantID := c.GetUint("tenant_id")
-
 	// 先通过服务名称查找服务(不过滤租户)
 	service, err := h.svc.GetServiceModelByNameOnly(serviceName)
 	if err != nil {
@@ -430,16 +427,8 @@ func (h *OGCFeaturesHandler) getAndValidateService(c *gin.Context, serviceName s
 	}
 
 	// 检查访问权限
-	if !service.PublicAccess {
-		// 非公开服务需要认证且租户匹配
-		if tenantID == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
-			return nil, errors.New("authentication required")
-		}
-		if service.TenantID != tenantID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
-			return nil, errors.New("access denied")
-		}
+	if !requireJSONServiceAccess(c, service.PublicAccess, service.TenantID) {
+		return nil, errors.New("service access denied")
 	}
 
 	return service, nil

@@ -2,39 +2,55 @@
   <div class="dag-editor">
     <div class="toolbar">
       <div class="toolbar-left">
-        <el-button
-          :type="isAddEdgeMode ? 'primary' : 'default'"
-          size="small"
-          @click="handleToggleEdgeMode"
-        >
-          <el-icon><Connection /></el-icon> {{ isAddEdgeMode ? t('orchestrator.dagEditor.edgeModeOn') : t('orchestrator.dagEditor.edgeModeOff') }}
-        </el-button>
-
+        <el-tooltip :content="t('orchestrator.dagEditor.undo')">
+          <el-button circle size="small" :aria-label="t('orchestrator.dagEditor.undo')" :disabled="!canUndo" @click="handleUndo"><el-icon><RefreshLeft /></el-icon></el-button>
+        </el-tooltip>
+        <el-tooltip :content="t('orchestrator.dagEditor.redo')">
+          <el-button circle size="small" :aria-label="t('orchestrator.dagEditor.redo')" :disabled="!canRedo" @click="handleRedo"><el-icon><RefreshRight /></el-icon></el-button>
+        </el-tooltip>
         <el-divider direction="vertical" />
-
-        <el-button type="danger" size="small" @click="handleDelete" :disabled="!selectedItem">
-          <el-icon><Delete /></el-icon> {{ t('orchestrator.dagEditor.deleteBtn') }}{{ selectedItem ? (selectedItem.getType && selectedItem.getType() === 'edge' ? t('orchestrator.dagEditor.deleteEdge') : t('orchestrator.dagEditor.deleteNode')) : '' }}
-        </el-button>
-        <el-button type="info" size="small" @click="handleClear">
-          <el-icon><DocumentDelete /></el-icon> {{ t('orchestrator.dagEditor.clearBtn') }}
-        </el-button>
+        <el-tooltip :content="t('orchestrator.dagEditor.copyNode')">
+          <el-button circle size="small" :aria-label="t('orchestrator.dagEditor.copyNode')" :disabled="!canCopyNode" @click="handleCopy"><el-icon><CopyDocument /></el-icon></el-button>
+        </el-tooltip>
+        <el-tooltip :content="t('orchestrator.dagEditor.pasteNode')">
+          <el-button circle size="small" :aria-label="t('orchestrator.dagEditor.pasteNode')" :disabled="!copiedNode" @click="handlePaste"><el-icon><DocumentAdd /></el-icon></el-button>
+        </el-tooltip>
+        <el-tooltip :content="t('orchestrator.dagEditor.duplicateNode')">
+          <el-button circle size="small" :aria-label="t('orchestrator.dagEditor.duplicateNode')" :disabled="!canCopyNode" @click="handleDuplicate"><el-icon><Plus /></el-icon></el-button>
+        </el-tooltip>
+        <el-divider direction="vertical" />
+        <el-tooltip :content="t('orchestrator.dagEditor.deleteSelected')">
+          <el-button circle size="small" type="danger" plain :aria-label="t('orchestrator.dagEditor.deleteSelected')" @click="handleDelete" :disabled="!selectedItem">
+            <el-icon><Delete /></el-icon>
+          </el-button>
+        </el-tooltip>
+        <el-divider direction="vertical" />
+        <el-tooltip :content="t('orchestrator.dagEditor.zoomOut')">
+          <el-button circle size="small" :aria-label="t('orchestrator.dagEditor.zoomOut')" :disabled="!canZoomOut" @click="handleZoomOut"><el-icon><ZoomOut /></el-icon></el-button>
+        </el-tooltip>
+        <el-tooltip :content="t('orchestrator.dagEditor.zoomIn')">
+          <el-button circle size="small" :aria-label="t('orchestrator.dagEditor.zoomIn')" :disabled="!canZoomIn" @click="handleZoomIn"><el-icon><ZoomIn /></el-icon></el-button>
+        </el-tooltip>
+        <el-tooltip :content="t('orchestrator.dagEditor.fitView')">
+          <el-button circle size="small" :aria-label="t('orchestrator.dagEditor.fitView')" @click="handleFitView"><el-icon><FullScreen /></el-icon></el-button>
+        </el-tooltip>
+        <el-tooltip :content="t('orchestrator.dagEditor.autoLayout')">
+          <el-button circle size="small" :aria-label="t('orchestrator.dagEditor.autoLayout')" @click="handleAutoLayout"><el-icon><Rank /></el-icon></el-button>
+        </el-tooltip>
       </div>
-
-      <div class="toolbar-tips">
-        <el-alert type="info" :closable="false" show-icon>
-          <template #title>
-            <span class="tips-text">
-              {{ isAddEdgeMode
-                ? t('orchestrator.dagEditor.tipEdgeMode')
-                : t('orchestrator.dagEditor.tipDefault')
-              }}
-            </span>
-          </template>
-        </el-alert>
-      </div>
+      <el-tooltip :content="t('orchestrator.dagEditor.clearBtn')">
+        <el-button circle size="small" :aria-label="t('orchestrator.dagEditor.clearBtn')" @click="handleClear"><el-icon><DocumentDelete /></el-icon></el-button>
+      </el-tooltip>
     </div>
 
-    <div id="dag-container" ref="container" @dragover.prevent @drop="handleDrop"></div>
+    <div
+      id="dag-container"
+      ref="container"
+      tabindex="0"
+      @dragover.prevent
+      @drop="handleDrop"
+      @keydown="handleKeydown"
+    ></div>
 
     <!-- 节点配置抽屉 -->
     <el-drawer v-model="drawerVisible" :title="t('orchestrator.dagEditor.drawerTitle')" size="40%">
@@ -141,12 +157,13 @@
         <el-form-item
           v-else-if="parameterEditorMode === 'json'"
           :label="t('orchestrator.dagEditor.parametersJsonLabel')"
+          :error="jsonDraftError"
         >
           <el-input
             type="textarea"
             v-model="parametersStr"
             :rows="8"
-            placeholder='{"key": "value"}'
+            :placeholder="t('orchestrator.dagEditor.parametersJsonPlaceholder')"
           ></el-input>
         </el-form-item>
 
@@ -156,11 +173,6 @@
           :image-size="48"
           class="empty-parameters"
         />
-
-        <el-form-item>
-          <el-button type="primary" @click="saveNodeConfig">{{ t('orchestrator.dagEditor.saveConfigBtn') }}</el-button>
-          <el-button @click="drawerVisible = false">{{ t('orchestrator.dagEditor.cancelBtn') }}</el-button>
-        </el-form-item>
       </el-form>
     </el-drawer>
   </div>
@@ -169,10 +181,35 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
-import { Connection, Delete, DocumentDelete, Edit } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  CopyDocument,
+  Delete,
+  DocumentAdd,
+  DocumentDelete,
+  Edit,
+  FullScreen,
+  Plus,
+  Rank,
+  RefreshLeft,
+  RefreshRight,
+  ZoomIn,
+  ZoomOut
+} from '@element-plus/icons-vue'
 import { buildTaskOwnerUrl } from '@addp/common-frontend'
-import { useDAGCore, useLoopDetection, useDAGSelection, useDAGEdgeMode, generateColor } from '@addp/common-frontend/dag'
+import {
+  createDAGDirectEdgeBehavior,
+  createDAGDragNodeBehavior,
+  generateColor,
+  linkPointPort,
+  useDAGClipboard,
+  useDAGCore,
+  useDAGHistory,
+  useDAGLayout,
+  useDAGSelection,
+  useDAGViewport,
+  useLoopDetection
+} from '@addp/common-frontend/dag'
 import modulesApi from '../api/modules'
 import taskProvidersAPI from '../api/taskProviders'
 import {
@@ -180,8 +217,7 @@ import {
   createParameterDraft,
   executionParameterMode,
   executionSchemaFields,
-  serializeParameterDraft,
-  validateParameterDraft
+  serializeParameterDraft
 } from '../utils/executionSchemaForm'
 
 const { t, te } = useI18n()
@@ -190,64 +226,97 @@ const props = defineProps({
   initialSteps: {
     type: Array,
     default: () => []
+  },
+  initialLayout: {
+    type: Object,
+    default: () => ({})
   }
 })
 
-const emit = defineEmits(['update:steps'])
+const emit = defineEmits(['update:steps', 'update:layout'])
 
 const container = ref(null)
 const drawerVisible = ref(false)
 const currentNode = ref({})
 const parametersStr = ref('')
 const structuredParameters = ref({})
+const parameterEditorMode = ref('json')
+const jsonDraftError = ref('')
 const taskTypeEditUrlIndex = ref(new Map())
 const taskContextIndex = ref(new Map())
 const executionSchemaIndex = ref(new Map())
+const lastStepsSignature = ref('')
+let nodeCopyCounter = 0
+let addedNodeCounter = 0
+let syncingNodeDraft = false
+const canvasColors = resolveCanvasColors()
 
 // 使用 composables
 const { graph, initGraph, loadData } = useDAGCore(container, {
-  layout: {
-    type: 'dagre',
-    rankdir: 'LR',
-    nodesep: 48,
-    ranksep: 96
-  },
   modes: {
-    default: ['drag-canvas', 'drag-node', 'click-select'],
-    addEdge: ['drag-canvas', 'click-select', 'create-edge']
+    default: [
+      'drag-canvas',
+      'zoom-canvas',
+      createDAGDragNodeBehavior(),
+      'click-select',
+      createDAGDirectEdgeBehavior({
+        resolveSource: event => linkPointPort(event, 'right'),
+        resolveTarget: event => linkPointPort(event, 'left'),
+        canConnect: canCreateDependency,
+        buildEdgeConfig: ({ targetPort }) => ({
+          sourceAnchor: 1,
+          targetAnchor: targetPort ? 0 : undefined
+        }),
+        onRejected: handleConnectionRejected
+      })
+    ]
   },
   defaultNode: {
     type: 'rect',
     size: [120, 50],
-    anchorPoints: [[0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5]],
+    anchorPoints: [[0, 0.5], [1, 0.5]],
     style: {
-      fill: '#5B8FF9',
-      stroke: '#1890FF',
+      fill: canvasColors.node,
+      stroke: canvasColors.primary,
       lineWidth: 2,
       radius: 4
     },
     labelCfg: {
       style: {
-        fill: '#fff',
+        fill: canvasColors.onPrimary,
         fontSize: 13
       }
     },
     linkPoints: {
-      top: true,
+      top: false,
       right: true,
-      bottom: true,
+      bottom: false,
       left: true,
       size: 10,
       lineWidth: 2,
-      fill: '#fff',
-      stroke: '#1890FF'
+      fill: canvasColors.background,
+      stroke: canvasColors.primary
     }
   }
 })
 
 const { hasLoop } = useLoopDetection(graph)
 const { selectedItem, initSelectionListener, deleteSelected, clearGraph } = useDAGSelection(graph)
-const { isAddEdgeMode, toggleAddEdgeMode } = useDAGEdgeMode(graph)
+const { canZoomIn, canZoomOut, zoomIn, zoomOut, fitView, autoLayout } = useDAGViewport(graph)
+const { captureLayout, applyNodePositions, restoreViewport } = useDAGLayout(graph)
+const { copiedNode, copy, paste } = useDAGClipboard(graph, { createNodeId: createCopiedNodeId })
+const {
+  canUndo,
+  canRedo,
+  reset: resetHistory,
+  record: recordHistory,
+  undo,
+  redo
+} = useDAGHistory({
+  capture: () => graph.value?.save?.() || { nodes: [], edges: [] },
+  restore: restoreGraphSnapshot
+})
+const canCopyNode = computed(() => selectedItem.value?.getType?.() === 'node')
 
 const currentOwnerEditUrl = computed(() => resolveNodeEditUrl(currentNode.value))
 const currentOwnerGraphId = computed(() => resolveNodeGraphId(currentNode.value))
@@ -264,10 +333,6 @@ const ownerTaskButtonTooltip = computed(() => {
 const currentExecutionSchema = computed(() => {
   return executionSchemaIndex.value.get(taskTypeIndexKey(currentNode.value?.provider, currentNode.value?.taskType)) || null
 })
-const parameterEditorMode = computed(() => executionParameterMode(
-  currentExecutionSchema.value,
-  currentNode.value?.parameters || {}
-))
 const parameterFields = computed(() => executionSchemaFields(currentExecutionSchema.value))
 
 watch(currentExecutionSchema, () => {
@@ -275,6 +340,37 @@ watch(currentExecutionSchema, () => {
     syncParameterEditors(currentNode.value?.parameters || {})
   }
 })
+
+watch(
+  () => [currentNode.value?.name, currentNode.value?.timeout],
+  () => applyCurrentNodeDraft(currentNode.value?.parameters || {}),
+  { flush: 'sync' }
+)
+
+watch(structuredParameters, draft => {
+  if (parameterEditorMode.value !== 'structured') return
+  applyCurrentNodeDraft(serializeParameterDraft(currentExecutionSchema.value, draft))
+}, { deep: true, flush: 'sync' })
+
+watch(parametersStr, value => {
+  if (syncingNodeDraft || !drawerVisible.value || parameterEditorMode.value !== 'json') return
+  try {
+    const parameters = JSON.parse(value || '{}')
+    if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) {
+      jsonDraftError.value = t('orchestrator.dagEditor.jsonObjectError')
+      return
+    }
+    jsonDraftError.value = ''
+    applyCurrentNodeDraft(parameters)
+  } catch {
+    jsonDraftError.value = t('orchestrator.dagEditor.jsonError')
+  }
+}, { flush: 'sync' })
+
+watch(() => props.initialSteps, steps => {
+  if (!graph.value || stepsSignature(steps) === lastStepsSignature.value) return
+  loadSteps(steps)
+}, { deep: true })
 
 onMounted(async () => {
   initGraph()
@@ -285,72 +381,65 @@ onMounted(async () => {
   graph.value.on('node:dblclick', handleNodeClick)
 
   // 边创建后的处理
-  graph.value.on('aftercreateedge', (e) => {
-    const edge = e.edge
-    const source = edge.getSource()
-    const target = edge.getTarget()
-
-    if (hasLoop(source.getID(), target.getID())) {
-      graph.value.removeItem(edge)
-      ElMessage.warning(t('orchestrator.dagEditor.loopDetected'))
-      return
-    }
-
+  graph.value.on('aftercreateedge', () => {
+    recordHistory()
     ElMessage.success(t('orchestrator.dagEditor.edgeCreated'))
     emitSteps()
+    emitLayout()
   })
+  graph.value.on('node:dragend', () => {
+    recordHistory()
+    emitLayout()
+  })
+  graph.value.on('canvas:dragend', emitLayout)
+  graph.value.on('wheelzoom', emitLayout)
 
-  if (props.initialSteps.length > 0) {
-    loadSteps(props.initialSteps)
-  }
+  loadSteps(props.initialSteps)
 })
 
 function handleNodeClick(evt) {
   const model = evt.item.getModel()
-  currentNode.value = {
-    ...model,
-    graphId: resolveNodeGraphId(model),
-    editUrl: resolveNodeEditUrl(model)
-  }
-  syncParameterEditors(model.parameters || {})
-  drawerVisible.value = true
+  withNodeDraftSync(() => {
+    currentNode.value = {
+      ...model,
+      graphId: resolveNodeGraphId(model),
+      editUrl: resolveNodeEditUrl(model)
+    }
+    syncParameterEditors(model.parameters || {})
+    drawerVisible.value = true
+  })
 }
 
-function saveNodeConfig() {
-  try {
-    let params = {}
-    if (parameterEditorMode.value === 'structured') {
-      const validationError = validateParameterDraft(currentExecutionSchema.value, structuredParameters.value)
-      if (validationError) {
-        ElMessage.error(parameterValidationMessage(validationError))
-        return
-      }
-      params = serializeParameterDraft(currentExecutionSchema.value, structuredParameters.value)
-    } else if (parameterEditorMode.value === 'json') {
-      params = JSON.parse(parametersStr.value || '{}')
-      if (!params || typeof params !== 'object' || Array.isArray(params)) {
-        ElMessage.error(t('orchestrator.dagEditor.jsonObjectError'))
-        return
-      }
-    }
-    currentNode.value.parameters = params
+function applyCurrentNodeDraft(parameters = currentNode.value?.parameters || {}) {
+  if (syncingNodeDraft || !drawerVisible.value || !graph.value || !currentNode.value?.id) return
 
-    graph.value.updateItem(currentNode.value.id, {
-      label: currentNode.value.name || currentNode.value.provider || currentNode.value.id,
-      ...currentNode.value
-    })
-
-    drawerVisible.value = false
-    ElMessage.success(t('orchestrator.dagEditor.configSaved'))
-    emitSteps()
-  } catch (error) {
-    ElMessage.error(t('orchestrator.dagEditor.jsonError'))
-  }
+  currentNode.value.parameters = parameters
+  graph.value.updateItem(currentNode.value.id, {
+    ...currentNode.value,
+    label: currentNode.value.name || currentNode.value.provider || currentNode.value.id,
+    parameters
+  })
+  recordHistory({ mergeKey: `node-draft:${currentNode.value.id}` })
+  emitSteps()
 }
 
 function syncParameterEditors(parameters) {
-  parametersStr.value = JSON.stringify(parameters || {}, null, 2)
-  structuredParameters.value = createParameterDraft(currentExecutionSchema.value, parameters || {})
+  withNodeDraftSync(() => {
+    parameterEditorMode.value = executionParameterMode(currentExecutionSchema.value, parameters || {})
+    parametersStr.value = JSON.stringify(parameters || {}, null, 2)
+    structuredParameters.value = createParameterDraft(currentExecutionSchema.value, parameters || {})
+    jsonDraftError.value = ''
+  })
+}
+
+function withNodeDraftSync(callback) {
+  const wasSyncing = syncingNodeDraft
+  syncingNodeDraft = true
+  try {
+    callback()
+  } finally {
+    syncingNodeDraft = wasSyncing
+  }
 }
 
 function parameterFieldLabel(field) {
@@ -368,37 +457,51 @@ function usesBooleanSwitch(field) {
   return field.required || Object.prototype.hasOwnProperty.call(field.schema, 'default')
 }
 
-function parameterValidationMessage(error) {
-  return t(`orchestrator.dagEditor.parameterValidation.${error.reason}`, {
-    field: parameterFieldLabel(parameterFields.value.find(field => field.name === error.field) || {
-      name: error.field,
-      schema: {}
-    }),
-    limit: error.limit
+function canCreateDependency({ sourceId, targetId }) {
+  if (!sourceId || !targetId || sourceId === targetId || hasLoop(sourceId, targetId)) {
+    return 'loop'
+  }
+  const duplicated = graph.value.getEdges().some(edge => {
+    const model = edge.getModel()
+    return model.source === sourceId && model.target === targetId
   })
+  return duplicated ? 'duplicate' : true
 }
 
-function handleToggleEdgeMode() {
-  toggleAddEdgeMode()
-  if (isAddEdgeMode.value) {
-    ElMessage.info(t('orchestrator.dagEditor.enterEdgeMode'))
-  } else {
-    ElMessage.info(t('orchestrator.dagEditor.exitEdgeMode'))
+function handleConnectionRejected({ reason }) {
+  if (reason === 'loop') {
+    ElMessage.warning(t('orchestrator.dagEditor.loopDetected'))
+  } else if (reason === 'duplicate') {
+    ElMessage.warning(t('orchestrator.dagEditor.edgeAlreadyExists'))
   }
 }
 
 function handleDelete() {
+  const itemType = selectedItem.value?.getType?.()
   if (deleteSelected()) {
-    const itemType = selectedItem.value?.getType ? selectedItem.value.getType() : 'edge'
     ElMessage.success(itemType === 'edge' ? t('orchestrator.dagEditor.edgeDeleted') : t('orchestrator.dagEditor.nodeDeleted'))
+    recordHistory()
     emitSteps()
+    emitLayout()
   }
 }
 
-function handleClear() {
-  clearGraph()
-  ElMessage.info(t('orchestrator.dagEditor.canvasCleared'))
-  emitSteps()
+async function handleClear() {
+  if (!graph.value?.getNodes().length) return
+  try {
+    await ElMessageBox.confirm(
+      t('orchestrator.dagEditor.clearConfirm'),
+      t('orchestrator.dagEditor.clearBtn'),
+      { type: 'warning' }
+    )
+    clearGraph()
+    recordHistory()
+    ElMessage.info(t('orchestrator.dagEditor.canvasCleared'))
+    emitSteps()
+    emitLayout()
+  } catch {
+    // 用户取消
+  }
 }
 
 function handleDrop(event) {
@@ -410,21 +513,21 @@ function handleDrop(event) {
 
     const nodeData = JSON.parse(data)
     const point = graph.value.getPointByClient(event.clientX, event.clientY)
+    addTask(nodeData, point)
+  } catch (error) {
+    console.error('拖放失败:', error)
+    ElMessage.error(t('orchestrator.dagEditor.addNodeFailed', { error: error.message }))
+  }
+}
 
-    const width = container.value.offsetWidth || 1200
-    const height = container.value.offsetHeight || 600
-
-    let x = point.x
-    let y = point.y
-
-    if (x < 0 || x > width || y < 0 || y > height) {
-      x = width / 2 + Math.random() * 200 - 100
-      y = height / 2 + Math.random() * 200 - 100
-    }
-
+function addTask(nodeData, point = null) {
+  try {
+    if (!graph.value || !nodeData) return null
+    const targetPoint = point || viewportCenterPoint()
     const colorKey = nodeData.provider || 'unknown'
     const color = generateColor(colorKey)
-    const id = `${colorKey}-${Date.now()}`
+    addedNodeCounter += 1
+    const id = `${colorKey}-${Date.now()}-${addedNodeCounter}`
 
     const nodeModel = {
       id,
@@ -437,29 +540,44 @@ function handleDrop(event) {
       editUrl: nodeData.editUrl || resolveTaskTypeEditUrl(nodeData.provider, nodeData.taskType),
       parameters: nodeData.parameters || {},
       timeout: 300,
-      x,
-      y,
+      x: targetPoint.x,
+      y: targetPoint.y,
+      stateStyles: selectedNodeStateStyles(color),
       style: {
         fill: color,
-        stroke: '#1890FF',
+        stroke: canvasColors.primary,
         lineWidth: 2
       }
     }
 
-    graph.value.addItem('node', nodeModel)
+    const item = graph.value.addItem('node', nodeModel)
     graph.value.paint()
+    selectGraphItem(item)
+    recordHistory()
 
     ElMessage.success(t('orchestrator.dagEditor.taskAdded', { name: nodeData.name }))
     emitSteps()
+    emitLayout()
+    return item
   } catch (error) {
-    console.error('拖放失败:', error)
+    console.error('添加任务节点失败:', error)
     ElMessage.error(t('orchestrator.dagEditor.addNodeFailed', { error: error.message }))
+    return null
   }
+}
+
+function viewportCenterPoint() {
+  const rect = container.value.getBoundingClientRect()
+  return graph.value.getPointByClient(
+    rect.left + rect.width / 2,
+    rect.top + rect.height / 2
+  )
 }
 
 function emitSteps() {
   const data = graph.value.save()
   const steps = convertToSteps(data)
+  lastStepsSignature.value = stepsSignature(steps)
   emit('update:steps', steps)
 }
 
@@ -475,7 +593,7 @@ function convertToSteps(graphData) {
       task_id: node.taskId || null,
       parameters: node.parameters || {},
       depends_on: [],
-      timeout: node.timeout || 300
+      timeout: node.timeout ?? 300
     }
 
     nodeMap.set(node.id, step)
@@ -512,6 +630,7 @@ function loadSteps(steps) {
       editUrl: resolveTaskTypeEditUrl(step.provider, step.task_type),
       parameters: step.parameters,
       timeout: step.timeout,
+      stateStyles: selectedNodeStateStyles(color),
       style: {
         fill: color
       }
@@ -525,11 +644,160 @@ function loadSteps(steps) {
     })
   })
 
-  loadData(nodes, edges)
+  loadData(applyNodePositions(nodes, props.initialLayout), edges)
+  lastStepsSignature.value = stepsSignature(steps)
+  if (hasStoredLayout(props.initialLayout)) {
+    restoreViewport(props.initialLayout)
+  } else if (nodes.length > 0) {
+    autoLayout()
+  }
+  resetHistory(graph.value.save())
+  emitLayout()
+}
+
+function handleUndo() {
+  if (undo()) ElMessage.success(t('orchestrator.dagEditor.undone'))
+}
+
+function handleRedo() {
+  if (redo()) ElMessage.success(t('orchestrator.dagEditor.redone'))
+}
+
+function handleCopy() {
+  if (!copy(selectedItem.value)) {
+    ElMessage.warning(t('orchestrator.dagEditor.noNodeToCopy'))
+    return false
+  }
+  ElMessage.success(t('orchestrator.dagEditor.nodeCopied'))
+  return true
+}
+
+function handlePaste() {
+  const item = paste()
+  if (!item) {
+    ElMessage.warning(t('orchestrator.dagEditor.noNodeToPaste'))
+    return
+  }
+  selectGraphItem(item)
+  recordHistory()
+  emitSteps()
+  emitLayout()
+  ElMessage.success(t('orchestrator.dagEditor.nodePasted'))
+}
+
+function handleDuplicate() {
+  if (handleCopy()) handlePaste()
+}
+
+function handleKeydown(event) {
+  const modifier = event.metaKey || event.ctrlKey
+  const key = event.key.toLowerCase()
+  if (modifier && key === 'z') {
+    event.preventDefault()
+    event.shiftKey ? handleRedo() : handleUndo()
+  } else if (modifier && key === 'y') {
+    event.preventDefault()
+    handleRedo()
+  } else if (modifier && key === 'c') {
+    event.preventDefault()
+    handleCopy()
+  } else if (modifier && key === 'v') {
+    event.preventDefault()
+    handlePaste()
+  } else if (modifier && key === 'd') {
+    event.preventDefault()
+    handleDuplicate()
+  } else if (key === 'delete' || key === 'backspace') {
+    event.preventDefault()
+    handleDelete()
+  }
+}
+
+function handleZoomIn() {
+  zoomIn()
+  emitLayout()
+}
+
+function handleZoomOut() {
+  zoomOut()
+  emitLayout()
+}
+
+function handleFitView() {
+  fitView()
+  emitLayout()
+}
+
+function handleAutoLayout() {
+  autoLayout()
+  recordHistory()
+  emitLayout()
+}
+
+function restoreGraphSnapshot(snapshot) {
+  graph.value?.clear()
+  graph.value?.data(snapshot)
+  graph.value?.render()
+  selectedItem.value = null
+  drawerVisible.value = false
+  emitSteps()
+  emitLayout()
+}
+
+function emitLayout() {
+  if (graph.value) emit('update:layout', captureLayout())
+}
+
+function createCopiedNodeId(node) {
+  nodeCopyCounter += 1
+  return `${node.provider || 'node'}-${Date.now()}-${nodeCopyCounter}`
+}
+
+function selectGraphItem(item) {
+  graph.value.getNodes().forEach(node => graph.value.setItemState(node, 'selected', false))
+  graph.value.setItemState(item, 'selected', true)
+  selectedItem.value = item
+  container.value?.focus()
+}
+
+function stepsSignature(steps) {
+  return JSON.stringify(Array.isArray(steps) ? steps : [])
+}
+
+function hasStoredLayout(layout) {
+  return Boolean(Object.keys(layout?.nodes || {}).length || layout?.viewport)
 }
 
 function hasValue(value) {
   return value !== null && value !== undefined && String(value).trim() !== ''
+}
+
+function resolveCanvasColors() {
+  const style = getComputedStyle(document.documentElement)
+  const color = name => style.getPropertyValue(name).trim()
+  return {
+    node: color('--addp-module-orchestrator'),
+    primary: color('--el-color-primary'),
+    danger: color('--el-color-danger'),
+    onPrimary: color('--el-color-white'),
+    background: color('--addp-bg-primary')
+  }
+}
+
+function selectedNodeStateStyles(fill) {
+  return {
+    selected: {
+      fill,
+      stroke: canvasColors.danger,
+      lineWidth: 3,
+      shadowColor: canvasColors.danger,
+      shadowBlur: 6,
+      'text-shape': {
+        fill: canvasColors.onPrimary,
+        fontWeight: 600
+      }
+    }
+  }
 }
 
 function parseCapabilities(capabilities) {
@@ -641,10 +909,12 @@ function openCurrentOwnerTask() {
 }
 
 defineExpose({
+  addTask,
   getSteps: () => {
     const data = graph.value.save()
     return convertToSteps(data)
   },
+  getLayout: captureLayout,
   loadSteps
 })
 </script>
@@ -674,11 +944,6 @@ defineExpose({
   align-items: center;
 }
 
-.toolbar-tips {
-  flex: 1;
-  max-width: 600px;
-}
-
 .parameter-description {
   width: 100%;
   margin-top: 4px;
@@ -691,16 +956,12 @@ defineExpose({
   padding: 16px 0;
 }
 
-.tips-text {
-  font-size: 12px;
-  color: var(--addp-text-secondary);
-}
-
 #dag-container {
   flex: 1;
   background: var(--addp-bg-secondary) !important;
   position: relative;
   overflow: hidden;
+  outline: none;
 }
 
 :deep(.el-alert--info) {
@@ -711,3 +972,4 @@ defineExpose({
   font-size: 12px;
 }
 </style>
+    recordHistory()

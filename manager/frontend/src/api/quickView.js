@@ -335,5 +335,14 @@ export const quickViewAPI = {
 
   getExecutionStatus(executionID) {
     return request.get(`/manager/executions/${executionID}`)
-  }
+	},
+
+	listVectorTileSetTasks(params = {}) { return request.get('/manager/vector_tile_set_tasks', { params }) },
+	getVectorTileSetTask(id) { return request.get(`/manager/vector_tile_set_tasks/${id}`) },
+	createVectorTileSetTask(payload) { return request.post('/manager/vector_tile_set_tasks', payload) },
+	updateVectorTileSetTask(id, payload) { return request.put(`/manager/vector_tile_set_tasks/${id}`, payload) },
+	deleteVectorTileSetTask(id) { return request.delete(`/manager/vector_tile_set_tasks/${id}`) },
+	executeVectorTileSetTask(id) {
+		return request.post(`/manager/tasks/vector_tile_set_generation/${id}/execute`, { trigger_type: 'manual', source: 'manager' })
+	}
 }

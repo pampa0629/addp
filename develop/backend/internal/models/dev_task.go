@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	commonModels "github.com/addp/common/models"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
@@ -22,7 +23,8 @@ type DevTask struct {
 	Content DevTaskContent `gorm:"type:jsonb;not null" json:"content"`
 
 	// 执行配置（JSONB 字段，统一的执行配置）
-	ExecutionConfig DevTaskContent `gorm:"type:jsonb;column:execution_config" json:"execution_config,omitempty"`
+	ExecutionConfig DevTaskContent       `gorm:"type:jsonb;column:execution_config" json:"execution_config,omitempty"`
+	EditorLayout    commonModels.JSONMap `gorm:"type:jsonb;not null;default:'{}'" json:"editor_layout"`
 
 	Timeout int `gorm:"default:300" json:"timeout"` // 超时时间（秒）
 
@@ -47,25 +49,26 @@ type DevTask struct {
 // ProviderDevTask 是 Develop 通过 TaskProvider API 暴露的标准任务定义。
 // DevTask 内部使用 dev_type，TaskProvider 契约对外必须使用 task_type。
 type ProviderDevTask struct {
-	ID                  uint           `json:"id"`
-	TenantID            uint           `json:"tenant_id"`
-	Name                string         `json:"name"`
-	DisplayName         string         `json:"display_name,omitempty"`
-	TaskType            string         `json:"task_type"`
-	Content             DevTaskContent `json:"content,omitempty"`
-	ExecutionConfig     DevTaskContent `json:"execution_config,omitempty"`
-	Parameters          DevTaskContent `json:"parameters,omitempty"`
-	Timeout             int            `json:"timeout"`
-	Description         string         `json:"description,omitempty"`
-	Tags                pq.StringArray `json:"tags,omitempty"`
-	CreatedBy           *uint          `json:"created_by,omitempty"`
-	UpdatedBy           *uint          `json:"updated_by,omitempty"`
-	CreatedAt           time.Time      `json:"created_at"`
-	UpdatedAt           time.Time      `json:"updated_at"`
-	Status              string         `json:"status"`
-	LastExecutionID     *string        `json:"last_execution_id,omitempty"`
-	LastExecutionStatus string         `json:"last_execution_status,omitempty"`
-	LastRunAt           *time.Time     `json:"last_run_at,omitempty"`
+	ID                  uint                 `json:"id"`
+	TenantID            uint                 `json:"tenant_id"`
+	Name                string               `json:"name"`
+	DisplayName         string               `json:"display_name,omitempty"`
+	TaskType            string               `json:"task_type"`
+	Content             DevTaskContent       `json:"content,omitempty"`
+	ExecutionConfig     DevTaskContent       `json:"execution_config,omitempty"`
+	EditorLayout        commonModels.JSONMap `json:"editor_layout"`
+	Parameters          DevTaskContent       `json:"parameters,omitempty"`
+	Timeout             int                  `json:"timeout"`
+	Description         string               `json:"description,omitempty"`
+	Tags                pq.StringArray       `json:"tags,omitempty"`
+	CreatedBy           *uint                `json:"created_by,omitempty"`
+	UpdatedBy           *uint                `json:"updated_by,omitempty"`
+	CreatedAt           time.Time            `json:"created_at"`
+	UpdatedAt           time.Time            `json:"updated_at"`
+	Status              string               `json:"status"`
+	LastExecutionID     *string              `json:"last_execution_id,omitempty"`
+	LastExecutionStatus string               `json:"last_execution_status,omitempty"`
+	LastRunAt           *time.Time           `json:"last_run_at,omitempty"`
 }
 
 // ListProviderDevTasksResponse 是 TaskProvider 标准任务列表响应。
@@ -85,6 +88,7 @@ func NewProviderDevTask(item DevTask) ProviderDevTask {
 		TaskType:            item.DevType,
 		Content:             item.Content,
 		ExecutionConfig:     item.ExecutionConfig,
+		EditorLayout:        item.EditorLayout,
 		Parameters:          providerTaskParameters(item),
 		Timeout:             item.Timeout,
 		Description:         item.Description,
@@ -208,6 +212,7 @@ type CreateDevTaskRequest struct {
 	DevType         string                 `json:"dev_type" binding:"required,oneof=query workflow script"` // Develop 内部类型；TaskProvider 对外映射为 task_type
 	Content         map[string]interface{} `json:"content" binding:"required"`
 	ExecutionConfig map[string]interface{} `json:"execution_config"`
+	EditorLayout    commonModels.JSONMap   `json:"editor_layout"`
 	Timeout         int                    `json:"timeout"`
 	Description     string                 `json:"description"`
 	Tags            []string               `json:"tags"`
@@ -219,6 +224,7 @@ type UpdateDevTaskRequest struct {
 	DisplayName     string                 `json:"display_name"`
 	Content         map[string]interface{} `json:"content"`
 	ExecutionConfig map[string]interface{} `json:"execution_config"`
+	EditorLayout    commonModels.JSONMap   `json:"editor_layout"`
 	Timeout         int                    `json:"timeout"`
 	Description     string                 `json:"description"`
 	Tags            []string               `json:"tags"`

@@ -1836,6 +1836,9 @@ const docTemplate = `{
                     "type": "string",
                     "example": "城市缓冲区工作流"
                 },
+                "editor_layout": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger"
+                },
                 "execution_config": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger"
                 },
@@ -1892,6 +1895,50 @@ const docTemplate = `{
                         "scheduled"
                     ],
                     "example": "manual"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger": {
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DAGEditorNodePositionSwagger"
+                    }
+                },
+                "viewport": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DAGEditorViewportSwagger"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.DAGEditorNodePositionSwagger": {
+            "type": "object",
+            "properties": {
+                "x": {
+                    "type": "number",
+                    "example": 120
+                },
+                "y": {
+                    "type": "number",
+                    "example": 240
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.DAGEditorViewportSwagger": {
+            "type": "object",
+            "properties": {
+                "translate_x": {
+                    "type": "number",
+                    "example": 0
+                },
+                "translate_y": {
+                    "type": "number",
+                    "example": 0
+                },
+                "zoom": {
+                    "type": "number",
+                    "example": 1
                 }
             }
         },
@@ -1983,6 +2030,9 @@ const docTemplate = `{
                 "display_name": {
                     "type": "string",
                     "example": "城市缓冲区工作流"
+                },
+                "editor_layout": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger"
                 },
                 "execution_config": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger"
@@ -2311,6 +2361,9 @@ const docTemplate = `{
                     "type": "string",
                     "example": "城市缓冲区工作流"
                 },
+                "editor_layout": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger"
+                },
                 "execution_config": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger"
                 },
@@ -2461,6 +2514,9 @@ const docTemplate = `{
                 "display_name": {
                     "type": "string",
                     "example": "城市缓冲区工作流"
+                },
+                "editor_layout": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger"
                 },
                 "execution_config": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger"

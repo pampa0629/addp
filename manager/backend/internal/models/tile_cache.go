@@ -56,12 +56,14 @@ type TileCache struct {
 	TaskID          *uint   `gorm:"index:idx_vector_tile_cache_task" json:"task_id,omitempty"`
 	LastExecutionID *string `gorm:"size:36;index:idx_vector_tile_cache_execution" json:"last_execution_id,omitempty"`
 
-	TileFormat string         `gorm:"size:32;not null" json:"tile_format"`
-	StorageRef string         `gorm:"type:text" json:"storage_ref,omitempty"`
-	Extent     datatypes.JSON `gorm:"type:jsonb" json:"extent,omitempty"`
-	ExtentSRID *int           `gorm:"column:extent_srid" json:"extent_srid,omitempty"`
-	MinZoom    *int           `json:"min_zoom,omitempty"`
-	MaxZoom    *int           `json:"max_zoom,omitempty"`
+	TileFormat    string         `gorm:"size:32;not null" json:"tile_format"`
+	StorageRef    string         `gorm:"type:text" json:"storage_ref,omitempty"`
+	SourceVersion string         `gorm:"size:64;not null" json:"source_version"`
+	ProfileHash   string         `gorm:"size:64;not null" json:"profile_hash"`
+	Extent        datatypes.JSON `gorm:"type:jsonb" json:"extent,omitempty"`
+	ExtentSRID    *int           `gorm:"column:extent_srid" json:"extent_srid,omitempty"`
+	MinZoom       *int           `json:"min_zoom,omitempty"`
+	MaxZoom       *int           `json:"max_zoom,omitempty"`
 
 	Status       string `gorm:"size:32;not null;index:idx_vector_tile_cache_status" json:"status"`
 	ErrorMessage string `gorm:"type:text" json:"error_message,omitempty"`

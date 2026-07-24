@@ -43,6 +43,8 @@ Graph 模块是 ADDP 平台的**知识图谱领域模块**，覆盖知识图谱�
 
 ```
 graph/
+├── authorization/
+│   └── permissions.yaml          # Graph owner Permission Manifest
 ├── backend/
 │   ├── cmd/server/main.go          # 入口
 │   ├── go.mod
@@ -122,6 +124,7 @@ DELETE /api/v1/graph/graphs/:id                          删除知识图谱
 
 GET    /api/v1/graph/graphs/:id/analysis/capabilities  算法能力探测（GDS/Cypher）
 POST   /api/v1/graph/graphs/:id/analysis/run           执行图算法（度中心性/K跳/最短路径/PageRank/Louvain/WCC/介数中心性）
+POST   /api/v1/graph/graphs/:id/analysis/sync-spatial  同步空间图层
 
 GET    /api/v1/graph/graphs/:id/schema                   图谱 Schema（标签 + 关系类型）
 GET    /api/v1/graph/graphs/:id/stats                    图谱统计（节点数/关系数/按标签分组）
@@ -129,7 +132,51 @@ GET    /api/v1/graph/graphs/:id/overview                 概览子图（采样10
 POST   /api/v1/graph/graphs/:id/search                   全文搜索节点 (body: {query, limit})
 POST   /api/v1/graph/graphs/:id/expand                   展开节点邻居 (body: {node_id, limit})
 POST   /api/v1/graph/graphs/:id/path                     最短路径查询 (body: {source_id, target_id})
+
+GET/POST   /api/v1/graph/graphs/:id/build/tasks                         构建任务列表/创建
+GET/DELETE /api/v1/graph/graphs/:id/build/tasks/:tid                    构建任务详情/删除
+POST       /api/v1/graph/graphs/:id/build/tasks/:tid/run                执行构建
+POST       /api/v1/graph/graphs/:id/build/tasks/:tid/cancel             取消构建
+POST       /api/v1/graph/graphs/:id/build/tasks/:tid/rerun              重新执行
+GET/POST   /api/v1/graph/graphs/:id/build/tasks/:tid/materials          列出/上传构建材料
+DELETE     /api/v1/graph/graphs/:id/build/tasks/:tid/materials/:mid     删除构建材料
+
+GET  /api/v1/graph/graphs/:id/review                  审核项列表
+GET  /api/v1/graph/graphs/:id/review/pending-count    待审数量
+POST /api/v1/graph/graphs/:id/review/batch            批量通过/拒绝
+POST /api/v1/graph/graphs/:id/review/:iid/approve     通过审核项
+POST /api/v1/graph/graphs/:id/review/:iid/reject      拒绝审核项
+PUT  /api/v1/graph/graphs/:id/review/:iid             修改并通过审核项
+
+GET  /api/v1/graph/tasks                              TaskProvider 构建任务列表
+GET  /api/v1/graph/tasks/:task_type/:id               TaskProvider 构建任务详情
+POST /api/v1/graph/tasks/:task_type/:id/execute       TaskProvider 执行构建任务
+GET  /api/v1/graph/executions/:execution_id           Graph 构建 execution 详情
+
+GET/POST /api/v1/graph/kg/:graphId/*                  可选认证的 Knowledge Service 查询
 ```
+
+## IAM Permission 所有权
+
+Graph 是以下 Permission 的唯一 owner：
+
+- `graph.ontology.*`
+- `graph.graph.*`
+- `graph.build_task.*`
+- `graph.analysis.*`
+- `graph.review.*`
+
+机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Graph 服务启动时不向 System 动态注册 Permission。
+
+路由与 Permission 语义映射固定如下：
+
+- Ontology 的实体类、关系类、版本、Model 导入、Schema 推导和约束/空间映射都是 Ontology 聚合内部能力，按操作语义映射到 `graph.ontology.read/create/update/delete`。
+- 图谱实例 CRUD 映射到 `graph.graph.*`；Schema、统计、浏览、搜索、展开、路径和私有 Knowledge Service 查询使用 `graph.graph.read`。公开 Knowledge Service 由图谱的显式公开策略决定，不伪造 Principal Permission。
+- 构建任务和 Graph TaskProvider 的查询/执行分别使用 `graph.build_task.read/execute`；上传或删除材料使用 `graph.build_task.update`；重跑使用 `graph.build_task.execute`。
+- Analysis 能力探测使用 `graph.analysis.read`，算法执行和空间图层同步使用 `graph.analysis.execute`。
+- Review 列表/数量使用 `graph.review.read`，通过、拒绝和修改分别使用 `graph.review.approve/reject/update`；批量路由必须按请求 action 校验对应 Permission。
+
+`delegable` 当前统一保守为 `false`，待 Graph Knowledge Service、Agent Tool 和 OAuth Scope 映射阶段逐项评审，不在首批目录中默认开放委托。
 
 ### 图谱构建 execution 语义
 
@@ -159,10 +206,10 @@ bash scripts/dev/restart.sh -graph
 | 阶段 | 内容 | 状态 |
 |------|------|------|
 | 阶段一 | 基础架构 + 本体建模 | ✅ 已完成（基础 CRUD） |
-| 阶段二 | 图谱构建（LLM 驱动） | 待实施 |
+| 阶段二 | 图谱构建（LLM 驱动） | ✅ 已完成（构建任务、材料、审核和抽取链路） |
 | 阶段三 | 知识探索（图可视化，G6） | ✅ 已完成（图谱浏览器） |
 | 阶段四 | 图算法分析 | ✅ 已完成（度中心性/K跳/多路径/PageRank/Louvain/WCC/介数中心性） |
-| 阶段五 | 知识服务 API + Agent 集成 | 待实施 |
+| 阶段五 | 知识服务 API + Agent 集成 | 基础 Knowledge Service API 已完成，Agent 集成待实施 |
 
 ## 九、相关文档
 

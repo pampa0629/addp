@@ -67,28 +67,68 @@ func TestParseContinuousTaskSpecRejectsKeyMappingDrift(t *testing.T) {
 	}
 }
 
-func TestBuildPostgreSQLCDCContinuousPlanMapsFrozenSpatialFactsToTarget(t *testing.T) {
+func TestParseContinuousTaskSpecRequiresExplicitRecordFailureMode(t *testing.T) {
+	config := validContinuousConfig()
+	delete(config["runtime"].(map[string]interface{}), "record_failure")
+	if _, err := ParseContinuousTaskSpec(config); err == nil {
+		t.Fatal("missing runtime.record_failure was accepted")
+	}
+	config = validContinuousConfig()
+	config["runtime"].(map[string]interface{})["record_failure"] = map[string]interface{}{"mode": "ignore"}
+	if _, err := ParseContinuousTaskSpec(config); err == nil {
+		t.Fatal("unsupported runtime.record_failure.mode was accepted")
+	}
+}
+
+func TestBuildContinuousPlanRequiresSkipCapabilityForDeadLetterMode(t *testing.T) {
+	config := validContinuousConfig()
+	config["runtime"].(map[string]interface{})["record_failure"] = map[string]interface{}{"mode": "dead_letter"}
+	spec, err := ParseContinuousTaskSpec(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceCaps := (&kafka.KafkaPlugin{}).Capabilities()
+	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
+	for index := range targetCaps.Storage.Store.PartitionedTableChangeApply.Operations {
+		if targetCaps.Storage.Store.PartitionedTableChangeApply.Operations[index] == engineplugin.TableChangeOperationSkip {
+			targetCaps.Storage.Store.PartitionedTableChangeApply.Operations = append(
+				targetCaps.Storage.Store.PartitionedTableChangeApply.Operations[:index],
+				targetCaps.Storage.Store.PartitionedTableChangeApply.Operations[index+1:]...,
+			)
+			break
+		}
+	}
+	if _, err := BuildContinuousPlan(spec, StaticEngineResolver{
+		30: {Type: "kafka", Capabilities: &sourceCaps},
+		8:  {Type: "postgresql", Capabilities: &targetCaps},
+	}); err == nil {
+		t.Fatal("dead-letter plan accepted a target without skip capability")
+	}
+}
+
+func TestBuildDatabaseCDCContinuousPlanMapsFrozenPostgreSQLSpatialFactsToTarget(t *testing.T) {
 	config := validPostgreSQLCDCConfig()
 	fields := config["transforms"].([]interface{})[0].(map[string]interface{})["fields"].([]interface{})
 	config["transforms"].([]interface{})[0].(map[string]interface{})["fields"] = append(fields, map[string]interface{}{
 		"source": "shape", "target": "geometry", "target_type": "geometry", "nullable": true,
 	})
-	spec, err := ParsePostgreSQLCDCTaskSpec(config)
+	spec, err := ParseDatabaseCDCTaskSpec(config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
-	plan, err := BuildPostgreSQLCDCContinuousPlan(spec, StaticEngineResolver{
+	plan, err := BuildDatabaseCDCContinuousPlan(spec, StaticEngineResolver{
 		12: {Type: "postgresql", ConnInfo: engineplugin.ConnectionInfo{"database": "business"}},
 		20: {Type: "postgresql", Capabilities: &targetCaps},
-	}, PostgreSQLCDCStreamBinding{
+	}, DatabaseCDCStreamBinding{
+		Provider:      "postgresql",
 		ConnInfo:      engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
 		ConsumerGroup: "group", SourceIdentity: "addp://engine/12/path/public/orders?type=table",
 		Database: "business", Schema: "public", Table: "orders",
 		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("shape", "MultiPolygon", 4549, 2),
 	}, 100)
 	if err != nil {
-		t.Fatalf("BuildPostgreSQLCDCContinuousPlan() error = %v", err)
+		t.Fatalf("BuildDatabaseCDCContinuousPlan() error = %v", err)
 	}
 	if plan.CDC.SpatialInfo.PrimaryGeometryName() != "shape" || plan.Target.SpatialInfo.PrimaryGeometryName() != "geometry" ||
 		plan.Target.SpatialInfo.PrimaryGeometryType() != "MultiPolygon" || plan.Target.SpatialInfo.PrimarySRIDValue() != 4549 {
@@ -96,9 +136,32 @@ func TestBuildPostgreSQLCDCContinuousPlanMapsFrozenSpatialFactsToTarget(t *testi
 	}
 }
 
+func TestBuildDatabaseCDCContinuousPlanRoutesMySQLEnvelope(t *testing.T) {
+	config := validPostgreSQLCDCConfig()
+	config["source"].(map[string]interface{})["locator"] = "addp://engine/12/path/business/orders?type=table"
+	spec, err := ParseDatabaseCDCTaskSpec(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
+	plan, err := BuildDatabaseCDCContinuousPlan(spec, StaticEngineResolver{
+		12: {Type: "mysql"}, 20: {Type: "postgresql", Capabilities: &targetCaps},
+	}, DatabaseCDCStreamBinding{
+		Provider: "mysql", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
+		ConsumerGroup: "group", SourceIdentity: "addp://engine/12/path/business/orders?type=table",
+		Database: "business", Table: "orders",
+	}, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Envelope != ContinuousEnvelopeMySQLDebezium || plan.CDC.Provider != "mysql" || plan.CDC.Schema != "" {
+		t.Fatalf("MySQL CDC plan = %#v", plan)
+	}
+}
+
 func validContinuousConfig() map[string]interface{} {
 	return map[string]interface{}{
-		"runtime": map[string]interface{}{"boundary": "continuous"},
+		"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}},
 		"load":    map[string]interface{}{"mode": "incremental", "change_detection": map[string]interface{}{"type": "kafka"}},
 		"source": map[string]interface{}{
 			"locator": "addp://engine/30/path/orders.events?type=topic", "representation": "native",

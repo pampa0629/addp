@@ -236,8 +236,11 @@
         <TilePreview
           :tile-url="previewTileUrl"
           base-map="osm"
-          :center="[116.4, 39.9]"
-          :zoom="10"
+          :center="previewMapConfig.center"
+          :extent="previewMapConfig.extent"
+          :zoom="previewMapConfig.zoom"
+          :min-zoom="previewMapConfig.minZoom"
+          :max-zoom="previewMapConfig.maxZoom"
           @tileLoadStart="handleTileLoadStart"
           @tileLoadEnd="handleTileLoadEnd"
           @tileLoadError="handleTileLoadError"
@@ -336,10 +339,10 @@
           <el-form-item :label="t('service.tile.tileDatasetLabel')">
             <ResourceTreePicker
               :api-base-url="metaApiBaseUrl"
-              :engine-types="TILE_PYRAMID_ENGINE_TYPES"
+              :engine-types="PMTILES_ENGINE_TYPES"
               mode="item"
-              :node-filter="isTilePyramidVisibleNode"
-              :selectable-filter="isTilePyramidNode"
+              :node-filter="isPMTilesVisibleNode"
+              :selectable-filter="isPMTilesNode"
               :show-selection-summary="true"
               :engine-multiple="true"
               :select-all-engines-by-default="true"
@@ -350,14 +353,14 @@
             />
           </el-form-item>
           <el-descriptions v-if="layerFormTileMetadata" :column="3" border size="small">
-            <el-descriptions-item :label="t('service.tile.tileFormatLabel')">
-              {{ layerFormTileMetadata.tileFormat.toUpperCase() }}
+            <el-descriptions-item :label="t('service.tile.archiveFormatLabel')">
+              {{ layerFormTileMetadata.archiveFormat.toUpperCase() }}
             </el-descriptions-item>
             <el-descriptions-item :label="t('service.tile.zoomRangeLabel')">
               {{ layerFormTileMetadata.minZoom }} - {{ layerFormTileMetadata.maxZoom }}
             </el-descriptions-item>
-            <el-descriptions-item :label="t('service.tile.tileMatrixSetLabel')">
-              {{ layerFormTileMetadata.tileMatrixSet }}
+            <el-descriptions-item :label="t('service.tile.tileEncodingLabel')">
+              {{ layerFormTileMetadata.tileFormat.toUpperCase() }} / {{ layerFormTileMetadata.tileCompression.toUpperCase() }}
             </el-descriptions-item>
           </el-descriptions>
         </template>
@@ -384,15 +387,16 @@ import { Link } from '@element-plus/icons-vue'
 import tileServiceAPI from '@/api/tileService'
 import { TilePreview } from '@common-ui-map'
 import { copyToClipboard } from '../utils/serviceHelper'
+import { tilePreviewConfig, tilePreviewCoordinate } from '../utils/tileServicePreview'
 import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
 import {
   NATIVE_TABLE_ENGINE_TYPES,
-  TILE_PYRAMID_ENGINE_TYPES,
+  PMTILES_ENGINE_TYPES,
   defaultTileLayerName,
   isNativeTableNode,
   isNativeTableVisibleNode,
-  isTilePyramidNode,
-  isTilePyramidVisibleNode
+  isPMTilesNode,
+  isPMTilesVisibleNode
 } from '@/utils/resourceSelection'
 
 const router = useRouter()
@@ -466,10 +470,17 @@ const previewTileUrl = computed(() => {
   return `${baseURL.value}/tiles/${service.value.service_name}/${selectedLayerForPreview.value}/{z}/{x}/{y}.mvt`
 })
 
+const selectedPreviewLayer = computed(() => {
+  return service.value?.layers?.find(layer => layer.layer_name === selectedLayerForPreview.value) || null
+})
+
+const previewMapConfig = computed(() => tilePreviewConfig(selectedPreviewLayer.value))
+
 const xyzTilesExample = computed(() => {
   if (!service.value || !service.value.layers || service.value.layers.length === 0) return ''
   const firstLayer = service.value.layers[0]
-  return `${baseURL.value}/tiles/${service.value.service_name}/${firstLayer.layer_name}/12/3421/1532.mvt`
+  const { z, x, y } = tilePreviewCoordinate(firstLayer)
+  return `${baseURL.value}/tiles/${service.value.service_name}/${firstLayer.layer_name}/${z}/${x}/${y}.mvt`
 })
 
 const wmtsEndpoint = computed(() => {
@@ -491,6 +502,7 @@ const ogcTileMatrixSets = computed(() => {
 const openLayersExample = computed(() => {
   if (!service.value || !service.value.layers || service.value.layers.length === 0) return ''
   const firstLayer = service.value.layers[0]
+  const preview = tilePreviewConfig(firstLayer)
   return `import VectorTileLayer from 'ol/layer/VectorTile'
 import VectorTileSource from 'ol/source/VectorTile'
 import MVT from 'ol/format/MVT'
@@ -508,8 +520,8 @@ const map = new Map({
   target: 'map',
   layers: [layer],
   view: new View({
-    center: fromLonLat([116.4, 39.9]),
-    zoom: 10
+    center: fromLonLat([${preview.center[0]}, ${preview.center[1]}]),
+    zoom: ${preview.zoom}
   })
 })`
 })
@@ -517,11 +529,12 @@ const map = new Map({
 const leafletExample = computed(() => {
   if (!service.value || !service.value.layers || service.value.layers.length === 0) return ''
   const firstLayer = service.value.layers[0]
+  const preview = tilePreviewConfig(firstLayer)
   return `// 使用 Leaflet.VectorGrid 插件
 import L from 'leaflet'
 import 'leaflet.vectorgrid'
 
-const map = L.map('map').setView([39.9, 116.4], 10)
+const map = L.map('map').setView([${preview.center[1]}, ${preview.center[0]}], ${preview.zoom})
 
 const vectorTileOptions = {
   rendererFactory: L.canvas.tile,
@@ -539,20 +552,21 @@ const layer = L.vectorGrid.protobuf(
 const mapboxExample = computed(() => {
   if (!service.value || !service.value.layers || service.value.layers.length === 0) return ''
   const firstLayer = service.value.layers[0]
+  const preview = tilePreviewConfig(firstLayer)
   return `import mapboxgl from 'mapbox-gl'
 
 const map = new mapboxgl.Map({
   container: 'map',
-  center: [116.4, 39.9],
-  zoom: 10
+  center: [${preview.center[0]}, ${preview.center[1]}],
+  zoom: ${preview.zoom}
 })
 
 map.on('load', () => {
   map.addSource('${firstLayer.layer_name}', {
     type: 'vector',
     tiles: ['${baseURL.value}/tiles/${service.value.service_name}/${firstLayer.layer_name}/{z}/{x}/{y}.mvt'],
-    minzoom: 0,
-    maxzoom: 22
+    minzoom: ${preview.minZoom},
+    maxzoom: ${preview.maxZoom}
   })
 
   map.addLayer({
@@ -699,10 +713,11 @@ const showEditLayerDialog = (layer) => {
   const snapshot = layer.layer_config?.source_snapshot
   layerFormTileMetadata.value = snapshot
     ? {
+        archiveFormat: String(snapshot.archive_format || ''),
         tileFormat: String(snapshot.tile_format || ''),
+        tileCompression: String(snapshot.tile_compression || ''),
         minZoom: Number(snapshot.min_zoom),
-        maxZoom: Number(snapshot.max_zoom),
-        tileMatrixSet: String(snapshot.tile_matrix_set || '')
+        maxZoom: Number(snapshot.max_zoom)
       }
     : null
   layerDialogVisible.value = true
@@ -796,14 +811,15 @@ const handleLayerTileSelection = async (selection) => {
   if (!itemId || !locator) return
   try {
     const item = await tileServiceAPI.getMetaItem(itemId)
-    const info = item?.attributes?.format_info?.tile_pyramid
+    const info = item?.attributes?.format_info?.pmtiles
     if (!info) throw new Error(t('service.tile.invalidTileDataset'))
     layerForm.value.layer_config = { source: { locator } }
     layerFormTileMetadata.value = {
-      tileFormat: String(info.tile_format || ''),
+      archiveFormat: 'pmtiles',
+      tileFormat: String(info.tile_type || ''),
+      tileCompression: String(info.tile_compression || ''),
       minZoom: Number(info.min_zoom),
-      maxZoom: Number(info.max_zoom),
-      tileMatrixSet: String(info.tile_matrix_set || '')
+      maxZoom: Number(info.max_zoom)
     }
     const label = selection.display?.label || item.name || ''
     if (!layerForm.value.layer_name) layerForm.value.layer_name = defaultTileLayerName(label, itemId)

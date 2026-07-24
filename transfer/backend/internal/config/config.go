@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -54,16 +55,28 @@ type Config struct {
 	CaptureTopicRetention              time.Duration
 	CaptureTopicRetentionBytes         int64
 	CaptureTopicReplicationFactor      int
+	DeadLetterTopicRetention           time.Duration
+	DeadLetterTopicRetentionBytes      int64
+	DeadLetterTopicReplicationFactor   int
+	DeadLetterReconcileInterval        time.Duration
+	DeadLetterReconcileBatchSize       int
+	DeadLetterReconcileTimeout         time.Duration
+	DeadLetterReconcileFetchMaxBytes   int
 	KafkaConnectURL                    string
 	KafkaConnectUsername               string
 	KafkaConnectPassword               string
 	KafkaConnectTimeout                time.Duration
 	KafkaConnectLoopbackHost           string
+	KafkaConnectBootstrapServers       string
+	KafkaConnectKafkaUsername          string
+	KafkaConnectKafkaPassword          string
+	KafkaConnectKafkaSecurityProtocol  string
+	KafkaConnectKafkaTLSCACertFile     string
 	CaptureProvisioningTimeout         time.Duration
 	CaptureStatusPollInterval          time.Duration
 	CaptureMonitorInterval             time.Duration
-	CaptureRuntimeStopTimeout          time.Duration
-	CaptureRuntimeStopPollInterval     time.Duration
+	ContinuousRuntimeStopTimeout       time.Duration
+	ContinuousRuntimeStopPollInterval  time.Duration
 
 	BuiltinMinioEndpoint  string
 	BuiltinMinioAccessKey string
@@ -89,6 +102,15 @@ func (c Config) ValidateContinuousRuntime() error {
 	}
 	if c.ContinuousRecoveryMaxFailures <= 0 {
 		return fmt.Errorf("continuous recovery max failures must be greater than zero")
+	}
+	if c.DeadLetterReconcileInterval <= 0 || c.DeadLetterReconcileTimeout <= 0 ||
+		c.DeadLetterReconcileBatchSize <= 0 || c.DeadLetterReconcileBatchSize > 1000 ||
+		c.DeadLetterReconcileFetchMaxBytes <= 0 || int64(c.DeadLetterReconcileFetchMaxBytes) > math.MaxInt32 {
+		return fmt.Errorf("dead-letter reconcile interval, timeout, batch size, and fetch bytes must be valid")
+	}
+	if c.ContinuousRuntimeStopTimeout <= 0 || c.ContinuousRuntimeStopPollInterval <= 0 ||
+		c.ContinuousRuntimeStopPollInterval >= c.ContinuousRuntimeStopTimeout {
+		return fmt.Errorf("continuous runtime stop timeout and poll interval must be valid")
 	}
 	return nil
 }
@@ -136,16 +158,28 @@ func Load() *Config {
 		CaptureTopicRetention:              commonConfig.GetEnvDuration("INFRA_KAFKA_CDC_RETENTION", "168h"),
 		CaptureTopicRetentionBytes:         getEnvInt64("INFRA_KAFKA_CDC_RETENTION_BYTES", 0),
 		CaptureTopicReplicationFactor:      commonConfig.GetEnvInt("INFRA_KAFKA_CDC_REPLICATION_FACTOR", 1),
+		DeadLetterTopicRetention:           commonConfig.GetEnvDuration("INFRA_KAFKA_DLQ_RETENTION", "168h"),
+		DeadLetterTopicRetentionBytes:      getEnvInt64("INFRA_KAFKA_DLQ_RETENTION_BYTES", 0),
+		DeadLetterTopicReplicationFactor:   commonConfig.GetEnvInt("INFRA_KAFKA_DLQ_REPLICATION_FACTOR", 1),
+		DeadLetterReconcileInterval:        commonConfig.GetEnvDuration("TRANSFER_DLQ_RECONCILE_INTERVAL", "1m"),
+		DeadLetterReconcileBatchSize:       commonConfig.GetEnvInt("TRANSFER_DLQ_RECONCILE_BATCH_SIZE", 100),
+		DeadLetterReconcileTimeout:         commonConfig.GetEnvDuration("TRANSFER_DLQ_RECONCILE_TIMEOUT", "10s"),
+		DeadLetterReconcileFetchMaxBytes:   commonConfig.GetEnvInt("TRANSFER_DLQ_RECONCILE_FETCH_MAX_BYTES", 10485760),
 		KafkaConnectURL:                    commonConfig.GetEnv("KAFKA_CONNECT_URL", "http://localhost:18083"),
 		KafkaConnectUsername:               commonConfig.GetEnv("KAFKA_CONNECT_USERNAME", ""),
 		KafkaConnectPassword:               commonConfig.GetEnv("KAFKA_CONNECT_PASSWORD", ""),
 		KafkaConnectTimeout:                commonConfig.GetEnvDuration("KAFKA_CONNECT_TIMEOUT", "15s"),
 		KafkaConnectLoopbackHost:           commonConfig.GetEnv("KAFKA_CONNECT_LOOPBACK_HOST", "host.docker.internal"),
+		KafkaConnectBootstrapServers:       commonConfig.GetEnv("KAFKA_CONNECT_BOOTSTRAP_SERVERS", "kafka:29092"),
+		KafkaConnectKafkaUsername:          commonConfig.GetEnv("KAFKA_CONNECT_KAFKA_USERNAME", "connect"),
+		KafkaConnectKafkaPassword:          commonConfig.GetEnv("INFRA_KAFKA_CONNECT_PASSWORD", "addp_kafka_connect"),
+		KafkaConnectKafkaSecurityProtocol:  commonConfig.GetEnv("KAFKA_CONNECT_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext"),
+		KafkaConnectKafkaTLSCACertFile:     commonConfig.GetEnv("KAFKA_CONNECT_KAFKA_TLS_CA_CERT_FILE", commonConfig.GetEnv("INFRA_KAFKA_TLS_CA_CERT_FILE", "")),
 		CaptureProvisioningTimeout:         commonConfig.GetEnvDuration("TRANSFER_CAPTURE_PROVISIONING_TIMEOUT", "60s"),
 		CaptureStatusPollInterval:          commonConfig.GetEnvDuration("TRANSFER_CAPTURE_STATUS_POLL_INTERVAL", "1s"),
 		CaptureMonitorInterval:             commonConfig.GetEnvDuration("TRANSFER_CAPTURE_MONITOR_INTERVAL", "15s"),
-		CaptureRuntimeStopTimeout:          commonConfig.GetEnvDuration("TRANSFER_CAPTURE_RUNTIME_STOP_TIMEOUT", "45s"),
-		CaptureRuntimeStopPollInterval:     commonConfig.GetEnvDuration("TRANSFER_CAPTURE_RUNTIME_STOP_POLL_INTERVAL", "250ms"),
+		ContinuousRuntimeStopTimeout:       commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RUNTIME_STOP_TIMEOUT", "45s"),
+		ContinuousRuntimeStopPollInterval:  commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RUNTIME_STOP_POLL_INTERVAL", "250ms"),
 	}
 
 	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
@@ -182,6 +216,14 @@ func Load() *Config {
 }
 
 func (c Config) InfraKafkaTransferConnectionInfo() (engineplugin.ConnectionInfo, error) {
+	return c.infraKafkaConnectionInfo("transfer", c.InfraKafkaTransferPassword, "addp-transfer-continuous-worker")
+}
+
+func (c Config) InfraKafkaAdminConnectionInfo() (engineplugin.ConnectionInfo, error) {
+	return c.infraKafkaConnectionInfo(c.InfraKafkaAdminUsername, c.InfraKafkaAdminPassword, "addp-transfer-dlq-cleanup")
+}
+
+func (c Config) infraKafkaConnectionInfo(username, password, clientID string) (engineplugin.ConnectionInfo, error) {
 	if strings.TrimSpace(c.InfraKafkaBootstrapServers) == "" {
 		return nil, fmt.Errorf("Infra Kafka bootstrap servers are required")
 	}
@@ -195,14 +237,14 @@ func (c Config) InfraKafkaTransferConnectionInfo() (engineplugin.ConnectionInfo,
 	info := engineplugin.ConnectionInfo{
 		"bootstrap_servers": c.InfraKafkaBootstrapServers,
 		"security_protocol": protocol,
-		"client_id":         "addp-transfer-continuous-worker",
+		"client_id":         clientID,
 	}
 	if protocol == "sasl_plaintext" || protocol == "sasl_ssl" {
-		if strings.TrimSpace(c.InfraKafkaTransferPassword) == "" {
-			return nil, fmt.Errorf("Infra Kafka transfer principal password is required")
+		if strings.TrimSpace(username) == "" || password == "" {
+			return nil, fmt.Errorf("Infra Kafka SASL username and password are required")
 		}
-		info["username"] = "transfer"
-		info["password"] = c.InfraKafkaTransferPassword
+		info["username"] = strings.TrimSpace(username)
+		info["password"] = password
 		info["sasl_mechanism"] = "plain"
 	}
 	if protocol == "ssl" || protocol == "sasl_ssl" {

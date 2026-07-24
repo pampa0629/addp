@@ -19,6 +19,8 @@ import (
 	"github.com/addp/transfer/internal/api"
 	"github.com/addp/transfer/internal/capture"
 	"github.com/addp/transfer/internal/config"
+	"github.com/addp/transfer/internal/continuous"
+	"github.com/addp/transfer/internal/deadletter"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	transferRepo "github.com/addp/transfer/internal/repository"
@@ -116,14 +118,41 @@ func main() {
 		log.Printf("✅ SystemClient 已初始化: %s", cfg.SystemServiceURL)
 	}
 
-	// 初始化 Service 层（传入 taskQueue 和 redisClient）
-	taskService := service.NewTaskService(db, nil, cfg, taskQueue)         // engine 传 nil（暂不执行任务）
+	// 初始化 Service 层。HTTP 进程需要 execution engine 解析 replay plan 和采集请求时 retention 快照，
+	// 实际 bounded 数据处理仍只由 worker 执行。
 	executionService := service.NewExecutionService(db, taskExecutionRepo) // 使用统一执行表
 	executionService.SetTaskQueue(taskQueue)
+	executionEngineService := service.NewExecutionEngineService(
+		transferRepo.NewTaskRepository(db),
+		transferRepo.NewSyncStateRepository(db),
+		executionService,
+		systemClient,
+		nil,
+	)
+	executionEngineService.SetConfig(cfg)
+	executionEngineService.SetReplayRuntime(continuous.NewReplayRuntime(continuous.BoundedReplayRunner{
+		PollTimeout: cfg.ContinuousPollTimeout, MaxBytes: cfg.ContinuousFetchMaxBytes,
+		AssertTargetAbsent: continuous.NewReplayTargetAbsenceValidator(nil),
+	}))
+	taskService := service.NewTaskService(db, executionEngineService, cfg, taskQueue)
+	taskService.SetEngineResolver(planner.NewSystemEngineResolver(systemClient))
 	taskService.SetExecutionService(executionService) // 注入执行服务（避免循环依赖）
-	cleanupService := service.NewTransferCleanupService(db, redisClient, taskExecutionRepo)
+	cleanupService := service.NewTransferCleanupService(db, redisClient, taskExecutionRepo, service.TaskOwnedCleanupConfig{
+		RuntimeStopTimeout: cfg.ContinuousRuntimeStopTimeout, RuntimeStopPollInterval: cfg.ContinuousRuntimeStopPollInterval,
+	})
+	infraKafkaAdminConnection, err := cfg.InfraKafkaAdminConnectionInfo()
+	if err != nil {
+		log.Fatalf("初始化 Infra Kafka DLQ cleanup 配置失败: %v", err)
+	}
+	deadLetterTopicCleaner, err := deadletter.NewKafkaTopicCleaner(deadletter.KafkaTopicCleanerConfig{ConnectionInfo: infraKafkaAdminConnection})
+	if err != nil {
+		log.Fatalf("初始化 Infra Kafka DLQ topic cleaner 失败: %v", err)
+	}
+	defer deadLetterTopicCleaner.Close()
+	cleanupService.SetDeadLetterTopicCleaner(deadLetterTopicCleaner)
+	taskService.SetTaskOwnedResourceCleanup(cleanupService)
 
-	// PostgreSQL CDC capture control plane；数据面由独立 continuous worker 消费登记的 Infra Kafka generation。
+	// 数据库 CDC capture control plane；数据面由独立 continuous worker 消费登记的 Infra Kafka generation。
 	if systemClient != nil {
 		topicAdmin, err := capture.NewKafkaTopicAdmin(capture.KafkaAdminConfig{
 			BootstrapServers: cfg.InfraKafkaBootstrapServers,
@@ -141,12 +170,16 @@ func main() {
 		}
 		captureSupervisor, err := capture.NewSupervisor(
 			transferRepo.NewCaptureRepository(db),
-			capture.NewPostgreSQLPlanResolver(planner.NewSystemEngineResolver(systemClient)),
-			connectClient, topicAdmin, capture.PostgreSQLSourceResources{},
+			capture.NewDatabasePlanResolver(planner.NewSystemEngineResolver(systemClient)),
+			connectClient, topicAdmin, capture.DatabaseSourceResources{},
 			capture.SupervisorConfig{
 				TopicRetention: cfg.CaptureTopicRetention, TopicRetentionBytes: cfg.CaptureTopicRetentionBytes,
 				TopicReplication: int16(cfg.CaptureTopicReplicationFactor), ConnectLoopbackHost: cfg.KafkaConnectLoopbackHost,
-				ProvisioningTimeout: cfg.CaptureProvisioningTimeout, StatusPollInterval: cfg.CaptureStatusPollInterval,
+				ConnectBootstrapServers: cfg.KafkaConnectBootstrapServers,
+				ConnectKafkaUsername:    cfg.KafkaConnectKafkaUsername, ConnectKafkaPassword: cfg.KafkaConnectKafkaPassword,
+				ConnectKafkaSecurityProtocol: cfg.KafkaConnectKafkaSecurityProtocol,
+				ConnectKafkaTLSCACertFile:    cfg.KafkaConnectKafkaTLSCACertFile,
+				ProvisioningTimeout:          cfg.CaptureProvisioningTimeout, StatusPollInterval: cfg.CaptureStatusPollInterval,
 				MonitorInterval: cfg.CaptureMonitorInterval,
 			},
 			logger.With("component", "capture_supervisor"),
@@ -240,15 +273,24 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 		SSLMode:  "disable",
 	}
 
-	// Initialize database with auto-migration
-	db, err := commonRepo.InitDatabase(dbConfig,
+	// Connect first so the one-way capture schema split can run before AutoMigrate
+	// attempts to enforce the new non-null source_type column.
+	db, err := commonRepo.InitDatabase(dbConfig)
+	if err != nil {
+		return nil, err
+	}
+	if err := transferRepo.MigrateCaptureProviderResources(db); err != nil {
+		return nil, err
+	}
+	if err := db.AutoMigrate(
 		&models.TransferTask{},
 		&models.SyncState{},
 		&models.RuntimeLease{},
 		&models.CaptureResource{},
-	)
-	if err != nil {
-		return nil, err
+		&models.PostgreSQLCaptureResource{},
+		&models.MySQLCaptureResource{},
+	); err != nil {
+		return nil, fmt.Errorf("auto-migrate transfer models: %w", err)
 	}
 
 	return db, nil

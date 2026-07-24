@@ -1,6 +1,8 @@
 package service
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -10,12 +12,10 @@ import (
 	enginePlugin "github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/pmtiles"
 	"github.com/addp/common/resourcetree"
-	"github.com/addp/common/tilepyramid"
 	"github.com/addp/service/internal/models"
 )
-
-var ErrStaticTileOutOfRange = errors.New("static tile coordinates are outside the published range")
 
 type StaticTileEngineClient interface {
 	GetEngine(engineID uint) (*commonModels.Engine, error)
@@ -65,13 +65,8 @@ func (s *StaticTileService) GetStaticTile(
 	minZoom := int(commonJSON.InterfaceInt64(snapshot["min_zoom"]))
 	maxZoom := int(commonJSON.InterfaceInt64(snapshot["max_zoom"]))
 	if z < minZoom || z > maxZoom || x < 0 || y < 0 {
-		return nil, ErrStaticTileOutOfRange
+		return emptyStaticVectorTile(), nil
 	}
-	tilePath, err := tilepyramid.ResolveTilePath(commonJSON.InterfaceString(snapshot["tile_template"]), z, x, y)
-	if err != nil {
-		return nil, fmt.Errorf("resolve static tile path: %w", err)
-	}
-
 	engine, err := s.systemClient.GetEngine(loc.EngineID)
 	if err != nil {
 		return nil, fmt.Errorf("get static tile engine %d: %w", loc.EngineID, err)
@@ -87,36 +82,81 @@ func (s *StaticTileService) GetStaticTile(
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not expose a catalog model", engine.EngineType)
 	}
-	contentReader, ok := pl.(enginePlugin.ContentReadableProvider)
+	rangeReader, ok := pl.(enginePlugin.RangeReadableProvider)
 	if !ok {
-		return nil, fmt.Errorf("engine %s does not support content reads", engine.EngineType)
+		return nil, fmt.Errorf("engine %s does not support range reads", engine.EngineType)
 	}
-	tileLocator := &resourcetree.ResourceLocator{
-		EngineID: loc.EngineID,
-		Path:     append(append([]string(nil), loc.Path...), strings.Split(tilePath, "/")...),
-		Type:     loc.Type,
-	}
-	providerPath, err := resourcetree.ProviderCatalogPathFromLocator(modelProvider.CatalogModel(), tileLocator)
+	providerPath, err := resourcetree.ProviderCatalogPathFromLocator(modelProvider.CatalogModel(), loc)
 	if err != nil {
-		return nil, fmt.Errorf("build static tile provider path: %w", err)
+		return nil, fmt.Errorf("build static PMTiles provider path: %w", err)
 	}
-	reader, err := contentReader.OpenContent(ctx, enginePlugin.ConnectionInfo(engine.ConnectionInfo), providerPath, enginePlugin.ReadOptions{})
+	connInfo := enginePlugin.ConnectionInfo(engine.ConnectionInfo)
+	headerBytes, err := readStaticPMTilesRange(ctx, rangeReader, connInfo, providerPath, 0, pmtiles.HeaderSize)
 	if err != nil {
-		return nil, fmt.Errorf("open static tile content: %w", err)
+		return nil, fmt.Errorf("read static PMTiles header: %w", err)
 	}
-	defer reader.Close()
-	data, err := io.ReadAll(reader)
+	header, err := pmtiles.ParseHeaderBytes(headerBytes)
 	if err != nil {
-		return nil, fmt.Errorf("read static tile content: %w", err)
+		return nil, err
 	}
-	if len(data) == 0 {
-		return nil, errors.New("static tile content is empty")
+	headerHash, err := pmtiles.HeaderHash(headerBytes)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(headerHash, commonJSON.InterfaceString(snapshot["header_hash"])) {
+		return nil, errors.New("static PMTiles header no longer matches the published dependency snapshot")
+	}
+	archive, err := pmtiles.NewArchive(header, func(readCtx context.Context, offset, length int64) ([]byte, error) {
+		return readStaticPMTilesRange(readCtx, rangeReader, connInfo, providerPath, offset, length)
+	})
+	if err != nil {
+		return nil, err
+	}
+	data, err := archive.GetTile(ctx, uint8(z), uint32(x), uint32(y))
+	if errors.Is(err, pmtiles.ErrTileNotFound) {
+		return emptyStaticVectorTile(), nil
+	}
+	if err != nil {
+		return nil, err
 	}
 	return &StaticTile{
 		Data:            data,
-		ContentType:     tilepyramid.ContentType(tileFormat, commonJSON.InterfaceString(snapshot["content_type"])),
-		ContentEncoding: strings.ToLower(strings.TrimSpace(commonJSON.InterfaceString(snapshot["content_encoding"]))),
+		ContentType:     "application/vnd.mapbox-vector-tile",
+		ContentEncoding: "gzip",
 	}, nil
+}
+
+var emptyGzipMVT = func() []byte {
+	var buffer bytes.Buffer
+	writer := gzip.NewWriter(&buffer)
+	if err := writer.Close(); err != nil {
+		panic(fmt.Sprintf("build empty gzip MVT: %v", err))
+	}
+	return buffer.Bytes()
+}()
+
+func emptyStaticVectorTile() *StaticTile {
+	return &StaticTile{
+		Data:            emptyGzipMVT,
+		ContentType:     "application/vnd.mapbox-vector-tile",
+		ContentEncoding: "gzip",
+	}
+}
+
+func readStaticPMTilesRange(ctx context.Context, reader enginePlugin.RangeReadableProvider, connInfo enginePlugin.ConnectionInfo, path enginePlugin.CatalogPath, offset, length int64) ([]byte, error) {
+	rc, err := reader.OpenRange(ctx, connInfo, path, enginePlugin.ReadOptions{Offset: offset, Length: length})
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(io.LimitReader(rc, length+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) != length {
+		return nil, fmt.Errorf("range read returned %d bytes, want %d", len(data), length)
+	}
+	return data, nil
 }
 
 func normalizeTileFormat(value string) string {

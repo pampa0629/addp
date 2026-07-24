@@ -105,6 +105,7 @@ func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 		PartitionedTableChangeApplyOperations: []string{
 			plugin.TableChangeOperationUpsert,
 			plugin.TableChangeOperationDelete,
+			plugin.TableChangeOperationSkip,
 		},
 		Delete:          true,
 		SpatialFacts:    true,

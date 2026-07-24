@@ -48,6 +48,19 @@ func (s *TaskProviderRegistryService) Register() error {
 		"schema_version": "task.capabilities/v1",
 		"task_capabilities": []map[string]interface{}{
 			{
+				"type":                      "vector_tile_set_generation",
+				"display_name":              "矢量瓦片生成",
+				"description":               "将空间数据项生成为 Business 存储中的 PMTiles v3 数据项",
+				"definition_schema":         map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
+				"supports_schedule":         false,
+				"supports_cancel":           false,
+				"supports_inline_execution": false,
+				"create_url":                "/manager/spatial-tasks/vector-tiles?create=1",
+				"edit_url":                  "/manager/spatial-tasks/vector-tiles?task_id=:id",
+				"deprecated":                false,
+			},
+			{
 				"type":                      "vector_tile_cache_generation",
 				"display_name":              "瓦片缓存生成",
 				"description":               "为空间数据项生成可复用的瓦片缓存结果",

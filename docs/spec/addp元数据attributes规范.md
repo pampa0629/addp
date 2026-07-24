@@ -30,7 +30,7 @@
 
 Manager infra 中的 GLB、3D Tiles、S3M、COPC、KSplat、COG 等快显结果不是 data item，不写入源 item 或虚构目标 item 的 attributes。源 item、源指纹、目标格式、任务、execution 与快显结果的关系由 Manager 对应结果表显式保存；不得通过输出目录名推断。Develop 工作流写入业务存储并经 Meta 扫描形成的目标才是派生 data item，其 attributes 仍只描述该目标 item 自身的标准事实。
 
-Manager infra 中的 MVT 快显缓存同样不是 data item。只有把完整瓦片集合复制到业务存储、生成 `addp.tile_pyramid.v1` 的 `tiles.addp.json` 并经 Meta 扫描后，才形成 `data_type=media + format=tile_pyramid + layout=whole` 的业务 data item。
+Manager infra 中的 PMTiles 快显缓存同样不是 data item。只有通过 `vector_tile_set_generation` 原子写入 Business 存储、校验完成并经 Meta 扫描后，才形成 `data_type=media + format=pmtiles + layout=single` 的业务 data item。
 
 旧 attributes 字段、旧分区和平铺字段不保留兼容读取或兼容写入。旧数据应删除后重新 meta 扫描生成新结构；仍依赖旧结构的代码应尽早暴露并修正。
 
@@ -372,20 +372,20 @@ TIFF / GeoTIFF 的 CRS、extent、transform 等跨格式空间事实写入 `capa
 
 Raster mosaic 的 CRS、extent、分辨率范围等跨格式空间事实写入 `capabilities.spatial`。`format_info.raster_mosaic` 只保存 manifest、index、overview、leaf 组织和 COG 校验摘要等格式私有事实。
 
-### format_info.tile_pyramid
+### format_info.pmtiles
 
-`format_info.tile_pyramid` 表达二维瓦片金字塔的格式层事实，受控字段为：
+`format_info.pmtiles` 表达 PMTiles v3 单文件归档的格式层事实，受控字段为：
 
-- `manifest_ref`：固定入口 `tiles.addp.json`。
-- `tile_kind`：`vector` 或 `raster`。
-- `tile_format`：`mvt`、`png`、`jpeg` 或 `webp`。
-- `scheme`：第一版固定 `xyz`。
-- `tile_matrix_set`：第一版固定 `WebMercatorQuad`。
-- `tile_template`：whole scope 内部相对模板，必须包含 `{z}`、`{x}`、`{y}`。
-- `content_type`、`content_encoding`：HTTP 内容语义；MVT gzip 使用 `content_encoding=gzip`。
-- `min_zoom`、`max_zoom`、`tile_count`：manifest 声明并经校验的层级和数量摘要。
+- `spec_version`：固定为 `3`。
+- `tile_type`：当前固定为 `mvt`。
+- `tile_compression`：当前固定为 `gzip`。
+- `internal_compression`：PMTiles 目录和 metadata 的压缩方式。
+- `min_zoom` / `max_zoom`：header 声明的可用层级范围。
+- `addressed_tiles_count` / `tile_entries_count` / `tile_contents_count`：header 计数事实。
+- `clustered`：归档是否按 tile id 聚簇。
+- `center`：header 中的 `[longitude, latitude, zoom]`。
 
-extent、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `format_info.tile_pyramid`。不得把单个瓦片对象列表、存储凭据、Manager `storage_ref` 或 Service URL 写入 attributes。
+WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `format_info.pmtiles`。不得把 PMTiles 目录项、单瓦片字节、存储凭据、Manager `storage_ref` 或 Service URL 写入 attributes。
 
 ## capabilities 命名空间
 

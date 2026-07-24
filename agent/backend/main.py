@@ -61,7 +61,11 @@ app.include_router(
 )
 
 
-@app.get("/health", summary="健康检查 | Health Check")
+@app.get(
+    "/health",
+    summary="健康检查 | Health Check",
+    openapi_extra={"x-addp-auth-mode": "public"},
+)
 async def health():
     return {"status": "ok", "module": "agent"}
 

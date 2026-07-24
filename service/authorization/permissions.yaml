@@ -1,0 +1,92 @@
+schema_version: addp.permission_manifest/v1
+owner_module: service
+manifest_version: 1
+permissions:
+  - key: service.definition.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.service.definition.create.name
+    description_i18n_key: permissions.service.definition.create.description
+  - key: service.definition.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.service.definition.delete.name
+    description_i18n_key: permissions.service.definition.delete.description
+  - key: service.definition.offline
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.service.definition.offline.name
+    description_i18n_key: permissions.service.definition.offline.description
+  - key: service.definition.publish
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.service.definition.publish.name
+    description_i18n_key: permissions.service.definition.publish.description
+  - key: service.definition.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.service.definition.read.name
+    description_i18n_key: permissions.service.definition.read.description
+  - key: service.definition.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.service.definition.update.name
+    description_i18n_key: permissions.service.definition.update.description
+  - key: service.endpoint.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.service.endpoint.read.name
+    description_i18n_key: permissions.service.endpoint.read.description
+  - key: service.external_registration.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.service.external_registration.create.name
+    description_i18n_key: permissions.service.external_registration.create.description
+  - key: service.external_registration.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.service.external_registration.delete.name
+    description_i18n_key: permissions.service.external_registration.delete.description
+  - key: service.external_registration.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.service.external_registration.read.name
+    description_i18n_key: permissions.service.external_registration.read.description
+  - key: service.external_registration.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.service.external_registration.update.name
+    description_i18n_key: permissions.service.external_registration.update.description

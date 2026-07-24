@@ -142,9 +142,8 @@
           </div>
         </section>
 
-        <!-- 保存按钮 -->
+        <!-- 草稿操作 -->
         <el-form-item>
-          <el-button type="primary" @click="saveParams">{{ t('develop.operatorParams.saveParams') }}</el-button>
           <el-button @click="resetParams">{{ t('develop.operatorParams.reset') }}</el-button>
         </el-form-item>
       </el-form>
@@ -187,7 +186,7 @@
 </template>
 
 <script setup>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionFilled, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -201,7 +200,6 @@ import {
   isResourceDataTypeSupported,
   isResourceFormatSupported,
   isTargetResourceBinding,
-  missingResourceBindingParams,
   resourceBindingInitialLocator,
   resourceBindingGeometryColumnParam,
   resourceBindingNameParam,
@@ -230,13 +228,14 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['save'])
+const emit = defineEmits(['update'])
 
 const formData = ref({})
 const resourcePickerDialogVisible = ref(false)
 const resourcePickerDialogParam = ref(null)
 const resourcePickerDraftSelection = ref(null)
 const resourceGeometryColumnsByParam = ref({})
+let syncingFromProps = false
 
 // 使用工作流引擎返回的结构化参数定义。
 const effectiveParameters = computed(() => {
@@ -296,12 +295,29 @@ const dependencyMap = computed(() => {
 
 // 监听 initialParams 变化,初始化表单
 watch(() => props.initialParams, (newParams) => {
+  syncingFromProps = true
   formData.value = { ...newParams }
+  nextTick(() => {
+    syncingFromProps = false
+  })
 }, { immediate: true, deep: true })
 
 // 监听 operator 变化,重置表单
 watch(() => props.operator, () => {
+  syncingFromProps = true
   formData.value = { ...props.initialParams }
+  nextTick(() => {
+    syncingFromProps = false
+  })
+}, { deep: true })
+
+watch(formData, () => {
+  if (!syncingFromProps) {
+    emit('update', {
+      nodeId: props.nodeId,
+      params: buildDraftParams()
+    })
+  }
 }, { deep: true })
 
 // 根据参数元数据选择组件类型
@@ -474,39 +490,11 @@ const resourceLabelFromLocator = (locator) => {
   return parsed.path?.[parsed.path.length - 1] || locator || ''
 }
 
-// 保存参数
-const saveParams = () => {
-  // 验证必填参数
-  for (const param of effectiveParameters.value) {
-    if (param.required && !formData.value[param.name]) {
-      ElMessage.warning(t('develop.operatorParams.requiredParam', { name: param.name }))
-      return
-    }
-  }
-
-  const allParams = props.publicParameters && props.publicParameters.length > 0 ? props.publicParameters : []
+const buildDraftParams = () => {
   const visibleResourceParameters = effectiveParameters.value.filter(param => param.ui_type === 'resource_tree_picker')
-  const missingResourceParams = missingResourceBindingParams(visibleResourceParameters, formData.value)
-  if (missingResourceParams.length > 0) {
-    ElMessage.warning(t('develop.operatorParams.requiredParam', { name: missingResourceParams[0] }))
-    return
-  }
-  for (const parameter of visibleResourceParameters.filter(isTargetResourcePicker)) {
-    const extension = resourceBindingTargetExtension(parameter)
-    const name = String(formData.value[resourceBindingNameParam(parameter)] || '')
-    if (extension && !name.toLowerCase().endsWith(extension.toLowerCase())) {
-      ElMessage.warning(t('develop.operatorParams.targetExtensionRequired', { extension }))
-      return
-    }
-  }
-
-  // 过滤参数：只保存当前条件下应该显示的参数（已经过 show_when 过滤的）
   const cleanedParams = {}
 
-  // 使用 Public Operator Spec 过滤后的 effectiveParameters。
-  // effectiveParameters 已经根据 show_when 条件过滤了不应该显示的参数
   effectiveParameters.value.forEach(param => {
-    // 跳过 UI 类型参数（这些参数已经在 effectiveParameters 中被隐藏了，但以防万一）
     if (param.type === 'ui' || param.type === 'input' || param.param_type === 'input' || param.param_type === 'resource') {
       return
     }
@@ -523,13 +511,7 @@ const saveParams = () => {
   })
 
   Object.assign(cleanedParams, collectResourceBindingParams(visibleResourceParameters, formData.value))
-
-  emit('save', {
-    nodeId: props.nodeId,
-    params: cleanedParams
-  })
-
-  ElMessage.success(t('develop.operatorParams.saveSuccess'))
+  return cleanedParams
 }
 
 // 重置参数

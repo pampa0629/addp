@@ -388,7 +388,7 @@ func (s *RasterMosaicTaskService) submitRasterMosaicMetaScan(tenantID uint, cfg 
 	return s.metaScanSubmitter.CreateManualScanRun(commonClient.MetaScanOptions{
 		EngineID:     cfg.Target.TargetEngineID,
 		CatalogPaths: []string{catalogPath},
-		ScanDepth:    "deep",
+		ScanDepth:    commonClient.MetaScanDepthDeep,
 		Force:        true,
 		TriggerType:  commonExecution.TriggerTypeManual,
 		Source:       commonExecution.ModuleManager,

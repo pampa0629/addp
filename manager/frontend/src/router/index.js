@@ -42,6 +42,12 @@ const routes = [
         meta: { requiresAuth: true, title: '矢量快显 - 瓦片缓存-addp' }
       },
       {
+        path: 'spatial-tasks/vector-tiles',
+        name: 'VectorTileSet',
+        component: () => import('../views/VectorTileSet.vue'),
+        meta: { requiresAuth: true, title: '矢量瓦片任务-addp' }
+      },
+      {
         path: 'spatial-quick-view/vector-materialized-view',
         name: 'VectorMaterializedView',
         component: () => import('../views/VectorMaterializedView.vue'),

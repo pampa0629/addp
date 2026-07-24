@@ -11,6 +11,7 @@ import (
 	_ "github.com/addp/common/format/plugins/csv"
 	_ "github.com/addp/common/format/plugins/pdf"
 	"github.com/addp/transfer/internal/models"
+	"github.com/addp/transfer/internal/planner"
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -68,10 +69,122 @@ func TestValidateNewTaskConfigAcceptsPostgreSQLCDCAfterDataPlaneIsAvailable(t *t
 	}
 }
 
+func TestTaskServiceAcceptsMySQLCDCThroughDatabaseCDCParser(t *testing.T) {
+	db := newTransferTaskServiceTestDB(t)
+	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc.SetEngineResolver(planner.StaticEngineResolver{
+		12: {Type: "mysql", EngineID: 12},
+		20: {Type: "postgresql", EngineID: 20},
+	})
+	config := validPostgreSQLCDCTaskConfig()
+	config["source"].(map[string]interface{})["locator"] = "addp://engine/12/path/business/orders?type=table"
+	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
+		Name: "mysql-cdc", TaskType: commonExecution.TaskTypeSync, Config: config,
+	}, 7, 9)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if task.ID == 0 || task.DesiredState != models.TaskDesiredStateStopped {
+		t.Fatalf("created MySQL CDC task = %#v", task)
+	}
+}
+
+func TestValidateNewTaskConfigRequiresExplicitRecordFailurePolicy(t *testing.T) {
+	if err := validateNewTaskConfig(validContinuousTaskConfig(), 1000); err != nil {
+		t.Fatalf("explicit block policy rejected: %v", err)
+	}
+	missing := validContinuousTaskConfig()
+	delete(missing["runtime"].(map[string]interface{}), "record_failure")
+	if err := validateNewTaskConfig(missing, 1000); err == nil {
+		t.Fatal("missing record_failure policy was accepted")
+	}
+	deadLetter := validContinuousTaskConfig()
+	deadLetter["runtime"].(map[string]interface{})["record_failure"] = map[string]interface{}{"mode": "dead_letter"}
+	if err := validateNewTaskConfig(deadLetter, 1000); err != nil {
+		t.Fatalf("explicit dead_letter policy rejected: %v", err)
+	}
+}
+
+func TestReplayTaskCreatesIndependentExecutionWithoutChangingOwnerTask(t *testing.T) {
+	db := newTransferTaskServiceTestDB(t)
+	lastExecutionID := "owner-continuous-execution"
+	lastExecutionStatus := commonExecution.ExecutionStatusRunning
+	task := &models.TransferTask{
+		TenantID: 7, Name: "orders continuous", TaskType: commonExecution.TaskTypeSync,
+		Config: validContinuousTaskConfig(), BatchSize: 1000, Status: models.TaskStatusRunning,
+		DesiredState: models.TaskDesiredStateRunning, Progress: 42,
+		LastExecutionID: &lastExecutionID, LastExecutionStatus: &lastExecutionStatus,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	engine := &fakeReplayTaskExecutionEngine{}
+	queue := &fakeReplayTaskQueue{}
+	executionService := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+	taskService := NewTaskService(db, engine, nil, queue)
+	taskService.SetExecutionService(executionService)
+
+	execution, err := taskService.ReplayTask(context.Background(), task.ID, task.TenantID, 9, models.ReplayTaskRequest{
+		Ranges: []models.ReplayOffsetRangeRequest{{Partition: "0", StartOffset: 10, EndOffset: 20}},
+		Target: models.ReplayTargetRequest{ParentLocator: "addp://engine/8/path/replay?type=schema&node_id=12", Name: "orders_replay"},
+	})
+	if err != nil {
+		t.Fatalf("ReplayTask() error = %v", err)
+	}
+	if execution.Status != models.ExecutionStatusPending || queue.executionID != execution.ID || queue.taskID != task.ID {
+		t.Fatalf("execution=%#v queue=%#v", execution, queue)
+	}
+	if engine.applyIdentity == "" || engine.applyIdentity == task.ApplyIdentity {
+		t.Fatalf("replay apply identity = %q, owner = %q", engine.applyIdentity, task.ApplyIdentity)
+	}
+
+	var reloaded models.TransferTask
+	if err := db.First(&reloaded, task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Status != models.TaskStatusRunning || reloaded.DesiredState != models.TaskDesiredStateRunning ||
+		reloaded.Progress != 42 || reloaded.LastExecutionID == nil || *reloaded.LastExecutionID != lastExecutionID ||
+		reloaded.LastExecutionStatus == nil || *reloaded.LastExecutionStatus != lastExecutionStatus {
+		t.Fatalf("owner task was changed by replay: %#v", reloaded)
+	}
+}
+
+type fakeReplayTaskExecutionEngine struct {
+	applyIdentity string
+}
+
+func (e *fakeReplayTaskExecutionEngine) ExecuteTask(context.Context, uint, uint) error { return nil }
+
+func (e *fakeReplayTaskExecutionEngine) PrepareReplayExecution(_ context.Context, taskConfig map[string]interface{}, request ReplayExecutionRequest, executionApplyIdentity string) (*ReplayExecutionPreparation, error) {
+	e.applyIdentity = executionApplyIdentity
+	return &ReplayExecutionPreparation{
+		ExecutionConfig: models.JSONMap{
+			"task_config": taskConfig,
+			"replay": map[string]interface{}{
+				"version": ReplayExecutionVersion, "ranges": request.Ranges,
+				"target": request.Target, "apply_identity": executionApplyIdentity,
+			},
+		},
+		Metadata: models.JSONMap{"replay": map[string]interface{}{"status": "pending"}},
+	}, nil
+}
+
+type fakeReplayTaskQueue struct {
+	taskID      uint
+	executionID uint
+	tenantID    uint
+}
+
+func (q *fakeReplayTaskQueue) EnqueueExecuteTask(_ context.Context, taskID, executionID, tenantID uint) error {
+	q.taskID, q.executionID, q.tenantID = taskID, executionID, tenantID
+	return nil
+}
+
+func (*fakeReplayTaskQueue) Close() error { return nil }
+
 func TestCreateTaskPersistsNextRunAtWhenEnabled(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
 	taskSvc := NewTaskService(db, nil, nil, nil)
-
 	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
 		Name:     "scheduled",
 		TaskType: commonExecution.TaskTypeSync,
@@ -229,6 +342,10 @@ func TestPostgreSQLCDCTaskStartsCaptureBeforeRuntimeAndResumesGeneration(t *test
 	db := newTransferTaskServiceTestDB(t)
 	control := &fakeCaptureControl{}
 	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc.SetEngineResolver(planner.StaticEngineResolver{
+		12: {Type: "postgresql", EngineID: 12},
+		20: {Type: "postgresql", EngineID: 20},
+	})
 	taskSvc.SetCaptureControl(control)
 	taskSvc.SetExecutionService(NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db)))
 	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
@@ -462,7 +579,7 @@ func validTableTransferTaskConfig() map[string]interface{} {
 
 func validContinuousTaskConfig() map[string]interface{} {
 	return map[string]interface{}{
-		"runtime": map[string]interface{}{"boundary": "continuous"},
+		"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}},
 		"load":    map[string]interface{}{"mode": "incremental", "change_detection": map[string]interface{}{"type": "kafka"}},
 		"source": map[string]interface{}{
 			"locator": "addp://engine/30/path/orders.events?type=topic", "representation": "native",
@@ -486,7 +603,7 @@ func validContinuousTaskConfig() map[string]interface{} {
 
 func validPostgreSQLCDCTaskConfig() map[string]interface{} {
 	return map[string]interface{}{
-		"runtime": map[string]interface{}{"boundary": "continuous"},
+		"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}},
 		"load": map[string]interface{}{
 			"mode": "incremental", "change_detection": map[string]interface{}{"type": "cdc", "bootstrap": "initial_snapshot"},
 		},

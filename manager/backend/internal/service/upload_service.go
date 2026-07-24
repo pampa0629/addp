@@ -251,7 +251,7 @@ func (s *UploadService) submitUploadScan(tenantID uint, engineID uint, uploadedP
 	opts := commonClient.MetaScanOptions{
 		EngineID:    engineID,
 		RefGroups:   refGroups,
-		ScanDepth:   "deep",
+		ScanDepth:   commonClient.MetaScanDepthDeep,
 		Force:       true,
 		TriggerType: commonExecution.TriggerTypeManual,
 		Source:      commonExecution.ModuleManager,

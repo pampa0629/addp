@@ -11,6 +11,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.manager.dataExplorer',       module: 'manager', route: '/manager/data-explorer',       keywords: ['数据探查', '数据浏览', '数据目录', 'explorer', 'browse'] },
   { labelKey: 'console.menus.manager.dataRetrieval',      module: 'manager', route: '/manager/data-retrieval',      keywords: ['数据检索', '搜索', 'retrieval', 'search'] },
   { labelKey: 'console.menus.manager.vectorizationTasks', module: 'manager', route: '/manager/vectorization-tasks', keywords: ['向量化', '向量', 'vector', 'embedding'] },
+  { labelKey: 'console.menus.manager.vectorTiles',        module: 'manager', route: '/manager/spatial-tasks/vector-tiles', keywords: ['空间任务', '矢量瓦片', '业务瓦片', 'PMTiles', 'vector tiles', 'spatial tasks'] },
   { labelKey: 'console.menus.manager.tileCache',          module: 'manager', route: '/manager/spatial-quick-view/vector-tile-cache', keywords: ['矢量快显瓦片缓存', '瓦片缓存任务', '瓦片缓存', '瓦片生成', '矢量瓦片', 'tile cache tasks', 'tile cache', 'tile'] },
   { labelKey: 'console.menus.manager.vectorMaterializedView', module: 'manager', route: '/manager/spatial-quick-view/vector-materialized-view', keywords: ['矢量快显物化视图', '物化视图任务', '快显物化视图', '动态MVT', '3857', 'materialized view', 'quick view', 'mvt'] },
   { labelKey: 'console.menus.manager.cogArtifacts',       module: 'manager', route: '/manager/spatial-quick-view/raster-cog', keywords: ['栅格快显COG', 'COG', 'COG生成', 'TIFF', 'GeoTIFF', '栅格快显', 'cloud optimized geotiff'] },

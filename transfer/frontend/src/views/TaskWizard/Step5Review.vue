@@ -253,8 +253,8 @@ const warnings = computed(() => {
 const hasWarnings = computed(() => warnings.value.length > 0)
 
 const loadModeLabel = computed(() => {
-	if (props.wizardState.isPostgreSQLCDCTask.value) {
-		return t('transfer.taskWizard.postgresqlCDCLoad')
+	if (props.wizardState.isDatabaseCDCTask.value) {
+		return t('transfer.taskWizard.databaseCDCLoad')
 	}
   if (props.wizardState.isContinuousTask.value) {
     return t('transfer.taskWizard.continuousIncrementalLoad')
@@ -277,7 +277,7 @@ const continuousInitialPositionLabel = computed(() => {
 })
 
 const targetApplyModeLabel = computed(() => {
-	if (props.wizardState.isPostgreSQLCDCTask.value) {
+	if (props.wizardState.isDatabaseCDCTask.value) {
 		return t('transfer.taskWizard.applyModeUpsertDelete')
 	}
   if (props.wizardState.isContinuousTask.value || props.wizardState.isWatermarkIncremental.value) {

@@ -100,7 +100,7 @@
               <el-button size="small" type="warning" @click="handlePause(row)" :disabled="row.desired_state !== 'running' || isCDCSchemaBlocked(row)">
                 {{ t('transfer.taskList.pause') }}
               </el-button>
-              <el-button size="small" :type="isPostgreSQLCDCTask(row) ? 'danger' : undefined" @click="handleStop(row)" :disabled="row.desired_state === 'stopped' && row.capture?.status !== 'cleanup_failed'">
+              <el-button size="small" :type="isDatabaseCDCTask(row) ? 'danger' : undefined" @click="handleStop(row)" :disabled="row.desired_state === 'stopped' && row.capture?.status !== 'cleanup_failed'">
                 {{ row.capture?.status === 'cleanup_failed' ? t('transfer.taskList.retryCleanup') : t('transfer.taskList.stop') }}
               </el-button>
               <el-button size="small" type="danger" @click="handleDelete(row)" :disabled="row.desired_state !== 'stopped' || isRunning(row)">
@@ -158,7 +158,7 @@ import { Plus, Loading, SuccessFilled, CircleCloseFilled } from '@element-plus/i
 import { taskAPI } from '@/api/tasks'
 import { formatDate } from '@common-ui'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType } from '@/utils/formatters'
-import { buildCDCStopRequest, continuousStartDisabledReason, isCDCSchemaBlocked, isPostgreSQLCDCTask } from '@/utils/cdcTask.mjs'
+import { buildCDCStopRequest, continuousStartDisabledReason, isCDCSchemaBlocked, isDatabaseCDCTask } from '@/utils/cdcTask.mjs'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -292,7 +292,7 @@ const handleExecute = async (task) => {
 // 暂停定时任务
 const handlePause = async (task) => {
   try {
-    const message = isPostgreSQLCDCTask(task)
+    const message = isDatabaseCDCTask(task)
       ? t('transfer.taskList.cdcPauseConfirm')
       : t('transfer.taskList.pauseConfirm')
     await ElMessageBox.confirm(message, t('transfer.taskList.hint'), {
@@ -337,7 +337,7 @@ const handleStartContinuous = async (task) => {
 
 const handleStop = async (task) => {
   try {
-    if (isPostgreSQLCDCTask(task)) {
+    if (isDatabaseCDCTask(task)) {
       const { value } = await ElMessageBox.prompt(
         t('transfer.taskList.cdcStopConfirm', { name: task.name }),
         t('transfer.taskList.cdcStopTitle'),
@@ -405,7 +405,7 @@ const getTaskDisplayStatus = (task) => {
 	if (isCDCSchemaBlocked(task)) return t('transfer.taskList.schemaBlocked')
   if (task.desired_state === 'paused') return t('transfer.taskList.continuousPaused')
   if (task.desired_state === 'stopped') {
-		if (isPostgreSQLCDCTask(task) && !task.capture) return t('transfer.taskList.continuousNotStarted')
+		if (isDatabaseCDCTask(task) && !task.capture) return t('transfer.taskList.continuousNotStarted')
 		return t('transfer.taskList.continuousStopped')
 	}
   return t('transfer.taskList.continuousRunning')

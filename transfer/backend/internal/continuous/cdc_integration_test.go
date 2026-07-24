@@ -1,10 +1,14 @@
 package continuous
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -14,18 +18,22 @@ import (
 	"github.com/addp/common/engine/plugins/kafka"
 	"github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
+	transferapi "github.com/addp/transfer/internal/api"
 	"github.com/addp/transfer/internal/capture"
+	transferconfig "github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
+	"github.com/addp/transfer/internal/service"
 	"github.com/addp/transfer/internal/testpg"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	postgresdriver "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
-func TestIntegrationPostgreSQLCDCDataPlaneSnapshotUpdateDeleteCrashResumeAndSchemaDriftBlock(t *testing.T) {
+func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashResumeAndStopCleanup(t *testing.T) {
 	if os.Getenv("ADDP_CDC_DATA_E2E") != "1" {
 		t.Skip("set ADDP_CDC_DATA_E2E=1 to run PostgreSQL CDC data-plane integration test")
 	}
@@ -47,7 +55,13 @@ func TestIntegrationPostgreSQLCDCDataPlaneSnapshotUpdateDeleteCrashResumeAndSche
 	if err := commonExecution.EnsureStore(infraDB); err != nil {
 		t.Fatal(err)
 	}
-	if err := infraDB.AutoMigrate(&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}, &models.CaptureResource{}); err != nil {
+	if err := repository.MigrateCaptureProviderResources(infraDB); err != nil {
+		t.Fatalf("migrate legacy capture resources: %v", err)
+	}
+	if err := infraDB.AutoMigrate(
+		&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}, &models.CaptureResource{},
+		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{},
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -62,7 +76,7 @@ func TestIntegrationPostgreSQLCDCDataPlaneSnapshotUpdateDeleteCrashResumeAndSche
 	}
 	defer businessDB.Close()
 	if err := businessDB.PingContext(ctx); err != nil {
-		t.Skipf("business PostgreSQL is unavailable: %v", err)
+		t.Fatalf("business PostgreSQL is unavailable: %v", err)
 	}
 	suffix := time.Now().UnixNano()
 	schema := fmt.Sprintf("cdc_data_%d", suffix)
@@ -96,16 +110,6 @@ func TestIntegrationPostgreSQLCDCDataPlaneSnapshotUpdateDeleteCrashResumeAndSche
 		t.Fatal(err)
 	}
 
-	task := models.TransferTask{
-		TenantID: uint(700000 + suffix%90000), Name: "cdc-data-e2e", TaskType: commonExecution.TaskTypeSync,
-		Config: cdcDataTaskConfig(schema, sourceTable, targetTable), BatchSize: 100,
-		Status: models.TaskStatusIdle, DesiredState: models.TaskDesiredStateStopped,
-	}
-	if err := infraDB.Create(&task).Error; err != nil {
-		t.Fatal(err)
-	}
-	defer cleanupCDCDataInfraRows(infraDB, task.ID)
-
 	resolver := planner.StaticEngineResolver{
 		12: {Type: "postgresql", EngineID: 12, ConnInfo: businessInfo},
 		20: {Type: "postgresql", EngineID: 20, ConnInfo: businessInfo, Capabilities: ptrEngineCapabilities((&postgresql.PostgreSQLPlugin{}).Capabilities())},
@@ -126,8 +130,8 @@ func TestIntegrationPostgreSQLCDCDataPlaneSnapshotUpdateDeleteCrashResumeAndSche
 		t.Fatal(err)
 	}
 	captureSupervisor, err := capture.NewSupervisor(
-		captureRepo, capture.NewPostgreSQLPlanResolver(resolver), connectClient, topicAdmin,
-		capture.PostgreSQLSourceResources{}, capture.SupervisorConfig{
+		captureRepo, capture.NewDatabasePlanResolver(resolver), connectClient, topicAdmin,
+		capture.DatabaseSourceResources{}, capture.SupervisorConfig{
 			TopicRetention: time.Hour, TopicReplication: 1,
 			ConnectLoopbackHost: cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_LOOPBACK_HOST", "host.docker.internal"),
 			ProvisioningTimeout: 60 * time.Second, StatusPollInterval: 500 * time.Millisecond, MonitorInterval: time.Second,
@@ -136,26 +140,45 @@ func TestIntegrationPostgreSQLCDCDataPlaneSnapshotUpdateDeleteCrashResumeAndSche
 	if err != nil {
 		t.Fatal(err)
 	}
-	resource, err := captureSupervisor.Start(ctx, &task)
-	if err != nil {
-		t.Fatalf("start CDC capture: %v", err)
-	}
-	defer captureSupervisor.Stop(context.Background(), &task)
-
 	taskRepo := repository.NewTaskRepository(infraDB)
 	leaseRepo := repository.NewRuntimeLeaseRepository(infraDB, repository.ContinuousRecoveryPolicy{
 		InitialBackoff: time.Second, MaxBackoff: 4 * time.Second, MaxFailures: 3,
 		CircuitOpenTime: 10 * time.Second, StabilityWindow: 30 * time.Second,
 	})
 	stateRepo := repository.NewSyncStateRepository(infraDB)
-	execution := cdcDataExecution(task)
-	if _, err := taskRepo.StartContinuousExecution(ctx, task.ID, task.TenantID, &execution); err != nil {
-		t.Fatal(err)
+	executionService := service.NewExecutionService(infraDB, commonExecution.NewTaskExecutionRepository(infraDB))
+	taskService := service.NewTaskService(infraDB, nil, &transferconfig.Config{
+		ContinuousRuntimeStopTimeout: 5 * time.Second, ContinuousRuntimeStopPollInterval: 50 * time.Millisecond,
+	}, nil)
+	taskService.SetEngineResolver(resolver)
+	taskService.SetExecutionService(executionService)
+	taskService.SetCaptureControl(captureSupervisor)
+	apiRouter := cdcDataAPIRouter(taskService, uint(700000+suffix%90000), 700001)
+	task := cdcDataCreateTaskViaAPI(t, apiRouter, cdcDataTaskConfig(schema, sourceTable, targetTable))
+	defer cleanupCDCDataInfraRows(infraDB, task.ID)
+
+	execution := cdcDataStartTaskViaAPI(t, apiRouter, task.ID)
+	resource, err := captureRepo.GetLatest(ctx, task.ID, task.TenantID)
+	if err != nil {
+		t.Fatalf("load API-created CDC capture generation: %v", err)
 	}
+	captureStopped := false
+	defer func() {
+		if !captureStopped {
+			_ = captureSupervisor.Stop(context.Background(), &task)
+		}
+	}()
 	claim, err := leaseRepo.ClaimNext(ctx, "cdc-worker-a", time.Now(), 30*time.Second)
 	if err != nil || claim == nil {
 		t.Fatalf("first claim=%#v err=%v", claim, err)
 	}
+	if claim.Execution.ExecutionID != execution.ExecutionID {
+		t.Fatalf("worker claimed execution %q, want API execution %q", claim.Execution.ExecutionID, execution.ExecutionID)
+	}
+	if task.ApplyIdentity != "" || claim.Task.ApplyIdentity == "" {
+		t.Fatalf("apply identity exposure mismatch: API=%q worker=%q", task.ApplyIdentity, claim.Task.ApplyIdentity)
+	}
+	task.ApplyIdentity = claim.Task.ApplyIdentity
 	runner := &DataSessionRunner{
 		Resolver: resolver, States: stateRepo, Progress: leaseRepo, Captures: captureRepo,
 		InfraKafkaConnection: cdcDataTransferKafkaConnection(), PollTimeout: 500 * time.Millisecond,
@@ -296,11 +319,129 @@ func TestIntegrationPostgreSQLCDCDataPlaneSnapshotUpdateDeleteCrashResumeAndSche
 		t.Fatalf("restart blocked task error=%v, want ErrContinuousTaskBlocked", err)
 	}
 	cancelSecond()
+
+	cdcDataStopTaskViaAPI(t, apiRouter, task.ID, task.Name)
+	captureStopped = true
+	assertCDCDataCaptureCleanup(t, ctx, businessDB, captureRepo, connectClient, task, resource)
+}
+
+func cdcDataAPIRouter(taskService *service.TaskService, tenantID, userID uint) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", tenantID)
+		c.Set("user_id", userID)
+		c.Next()
+	})
+	handler := transferapi.NewTaskHandler(taskService)
+	router.POST("/api/v1/transfer/task-definitions", handler.CreateTask)
+	router.POST("/api/v1/transfer/task-definitions/:id/start", handler.StartTask)
+	router.POST("/api/v1/transfer/task-definitions/:id/pause", handler.PauseTask)
+	router.POST("/api/v1/transfer/task-definitions/:id/resume", handler.ResumeTask)
+	router.POST("/api/v1/transfer/task-definitions/:id/stop", handler.StopTask)
+	return router
+}
+
+func cdcDataCreateTaskViaAPI(t *testing.T, router http.Handler, config models.JSONMap) models.TransferTask {
+	t.Helper()
+	response := cdcDataAPIRequest(t, router, http.MethodPost, "/api/v1/transfer/task-definitions", models.CreateTaskRequest{
+		Name: "cdc-data-e2e", TaskType: commonExecution.TaskTypeSync, Config: config, BatchSize: 100,
+	})
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create CDC task API status=%d body=%s", response.Code, response.Body.String())
+	}
+	var task models.TransferTask
+	if err := json.Unmarshal(response.Body.Bytes(), &task); err != nil {
+		t.Fatalf("decode created CDC task: %v; body=%s", err, response.Body.String())
+	}
+	if task.ID == 0 || task.DesiredState != models.TaskDesiredStateStopped {
+		t.Fatalf("created CDC task=%#v", task)
+	}
+	return task
+}
+
+func cdcDataStartTaskViaAPI(t *testing.T, router http.Handler, taskID uint) models.TaskExecution {
+	t.Helper()
+	response := cdcDataAPIRequest(t, router, http.MethodPost, fmt.Sprintf("/api/v1/transfer/task-definitions/%d/start", taskID), nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("start CDC task API status=%d body=%s", response.Code, response.Body.String())
+	}
+	var execution models.TaskExecution
+	if err := json.Unmarshal(response.Body.Bytes(), &execution); err != nil {
+		t.Fatalf("decode started CDC execution: %v; body=%s", err, response.Body.String())
+	}
+	if execution.ExecutionID == "" || execution.Status != models.ExecutionStatusPending {
+		t.Fatalf("started CDC execution=%#v", execution)
+	}
+	return execution
+}
+
+func cdcDataStopTaskViaAPI(t *testing.T, router http.Handler, taskID uint, taskName string) {
+	t.Helper()
+	response := cdcDataAPIRequest(t, router, http.MethodPost, fmt.Sprintf("/api/v1/transfer/task-definitions/%d/stop", taskID), models.StopTaskRequest{
+		Confirmed: true, ConfirmationText: taskName,
+	})
+	if response.Code != http.StatusOK {
+		t.Fatalf("stop CDC task API status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func cdcDataAPIRequest(t *testing.T, router http.Handler, method, path string, body interface{}) *httptest.ResponseRecorder {
+	t.Helper()
+	var payload *bytes.Reader
+	if body == nil {
+		payload = bytes.NewReader(nil)
+	} else {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("encode API request: %v", err)
+		}
+		payload = bytes.NewReader(encoded)
+	}
+	request := httptest.NewRequest(method, path, payload)
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	return response
+}
+
+func assertCDCDataCaptureCleanup(
+	t *testing.T,
+	ctx context.Context,
+	businessDB *sql.DB,
+	captures *repository.CaptureRepository,
+	connectClient *capture.ConnectClient,
+	task models.TransferTask,
+	resource *models.CaptureResource,
+) {
+	t.Helper()
+	stopped, err := captures.GetLatest(ctx, task.ID, task.TenantID)
+	if err != nil || stopped.Status != models.CaptureStatusStopped {
+		t.Fatalf("stopped capture=%#v err=%v", stopped, err)
+	}
+	if _, err := connectClient.Status(ctx, resource.ConnectorName); !errors.Is(err, capture.ErrConnectorNotFound) {
+		t.Fatalf("connector %q still exists after Stop API: %v", resource.ConnectorName, err)
+	}
+	if resource.PostgreSQL == nil {
+		t.Fatal("PostgreSQL capture provider facts are missing")
+	}
+	var slotExists, publicationExists bool
+	if err := businessDB.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name=$1)", resource.PostgreSQL.SlotName).Scan(&slotExists); err != nil {
+		t.Fatal(err)
+	}
+	if err := businessDB.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM pg_publication WHERE pubname=$1)", resource.PostgreSQL.PublicationName).Scan(&publicationExists); err != nil {
+		t.Fatal(err)
+	}
+	if slotExists || publicationExists {
+		t.Fatalf("CDC source resources remain after Stop API: slot=%v publication=%v", slotExists, publicationExists)
+	}
 }
 
 func cdcDataTaskConfig(schema, sourceTable, targetTable string) models.JSONMap {
 	return models.JSONMap{
-		"runtime": map[string]interface{}{"boundary": "continuous"},
+		"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}},
 		"load": map[string]interface{}{
 			"mode": "incremental", "change_detection": map[string]interface{}{"type": "cdc", "bootstrap": "initial_snapshot"},
 		},

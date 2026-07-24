@@ -100,7 +100,11 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 
-@app.get("/health", summary="健康检查 | Health Check")
+@app.get(
+    "/health",
+    summary="健康检查 | Health Check",
+    openapi_extra={"x-addp-auth-mode": "public"},
+)
 async def health_check():
     """健康检查"""
     return {
@@ -110,7 +114,11 @@ async def health_check():
     }
 
 
-@app.get("/", summary="根路径 | Root")
+@app.get(
+    "/",
+    summary="根路径 | Root",
+    openapi_extra={"x-addp-auth-mode": "public"},
+)
 async def root():
     """根路径"""
     return {

@@ -50,6 +50,25 @@ type WorkflowEngineSpecificConfigSwagger struct {
 	SparkClusterID uint `json:"spark_cluster_id,omitempty" example:"34"`
 }
 
+// DAGEditorLayoutSwagger DAG 编辑器展示状态，不参与运行时执行。
+type DAGEditorLayoutSwagger struct {
+	Nodes    map[string]DAGEditorNodePositionSwagger `json:"nodes"`
+	Viewport DAGEditorViewportSwagger                `json:"viewport"`
+}
+
+// DAGEditorNodePositionSwagger DAG 节点坐标。
+type DAGEditorNodePositionSwagger struct {
+	X float64 `json:"x" example:"120"`
+	Y float64 `json:"y" example:"240"`
+}
+
+// DAGEditorViewportSwagger DAG 画布视口。
+type DAGEditorViewportSwagger struct {
+	Zoom       float64 `json:"zoom" example:"1"`
+	TranslateX float64 `json:"translate_x" example:"0"`
+	TranslateY float64 `json:"translate_y" example:"0"`
+}
+
 // CreateDevTaskSwaggerRequest 创建开发任务 Swagger 请求体。
 type CreateDevTaskSwaggerRequest struct {
 	Name            string                        `json:"name" binding:"required" example:"city_buffer_workflow"`
@@ -57,6 +76,7 @@ type CreateDevTaskSwaggerRequest struct {
 	DevType         string                        `json:"dev_type" binding:"required" enums:"query,workflow,script" example:"workflow"`
 	Content         DevTaskContentSwagger         `json:"content" binding:"required"`
 	ExecutionConfig DevTaskExecutionConfigSwagger `json:"execution_config,omitempty"`
+	EditorLayout    DAGEditorLayoutSwagger        `json:"editor_layout,omitempty"`
 	Timeout         int                           `json:"timeout,omitempty" example:"300"`
 	Description     string                        `json:"description,omitempty" example:"示例工作流"`
 	Tags            []string                      `json:"tags,omitempty"`
@@ -68,6 +88,7 @@ type UpdateDevTaskSwaggerRequest struct {
 	DisplayName     string                        `json:"display_name,omitempty" example:"城市缓冲区工作流"`
 	Content         DevTaskContentSwagger         `json:"content,omitempty"`
 	ExecutionConfig DevTaskExecutionConfigSwagger `json:"execution_config,omitempty"`
+	EditorLayout    DAGEditorLayoutSwagger        `json:"editor_layout,omitempty"`
 	Timeout         int                           `json:"timeout,omitempty" example:"300"`
 	Description     string                        `json:"description,omitempty" example:"示例工作流"`
 	Tags            []string                      `json:"tags,omitempty"`
@@ -83,6 +104,7 @@ type DevTaskSwagger struct {
 	DevType             string                        `json:"dev_type" enums:"query,workflow,script" example:"workflow"`
 	Content             DevTaskContentSwagger         `json:"content"`
 	ExecutionConfig     DevTaskExecutionConfigSwagger `json:"execution_config,omitempty"`
+	EditorLayout        DAGEditorLayoutSwagger        `json:"editor_layout"`
 	Parameters          map[string]interface{}        `json:"parameters,omitempty" swaggertype:"object"`
 	Timeout             int                           `json:"timeout" example:"300"`
 	Description         string                        `json:"description,omitempty" example:"示例工作流"`

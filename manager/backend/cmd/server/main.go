@@ -80,6 +80,7 @@ func main() {
 	vectorMaterializedViewRepo := repository.NewVectorMaterializedViewRepository(db)
 	rasterCOGRepo := repository.NewRasterCOGRepository(db)
 	rasterMosaicRepo := repository.NewRasterMosaicRepository(db)
+	vectorTileSetRepo := repository.NewVectorTileSetRepository(db)
 	model3DGLBRepo := repository.NewModel3DGLBRepository(db)
 	gaussianSplatKSplatRepo := repository.NewGaussianSplatKSplatRepository(db)
 	pointCloudCOPCRepo := repository.NewPointCloudCOPCRepository(db)
@@ -195,18 +196,6 @@ func main() {
 		RealtimeTileTimeoutMS:   cfg.TileCache.RealtimeTileTimeoutMS,
 	})
 
-	tileGenerator := mvt.NewTileGenerator(systemClient, cfg.TileCache.MaxDBConns)
-	tileCacheGenerator, err := mvt.NewQuickViewService(tileGenerator, mvt.MinIOConfig{
-		Endpoint:  cfg.MinioEndpoint,
-		AccessKey: cfg.MinioAccessKey,
-		SecretKey: cfg.MinioSecretKey,
-		UseSSL:    cfg.MinioUseSSL,
-		Bucket:    minioBucket,
-	})
-	if err != nil {
-		logger.L().Warn("瓦片缓存 MVT 生成器初始化失败（任务执行将失败并记录原因）", "error", err)
-	}
-
 	// 初始化向量化服务（Manager 模块的按需向量化）
 	embeddingService, err := service.NewEmbeddingService(embeddingRepo, systemClient, metaClient, taskExecRepo, cfg, logger.L())
 	if err != nil {
@@ -222,6 +211,9 @@ func main() {
 	vectorMaterializedViewTaskSvc := service.NewVectorMaterializedViewTaskService(vectorMaterializedViewRepo, taskExecRepo)
 	rasterCOGTaskSvc := service.NewRasterCOGTaskService(rasterCOGRepo)
 	rasterMosaicTaskSvc := service.NewRasterMosaicTaskService(rasterMosaicRepo, taskExecRepo)
+	vectorTileSetTaskSvc := service.NewVectorTileSetTaskService(vectorTileSetRepo, taskExecRepo)
+	vectorTileSetTaskSvc.SetMetaClient(metaClient)
+	vectorTileSetTaskSvc.SetTileCacheRepository(tileCacheRepo)
 	model3DGLBTaskSvc := service.NewModel3DGLBTaskService(model3DGLBRepo)
 	gaussianSplatKSplatTaskSvc := service.NewGaussianSplatKSplatTaskService(gaussianSplatKSplatRepo)
 	pointCloudCOPCTaskSvc := service.NewPointCloudCOPCTaskService(pointCloudCOPCRepo)
@@ -240,7 +232,13 @@ func main() {
 	pointCloudCOPCTaskSvc.SetCleaner(service.NewMinIOPointCloudCOPCCleaner(minioClient, minioBucket))
 	cadPreviewTaskSvc.SetBucket(minioBucket)
 	cadPreviewTaskSvc.SetCleaner(service.NewMinIOCADPreviewCleaner(minioClient, minioBucket))
+	var postGISTileGenerator *mvt.PMTilesGenerator
 	if systemClient != nil {
+		postGISTileGenerator = mvt.NewPMTilesGenerator(mvt.NewTileGenerator(systemClient, cfg.TileCache.MaxDBConns))
+		tileCacheTaskSvc.SetTileGenerator(
+			service.NewManagerPostGISVectorTileCacheExecutor(postGISTileGenerator, minioClient, minioBucket),
+			cfg.TileCache.Concurrency,
+		)
 		rasterCOGTaskSvc.SetExecutor(service.NewManagerRasterCOGExecutor(
 			systemClient,
 			systemClient,
@@ -255,12 +253,10 @@ func main() {
 	vectorMaterializedViewTaskSvc.SetDBProvider(mvtService)
 	vectorMaterializedViewTaskSvc.SetPreviewStateRepository(quickViewService.Repository())
 	tileCacheTaskSvc.SetQuickViewService(quickViewService)
+	tileCacheTaskSvc.SetMetaClient(metaClient)
 	tileCacheTaskSvc.SetRealtimeTileTargetResolver(mvtService)
 	tileCacheTaskSvc.SetTileCacheRuntimeCacheInvalidator(spatialPreviewService)
-	if tileCacheGenerator != nil {
-		tileCacheTaskSvc.SetTileGenerator(tileCacheGenerator, cfg.TileCache.Concurrency)
-		tileCacheTaskSvc.SetTileCacheCleaner(tileCacheGenerator)
-	}
+	tileCacheTaskSvc.SetTileCacheCleaner(spatialPreviewService)
 	embeddingTaskScheduler := service.NewEmbeddingTaskScheduler(embeddingTaskSvc)
 	if err := embeddingTaskScheduler.Start(context.Background()); err != nil {
 		logger.L().Warn("向量化任务调度器启动失败", "error", err)
@@ -294,6 +290,7 @@ func main() {
 	taskProviderHandler.SetPointCloudCOPCTaskService(pointCloudCOPCTaskSvc)
 	taskProviderHandler.SetCADPreviewTaskService(cadPreviewTaskSvc)
 	taskProviderHandler.SetModel3DTilesTaskService(model3DTilesTaskSvc)
+	taskProviderHandler.SetVectorTileSetTaskService(vectorTileSetTaskSvc)
 
 	// 设置 UnifiedMVTService 的 QuickViewService（延迟注入避免循环依赖）
 	unifiedMVTService.SetQuickViewService(quickViewService)
@@ -422,9 +419,15 @@ func main() {
 			minioBucket,
 			cfg.RasterMosaicGeneration.Timeout,
 		))
+		vectorTileSetExecutor := service.NewManagerVectorTileSetExecutor(
+			systemClient, systemClient, minioClient, serviceURL, cfg.InternalAPIKey, cfg.RasterMosaicGeneration.Timeout,
+		)
+		vectorTileSetExecutor.SetPostGISGenerator(postGISTileGenerator, cfg.TileCache.Concurrency)
+		vectorTileSetTaskSvc.SetExecutor(vectorTileSetExecutor)
 	}
 	if metaClient != nil {
 		rasterMosaicTaskSvc.SetMetaScanSubmitter(metaClient)
+		vectorTileSetTaskSvc.SetMetaScanSubmitter(metaClient)
 	}
 
 	// ========== 服务注册（注册到 System service_registry）==========

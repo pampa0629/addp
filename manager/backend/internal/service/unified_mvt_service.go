@@ -1,8 +1,6 @@
 package service
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -214,7 +212,6 @@ func (s *UnifiedMVTService) GetTile(
 		"tenantID", tenantID)
 
 	var minZoom, maxZoom int
-	var beyondMaxZoom bool // 是否超出产物覆盖范围
 	cacheScope := fmt.Sprintf("fingerprint:%s", fingerprint)
 	storageRef := ""
 	renderSource := QuickViewRenderSourceRealtimeTile
@@ -269,7 +266,6 @@ func (s *UnifiedMVTService) GetTile(
 
 			// 检查是否超出 maxZoom（允许但降低缓存优先级）
 			if z > maxZoom {
-				beyondMaxZoom = true
 				logger.L().Info("Zoom 层级超出瓦片缓存结果覆盖范围，使用实时生成模式",
 					"z", z,
 					"max_zoom", maxZoom,
@@ -409,32 +405,6 @@ func (s *UnifiedMVTService) GetTile(
 			"size", len(tileData))
 	}
 
-	// 5. 判断是否需要按当前 storage_ref 回填瓦片对象
-	// - 产物覆盖范围内（z <= maxZoom）: 生成时间 > 100ms 或 大小 > 50KB
-	// - 超出产物覆盖范围（z > maxZoom）: 更严格的缓存条件（生成时间 > 200ms 且 大小 > 100KB）
-	tileSizeKB := float64(len(tileData)) / 1024.0
-	durationMs := float64(duration.Milliseconds())
-
-	var shouldCache bool
-	if beyondMaxZoom {
-		// 超出产物覆盖范围：仅缓存高成本瓦片（避免缓存爆炸）
-		shouldCache = durationMs > 200 && tileSizeKB > 100
-		logger.L().Info("超出瓦片缓存结果覆盖范围的缓存判断",
-			"z", z,
-			"duration_ms", durationMs,
-			"size_kb", tileSizeKB,
-			"should_cache", shouldCache,
-			"reason", "beyond_max_zoom_strict_policy")
-	} else {
-		// 产物覆盖范围内：正常回填策略
-		shouldCache = durationMs > 100 || tileSizeKB > 50
-	}
-
-	if shouldCache && len(tileData) > 0 && strings.TrimSpace(storageRef) != "" {
-		// 异步持久化到对象存储（包括回填 Redis 和内存缓存，租户隔离）
-		go s.persistToObjectStorage(context.Background(), *tenantID, cacheScope, storageRef, z, x, y, tileData)
-	}
-
 	return &TileResponse{
 		Data:                  tileData,
 		FromCache:             false,
@@ -463,42 +433,4 @@ func (s *UnifiedMVTService) calculateFingerprint(engineID uint, schema, table st
 	// 两步计算方式：先拼接 full_name，再计算指纹
 	fullName := fmt.Sprintf("%s.%s", schema, table)
 	return commonModels.GenerateItemFingerprint(engineID, fullName)
-}
-
-// persistToObjectStorage 持久化瓦片到对象存储（异步执行，不阻塞响应，租户隔离）
-func (s *UnifiedMVTService) persistToObjectStorage(
-	ctx context.Context,
-	tenantID uint,
-	cacheScope string,
-	storageRef string,
-	z, x, y int,
-	tileData []byte,
-) {
-	// 1. Gzip 压缩瓦片数据
-	var buf bytes.Buffer
-	gzipWriter := gzip.NewWriter(&buf)
-	if _, err := gzipWriter.Write(tileData); err != nil {
-		logger.L().Warn("Gzip 压缩瓦片数据失败",
-			"tenant_id", tenantID,
-			"error", err, "cache_scope", cacheScope, "z", z, "x", x, "y", y)
-		return
-	}
-	if err := gzipWriter.Close(); err != nil {
-		logger.L().Warn("Gzip 关闭失败", "error", err)
-		return
-	}
-	compressed := buf.Bytes()
-
-	if err := s.spatialPreviewService.PutTileByStorageRef(ctx, tenantID, cacheScope, storageRef, z, x, y, compressed); err != nil {
-		logger.L().Warn("上传瓦片到对象存储失败",
-			"tenant_id", tenantID,
-			"error", err, "cache_scope", cacheScope, "z", z, "x", x, "y", y)
-		return
-	}
-
-	logger.L().Info("瓦片已持久化到对象存储",
-		"tenant_id", tenantID,
-		"cache_scope", cacheScope,
-		"z", z, "x", x, "y", y,
-		"compressed_size", len(compressed))
 }

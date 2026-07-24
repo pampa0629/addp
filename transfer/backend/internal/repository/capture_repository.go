@@ -13,11 +13,12 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var ErrCaptureTerminal = errors.New("PostgreSQL CDC task is permanently stopped")
+var ErrCaptureTerminal = errors.New("database CDC task is permanently stopped")
 
 type CaptureIdentity struct {
 	TaskID                      uint
 	TenantID                    uint
+	SourceType                  models.CaptureSourceType
 	SourceIdentity              string
 	SourceConnectionFingerprint string
 	SourceEngineID              uint
@@ -48,12 +49,12 @@ func (r *CaptureRepository) BeginGeneration(ctx context.Context, identity Captur
 			Where("id = ? AND tenant_id = ?", identity.TaskID, identity.TenantID).First(&task).Error; err != nil {
 			return err
 		}
-		err := tx.Where("task_id = ?", identity.TaskID).Order("generation DESC").First(&resource).Error
+		err := tx.Preload("PostgreSQL").Preload("MySQL").Where("task_id = ?", identity.TaskID).Order("generation DESC").First(&resource).Error
 		if err == nil {
 			if captureStopInitiated(resource.Status) {
 				return ErrCaptureTerminal
 			}
-			if resource.SourceIdentity != identity.SourceIdentity || resource.SourceConnectionFingerprint != identity.SourceConnectionFingerprint || resource.SourceEngineID != identity.SourceEngineID ||
+			if resource.SourceType != identity.SourceType || resource.SourceIdentity != identity.SourceIdentity || resource.SourceConnectionFingerprint != identity.SourceConnectionFingerprint || resource.SourceEngineID != identity.SourceEngineID ||
 				resource.SourceDatabase != identity.SourceDatabase || resource.SourceSchema != identity.SourceSchema || resource.SourceTable != identity.SourceTable ||
 				!captureSpatialInfoEqual(resource.SourceSpatialInfo, identity.SourceSpatialInfo) {
 				return fmt.Errorf("capture source identity changed after generation creation")
@@ -63,21 +64,46 @@ func (r *CaptureRepository) BeginGeneration(ctx context.Context, identity Captur
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
+		if identity.SourceType != models.CaptureSourcePostgreSQL && identity.SourceType != models.CaptureSourceMySQL {
+			return fmt.Errorf("unsupported capture source type %q", identity.SourceType)
+		}
 		generation := uint64(1)
 		resource = models.CaptureResource{
 			TaskID: identity.TaskID, TenantID: identity.TenantID, Generation: generation,
-			ConnectorName:   captureConnectorName(identity.TenantID, identity.TaskID, generation),
-			TopicName:       captureTopicName(identity.TenantID, identity.TaskID, generation),
-			ConsumerGroup:   captureConsumerGroup(identity.TenantID, identity.TaskID, generation),
-			SlotName:        captureSlotName(identity.TenantID, identity.TaskID, generation),
-			PublicationName: capturePublicationName(identity.TenantID, identity.TaskID, generation),
-			SourceIdentity:  identity.SourceIdentity, SourceConnectionFingerprint: identity.SourceConnectionFingerprint,
+			ConnectorName: captureConnectorName(identity.TenantID, identity.TaskID, generation),
+			TopicName:     captureTopicName(identity.TenantID, identity.TaskID, generation),
+			ConsumerGroup: captureConsumerGroup(identity.TenantID, identity.TaskID, generation),
+			SourceType:    identity.SourceType, SourceIdentity: identity.SourceIdentity, SourceConnectionFingerprint: identity.SourceConnectionFingerprint,
 			SourceEngineID: identity.SourceEngineID,
 			SourceDatabase: identity.SourceDatabase, SourceSchema: identity.SourceSchema, SourceTable: identity.SourceTable,
 			SourceSpatialInfo: identity.SourceSpatialInfo,
-			Status:            models.CaptureStatusProvisioning, SlotOwned: true, PublicationOwned: true, ResourceVersion: 1,
+			Status:            models.CaptureStatusProvisioning, ResourceVersion: 1,
 		}
-		return tx.Create(&resource).Error
+		if err := tx.Create(&resource).Error; err != nil {
+			return err
+		}
+		switch identity.SourceType {
+		case models.CaptureSourcePostgreSQL:
+			resource.PostgreSQL = &models.PostgreSQLCaptureResource{
+				CaptureResourceID: resource.ID,
+				SlotName:          captureSlotName(identity.TenantID, identity.TaskID, generation), PublicationName: capturePublicationName(identity.TenantID, identity.TaskID, generation),
+				SlotOwned: true, PublicationOwned: true,
+			}
+			return tx.Create(resource.PostgreSQL).Error
+		case models.CaptureSourceMySQL:
+			serverID, err := mysqlConnectorServerID(resource.ID)
+			if err != nil {
+				return err
+			}
+			resource.MySQL = &models.MySQLCaptureResource{
+				CaptureResourceID: resource.ID, ConnectorServerID: serverID,
+				SchemaHistoryTopicName:  captureSchemaHistoryTopicName(identity.TenantID, identity.TaskID, generation),
+				SchemaHistoryTopicOwned: true,
+			}
+			return tx.Create(resource.MySQL).Error
+		default:
+			return fmt.Errorf("unsupported capture source type %q", identity.SourceType)
+		}
 	})
 	return &resource, err
 }
@@ -93,7 +119,8 @@ func captureSpatialInfoEqual(left, right models.JSONMap) bool {
 
 func (r *CaptureRepository) GetLatest(ctx context.Context, taskID, tenantID uint) (*models.CaptureResource, error) {
 	var resource models.CaptureResource
-	err := r.db.WithContext(ctx).Where("task_id = ? AND tenant_id = ?", taskID, tenantID).Order("generation DESC").First(&resource).Error
+	err := r.db.WithContext(ctx).Preload("PostgreSQL").Preload("MySQL").
+		Where("task_id = ? AND tenant_id = ?", taskID, tenantID).Order("generation DESC").First(&resource).Error
 	if err != nil {
 		return nil, err
 	}
@@ -106,6 +133,7 @@ func (r *CaptureRepository) ListObservable(ctx context.Context, limit int) ([]mo
 	}
 	var resources []models.CaptureResource
 	err := r.db.WithContext(ctx).
+		Preload("PostgreSQL").Preload("MySQL").
 		Where("connector_created = ? AND status IN ?", true, []models.CaptureStatus{models.CaptureStatusRunning, models.CaptureStatusFailed}).
 		Order("updated_at ASC").Limit(limit).Find(&resources).Error
 	return resources, err
@@ -160,6 +188,10 @@ func captureTopicName(tenantID, taskID uint, generation uint64) string {
 	return fmt.Sprintf("__addp_cdc.%d.%d.%d", tenantID, taskID, generation)
 }
 
+func captureSchemaHistoryTopicName(tenantID, taskID uint, generation uint64) string {
+	return fmt.Sprintf("__addp_cdc_schema.%d.%d.%d", tenantID, taskID, generation)
+}
+
 func captureConsumerGroup(tenantID, taskID uint, generation uint64) string {
 	return fmt.Sprintf("__addp_cdc_consumer.%d.%d.%d", tenantID, taskID, generation)
 }
@@ -170,4 +202,11 @@ func captureSlotName(tenantID, taskID uint, generation uint64) string {
 
 func capturePublicationName(tenantID, taskID uint, generation uint64) string {
 	return fmt.Sprintf("addp_cdc_t%d_task%d_g%d_pub", tenantID, taskID, generation)
+}
+
+func mysqlConnectorServerID(captureResourceID uint) (uint32, error) {
+	if captureResourceID == 0 || uint64(captureResourceID) > uint64(^uint32(0)) {
+		return 0, fmt.Errorf("capture resource ID %d cannot be represented as a MySQL connector server id", captureResourceID)
+	}
+	return uint32(captureResourceID), nil
 }

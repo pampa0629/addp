@@ -846,12 +846,12 @@ func TestIntegrationPostgresManagerManagedTaskSemanticIdentityIndexes(t *testing
 	fingerprint := fmt.Sprintf("manager-semantic-%d", tenantID)
 	tileConfig := commonModels.JSONMap{
 		"target": commonModels.JSONMap{"item_fingerprint": fingerprint},
-		"tile":   commonModels.JSONMap{"format": "mvt"},
+		"profile_hash": "profile-a",
 	}
 	if err := db.Create(&models.TileCacheTask{TenantID: tenantID, Name: "tile-a", Enabled: true, Config: tileConfig}).Error; err != nil {
 		t.Fatalf("create first tile cache task: %v", err)
 	}
-	if err := db.Create(&models.TileCacheTask{TenantID: tenantID, Name: "tile-b", Enabled: true, Config: tileConfig}).Error; err == nil || !strings.Contains(err.Error(), "idx_vector_tile_cache_tasks_source_format_unique") {
+	if err := db.Create(&models.TileCacheTask{TenantID: tenantID, Name: "tile-b", Enabled: true, Config: tileConfig}).Error; err == nil || !strings.Contains(err.Error(), "idx_vector_tile_cache_tasks_source_profile_unique") {
 		t.Fatalf("duplicate tile cache task error = %v, want semantic identity index", err)
 	}
 

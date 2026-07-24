@@ -1,9 +1,9 @@
 package service
 
 import (
-	"bytes"
 	"container/list"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/addp/common/logger"
+	commonPMTiles "github.com/addp/common/pmtiles"
 	rastercogref "github.com/addp/manager/internal/cog"
 	"github.com/addp/manager/internal/tilecache"
 	"github.com/minio/minio-go/v7"
@@ -167,139 +168,88 @@ func NewSpatialPreviewService(redisClient *redis.Client) *SpatialPreviewService 
 }
 
 func (s *SpatialPreviewService) GetTileByStorageRef(ctx context.Context, tenantID uint, cacheScope string, storageRef string, z, x, y int) ([]byte, error) {
-	bucket, objectName, err := s.tileObjectLocationFromStorageRef(storageRef, z, x, y)
-	if err != nil {
-		return nil, err
-	}
 	key := s.buildCacheKey(tenantID, cacheScope, z, x, y)
-	return s.getTile(ctx, key, bucket, objectName, map[string]interface{}{
-		"tenant_id":   tenantID,
-		"cache_scope": cacheScope,
-		"z":           z,
-		"x":           x,
-		"y":           y,
-	})
-}
-
-func (s *SpatialPreviewService) getTile(ctx context.Context, key string, bucket string, objectName string, logFields map[string]interface{}) ([]byte, error) {
-	if bucket == "" {
-		bucket = s.bucket
-	}
-
-	logger.L().Info("🔍 开始查找瓦片",
-		"tile", logFields,
-		"cache_key", key)
-
-	// 1️⃣ 内存 LRU 缓存（最快，1-2ms）
 	if s.memEnabled {
 		if data, ok := s.memCache.Get(key); ok {
-			logger.L().Info("✅ 瓦片命中内存缓存",
-				"tile", logFields,
-				"size", len(data))
 			return data, nil
 		}
-		logger.L().Info("❌ 内存缓存未命中", "tile", logFields)
-	} else {
-		logger.L().Info("⚠️  内存缓存未启用")
 	}
-
-	// 2️⃣ Redis 缓存（中等速度，3-10ms）
 	if s.redisClient != nil {
 		data, err := s.redisClient.Get(ctx, key).Bytes()
 		if err == nil && len(data) > 0 {
-			logger.L().Info("✅ 瓦片命中 Redis 缓存",
-				"tile", logFields,
-				"size", len(data))
-
-			// 回填内存缓存（异步）
 			if s.memEnabled {
 				s.memCache.Add(key, data, s.memTTL)
 			}
 			return data, nil
 		}
 		if err != nil && err != redis.Nil {
-			logger.L().Warn("Redis 读取失败", "error", err)
+			logger.L().Warn("读取瓦片 Redis 缓存失败", "error", err)
 		}
-		logger.L().Info("❌ Redis 缓存未命中", "tile", logFields)
-	} else {
-		logger.L().Info("⚠️  Redis 客户端未初始化")
 	}
-
-	// 3️⃣ MinIO 持久化存储（瓦片缓存结果，5-20ms）
-	logger.L().Info("🔧 尝试初始化 MinIO 客户端...")
-	if err := s.ensureMinIOClient(ctx); err != nil {
-		logger.L().Error("❌ MinIO 客户端初始化失败", "error", err)
-		return nil, fmt.Errorf("failed to initialize MinIO client: %w", err)
+	data, err := s.readPMTilesTile(ctx, storageRef, z, x, y)
+	if errors.Is(err, commonPMTiles.ErrTileNotFound) {
+		return nil, nil
 	}
-	logger.L().Info("✅ MinIO 客户端已初始化")
-
-	logger.L().Info("📦 尝试从 MinIO 读取对象",
-		"tile", logFields,
-		"bucket", bucket,
-		"object", objectName)
-
-	obj, err := s.minioClient.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
 	if err != nil {
-		logger.L().Error("❌ MinIO GetObject 失败", "error", err, "object", objectName)
-		return nil, fmt.Errorf("tile not found in MinIO: %w", err)
+		return nil, err
 	}
-	defer obj.Close()
-
-	// 检查对象状态
-	objInfo, err := obj.Stat()
-	if err != nil {
-		logger.L().Error("❌ MinIO 对象 Stat 失败", "error", err, "object", objectName)
-		return nil, fmt.Errorf("failed to stat MinIO object: %w", err)
-	}
-	logger.L().Info("📊 MinIO 对象信息", "size", objInfo.Size, "content_type", objInfo.ContentType)
-
-	// 读取全部数据
-	data, err := io.ReadAll(obj)
-	if err != nil {
-		logger.L().Error("❌ 读取 MinIO 数据失败", "error", err)
-		return nil, fmt.Errorf("failed to read tile data: %w", err)
-	}
-
-	if len(data) == 0 {
-		logger.L().Warn("⚠️  从 MinIO 读取的数据为空!", "object", objectName)
-		return nil, fmt.Errorf("empty data read from MinIO")
-	}
-
-	logger.L().Info("✅ 瓦片从 MinIO 加载成功",
-		"tile", logFields,
-		"size", len(data))
-
-	// 回填上层缓存（异步，不阻塞响应）
-	go s.backfillCache(context.Background(), key, data)
-
+	s.backfillCache(ctx, key, data)
 	return data, nil
 }
 
-func (s *SpatialPreviewService) PutTileByStorageRef(ctx context.Context, tenantID uint, cacheScope string, storageRef string, z, x, y int, compressed []byte) error {
-	bucket, objectName, err := s.tileObjectLocationFromStorageRef(storageRef, z, x, y)
+func (s *SpatialPreviewService) readPMTilesTile(ctx context.Context, storageRef string, z, x, y int) ([]byte, error) {
+	if z < 0 || z > 31 || x < 0 || y < 0 {
+		return nil, commonPMTiles.ErrTileNotFound
+	}
+	bucket, objectName, err := tilecache.ObjectLocation(storageRef, s.bucket)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := s.ensureMinIOClient(ctx); err != nil {
-		return fmt.Errorf("failed to initialize MinIO client: %w", err)
+		return nil, fmt.Errorf("initialize PMTiles object store: %w", err)
 	}
-	_, err = s.minioClient.PutObject(
-		ctx,
-		bucket,
-		objectName,
-		bytes.NewReader(compressed),
-		int64(len(compressed)),
-		minio.PutObjectOptions{
-			ContentType:     "application/vnd.mapbox-vector-tile",
-			ContentEncoding: "gzip",
-		},
-	)
+	info, err := s.minioClient.StatObject(ctx, bucket, objectName, minio.StatObjectOptions{})
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("stat PMTiles object: %w", err)
 	}
-	cacheKey := s.buildCacheKey(tenantID, cacheScope, z, x, y)
-	s.backfillCache(ctx, cacheKey, compressed)
-	return nil
+	readRange := func(ctx context.Context, offset, length int64) ([]byte, error) {
+		if offset < 0 || length <= 0 || offset > info.Size || length > info.Size-offset {
+			return nil, fmt.Errorf("invalid PMTiles range offset=%d length=%d size=%d", offset, length, info.Size)
+		}
+		opts := minio.GetObjectOptions{}
+		if err := opts.SetRange(offset, offset+length-1); err != nil {
+			return nil, err
+		}
+		obj, err := s.minioClient.GetObject(ctx, bucket, objectName, opts)
+		if err != nil {
+			return nil, err
+		}
+		defer obj.Close()
+		data, err := io.ReadAll(io.LimitReader(obj, length))
+		if err != nil {
+			return nil, err
+		}
+		if int64(len(data)) != length {
+			return nil, io.ErrUnexpectedEOF
+		}
+		return data, nil
+	}
+	headerData, err := readRange(ctx, 0, commonPMTiles.HeaderSize)
+	if err != nil {
+		return nil, fmt.Errorf("read PMTiles header: %w", err)
+	}
+	header, err := commonPMTiles.ParseHeaderBytes(headerData)
+	if err != nil {
+		return nil, err
+	}
+	if err := commonPMTiles.ValidateHeader(header, info.Size); err != nil {
+		return nil, err
+	}
+	archive, err := commonPMTiles.NewArchive(header, readRange)
+	if err != nil {
+		return nil, err
+	}
+	return archive.GetTile(ctx, uint8(z), uint32(x), uint32(y))
 }
 
 func (s *SpatialPreviewService) OpenRasterCOG(ctx context.Context, storageRef string, rangeHeader string) (io.ReadCloser, int64, string, string, error) {
@@ -333,6 +283,20 @@ func (s *SpatialPreviewService) OpenRasterCOG(ctx context.Context, storageRef st
 		contentType = "image/tiff"
 	}
 	return obj, contentLength, contentRange, contentType, nil
+}
+
+func (s *SpatialPreviewService) DeleteByStorageRef(ctx context.Context, storageRef string) error {
+	bucket, objectName, err := tilecache.ObjectLocation(storageRef, s.bucket)
+	if err != nil {
+		return err
+	}
+	if err := s.ensureMinIOClient(ctx); err != nil {
+		return fmt.Errorf("initialize PMTiles object store: %w", err)
+	}
+	if err := s.minioClient.RemoveObject(ctx, bucket, objectName, minio.RemoveObjectOptions{}); err != nil {
+		return fmt.Errorf("delete PMTiles object %q: %w", objectName, err)
+	}
+	return nil
 }
 
 func (s *SpatialPreviewService) InvalidateTileCacheRuntimeCache(ctx context.Context, tenantID uint, tileCacheID uint) error {
@@ -421,10 +385,6 @@ func (s *SpatialPreviewService) buildCacheKey(tenantID uint, cacheScope string, 
 
 func (s *SpatialPreviewService) buildTileCacheRuntimeCachePrefix(tenantID uint, tileCacheID uint) string {
 	return fmt.Sprintf("manager:tenant_%d:cache:mvt:spatial:vector_tile_cache:%d:", tenantID, tileCacheID)
-}
-
-func (s *SpatialPreviewService) tileObjectLocationFromStorageRef(storageRef string, z, x, y int) (string, string, error) {
-	return tilecache.TileObjectLocation(storageRef, s.bucket, z, x, y)
 }
 
 // ensureMinIOClient 确保 MinIO 客户端已初始化

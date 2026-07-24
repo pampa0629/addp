@@ -55,6 +55,44 @@ func TestFilterAndCoalescePostgresChangesKeepsLatestDeletePerKey(t *testing.T) {
 	}
 }
 
+func TestFilterAndCoalescePostgresChangesAcceptsLedgerOnlySkip(t *testing.T) {
+	batch := &plugin.PartitionedTableChangeBatch{
+		Partition: "0",
+		Changes: []plugin.PartitionedTableChange{
+			{Operation: plugin.TableChangeOperationUpsert, Position: kafkaOffsetPosition("0", 6), Row: map[string]interface{}{"id": int64(1), "name": "one"}},
+			{Operation: plugin.TableChangeOperationSkip, Position: kafkaOffsetPosition("0", 7)},
+			{Operation: plugin.TableChangeOperationUpsert, Position: kafkaOffsetPosition("0", 8), Row: map[string]interface{}{"id": int64(2), "name": "two"}},
+		},
+	}
+
+	changes, skipped, err := filterAndCoalescePostgresChanges(batch, []string{"id"}, 5, 5, 8)
+	if err != nil {
+		t.Fatalf("filterAndCoalescePostgresChanges() error = %v", err)
+	}
+	if skipped != 1 || len(changes) != 2 {
+		t.Fatalf("skipped=%d changes=%d, want skipped=1 changes=2", skipped, len(changes))
+	}
+	if changes[0].nextOffset != 6 || changes[1].nextOffset != 8 {
+		t.Fatalf("changes=%#v, want data operations around skipped offset", changes)
+	}
+}
+
+func TestFilterAndCoalescePostgresChangesRejectsSkipRow(t *testing.T) {
+	batch := &plugin.PartitionedTableChangeBatch{
+		Partition: "0",
+		Changes: []plugin.PartitionedTableChange{{
+			Operation: plugin.TableChangeOperationSkip,
+			Position:  kafkaOffsetPosition("0", 6),
+			Row:       map[string]interface{}{"id": int64(1)},
+		}},
+	}
+
+	_, _, err := filterAndCoalescePostgresChanges(batch, []string{"id"}, 5, 5, 6)
+	if err == nil || !strings.Contains(err.Error(), "skip operation must not contain a row") {
+		t.Fatalf("error=%v, want skip row rejection", err)
+	}
+}
+
 func TestFilterAndCoalescePostgresChangesRejectsNonIncreasingPositions(t *testing.T) {
 	batch := &plugin.PartitionedTableChangeBatch{
 		Partition: "0",

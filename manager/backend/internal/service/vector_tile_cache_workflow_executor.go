@@ -81,18 +81,18 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 	if err != nil {
 		return nil, nil, err
 	}
-	bucket, objectPrefix, _, err := tilecache.ParseObjectPrefix(req.StorageRef, e.defaultBucket)
+	bucket, objectName, err := tilecache.ObjectLocation(req.StorageRef, e.defaultBucket)
 	if err != nil {
 		return nil, nil, err
 	}
 	if err := e.ensureTargetBucket(ctx, bucket); err != nil {
 		return nil, nil, err
 	}
-	targetURI, targetEnv, err := e.prepareTargetPrefixURI(bucket, objectPrefix)
+	targetURI, targetEnv, err := e.prepareTargetArchiveURI(bucket, objectName)
 	if err != nil {
 		return nil, nil, err
 	}
-	workflowEngine, workflowOperator, err := e.selectDirectWorkflowRuntime(ctx, req.Task.TenantID, "vector_to_mvt_tiles")
+	workflowEngine, workflowOperator, err := e.selectDirectWorkflowRuntime(ctx, req.Task.TenantID, "vector_to_pmtiles")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -107,6 +107,7 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 			"access_plan": commonModels.JSONMap{
 				"source": commonModels.JSONMap{
 					"root_uri":         sourceURI,
+					"layer_name":       sourceFacts["layer_name"],
 					"gdal_env":         sourceEnv,
 					"engine_id":        req.Identity.EngineID,
 					"source_kind":      req.Identity.SourceKind,
@@ -116,10 +117,10 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 					"metadata":         sourceFacts,
 				},
 				"target": commonModels.JSONMap{
-					"object_prefix_uri": targetURI,
-					"object_prefix":     objectPrefix,
-					"storage_ref":       req.StorageRef,
-					"gdal_env":          targetEnv,
+					"archive_uri": targetURI,
+					"object":      objectName,
+					"storage_ref": req.StorageRef,
+					"gdal_env":    targetEnv,
 				},
 				"progress_callback": commonModels.JSONMap{
 					"endpoint":         e.managerBaseURL + "/api/v1/manager/internal/executions/" + strings.TrimSpace(req.ExecutionID) + "/events",
@@ -134,10 +135,10 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 		Timeout: e.invokeTimeout,
 	})
 	if err != nil {
-		return nil, nil, operatorInvokeError("invoke vector to MVT tiles operator", invokeResult, err)
+		return nil, nil, operatorInvokeError("invoke vector to PMTiles operator", invokeResult, err)
 	}
 	if invokeResult.Status != "" && invokeResult.Status != "success" {
-		return nil, nil, operatorInvokeError("vector to MVT tiles direct operator invocation failed", invokeResult, nil)
+		return nil, nil, operatorInvokeError("vector to PMTiles direct operator invocation failed", invokeResult, nil)
 	}
 	facts := operatorInvokeJSONFacts(invokeResult)
 	result := generateResultFromWorkflowFacts(facts)
@@ -155,6 +156,11 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 	}
 	if mvtOptions, ok := asJSONMap(facts["mvt_options"]); ok {
 		metadata["mvt_options"] = mvtOptions.Clone()
+	}
+	for _, key := range []string{"archive_format", "spec_version", "tile_format", "tile_compression", "header_hash", "archive_size_bytes"} {
+		if value, ok := facts[key]; ok {
+			metadata[key] = value
+		}
 	}
 	return result, metadata, nil
 }
@@ -224,7 +230,7 @@ func prepareObjectStoreGDALSource(displayEngineType, engineType string, connInfo
 	}, nil
 }
 
-func (e *ManagerVectorTileCacheWorkflowExecutor) prepareTargetPrefixURI(bucket, objectPrefix string) (string, commonModels.JSONMap, error) {
+func (e *ManagerVectorTileCacheWorkflowExecutor) prepareTargetArchiveURI(bucket, objectName string) (string, commonModels.JSONMap, error) {
 	if e.minioEndpoint == "" || e.minioAccessKey == "" || e.minioSecretKey == "" {
 		return "", nil, errors.New("infra MinIO config is required for vector tile cache generation")
 	}
@@ -240,7 +246,7 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) prepareTargetPrefixURI(bucket, 
 		"AWS_VIRTUAL_HOSTING":   "FALSE",
 		"AWS_HTTPS":             gdalHTTPSValue(gdalUseSSL),
 	}
-	return "/vsis3/" + strings.Trim(bucket, "/") + "/" + strings.Trim(objectPrefix, "/"), env, nil
+	return "/vsis3/" + strings.Trim(bucket, "/") + "/" + strings.Trim(objectName, "/"), env, nil
 }
 
 func (e *ManagerVectorTileCacheWorkflowExecutor) ensureTargetBucket(ctx context.Context, bucket string) error {

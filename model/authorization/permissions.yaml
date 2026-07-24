@@ -1,0 +1,36 @@
+schema_version: addp.permission_manifest/v1
+owner_module: model
+manifest_version: 1
+permissions:
+  - key: model.logical_model.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.logical_model.create.name
+    description_i18n_key: permissions.model.logical_model.create.description
+  - key: model.logical_model.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.logical_model.delete.name
+    description_i18n_key: permissions.model.logical_model.delete.description
+  - key: model.logical_model.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.logical_model.read.name
+    description_i18n_key: permissions.model.logical_model.read.description
+  - key: model.logical_model.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.logical_model.update.name
+    description_i18n_key: permissions.model.logical_model.update.description

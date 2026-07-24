@@ -18,6 +18,7 @@ import (
 	"github.com/addp/common/logger"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/config"
+	"github.com/addp/transfer/internal/continuous"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
 	"github.com/addp/transfer/internal/worker"
@@ -117,6 +118,10 @@ func main() {
 		metaClient,
 	)
 	executionEngineService.SetConfig(cfg)
+	executionEngineService.SetReplayRuntime(continuous.NewReplayRuntime(continuous.BoundedReplayRunner{
+		PollTimeout: cfg.ContinuousPollTimeout, MaxBytes: cfg.ContinuousFetchMaxBytes,
+		AssertTargetAbsent: continuous.NewReplayTargetAbsenceValidator(nil),
+	}))
 
 	// 2. 创建 TaskService (负责任务 CRUD，传入 executionEngineService)
 	taskService := service.NewTaskService(db, executionEngineService, cfg, taskQueue)

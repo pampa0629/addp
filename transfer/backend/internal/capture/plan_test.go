@@ -13,6 +13,7 @@ import (
 
 func TestBuildConnectorConfigUsesOwnedNamesAndRoutesSingleTopic(t *testing.T) {
 	plan := &CapturePlan{
+		SourceType: models.CaptureSourcePostgreSQL,
 		SourceConnInfo: engineplugin.ConnectionInfo{
 			"host": "localhost", "port": 5433, "user": "postgres", "password": "secret", "database": "business", "sslmode": "disable",
 		},
@@ -20,9 +21,13 @@ func TestBuildConnectorConfigUsesOwnedNamesAndRoutesSingleTopic(t *testing.T) {
 	}
 	resource := &models.CaptureResource{
 		ConnectorName: "addp-cdc-t1-task2-g1", TopicName: "__addp_cdc.1.2.1",
-		SlotName: "addp_cdc_t1_task2_g1", PublicationName: "addp_cdc_t1_task2_g1_pub",
+		SourceType: models.CaptureSourcePostgreSQL,
+		PostgreSQL: &models.PostgreSQLCaptureResource{SlotName: "addp_cdc_t1_task2_g1", PublicationName: "addp_cdc_t1_task2_g1_pub"},
 	}
-	config := buildConnectorConfig(plan, resource, "host.docker.internal")
+	config, err := buildConnectorConfig(plan, resource, SupervisorConfig{ConnectLoopbackHost: "host.docker.internal"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if config["database.hostname"] != "host.docker.internal" {
 		t.Fatalf("database.hostname = %q", config["database.hostname"])
 	}
@@ -34,6 +39,84 @@ func TestBuildConnectorConfigUsesOwnedNamesAndRoutesSingleTopic(t *testing.T) {
 	}
 	if config["decimal.handling.mode"] != "string" || config["time.precision.mode"] != "connect" {
 		t.Fatalf("Debezium schemaless type encoding is not frozen: %#v", config)
+	}
+}
+
+func TestBuildMySQLConnectorConfigFreezesServerIDHistoryAndEncoding(t *testing.T) {
+	plan := &CapturePlan{
+		SourceType: models.CaptureSourceMySQL,
+		SourceConnInfo: engineplugin.ConnectionInfo{
+			"host": "localhost", "port": 3306, "user": "cdc", "password": "secret",
+		},
+		SourceDatabase: "business", SourceTable: "orders",
+	}
+	resource := &models.CaptureResource{
+		ConnectorName: "addp-cdc-t1-task2-g1", TopicName: "__addp_cdc.1.2.1", SourceType: models.CaptureSourceMySQL,
+		MySQL: &models.MySQLCaptureResource{ConnectorServerID: 41, SchemaHistoryTopicName: "__addp_cdc_schema.1.2.1", SchemaHistoryTopicOwned: true},
+	}
+	config, err := buildConnectorConfig(plan, resource, SupervisorConfig{
+		ConnectLoopbackHost: "host.docker.internal", ConnectBootstrapServers: "kafka:29092",
+		ConnectKafkaUsername: "connect", ConnectKafkaPassword: `p\"ass`, ConnectKafkaSecurityProtocol: "sasl_plaintext",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config["connector.class"] != "io.debezium.connector.mysql.MySqlConnector" || config["database.server.id"] != "41" ||
+		config["schema.history.internal.kafka.topic"] != resource.MySQL.SchemaHistoryTopicName ||
+		config["binary.handling.mode"] != "base64" || config["transforms.route.replacement"] != resource.TopicName {
+		t.Fatalf("MySQL connector config = %#v", config)
+	}
+	if !strings.Contains(config["schema.history.internal.producer.sasl.jaas.config"], `password="p\\\"ass"`) {
+		t.Fatalf("MySQL schema history JAAS is not escaped: %q", config["schema.history.internal.producer.sasl.jaas.config"])
+	}
+}
+
+func TestMySQLCDCSourceTypeMatrix(t *testing.T) {
+	valid := []struct {
+		columnType, dataType string
+		precision            sql.NullInt64
+		fieldType            datatype.FieldType
+	}{
+		{"int", "int", sql.NullInt64{}, datatype.FieldTypeInt},
+		{"bigint", "bigint", sql.NullInt64{}, datatype.FieldTypeBigInt},
+		{"decimal(30,4)", "decimal", sql.NullInt64{}, datatype.FieldTypeDecimal},
+		{"datetime(3)", "datetime", sql.NullInt64{Int64: 3, Valid: true}, datatype.FieldTypeTimestamp},
+		{"json", "json", sql.NullInt64{}, datatype.FieldTypeJSON},
+		{"longblob", "longblob", sql.NullInt64{}, datatype.FieldTypeBytes},
+	}
+	for _, test := range valid {
+		if err := validateMySQLCDCSourceFieldType("value", test.columnType, test.dataType, test.precision, sql.NullString{}, test.fieldType); err != nil {
+			t.Fatalf("type %q rejected: %v", test.columnType, err)
+		}
+	}
+	invalid := []struct {
+		columnType, dataType string
+		precision            sql.NullInt64
+		defaultValue         sql.NullString
+	}{
+		{"int unsigned", "int", sql.NullInt64{}, sql.NullString{}},
+		{"tinyint(1)", "tinyint", sql.NullInt64{}, sql.NullString{}},
+		{"enum('a','b')", "enum", sql.NullInt64{}, sql.NullString{}},
+		{"datetime(6)", "datetime", sql.NullInt64{Int64: 6, Valid: true}, sql.NullString{}},
+		{"date", "date", sql.NullInt64{}, sql.NullString{String: "0000-00-00", Valid: true}},
+	}
+	for _, test := range invalid {
+		if err := validateMySQLCDCSourceFieldType("value", test.columnType, test.dataType, test.precision, test.defaultValue, datatype.FieldTypeInt); err == nil {
+			t.Fatalf("unsupported type/default %q was accepted", test.columnType)
+		}
+	}
+}
+
+func TestMySQLSystemVariableEnabledAcceptsDriverAndDisplayForms(t *testing.T) {
+	for _, value := range []string{"ON", "on", "1", " ON "} {
+		if !mysqlSystemVariableEnabled(value) {
+			t.Fatalf("mysqlSystemVariableEnabled(%q) = false", value)
+		}
+	}
+	for _, value := range []string{"OFF", "0", "true", ""} {
+		if mysqlSystemVariableEnabled(value) {
+			t.Fatalf("mysqlSystemVariableEnabled(%q) = true", value)
+		}
 	}
 }
 

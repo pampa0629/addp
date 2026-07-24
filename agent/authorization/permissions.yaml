@@ -1,0 +1,60 @@
+schema_version: addp.permission_manifest/v1
+owner_module: agent
+manifest_version: 1
+permissions:
+  - key: agent.run.cancel
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.agent.run.cancel.name
+    description_i18n_key: permissions.agent.run.cancel.description
+  - key: agent.run.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.agent.run.create.name
+    description_i18n_key: permissions.agent.run.create.description
+  - key: agent.run.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.agent.run.execute.name
+    description_i18n_key: permissions.agent.run.execute.description
+  - key: agent.run.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.agent.run.read.name
+    description_i18n_key: permissions.agent.run.read.description
+  - key: agent.session.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.agent.session.create.name
+    description_i18n_key: permissions.agent.session.create.description
+  - key: agent.session.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.agent.session.delete.name
+    description_i18n_key: permissions.agent.session.delete.description
+  - key: agent.session.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.agent.session.read.name
+    description_i18n_key: permissions.agent.session.read.description

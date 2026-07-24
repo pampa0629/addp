@@ -63,19 +63,6 @@ func TestDropDeprecatedEngineColumnsSQLRemovesLegacyEngineFields(t *testing.T) {
 	}
 }
 
-func TestScrubOAuthAuditRequestBodiesSQLRemovesHistoricalSecrets(t *testing.T) {
-	for _, fragment := range []string{
-		"UPDATE system.audit_logs",
-		"SET request_body = '', query_params = '', error_message = ''",
-		"resource_path LIKE '/api/v1/system/oauth/%'",
-		"request_body <> '' OR query_params <> '' OR error_message <> ''",
-	} {
-		if !strings.Contains(scrubOAuthAuditRequestBodiesSQL, fragment) {
-			t.Fatalf("scrubOAuthAuditRequestBodiesSQL missing %q", fragment)
-		}
-	}
-}
-
 func TestRemoveBuiltinMathWorkflowExampleSQLDeletesOnlyBuiltinMathWorkflow(t *testing.T) {
 	requiredFragments := []string{
 		"DELETE FROM system.engines",

@@ -1,0 +1,404 @@
+schema_version: addp.builtin_roles/v1
+manifest_version: 8
+roles:
+  - key: platform.audit_administrator
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.audit_administrator.name
+    description_i18n_key: roles.platform.audit_administrator.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [user]
+    permissions:
+      - audit.event.export
+      - audit.event.read
+      - audit.report.create
+      - audit.report.read
+      - audit.report.update
+      - audit.subject.read
+      - iam.permission.read
+      - iam.platform_identity_change.read
+      - iam.platform_role_change.read
+      - iam.role.read
+      - platform.restore_request.approve
+      - platform.restore_request.read
+      - platform.restore_request.reject
+  - key: platform.security_administrator
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.security_administrator.name
+    description_i18n_key: roles.platform.security_administrator.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [user]
+    permissions:
+      - iam.external_identity.link
+      - iam.external_identity.read
+      - iam.external_identity.suspend
+      - iam.external_identity.unlink
+      - iam.identity_provider.create
+      - iam.identity_provider.read
+      - iam.identity_provider.suspend
+      - iam.identity_provider.update
+      - iam.permission.read
+      - iam.platform_identity_change.create
+      - iam.platform_identity_change.read
+      - iam.platform_role_change.create
+      - iam.platform_role_change.read
+      - iam.role.read
+      - iam.security_policy.read
+      - iam.security_policy.update
+      - iam.session.read
+      - iam.session.revoke
+      - iam.user.create
+      - iam.user.read
+      - iam.user.suspend
+      - iam.user.update
+      - platform.restore_request.approve
+      - platform.restore_request.read
+      - platform.restore_request.reject
+  - key: platform.statistics_viewer
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.statistics_viewer.name
+    description_i18n_key: roles.platform.statistics_viewer.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [user]
+    permissions:
+      - statistics.summary.read
+      - statistics.tenant_breakdown.read
+  - key: platform.system_administrator
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.system_administrator.name
+    description_i18n_key: roles.platform.system_administrator.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [user]
+    permissions:
+      - iam.platform_identity_change.approve
+      - iam.platform_identity_change.read
+      - iam.platform_identity_change.reject
+      - iam.platform_role_change.approve
+      - iam.platform_role_change.read
+      - iam.platform_role_change.reject
+      - platform.backup.execute
+      - platform.configuration.read
+      - platform.configuration.update
+      - platform.module.read
+      - platform.module.update
+      - platform.operation.read
+      - platform.restore_request.create
+      - platform.restore_request.execute
+      - platform.restore_request.read
+      - platform.tenant.close
+      - platform.tenant.create
+      - platform.tenant.read
+      - platform.tenant.suspend
+      - platform.tenant.update
+  - key: tenant.administrator
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.administrator.name
+    description_i18n_key: roles.tenant.administrator.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [user]
+    permissions:
+      - iam.department.create
+      - iam.department.delete
+      - iam.department.read
+      - iam.department.update
+      - iam.department_membership.close
+      - iam.department_membership.create
+      - iam.department_membership.read
+      - iam.department_membership.update
+      - iam.permission.read
+      - iam.project_group.close
+      - iam.project_group.create
+      - iam.project_group.read
+      - iam.project_group.update
+      - iam.project_group_membership.close
+      - iam.project_group_membership.create
+      - iam.project_group_membership.read
+      - iam.project_group_membership.update
+      - iam.tenant_idp_connection.create
+      - iam.tenant_idp_connection.read
+      - iam.tenant_idp_connection.suspend
+      - iam.tenant_idp_connection.update
+      - iam.tenant_invitation.create
+      - iam.tenant_invitation.read
+      - iam.tenant_invitation.revoke
+      - iam.tenant_membership.close
+      - iam.tenant_membership.read
+      - iam.tenant_membership.suspend
+      - iam.tenant_membership.update
+      - iam.tenant_role.create
+      - iam.tenant_role.delete
+      - iam.tenant_role.read
+      - iam.tenant_role.update
+      - iam.tenant_role_assignment.create
+      - iam.tenant_role_assignment.read
+      - iam.tenant_role_assignment.revoke
+  - key: tenant.ai_user
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.ai_user.name
+    description_i18n_key: roles.tenant.ai_user.description
+    allowed_scope_types: [tenant, department, project_group]
+    allowed_principal_types: [user]
+    permissions:
+      - agent.run.cancel
+      - agent.run.create
+      - agent.run.execute
+      - agent.run.read
+      - agent.session.create
+      - agent.session.delete
+      - agent.session.read
+      - copilot.sql.execute
+      - copilot.workflow.execute
+  - key: tenant.asset_consumer
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.asset_consumer.name
+    description_i18n_key: roles.tenant.asset_consumer.description
+    allowed_scope_types: [tenant, department, project_group]
+    allowed_principal_types: [user]
+    permissions:
+      - asset.application.create
+      - asset.application.read
+      - asset.authorization.read
+      - asset.catalog.read
+      - asset.entry.read
+      - asset.rating.create
+      - asset.rating.read
+      - asset.rating.update
+      - service.endpoint.read
+  - key: tenant.asset_manager
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.asset_manager.name
+    description_i18n_key: roles.tenant.asset_manager.description
+    allowed_scope_types: [tenant, department, project_group]
+    allowed_principal_types: [user]
+    permissions:
+      - asset.application.approve
+      - asset.application.create
+      - asset.application.read
+      - asset.application.reject
+      - asset.application.revoke
+      - asset.authorization.read
+      - asset.authorization.revoke
+      - asset.catalog.create
+      - asset.catalog.delete
+      - asset.catalog.read
+      - asset.catalog.update
+      - asset.entry.delete
+      - asset.entry.offline
+      - asset.entry.publish
+      - asset.entry.read
+      - asset.entry.update
+      - asset.rating.create
+      - asset.rating.read
+      - asset.rating.update
+  - key: tenant.auditor
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.auditor.name
+    description_i18n_key: roles.tenant.auditor.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [user]
+    permissions:
+      - audit.tenant_event.export
+      - audit.tenant_event.read
+      - audit.tenant_subject.read
+      - monitor.execution.read
+      - monitor.statistics.read
+  - key: tenant.data_engineer
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.data_engineer.name
+    description_i18n_key: roles.tenant.data_engineer.description
+    allowed_scope_types: [tenant, department, project_group]
+    allowed_principal_types: [user]
+    permissions:
+      - develop.notebook.create
+      - develop.notebook.delete
+      - develop.notebook.execute
+      - develop.notebook.read
+      - develop.notebook.update
+      - develop.task.cancel
+      - develop.task.create
+      - develop.task.delete
+      - develop.task.execute
+      - develop.task.read
+      - develop.task.update
+      - manager.content.read
+      - manager.data_item.read
+      - manager.search.execute
+      - monitor.execution.read
+      - orchestrator.workflow.cancel
+      - orchestrator.workflow.create
+      - orchestrator.workflow.delete
+      - orchestrator.workflow.execute
+      - orchestrator.workflow.read
+      - orchestrator.workflow.update
+      - transfer.task.cancel
+      - transfer.task.create
+      - transfer.task.delete
+      - transfer.task.execute
+      - transfer.task.read
+      - transfer.task.update
+  - key: tenant.data_steward
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.data_steward.name
+    description_i18n_key: roles.tenant.data_steward.description
+    allowed_scope_types: [tenant, department, project_group]
+    allowed_principal_types: [user]
+    permissions:
+      - manager.content.read
+      - manager.data_item.create
+      - manager.data_item.delete
+      - manager.data_item.read
+      - manager.data_item.update
+      - manager.derived_artifact.create
+      - manager.derived_artifact.delete
+      - manager.derived_artifact.read
+      - manager.search.execute
+      - meta.catalog.read
+      - meta.inspect.execute
+      - meta.scan_task.create
+      - meta.scan_task.delete
+      - meta.scan_task.execute
+      - meta.scan_task.read
+      - meta.scan_task.update
+  - key: tenant.data_viewer
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.data_viewer.name
+    description_i18n_key: roles.tenant.data_viewer.description
+    allowed_scope_types: [tenant, department, project_group]
+    allowed_principal_types: [user]
+    permissions:
+      - manager.content.read
+      - manager.data_item.read
+      - manager.search.execute
+      - meta.catalog.read
+  - key: tenant.department_coordinator
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.department_coordinator.name
+    description_i18n_key: roles.tenant.department_coordinator.description
+    allowed_scope_types: [department]
+    allowed_principal_types: [user]
+    permissions:
+      - iam.department.read
+      - iam.department_membership.close
+      - iam.department_membership.create
+      - iam.department_membership.read
+      - iam.department_membership.update
+  - key: tenant.governance_manager
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.governance_manager.name
+    description_i18n_key: roles.tenant.governance_manager.description
+    allowed_scope_types: [tenant, department, project_group]
+    allowed_principal_types: [user]
+    permissions:
+      - model.logical_model.create
+      - model.logical_model.delete
+      - model.logical_model.read
+      - model.logical_model.update
+      - monitor.execution.read
+      - quality.check_task.create
+      - quality.check_task.delete
+      - quality.check_task.execute
+      - quality.check_task.read
+      - quality.check_task.update
+      - quality.issue.read
+      - quality.issue.update
+      - quality.rule_application.create
+      - quality.rule_application.delete
+      - quality.rule_application.read
+      - quality.rule_application.update
+      - standard.code_set.create
+      - standard.code_set.delete
+      - standard.code_set.read
+      - standard.code_set.update
+      - standard.domain.create
+      - standard.domain.delete
+      - standard.domain.read
+      - standard.domain.update
+      - standard.element.create
+      - standard.element.delete
+      - standard.element.read
+      - standard.element.update
+      - standard.metric.create
+      - standard.metric.delete
+      - standard.metric.read
+      - standard.metric.update
+  - key: tenant.graph_engineer
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.graph_engineer.name
+    description_i18n_key: roles.tenant.graph_engineer.description
+    allowed_scope_types: [tenant, department, project_group]
+    allowed_principal_types: [user]
+    permissions:
+      - graph.analysis.execute
+      - graph.analysis.read
+      - graph.build_task.cancel
+      - graph.build_task.create
+      - graph.build_task.delete
+      - graph.build_task.execute
+      - graph.build_task.read
+      - graph.build_task.update
+      - graph.graph.create
+      - graph.graph.delete
+      - graph.graph.read
+      - graph.graph.update
+      - graph.ontology.create
+      - graph.ontology.delete
+      - graph.ontology.read
+      - graph.ontology.update
+      - graph.review.approve
+      - graph.review.read
+      - graph.review.reject
+      - graph.review.update
+  - key: tenant.infrastructure_administrator
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.infrastructure_administrator.name
+    description_i18n_key: roles.tenant.infrastructure_administrator.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [user]
+    permissions:
+      - monitor.health.read
+      - system.api_key.create
+      - system.api_key.read
+      - system.api_key.revoke
+      - system.application.create
+      - system.application.delete
+      - system.application.read
+      - system.application.update
+      - system.cleanup.execute
+      - system.cleanup.read
+      - system.engine.create
+      - system.engine.delete
+      - system.engine.execute
+      - system.engine.read
+      - system.engine.update
+  - key: tenant.project_group_coordinator
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.project_group_coordinator.name
+    description_i18n_key: roles.tenant.project_group_coordinator.description
+    allowed_scope_types: [project_group]
+    allowed_principal_types: [user]
+    permissions:
+      - iam.project_group.read
+      - iam.project_group_membership.close
+      - iam.project_group_membership.create
+      - iam.project_group_membership.read
+      - iam.project_group_membership.update
+  - key: tenant.service_publisher
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.service_publisher.name
+    description_i18n_key: roles.tenant.service_publisher.description
+    allowed_scope_types: [tenant, department, project_group]
+    allowed_principal_types: [user]
+    permissions:
+      - manager.content.read
+      - manager.data_item.read
+      - manager.search.execute
+      - meta.catalog.read
+      - service.definition.create
+      - service.definition.delete
+      - service.definition.offline
+      - service.definition.publish
+      - service.definition.read
+      - service.definition.update
+      - service.external_registration.create
+      - service.external_registration.delete
+      - service.external_registration.read
+      - service.external_registration.update

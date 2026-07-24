@@ -38,10 +38,15 @@ type MetaScanOptions struct {
 	Source       string
 }
 
+const (
+	MetaScanDepthBasic = "basic"
+	MetaScanDepthDeep  = "deep"
+)
+
 type MetaInspectRequest struct {
-	Locator   string              `json:"locator"`
-	RefGroups []MetaScanRefGroup  `json:"ref_groups,omitempty"`
-	ScanDepth string              `json:"scan_depth,omitempty"`
+	Locator   string             `json:"locator"`
+	RefGroups []MetaScanRefGroup `json:"ref_groups,omitempty"`
+	ScanDepth string             `json:"scan_depth,omitempty"`
 }
 
 type MetaInspectResult struct {

@@ -10,7 +10,8 @@ import (
 func TestCaptureSummaryDoesNotExposeInternalResourceNames(t *testing.T) {
 	summary := NewCaptureSummary(&CaptureResource{
 		Generation: 1, Status: CaptureStatusRunning, ConnectorStatus: "RUNNING",
-		ConnectorName: "secret-connector", TopicName: "__addp_cdc.1.2.1", SlotName: "secret_slot",
+		ConnectorName: "secret-connector", TopicName: "__addp_cdc.1.2.1",
+		PostgreSQL: &PostgreSQLCaptureResource{SlotName: "secret_slot"},
 	})
 	data, err := json.Marshal(summary)
 	if err != nil {
@@ -21,6 +22,21 @@ func TestCaptureSummaryDoesNotExposeInternalResourceNames(t *testing.T) {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("capture summary leaked %q: %s", forbidden, text)
 		}
+	}
+}
+
+func TestCaptureResourceKeepsProviderFieldsOutOfGenericGeneration(t *testing.T) {
+	typeOfCapture := reflect.TypeOf(CaptureResource{})
+	for _, field := range []string{"SlotName", "PublicationName", "SlotOwned", "PublicationOwned", "ConnectorServerID"} {
+		if _, ok := typeOfCapture.FieldByName(field); ok {
+			t.Fatalf("generic CaptureResource contains provider field %s", field)
+		}
+	}
+	if _, ok := reflect.TypeOf(PostgreSQLCaptureResource{}).FieldByName("SlotName"); !ok {
+		t.Fatal("PostgreSQL provider facts do not own SlotName")
+	}
+	if _, ok := reflect.TypeOf(MySQLCaptureResource{}).FieldByName("ConnectorServerID"); !ok {
+		t.Fatal("MySQL provider facts do not own ConnectorServerID")
 	}
 }
 

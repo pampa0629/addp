@@ -95,6 +95,7 @@ export const buildWorkflowDevTaskPayload = ({
   displayName = '',
   description = '',
   workflow,
+  editorLayout = {},
   inputs = {},
   workflowEngineId,
   sparkRuntimeId = null,
@@ -105,6 +106,7 @@ export const buildWorkflowDevTaskPayload = ({
     name,
     display_name: displayName,
     description,
+    editor_layout: editorLayout,
     execution_config: buildWorkflowExecutionConfig({
       workflowEngineId,
       sparkRuntimeId,

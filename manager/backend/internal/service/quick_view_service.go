@@ -523,10 +523,12 @@ type QuickViewRenderFacts struct {
 }
 
 type ZoomRecommendation struct {
-	MinZoom int    `json:"min_zoom"`
-	MaxZoom int    `json:"max_zoom"`
-	Status  string `json:"status"`
-	Reason  string `json:"reason,omitempty"`
+	MinZoom            int    `json:"min_zoom"`
+	MaxZoom            int    `json:"max_zoom"`
+	Status             string `json:"status"`
+	Reason             string `json:"reason,omitempty"`
+	EstimatedTileCount int64  `json:"estimated_tile_count,omitempty"`
+	TileBudget         int64  `json:"tile_budget,omitempty"`
 }
 
 type TileCacheGeneration struct {
@@ -1985,7 +1987,10 @@ func renderInfoFromTileCache(engineID uint, schema, table string, tileCache *mod
 		info.MaxZoom = maxZoom
 	}
 	if spatialMeta != nil {
+		info.GeometryColumn = spatialMeta.GeomColumn
 		info.SourceSRID = spatialMeta.SRID
+		info.RecordCount = spatialMeta.RecordCount
+		applyQuickViewCRSContract(&info, spatialMeta)
 	}
 	return info
 }
@@ -3026,11 +3031,19 @@ func rasterStorageRefFromLocator(loc *resourcetree.ResourceLocator) string {
 	}
 }
 
+const quickViewCandidateTileBudget int64 = 10_000
+
 func quickViewZoomRange(meta *SpatialMetadataResult) (int, int) {
+	recommendation := quickViewZoomRecommendation(meta)
+	return recommendation.MinZoom, recommendation.MaxZoom
+}
+
+func quickViewZoomRecommendation(meta *SpatialMetadataResult) ZoomRecommendation {
 	minZoom := 3
 	maxZoom := 18
-	if extent, srid, ok := zoomExtent(meta); ok {
-		minZoom = spatial.CalculateMinZoomFromExtent(extent, srid)
+	extent, extentSRID, hasExtent := zoomExtent(meta)
+	if hasExtent {
+		minZoom = spatial.CalculateMinZoomFromExtent(extent, extentSRID)
 		if minZoom < 3 {
 			minZoom = 3
 		}
@@ -3046,7 +3059,33 @@ func quickViewZoomRange(meta *SpatialMetadataResult) (int, int) {
 	if maxZoom < minZoom {
 		maxZoom = minZoom
 	}
-	return minZoom, maxZoom
+
+	recommendation := ZoomRecommendation{
+		MinZoom:    minZoom,
+		MaxZoom:    maxZoom,
+		Status:     "manual_required",
+		Reason:     "render extent is unavailable",
+		TileBudget: quickViewCandidateTileBudget,
+	}
+	if !hasExtent {
+		return recommendation
+	}
+
+	extentArray := [4]float64{extent[0], extent[1], extent[2], extent[3]}
+	budgetMaxZoom, estimatedTileCount, ok := spatial.RecommendMaxZoomByTileBudget(
+		extentArray,
+		extentSRID,
+		minZoom,
+		maxZoom,
+		quickViewCandidateTileBudget,
+	)
+	if ok {
+		recommendation.MaxZoom = budgetMaxZoom
+		recommendation.EstimatedTileCount = estimatedTileCount
+		recommendation.Status = "estimated"
+		recommendation.Reason = "computed from render extent and candidate tile budget"
+	}
+	return recommendation
 }
 
 func isReliableZoomExtentSRID(srid int) bool {
@@ -3070,23 +3109,12 @@ func renderFactsFromSpatialMeta(meta *SpatialMetadataResult) *QuickViewRenderFac
 	if meta == nil {
 		return nil
 	}
-	minZoom, maxZoom := quickViewZoomRange(meta)
-	status := "manual_required"
-	reason := "render extent is unavailable"
-	if _, _, ok := zoomExtent(meta); ok {
-		status = "estimated"
-		reason = "computed from render extent"
-	}
+	zoomRecommendation := quickViewZoomRecommendation(meta)
 	facts := &QuickViewRenderFacts{
-		SourceSRID:       meta.SRID,
-		SourceExtent:     append([]float64(nil), meta.Extent...),
-		SourceExtentSRID: meta.ExtentSRID,
-		ZoomRecommendation: &ZoomRecommendation{
-			MinZoom: minZoom,
-			MaxZoom: maxZoom,
-			Status:  status,
-			Reason:  reason,
-		},
+		SourceSRID:         meta.SRID,
+		SourceExtent:       append([]float64(nil), meta.Extent...),
+		SourceExtentSRID:   meta.ExtentSRID,
+		ZoomRecommendation: &zoomRecommendation,
 	}
 	if len(meta.RenderExtent) == 4 && meta.RenderExtentSRID > 0 {
 		facts.RenderExtent = append([]float64(nil), meta.RenderExtent...)
@@ -3111,10 +3139,11 @@ func applyOptimizationRenderFacts(facts *QuickViewRenderFacts, optimization *Vec
 	}
 	if facts.ZoomRecommendation == nil {
 		facts.ZoomRecommendation = &ZoomRecommendation{
-			MinZoom: 3,
-			MaxZoom: 12,
-			Status:  "estimated",
-			Reason:  "ready vector materialized view target",
+			MinZoom:    3,
+			MaxZoom:    12,
+			Status:     "estimated",
+			Reason:     "ready vector materialized view target",
+			TileBudget: quickViewCandidateTileBudget,
 		}
 	}
 }

@@ -21,7 +21,7 @@
               <template #default="{ row }">{{ taskResource(row) }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.tileCache.format')" width="100">
-              <template #default="{ row }">{{ row.tile?.format || 'mvt' }}</template>
+			  <template #default="{ row }">{{ row.tile?.archive_format || 'pmtiles' }} / {{ row.tile?.tile_type || 'mvt' }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.tileCache.zoom')" width="110">
               <template #default="{ row }">
@@ -278,13 +278,23 @@
           </template>
         </el-alert>
         <el-form-item :label="t('manager.tileCache.format')">
-          <el-tag type="info">mvt</el-tag>
+          <el-tag type="info">PMTiles / MVT</el-tag>
         </el-form-item>
         <el-form-item :label="t('manager.tileCache.zoom')" required>
-          <div class="zoom-row">
-            <el-input-number v-model="form.config.tile.min_zoom" :min="0" :max="form.config.tile.max_zoom" controls-position="right" />
-            <span>-</span>
-            <el-input-number v-model="form.config.tile.max_zoom" :min="form.config.tile.min_zoom" :max="22" controls-position="right" />
+          <div class="zoom-settings">
+            <div class="zoom-row">
+              <el-input-number v-model="form.config.tile.min_zoom" :min="0" :max="form.config.tile.max_zoom" controls-position="right" />
+              <span>-</span>
+              <el-input-number v-model="form.config.tile.max_zoom" :min="form.config.tile.min_zoom" :max="22" controls-position="right" />
+            </div>
+            <el-alert
+              v-if="tileRangeEstimate.supported"
+              :type="tileEstimateOverBudget ? 'warning' : 'info'"
+              :closable="false"
+              show-icon
+              class="tile-budget-advice"
+              :title="tileEstimateMessage"
+            />
           </div>
         </el-form-item>
         <el-form-item :label="t('manager.tileCache.targetSrid')">
@@ -322,7 +332,7 @@
           {{ selectedTask.tile?.geometry_column || selectedTask.config?.options?.geometry_column || '-' }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('manager.tileCache.format')">
-          {{ selectedTask.tile?.format || selectedTask.config?.tile?.format || 'mvt' }}
+		  {{ selectedTask.tile?.archive_format || selectedTask.config?.tile?.archive_format || 'pmtiles' }} / {{ selectedTask.tile?.tile_type || selectedTask.config?.tile?.tile_type || 'mvt' }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('manager.tileCache.zoom')">
           {{ selectedTask.tile?.min_zoom ?? selectedTask.config?.tile?.min_zoom ?? '-' }} -
@@ -436,6 +446,10 @@ import {
   createTileCacheTaskFormFromTask,
   createTileCacheTaskPayload
 } from '../utils/tileCacheTaskForm'
+import {
+  calculateTileRangeEstimate,
+  DEFAULT_QUICK_VIEW_TILE_BUDGET
+} from '../utils/vectorTileEstimate'
 import { buildVectorMaterializedViewCreateQuery } from '../utils/quickViewNavigationQuery'
 import { tileCacheOptimizationAdvice as buildTileCacheOptimizationAdvice } from '../utils/tileCacheOptimizationAdvice'
 import { quickViewDisplayText } from '../utils/quickViewResourceDisplay'
@@ -492,6 +506,8 @@ const detailExecutionLoading = ref(false)
 let detailExecutionRequestSeq = 0
 let taskRefreshTimer = null
 const capabilityLoading = ref(false)
+const tileBudget = ref(DEFAULT_QUICK_VIEW_TILE_BUDGET)
+const recommendedMaxZoom = ref(12)
 const tileCacheOptimizationAdvice = reactive({
   visible: false,
   title: '',
@@ -519,6 +535,27 @@ const selectedResourceSummary = computed(() => {
   if (engine && engine !== '-') parts.push(engine)
   if (sourceResourceText.value && sourceResourceText.value !== '-') parts.push(sourceResourceText.value)
   return parts.join(' / ') || resourceTextFromLocator(form.config.target.locator) || ''
+})
+const tileRangeEstimate = computed(() => calculateTileRangeEstimate({
+  extent: form.config.tile.extent,
+  extentSRID: form.config.tile.extent_srid,
+  minZoom: form.config.tile.min_zoom,
+  maxZoom: form.config.tile.max_zoom
+}))
+const tileEstimateOverBudget = computed(() => {
+  return tileRangeEstimate.value.supported && tileRangeEstimate.value.tileCount > tileBudget.value
+})
+const tileEstimateMessage = computed(() => {
+  const count = Number(tileRangeEstimate.value.tileCount || 0).toLocaleString()
+  const budget = Number(tileBudget.value || DEFAULT_QUICK_VIEW_TILE_BUDGET).toLocaleString()
+  if (tileEstimateOverBudget.value) {
+    return t('manager.tileCache.tileEstimateOverBudget', {
+      count,
+      budget,
+      recommended: recommendedMaxZoom.value
+    })
+  }
+  return t('manager.tileCache.tileEstimateWithinBudget', { count, budget })
 })
 const resultTaskFilterLabel = computed(() => {
   if (!selectedResultTask.value) return ''
@@ -565,6 +602,8 @@ const resetForm = (task = null) => {
   tileCacheOptimizationAdvice.type = 'warning'
   tileCacheOptimizationAdvice.actionVisible = true
   Object.assign(form, next)
+  tileBudget.value = DEFAULT_QUICK_VIEW_TILE_BUDGET
+  recommendedMaxZoom.value = Number(form.config.tile.max_zoom || 12)
   if (form.config.options.geometry_column) {
     geometryColumnOptions.value = [form.config.options.geometry_column]
   }
@@ -846,6 +885,8 @@ const applyQuickViewCapabilityToForm = (config, fallbackGeometryColumns = []) =>
   if (config.full_name) form.config.target.full_name = String(config.full_name)
   form.config.tile.min_zoom = Number(config.min_zoom ?? form.config.tile.min_zoom)
   form.config.tile.max_zoom = Number(config.max_zoom ?? form.config.tile.max_zoom)
+  tileBudget.value = Number(config.tile_budget || DEFAULT_QUICK_VIEW_TILE_BUDGET)
+  recommendedMaxZoom.value = Number(config.max_zoom ?? form.config.tile.max_zoom)
   form.config.tile.target_srid = Number(config.target_srid || 3857)
   form.config.tile.source_srid = Number(config.source_srid || form.config.tile.source_srid || 0)
   form.config.tile.extent_srid = Number(config.extent_srid || config.srid || form.config.tile.extent_srid || 0)
@@ -895,6 +936,8 @@ const tileCacheFormConfigFromCapability = (capability) => {
     item_fingerprint: capability?.item_fingerprint,
     min_zoom: zoom.min_zoom ?? quickView.min_zoom,
     max_zoom: zoom.max_zoom ?? quickView.max_zoom,
+    estimated_tile_count: zoom.estimated_tile_count,
+    tile_budget: zoom.tile_budget,
     source_srid: renderFacts.source_srid ?? quickView.source_srid,
     extent: Array.isArray(renderFacts.render_extent) ? renderFacts.render_extent : quickView.extent,
     extent_srid: renderFacts.render_extent_srid ?? quickView.extent_srid,
@@ -1463,6 +1506,17 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+.zoom-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.tile-budget-advice {
+  width: 100%;
 }
 
 .source-summary {

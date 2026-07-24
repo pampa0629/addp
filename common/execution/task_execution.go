@@ -148,6 +148,7 @@ const (
 	TaskTypeOrchestration = "orchestration"
 	// Manager 模块
 	TaskTypeVectorTileCacheGeneration        = "vector_tile_cache_generation"
+	TaskTypeVectorTileSetGeneration          = "vector_tile_set_generation"
 	TaskTypeVectorMaterializedViewGeneration = "vector_materialized_view_generation"
 	TaskTypeRasterCOGGeneration              = "raster_cog_generation"
 	TaskTypeRasterMosaicGeneration           = "raster_mosaic_generation"

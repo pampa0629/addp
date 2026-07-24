@@ -761,7 +761,8 @@ async function loadCapabilities() {
     })
     props.wizardState.updateFormatCapabilities({
       readableEncodedFormats: readable,
-      rawCopyFormats: nextRawCopyFormats
+		rawCopyFormats: nextRawCopyFormats,
+		databaseCDC: data?.continuous?.database_cdc || data?.continuous?.databaseCDC || null
     })
     writableOutputFormats.value = writable
     if (!writableOutputFormats.value.some(format => format.value === outputFormat.value)) {

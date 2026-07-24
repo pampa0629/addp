@@ -1044,6 +1044,24 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 }
             }
@@ -1073,6 +1091,24 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 }
             }
@@ -1101,6 +1137,24 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -1138,6 +1192,24 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 }
             }
@@ -1166,6 +1238,24 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -1229,6 +1319,24 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -2564,6 +2672,24 @@ const docTemplate = `{
                         "schema": {
                             "type": "file"
                         }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 }
             }
@@ -2597,6 +2723,18 @@ const docTemplate = `{
                         "description": "WMTS Capabilities XML | WMTS Capabilities XML",
                         "schema": {
                             "$ref": "#/definitions/internal_api.Capabilities"
+                        }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ExceptionReport"
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ExceptionReport"
                         }
                     }
                 }
@@ -4144,6 +4282,31 @@ const docTemplate = `{
             "properties": {
                 "http": {
                     "$ref": "#/definitions/internal_api.HTTP"
+                }
+            }
+        },
+        "internal_api.Exception": {
+            "type": "object",
+            "properties": {
+                "exceptionCode": {
+                    "type": "string"
+                },
+                "exceptionText": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ExceptionReport": {
+            "type": "object",
+            "properties": {
+                "exception": {
+                    "$ref": "#/definitions/internal_api.Exception"
+                },
+                "version": {
+                    "type": "string"
+                },
+                "xmlname": {
+                    "$ref": "#/definitions/encoding_xml.Name"
                 }
             }
         },

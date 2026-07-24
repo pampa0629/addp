@@ -6,6 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
+from authorization_permissions_generated import (
+    AGENT_SESSION_CREATE,
+    AGENT_SESSION_DELETE,
+    AGENT_SESSION_READ,
+)
 from database import get_db
 from models.session import Session
 
@@ -25,7 +30,14 @@ class SessionResponse(BaseModel):
     updated_at: str
 
 
-@router.get("", summary="获取会话列表 | List Sessions")
+@router.get(
+    "",
+    summary="获取会话列表 | List Sessions",
+    openapi_extra={
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [AGENT_SESSION_READ],
+    },
+)
 async def list_sessions(request: Request, db: AsyncSession = Depends(get_db)):
     """获取当前用户的会话列表"""
     user_id = request.state.user_id
@@ -46,7 +58,15 @@ async def list_sessions(request: Request, db: AsyncSession = Depends(get_db)):
     ]
 
 
-@router.post("", status_code=201, summary="创建会话 | Create Session")
+@router.post(
+    "",
+    status_code=201,
+    summary="创建会话 | Create Session",
+    openapi_extra={
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [AGENT_SESSION_CREATE],
+    },
+)
 async def create_session(request: Request, body: SessionCreate, db: AsyncSession = Depends(get_db)):
     """创建新会话"""
     session = Session(
@@ -64,7 +84,14 @@ async def create_session(request: Request, body: SessionCreate, db: AsyncSession
     }
 
 
-@router.get("/{session_id}", summary="获取会话详情 | Get Session")
+@router.get(
+    "/{session_id}",
+    summary="获取会话详情 | Get Session",
+    openapi_extra={
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [AGENT_SESSION_READ],
+    },
+)
 async def get_session(session_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """获取会话详情"""
     result = await db.execute(
@@ -84,7 +111,14 @@ async def get_session(session_id: int, request: Request, db: AsyncSession = Depe
     }
 
 
-@router.delete("/{session_id}", summary="删除会话 | Delete Session")
+@router.delete(
+    "/{session_id}",
+    summary="删除会话 | Delete Session",
+    openapi_extra={
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [AGENT_SESSION_DELETE],
+    },
+)
 async def delete_session(session_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """删除会话"""
     result = await db.execute(

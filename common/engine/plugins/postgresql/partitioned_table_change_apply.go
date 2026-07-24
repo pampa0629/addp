@@ -36,9 +36,9 @@ func (p *PostgreSQLPlugin) PreparePartitionedTableChangeApply(ctx context.Contex
 	if err := validatePartitionedTableChangeApplyOptions(opts); err != nil {
 		return err
 	}
-	if err := p.PrepareTableUpsert(ctx, connInfo, path, plugin.TableUpsertOptions{
+	if err := p.prepareTableUpsert(ctx, connInfo, path, plugin.TableUpsertOptions{
 		Fields: opts.Fields, SpatialInfo: opts.SpatialInfo, Keys: opts.Keys,
-	}); err != nil {
+	}, opts.RequireTargetAbsent); err != nil {
 		return err
 	}
 	connStr, err := p.BuildDSN(connInfo)
@@ -271,8 +271,11 @@ func filterAndCoalescePostgresChanges(batch *plugin.PartitionedTableChangeBatch,
 	skipped := 0
 	previousOffset := int64(-1)
 	for index, change := range batch.Changes {
-		if change.Operation != plugin.TableChangeOperationUpsert && change.Operation != plugin.TableChangeOperationDelete {
+		if change.Operation != plugin.TableChangeOperationUpsert && change.Operation != plugin.TableChangeOperationDelete && change.Operation != plugin.TableChangeOperationSkip {
 			return nil, 0, fmt.Errorf("unsupported table change operation %q at index %d", change.Operation, index)
+		}
+		if change.Operation == plugin.TableChangeOperationSkip && len(change.Row) != 0 {
+			return nil, 0, fmt.Errorf("skip operation must not contain a row at index %d", index)
 		}
 		nextOffset, err := kafkaNextOffset(change.Position, batch.Partition)
 		if err != nil {
@@ -289,6 +292,10 @@ func filterAndCoalescePostgresChanges(batch *plugin.PartitionedTableChangeBatch,
 			return nil, 0, fmt.Errorf("table change next_offset %d exceeds batch end %d", nextOffset, endOffset)
 		}
 		if nextOffset <= ledgerOffset {
+			skipped++
+			continue
+		}
+		if change.Operation == plugin.TableChangeOperationSkip {
 			skipped++
 			continue
 		}

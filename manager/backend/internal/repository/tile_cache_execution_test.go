@@ -862,7 +862,7 @@ func newTileCacheExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(`CREATE TABLE manager.vector_tile_cache (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
 		item_id INTEGER, locator TEXT, task_id INTEGER, last_execution_id TEXT, tile_format TEXT NOT NULL,
-		storage_ref TEXT, extent JSON, extent_srid INTEGER, min_zoom INTEGER, max_zoom INTEGER,
+		storage_ref TEXT, source_version TEXT NOT NULL, profile_hash TEXT NOT NULL, extent JSON, extent_srid INTEGER, min_zoom INTEGER, max_zoom INTEGER,
 		status TEXT NOT NULL, error_message TEXT, created_by INTEGER, created_at DATETIME,
 		updated_at DATETIME, deleted_at DATETIME
 	)`).Error; err != nil {

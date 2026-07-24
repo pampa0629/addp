@@ -1,10 +1,6 @@
 package mvt
 
-import (
-	"time"
-
-	commonModels "github.com/addp/common/models"
-)
+import commonModels "github.com/addp/common/models"
 
 // TileCoord 瓦片坐标
 type TileCoord struct {
@@ -25,20 +21,6 @@ type TileGenerationSource struct {
 	PrimaryKey         string
 	MaxZoom            int
 	OptimizationConfig *commonModels.OptimizationConfig
-}
-
-func TileGenerationSourceFromQuickViewConfig(cfg QuickViewConfig) TileGenerationSource {
-	return TileGenerationSource{
-		EngineID:           cfg.EngineID,
-		TenantID:           cfg.TenantID,
-		Schema:             cfg.Schema,
-		Table:              cfg.Table,
-		GeomColumn:         cfg.GeomColumn,
-		SRID:               cfg.SRID,
-		PrimaryKey:         cfg.PrimaryKey,
-		MaxZoom:            cfg.MaxZoom,
-		OptimizationConfig: cfg.OptimizationConfig,
-	}
 }
 
 func (s TileGenerationSource) Params(coord TileCoord) TileGenerationParams {
@@ -72,29 +54,6 @@ type ZoomLevelStats struct {
 	TotalSizeBytes int64   `json:"total_size_bytes"` // 总大小（字节）
 	MaxSizeBytes   int64   `json:"max_size_bytes"`   // 最大单瓦片原始 MVT 大小（字节）
 	MinSizeBytes   int64   `json:"min_size_bytes"`   // 最小单瓦片原始 MVT 大小（字节）
-}
-
-// QuickViewMetadata 快显元数据（存储在 MinIO）
-type QuickViewMetadata struct {
-	EngineID         uint                      `json:"engine_id"`
-	Fingerprint      string                    `json:"fingerprint"`
-	TileFormat       string                    `json:"tile_format"`
-	StorageRef       string                    `json:"storage_ref"`
-	ObjectPrefix     string                    `json:"object_prefix"`
-	TableName        string                    `json:"table_name"`
-	Schema           string                    `json:"schema"`
-	Extent           []float64                 `json:"extent"` // [minLng, minLat, maxLng, maxLat]
-	SRID             int                       `json:"srid"`
-	MinZoom          int                       `json:"min_zoom"`
-	RowCount         int64                     `json:"row_count"`
-	GeometryTypes    []string                  `json:"geometry_types"`
-	ZoomLevels       map[string]ZoomLevelStats `json:"zoom_levels"` // "0", "1", ... "maxZoom"
-	MaxZoomGenerated int                       `json:"max_zoom_generated"`
-	StopReason       string                    `json:"stop_reason"` // "max_zoom_reached" or "adaptive_threshold"
-	TotalTiles       int                       `json:"total_tiles"`
-	TotalSizeBytes   int64                     `json:"total_size_bytes"`
-	CreatedAt        time.Time                 `json:"created_at"`
-	GenerationSec    float64                   `json:"generation_duration_seconds"`
 }
 
 // SpatialMetadata 空间表元数据

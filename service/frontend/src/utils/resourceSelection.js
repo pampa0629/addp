@@ -1,7 +1,15 @@
 export const QUERY_TABLE_ENGINE_TYPES = ['postgresql', 'mysql', 'doris', 'clickhouse', 'minio', 's3']
 export const NATIVE_TABLE_ENGINE_TYPES = ['postgresql', 'mysql', 'doris', 'clickhouse']
 export const OBJECT_TABLE_FORMATS = ['parquet', 'orc', 'avro']
-export const TILE_PYRAMID_ENGINE_TYPES = ['s3', 'minio', 'nfs']
+export const PMTILES_ENGINE_TYPES = ['s3', 'minio', 'nfs']
+
+export function isNativeTableEngine(engine) {
+  return NATIVE_TABLE_ENGINE_TYPES.includes(String(engine?.engine_type || '').toLowerCase())
+}
+
+export function isPMTilesEngine(engine) {
+  return PMTILES_ENGINE_TYPES.includes(String(engine?.engine_type || '').toLowerCase()) && engine?.is_builtin !== true
+}
 
 export function isQueryableTableNode(node) {
   if (!node) return false
@@ -50,7 +58,7 @@ export function isNativeTableVisibleNode(node) {
   return node.hasChildren || type === 'engine' || type === 'schema' || type === 'database' || type === 'bucket' || type === 'directory' || type === 'dir' || type === 'prefix' || type === 'root' || type === 'service' || type === 'server'
 }
 
-export function isTilePyramidNode(node) {
+export function isPMTilesNode(node) {
   if (!node) return false
   const type = String(node.type || '').toLowerCase()
   if (type !== 'object' && type !== 'file') return false
@@ -58,12 +66,12 @@ export function isTilePyramidNode(node) {
   const dataType = String(metadata.data_type || metadata.attributes?.item?.data_type || '').toLowerCase()
   const format = String(metadata.format || metadata.attributes?.item?.format || '').toLowerCase()
   const layout = String(metadata.layout || metadata.attributes?.item?.layout || '').toLowerCase()
-  return dataType === 'media' && format === 'tile_pyramid' && layout === 'whole'
+  return dataType === 'media' && format === 'pmtiles' && layout === 'single'
 }
 
-export function isTilePyramidVisibleNode(node) {
+export function isPMTilesVisibleNode(node) {
   if (!node) return false
-  if (isTilePyramidNode(node)) return true
+  if (isPMTilesNode(node)) return true
   const type = String(node.type || '').toLowerCase()
   return node.hasChildren || ['engine', 'bucket', 'directory', 'dir', 'prefix', 'root', 'service'].includes(type)
 }

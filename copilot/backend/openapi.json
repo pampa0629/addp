@@ -1,0 +1,1156 @@
+{
+  "components": {
+    "schemas": {
+      "DataSourceCandidate": {
+        "description": "数据源候选",
+        "properties": {
+          "engine_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine Id"
+          },
+          "engine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine Name"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "schema_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Name"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "table_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Table Name"
+          }
+        },
+        "required": [
+          "score",
+          "reason"
+        ],
+        "title": "DataSourceCandidate",
+        "type": "object"
+      },
+      "EntityTypeInfo": {
+        "description": "实体类型定义（来自本体模型）",
+        "properties": {
+          "description": {
+            "default": "",
+            "description": "实体类型说明",
+            "title": "Description",
+            "type": "string"
+          },
+          "label": {
+            "description": "显示名称",
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "description": "实体类型名（对应 Neo4j Label）",
+            "title": "Name",
+            "type": "string"
+          },
+          "properties": {
+            "description": "属性定义列表（含 unique 标记）",
+            "items": {
+              "$ref": "#/components/schemas/PropertyInfo"
+            },
+            "title": "Properties",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "EntityTypeInfo",
+        "type": "object"
+      },
+      "ExtractedEntity": {
+        "description": "抽取出的实体",
+        "properties": {
+          "confidence": {
+            "description": "置信度 0.0~1.0",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "properties": {
+            "additionalProperties": true,
+            "description": "属性值（必须包含所有 unique=true 的属性）",
+            "title": "Properties",
+            "type": "object"
+          },
+          "source_text": {
+            "description": "实体在原文中的来源文本片段（约 50 字以内）",
+            "title": "Source Text",
+            "type": "string"
+          },
+          "temp_id": {
+            "description": "局部临时 ID（供同一 chunk 内的关系引用，格式: e1/e2/...）",
+            "title": "Temp Id",
+            "type": "string"
+          },
+          "type": {
+            "description": "实体类型名（必须与 OntologySchema 中的 name 一致）",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "temp_id",
+          "type",
+          "properties",
+          "confidence",
+          "source_text"
+        ],
+        "title": "ExtractedEntity",
+        "type": "object"
+      },
+      "ExtractedRelation": {
+        "description": "抽取出的关系",
+        "properties": {
+          "confidence": {
+            "description": "置信度 0.0~1.0",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "properties": {
+            "additionalProperties": true,
+            "description": "关系属性值",
+            "title": "Properties",
+            "type": "object"
+          },
+          "source_temp_id": {
+            "description": "源实体的 temp_id",
+            "title": "Source Temp Id",
+            "type": "string"
+          },
+          "source_text": {
+            "description": "关系在原文中的来源文本片段",
+            "title": "Source Text",
+            "type": "string"
+          },
+          "target_temp_id": {
+            "description": "目标实体的 temp_id",
+            "title": "Target Temp Id",
+            "type": "string"
+          },
+          "type": {
+            "description": "关系类型名（必须与 OntologySchema 中的 name 一致）",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "source_temp_id",
+          "target_temp_id",
+          "confidence",
+          "source_text"
+        ],
+        "title": "ExtractedRelation",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "KGExtractRequest": {
+        "description": "KG 抽取请求（单个 chunk，由 Graph 后端分块后调用）",
+        "properties": {
+          "confidence_threshold": {
+            "default": 0.7,
+            "description": "置信度阈值（参考值，具体分类由 Graph 后端处理）",
+            "title": "Confidence Threshold",
+            "type": "number"
+          },
+          "doc_context": {
+            "default": "",
+            "description": "文档头部上下文（前 N 字），帮助 LLM 理解主题和简称",
+            "title": "Doc Context",
+            "type": "string"
+          },
+          "graph_id": {
+            "description": "知识图谱 ID",
+            "title": "Graph Id",
+            "type": "integer"
+          },
+          "ontology": {
+            "$ref": "#/components/schemas/OntologySchema",
+            "description": "本体 Schema（实体类型+关系类型+属性定义）"
+          },
+          "text": {
+            "description": "待抽取的文本（单个 chunk，约 1000 字符）",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "ontology",
+          "graph_id"
+        ],
+        "title": "KGExtractRequest",
+        "type": "object"
+      },
+      "KGExtractResponse": {
+        "description": "KG 抽取响应",
+        "properties": {
+          "entities": {
+            "items": {
+              "$ref": "#/components/schemas/ExtractedEntity"
+            },
+            "title": "Entities",
+            "type": "array"
+          },
+          "processing_time": {
+            "description": "处理耗时（秒）",
+            "title": "Processing Time",
+            "type": "number"
+          },
+          "relations": {
+            "items": {
+              "$ref": "#/components/schemas/ExtractedRelation"
+            },
+            "title": "Relations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "processing_time"
+        ],
+        "title": "KGExtractResponse",
+        "type": "object"
+      },
+      "NavigateAction": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "route": {
+            "title": "Route",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "route"
+        ],
+        "title": "NavigateAction",
+        "type": "object"
+      },
+      "NavigateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "NavigateRequest",
+        "type": "object"
+      },
+      "NavigateResponse": {
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/NavigateAction"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "actions"
+        ],
+        "title": "NavigateResponse",
+        "type": "object"
+      },
+      "OntologySchema": {
+        "description": "本体 Schema（传递给 LLM 的抽取指导）",
+        "properties": {
+          "entity_types": {
+            "description": "实体类型列表",
+            "items": {
+              "$ref": "#/components/schemas/EntityTypeInfo"
+            },
+            "title": "Entity Types",
+            "type": "array"
+          },
+          "relation_types": {
+            "description": "关系类型列表",
+            "items": {
+              "$ref": "#/components/schemas/RelationTypeInfo"
+            },
+            "title": "Relation Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "entity_types",
+          "relation_types"
+        ],
+        "title": "OntologySchema",
+        "type": "object"
+      },
+      "PropertyInfo": {
+        "description": "属性定义（来自本体模型）",
+        "properties": {
+          "data_type": {
+            "description": "数据类型: string/integer/float/boolean/date/datetime/wkt",
+            "title": "Data Type",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "description": "属性说明",
+            "title": "Description",
+            "type": "string"
+          },
+          "label": {
+            "description": "显示名称",
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "description": "属性名（英文标识符）",
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "description": "是否必填",
+            "title": "Required",
+            "type": "boolean"
+          },
+          "unique": {
+            "default": false,
+            "description": "是否为唯一标识属性（驱动 Neo4j MERGE 的唯一键）",
+            "title": "Unique",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "data_type"
+        ],
+        "title": "PropertyInfo",
+        "type": "object"
+      },
+      "RelationTypeInfo": {
+        "description": "关系类型定义（来自本体模型）",
+        "properties": {
+          "description": {
+            "default": "",
+            "description": "关系类型说明",
+            "title": "Description",
+            "type": "string"
+          },
+          "label": {
+            "description": "显示名称",
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "description": "关系类型名（对应 Neo4j 关系类型）",
+            "title": "Name",
+            "type": "string"
+          },
+          "properties": {
+            "items": {
+              "$ref": "#/components/schemas/PropertyInfo"
+            },
+            "title": "Properties",
+            "type": "array"
+          },
+          "source_type": {
+            "description": "源实体类型名",
+            "title": "Source Type",
+            "type": "string"
+          },
+          "target_type": {
+            "description": "目标实体类型名",
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "source_type",
+          "target_type"
+        ],
+        "title": "RelationTypeInfo",
+        "type": "object"
+      },
+      "SQLGenerationRequest": {
+        "additionalProperties": false,
+        "description": "SQL 生成请求",
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "engine_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine Id"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "SQLGenerationRequest",
+        "type": "object"
+      },
+      "SQLGenerationResponse": {
+        "description": "SQL 生成响应",
+        "properties": {
+          "auto_selected": {
+            "title": "Auto Selected",
+            "type": "boolean"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/DataSourceCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "integer"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql",
+          "explanation",
+          "auto_selected",
+          "candidates",
+          "conversation_id"
+        ],
+        "title": "SQLGenerationResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WorkflowGenerationRequest": {
+        "additionalProperties": false,
+        "description": "工作流生成请求",
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "resources": {
+            "description": "由 owner Tool 验证的全部输入资源事实；不允许 Copilot 自行搜索或拼接 locator",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowResourceFact"
+            },
+            "title": "Resources",
+            "type": "array"
+          },
+          "workflow_engine_id": {
+            "title": "Workflow Engine Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query",
+          "workflow_engine_id",
+          "resources"
+        ],
+        "title": "WorkflowGenerationRequest",
+        "type": "object"
+      },
+      "WorkflowGenerationResponse": {
+        "description": "工作流生成响应",
+        "properties": {
+          "clarification_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clarification Reason"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors"
+          },
+          "explanation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "resources": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resources"
+          },
+          "selected_operators": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Operators"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "suggestions": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestions"
+          },
+          "validation_result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Result"
+          },
+          "warnings": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warnings"
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "WorkflowGenerationResponse",
+        "type": "object"
+      },
+      "WorkflowResourceFact": {
+        "additionalProperties": false,
+        "description": "由 owner Tool 验证后交给 Copilot 的工作流输入资源事实。",
+        "properties": {
+          "crs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "已验证的 CRS，例如 EPSG:32650",
+            "title": "Crs"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "资源数据类型",
+            "title": "Data Type"
+          },
+          "fields": {
+            "description": "受限字段名称和类型事实",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "geometry_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "已验证的几何列",
+            "title": "Geometry Column"
+          },
+          "geometry_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "已验证的几何类型",
+            "title": "Geometry Type"
+          },
+          "locator": {
+            "description": "已验证的 ADDP ResourceLocator",
+            "minLength": 1,
+            "title": "Locator",
+            "type": "string"
+          },
+          "role": {
+            "description": "资源在本次分析中的稳定用途",
+            "minLength": 1,
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "locator"
+        ],
+        "title": "WorkflowResourceFact",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "description": "ADDP 用户访问令牌：Authorization: Bearer <token>",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "ADDP Copilot",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/": {
+      "get": {
+        "description": "根路径",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "根路径 | Root",
+        "x-addp-auth-mode": "public"
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "健康检查",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "健康检查 | Health Check",
+        "x-addp-auth-mode": "public"
+      }
+    },
+    "/kg-build/extract": {
+      "post": {
+        "description": "从单个文本 chunk 抽取实体和关系\n\n- 文本分块由 Graph 后端负责（见 graph/backend/internal/service/build_service.go）\n- 此端点只处理单个 chunk（约 1000 字符）\n- 抽取结果的置信度分类和写入 Neo4j 由 Graph 后端负责",
+        "operationId": "extract_from_chunk_api_v1_copilot_kg_build_extract_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Internal-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Api-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Accept-Language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Accept-Language"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KGExtractRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KGExtractResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "抽取实体关系 | Extract From Chunk",
+        "tags": [
+          "图谱构建 | KG Build"
+        ],
+        "x-addp-auth-mode": "internal"
+      }
+    },
+    "/navigate/guide": {
+      "post": {
+        "description": "根据用户意图返回平台导航建议\n\n接收自然语言描述，返回相关模块/页面的链接列表",
+        "operationId": "navigate_guide_api_v1_copilot_navigate_guide_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Accept-Language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Accept-Language"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NavigateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NavigateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "导航引导 | Navigation Guide",
+        "tags": [
+          "导航引导 | Navigation Guide"
+        ],
+        "x-addp-auth-mode": "authenticated"
+      }
+    },
+    "/sql/generate": {
+      "post": {
+        "description": "生成 SQL 语句\n\n根据用户的自然语言描述生成 SQL 查询",
+        "operationId": "generate_sql_api_v1_copilot_sql_generate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Accept-Language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Accept-Language"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SQLGenerationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SQLGenerationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "生成 SQL | Generate SQL",
+        "tags": [
+          "SQL 智能体 | SQL Agent"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "copilot.sql.execute"
+        ]
+      }
+    },
+    "/workflow/generate": {
+      "post": {
+        "description": "生成工作流（基于 WorkflowPipeline）\n\n根据用户的自然语言描述生成 GIS 工作流 DAG\n\n流程：\n1. 数据源理解（可选，支持跳过）\n2. 算子筛选\n3. 工作流生成\n4. 工作流验证 + 自动修复",
+        "operationId": "generate_workflow_api_v1_copilot_workflow_generate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Accept-Language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Accept-Language"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowGenerationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowGenerationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "工作流生成失败 | Workflow generation failed"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "生成工作流 | Generate Workflow",
+        "tags": [
+          "工作流智能体 | Workflow Agent"
+        ],
+        "x-addp-auth-mode": "delegated_tool",
+        "x-addp-required-permissions": [
+          "copilot.workflow.execute"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/api/v1/copilot"
+    }
+  ]
+}

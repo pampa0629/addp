@@ -3,11 +3,13 @@
 
 接收用户意图，返回平台模块/页面的导航建议
 """
-from fastapi import APIRouter
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 import json
 
+from addp_common.auth import AuthorizationContext
+from dependencies.auth import require_user
 from services.llm_service import llm_service
 
 router = APIRouter()
@@ -102,9 +104,9 @@ SYSTEM_PROMPT = f"""你是 ADDP 数据平台的导航助手。根据用户的需
 
 
 class NavigateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     query: str
-    tenant_id: int = 1
-    user_id: int = 1
 
 
 class NavigateAction(BaseModel):
@@ -117,8 +119,16 @@ class NavigateResponse(BaseModel):
     actions: List[NavigateAction]
 
 
-@router.post("/navigate/guide", response_model=NavigateResponse, summary="导航引导 | Navigation Guide")
-async def navigate_guide(request: NavigateRequest):
+@router.post(
+    "/navigate/guide",
+    response_model=NavigateResponse,
+    summary="导航引导 | Navigation Guide",
+    openapi_extra={"x-addp-auth-mode": "authenticated"},
+)
+async def navigate_guide(
+    request: NavigateRequest,
+    _user: AuthorizationContext = Depends(require_user),
+):
     """
     根据用户意图返回平台导航建议
 

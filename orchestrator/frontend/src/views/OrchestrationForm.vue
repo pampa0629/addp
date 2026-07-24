@@ -34,7 +34,7 @@
     <div class="three-column-layout">
       <!-- 左侧任务库 -->
       <div class="left-panel" :style="{ width: `${leftPanelWidth}px` }">
-        <TaskPanel />
+        <TaskPanel @add-task="handleAddTask" />
       </div>
 
       <div class="panel-splitter" @mousedown="startLeftPanelResize"></div>
@@ -44,7 +44,9 @@
         <DAGEditor
           ref="dagEditor"
           :initial-steps="form.steps"
+          :initial-layout="form.editor_layout"
           @update:steps="handleStepsUpdate"
+          @update:layout="handleLayoutUpdate"
         />
       </div>
     </div>
@@ -129,7 +131,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch, computed } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
@@ -157,7 +159,8 @@ const form = reactive({
   description: '',
   enabled: false,
   schedule: '',
-  steps: []
+  steps: [],
+  editor_layout: {}
 })
 
 const metadataDraft = reactive({
@@ -183,16 +186,6 @@ onMounted(async () => {
   }
 })
 
-// 监听 form.steps 变化,同步到 DAGEditor (修复问题4)
-watch(() => form.steps, (newSteps) => {
-  if (newSteps && newSteps.length > 0 && dagEditor.value) {
-    // 等待下一个 tick 确保 DAGEditor 已经初始化
-    setTimeout(() => {
-      dagEditor.value.loadSteps(newSteps)
-    }, 100)
-  }
-}, { deep: true })
-
 async function loadOrchestration(id) {
   try {
     const data = await orchestrationAPI.get(id)
@@ -206,6 +199,14 @@ function handleStepsUpdate(steps) {
   form.steps = steps
 }
 
+function handleLayoutUpdate(layout) {
+  form.editor_layout = layout
+}
+
+function handleAddTask(taskData) {
+  dagEditor.value?.addTask(taskData)
+}
+
 function hasValue(value) {
   return value !== null && value !== undefined && String(value).trim() !== ''
 }
@@ -217,6 +218,7 @@ function hasTaskReference(step) {
 async function handleSave() {
   const latestSteps = dagEditor.value?.getSteps ? dagEditor.value.getSteps() : form.steps
   form.steps = latestSteps || []
+  form.editor_layout = dagEditor.value?.getLayout ? dagEditor.value.getLayout() : form.editor_layout
 
   if (!form.steps || form.steps.length === 0) {
     ElMessage.warning(t('orchestrator.orchestrationForm.stepsRequired'))

@@ -91,7 +91,7 @@ func main() {
 	neo4jSvc := service.NewNeo4jService(graphRepo, ontologyRepo, systemClient)
 	knowledgeSvc := service.NewKnowledgeService(neo4jSvc, ontologyRepo, graphRepo)
 	schemaInferenceSvc := service.NewSchemaInferenceService(graphRepo, ontologyRepo, neo4jSvc, ontologySvc, systemClient)
-	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, neo4jSvc, materialReader, materialWriter, cfg.CopilotServiceURL)
+	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, neo4jSvc, materialReader, materialWriter, cfg.CopilotServiceURL, cfg.InternalAPIKey)
 	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, systemClient)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupSvc.Start(context.Background()); err != nil {

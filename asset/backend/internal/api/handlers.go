@@ -1,0 +1,845 @@
+package api
+
+import (
+	"strconv"
+
+	i18nkeys "github.com/addp/asset/i18n"
+	"github.com/addp/asset/internal/service"
+	commonAPI "github.com/addp/common/api"
+	commonAuth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+)
+
+type Handler struct {
+	typeSvc          *service.TypeService
+	catalogSvc       *service.CatalogService
+	assetSvc         *service.AssetService
+	applicationSvc   *service.ApplicationService
+	authorizationSvc *service.AuthorizationService
+	ratingSvc        *service.RatingService
+}
+
+type ratingUpsertRequest struct {
+	AssetID int64    `json:"asset_id" binding:"required"`
+	UserID  int64    `json:"user_id" binding:"required"`
+	Score   float32  `json:"score" binding:"required,min=1,max=5"`
+	Comment string   `json:"comment"`
+	Tags    []string `json:"tags"`
+}
+
+type ratingHandledRequest struct {
+	IsHandled bool `json:"is_handled"`
+}
+
+func newHandler(db *gorm.DB, assetSvc *service.AssetService) *Handler {
+	authorizationSvc := service.NewAuthorizationService(db)
+	return &Handler{
+		typeSvc:          service.NewTypeService(db),
+		catalogSvc:       service.NewCatalogService(db),
+		assetSvc:         assetSvc,
+		applicationSvc:   service.NewApplicationService(db, authorizationSvc),
+		authorizationSvc: authorizationSvc,
+		ratingSvc:        service.NewRatingService(db),
+	}
+}
+
+func pathID(c *gin.Context, name string) (int64, bool) {
+	id, err := strconv.ParseInt(c.Param(name), 10, 64)
+	if err != nil {
+		commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
+		return 0, false
+	}
+	return id, true
+}
+
+// listTypes godoc
+// @Summary 获取资产类型 | List asset types
+// @Tags Asset Type
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.entry.read"]
+// @Router /type-definitions [get]
+func (h *Handler) listTypes(c *gin.Context) {
+	types, err := h.typeSvc.ListTypes(commonAuth.GetTenantID(c))
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, types)
+}
+
+// getType godoc
+// @Summary 获取资产类型详情 | Get asset type
+// @Tags Asset Type
+// @Produce json
+// @Param id path int true "类型 ID | Type ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.entry.read"]
+// @Router /type-definitions/{id} [get]
+func (h *Handler) getType(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	typeDefinition, err := h.typeSvc.GetType(id)
+	if err != nil {
+		commonAPI.NotFoundError(c, commoni18n.T(c, i18nkeys.MsgTypeNotFound))
+		return
+	}
+	commonAPI.SuccessResponse(c, typeDefinition)
+}
+
+// listCatalogs godoc
+// @Summary 获取资产目录 | List asset catalogs
+// @Tags Asset Catalog
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.catalog.read"]
+// @Router /catalogs [get]
+func (h *Handler) listCatalogs(c *gin.Context) {
+	catalogs, err := h.catalogSvc.ListAll(commonAuth.GetTenantID(c))
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, catalogs)
+}
+
+// getCatalogTree godoc
+// @Summary 获取资产目录树 | Get asset catalog tree
+// @Tags Asset Catalog
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.catalog.read"]
+// @Router /catalogs/tree [get]
+func (h *Handler) getCatalogTree(c *gin.Context) {
+	tree, err := h.catalogSvc.GetTree(commonAuth.GetTenantID(c))
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, tree)
+}
+
+// getCatalog godoc
+// @Summary 获取资产目录详情 | Get asset catalog
+// @Tags Asset Catalog
+// @Produce json
+// @Param id path int true "目录 ID | Catalog ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.catalog.read"]
+// @Router /catalogs/{id} [get]
+func (h *Handler) getCatalog(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	catalog, err := h.catalogSvc.Get(commonAuth.GetTenantID(c), id)
+	if err != nil {
+		commonAPI.NotFoundError(c, commoni18n.T(c, i18nkeys.MsgCatalogNotFound))
+		return
+	}
+	commonAPI.SuccessResponse(c, catalog)
+}
+
+// createCatalog godoc
+// @Summary 创建资产目录 | Create asset catalog
+// @Tags Asset Catalog
+// @Accept json
+// @Produce json
+// @Param request body service.CreateCatalogReq true "目录 | Catalog"
+// @Success 201 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.catalog.create"]
+// @Router /catalogs [post]
+func (h *Handler) createCatalog(c *gin.Context) {
+	var request service.CreateCatalogReq
+	if !commonAPI.BindJSON(c, &request) {
+		return
+	}
+	catalog, err := h.catalogSvc.Create(commonAuth.GetTenantID(c), &request)
+	if err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	commonAPI.CreatedResponse(c, catalog)
+}
+
+// updateCatalog godoc
+// @Summary 更新资产目录 | Update asset catalog
+// @Tags Asset Catalog
+// @Accept json
+// @Produce json
+// @Param id path int true "目录 ID | Catalog ID"
+// @Param request body service.UpdateCatalogReq true "目录 | Catalog"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.catalog.update"]
+// @Router /catalogs/{id} [put]
+func (h *Handler) updateCatalog(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	var request service.UpdateCatalogReq
+	if !commonAPI.BindJSON(c, &request) {
+		return
+	}
+	catalog, err := h.catalogSvc.Update(commonAuth.GetTenantID(c), id, &request)
+	if err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, catalog)
+}
+
+// deleteCatalog godoc
+// @Summary 删除资产目录 | Delete asset catalog
+// @Tags Asset Catalog
+// @Produce json
+// @Param id path int true "目录 ID | Catalog ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.catalog.delete"]
+// @Router /catalogs/{id} [delete]
+func (h *Handler) deleteCatalog(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.catalogSvc.Delete(commonAuth.GetTenantID(c), id); err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgDeleteSuccess)})
+}
+
+// listAssets godoc
+// @Summary 获取资产列表 | List assets
+// @Tags Asset
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.entry.read"]
+// @Router /assets [get]
+func (h *Handler) listAssets(c *gin.Context) {
+	page, pageSize := commonAPI.GetPaginationParams(c)
+	typeID, _ := strconv.ParseInt(c.Query("type_id"), 10, 64)
+	params := &service.AssetListParams{
+		Page: page, PageSize: pageSize, Status: c.Query("status"), TypeID: typeID, Keyword: c.Query("keyword"),
+	}
+	if value := c.Query("catalog_id"); value != "" {
+		if catalogID, err := strconv.ParseInt(value, 10, 64); err == nil {
+			params.CatalogID = &catalogID
+		}
+	}
+	assets, total, err := h.assetSvc.List(commonAuth.GetTenantID(c), params)
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	commonAPI.SendPaginatedResponse(c, assets, total, page, pageSize)
+}
+
+// getAsset godoc
+// @Summary 获取资产详情 | Get asset
+// @Tags Asset
+// @Produce json
+// @Param id path int true "资产 ID | Asset ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.entry.read"]
+// @Router /assets/{id} [get]
+func (h *Handler) getAsset(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	asset, err := h.assetSvc.Get(commonAuth.GetTenantID(c), id)
+	if err != nil {
+		commonAPI.NotFoundError(c, commoni18n.T(c, i18nkeys.MsgAssetNotFound))
+		return
+	}
+	commonAPI.SuccessResponse(c, asset)
+}
+
+// updateAsset godoc
+// @Summary 更新资产 | Update asset
+// @Tags Asset
+// @Accept json
+// @Produce json
+// @Param id path int true "资产 ID | Asset ID"
+// @Param request body service.UpdateAssetReq true "资产 | Asset"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.entry.update"]
+// @Router /assets/{id} [put]
+func (h *Handler) updateAsset(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	var request service.UpdateAssetReq
+	if !commonAPI.BindJSON(c, &request) {
+		return
+	}
+	asset, err := h.assetSvc.Update(commonAuth.GetTenantID(c), id, commonAuth.GetUserID(c), &request)
+	if err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, asset)
+}
+
+// deleteAsset godoc
+// @Summary 删除资产 | Delete asset
+// @Tags Asset
+// @Produce json
+// @Param id path int true "资产 ID | Asset ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.entry.delete"]
+// @Router /assets/{id} [delete]
+func (h *Handler) deleteAsset(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.assetSvc.Delete(commonAuth.GetTenantID(c), id); err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgDeleteSuccess)})
+}
+
+// publishAsset godoc
+// @Summary 上架资产 | Publish asset
+// @Tags Asset
+// @Produce json
+// @Param id path int true "资产 ID | Asset ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.entry.publish"]
+// @Router /assets/{id}/publish [post]
+func (h *Handler) publishAsset(c *gin.Context) {
+	h.assetStatusAction(c, h.assetSvc.Publish, i18nkeys.MsgAssetPublished)
+}
+
+// offlineAsset godoc
+// @Summary 下架资产 | Offline asset
+// @Tags Asset
+// @Produce json
+// @Param id path int true "资产 ID | Asset ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.entry.offline"]
+// @Router /assets/{id}/offline [post]
+func (h *Handler) offlineAsset(c *gin.Context) {
+	h.assetStatusAction(c, h.assetSvc.Offline, i18nkeys.MsgAssetOfflined)
+}
+
+func (h *Handler) assetStatusAction(c *gin.Context, action func(uint, int64) error, messageKey string) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	if err := action(commonAuth.GetTenantID(c), id); err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, messageKey)})
+}
+
+// batchPublishAssets godoc
+// @Summary 批量上架资产 | Batch publish assets
+// @Tags Asset
+// @Accept json
+// @Produce json
+// @Param request body service.BatchIDsReq true "资产 ID | Asset IDs"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.entry.publish"]
+// @Router /assets/batch-publish [post]
+func (h *Handler) batchPublishAssets(c *gin.Context) {
+	h.batchAssetAction(c, h.assetSvc.BatchPublish)
+}
+
+// batchOfflineAssets godoc
+// @Summary 批量下架资产 | Batch offline assets
+// @Tags Asset
+// @Accept json
+// @Produce json
+// @Param request body service.BatchIDsReq true "资产 ID | Asset IDs"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.entry.offline"]
+// @Router /assets/batch-offline [post]
+func (h *Handler) batchOfflineAssets(c *gin.Context) {
+	h.batchAssetAction(c, h.assetSvc.BatchOffline)
+}
+
+func (h *Handler) batchAssetAction(c *gin.Context, action func(uint, []int64) (int, error)) {
+	var request service.BatchIDsReq
+	if !commonAPI.BindJSON(c, &request) {
+		return
+	}
+	count, err := action(commonAuth.GetTenantID(c), request.IDs)
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, gin.H{"affected": count})
+}
+
+// batchCatalogAssets godoc
+// @Summary 批量归入目录 | Batch catalog assets
+// @Tags Asset
+// @Accept json
+// @Produce json
+// @Param request body service.BatchCatalogReq true "目录变更 | Catalog change"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.entry.update"]
+// @Router /assets/batch-catalog [post]
+func (h *Handler) batchCatalogAssets(c *gin.Context) {
+	var request service.BatchCatalogReq
+	if !commonAPI.BindJSON(c, &request) {
+		return
+	}
+	count, err := h.assetSvc.BatchCatalog(commonAuth.GetTenantID(c), request.IDs, request.CatalogID)
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, gin.H{"affected": count})
+}
+
+// syncAssets godoc
+// @Summary 同步资产 | Sync assets
+// @Tags Asset
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.entry.update"]
+// @Router /assets/sync [post]
+func (h *Handler) syncAssets(c *gin.Context) {
+	result, err := h.assetSvc.Sync(commonAuth.GetTenantID(c))
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, result)
+}
+
+// getAssetStats godoc
+// @Summary 获取资产统计 | Get asset statistics
+// @Tags Asset
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.entry.read"]
+// @Router /assets/stats [get]
+func (h *Handler) getAssetStats(c *gin.Context) {
+	result, err := h.assetSvc.GetStats(commonAuth.GetTenantID(c))
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, result)
+}
+
+// getAssetDashboardStats godoc
+// @Summary 获取资产运营统计 | Get asset dashboard statistics
+// @Tags Asset
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.entry.read"]
+// @Router /assets/stats/dashboard [get]
+func (h *Handler) getAssetDashboardStats(c *gin.Context) {
+	result, err := h.assetSvc.GetDashboardStats(commonAuth.GetTenantID(c))
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, result)
+}
+
+// getAssetTypeFields godoc
+// @Summary 获取资产类型字段 | Get asset type fields
+// @Tags Asset
+// @Produce json
+// @Param type_id path int true "类型 ID | Type ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.entry.read"]
+// @Router /assets/type-fields/{type_id} [get]
+func (h *Handler) getAssetTypeFields(c *gin.Context) {
+	typeID, err := strconv.ParseInt(c.Param("type_id"), 10, 64)
+	if err != nil {
+		commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidTypeID))
+		return
+	}
+	fields, err := h.assetSvc.GetTypeFieldSchemas(typeID)
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, fields)
+}
+
+// listApplications godoc
+// @Summary 获取资产申请 | List asset applications
+// @Tags Asset Application
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.application.read"]
+// @Router /applications [get]
+func (h *Handler) listApplications(c *gin.Context) {
+	page, pageSize := commonAPI.GetPaginationParams(c)
+	params := service.ApplicationListParams{
+		Page: page, PageSize: pageSize, Status: c.Query("status"), DisplayStatus: c.Query("display_status"),
+	}
+	params.AssetID, _ = strconv.ParseInt(c.Query("asset_id"), 10, 64)
+	params.ApplicantID, _ = strconv.ParseInt(c.Query("applicant_id"), 10, 64)
+	items, total, err := h.applicationSvc.List(commonAuth.GetTenantID(c), params)
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	commonAPI.SendPaginatedResponse(c, items, total, page, pageSize)
+}
+
+// createApplication godoc
+// @Summary 创建资产申请 | Create asset application
+// @Tags Asset Application
+// @Accept json
+// @Produce json
+// @Param request body service.CreateApplicationReq true "申请 | Application"
+// @Success 201 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.application.create"]
+// @Router /applications [post]
+func (h *Handler) createApplication(c *gin.Context) {
+	var request service.CreateApplicationReq
+	if !commonAPI.BindJSON(c, &request) {
+		return
+	}
+	application, err := h.applicationSvc.Create(commonAuth.GetTenantID(c), &request)
+	if err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	commonAPI.CreatedResponse(c, application)
+}
+
+// getApplication godoc
+// @Summary 获取资产申请详情 | Get asset application
+// @Tags Asset Application
+// @Produce json
+// @Param id path int true "申请 ID | Application ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.application.read"]
+// @Router /applications/{id} [get]
+func (h *Handler) getApplication(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	application, err := h.applicationSvc.Get(commonAuth.GetTenantID(c), id)
+	if err != nil {
+		commonAPI.NotFoundError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, application)
+}
+
+// approveApplication godoc
+// @Summary 批准资产申请 | Approve asset application
+// @Tags Asset Application
+// @Accept json
+// @Produce json
+// @Param id path int true "申请 ID | Application ID"
+// @Param request body service.ApproveApplicationReq true "审批 | Review"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.application.approve"]
+// @Router /applications/{id}/approve [post]
+func (h *Handler) approveApplication(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	var request service.ApproveApplicationReq
+	if !commonAPI.BindJSON(c, &request) {
+		return
+	}
+	if err := h.applicationSvc.Approve(commonAuth.GetTenantID(c), commonAuth.GetUserID(c), id, &request); err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgApproveSuccess)})
+}
+
+// rejectApplication godoc
+// @Summary 驳回资产申请 | Reject asset application
+// @Tags Asset Application
+// @Accept json
+// @Produce json
+// @Param id path int true "申请 ID | Application ID"
+// @Param request body service.RejectApplicationReq true "审批 | Review"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.application.reject"]
+// @Router /applications/{id}/reject [post]
+func (h *Handler) rejectApplication(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	var request service.RejectApplicationReq
+	if !commonAPI.BindJSON(c, &request) {
+		return
+	}
+	if err := h.applicationSvc.Reject(commonAuth.GetTenantID(c), commonAuth.GetUserID(c), id, &request); err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgRejectSuccess)})
+}
+
+// revokeApplication godoc
+// @Summary 撤销申请授权 | Revoke application authorization
+// @Tags Asset Application
+// @Produce json
+// @Param id path int true "申请 ID | Application ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.application.revoke"]
+// @Router /applications/{id}/revoke [post]
+func (h *Handler) revokeApplication(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.applicationSvc.RevokeByApplication(commonAuth.GetTenantID(c), commonAuth.GetUserID(c), id); err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgRevokeSuccess)})
+}
+
+// listAuthorizations godoc
+// @Summary 获取资产授权 | List asset authorizations
+// @Tags Asset Authorization
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.authorization.read"]
+// @Router /authorizations [get]
+func (h *Handler) listAuthorizations(c *gin.Context) {
+	page, pageSize := commonAPI.GetPaginationParams(c)
+	params := service.AuthorizationListParams{Page: page, PageSize: pageSize}
+	params.UserID, _ = strconv.ParseInt(c.Query("user_id"), 10, 64)
+	params.AssetID, _ = strconv.ParseInt(c.Query("asset_id"), 10, 64)
+	if value := c.Query("is_active"); value == "true" || value == "false" {
+		active := value == "true"
+		params.IsActive = &active
+	}
+	items, total, err := h.authorizationSvc.List(commonAuth.GetTenantID(c), params)
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	commonAPI.SendPaginatedResponse(c, items, total, page, pageSize)
+}
+
+// getAuthorization godoc
+// @Summary 获取资产授权详情 | Get asset authorization
+// @Tags Asset Authorization
+// @Produce json
+// @Param id path int true "授权 ID | Authorization ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.authorization.read"]
+// @Router /authorizations/{id} [get]
+func (h *Handler) getAuthorization(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	authorization, err := h.authorizationSvc.Get(commonAuth.GetTenantID(c), id)
+	if err != nil {
+		commonAPI.NotFoundError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, authorization)
+}
+
+// revokeAuthorization godoc
+// @Summary 撤销资产授权 | Revoke asset authorization
+// @Tags Asset Authorization
+// @Produce json
+// @Param id path int true "授权 ID | Authorization ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.authorization.revoke"]
+// @Router /authorizations/{id}/revoke [post]
+func (h *Handler) revokeAuthorization(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.authorizationSvc.Revoke(commonAuth.GetTenantID(c), commonAuth.GetUserID(c), id); err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgRevokeSuccess)})
+}
+
+// listRatings godoc
+// @Summary 获取资产评价 | List asset ratings
+// @Tags Asset Rating
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.rating.read"]
+// @Router /ratings [get]
+func (h *Handler) listRatings(c *gin.Context) {
+	page, pageSize := commonAPI.GetPaginationParams(c)
+	params := service.RatingListParams{Page: page, PageSize: pageSize}
+	params.AssetID, _ = strconv.ParseInt(c.Query("asset_id"), 10, 64)
+	params.UserID, _ = strconv.ParseInt(c.Query("user_id"), 10, 64)
+	params.HasFeedback = c.Query("has_feedback") == "true"
+	if value := c.Query("is_handled"); value == "true" || value == "false" {
+		handled := value == "true"
+		params.IsHandled = &handled
+	}
+	items, total, err := h.ratingSvc.List(commonAuth.GetTenantID(c), params)
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	commonAPI.SendPaginatedResponse(c, items, total, page, pageSize)
+}
+
+// upsertRating godoc
+// @Summary 提交或更新资产评价 | Submit or update asset rating
+// @Tags Asset Rating
+// @Accept json
+// @Produce json
+// @Param request body ratingUpsertRequest true "评价 | Rating"
+// @Success 201 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.rating.create","asset.rating.update"]
+// @Router /ratings [post]
+func (h *Handler) upsertRating(c *gin.Context) {
+	var request ratingUpsertRequest
+	if !commonAPI.BindJSON(c, &request) {
+		return
+	}
+	rating, err := h.ratingSvc.Upsert(
+		commonAuth.GetTenantID(c),
+		request.UserID,
+		request.AssetID,
+		&service.UpsertRatingReq{Score: request.Score, Comment: request.Comment, Tags: request.Tags},
+	)
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	commonAPI.CreatedResponse(c, rating)
+}
+
+// markRatingHandled godoc
+// @Summary 标记评价反馈状态 | Mark rating feedback status
+// @Tags Asset Rating
+// @Accept json
+// @Produce json
+// @Param id path int true "评价 ID | Rating ID"
+// @Param request body ratingHandledRequest true "处理状态 | Handled status"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.rating.update"]
+// @Router /ratings/{id}/mark-handled [post]
+func (h *Handler) markRatingHandled(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	var request ratingHandledRequest
+	if !commonAPI.BindJSON(c, &request) {
+		return
+	}
+	if err := h.ratingSvc.MarkHandled(commonAuth.GetTenantID(c), id, request.IsHandled); err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgUpdateSuccess)})
+}
+
+// getRatingStats godoc
+// @Summary 获取资产评价统计 | Get asset rating statistics
+// @Tags Asset Rating
+// @Produce json
+// @Param asset_id query int true "资产 ID | Asset ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.rating.read"]
+// @Router /ratings/stats [get]
+func (h *Handler) getRatingStats(c *gin.Context) {
+	assetID, err := strconv.ParseInt(c.Query("asset_id"), 10, 64)
+	if err != nil || assetID <= 0 {
+		commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgMissingAssetID))
+		return
+	}
+	stats, err := h.ratingSvc.GetStats(commonAuth.GetTenantID(c), assetID)
+	if err != nil {
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	commonAPI.SuccessResponse(c, stats)
+}

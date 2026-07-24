@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	_ "github.com/addp/asset/docs"
 	_ "github.com/addp/asset/i18n"
 	"github.com/addp/asset/internal/api"
 	"github.com/addp/asset/internal/config"
@@ -19,6 +20,14 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+// @title ADDP Asset API
+// @version 1.0
+// @description ADDP 资产目录、发布、申请、授权和评价 API | ADDP asset catalog, publishing, application, authorization and rating API
+// @BasePath /api/v1/asset
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
 
 func main() {
 	cfg, err := config.LoadConfig()

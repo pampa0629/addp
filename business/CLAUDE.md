@@ -6,7 +6,7 @@
 
 ## 包含组件
 
-- PostgreSQL/PostGIS：业务关系库。
+- PostgreSQL/PostGIS、MySQL：业务关系库与 CDC 测试源。
 - MinIO：业务对象存储。
 - ClickHouse、MongoDB、Doris、Spark：可选业务数据源和分析组件。
 - Neo4j：图业务数据测试环境。
@@ -18,6 +18,7 @@ business/
 ├── docker-compose.yml
 ├── .env.example
 ├── scripts/            # start、stop、restart
+├── mysql/              # MySQL 测试数据与 CDC 用户初始化
 ├── postgres/
 ├── minio/
 ├── clickhouse/
@@ -32,6 +33,7 @@ business/
 - 系统库和业务库必须保持隔离，不要把 ADDP 元数据表写入业务库。
 - 修改业务库端口、账号或容器名时，同步检查 `docs/spec/addp配置介绍.md`、`docs/spec/addp端口分配.md` 和依赖该业务源的测试数据说明。
 - 业务库脚本应保持幂等，可重复启动、停止和重启。
+- MySQL CDC 必须使用 `MYSQL_CDC_USER` 专用账号；`scripts/start.sh -mysql` 每次在数据库 ready 后执行 `mysql/init-cdc.sh`，确保已有 volume 也能补齐账号、轮换密码并收敛最小权限。
 - 生产部署前必须修改 `.env` 默认密码并限制网络访问。
 
 ## 启动与验证

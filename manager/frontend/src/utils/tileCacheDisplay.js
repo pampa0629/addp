@@ -66,7 +66,7 @@ export function resultLocatorInfo(result, parseLocator) {
 
 export function storageLocationKey(storageRef) {
   const parsed = parseTileCacheStorageRef(storageRef)
-  if (parsed?.provider === 'addp_object_storage' || parsed?.object_prefix) {
+	if (parsed?.provider === 'addp_object_storage' && parsed?.type === 'object' && parsed?.object) {
     return 'platformObjectStorage'
   }
   return 'externalStorage'

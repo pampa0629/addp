@@ -8,7 +8,7 @@ import (
 
 func needMagicValidation(format FormatType) bool {
 	switch format {
-	case FormatPDF, FormatSQLite, FormatUDBX, FormatGeoPackage, FormatJPEG, FormatPNG, FormatGIF, FormatGLB, FormatLAS, FormatLAZ, FormatCOPC, FormatE57, FormatDWG, FormatDXF:
+	case FormatPDF, FormatSQLite, FormatUDBX, FormatGeoPackage, FormatJPEG, FormatPNG, FormatGIF, FormatGLB, FormatLAS, FormatLAZ, FormatCOPC, FormatE57, FormatDWG, FormatDXF, FormatPMTiles:
 		return true
 	default:
 		return false

@@ -1,0 +1,52 @@
+schema_version: addp.permission_manifest/v1
+owner_module: transfer
+manifest_version: 1
+permissions:
+  - key: transfer.task.cancel
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.transfer.task.cancel.name
+    description_i18n_key: permissions.transfer.task.cancel.description
+  - key: transfer.task.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.transfer.task.create.name
+    description_i18n_key: permissions.transfer.task.create.description
+  - key: transfer.task.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.transfer.task.delete.name
+    description_i18n_key: permissions.transfer.task.delete.description
+  - key: transfer.task.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.transfer.task.execute.name
+    description_i18n_key: permissions.transfer.task.execute.description
+  - key: transfer.task.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.transfer.task.read.name
+    description_i18n_key: permissions.transfer.task.read.description
+  - key: transfer.task.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.transfer.task.update.name
+    description_i18n_key: permissions.transfer.task.update.description

@@ -171,6 +171,7 @@ const (
 	ChangeStreamPositionVersionV1       = "v1"
 	TableChangeOperationUpsert          = "upsert"
 	TableChangeOperationDelete          = "delete"
+	TableChangeOperationSkip            = "skip"
 	ChangeStreamInitialEarliest         = "earliest"
 	ChangeStreamInitialLatest           = "latest"
 )
@@ -252,11 +253,12 @@ type PartitionedTableChangeBatch struct {
 }
 
 type PartitionedTableChangeApplyOptions struct {
-	ApplyIdentity  string
-	SourceIdentity string
-	Fields         []datatype.FieldInfo
-	SpatialInfo    *datatype.SpatialInfo
-	Keys           []string
+	ApplyIdentity       string
+	SourceIdentity      string
+	Fields              []datatype.FieldInfo
+	SpatialInfo         *datatype.SpatialInfo
+	Keys                []string
+	RequireTargetAbsent bool
 }
 
 type PartitionedTableChangeApplyResult struct {

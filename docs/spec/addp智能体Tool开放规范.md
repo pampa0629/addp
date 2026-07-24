@@ -61,7 +61,7 @@ common-python/addp_common/tools/manifest.json
 | `owner` | 业务事实和权限校验归属模块。 |
 | `risk` | 只允许 `read`、`propose`、`write`。 |
 | `approval.mode` | 当前只使用 `none` 或 `owner_policy`。 |
-| `auth` | 必须是 `delegated_access_token`；`audience` 必须等于 `owner`；`required_scopes` 必须且只能包含 Tool 稳定名称。 |
+| `auth` | 必须是 `delegated_access_token`；`audience` 必须等于 `owner`；`required_scopes` 必须且只能包含 Tool 稳定名称；`required_permissions` 必须是非空、无重复的 owner Permission Key 列表，且对应 Permission 必须 `delegable=true`。 |
 | `permission_enforced_by` | 固定为 `owner`。 |
 | `audit` | `owner` 表示 owner 记录调用；`required` 表示必须具备完整审计绑定。 |
 | `result_ref` | 只允许 `none`、`locator` 或当前已实现的 `execution + addp.result-ref/v1`。 |
@@ -74,17 +74,17 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 
 ### 3.3 当前 Tool 集合
 
-| Tool | Owner | 风险 | 审批 | ResultRef | 最大输出 |
-| --- | --- | --- | --- | --- | ---: |
-| `engine.list` | System | read | none | none | 128 KiB |
-| `data.search` | Manager | read | none | locator | 128 KiB |
-| `resource.ancestors.get` | Meta | read | none | locator | 128 KiB |
-| `data.preview` | Manager | read | none | locator | 256 KiB |
-| `workflow.operators.list` | Develop | read | none | none | 512 KiB |
-| `workflow.draft.generate` | Copilot | propose | none | none | 256 KiB |
-| `workflow.validate` | Develop | read | none | none | 128 KiB |
-| `workflow.run` | Develop | write | owner_policy | execution | 64 KiB |
-| `execution.get` | Develop | read | none | execution | 128 KiB |
+| Tool | Owner | Role Permission | 风险 | 审批 | ResultRef | 最大输出 |
+| --- | --- | --- | --- | --- | --- | ---: |
+| `engine.list` | System | `system.engine.read` | read | none | none | 128 KiB |
+| `data.search` | Manager | `manager.search.execute` | read | none | locator | 128 KiB |
+| `resource.ancestors.get` | Meta | `meta.catalog.read` | read | none | locator | 128 KiB |
+| `data.preview` | Manager | `manager.data_item.read` | read | none | locator | 256 KiB |
+| `workflow.operators.list` | Develop | `develop.task.read` | read | none | none | 512 KiB |
+| `workflow.draft.generate` | Copilot | `copilot.workflow.execute` | propose | none | none | 256 KiB |
+| `workflow.validate` | Develop | `develop.task.execute` | read | none | none | 128 KiB |
+| `workflow.run` | Develop | `develop.task.execute` | write | owner_policy | execution | 64 KiB |
+| `execution.get` | Develop | `develop.task.read` | read | none | execution | 128 KiB |
 
 这是当前完整集合。未出现在 Manifest 中的 API 不能被 Adapter 自行包装为 ADDP Tool。
 
@@ -197,4 +197,3 @@ make test-agent-eval
 - `docs/spec/addp授权上下文规范.md`
 - `docs/spec/addp-API设计规范.md`
 - `common-python/README.md`
-

@@ -147,7 +147,8 @@ async function loadCapabilities() {
     supportedRawCopyFormats.value = nextRawCopyFormats
     props.wizardState.updateFormatCapabilities({
       readableEncodedFormats: formats,
-      rawCopyFormats: nextRawCopyFormats
+		rawCopyFormats: nextRawCopyFormats,
+		databaseCDC: data?.continuous?.database_cdc || data?.continuous?.databaseCDC || null
     })
   } catch (error) {
     supportedEncodedSourceFormats.value = new Set()

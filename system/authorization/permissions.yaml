@@ -1,0 +1,820 @@
+schema_version: addp.permission_manifest/v1
+owner_module: system
+manifest_version: 3
+permissions:
+  - key: audit.event.export
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.audit.event.export.name
+    description_i18n_key: permissions.audit.event.export.description
+  - key: audit.event.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.audit.event.read.name
+    description_i18n_key: permissions.audit.event.read.description
+  - key: audit.report.create
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.audit.report.create.name
+    description_i18n_key: permissions.audit.report.create.description
+  - key: audit.report.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.audit.report.read.name
+    description_i18n_key: permissions.audit.report.read.description
+  - key: audit.report.update
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.audit.report.update.name
+    description_i18n_key: permissions.audit.report.update.description
+  - key: audit.subject.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.audit.subject.read.name
+    description_i18n_key: permissions.audit.subject.read.description
+  - key: audit.tenant_event.export
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.audit.tenant_event.export.name
+    description_i18n_key: permissions.audit.tenant_event.export.description
+  - key: audit.tenant_event.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.audit.tenant_event.read.name
+    description_i18n_key: permissions.audit.tenant_event.read.description
+  - key: audit.tenant_subject.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.audit.tenant_subject.read.name
+    description_i18n_key: permissions.audit.tenant_subject.read.description
+  - key: iam.department.create
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.department.create.name
+    description_i18n_key: permissions.iam.department.create.description
+  - key: iam.department.delete
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.department.delete.name
+    description_i18n_key: permissions.iam.department.delete.description
+  - key: iam.department.read
+    allowed_scope_types: [tenant, department]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.department.read.name
+    description_i18n_key: permissions.iam.department.read.description
+  - key: iam.department.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.department.update.name
+    description_i18n_key: permissions.iam.department.update.description
+  - key: iam.department_membership.close
+    allowed_scope_types: [tenant, department]
+    risk_level: critical
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.department_membership.close.name
+    description_i18n_key: permissions.iam.department_membership.close.description
+  - key: iam.department_membership.create
+    allowed_scope_types: [tenant, department]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.department_membership.create.name
+    description_i18n_key: permissions.iam.department_membership.create.description
+  - key: iam.department_membership.read
+    allowed_scope_types: [tenant, department]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.department_membership.read.name
+    description_i18n_key: permissions.iam.department_membership.read.description
+  - key: iam.department_membership.update
+    allowed_scope_types: [tenant, department]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.department_membership.update.name
+    description_i18n_key: permissions.iam.department_membership.update.description
+  - key: iam.external_identity.link
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.external_identity.link.name
+    description_i18n_key: permissions.iam.external_identity.link.description
+  - key: iam.external_identity.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.external_identity.read.name
+    description_i18n_key: permissions.iam.external_identity.read.description
+  - key: iam.external_identity.suspend
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.external_identity.suspend.name
+    description_i18n_key: permissions.iam.external_identity.suspend.description
+  - key: iam.external_identity.unlink
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.external_identity.unlink.name
+    description_i18n_key: permissions.iam.external_identity.unlink.description
+  - key: iam.identity_provider.create
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.identity_provider.create.name
+    description_i18n_key: permissions.iam.identity_provider.create.description
+  - key: iam.identity_provider.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.identity_provider.read.name
+    description_i18n_key: permissions.iam.identity_provider.read.description
+  - key: iam.identity_provider.suspend
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.identity_provider.suspend.name
+    description_i18n_key: permissions.iam.identity_provider.suspend.description
+  - key: iam.identity_provider.update
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.identity_provider.update.name
+    description_i18n_key: permissions.iam.identity_provider.update.description
+  - key: iam.permission.read
+    allowed_scope_types: [platform, tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.permission.read.name
+    description_i18n_key: permissions.iam.permission.read.description
+  - key: iam.platform_identity_change.approve
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.platform_identity_change.approve.name
+    description_i18n_key: permissions.iam.platform_identity_change.approve.description
+  - key: iam.platform_identity_change.create
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.platform_identity_change.create.name
+    description_i18n_key: permissions.iam.platform_identity_change.create.description
+  - key: iam.platform_identity_change.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.platform_identity_change.read.name
+    description_i18n_key: permissions.iam.platform_identity_change.read.description
+  - key: iam.platform_identity_change.reject
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.platform_identity_change.reject.name
+    description_i18n_key: permissions.iam.platform_identity_change.reject.description
+  - key: iam.platform_role_change.approve
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.platform_role_change.approve.name
+    description_i18n_key: permissions.iam.platform_role_change.approve.description
+  - key: iam.platform_role_change.create
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.platform_role_change.create.name
+    description_i18n_key: permissions.iam.platform_role_change.create.description
+  - key: iam.platform_role_change.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.platform_role_change.read.name
+    description_i18n_key: permissions.iam.platform_role_change.read.description
+  - key: iam.platform_role_change.reject
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.platform_role_change.reject.name
+    description_i18n_key: permissions.iam.platform_role_change.reject.description
+  - key: iam.project_group.close
+    allowed_scope_types: [tenant]
+    risk_level: critical
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.project_group.close.name
+    description_i18n_key: permissions.iam.project_group.close.description
+  - key: iam.project_group.create
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.project_group.create.name
+    description_i18n_key: permissions.iam.project_group.create.description
+  - key: iam.project_group.read
+    allowed_scope_types: [tenant, project_group]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.project_group.read.name
+    description_i18n_key: permissions.iam.project_group.read.description
+  - key: iam.project_group.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.project_group.update.name
+    description_i18n_key: permissions.iam.project_group.update.description
+  - key: iam.project_group_membership.close
+    allowed_scope_types: [tenant, project_group]
+    risk_level: critical
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.project_group_membership.close.name
+    description_i18n_key: permissions.iam.project_group_membership.close.description
+  - key: iam.project_group_membership.create
+    allowed_scope_types: [tenant, project_group]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.project_group_membership.create.name
+    description_i18n_key: permissions.iam.project_group_membership.create.description
+  - key: iam.project_group_membership.read
+    allowed_scope_types: [tenant, project_group]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.project_group_membership.read.name
+    description_i18n_key: permissions.iam.project_group_membership.read.description
+  - key: iam.project_group_membership.update
+    allowed_scope_types: [tenant, project_group]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.project_group_membership.update.name
+    description_i18n_key: permissions.iam.project_group_membership.update.description
+  - key: iam.role.read
+    allowed_scope_types: [platform, tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.role.read.name
+    description_i18n_key: permissions.iam.role.read.description
+  - key: iam.security_policy.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.security_policy.read.name
+    description_i18n_key: permissions.iam.security_policy.read.description
+  - key: iam.security_policy.update
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.security_policy.update.name
+    description_i18n_key: permissions.iam.security_policy.update.description
+  - key: iam.session.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.session.read.name
+    description_i18n_key: permissions.iam.session.read.description
+  - key: iam.session.revoke
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.session.revoke.name
+    description_i18n_key: permissions.iam.session.revoke.description
+  - key: iam.tenant_idp_connection.create
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_idp_connection.create.name
+    description_i18n_key: permissions.iam.tenant_idp_connection.create.description
+  - key: iam.tenant_idp_connection.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_idp_connection.read.name
+    description_i18n_key: permissions.iam.tenant_idp_connection.read.description
+  - key: iam.tenant_idp_connection.suspend
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_idp_connection.suspend.name
+    description_i18n_key: permissions.iam.tenant_idp_connection.suspend.description
+  - key: iam.tenant_idp_connection.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_idp_connection.update.name
+    description_i18n_key: permissions.iam.tenant_idp_connection.update.description
+  - key: iam.tenant_invitation.create
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_invitation.create.name
+    description_i18n_key: permissions.iam.tenant_invitation.create.description
+  - key: iam.tenant_invitation.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_invitation.read.name
+    description_i18n_key: permissions.iam.tenant_invitation.read.description
+  - key: iam.tenant_invitation.revoke
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_invitation.revoke.name
+    description_i18n_key: permissions.iam.tenant_invitation.revoke.description
+  - key: iam.tenant_membership.close
+    allowed_scope_types: [tenant]
+    risk_level: critical
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_membership.close.name
+    description_i18n_key: permissions.iam.tenant_membership.close.description
+  - key: iam.tenant_membership.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_membership.read.name
+    description_i18n_key: permissions.iam.tenant_membership.read.description
+  - key: iam.tenant_membership.suspend
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_membership.suspend.name
+    description_i18n_key: permissions.iam.tenant_membership.suspend.description
+  - key: iam.tenant_membership.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_membership.update.name
+    description_i18n_key: permissions.iam.tenant_membership.update.description
+  - key: iam.tenant_role.create
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_role.create.name
+    description_i18n_key: permissions.iam.tenant_role.create.description
+  - key: iam.tenant_role.delete
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_role.delete.name
+    description_i18n_key: permissions.iam.tenant_role.delete.description
+  - key: iam.tenant_role.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_role.read.name
+    description_i18n_key: permissions.iam.tenant_role.read.description
+  - key: iam.tenant_role.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_role.update.name
+    description_i18n_key: permissions.iam.tenant_role.update.description
+  - key: iam.tenant_role_assignment.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_role_assignment.create.name
+    description_i18n_key: permissions.iam.tenant_role_assignment.create.description
+  - key: iam.tenant_role_assignment.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_role_assignment.read.name
+    description_i18n_key: permissions.iam.tenant_role_assignment.read.description
+  - key: iam.tenant_role_assignment.revoke
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_role_assignment.revoke.name
+    description_i18n_key: permissions.iam.tenant_role_assignment.revoke.description
+  - key: iam.user.create
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.user.create.name
+    description_i18n_key: permissions.iam.user.create.description
+  - key: iam.user.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.user.read.name
+    description_i18n_key: permissions.iam.user.read.description
+  - key: iam.user.suspend
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.user.suspend.name
+    description_i18n_key: permissions.iam.user.suspend.description
+  - key: iam.user.update
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.user.update.name
+    description_i18n_key: permissions.iam.user.update.description
+  - key: platform.backup.execute
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.backup.execute.name
+    description_i18n_key: permissions.platform.backup.execute.description
+  - key: platform.configuration.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.configuration.read.name
+    description_i18n_key: permissions.platform.configuration.read.description
+  - key: platform.configuration.update
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.configuration.update.name
+    description_i18n_key: permissions.platform.configuration.update.description
+  - key: platform.module.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.module.read.name
+    description_i18n_key: permissions.platform.module.read.description
+  - key: platform.module.update
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.module.update.name
+    description_i18n_key: permissions.platform.module.update.description
+  - key: platform.operation.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.operation.read.name
+    description_i18n_key: permissions.platform.operation.read.description
+  - key: platform.restore_request.approve
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.restore_request.approve.name
+    description_i18n_key: permissions.platform.restore_request.approve.description
+  - key: platform.restore_request.create
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.restore_request.create.name
+    description_i18n_key: permissions.platform.restore_request.create.description
+  - key: platform.restore_request.execute
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.restore_request.execute.name
+    description_i18n_key: permissions.platform.restore_request.execute.description
+  - key: platform.restore_request.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.restore_request.read.name
+    description_i18n_key: permissions.platform.restore_request.read.description
+  - key: platform.restore_request.reject
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.restore_request.reject.name
+    description_i18n_key: permissions.platform.restore_request.reject.description
+  - key: platform.tenant.close
+    allowed_scope_types: [platform]
+    risk_level: critical
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.tenant.close.name
+    description_i18n_key: permissions.platform.tenant.close.description
+  - key: platform.tenant.create
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.tenant.create.name
+    description_i18n_key: permissions.platform.tenant.create.description
+  - key: platform.tenant.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.tenant.read.name
+    description_i18n_key: permissions.platform.tenant.read.description
+  - key: platform.tenant.suspend
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.tenant.suspend.name
+    description_i18n_key: permissions.platform.tenant.suspend.description
+  - key: platform.tenant.update
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.tenant.update.name
+    description_i18n_key: permissions.platform.tenant.update.description
+  - key: statistics.summary.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.statistics.summary.read.name
+    description_i18n_key: permissions.statistics.summary.read.description
+  - key: statistics.tenant_breakdown.export
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.statistics.tenant_breakdown.export.name
+    description_i18n_key: permissions.statistics.tenant_breakdown.export.description
+  - key: statistics.tenant_breakdown.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.statistics.tenant_breakdown.read.name
+    description_i18n_key: permissions.statistics.tenant_breakdown.read.description
+  - key: system.api_key.create
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.api_key.create.name
+    description_i18n_key: permissions.system.api_key.create.description
+  - key: system.api_key.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.api_key.read.name
+    description_i18n_key: permissions.system.api_key.read.description
+  - key: system.api_key.revoke
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.api_key.revoke.name
+    description_i18n_key: permissions.system.api_key.revoke.description
+  - key: system.application.create
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.application.create.name
+    description_i18n_key: permissions.system.application.create.description
+  - key: system.application.delete
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.application.delete.name
+    description_i18n_key: permissions.system.application.delete.description
+  - key: system.application.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.application.read.name
+    description_i18n_key: permissions.system.application.read.description
+  - key: system.application.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.application.update.name
+    description_i18n_key: permissions.system.application.update.description
+  - key: system.cleanup.execute
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.cleanup.execute.name
+    description_i18n_key: permissions.system.cleanup.execute.description
+  - key: system.cleanup.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.cleanup.read.name
+    description_i18n_key: permissions.system.cleanup.read.description
+  - key: system.engine.create
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.engine.create.name
+    description_i18n_key: permissions.system.engine.create.description
+  - key: system.engine.delete
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.engine.delete.name
+    description_i18n_key: permissions.system.engine.delete.description
+  - key: system.engine.execute
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.engine.execute.name
+    description_i18n_key: permissions.system.engine.execute.description
+  - key: system.engine.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: true
+    status: active
+    name_i18n_key: permissions.system.engine.read.name
+    description_i18n_key: permissions.system.engine.read.description
+  - key: system.engine.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.engine.update.name
+    description_i18n_key: permissions.system.engine.update.description

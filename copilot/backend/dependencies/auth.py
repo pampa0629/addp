@@ -1,3 +1,5 @@
+import hmac
+
 import httpx
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -57,6 +59,23 @@ async def require_user(
     return context
 
 
+async def require_tenant_user(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer_auth),
+    accept_language: str | None = Header(default=None, alias="Accept-Language"),
+) -> AuthorizationContext:
+    context = await require_user(credentials, accept_language)
+    if context.tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_message(
+                accept_language,
+                "此接口需要租户上下文",
+                "This endpoint requires a tenant context",
+            ),
+        )
+    return context
+
+
 def require_tool_user(audience: str, scope: str):
     async def dependency(
         credentials: HTTPAuthorizationCredentials = Depends(_bearer_auth),
@@ -71,3 +90,28 @@ def require_tool_user(audience: str, scope: str):
         return context
 
     return dependency
+
+
+async def require_internal_api_key(
+    internal_api_key: str | None = Header(default=None, alias="X-Internal-API-Key"),
+    accept_language: str | None = Header(default=None, alias="Accept-Language"),
+) -> None:
+    configured_key = settings.internal_api_key
+    if not configured_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_message(
+                accept_language,
+                "内部认证未配置",
+                "Internal authentication is not configured",
+            ),
+        )
+    if not internal_api_key or not hmac.compare_digest(internal_api_key, configured_key):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=_message(
+                accept_language,
+                "内部 API Key 无效",
+                "Internal API key is invalid",
+            ),
+        )

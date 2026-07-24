@@ -25,6 +25,19 @@ def test_manifest_has_unique_stage_two_tools():
         assert tool.auth.type == "delegated_access_token"
         assert tool.auth.audience == tool.owner
         assert tool.auth.required_scopes == [tool.name]
+    expected_permissions = {
+        "engine.list": ["system.engine.read"],
+        "data.search": ["manager.search.execute"],
+        "resource.ancestors.get": ["meta.catalog.read"],
+        "data.preview": ["manager.data_item.read"],
+        "workflow.operators.list": ["develop.task.read"],
+        "workflow.draft.generate": ["copilot.workflow.execute"],
+        "workflow.validate": ["develop.task.execute"],
+        "workflow.run": ["develop.task.execute"],
+        "execution.get": ["develop.task.read"],
+    }
+    for tool in manifest.tools:
+        assert tool.auth.required_permissions == expected_permissions[tool.name]
 
 
 def test_executor_validates_arguments_before_dispatch():

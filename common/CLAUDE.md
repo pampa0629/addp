@@ -9,6 +9,7 @@
 ```text
 common/
 ├── api/            # 统一响应、错误和 handler 辅助
+├── authorization/  # Permission/内置 Role Manifest Schema、仓库聚合 CLI、严格校验和共享授权契约
 ├── client/         # System、Meta、Asset、Service 等模块客户端
 ├── middleware/auth/ # System AuthContext 消费、Gin 上下文注入和租户隔离 helper
 ├── config/         # .env 加载和服务配置
@@ -31,6 +32,7 @@ common/
 ## 开发规则
 
 - 新增共享能力必须保持模块边界清晰，避免把某个业务模块的私有逻辑沉淀到 `common/`。
+- `common/authorization` 只提供 Permission/内置 Role Manifest Schema、解析/校验、确定性 Catalog Report、发布期聚合 CLI 和共享授权类型；业务 Permission 内容必须留在各 owner 的 `authorization/permissions.yaml`，产品内置 Role 内容必须留在 `system/authorization/builtin_roles.yaml`，不得建立 common 中央业务清单。
 - `common/jsonmap` 只提供通用 JSON map 读写 helper，不承载 `meta_item.attributes` 规范语义。
 - `common/format` 只提供通用格式、type info / format info、parser / analyzer 能力；Meta item 识别、claims / exclusive、`meta_item.full_name` 决策和 attributes 落库构造属于 Meta 模块。
 - `common/contentio` 只表达内容定位和 I/O，不依赖 engine，不解析 format，不返回上层 DTO。

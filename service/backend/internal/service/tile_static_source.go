@@ -3,13 +3,13 @@ package service
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/resourcetree"
-	"github.com/addp/common/tilepyramid"
 )
 
 func (s *TileServiceService) normalizeStaticTileSource(tenantID uint, config map[string]interface{}) error {
@@ -42,32 +42,28 @@ func (s *TileServiceService) normalizeStaticTileSource(tenantID uint, config map
 		return errors.New("static tile locator path does not match meta item full_name")
 	}
 	if commonJSON.String(item.Attributes, "item", "data_type") != "media" ||
-		commonJSON.String(item.Attributes, "item", "format") != string(format.FormatTilePyramid) ||
-		commonJSON.String(item.Attributes, "item", "layout") != format.LayoutWhole {
-		return errors.New("static tile source must be a media/tile_pyramid/whole item")
+		commonJSON.String(item.Attributes, "item", "format") != string(format.FormatPMTiles) ||
+		commonJSON.String(item.Attributes, "item", "layout") != format.LayoutSingle {
+		return errors.New("static tile source must be a media/pmtiles/single item")
 	}
-	info := commonJSON.Section(item.Attributes, "format_info.tile_pyramid")
+	info := commonJSON.Section(item.Attributes, "format_info.pmtiles")
 	if info == nil {
-		return errors.New("static tile item is missing format_info.tile_pyramid")
+		return errors.New("static tile item is missing format_info.pmtiles")
 	}
-	manifest := tilepyramid.Manifest{
-		SchemaVersion:   tilepyramid.ManifestSchemaVersion,
-		DataType:        "media",
-		Format:          string(format.FormatTilePyramid),
-		Layout:          format.LayoutWhole,
-		TileKind:        commonJSON.InterfaceString(info["tile_kind"]),
-		TileFormat:      commonJSON.InterfaceString(info["tile_format"]),
-		Scheme:          commonJSON.InterfaceString(info["scheme"]),
-		TileMatrixSet:   commonJSON.InterfaceString(info["tile_matrix_set"]),
-		TileTemplate:    commonJSON.InterfaceString(info["tile_template"]),
-		ContentType:     commonJSON.InterfaceString(info["content_type"]),
-		ContentEncoding: commonJSON.InterfaceString(info["content_encoding"]),
-		MinZoom:         int(commonJSON.InterfaceInt64(info["min_zoom"])),
-		MaxZoom:         int(commonJSON.InterfaceInt64(info["max_zoom"])),
-		TileCount:       commonJSON.InterfaceInt64(info["tile_count"]),
-	}
-	if err := tilepyramid.ValidateManifest(manifest); err != nil {
-		return fmt.Errorf("invalid static tile item metadata: %w", err)
+	specVersion := int(commonJSON.InterfaceInt64(info["spec_version"]))
+	tileType := strings.ToLower(strings.TrimSpace(commonJSON.InterfaceString(info["tile_type"])))
+	tileCompression := strings.ToLower(strings.TrimSpace(commonJSON.InterfaceString(info["tile_compression"])))
+	headerHash := strings.ToLower(strings.TrimSpace(commonJSON.InterfaceString(info["header_hash"])))
+	minZoom := int(commonJSON.InterfaceInt64(info["min_zoom"]))
+	maxZoom := int(commonJSON.InterfaceInt64(info["max_zoom"]))
+	center := commonJSON.InterfaceFloat64Slice(info["center"])
+	spatial := commonJSON.Section(item.Attributes, "capabilities.spatial")
+	extent := commonJSON.InterfaceFloat64Slice(spatial["extent"])
+	srid := int(commonJSON.InterfaceInt64(spatial["srid"]))
+	crsRef := strings.TrimSpace(commonJSON.InterfaceString(spatial["crs_ref"]))
+	if specVersion != 3 || tileType != "mvt" || tileCompression != "gzip" || len(headerHash) != 64 || minZoom < 0 || maxZoom < minZoom || maxZoom > 31 ||
+		!validPMTilesCenter(center, minZoom, maxZoom) || !validWGS84Extent(extent) || srid != 4326 || crsRef != "EPSG:4326" {
+		return errors.New("static tile item has invalid PMTiles v3 metadata")
 	}
 
 	for key := range config {
@@ -82,17 +78,39 @@ func (s *TileServiceService) normalizeStaticTileSource(tenantID uint, config map
 		"item_id":          item.ID,
 		"fingerprint":      item.Fingerprint,
 		"scope_path":       item.FullName,
-		"tile_kind":        manifest.TileKind,
-		"tile_format":      strings.ToLower(strings.TrimSpace(manifest.TileFormat)),
-		"scheme":           tilepyramid.SchemeXYZ,
-		"tile_matrix_set":  tilepyramid.DefaultMatrixSet,
-		"tile_template":    strings.TrimSpace(manifest.TileTemplate),
-		"content_type":     tilepyramid.ContentType(manifest.TileFormat, manifest.ContentType),
-		"content_encoding": strings.ToLower(strings.TrimSpace(manifest.ContentEncoding)),
-		"min_zoom":         manifest.MinZoom,
-		"max_zoom":         manifest.MaxZoom,
-		"tile_count":       manifest.TileCount,
-		"captured_at":      time.Now().UTC().Format(time.RFC3339Nano),
+		"archive_format":   "pmtiles",
+		"spec_version":     specVersion,
+		"header_hash":      headerHash,
+		"tile_format":      tileType,
+		"tile_compression": tileCompression,
+		"min_zoom":         minZoom,
+		"max_zoom":         maxZoom,
+		"center":           append([]float64(nil), center...),
+		"spatial": map[string]interface{}{
+			"srid": srid, "crs_ref": crsRef, "extent": append([]float64(nil), extent...),
+		},
+		"captured_at": time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	return nil
+}
+
+func validPMTilesCenter(center []float64, minZoom, maxZoom int) bool {
+	return len(center) == 3 && finite(center...) &&
+		center[0] >= -180 && center[0] <= 180 && center[1] >= -90 && center[1] <= 90 &&
+		center[2] >= float64(minZoom) && center[2] <= float64(maxZoom)
+}
+
+func validWGS84Extent(extent []float64) bool {
+	return len(extent) == 4 && finite(extent...) &&
+		extent[0] >= -180 && extent[2] <= 180 && extent[1] >= -90 && extent[3] <= 90 &&
+		extent[0] <= extent[2] && extent[1] <= extent[3]
+}
+
+func finite(values ...float64) bool {
+	for _, value := range values {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return false
+		}
+	}
+	return true
 }

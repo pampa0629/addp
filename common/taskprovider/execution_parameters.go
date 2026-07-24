@@ -6,6 +6,7 @@ import (
 	"math"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode/utf8"
 )
@@ -169,7 +170,13 @@ func validateObjectValue(schema map[string]interface{}, value map[string]interfa
 		}
 	}
 
-	for name, fieldValue := range value {
+	names := make([]string, 0, len(value))
+	for name := range value {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		fieldValue := value[name]
 		fieldSchema, declared := objectSchema(properties[name])
 		if declared {
 			if err := validateSchemaValue(fieldSchema, fieldValue, path+"."+name, options); err != nil {

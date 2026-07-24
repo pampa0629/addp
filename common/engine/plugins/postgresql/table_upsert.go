@@ -12,6 +12,10 @@ import (
 )
 
 func (p *PostgreSQLPlugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableUpsertOptions) error {
+	return p.prepareTableUpsert(ctx, connInfo, path, opts, false)
+}
+
+func (p *PostgreSQLPlugin) prepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableUpsertOptions, requireTargetAbsent bool) error {
 	keys, err := validatePostgresUpsertOptions(opts)
 	if err != nil {
 		return err
@@ -33,6 +37,9 @@ func (p *PostgreSQLPlugin) PrepareTableUpsert(ctx context.Context, connInfo plug
 	if err := db.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, schema+"."+table).Scan(&exists); err != nil {
 		return fmt.Errorf("check postgresql upsert target: %w", err)
 	}
+	if requireTargetAbsent && exists {
+		return fmt.Errorf("postgresql replay target %s.%s already exists", schema, table)
+	}
 	writeFields := append([]datatype.FieldInfo(nil), opts.Fields...)
 	if !exists {
 		keySet := make(map[string]bool, len(keys))
@@ -46,7 +53,7 @@ func (p *PostgreSQLPlugin) PrepareTableUpsert(ctx context.Context, connInfo plug
 			}
 		}
 	}
-	if err := createPostgresTableIfNotExists(ctx, db, schema, table, writeFields, opts.SpatialInfo); err != nil {
+	if err := createPostgresTable(ctx, db, schema, table, writeFields, opts.SpatialInfo, !requireTargetAbsent); err != nil {
 		return err
 	}
 	if err := validatePostgresUniqueTieBreakers(ctx, db, schema, table, keys); err != nil {

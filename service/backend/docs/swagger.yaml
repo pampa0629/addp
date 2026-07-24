@@ -1077,6 +1077,22 @@ definitions:
       http:
         $ref: '#/definitions/internal_api.HTTP'
     type: object
+  internal_api.Exception:
+    properties:
+      exceptionCode:
+        type: string
+      exceptionText:
+        type: string
+    type: object
+  internal_api.ExceptionReport:
+    properties:
+      exception:
+        $ref: '#/definitions/internal_api.Exception'
+      version:
+        type: string
+      xmlname:
+        $ref: '#/definitions/encoding_xml.Name'
+    type: object
   internal_api.Get:
     properties:
       href:
@@ -1898,6 +1914,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: OGC Tiles API Landing Page | OGC Tiles API Landing Page
       tags:
       - OGC Tiles
@@ -1917,6 +1945,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: OGC API Conformance | OGC API Conformance
       tags:
       - OGC Tiles
@@ -1935,6 +1975,18 @@ paths:
           description: 瓦片矩阵集列表 | Tile Matrix Set list
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       summary: 获取 Tile Matrix Sets | Get Tile Matrix Sets
       tags:
@@ -1960,6 +2012,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: 获取单个 Tile Matrix Set | Get single Tile Matrix Set
       tags:
       - OGC Tiles
@@ -1978,6 +2042,18 @@ paths:
           description: 瓦片集列表 | Tileset list
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       summary: 获取 Tilesets | Get Tilesets
       tags:
@@ -2022,6 +2098,18 @@ paths:
           description: OK
           schema:
             type: file
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: 获取单个瓦片 | Get single tile
       tags:
       - OGC Tiles
@@ -2885,6 +2973,18 @@ paths:
           description: 瓦片数据 | Tile data
           schema:
             type: file
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: 获取 XYZ 瓦片 | Get XYZ tile
       tags:
       - Tiles
@@ -2907,6 +3007,14 @@ paths:
           description: WMTS Capabilities XML | WMTS Capabilities XML
           schema:
             $ref: '#/definitions/internal_api.Capabilities'
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            $ref: '#/definitions/internal_api.ExceptionReport'
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            $ref: '#/definitions/internal_api.ExceptionReport'
       summary: 获取 WMTS Capabilities | Get WMTS Capabilities
       tags:
       - WMTS

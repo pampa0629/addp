@@ -161,6 +161,11 @@ services:
   mysql:
     image: docker.m.daocloud.io/library/mysql:8.0
     container_name: business-mysql
+    command:
+      - --server-id=1
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --binlog-row-image=FULL
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
       MYSQL_ROOT_HOST: '%'

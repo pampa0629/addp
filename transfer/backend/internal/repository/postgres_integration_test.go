@@ -111,7 +111,13 @@ func TestIntegrationPostgresAtomicTaskClaimAndSyncStateCAS(t *testing.T) {
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatalf("ensure common execution store: %v", err)
 	}
-	if err := db.AutoMigrate(&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}, &models.CaptureResource{}); err != nil {
+	if err := MigrateCaptureProviderResources(db); err != nil {
+		t.Fatalf("migrate legacy capture resources: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}, &models.CaptureResource{},
+		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{},
+	); err != nil {
 		t.Fatalf("migrate transfer integration models: %v", err)
 	}
 
@@ -212,7 +218,7 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	}
 	task := models.TransferTask{
 		TenantID: 999999, Name: fmt.Sprintf("continuous-lease-%d", time.Now().UnixNano()), TaskType: commonExecution.TaskTypeSync,
-		Config: models.JSONMap{"runtime": map[string]interface{}{"boundary": "continuous"}}, BatchSize: 100,
+		Config: models.JSONMap{"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}}}, BatchSize: 100,
 		Status: models.TaskStatusIdle, DesiredState: models.TaskDesiredStateStopped,
 	}
 	if err := db.Create(&task).Error; err != nil {
@@ -383,7 +389,7 @@ func TestIntegrationPostgresContinuousAutomaticRecoveryCreatesNewExecution(t *te
 
 	task := models.TransferTask{
 		TenantID: 999999, Name: fmt.Sprintf("continuous-recovery-%d", time.Now().UnixNano()), TaskType: commonExecution.TaskTypeSync,
-		Config: models.JSONMap{"runtime": map[string]interface{}{"boundary": "continuous"}}, BatchSize: 100,
+		Config: models.JSONMap{"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}}}, BatchSize: 100,
 		Status: models.TaskStatusIdle, DesiredState: models.TaskDesiredStateStopped,
 	}
 	if err := db.Create(&task).Error; err != nil {
@@ -505,7 +511,7 @@ func TestIntegrationPostgresContinuousRecoveryBackoffAndCircuitBreaker(t *testin
 
 	task := models.TransferTask{
 		TenantID: 999999, Name: fmt.Sprintf("continuous-circuit-%d", time.Now().UnixNano()), TaskType: commonExecution.TaskTypeSync,
-		Config: models.JSONMap{"runtime": map[string]interface{}{"boundary": "continuous"}}, BatchSize: 100,
+		Config: models.JSONMap{"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}}}, BatchSize: 100,
 		Status: models.TaskStatusIdle, DesiredState: models.TaskDesiredStateStopped,
 	}
 	if err := db.Create(&task).Error; err != nil {

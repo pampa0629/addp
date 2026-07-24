@@ -42,6 +42,7 @@ func NewAuthHandler(
 // @Success      200 {object} models.LoginResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      401 {object} models.ErrorResponse
+// @x-addp-auth-mode "public"
 // @Router       /login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req models.LoginRequest
@@ -80,6 +81,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 // @Success      201 {object} models.User
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      403 {object} models.ErrorResponse
+// @x-addp-auth-mode "public"
 // @Router       /register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
 	if !h.cfg.AllowPublicRegistration {
@@ -110,6 +112,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 // @Produce      json
 // @Success      200 {object} models.LoginResponse
 // @Failure      401 {object} models.ErrorResponse
+// @x-addp-auth-mode "public"
 // @Router       /refresh [post]
 func (h *AuthHandler) Refresh(c *gin.Context) {
 	refreshToken, err := c.Cookie(refreshCookieName)
@@ -139,6 +142,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 // @Tags         认证 | Auth
 // @Produce      json
 // @Success      204
+// @x-addp-auth-mode "authenticated"
 // @Router       /logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
 	if refreshToken, err := c.Cookie(refreshCookieName); err == nil {
@@ -157,6 +161,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 // @Security     BearerAuth
 // @Success      200 {object} models.AuthorizationContext
 // @Failure      401 {object} models.ErrorResponse
+// @x-addp-auth-mode "authenticated"
 // @Router       /auth/context [get]
 func (h *AuthHandler) Context(c *gin.Context) {
 	value, exists := c.Get(middleware.AuthorizationContextKey)
@@ -180,6 +185,7 @@ func (h *AuthHandler) Context(c *gin.Context) {
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      401 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "authenticated"
 // @Router       /auth/delegations [post]
 func (h *AuthHandler) CreateDelegation(c *gin.Context) {
 	var req models.DelegatedAccessTokenRequest

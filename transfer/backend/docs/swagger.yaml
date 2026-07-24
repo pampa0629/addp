@@ -52,6 +52,52 @@ definitions:
         example: sync
         type: string
     type: object
+  github_com_addp_transfer_internal_models.DeadLetterListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_transfer_internal_models.DeadLetterView'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_transfer_internal_models.DeadLetterView:
+    properties:
+      error_category:
+        type: string
+      error_code:
+        type: string
+      error_message:
+        type: string
+      first_execution_id:
+        type: string
+      first_observed_at:
+        type: string
+      identity:
+        type: string
+      last_execution_id:
+        type: string
+      last_observed_at:
+        type: string
+      occurrence_count:
+        type: integer
+      payload_available:
+        type: boolean
+      source_offset:
+        type: integer
+      source_partition:
+        type: string
+      source_timestamp:
+        type: string
+      source_topic:
+        type: string
+    type: object
   github_com_addp_transfer_internal_models.ExecutionStatus:
     enum:
     - pending
@@ -116,6 +162,36 @@ definitions:
     properties:
       time.Time:
         type: string
+    type: object
+  github_com_addp_transfer_internal_models.ReplayOffsetRangeRequest:
+    properties:
+      end_offset:
+        example: 20
+        type: integer
+      partition:
+        example: "0"
+        type: string
+      start_offset:
+        example: 10
+        type: integer
+    type: object
+  github_com_addp_transfer_internal_models.ReplayTargetRequest:
+    properties:
+      name:
+        example: orders_replay
+        type: string
+      parent_locator:
+        example: addp://engine/8/path/replay_schema?type=schema&node_id=12
+        type: string
+    type: object
+  github_com_addp_transfer_internal_models.ReplayTaskRequest:
+    properties:
+      ranges:
+        items:
+          $ref: '#/definitions/github_com_addp_transfer_internal_models.ReplayOffsetRangeRequest'
+        type: array
+      target:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.ReplayTargetRequest'
     type: object
   github_com_addp_transfer_internal_models.StopTaskRequest:
     properties:
@@ -361,6 +437,15 @@ definitions:
         example: snapshot
         type: string
     type: object
+  github_com_addp_transfer_internal_models.TransferRecordFailureDoc:
+    properties:
+      mode:
+        enum:
+        - block
+        - dead_letter
+        example: block
+        type: string
+    type: object
   github_com_addp_transfer_internal_models.TransferRuntimeDoc:
     properties:
       boundary:
@@ -369,6 +454,8 @@ definitions:
         - continuous
         example: bounded
         type: string
+      record_failure:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferRecordFailureDoc'
     type: object
   github_com_addp_transfer_internal_models.TransferSourceEndpointDoc:
     properties:
@@ -556,8 +643,21 @@ definitions:
       status:
         type: string
     type: object
+  internal_api.TransferBusinessKafkaCapabilities:
+    properties:
+      bounded_replay:
+        $ref: '#/definitions/internal_api.TransferReplayCapability'
+      dead_letters:
+        $ref: '#/definitions/internal_api.TransferDeadLetterCapability'
+      record_failure_modes:
+        items:
+          type: string
+        type: array
+    type: object
   internal_api.TransferCapabilitiesResponse:
     properties:
+      continuous:
+        $ref: '#/definitions/internal_api.TransferContinuousCapabilities'
       raw_copy_formats:
         items:
           $ref: '#/definitions/internal_api.TransferRawCopyFormatSupport'
@@ -566,6 +666,43 @@ definitions:
         items:
           $ref: '#/definitions/internal_api.TransferTableFormatSupport'
         type: array
+    type: object
+  internal_api.TransferContinuousCapabilities:
+    properties:
+      business_kafka:
+        $ref: '#/definitions/internal_api.TransferBusinessKafkaCapabilities'
+      database_cdc:
+        $ref: '#/definitions/internal_api.TransferDatabaseCDCCapability'
+    type: object
+  internal_api.TransferDatabaseCDCCapability:
+    properties:
+      apply_mode:
+        type: string
+      bootstrap:
+        items:
+          type: string
+        type: array
+      sources:
+        items:
+          type: string
+        type: array
+      target:
+        type: string
+    type: object
+  internal_api.TransferDeadLetterCapability:
+    properties:
+      detail_endpoint:
+        type: string
+      exposes_payload:
+        type: boolean
+      filters:
+        items:
+          type: string
+        type: array
+      list_endpoint:
+        type: string
+      supported:
+        type: boolean
     type: object
   internal_api.TransferRawCopyFormatSupport:
     properties:
@@ -581,6 +718,17 @@ definitions:
         type: array
       value:
         type: string
+    type: object
+  internal_api.TransferReplayCapability:
+    properties:
+      endpoint:
+        type: string
+      owner_record_failure_modes:
+        items:
+          type: string
+        type: array
+      supported:
+        type: boolean
     type: object
   internal_api.TransferTableFormatSupport:
     properties:
@@ -620,9 +768,9 @@ info:
 paths:
   /capabilities:
     get:
-      description: 返回 Transfer 当前可用于表格传输的格式能力，来源于 common format descriptor 与已加载 plugin
-        的接口实现状态 | Returns table transfer format capabilities backed by common format
-        descriptors and loaded plugin implementations
+      description: 返回 Transfer 当前可用的格式能力、业务 Kafka continuous 能力和数据库 CDC 支持矩阵。| Returns
+        available Transfer format capabilities, business Kafka continuous features,
+        and the database CDC support matrix.
       produces:
       - application/json
       responses:
@@ -885,13 +1033,14 @@ paths:
     post:
       consumes:
       - application/json
-      description: 创建 bounded、业务 Kafka continuous 或 PostgreSQL CDC 任务。配置必须使用 runtime.boundary、load.mode、load.change_detection
-        和 target.policy.apply_mode；CDC 第一版固定为 PostgreSQL 单表 initial_snapshot 和 PostgreSQL
-        新目标表 upsert_delete。旧 mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka
-        continuous, or PostgreSQL CDC task using runtime.boundary, load.mode, load.change_detection,
-        and target.policy.apply_mode. CDC v1 is limited to a single PostgreSQL table
-        with initial_snapshot and a new PostgreSQL upsert_delete target. Legacy mode/write_mode
-        fields are rejected.
+      description: 创建 bounded、业务 Kafka continuous 或数据库 CDC 任务。业务 Kafka continuous
+        必须显式使用 runtime.record_failure.mode=block|dead_letter；dead_letter 只处理确定性记录级数据错误。CDC
+        第一版支持 PostgreSQL/MySQL 单表 initial_snapshot、block 和 PostgreSQL 新目标表 upsert_delete。旧
+        mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka continuous, or database
+        CDC task. Business Kafka continuous tasks must explicitly use runtime.record_failure.mode=block|dead_letter;
+        dead_letter only handles deterministic record-level data errors. CDC v1 supports
+        a single PostgreSQL or MySQL table with initial_snapshot, block policy, and
+        a new PostgreSQL upsert_delete target. Legacy mode/write_mode fields are rejected.
       parameters:
       - description: 任务创建请求 | Task creation request
         in: body
@@ -933,7 +1082,10 @@ paths:
     delete:
       consumes:
       - application/json
-      description: 删除指定的任务及相关执行记录 | Delete a specific task and its execution records
+      description: 删除指定任务。运行中的任务必须先停止；删除前会清理 task-owned capture/DLQ 资源，但保留统一 execution
+        历史和目标业务数据。| Delete a task. Running tasks must be stopped first; task-owned
+        capture/DLQ resources are cleaned before deletion, while unified execution
+        history and target business data are retained.
       parameters:
       - description: 任务ID | Task ID
         in: path
@@ -955,8 +1107,20 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "409":
+          description: 任务仍在运行 | Task is still running
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "500":
           description: 服务器错误 | Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 任务资源清理不可用或失败 | Task resource cleanup unavailable or failed
           schema:
             additionalProperties:
               type: string
@@ -1049,6 +1213,122 @@ paths:
       summary: 更新任务 | Update task
       tags:
       - 任务管理 | Task Management
+  /task-definitions/{id}/dead-letters:
+    get:
+      description: 分页查询当前租户 owner task 的安全 DLQ 控制索引。只返回源位置、稳定错误、execution 与观测审计事实，不返回
+        Infra Kafka payload reference 或原始 key/value/headers。| List safe DLQ control-index
+        records for the current tenant's owner task. Only source position, stable
+        error, execution, and observation audit facts are returned; Infra Kafka payload
+        references and raw key/value/headers are never exposed.
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - default: 1
+        description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页大小，最大100 | Page size, max 100
+        in: query
+        name: page_size
+        type: integer
+      - description: 源分区精确过滤 | Exact source partition filter
+        in: query
+        name: source_partition
+        type: string
+      - description: 错误分类精确过滤 | Exact error category filter
+        in: query
+        name: error_category
+        type: string
+      - description: 错误码精确过滤 | Exact error code filter
+        in: query
+        name: error_code
+        type: string
+      - description: payload 可用状态精确过滤 | Exact payload availability filter
+        in: query
+        name: payload_available
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 死信记录分页结果 | Paginated dead-letter records
+          schema:
+            $ref: '#/definitions/github_com_addp_transfer_internal_models.DeadLetterListResponse'
+        "400":
+          description: 查询参数无效 | Invalid query parameters
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 任务不存在 | Task not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取任务死信记录 | List task dead-letter records
+      tags:
+      - 死信管理 | Dead-letter Management
+  /task-definitions/{id}/dead-letters/{identity}:
+    get:
+      description: 按 identity 获取当前租户 owner task 下的安全 DLQ 控制索引详情。DLQ 不是 replay source，本接口不读取原始
+        payload。| Get a safe DLQ control-index detail by identity under the current
+        tenant's owner task. DLQ is not a replay source and this endpoint does not
+        read raw payload.
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 死信记录 UUID | Dead-letter record UUID
+        in: path
+        name: identity
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 死信记录详情 | Dead-letter record detail
+          schema:
+            $ref: '#/definitions/github_com_addp_transfer_internal_models.DeadLetterView'
+        "400":
+          description: 标识无效 | Invalid identity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 任务或死信记录不存在 | Task or dead-letter record not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取死信记录详情 | Get dead-letter record detail
+      tags:
+      - 死信管理 | Dead-letter Management
   /task-definitions/{id}/executions:
     get:
       parameters:
@@ -1131,6 +1411,74 @@ paths:
       summary: 暂停任务 | Pause task
       tags:
       - 任务管理 | Task Management
+  /task-definitions/{id}/replay:
+    post:
+      consumes:
+      - application/json
+      description: 从 owner task 的原业务 Kafka topic 按显式半开 partition/offset 范围读取，创建独立
+        bounded execution，并只写入不存在的新 PostgreSQL 隔离表。请求不能覆盖 source、mapping、key、policy
+        或原目标；replay 不修改主任务状态、主水位或主目标。| Read explicit half-open partition/offset ranges
+        from the owner task's original business Kafka topic, create an independent
+        bounded execution, and write only to a new non-existing isolated PostgreSQL
+        table. The request cannot override source, mapping, key, policy, or the owner
+        target; replay does not change the owner task state, committed position, or
+        target.
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 回放范围与新目标 | Replay ranges and new target
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_transfer_internal_models.ReplayTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: 已创建独立回放执行 | Independent replay execution created
+          schema:
+            $ref: '#/definitions/github_com_addp_transfer_internal_models.TaskExecution'
+        "400":
+          description: 请求不符合 bounded replay v1 契约 | Request violates the bounded replay
+            v1 contract
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 任务不存在 | Task not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 范围超出保留边界或目标已存在 | Range is outside retention or target already
+            exists
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 回放运行时不可用 | Replay runtime unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建 Kafka bounded replay | Create Kafka bounded replay
+      tags:
+      - 任务管理 | Task Management
   /task-definitions/{id}/resume:
     post:
       description: bounded 任务恢复自身定时调度；continuous 任务创建新的 pending execution 并从 committed
@@ -1181,9 +1529,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: 启动任务执行并创建执行记录；PostgreSQL CDC 首次启动会先创建并确认 capture generation，普通中断恢复时复用同一
+      description: 启动任务执行并创建执行记录；数据库 CDC 首次启动会先创建并确认 capture generation，普通中断恢复时复用同一
         generation；schema drift blocked 任务不得再次启动。| Start task execution and create
-        an execution record. PostgreSQL CDC provisions and verifies its capture generation
+        an execution record. Database CDC provisions and verifies its capture generation
         before the first runtime session and reuses that generation for normal interruption
         recovery; schema-drift-blocked tasks cannot be started again.
       parameters:
@@ -1227,12 +1575,12 @@ paths:
     post:
       consumes:
       - application/json
-      description: 普通业务 Kafka continuous stop 保留 committed position；PostgreSQL CDC
-        stop 是不可逆终态，必须提交 confirmed=true 且 confirmation_text 与任务名称完全一致，并删除 ADDP-owned
-        connector、slot、publication 和 CDC topic。| Business Kafka continuous stop keeps
-        committed positions. PostgreSQL CDC stop is irreversible and requires confirmed=true
-        plus confirmation_text exactly matching the task name; ADDP-owned connector,
-        slot, publication, and CDC topic are deleted.
+      description: 普通业务 Kafka continuous stop 保留 committed position；数据库 CDC stop 是不可逆终态，必须提交
+        confirmed=true 且 confirmation_text 与任务名称完全一致，并删除 ADDP-owned connector、provider
+        专属捕获资源、内部 topic、group 和 ACL。| Business Kafka continuous stop keeps committed
+        positions. Database CDC stop is irreversible and requires confirmed=true plus
+        confirmation_text exactly matching the task name; ADDP-owned connector, provider-specific
+        capture resources, internal topics, group, and ACLs are deleted.
       parameters:
       - description: 任务ID | Task ID
         in: path

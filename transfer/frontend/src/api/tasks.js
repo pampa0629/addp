@@ -57,6 +57,21 @@ export const taskAPI = {
     return client.get(`/transfer/task-definitions/${id}/executions`, { params })
   },
 
+  // 获取任务的 DLQ 安全控制索引
+  deadLetters(id, params) {
+    return client.get(`/transfer/task-definitions/${id}/dead-letters`, { params })
+  },
+
+  // 获取单条 DLQ 安全控制索引详情
+  deadLetter(id, identity) {
+    return client.get(`/transfer/task-definitions/${id}/dead-letters/${identity}`)
+  },
+
+  // 创建写入新 PostgreSQL 隔离表的 bounded replay execution
+  replay(id, data) {
+    return client.post(`/transfer/task-definitions/${id}/replay`, data)
+  },
+
   // 字段映射写入任务 config.transforms[]，不再提供独立 mappings API。
 }
 

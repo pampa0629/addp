@@ -1,0 +1,52 @@
+schema_version: addp.permission_manifest/v1
+owner_module: monitor
+manifest_version: 1
+permissions:
+  - key: monitor.execution.cancel
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.execution.cancel.name
+    description_i18n_key: permissions.monitor.execution.cancel.description
+  - key: monitor.execution.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.execution.read.name
+    description_i18n_key: permissions.monitor.execution.read.description
+  - key: monitor.execution.retry
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.execution.retry.name
+    description_i18n_key: permissions.monitor.execution.retry.description
+  - key: monitor.health.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.health.read.name
+    description_i18n_key: permissions.monitor.health.read.description
+  - key: monitor.statistics.export
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.statistics.export.name
+    description_i18n_key: permissions.monitor.statistics.export.description
+  - key: monitor.statistics.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.statistics.read.name
+    description_i18n_key: permissions.monitor.statistics.read.description

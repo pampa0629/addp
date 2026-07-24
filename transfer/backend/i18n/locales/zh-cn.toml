@@ -19,6 +19,15 @@ other = "任务暂停成功"
 [transfer.task.resumed]
 other = "任务恢复成功"
 
+[transfer.task.not_found]
+other = "任务不存在"
+
+[transfer.task.delete_requires_stopped]
+other = "任务正在运行，必须先停止任务才能删除"
+
+[transfer.task.delete_cleanup_failed]
+other = "任务资源清理失败，任务和审计索引均未删除，请稍后重试"
+
 [transfer.execution.cancelled]
 other = "执行已取消"
 
@@ -33,3 +42,30 @@ other = "数据库变更捕获控制面当前不可用"
 
 [transfer.cdc.schema_change_blocked]
 other = "源表结构变化已永久阻塞当前同步 generation；当前任务只能永久停止，请停止旧任务后创建新任务和新目标表"
+
+[transfer.replay.invalid]
+other = "回放请求无效；仅支持业务 Kafka record/json 严格阻塞任务、显式分区 offset 范围和新的 PostgreSQL 隔离目标"
+
+[transfer.replay.range_unavailable]
+other = "请求的回放范围已超出 Kafka 当前保留边界"
+
+[transfer.replay.target_exists]
+other = "回放目标已存在；必须选择一个不存在的新 PostgreSQL 表"
+
+[transfer.replay.unavailable]
+other = "回放运行时当前不可用"
+
+[transfer.replay.internal_error]
+other = "创建回放执行失败"
+
+[transfer.dead_letter.invalid_query]
+other = "死信记录查询参数无效"
+
+[transfer.dead_letter.invalid_identity]
+other = "死信记录标识无效"
+
+[transfer.dead_letter.not_found]
+other = "死信记录不存在"
+
+[transfer.dead_letter.internal_error]
+other = "查询死信记录失败"

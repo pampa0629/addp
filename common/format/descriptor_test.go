@@ -45,16 +45,16 @@ func TestRasterMosaicDescriptorUsesManifestFileName(t *testing.T) {
 	}
 }
 
-func TestTilePyramidDescriptorUsesManifestFileName(t *testing.T) {
-	descriptor, ok := GetFormatDescriptor(FormatTilePyramid)
+func TestPMTilesDescriptorUsesSingleFileIdentity(t *testing.T) {
+	descriptor, ok := GetFormatDescriptor(FormatPMTiles)
 	if !ok {
-		t.Fatal("descriptor for tile_pyramid not found")
+		t.Fatal("descriptor for pmtiles not found")
 	}
-	if descriptor.DataType != datatype.Media || !HasLayout(descriptor.Layouts, LayoutWhole) {
+	if descriptor.DataType != datatype.Media || !HasLayout(descriptor.Layouts, LayoutSingle) {
 		t.Fatalf("descriptor = %#v", descriptor)
 	}
-	if len(descriptor.Identification.FileNames) != 1 || descriptor.Identification.FileNames[0] != "tiles.addp.json" {
-		t.Fatalf("file_names = %#v", descriptor.Identification.FileNames)
+	if len(descriptor.Identification.Extensions) != 1 || descriptor.Identification.Extensions[0] != ".pmtiles" {
+		t.Fatalf("extensions = %#v", descriptor.Identification.Extensions)
 	}
 }
 

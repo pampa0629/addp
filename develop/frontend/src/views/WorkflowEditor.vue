@@ -1,20 +1,27 @@
 <template>
   <div class="workflow-editor-page">
-    <!-- 工具栏 -->
-    <div class="toolbar">
-      <div class="toolbar-left">
-        <h2>{{ t('develop.workflow.title') }}</h2>
-
-        <!-- 引擎选择区域 -->
-        <div class="engine-selector">
-          <!-- 工作流引擎选择（必选） -->
-          <div class="engine-select-group">
-            <label>{{ t('develop.workflow.workflowEngine') }}:</label>
+    <header class="editor-header">
+      <div class="editor-identity">
+        <el-tooltip :content="t('develop.workflow.toggleOperatorPanel')">
+          <el-button circle text @click="leftPanelCollapsed = !leftPanelCollapsed">
+            <el-icon><Grid /></el-icon>
+          </el-button>
+        </el-tooltip>
+        <div class="title-block">
+          <div class="title-row">
+            <h2>{{ currentTaskName || t('develop.workflow.untitled') }}</h2>
+            <el-tag size="small" :type="isDirty ? 'warning' : 'success'" effect="plain">
+              {{ isDirty ? t('develop.workflow.unsaved') : t('develop.workflow.saved') }}
+            </el-tag>
+          </div>
+          <div class="engine-row">
+            <span class="engine-label">{{ t('develop.workflow.workflowEngine') }}</span>
             <el-select
-              v-model="workflowEngineId"
+              :model-value="workflowEngineId"
               :placeholder="t('develop.workflow.selectEngine')"
-              style="width: 280px"
-              @change="handleEngineChange"
+              :disabled="switchingEngine"
+              class="engine-select"
+              @change="requestEngineChange"
             >
               <el-option
                 v-for="engine in workflowEngines"
@@ -22,137 +29,210 @@
                 :label="engine.name"
                 :value="engine.id"
               >
-                <div style="display: flex; justify-content: space-between; align-items: center">
+                <div class="engine-option">
                   <span>{{ engine.name }}</span>
-                  <el-tag size="small" type="success" style="margin-left: 8px">
-                    {{ getEngineTag(engine) }}
-                  </el-tag>
+                  <el-tag size="small" type="info">{{ getEngineTag(engine) }}</el-tag>
                 </div>
               </el-option>
             </el-select>
-          </div>
 
-          <!-- Spark 通用引擎资源选择（仅 Spark Workflow 需要） -->
-          <div v-if="needsSparkRuntime()" class="spark-runtime-select-group">
-            <label>{{ t('develop.workflow.sparkRuntime') }}:</label>
-            <el-select
-              v-model="sparkRuntimeId"
-              :placeholder="t('develop.workflow.selectSparkCluster')"
-              style="width: 280px"
-              :disabled="sparkRuntimes.length === 0"
-            >
-              <el-option
-                v-for="runtime in sparkRuntimes"
-                :key="runtime.id"
-                :label="formatRuntimeLabel(runtime)"
-                :value="runtime.id"
+            <template v-if="needsSparkRuntime()">
+              <span class="engine-label">{{ t('develop.workflow.sparkRuntime') }}</span>
+              <el-select
+                v-model="sparkRuntimeId"
+                :placeholder="t('develop.workflow.selectSparkCluster')"
+                :disabled="sparkRuntimes.length === 0"
+                class="engine-select"
               >
-                <div>
-                  <div>{{ runtime.name }}</div>
-                  <div style="font-size: 12px; color: #8492a6">
-                    {{ runtime.connection_info?.spark_master || t('develop.workflow.notConfigured') }}
-                  </div>
-                </div>
-              </el-option>
-            </el-select>
-
-            <!-- 无可用运行时提示 -->
-            <el-alert
-              v-if="sparkRuntimes.length === 0"
-              type="warning"
-              :closable="false"
-              style="margin-top: 8px"
-            >
-              {{ t('develop.workflow.noSparkRuntime') }}
-            </el-alert>
+                <el-option
+                  v-for="runtime in sparkRuntimes"
+                  :key="runtime.id"
+                  :label="formatRuntimeLabel(runtime)"
+                  :value="runtime.id"
+                />
+              </el-select>
+            </template>
           </div>
         </div>
       </div>
 
-      <div class="toolbar-right">
-        <el-button type="primary" @click="handleSave" :disabled="!canSave()">
+      <div v-if="hasValidWorkflow" class="header-validation">
+        <el-popover
+          v-if="validationIssues.length"
+          v-model:visible="validationPopoverVisible"
+          placement="bottom"
+          :width="420"
+          trigger="click"
+          popper-class="validation-popover"
+        >
+          <template #reference>
+            <button
+              type="button"
+              class="validation-summary validation-trigger"
+              :class="validationStatusClass"
+              :aria-label="t('develop.workflow.viewIssues')"
+            >
+              <el-icon v-if="validating" class="is-loading"><Loading /></el-icon>
+              <el-icon v-else-if="validationErrors.length"><CircleCloseFilled /></el-icon>
+              <el-icon v-else><WarningFilled /></el-icon>
+              <span class="validation-summary-text">{{ validationSummary }}</span>
+              <span class="validation-preview">{{ validationIssues[0].message }}</span>
+            </button>
+          </template>
+          <div class="validation-list">
+            <button
+              v-for="issue in validationIssues"
+              :key="`${issue.code}:${issue.path}`"
+              type="button"
+              class="validation-item"
+              @click="focusValidationIssue(issue)"
+            >
+              <el-icon><WarningFilled /></el-icon>
+              <span>{{ issue.message }}</span>
+            </button>
+          </div>
+        </el-popover>
+
+        <div v-else class="validation-summary" :class="validationStatusClass">
+          <el-icon v-if="validating" class="is-loading"><Loading /></el-icon>
+          <el-icon v-else-if="validationRequestError"><WarningFilled /></el-icon>
+          <el-icon v-else><CircleCheckFilled /></el-icon>
+          <span>{{ validationSummary }}</span>
+        </div>
+      </div>
+
+      <div class="primary-actions">
+        <el-button type="primary" :disabled="!canSave" :loading="saving" @click="handleSave">
           <el-icon><DocumentAdd /></el-icon>
           {{ t('develop.workflow.save') }}
         </el-button>
-        <el-button type="success" @click="handleExecute" :disabled="!canExecute()">
+        <el-button type="success" :disabled="!canExecute" :loading="executing" @click="handleExecute">
           <el-icon><VideoPlay /></el-icon>
           {{ t('develop.workflow.execute') }}
         </el-button>
-        <el-button @click="handleSaveAs">
-          <el-icon><CopyDocument /></el-icon>
-          {{ t('develop.workflow.saveAs') }}
-        </el-button>
-        <el-button type="info" @click="handleViewJSON">
-          <el-icon><Document /></el-icon>
-          {{ t('develop.workflow.viewJson') }}
-        </el-button>
-        <el-button type="warning" @click="handleClear">
-          <el-icon><Delete /></el-icon>
-          {{ t('develop.workflow.clear') }}
-        </el-button>
-        <el-button @click="handleExport">
-          <el-icon><Download /></el-icon>
-          {{ t('develop.workflow.export') }}
-        </el-button>
-        <el-button @click="handleImport">
-          <el-icon><Upload /></el-icon>
-          {{ t('develop.workflow.import') }}
-        </el-button>
+        <el-dropdown trigger="click" @command="handleMoreCommand">
+          <el-button>
+            {{ t('develop.workflow.more') }}
+            <el-icon class="el-icon--right"><MoreFilled /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="saveAs" :disabled="!canSave">
+                <el-icon><CopyDocument /></el-icon>{{ t('develop.workflow.saveAs') }}
+              </el-dropdown-item>
+              <el-dropdown-item command="viewJson" :disabled="!hasValidWorkflow">
+                <el-icon><Document /></el-icon>{{ t('develop.workflow.viewJson') }}
+              </el-dropdown-item>
+              <el-dropdown-item command="import">
+                <el-icon><Upload /></el-icon>{{ t('develop.workflow.import') }}
+              </el-dropdown-item>
+              <el-dropdown-item command="export" :disabled="!hasValidWorkflow">
+                <el-icon><Download /></el-icon>{{ t('develop.workflow.export') }}
+              </el-dropdown-item>
+              <el-dropdown-item divided command="clear" :disabled="!hasValidWorkflow">
+                <el-icon><Delete /></el-icon>{{ t('develop.workflow.clear') }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
-    </div>
+    </header>
 
-    <!-- 三栏布局 -->
-    <div class="editor-content">
-      <!-- 左侧: 算子面板 -->
-      <div class="left-panel">
+    <main class="editor-content">
+      <aside v-if="!leftPanelCollapsed" class="left-panel">
         <div class="panel-header">
           <span class="panel-title">{{ t('develop.workflow.operatorPanel') }}</span>
+          <el-button circle text size="small" @click="leftPanelCollapsed = true">
+            <el-icon><ArrowLeft /></el-icon>
+          </el-button>
         </div>
-        <div class="panel-body">
+        <div class="panel-body operator-panel-body">
           <OperatorPalette
             :workflow-engine-id="workflowEngineId"
-            @operator-drag="handleOperatorDrag"
+            :operators="operators"
+            :loading="operatorsLoading"
+            :load-error="operatorLoadError"
             @operator-click="handleOperatorClick"
           />
         </div>
-      </div>
+      </aside>
 
-      <!-- 中间: DAG 画布 -->
-      <div class="canvas-panel">
+      <section class="canvas-panel">
         <WorkflowDAGCanvas
           ref="canvasRef"
           :initial-workflow="workflowData"
+          :initial-layout="editorLayout"
+          :operators="operators"
+          :validation-issues="validationIssues"
           @update:workflow="handleWorkflowUpdate"
+          @update:layout="handleLayoutUpdate"
           @node-click="handleNodeClick"
         />
-      </div>
 
-      <!-- 右侧: 参数配置面板 -->
-      <div class="right-panel">
+      </section>
+
+      <aside v-if="selectedNode && !rightPanelCollapsed" class="right-panel">
         <div class="panel-header">
-          <span class="panel-title">{{ t('develop.workflow.paramsPanel') }}</span>
-        </div>
-        <div class="panel-body">
-          <div v-if="selectedNode" class="params-container">
-            <OperatorParamsPanel
-              :node-id="selectedNode.id"
-              :operator="selectedNode.operator"
-              :public-parameters="selectedNode.publicParameters"
-              :initial-params="selectedNode.params"
-              @save="handleParamsSave"
-            />
+          <div class="panel-title-group">
+            <span class="panel-title">{{ selectedNode.displayName || selectedNode.operator }}</span>
+            <span
+              v-if="hasDistinctText(selectedNode.operator, selectedNode.displayName)"
+              class="panel-subtitle"
+            >
+              {{ selectedNode.operator }}
+            </span>
           </div>
-          <el-empty v-else :description="t('develop.workflow.selectNodeHint')" />
+          <el-button circle text size="small" @click="rightPanelCollapsed = true">
+            <el-icon><ArrowRight /></el-icon>
+          </el-button>
         </div>
-      </div>
-    </div>
+        <div class="panel-body params-panel-body">
+          <OperatorParamsPanel
+            :node-id="selectedNode.id"
+            :operator="selectedNode.operator"
+            :public-parameters="selectedNode.publicParameters"
+            :initial-params="selectedNode.params"
+            @update="handleParamsUpdate"
+          />
+        </div>
+      </aside>
 
-    <!-- 保存对话框 -->
+      <el-tooltip v-if="selectedNode && rightPanelCollapsed" :content="t('develop.workflow.openParamsPanel')">
+        <el-button class="open-inspector" circle @click="rightPanelCollapsed = false">
+          <el-icon><Setting /></el-icon>
+        </el-button>
+      </el-tooltip>
+    </main>
+
     <el-dialog
-      v-model="saveDialogVisible"
-      :title="t('develop.workflow.saveDialogTitle')"
-      width="500px"
+      v-model="engineSwitchDialogVisible"
+      :title="t('develop.workflow.engineSwitchTitle')"
+      width="min(520px, 90vw)"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!switchingEngine && !saving"
+      :show-close="!switchingEngine && !saving"
+      @closed="handleEngineSwitchDialogClosed"
     >
+      <el-alert
+        :title="t('develop.workflow.engineSwitchMessage', { name: pendingWorkflowEngine?.name || '-' })"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
+      <template #footer>
+        <el-button :disabled="switchingEngine || saving" @click="cancelEngineSwitch">
+          {{ t('develop.workflow.cancel') }}
+        </el-button>
+        <el-button type="primary" :loading="saving" :disabled="switchingEngine" @click="saveAndSwitchEngine">
+          {{ t('develop.workflow.saveAndClear') }}
+        </el-button>
+        <el-button type="danger" plain :loading="switchingEngine" :disabled="saving" @click="clearAndSwitchEngine">
+          {{ t('develop.workflow.clearAndSwitch') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="saveDialogVisible" :title="saveDialogTitle" width="500px">
       <el-form :model="saveForm" label-width="100px">
         <el-form-item :label="t('develop.workflow.workflowName')" required>
           <el-input v-model="saveForm.name" :placeholder="t('develop.workflow.workflowNamePlaceholder')" />
@@ -170,74 +250,44 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="saveDialogVisible = false">{{ t('develop.workflow.cancel') }}</el-button>
-        <el-button type="primary" @click="confirmSave">{{ t('develop.workflow.save') }}</el-button>
+        <el-button @click="cancelSaveDialog">{{ t('develop.workflow.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="confirmSave">{{ t('develop.workflow.save') }}</el-button>
       </template>
     </el-dialog>
 
-    <!-- 执行对话框 -->
-    <el-dialog
-      v-model="executeDialogVisible"
-      :title="t('develop.workflow.executeDialogTitle')"
-      width="500px"
-    >
+    <el-dialog v-model="executeDialogVisible" :title="t('develop.workflow.executeDialogTitle')" width="500px">
       <el-form label-width="100px">
         <el-form-item :label="t('develop.workflow.taskCount')">
-          <el-input :value="workflowData?.tasks?.length || 0" disabled />
+          <el-input :model-value="workflowData?.tasks?.length || 0" disabled />
         </el-form-item>
         <el-form-item :label="t('develop.workflow.execParams')">
-          <el-input
-            v-model="executeInputs"
-            type="textarea"
-            :rows="5"
-            placeholder='{"key": "value"}'
-          />
+          <el-input v-model="executeInputs" type="textarea" :rows="5" placeholder='{"key": "value"}' />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="executeDialogVisible = false">{{ t('develop.workflow.cancel') }}</el-button>
-        <el-button
-          type="primary"
-          @click="confirmExecute"
-          :loading="executing"
-        >
+        <el-button type="primary" :loading="executing" @click="confirmExecute">
           {{ t('develop.workflow.execute') }}
         </el-button>
       </template>
     </el-dialog>
 
-    <!-- JSON 查看对话框 -->
-    <el-dialog
-      v-model="jsonDialogVisible"
-      :title="t('develop.workflow.jsonDialogTitle')"
-      width="60%"
-    >
-      <div class="json-viewer">
-        <pre>{{ workflowJSON }}</pre>
-      </div>
+    <el-dialog v-model="jsonDialogVisible" :title="t('develop.workflow.jsonDialogTitle')" width="min(840px, 86vw)">
+      <div class="json-viewer"><pre>{{ workflowJSON }}</pre></div>
       <template #footer>
         <el-button @click="jsonDialogVisible = false">{{ t('develop.workflow.close') }}</el-button>
         <el-button type="primary" @click="copyJSON">{{ t('develop.workflow.copyToClipboard') }}</el-button>
       </template>
     </el-dialog>
 
-    <!-- 导入文件输入 -->
-    <input
-      ref="fileInputRef"
-      type="file"
-      accept=".json"
-      style="display: none;"
-      @change="handleFileChange"
-    />
+    <input ref="fileInputRef" type="file" accept=".json" class="hidden-file-input" @change="handleFileChange" />
 
-    <!-- AI 工作流生成：魔法棒 + 向左滑出的输入面板 -->
     <div class="ai-fab-wrapper">
-      <!-- 滑出的输入面板 -->
       <transition name="ai-slide">
         <div v-if="aiDialogOpen" class="ai-inline-panel">
           <div class="ai-panel-header">
             <span class="ai-panel-title">{{ t('develop.workflow.aiTitle') }}</span>
-            <el-icon class="ai-panel-close" @click="aiDialogOpen = false"><Close /></el-icon>
+            <el-button circle text size="small" @click="aiDialogOpen = false"><el-icon><Close /></el-icon></el-button>
           </div>
           <el-input
             ref="aiInputRef"
@@ -246,522 +296,680 @@
             :rows="4"
             :placeholder="t('develop.workflow.aiPlaceholder')"
             :disabled="generating"
-            @keydown.ctrl.enter="generateWorkflow"
             class="ai-panel-input"
           />
           <div class="ai-panel-footer">
-            <span class="ai-panel-hint">Ctrl+Enter {{ t('develop.workflow.generateWorkflow') }}</span>
-            <el-button
-              type="primary"
-              :loading="generating"
-              size="small"
-              @click="generateWorkflow"
-            >
+            <el-button type="primary" :loading="generating" size="small" @click="generateWorkflow">
               {{ t('develop.workflow.generateWorkflow') }}
             </el-button>
           </div>
         </div>
       </transition>
-
-      <!-- 魔法棒 FAB 按钮 -->
-      <div
-        class="ai-fab"
-        :class="{ 'ai-fab--active': aiDialogOpen }"
-        @click="toggleAiPanel"
-        :title="t('develop.workflow.aiTitle')"
-      >
-        <el-icon :size="20"><MagicStick /></el-icon>
-      </div>
+      <el-tooltip :content="t('develop.workflow.aiTitle')">
+        <el-button class="ai-fab" circle type="primary" @click="toggleAiPanel">
+          <el-icon><MagicStick /></el-icon>
+        </el-button>
+      </el-tooltip>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  DocumentAdd,
-  VideoPlay,
+  ArrowLeft,
+  ArrowRight,
+  CircleCheckFilled,
+  CircleCloseFilled,
+  Close,
   CopyDocument,
   Delete,
-  Download,
-  Upload,
   Document,
+  DocumentAdd,
+  Download,
+  Grid,
+  Loading,
   MagicStick,
-  Close
+  MoreFilled,
+  Setting,
+  Upload,
+  VideoPlay,
+  WarningFilled
 } from '@element-plus/icons-vue'
 import OperatorPalette from '@/components/workflow/OperatorPalette.vue'
 import WorkflowDAGCanvas from '@/components/workflow/WorkflowDAGCanvas.vue'
 import OperatorParamsPanel from '@/components/workflow/OperatorParamsPanel.vue'
 import { getDevTask } from '@/api/devTask'
-import { listOperatorsByWorkflowEngine } from '@/api/operator'
+import { listOperatorsByWorkflowEngine, validateWorkflowDefinition } from '@/api/operator'
 import { generateWorkflowFromNL } from '@/api/copilot'
 import { getWorkflowEngines, getSparkRuntimes } from '@/api/engines'
-import {
-  createTemporaryWorkflowTask,
-  executeWorkflowTask,
-  saveWorkflowTask,
-  updateWorkflowTask
-} from '@/api/workflow'
+import { executeWorkflowTask, saveWorkflowTask, updateWorkflowTask } from '@/api/workflow'
 import {
   buildWorkflowExportPayload,
   isSparkWorkflowEngine,
   isStandardWorkflowDefinition
 } from '@/utils/workflowDevTaskPayload'
-import { isStandardOperatorMetadata } from '@/utils/operatorMetadataContract'
+import { findInvalidOperatorMetadata } from '@/utils/operatorMetadataContract'
 import { resolveWorkflowGenerationResult } from '@/utils/workflowGenerationResult.mjs'
+import { hasDistinctText } from '@/utils/displayText'
 import { openMonitorExecution } from '@addp/common-frontend'
 
 const route = useRoute()
+const router = useRouter()
 const { t } = useI18n()
 
-// 引擎选择状态
-const workflowEngines = ref([])       // 工作流引擎列表
-const workflowEngineId = ref(null)    // 选中的工作流引擎 ID
-const selectedEngine = ref(null)      // 选中的工作流引擎对象
+const workflowEngines = ref([])
+const workflowEngineId = ref(null)
+const selectedEngine = ref(null)
+const sparkRuntimes = ref([])
+const sparkRuntimeId = ref(null)
+const operators = ref([])
+const operatorsLoading = ref(false)
+const operatorLoadError = ref('')
 
-const sparkRuntimes = ref([])         // Spark 通用引擎资源列表
-const sparkRuntimeId = ref(null)      // 选中的 Spark 通用引擎资源 ID
-
-// AI 助手状态
-const aiDialogOpen = ref(false)
-const aiQuery = ref('')
-const generating = ref(false)
-const generatedWorkflow = ref(null)
-const aiInputRef = ref(null)
-
-const toggleAiPanel = () => {
-  aiDialogOpen.value = !aiDialogOpen.value
-  if (aiDialogOpen.value) {
-    setTimeout(() => aiInputRef.value?.focus(), 300)
-  }
-}
-
-// 画布引用
 const canvasRef = ref(null)
 const fileInputRef = ref(null)
-
-// 当前任务信息
+const workflowData = ref({ tasks: [] })
+const editorLayout = ref({})
+const selectedNode = ref(null)
 const currentTaskId = ref(null)
 const currentTaskName = ref('')
 const currentTask = ref(null)
+const savedStateSignature = ref('')
 
-// 工作流数据
-const workflowData = ref({
-  tasks: []
-})
-
-// 选中节点
-const selectedNode = ref(null)
-
-// 对话框状态
+const leftPanelCollapsed = ref(false)
+const rightPanelCollapsed = ref(false)
 const saveDialogVisible = ref(false)
-const jsonDialogVisible = ref(false)
-const workflowJSON = ref('')
-const saveForm = reactive({
-  name: '',
-  display_name: '',
-  description: ''
-})
+const saveAsMode = ref(false)
+const pendingAction = ref(null)
+const saving = ref(false)
+const saveForm = reactive({ name: '', display_name: '', description: '' })
+const engineSwitchDialogVisible = ref(false)
+const pendingWorkflowEngineId = ref(null)
+const switchingEngine = ref(false)
 
 const executeDialogVisible = ref(false)
 const executeInputs = ref('{}')
 const executing = ref(false)
+const jsonDialogVisible = ref(false)
+const workflowJSON = ref('')
 
-// 计算属性
-const hasValidWorkflow = computed(() => {
-  return isStandardWorkflowDefinition(workflowData.value)
+const validating = ref(false)
+const validationResult = ref(null)
+const validationRequestError = ref('')
+const validationPopoverVisible = ref(false)
+let validationTimer = null
+
+const aiDialogOpen = ref(false)
+const aiQuery = ref('')
+const generating = ref(false)
+const aiInputRef = ref(null)
+
+const hasValidWorkflow = computed(() => isStandardWorkflowDefinition(workflowData.value))
+const isDirty = computed(() => editorStateSignature() !== savedStateSignature.value)
+const pendingWorkflowEngine = computed(() => (
+  workflowEngines.value.find(engine => engine.id === pendingWorkflowEngineId.value) || null
+))
+const validationErrors = computed(() => validationResult.value?.errors || [])
+const validationWarnings = computed(() => validationResult.value?.warnings || [])
+const validationIssues = computed(() => [
+  ...mapValidationIssues(validationErrors.value, 'error'),
+  ...mapValidationIssues(validationWarnings.value, 'warning')
+])
+const validationStatusClass = computed(() => {
+  if (validationErrors.value.length) return 'is-error'
+  if (validationWarnings.value.length) return 'is-warning'
+  return validationRequestError.value ? 'is-warning' : 'is-valid'
 })
+const validationSummary = computed(() => {
+  if (validating.value) return t('develop.workflow.validating')
+  if (validationErrors.value.length) {
+    return t('develop.workflow.validationFailed', { count: validationErrors.value.length })
+  }
+  if (validationWarnings.value.length) {
+    return t('develop.workflow.validationWarnings', { count: validationWarnings.value.length })
+  }
+  if (validationRequestError.value) return t('develop.workflow.validationUnavailable')
+  return t('develop.workflow.validationPassed')
+})
+const canSave = computed(() => Boolean(workflowEngineId.value && hasValidWorkflow.value))
+const canExecute = computed(() => Boolean(
+  canSave.value &&
+  (!needsSparkRuntime() || sparkRuntimeId.value) &&
+  !validating.value &&
+  validationResult.value?.valid === true
+))
+const saveDialogTitle = computed(() => saveAsMode.value
+  ? t('develop.workflow.saveAsDialogTitle')
+  : t('develop.workflow.saveDialogTitle'))
 
-// 工作流更新处理
-const handleWorkflowUpdate = (workflow) => {
+function handleWorkflowUpdate(workflow) {
   workflowData.value = workflow
-  console.log('工作流已更新:', workflow)
+  if (workflow.tasks.length === 0) editorLayout.value = {}
+  scheduleValidation()
 }
 
-// 节点单击后加载参数配置。
-const handleNodeClick = async (node) => {
-  try {
-    console.log('节点被点击:', node)
-
-    if (!workflowEngineId.value) {
-      ElMessage.warning(t('develop.workflow.selectEngineFirst'))
-      return
-    }
-
-    // 从当前工作流运行时实例获取算子列表，然后查找匹配的算子
-    const operatorList = await listOperatorsByWorkflowEngine(workflowEngineId.value)
-
-    const operator = operatorList.operators?.find(op => op.name === node.operator)
-
-    if (!operator) {
-      ElMessage.error(t('develop.workflow.operatorNotInEngine', {
-        operator: node.operator,
-      }))
-      return
-    }
-    if (!isStandardOperatorMetadata(operator)) {
-      ElMessage.error(t('develop.workflow.loadOperatorFailed'))
-      return
-    }
-
-    selectedNode.value = {
-      id: node.id,
-      operator: node.operator,
-      params: node.params,
-      publicParameters: operator.public_parameters
-    }
-
-    console.log('[WorkflowEditor] 加载节点参数:', node.id, node.params)
-  } catch (error) {
-    console.error('加载算子详情失败:', error)
-    ElMessage.error(t('develop.workflow.loadOperatorFailed'))
-  }
+function handleLayoutUpdate(layout) {
+  if (workflowData.value.tasks.length === 0) return
+  editorLayout.value = layout
 }
 
-// 算子拖拽/点击处理
-const handleOperatorDrag = (operator) => {
-  console.log('算子拖拽:', operator)
+function handleNodeClick(node) {
+  selectedNode.value = node
+  if (node) rightPanelCollapsed.value = false
 }
 
-const handleOperatorClick = (operator) => {
-  console.log('算子点击:', operator)
+function handleParamsUpdate(data) {
+  canvasRef.value?.updateNodeParams(data.nodeId, data.params, selectedNode.value?.publicParameters)
 }
 
-// 参数保存处理
-const handleParamsSave = (data) => {
-  if (canvasRef.value) {
-    canvasRef.value.updateNodeParams(data.nodeId, data.params, selectedNode.value?.publicParameters)
-    // 成功消息已经在 OperatorParamsPanel 中显示，这里不需要重复
-  }
+function handleOperatorClick(operator) {
+  canvasRef.value?.addOperator(operator)
 }
 
-// ========== 引擎选择相关方法 ==========
-
-// 加载工作流引擎列表
-const loadWorkflowEngines = async () => {
+async function loadWorkflowEngines() {
   try {
     const response = await getWorkflowEngines()
     workflowEngines.value = response.data || response
-
-    if (workflowEngines.value.length === 0) {
-      ElMessage.warning(t('develop.workflow.noEngineAvailable'))
-    }
+    if (workflowEngines.value.length === 0) ElMessage.warning(t('develop.workflow.noEngineAvailable'))
   } catch (error) {
-    console.error('加载工作流引擎失败:', error)
     ElMessage.error(t('develop.workflow.loadEngineFailed'))
   }
 }
 
-// 加载 Spark 通用引擎资源列表
-const loadSparkRuntimes = async () => {
+async function loadOperators(engineId) {
+  operatorsLoading.value = true
+  operatorLoadError.value = ''
+  operators.value = []
+  try {
+    const response = await listOperatorsByWorkflowEngine(engineId)
+    if (!Array.isArray(response?.operators)) throw new Error(t('develop.operatorPalette.invalidMetadata'))
+    const invalid = findInvalidOperatorMetadata(response.operators)
+    if (invalid) throw new Error(t('develop.operatorPalette.invalidOperatorMetadata', { name: invalid.name || '-' }))
+    operators.value = response.operators
+  } catch (error) {
+    operatorLoadError.value = t('develop.operatorPalette.loadFailed') + (error.response?.data?.error || error.message)
+    ElMessage.error(operatorLoadError.value)
+  } finally {
+    operatorsLoading.value = false
+  }
+}
+
+async function loadSparkRuntimes() {
   try {
     const response = await getSparkRuntimes()
     sparkRuntimes.value = response.data || response
-  } catch (error) {
-    console.error('加载 Spark 通用引擎资源失败:', error)
+  } catch {
     ElMessage.error(t('develop.workflow.loadSparkRuntimeFailed'))
   }
 }
 
-// 选择默认工作流引擎
-const selectDefaultEngine = () => {
-  if (workflowEngines.value.length === 0) return
-
+async function selectDefaultEngine() {
+  if (!workflowEngines.value.length) return
   workflowEngineId.value = workflowEngines.value[0].id
   selectedEngine.value = workflowEngines.value[0]
+  await loadOperators(workflowEngineId.value)
+  if (needsSparkRuntime()) await ensureSparkRuntime()
 }
 
-// 引擎切换处理
-const handleEngineChange = async (engineId) => {
-  selectedEngine.value = workflowEngines.value.find(e => e.id === engineId)
+async function requestEngineChange(engineId) {
+  if (!engineId || engineId === workflowEngineId.value) return
+  if (workflowData.value.tasks.length === 0) {
+    await applyEngineSwitch(engineId)
+    return
+  }
+  pendingWorkflowEngineId.value = engineId
+  engineSwitchDialogVisible.value = true
+}
 
-  // 如果切换到 Spark 工作流引擎，加载 Spark 通用引擎资源列表
-  if (needsSparkRuntime()) {
-    await loadSparkRuntimes()
+function cancelEngineSwitch() {
+  if (switchingEngine.value || saving.value) return
+  engineSwitchDialogVisible.value = false
+  pendingWorkflowEngineId.value = null
+}
 
-    // 自动选择第一个 Spark 通用引擎资源
-    if (sparkRuntimes.value.length > 0) {
-      sparkRuntimeId.value = sparkRuntimes.value[0].id
-    }
-  } else {
-    // 切换到不需要 Spark 绑定的工作流运行时，清空 Spark 通用引擎资源选择
-    sparkRuntimeId.value = null
+function handleEngineSwitchDialogClosed() {
+  if (pendingAction.value !== 'switchEngine') {
+    pendingWorkflowEngineId.value = null
   }
 }
 
-// 判断是否需要选择 Spark 通用引擎资源
-const needsSparkRuntime = () => {
+async function saveAndSwitchEngine() {
+  if (!pendingWorkflowEngineId.value) return
+
+  if (!currentTaskId.value) {
+    engineSwitchDialogVisible.value = false
+    pendingAction.value = 'switchEngine'
+    openSaveDialog(false)
+    return
+  }
+
+  if (await saveCurrentTask()) {
+    await applyEngineSwitch(pendingWorkflowEngineId.value)
+  }
+}
+
+async function clearAndSwitchEngine() {
+  if (pendingWorkflowEngineId.value) {
+    await applyEngineSwitch(pendingWorkflowEngineId.value)
+  }
+}
+
+async function applyEngineSwitch(engineId) {
+  const dialogWasVisible = engineSwitchDialogVisible.value
+  switchingEngine.value = true
+  engineSwitchDialogVisible.value = false
+  canvasRef.value?.clearGraph()
+  selectedNode.value = null
+  validationResult.value = null
+  validationRequestError.value = ''
+  currentTaskId.value = null
+  currentTaskName.value = ''
+  currentTask.value = null
+  workflowEngineId.value = engineId
+  selectedEngine.value = workflowEngines.value.find(engine => engine.id === engineId) || null
+  sparkRuntimeId.value = null
+
+  try {
+    await loadOperators(engineId)
+    if (needsSparkRuntime()) await ensureSparkRuntime()
+    markSaved()
+    await clearTaskRouteQuery()
+    ElMessage.success(t('develop.workflow.engineSwitchSuccess', { name: selectedEngine.value?.name || '-' }))
+  } finally {
+    if (!dialogWasVisible) pendingWorkflowEngineId.value = null
+    switchingEngine.value = false
+  }
+}
+
+async function clearTaskRouteQuery() {
+  const query = { ...route.query }
+  const hasTaskQuery = Object.prototype.hasOwnProperty.call(query, 'id') ||
+    Object.prototype.hasOwnProperty.call(query, 'taskId')
+  if (!hasTaskQuery) return
+  delete query.id
+  delete query.taskId
+  await router.replace({ query })
+}
+
+async function ensureSparkRuntime() {
+  await loadSparkRuntimes()
+  if (!sparkRuntimeId.value && sparkRuntimes.value.length) sparkRuntimeId.value = sparkRuntimes.value[0].id
+}
+
+function needsSparkRuntime() {
   return isSparkWorkflowEngine(selectedEngine.value)
 }
 
-// 获取引擎标签
-const getEngineTag = (engine) => {
+function getEngineTag(engine) {
   return engine?.engine_type || '-'
 }
 
-// 格式化运行时标签
-const formatRuntimeLabel = (runtime) => {
-  // 根据资源类型显示不同的连接信息
-  let connInfo = t('develop.workflow.notConfigured')
-
-  if (runtime.connection_info) {
-    if (runtime.engine_type === 'spark') {
-      // Apache Spark 数据源：显示 host:port/database
-      const { host, port, database } = runtime.connection_info
-      if (host && port) {
-        connInfo = `${host}:${port}${database ? '/' + database : ''}`
-      }
-    } else if (runtime.connection_info.spark_master) {
-      // Spark 通用引擎资源：显示 spark_master
-      connInfo = runtime.connection_info.spark_master
-    }
-  }
-
-  return `${runtime.name} (${connInfo})`
+function formatRuntimeLabel(runtime) {
+  const connection = runtime.connection_info || {}
+  const location = connection.spark_master || [connection.host, connection.port].filter(Boolean).join(':')
+  return location ? `${runtime.name} (${location})` : runtime.name
 }
 
-// 是否可以保存
-const canSave = () => {
-  // 必须选择工作流引擎
-  if (!workflowEngineId.value) return false
-
-  // 如果是 Spark 工作流引擎，必须选择运行时
-  if (needsSparkRuntime() && !sparkRuntimeId.value) return false
-
-  // 必须有工作流内容
-  if (!hasValidWorkflow.value) return false
-
-  return true
-}
-
-// 是否可以执行
-const canExecute = () => {
-  return canSave()
-}
-
-// 保存工作流
-const handleSave = () => {
-  if (!canSave()) {
-    if (!workflowEngineId.value) {
-      ElMessage.warning(t('develop.workflow.selectEngineFirst'))
-    } else if (needsSparkRuntime() && !sparkRuntimeId.value) {
-      ElMessage.warning(t('develop.workflow.selectSparkRuntimeFirst'))
-    } else if (!hasValidWorkflow.value) {
-      ElMessage.warning(t('develop.workflow.emptyWorkflow'))
-    }
+async function handleSave() {
+  if (!guardWorkflowSavable()) return
+  if (!currentTaskId.value) {
+    openSaveDialog(false)
     return
   }
+  await saveCurrentTask()
+}
+
+function openSaveDialog(asCopy) {
+  saveAsMode.value = asCopy
+  Object.assign(saveForm, {
+    name: asCopy && currentTaskName.value
+      ? `${currentTaskName.value}${t('develop.workflow.copySuffix')}`
+      : currentTaskName.value,
+    display_name: currentTask.value?.display_name || '',
+    description: currentTask.value?.description || ''
+  })
   saveDialogVisible.value = true
 }
 
-const confirmSave = async () => {
-  if (!saveForm.name) {
+function cancelSaveDialog() {
+  saveDialogVisible.value = false
+  if (pendingAction.value === 'switchEngine') {
+    pendingWorkflowEngineId.value = null
+  }
+  pendingAction.value = null
+}
+
+async function confirmSave() {
+  if (!saveForm.name.trim()) {
     ElMessage.warning(t('develop.workflow.workflowNameRequired'))
     return
   }
-
+  saving.value = true
+  let saved = false
   try {
-    const workflow = canvasRef.value?.getWorkflow()
-
-    const requiresSparkRuntime = needsSparkRuntime()
-    const taskData = {
-      name: saveForm.name,
+    const task = await saveWorkflowTask(buildTaskData({
+      name: saveForm.name.trim(),
       displayName: saveForm.display_name,
-      description: saveForm.description,
-      workflow,
-      inputs: {},
-      workflowEngineId: workflowEngineId.value,
-      sparkRuntimeId: sparkRuntimeId.value,
-      requiresSparkRuntime
-    }
-
-    console.log('[WorkflowEditor] 执行配置:', {
-      workflowEngineId: workflowEngineId.value,
-      selectedEngine: selectedEngine.value,
-      requiresSparkRuntime
-    })
-
-    if (currentTaskId.value) {
-      await updateWorkflowTask(currentTaskId.value, taskData)
-    } else {
-      const task = await saveWorkflowTask(taskData)
-      currentTaskId.value = task.id
-      currentTaskName.value = task.name
-      currentTask.value = task
-    }
-
-    ElMessage.success(t('develop.workflow.saveSuccess'))
+      description: saveForm.description
+    }))
+    currentTaskId.value = task.id
+    currentTaskName.value = task.name
+    currentTask.value = task
     saveDialogVisible.value = false
-
-    // 重置表单
-    Object.assign(saveForm, {
-      name: '',
-      display_name: '',
-      description: ''
-    })
+    saveAsMode.value = false
+    markSaved()
+    ElMessage.success(t('develop.workflow.saveSuccess'))
+    saved = true
   } catch (error) {
-    console.error('保存工作流失败:', error)
     ElMessage.error(t('develop.workflow.saveFailed') + (error.response?.data?.error || error.message))
+  } finally {
+    saving.value = false
+  }
+
+  if (!saved) return
+  const action = pendingAction.value
+  pendingAction.value = null
+  if (action === 'execute') {
+    openExecuteDialog()
+  } else if (action === 'switchEngine') {
+    await applyEngineSwitch(pendingWorkflowEngineId.value)
   }
 }
 
-// 另存为
-const handleSaveAs = () => {
-  handleSave()
+async function saveCurrentTask() {
+  if (!currentTaskId.value) return false
+  saving.value = true
+  try {
+    const task = await updateWorkflowTask(currentTaskId.value, buildTaskData({
+      name: currentTaskName.value,
+      displayName: currentTask.value?.display_name || '',
+      description: currentTask.value?.description || ''
+    }))
+    currentTask.value = task
+    currentTaskName.value = task.name
+    markSaved()
+    ElMessage.success(t('develop.workflow.saveSuccess'))
+    return true
+  } catch (error) {
+    ElMessage.error(t('develop.workflow.saveFailed') + (error.response?.data?.error || error.message))
+    return false
+  } finally {
+    saving.value = false
+  }
 }
 
-// 执行工作流
-const handleExecute = () => {
-  if (!canExecute()) {
-    if (!workflowEngineId.value) {
-      ElMessage.warning(t('develop.workflow.selectEngineFirst'))
-    } else if (needsSparkRuntime() && !sparkRuntimeId.value) {
-      ElMessage.warning(t('develop.workflow.selectSparkRuntimeFirst'))
-    } else if (!hasValidWorkflow.value) {
-      ElMessage.warning(t('develop.workflow.emptyWorkflowExecute'))
-    }
+function buildTaskData({ name, displayName, description }) {
+  return {
+    name,
+    displayName,
+    description,
+    workflow: canvasRef.value?.getWorkflow() || workflowData.value,
+    editorLayout: editorLayout.value,
+    inputs: currentTask.value?.content?.inputs || {},
+    workflowEngineId: workflowEngineId.value,
+    sparkRuntimeId: sparkRuntimeId.value,
+    requiresSparkRuntime: needsSparkRuntime()
+  }
+}
+
+async function handleExecute() {
+  if (!guardWorkflowReady()) return
+  if (!await validateCurrentWorkflow()) return
+  if (!currentTaskId.value) {
+    pendingAction.value = 'execute'
+    openSaveDialog(false)
     return
   }
+  if (isDirty.value && !await saveCurrentTask()) return
+  openExecuteDialog()
+}
+
+function openExecuteDialog() {
   executeInputs.value = '{}'
   executeDialogVisible.value = true
 }
 
-const confirmExecute = async () => {
+async function confirmExecute() {
+  let inputs
   try {
-    executing.value = true
+    inputs = JSON.parse(executeInputs.value)
+    if (!inputs || typeof inputs !== 'object' || Array.isArray(inputs)) throw new Error()
+  } catch {
+    ElMessage.warning(t('develop.workflow.invalidJson'))
+    return
+  }
 
-    let inputs = {}
-    try {
-      inputs = JSON.parse(executeInputs.value)
-    } catch {
-      ElMessage.warning(t('develop.workflow.invalidJson'))
-      return
-    }
-
-    const workflow = canvasRef.value?.getWorkflow()
-    const requiresSparkRuntime = needsSparkRuntime()
-    const taskData = {
-      name: `${t('develop.workflow.tempWorkflowPrefix')}_${Date.now()}`,
-      workflow,
-      inputs,
-      workflowEngineId: workflowEngineId.value,
-      sparkRuntimeId: sparkRuntimeId.value,
-      requiresSparkRuntime
-    }
-
-    console.log('[WorkflowEditor] 执行配置:', {
-      workflowEngineId: workflowEngineId.value,
-      selectedEngine: selectedEngine.value,
-      requiresSparkRuntime
-    })
-
-    // 创建临时任务并执行
-    const tempTask = await createTemporaryWorkflowTask(taskData)
-
-    const execution = await executeWorkflowTask(tempTask.id, inputs)
-
-    ElMessage.success(t('develop.workflow.executeSubmitted'))
+  executing.value = true
+  try {
+    const execution = await executeWorkflowTask(currentTaskId.value, inputs)
     executeDialogVisible.value = false
-
+    ElMessage.success(t('develop.workflow.executeSubmitted'))
     await openMonitorExecution(execution.execution_id)
   } catch (error) {
-    console.error('执行工作流失败:', error)
     ElMessage.error(t('develop.workflow.executeFailed') + (error.response?.data?.error || error.message))
   } finally {
     executing.value = false
   }
 }
 
-// 清空画布
-const handleClear = async () => {
+function guardWorkflowReady() {
+  if (!workflowEngineId.value) ElMessage.warning(t('develop.workflow.selectEngineFirst'))
+  else if (needsSparkRuntime() && !sparkRuntimeId.value) ElMessage.warning(t('develop.workflow.selectSparkRuntimeFirst'))
+  else if (!hasValidWorkflow.value) ElMessage.warning(t('develop.workflow.emptyWorkflow'))
+  else return true
+  return false
+}
+
+function guardWorkflowSavable() {
+  if (!workflowEngineId.value) ElMessage.warning(t('develop.workflow.selectEngineFirst'))
+  else if (!hasValidWorkflow.value) ElMessage.warning(t('develop.workflow.emptyWorkflow'))
+  else return true
+  return false
+}
+
+async function handleMoreCommand(command) {
+  if (command === 'saveAs') {
+    if (guardWorkflowSavable()) openSaveDialog(true)
+  } else if (command === 'viewJson') handleViewJSON()
+  else if (command === 'import') fileInputRef.value?.click()
+  else if (command === 'export') handleExport()
+  else if (command === 'clear') await handleClear()
+}
+
+async function handleClear() {
   try {
-    await ElMessageBox.confirm(t('develop.workflow.clearConfirmMsg'), t('develop.workflow.clearConfirmTitle'), {
-      type: 'warning'
-    })
-
-    if (canvasRef.value) {
-      canvasRef.value.clearGraph()
-    }
-
-    workflowData.value = { tasks: [] }
+    await ElMessageBox.confirm(t('develop.workflow.clearConfirmMsg'), t('develop.workflow.clearConfirmTitle'), { type: 'warning' })
+    canvasRef.value?.clearGraph()
     selectedNode.value = null
+    validationResult.value = null
     ElMessage.success(t('develop.workflow.clearSuccess'))
-  } catch (error) {
+  } catch {
     // 用户取消
   }
 }
 
-// 查看 JSON
-const handleViewJSON = () => {
-  if (!hasValidWorkflow.value) {
-    ElMessage.warning(t('develop.workflow.emptyWorkflow'))
-    return
-  }
-
-  const workflow = canvasRef.value?.getWorkflow()
-  const exportData = buildWorkflowExportPayload({
-    workflow,
+function handleViewJSON() {
+  if (!guardWorkflowReady()) return
+  workflowJSON.value = JSON.stringify(buildWorkflowExportPayload({
+    workflow: canvasRef.value?.getWorkflow() || workflowData.value,
     workflowEngineId: workflowEngineId.value,
     sparkRuntimeId: sparkRuntimeId.value,
     requiresSparkRuntime: needsSparkRuntime()
-  })
-
-  workflowJSON.value = JSON.stringify(exportData, null, 2)
+  }), null, 2)
   jsonDialogVisible.value = true
 }
 
-// 复制 JSON 到剪贴板
-const copyJSON = async () => {
+async function copyJSON() {
   try {
     await navigator.clipboard.writeText(workflowJSON.value)
     ElMessage.success(t('develop.workflow.copiedToClipboard'))
-  } catch (error) {
+  } catch {
     ElMessage.error(t('develop.workflow.copyFailed'))
   }
 }
 
-// 导出工作流
-const handleExport = () => {
-  if (!hasValidWorkflow.value) {
-    ElMessage.warning(t('develop.workflow.emptyWorkflowExport'))
-    return
-  }
+function handleExport() {
+  if (!guardWorkflowReady()) return
+  const workflow = canvasRef.value?.getWorkflow() || workflowData.value
+  const url = URL.createObjectURL(new Blob([JSON.stringify(workflow, null, 2)], { type: 'application/json' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${currentTaskName.value || 'workflow'}.json`
+  link.click()
+  URL.revokeObjectURL(url)
+  ElMessage.success(t('develop.workflow.exportSuccess'))
+}
 
+async function handleFileChange(event) {
+  const file = event.target.files[0]
+  if (!file) return
   try {
-    const workflow = canvasRef.value?.getWorkflow()
-    const json = JSON.stringify(workflow, null, 2)
-
-    const blob = new Blob([json], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `workflow_${Date.now()}.json`
-    link.click()
-    URL.revokeObjectURL(url)
-
-    ElMessage.success(t('develop.workflow.exportSuccess'))
+    const workflow = JSON.parse(await file.text())
+    if (!isStandardWorkflowDefinition(workflow)) throw new Error(t('develop.workflow.invalidWorkflowFormat'))
+    workflowData.value = workflow
+    editorLayout.value = {}
+    selectedNode.value = null
+    scheduleValidation()
+    ElMessage.success(t('develop.workflow.importSuccess'))
   } catch (error) {
-    console.error('导出工作流失败:', error)
-    ElMessage.error(t('develop.workflow.exportFailed') + error.message)
+    ElMessage.error(t('develop.workflow.importFailed') + error.message)
+  } finally {
+    event.target.value = ''
   }
 }
 
-// 导入工作流
-const handleImport = () => {
-  fileInputRef.value?.click()
+function scheduleValidation() {
+  clearTimeout(validationTimer)
+  validationPopoverVisible.value = false
+  validationResult.value = null
+  validationRequestError.value = ''
+  if (!hasValidWorkflow.value || !workflowEngineId.value) return
+  validationTimer = setTimeout(() => validateCurrentWorkflow({ silent: true }), 500)
 }
 
-// AI 工作流生成
-const generateWorkflow = async () => {
+async function validateCurrentWorkflow({ silent = false } = {}) {
+  if (!hasValidWorkflow.value || !workflowEngineId.value) return false
+  validating.value = true
+  validationRequestError.value = ''
+  const clientErrors = canvasRef.value?.getClientValidationIssues() || []
+  if (clientErrors.length) {
+    validationResult.value = {
+      valid: false,
+      errors: clientErrors,
+      warnings: []
+    }
+    validating.value = false
+    if (!silent) ElMessage.warning(t('develop.workflow.validationFailed', { count: clientErrors.length }))
+    return false
+  }
+  try {
+    const result = await validateWorkflowDefinition(
+      workflowEngineId.value,
+      canvasRef.value?.getWorkflow() || workflowData.value
+    )
+    const errors = deduplicateIssues(result.errors || [])
+    validationResult.value = {
+      ...result,
+      valid: errors.length === 0,
+      errors
+    }
+    if (errors.length && !silent) {
+      ElMessage.warning(t('develop.workflow.validationFailed', { count: errors.length }))
+    }
+    return errors.length === 0
+  } catch (error) {
+    validationRequestError.value = error.response?.data?.error || error.message
+    if (!silent) ElMessage.error(t('develop.workflow.validationUnavailable'))
+    return false
+  } finally {
+    validating.value = false
+  }
+}
+
+function deduplicateIssues(issues) {
+  const seen = new Set()
+  return issues.filter(issue => {
+    const key = `${issue.code}:${issue.path}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function mapValidationIssues(issues, severity) {
+  return issues.map(issue => {
+    const match = String(issue.path || '').match(/tasks\[(\d+)\]/)
+    const index = match ? Number(match[1]) : -1
+    return {
+      ...issue,
+      severity,
+      nodeId: index >= 0 ? workflowData.value.tasks[index]?.id : null
+    }
+  })
+}
+
+function focusValidationIssue(issue) {
+  validationPopoverVisible.value = false
+  if (issue.nodeId) canvasRef.value?.selectNode(issue.nodeId)
+}
+
+function editorStateSignature() {
+  return JSON.stringify({
+    workflow: workflowData.value,
+    editorLayout: editorLayout.value,
+    workflowEngineId: workflowEngineId.value,
+    sparkRuntimeId: sparkRuntimeId.value
+  })
+}
+
+function markSaved() {
+  savedStateSignature.value = editorStateSignature()
+}
+
+async function loadTask(taskId) {
+  try {
+    const task = await getDevTask(taskId)
+    currentTaskId.value = task.id
+    currentTaskName.value = task.name
+    currentTask.value = task
+
+    const config = task.execution_config || {}
+    workflowEngineId.value = config.engine_id
+    selectedEngine.value = workflowEngines.value.find(engine => engine.id === config.engine_id) || null
+    await loadOperators(workflowEngineId.value)
+    if (needsSparkRuntime()) {
+      await loadSparkRuntimes()
+      sparkRuntimeId.value = config.engine_specific?.spark_cluster_id || null
+    }
+
+    if (!task.content?.workflow_definition) {
+      ElMessage.warning(t('develop.workflow.noWorkflowContent'))
+      return
+    }
+    editorLayout.value = task.editor_layout || {}
+    workflowData.value = task.content.workflow_definition
+    await nextTick()
+    markSaved()
+    scheduleValidation()
+  } catch (error) {
+    ElMessage.error(t('develop.workflow.loadTaskFailed') + (error.response?.data?.error || error.message))
+  }
+}
+
+function toggleAiPanel() {
+  aiDialogOpen.value = !aiDialogOpen.value
+  if (aiDialogOpen.value) nextTick(() => aiInputRef.value?.focus())
+}
+
+async function generateWorkflow() {
   if (!aiQuery.value.trim()) {
     ElMessage.warning(t('develop.workflow.describeWorkflow'))
     return
   }
-
-  // 检查是否选择了工作流引擎
   if (!workflowEngineId.value) {
     ElMessage.warning(t('develop.workflow.selectEngineFirst'))
     return
@@ -769,8 +977,8 @@ const generateWorkflow = async () => {
 
   generating.value = true
   try {
-    const currentWorkflow = canvasRef.value?.getWorkflow()
-    const resources = (currentWorkflow?.tasks || [])
+    const currentWorkflow = canvasRef.value?.getWorkflow() || workflowData.value
+    const resources = currentWorkflow.tasks
       .filter(task => task.operator === 'load' && task.params?.locator)
       .map(task => ({ role: task.id, locator: task.params.locator }))
     const result = await generateWorkflowFromNL({
@@ -780,320 +988,148 @@ const generateWorkflow = async () => {
     })
     const resolved = resolveWorkflowGenerationResult(result)
     if (resolved.clarificationKey) {
-      ElMessage.warning({
-        message: t(resolved.clarificationKey),
-        duration: 5000,
-        showClose: true
-      })
+      ElMessage.warning(t(resolved.clarificationKey))
       return
     }
-
-    // 直接加载到画布
     workflowData.value = resolved.workflow
+    editorLayout.value = {}
+    selectedNode.value = null
     aiDialogOpen.value = false
+    scheduleValidation()
     ElMessage.success(t('develop.workflow.generateSuccess', { count: resolved.workflow.tasks.length }))
   } catch (error) {
-    console.error('工作流生成失败:', error)
-
-    // 提取后端返回的错误消息
-    let errorMsg = t('develop.workflow.generateFailed')
-    if (error.response?.data?.detail) {
-      errorMsg = error.response.data.detail
-    } else if (error.message) {
-      errorMsg = error.message
-    }
-
-    ElMessage.error({
-      message: errorMsg,
-      duration: 5000,
-      showClose: true
-    })
+    ElMessage.error(error.response?.data?.detail || error.message || t('develop.workflow.generateFailed'))
   } finally {
     generating.value = false
   }
 }
 
-const loadToCanvas = () => {
-  if (generatedWorkflow.value) {
-    workflowData.value = generatedWorkflow.value
-    generatedWorkflow.value = null
-    ElMessage.success(t('develop.workflow.loadedToCanvas'))
-  }
+function handleBeforeUnload(event) {
+  if (!isDirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
 }
 
-const handleFileChange = async (event) => {
-  const file = event.target.files[0]
-  if (!file) return
-
+onBeforeRouteLeave(async () => {
+  if (!isDirty.value) return true
   try {
-    const text = await file.text()
-    const workflow = JSON.parse(text)
-
-    // 验证格式
-    if (!isStandardWorkflowDefinition(workflow)) {
-      throw new Error(t('develop.workflow.invalidWorkflowFormat'))
-    }
-
-    workflowData.value = workflow
-    ElMessage.success(t('develop.workflow.importSuccess'))
-  } catch (error) {
-    console.error('导入工作流失败:', error)
-    ElMessage.error(t('develop.workflow.importFailed') + error.message)
-  } finally {
-    // 清空文件输入
-    event.target.value = ''
-  }
-}
-
-// 加载已有任务
-const loadTask = async (taskId) => {
-  try {
-    const task = await getDevTask(taskId)
-
-    // 设置当前任务信息
-    currentTaskId.value = task.id
-    currentTaskName.value = task.name
-    currentTask.value = task
-    Object.assign(saveForm, {
-      name: task.name || '',
-      display_name: task.display_name || '',
-      description: task.description || ''
-    })
-
-    // 解析执行配置
-    if (task.execution_config) {
-      try {
-        if (typeof task.execution_config !== 'object') {
-          throw new Error('execution_config must be an object')
-        }
-        const config = task.execution_config
-
-        // 恢复工作流引擎选择
-        workflowEngineId.value = config.engine_id
-        selectedEngine.value = workflowEngines.value.find(
-          e => e.id === config.engine_id
-        )
-
-        // 如果需要 Spark 通用引擎资源，加载列表并恢复选择
-        if (needsSparkRuntime() && config.engine_specific) {
-          await loadSparkRuntimes()
-          sparkRuntimeId.value = config.engine_specific.spark_cluster_id
-        }
-      } catch (error) {
-        console.error('解析执行配置失败:', error)
-        ElMessage.warning(t('develop.workflow.corruptedConfig'))
-      }
-    }
-
-    // 加载工作流内容
-    if (task.content) {
-      if (task.content.workflow_definition) {
-        workflowData.value = task.content.workflow_definition
-      } else {
-        ElMessage.warning(t('develop.workflow.noWorkflowContent'))
-        return
-      }
-      ElMessage.success(t('develop.workflow.workflowLoaded', { name: task.name }))
-    } else {
-      ElMessage.warning(t('develop.workflow.noWorkflowContent'))
-    }
-  } catch (error) {
-    console.error('加载任务失败:', error)
-    ElMessage.error(t('develop.workflow.loadTaskFailed') + (error.response?.data?.error || error.message))
-  }
-}
-
-// 组件挂载时检查是否有任务 ID
-onMounted(async () => {
-  // 加载工作流引擎列表
-  await loadWorkflowEngines()
-
-  const taskId = firstQueryValue(route.query.id || route.query.taskId)
-  if (taskId) {
-    // 如果是编辑模式，加载开发任务
-    await loadTask(taskId)
-  } else {
-    // 新建模式：选择默认引擎
-    selectDefaultEngine()
+    await ElMessageBox.confirm(
+      t('develop.workflow.leaveConfirm'),
+      t('develop.workflow.unsaved'),
+      { type: 'warning' }
+    )
+    return true
+  } catch {
+    return false
   }
 })
 
-function firstQueryValue(value) {
-  if (Array.isArray(value)) {
-    return value[0] || ''
+onMounted(async () => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+  await loadWorkflowEngines()
+  const taskId = firstQueryValue(route.query.id || route.query.taskId)
+  if (taskId) await loadTask(taskId)
+  else {
+    await selectDefaultEngine()
+    markSaved()
   }
-  return value || ''
+})
+
+onBeforeUnmount(() => {
+  clearTimeout(validationTimer)
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+})
+
+function firstQueryValue(value) {
+  return Array.isArray(value) ? value[0] || '' : value || ''
 }
 </script>
 
 <style scoped>
 .workflow-editor-page {
+  height: 100vh;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  overflow: hidden;
   background: var(--addp-bg-secondary);
 }
 
-/* AI 助手顶部面板已移除 */
-
-.ai-fab-wrapper {
-  position: fixed;
-  bottom: 28px;
-  right: 28px;
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  z-index: 1000;
-}
-
-.ai-fab {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: var(--el-color-primary);
-  color: #fff;
+.editor-header {
+  min-height: 72px;
+  padding: 10px 16px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  justify-content: space-between;
+  gap: 16px;
   flex-shrink: 0;
-  transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
-}
-
-.ai-fab:hover {
-  background: var(--el-color-primary-dark-2);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-}
-
-.ai-fab--active {
-  background: var(--el-color-primary-dark-2);
-  transform: rotate(15deg);
-}
-
-.ai-inline-panel {
-  width: 320px;
-  background: var(--addp-bg-primary);
-  border: 1px solid var(--addp-border-color);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  transform-origin: right bottom;
-}
-
-.ai-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.ai-panel-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--addp-text-primary);
-}
-
-.ai-panel-close {
-  cursor: pointer;
-  color: var(--addp-text-secondary);
-  font-size: 14px;
-  transition: color 0.15s;
-}
-
-.ai-panel-close:hover {
-  color: var(--addp-text-primary);
-}
-
-.ai-panel-input :deep(.el-textarea__inner) {
-  font-size: 13px;
-  resize: none;
-}
-
-.ai-panel-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.ai-panel-hint {
-  font-size: 11px;
-  color: var(--addp-text-secondary);
-}
-
-/* 滑动动画 */
-.ai-slide-enter-active {
-  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.ai-slide-leave-active {
-  transition: all 0.18s ease-in;
-}
-
-.ai-slide-enter-from {
-  opacity: 0;
-  transform: translateX(20px) scale(0.95);
-}
-
-.ai-slide-leave-to {
-  opacity: 0;
-  transform: translateX(20px) scale(0.95);
-}
-
-.toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 12px 20px;
   background: var(--addp-bg-primary);
   border-bottom: 1px solid var(--addp-border-color);
-  flex-shrink: 0;
 }
 
-.toolbar-left,
-.toolbar-right {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.toolbar-left {
-  flex-direction: column;
-}
-
-.toolbar-left h2 {
-  margin: 0;
-  font-size: 18px;
-  color: var(--addp-text-primary);
-  font-weight: 500;
-}
-
-.engine-selector {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-.engine-select-group,
-.spark-runtime-select-group {
+.editor-identity,
+.title-row,
+.engine-row,
+.primary-actions,
+.engine-option {
   display: flex;
   align-items: center;
+}
+
+.editor-identity {
+  min-width: 0;
+  gap: 10px;
+}
+
+.title-block {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
-.engine-select-group label,
-.spark-runtime-select-group label {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--addp-text-secondary);
-  min-width: 100px;
+.title-row {
+  gap: 8px;
+}
+
+.title-row h2 {
+  max-width: 320px;
+  margin: 0;
+  overflow: hidden;
+  color: var(--addp-text-primary);
+  font-size: 16px;
+  font-weight: 600;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.engine-row {
+  min-width: 0;
+  gap: 8px;
+}
+
+.engine-label {
+  color: var(--addp-text-tertiary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.engine-select {
+  width: 230px;
+}
+
+.engine-option {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.primary-actions {
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .editor-content {
+  position: relative;
+  min-height: 0;
   flex: 1;
   display: flex;
   overflow: hidden;
@@ -1101,69 +1137,318 @@ function firstQueryValue(value) {
 
 .left-panel,
 .right-panel {
-  width: 300px;
   display: flex;
   flex-direction: column;
-  background: var(--addp-bg-primary);
-  border-right: 1px solid var(--addp-border-color);
   flex-shrink: 0;
-  position: relative;
-  z-index: 10;
+  background: var(--addp-bg-primary);
+}
+
+.left-panel {
+  width: 270px;
+  border-right: 1px solid var(--addp-border-color);
 }
 
 .right-panel {
-  border-right: none;
+  width: 360px;
   border-left: 1px solid var(--addp-border-color);
-  position: relative;
-  z-index: 10;
 }
 
 .canvas-panel {
+  min-width: 0;
+  min-height: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   background: var(--addp-bg-secondary);
-  position: relative;
-  z-index: 1;
 }
 
 .panel-header {
-  padding: 12px 16px;
-  background: var(--addp-bg-secondary);
-  border-bottom: 1px solid var(--addp-border-color);
+  min-height: 44px;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   flex-shrink: 0;
+  border-bottom: 1px solid var(--addp-border-color);
+}
+
+.panel-title-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .panel-title {
-  font-size: 14px;
-  font-weight: 600;
+  overflow: hidden;
   color: var(--addp-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-subtitle {
+  overflow: hidden;
+  color: var(--addp-text-tertiary);
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .panel-body {
+  min-height: 0;
   flex: 1;
-  overflow: auto;
-  padding: 16px;
+  overflow: hidden;
 }
 
-.params-container {
-  height: 100%;
+.operator-panel-body {
+  padding: 12px;
+}
+
+.params-panel-body {
+  overflow: auto;
+}
+
+.header-validation {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.validation-summary {
+  min-width: 0;
+  max-width: 520px;
+  min-height: 32px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+  letter-spacing: 0;
+  background: var(--addp-bg-secondary);
+  border: 1px solid var(--addp-border-color);
+  border-radius: 4px;
+}
+
+.validation-trigger {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.validation-summary.is-error {
+  color: var(--el-color-danger);
+  border-color: var(--el-color-danger);
+}
+
+.validation-summary.is-valid {
+  color: var(--el-color-success);
+  border-color: var(--el-color-success);
+}
+
+.validation-summary.is-warning {
+  color: var(--el-color-warning);
+  border-color: var(--el-color-warning);
+}
+
+.validation-summary-text {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.validation-preview {
+  min-width: 0;
+  padding-left: 8px;
+  overflow: hidden;
+  color: var(--addp-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-left: 1px solid var(--addp-border-color);
+}
+
+.validation-list {
+  max-height: 280px;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.validation-item {
+  width: 100%;
+  padding: 9px 4px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--addp-text-primary);
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--addp-border-color-light);
+  cursor: pointer;
+}
+
+.validation-item:hover {
+  background: var(--addp-bg-secondary);
+}
+
+.open-inspector {
+  position: absolute;
+  top: 54px;
+  right: 12px;
+  z-index: 20;
 }
 
 .json-viewer {
-  max-height: 500px;
-  overflow: auto;
-  background-color: var(--addp-bg-secondary);
-  border-radius: 4px;
+  max-height: 60vh;
   padding: 12px;
+  overflow: auto;
+  background: var(--addp-bg-secondary);
+  border-radius: 4px;
 }
 
 .json-viewer pre {
   margin: 0;
-  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-  font-size: 13px;
-  line-height: 1.5;
   color: var(--addp-text-primary);
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.hidden-file-input {
+  display: none;
+}
+
+.ai-fab-wrapper {
+  position: fixed;
+  right: 22px;
+  bottom: 48px;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.ai-fab {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  box-shadow: var(--addp-shadow-hover);
+}
+
+.ai-inline-panel {
+  width: 320px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--addp-bg-primary);
+  border: 1px solid var(--addp-border-color);
+  border-radius: 8px;
+  box-shadow: var(--addp-shadow-card);
+}
+
+.ai-panel-header,
+.ai-panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ai-panel-footer {
+  justify-content: flex-end;
+}
+
+.ai-panel-title {
+  color: var(--addp-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ai-panel-input :deep(.el-textarea__inner) {
+  resize: none;
+}
+
+.ai-slide-enter-active,
+.ai-slide-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.ai-slide-enter-from,
+.ai-slide-leave-to {
+  opacity: 0;
+  transform: translateX(12px);
+}
+
+@media (max-width: 1280px) {
+  .editor-header {
+    align-items: flex-start;
+  }
+
+  .engine-select {
+    width: 190px;
+  }
+
+  .validation-preview {
+    max-width: 180px;
+  }
+
+  .right-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    width: min(360px, 88vw);
+    box-shadow: var(--addp-shadow-card);
+  }
+}
+
+@media (max-width: 900px) {
+  .editor-header {
+    min-height: 104px;
+    flex-wrap: wrap;
+  }
+
+  .editor-identity {
+    width: 100%;
+  }
+
+  .engine-row {
+    flex-wrap: wrap;
+  }
+
+  .primary-actions {
+    margin-left: auto;
+  }
+
+  .header-validation {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .validation-summary {
+    max-width: 100%;
+  }
+
+  .left-panel {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 30;
+    width: min(290px, 88vw);
+    box-shadow: var(--addp-shadow-card);
+  }
 }
 </style>

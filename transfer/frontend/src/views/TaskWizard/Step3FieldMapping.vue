@@ -145,7 +145,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CONTINUOUS_FIELD_TYPES } from './continuousTask.mjs'
+import { CONTINUOUS_FIELD_TYPES, databaseCDCFieldTypes } from './continuousTask.mjs'
 
 const { t } = useI18n()
 
@@ -157,7 +157,9 @@ const props = defineProps({
 })
 
 const targetTypeOptions = computed(() => {
-  const types = props.wizardState.isContinuousTask.value
+  const types = props.wizardState.isDatabaseCDCTask.value
+    ? databaseCDCFieldTypes(props.wizardState.sourceEngineType.value)
+    : props.wizardState.isContinuousTask.value
     ? CONTINUOUS_FIELD_TYPES
     : ['string', 'bool', 'int', 'bigint', 'float', 'double', 'decimal', 'date', 'time', 'timestamp', 'json', 'uuid', 'geometry']
   return types.map(value => ({

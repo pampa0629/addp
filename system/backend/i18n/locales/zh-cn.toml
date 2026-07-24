@@ -19,6 +19,21 @@ other = "用户或所属租户不可用"
 [system.auth.token_refresh_failed]
 other = "生成新 token 失败"
 
+[system.auth.step_up_required]
+other = "需要增强认证"
+
+[system.auth.session_conflict]
+other = "会话状态已变化，请重试"
+
+[system.auth.internal_error]
+other = "认证服务暂时不可用"
+
+[system.auth.invalid_current_password]
+other = "当前密码不正确"
+
+[system.auth.password_unchanged]
+other = "新密码不能与当前密码相同"
+
 [system.log.not_found]
 other = "日志不存在"
 

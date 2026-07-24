@@ -10,6 +10,7 @@ from typing import Optional, Dict, Any
 from pipelines.workflow_pipeline import WorkflowPipeline
 from services.llm_service import llm_service
 from addp_common.auth import AuthorizationContext
+from authorization_permissions_generated import COPILOT_WORKFLOW_EXECUTE
 from dependencies.auth import require_tool_user
 from models.workflow_models import WorkflowResourceFact
 
@@ -74,6 +75,10 @@ class WorkflowGenerationResponse(BaseModel):
     response_model=WorkflowGenerationResponse,
     summary="生成工作流 | Generate Workflow",
     responses={500: {"description": "工作流生成失败 | Workflow generation failed"}},
+    openapi_extra={
+        "x-addp-auth-mode": "delegated_tool",
+        "x-addp-required-permissions": [COPILOT_WORKFLOW_EXECUTE],
+    },
 )
 async def generate_workflow(
     request: WorkflowGenerationRequest,

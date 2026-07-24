@@ -2,15 +2,33 @@
   <div class="task-panel">
     <ResourceTree
       :tree-data="treeData"
-      :loading="loading"
+      :loading="initialLoading"
       :title="t('orchestrator.taskPanel.title')"
-      default-expand-all
+      v-model:filter-text="filterText"
+      v-model:expanded-keys="expandedKeys"
+      :filter-placeholder="t('orchestrator.taskPanel.searchPlaceholder')"
+      :default-expand-root="false"
       :empty-text="t('orchestrator.taskPanel.emptyText')"
+      :filter-empty-text="t('orchestrator.taskPanel.filterEmptyText')"
       :show-count="false"
+      :show-refresh-button="false"
       card-shadow="never"
       height="100%"
-      @refresh="refreshAll"
     >
+      <template #header-actions>
+        <el-tooltip :content="t('orchestrator.taskPanel.refreshTooltip')" placement="bottom">
+          <el-button
+            size="small"
+            :loading="loading"
+            :disabled="loading"
+            :aria-label="t('orchestrator.taskPanel.refreshTooltip')"
+            @click="refreshAll"
+          >
+            <el-icon><Refresh /></el-icon>
+          </el-button>
+        </el-tooltip>
+      </template>
+
       <!-- 自定义节点渲染 -->
       <template #node="{ data }">
         <div
@@ -27,8 +45,11 @@
           <template v-if="data.type === 'module'">
             <el-icon class="module-icon"><FolderOpened /></el-icon>
             <span class="module-name">{{ data.label }}</span>
+            <el-icon v-if="data.metadata?.loading" class="task-loading module-loading is-loading">
+              <Loading />
+            </el-icon>
             <el-badge
-              v-if="data.metadata?.taskCount"
+              v-else-if="data.metadata?.taskCount"
               :value="data.metadata.taskCount"
               class="task-count-badge"
             />
@@ -38,7 +59,18 @@
           <template v-else-if="data.type === 'taskType'">
             <el-icon class="task-type-icon"><FolderOpened /></el-icon>
             <span class="task-type-name">{{ data.label }}</span>
+            <el-icon v-if="data.metadata?.loading" class="task-loading task-type-loading is-loading">
+              <Loading />
+            </el-icon>
+            <el-tooltip
+              v-else-if="data.metadata?.loadFailed"
+              :content="t('orchestrator.taskPanel.taskTypeLoadFailed')"
+              placement="right"
+            >
+              <el-icon class="task-load-error"><WarningFilled /></el-icon>
+            </el-tooltip>
             <el-badge
+              v-else
               :value="data.metadata?.taskCount || 0"
               class="task-count-badge"
             />
@@ -72,6 +104,21 @@
                 {{ data.metadata.status }}
               </el-tag>
               <el-tooltip
+                :content="t('orchestrator.taskPanel.addToCanvas')"
+                placement="right"
+              >
+                <el-button
+                  class="node-icon-button"
+                  size="small"
+                  link
+                  type="primary"
+                  :aria-label="t('orchestrator.taskPanel.addToCanvas')"
+                  @click.stop="addTaskToCanvas(data)"
+                >
+                  <el-icon><CirclePlus /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip
                 v-if="data.metadata?.editUrl"
                 :content="t('orchestrator.taskPanel.editTaskTooltip')"
                 placement="right"
@@ -95,18 +142,24 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Edit, FolderOpened, Plus, Rank } from '@element-plus/icons-vue'
+import { CirclePlus, Edit, FolderOpened, Loading, Plus, Rank, Refresh, WarningFilled } from '@element-plus/icons-vue'
 import { buildTaskOwnerUrl, ResourceTree } from '@addp/common-frontend'
 import taskProvidersAPI from '../api/taskProviders'
 import modulesApi from '../api/modules'
+import { createConcurrencyLimiter } from '../utils/concurrency'
 import { ElMessage } from 'element-plus'
 
+const TASK_REQUEST_CONCURRENCY = 4
 const { t } = useI18n()
+const emit = defineEmits(['add-task'])
 
 const loading = ref(false)
 const treeData = ref([])
+const filterText = ref('')
+const expandedKeys = ref([])
+const initialLoading = computed(() => loading.value && treeData.value.length === 0)
 
 onMounted(async () => {
   await loadAllTasks()
@@ -120,59 +173,60 @@ async function loadAllTasks() {
     const providers = await taskProvidersAPI.list()
     console.log('已加载任务提供者:', providers)
 
-    // 2. 为每个任务提供者加载任务
-    const treeNodes = []
-    for (const provider of providers) {
-      const moduleNode = await loadProviderTasks(provider)
-      if (moduleNode) {
-        treeNodes.push(moduleNode)
-      }
+    const providerStates = providers.map(provider => ({
+      provider,
+      identifier: provider.module_name,
+      taskCapabilities: parseTaskCapabilities(provider.capabilities)
+    }))
+    treeData.value = providerStates.map(buildProviderNode)
+    if (!filterText.value) {
+      expandedKeys.value = treeData.value.map(node => node.id)
     }
 
-    treeData.value = treeNodes
+    // 所有 Provider 共用一个请求队列，每个任务类型完成后原位更新对应节点。
+    const scheduleTaskRequest = createConcurrencyLimiter(TASK_REQUEST_CONCURRENCY)
+    const failureCounts = await Promise.all(providerStates.map(async providerState => {
+      try {
+        return await loadProviderTasks(providerState, scheduleTaskRequest)
+      } catch (error) {
+        console.error(`加载任务提供者 ${providerState.identifier} 失败:`, error)
+        markProviderLoadFailed(providerState.identifier)
+        return providerState.taskCapabilities.length
+      }
+    }))
     console.log('树形数据已构建:', treeData.value)
+    return failureCounts.reduce((sum, count) => sum + count, 0)
   } catch (error) {
     console.error('加载任务失败:', error)
     console.error('任务库树数据:', treeData.value)
     ElMessage.error(t('orchestrator.taskPanel.loadFailed'))
+    return null
   } finally {
     loading.value = false
   }
 }
 
 // 加载单个任务提供者的任务
-async function loadProviderTasks(provider) {
-  const identifier = provider.module_name
-  const taskCapabilities = parseTaskCapabilities(provider.capabilities)
-  let tasks = []
+async function loadProviderTasks(providerState, scheduleTaskRequest) {
+  const { identifier, taskCapabilities } = providerState
+  console.log(`加载任务提供者任务: ${identifier}`)
 
-  try {
-    console.log(`加载任务提供者任务: ${identifier}`)
-
-    // 按 capabilities 中声明的 task_type 拉取任务，避免跨类型任务由前端猜测过滤。
-    const results = await Promise.all(taskCapabilities.map(async taskType => {
-      const data = await modulesApi.listTasksByModule(identifier, { task_type: taskType.type })
-      return data.items || []
-    }))
-    tasks = results.flat()
-
-    console.log(`任务提供者 ${identifier} 的任务:`, tasks)
-  } catch (error) {
-    console.error(`加载任务提供者 ${identifier} 任务失败:`, error)
-  }
-
-  const children = buildTaskTypeNodes(identifier, taskCapabilities, tasks)
-
-  return {
-    id: identifier,
-    label: provider.display_name || provider.name || identifier,
-    type: 'module',
-    metadata: {
-      uniqueIdentifier: identifier,
-      taskCount: children.reduce((sum, child) => sum + (child.metadata?.taskCount || 0), 0)
-    },
-    children
-  }
+  // 按 capabilities 中声明的 task_type 拉取任务，单个类型失败不丢弃其他已加载类型。
+  const results = await Promise.all(taskCapabilities.map(async taskType => {
+    try {
+      const data = await scheduleTaskRequest(() => (
+        modulesApi.listTasksByModule(identifier, { task_type: taskType.type })
+      ))
+      const tasks = Array.isArray(data.items) ? data.items : []
+      updateTaskTypeNode(identifier, taskType, tasks, false)
+      return true
+    } catch (error) {
+      console.error(`加载任务提供者 ${identifier} 的 ${taskType.type} 任务失败:`, error)
+      updateTaskTypeNode(identifier, taskType, [], true)
+      return false
+    }
+  }))
+  return results.filter(success => !success).length
 }
 
 function hasValue(value) {
@@ -202,24 +256,74 @@ function parseCapabilities(capabilities) {
   }
 }
 
-function buildTaskTypeNodes(identifier, taskCapabilities, tasks) {
-  return taskCapabilities.map(taskType => {
-    const children = tasks
-      .filter(task => task.task_type === taskType.type)
-      .map(task => buildTaskNode(identifier, task, taskType))
-      .filter(Boolean)
+function buildProviderNode({ provider, identifier, taskCapabilities }) {
+  return {
+    id: identifier,
+    label: provider.display_name || provider.name || identifier,
+    type: 'module',
+    metadata: {
+      uniqueIdentifier: identifier,
+      taskCount: 0,
+      loading: taskCapabilities.length > 0
+    },
+    children: taskCapabilities.map(taskType => buildTaskTypeNode(identifier, taskType, [], { loading: true }))
+  }
+}
 
+function buildTaskTypeNode(identifier, taskType, tasks, { loading = false, loadFailed = false } = {}) {
+  const children = tasks
+    .filter(task => task.task_type === taskType.type)
+    .map(task => buildTaskNode(identifier, task, taskType))
+    .filter(Boolean)
+
+  return {
+    id: `${identifier}-type-${taskType.type}`,
+    label: taskType.displayName,
+    type: 'taskType',
+    metadata: {
+      provider: identifier,
+      taskType: taskType.type,
+      createUrl: taskType.createUrl,
+      editUrl: taskType.editUrl,
+      taskCount: children.length,
+      loading,
+      loadFailed
+    },
+    children
+  }
+}
+
+function updateTaskTypeNode(identifier, taskType, tasks, loadFailed) {
+  treeData.value = treeData.value.map(moduleNode => {
+    if (moduleNode.id !== identifier) return moduleNode
+
+    const children = moduleNode.children.map(node => (
+      node.metadata?.taskType === taskType.type
+        ? buildTaskTypeNode(identifier, taskType, tasks, { loadFailed })
+        : node
+    ))
     return {
-      id: `${identifier}-type-${taskType.type}`,
-      label: taskType.displayName,
-      type: 'taskType',
+      ...moduleNode,
       metadata: {
-        provider: identifier,
-        taskType: taskType.type,
-        createUrl: taskType.createUrl,
-        editUrl: taskType.editUrl,
-        taskCount: children.length
+        ...moduleNode.metadata,
+        taskCount: children.reduce((sum, child) => sum + (child.metadata?.taskCount || 0), 0),
+        loading: children.some(child => child.metadata?.loading)
       },
+      children
+    }
+  })
+}
+
+function markProviderLoadFailed(identifier) {
+  treeData.value = treeData.value.map(moduleNode => {
+    if (moduleNode.id !== identifier) return moduleNode
+    const children = moduleNode.children.map(node => ({
+      ...node,
+      metadata: { ...node.metadata, loading: false, loadFailed: true }
+    }))
+    return {
+      ...moduleNode,
+      metadata: { ...moduleNode.metadata, loading: false },
       children
     }
   })
@@ -273,16 +377,19 @@ function openOwnerUrl(rawUrl, replacements = {}) {
 
 // 刷新所有任务
 async function refreshAll() {
-  await loadAllTasks()
+  const failureCount = await loadAllTasks()
+  if (failureCount === null) return
+  if (failureCount > 0) {
+    ElMessage.warning(t('orchestrator.taskPanel.refreshPartial'))
+    return
+  }
   ElMessage.success(t('orchestrator.taskPanel.refreshSuccess'))
 }
 
-// 拖拽任务到画布
-function startDrag(data, event) {
+function buildTaskNodeData(data) {
   if (data.type !== 'task' || !data.metadata) return
 
-  const nodeData = {
-    // 任务引用模式字段
+  return {
     provider: data.metadata.provider,
     taskType: data.metadata.taskType,
     taskId: data.metadata.taskId,
@@ -291,6 +398,17 @@ function startDrag(data, event) {
     name: data.label,
     parameters: data.metadata.parameters
   }
+}
+
+function addTaskToCanvas(data) {
+  const nodeData = buildTaskNodeData(data)
+  if (nodeData) emit('add-task', nodeData)
+}
+
+// 拖拽任务到画布
+function startDrag(data, event) {
+  const nodeData = buildTaskNodeData(data)
+  if (!nodeData) return
 
   console.log('拖拽任务数据:', nodeData)
   event.dataTransfer.setData('application/json', JSON.stringify(nodeData))
@@ -331,6 +449,7 @@ function getStatusColor(status) {
 /* 树节点样式 */
 .tree-node {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -338,6 +457,7 @@ function getStatusColor(status) {
   border-radius: 4px;
   transition: all 0.3s;
   width: 100%;
+  box-sizing: border-box;
 }
 
 /* 模块节点 */
@@ -357,11 +477,25 @@ function getStatusColor(status) {
 
 .module-name {
   flex: 1;
+  min-width: 0;
   font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-count-badge {
   margin-left: auto;
+}
+
+.task-loading {
+  color: var(--addp-text-tertiary);
+  flex-shrink: 0;
+}
+
+.task-load-error {
+  color: var(--el-color-danger);
+  flex-shrink: 0;
 }
 
 /* 任务类型节点 */
@@ -381,6 +515,7 @@ function getStatusColor(status) {
 
 .task-type-name {
   flex: 1;
+  min-width: 0;
   font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -417,6 +552,7 @@ function getStatusColor(status) {
 
 .task-name {
   flex: 1;
+  min-width: 0;
   font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;

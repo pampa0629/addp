@@ -6,17 +6,17 @@ import {
 	continuousStartDisabledReason,
 	getCDCCaptureHealthWarning,
 	isCDCSchemaBlocked,
-	isPostgreSQLCDCTask
+	isDatabaseCDCTask
 } from '../src/utils/cdcTask.mjs'
 
-test('detects only frozen PostgreSQL CDC task shape', () => {
-  assert.equal(isPostgreSQLCDCTask({
+test('detects the provider-neutral database CDC task shape', () => {
+  assert.equal(isDatabaseCDCTask({
     config: {
       runtime: { boundary: 'continuous' },
       load: { mode: 'incremental', change_detection: { type: 'cdc', bootstrap: 'initial_snapshot' } }
     }
   }), true)
-  assert.equal(isPostgreSQLCDCTask({
+  assert.equal(isDatabaseCDCTask({
     config: { runtime: { boundary: 'continuous' }, load: { mode: 'incremental', change_detection: { type: 'kafka' } } }
   }), false)
 })
@@ -55,7 +55,7 @@ test('reports unhealthy active CDC capture without warning for stopped capture',
 	}), null)
 })
 
-test('allows first PostgreSQL CDC start and distinguishes terminal capture state', () => {
+test('allows first database CDC start and distinguishes terminal capture state', () => {
 	const config = {
 		runtime: { boundary: 'continuous' },
 		load: { mode: 'incremental', change_detection: { type: 'cdc', bootstrap: 'initial_snapshot' } }

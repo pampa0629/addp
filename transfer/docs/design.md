@@ -1,6 +1,6 @@
 # Transfer 当前架构设计
 
-更新时间：2026-07-12
+更新时间：2026-07-23
 
 本文记录 Transfer 模块当前稳定架构。旧的 Transfer 私有 Reader / Writer 插件体系、ConnectorRegistry、`pkg/pipeline` 和旧任务 JSON 不再作为主路径保留。
 
@@ -23,9 +23,8 @@ Transfer 不负责具体引擎连接、格式解析或数据类型 reader / writ
 ```text
 Transfer API / Frontend
   -> TaskService / ExecutionService
-  -> Asynq Worker
-  -> Planner
-  -> Executor
+  -> bounded: Asynq Worker -> Planner -> Executor
+  -> continuous: Continuous Worker -> ChangeEvent adapter -> ChangeApplyWriter
   -> common/engine + common/format + common/contentio
   -> Source / Target engine
 ```
@@ -34,7 +33,8 @@ Transfer API / Frontend
 |---|---|---|
 | API | `backend/internal/api` | REST API、认证后的租户上下文、请求 DTO |
 | Service | `backend/internal/service` | 任务 CRUD、执行记录、重试、队列入队、Meta scan 触发 |
-| Worker | `backend/internal/worker` | 从 Asynq 队列取任务并调用执行服务 |
+| Bounded Worker | `backend/internal/worker` | 从 Asynq 队列取 bounded task 并调用执行服务 |
+| Continuous Worker | `backend/internal/continuous` | 通过 lease/fencing 领取 continuous execution，消费 change stream 并提交目标变化与 position |
 | Planner | `backend/internal/planner` | 解析新 endpoint JSON，解析 System engine，生成 table transfer plan 或 raw copy plan |
 | Executor | `backend/internal/executor` | 按计划执行 table reader / transform / writer，或执行 encoded single content 原样复制 |
 | Common | `common/engine`、`common/format`、`common/contentio` | 引擎、格式、内容 I/O 和数据类型能力 |
@@ -82,7 +82,7 @@ Transfer API / Frontend
 - `data_type` 稳定支持 `table`；`document`、`media`、`cad`、`unknown` 已支持 encoded single raw copy。
 - `representation` 支持 `native` 和 `encoded`。
 - `format` 只用于 encoded endpoint。
-- `target.policy.apply_mode` 在 snapshot table Transfer 支持 `replace` 和 `append`；raw copy 只支持 `replace`；PostgreSQL watermark incremental 只支持幂等 `upsert`。
+- `target.policy.apply_mode` 在 snapshot table Transfer 支持 `replace` 和 `append`；raw copy 只支持 `replace`；PostgreSQL watermark 和业务 Kafka continuous 使用幂等 `upsert`；PostgreSQL CDC 使用 `upsert_delete`。
 - 旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
 
 ## 四、table Transfer 主路径
@@ -170,13 +170,14 @@ raw copy 的覆盖语义由 Transfer 执行：目标引擎必须提供 `Resource
 
 ## 七、写入策略
 
-replace / append / upsert 是 Transfer apply policy；upsert 必须由 common engine 的强类型 Provider 真实实现。
+replace / append / upsert / upsert_delete 是 Transfer apply policy；upsert 和 upsert_delete 必须由 common engine 的强类型 Provider 真实实现。
 
 | 模式 | 当前语义 |
 |---|---|
 | `replace` | 写入前由 Transfer 规划删除目标资源或重建目标，再执行写入。 |
 | `append` | 追加写入；失败 retry 当前拒绝 append，避免重复写。 |
 | `upsert` | 按稳定键幂等新增或更新；第一版仅 PostgreSQL native table。 |
+| `upsert_delete` | 按稳定键新增、更新和物理删除；第一版仅 PostgreSQL CDC 到 PostgreSQL 新目标表。 |
 
 `TableWritePreparer` 只做 ensure / create table / schema evolution，不承载 replace / append 策略。DeleteResource 是 common engine 提供的原子删除能力；watermark upsert 使用独立强类型 Provider。
 
@@ -214,7 +215,7 @@ snapshot checkpoint resumable 尚未进入主链路。PostgreSQL watermark incre
 
 Transfer 不直接写目标 Meta attributes。目标 item 的 `data_type`、`format`、`layout`、`type_info`、`format_info` 和 capabilities 由 Meta scan 重新识别。
 
-## 十、后续方向
+## 十、持续运行时与后续方向
 
 table Transfer 主链路已经稳定。后续增强包括：
 
@@ -226,7 +227,7 @@ table Transfer 主链路已经稳定。后续增强包括：
 - raw copy 端到端样例任务和更完整的执行展示。
 - container child table transfer。
 
-continuous/Kafka 工作包 2A 已完成正式契约冻结，代码实现属于工作包 2B。第一条实现路径固定为：
+continuous/Kafka 工作包 2A-2D 已完成第一版。业务 Kafka 主路径固定为：
 
 ```text
 Business Kafka topic
@@ -238,4 +239,30 @@ Business Kafka topic
   -> per-partition kafka_offset/v1 next_offset CAS
 ```
 
-continuous worker 是 Transfer 独立长驻进程角色，一个进程承载多个 runtime session；它通过 `transfer.runtime_leases` claim owner/lease/heartbeat/fencing，不使用 Asynq 承载无限循环。无 key append、Debezium、CDC、Kafka target、DLQ、Schema Registry、Avro、Protobuf、replay 和物理删除均不进入工作包 2B 第一版。
+PostgreSQL CDC 工作包 3A-3D 已完成第一版，主路径固定为：
+
+```text
+PostgreSQL 单表
+  -> Debezium PostgreSQL Connector
+  -> Infra Kafka 单分区 CDC topic
+  -> 同一个 Transfer Continuous Worker
+  -> snapshot/upsert/delete ChangeEvent
+  -> PostgreSQL PartitionedTableChangeApplyProvider
+  -> business target addp_transfer.apply_positions + table upsert/delete (one transaction)
+  -> per-partition kafka_offset/v1 next_offset CAS
+```
+
+MySQL CDC 工作包 3E 已完成，并复用同一主路径：
+
+```text
+MySQL 8.0 单表
+  -> Debezium MySQL Connector + generation-owned schema-history topic
+  -> Infra Kafka 单分区 CDC data topic
+  -> 同一个 Transfer Continuous Worker
+  -> snapshot/upsert/delete ChangeEvent
+  -> PostgreSQL PartitionedTableChangeApplyProvider
+  -> business target addp_transfer.apply_positions + table upsert/delete (one transaction)
+  -> per-partition kafka_offset/v1 next_offset CAS
+```
+
+continuous worker 是 Transfer 独立长驻进程角色，一个进程承载多个 runtime session；它通过 `transfer.runtime_leases` claim owner/lease/heartbeat/fencing，不使用 Asynq 承载无限循环。业务 Kafka 与 PostgreSQL/MySQL CDC 复用同一个 consumer/apply/CAS 主循环，不建立第二套 CDC consumer。业务 Kafka 已支持显式 `block|dead_letter`；bounded replay 通过独立 Asynq execution 从原业务 Kafka 读取显式 offset ranges，并只写不存在的新 PostgreSQL 隔离表。当前仍不支持无 key append、Kafka target、Schema Registry、Avro、Protobuf、数据库 CDC replay、Oracle CDC 或自动 DDL。

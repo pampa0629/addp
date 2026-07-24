@@ -1,8 +1,8 @@
 # ADDP IAM 目标数据模型设计
 
-更新日期：2026-07-23
+更新日期：2026-07-24
 
-状态：技术设计、Permission / Role 矩阵和 AuthContext 契约已确认，owner 授权接口正在设计，待完成 OAuth/OIDC 协议引擎决策。本文落实 `docs/concepts/addp账号与权限体系图.md` 中已确认的概念，不定义 owner Resource Grant / Policy、MFA 协议或具体 OAuth/OIDC 实现库。
+状态：技术设计、Permission / Role 矩阵、AuthContext、owner Resource Grant / Policy 和 OAuth/OIDC 协议引擎路线已确认。本文落实 `docs/concepts/addp账号与权限体系图.md` 中已确认的概念，不定义 MFA 协议或外部 IdP 具体配置。
 
 ## 一、目标与边界
 
@@ -133,6 +133,7 @@ erDiagram
 | `status` | text | `active | suspended | deactivated` |
 | `authorization_version` | bigint | 非空，默认 1，只递增 |
 | `deactivated_at` | timestamptz | 可空 |
+| `status_change_request_id` | bigint | 可空，FK -> `privileged_change_requests.id`，仅记录最近一次受治理身份状态变更 |
 | `created_at` / `updated_at` | timestamptz | 非空 |
 
 `authorization_version` 是授权事实版本。任何会改变该 Principal 有效权限的 Membership、Role Assignment、Department / Project Group Membership 或身份状态变更，必须在同一数据库事务中递增该值。
@@ -170,6 +171,10 @@ erDiagram
 | `created_at` / `updated_at` | timestamptz | 非空 |
 
 第一阶段一个 User 最多绑定一个 Local Account。`normalized_username` 使用 `trim + Unicode NFKC + Unicode case folding` 的单一规则生成；数据库保存结果并做唯一约束，不依赖数据库 locale 或 `citext` 隐式行为。停用账号仍占用用户名，避免身份审计混淆和用户名接管。
+
+密码强度、历史、防泄露词典、轮换周期和恢复流程属于后续统一 Authentication Policy，必须在登录 API 切换前单独确认。IAM Runtime 基础 Service 只拒绝空密码、使用 bcrypt 生成 Hash，并保证密码轮换、授权版本递增、Token Family 撤销和审计同事务；旧 DTO 的 `min=6` 不是目标 IAM 契约，不得继续沿用为默认策略。
+
+当前用户资料 API 只投影 `users` 的稳定资料字段和可空 Local Account 展示用户名，不把 Local Account、Principal、Tenant Membership 或 Role Assignment 重新拼成旧 User 聚合。当前用户改密必须用当前第一方 Browser Access Token 定位 Principal，在 Principal 锁内重新校验 Token，再修改密码并撤销全部 Family；当前密码错误是字段校验结果，不使用会触发浏览器 Token 刷新的 401。
 
 ### 5.4 `system.service_principals`
 
@@ -382,17 +387,19 @@ Department Membership 结束或 Department 停用时，必须在同一 Principal
 | 字段 | 类型 | 约束 |
 | --- | --- | --- |
 | `id` | bigint identity | PK |
-| `permission_key` | text | 全局唯一，例如 `system.users.read` |
+| `permission_key` | text | 全局唯一，例如 `iam.user.read` |
 | `owner_module` | text | 非空，稳定模块名 |
 | `action` | text | 非空，稳定动作名 |
 | `risk_level` | text | `low | medium | high | critical` |
 | `delegable` | boolean | 非空，默认 false |
 | `allowed_scope_types` | text[] | Permission 可进入的 Scope 非空集合 |
 | `tenant_customizable` | boolean | 是否允许 Tenant 自定义 Role 引用 |
+| `name_i18n_key` | text | 非空，稳定名称翻译 Key |
+| `description_i18n_key` | text | 非空，稳定说明翻译 Key |
 | `status` | text | `active | disabled` |
 | `created_at` / `updated_at` | timestamptz | 非空 |
 
-Permission 由产品代码和版本化迁移注册，不提供创建任意 Permission 的 Tenant API。Permission 删除使用 `disabled`，避免已有 Role 静默改变语义。
+Permission 由对应 owner 模块的版本化 Manifest 定义，经唯一发布期聚合器生成版本化迁移并注册到 System；System 只保存不透明授权契约，不理解业务实现或资源 Policy。Tenant 不具有创建任意 Permission 的 API。Permission 删除使用 `disabled`，避免已有 Role 静默改变语义。
 
 ### 9.2 `system.roles`
 
@@ -401,16 +408,19 @@ Permission 由产品代码和版本化迁移注册，不提供创建任意 Permi
 | `id` | bigint identity | PK |
 | `tenant_id` | bigint | Tenant 自定义 Role 时非空；平台/内置模板为空 |
 | `role_key` | text | 稳定键 |
-| `name` | text | 非空 |
-| `description` | text | 非空，默认空字符串 |
+| `name` | text | Tenant 自定义 Role 必填；内置 Role 为空 |
+| `description` | text | Tenant 自定义 Role 可填；内置 Role 为空 |
+| `name_i18n_key` | text | 内置 Role 必填；Tenant 自定义 Role 为空 |
+| `description_i18n_key` | text | 内置 Role 必填；Tenant 自定义 Role 为空 |
 | `role_type` | text | `platform_builtin | tenant_builtin | tenant_custom` |
 | `allowed_scope_types` | text[] | Platform / Tenant / Department / Project Group 的非空集合 |
-| `human_only` | boolean | 平台三员为 true |
+| `allowed_principal_types` | text[] | `user | service_principal` 的非空有序集合；平台三员只允许 `user` |
 | `immutable` | boolean | 内置角色为 true |
 | `status` | text | `active | disabled` |
+| `created_by_principal_id` | bigint | Tenant 自定义 Role 必填；内置 Role 为空 |
 | `created_at` / `updated_at` | timestamptz | 非空 |
 
-唯一约束使用 `unique nulls not distinct (tenant_id, role_key)`。Tenant 自定义 Role 只能引用 `tenant_id` 对应 Tenant，并且只能组合允许 Tenant 使用的稳定 Permission。
+唯一约束使用 `unique nulls not distinct (tenant_id, role_key)`。检查约束保证内置 Role 只使用 i18n Key 且没有伪造的创建 Principal；Tenant 自定义 Role 只使用 Tenant 自己输入的名称/说明并记录真实创建 Principal，不把翻译后的文本固化为内置 Role 数据。Tenant 自定义 Role 只能引用 `tenant_id` 对应 Tenant，并且只能组合允许 Tenant 使用的稳定 Permission。
 
 ### 9.3 `system.role_permissions`
 
@@ -418,10 +428,11 @@ Permission 由产品代码和版本化迁移注册，不提供创建任意 Permi
 | --- | --- | --- |
 | `role_id` | bigint | FK -> `roles.id` |
 | `permission_id` | bigint | FK -> `permissions.id` |
-| `created_by_principal_id` | bigint | FK -> `principals.id` |
+| `source_type` | text | `product | tenant` |
+| `created_by_principal_id` | bigint | Tenant 变更必填；产品种子为空 |
 | `created_at` | timestamptz | 非空 |
 
-主键为 `(role_id, permission_id)`。触发器验证 Role 的允许 Scope 不突破 Permission 的 `allowed_scope_types`，Tenant 自定义 Role 只能引用 `tenant_customizable=true` 的 Permission。本表只表达 Allow 候选，不表达资源 Deny。资源级显式 Deny 归 owner Policy。
+主键为 `(role_id, permission_id)`。检查约束保证 `source_type=product` 只能用于内置 Role 且 `created_by_principal_id` 为空，`source_type=tenant` 只能用于 Tenant 自定义 Role 且记录真实 Principal。触发器验证 Role 的允许 Scope 不突破 Permission 的 `allowed_scope_types`，Tenant 自定义 Role 只能引用 `tenant_customizable=true` 的 Permission。本表只表达 Allow 候选，不表达资源 Deny。资源级显式 Deny 归 owner Policy。
 
 ### 9.4 `system.role_assignments`
 
@@ -438,10 +449,12 @@ Permission 由产品代码和版本化迁移注册，不提供创建任意 Permi
 | `valid_from` | timestamptz | 非空 |
 | `valid_until` | timestamptz | 可空 |
 | `source_type` | text | `manual | idp_mapping | bootstrap | break_glass` |
-| `created_by_principal_id` | bigint | FK -> `principals.id` |
+| `created_by_principal_id` | bigint | Bootstrap 时为空，其他来源必填 |
 | `revoked_by_principal_id` | bigint | 可空 |
 | `revoked_at` | timestamptz | 可空 |
 | `reason` | text | 非空，默认空字符串 |
+| `grant_change_request_id` | bigint | Platform Assignment 除 Bootstrap 外必填，FK -> `privileged_change_requests.id`，唯一消费 |
+| `revoke_change_request_id` | bigint | Platform Assignment 撤销时必填，FK -> `privileged_change_requests.id`，唯一消费 |
 | `created_at` / `updated_at` | timestamptz | 非空 |
 
 Scope 检查约束：
@@ -460,9 +473,11 @@ project_group -> tenant_id 和 project_group_id 非空，department_id 为空
 - Project Group Scope 的 Principal 具有该 Project Group 的有效成员关系，且 Project Group 未关闭；
 - Tenant 自定义 Role 只能在自身 Tenant 分配；
 - Role 的 `allowed_scope_types` 包含当前 Scope；
-- `human_only=true` 的 Role 只能分配给 User；
+- Principal 的 `principal_type` 必须属于 Role 的 `allowed_principal_types`；
 - 有效期满足 `valid_until > valid_from`；
 - 三员冲突和高权限审批事实有效。
+
+`source_type=bootstrap` 只允许离线 Bootstrap 流程使用，`created_by_principal_id` 和 `grant_change_request_id` 必须为空并由独立 Bootstrap 审计事件记录来源；其他 Platform Assignment 必须记录真实创建 Principal，并通过 `grant_change_request_id` 关联一次性消费的已批准请求。Platform Assignment 撤销通过 `revoke_change_request_id` 关联另一条已批准请求，不能覆盖原授予请求。Tenant、Department 和 Project Group Assignment 不使用平台高权限请求字段。
 
 有效 Assignment 使用 `UNIQUE NULLS NOT DISTINCT` 部分唯一索引，唯一键为 Principal、Role 和完整 Scope，条件为 `status='active'`。
 
@@ -496,10 +511,18 @@ project_group -> tenant_id 和 project_group_id 非空，department_id 为空
 
 新增：
 
-- `system.privileged_change_requests`：使用显式列记录 `platform_role_grant | platform_role_revoke | platform_identity_suspend | platform_identity_deactivate`、目标 Principal、可选目标 Role、Scope、理由、申请人和状态；
-- `system.privileged_change_approvals`：记录独立复核人、决定和时间。
+- `system.privileged_change_requests`：显式记录 `change_type=platform_role_grant | platform_role_revoke | platform_identity_suspend | platform_identity_deactivate`、目标 Principal、Role 变更时的目标 Role、固定 `scope_type=platform`、理由、申请人、`pending | approved | rejected | cancelled | applied` 状态以及决定/消费时间；
+- `system.privileged_change_approvals`：每个 Request 最多一条终局复核决定，记录独立复核人、`approved | rejected`、理由和决定时间。
 
-平台三员 Assignment 只能由已批准 Request 生成；对当前持有平台角色的 User 执行 suspend / deactivate 也必须具有已批准 Request。数据库要求申请人、复核人和目标自然人互不相同；同一自然人多账号规避由 User 身份治理和审计规则检测。
+Platform Assignment 除离线 Bootstrap 外只能由已批准 Request 生成；对当前持有有效 Platform Role 的 User 执行 suspend / deactivate 也必须具有已批准 Request。数据库要求申请人、复核人和目标自然人互不相同，并要求目标、申请人和复核人都是 User Principal；同一自然人多账号规避由 User 身份治理和审计规则检测。
+
+审批事实使用显式、不可复用的外键闭环：
+
+- Platform Role 授予写入 `role_assignments.grant_change_request_id`；
+- Platform Role 撤销写入 `role_assignments.revoke_change_request_id`，保留原授予请求；
+- 受治理身份停用写入 `principals.status_change_request_id`；
+- 实际变更成功后，数据库在同一事务把对应 Request 从 `approved` 单向更新为 `applied` 并写入 `applied_at`；
+- `rejected`、`cancelled` 和 `applied` 都是终态，已消费 Request 不能再次授予、撤销或停用其他主体。
 
 普通 Tenant Role Assignment 仍通过统一 Role Assignment Service 写入，但不强制使用平台三员审批表。两者共享同一个最终 `role_assignments` 事实表，不形成两套权限判断路径。
 
@@ -517,7 +540,62 @@ Bootstrap 不开放普通网络 API，不留下可重复运行的默认密码或
 
 ### 10.3 审计存储边界
 
-`audit_logs` 目标上使用 `principal_id + context_type + tenant_id` 记录行为主体和上下文，不再以 `user_type` 推断可见范围。平台审计管理员通过只读 API 查询和导出；System 运行时数据库角色不得拥有原始审计记录的 UPDATE / DELETE 权限。审计保留和归档由独立数据库角色执行，不能授予平台系统管理员或安全管理员。
+`system.audit_logs` 是 IAM、OAuth 和通用操作审计的唯一持久化事实表，不建立第二张 IAM 或 OAuth 审计表。目标字段固定为：
+
+| 字段 | 类型 | 约束与语义 |
+| --- | --- | --- |
+| `id` | bigint identity | PK |
+| `principal_id` | bigint | 可空，FK -> `principals.id`；匿名或尚未建立身份的事件为空 |
+| `principal_type` | text | 可空，`user \| service_principal`；有 Principal 时必须与 Principal 当前类型一致 |
+| `context_type` | text | 可空，`platform \| tenant`；只表示已经建立的 AuthContext，不增加 `anonymous` 或 `internal` 伪上下文 |
+| `tenant_id` | bigint | 可空，FK -> `tenants.id`；Tenant Context 时必填，Platform Context 或无上下文事件为空 |
+| `event_name` | text | 非空稳定事件名，例如 `iam.tenant_membership.suspended` |
+| `result` | text | 非空稳定结果，例如 `succeeded \| failed \| denied \| ignored` |
+| `risk_level` | text | `low \| medium \| high \| critical` |
+| `module_name` | text | 非空 owner 模块名 |
+| `http_method` / `resource_path` / `http_status` | text / text / integer | 可空；非 HTTP 领域事件不伪造 HTTP 字段 |
+| `request_id` | text | 可空；有请求链路时保存稳定追踪 ID |
+| `ip_address` / `user_agent` | inet / text | 可空；没有终端请求来源的内部事务事件为空 |
+| `entity_type` / `entity_id` | text / text | 可空的业务实体定位 |
+| `details` | jsonb | 非空对象，只保存结构化、允许公开给审计管理员的脱敏详情 |
+| `created_at` | timestamptz | 非空，数据库生成 |
+
+上下文约束为：
+
+```text
+context_type = platform -> tenant_id is null
+context_type = tenant   -> tenant_id is not null
+context_type is null    -> tenant_id is null
+principal_id is null    -> principal_type is null
+principal_id is set     -> principal_type is set and matches principals.principal_type
+```
+
+`context_type IS NULL` 表示事件发生时没有已建立的授权上下文，例如登录失败、OAuth 客户端前置校验失败或数据库内部安全事件；它不表示平台上下文，也不能获得任何平台权限。事件来源通过 `module_name`、`event_name` 和结构化详情表达，不把 `internal` 扩展成第三种 AuthContext。
+
+身份、Tenant Membership、Role Assignment、授权版本、Token Family 撤销、Bootstrap 和 OAuth 一次性状态转换等安全事实，必须在修改权威事实的同一个 PostgreSQL 事务中写入审计事件；审计写入失败时整个业务事务回滚。通用 HTTP 操作审计可以在请求完成后写入，但不得替代领域安全事件，也不能产生同一安全事实的重复记录。
+
+`details` 禁止保存密码、密码 Hash、MFA Secret、Client Secret、Access/Refresh/Delegated Token、Resource Ticket、Authorization/Device/User Code、PKCE verifier/challenge、state、Cookie、Authorization Header、原始 OAuth 请求体、原始 query 或可能包含上述材料的错误堆栈。OAuth 安全事件继续遵守 OAuth 规范的更小字段白名单。
+
+首段 IAM Runtime 使用下列稳定事件名；风险等级与 Permission 目录保持一致：
+
+| 事件 | 风险等级 | 事务边界 |
+| --- | --- | --- |
+| `iam.identity.created` | medium | Principal、User、Local Account 和审计同事务 |
+| `iam.authentication.succeeded \| failed` | medium | `last_authenticated_at` 成功更新或失败结果与审计同事务 |
+| `iam.password.rotated` | high | Password Hash、授权版本、全部有效 Token Family 撤销和审计同事务 |
+| `iam.tenant.created` | medium | Tenant 和审计同事务；不隐式创建 User 或管理员 |
+| `iam.tenant_membership.established` | medium | Membership、授权版本、全部有效 Token Family 撤销和审计同事务 |
+| `iam.tenant_membership.suspended` | high | 同上 |
+| `iam.tenant_membership.ended` | critical | 同上 |
+| `iam.tenant_membership.restored` | medium | 同上 |
+| `iam.context_selection.ticket_issued` | low | Ticket、选项快照和审计同事务；不签发业务 Token |
+| `iam.browser_session.issued` | medium | Ticket 消费（直接签发时无）、Family、Access/Refresh Token、各 owner Resource Ticket 和审计同事务 |
+| `iam.refresh_token.rotated` | medium | 旧 Refresh Token 使用、旧 Access/Resource Ticket 撤销、新 Access/Refresh/Resource Ticket 和审计同事务；Family 最终期限不变 |
+| `iam.refresh_token.reuse_detected` | high | 历史 Refresh Token 标记重用、整个 Family 及全部派生票据撤销和审计同事务 |
+| `iam.browser_context.switched` | medium | 旧 Browser Family 撤销、继承原最终期限的新 Context Family 及全部派生票据和审计同事务 |
+| `iam.browser_session.logged_out` | medium | 当前 Browser Family 及全部派生票据撤销和审计同事务；只接受同一 Family 的当前 Access/Refresh 凭据对 |
+
+审计记录采用追加式存储。普通 System 运行时路径只能 INSERT 和按权限 SELECT，不得 UPDATE / DELETE / TRUNCATE；当前目标 DDL 对这些操作无条件拒绝。平台审计管理员通过只读 API 查询和导出；审计保留和归档能力不能授予平台系统管理员或安全管理员。生产部署最终拆分 migration owner、运行时 writer、审计 reader 和 maintenance 数据库角色；需要物理保留清理时必须先形成独立的分区、归档校验和数据库职责设计，不能在运行时表上预留可自行开启的绕过开关。
 
 ## 十一、Session 与 Token 关联
 
@@ -537,6 +615,7 @@ Bootstrap 不开放普通网络 API，不留下可重复运行的默认密码或
 | `authentication_methods` | text[] | 非空 |
 | `assurance_level` | text | `aal1 | aal2 | aal3` |
 | `authenticated_at` | timestamptz | 非空 |
+| `step_up_expires_at` | timestamptz | 可空，不早于认证时间；Ticket 过期不截断既有 step-up 事实 |
 | `expires_at` | timestamptz | 非空，默认签发后 5 分钟 |
 | `consumed_at` | timestamptz | 可空 |
 | `created_at` | timestamptz | 非空 |
@@ -554,7 +633,7 @@ Bootstrap 不开放普通网络 API，不留下可重复运行的默认密码或
 
 ### 11.2 Token Family 与 Access Token
 
-现有 Token 表不再保存 `user_id + tenant_id` 作为权限语义，统一改为：
+现有 Token 表不再保存 `user_id + tenant_id` 作为权限语义。Refresh Token Family 统一保存：
 
 | 字段 | 含义 |
 | --- | --- |
@@ -564,7 +643,14 @@ Bootstrap 不开放普通网络 API，不留下可重复运行的默认密码或
 | `issued_authorization_version` | 签发时 Principal 授权版本 |
 | `client_id` / `audiences` / `scopes` | 客户端能力上限 |
 
-这些字段进入 Refresh Token Family、Access Token、Authorization Code 和 Device Authorization 的批准结果。Delegated Access Token 和 Browser Resource Access Ticket 从源 Family 派生同一上下文，不能改变 Tenant。
+Authorization Request 和 Device Authorization 在批准结果中保存同一组字段，兑换时复制到唯一 Refresh Token Family。Access Token 和 Refresh Token 只保存自身 Hash、生命周期和 `family_id`，不重复 Principal、Context、Client、audience 或 Scope；Authorization Code 通过 Authorization Request 重建协议 Session。Delegated Access Token 和 Browser Resource Access Ticket 从源 Family 派生同一上下文，不能改变 Tenant。
+
+派生票据的目标字段进一步固定为：
+
+- `delegated_access_tokens` 只保存 Token Hash、`source_access_token_id`、唯一 owner `audience`、非空 Tool Scope、AgentRun / ToolCall 审计绑定和生命周期；Principal、Context、Client 与授权版本通过 Source Access Token -> Family 唯一派生，不重复保存；
+- `resource_access_tickets` 只保存 Token Hash、`family_id`、唯一 owner 和生命周期，只允许从 `auth_type=first_party` 的 Browser Family 派生；
+- Family、Access Token、Refresh Token、Delegated Access Token 和 Resource Access Ticket 的撤销事实保留，不物理删除；Family 撤销在同一事务级联标记全部派生 Token / Ticket；
+- Access Token 撤销立即使其 Delegated Access Token 失效并同步标记撤销；Delegated Token 和 Resource Ticket 都不可刷新或继续派生。
 
 数据库检查约束：
 
@@ -642,12 +728,27 @@ Principal -> Tenant Membership -> Role Assignment / Organization Membership -> T
 - 批量变更分页执行，但同一 Principal 的授权版本和 Token 撤销必须原子完成；
 - 高风险批量操作设置事务超时并产生可恢复的进度审计，不持有锁等待人工确认。
 
+### 13.3 Refresh Token 轮换与重用
+
+Refresh Token 轮换先无锁读取已提交快照以定位 Principal 和 Family，再按 `Principal -> Token Family -> Refresh Token -> Access Token -> Resource Access Ticket` 顺序加锁。服务端使用快照与锁后状态共同区分两类请求：
+
+- 快照为当前 unused，锁后变为 used 且 replacement 已建立：属于正常并发竞争，返回可重试冲突，不撤销 Family，不写高风险重用事件；
+- 快照已经为 used 且 replacement 已建立：属于历史 Token 重用，在同一事务设置 `reuse_detected_at`、撤销 Family 和全部派生票据、写 `iam.refresh_token.reuse_detected`。
+
+正常轮换必须标记旧 Refresh Token、撤销其 Access Token 及 Delegated Token、撤销旧 Resource Access Ticket、创建 replacement Access/Refresh/Resource Ticket 并写 `iam.refresh_token.rotated`。Family `expires_at` 固定不延长。无效、过期、已撤销 Token 返回未授权；不得使用时间宽限窗口、进程内状态或客户端上报信息作为并发判据。
+
+### 13.4 Browser 主动退出
+
+Browser logout 先无锁读取当前 Access Token、Refresh Token 和 Family 快照，确认两枚 Token 属于同一 Family，且 Refresh Token 的 `issued_access_token_id` 指向提交的 Access Token；然后按 `Principal -> Token Family -> Refresh Token -> Access Token -> Resource Access Ticket` 加锁并复核。只允许 `auth_type=first_party`、`client_id=addp-web` 的当前有效凭据对主动撤销整个 Family，并写 `iam.browser_session.logged_out`。
+
+logout 与 refresh / context switch 竞争时，只允许先获得 Principal 锁的事务完成状态转换。锁后发现 Family 或任一提交 Token 已被转换时统一返回未授权，不把竞争识别为 Refresh Token 重用。重复 logout 同样返回未授权，不通过已撤销 Token 建立幂等成功旁路，也不重复写审计。审计失败时 Family 和全部派生 Token / Ticket 撤销必须回滚。
+
 ## 十四、迁移与切换
 
 ADDP 当前处于开发阶段，本次采用破坏性、一次性切换：
 
 1. 停止所有 ADDP 服务；
-2. 使用版本化 SQL 创建目标 IAM 表、约束、触发器和种子 Permission / Role；
+2. 聚合各 owner Permission Manifest 和 System 内置 Role 模板，使用生成的版本化 SQL 创建目标 IAM 表、约束、触发器和种子 Permission / Role；
 3. 开发环境重建旧 User、Token、Session 和相关测试数据，不编写运行时兼容回填分支；
 4. 一次性修改 System、common、common-python、Gateway、owner 模块和前端调用方；
 5. 从 Token、DTO、helper、数据库和 Swagger 删除 `user_type` 与 User 单 `tenant_id`；
@@ -706,6 +807,8 @@ IAM 模型迁移后必须从 `AutoMigrate` 列表移除相关表。GORM 只作�
 7. **Role Scope**：使用单一 Role Assignment 表和显式 Scope 列，不为 Platform / Tenant / Department / Project Group 建四套 Assignment 表。
 8. **首阶段 AuthContext 缓存**：不跨请求缓存，先保证撤权即时生效；后续只允许版本校验后的单一路径缓存。
 9. **切换方式**：开发环境破坏性重建 IAM 数据，不保留 `user_type` 或旧 AuthContext 兼容期。
+10. **OAuth/OIDC 协议引擎**：采用 System 内嵌的 ADDP 受控 Fosite 派生版本作为唯一协议引擎；不直接使用缺少 Device Flow 的 `v0.49.0`，不裸用 master，不保留自研 OAuth 双处理器。
+11. **Fosite 持久化**：使用显式 Provider Compose、单一 PostgreSQL Storage Adapter 和 Token Family Repository；不保存通用 Fosite Session Blob，Access/Refresh Token 不重复 Family 上下文字段。
 
 ## 十七、Fosite 决策门
 
@@ -749,8 +852,10 @@ ADR 前进行一个不进入生产代码的最小验证，检查当时选定 Fos
 - 与现有 `request_id` 托管授权请求、CLI 和 Browser SSO 流程的衔接；
 - 协议一致性、安全测试和后续升级成本。
 
-### 17.4 当前推荐
+### 17.4 已确认结论
 
-当前基线推荐是 **System 内嵌 Fosite，仅把它作为 OAuth2 / OIDC 协议引擎**。原因是账号、组织、三员、Role、owner 授权和审计边界都已确定归 ADDP 自身，Fosite 正好填补协议状态机和标准遵从，不会引入第二套 IAM 事实源。
+决策门已完成，具体证据、版本风险、职责边界和切换要求见 [ADDP IAM OAuth/OIDC 协议引擎 ADR](addp-IAM%20OAuth-OIDC协议引擎ADR.md)。
 
-这仍是待 ADR 和最小验证证明的技术判断，不提前写入代码。若 Fosite 无法覆盖已确定的协议矩阵，必须在“完整采用 Fosite 主路径”与“完整自研主路径”之间二选一，不保留两个协议处理器按 grant type 或客户端分流。
+结论是 **System 内嵌 ADDP 受控 Fosite 派生版本，仅把它作为 OAuth2 / OIDC 协议引擎**。账号、组织、三员、Role、owner 授权和审计继续归 ADDP 自身；Fosite 不成为第二 IAM 事实源。
+
+受控版本以包含 RFC 8628 Device Flow 的已验证上游提交为候选基线，纳入适用的未合并安全修复并固定不可变版本。正式版 `v0.49.0 + ADDP 自研 Device Flow`、裸用上游 master 和继续完全自研三条路线均已拒绝。实施时必须一次性替换当前自研 OAuth 状态机，不按 grant type 或客户端分流。

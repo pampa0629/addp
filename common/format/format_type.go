@@ -44,7 +44,7 @@ const (
 	FormatAvro         FormatType = "avro"
 	FormatZIP          FormatType = "zip"
 	FormatRasterMosaic FormatType = "raster_mosaic"
-	FormatTilePyramid  FormatType = "tile_pyramid"
+	FormatPMTiles      FormatType = "pmtiles"
 
 	FormatVideo FormatType = "video"
 	FormatAudio FormatType = "audio"

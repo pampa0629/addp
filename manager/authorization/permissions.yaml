@@ -1,0 +1,100 @@
+schema_version: addp.permission_manifest/v1
+owner_module: manager
+manifest_version: 2
+permissions:
+  - key: manager.content.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.content.read.name
+    description_i18n_key: permissions.manager.content.read.description
+  - key: manager.data_item.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.data_item.create.name
+    description_i18n_key: permissions.manager.data_item.create.description
+  - key: manager.data_item.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.data_item.delete.name
+    description_i18n_key: permissions.manager.data_item.delete.description
+  - key: manager.data_item.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: true
+    status: active
+    name_i18n_key: permissions.manager.data_item.read.name
+    description_i18n_key: permissions.manager.data_item.read.description
+  - key: manager.data_item.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.data_item.update.name
+    description_i18n_key: permissions.manager.data_item.update.description
+  - key: manager.derived_artifact.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.derived_artifact.create.name
+    description_i18n_key: permissions.manager.derived_artifact.create.description
+  - key: manager.derived_artifact.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.derived_artifact.delete.name
+    description_i18n_key: permissions.manager.derived_artifact.delete.description
+  - key: manager.derived_artifact.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.derived_artifact.read.name
+    description_i18n_key: permissions.manager.derived_artifact.read.description
+  - key: manager.resource_grant.create
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.resource_grant.create.name
+    description_i18n_key: permissions.manager.resource_grant.create.description
+  - key: manager.resource_grant.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.resource_grant.read.name
+    description_i18n_key: permissions.manager.resource_grant.read.description
+  - key: manager.resource_grant.revoke
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.resource_grant.revoke.name
+    description_i18n_key: permissions.manager.resource_grant.revoke.description
+  - key: manager.search.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: true
+    status: active
+    name_i18n_key: permissions.manager.search.execute.name
+    description_i18n_key: permissions.manager.search.execute.description

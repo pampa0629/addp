@@ -146,6 +146,7 @@ func (h *UserHandler) Delete(c *gin.Context) {
 // @Security     BearerAuth
 // @Success      200 {object} models.User
 // @Failure      401 {object} models.ErrorResponse
+// @x-addp-auth-mode "self"
 // @Router       /users/me [get]
 func (h *UserHandler) Me(c *gin.Context) {
 	userID, _ := commonapi.GetCurrentUserID(c)
@@ -153,24 +154,19 @@ func (h *UserHandler) Me(c *gin.Context) {
 	commonapi.RespondOrError(c, user, err)
 }
 
-// ChangePassword godoc
-// @Summary      修改用户密码 | Change user password
+// ChangeOwnPassword godoc
+// @Summary      修改当前用户密码 | Change current user password
 // @Tags         用户管理 | User Management
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id path int true "用户ID | User ID"
 // @Param        request body models.ChangePasswordRequest true "密码修改请求 | Change password request"
 // @Success      200 {object} models.SuccessResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
-// @Router       /users/{id}/change-password [put]
-func (h *UserHandler) ChangePassword(c *gin.Context) {
-	id, err := commonapi.BindIDParam(c, "id")
-	if err != nil {
-		return
-	}
-
+// @x-addp-auth-mode "self"
+// @Router       /users/me/password [put]
+func (h *UserHandler) ChangeOwnPassword(c *gin.Context) {
 	var req models.ChangePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		commonapi.RespondError(c, 400, err.Error())
@@ -178,7 +174,7 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 	}
 
 	userID, _ := commonapi.GetCurrentUserID(c)
-	err = h.userService.ChangePassword(id, &req, userID)
+	err := h.userService.ChangeOwnPassword(&req, userID)
 	if err != nil {
 		commonapi.RespondOrError(c, nil, err)
 		return

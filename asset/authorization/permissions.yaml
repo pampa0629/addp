@@ -1,0 +1,156 @@
+schema_version: addp.permission_manifest/v1
+owner_module: asset
+manifest_version: 1
+permissions:
+  - key: asset.application.approve
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.application.approve.name
+    description_i18n_key: permissions.asset.application.approve.description
+  - key: asset.application.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.application.create.name
+    description_i18n_key: permissions.asset.application.create.description
+  - key: asset.application.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.application.read.name
+    description_i18n_key: permissions.asset.application.read.description
+  - key: asset.application.reject
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.application.reject.name
+    description_i18n_key: permissions.asset.application.reject.description
+  - key: asset.application.revoke
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.application.revoke.name
+    description_i18n_key: permissions.asset.application.revoke.description
+  - key: asset.authorization.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.authorization.read.name
+    description_i18n_key: permissions.asset.authorization.read.description
+  - key: asset.authorization.revoke
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.authorization.revoke.name
+    description_i18n_key: permissions.asset.authorization.revoke.description
+  - key: asset.catalog.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.catalog.create.name
+    description_i18n_key: permissions.asset.catalog.create.description
+  - key: asset.catalog.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.catalog.delete.name
+    description_i18n_key: permissions.asset.catalog.delete.description
+  - key: asset.catalog.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.catalog.read.name
+    description_i18n_key: permissions.asset.catalog.read.description
+  - key: asset.catalog.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.catalog.update.name
+    description_i18n_key: permissions.asset.catalog.update.description
+  - key: asset.entry.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.entry.delete.name
+    description_i18n_key: permissions.asset.entry.delete.description
+  - key: asset.entry.offline
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.entry.offline.name
+    description_i18n_key: permissions.asset.entry.offline.description
+  - key: asset.entry.publish
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.entry.publish.name
+    description_i18n_key: permissions.asset.entry.publish.description
+  - key: asset.entry.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.entry.read.name
+    description_i18n_key: permissions.asset.entry.read.description
+  - key: asset.entry.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.entry.update.name
+    description_i18n_key: permissions.asset.entry.update.description
+  - key: asset.rating.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.rating.create.name
+    description_i18n_key: permissions.asset.rating.create.description
+  - key: asset.rating.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.rating.read.name
+    description_i18n_key: permissions.asset.rating.read.description
+  - key: asset.rating.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.rating.update.name
+    description_i18n_key: permissions.asset.rating.update.description

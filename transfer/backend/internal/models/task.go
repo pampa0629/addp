@@ -154,6 +154,8 @@ func (RuntimeLease) TableName() string { return "transfer.runtime_leases" }
 
 type CaptureStatus string
 
+type CaptureSourceType string
+
 const (
 	CaptureStatusProvisioning  CaptureStatus = "provisioning"
 	CaptureStatusRunning       CaptureStatus = "running"
@@ -161,42 +163,66 @@ const (
 	CaptureStatusCleaning      CaptureStatus = "cleaning"
 	CaptureStatusCleanupFailed CaptureStatus = "cleanup_failed"
 	CaptureStatusStopped       CaptureStatus = "stopped"
+
+	CaptureSourcePostgreSQL CaptureSourceType = "postgresql"
+	CaptureSourceMySQL      CaptureSourceType = "mysql"
 )
 
-// CaptureResource 是 PostgreSQL CDC task generation 的资源登记事实。
-// 只登记 ADDP 创建且拥有生命周期的 connector、slot、publication、topic 和 consumer group。
+// CaptureResource 是数据库 CDC task generation 的 engine-neutral 资源登记事实。
 type CaptureResource struct {
-	ID                          uint          `gorm:"primaryKey" json:"id"`
-	TaskID                      uint          `gorm:"not null;uniqueIndex:uq_transfer_capture_generation" json:"task_id"`
-	TenantID                    uint          `gorm:"not null;index" json:"tenant_id"`
-	Generation                  uint64        `gorm:"not null;uniqueIndex:uq_transfer_capture_generation" json:"generation"`
-	ConnectorName               string        `gorm:"type:varchar(255);not null;uniqueIndex:uq_transfer_capture_connector" json:"connector_name"`
-	TopicName                   string        `gorm:"type:varchar(255);not null;uniqueIndex:uq_transfer_capture_topic" json:"topic_name"`
-	ConsumerGroup               string        `gorm:"type:varchar(255);not null;uniqueIndex:uq_transfer_capture_group" json:"consumer_group"`
-	SlotName                    string        `gorm:"type:varchar(63);not null;uniqueIndex:uq_transfer_capture_slot" json:"slot_name"`
-	PublicationName             string        `gorm:"type:varchar(63);not null;uniqueIndex:uq_transfer_capture_publication" json:"publication_name"`
-	SourceIdentity              string        `gorm:"type:text;not null" json:"source_identity"`
-	SourceConnectionFingerprint string        `gorm:"type:varchar(64);not null" json:"source_connection_fingerprint"`
-	SourceEngineID              uint          `gorm:"not null" json:"source_engine_id"`
-	SourceDatabase              string        `gorm:"type:varchar(255);not null" json:"source_database"`
-	SourceSchema                string        `gorm:"type:varchar(255);not null" json:"source_schema"`
-	SourceTable                 string        `gorm:"type:varchar(255);not null" json:"source_table"`
-	SourceSpatialInfo           JSONMap       `gorm:"type:jsonb;not null;default:'{}'" json:"source_spatial_info,omitempty"`
-	Status                      CaptureStatus `gorm:"type:varchar(32);not null;index" json:"status"`
-	ConnectorStatus             string        `gorm:"type:varchar(32)" json:"connector_status,omitempty"`
-	ConnectorError              string        `gorm:"type:text" json:"connector_error,omitempty"`
-	TopicCreated                bool          `gorm:"not null;default:false" json:"topic_created"`
-	ConnectorCreated            bool          `gorm:"not null;default:false" json:"connector_created"`
-	SlotOwned                   bool          `gorm:"not null;default:true" json:"slot_owned"`
-	PublicationOwned            bool          `gorm:"not null;default:true" json:"publication_owned"`
-	ResourceVersion             uint64        `gorm:"not null;default:1" json:"resource_version"`
-	LastObservedAt              *time.Time    `json:"last_observed_at,omitempty"`
-	StoppedAt                   *time.Time    `json:"stopped_at,omitempty"`
-	CreatedAt                   time.Time     `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt                   time.Time     `gorm:"autoUpdateTime" json:"updated_at"`
+	ID                          uint                       `gorm:"primaryKey" json:"id"`
+	TaskID                      uint                       `gorm:"not null;uniqueIndex:uq_transfer_capture_generation" json:"task_id"`
+	TenantID                    uint                       `gorm:"not null;index" json:"tenant_id"`
+	Generation                  uint64                     `gorm:"not null;uniqueIndex:uq_transfer_capture_generation" json:"generation"`
+	ConnectorName               string                     `gorm:"type:varchar(255);not null;uniqueIndex:uq_transfer_capture_connector" json:"connector_name"`
+	TopicName                   string                     `gorm:"type:varchar(255);not null;uniqueIndex:uq_transfer_capture_topic" json:"topic_name"`
+	ConsumerGroup               string                     `gorm:"type:varchar(255);not null;uniqueIndex:uq_transfer_capture_group" json:"consumer_group"`
+	SourceType                  CaptureSourceType          `gorm:"type:varchar(32);not null;index:idx_transfer_capture_resources_source_type;check:chk_transfer_capture_source_type,source_type IN ('postgresql','mysql')" json:"source_type"`
+	SourceIdentity              string                     `gorm:"type:text;not null" json:"source_identity"`
+	SourceConnectionFingerprint string                     `gorm:"type:varchar(64);not null" json:"source_connection_fingerprint"`
+	SourceEngineID              uint                       `gorm:"not null" json:"source_engine_id"`
+	SourceDatabase              string                     `gorm:"type:varchar(255);not null" json:"source_database"`
+	SourceSchema                string                     `gorm:"type:varchar(255);not null" json:"source_schema"`
+	SourceTable                 string                     `gorm:"type:varchar(255);not null" json:"source_table"`
+	SourceSpatialInfo           JSONMap                    `gorm:"type:jsonb;not null;default:'{}'" json:"source_spatial_info,omitempty"`
+	Status                      CaptureStatus              `gorm:"type:varchar(32);not null;index" json:"status"`
+	ConnectorStatus             string                     `gorm:"type:varchar(32)" json:"connector_status,omitempty"`
+	ConnectorError              string                     `gorm:"type:text" json:"connector_error,omitempty"`
+	TopicCreated                bool                       `gorm:"not null;default:false" json:"topic_created"`
+	ConnectorCreated            bool                       `gorm:"not null;default:false" json:"connector_created"`
+	ResourceVersion             uint64                     `gorm:"not null;default:1" json:"resource_version"`
+	LastObservedAt              *time.Time                 `json:"last_observed_at,omitempty"`
+	StoppedAt                   *time.Time                 `json:"stopped_at,omitempty"`
+	CreatedAt                   time.Time                  `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt                   time.Time                  `gorm:"autoUpdateTime" json:"updated_at"`
+	PostgreSQL                  *PostgreSQLCaptureResource `gorm:"foreignKey:CaptureResourceID;constraint:OnDelete:CASCADE" json:"-"`
+	MySQL                       *MySQLCaptureResource      `gorm:"foreignKey:CaptureResourceID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
 func (CaptureResource) TableName() string { return "transfer.capture_resources" }
+
+// PostgreSQLCaptureResource 保存 PostgreSQL capture generation 独有的 logical replication 资源。
+type PostgreSQLCaptureResource struct {
+	CaptureResourceID uint   `gorm:"primaryKey" json:"capture_resource_id"`
+	SlotName          string `gorm:"type:varchar(63);not null;uniqueIndex:uq_transfer_postgresql_capture_slot" json:"slot_name"`
+	PublicationName   string `gorm:"type:varchar(63);not null;uniqueIndex:uq_transfer_postgresql_capture_publication" json:"publication_name"`
+	SlotOwned         bool   `gorm:"not null;default:true" json:"slot_owned"`
+	PublicationOwned  bool   `gorm:"not null;default:true" json:"publication_owned"`
+}
+
+func (PostgreSQLCaptureResource) TableName() string {
+	return "transfer.postgresql_capture_resources"
+}
+
+// MySQLCaptureResource 保存 MySQL capture generation 独有且必须全局唯一的 connector server id。
+type MySQLCaptureResource struct {
+	CaptureResourceID       uint   `gorm:"primaryKey" json:"capture_resource_id"`
+	ConnectorServerID       uint32 `gorm:"not null;uniqueIndex:uq_transfer_mysql_capture_server_id;check:chk_transfer_mysql_capture_server_id,connector_server_id >= 1 AND connector_server_id <= 4294967295" json:"connector_server_id"`
+	SchemaHistoryTopicName  string `gorm:"type:varchar(255);not null;uniqueIndex:uq_transfer_mysql_capture_schema_history_topic" json:"schema_history_topic_name"`
+	SchemaHistoryTopicOwned bool   `gorm:"not null;default:true" json:"schema_history_topic_owned"`
+}
+
+func (MySQLCaptureResource) TableName() string { return "transfer.mysql_capture_resources" }
 
 // CaptureSummary 是任务 API 可展示的捕获状态；内部资源名称和连接身份不对外暴露。
 type CaptureSummary struct {
@@ -298,6 +324,24 @@ type UpdateTaskRequest struct {
 type StopTaskRequest struct {
 	Confirmed        bool   `json:"confirmed"`
 	ConfirmationText string `json:"confirmation_text"`
+}
+
+// ReplayTaskRequest 创建业务 Kafka bounded replay execution。
+// 除 ranges 与新目标位置外不接受任何任务配置覆盖。
+type ReplayTaskRequest struct {
+	Ranges []ReplayOffsetRangeRequest `json:"ranges"`
+	Target ReplayTargetRequest        `json:"target"`
+}
+
+type ReplayOffsetRangeRequest struct {
+	Partition   string `json:"partition" example:"0"`
+	StartOffset int64  `json:"start_offset" example:"10"`
+	EndOffset   int64  `json:"end_offset" example:"20"`
+}
+
+type ReplayTargetRequest struct {
+	ParentLocator string `json:"parent_locator" example:"addp://engine/8/path/replay_schema?type=schema&node_id=12"`
+	Name          string `json:"name" example:"orders_replay"`
 }
 
 // ListTasksRequest 查询任务列表请求

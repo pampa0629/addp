@@ -31,6 +31,7 @@ type ExecutionEngineService struct {
 	executionService *ExecutionService
 	systemClient     *commonClient.SystemClient
 	metaClient       *commonClient.MetaClient
+	replayRuntime    BoundedReplayRuntime
 	cfg              *config.Config
 	logger           *slog.Logger
 }
@@ -56,6 +57,10 @@ func (s *ExecutionEngineService) SetConfig(cfg *config.Config) {
 	s.cfg = cfg
 }
 
+func (s *ExecutionEngineService) SetReplayRuntime(runtime BoundedReplayRuntime) {
+	s.replayRuntime = runtime
+}
+
 // ExecuteTask 执行任务（由 Worker 调用）
 func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, executionID uint) error {
 	s.logger.Info("executing task", "task_id", taskID, "execution_id", executionID)
@@ -63,6 +68,17 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 	task, err := s.taskRepo.GetByID(taskID)
 	if err != nil {
 		return fmt.Errorf("failed to get task: %w", err)
+	}
+	execution, err := s.executionService.taskExecutionRepo.GetByID(ctx, int64(executionID), int(task.TenantID))
+	if err != nil {
+		return fmt.Errorf("failed to get execution: %w", err)
+	}
+	executionTaskID, err := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID)
+	if err != nil || execution.Module != commonExecution.ModuleTransfer || execution.TaskType != commonExecution.TaskTypeSync || executionTaskID != task.ID {
+		return fmt.Errorf("execution does not belong to transfer task %d", task.ID)
+	}
+	if isReplayExecutionConfig(execution.ExecutionConfig) {
+		return s.executeBoundedReplay(ctx, task, executionID, execution.ExecutionConfig)
 	}
 
 	return s.executeCommonTransferTask(ctx, task, executionID)

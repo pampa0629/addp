@@ -2,15 +2,22 @@
 KG 图谱构建 API
 提供单 chunk 实体/关系抽取端点，供 Graph 后端调用
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from dependencies.auth import require_internal_api_key
 from models.kg_models import KGExtractRequest, KGExtractResponse
 from pipelines.kg_build_pipeline import KGBuildPipeline
 
 router = APIRouter()
 
 
-@router.post("/kg-build/extract", response_model=KGExtractResponse, summary="抽取实体关系 | Extract From Chunk")
+@router.post(
+    "/kg-build/extract",
+    response_model=KGExtractResponse,
+    summary="抽取实体关系 | Extract From Chunk",
+    dependencies=[Depends(require_internal_api_key)],
+    openapi_extra={"x-addp-auth-mode": "internal"},
+)
 async def extract_from_chunk(request: KGExtractRequest):
     """
     从单个文本 chunk 抽取实体和关系

@@ -19,6 +19,15 @@ other = "Task paused successfully"
 [transfer.task.resumed]
 other = "Task resumed successfully"
 
+[transfer.task.not_found]
+other = "Task not found"
+
+[transfer.task.delete_requires_stopped]
+other = "The task is running and must be stopped before deletion."
+
+[transfer.task.delete_cleanup_failed]
+other = "Task resource cleanup failed. The task and audit index were not deleted. Retry later."
+
 [transfer.execution.cancelled]
 other = "Execution cancelled successfully"
 
@@ -33,3 +42,30 @@ other = "The database change capture control plane is unavailable"
 
 [transfer.cdc.schema_change_blocked]
 other = "A source schema change permanently blocked the current synchronization generation. The task can only be permanently stopped; then create a new task and target table."
+
+[transfer.replay.invalid]
+other = "Invalid replay request. Only business Kafka record/json tasks with blocking failure policy, explicit partition offset ranges, and a new isolated PostgreSQL target are supported."
+
+[transfer.replay.range_unavailable]
+other = "The requested replay range is outside the current Kafka retention boundary."
+
+[transfer.replay.target_exists]
+other = "The replay target already exists. Select a new PostgreSQL table that does not exist."
+
+[transfer.replay.unavailable]
+other = "The replay runtime is unavailable."
+
+[transfer.replay.internal_error]
+other = "Failed to create replay execution."
+
+[transfer.dead_letter.invalid_query]
+other = "Invalid dead-letter query parameters."
+
+[transfer.dead_letter.invalid_identity]
+other = "Invalid dead-letter identity."
+
+[transfer.dead_letter.not_found]
+other = "Dead-letter record not found."
+
+[transfer.dead_letter.internal_error]
+other = "Failed to query dead-letter records."

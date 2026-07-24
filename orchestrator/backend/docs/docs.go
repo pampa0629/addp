@@ -834,6 +834,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "editor_layout": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
                 "enabled": {
                     "type": "boolean"
                 },

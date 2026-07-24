@@ -4965,7 +4965,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type filter",
+                        "description": "任务类型过滤：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type filter",
                         "name": "task_type",
                         "in": "query"
                     },
@@ -5024,7 +5024,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type",
+                        "description": "任务类型：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -5082,7 +5082,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type",
+                        "description": "任务类型：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -5890,6 +5890,167 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/vector_tile_set_tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取业务矢量瓦片集任务 | List business vector tile set tasks",
+                "responses": {
+                    "200": {
+                        "description": "任务列表 | Task list",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.TaskListResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "创建业务矢量瓦片集任务 | Create business vector tile set task",
+                "parameters": [
+                    {
+                        "description": "任务配置 | Task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.TileCacheTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "任务 | Task",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.VectorTileSetTask"
+                        }
+                    }
+                }
+            }
+        },
+        "/vector_tile_set_tasks/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取业务矢量瓦片集任务 | Get business vector tile set task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务 | Task",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.VectorTileSetTask"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "更新业务矢量瓦片集任务 | Update business vector tile set task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "任务配置 | Task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.TileCacheTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务 | Task",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.VectorTileSetTask"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除业务矢量瓦片集任务 | Delete business vector tile set task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "删除成功 | Deleted"
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -6544,6 +6705,12 @@ const docTemplate = `{
                 "min_zoom": {
                     "type": "integer"
                 },
+                "profile_hash": {
+                    "type": "string"
+                },
+                "source_version": {
+                    "type": "string"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -6644,6 +6811,47 @@ const docTemplate = `{
                 },
                 "task_id": {
                     "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_models.VectorTileSetTask": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
                 },
                 "tenant_id": {
                     "type": "integer"
@@ -7696,6 +7904,9 @@ const docTemplate = `{
         "github_com_addp_manager_internal_service.ZoomRecommendation": {
             "type": "object",
             "properties": {
+                "estimated_tile_count": {
+                    "type": "integer"
+                },
                 "max_zoom": {
                     "type": "integer"
                 },
@@ -7707,6 +7918,9 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string"
+                },
+                "tile_budget": {
+                    "type": "integer"
                 }
             }
         },
@@ -8946,7 +9160,7 @@ const docTemplate = `{
         "internal_api.TileCacheTaskTileResponse": {
             "type": "object",
             "properties": {
-                "format": {
+                "archive_format": {
                     "type": "string"
                 },
                 "geometry_column": {
@@ -8960,6 +9174,9 @@ const docTemplate = `{
                 },
                 "target_srid": {
                     "type": "integer"
+                },
+                "tile_type": {
+                    "type": "string"
                 }
             }
         },

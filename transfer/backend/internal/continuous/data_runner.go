@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"math/big"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/kafka"
+	"github.com/addp/transfer/internal/deadletter"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
@@ -41,6 +43,10 @@ type ContinuousSchemaChangeStore interface {
 	RecordSchemaChange(ctx context.Context, claim repository.RuntimeLeaseClaim, change repository.ContinuousSchemaChange) error
 }
 
+type ContinuousDeadLetterRecorder interface {
+	Record(ctx context.Context, request deadletter.RecordRequest) (*models.DeadLetter, error)
+}
+
 type PluginGetter func(engineType string) (engineplugin.EnginePlugin, error)
 
 type DataSessionRunner struct {
@@ -57,6 +63,7 @@ type DataSessionRunner struct {
 	RetentionCriticalHorizon time.Duration
 	CheckpointStaleAfter     time.Duration
 	Now                      func() time.Time
+	DeadLetters              ContinuousDeadLetterRecorder
 }
 
 const (
@@ -78,6 +85,9 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 	plan, err := r.buildPlan(ctx, claim)
 	if err != nil {
 		return err
+	}
+	if plan.RecordFailureMode == planner.RecordFailureModeDeadLetter && r.DeadLetters == nil {
+		return fmt.Errorf("continuous dead-letter mode requires a dead-letter recorder")
 	}
 	getPlugin := r.GetPlugin
 	if getPlugin == nil {
@@ -205,7 +215,7 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 			if !hasStart {
 				start = kafkaOffsetPosition(group.partition, group.records[0].Offset)
 			}
-			changes, err := mapPartitionRecords(group.records, start, plan)
+			changes, err := r.mapPartitionRecords(ctx, claim, group.records, start, plan, now)
 			if err != nil {
 				var schemaErr *SchemaChangeError
 				if errors.As(err, &schemaErr) {
@@ -265,26 +275,65 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 	}
 }
 
+func (r *DataSessionRunner) mapPartitionRecords(
+	ctx context.Context,
+	claim repository.RuntimeLeaseClaim,
+	records []engineplugin.ChangeRecord,
+	start engineplugin.ChangeStreamPosition,
+	plan *planner.ContinuousPlan,
+	now func() time.Time,
+) ([]engineplugin.PartitionedTableChange, error) {
+	if plan.RecordFailureMode != planner.RecordFailureModeDeadLetter {
+		return mapPartitionRecords(records, start, plan)
+	}
+	changes := make([]engineplugin.PartitionedTableChange, 0, len(records))
+	for _, record := range records {
+		mapped, err := mapPartitionRecords([]engineplugin.ChangeRecord{record}, start, plan)
+		if err == nil {
+			changes = append(changes, mapped...)
+			continue
+		}
+		var dataErr *RecordDataError
+		if !errors.As(err, &dataErr) {
+			return nil, err
+		}
+		if _, recordErr := r.DeadLetters.Record(ctx, deadletter.RecordRequest{
+			TenantID: claim.Task.TenantID, TaskID: claim.Task.ID, ExecutionID: claim.Execution.ExecutionID,
+			ApplyIdentity: claim.Task.ApplyIdentity, SourceIdentity: plan.Source.SourceIdentity,
+			Record:     record,
+			Error:      deadletter.ErrorDetail{Code: dataErr.Code, Category: dataErr.Category, Message: dataErr.Message},
+			DetectedAt: now(),
+		}); recordErr != nil {
+			return nil, fmt.Errorf("persist dead-letter for source offset %d: %w", record.Offset, recordErr)
+		}
+		changes = append(changes, engineplugin.PartitionedTableChange{
+			Operation: engineplugin.TableChangeOperationSkip, Position: record.Position,
+		})
+	}
+	return changes, nil
+}
+
 func (r *DataSessionRunner) buildPlan(ctx context.Context, claim repository.RuntimeLeaseClaim) (*planner.ContinuousPlan, error) {
-	if planner.IsPostgreSQLCDCTaskConfig(claim.Task.Config) {
+	if planner.IsDatabaseCDCTaskConfig(claim.Task.Config) {
 		if r.Captures == nil {
-			return nil, fmt.Errorf("PostgreSQL CDC data runner requires capture resource store")
+			return nil, fmt.Errorf("database CDC data runner requires capture resource store")
 		}
 		if len(r.InfraKafkaConnection) == 0 {
-			return nil, fmt.Errorf("PostgreSQL CDC data runner requires Infra Kafka connection")
+			return nil, fmt.Errorf("database CDC data runner requires Infra Kafka connection")
 		}
 		resource, err := r.Captures.GetLatest(ctx, claim.Task.ID, claim.Task.TenantID)
 		if err != nil {
-			return nil, fmt.Errorf("load PostgreSQL CDC capture generation: %w", err)
+			return nil, fmt.Errorf("load database CDC capture generation: %w", err)
 		}
 		if resource.Status != models.CaptureStatusRunning || !resource.TopicCreated || !resource.ConnectorCreated {
-			return nil, fmt.Errorf("PostgreSQL CDC capture generation is not running")
+			return nil, fmt.Errorf("database CDC capture generation is not running")
 		}
-		spec, err := planner.ParsePostgreSQLCDCTaskSpec(claim.Task.Config)
+		spec, err := planner.ParseDatabaseCDCTaskSpec(claim.Task.Config)
 		if err != nil {
-			return nil, fmt.Errorf("parse PostgreSQL CDC task: %w", err)
+			return nil, fmt.Errorf("parse database CDC task: %w", err)
 		}
-		return planner.BuildPostgreSQLCDCContinuousPlan(spec, r.Resolver, planner.PostgreSQLCDCStreamBinding{
+		return planner.BuildDatabaseCDCContinuousPlan(spec, r.Resolver, planner.DatabaseCDCStreamBinding{
+			Provider: string(resource.SourceType),
 			ConnInfo: r.InfraKafkaConnection, Path: internalKafkaTopicPath(resource.TopicName),
 			ConsumerGroup: resource.ConsumerGroup, SourceIdentity: resource.SourceIdentity,
 			Database: resource.SourceDatabase, Schema: resource.SourceSchema, Table: resource.SourceTable,
@@ -511,6 +560,20 @@ func mapPartitionRecords(records []engineplugin.ChangeRecord, start engineplugin
 					err = fmt.Errorf("unsupported normalized change event operation %q", event.Operation)
 				}
 			}
+		case planner.ContinuousEnvelopeMySQLDebezium:
+			var event *ChangeEvent
+			event, err = decodeMySQLDebeziumRecord(record, plan)
+			if err == nil {
+				row = event.Row
+				switch event.Operation {
+				case changeEventOperationSnapshot, changeEventOperationUpsert:
+					operation = engineplugin.TableChangeOperationUpsert
+				case changeEventOperationDelete:
+					operation = engineplugin.TableChangeOperationDelete
+				default:
+					err = fmt.Errorf("unsupported normalized change event operation %q", event.Operation)
+				}
+			}
 		default:
 			err = fmt.Errorf("unsupported continuous envelope %q", plan.Envelope)
 		}
@@ -529,28 +592,33 @@ func decodeAndMapRecord(record engineplugin.ChangeRecord, plan *planner.Continuo
 	decoder.UseNumber()
 	var source map[string]interface{}
 	if err := decoder.Decode(&source); err != nil {
-		return nil, fmt.Errorf("value must be a JSON object: %w", err)
+		return nil, newRecordDataError("invalid_json_object", recordErrorCategoryDecode, "record value must be a JSON object", err)
 	}
 	if source == nil {
-		return nil, fmt.Errorf("value must be a JSON object")
+		return nil, newRecordDataError("invalid_json_object", recordErrorCategoryDecode, "record value must be a JSON object", nil)
 	}
 	var trailing interface{}
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("value must contain exactly one JSON object")
+		return nil, newRecordDataError("multiple_json_values", recordErrorCategoryDecode, "record value must contain exactly one JSON object", nil)
 	}
 	allowed := make(map[string]bool, len(plan.Mappings))
 	for _, mapping := range plan.Mappings {
 		allowed[mapping.Source] = true
 	}
+	unknownFields := make([]string, 0)
 	for field := range source {
 		if !allowed[field] {
-			return nil, fmt.Errorf("unknown source field %q", field)
+			unknownFields = append(unknownFields, field)
 		}
+	}
+	if len(unknownFields) > 0 {
+		sort.Strings(unknownFields)
+		return nil, newRecordDataError("unknown_source_field", recordErrorCategoryFieldValidation, fmt.Sprintf("unknown source field %q", unknownFields[0]), nil)
 	}
 	for _, key := range plan.SourceKeys {
 		value, ok := source[key]
 		if !ok || value == nil {
-			return nil, fmt.Errorf("missing non-null source key field %q", key)
+			return nil, newRecordDataError("missing_source_key", recordErrorCategoryKeyValidation, fmt.Sprintf("missing non-null source key field %q", key), nil)
 		}
 	}
 	row := make(map[string]interface{}, len(plan.Mappings))
@@ -563,18 +631,18 @@ func decodeAndMapRecord(record engineplugin.ChangeRecord, plan *planner.Continuo
 				row[mapping.Target] = nil
 				continue
 			} else {
-				return nil, fmt.Errorf("missing required source field %q", mapping.Source)
+				return nil, newRecordDataError("missing_required_field", recordErrorCategoryFieldValidation, fmt.Sprintf("missing required source field %q", mapping.Source), nil)
 			}
 		}
 		converted, err := coerceContinuousValue(value, mapping.Type)
 		if err != nil {
-			return nil, fmt.Errorf("field %q: %w", mapping.Source, err)
+			return nil, newRecordDataError("incompatible_field_type", recordErrorCategoryTypeConversion, fmt.Sprintf("source field %q is incompatible with target type %q", mapping.Source, mapping.Type), err)
 		}
 		row[mapping.Target] = converted
 	}
 	for _, key := range plan.Target.Keys {
 		if value, ok := row[key]; !ok || value == nil {
-			return nil, fmt.Errorf("mapped target key field %q is null", key)
+			return nil, newRecordDataError("null_target_key", recordErrorCategoryKeyValidation, fmt.Sprintf("mapped target key field %q is null", key), nil)
 		}
 	}
 	return row, nil

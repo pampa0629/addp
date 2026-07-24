@@ -40,6 +40,7 @@ type BuildService struct {
 	materialReader    contentio.Reader
 	materialWriter    contentio.Writer
 	copilotURL        string
+	internalAPIKey    string
 	httpClient        *http.Client
 
 	// 取消令牌（graphID+taskID → cancel func）
@@ -62,6 +63,7 @@ func NewBuildService(
 	materialReader contentio.Reader,
 	materialWriter contentio.Writer,
 	copilotURL string,
+	internalAPIKey string,
 ) *BuildService {
 	return &BuildService{
 		buildRepo:         buildRepo,
@@ -73,6 +75,7 @@ func NewBuildService(
 		materialReader:    materialReader,
 		materialWriter:    materialWriter,
 		copilotURL:        copilotURL,
+		internalAPIKey:    internalAPIKey,
 		httpClient:        &http.Client{Timeout: 120 * time.Second},
 		cancels:           make(map[string]*activeBuildRun),
 	}
@@ -851,6 +854,7 @@ func (s *BuildService) callCopilotExtract(ctx context.Context, text, docContext 
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-Internal-API-Key", s.internalAPIKey)
 
 	resp, err := s.httpClient.Do(httpReq)
 	if err != nil {

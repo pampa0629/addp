@@ -131,7 +131,7 @@ func (r *OrchestrationRepository) ClaimDue(ctx context.Context, id uint, schedul
 func (r *OrchestrationRepository) UpdateForTenant(orch *models.Orchestration) error {
 	result := r.db.Model(&models.Orchestration{}).
 		Where("id = ? AND tenant_id = ?", orch.ID, orch.TenantID).
-		Select("name", "description", "steps", "enabled", "schedule", "next_run_at", "updated_at").
+		Select("name", "description", "steps", "editor_layout", "enabled", "schedule", "next_run_at", "updated_at").
 		Updates(orch)
 	if result.Error != nil {
 		return result.Error

@@ -16,10 +16,6 @@ export const updateWorkflowTask = (id, taskData) => {
   }))
 }
 
-export const createTemporaryWorkflowTask = (taskData) => {
-  return createDevTask(buildWorkflowDevTaskPayload(taskData))
-}
-
 export const executeWorkflowTask = (id, inputs = {}) => {
   return executeDevTask(id, inputs)
 }

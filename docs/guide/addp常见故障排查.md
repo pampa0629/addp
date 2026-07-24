@@ -99,6 +99,29 @@ lsof -ti :$port -sTCP:LISTEN
 
 ---
 
+### 3. restart.sh 报告 ADDP 旧进程未清理（launchd KeepAlive 自动拉起）
+
+#### 问题现象
+
+`restart.sh` 已调用 `stop.sh`，但启动阶段仍报告端口被 `.dev-bins/addp-*` 占用。对应 PID 文件不存在，杀死进程后又会出现新的 PID。
+
+#### 根本原因
+
+服务曾通过 `launchctl submit` 注册为 `com.addp.codex.*` KeepAlive 作业。`stop.sh` 只杀死进程时，`launchd` 会立即重新拉起服务，导致端口再次被占用。
+
+#### 处理方式
+
+`stop.sh` 会在 macOS 上先枚举 `com.addp.codex.*` 作业，只卸载作业命令中包含当前仓库绝对路径的条目，然后执行常规 PID、进程名和端口清理。卸载失败会使 `stop.sh` 返回非零状态，并中断 `restart.sh`。
+
+旧版脚本可先手动卸载作业：
+
+```bash
+launchctl bootout gui/$(id -u)/com.addp.codex.meta
+bash scripts/dev/stop.sh
+```
+
+---
+
 ## 前端问题
 
 ### 1. Manager 数据预览显示"暂无数据"（双重 .data 访问问题）

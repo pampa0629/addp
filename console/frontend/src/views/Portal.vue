@@ -442,7 +442,7 @@ async function askCopilot() {
   copilotLoading.value = true
   copilotResult.value = null
   try {
-    const res = await navigateGuide({ query: copilotQuery.value, tenant_id: 1, user_id: 1 })
+    const res = await navigateGuide({ query: copilotQuery.value })
     copilotResult.value = res
   } catch (e) {
     ElMessage.error('导航助手暂时不可用')

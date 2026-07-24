@@ -26,6 +26,8 @@ func NewTenantHandler(tenantService *service.TenantService) *TenantHandler {
 // @Param        request body models.TenantCreateRequest true "租户信息 | Tenant info"
 // @Success      200 {object} models.Tenant
 // @Failure      400 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["platform.tenant.create"]
 // @Router       /tenants [post]
 func (h *TenantHandler) Create(c *gin.Context) {
 	var req models.TenantCreateRequest
@@ -48,6 +50,8 @@ func (h *TenantHandler) Create(c *gin.Context) {
 // @Param        page_size query int false "每页数量 | Page size" default(10)
 // @Success      200 {object} object{data=[]models.Tenant,total=int,page=int,page_size=int}
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["platform.tenant.read"]
 // @Router       /tenants [get]
 func (h *TenantHandler) List(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
@@ -70,6 +74,8 @@ func (h *TenantHandler) List(c *gin.Context) {
 // @Success      200 {object} models.Tenant
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["platform.tenant.read"]
 // @Router       /tenants/{id} [get]
 func (h *TenantHandler) GetByID(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
@@ -93,6 +99,8 @@ func (h *TenantHandler) GetByID(c *gin.Context) {
 // @Success      200 {object} models.Tenant
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["platform.tenant.update"]
 // @Router       /tenants/{id} [put]
 func (h *TenantHandler) Update(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")

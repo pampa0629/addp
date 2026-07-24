@@ -42,7 +42,10 @@ func TestIntegrationPostgreSQLCaptureControlLifecycle(t *testing.T) {
 	if err := infraDB.Exec("CREATE SCHEMA IF NOT EXISTS transfer").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := infraDB.AutoMigrate(&models.TransferTask{}, &models.CaptureResource{}); err != nil {
+	if err := repository.MigrateCaptureProviderResources(infraDB); err != nil {
+		t.Fatalf("migrate legacy capture resources: %v", err)
+	}
+	if err := infraDB.AutoMigrate(&models.TransferTask{}, &models.CaptureResource{}, &models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{}); err != nil {
 		t.Fatalf("migrate capture control models: %v", err)
 	}
 
@@ -57,7 +60,7 @@ func TestIntegrationPostgreSQLCaptureControlLifecycle(t *testing.T) {
 	}
 	defer businessDB.Close()
 	if err := businessDB.PingContext(ctx); err != nil {
-		t.Skipf("business PostgreSQL is unavailable: %v", err)
+		t.Fatalf("business PostgreSQL is unavailable: %v", err)
 	}
 	suffix := time.Now().UnixNano()
 	schema := fmt.Sprintf("cdc_control_%d", suffix)
@@ -107,8 +110,8 @@ func TestIntegrationPostgreSQLCaptureControlLifecycle(t *testing.T) {
 		20: {Type: "postgresql", EngineID: 20, ConnInfo: businessInfo},
 	}
 	supervisor, err := NewSupervisor(
-		repository.NewCaptureRepository(infraDB), NewPostgreSQLPlanResolver(resolver), connectClient, topicAdmin,
-		PostgreSQLSourceResources{}, SupervisorConfig{
+		repository.NewCaptureRepository(infraDB), NewDatabasePlanResolver(resolver), connectClient, topicAdmin,
+		DatabaseSourceResources{}, SupervisorConfig{
 			TopicRetention: time.Hour, TopicReplication: 1,
 			ConnectLoopbackHost: integrationEnv("ADDP_TEST_KAFKA_CONNECT_LOOPBACK_HOST", "host.docker.internal"),
 			ProvisioningTimeout: 60 * time.Second, StatusPollInterval: 500 * time.Millisecond, MonitorInterval: time.Second,
@@ -160,7 +163,7 @@ func TestIntegrationPostgreSQLCaptureControlLifecycle(t *testing.T) {
 
 func integrationCDCConfig(schema, sourceTable, targetTable string) map[string]interface{} {
 	return map[string]interface{}{
-		"runtime": map[string]interface{}{"boundary": "continuous"},
+		"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}},
 		"load":    map[string]interface{}{"mode": "incremental", "change_detection": map[string]interface{}{"type": "cdc", "bootstrap": "initial_snapshot"}},
 		"source": map[string]interface{}{
 			"locator": fmt.Sprintf("addp://engine/12/path/%s/%s?type=table", schema, sourceTable), "data_type": "table", "representation": "native",
@@ -199,11 +202,14 @@ func integrationEnv(key, fallback string) string {
 
 func assertCaptureDatabaseResources(t *testing.T, ctx context.Context, db *sql.DB, resource *models.CaptureResource, want bool) {
 	t.Helper()
+	if resource.PostgreSQL == nil {
+		t.Fatal("PostgreSQL capture provider facts are missing")
+	}
 	var slot, publication bool
-	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name=$1)`, resource.SlotName).Scan(&slot); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name=$1)`, resource.PostgreSQL.SlotName).Scan(&slot); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_publication WHERE pubname=$1)`, resource.PublicationName).Scan(&publication); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_publication WHERE pubname=$1)`, resource.PostgreSQL.PublicationName).Scan(&publication); err != nil {
 		t.Fatal(err)
 	}
 	if slot != want || publication != want {

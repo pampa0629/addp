@@ -7,6 +7,7 @@ replace github.com/addp/common => ../../common
 require (
 	github.com/addp/common v0.0.0-00010101000000-000000000000
 	github.com/gin-gonic/gin v1.11.0
+	github.com/go-sql-driver/mysql v1.9.3
 	github.com/hibiken/asynq v0.25.1
 	github.com/jonas-p/go-shp v0.1.1
 	github.com/lib/pq v1.10.9
@@ -41,7 +42,6 @@ require (
 	github.com/go-openapi/jsonreference v0.19.6 // indirect
 	github.com/go-openapi/spec v0.20.4 // indirect
 	github.com/go-openapi/swag v0.19.15 // indirect
-	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/go-zookeeper/zk v1.0.4 // indirect
 	github.com/gogama/flatgeobuf v1.0.1 // indirect
 	github.com/golang/snappy v0.0.4 // indirect

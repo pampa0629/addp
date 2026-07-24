@@ -57,9 +57,9 @@ bash scripts/dev/start.sh
 # 停止所有服务
 bash scripts/dev/stop.sh
 # 自动执行:
-# 1. 读取 PID 文件,优雅停止进程
-# 2. 清理 Vite 缓存
-# 3. 清理孤立进程
+# 1. 卸载当前工作区的 com.addp.codex.* launchd 托管作业
+# 2. 读取 PID 文件,优雅停止进程
+# 3. 清理 Vite 缓存和孤立进程
 
 # 重启服务
 bash scripts/dev/restart.sh
@@ -118,17 +118,18 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 **功能**: 停止所有开发服务
 
 **执行步骤**:
-1. 读取 PID 文件(`.dev-pids/*.pid`)
-2. 优雅停止进程(`kill -TERM`)
-3. 等待进程退出(最多10秒)
-4. 强制杀死未退出进程(`kill -9`)
-5. 清理 Vite 缓存(`node_modules/.vite/`)
-6. 清理孤立的 `go run` 进程
-7. 删除 PID 文件
+1. 在 macOS 上卸载当前工作区的 `com.addp.codex.*` launchd 托管作业
+2. 读取 PID 文件(`.dev-pids/*.pid`)
+3. 优雅停止进程(`kill -TERM`)
+4. 等待进程退出(最多5秒)
+5. 强制杀死未退出进程(`kill -9`)
+6. 按进程名和开发端口清理 ADDP 残留进程
+7. 清理 Vite 缓存(`node_modules/.vite/`)并删除 PID 文件
 
 **安全性**:
-- ✅ 仅杀死由 start.sh 启动的进程(通过 PID 精确匹配)
-- ✅ 不会影响其他 Go 项目或 Vite 进程
+- launchd 作业必须同时满足 `com.addp.codex.*` 标签和当前仓库绝对路径才会被卸载
+- PID 文件用于精确停止正常启动的服务，进程名和端口检查用于清理 ADDP 残留进程
+- launchd 作业卸载失败时返回非零状态，`restart.sh` 会中断，不会带着残留进程继续启动
 
 ### restart.sh
 

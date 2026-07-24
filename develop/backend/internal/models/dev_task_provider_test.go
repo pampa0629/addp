@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	commonModels "github.com/addp/common/models"
 )
 
 func TestProviderDevTaskUsesTaskTypeContract(t *testing.T) {
@@ -16,10 +18,13 @@ func TestProviderDevTaskUsesTaskTypeContract(t *testing.T) {
 		DevType:         "workflow",
 		Content:         DevTaskContent{"inputs": map[string]interface{}{"area": "farmland"}},
 		ExecutionConfig: DevTaskContent{"type": "workflow"},
-		Timeout:         300,
-		Status:          "active",
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		EditorLayout: commonModels.JSONMap{
+			"nodes": map[string]interface{}{"load": map[string]interface{}{"x": 10, "y": 20}},
+		},
+		Timeout:   300,
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 
 	providerTask := NewProviderDevTask(item)
@@ -43,6 +48,9 @@ func TestProviderDevTaskUsesTaskTypeContract(t *testing.T) {
 	}
 	if decoded["task_type"] != "workflow" {
 		t.Fatalf("task_type = %v, want workflow", decoded["task_type"])
+	}
+	if _, ok := decoded["editor_layout"]; !ok {
+		t.Fatalf("provider task JSON must retain editor_layout: %s", payload)
 	}
 	if _, ok := decoded["schedule"]; ok {
 		t.Fatalf("provider task JSON must not expose schedule while supports_schedule=false: %s", payload)

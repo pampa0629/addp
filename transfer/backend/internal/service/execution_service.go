@@ -498,7 +498,7 @@ func (s *ExecutionService) RetryExecution(ctx context.Context, id, tenantID, use
 	if err != nil {
 		return nil, fmt.Errorf("task not found: %w", err)
 	}
-	if task.Status == models.TaskStatusBlocked && planner.IsPostgreSQLCDCTaskConfig(task.Config) {
+	if task.Status == models.TaskStatusBlocked && planner.IsDatabaseCDCTaskConfig(task.Config) {
 		return nil, ErrCDCSchemaChangeBlocked
 	}
 	if mode := taskApplyMode(task); mode != "replace" && mode != "upsert" {

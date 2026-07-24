@@ -27,6 +27,7 @@ import (
 type TaskProviderHandler struct {
 	embeddingTaskSvc              *service.EmbeddingTaskService
 	tileCacheTaskSvc              *service.TileCacheTaskService
+	vectorTileSetTaskSvc          *service.VectorTileSetTaskService
 	vectorMaterializedViewTaskSvc *service.VectorMaterializedViewTaskService
 	rasterCOGTaskSvc              *service.RasterCOGTaskService
 	rasterMosaicTaskSvc           *service.RasterMosaicTaskService
@@ -62,6 +63,10 @@ func NewTaskProviderHandler(
 
 func (h *TaskProviderHandler) SetModel3DTilesTaskService(model3DTilesTaskSvc *service.Model3DTilesTaskService) {
 	h.model3DTilesTaskSvc = model3DTilesTaskSvc
+}
+
+func (h *TaskProviderHandler) SetVectorTileSetTaskService(vectorTileSetTaskSvc *service.VectorTileSetTaskService) {
+	h.vectorTileSetTaskSvc = vectorTileSetTaskSvc
 }
 
 func (h *TaskProviderHandler) SetModel3DGLBTaskService(model3DGLBTaskSvc *service.Model3DGLBTaskService) {
@@ -156,7 +161,8 @@ type TileCacheTaskTargetResponse struct {
 }
 
 type TileCacheTaskTileResponse struct {
-	Format         string `json:"format"`
+	ArchiveFormat  string `json:"archive_format"`
+	TileType       string `json:"tile_type"`
 	MinZoom        int    `json:"min_zoom"`
 	MaxZoom        int    `json:"max_zoom"`
 	TargetSRID     int    `json:"target_srid,omitempty"`
@@ -503,12 +509,12 @@ type PointCloudCOPCTaskResponse struct {
 }
 
 // ListTasks GET /api/v1/manager/tasks
-// 查询参数：?task_type=vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
+// 查询参数：?task_type=vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
 // @Summary 列出任务 | List tasks
 // @Description 列出 Manager 模块的任务（矢量瓦片缓存生成、矢量物化视图、栅格快显 COG、栅格 mosaic、CAD 栅格预览、三维模型与点云快显、向量化任务）| List Manager module tasks
 // @Tags Manager
 // @Produce json
-// @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type filter"
+// @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type filter"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} TaskListResponse "任务列表 | Task list"
@@ -554,6 +560,20 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
+		}
+	case commonExecution.TaskTypeVectorTileSetGeneration:
+		if h.vectorTileSetTaskSvc == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "vector tile set task service is unavailable"})
+			return
+		}
+		tasks, t, err := h.vectorTileSetTaskSvc.List(ctx, tenantID, page, pageSize)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		total = t
+		for _, task := range tasks {
+			items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeVectorTileSetGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
 		}
 	case commonExecution.TaskTypeVectorMaterializedViewGeneration:
 		if h.vectorMaterializedViewTaskSvc == nil {
@@ -724,6 +744,17 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 			total += t
 			for _, task := range tasks {
 				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeVectorTileCacheGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
+			}
+		}
+		if h.vectorTileSetTaskSvc != nil {
+			tasks, t, err := h.vectorTileSetTaskSvc.List(ctx, tenantID, page, pageSize)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			total += t
+			for _, task := range tasks {
+				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeVectorTileSetGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
 			}
 		}
 		if h.vectorMaterializedViewTaskSvc != nil {
@@ -924,7 +955,7 @@ func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
 // @Description 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and ID
 // @Tags Manager
 // @Produce json
-// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type"
+// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type"
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} object "任务详情，按 task_type 返回矢量瓦片缓存、矢量物化视图、栅格 COG 生成或向量化任务详情 | Task detail by task_type"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -954,6 +985,17 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, tileCacheTaskResponse(task))
+	case commonExecution.TaskTypeVectorTileSetGeneration:
+		task, err := h.vectorTileSetTaskSvc.GetByID(ctx, uint(id), tenantID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if task == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+			return
+		}
+		c.JSON(http.StatusOK, task)
 	case commonExecution.TaskTypeVectorMaterializedViewGeneration:
 		task, err := h.vectorMaterializedViewTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1141,7 +1183,7 @@ func existingResultActionAllowsOverwrite(action string) (bool, error) {
 // @Tags Manager
 // @Accept json
 // @Produce json
-// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type"
+// @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type"
 // @Param id path int true "任务ID | Task ID"
 // @Param body body TaskExecuteRequest false "执行配置 | Execution configuration"
 // @Success 202 {object} TaskExecuteResponse "执行ID | Execution ID"
@@ -1196,6 +1238,9 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	switch taskType {
 	case commonExecution.TaskTypeVectorTileCacheGeneration:
 		executionID, err = h.tileCacheTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
+		executionStatus = commonExecution.ExecutionStatusPending
+	case commonExecution.TaskTypeVectorTileSetGeneration:
+		executionID, err = h.vectorTileSetTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeVectorMaterializedViewGeneration:
 		executionID, err = h.vectorMaterializedViewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
@@ -1639,6 +1684,142 @@ func (h *TaskProviderHandler) DeleteTileCacheTask(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+// ListVectorTileSetTasks lists business PMTiles generation task definitions.
+// @Summary 获取业务矢量瓦片集任务 | List business vector tile set tasks
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} TaskListResponse "任务列表 | Task list"
+// @Router /vector_tile_set_tasks [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListVectorTileSetTasks(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	tasks, total, err := h.vectorTileSetTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": tasks, "total": total, "page": page, "page_size": pageSize})
+}
+
+// CreateVectorTileSetTask creates a business PMTiles generation task.
+// @Summary 创建业务矢量瓦片集任务 | Create business vector tile set task
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param body body TileCacheTaskRequest true "任务配置 | Task configuration"
+// @Success 201 {object} models.VectorTileSetTask "任务 | Task"
+// @Router /vector_tile_set_tasks [post]
+// @Security BearerAuth
+func (h *TaskProviderHandler) CreateVectorTileSetTask(c *gin.Context) {
+	var req TileCacheTaskRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	task := &models.VectorTileSetTask{TenantID: c.GetUint("tenant_id"), Name: req.Name, Description: req.Description, Enabled: enabled, Config: req.Config}
+	if userID := c.GetUint("user_id"); userID > 0 {
+		task.CreatedBy = &userID
+	}
+	if err := h.vectorTileSetTaskSvc.Create(c.Request.Context(), task); err != nil {
+		c.JSON(commonapi.MapErrorToHTTPStatus(err), gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, task)
+}
+
+// GetVectorTileSetTask returns a business PMTiles generation task.
+// @Summary 获取业务矢量瓦片集任务 | Get business vector tile set task
+// @Tags Manager
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} models.VectorTileSetTask "任务 | Task"
+// @Router /vector_tile_set_tasks/{id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) GetVectorTileSetTask(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	task, err := h.vectorTileSetTaskSvc.GetByID(c.Request.Context(), uint(id), c.GetUint("tenant_id"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if task == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, task)
+}
+
+// UpdateVectorTileSetTask updates a business PMTiles generation task.
+// @Summary 更新业务矢量瓦片集任务 | Update business vector tile set task
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Param body body TileCacheTaskRequest true "任务配置 | Task configuration"
+// @Success 200 {object} models.VectorTileSetTask "任务 | Task"
+// @Router /vector_tile_set_tasks/{id} [put]
+// @Security BearerAuth
+func (h *TaskProviderHandler) UpdateVectorTileSetTask(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	task, err := h.vectorTileSetTaskSvc.GetByID(c.Request.Context(), uint(id), c.GetUint("tenant_id"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if task == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+		return
+	}
+	var req TileCacheTaskRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	task.Name, task.Description, task.Config = req.Name, req.Description, req.Config
+	if req.Enabled != nil {
+		task.Enabled = *req.Enabled
+	}
+	if err := h.vectorTileSetTaskSvc.Update(c.Request.Context(), task); err != nil {
+		c.JSON(commonapi.MapErrorToHTTPStatus(err), gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, task)
+}
+
+// DeleteVectorTileSetTask deletes a business PMTiles generation task.
+// @Summary 删除业务矢量瓦片集任务 | Delete business vector tile set task
+// @Tags Manager
+// @Param id path int true "任务ID | Task ID"
+// @Success 204 "删除成功 | Deleted"
+// @Router /vector_tile_set_tasks/{id} [delete]
+// @Security BearerAuth
+func (h *TaskProviderHandler) DeleteVectorTileSetTask(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	if err := h.vectorTileSetTaskSvc.Delete(c.Request.Context(), uint(id), c.GetUint("tenant_id")); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // ListVectorMaterializedViewTasks GET /api/v1/manager/vector_materialized_view_tasks
@@ -3449,7 +3630,8 @@ func tileCacheTaskResponse(task *models.TileCacheTask) TileCacheTaskResponse {
 	if tile, ok := asJSONMap(task.Config["tile"]); ok {
 		options, _ := asJSONMap(task.Config["options"])
 		resp.Tile = &TileCacheTaskTileResponse{
-			Format:         stringFromConfig(tile["format"]),
+			ArchiveFormat:  stringFromConfig(tile["archive_format"]),
+			TileType:       stringFromConfig(tile["tile_type"]),
 			MinZoom:        intFromAPIConfig(tile["min_zoom"], 0),
 			MaxZoom:        intFromAPIConfig(tile["max_zoom"], 0),
 			TargetSRID:     intFromAPIConfig(tile["target_srid"], 0),

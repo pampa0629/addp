@@ -162,6 +162,16 @@
             </template>
           </el-dropdown>
 
+          <el-button
+            v-if="showVectorTileSetAction"
+            size="small"
+            type="primary"
+            @click="handleGenerateVectorTileSet"
+          >
+            <el-icon><Grid /></el-icon>
+            {{ t('manager.explorer.generateVectorTiles') }}
+          </el-button>
+
           <!-- 空间快显 / 瓦片缓存入口 -->
           <div v-if="showQuickViewActions" class="quick-view-actions">
             <el-switch
@@ -472,7 +482,7 @@ import { computed, ref, watch, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { MagicStick, Download, Location, Collection, Document, View, Refresh, Select, InfoFilled, WarningFilled } from '@element-plus/icons-vue'
+import { MagicStick, Download, Location, Collection, Document, View, Refresh, Select, InfoFilled, WarningFilled, Grid } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
 import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
@@ -523,6 +533,7 @@ import {
   rasterSpatialFacts
 } from '@/utils/rasterQuickViewTarget'
 import { isCADPreviewSource } from '@/utils/cadPreviewSource'
+import { isVectorTilePreviewTarget } from '@/utils/vectorTileSetResource'
 import {
   combinedMultiRefValue,
   multiRefPreviewOptions
@@ -1491,6 +1502,10 @@ const showQuickViewActions = computed(() => {
   return !!spatialPreviewTarget.value && (!!quickViewStatus.value || !!quickViewLoadError.value)
 })
 
+const showVectorTileSetAction = computed(() => {
+  return isVectorTilePreviewTarget(spatialPreviewTarget.value)
+})
+
 const isSelectedChildPreviewActive = computed(() => {
   if (!store.selectedRefPath && !store.selectedChildName && !store.selectedNestedChildPath) return false
   return multiRefOptions.value.length > 0 || previewPluginName.value === 'container-preview'
@@ -1985,6 +2000,15 @@ const handleGenerateTileCache = () => {
   router.push({
     name: 'TileCache',
     query: buildTileCacheCreateQuery(target, quickViewStatus.value)
+  })
+}
+
+const handleGenerateVectorTileSet = () => {
+  const target = spatialPreviewTarget.value
+  if (!target?.locator) return
+  router.push({
+    name: 'VectorTileSet',
+    query: { create: '1', locator: target.locator }
   })
 }
 

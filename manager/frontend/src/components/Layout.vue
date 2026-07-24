@@ -93,6 +93,16 @@
               <span>{{ t('manager.layout.pointCloudCOPC') }}</span>
             </el-menu-item>
           </el-sub-menu>
+          <el-sub-menu index="/spatial-tasks">
+            <template #title>
+              <el-icon><Aim /></el-icon>
+              <span>{{ t('manager.layout.spatialTasks') }}</span>
+            </template>
+            <el-menu-item index="/spatial-tasks/vector-tiles">
+              <el-icon><Grid /></el-icon>
+              <span>{{ t('manager.layout.vectorTiles') }}</span>
+            </el-menu-item>
+          </el-sub-menu>
         </el-menu>
       </el-aside>
 

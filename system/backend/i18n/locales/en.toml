@@ -19,6 +19,21 @@ other = "The user or tenant is unavailable"
 [system.auth.token_refresh_failed]
 other = "Failed to refresh token"
 
+[system.auth.step_up_required]
+other = "Step-up authentication is required"
+
+[system.auth.session_conflict]
+other = "Session state changed; retry the request"
+
+[system.auth.internal_error]
+other = "The authentication service is temporarily unavailable"
+
+[system.auth.invalid_current_password]
+other = "The current password is incorrect"
+
+[system.auth.password_unchanged]
+other = "The new password must differ from the current password"
+
 [system.log.not_found]
 other = "Log not found"
 

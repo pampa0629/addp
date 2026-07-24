@@ -15,6 +15,8 @@ Orchestrator 模块负责任务编排、DAG 执行、定时调度、跨模块任
 
 ```text
 orchestrator/
+├── authorization/
+│   └── permissions.yaml       # Orchestrator Permission Manifest，发布期聚合事实源
 ├── backend/
 │   ├── cmd/server/main.go
 │   ├── internal/api/handler.go
@@ -33,6 +35,8 @@ orchestrator/
 ```
 
 ## 核心 API
+
+Orchestrator 是 `orchestrator.workflow.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。`orchestrator.workflow.cancel` 是 IAM 目标目录能力，当前真实执行取消入口仍待路由覆盖阶段确认。
 
 路由前缀：`/api/v1/orchestrator`。
 

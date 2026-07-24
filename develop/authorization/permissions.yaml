@@ -1,0 +1,92 @@
+schema_version: addp.permission_manifest/v1
+owner_module: develop
+manifest_version: 2
+permissions:
+  - key: develop.notebook.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.notebook.create.name
+    description_i18n_key: permissions.develop.notebook.create.description
+  - key: develop.notebook.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.notebook.delete.name
+    description_i18n_key: permissions.develop.notebook.delete.description
+  - key: develop.notebook.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.notebook.execute.name
+    description_i18n_key: permissions.develop.notebook.execute.description
+  - key: develop.notebook.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.notebook.read.name
+    description_i18n_key: permissions.develop.notebook.read.description
+  - key: develop.notebook.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.notebook.update.name
+    description_i18n_key: permissions.develop.notebook.update.description
+  - key: develop.task.cancel
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.task.cancel.name
+    description_i18n_key: permissions.develop.task.cancel.description
+  - key: develop.task.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.task.create.name
+    description_i18n_key: permissions.develop.task.create.description
+  - key: develop.task.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.task.delete.name
+    description_i18n_key: permissions.develop.task.delete.description
+  - key: develop.task.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: true
+    status: active
+    name_i18n_key: permissions.develop.task.execute.name
+    description_i18n_key: permissions.develop.task.execute.description
+  - key: develop.task.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: true
+    status: active
+    name_i18n_key: permissions.develop.task.read.name
+    description_i18n_key: permissions.develop.task.read.description
+  - key: develop.task.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.task.update.name
+    description_i18n_key: permissions.develop.task.update.description

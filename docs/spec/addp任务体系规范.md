@@ -185,7 +185,7 @@ Common 不维护全量业务 `task_type` 编译期枚举。`task_type` 由 owner
 | Meta | `scan` | `meta.scan_tasks` |
 | Transfer | `sync` | `transfer.transfer_tasks` |
 | Develop | `query` / `workflow` / `script` | `develop.dev_tasks` |
-| Manager | `vector_tile_cache_generation` / `vector_materialized_view_generation` / `embedding` / `raster_cog_generation` / `raster_mosaic_generation` / `model_3d_glb_generation` / `model3d_tiles_generation` / `gaussian_splat_ksplat_generation` / `point_cloud_copc_generation` / `cad_preview_generation` | `manager.vector_tile_cache_tasks` / `manager.vector_materialized_view_tasks` / `manager.embedding_tasks` / `manager.raster_cog_tasks` / `manager.raster_mosaic_tasks` / `manager.model_3d_glb_tasks` / `manager.model3d_tiles_tasks` / `manager.gaussian_splat_ksplat_tasks` / `manager.point_cloud_copc_tasks` / `manager.cad_preview_tasks` |
+| Manager | `vector_tile_cache_generation` / `vector_tile_set_generation` / `vector_materialized_view_generation` / `embedding` / `raster_cog_generation` / `raster_mosaic_generation` / `model_3d_glb_generation` / `model3d_tiles_generation` / `gaussian_splat_ksplat_generation` / `point_cloud_copc_generation` / `cad_preview_generation` | `manager.vector_tile_cache_tasks` / `manager.vector_tile_set_tasks` / `manager.vector_materialized_view_tasks` / `manager.embedding_tasks` / `manager.raster_cog_tasks` / `manager.raster_mosaic_tasks` / `manager.model_3d_glb_tasks` / `manager.model3d_tiles_tasks` / `manager.gaussian_splat_ksplat_tasks` / `manager.point_cloud_copc_tasks` / `manager.cad_preview_tasks` |
 | Quality | `check` | `quality.check_tasks` |
 | Graph | `kg_build` | `graph.build_tasks` |
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
@@ -223,7 +223,7 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 
 ```json
 {
-  "runtime": {"boundary": "continuous"},
+  "runtime": {"boundary": "continuous", "record_failure": {"mode": "block"}},
   "load": {
     "mode": "incremental",
     "change_detection": {"type": "kafka"}
@@ -273,7 +273,7 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 10. Transfer 必须把 poll 结果按 partition 拆成顺序批次，每条已映射记录携带消费后 `next_offset`。Provider 锁定 ledger 行，拒绝位置缺口，跳过不大于已应用位置的重复记录；同一批剩余记录出现相同目标 key 时保留最高 `next_offset` 的最后状态，再执行一次原子 upsert。
 11. 投递保证固定为 `at-least-once delivery + target monotonic apply`。目标提交与 Infra position CAS 之间崩溃会重放，但目标 ledger 必须吸收重复批次，并阻止租约过期 worker 在新 worker 之后写回旧状态；不得宣称跨 Kafka、业务 PostgreSQL 和 Infra PostgreSQL 的分布式 exactly-once。
 12. consumer auto commit 禁用。Kafka consumer group 只用于分区分配，不是 Transfer committed position 的事实源。
-13. 第一版不提供 replay、DLQ、物理删除、Debezium、CDC、Kafka target 或 continuous append。
+13. 阶段 2B 的初始范围不提供 replay、DLQ、物理删除、Debezium、CDC、Kafka target 或 continuous append；当前业务 Kafka 已按后文 4A/4B 唯一契约开放 `dead_letter` 和写入新隔离目标的 bounded replay。数据库 CDC、Kafka target、物理删除和 continuous append 仍不得借用业务 Kafka 的 DLQ/replay 路线绕过各自边界。
 14. resume 前必须验证 committed `next_offset` 仍位于 Kafka partition 的 `[earliest_offset, latest_offset]` 范围；低于 earliest 表示 retention 已破坏连续恢复条件，execution 必须明确失败，不得静默重置到 earliest 或 latest。高于 latest 视为状态损坏，同样失败。
 15. continuous worker 必须由 source Provider 读取每分区 `earliest_offset` 和 `latest_offset`，并以目标已成功应用且已提交的 `next_offset` 计算 `lag_records = latest_offset - next_offset`。consumer fetch position、预取位置或 Kafka consumer group committed offset 不得冒充 Transfer committed position。
 16. retention 恢复余量以 `recovery_headroom_records = next_offset - earliest_offset` 表示。时间余量只能在同一 worker session 内至少存在两次有效 source latest 样本时，按 `recovery_headroom_records / source_rate_records_per_second` 估算；冷启动、无已提交位置、样本时间非正或写入速率为零时必须返回未知，不得伪造为无限安全。
@@ -311,7 +311,7 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 continuous task 与 execution 生命周期：
 
 1. continuous task definition 必须保存独立活状态 `desired_state=running|paused|stopped`，初始值为 `stopped`。该字段不进入 config JSON，也不复用最近 execution `status`；bounded task 不消费该字段。
-   任务实际状态继续使用 `status=idle|running|blocked`；`blocked` 表示系统发现不可安全恢复的条件，但不覆盖用户 `desired_state`。当前只有 PostgreSQL CDC schema drift 使用 `blocked`。
+   任务实际状态继续使用 `status=idle|running|blocked`；`blocked` 表示系统发现不可安全恢复的条件，但不覆盖用户 `desired_state`。当前只有数据库 CDC schema drift 使用 `blocked`。
 2. `start` 原子设置 `desired_state=running` 并创建 pending execution；`pause` 设置 `paused`，`resume` 设置 `running` 并创建新 execution，`stop` 设置 `stopped`。同一 task 已有合法 active session 时不得重复创建 execution。
 3. 每次启动或自动恢复都创建新的 pending execution；一个 execution 对应一个 runtime session，结束后不得重新变回 running。
 4. runtime session 由 `transfer.runtime_leases` 保存 owner instance、execution、lease deadline、heartbeat 和 fencing token；lease 与 `transfer.sync_states` 的业务 position 分离。
@@ -324,20 +324,22 @@ continuous task 与 execution 生命周期：
 8. continuous execution 不使用 0 到 100 作为主要进度；Monitor 应展示 per-partition next offset、source latest offset、lag、吞吐、last event time、last committed time、checkpoint age/health、retry/rebalance、恢复 circuit 和 heartbeat。Monitor 只消费 owner 写入的统一 execution metadata；不得自行连接 Kafka 或 Transfer 私有表补算这些事实。
 9. Orchestrator v1 不编排 continuous Transfer task。Transfer 的 TaskProvider 任务发现不得把 continuous task 暴露为可选编排步骤，provider execute 入口也必须拒绝 `source=orchestrator` 触发 continuous task；长期服务型 Step 语义进入 Orchestrator v2 专题。
 
-#### Transfer PostgreSQL CDC v1 契约（3A/3B/3C/3D 已完成第一版）
+#### Transfer 数据库 CDC v1 契约（PostgreSQL/MySQL 已完成）
 
-PostgreSQL CDC 第一版只允许以下单一路线：
+数据库 CDC 第一版只允许以下两种 source provider 进入同一数据面：
 
 ```text
 PostgreSQL 单表 -> Debezium PostgreSQL Connector -> Infra Kafka
   -> Transfer Continuous Worker -> PostgreSQL 新目标表
+MySQL 8.0 单表 -> Debezium MySQL Connector -> Infra Kafka
+  -> Transfer Continuous Worker -> PostgreSQL 新目标表
 ```
 
-公开任务配置不暴露 connector、replication slot、publication、Infra Kafka topic 或 consumer group：
+公开任务配置不暴露 provider 类型、connector、replication slot、publication、schema-history topic、Infra Kafka data topic 或 consumer group；source provider 只由 source locator 对应的 System Engine 解析结果决定：
 
 ```json
 {
-  "runtime": {"boundary": "continuous"},
+  "runtime": {"boundary": "continuous", "record_failure": {"mode": "block"}},
   "load": {
     "mode": "incremental",
     "change_detection": {
@@ -372,34 +374,92 @@ PostgreSQL 单表 -> Debezium PostgreSQL Connector -> Infra Kafka
 
 契约约束：
 
-1. source 和 target 都固定为 PostgreSQL native table；一个任务只捕获一张源表。MySQL、Oracle、多表 connector、无主键表和 Kafka target 后置。
+1. 当前 CDC source 只允许 PostgreSQL 或 MySQL 8.0 native table，target 固定为 PostgreSQL native table；一个任务只捕获一张源表。公开 capability 固定声明 `sources=[postgresql,mysql]`、`target=postgresql`、`bootstrap=[initial_snapshot]`、`apply_mode=upsert_delete`。Oracle 已延期且不进入当前实施计划；多表 connector、无主键表和 Kafka target 也未进入当前实现。
 2. 源表必须有稳定、非空且捕获期间不可修改的主键；Debezium record key 必须完整包含该复合主键。源主键经 `field_mapping` 映射后必须与 `target.policy.keys` 一一对应。
 3. `bootstrap` 第一版只允许 `initial_snapshot`，对应 Debezium `snapshot.mode=initial`。Debezium 负责一致性 snapshot、日志起点和 snapshot/stream 无空洞交接；Transfer 只按 Infra Kafka 顺序消费，不另起 bounded snapshot 路线。
 4. 初次 bootstrap 的目标表必须不存在，由本任务按固定字段映射创建。第一版不接管、清空或合并已有目标表，避免 snapshot upsert 无法识别目标残留行。
-5. Debezium payload 固定使用无 schema wrapper 的 JSON envelope；key/value converter 的 `schemas.enable=false`，`tombstones.on.delete=false`。为消除 schemaless JSON 的类型歧义，connector 同时固定 `decimal.handling.mode=string` 和 `time.precision.mode=connect`。内部 CDC topic 第一版固定为单 partition。
+5. Debezium payload 固定使用无 schema wrapper 的 JSON envelope；key/value converter 的 `schemas.enable=false`，`tombstones.on.delete=false`。为消除 schemaless JSON 的类型歧义，connector 同时固定 `decimal.handling.mode=string` 和 `time.precision.mode=connect`，MySQL 额外固定 `binary.handling.mode=base64`。内部 CDC data topic 第一版固定为单 partition。
 6. Debezium `op=r` 归一化为 `snapshot` 并按 upsert 应用，`op=c|u` 归一化为 `upsert`，`op=d` 使用 Kafka record key 归一化为 `delete`。`op=t|m`、空 value tombstone、来源表身份不匹配和未知 op 均视为协议错误，不得静默推进 offset。
 7. delete 只按映射后的稳定目标 key 执行物理行删除，不依赖 `before` 包含完整旧行。目标必须使用 `apply_mode=upsert_delete`，PostgreSQL `PartitionedTableChangeApplyProvider` 必须真实声明并实现 `operations=[upsert,delete]` 后才可开放 CDC capability。
 8. snapshot/upsert/delete 与业务目标库 `addp_transfer.apply_positions` 必须在同一事务按 partition monotonic apply；`transfer.sync_states` 继续保存 `kafka_offset/v1.next_offset`，目标提交后才允许以 runtime fencing + state version 做 CAS 推进。
-9. Kafka Connect offset 是捕获位点，回答 PostgreSQL WAL 已捕获到哪里；Transfer committed position 是消费位点，回答目标已应用到哪个 Infra Kafka offset。两者由各自 owner 管理，任何一方都不能代替另一方。
-10. PostgreSQL LSN、事务 ID 和事件时间可以进入 ChangeEvent 诊断信息，但第一版不承诺把一个源数据库事务跨多行原子提交到目标；交付保证仍是 at-least-once + target monotonic apply。
+9. Kafka Connect offset 是捕获位点，回答源数据库日志已捕获到哪里；Transfer committed position 是消费位点，回答目标已应用到哪个 Infra Kafka offset。两者由各自 owner 管理，任何一方都不能代替另一方。
+10. PostgreSQL LSN、MySQL binlog file/position/GTID、事务 ID 和事件时间可以进入 ChangeEvent 诊断信息，但不得替代 Kafka partition offset，也不承诺把一个源数据库事务跨多行原子提交到目标；交付保证仍是 at-least-once + target monotonic apply。
 11. PostgreSQL CDC v1 接受可无歧义映射到 ADDP `string|bool|int|bigint|float|double|decimal|date|time|timestamp|json|uuid|geometry` 的源字段；完整源表字段必须逐一映射且声明类型必须与真实 PostgreSQL 类型一致。PostGIS 只开放带 typmod 的 `geometry(<OGC type>[Z], <positive SRID>)`，不开放 `geography`、未约束的 generic geometry、M/ZM、geometry 主键或运行时重投影。capture generation 创建前必须从源库冻结每个 geometry 字段的 OGC type、SRID、维度和 nullable，并持久化为 generation source spatial facts；Debezium schemaless JSON geometry 固定按 `{wkb: <base64>, srid: <number>}` 解码。进入 ADDP 数据面的标准中间表示仍是行内 `[]byte` EWKB 加表级 `datatype.SpatialInfo`，`geom.T` 只允许作为 native encoding 与 EWKB 转换、校验时的短生命周期对象，不进入 ChangeEvent、Provider、任务配置或持久状态。消息 SRID、几何类型或维度与冻结事实不一致时按 schema drift 阻塞且不得推进 offset。目标 Engine Provider 使用映射后的字段名和同一组空间事实转换为目标 native geometry；PostgreSQL 目标按此创建 geometry typmod 列。跨引擎或跨执行边界的空间链路默认复用 native geometry ↔ EWKB + `SpatialInfo` 边界，不能引入数据库私有的跨层几何对象；只有 source 与 target 通过能力声明协商出完全相同的 native geometry encoding，且链路不经过编码转换、CRS 转换或中间几何算子时，planner 才可选择 native encoding 直通。PostGIS `geometry` 是数据库内部类型而不是跨 Provider encoding；当前 PostgreSQL CDC 经过 Debezium 和 Infra Kafka，不满足 native 直通条件。`bytea`、数组、interval、枚举和其他用户定义类型在创建 capture 前明确拒绝，不得先启动 connector 再让运行时失败。Decimal 以原始十进制字符串传递；date 使用 epoch days；time 和无时区 timestamp 只允许声明精度 `0..3` 并使用毫秒编码，默认微秒精度或显式精度大于 3 的列必须拒绝，不能静默截断；带时区 timestamp 接受 RFC 3339 并按 UTC instant 写入目标 `timestamp`；JSON/JSONB 使用合法 JSON 字符串。
     Debezium 的 geometry 属性名固定为 `wkb`，但真实 PostgreSQL/PostGIS connector 已验证该 base64 字节可以是带内嵌 SRID 的 EWKB。adapter 必须使用 ADDP 通用 WKB/EWKB 解析器，并要求内嵌 SRID、旁路 `srid` 和 generation 冻结事实一致；不得仅按 JSON 属性名强制使用标准 WKB 解码器。
+    MySQL CDC v1 只接受有符号 `TINYINT/SMALLINT/MEDIUMINT/INT/BIGINT`、`CHAR/VARCHAR/TEXT`、`DECIMAL/NUMERIC`、`FLOAT/DOUBLE`、`DATE/TIME/DATETIME/TIMESTAMP`（精度 `0..3`）、`JSON` 和 `BINARY/VARBINARY/BLOB`。拒绝 unsigned、`TINYINT(1)`/`BOOL`、`BIT`、`ENUM/SET`、`YEAR`、空间类型、超过毫秒精度和 zero-date 默认值；完整字段、nullable 与复合主键顺序必须和 field mapping 一致。MySQL source adapter 必须按自己的 Debezium source schema 严格校验，不能复用 PostgreSQL exact source schema。
 12. schema drift 固定使用 `fail`，不增加任务配置开关。字段增删、主键变化、类型不兼容或 envelope/source 结构变化必须阻塞、在 execution metadata 保存 missing/unexpected/incompatible schema diff，并以 `schema_change_blocked` 结束 execution。任务定义必须原子进入 `status=blocked`，保留用户原 `desired_state` 和 capture 继续采集的事实，但不得再次 start/resume，也不得对失败 execution 执行 retry；这避免把“用户仍希望运行”错误解释为“系统可以安全恢复”。
-13. PostgreSQL CDC v1 的 schema drift 对当前 capture generation 是不可恢复终态。由于公开配置和完整字段映射在 generation 创建后不可修改，且第一版不支持跳过当前消息、replay 或自动 DDL，用户只能执行不可逆 Stop 清理旧 capture，再创建新任务和新目标表重新 initial snapshot。不得提示“调整目标后从原 committed position resume”。
+13. 数据库 CDC v1 的 schema drift 对当前 capture generation 是不可恢复终态。由于公开配置和完整字段映射在 generation 创建后不可修改，且第一版不支持跳过当前消息、replay 或自动 DDL，用户只能执行不可逆 Stop 清理旧 capture，再创建新任务和新目标表重新 initial snapshot。不得提示“调整目标后从原 committed position resume”。
 14. 第一版只支持无 schema drift 的运行中断 resume，不支持 replay、DLQ、Schema Registry、Avro、Protobuf、truncate 事件或历史补洞。resume 必须同时依赖任务未处于 `blocked`、有效的 Kafka Connect offset/replication slot 和仍在 Infra Kafka retention 内的 Transfer committed position。
 
 捕获资源与生命周期：
 
 1. Kafka Connect 使用独立 distributed 集群。Transfer capture supervisor 是 connector 生命周期 owner；continuous worker 只消费 Infra Kafka，不在 Go 进程内嵌入 Debezium。
-2. connector、slot、publication、CDC topic 和 consumer group 由服务端按 task/generation 生成稳定内部名称，不接受用户自定义，也不进入 System Engine、Meta 资源树或公开任务 config。
-3. publication 只包含任务源表；slot 和 publication 均由 ADDP 创建并拥有。不得复用或删除用户已有 replication slot/publication。
+2. connector、provider 专属资源、CDC data/schema-history topic 和 consumer group 由服务端按 task/generation 生成稳定内部名称，不接受用户自定义，也不进入 System Engine、Meta 资源树或公开任务 config。
+   `transfer.capture_resources` 只保存 engine-neutral generation、connector/data topic/group、source identity 与 lifecycle 状态，并以 `source_type` 明确 provider。PostgreSQL slot/publication 只存在于一对一 `transfer.postgresql_capture_resources`；MySQL connector server id、schema-history topic name 和 ownership 只存在于一对一 `transfer.mysql_capture_resources`。provider 子事实必须与 generation 同事务创建并通过外键级联清理，不得在 generic 主表保留 provider 字段、兼容读取或伪资源占位。
+3. PostgreSQL publication 只包含任务源表；slot 和 publication 均由 ADDP 创建并拥有，不得复用或删除用户已有 replication slot/publication。MySQL 不创建或登记伪 slot/publication；每个 generation 使用唯一非零 connector server id，并拥有独立单分区 schema-history topic。Debezium 3.6 history record key 为空，因此该 topic 固定 `cleanup.policy=delete`、`retention.ms=-1`，由 Stop 显式删除，不能改成 compact 或依赖自动建 topic。
 4. `pause` 只停止目标应用 runtime，Debezium connector 继续捕获并推进 replication slot，变化积压在 Infra Kafka；因此正常 pause 不会因 slot 停滞直接堆积源库 WAL，但会持续消耗 Kafka retention 和磁盘。connector、Kafka 或网络故障导致 slot 不再推进时，源库 WAL 仍可能增长，必须独立告警。
 5. pause 的无损恢复只在 connector 健康且 committed position 未被 Kafka retention 清除时成立，不是无限期保证。暂停期间必须继续观测 connector 状态、slot/WAL lag、topic 容量和 committed position 的 retention horizon。
 6. `resume` 只允许从 paused 或可恢复失败状态创建新 execution；继续使用同一 capture generation、connector offset、topic 和 Transfer committed position。`status=blocked` 的 schema drift 不是可恢复失败，start/resume API 必须返回 `409 Conflict`。
-7. `stop` 是 PostgreSQL CDC task 的不可逆终态：停止目标 runtime，停止并删除 connector，删除 ADDP-owned slot/publication 和内部 CDC topic，使原 capture generation 失效。已停止任务不得再次 start/resume；重新同步必须创建新任务和新目标表并重新 initial snapshot。
-   `desired_state=stopped` 同时也是 continuous task definition 的初始值，因此不能单独作为 PostgreSQL CDC 已进入不可逆终态的判据。永久停止必须以 `transfer.capture_resources` 中当前 generation 的 `status=stopped` 为事实；尚无 capture generation 的新任务允许首次 start。`status=cleanup_failed` 表示不可逆 Stop 已开始但资源清理未完成，此时只允许重试 Stop 清理，不允许 start/resume。
+7. `stop` 是数据库 CDC task 的不可逆终态：停止目标 runtime，停止并删除 connector，删除 ADDP-owned provider 专属资源、data/schema-history topic、consumer group 和 ACL，使原 capture generation 失效。已停止任务不得再次 start/resume；重新同步必须创建新任务和新目标表并重新 initial snapshot。
+   `desired_state=stopped` 同时也是 continuous task definition 的初始值，因此不能单独作为数据库 CDC 已进入不可逆终态的判据。永久停止必须以 `transfer.capture_resources` 中当前 generation 的 `status=stopped` 为事实；尚无 capture generation 的新任务允许首次 start。`status=cleanup_failed` 表示不可逆 Stop 已开始但资源清理未完成，此时只允许重试 Stop 清理，不允许 start/resume。
 8. Stop API 必须由服务端要求显式不可逆确认，不能只依赖前端弹窗；沿用唯一 `POST /task-definitions/:id/stop` 路由，CDC task 请求体必须提交 `confirmed=true` 且 `confirmation_text` 与当前任务名称完全一致。Console 同时使用 danger 样式二次确认并要求输入任务名称，明确说明不能恢复、内部捕获资源会被删除且重新同步必须新建任务。普通业务 Kafka continuous stop 不要求该请求体，仍按其既有可恢复 committed-position 语义处理，不能混用 CDC 的终态提示。
 9. stop 不删除目标业务表、目标行、目标 apply ledger、任务定义、execution 或清理审计。任务删除和 System cleanup 必须再次幂等清理残留 capture 资源，并保留统一 execution/审计事实。
+
+#### Transfer 业务 Kafka DLQ 与 bounded replay v1 契约（4A/4B 已完成）
+
+该契约是当前公开实现的唯一技术路线。Transfer capability 与 Swagger 已公开业务 Kafka `block|dead_letter` 和唯一 bounded replay API；Console 新建任务默认仍显式发送 `block`，不得依赖字段省略猜默认值。
+
+业务 Kafka continuous task 的记录失败策略固定使用：
+
+```json
+{
+  "runtime": {
+    "boundary": "continuous",
+    "record_failure": {"mode": "block"}
+  }
+}
+```
+
+`mode` 只允许 `block|dead_letter`。4B clean break 落地后，业务 Kafka 新建和更新任务必须显式提交该字段，Console 默认显式发送 `block`；不得把字段省略解释为兼容旧配置。数据库 CDC 固定为 `block`，不得提交 `dead_letter`。
+
+DLQ v1 约束：
+
+1. 只有业务 Kafka record 在 JSON object 解码、未知/缺失字段、key 提取或字段类型转换阶段产生的确定性数据错误可以进入 DLQ。source open/poll、目标 prepare/apply、数据库锁或连接、runtime lease/fencing、retention 越界、Infra Kafka/Infra PostgreSQL 错误必须失败并阻塞；它们不是可跳过数据。
+2. 数据库 CDC 的 envelope/source/schema/protocol 漂移继续按 `schema_change_blocked` 处理，不能通过 DLQ 越过。Debezium tombstone、truncate、message 和未知 operation 也不得降级为业务 Kafka DLQ。
+3. dead-letter identity 固定由 `apply_identity + source_identity + partition + record_offset` 计算，重复处理同一源记录必须得到同一 identity。Infra Kafka topic 固定使用 Transfer-owned `__addp_dlq.<tenant_id>.<task_id>` namespace，原业务 Kafka principal 不得访问。
+4. DLQ envelope schema 固定为 `transfer.dead_letter/v1`，至少包含 dead-letter identity、tenant/task/execution、source identity、原 topic/partition/offset/timestamp、原 key/value/headers 的无损 base64、稳定错误 code/category/message 和 detected_at。不得在错误文本中写入连接凭据。
+5. `transfer.dead_letters` 只保存查询和审计所需的控制索引、Infra Kafka payload reference 和首次/最近观测时间；原始大 payload 只保存在 Infra Kafka。控制索引按 dead-letter identity 唯一，重复写入不得产生第二条逻辑记录。
+6. 处理顺序固定为：幂等写 DLQ payload -> 幂等落控制索引 -> PostgreSQL 目标以 `operation=skip` 原子推进业务目标 ledger -> Transfer 以 runtime fencing + state version CAS 推进 `transfer.sync_states`。只有前一步成功才能执行下一步；任一步失败都不得提交后续 position。
+7. `skip` 只表示该 source position 已经由显式 dead-letter 策略审计跳过，不携带业务 row，也不修改目标业务表。目标 Provider 必须在同一事务校验 apply identity/source/target/partition 和单调位置后推进 ledger。
+8. 目标 ledger 已推进但 Infra state CAS 前崩溃时，重试必须复用同一 dead-letter identity，目标 `skip` 必须按 monotonic ledger 幂等吸收，随后重新提交 Infra state；不得产生静默丢数或位置缺口。
+9. DLQ topic 和控制索引在普通 pause/stop 后保留；task 删除和 System cleanup 由 Transfer cleanup owner 幂等删除。Infra retention 到期只删除 payload 后，控制索引必须明确显示 payload unavailable，不得伪装为可 replay。
+10. 每个 task 的 DLQ topic 第一版固定为 1 partition，record key 固定为 dead-letter identity，`cleanup.policy=compact,delete`；compaction 收敛同一 identity 的物理重复记录，delete retention 形成真实 payload 可用边界。Transfer principal 只在 `__addp_dlq.` namespace 拥有 Create/Write/Read/Describe/DescribeConfigs，Connect 和业务 Kafka principal 不得访问；retention 与 replication factor 只属于部署配置，不进入任务 JSON。
+11. DLQ 管理 API 必须挂在 owner task 下，唯一只读路由为 `GET /task-definitions/:id/dead-letters` 和 `GET /task-definitions/:id/dead-letters/:identity`。服务端必须先按认证租户校验 task ownership，再以 `tenant_id + task_id` 查询控制索引；不得提供跨 task 查询、全局 identity 直查或旧路由。
+12. 列表使用统一分页响应 `{data,total,page,page_size,total_pages}`，默认按 `last_observed_at DESC, identity DESC` 稳定排序；只允许 `source_partition`、`error_category`、`error_code`、`payload_available` 精确过滤。`page_size` 最大 100，非法过滤或分页参数返回 `400 Bad Request`，不存在的 task 或不属于当前租户的 task 统一返回 `404 Not Found`。
+13. 第一阶段列表与详情只返回安全控制事实：identity、source topic/partition/offset/timestamp、首次/最近 execution、稳定错误 code/category/safe message、payload availability、首次/最近观测时间和 occurrence count。不得公开 Infra Kafka payload topic/partition/offset、原始 key/value/headers、`apply_identity` 或租户内部字段；也不提供删除、编辑、重新分类、伪回放状态或以 DLQ 行直接创建 replay 的 API。
+14. `payload_available` 只表达控制索引已确认的 payload 可用状态，不承诺无限保存。管理 API 不因读取列表或详情而扫描、消费或改写 Infra Kafka；payload retention/compaction 的可用性收敛由 Transfer-owned 独立治理流程负责，不能在请求链路中引入昂贵的逐条 Kafka 探测。
+15. payload availability 治理必须由 Transfer continuous worker 内的独立低频 reconciler 承担，不进入 HTTP 请求链路，也不建立 consumer group、提交 offset 或创建第二套 replay source。reconciler 只扫描当前 `payload_available=true` 的控制索引，并按 identity 游标分批轮转，允许多实例重复核验但结果必须幂等。
+16. 核验必须使用控制索引当前保存的 `payload_topic + payload_partition + payload_offset` 精确读取。只有 exact offset 的 record key 等于 dead-letter identity，且 `addp-schema=transfer.dead_letter/v1` 时才确认仍可用；topic/partition 不存在、offset 已越过当前 `[earliest,latest)` 或 fetch 已跨过该 compacted hole 时确认不可用。认证、网络、broker、超时或其他瞬时错误不得把 payload 标记为不可用。
+17. 标记不可用必须使用 `identity + payload_topic + payload_partition + payload_offset + payload_available=true` 条件更新；重复观测若已写入新的 payload reference，旧核验结果必须因 CAS 不匹配而失效。该更新只修改 `payload_available` 和技术更新时间，不得改写 `first_observed_at`、`last_observed_at`、错误、execution 或 source 审计事实。
+18. availability 核验可以在进程内读取 Kafka record key/header 以确认身份，但不得反序列化、记录日志、返回或持久化原始 value/key/headers 副本。公开 API 继续只返回安全控制索引；payload 从 `false` 恢复为 `true` 的唯一主路径是同一 source record 被 runtime 再次观测并成功写入新的 DLQ payload/reference。
+19. 普通 pause/stop 和 System logical cleanup 必须保留 DLQ topic 与控制索引。用户直接删除任务和 System physical cleanup 必须走同一个 task-owned resource cleanup：数据库 CDC 先完成既有 capture cleanup；业务 Kafka task 随后由 Infra Kafka admin 幂等删除确定性 `__addp_dlq.<tenant_id>.<task_id>` topic；外部资源清理成功或确认不存在后，才允许进入唯一最终事务删除 task-private state 与任务定义。
+20. DLQ topic 删除失败、权限不足或 Infra Kafka 不可用时，必须保留控制索引和任务定义并返回失败，不能先删数据库事实形成不可追踪的孤儿 Kafka topic。topic 已删除但控制索引或任务定义删除失败时，重试必须把 unknown topic 视为成功并继续数据库清理。
+21. 当前为业务 Kafka continuous 的 task，无论 `record_failure.mode=block|dead_letter`，物理删除时都必须尝试删除确定性 DLQ topic；当前配置已改变但仍保留 `transfer.dead_letters` 索引的 task 也必须执行同一删除。只有既非业务 Kafka且不存在 DLQ 控制索引的 bounded/CDC task 才可跳过 Kafka cleanup，不能仅根据当前 `record_failure.mode=block` 猜测从未产生 DLQ。
+22. task-owned resource cleanup 不删除目标业务表、目标行、业务目标 apply ledger 或 `common.task_executions` 历史。直接任务删除仍使用 owner 模块既有 soft-delete；System physical cleanup 使用 unscoped delete，但两者必须复用同一外部资源清理与最终数据库事务，不保留两条删除路线。直接删除运行中任务返回 `409 Conflict`；外部资源 cleanup 不可用或失败返回 `503 Service Unavailable`，响应不得泄露 Kafka、数据库或凭据细节。
+23. 物理清理 continuous task 前，cleanup 必须先把 `desired_state` 原子设置为 `stopped`，取消尚未 claim 的 pending execution，再等待 active runtime owner 释放 lease 或 lease 到期。等待超时必须停止后续清理；不得在 worker 仍可能续租、写目标或提交 position 时删除 `runtime_leases` / `sync_states`。lease 已过期但 execution 仍为 pending/running 时，最终删除事务必须以 `stop_reason=cleanup` 收敛为 `cancelled` 终态并保留该 execution。直接 Delete 与 System physical cleanup 使用相同的统一 stop timeout/poll policy。
+24. bounded task 没有真实 worker 中断能力。直接 Delete 继续对 `status=running` 返回 409；System physical cleanup 遇到 running bounded task 必须记录失败并保留任务及其私有状态，不能通过改数据库状态伪取消运行体。
+25. capture/DLQ 外部资源成功清理且 continuous runtime 已停止后，必须在一个锁定 task definition 行的 Infra PostgreSQL 事务中删除该 task 的 `transfer.dead_letters`、`transfer.sync_states`、`transfer.runtime_leases`、`transfer.capture_resources`，并在同一事务 soft/unscoped delete task definition。事务中发现 task 已重新进入 running/desired running 或仍有有效 runtime owner/lease 时整体失败回滚，封住私有状态提交后并发 Start 重新创建运行事实的窗口。
+26. `sync_states`、`runtime_leases` 和 `capture_resources` 是仅服务于仍存在 task definition 的当前运行控制事实，不是长期审计实体；任务删除后不得保留孤儿行。长期审计由保留的 `common.task_executions`、System audit 和 cleanup execution/result 承担。目标业务数据、业务目标 apply ledger、bounded replay 隔离结果和公共 execution 历史仍不随 task 删除。
+
+bounded replay v1 约束：
+
+1. replay 不是新的 `task_type`，也不修改任务定义。唯一 owner API 为 `POST /task-definitions/:id/replay`，请求只接受显式 per-partition `[start_offset,end_offset)` ranges 和一个不存在的新 PostgreSQL target endpoint；不接受 source、mapping、key 或主任务目标的任意覆盖。
+2. replay v1 只支持业务 Kafka `record/json` task。source ranges 从原业务 Kafka topic 读取，提交前必须验证完整落在当前 retention `[earliest_offset,latest_offset]` 内；DLQ topic 不是 replay source。
+3. replay 是独立 bounded execution，使用 execution-scoped apply identity 和独立目标 ledger，从 range start 顺序处理到冻结 end 后结束。它不读取或写入 `transfer.sync_states`、主 task `desired_state`、主 runtime lease、主 apply identity 或主目标 ledger。
+4. replay target 必须是不存在的新 PostgreSQL table。仅有幂等 upsert/delete 不足以保证历史事件写回原目标时的时间顺序，因此原目标、已有目标、append 目标和“业务接受重复”均不得绕过隔离要求。
+5. replay 不允许编辑 DLQ payload、替换历史 record、覆盖主 committed position或在成功后自动切换主任务 target。若要用 replay 结果替换业务数据，必须由独立、显式的数据发布或切换流程负责。
+6. replay 可与主 continuous runtime 并行，因为 source 只读且 target 强制隔离；Transfer 必须仍按部署容量限制 replay 并发。replay failure 不改变主任务状态，不触发 continuous 自动恢复 circuit。
+7. replay execution metadata 至少保存 source ranges、请求时 earliest/latest 快照、隔离 target identity、execution apply identity、每分区当前位置和最终统计。所有终态沿用统一 execution status。
 
 Infra Kafka/Kafka Connect 部署基线（工作包 3A 已冻结，3B 实现）：
 
@@ -413,13 +473,13 @@ Infra Kafka/Kafka Connect 部署基线（工作包 3A 已冻结，3B 实现）�
 8. Kafka Connect 禁止依赖 broker auto-create 创建 CDC topic。capture supervisor 在创建 connector 前按规范显式创建 topic/ACL，在删除 connector 并确认停止后删除任务级 topic。shared internal topics 和 broker 数据目录由 Infra 部署 owner 管理，不随单个 task cleanup 删除。
 9. PostgreSQL connector 固定使用 `plugin.name=pgoutput`、`publication.autocreate.mode=filtered`、单表 `table.include.list`、服务端生成的 slot/publication 名称和 `slot.drop.on.stop=false`。stop/cleanup 由 capture supervisor 在 connector 停止后显式删除 ADDP-owned slot/publication，不依赖 connector 退出副作用。
 
-Manager 的瓦片缓存生成、矢量物化视图、embedding、PreviewState、raster COG、raster mosaic、三维模型 GLB 快显、三维模型 3D Tiles 生成、3DGS - KSplat 快显和点云 COPC 快显细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。瓦片缓存生成任务类型为 `vector_tile_cache_generation`，任务定义表为 `manager.vector_tile_cache_tasks`；矢量物化视图任务类型为 `vector_materialized_view_generation`，任务定义表为 `manager.vector_materialized_view_tasks`，结果表为 `manager.vector_materialized_view`；单 TIFF 栅格 COG 生成任务类型为 `raster_cog_generation`，任务定义表为 `manager.raster_cog_tasks`；栅格镶嵌数据集生成任务类型为 `raster_mosaic_generation`，任务定义表为 `manager.raster_mosaic_tasks`，结果是业务存储中的 `format=raster_mosaic` data item，不是 Manager infra artifact；三维模型 GLB 快显任务类型为 `model_3d_glb_generation`，任务定义表为 `manager.model_3d_glb_tasks`，源 item 必须是 `format=osgb`、`layout=single`，`format=gltf`、`layout=multi`，`format=fbx|obj|stl`、`layout=single`，或 `format=ifc`、`layout=single`，结果表为 `manager.model_3d_glb`，结果是 Manager infra MinIO 中的 GLB artifact，不自动升格为业务 data item；IFC 通过 `model3d_workflow.ifc_to_glb` 专用 operator 生成 GLB，不复用 glTF / FBX / OBJ / STL 的 mesh converter；OSGB Scene 分块瓦片快显任务类型为 `model3d_tiles_generation`，任务定义表为 `manager.model3d_tiles_tasks`，源 item 当前必须是 `format=osgb_scene`、`layout=whole`，`target_format=3d_tiles|s3m`，结果表为 `manager.model3d_tiles`，结果写入 Manager infra MinIO，不形成 Meta item；同一源可以分别拥有一条 3D Tiles 结果和一条 S3M 结果；3DGS - KSplat 快显任务类型为 `gaussian_splat_ksplat_generation`，任务定义表为 `manager.gaussian_splat_ksplat_tasks`，源 item 必须是 `data_type=gaussian_splat + layout=single + format=ply|splat`，结果表为 `manager.gaussian_splat_ksplat`，结果是 Manager infra MinIO 中的 KSplat artifact，不自动升格为业务 data item；`format=ply|splat` 的高斯泼溅 item 会转换为 `.ksplat` 文件，`format=ksplat` 的源 item 直接基础预览，不创建 KSplat 快显任务；点云 COPC 快显任务类型为 `point_cloud_copc_generation`，任务定义表为 `manager.point_cloud_copc_tasks`，源 item 必须是 `data_type=point_cloud + layout=single + format=las|laz|e57|pcd|xyz`，结果表为 `manager.point_cloud_copc`，结果是 Manager infra MinIO 中的 COPC artifact，不自动升格为业务 data item；源 `format=copc` item 直接基础预览，不创建二次 COPC 快显任务。PreviewState 目标落点为 `manager.preview_state`，用于保存基础预览和快显预览的模式偏好与视角状态，不属于任务定义或快显结果表。MVT 是瓦片缓存格式，应进入任务配置，例如 `config.tile.format=mvt`，不作为任务类型。持久化 embedding 任务执行必须复用任务服务创建的主 execution；ad-hoc embedding 可以自行创建 execution，但不得产生 owner 任务定义，且没有 `source_task_id` 时必须写完整 `execution_config`。
+Manager 的快显和业务派生任务细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。快显缓存生成任务类型为 `vector_tile_cache_generation`，任务定义表为 `manager.vector_tile_cache_tasks`，结果表为 `manager.vector_tile_cache`，结果是 Manager infra PMTiles artifact；业务矢量瓦片集生成任务类型为 `vector_tile_set_generation`，任务定义表为 `manager.vector_tile_set_tasks`，结果是 Business 存储中 `data_type=media + format=pmtiles + layout=single` 的 Meta item，不设 Manager 结果表。两者统一调用 GeoPython Workflow `vector_to_pmtiles`，PostGIS、NFS、MinIO/S3 只在 Manager 访问计划中区分；MVT 是 PMTiles 内部 tile encoding，不是任务类型。矢量物化视图、栅格、三维、点云与 embedding 的既有任务边界保持不变。
 
 Manager 已有结果动作统一适用于 `vector_tile_cache_generation`、`vector_materialized_view_generation`、`raster_cog_generation`、`model_3d_glb_generation`、`model3d_tiles_generation`、`gaussian_splat_ksplat_generation`、`point_cloud_copc_generation` 和 `cad_preview_generation`。这些任务的标准执行参数只允许 `existing_result_action:string`，当前枚举只有 `overwrite`；结果表中存在与任务语义身份对应的未删除结果时，服务端必须要求 `parameters.existing_result_action=overwrite` 才能刷新。该动作只作用于本次 execution，不改写 owner 任务定义。
 
 上述八类 Manager 受管当前结果任务当前统一声明 `supports_schedule=false`，Manager 不为它们启动 owner scheduler；这不限制 Orchestrator 定时 Pipeline 调用。需要周期性刷新时，由用户在 Orchestrator Step 参数中显式配置 `existing_result_action=overwrite`，Orchestrator 每次调用原样提交。`embedding` 的独立逐 item 调度语义不在此限制内。
 
-`raster_mosaic_generation` 的结果是用户业务存储中的派生 data item，Manager 不拥有其生命周期，因此不使用当前结果覆盖确认；重跑按任务配置和目标数据集自身的幂等/恢复规则执行。`embedding` 的批量结果更新具有逐 item 跳过、过期重建等独立语义，也不使用本确认参数。两者的 `execution_schema` 必须保持闭合空对象并拒绝非空 `parameters`。
+`raster_mosaic_generation` 与 `vector_tile_set_generation` 的结果是用户业务存储中的派生 data item，Manager 不拥有其生命周期，因此不使用当前结果覆盖确认；重跑按任务配置和目标数据集自身的幂等/恢复规则执行。`embedding` 的批量结果更新具有逐 item 跳过、过期重建等独立语义，也不使用本确认参数。这三者的 `execution_schema` 必须保持闭合空对象并拒绝非空 `parameters`。
 
 Manager 中矢量物化视图、瓦片缓存、COG、GLB、KSplat 等派生产物的 `ready`、`generating`、`stale`、`failed` 等状态属于 artifact state，不是统一 execution status。PreviewState 只保存预览偏好和交互视角，不保存 execution 状态。Manager 的即时向量化内存轮询状态虽不持久化为任务定义，但属于 execution-like 状态，成功态也必须使用 `success`，不得使用 `completed`。
 
@@ -549,6 +609,7 @@ HTTP 状态码表达错误类型，响应体不得重复携带 `status=error`。
 | provider | task_type | 任务定义表 | 执行 owner |
 | --- | --- | --- | --- |
 | `manager` | `vector_tile_cache_generation` | `manager.vector_tile_cache_tasks` | Manager |
+| `manager` | `vector_tile_set_generation` | `manager.vector_tile_set_tasks` | Manager |
 | `manager` | `vector_materialized_view_generation` | `manager.vector_materialized_view_tasks` | Manager |
 | `manager` | `embedding` | `manager.embedding_tasks` | Manager |
 
@@ -788,5 +849,5 @@ cleanup execution 属于系统运维执行记录。Monitor 必须能展示 clean
 ## 与相关文档的关系
 
 - Meta 扫描任务细节见 [元数据扫描机制规范](addp元数据扫描机制规范.md)。
-- Transfer 稳定任务语义以本文和 [Transfer 模块基本概念及配置说明](../../transfer/docs/transfer-基本概念及配置说明.md) 为准；[Transfer 任务语义与同步模式设计](../next/transfer任务语义与同步模式设计.md) 只保留后续 continuous、Kafka 和 CDC 路线设计。
+- Transfer 稳定任务语义以本文和 [Transfer 模块基本概念及配置说明](../../transfer/docs/transfer-基本概念及配置说明.md) 为准；[Transfer 任务语义与同步模式设计](../next/transfer任务语义与同步模式设计.md) 保留设计演进记录和仍未进入当前实现的后续路线。
 - Manager 派生产物任务内部语义后续以 Manager 专题为准。

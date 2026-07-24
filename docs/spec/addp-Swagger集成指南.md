@@ -77,6 +77,43 @@ go install github.com/swaggo/swag/cmd/swag@latest
 - HTTP method 必须一致，不能真实路由是 `POST` 而 Swagger 写成 `[get]`。
 - 删除或迁移 API 时，必须删除旧 `@Router` 注解并重新生成文档，避免旧 path 残留。
 
+## IAM 授权扩展
+
+每个公开 Operation 必须显式输出 `x-addp-auth-mode`，取值只能是：
+
+```text
+public | authenticated | self | permission | delegated_tool | resource_ticket | internal
+```
+
+`permission`、`delegated_tool` 和 `resource_ticket` 必须同时输出非空、无重复的 `x-addp-required-permissions` 数组；其他模式不得携带业务 Permission Key。多个 Permission 固定按 all-of 处理。
+
+Go swaggo 目标注解：
+
+```go
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.data_item.read"]
+```
+
+FastAPI 目标声明：
+
+```python
+openapi_extra={
+    "x-addp-auth-mode": "permission",
+    "x-addp-required-permissions": ["manager.data_item.read"],
+}
+```
+
+Permission Key 必须来自其事实 owner 的 `authorization/permissions.yaml` 及生成常量，不得在注解中发明新 Key、使用通配符或按 URL 前缀推导 Permission。Portal、代理路由或跨模块投影可以显式引用其他 owner 的 Permission，最终仍由该事实 owner 执行资源策略。
+
+授权覆盖报告使用：
+
+```bash
+cd common
+go run ./authorization/cmd/manifest --coverage-report --repository-root ..
+```
+
+该报告与 `scripts/swagger/check-route-coverage.sh` 职责不同：后者验证真实路由与 Swagger path/method 一致，前者验证 Swagger Operation 与 Permission/Tool 契约一致；两者都必须通过才能生成最终 IAM SQL seed。
+
 ## 为 Go 模块添加 Swagger 的步骤
 
 ### 1. 添加依赖

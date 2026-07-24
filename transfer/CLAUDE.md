@@ -25,6 +25,8 @@ table 类型 Transfer 主链路已经稳定：native table、encoded single file
 
 ```text
 transfer/
+├── authorization/
+│   └── permissions.yaml       # Transfer Permission Manifest，发布期聚合事实源
 ├── backend/
 │   ├── cmd/server/main.go
 │   ├── internal/api/          # tasks、executions、engines、capabilities
@@ -45,12 +47,15 @@ transfer/
 
 ## 核心 API
 
+Transfer 是 `transfer.task.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。`transfer.task.cancel` 是 IAM 目标目录能力，当前真实执行取消仍未实现，首次 SQL seed 前必须通过路由覆盖门禁处理。
+
 路由前缀：`/api/v1/transfer`。
 
 - 公共连通：`GET /ping`。
 - 资源选择与资源树：统一使用 Meta resource-tree / item API；Transfer 不保留私有数据源树、节点 children 或表 metadata 代理接口。
 - TaskProvider 标准任务：`GET /tasks`、`GET /tasks/:task_type/:id`、`POST /tasks/:task_type/:id/execute`，其中 `task_type` 固定为 `sync`。
 - 任务定义：`POST /task-definitions`、`GET /task-definitions/statistics`、`GET /task-definitions/:id`、`PUT /task-definitions/:id`、`DELETE /task-definitions/:id`、`POST /task-definitions/:id/start|pause|resume`、`GET /task-definitions/:id/executions`。`pause/resume` 只控制 owner schedule，不中断 active execution。
+- 业务 Kafka DLQ 只读管理：`GET /task-definitions/:id/dead-letters`、`GET /task-definitions/:id/dead-letters/:identity`。只公开 tenant/task scoped 安全控制索引，不返回 Infra Kafka payload reference 或原始 key/value/headers。
 - 字段映射：字段映射写入 `config.transforms[type=field_mapping]`，不提供独立 mappings 主路径。
 - 对象存储目录选择统一走 Meta resource-tree；Transfer 不再保留私有 object-storage 浏览 API。
 - 执行记录：`GET /executions`、`GET /executions/statistics`、`GET /executions/:execution_id`。
@@ -70,10 +75,15 @@ transfer/
 - Worker 任务载荷只保存 ID 和必要上下文，不要塞入大对象。
 - 工作包 2B/2C 已实现业务 Kafka keyed JSON record -> PostgreSQL monotonic upsert；工作包 3D 已在同一 continuous worker 主循环中实现 PostgreSQL CDC Debezium envelope -> PostgreSQL snapshot/upsert/delete。两条路线共用 `ChangeStreamReaderProvider`、partition position、目标 ledger、Infra state CAS、runtime lease/fencing 和 retention 防护；不得新增第二套 CDC consumer。
 - continuous resume 前必须验证 committed `next_offset` 仍在 Kafka 保留范围内；低于 earliest offset 时明确失败，不能静默跳到 earliest。目标 PostgreSQL 被锁时必须响应 context 取消并回滚业务写入与 apply ledger。
+- 工作包 4B 已完成：业务 Kafka DLQ 按确定性 record error -> Infra Kafka payload -> `transfer.dead_letters` -> 目标 `skip` ledger -> Infra CAS 运行；公开任务 API 接受显式 `runtime.record_failure.mode=block|dead_letter`，Console 默认显式发送 `block`。唯一 replay API 为 `POST /task-definitions/:id/replay`，只接受显式 partition offset ranges 与不存在的新 PostgreSQL `parent_locator + name`，并通过独立 bounded execution/apply identity 写隔离目标，不能触碰主任务状态、水位或目标。
+- 工作包 4D 的 DLQ payload availability 治理由 continuous worker 内唯一 reconciler 承担：按 identity 游标分批核验当前 Infra Kafka exact topic/partition/offset，只有 topic/partition/offset 明确消失或 exact record 身份/schema 不匹配时才以 payload reference CAS 标记 unavailable；网络、认证和 broker 错误保持原状态。reconciler 不解码/记录 payload、不提交 Kafka offset，也不进入 HTTP 请求链路。
+- task 直接删除与 System physical cleanup 必须复用同一 task-owned resource cleanup：CDC capture（如适用）→ 业务 Kafka 确定性 DLQ topic → tenant/task scoped `transfer.dead_letters` → task definition。logical cleanup、pause/stop 保留 DLQ；Kafka 删除失败时不得先删索引或任务。
+- physical cleanup 在删除私有状态前必须把 continuous task 收敛到 desired stopped 并等待 active lease 释放；running bounded task 无真实 cancel 能力，必须拒绝删除。外部资源清理后，`dead_letters/sync_states/runtime_leases/capture_resources` 在同一事务删除，公共 execution 和目标业务事实继续保留。
 - continuous worker 从同一 ChangeStreamReader 采集分区 earliest/latest，用 Transfer committed `next_offset` 计算 lag、recovery headroom、source rate 和 retention horizon，并将 `healthy|degraded|critical|unknown` 写入 execution metadata。Monitor 只展示该 metadata，不直连 Kafka 或 Transfer 私表。
 - 工作包 3A 已冻结 PostgreSQL 单表 CDC v1 契约，3B 已完成 Infra Kafka/Kafka Connect，3C 已实现 capture control plane，3D 已实现 Debezium adapter、严格 schema/protocol 校验、目标 upsert/delete + ledger 原子提交、公开任务创建和 Console Wizard。
-- PostgreSQL CDC pause 时 connector 继续捕获，主要风险是 Infra Kafka retention；stop 是不可逆终态，必须由服务端显式确认并清理 ADDP-owned connector/slot/publication/topic，已停止任务不得重新 start/resume。重新同步创建新任务和新目标表，不保留兼容分支。
-- PostgreSQL CDC 数据面固定接受 Debezium Connect 3.6.0.Final schemaless JSON；`r -> snapshot/upsert`、`c|u -> upsert`、`d -> delete`，tombstone、truncate、message、来源身份不匹配和未知字段严格阻塞且不得推进 offset。Decimal 固定 string、时间固定 Connect 毫秒编码，capture 前必须校验完整字段与 v1 PostgreSQL 类型矩阵；字段、类型或 envelope/source 漂移统一以 `schema_change_blocked` 阻塞，并把任务置为 `status=blocked`。blocked CDC 不得 start/resume/retry，只能 Stop 后创建新任务和新目标表。第一版仍不支持 replay、DLQ、Schema Registry、Avro、Protobuf、Kafka target、MySQL/Oracle CDC 或自动 DDL。
+- 工作包 3E 已完成：`transfer.capture_resources` 是 engine-neutral generation 主事实，一对一 `postgresql_capture_resources` / `mysql_capture_resources` 保存 provider 私有资源；generic 主表不得恢复 slot/publication 或使用伪资源占位。数据库 CDC 任务 JSON 只使用唯一 `DatabaseCDCTaskSpec`，provider 必须由 System Engine 解析，不能用配置形态推断；PostgreSQL/MySQL 共用唯一 capture supervisor、continuous worker、API、capability 和 Console 路线。
+- 数据库 CDC pause 时 connector 继续捕获，主要风险是 Infra Kafka retention；stop 是不可逆终态，必须由服务端显式确认并清理 ADDP-owned connector、provider 专属资源、data/schema-history topic、group 和 ACL，已停止任务不得重新 start/resume。重新同步创建新任务和新目标表，不保留兼容分支。
+- 数据库 CDC 数据面固定接受 Debezium Connect 3.6.0.Final schemaless JSON；`r -> snapshot/upsert`、`c|u -> upsert`、`d -> delete`，tombstone、truncate、message、来源身份不匹配和未知字段严格阻塞且不得推进 offset。PostgreSQL 与 MySQL 使用各自严格 source adapter 和类型矩阵，Decimal 固定 string、时间固定 Connect 毫秒编码，MySQL binary 固定 base64；字段、类型或 envelope/source 漂移统一以 `schema_change_blocked` 阻塞。blocked CDC 不得 start/resume/retry，只能 Stop 后创建新任务和新目标表。当前公开能力仍不支持 CDC replay/DLQ、Schema Registry、Avro、Protobuf、Kafka target、Oracle CDC 或自动 DDL；Oracle 后置。
 - 业务 Kafka 注册为 System Engine，topic 使用 `type=topic` ResourceLocator；partition 只属于 runtime assignment/position/diagnostics。Infra Kafka 来自 ADDP 部署配置，不进入 System engines、资源树或用户任务 JSON。
 - continuous source 必须消费 common `ChangeStreamReaderProvider`；原始 ChangeRecord 到 ChangeEvent 的解码以及 ChangeApplyWriter 归 Transfer runtime。第一版目标必须消费 PostgreSQL `PartitionedTableChangeApplyProvider`，把业务行与业务库 `addp_transfer.apply_positions` 原子提交；普通 `TableUpsertProvider` 不足以阻止失效 worker 写回旧状态。
 - continuous session 不进入 Asynq；使用 `transfer.runtime_leases` 做 owner lease、heartbeat 和 fencing，并使用 `transfer.sync_states` 按 partition 保存 `kafka_offset/v1.next_offset`。

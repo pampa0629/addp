@@ -1,10 +1,10 @@
 # Transfer 任务语义、增量同步与持续运行时设计
 
-更新时间：2026-07-13
+更新时间：2026-07-24
 
-状态：阶段 0/1 与工作包 2A-2D 已完成；工作包 3A 已冻结 PostgreSQL CDC v1 契约，3B 已完成 Infra Kafka/Kafka Connect，3C 已完成 capture control plane，3D 已完成 Debezium 数据面、目标原子 upsert/delete、公开任务创建、Console Wizard 和全链路验收。
+状态：阶段 0/1、工作包 2A-2D、3A-3E、4A-4F 已完成。业务 Kafka DLQ、只读管理、payload availability、task-owned cleanup 与 task-private runtime/control state 生命周期治理、隔离目标 bounded replay v1，以及 PostgreSQL/MySQL 数据库 CDC 已完成公开 API、Console 操作闭环和真实全生命周期 E2E；Oracle CDC 已明确延期，不进入当前实施序列。
 
-本文整理 Transfer 全量、批增量、Kafka 流式源、数据库 CDC 和持续运行时的概念与推荐技术路线。bounded/watermark、业务 Kafka continuous 和 PostgreSQL CDC v1 已完成第一版；replay、DLQ、MySQL/Oracle CDC 和自动 DDL 仍未实现。
+本文整理 Transfer 全量、批增量、Kafka 流式源、数据库 CDC 和持续运行时的概念与推荐技术路线。bounded/watermark、业务 Kafka continuous、业务 Kafka DLQ、隔离目标 bounded replay，以及 PostgreSQL/MySQL CDC v1 已完成；Oracle CDC 已延期，自动 DDL 仍未实现。
 
 当前稳定实现仍以以下文档为准：
 
@@ -12,7 +12,7 @@
 - `transfer/docs/transfer-基本概念及配置说明.md`
 - `transfer/docs/design.md`
 
-当前实现支持 bounded snapshot 的 `replace` / `append`、PostgreSQL bounded watermark incremental、业务 Kafka keyed JSON continuous upsert，以及 PostgreSQL 单表 CDC initial snapshot + upsert/delete。continuous/CDC 使用目标 monotonic apply、业务库 ledger、Infra state CAS 与 runtime fencing；replay 仍未实现。
+当前实现支持 bounded snapshot 的 `replace` / `append`、PostgreSQL bounded watermark incremental、业务 Kafka keyed JSON continuous upsert + `block|dead_letter`、业务 Kafka 显式 offset 范围到新 PostgreSQL 隔离表的 bounded replay，以及 PostgreSQL/MySQL 单表 CDC initial snapshot + upsert/delete。continuous/CDC 使用目标 monotonic apply、业务库 ledger、Infra state CAS 与 runtime fencing；replay 使用独立 execution-scoped apply identity，不读写主状态。
 
 ## 一、本文要解决的问题
 
@@ -22,7 +22,7 @@
 2. 全量、watermark 批增量和 CDC 持续同步分别是什么。
 3. 增量状态与 execution checkpoint 有什么区别。
 4. 当前 Go batch 主链路是否需要被 Flink 等流批一体框架替换。
-5. 不使用 Flink 时能否支持 Oracle CDC。
+5. 不使用 Flink 时能否支持 MySQL、Oracle CDC。
 6. Kafka 作为用户数据源时如何接入。
 7. Kafka 作为 ADDP 内部 CDC 总线时是否属于 infra。
 8. 后续实现应按什么顺序推进。
@@ -43,7 +43,7 @@
 8. 增量主状态由 Transfer 私有状态表保存；execution metadata 只保存本次执行快照和诊断信息。
 9. 第一阶段一致性基线是 `at-least-once + 目标幂等`，不宣称通用端到端 exactly-once。
 10. 保留当前 Go bounded batch runtime；后续增加独立 continuous runtime，不整体改写为 Flink。
-11. Oracle CDC 推荐使用 Debezium Oracle Connector 捕获 redo log，经 Infra Kafka 交给 Transfer。
+11. 数据库日志 CDC 统一使用 Debezium Connector 捕获并经 Infra Kafka 交给 Transfer；MySQL binlog 已完成，Oracle redo/LogMiner 已延期且不进入当前实施序列。
 12. 用户 Kafka 数据源注册为 System Engine；Infra Kafka 不进入 System engines，也不出现在资源树。
 13. Infra Kafka 与业务 Kafka 可以在小型部署中物理共用集群，但必须保持不同身份、凭据、ACL、topic namespace 和生命周期。
 14. 当前 Asynq worker 继续作为 bounded worker；新增独立 continuous worker 进程角色，一个进程承载多个 runtime session，并通过 DB lease/fencing 支持多实例。
@@ -156,7 +156,7 @@ continuous 任务也可以被手动或定时启动。因此 `realtime` 不进入
 | `upsert` | 按稳定键新增或更新。 | watermark、无删除 CDC |
 | `upsert_delete` | 按稳定键新增、更新和删除。 | 完整 CDC |
 
-稳定字段已 clean break 为 `target.policy.apply_mode=replace|append|upsert|upsert_delete`；当前 PostgreSQL CDC v1 已开放 `upsert_delete`。旧 `write_mode` 已拒绝，不保留字段别名。
+稳定字段已 clean break 为 `target.policy.apply_mode=replace|append|upsert|upsert_delete`；当前 PostgreSQL/MySQL 数据库 CDC v1 已开放 `upsert_delete`。旧 `write_mode` 已拒绝，不保留字段别名。
 
 Transfer 拥有应用策略，但目标引擎必须提供真实写入能力，并声明键要求、提交边界、删除能力和幂等语义。不能仅靠 Transfer 配置中的字符串推导目标支持 upsert。
 
@@ -338,13 +338,9 @@ resume 和 replay 是执行参数，不是新的 `task_type`：
 | resume | 从主 committed position 到本次上界 | 成功后推进 |
 | replay | 用户指定历史范围 | 永不推进主状态 |
 
-replay 默认必须满足以下条件之一：
+幂等 upsert/delete 只能吸收同一状态的重复应用，不能阻止旧事件覆盖同 key 的新状态；普通 append 接受重复也不能解决顺序正确性。因此 replay v1 只允许写入不存在的新隔离目标，不允许写回主任务目标。replay 必须从原业务 Kafka 的显式 partition/offset 范围按源顺序读取；DLQ 只保存被跳过的记录，不能冒充可重建完整目标状态的历史源。
 
-- 写入隔离目标；或者
-- 目标使用幂等 upsert/delete；或者
-- 业务明确接受追加重复。
-
-replay 不应提供“顺便覆盖主水位”的开关，否则会破坏单一状态事实源。
+replay 使用独立 execution 和 execution-scoped apply identity，不读取或推进 `transfer.sync_states`，也不提供“顺便覆盖主水位”的开关。主 continuous task 可以继续运行，因为 replay 目标与主目标强制隔离；资源容量和并发由 Transfer runtime 统一限制。
 
 ## 八、持续同步与 ChangeEvent
 
@@ -595,11 +591,27 @@ continuous worker 必须设置容量上限，例如 active task 数、总 partit
 
 不使用 Asynq 承载长期 continuous session；Asynq 仍只用于 bounded execution 和必要的短期控制任务。
 
-只有出现明确的事件时间窗口、流式 join、大规模状态计算、统一流式 SQL 或现有 runtime 无法承担的并行规模时，再把 Flink 作为可选 runtime 评估；Flink 不作为支持 Kafka 或 Oracle CDC 的前置条件。
+只有出现明确的事件时间窗口、流式 join、大规模状态计算、统一流式 SQL 或现有 runtime 无法承担的并行规模时，再把 Flink 作为可选 runtime 评估；Flink 不作为支持 Kafka、MySQL CDC 或 Oracle CDC 的前置条件。
 
-## 十、不使用 Flink 的 Oracle CDC
+## 十、不使用 Flink 的数据库日志 CDC
 
-### 10.1 推荐链路
+### 10.1 MySQL CDC 优先路线
+
+MySQL 先于 Oracle 实现。原因不是建立另一套 CDC 架构，而是当前开发环境已经具备 MySQL 8.0、ROW/FULL binlog、Debezium MySQL Connector 和既有 Infra Kafka/continuous runtime，可先验证第二种数据库日志源是否真正复用统一链路：
+
+```text
+MySQL binlog
+  -> Debezium MySQL Connector
+  -> Infra Kafka
+  -> Transfer continuous runtime
+  -> PostgreSQL target
+```
+
+MySQL CDC v1 先冻结为单表、稳定非空主键、`initial` snapshot、schemaless JSON、`upsert_delete` 和不存在的新 PostgreSQL 目标表。源库必须满足 `log_bin=ON`、`binlog_format=ROW`、`binlog_row_image=FULL`、唯一正整数 `server_id`，并为 connector 提供最小 snapshot/binlog 权限；GTID 不是 v1 前提，捕获位点仍只由 Kafka Connect 管理。
+
+3E-A 已把 `transfer.capture_resources` 收敛为 engine-neutral generation 主事实；PostgreSQL slot/publication 与 MySQL connector server id 分别只存在于一对一 provider-owned 子事实。generic 主表不保留兼容字段，也不使用空字符串、伪资源名或 JSON 猜测 provider。
+
+### 10.2 Oracle 后续路线
 
 ```text
 Oracle Redo / Archive Log
@@ -618,7 +630,7 @@ Oracle Redo / Archive Log
 | Transfer | 消费事件、转换、目标应用、execution 和 committed position。 |
 | Target engine plugin | 批量 upsert/delete、提交边界和幂等实现。 |
 
-### 10.2 Oracle 捕获方案判断
+### 10.3 Oracle 捕获方案判断
 
 | 方案 | 定位 |
 |---|---|
@@ -639,7 +651,7 @@ Oracle 接入前至少验证：
 - LOB、DDL、表重建、长事务和归档日志保留。
 - XStream、GoldenGate 等相关 Oracle 许可。
 
-### 10.3 Snapshot 与 CDC 交接
+### 10.4 Snapshot 与 CDC 交接
 
 首次接入不能简单执行“先全量，完成后再开始 CDC”，否则两者之间可能出现数据空洞。正确路线需要：
 
@@ -649,9 +661,9 @@ Oracle 接入前至少验证：
 4. snapshot 应用完成后继续消费积压变化。
 5. 进入稳定 continuous 消费。
 
-这一协调优先使用 Debezium 已验证的 snapshot 语义，不由 Transfer 自行拼接 Oracle 查询和 redo 日志。
+这一协调优先使用对应 Debezium Connector 已验证的 snapshot 语义，不由 Transfer 自行拼接源库全量查询与 binlog/redo 日志。
 
-### 10.4 Debezium 托管模式
+### 10.5 Debezium 托管模式
 
 推荐采用独立 Kafka Connect distributed 集群运行 Debezium：
 
@@ -671,23 +683,23 @@ Transfer Capture Supervisor
 | Transfer capture supervisor | 创建、更新、停止、删除和监控 connector；关联 Transfer task/execution。 |
 | Transfer continuous worker | 消费 Infra Kafka、应用目标并维护消费位点。 |
 
-Transfer 不在 Go 进程内嵌入 Debezium Java runtime。Kafka Connect distributed mode提高捕获服务可用性，但不单独构成“不丢数据”保证；仍需同时满足 Kafka 内部 topic/业务 topic 复制、Oracle archive log 保留、connector offset 持久化和 Infra Kafka retention 要求。
+Transfer 不在 Go 进程内嵌入 Debezium Java runtime。Kafka Connect distributed mode提高捕获服务可用性，但不单独构成“不丢数据”保证；仍需同时满足 Kafka 内部 topic/业务 topic 复制、MySQL binlog 或 Oracle archive log 保留、connector offset 持久化和 Infra Kafka retention 要求。
 
-### 10.5 捕获位点与消费位点
+### 10.6 捕获位点与消费位点
 
 需要同时存在两类位点，但不能混为一个状态：
 
 ```text
-Oracle
-  -- Debezium capture position / SCN -->
+source database
+  -- Debezium capture position -->
 Infra Kafka
   -- Transfer topic/partition/offset -->
 target
 ```
 
-- Kafka Connect offset 回答“Oracle 日志已经捕获到哪里”，由 Kafka Connect 管理。
+- Kafka Connect offset 回答“源数据库日志已经捕获到哪里”，由 Kafka Connect 管理；MySQL 可使用 binlog file/position 或 GTID，Oracle 可使用 SCN。
 - Transfer committed position 回答“目标已经可靠应用到哪个 Kafka offset”，由 Transfer 管理。
-- ChangeEvent 可以携带 Oracle SCN 供诊断、审计和目标防乱序使用。
+- ChangeEvent 可以携带 MySQL binlog file/position/GTID 或 Oracle SCN 供诊断与审计使用，但目标应用顺序仍以当前 generation 的 Kafka partition/offset 为准。
 - Transfer 不复制维护 Kafka Connect 内部 offset，但不能因此省略自己的消费状态。
 
 ## 十一、Kafka 作为用户数据源
@@ -855,7 +867,7 @@ ADDP 不自动暂停用户 Oracle 或其他上游业务写入。平台可以暂�
 
 ## 十三、建议配置形态
 
-13.1 的 PostgreSQL watermark JSON 已是当前可提交 API；13.2 是工作包 2A 已冻结、待 2B 实现后才能提交的正式目标配置；13.3 仍只表达 CDC 后续语义方向。
+13.1 的 PostgreSQL watermark、13.2 的业务 Kafka continuous、13.3 的 PostgreSQL CDC v1 和 13.4 的 MySQL CDC v1 都是当前可提交 API；13.5 的 Oracle CDC 仍只表达后续语义方向。
 
 ### 13.1 Watermark bounded incremental
 
@@ -898,7 +910,8 @@ ADDP 不自动暂停用户 Oracle 或其他上游业务写入。平台可以暂�
 ```json
 {
   "runtime": {
-    "boundary": "continuous"
+    "boundary": "continuous",
+    "record_failure": {"mode": "block"}
   },
   "load": {
     "mode": "incremental",
@@ -940,14 +953,15 @@ ADDP 不自动暂停用户 Oracle 或其他上游业务写入。平台可以暂�
 }
 ```
 
-### 13.3 PostgreSQL CDC v1（工作包 3A 已冻结）
+### 13.3 PostgreSQL CDC v1（工作包 3A-3D 已完成第一版）
 
 PostgreSQL CDC 公开任务配置只引用源 PostgreSQL 表和目标 PostgreSQL Engine，不暴露 Infra Kafka topic：
 
 ```json
 {
   "runtime": {
-    "boundary": "continuous"
+    "boundary": "continuous",
+    "record_failure": {"mode": "block"}
   },
   "load": {
     "mode": "incremental",
@@ -988,9 +1002,15 @@ Debezium connector 名称、slot、publication、内部 topic、consumer group �
 
 生命周期固定为：pause 只停止目标应用，connector 继续捕获并把 backlog 写入 Infra Kafka；stop 删除 ADDP-owned connector/slot/publication/topic 并进入不可恢复终态。暂停的常态风险是 Kafka retention 和磁盘，connector/Kafka 故障导致 slot 不推进时才会额外造成源库 WAL 堆积。Stop 必须由服务端校验 `confirmed=true` 和与任务名称完全一致的 `confirmation_text`，Console 同时显示高危二次确认并要求输入任务名称。
 
-### 13.4 Oracle CDC（后续）
+### 13.4 MySQL CDC v1（工作包 3E 已完成）
 
-Oracle CDC 沿用相同公开任务形态和 Infra Kafka/ChangeEvent/目标应用契约，但 source locator 指向 Oracle 表，捕获实现使用 Debezium Oracle Connector + LogMiner。Oracle 版本、RAC、CDB/PDB、LOB 和权限矩阵在 PostgreSQL CDC 链路稳定后单独冻结，不与 PostgreSQL 第一版并行实现。
+MySQL CDC 沿用 PostgreSQL CDC 的公开任务形态、Infra Kafka、ChangeEvent、目标 monotonic apply、execution/state 与 lifecycle 契约，source locator 指向 MySQL table，捕获实现使用 Debezium MySQL Connector。v1 固定 MySQL 8.0 单表、稳定非空主键、initial snapshot、ROW/FULL binlog、严格 schema drift 阻塞和 PostgreSQL 新目标表；公开 API、`continuous.database_cdc` capability 与 Console 共用唯一数据库 CDC 路线，不增加 provider 字段或 MySQL 专用 endpoint。
+
+### 13.5 Oracle CDC（延期）
+
+若未来恢复 Oracle CDC，公开任务形态仍应沿用相同 Infra Kafka/ChangeEvent/目标应用契约，source locator 指向 Oracle 表，捕获实现使用 Debezium Oracle Connector + LogMiner。恢复实施前必须重新冻结 Oracle 版本、RAC、CDB/PDB、LOB、权限和许可矩阵，不能基于当前 MySQL 路线推定兼容。
+
+2026-07-24 调研确认 Oracle 12c 不存在 XE/Free 版本；仍支持 Oracle 12c 的 ArcGIS Enterprise 版本要求 Oracle SE2/EE，而当前固定的 Debezium 3.6 官方测试矩阵不包含 Oracle 12c。ArcGIS Enterprise Geodatabase 默认 `ST_GEOMETRY` 或可选 `SDO_GEOMETRY` 也落在 Debezium Oracle 当前不支持的用户定义/Oracle supplied spatial type 范围，传统版本化编辑还会写入 A/D delta tables，不能把普通表 redo CDC 等同于 ArcGIS 逻辑要素 CDC。因此 Oracle 及 ArcGIS SDE 同步不进入当前 3F 实施；未来若恢复，必须先分别冻结普通 Oracle 表 CDC 与 ArcGIS 逻辑变化源的产品边界，不能增加版本兼容分支或伪装成同一路径。
 
 ## 十四、推荐实施顺序
 
@@ -1026,11 +1046,11 @@ Oracle CDC 沿用相同公开任务形态和 Infra Kafka/ChangeEvent/目标应�
 3. 实现 keyed JSON record -> ChangeEvent(operation=upsert) -> PostgreSQL `PartitionedTableChangeApplyProvider`，并原子提交业务表与目标 apply ledger。
 4. 实现 partition state、lag、heartbeat、真实暂停和停止。
 5. 已覆盖目标提交后 Infra position 可重复应用、rebalance、worker lease/fencing 失效、pause/resume/stop、目标锁取消、retention 已越过 committed position 和严格 schema drift；lag 与 retention horizon 提前告警由工作包 2D 完成。
-6. 当时将 Debezium envelope 与 upsert/delete 后置到工作包 3D；现已完成。DLQ、Schema Registry、Avro 和 Protobuf 继续后置。
+6. 当时将 Debezium envelope 与 upsert/delete 后置到工作包 3D，业务 Kafka DLQ/bounded replay 后置到 4A/4B；现均已完成。Schema Registry、Avro 和 Protobuf 继续后置。
 
 ### 阶段 2C：Continuous 产品化与运行保障（已完成第一版）
 
-1. Console Wizard 已开放业务 Kafka topic -> PostgreSQL 和 PostgreSQL 单表 CDC -> PostgreSQL 新目标表两条已实现路线，不提供未实现路线。
+1. Console Wizard 已开放业务 Kafka topic -> PostgreSQL，以及 PostgreSQL/MySQL 单表 CDC -> PostgreSQL 新目标表两类已实现路线，不提供未实现路线。
 2. 任务列表和详情支持 continuous start/pause/resume/stop，execution 详情展示 owner、heartbeat、lease、fencing token、partition committed `next_offset`、最近提交时间和 checkpoint age。
 3. resume 前校验 committed position 是否仍在 Kafka earliest/latest 范围，retention 已清除时明确失败，不静默重置。
 4. PostgreSQL 目标锁等待响应 context 取消，并验证业务写入与 apply ledger 同时回滚。
@@ -1074,9 +1094,77 @@ Oracle CDC 沿用相同公开任务形态和 Infra Kafka/ChangeEvent/目标应�
 3. 已复用 continuous worker、`kafka_offset/v1`、CAS/fencing、retention 位置保护和 capture generation，不建立第二套 CDC consumer。
 4. 已完成 PostgreSQL -> PostgreSQL initial snapshot、update、delete、worker 崩溃换 owner 恢复、目标 ledger/Infra state 对齐和 stop cleanup 端到端测试。
 
-### 工作包 3E：Oracle CDC（PostgreSQL 稳定后）
+### 工作包 4A：业务 Kafka DLQ 与 bounded replay 契约冻结（已完成）
 
-接入 Oracle LogMiner，集中验证 Oracle 权限、日志、snapshot、LOB、DDL、长事务和版本兼容矩阵；MySQL CDC 与 Oracle 一样后置，不与 PostgreSQL v1 并行开放。
+1. DLQ v1 只处理业务 Kafka record 的 JSON 解码、字段校验和类型转换错误；source/poll、目标数据库、fencing、retention、Infra 故障以及 PostgreSQL CDC schema/protocol 漂移继续阻塞。
+2. continuous task 使用显式 `runtime.record_failure.mode=block|dead_letter`；实现落地后新配置必须显式提交，不依赖省略字段猜默认值。
+3. dead-letter identity 固定由 task/apply identity + source identity + partition + offset 推导。先把原始 key/value/headers、错误和 execution 审计写入 Transfer-owned Infra Kafka DLQ，再幂等落 `transfer.dead_letters` 控制索引，随后由目标 Provider 以 `operation=skip` 只推进目标 ledger，最后 CAS 推进 Infra 主 position；任一步失败都不得越过源记录。
+4. replay v1 与 DLQ 解耦：它从原业务 Kafka 的显式 offset 范围读取，创建独立 bounded execution，并强制写入不存在的新 PostgreSQL 隔离目标。DLQ 不是完整 replay source，原目标不允许被历史事件回写。
+5. replay 不修改任务定义、`desired_state`、主 runtime lease、`transfer.sync_states` 或主 apply ledger，不提供覆盖主水位、编辑原始 payload、同目标回放或 PostgreSQL CDC replay。
+
+### 工作包 4B：业务 Kafka DLQ 与 bounded replay 实现（已完成）
+
+1. 已扩展 `PartitionedTableChangeApplyProvider` 的 `skip` operation 和 capability validator；PostgreSQL 已在目标事务内实现 ledger-only skip，并通过真实数据库集成测试验证不修改业务行。
+2. Infra Kafka DLQ topic/ACL、`transfer.dead_letters` 控制索引、确定性 UUID v5 identity、`transfer.dead_letter/v1` 无损 envelope 与 payload -> index 幂等写入组件已完成。
+3. 已完成业务 Kafka 确定性 record error 分类，并在同一 continuous 主循环接通 payload -> index -> target skip -> source CAS；DLQ、目标 apply 或 CAS 任一步失败均停止后续步骤，真实 Kafka/Infra PostgreSQL/业务 PostgreSQL E2E 已验证坏记录被审计跳过、有效记录写入且两侧 position 对齐。公开任务 API 现接受显式 `block|dead_letter`，Console 默认仍显式发送 `block`。
+4. bounded replay runner 核心已实现：只接受业务 Kafka `record/json + block` plan、显式 per-partition 半开 ranges 和 execution-scoped apply identity；先校验完整 retention，再校验隔离目标不存在，最后才允许 prepare/write。runner 的依赖中不存在 `SyncStateRepository` 或 runtime lease，不能读写主 committed position。Kafka offset 空洞通过“partition 已分配且固定历史上界内 poll 为空”判定已追到冻结 end，不把该 fetch 进度提交为 consumer group 或主状态。
+5. 已增加唯一 owner API `POST /task-definitions/:id/replay`：请求严格只接受 ranges 与新目标 `parent_locator + name`；请求时冻结 retention 快照并拒绝原目标/已有目标，execution config 保存 owner task 快照、ranges、target 和独立 apply identity，bounded worker 通过 execution marker 进入唯一 replay 数据面。
+6. replay 请求创建和 worker 执行都不 claim 或更新 owner task，不创建/修改 `transfer.sync_states`；PostgreSQL prepare 使用 `RequireTargetAbsent` 和非 `IF NOT EXISTS` DDL 防止并发竞态。单元测试已覆盖非法/重复 range、配置覆盖拒绝、主任务并行与状态隔离；真实 Kafka/PostgreSQL E2E 已验证 retention 快照、`[start,end)`、新隔离表、独立 ledger 和原目标不变。公开 `dead_letter`、replay API 与 capability 已同时开放。
+
+### 工作包 4C：DLQ 只读管理与 Console 操作闭环（已完成第一版）
+
+1. owner task 下已增加唯一只读 API：`GET /task-definitions/:id/dead-letters` 与 `GET /task-definitions/:id/dead-letters/:identity`。查询同时受认证租户和 task owner 约束，不提供跨 task 管理入口或全局 identity 直查；Transfer capability 同步声明路由、过滤字段和 `exposes_payload=false`。
+2. 列表采用 `{data,total,page,page_size,total_pages}`，固定支持 `page`、`page_size` 以及 `source_partition`、`error_category`、`error_code`、`payload_available` 精确过滤，按 `last_observed_at DESC, identity DESC` 稳定排序。
+3. 第一阶段只公开安全控制索引，不公开 Infra Kafka payload reference，也不读取原始 key/value/headers。详情用于展示完整 safe error、execution 与观测审计事实；DLQ 仍不是 replay source，不能从某一 DLQ 行直接生成 replay 请求。
+4. Console 只对当前业务 Kafka `runtime.record_failure.mode=dead_letter` task 展示 DLQ 卡片、过滤、分页和详情；payload unavailable 明确展示为不可用，不显示“可回放”等误导状态。
+5. bounded replay Console 表单只对业务 Kafka `record/json + block` owner task 开放，要求用户显式输入 per-partition `[start_offset,end_offset)` 和新的 PostgreSQL `parent_locator + name`。表单调用既有唯一 replay API，不允许从 DLQ payload 或 DLQ identity 自动补齐 source range。
+6. 本工作包未增加 DLQ 删除、编辑、原始 payload 查看、跨任务聚合、自动重放、原目标覆盖或 payload retention 探测请求链路。后端单元测试覆盖 tenant/task scope、过滤、稳定排序和敏感字段不泄露；Transfer 全量 Go 测试/vet、前端测试/build、Swagger 25 路由覆盖均通过。payload availability 的周期性收敛属于后续独立治理工作，不与只读管理 API 建立第二条 Kafka consumer 路线。
+
+### 工作包 4D：DLQ payload availability 生命周期治理（已完成第一版）
+
+1. 已在 Transfer continuous worker 内增加唯一低频 reconciler，按 identity 游标分批扫描 `payload_available=true` 控制索引。它不进入 HTTP 请求、不加入 consumer group、不提交 Kafka offset，也不修改 owner task、execution、sync state 或目标 ledger。
+2. 每批按控制索引快照中的 Infra Kafka topic/partition/offset 精确核验：record 必须仍位于当前 retention 边界内，exact offset 必须存在，record key 必须等于 dead-letter identity，schema header 必须为 `transfer.dead_letter/v1`。代码不解码、不记录或复制原始 payload value。
+3. topic/partition 已删除、offset 低于 earliest、offset 不小于 latest，或 compaction 后 fetch 已跨过 exact offset 时确认 unavailable；认证、网络、broker、fetch timeout 等运行故障保持原状态并等待下一轮，不能伪造 payload 丢失。
+4. `false` 更新使用 identity + 当前 payload reference + `payload_available=true` CAS。若 continuous runtime 已重复观测同一 source record并写入新 payload offset，旧 probe 结果必须更新 0 行，不能覆盖新的 available 状态。availability 更新不得改写首次/最近观测时间或错误审计事实。
+5. reconciler interval、batch size、单批 timeout 和 fetch bytes 属于 Transfer 部署策略，不进入 task JSON。多 continuous-worker 实例允许重复核验；CAS 和只从 true 向 false 的相同引用更新保证结果幂等，不为此新增第二套 leader/lease 事实。
+6. 单元与 race 测试已覆盖 exact record、compacted hole、identity/schema 不匹配、游标轮转、partial probe error 和 stale reference CAS；真实 Infra Kafka 已验证 payload 存在后为 available、删除 topic 后收敛 unavailable，真实 PostgreSQL 已验证旧 reference 更新 0 行、当前 reference 更新成功且不改写 `last_observed_at`。Transfer 全量 Go 测试/vet、前端测试/build 与 Swagger 25 路由覆盖均通过。
+
+### 工作包 4E：DLQ task-owned cleanup 生命周期（已完成第一版）
+
+1. 用户直接删除 task 与 System physical cleanup 已复用同一个 task-owned resource cleanup；TaskService 和 cleanup executor 不再各自维护外部资源删除逻辑。System logical cleanup、普通 pause 和 stop 继续保留 DLQ 审计资源。
+2. 物理清理顺序固定为：PostgreSQL CDC capture cleanup（如适用）→ 业务 Kafka 确定性 DLQ topic 幂等删除 → 最终 Infra PostgreSQL 事务。最终事务统一删除 task-private state 并 soft/unscoped delete task definition；任一步失败均停止后续步骤。
+3. DLQ topic 只能由 Infra Kafka admin principal 删除。`UnknownTopicOrPartition` 视为幂等成功；权限、网络、broker 或超时错误必须阻止索引与任务删除。topic 已删除而数据库删除失败时，后续重试从 unknown topic 继续，不恢复 payload 或建立补偿 topic。
+4. 当前业务 Kafka continuous task 物理删除时都尝试删除 `__addp_dlq.<tenant>.<task>`，不根据当前 `record_failure.mode` 猜测历史；当前配置已改变但仍有 DLQ 控制索引的 task 也走同一路径。只有既非业务 Kafka且无 DLQ 索引的 bounded/CDC task 才跳过 Kafka cleanup。
+5. cleanup 不删除目标业务数据、目标 apply ledger 或统一 execution 历史；公开 Delete API 路由保持不变，不新增旁路 cleanup API。运行中删除返回 409，外部 cleanup 失败返回不泄露内部细节的双语 503。
+6. 单元与 race 测试已覆盖 logical 保留、topic-before-index 顺序、Kafka 失败阻断后续删除、当前配置变化但保留 DLQ 索引、直接 Delete soft-delete 与 System physical unscoped delete复用；真实 Kafka 已验证 admin topic 删除及重复删除幂等，真实 PostgreSQL 已验证 tenant/task scoped 索引删除。Transfer 全量 Go 测试/vet、前端测试/build、Swagger 25 路由覆盖和差异检查均通过。
+
+### 工作包 4F：task-private runtime/control state 生命周期（已完成第一版）
+
+1. `transfer.sync_states`、`transfer.runtime_leases`、`transfer.capture_resources` 与 `transfer.dead_letters` 都是 task definition 存续期间的私有当前事实，不承担长期审计。task 删除后由 `common.task_executions`、System audit 和 cleanup execution/result 保留历史，因此这些私有表不得残留孤儿行。
+2. continuous task 物理清理前必须复用唯一 stop 路径：设置 `desired_state=stopped`、取消 pending execution、等待 active lease owner 释放或 lease 到期。等待超时返回失败，不删除 capture/DLQ、私有状态或 task definition；lease 已过期但仍为 pending/running 的 execution 在最终事务中以 `stop_reason=cleanup` 收敛为 cancelled 并保留。
+3. bounded task 没有真实 cancel 能力；直接 Delete 与 System physical cleanup 都拒绝删除 `status=running` 的 bounded task，不能用状态更新伪造 worker 已停止。
+4. 外部 capture/DLQ cleanup 成功后，在单个锁 task 行的 Infra PostgreSQL 事务中删除 tenant/task scoped dead letters、sync states、runtime leases、capture resources，并在同一事务 soft/unscoped delete task definition。事务再次验证 desired/status 与有效 lease，避免 stop-check 后并发 Start 重新创建运行事实。
+5. 直接 Delete 在该事务中 soft-delete task definition，System physical cleanup 在同一事务 unscoped delete。两者继续保留统一 execution、目标业务数据、目标 apply ledger 和 replay 隔离结果。
+6. `TRANSFER_CONTINUOUS_RUNTIME_STOP_TIMEOUT|POLL_INTERVAL` 是所有 continuous stop/cleanup 的唯一部署策略；不保留 capture-scoped 旧环境变量或 fallback。
+7. 已移除 task definition 与 DLQ 索引的独立删除入口；单元测试覆盖 soft/physical delete、四类私有状态、execution 终态化和 runtime guard 整体回滚，真实 PostgreSQL 验证同事务删除及 active lease 回滚。Transfer 全量 Go 测试/vet、关键包 race、前端测试/build、Swagger 25 路由覆盖和差异检查均通过。
+
+### 工作包 3E：MySQL CDC（已完成）
+
+1. 3E-A 已完成：capture generation 主事实已改为 engine-neutral，PostgreSQL/MySQL provider-specific source resource 子事实与 generation 同事务创建并外键级联清理；generic model 中的 slot/publication 已删除，不保留双轨读取。新安装基线与 017 clean-break 迁移一致，真实 PostgreSQL 已验证旧数据迁入、旧列删除、唯一索引、单一外键、级联清理和 PostgreSQL capture control E2E。
+2. 3E-B：数据库 CDC 任务 JSON 使用唯一 `DatabaseCDCTaskSpec`，只表达 continuous + incremental CDC、单表、initial snapshot、完整 field mapping 和 PostgreSQL `upsert_delete` 目标等通用语义；source provider 不写入任务 JSON，只能由 source locator 对应的 System Engine 解析结果决定。不得并行保留 PostgreSQL/MySQL 两个同形 parser，也不得在未解析 Engine 时用配置形态推断 provider。创建、更新和启动必须在进入 capture 前完成真实 provider 校验。
+3. 3E-B 的 MySQL 8.0 v1 只支持有稳定主键的单表和无歧义类型集合：有符号 `TINYINT/SMALLINT/MEDIUMINT/INT/BIGINT`、`CHAR/VARCHAR/TEXT`、`DECIMAL/NUMERIC`、`FLOAT/DOUBLE`、`DATE/TIME/DATETIME/TIMESTAMP`（最高毫秒精度）、`JSON`、`BINARY/VARBINARY/BLOB`。拒绝所有 unsigned 整数、`TINYINT(1)`/`BOOL` 布尔歧义、`BIT`、`ENUM/SET`、`YEAR`、空间类型、超过毫秒的时间精度以及 zero date 默认值；字段 mapping 必须覆盖源表完整 schema，源主键必须按顺序一一映射到目标 keys。
+4. MySQL capture 前置校验固定要求 MySQL 8.0、`log_bin=ON`、`binlog_format=ROW`、`binlog_row_image=FULL`、非零 server id，并验证 connector 凭据可读取 binlog 状态。GTID 可为 `ON|OFF`，仅作为诊断事实，不进入 Transfer committed position；Kafka partition offset 仍是目标应用唯一主顺序。
+5. Debezium MySQL connector 固定 `initial` snapshot、schemaless JSON、decimal string、Connect 毫秒时间和 binary base64。除单分区数据 topic 外，每个 MySQL capture generation 还拥有独立 schema-history topic；Debezium 3.6 history record 使用空 key，Kafka 4.3 compact topic 会拒绝，因此该 topic 固定为单分区 `cleanup.policy=delete + retention.ms=-1`，并由 capture cleanup 显式删除。其名称、ownership 和 connector server id 属于 MySQL provider 子事实，必须与 connector/data topic 一起创建、授权和清理，不能依赖 Kafka 自动建 topic 或留下未登记资源。
+6. MySQL envelope 使用独立严格 source schema adapter，不能复用 PostgreSQL exact source schema；两者只复用 outer envelope、key/row 映射和统一 `ChangeEvent`。MySQL `file/pos/gtid/row/server_id` 只用于协议校验和诊断，不替代 Kafka offset。tombstone、truncate、来源身份不匹配、未知 source/envelope 字段、字段/类型变化都阻塞且不得推进 offset。
+7. 3E-B 已完成：MySQL planner、源字段/主键/binlog 前置校验、Debezium connector config、严格 envelope adapter 已接入既有 PostgreSQL monotonic target apply；内部继续使用唯一 capture supervisor 和 continuous worker 主路径。单元测试覆盖 provider 解析、类型矩阵、connector/schema-history 资源、snapshot/c/u/d、空 BLOB、source/envelope/schema drift 和 runner committed progress；真实 MySQL 8.0.46 + Debezium 3.6.0.Final + Kafka 4.3.0 已验证 preflight、connector RUNNING、initial snapshot 与 c/u/d 的实际 schemaless envelope。该验证不替代 3E-C 的完整恢复/生命周期 E2E。
+8. 3E-C 环境契约：Business MySQL 使用独立 `MYSQL_CDC_USER`/`MYSQL_CDC_PASSWORD`，启动后由 root 幂等创建或更新 connector 用户，并把权限收敛为 `SELECT`、`RELOAD`、`SHOW DATABASES`、`REPLICATION SLAVE`、`REPLICATION CLIENT`、`LOCK TABLES`。初始化必须在每次 `business/scripts/start.sh -mysql` 等待 ready 后执行，不能只依赖首次建卷的 `/docker-entrypoint-initdb.d`；Business MySQL 必须显式启用非零 server id、binlog、ROW format 和 FULL row image。CDC E2E 使用独立 schema/table，不复用包含 MySQL v1 非支持类型的业务样例表。
+9. 3E-C 真实全生命周期 gate：公共 API 创建 MySQL CDC 后，必须在真实 MySQL 8.0、Debezium 3.6、Infra Kafka 4.3 和 PostgreSQL 目标上覆盖 initial snapshot、insert/update/delete、pause/resume backlog、worker crash 后 lease/fencing recovery、retention 越界拒绝、strict schema drift 阻塞，以及 stop 后 connector、数据 topic、schema-history topic、ACL/group 的幂等清理；目标 apply ledger 必须始终与 Transfer committed offset 单调一致，MySQL 不伪造 slot/publication 资源。retention segment 推进若无法在共享开发 Kafka 中稳定制造，必须用隔离 topic 的确定性真实 Kafka integration 补证，不能降低为只验证错误文本。
+10. 3E-C 产品开放 gate：上述 E2E 通过后，删除公开 API 的临时 MySQL 拒绝分支；唯一 continuous capability 增加结构化 `database_cdc`，声明 `sources=[postgresql,mysql]`、`target=postgresql`、`bootstrap=[initial_snapshot]`、`apply_mode=upsert_delete`。Console 将 PostgreSQL-specific CDC helper clean break 为唯一 database CDC helper，按 source provider 使用各自可证明的类型矩阵，继续复用同一 Wizard、详情和生命周期操作，不增加 MySQL 专用 endpoint、页面或任务 JSON 字段。
+11. 3E-C 已完成：Business 初始化连续执行两次后账号权限和 MySQL binlog 前置条件保持一致；真实 MySQL 8.0.46 -> Debezium 3.6.0.Final -> Kafka 4.3.0 -> PostgreSQL E2E 通过公共 API 覆盖 snapshot、insert/update/delete、worker lease/fencing recovery、pause/resume backlog、schema drift 不推进位置、`DeleteRecords` 推进 earliest 后的 retention 拒绝，以及 connector、数据 topic、schema-history topic、consumer group 和 ACL cleanup。API gate 已删除，capability 与 Console 已按第 10 项开放。
+
+### 工作包 3F：Oracle CDC（延期，不进入当前实施序列）
+
+接入 Oracle LogMiner，集中验证 Oracle 权限、日志、snapshot、LOB、DDL、长事务和版本兼容矩阵；Oracle 不与 MySQL 工作包并行开放。
 
 ### 阶段 4：按真实需求评估 Flink
 
@@ -1103,7 +1191,7 @@ Oracle CDC 沿用相同公开任务形态和 Infra Kafka/ChangeEvent/目标应�
 
 ## 十六、设计确认状态与后续问题
 
-16.1 至 16.5 已随阶段 0/1 升级为正式规范并实现；16.6 至 16.9 已由工作包 2A 确认并实现 keyed JSON -> PostgreSQL continuous v1；16.10 至 16.12 和 16.14 已由工作包 3A 确认并升级到正式规范。Infra Kafka/Kafka Connect 的代码部署属于工作包 3B，Oracle 和 Flink 仍后置。
+16.1 至 16.5 已随阶段 0/1 升级为正式规范并实现；16.6 至 16.9 已由工作包 2A 确认并实现 keyed JSON -> PostgreSQL continuous v1；16.10 至 16.12 和 16.14 已由工作包 3A 确认并升级到正式规范。Infra Kafka/Kafka Connect 的代码部署属于工作包 3B；MySQL CDC 已完成 3E 全生命周期 E2E 与产品入口开放，Oracle 已延期，Flink 只在出现明确有状态计算或规模证据后评估。
 
 ### 16.1 任务配置采用嵌套结构还是扁平结构（已确认）
 
@@ -1137,7 +1225,7 @@ target.policy.apply_mode
 - `transfer.sync_states`：保存 committed position、position type/version、state version 和最近提交 execution。
 - `transfer.runtime_leases`：保存 owner instance、lease、heartbeat 和 fencing token。
 
-`position` 使用带 `type`、`version` 的 JSONB，由对应 source provider 解释；公共列只保存跨 provider 必需的身份、版本和审计字段。阶段 1 已实现 watermark position v1；工作包 2A 已冻结 Kafka position v1，待 2B 实现。CDC 后续增加新 position type，不修改已有 type 的字段含义。
+`position` 使用带 `type`、`version` 的 JSONB，由对应 source provider 解释；公共列只保存跨 provider 必需的身份、版本和审计字段。阶段 1 已实现 watermark position v1；工作包 2B 已实现 per-partition `kafka_offset/v1.next_offset`，业务 Kafka continuous 与 PostgreSQL CDC 复用该位置契约。后续新增 position type 时不得修改已有 type 的字段含义。
 
 ### 16.4 Watermark 第一版源与一致上界（已确认）
 
@@ -1149,7 +1237,7 @@ target.policy.apply_mode
 
 分析：replay 会引入历史范围选择、目标重复应用、与主任务并发、审计和资源限流，显著扩大第一版状态机。
 
-结论：阶段 1 只支持 resume。replay 未进入当前实现，后续引入时永不推进主 committed position，也不提供覆盖主水位开关。
+结论：阶段 1 只支持 resume。工作包 4B 已在第二阶段实现业务 Kafka bounded replay；它永不推进主 committed position，也不提供覆盖主水位开关。
 
 ### 16.6 Kafka catalog 与 ResourceLocator（已确认）
 
@@ -1180,11 +1268,13 @@ target.policy.apply_mode
 
 具体秒数应通过阶段 2 压测确定，不在概念规范中硬编码。
 
-### 16.9 Dead-letter 是否进入第一版（已确认）
+### 16.9 Dead-letter 与 replay 第二阶段范围（已确认）
 
 分析：把坏消息写入 DLQ 后推进源 offset，实质上是经过审计的数据跳过；若 DLQ 写入或回放语义不完整，容易从“不中断任务”退化为静默丢数。
 
-结论：第一版不提供 DLQ，遇到不可解析或不可应用事件时严格阻塞对应 partition。第二阶段再设计 Transfer-owned Infra Kafka DLQ，必须保存原 topic/partition/offset、原始载荷引用、错误、task/execution 和回放状态；只有 DLQ 写入成功后才允许推进源 offset。
+结论：阶段 1 严格阻塞；工作包 4B 已完成第二阶段 v1 并公开。DLQ 只覆盖业务 Kafka 的记录级数据错误，使用确定性 identity 保存原 topic/partition/offset、原始 key/value/headers、错误和 task/execution 审计；只有 DLQ payload、控制索引和目标 `skip` ledger 都成功后才允许推进源 offset。数据库 CDC schema/protocol 漂移、source/poll、目标、fencing、retention 和 Infra 错误不得进入 DLQ。
+
+DLQ 不保存伪造的“已回放”状态，也不作为完整 replay source。bounded replay 从原业务 Kafka 的显式 offset 范围读取，只写不存在的新 PostgreSQL 隔离目标，并以独立 execution 表达状态；同目标 replay、主水位覆盖、payload 编辑和 PostgreSQL CDC replay 均不进入 v1。
 
 ### 16.10 Infra Kafka 发行版、部署与容量（已确认）
 
@@ -1205,23 +1295,23 @@ target.policy.apply_mode
 
 结论：采用独立 Kafka Connect distributed + Transfer capture supervisor 单一路线。capture supervisor 通过 Kafka Connect API 管理 connector 和状态映射；continuous worker 只消费 Infra Kafka。Kafka Connect 管 capture offset，Transfer 管 target committed offset，两者不能互相替代。connector、slot、publication、topic 和 group 均由服务端按 task/generation 生成，不进入公开任务配置。
 
-### 16.12 PostgreSQL CDC 第一版范围与生命周期（已确认）
+### 16.12 数据库 CDC 第一版范围与生命周期（已确认）
 
 分析：如果 stop 后删除 connector/slot 再直接 resume，会产生无法补齐的捕获空档；如果重新 snapshot 只做 upsert，又无法删除目标中已经不存在于源端的残留行。若为了 resume 让已 stop 的任务永久保持捕获，stop 就失去真实资源终止语义。
 
-结论：第一版只支持 PostgreSQL 有稳定主键的单表，使用 Debezium `initial` snapshot，经单 partition Infra Kafka topic 写入不存在的 PostgreSQL 新目标表。snapshot/c/u/d 归一化为 snapshot/upsert/delete，目标固定 `upsert_delete`，schema drift 固定 fail。
+结论：第一版 source 支持 PostgreSQL 或 MySQL 8.0 有稳定主键的单表，使用 Debezium `initial` snapshot，经单 partition Infra Kafka data topic 写入不存在的 PostgreSQL 新目标表。snapshot/c/u/d 归一化为 snapshot/upsert/delete，目标固定 `upsert_delete`，schema drift 固定 fail。
 
-- pause 只停止目标应用，connector 继续捕获并推进 slot；resume 在 capture healthy 且 Kafka committed position 未过期时无损恢复。
-- 正常 pause 的主要资源代价是 Infra Kafka backlog、磁盘和 retention；connector/Kafka 故障导致 slot 停滞时，源库 WAL 才会额外持续增长。
-- stop 是不可逆终态，清理 ADDP-owned connector/slot/publication/topic；已 stop 任务不得 start/resume，重新同步创建新任务和新目标表。
+- pause 只停止目标应用，connector 继续捕获并推进源日志位置；resume 在 capture healthy 且 Kafka committed position 未过期时无损恢复。
+- 正常 pause 的主要资源代价是 Infra Kafka backlog、磁盘和 retention；connector/Kafka 故障时还必须分别观测 PostgreSQL WAL 或 MySQL binlog 保留风险。
+- stop 是不可逆终态，清理 ADDP-owned connector、provider 专属资源、data/schema-history topic、group 和 ACL；已 stop 任务不得 start/resume，重新同步创建新任务和新目标表。
 - Stop API 必须由服务端校验 `confirmed=true` 和与任务名称完全一致的 `confirmation_text`，Console 同时显示 danger 二次确认并要求输入任务名称；stop 保留目标业务数据、任务、execution、目标 ledger 和清理审计。
-- 第一版只支持 resume，不支持 replay、DLQ、truncate、自动 DDL、多表、无主键、MySQL 或 Oracle。
+- 第一版只支持 resume，不支持 CDC replay、DLQ、truncate、自动 DDL、多表、无主键或 Oracle。
 
-### 16.13 Oracle 第一版支持范围
+### 16.13 Oracle 第一版支持范围（延期）
 
 分析：Oracle RAC、CDB/PDB、LOB、DDL 和长事务会显著增加验证矩阵。第一版应先证明通用 CDC 链路，而不是承诺所有 Oracle 部署形态。
 
-建议：在 PostgreSQL CDC 链路稳定后，Oracle 第一版优先限定为一个明确受支持版本和单实例部署、表级选择、insert/update/delete、稳定主键和基础标量类型；初始 snapshot + LogMiner continuous 必须闭环。RAC、复杂 LOB、自动 DDL 传播和无主键表后置。最终版本范围必须结合用户真实 Oracle 环境与 Debezium 兼容矩阵确认，不能仅凭文档猜测。
+建议：若未来恢复 Oracle CDC，第一版仍应限定为一个明确受支持版本和单实例部署、表级选择、insert/update/delete、稳定主键和基础标量类型；初始 snapshot + LogMiner continuous 必须闭环。RAC、复杂 LOB、自动 DDL 传播和无主键表不进入第一版。最终版本范围必须结合用户真实 Oracle 环境、许可和 Debezium 兼容矩阵确认，不能仅凭文档猜测。
 
 ### 16.14 Schema 变化与 Meta 协议（已确认）
 

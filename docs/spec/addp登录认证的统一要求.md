@@ -1,6 +1,6 @@
 # ADDP 登录认证的统一要求
 
-更新日期：2026-07-22
+更新日期：2026-07-24
 
 ## 一、认证事实与唯一主路径
 
@@ -89,7 +89,11 @@ credentials: include
 
 ## 四、多标签页协调
 
-Refresh Token Family 采用严格轮换。两个标签页同时提交同一旧 Refresh Token 会触发重用检测，因此跨标签页刷新互斥是安全要求，不是可选优化。
+Refresh Token Family 采用严格轮换。跨标签页刷新互斥仍是安全要求，不是可选优化；但服务端必须区分正常并发竞争和已经完成轮换后的历史 Token 重用：
+
+- 请求开始时读取到当前、未使用的 Refresh Token，但进入事务并等待锁后发现它已被另一事务轮换，属于正常并发竞争；本次请求返回可重试冲突，不撤销 Family，也不记录高风险重用事件；
+- 请求开始时已经读取到 `used_at` 和已建立的 replacement 链，属于历史 Refresh Token 重用；本次请求返回未授权，并在同一事务设置 `reuse_detected_at`、撤销整个 Family 及全部派生票据、写入高风险审计；
+- 无效、过期、已撤销 Token 一律返回未授权，不得通过错误内容泄露 Token 是否存在或 Family 状态。
 
 同 origin 页面统一使用：
 
@@ -144,6 +148,8 @@ Console Browser AuthSession
 
 Context Selection Ticket 只保存 Hash，不能进入 Cookie、URL、浏览器历史、持久化存储或日志。客户端不得提交或决定 Principal、Tenant、Role、Permission、授权版本。平台选项不能静默转换为任一 Tenant，Tenant 选项也不能自动激活平台权限。
 
+本地用户名密码登录由单一 Browser Login Runtime 编排：先调用 Local Account 认证，成功事实固定为 `methods=["password"]`、`assurance_level=aal1`，再调用 Context Selection Service。HTTP Handler 不得绕过该编排直接创建 Token Family，也不得根据旧 `user_type` 或 `users.tenant_id` 选择 Context。
+
 ### 6.2 启动恢复
 
 页面启动时先进入 `initializing` 状态：
@@ -173,9 +179,49 @@ POST /api/v1/system/auth/context-switches
 
 两个端点都要求当前第一方 Web Access Token；切换还要求同一 Family 的 Refresh Token Cookie。进入 Platform Context 时 User 认证强度至少为 AAL2，否则先返回 `step_up_required`。
 
-切换事务必须：锁定当前 Browser Family，复核目标 Context 和授权版本，撤销旧 Family 及派生 Resource Access Ticket，创建新 Family 和新票据，写入旧 / 新 Context 审计，最后返回新内存 Access Token。事务失败时旧 Family 保持有效。切换成功后通过 `addp-auth-session` 广播 `context_changed`；其他标签页和 iframe 必须清空旧 Context 的业务缓存并采用新 Token。
+`context-options` 返回 Principal 当前全部有效 Platform / Tenant Context，并显式标记当前 Context。具备有效平台角色但当前认证强度不足时，Platform 选项仍返回并标记 `requires_step_up=true`；该标记只用于前端发起增强认证，不能绕过切换 Service 的 AAL2/AAL3 校验。Tenant 选项按 Tenant Code、Tenant ID 稳定排序，Platform 固定在最前。
+
+切换事务必须：锁定当前 Browser Family，复核目标 Context 和授权版本，撤销旧 Family 及派生 Resource Access Ticket，创建新 Family 和新票据，写入旧 / 新 Context 审计，最后返回新内存 Access Token。目标 Context 必须与当前 Context 不同；新 Family 继承原 Family 的认证事实和固定最终 `expires_at`，切换不得重新起算 30 天期限。事务失败时旧 Family 保持有效。切换成功后通过 `addp-auth-session` 广播 `context_changed`；其他标签页和 iframe 必须清空旧 Context 的业务缓存并采用新 Token。
+
+refresh 与 context switch 同时针对同一 Family 时，按 `Principal -> 目标 Membership / Tenant（切换到 Tenant 时）-> Family -> Refresh Token -> Access Token -> Resource Ticket` 的共同相对锁序，只能一个事务完成状态转换。等待锁后发现 Access Token、Refresh Token 或 Family 已被另一事务转换的请求返回可重试冲突或统一未授权，不得创建第二个 Family、不得把正常竞争误记为 Refresh Token 重用。
 
 CLI / OAuth Client 不能调用 Context Switch 修改既有 Family。它们需要另一个 Context 时必须重新执行用户授权，并永久绑定批准时选择的 Context。
+
+### 6.5 主动退出
+
+第一方浏览器主动退出必须同时提交当前内存 Access Token 和同一 Family 的 Refresh Token Cookie。System 只接受 `auth_type=first_party`、`client_id=addp-web`，且 Refresh Token 的 `issued_access_token_id` 指向所提交 Access Token 的当前有效凭据对；不得只凭 Access Token、只凭 Cookie，或跨 Family 撤销会话。
+
+退出事务按 `Principal -> Family -> Refresh Token -> Access Token -> Resource Ticket` 加锁，原子撤销整个 Family 及全部派生 Access Token、Refresh Token、Delegated Access Token 和 Resource Access Ticket，并写入唯一领域事件 `iam.browser_session.logged_out`。审计写入失败时全部撤销回滚。
+
+logout 与 refresh / context switch 同时针对同一 Family 时，只允许一个事务完成状态转换。先完成 logout 时，等待者统一返回未授权；先完成 refresh 时，使用旧凭据的 logout 返回未授权；先完成 context switch 时，旧凭据的 logout 返回未授权。重复 logout 也统一返回未授权，不识别已撤销 Token 形成幂等旁路，且不得重复写审计。无论服务端返回成功还是未授权，浏览器都必须清除本地内存状态和相关 Cookie，并广播退出事件。
+
+### 6.6 HTTP 契约
+
+`POST /login` 使用判别字段返回且只返回一种结果：
+
+```json
+{"next_action":"session_issued","session":{"access_token":"addp_at_...","token_type":"Bearer","expires_in":900}}
+```
+
+```json
+{"next_action":"select_context","selection":{"selection_ticket":"addp_cst_...","expires_at":"2026-07-24T12:00:00Z","contexts":[]}}
+```
+
+`POST /auth/context-selections`、`POST /auth/context-switches` 和 `POST /refresh` 成功时统一直接返回 `session` 对象的 Access Token 结构，并同时设置新的 Refresh Token 与各 Owner Resource Access Ticket Cookie。Selection Ticket 结果不得设置任何会话 Cookie。
+
+Context 选项统一包含 `type`、`current`、`requires_step_up`；Tenant 选项还包含十进制字符串 `tenant_id`、`tenant_membership_id`、`tenant_code`、`tenant_name`，Platform 选项不得伪造 Tenant 字段。Context Selection / Switch 请求只接受 `context_type` 和可选的十进制字符串 `tenant_membership_id`。
+
+错误响应遵循 `{ "error": "..." }`；需要增强认证时额外返回稳定 `error_code=step_up_required` 和 HTTP 403。非法参数返回 400，无效会话或无效凭据返回 401，无权进入 Context 返回 403，并发状态冲突返回 409，其他错误返回 500，且不得暴露内部错误细节。
+
+Refresh 缺少 Cookie 或 Runtime 明确返回未授权时清除全部会话 Cookie；409 锁竞争和 500 服务故障不得清 Cookie。Logout 无论 Runtime 成功、未授权或失败都必须清除全部会话 Cookie；只有首次成功撤销返回 204，其他结果按上述状态码返回。
+
+### 6.7 当前用户自服务
+
+`GET /users/me` 只返回当前全局 User/Profile：十进制字符串 `id`、`display_name`、可空 `primary_email`、可空 `locale`、`created_at`、`updated_at`，以及可空 `local_account`。`local_account` 仅包含展示用户名 `username`；纯外部 IdP User 没有 Local Account 时必须返回 `null`。该响应不得包含旧 `user_type`、单一 `tenant_id`、Principal 状态、授权版本、Role、Permission 或 Membership；当前 Context 和权限只能从 `/auth/context` 获取。
+
+`PUT /users/me/password` 只接受 `current_password` 和 `new_password`，两者都不得为空且必须不同。基础 IAM Runtime 不继承旧 DTO 的 `min=6`，后续密码强度统一由 Authentication Policy 决定。请求必须使用当前有效第一方 Browser Access Token；Runtime 在 Principal 锁内重新校验 Token 后修改 Local Account 密码、递增授权版本、撤销全部有效 Token Family 并写 `iam.password.rotated`。
+
+当前密码错误返回 HTTP 400 和稳定 `error_code=invalid_current_password`，不得返回会触发 Browser AuthSession 刷新的 Token 401；新旧密码相同返回 400 和 `error_code=password_unchanged`。成功返回 `changed_at` 与 `revoked_family_count`，同时清除当前浏览器全部会话 Cookie，前端清空内存 Token、广播退出并跳转登录。
 
 ## 七、前端共享能力要求
 
@@ -213,7 +259,7 @@ CLI / OAuth Client 不能调用 Context Switch 修改既有 Family。它们需�
 - [ ] Resource Access Ticket 只在 Owner 明确允许的 GET/HEAD 资源路由生效。
 - [ ] iframe 使用受信任 origin 的认证握手。
 - [ ] 页面刷新、新标签页和浏览器重启可在有效 Family 内静默恢复。
-- [ ] 多标签页同时到期不会触发 Refresh Token 重用撤销。
+- [ ] 多标签页同时到期时最多一个刷新成功，其余请求返回可重试冲突，且不会触发 Refresh Token 重用撤销。
 - [ ] 401 只重试一次，不形成刷新循环。
 - [ ] 用户退出会同步到其他标签页和 iframe。
 - [ ] Access Token 只绑定 `platform` 或一个当前 Tenant，上下文切换后旧权限不会继续生效。

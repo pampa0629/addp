@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
@@ -36,6 +37,127 @@ func TestTaskHandlerListTasksRejectsUnsupportedTaskType(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
+func TestReplayTaskRejectsTaskConfigOverrides(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, body := range []string{
+		`{"ranges":[{"partition":"0","start_offset":1,"end_offset":2}],"target":{"parent_locator":"addp://engine/8/path/replay?type=schema","name":"orders_replay"},"source":{"locator":"override"}}`,
+		`{"ranges":[{"partition":"0","start_offset":1,"end_offset":2}],"target":{"parent_locator":"addp://engine/8/path/replay?type=schema","name":"orders_replay","policy":{"apply_mode":"append"}}}`,
+	} {
+		router := gin.New()
+		router.POST("/task-definitions/:id/replay", NewTaskHandler(nil).ReplayTask)
+		req := httptest.NewRequest(http.MethodPost, "/task-definitions/1/replay", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status=%d body=%s request=%s", w.Code, w.Body.String(), body)
+		}
+	}
+}
+
+func TestRespondReplayTaskErrorDoesNotExposeInternalDetails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/replay-error", func(c *gin.Context) {
+		respondReplayTaskError(c, fmt.Errorf("kafka connection failed: password=secret"))
+	})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/replay-error", nil))
+	if w.Code != http.StatusInternalServerError || strings.Contains(w.Body.String(), "secret") {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestDeleteTaskErrorsUseStableStatusAndDoNotExposeCleanupDetails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/delete-running", func(c *gin.Context) {
+		respondTaskServiceError(c, service.ErrTaskDeleteRequiresStopped)
+	})
+	router.GET("/delete-cleanup", func(c *gin.Context) {
+		respondTaskServiceError(c, fmt.Errorf("%w: broker password=secret", service.ErrTaskDeleteCleanupFailed))
+	})
+
+	running := httptest.NewRecorder()
+	router.ServeHTTP(running, httptest.NewRequest(http.MethodGet, "/delete-running", nil))
+	if running.Code != http.StatusConflict {
+		t.Fatalf("running delete status=%d body=%s", running.Code, running.Body.String())
+	}
+	cleanup := httptest.NewRecorder()
+	router.ServeHTTP(cleanup, httptest.NewRequest(http.MethodGet, "/delete-cleanup", nil))
+	if cleanup.Code != http.StatusServiceUnavailable || strings.Contains(cleanup.Body.String(), "secret") {
+		t.Fatalf("cleanup delete status=%d body=%s", cleanup.Code, cleanup.Body.String())
+	}
+}
+
+func TestTaskHandlerDeadLettersAreTaskScopedAndDoNotExposePayloadReference(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newTransferTaskHandlerTestDB(t)
+	task := &models.TransferTask{
+		TenantID: 7, Name: "dead letter task", TaskType: commonExecution.TaskTypeSync,
+		Config: validTransferTaskHandlerContinuousConfig(), BatchSize: 100,
+		Status: models.TaskStatusIdle, DesiredState: models.TaskDesiredStateStopped,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	observedAt := time.Date(2026, 7, 23, 8, 0, 0, 0, time.UTC)
+	deadLetter := &models.DeadLetter{
+		Identity: "a220d5ad-d86e-52ca-ad4f-5ff2d8bfad1c", TenantID: 7, TaskID: task.ID,
+		ApplyIdentity: task.ApplyIdentity, FirstExecutionID: "execution-1", LastExecutionID: "execution-2",
+		SourceIdentity: "addp://engine/30/path/orders.events?type=topic", SourceTopic: "orders.events",
+		SourcePartition: "2", SourceOffset: 41, ErrorCode: "invalid_json_object", ErrorCategory: "record_decode",
+		ErrorMessage: "record value must be a JSON object", PayloadTopic: "__addp_dlq.7.1", PayloadPartition: 0,
+		PayloadOffset: 19, PayloadAvailable: true, FirstObservedAt: observedAt, LastObservedAt: observedAt, OccurrenceCount: 2,
+	}
+	if err := db.Create(deadLetter).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	taskSvc := service.NewTaskService(db, nil, nil, nil)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", uint(7))
+		c.Next()
+	})
+	handler := NewTaskHandler(taskSvc)
+	router.GET("/task-definitions/:id/dead-letters", handler.ListDeadLetters)
+	router.GET("/task-definitions/:id/dead-letters/:identity", handler.GetDeadLetter)
+
+	list := httptest.NewRecorder()
+	router.ServeHTTP(list, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/task-definitions/%d/dead-letters?source_partition=2&page=1&page_size=20", task.ID), nil))
+	if list.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", list.Code, list.Body.String())
+	}
+	var response struct {
+		Data  []map[string]interface{} `json:"data"`
+		Total int64                    `json:"total"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Total != 1 || len(response.Data) != 1 {
+		t.Fatalf("list response=%s", list.Body.String())
+	}
+	for _, forbidden := range []string{"tenant_id", "task_id", "apply_identity", "payload_topic", "payload_partition", "payload_offset"} {
+		if _, exists := response.Data[0][forbidden]; exists {
+			t.Fatalf("public dead-letter response exposed %s: %s", forbidden, list.Body.String())
+		}
+	}
+
+	detail := httptest.NewRecorder()
+	router.ServeHTTP(detail, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/task-definitions/%d/dead-letters/%s", task.ID, deadLetter.Identity), nil))
+	if detail.Code != http.StatusOK || strings.Contains(detail.Body.String(), "__addp_dlq") {
+		t.Fatalf("detail status=%d body=%s", detail.Code, detail.Body.String())
+	}
+
+	invalid := httptest.NewRecorder()
+	router.ServeHTTP(invalid, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/task-definitions/%d/dead-letters/not-a-uuid", task.ID), nil))
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid identity status=%d body=%s", invalid.Code, invalid.Body.String())
 	}
 }
 
@@ -281,6 +403,36 @@ func newTransferTaskHandlerTestDB(t *testing.T) *gorm.DB {
 	`).Error; err != nil {
 		t.Fatalf("create transfer_tasks table: %v", err)
 	}
+	if err := db.Exec(`
+		CREATE TABLE transfer.dead_letters (
+			identity TEXT PRIMARY KEY,
+			tenant_id INTEGER NOT NULL,
+			task_id INTEGER NOT NULL,
+			apply_identity TEXT NOT NULL,
+			first_execution_id TEXT NOT NULL,
+			last_execution_id TEXT NOT NULL,
+			source_identity TEXT NOT NULL,
+			source_topic TEXT NOT NULL,
+			source_partition TEXT NOT NULL,
+			source_offset INTEGER NOT NULL,
+			source_timestamp DATETIME,
+			error_code TEXT NOT NULL,
+			error_category TEXT NOT NULL,
+			error_message TEXT NOT NULL,
+			payload_topic TEXT NOT NULL,
+			payload_partition INTEGER NOT NULL,
+			payload_offset INTEGER NOT NULL,
+			payload_available BOOLEAN NOT NULL,
+			first_observed_at DATETIME NOT NULL,
+			last_observed_at DATETIME NOT NULL,
+			occurrence_count INTEGER NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME,
+			UNIQUE(apply_identity, source_identity, source_partition, source_offset)
+		)
+	`).Error; err != nil {
+		t.Fatalf("create dead_letters table: %v", err)
+	}
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
 		t.Fatalf("attach common schema: %v", err)
 	}
@@ -342,7 +494,7 @@ func validTransferTaskHandlerConfig() map[string]interface{} {
 
 func validTransferTaskHandlerContinuousConfig() map[string]interface{} {
 	return map[string]interface{}{
-		"runtime": map[string]interface{}{"boundary": "continuous"},
+		"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}},
 		"load":    map[string]interface{}{"mode": "incremental", "change_detection": map[string]interface{}{"type": "kafka"}},
 		"source": map[string]interface{}{
 			"locator": "addp://engine/30/path/orders.events?type=topic", "representation": "native",
@@ -364,7 +516,7 @@ func validTransferTaskHandlerContinuousConfig() map[string]interface{} {
 
 func validTransferTaskHandlerCDCConfig() map[string]interface{} {
 	return map[string]interface{}{
-		"runtime": map[string]interface{}{"boundary": "continuous"},
+		"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}},
 		"load": map[string]interface{}{
 			"mode": "incremental", "change_detection": map[string]interface{}{"type": "cdc", "bootstrap": "initial_snapshot"},
 		},

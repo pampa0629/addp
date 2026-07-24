@@ -433,6 +433,10 @@ definitions:
         type: integer
       min_zoom:
         type: integer
+      profile_hash:
+        type: string
+      source_version:
+        type: string
       status:
         type: string
       storage_ref:
@@ -500,6 +504,33 @@ definitions:
         type: string
       task_id:
         type: integer
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_manager_internal_models.VectorTileSetTask:
+    properties:
+      config:
+        $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
       tenant_id:
         type: integer
       updated_at:
@@ -1196,6 +1227,8 @@ definitions:
     type: object
   github_com_addp_manager_internal_service.ZoomRecommendation:
     properties:
+      estimated_tile_count:
+        type: integer
       max_zoom:
         type: integer
       min_zoom:
@@ -1204,6 +1237,8 @@ definitions:
         type: string
       status:
         type: string
+      tile_budget:
+        type: integer
     type: object
   internal_api.CADPreviewTaskRequest:
     properties:
@@ -2018,7 +2053,7 @@ definitions:
     type: object
   internal_api.TileCacheTaskTileResponse:
     properties:
-      format:
+      archive_format:
         type: string
       geometry_column:
         type: string
@@ -2028,6 +2063,8 @@ definitions:
         type: integer
       target_srid:
         type: integer
+      tile_type:
+        type: string
     type: object
   internal_api.UpdatePreferredModeRequest:
     properties:
@@ -5448,7 +5485,7 @@ paths:
       description: 列出 Manager 模块的任务（矢量瓦片缓存生成、矢量物化视图、栅格快显 COG、栅格 mosaic、CAD 栅格预览、三维模型与点云快显、向量化任务）|
         List Manager module tasks
       parameters:
-      - description: 任务类型过滤：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
+      - description: 任务类型过滤：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
           | Task type filter
         in: query
         name: task_type
@@ -5488,7 +5525,7 @@ paths:
       description: 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and
         ID
       parameters:
-      - description: 任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
+      - description: 任务类型：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
           | Task type
         in: path
         name: task_type
@@ -5528,7 +5565,7 @@ paths:
       - application/json
       description: 触发指定任务立即执行 | Trigger immediate execution of a specific task
       parameters:
-      - description: 任务类型：vector_tile_cache_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
+      - description: 任务类型：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding
           | Task type
         in: path
         name: task_type
@@ -6060,6 +6097,104 @@ paths:
       security:
       - BearerAuth: []
       summary: 更新瓦片缓存生成任务配置 | Update tile cache generation task configuration
+      tags:
+      - Manager
+  /vector_tile_set_tasks:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 任务列表 | Task list
+          schema:
+            $ref: '#/definitions/internal_api.TaskListResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取业务矢量瓦片集任务 | List business vector tile set tasks
+      tags:
+      - Manager
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务配置 | Task configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.TileCacheTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 任务 | Task
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_models.VectorTileSetTask'
+      security:
+      - BearerAuth: []
+      summary: 创建业务矢量瓦片集任务 | Create business vector tile set task
+      tags:
+      - Manager
+  /vector_tile_set_tasks/{id}:
+    delete:
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: 删除成功 | Deleted
+      security:
+      - BearerAuth: []
+      summary: 删除业务矢量瓦片集任务 | Delete business vector tile set task
+      tags:
+      - Manager
+    get:
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 任务 | Task
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_models.VectorTileSetTask'
+      security:
+      - BearerAuth: []
+      summary: 获取业务矢量瓦片集任务 | Get business vector tile set task
+      tags:
+      - Manager
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 任务配置 | Task configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.TileCacheTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 任务 | Task
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_models.VectorTileSetTask'
+      security:
+      - BearerAuth: []
+      summary: 更新业务矢量瓦片集任务 | Update business vector tile set task
       tags:
       - Manager
 securityDefinitions:

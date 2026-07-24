@@ -15,6 +15,7 @@ Orchestrator 不直接调用计算引擎；工作流算子应先在 Develop 中�
 | `name` | VARCHAR(128) | 编排名称 |
 | `description` | VARCHAR(512) | 编排描述 |
 | `steps` | JSONB | DAG 步骤定义 |
+| `editor_layout` | JSONB | 编辑器节点坐标和视口，仅用于展示，不参与执行 |
 | `enabled` | BOOLEAN | 是否启用定时调度 |
 | `schedule` | VARCHAR(128) | Cron 表达式 |
 | `last_execution_id` | VARCHAR(36) | 最近一次父 execution UUID |
@@ -84,6 +85,23 @@ type Step struct {
 
 ## 四、执行语义
 
+编辑器布局使用独立顶层字段：
+
+```json
+{
+  "nodes": {
+    "scan": { "x": 120, "y": 240 }
+  },
+  "viewport": {
+    "zoom": 1,
+    "translate_x": 0,
+    "translate_y": 0
+  }
+}
+```
+
+`editor_layout` 不属于 `steps[]`，Executor 不得读取它。
+
 1. Orchestrator 创建父 execution：`module=orchestrator`、`task_type=orchestration`。
 2. Executor 对 `steps` 做 DAG 拓扑排序。
 3. 每个 Step 调用对应 provider 的 `task_execute_endpoint`。
@@ -123,6 +141,13 @@ curl -X POST http://localhost:8084/api/v1/orchestrator/orchestrations \
         "timeout": 1800
       }
     ],
+    "editor_layout": {
+      "nodes": {
+        "scan": { "x": 120, "y": 240 },
+        "workflow": { "x": 360, "y": 240 }
+      },
+      "viewport": { "zoom": 1, "translate_x": 0, "translate_y": 0 }
+    },
     "enabled": true,
     "schedule": "0 2 * * *"
   }'

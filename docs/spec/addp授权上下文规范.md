@@ -1,6 +1,6 @@
 # ADDP 授权上下文规范
 
-更新日期：2026-07-23
+更新日期：2026-07-24
 
 状态：正式目标规范。本规范定义 ADDP 访问令牌的唯一解析语义和模块消费路径；目标 JSON 契约固定为 `addp.auth_context/v1`，完整 Schema 和示例见 `docs/next/addp-IAM AuthContext契约设计.md`，现有 `user_type` 响应结构不是目标契约。
 
@@ -160,3 +160,5 @@ OAuth 数据模型不复用 `system.applications/api_keys`：API Key 表达应�
 5. 完成 System、common、common-python、Gateway 和 owner 模块契约测试后再切换运行路径。
 
 不允许旧 AuthContext 与新 AuthContext 按客户端、路由或配置双轨共存。
+
+当前 IAM Runtime 基础阶段已落地唯一 `auth-context-v1.schema.json`、共享 Go 类型和第一方 Web Access Token 投影。该投影只接受 `auth_type=first_party`、`client_id=addp-web` 的 User Access Token；OAuth、Service Principal、Resource Ticket 和 Delegated Token 在对应协议 Runtime 完成前统一拒绝，不借用第一方路径、不构造缺失事实。API、共享中间件和旧认证入口仍须在调用方准备完成后一次性切换。

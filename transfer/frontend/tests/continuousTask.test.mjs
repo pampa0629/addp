@@ -3,17 +3,24 @@ import assert from 'node:assert/strict'
 
 import {
   buildContinuousSourceEndpoint,
-  buildPostgreSQLCDCSourceEndpoint,
+	buildDatabaseCDCSourceEndpoint,
 	cdcMappingsCoverSourceFields,
 	continuousMappedTargetKeys,
 	continuousMappingsValid,
+	databaseCDCMappingsValid,
+	databaseCDCUnavailableReasonCodes,
 	isKafkaTopicSource,
-	isPostgreSQLTableSource,
+	isDatabaseTableCDCSource,
 	normalizeContinuousKeyFields,
-	postgresqlCDCMappingsValid,
-	postgresqlCDCUnavailableReasonCodes,
 	taskEngineTypes
 } from '../src/views/TaskWizard/continuousTask.mjs'
+
+const databaseCDCCapability = {
+	sources: ['postgresql', 'mysql'],
+	target: 'postgresql',
+	bootstrap: ['initial_snapshot'],
+	apply_mode: 'upsert_delete'
+}
 
 test('Kafka topic source is the only continuous source shape', () => {
   assert.equal(isKafkaTopicSource('kafka', 'addp://engine/30/path/orders.events?type=topic'), true)
@@ -21,10 +28,11 @@ test('Kafka topic source is the only continuous source shape', () => {
   assert.equal(isKafkaTopicSource('kafka', 'addp://engine/30/path/orders?type=table'), false)
 })
 
-test('PostgreSQL table is the only CDC source shape', () => {
-	assert.equal(isPostgreSQLTableSource('postgresql', 'addp://engine/12/path/public/orders?type=table'), true)
-	assert.equal(isPostgreSQLTableSource('kafka', 'addp://engine/12/path/public/orders?type=table'), false)
-	assert.deepEqual(buildPostgreSQLCDCSourceEndpoint('addp://engine/12/path/public/orders?type=table'), {
+test('PostgreSQL and MySQL tables use the single database CDC source shape', () => {
+	assert.equal(isDatabaseTableCDCSource('postgresql', 'addp://engine/12/path/public/orders?type=table'), true)
+	assert.equal(isDatabaseTableCDCSource('mysql', 'addp://engine/13/path/business/orders?type=table'), true)
+	assert.equal(isDatabaseTableCDCSource('kafka', 'addp://engine/12/path/public/orders?type=table'), false)
+	assert.deepEqual(buildDatabaseCDCSourceEndpoint('addp://engine/12/path/public/orders?type=table'), {
 		locator: 'addp://engine/12/path/public/orders?type=table',
 		data_type: 'table',
 		representation: 'native'
@@ -92,17 +100,22 @@ test('CDC mapping must cover the complete frozen source schema', () => {
 	assert.equal(cdcMappingsCoverSourceFields([{ source_field: 'id' }], fields), false)
 })
 
-test('PostgreSQL CDC accepts geometry without opening geometry to generic Kafka tasks', () => {
+test('database CDC mapping types are provider-specific', () => {
 	const mappings = [
 		{ source_field: 'id', target_field: 'id', target_type: 'bigint', nullable: false },
 		{ source_field: 'shape', target_field: 'geometry', target_type: 'geometry', nullable: true }
 	]
-	assert.equal(postgresqlCDCMappingsValid(mappings, ['id']), true)
+	assert.equal(databaseCDCMappingsValid(mappings, ['id'], 'postgresql'), true)
+	assert.equal(databaseCDCMappingsValid(mappings, ['id'], 'mysql'), false)
 	assert.equal(continuousMappingsValid(mappings, ['id']), false)
+	assert.equal(databaseCDCMappingsValid([
+		{ source_field: 'id', target_field: 'id', target_type: 'bigint', nullable: false },
+		{ source_field: 'payload', target_field: 'payload', target_type: 'bytes', nullable: false }
+	], ['id'], 'mysql'), true)
 })
 
-test('PostgreSQL CDC availability reports concrete blocking reasons', () => {
-	const available = postgresqlCDCUnavailableReasonCodes({
+test('database CDC availability reports provider-specific blocking reasons', () => {
+	const available = databaseCDCUnavailableReasonCodes({
 		sourceEngineType: 'postgresql',
 		sourceLocator: 'addp://engine/8/path/public/roads?type=table',
 		sourceRepresentation: 'native',
@@ -112,21 +125,36 @@ test('PostgreSQL CDC availability reports concrete blocking reasons', () => {
 		sourceFields: [
 			{ name: 'id', type: 'bigint', primary_key: true },
 			{ name: 'shape', type: 'geometry' }
-		]
+		],
+		databaseCDCCapability
 	})
 	assert.deepEqual(available, [])
-
-	const unavailable = postgresqlCDCUnavailableReasonCodes({
+	assert.deepEqual(databaseCDCUnavailableReasonCodes({
 		sourceEngineType: 'mysql',
+		sourceLocator: 'addp://engine/9/path/business/orders?type=table',
+		sourceRepresentation: 'native',
+		sourceDataType: 'table',
+		targetEngineType: 'postgresql',
+		targetRepresentation: 'native',
+		sourceFields: [
+			{ name: 'id', type: 'bigint', primary_key: true },
+			{ name: 'payload', type: 'bytes' }
+		],
+		databaseCDCCapability
+	}), [])
+
+	const unavailable = databaseCDCUnavailableReasonCodes({
+		sourceEngineType: 'kafka',
 		sourceLocator: 'addp://engine/9/path/public/roads?type=table',
 		sourceRepresentation: 'encoded',
 		sourceDataType: 'table',
 		targetEngineType: 'minio',
 		targetRepresentation: 'encoded',
-		sourceFields: [{ name: 'payload', type: 'bytes' }]
+		sourceFields: [{ name: 'payload', type: 'bytes' }],
+		databaseCDCCapability
 	})
 	assert.deepEqual(unavailable.map(reason => reason.code), [
-		'sourcePostgreSQLRequired',
+		'sourceDatabaseRequired',
 		'sourceNativeRequired',
 		'targetPostgreSQLRequired',
 		'targetNativeRequired',
@@ -134,6 +162,30 @@ test('PostgreSQL CDC availability reports concrete blocking reasons', () => {
 		'sourceFieldTypesUnsupported'
 	])
 	assert.deepEqual(unavailable.at(-1).fields, ['payload'])
+
+	const mysqlUnsupported = databaseCDCUnavailableReasonCodes({
+		sourceEngineType: 'mysql',
+		sourceLocator: 'addp://engine/9/path/business/orders?type=table',
+		sourceRepresentation: 'native',
+		sourceDataType: 'table',
+		targetEngineType: 'postgresql',
+		targetRepresentation: 'native',
+		sourceFields: [
+			{ name: 'id', type: 'bigint', primary_key: true },
+			{ name: 'enabled', type: 'bool' }
+		],
+		databaseCDCCapability
+	})
+	assert.deepEqual(mysqlUnsupported, [{ code: 'sourceFieldTypesUnsupported', fields: ['enabled'] }])
+	assert.deepEqual(databaseCDCUnavailableReasonCodes({
+		sourceEngineType: 'mysql',
+		sourceLocator: 'addp://engine/9/path/business/orders?type=table',
+		sourceRepresentation: 'native',
+		sourceDataType: 'table',
+		targetEngineType: 'postgresql',
+		targetRepresentation: 'native',
+		sourceFields: [{ name: 'id', type: 'bigint', primary_key: true }]
+	}), [{ code: 'capabilityUnavailable' }])
 })
 
 test('snapshot task engine types are restored from System engines instead of load mode guesses', () => {

@@ -1,0 +1,20 @@
+schema_version: addp.permission_manifest/v1
+owner_module: copilot
+manifest_version: 2
+permissions:
+  - key: copilot.sql.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.copilot.sql.execute.name
+    description_i18n_key: permissions.copilot.sql.execute.description
+  - key: copilot.workflow.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: true
+    status: active
+    name_i18n_key: permissions.copilot.workflow.execute.name
+    description_i18n_key: permissions.copilot.workflow.execute.description

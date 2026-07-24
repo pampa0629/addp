@@ -69,7 +69,11 @@ const docTemplate = `{
                             "type": "string"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.cleanup.execute"
+                ]
             }
         },
         "/admin/cleanup/history": {
@@ -121,7 +125,11 @@ const docTemplate = `{
                             "type": "string"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.cleanup.read"
+                ]
             }
         },
         "/admin/cleanup/scan": {
@@ -178,7 +186,11 @@ const docTemplate = `{
                             "type": "string"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.cleanup.execute"
+                ]
             }
         },
         "/admin/cleanup/tasks/{task_id}": {
@@ -236,7 +248,11 @@ const docTemplate = `{
                             "type": "string"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.cleanup.read"
+                ]
             }
         },
         "/applications": {
@@ -267,7 +283,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.application.read"
+                ]
             },
             "post": {
                 "security": [
@@ -309,7 +329,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.application.create"
+                ]
             }
         },
         "/applications/{id}": {
@@ -348,7 +372,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.application.read"
+                ]
             },
             "put": {
                 "security": [
@@ -397,7 +425,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.application.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -434,7 +466,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.application.delete"
+                ]
             }
         },
         "/applications/{id}/keys": {
@@ -474,7 +510,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.api_key.read"
+                ]
             },
             "post": {
                 "security": [
@@ -523,7 +563,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.api_key.create"
+                ]
             }
         },
         "/applications/{id}/keys/{key_id}": {
@@ -575,7 +619,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.api_key.revoke"
+                ]
             }
         },
         "/auth/context": {
@@ -606,7 +654,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "authenticated"
             }
         },
         "/auth/delegations": {
@@ -663,7 +712,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "authenticated"
             }
         },
         "/engines": {
@@ -755,7 +805,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.read"
+                ]
             },
             "post": {
                 "security": [
@@ -798,7 +852,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.create"
+                ]
             }
         },
         "/engines/test-connection": {
@@ -842,7 +900,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.execute"
+                ]
             }
         },
         "/engines/{id}": {
@@ -887,7 +949,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.read"
+                ]
             },
             "put": {
                 "security": [
@@ -942,7 +1008,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -985,7 +1055,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.delete"
+                ]
             }
         },
         "/engines/{id}/catalog/children": {
@@ -1055,7 +1129,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.read"
+                ]
             }
         },
         "/engines/{id}/spatial-workspaces/{ecosystem}/{kind}/enable": {
@@ -1124,7 +1202,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.execute"
+                ]
             }
         },
         "/engines/{id}/test": {
@@ -1180,7 +1262,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.execute"
+                ]
             }
         },
         "/login": {
@@ -1226,7 +1312,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/logout": {
@@ -1243,7 +1330,8 @@ const docTemplate = `{
                     "204": {
                         "description": "No Content"
                     }
-                }
+                },
+                "x-addp-auth-mode": "authenticated"
             }
         },
         "/logs": {
@@ -1615,7 +1703,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/oauth/authorization_requests/{request_id}": {
@@ -1673,7 +1762,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "authenticated"
             },
             "delete": {
                 "description": "使用只向 CLI 返回一次的请求凭据幂等取消待处理授权请求 | Idempotently cancel a pending authorization request using the request secret returned once to the CLI",
@@ -1725,7 +1815,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/oauth/authorizations": {
@@ -1800,7 +1891,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "authenticated"
             }
         },
         "/oauth/device/authorizations": {
@@ -1860,7 +1952,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "authenticated"
             }
         },
         "/oauth/device/code": {
@@ -1916,7 +2009,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/oauth/revoke": {
@@ -1964,7 +2058,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/oauth/token": {
@@ -2051,7 +2146,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/refresh": {
@@ -2080,7 +2176,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/register": {
@@ -2126,7 +2223,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/tenants": {
@@ -2189,7 +2287,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.tenant.read"
+                ]
             },
             "post": {
                 "security": [
@@ -2231,7 +2333,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.tenant.create"
+                ]
             }
         },
         "/tenants/{id}": {
@@ -2276,7 +2382,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.tenant.read"
+                ]
             },
             "put": {
                 "security": [
@@ -2331,7 +2441,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.tenant.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -2518,7 +2632,59 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "self"
+            }
+        },
+        "/users/me/password": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户管理 | User Management"
+                ],
+                "summary": "修改当前用户密码 | Change current user password",
+                "parameters": [
+                    {
+                        "description": "密码修改请求 | Change password request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ChangePasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "self"
             }
         },
         "/users/{id}": {
@@ -2640,63 +2806,6 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.SuccessResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/users/{id}/change-password": {
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "用户管理 | User Management"
-                ],
-                "summary": "修改用户密码 | Change user password",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "用户ID | User ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "密码修改请求 | Change password request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ChangePasswordRequest"
-                        }
                     }
                 ],
                 "responses": {

@@ -5,8 +5,11 @@
 // Composables
 export { useLoopDetection } from './composables/useLoopDetection.js'
 export { useDAGCore } from './composables/useDAGCore.js'
-export { useDAGEdgeMode } from './composables/useDAGEdgeMode.js'
 export { useDAGSelection } from './composables/useDAGSelection.js'
+export { useDAGViewport } from './composables/useDAGViewport.js'
+export { useDAGHistory } from './composables/useDAGHistory.js'
+export { useDAGClipboard } from './composables/useDAGClipboard.js'
+export { useDAGLayout } from './composables/useDAGLayout.js'
 
 // Nodes
 export { registerMultiPortNode } from './nodes/MultiPortNode.js'
@@ -20,3 +23,21 @@ export { registerDagViewerElement } from './web-components/dag-viewer-wc.js'
 
 // Utils
 export { DAG_SCHEMA_URL, NodeStatus, validateDAGSchema } from './utils/dagSchema.js'
+export {
+  createDAGDirectEdgeBehavior,
+  createDAGDragNodeBehavior,
+  isDAGPortEvent,
+  linkPointPort
+} from './utils/directEdge.js'
+export {
+  applyDAGNodePositions,
+  captureDAGEditorLayout,
+  clampDAGZoom,
+  cloneDAGNodeForPaste,
+  cloneDAGValue,
+  createDAGHistoryStore,
+  DAG_MAX_ZOOM,
+  DAG_MIN_ZOOM,
+  normalizeDAGEditorLayout,
+  restoreDAGViewport
+} from './utils/editing.js'

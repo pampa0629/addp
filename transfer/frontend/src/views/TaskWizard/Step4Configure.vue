@@ -30,8 +30,8 @@
 
       <el-alert
         v-if="isContinuousTask"
-				:title="isPostgreSQLCDCTask ? t('transfer.taskWizard.cdcSyncTitle') : t('transfer.taskWizard.continuousSyncTitle')"
-				:description="isPostgreSQLCDCTask ? t('transfer.taskWizard.cdcSyncDesc') : t('transfer.taskWizard.continuousSyncDesc')"
+				:title="isDatabaseCDCTask ? t('transfer.taskWizard.cdcSyncTitle') : t('transfer.taskWizard.continuousSyncTitle')"
+				:description="isDatabaseCDCTask ? t('transfer.taskWizard.cdcSyncDesc') : t('transfer.taskWizard.continuousSyncDesc')"
         type="info"
         :closable="false"
         show-icon
@@ -44,13 +44,13 @@
 					<el-radio value="incremental" :disabled="!watermarkIncrementalSupported">
 						{{ t('transfer.taskWizard.watermarkIncrementalLoad') }}
 					</el-radio>
-					<el-radio value="cdc" :disabled="!postgresqlCDCSupported">
-						{{ t('transfer.taskWizard.postgresqlCDCLoad') }}
+					<el-radio value="cdc" :disabled="!databaseCDCSupported">
+						{{ t('transfer.taskWizard.databaseCDCLoad') }}
 					</el-radio>
 				</el-radio-group>
-				<ul v-if="postgresqlCDCUnavailableReasons.length" class="field-hint block-hint cdc-unavailable-reasons">
-					<li v-for="reason in postgresqlCDCUnavailableReasons" :key="reason.code">
-						{{ postgresqlCDCReasonText(reason) }}
+				<ul v-if="databaseCDCUnavailableReasons.length" class="field-hint block-hint cdc-unavailable-reasons">
+					<li v-for="reason in databaseCDCUnavailableReasons" :key="reason.code">
+						{{ databaseCDCReasonText(reason) }}
 					</li>
 				</ul>
 			</el-form-item>
@@ -62,7 +62,7 @@
             multiple
             filterable
             :placeholder="t('transfer.taskWizard.continuousKeyFieldsPlaceholder')"
-						:disabled="isPostgreSQLCDCTask"
+						:disabled="isDatabaseCDCTask"
             class="field-select"
           >
             <el-option
@@ -76,7 +76,7 @@
         </el-form-item>
 
 				<el-alert
-					v-if="isPostgreSQLCDCTask"
+					v-if="isDatabaseCDCTask"
 					:title="t('transfer.taskWizard.cdcLifecycleWarningTitle')"
 					:description="t('transfer.taskWizard.cdcLifecycleWarning')"
 					type="warning"
@@ -247,13 +247,13 @@ const formData = reactive({
 
 const isContinuousTask = computed(() => props.wizardState.isContinuousTask.value)
 const isKafkaContinuousTask = computed(() => props.wizardState.isKafkaContinuousTask.value)
-const isPostgreSQLCDCTask = computed(() => props.wizardState.isPostgreSQLCDCTask.value)
+const isDatabaseCDCTask = computed(() => props.wizardState.isDatabaseCDCTask.value)
 const watermarkIncrementalSupported = computed(() => props.wizardState.supportsWatermarkIncremental.value)
-const postgresqlCDCSupported = computed(() => props.wizardState.supportsPostgreSQLCDC.value)
-const postgresqlCDCUnavailableReasons = computed(() => props.wizardState.postgresqlCDCUnavailableReasons.value)
+const databaseCDCSupported = computed(() => props.wizardState.supportsDatabaseCDC.value)
+const databaseCDCUnavailableReasons = computed(() => props.wizardState.databaseCDCUnavailableReasons.value)
 
-function postgresqlCDCReasonText(reason) {
-	const key = `transfer.taskWizard.postgresqlCDCUnavailableReasons.${reason?.code || 'unknown'}`
+function databaseCDCReasonText(reason) {
+	const key = `transfer.taskWizard.databaseCDCUnavailableReasons.${reason?.code || 'unknown'}`
 	return t(key, { fields: Array.isArray(reason?.fields) ? reason.fields.join(', ') : '' })
 }
 
@@ -424,7 +424,7 @@ watch(watermarkIncrementalSupported, (supported) => {
   }
 })
 
-watch(postgresqlCDCSupported, (supported) => {
+watch(databaseCDCSupported, (supported) => {
 	if (!supported && formData.loadMode === 'cdc') {
 		formData.loadMode = 'snapshot'
 	}

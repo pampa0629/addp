@@ -2,6 +2,8 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
+const isE2E = process.env.ADDP_E2E === '1'
+
 export default defineConfig({
   plugins: [vue()],
   resolve: {
@@ -21,7 +23,7 @@ export default defineConfig({
     port: 5177,
     strictPort: true, // 端口被占用时报错，不自动切换
     host: '0.0.0.0',
-    hmr: {
+    hmr: isE2E ? false : {
       // 修复 iframe 嵌入时 HMR WebSocket 连接问题
       // 在 iframe 中运行时,强制使用正确的端口
       protocol: 'ws',

@@ -230,6 +230,8 @@
         "dataRetrieval": "Data Retrieval",
         "vectorizationTasks": "Vectorization Tasks",
         "spatialQuickView": "Quick View Management",
+        "spatialTasks": "Spatial Tasks",
+        "vectorTiles": "Vector Tiles",
         "tileCache": "Vector Quick View - Tile Cache",
         "vectorMaterializedView": "Vector Quick View - Materialized View",
         "cogArtifacts": "Raster Quick View - COG",

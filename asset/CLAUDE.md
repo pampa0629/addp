@@ -15,9 +15,13 @@ Asset 模块负责数据资产管理，包括资产类型、资产目录、资�
 
 ```text
 asset/
+├── authorization/
+│   └── permissions.yaml       # Asset Permission Manifest，发布期聚合事实源
 ├── backend/
 │   ├── cmd/server/main.go
 │   ├── internal/api/router.go
+│   ├── internal/api/handlers.go
+│   ├── docs/                  # 由 swag 生成的发布检查文档
 │   ├── internal/models/models.go
 │   ├── internal/service/      # asset/catalog/type/application/authorization/rating
 │   └── internal/search/       # Meilisearch indexer
@@ -29,8 +33,11 @@ asset/
 
 ## API 与数据
 
+- Asset 是 `asset.catalog.*`、`asset.entry.*`、`asset.application.*`、`asset.authorization.*` 和 `asset.rating.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。
 - 路由前缀：`/api/v1/asset`。
 - 主要资源：`type-definitions`、`catalogs`、`assets`、`applications`、`authorizations`、`ratings`。
+- 公开业务路由只绑定 `internal/api/handlers.go` 中的真实 Handler；类型定义只读，不发布永久返回 403 的写路由。
+- 每个公开 Operation 必须在 Swagger 中声明 `x-addp-auth-mode`，Permission 模式使用 Asset Manifest 中的精确 Key。
 - 资产自动发现会调用 `META_URL`、`SERVICE_URL`、`STANDARD_URL`、`DEVELOP_URL`，不要在业务逻辑中硬编码单一来源。
 - 资产发布、授权和评价均按租户隔离，认证信息通过 `common/middleware/auth` 获取。
 

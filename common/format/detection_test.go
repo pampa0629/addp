@@ -63,10 +63,16 @@ func TestDetectFormat(t *testing.T) {
 			want:     FormatRasterMosaic,
 		},
 		{
-			name:     "Tile pyramid manifest by exact file name",
-			filename: "tiles.addp.json",
-			peek:     nil,
-			want:     FormatTilePyramid,
+			name:     "PMTiles v3 by extension and header",
+			filename: "roads.pmtiles",
+			peek:     append([]byte("PMTiles"), 0x03),
+			want:     FormatPMTiles,
+		},
+		{
+			name:     "PMTiles extension rejects invalid header",
+			filename: "roads.pmtiles",
+			peek:     []byte("not-pmtiles"),
+			want:     FormatUnknown,
 		},
 		{
 			name:     "Shapefile index component is not full shapefile format",

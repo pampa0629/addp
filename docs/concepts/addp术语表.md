@@ -37,7 +37,8 @@
 | data type | 数据类型 | 用户和平台理解 data item 的高层语义类型。 | 比文件格式更高层，例如 `table`、`document`、`media`。 |
 | format | 文件格式 | data item 或 content 的编码方式或格式族。 | 例如 `csv`、`parquet`、`pdf`、`shapefile`。 |
 | layout | 内容布局 | content 如何组成 data item 的布局维度。 | `format.layouts` 表示格式支持的布局列表，`attributes.item.layout` 表示已识别 item 的布局结果；取值为 `single`、`multi`、`whole`。 |
-| tile pyramid | 二维瓦片金字塔 | 由 manifest 和按瓦片坐标组织的二维地图瓦片共同组成的 whole-scope data item。 | 统一使用 `data_type=media`、`format=tile_pyramid`、`layout=whole`；MVT、PNG、JPEG、WebP 是 manifest 内的 `tile_format`。 |
+| vector tile set | 矢量瓦片集 | 以 PMTiles v3 单文件封装、可作为业务数据长期保存和跨平台交换的二维矢量瓦片 data item。 | 统一使用 `data_type=media`、`format=pmtiles`、`layout=single`；当前瓦片编码固定为 MVT。 |
+| PMTiles | PMTiles | 面向 HTTP Range Read 的单文件瓦片归档格式。 | ADDP 业务矢量瓦片集固定使用 PMTiles v3；PMTiles 是归档格式，MVT 是归档内单瓦片编码。 |
 | model_3d | 三维模型数据 | 以三维空间对象、场景、网格、构件或三维可视化结构为核心消费对象的数据类型。 | 覆盖 GLB / glTF、单 OSGB、OSGB Scene 倾斜摄影、S3M、3D Tiles 场景、IFC / Revit BIM 等；具体子形态由 `type_info.model_3d.model_kind`、format、layout 和 capabilities 表达。 |
 | point_cloud | 点云数据 | 以三维点集合、点属性、空间范围和抽样 / LOD 预览为核心消费对象的数据类型。 | 覆盖 LAS / LAZ / COPC、PCD、点云型 PLY、EPT / Potree 等；点属性不是普通表字段，不能仅因可列化而归为 `table`。 |
 | gaussian_splat | 高斯泼溅数据 | 以三维高斯基元、尺度、旋转、不透明度和视角相关颜色为核心消费对象的数据类型。 | 覆盖 3D Gaussian Splatting PLY 以及后续 `.splat`、`.ksplat`、`.spz` 等格式；不是普通点云，也不走传统 mesh / GLB 模型路线。 |
@@ -84,6 +85,7 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | Task | 任务 | 可被执行的业务能力抽象。 | Task 是抽象概念，不是统一任务总表；任务定义归 owner 模块私有表。 |
+| spatial task | 空间任务 | Manager 中按空间数据处理目的组织业务任务的导航与能力分类。 | 不是统一任务表或单一 `task_type`；当前包含“矢量瓦片”，后续空间业务能力按各自任务类型扩展。 |
 | task definition | 任务定义 | “未来应该按什么策略处理什么对象”的定义态。 | 例如 `meta.scan_tasks`、`transfer.transfer_tasks`、`manager.vector_tile_cache_tasks`。 |
 | task semantic identity | 任务语义身份 | owner 模块用于判定两次创建是否表达同一个持久任务定义的规范化键。 | 不等于任务 ID，也不由 execution ID 构成。受管派生任务通常由租户、稳定源身份和派生变体构成。 |
 | artifact variant | 派生变体 | 在同一稳定源上区分不同当前派生目标的规范化配置投影。 | 例如 `target_format=3d_tiles|s3m`、`tile_format=mvt`、几何列加目标 SRID。不能用输出目录名推断。 |
@@ -132,7 +134,8 @@
 | business Kafka Engine | 业务 Kafka 引擎 | 用户在 System 注册、按租户授权并显式选择 topic 的外部 Kafka。 | 进入 System engines、Catalog 和 ResourceLocator；ADDP 不默认创建或删除用户 topic。 |
 | Infra Kafka | 基础设施 Kafka | ADDP 内部为 Debezium CDC 中转、缓冲和 replay 使用的基础设施。 | 不进入 System engines、资源树或用户任务 endpoint；与业务 Kafka 即使物理共用也必须使用独立凭据、ACL 和 topic namespace。 |
 | resume | 恢复执行 | 新 execution 从任务同步主状态的 committed position 继续处理。 | 第一版 watermark 增量仅支持 resume；已结束 execution 不复用。 |
-| replay | 历史重放 | 按显式历史范围重新应用变化且不推进同步主状态。 | 不属于第一版 watermark 增量范围，也不是新的 `task_type`。 |
+| dead-letter record | 死信记录 | continuous runtime 按任务显式策略把无法归一化或映射的原始业务 Kafka record 持久化为可审计跳过事实。 | DLQ 写入、控制索引落库和目标 `skip` ledger 提交全部成功后才能推进主 position；PostgreSQL CDC schema/protocol 漂移不进入 DLQ。 |
+| replay | 历史重放 | 按显式 source partition/offset 历史范围创建独立 bounded execution，且不读取或推进同步主状态。 | v1 只允许业务 Kafka 重放到不存在的新 PostgreSQL 隔离目标；不是新的 `task_type`，也不是把 DLQ 单条消息补写回原目标。 |
 
 ## 工作流与算子
 
@@ -235,9 +238,10 @@
 | spatial | 空间能力 | 描述空间字段、CRS、范围、几何类型、空间索引等横切语义。 | 是横切能力，不是 data type。 |
 | quick view | 快显 | Manager 空间预览中的高性能地图浏览模式。 | 快显是 UI 能力，不是任务，也不是瓦片缓存产物。 |
 | preview state | 预览状态 | Manager 中记录某个 data item 的用户预览模式偏好和交互视角状态。 | 目标落点为 `manager.preview_state`；不依赖快显产物是否存在。快显能力、推荐结果和不可用原因由能力 API 动态合成。 |
-| tile cache | 瓦片缓存 | 面向地图浏览生成并保存的一组瓦片数据。 | 格式可以是 MVT、栅格瓦片、预渲染图片瓦片或后续扩展格式。 |
-| tile cache result | 瓦片缓存结果 | 某个 data item 生成后的瓦片缓存结果状态。 | 目标落点为 `manager.vector_tile_cache`；属于结果状态，不是 execution。 |
-| tile cache generation task | 瓦片缓存生成任务 | Manager 中可执行、可编排的瓦片缓存生成任务定义；当前不支持任务自身定时调度。 | 目标落点为 `manager.vector_tile_cache_tasks`，TaskProvider `task_type=vector_tile_cache_generation`。周期性刷新只能由显式携带本次覆盖确认的 Orchestrator 编排触发。 |
+| vector tile cache | 矢量瓦片缓存 | 为快显生成、由 Manager 管理生命周期的 infra PMTiles artifact。 | 不是 data item，不进入业务资源树，不允许被 Service 直接依赖。 |
+| vector tile cache result | 矢量瓦片缓存结果 | 某个源 data item 当前可复用的 infra PMTiles artifact 状态。 | 目标落点为 `manager.vector_tile_cache`；属于 artifact state，不是 execution。 |
+| vector tile cache generation task | 矢量瓦片缓存生成任务 | 为快显生成 infra PMTiles 的任务定义；当前不支持任务自身定时调度。 | 目标落点为 `manager.vector_tile_cache_tasks`，TaskProvider `task_type=vector_tile_cache_generation`。 |
+| vector tile set generation task | 矢量瓦片集生成任务 | 把源空间 data item 生成或把合格缓存 artifact 固化为 Business PMTiles data item 的业务派生任务。 | 目标落点为 `manager.vector_tile_set_tasks`，TaskProvider `task_type=vector_tile_set_generation`；结果只存在于业务存储与 Meta，不设 Manager 结果表。 |
 | storage ref | 存储引用 | 指向外部或内部存储位置的稳定引用。 | 上层逻辑消费存储引用，不应硬编码 bucket、prefix 或对象路径规则。 |
 | contentio.Ref | 内容引用 | 一个已确定 content 的定位器，不携带凭据。 | 需要多个 content 时使用 refs 数组。 |
 | contentio.Reader | 内容读取器 | 按内容引用打开单个 content 并读取轻量状态的统一抽象。 | 由编排层基于 engine capability 构造。 |

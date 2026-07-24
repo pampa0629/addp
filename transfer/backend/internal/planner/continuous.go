@@ -10,16 +10,27 @@ import (
 )
 
 const (
-	RuntimeBoundaryContinuous = "continuous"
-	changeTypeKafka           = "kafka"
+	RuntimeBoundaryContinuous   = "continuous"
+	changeTypeKafka             = "kafka"
+	RecordFailureModeBlock      = "block"
+	RecordFailureModeDeadLetter = "dead_letter"
 )
 
+type ContinuousRuntimeSpec struct {
+	Boundary      string                  `json:"boundary"`
+	RecordFailure ContinuousRecordFailure `json:"record_failure"`
+}
+
+type ContinuousRecordFailure struct {
+	Mode string `json:"mode"`
+}
+
 type ContinuousTaskSpec struct {
-	Runtime    RuntimeSpec          `json:"runtime"`
-	Load       ContinuousLoadSpec   `json:"load"`
-	Source     ContinuousSourceSpec `json:"source"`
-	Target     EndpointSpec         `json:"target"`
-	Transforms []TransformSpec      `json:"transforms"`
+	Runtime    ContinuousRuntimeSpec `json:"runtime"`
+	Load       ContinuousLoadSpec    `json:"load"`
+	Source     ContinuousSourceSpec  `json:"source"`
+	Target     EndpointSpec          `json:"target"`
+	Transforms []TransformSpec       `json:"transforms"`
 }
 
 type ContinuousLoadSpec struct {
@@ -98,6 +109,9 @@ func ParseContinuousTaskSpec(config map[string]interface{}) (ContinuousTaskSpec,
 func validateContinuousTaskSpec(spec ContinuousTaskSpec) error {
 	if spec.Runtime.Boundary != RuntimeBoundaryContinuous {
 		return fmt.Errorf("runtime.boundary must be %q", RuntimeBoundaryContinuous)
+	}
+	if spec.Runtime.RecordFailure.Mode != RecordFailureModeBlock && spec.Runtime.RecordFailure.Mode != RecordFailureModeDeadLetter {
+		return fmt.Errorf("runtime.record_failure.mode must be %q or %q", RecordFailureModeBlock, RecordFailureModeDeadLetter)
 	}
 	if spec.Load.Mode != loadModeIncremental || spec.Load.ChangeDetection.Type != changeTypeKafka {
 		return fmt.Errorf("continuous load must use incremental kafka change detection")

@@ -73,13 +73,9 @@ func AutoMigrate(db *gorm.DB) error {
 	if err := dropUsersIsSuperuser(db); err != nil {
 		return err
 	}
-	if err := scrubOAuthAuditRequestBodies(db); err != nil {
-		return err
-	}
 	return db.AutoMigrate(
 		&models.Tenant{},
 		&models.User{},
-		&models.AuditLog{},
 		&models.Engine{},
 		&models.Application{},
 		&models.APIKey{},
@@ -96,22 +92,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.ModuleRegistry{},
 	)
 }
-
-func scrubOAuthAuditRequestBodies(db *gorm.DB) error {
-	return db.Exec(scrubOAuthAuditRequestBodiesSQL).Error
-}
-
-const scrubOAuthAuditRequestBodiesSQL = `
-	DO $$
-	BEGIN
-		IF to_regclass('system.audit_logs') IS NOT NULL THEN
-			UPDATE system.audit_logs
-			SET request_body = '', query_params = '', error_message = ''
-			WHERE resource_path LIKE '/api/v1/system/oauth/%'
-			  AND (request_body <> '' OR query_params <> '' OR error_message <> '');
-		END IF;
-	END $$;
-`
 
 func EnsureBuiltinOAuthClients(db *gorm.DB) error {
 	client := models.OAuthClient{

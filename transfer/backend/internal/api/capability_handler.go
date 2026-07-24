@@ -15,6 +15,39 @@ type TransferCapabilityHandler struct{}
 type TransferCapabilitiesResponse struct {
 	TableFormats   []TransferTableFormatSupport   `json:"table_formats"`
 	RawCopyFormats []TransferRawCopyFormatSupport `json:"raw_copy_formats"`
+	Continuous     TransferContinuousCapabilities `json:"continuous"`
+}
+
+type TransferContinuousCapabilities struct {
+	BusinessKafka TransferBusinessKafkaCapabilities `json:"business_kafka"`
+	DatabaseCDC   TransferDatabaseCDCCapability     `json:"database_cdc"`
+}
+
+type TransferDatabaseCDCCapability struct {
+	Sources   []string `json:"sources"`
+	Target    string   `json:"target"`
+	Bootstrap []string `json:"bootstrap"`
+	ApplyMode string   `json:"apply_mode"`
+}
+
+type TransferBusinessKafkaCapabilities struct {
+	RecordFailureModes []string                     `json:"record_failure_modes"`
+	DeadLetters        TransferDeadLetterCapability `json:"dead_letters"`
+	BoundedReplay      TransferReplayCapability     `json:"bounded_replay"`
+}
+
+type TransferDeadLetterCapability struct {
+	Supported      bool     `json:"supported"`
+	ListEndpoint   string   `json:"list_endpoint"`
+	DetailEndpoint string   `json:"detail_endpoint"`
+	Filters        []string `json:"filters"`
+	ExposesPayload bool     `json:"exposes_payload"`
+}
+
+type TransferReplayCapability struct {
+	Supported               bool     `json:"supported"`
+	Endpoint                string   `json:"endpoint"`
+	OwnerRecordFailureModes []string `json:"owner_record_failure_modes"`
 }
 
 type TransferTableFormatSupport struct {
@@ -46,7 +79,7 @@ func NewTransferCapabilityHandler() *TransferCapabilityHandler {
 
 // Get returns Transfer capabilities backed by common format descriptors and loaded plugins.
 // @Summary 获取传输能力 | Get transfer capabilities
-// @Description 返回 Transfer 当前可用于表格传输的格式能力，来源于 common format descriptor 与已加载 plugin 的接口实现状态 | Returns table transfer format capabilities backed by common format descriptors and loaded plugin implementations
+// @Description 返回 Transfer 当前可用的格式能力、业务 Kafka continuous 能力和数据库 CDC 支持矩阵。| Returns available Transfer format capabilities, business Kafka continuous features, and the database CDC support matrix.
 // @Tags 传输能力 | Capabilities
 // @Produce json
 // @Success 200 {object} api.TransferCapabilitiesResponse
@@ -56,7 +89,31 @@ func (h *TransferCapabilityHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, TransferCapabilitiesResponse{
 		TableFormats:   buildTableFormatCapabilities(),
 		RawCopyFormats: buildRawCopyFormatCapabilities(),
+		Continuous:     buildContinuousCapabilities(),
 	})
+}
+
+func buildContinuousCapabilities() TransferContinuousCapabilities {
+	return TransferContinuousCapabilities{
+		DatabaseCDC: TransferDatabaseCDCCapability{
+			Sources: []string{"postgresql", "mysql"}, Target: "postgresql",
+			Bootstrap: []string{"initial_snapshot"}, ApplyMode: "upsert_delete",
+		},
+		BusinessKafka: TransferBusinessKafkaCapabilities{
+			RecordFailureModes: []string{"block", "dead_letter"},
+			DeadLetters: TransferDeadLetterCapability{
+				Supported:      true,
+				ListEndpoint:   "/api/v1/transfer/task-definitions/{id}/dead-letters",
+				DetailEndpoint: "/api/v1/transfer/task-definitions/{id}/dead-letters/{identity}",
+				Filters:        []string{"source_partition", "error_category", "error_code", "payload_available"},
+				ExposesPayload: false,
+			},
+			BoundedReplay: TransferReplayCapability{
+				Supported: true, Endpoint: "/api/v1/transfer/task-definitions/{id}/replay",
+				OwnerRecordFailureModes: []string{"block"},
+			},
+		},
+	}
 }
 
 func buildTableFormatCapabilities() []TransferTableFormatSupport {

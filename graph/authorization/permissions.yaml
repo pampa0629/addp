@@ -1,0 +1,164 @@
+schema_version: addp.permission_manifest/v1
+owner_module: graph
+manifest_version: 1
+permissions:
+  - key: graph.analysis.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.analysis.execute.name
+    description_i18n_key: permissions.graph.analysis.execute.description
+  - key: graph.analysis.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.analysis.read.name
+    description_i18n_key: permissions.graph.analysis.read.description
+  - key: graph.build_task.cancel
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.build_task.cancel.name
+    description_i18n_key: permissions.graph.build_task.cancel.description
+  - key: graph.build_task.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.build_task.create.name
+    description_i18n_key: permissions.graph.build_task.create.description
+  - key: graph.build_task.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.build_task.delete.name
+    description_i18n_key: permissions.graph.build_task.delete.description
+  - key: graph.build_task.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.build_task.execute.name
+    description_i18n_key: permissions.graph.build_task.execute.description
+  - key: graph.build_task.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.build_task.read.name
+    description_i18n_key: permissions.graph.build_task.read.description
+  - key: graph.build_task.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.build_task.update.name
+    description_i18n_key: permissions.graph.build_task.update.description
+  - key: graph.graph.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.graph.create.name
+    description_i18n_key: permissions.graph.graph.create.description
+  - key: graph.graph.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.graph.delete.name
+    description_i18n_key: permissions.graph.graph.delete.description
+  - key: graph.graph.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.graph.read.name
+    description_i18n_key: permissions.graph.graph.read.description
+  - key: graph.graph.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.graph.update.name
+    description_i18n_key: permissions.graph.graph.update.description
+  - key: graph.ontology.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.ontology.create.name
+    description_i18n_key: permissions.graph.ontology.create.description
+  - key: graph.ontology.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.ontology.delete.name
+    description_i18n_key: permissions.graph.ontology.delete.description
+  - key: graph.ontology.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.ontology.read.name
+    description_i18n_key: permissions.graph.ontology.read.description
+  - key: graph.ontology.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.ontology.update.name
+    description_i18n_key: permissions.graph.ontology.update.description
+  - key: graph.review.approve
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.review.approve.name
+    description_i18n_key: permissions.graph.review.approve.description
+  - key: graph.review.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.review.read.name
+    description_i18n_key: permissions.graph.review.read.description
+  - key: graph.review.reject
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.review.reject.name
+    description_i18n_key: permissions.graph.review.reject.description
+  - key: graph.review.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.review.update.name
+    description_i18n_key: permissions.graph.review.update.description

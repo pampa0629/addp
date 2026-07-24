@@ -58,7 +58,7 @@ func TestIntegrationContinuousKafkaToPostgresMultiWorkerFailoverPauseResumeStop(
 	}
 	defer producer.Close()
 	if err := producer.Ping(ctx); err != nil {
-		t.Skipf("Kafka is not available: %v", err)
+		t.Fatalf("Kafka is not available: %v", err)
 	}
 	topic := fmt.Sprintf("addp-continuous-e2e-%d", time.Now().UnixNano())
 	admin := kadm.NewClient(producer)
@@ -237,16 +237,13 @@ func TestIntegrationContinuousKafkaRetentionHealthTransitions(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	kafkaInfo := continuousKafkaIntegrationConnInfo()
-	producer, err := kgo.NewClient(
-		kgo.SeedBrokers(strings.Split(engineplugin.GetString(kafkaInfo, "bootstrap_servers"), ",")...),
-		kgo.RecordPartitioner(kgo.ManualPartitioner()),
-	)
+	producer, err := newContinuousIntegrationProducer(kafkaInfo)
 	if err != nil {
 		t.Fatalf("create Kafka producer: %v", err)
 	}
 	defer producer.Close()
 	if err := producer.Ping(ctx); err != nil {
-		t.Skipf("Kafka is not available: %v", err)
+		t.Fatalf("Kafka is not available: %v", err)
 	}
 	topic := fmt.Sprintf("addp-continuous-diagnostics-%d", time.Now().UnixNano())
 	admin := kadm.NewClient(producer)

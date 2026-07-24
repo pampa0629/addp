@@ -117,9 +117,9 @@ export function useUserManagement() {
   /**
    * 修改密码
    */
-  const changePassword = async (userId, passwordData) => {
+  const changePassword = async (passwordData) => {
     try {
-      await usersAPI.changePassword(userId, passwordData)
+      await usersAPI.changePassword(passwordData)
       ElMessage.success(t('system.user.msg.changePasswordSuccess'))
       return { success: true }
     } catch (error) {

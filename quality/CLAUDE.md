@@ -22,6 +22,8 @@
 
 ```
 quality/
+├── authorization/
+│   └── permissions.yaml                     # Quality owner Permission Manifest
 ├── backend/
 │   ├── cmd/server/main.go                    # 应用入口
 │   ├── go.mod                                # github.com/addp/quality
@@ -265,6 +267,18 @@ check_tasks.last_run_at、last_execution_id、last_execution_status
 | `INTERNAL_API_KEY` | - | 内部服务调用密钥 |
 | `ENABLE_SERVICE_INTEGRATION` | `true` | 是否启用跨模块服务集成 |
 | `REDIS_HOST` / `REDIS_PORT` | - | Redis 连接配置（用于认证缓存） |
+
+## IAM Permission 所有权
+
+Quality 是以下 Permission 的唯一 owner：
+
+- `quality.rule_application.*`
+- `quality.check_task.*`
+- `quality.issue.*`
+
+机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Quality 服务启动时不向 System 动态注册 Permission。
+
+Quality 的执行历史是 `common.task_executions` 的跨模块统一投影，首批内置 Role 使用 `monitor.execution.read` 读取该类全局执行事实；Quality 不重复定义同义的 `quality.execution.read`。
 
 ## 特殊设计
 

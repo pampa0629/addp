@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
@@ -16,6 +17,7 @@ import (
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/continuous"
+	"github.com/addp/transfer/internal/deadletter"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/google/uuid"
@@ -51,11 +53,46 @@ func main() {
 	if err != nil {
 		log.Fatalf("continuous worker Infra Kafka 配置无效: %v", err)
 	}
+	deadLetterWriter, err := deadletter.NewKafkaPayloadWriter(deadletter.KafkaWriterConfig{
+		ConnectionInfo:    infraKafkaConnection,
+		RetentionMillis:   int64(cfg.DeadLetterTopicRetention / time.Millisecond),
+		RetentionBytes:    cfg.DeadLetterTopicRetentionBytes,
+		ReplicationFactor: int16(cfg.DeadLetterTopicReplicationFactor),
+	})
+	if err != nil {
+		log.Fatalf("continuous worker DLQ Kafka writer 配置无效: %v", err)
+	}
+	defer deadLetterWriter.Close()
+	deadLetterRepo := repository.NewDeadLetterRepository(db)
+	deadLetterRecorder, err := deadletter.NewRecorder(deadLetterWriter, deadLetterRepo)
+	if err != nil {
+		log.Fatalf("continuous worker DLQ recorder 配置无效: %v", err)
+	}
+	deadLetterProbe, err := deadletter.NewKafkaPayloadAvailabilityProbe(deadletter.KafkaPayloadProbeConfig{
+		ConnectionInfo: infraKafkaConnection,
+		FetchMaxBytes:  cfg.DeadLetterReconcileFetchMaxBytes,
+	})
+	if err != nil {
+		log.Fatalf("continuous worker DLQ availability probe 配置无效: %v", err)
+	}
+	deadLetterReconciler, err := deadletter.NewPayloadAvailabilityReconciler(
+		deadLetterRepo,
+		deadLetterProbe,
+		deadletter.PayloadAvailabilityReconcilerConfig{
+			Interval: cfg.DeadLetterReconcileInterval, BatchSize: cfg.DeadLetterReconcileBatchSize,
+			Timeout: cfg.DeadLetterReconcileTimeout,
+		},
+		logger.With("component", "dead_letter_availability_reconciler"),
+	)
+	if err != nil {
+		log.Fatalf("continuous worker DLQ availability reconciler 配置无效: %v", err)
+	}
 	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 	runner := &continuous.DataSessionRunner{
 		Resolver: planner.NewSystemEngineResolver(systemClient),
 		States:   repository.NewSyncStateRepository(db), Progress: leaseRepo,
 		Captures: repository.NewCaptureRepository(db), InfraKafkaConnection: infraKafkaConnection,
+		DeadLetters: deadLetterRecorder,
 		PollTimeout: cfg.ContinuousPollTimeout, MaxBytes: cfg.ContinuousFetchMaxBytes,
 		DiagnosticsInterval:      cfg.ContinuousDiagnosticsInterval,
 		RetentionDegradedHorizon: cfg.ContinuousRetentionDegradedHorizon,
@@ -79,6 +116,11 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go func() {
+		if err := deadLetterReconciler.Run(ctx); err != nil && err != context.Canceled {
+			logger.L().Error("DLQ payload availability reconciler 已退出", "error", err)
+		}
+	}()
 	logger.L().Info("transfer continuous worker starting", "owner_instance_id", owner, "capacity", cfg.ContinuousWorkerCapacity, "data_plane", "kafka_or_postgresql_cdc_to_postgresql")
 	if err := supervisor.Run(ctx); err != nil && err != context.Canceled {
 		log.Fatalf("continuous supervisor 退出: %v", err)

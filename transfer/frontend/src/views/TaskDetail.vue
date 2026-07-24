@@ -21,7 +21,7 @@
               <el-button type="warning" @click="handlePause" :disabled="task.desired_state !== 'running' || isCDCSchemaBlocked">
                 {{ t('transfer.taskDetail.pause') }}
               </el-button>
-              <el-button :type="isPostgreSQLCDC ? 'danger' : undefined" @click="handleStop" :disabled="task.desired_state === 'stopped' && task.capture?.status !== 'cleanup_failed'">
+              <el-button :type="isDatabaseCDC ? 'danger' : undefined" @click="handleStop" :disabled="task.desired_state === 'stopped' && task.capture?.status !== 'cleanup_failed'">
                 {{ task.capture?.status === 'cleanup_failed' ? t('transfer.taskDetail.retryCleanup') : t('transfer.taskDetail.stop') }}
               </el-button>
             </template>
@@ -42,6 +42,9 @@
               </el-button>
             </template>
             <el-button @click="handleEdit" :disabled="!canEditTask">{{ t('transfer.taskDetail.edit') }}</el-button>
+            <el-button v-if="canCreateReplay" type="primary" plain @click="openReplayDialog">
+              {{ t('transfer.taskDetail.createReplay') }}
+            </el-button>
             <el-button @click="openJsonDialog">{{ t('transfer.taskDetail.viewJsonConfig') }}</el-button>
           </div>
         </div>
@@ -63,7 +66,7 @@
         <el-descriptions-item :label="t('transfer.taskDetail.description')" :span="2">
           {{ task.description || '-' }}
         </el-descriptions-item>
-        <template v-if="isPostgreSQLCDC && task.capture">
+        <template v-if="isDatabaseCDC && task.capture">
           <el-descriptions-item :label="t('transfer.taskDetail.captureStatus')">
             {{ task.capture.status }}
           </el-descriptions-item>
@@ -127,6 +130,84 @@
         </el-descriptions-item>
       </el-descriptions>
 
+      <template v-if="isDeadLetterTask">
+        <el-divider content-position="left">{{ t('transfer.taskDetail.deadLetters') }}</el-divider>
+        <el-alert
+          :title="t('transfer.taskDetail.deadLetterNoticeTitle')"
+          :description="t('transfer.taskDetail.deadLetterNoticeDescription')"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="dead-letter-notice"
+        />
+        <el-form :inline="true" class="dead-letter-filters" @submit.prevent="applyDeadLetterFilters">
+          <el-form-item :label="t('transfer.taskDetail.sourcePartition')">
+            <el-input v-model="deadLetterFilters.source_partition" clearable class="dead-letter-filter-input" />
+          </el-form-item>
+          <el-form-item :label="t('transfer.taskDetail.errorCategory')">
+            <el-input v-model="deadLetterFilters.error_category" clearable class="dead-letter-filter-input" />
+          </el-form-item>
+          <el-form-item :label="t('transfer.taskDetail.errorCode')">
+            <el-input v-model="deadLetterFilters.error_code" clearable class="dead-letter-filter-input" />
+          </el-form-item>
+          <el-form-item :label="t('transfer.taskDetail.payloadAvailability')">
+            <el-select v-model="deadLetterFilters.payload_available" class="dead-letter-filter-input">
+              <el-option :label="t('transfer.taskDetail.all')" value="" />
+              <el-option :label="t('transfer.taskDetail.payloadAvailable')" :value="true" />
+              <el-option :label="t('transfer.taskDetail.payloadUnavailable')" :value="false" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" native-type="submit">{{ t('transfer.taskDetail.query') }}</el-button>
+            <el-button @click="resetDeadLetterFilters">{{ t('transfer.taskDetail.reset') }}</el-button>
+          </el-form-item>
+        </el-form>
+
+        <el-table v-loading="deadLettersLoading" :data="deadLetters" stripe empty-text="-">
+          <el-table-column :label="t('transfer.taskDetail.sourcePosition')" min-width="180">
+            <template #default="{ row }">
+              <div>{{ row.source_topic }}</div>
+              <div class="secondary-text">{{ row.source_partition }} : {{ row.source_offset }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('transfer.taskDetail.error')" min-width="230" show-overflow-tooltip>
+            <template #default="{ row }">
+              <div>{{ row.error_category }} / {{ row.error_code }}</div>
+              <div class="secondary-text dead-letter-message">{{ row.error_message }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('transfer.taskDetail.payloadAvailability')" width="130">
+            <template #default="{ row }">
+              <el-tag :type="row.payload_available ? 'success' : 'info'" size="small">
+                {{ row.payload_available ? t('transfer.taskDetail.payloadAvailable') : t('transfer.taskDetail.payloadUnavailable') }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="occurrence_count" :label="t('transfer.taskDetail.occurrenceCount')" width="100" />
+          <el-table-column :label="t('transfer.taskDetail.lastObservedAt')" width="180">
+            <template #default="{ row }">{{ formatDate(row.last_observed_at) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('transfer.taskDetail.actions')" width="100" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="openDeadLetterDetail(row.identity)">
+                {{ t('transfer.taskDetail.detail') }}
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div class="dead-letter-pagination">
+          <el-pagination
+            v-model:current-page="deadLetterPage"
+            v-model:page-size="deadLetterPageSize"
+            :total="deadLetterTotal"
+            :page-sizes="[10, 20, 50, 100]"
+            layout="total, sizes, prev, pager, next"
+            @current-change="loadDeadLetters"
+            @size-change="handleDeadLetterPageSizeChange"
+          />
+        </div>
+      </template>
+
       <el-divider>{{ t('transfer.taskDetail.executionRecords') }}</el-divider>
       <el-table :data="executions" stripe>
         <el-table-column prop="execution_id" :label="t('transfer.taskDetail.executionId')" width="220" show-overflow-tooltip />
@@ -181,6 +262,71 @@
       </template>
       <pre class="json-pre">{{ formattedConfig }}</pre>
     </el-dialog>
+
+    <el-dialog v-model="deadLetterDetailVisible" :title="t('transfer.taskDetail.deadLetterDetail')" width="760px">
+      <el-descriptions v-if="deadLetterDetail" :column="2" border>
+        <el-descriptions-item :label="t('transfer.taskDetail.deadLetterIdentity')" :span="2">
+          <span class="detail-text">{{ deadLetterDetail.identity }}</span>
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.sourceTopic')">{{ deadLetterDetail.source_topic }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.sourcePosition')">
+          {{ deadLetterDetail.source_partition }} : {{ deadLetterDetail.source_offset }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.sourceTimestamp')">{{ formatDate(deadLetterDetail.source_timestamp) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.payloadAvailability')">
+          {{ deadLetterDetail.payload_available ? t('transfer.taskDetail.payloadAvailable') : t('transfer.taskDetail.payloadUnavailable') }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.errorCategory')">{{ deadLetterDetail.error_category }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.errorCode')">{{ deadLetterDetail.error_code }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.errorMessage')" :span="2">
+          <span class="detail-text">{{ deadLetterDetail.error_message }}</span>
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.firstExecutionId')">{{ deadLetterDetail.first_execution_id }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.lastExecutionId')">{{ deadLetterDetail.last_execution_id }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.firstObservedAt')">{{ formatDate(deadLetterDetail.first_observed_at) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.lastObservedAt')">{{ formatDate(deadLetterDetail.last_observed_at) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.taskDetail.occurrenceCount')">{{ deadLetterDetail.occurrence_count }}</el-descriptions-item>
+      </el-descriptions>
+    </el-dialog>
+
+    <el-dialog v-model="replayDialogVisible" :title="t('transfer.taskDetail.createReplay')" width="760px">
+      <el-alert
+        :title="t('transfer.taskDetail.replayNoticeTitle')"
+        :description="t('transfer.taskDetail.replayNoticeDescription')"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="replay-notice"
+      />
+      <el-form label-width="150px" class="replay-form">
+        <el-form-item :label="t('transfer.taskDetail.replayParentLocator')" required>
+          <el-input v-model="replayForm.target.parent_locator" />
+        </el-form-item>
+        <el-form-item :label="t('transfer.taskDetail.replayTargetName')" required>
+          <el-input v-model="replayForm.target.name" />
+        </el-form-item>
+        <el-form-item :label="t('transfer.taskDetail.replayRanges')" required>
+          <div class="replay-ranges">
+            <div v-for="(range, index) in replayForm.ranges" :key="index" class="replay-range-row">
+              <el-input v-model="range.partition" :placeholder="t('transfer.taskDetail.partition')" />
+              <el-input-number v-model="range.start_offset" :min="0" :controls="false" :placeholder="t('transfer.taskDetail.startOffset')" />
+              <span class="range-separator">→</span>
+              <el-input-number v-model="range.end_offset" :min="0" :controls="false" :placeholder="t('transfer.taskDetail.endOffset')" />
+              <el-button link type="danger" :disabled="replayForm.ranges.length === 1" @click="removeReplayRange(index)">
+                {{ t('transfer.taskDetail.remove') }}
+              </el-button>
+            </div>
+            <el-button link type="primary" @click="addReplayRange">{{ t('transfer.taskDetail.addRange') }}</el-button>
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="replayDialogVisible = false">{{ t('transfer.taskDetail.cancel') }}</el-button>
+        <el-button type="primary" :loading="replaySubmitting" @click="submitReplay">
+          {{ t('transfer.taskDetail.createReplay') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -194,7 +340,7 @@ import { continuousRecoveryTagType, formatLocatorDisplayPath, getContinuousRecov
 import { taskAPI, executionAPI } from '@/api/tasks'
 import { formatDate } from '@common-ui'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType, getExecutionTagType, getExecutionLabel } from '@/utils/formatters'
-import { buildCDCStopRequest, continuousStartDisabledReason, getCDCCaptureHealthWarning, isCDCSchemaBlocked as isCDCSchemaBlockedTask, isPostgreSQLCDCTask } from '@/utils/cdcTask.mjs'
+import { buildCDCStopRequest, continuousStartDisabledReason, getCDCCaptureHealthWarning, isCDCSchemaBlocked as isCDCSchemaBlockedTask, isDatabaseCDCTask } from '@/utils/cdcTask.mjs'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 
 const { t } = useI18n()
@@ -205,9 +351,32 @@ const loading = ref(false)
 const task = ref({})
 const executions = ref([])
 const jsonDialogVisible = ref(false)
+const deadLetters = ref([])
+const deadLettersLoading = ref(false)
+const deadLetterPage = ref(1)
+const deadLetterPageSize = ref(20)
+const deadLetterTotal = ref(0)
+const deadLetterDetailVisible = ref(false)
+const deadLetterDetail = ref(null)
+const replayDialogVisible = ref(false)
+const replaySubmitting = ref(false)
+const deadLetterFilters = ref({
+  source_partition: '',
+  error_category: '',
+  error_code: '',
+  payload_available: ''
+})
+const replayForm = ref(newReplayForm())
 
 const isContinuousTask = computed(() => task.value?.config?.runtime?.boundary === 'continuous')
-const isPostgreSQLCDC = computed(() => isPostgreSQLCDCTask(task.value))
+const isBusinessKafkaRecordTask = computed(() => isContinuousTask.value &&
+  task.value?.config?.load?.change_detection?.type === 'kafka' &&
+  task.value?.config?.source?.change_stream?.envelope === 'record' &&
+  task.value?.config?.source?.change_stream?.encoding === 'json')
+const recordFailureMode = computed(() => task.value?.config?.runtime?.record_failure?.mode)
+const isDeadLetterTask = computed(() => isBusinessKafkaRecordTask.value && recordFailureMode.value === 'dead_letter')
+const canCreateReplay = computed(() => isBusinessKafkaRecordTask.value && recordFailureMode.value === 'block')
+const isDatabaseCDC = computed(() => isDatabaseCDCTask(task.value))
 const isCDCSchemaBlocked = computed(() => isCDCSchemaBlockedTask(task.value))
 const captureHealthWarning = computed(() => getCDCCaptureHealthWarning(task.value))
 const isManualTask = computed(() => !isContinuousTask.value && !task.value?.schedule)
@@ -235,7 +404,7 @@ const taskDisplayStatus = computed(() => {
 	if (isCDCSchemaBlocked.value) return t('transfer.taskDetail.schemaBlocked')
   if (task.value?.desired_state === 'paused') return t('transfer.taskDetail.continuousPaused')
 	if (task.value?.desired_state === 'stopped') {
-		if (isPostgreSQLCDC.value && !task.value?.capture) return t('transfer.taskDetail.continuousNotStarted')
+		if (isDatabaseCDC.value && !task.value?.capture) return t('transfer.taskDetail.continuousNotStarted')
 		return t('transfer.taskDetail.continuousStopped')
 	}
   if (continuousRecoveryNotice.value) return recoveryStateText(continuousRecoveryNotice.value)
@@ -280,6 +449,12 @@ const loadTask = async () => {
 
     task.value = taskData || {}
     executions.value = executionsRes?.data || []
+    if (isDeadLetterTask.value) {
+      await loadDeadLetters()
+    } else {
+      deadLetters.value = []
+      deadLetterTotal.value = 0
+    }
     syncAutoRefresh()
   } finally {
     loading.value = false
@@ -295,7 +470,7 @@ const handleExecute = async () => {
 
 const handlePause = async () => {
   try {
-    const message = isPostgreSQLCDC.value
+    const message = isDatabaseCDC.value
       ? t('transfer.taskDetail.cdcPauseConfirm')
       : t('transfer.taskDetail.pauseConfirm')
     await ElMessageBox.confirm(message, t('transfer.taskDetail.hint'), {
@@ -332,7 +507,7 @@ const handleStartContinuous = async () => {
 
 const handleStop = async () => {
   try {
-    if (isPostgreSQLCDC.value) {
+    if (isDatabaseCDC.value) {
       const { value } = await ElMessageBox.prompt(
         t('transfer.taskDetail.cdcStopConfirm', { name: task.value.name }),
         t('transfer.taskDetail.cdcStopTitle'),
@@ -381,6 +556,101 @@ const retryExecution = async (executionId) => {
   await executionAPI.retry(executionId)
   ElMessage.success(t('transfer.taskDetail.retrySubmitted'))
   loadTask()
+}
+
+const loadDeadLetters = async () => {
+  if (!route.params.id || !isDeadLetterTask.value) return
+  deadLettersLoading.value = true
+  try {
+    const params = {
+      page: deadLetterPage.value,
+      page_size: deadLetterPageSize.value
+    }
+    for (const [key, value] of Object.entries(deadLetterFilters.value)) {
+      if (value !== '') params[key] = value
+    }
+    const response = await taskAPI.deadLetters(route.params.id, params)
+    deadLetters.value = response?.data || []
+    deadLetterTotal.value = response?.total || 0
+  } finally {
+    deadLettersLoading.value = false
+  }
+}
+
+const applyDeadLetterFilters = () => {
+  deadLetterPage.value = 1
+  loadDeadLetters()
+}
+
+const resetDeadLetterFilters = () => {
+  deadLetterFilters.value = { source_partition: '', error_category: '', error_code: '', payload_available: '' }
+  deadLetterPage.value = 1
+  loadDeadLetters()
+}
+
+const handleDeadLetterPageSizeChange = () => {
+  deadLetterPage.value = 1
+  loadDeadLetters()
+}
+
+const openDeadLetterDetail = async (identity) => {
+  deadLetterDetail.value = await taskAPI.deadLetter(route.params.id, identity)
+  deadLetterDetailVisible.value = true
+}
+
+function newReplayForm() {
+  return {
+    ranges: [{ partition: '', start_offset: 0, end_offset: 1 }],
+    target: { parent_locator: '', name: '' }
+  }
+}
+
+const openReplayDialog = () => {
+  replayForm.value = newReplayForm()
+  replayForm.value.target.parent_locator = task.value?.config?.target?.parent_locator || ''
+  replayDialogVisible.value = true
+}
+
+const addReplayRange = () => {
+  replayForm.value.ranges.push({ partition: '', start_offset: 0, end_offset: 1 })
+}
+
+const removeReplayRange = (index) => {
+  replayForm.value.ranges.splice(index, 1)
+}
+
+const submitReplay = async () => {
+  const target = replayForm.value.target
+  const ranges = replayForm.value.ranges
+  if (!target.parent_locator.trim() || !target.name.trim() || ranges.some((range) =>
+    !String(range.partition).trim() || range.start_offset < 0 || range.end_offset <= range.start_offset)) {
+    ElMessage.warning(t('transfer.taskDetail.replayInvalid'))
+    return
+  }
+  const partitions = ranges.map((range) => String(range.partition).trim())
+  if (new Set(partitions).size !== partitions.length) {
+    ElMessage.warning(t('transfer.taskDetail.replayDuplicatePartition'))
+    return
+  }
+  replaySubmitting.value = true
+  try {
+    const execution = await taskAPI.replay(route.params.id, {
+      ranges: ranges.map((range) => ({
+        partition: String(range.partition).trim(),
+        start_offset: range.start_offset,
+        end_offset: range.end_offset
+      })),
+      target: {
+        parent_locator: target.parent_locator.trim(),
+        name: target.name.trim()
+      }
+    })
+    replayDialogVisible.value = false
+    ElMessage.success(t('transfer.taskDetail.replaySubmitted', { id: execution?.execution_id || '-' }))
+    await loadTask()
+  } finally {
+    replaySubmitting.value = false
+  }
 }
 
 const executionRecovery = (execution) => getContinuousRecovery(execution?.metadata, execution?.status)
@@ -546,6 +816,59 @@ onBeforeUnmount(() => {
 
 .schema-blocked-alert {
 	margin-top: 16px;
+}
+
+.dead-letter-notice,
+.replay-notice {
+  margin-bottom: 16px;
+}
+
+.dead-letter-filters {
+  margin-bottom: 4px;
+}
+
+.dead-letter-filter-input {
+  width: 180px;
+}
+
+.dead-letter-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.secondary-text {
+  margin-top: 4px;
+  color: var(--addp-text-tertiary);
+  font-size: 12px;
+}
+
+.dead-letter-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replay-form {
+  margin-top: 20px;
+}
+
+.replay-ranges {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.replay-range-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.8fr) minmax(130px, 1fr) auto minmax(130px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.range-separator {
+  color: var(--addp-text-tertiary);
 }
 
 .continuous-start-action {

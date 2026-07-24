@@ -10,13 +10,13 @@ System 在第一方 Web 登录和每次 Web Refresh Token 轮换事务中，为�
 
 | 字段 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
-| `id` | uuid | 主键 | 票据记录 ID |
+| `id` | bigint identity | 主键 | 票据记录 ID |
 | `token_hash` | char(64) | 非空、唯一索引 | `addp_rat_` 明文票据的 SHA-256 Hash |
-| `family_id` | uuid | 非空、索引 | 所属 `refresh_token_families.id` |
-| `owner` | varchar(100) | 非空、索引 | 可消费票据的 Owner 模块，例如 `manager`、`standard` |
-| `expires_at` | timestamp | 非空、索引 | 服务端最终失效时间 |
-| `revoked_at` | timestamp | 可空、索引 | 轮换、退出或 Family 撤销时间 |
-| `created_at` | timestamp | 非空 | 创建时间 |
+| `family_id` | bigint | 非空、索引、FK | 所属第一方 Browser `refresh_token_families.id` |
+| `owner` | text | 非空、索引 | 可消费票据的唯一 Owner 模块，例如 `manager`、`standard` |
+| `expires_at` | timestamptz | 非空、索引 | 不晚于 Family 的最终失效时间 |
+| `revoked_at` | timestamptz | 可空、索引 | 轮换、退出或 Family 撤销时间 |
+| `created_at` | timestamptz | 非空 | 创建时间 |
 
 ## 三、生命周期
 

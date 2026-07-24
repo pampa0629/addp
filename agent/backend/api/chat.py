@@ -36,6 +36,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.main_agent import stream_agent_response
 from agents.context import HISTORY_MESSAGE_LIMIT, build_context_window
+from authorization_permissions_generated import (
+    AGENT_RUN_CREATE,
+    AGENT_RUN_EXECUTE,
+    AGENT_SESSION_READ,
+)
 from database import AsyncSessionLocal, get_db
 from models.interaction import Interaction
 from models.message import Message
@@ -276,7 +281,9 @@ async def _save_assistant_message(
     summary="运行智能体 | Run Agent",
     description="接收标准 AG-UI RunAgentInput，并以 text/event-stream 返回 AG-UI 事件。",
     openapi_extra={
-        "x-ai-hint": "使用 threadId 指定已有 ADDP Agent 会话；messages 中最后一条 user 消息是本次新输入。"
+        "x-ai-hint": "使用 threadId 指定已有 ADDP Agent 会话；messages 中最后一条 user 消息是本次新输入。",
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [AGENT_RUN_CREATE, AGENT_RUN_EXECUTE],
     },
     response_class=StreamingResponse,
     responses={200: {"content": {"text/event-stream": {}}}},
@@ -797,7 +804,9 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
     response_class=StreamingResponse,
     responses={200: {"content": {"text/event-stream": {}}}},
     openapi_extra={
-        "x-ai-hint": "runId 是本次重试的协议调用 ID；仅接受 failed AgentRun，取消态不允许重试。"
+        "x-ai-hint": "runId 是本次重试的协议调用 ID；仅接受 failed AgentRun，取消态不允许重试。",
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [AGENT_RUN_EXECUTE],
     },
 )
 async def retry_chat(
@@ -837,6 +846,10 @@ async def retry_chat(
 @router.get(
     "/sessions/{session_id}/messages",
     summary="获取会话消息 | List Session Messages",
+    openapi_extra={
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [AGENT_SESSION_READ],
+    },
 )
 async def get_messages(session_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     await _get_owned_session(db, session_id, int(request.state.user_id))

@@ -36,6 +36,7 @@ func NewOAuthHandler(tokenService *service.TokenService) *OAuthHandler {
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      429 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
+// @x-addp-auth-mode "public"
 // @Router       /oauth/authorization_requests [post]
 func (h *OAuthHandler) CreateAuthorizationRequest(c *gin.Context) {
 	clientID, scope := c.PostForm("client_id"), c.PostForm("scope")
@@ -71,6 +72,7 @@ func (h *OAuthHandler) CreateAuthorizationRequest(c *gin.Context) {
 // @Failure      410 {object} models.ErrorResponse
 // @Failure      429 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
+// @x-addp-auth-mode "authenticated"
 // @Router       /oauth/authorization_requests/{request_id} [get]
 func (h *OAuthHandler) GetAuthorizationRequest(c *gin.Context) {
 	response, err := h.tokenService.GetAuthorizationRequest(c.Param("request_id"))
@@ -97,6 +99,7 @@ func (h *OAuthHandler) GetAuthorizationRequest(c *gin.Context) {
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      429 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
+// @x-addp-auth-mode "public"
 // @Router       /oauth/authorization_requests/{request_id} [delete]
 func (h *OAuthHandler) CancelAuthorizationRequest(c *gin.Context) {
 	requestSecret := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
@@ -130,6 +133,7 @@ func (h *OAuthHandler) CancelAuthorizationRequest(c *gin.Context) {
 // @Failure      410 {object} models.ErrorResponse
 // @Failure      429 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
+// @x-addp-auth-mode "authenticated"
 // @Router       /oauth/authorizations [post]
 func (h *OAuthHandler) Authorize(c *gin.Context) {
 	var req models.OAuthAuthorizationDecisionRequest
@@ -177,6 +181,7 @@ func oauthRequestErrorStatus(err error, unavailableStatus int) int {
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      429 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
+// @x-addp-auth-mode "public"
 // @Router       /oauth/device/code [post]
 func (h *OAuthHandler) DeviceCode(c *gin.Context) {
 	clientID, scope := c.PostForm("client_id"), c.PostForm("scope")
@@ -204,6 +209,7 @@ func (h *OAuthHandler) DeviceCode(c *gin.Context) {
 // @Failure      401 {object} models.ErrorResponse
 // @Failure      429 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
+// @x-addp-auth-mode "authenticated"
 // @Router       /oauth/device/authorizations [post]
 func (h *OAuthHandler) ApproveDevice(c *gin.Context) {
 	var req models.DeviceApprovalRequest
@@ -243,6 +249,7 @@ func (h *OAuthHandler) ApproveDevice(c *gin.Context) {
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      429 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
+// @x-addp-auth-mode "public"
 // @Router       /oauth/token [post]
 func (h *OAuthHandler) Token(c *gin.Context) {
 	clientID := c.PostForm("client_id")
@@ -294,6 +301,7 @@ func (h *OAuthHandler) Token(c *gin.Context) {
 // @Success      200
 // @Failure      429 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
+// @x-addp-auth-mode "public"
 // @Router       /oauth/revoke [post]
 func (h *OAuthHandler) Revoke(c *gin.Context) {
 	clientID := c.PostForm("client_id")

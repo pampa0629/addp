@@ -9,11 +9,13 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	transferI18n "github.com/addp/transfer/i18n"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // TaskHandler 任务管理 API Handler
@@ -30,7 +32,7 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 
 // CreateTask 创建任务
 // @Summary 创建数据传输任务 | Create data transfer task
-// @Description 创建 bounded、业务 Kafka continuous 或 PostgreSQL CDC 任务。配置必须使用 runtime.boundary、load.mode、load.change_detection 和 target.policy.apply_mode；CDC 第一版固定为 PostgreSQL 单表 initial_snapshot 和 PostgreSQL 新目标表 upsert_delete。旧 mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka continuous, or PostgreSQL CDC task using runtime.boundary, load.mode, load.change_detection, and target.policy.apply_mode. CDC v1 is limited to a single PostgreSQL table with initial_snapshot and a new PostgreSQL upsert_delete target. Legacy mode/write_mode fields are rejected.
+// @Description 创建 bounded、业务 Kafka continuous 或数据库 CDC 任务。业务 Kafka continuous 必须显式使用 runtime.record_failure.mode=block|dead_letter；dead_letter 只处理确定性记录级数据错误。CDC 第一版支持 PostgreSQL/MySQL 单表 initial_snapshot、block 和 PostgreSQL 新目标表 upsert_delete。旧 mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka continuous, or database CDC task. Business Kafka continuous tasks must explicitly use runtime.record_failure.mode=block|dead_letter; dead_letter only handles deterministic record-level data errors. CDC v1 supports a single PostgreSQL or MySQL table with initial_snapshot, block policy, and a new PostgreSQL upsert_delete target. Legacy mode/write_mode fields are rejected.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
@@ -187,13 +189,15 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 
 // DeleteTask 删除任务
 // @Summary 删除任务 | Delete task
-// @Description 删除指定的任务及相关执行记录 | Delete a specific task and its execution records
+// @Description 删除指定任务。运行中的任务必须先停止；删除前会清理 task-owned capture/DLQ 资源，但保留统一 execution 历史和目标业务数据。| Delete a task. Running tasks must be stopped first; task-owned capture/DLQ resources are cleaned before deletion, while unified execution history and target business data are retained.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]string "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
+// @Failure 409 {object} map[string]string "任务仍在运行 | Task is still running"
+// @Failure 503 {object} map[string]string "任务资源清理不可用或失败 | Task resource cleanup unavailable or failed"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @Router /task-definitions/{id} [delete]
 // @Security BearerAuth
@@ -206,7 +210,7 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
 	if err := h.taskService.DeleteTask(c.Request.Context(), id, tenantID); err != nil {
-		commonAPI.InternalServerError(c, err.Error())
+		respondTaskServiceError(c, err)
 		return
 	}
 
@@ -215,7 +219,7 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 
 // StartTask 启动任务
 // @Summary 启动任务 | Start task
-// @Description 启动任务执行并创建执行记录；PostgreSQL CDC 首次启动会先创建并确认 capture generation，普通中断恢复时复用同一 generation；schema drift blocked 任务不得再次启动。| Start task execution and create an execution record. PostgreSQL CDC provisions and verifies its capture generation before the first runtime session and reuses that generation for normal interruption recovery; schema-drift-blocked tasks cannot be started again.
+// @Description 启动任务执行并创建执行记录；数据库 CDC 首次启动会先创建并确认 capture generation，普通中断恢复时复用同一 generation；schema drift blocked 任务不得再次启动。| Start task execution and create an execution record. Database CDC provisions and verifies its capture generation before the first runtime session and reuses that generation for normal interruption recovery; schema-drift-blocked tasks cannot be started again.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
@@ -242,6 +246,121 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, execution)
+}
+
+// ReplayTask 创建业务 Kafka bounded replay execution。
+// @Summary 创建 Kafka bounded replay | Create Kafka bounded replay
+// @Description 从 owner task 的原业务 Kafka topic 按显式半开 partition/offset 范围读取，创建独立 bounded execution，并只写入不存在的新 PostgreSQL 隔离表。请求不能覆盖 source、mapping、key、policy 或原目标；replay 不修改主任务状态、主水位或主目标。| Read explicit half-open partition/offset ranges from the owner task's original business Kafka topic, create an independent bounded execution, and write only to a new non-existing isolated PostgreSQL table. The request cannot override source, mapping, key, policy, or the owner target; replay does not change the owner task state, committed position, or target.
+// @Tags         任务管理 | Task Management
+// @Accept json
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Param request body models.ReplayTaskRequest true "回放范围与新目标 | Replay ranges and new target"
+// @Success 202 {object} models.TaskExecution "已创建独立回放执行 | Independent replay execution created"
+// @Failure 400 {object} map[string]string "请求不符合 bounded replay v1 契约 | Request violates the bounded replay v1 contract"
+// @Failure 404 {object} map[string]string "任务不存在 | Task not found"
+// @Failure 409 {object} map[string]string "范围超出保留边界或目标已存在 | Range is outside retention or target already exists"
+// @Failure 503 {object} map[string]string "回放运行时不可用 | Replay runtime unavailable"
+// @Failure 500 {object} map[string]string "服务器内部错误 | Internal server error"
+// @Router /task-definitions/{id}/replay [post]
+// @Security BearerAuth
+func (h *TaskHandler) ReplayTask(c *gin.Context) {
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	var req models.ReplayTaskRequest
+	if err := commonAPI.BindOptionalJSONStrict(c, &req); err != nil {
+		commonAPI.BadRequestError(c, i18nmiddleware.T(c, transferI18n.MsgReplayInvalid))
+		return
+	}
+	execution, err := h.taskService.ReplayTask(c.Request.Context(), id, c.GetUint("tenant_id"), c.GetUint("user_id"), req)
+	if err != nil {
+		respondReplayTaskError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, execution)
+}
+
+// ListDeadLetters 获取 owner task 的 DLQ 控制索引。
+// @Summary 获取任务死信记录 | List task dead-letter records
+// @Description 分页查询当前租户 owner task 的安全 DLQ 控制索引。只返回源位置、稳定错误、execution 与观测审计事实，不返回 Infra Kafka payload reference 或原始 key/value/headers。| List safe DLQ control-index records for the current tenant's owner task. Only source position, stable error, execution, and observation audit facts are returned; Infra Kafka payload references and raw key/value/headers are never exposed.
+// @Tags         死信管理 | Dead-letter Management
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Param page query int false "页码 | Page number" default(1)
+// @Param page_size query int false "每页大小，最大100 | Page size, max 100" default(20)
+// @Param source_partition query string false "源分区精确过滤 | Exact source partition filter"
+// @Param error_category query string false "错误分类精确过滤 | Exact error category filter"
+// @Param error_code query string false "错误码精确过滤 | Exact error code filter"
+// @Param payload_available query bool false "payload 可用状态精确过滤 | Exact payload availability filter"
+// @Success 200 {object} models.DeadLetterListResponse "死信记录分页结果 | Paginated dead-letter records"
+// @Failure 400 {object} map[string]string "查询参数无效 | Invalid query parameters"
+// @Failure 404 {object} map[string]string "任务不存在 | Task not found"
+// @Failure 500 {object} map[string]string "服务器内部错误 | Internal server error"
+// @Router /task-definitions/{id}/dead-letters [get]
+// @Security BearerAuth
+func (h *TaskHandler) ListDeadLetters(c *gin.Context) {
+	taskID, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	var request models.DeadLetterListRequest
+	if err := c.ShouldBindQuery(&request); err != nil {
+		commonAPI.BadRequestError(c, i18nmiddleware.T(c, transferI18n.MsgDeadLetterInvalidQuery))
+		return
+	}
+	if _, exists := c.GetQuery("page"); !exists {
+		request.Page = 1
+	}
+	if _, exists := c.GetQuery("page_size"); !exists {
+		request.PageSize = 20
+	}
+	if request.Page < 1 || request.PageSize < 1 || request.PageSize > 100 {
+		commonAPI.BadRequestError(c, i18nmiddleware.T(c, transferI18n.MsgDeadLetterInvalidQuery))
+		return
+	}
+	request.SourcePartition = strings.TrimSpace(request.SourcePartition)
+	request.ErrorCategory = strings.TrimSpace(request.ErrorCategory)
+	request.ErrorCode = strings.TrimSpace(request.ErrorCode)
+
+	deadLetters, total, err := h.taskService.ListDeadLetters(c.Request.Context(), taskID, c.GetUint("tenant_id"), request)
+	if err != nil {
+		respondDeadLetterError(c, err)
+		return
+	}
+	commonAPI.RespondPaginated(c, deadLetters, total, request.Page, request.PageSize)
+}
+
+// GetDeadLetter 获取 owner task 下单条 DLQ 控制索引。
+// @Summary 获取死信记录详情 | Get dead-letter record detail
+// @Description 按 identity 获取当前租户 owner task 下的安全 DLQ 控制索引详情。DLQ 不是 replay source，本接口不读取原始 payload。| Get a safe DLQ control-index detail by identity under the current tenant's owner task. DLQ is not a replay source and this endpoint does not read raw payload.
+// @Tags         死信管理 | Dead-letter Management
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Param identity path string true "死信记录 UUID | Dead-letter record UUID"
+// @Success 200 {object} models.DeadLetterView "死信记录详情 | Dead-letter record detail"
+// @Failure 400 {object} map[string]string "标识无效 | Invalid identity"
+// @Failure 404 {object} map[string]string "任务或死信记录不存在 | Task or dead-letter record not found"
+// @Failure 500 {object} map[string]string "服务器内部错误 | Internal server error"
+// @Router /task-definitions/{id}/dead-letters/{identity} [get]
+// @Security BearerAuth
+func (h *TaskHandler) GetDeadLetter(c *gin.Context) {
+	taskID, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	identity := strings.TrimSpace(c.Param("identity"))
+	if _, err := uuid.Parse(identity); err != nil {
+		commonAPI.BadRequestError(c, i18nmiddleware.T(c, transferI18n.MsgDeadLetterInvalidID))
+		return
+	}
+	deadLetter, err := h.taskService.GetDeadLetter(c.Request.Context(), taskID, c.GetUint("tenant_id"), identity)
+	if err != nil {
+		respondDeadLetterError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, deadLetter)
 }
 
 // ProviderExecuteRequest 是 TaskProvider 标准执行请求。
@@ -420,7 +539,7 @@ func (h *TaskHandler) ResumeTask(c *gin.Context) {
 
 // StopTask 停止 continuous task。
 // @Summary 停止连续任务 | Stop continuous task
-// @Description 普通业务 Kafka continuous stop 保留 committed position；PostgreSQL CDC stop 是不可逆终态，必须提交 confirmed=true 且 confirmation_text 与任务名称完全一致，并删除 ADDP-owned connector、slot、publication 和 CDC topic。| Business Kafka continuous stop keeps committed positions. PostgreSQL CDC stop is irreversible and requires confirmed=true plus confirmation_text exactly matching the task name; ADDP-owned connector, slot, publication, and CDC topic are deleted.
+// @Description 普通业务 Kafka continuous stop 保留 committed position；数据库 CDC stop 是不可逆终态，必须提交 confirmed=true 且 confirmation_text 与任务名称完全一致，并删除 ADDP-owned connector、provider 专属捕获资源、内部 topic、group 和 ACL。| Business Kafka continuous stop keeps committed positions. Database CDC stop is irreversible and requires confirmed=true plus confirmation_text exactly matching the task name; ADDP-owned connector, provider-specific capture resources, internal topics, group, and ACLs are deleted.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
@@ -479,6 +598,10 @@ func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {
 }
 
 func respondTaskServiceError(c *gin.Context, err error) {
+	if errors.Is(err, commonAPI.ErrNotFound) {
+		commonAPI.NotFoundError(c, i18nmiddleware.T(c, transferI18n.MsgTaskNotFound))
+		return
+	}
 	if errors.Is(err, service.ErrCDCStopConfirmationRequired) {
 		commonAPI.BadRequestError(c, i18nmiddleware.T(c, "transfer.cdc.stop_confirmation_required"))
 		return
@@ -503,5 +626,49 @@ func respondTaskServiceError(c *gin.Context, err error) {
 		commonAPI.BadRequestError(c, err.Error())
 		return
 	}
+	if errors.Is(err, service.ErrTaskDeleteRequiresStopped) {
+		c.JSON(http.StatusConflict, gin.H{"error": i18nmiddleware.T(c, transferI18n.MsgTaskDeleteRequiresStopped)})
+		return
+	}
+	if errors.Is(err, service.ErrTaskDeleteCleanupFailed) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": i18nmiddleware.T(c, transferI18n.MsgTaskDeleteCleanupFailed)})
+		return
+	}
 	commonAPI.InternalServerError(c, err.Error())
+}
+
+func respondReplayTaskError(c *gin.Context, err error) {
+	if errors.Is(err, commonAPI.ErrNotFound) {
+		commonAPI.NotFoundError(c, i18nmiddleware.T(c, transferI18n.MsgTaskNotFound))
+		return
+	}
+	if errors.Is(err, service.ErrInvalidReplayRequest) {
+		commonAPI.BadRequestError(c, i18nmiddleware.T(c, transferI18n.MsgReplayInvalid))
+		return
+	}
+	if errors.Is(err, service.ErrReplayRangeUnavailable) {
+		c.JSON(http.StatusConflict, gin.H{"error": i18nmiddleware.T(c, transferI18n.MsgReplayRangeUnavailable)})
+		return
+	}
+	if errors.Is(err, service.ErrReplayTargetExists) {
+		c.JSON(http.StatusConflict, gin.H{"error": i18nmiddleware.T(c, transferI18n.MsgReplayTargetExists)})
+		return
+	}
+	if errors.Is(err, service.ErrReplayRuntimeUnavailable) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": i18nmiddleware.T(c, transferI18n.MsgReplayUnavailable)})
+		return
+	}
+	commonAPI.InternalServerError(c, i18nmiddleware.T(c, transferI18n.MsgReplayInternalError))
+}
+
+func respondDeadLetterError(c *gin.Context, err error) {
+	if errors.Is(err, commonAPI.ErrNotFound) {
+		commonAPI.NotFoundError(c, i18nmiddleware.T(c, transferI18n.MsgTaskNotFound))
+		return
+	}
+	if errors.Is(err, service.ErrDeadLetterNotFound) {
+		commonAPI.NotFoundError(c, i18nmiddleware.T(c, transferI18n.MsgDeadLetterNotFound))
+		return
+	}
+	commonAPI.InternalServerError(c, i18nmiddleware.T(c, transferI18n.MsgDeadLetterInternal))
 }

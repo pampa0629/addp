@@ -1,6 +1,7 @@
 package continuous
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -73,6 +74,65 @@ func TestDecodePostgreSQLDebeziumRecordRejectsProtocolEventsWithoutAdvancing(t *
 				t.Fatalf("error = %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestDecodeMySQLDebeziumRecordNormalizesAndValidatesExactSource(t *testing.T) {
+	plan := mysqlCDCAdapterPlan()
+	event, err := decodeMySQLDebeziumRecord(plugin.ChangeRecord{
+		Key:   []byte(`{"id":1}`),
+		Value: []byte(mysqlDebeziumEnvelope("r", `null`, `{"id":1,"name":"snapshot"}`, "business", "orders")),
+	}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Operation != changeEventOperationSnapshot || event.Row["id"] != int64(1) || event.Row["name"] != "snapshot" {
+		t.Fatalf("MySQL snapshot event = %#v", event)
+	}
+
+	unknownSource := strings.Replace(
+		mysqlDebeziumEnvelope("c", `null`, `{"id":1,"name":"bad"}`, "business", "orders"),
+		`"query":null}`, `"query":null,"new_source_field":true}`, 1,
+	)
+	_, err = decodeMySQLDebeziumRecord(plugin.ChangeRecord{Key: []byte(`{"id":1}`), Value: []byte(unknownSource)}, plan)
+	var schemaErr *SchemaChangeError
+	if !errors.As(err, &schemaErr) || schemaErr.Scope != "Debezium source" || !containsTestString(schemaErr.UnexpectedFields, "new_source_field") {
+		t.Fatalf("unknown MySQL source field error = %#v", err)
+	}
+
+	_, err = decodeMySQLDebeziumRecord(plugin.ChangeRecord{
+		Key: []byte(`{"id":1}`), Value: []byte(mysqlDebeziumEnvelope("c", `null`, `{"id":1,"name":"bad"}`, "other", "orders")),
+	}, plan)
+	if err == nil || !strings.Contains(err.Error(), "source table identity") {
+		t.Fatalf("MySQL source mismatch error = %v", err)
+	}
+
+	badDeleteBefore := mysqlDebeziumEnvelope("d", `{"id":1,"name":"old","extra":true}`, `null`, "business", "orders")
+	_, err = decodeMySQLDebeziumRecord(plugin.ChangeRecord{Key: []byte(`{"id":1}`), Value: []byte(badDeleteBefore)}, plan)
+	if !errors.As(err, &schemaErr) || !containsTestString(schemaErr.UnexpectedFields, "extra") {
+		t.Fatalf("MySQL delete before schema drift error = %#v", err)
+	}
+}
+
+func TestDecodeMySQLDebeziumBinaryUsesStrictBase64(t *testing.T) {
+	plan := mysqlCDCAdapterPlan()
+	plan.Mappings = append(plan.Mappings, planner.ContinuousFieldPlan{Source: "payload", Target: "payload", Type: datatype.FieldTypeBytes, Nullable: false})
+	event, err := decodeMySQLDebeziumRecord(plugin.ChangeRecord{
+		Key:   []byte(`{"id":1}`),
+		Value: []byte(mysqlDebeziumEnvelope("c", `null`, `{"id":1,"name":"ok","payload":"AQID"}`, "business", "orders")),
+	}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(event.Row["payload"].([]byte), []byte{1, 2, 3}) {
+		t.Fatalf("decoded payload = %#v", event.Row["payload"])
+	}
+	_, err = decodeMySQLDebeziumRecord(plugin.ChangeRecord{
+		Key:   []byte(`{"id":1}`),
+		Value: []byte(mysqlDebeziumEnvelope("c", `null`, `{"id":1,"name":"ok","payload":"not-base64"}`, "business", "orders")),
+	}, plan)
+	if !errors.As(err, new(*SchemaChangeError)) {
+		t.Fatalf("invalid base64 error = %v, want SchemaChangeError", err)
 	}
 }
 
@@ -289,8 +349,8 @@ func postgresqlCDCAdapterPlan() *planner.ContinuousPlan {
 		},
 		SourceKeys: []string{"id"},
 		Target:     planner.ContinuousTargetPlan{Keys: []string{"id"}},
-		CDC: &planner.PostgreSQLCDCSourcePlan{
-			Database: "business", Schema: "public", Table: "orders",
+		CDC: &planner.DatabaseCDCSourcePlan{
+			Provider: "postgresql", Database: "business", Schema: "public", Table: "orders",
 		},
 	}
 }
@@ -305,10 +365,37 @@ func postgresqlCDCGeometryAdapterPlan(geometryType string, srid, dimension int) 
 	return plan
 }
 
+func mysqlCDCAdapterPlan() *planner.ContinuousPlan {
+	return &planner.ContinuousPlan{
+		Envelope: planner.ContinuousEnvelopeMySQLDebezium,
+		Mappings: []planner.ContinuousFieldPlan{
+			{Source: "id", Target: "id", Type: datatype.FieldTypeBigInt, Nullable: false},
+			{Source: "name", Target: "name", Type: datatype.FieldTypeString, Nullable: true},
+		},
+		SourceKeys: []string{"id"}, Target: planner.ContinuousTargetPlan{Keys: []string{"id"}},
+		CDC: &planner.DatabaseCDCSourcePlan{Provider: "mysql", Database: "business", Table: "orders"},
+	}
+}
+
 func debeziumEnvelope(op, before, after, database, schema, table string) string {
 	return `{"before":` + before + `,"after":` + after + `,"source":{` +
 		`"version":"3.6.0.Final","connector":"postgresql","name":"addp",` +
 		`"ts_ms":1,"snapshot":"false","db":"` + database + `","sequence":"[]",` +
 		`"ts_us":1000,"ts_ns":1000000,"schema":"` + schema + `","table":"` + table + `",` +
 		`"txId":1,"lsn":1,"xmin":null,"origin":"postgresql","origin_lsn":1},"op":"` + op + `","ts_ms":1,"ts_us":1000,"ts_ns":1000000,"transaction":null}`
+}
+
+func mysqlDebeziumEnvelope(op, before, after, database, table string) string {
+	serverID := "1"
+	snapshot := "false"
+	if op == "r" {
+		serverID = "0"
+		snapshot = "last"
+	}
+	return `{"before":` + before + `,"after":` + after + `,"source":{` +
+		`"version":"3.6.0.Final","connector":"mysql","name":"addp",` +
+		`"ts_ms":1,"snapshot":"` + snapshot + `","db":"` + database + `","sequence":null,` +
+		`"ts_us":1000,"ts_ns":1000000,"table":"` + table + `","server_id":` + serverID + `,` +
+		`"gtid":null,"file":"binlog.000001","pos":4,"row":0,"thread":1,"query":null},` +
+		`"op":"` + op + `","ts_ms":1,"ts_us":1000,"ts_ns":1000000,"transaction":null}`
 }

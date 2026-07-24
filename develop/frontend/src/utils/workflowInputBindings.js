@@ -67,6 +67,20 @@ function findInputParameter(parameters, sourceType, usedNames, currentParams) {
   )
 }
 
+function findExplicitInputParameter(parameters, edge, usedNames) {
+  if (!edge.targetParam) return null
+  const parameter = parameters.find(param => param?.name === edge.targetParam)
+  if (
+    !parameter ||
+    !isWorkflowInputParameter(parameter) ||
+    usedNames.has(parameter.name) ||
+    !areWorkflowTypesCompatible(edge.sourceType, parameter.type)
+  ) {
+    throw new Error(`input parameter ${edge.targetParam} is not compatible with source ${edge.sourceId}`)
+  }
+  return parameter
+}
+
 export function applyWorkflowInputRefs({ params = {}, parameters = [], inputEdges = [] }) {
   const nextParams = { ...params }
   if (!Array.isArray(inputEdges) || inputEdges.length === 0) {
@@ -79,7 +93,8 @@ export function applyWorkflowInputRefs({ params = {}, parameters = [], inputEdge
   const usedNames = new Set()
 
   inputEdges.forEach(edge => {
-    const parameter = findInputParameter(parameters, edge.sourceType, usedNames, nextParams)
+    const parameter = findExplicitInputParameter(parameters, edge, usedNames) ||
+      findInputParameter(parameters, edge.sourceType, usedNames, nextParams)
     if (!parameter) {
       throw new Error(`no compatible input parameter for source ${edge.sourceId}`)
     }

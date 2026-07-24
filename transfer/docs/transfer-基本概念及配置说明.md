@@ -22,7 +22,7 @@
 | `batch_size` | 批大小；config 内未声明时作为 planner 默认值。 |
 | `enabled` | 定时任务是否启用。 |
 | `auto_scan_metadata` | 成功后是否触发 Meta deep scan，默认 true。 |
-| `status` | 任务实际状态：`idle`、`running`、`blocked`；`blocked` 当前用于不可恢复的 PostgreSQL CDC schema drift。 |
+| `status` | 任务实际状态：`idle`、`running`、`blocked`；`blocked` 当前用于不可恢复的数据库 CDC schema drift。 |
 | `progress` | 任务进度百分比。 |
 
 任务状态只表达当前任务是否正在运行；成功或失败等结果在统一执行记录中查看。
@@ -236,7 +236,7 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 | `replace` | Transfer 写入前清理目标资源或让 prepare 重建目标。 |
 | `append` | 追加写入；失败 retry 当前拒绝 append，避免重复写入。 |
 | `upsert` | 按稳定键幂等新增或更新；第一版只支持 PostgreSQL native table 目标。 |
-| `upsert_delete` | PostgreSQL CDC v1 按稳定键新增、更新和物理删除；与目标 partition ledger 原子提交。 |
+| `upsert_delete` | 数据库 CDC v1 按稳定键新增、更新和物理删除；与目标 partition ledger 原子提交。 |
 
 apply mode 是 Transfer policy；真实 upsert/delete 能力必须由目标 engine Provider 和 capability 声明。raw copy 第一版只支持 `replace`，并要求目标 engine 提供删除资源能力。
 
@@ -259,15 +259,19 @@ bounded + incremental + watermark + upsert
 
 第一条 continuous 实现路径固定为业务 Kafka keyed JSON record -> PostgreSQL native table upsert。业务 Kafka 作为 System Engine 暴露 `service -> topic` catalog；用户选择 `type=topic` locator，partition 不进入资源树或 locator。Infra Kafka 是后续 CDC 的内部实现，不进入公开任务配置。
 
-Kafka Provider 通过 `ChangeStreamReaderProvider` 返回原始 ChangeRecord 和 per-partition provider position；Transfer adapter 只接受 JSON object，从 value 的显式非空字段提取稳定 key，并归一化为 `operation=upsert` ChangeEvent。任务必须提供完整 `field_mapping` 固定目标 schema，source key 映射后必须与目标 keys 一一对应。
+Kafka Provider 通过 `ChangeStreamReaderProvider` 返回原始 ChangeRecord 和 per-partition provider position；Transfer adapter 只接受 JSON object，从 value 的显式非空字段提取稳定 key，并归一化为 `operation=upsert` ChangeEvent。任务必须提供完整 `field_mapping` 固定目标 schema，source key 映射后必须与目标 keys 一一对应，并显式提交 `runtime.record_failure.mode=block|dead_letter`，不得依赖字段省略猜默认值。
 
 目标只允许 PostgreSQL `PartitionedTableChangeApplyProvider`。每个 task 由服务端生成不可变 `apply_identity`；Provider 在业务目标库维护 `addp_transfer.apply_positions`，把单 partition 的目标 upsert 与 `next_offset` 在同一事务提交。poll batch 必须先按 partition 拆分；同一批中相同目标 key 的有效记录保留最高 offset 的最后状态。普通 `TableUpsertProvider`、Infra state CAS 和 runtime lease 都不能替代该目标侧原子应用契约。
 
 每个 partition 的主状态继续存储在 `transfer.sync_states`，position 固定为 `type=kafka_offset`、`version=v1`、`next_offset`。consumer auto commit 禁用；目标提交后才允许以 runtime fencing token + state version 做 CAS。首次无状态 partition 必须显式选择 `earliest|latest`。
 
-continuous worker 是 Transfer 独立进程角色，不使用 Asynq。`desired_state`、原子 start/pause/resume/stop、session owner/lease/heartbeat/fencing、supervisor、业务 Kafka JSON upsert 和 PostgreSQL CDC snapshot/upsert/delete 已实现。两条路线共用同一个 consumer/apply/CAS 主循环；consumer group 只负责 partition assignment，Kafka auto commit 禁用。交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。Console Wizard 已支持业务 Kafka 和 PostgreSQL CDC 配置；execution 详情展示 owner、heartbeat、lease、fencing token、每个 partition 的 committed next offset 与最近提交时间。第一版仍不支持无 key append、DLQ、Schema Registry、Avro、Protobuf、Kafka target 和 replay。
+continuous worker 是 Transfer 独立进程角色，不使用 Asynq。`desired_state`、原子 start/pause/resume/stop、session owner/lease/heartbeat/fencing、supervisor、业务 Kafka JSON upsert + DLQ 和 PostgreSQL/MySQL CDC snapshot/upsert/delete 已实现。业务 Kafka与数据库 CDC 共用同一个 consumer/apply/CAS 主循环；consumer group 只负责 partition assignment，Kafka auto commit 禁用。交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。Console Wizard 已支持业务 Kafka以及 PostgreSQL/MySQL CDC 配置，业务 Kafka默认显式发送 `block`；公开 API 可显式选择 `dead_letter`。execution 详情展示 owner、heartbeat、lease、fencing token、每个 partition 的 committed next offset 与最近提交时间。当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、Oracle CDC 或自动 DDL。
 
-resume 前必须确认 committed `next_offset` 仍在 Kafka partition 的保留范围内。若 retention 已删除该位置，任务明确失败并要求人工决定如何处理，不能自动跳到 earliest。PostgreSQL 目标锁等待必须响应 context 取消；取消事务不得留下业务行或目标 ledger 的半提交状态。PostgreSQL CDC 遇到未知字段、缺失必填字段或类型不兼容时，当前 execution 失败且任务进入 `blocked`；业务 Kafka record 路线继续按其严格映射规则失败，但不复用 CDC 的不可恢复 generation 语义。
+`dead_letter` 只处理业务 Kafka JSON 解码、字段/key 校验和类型转换阶段的确定性记录错误。处理顺序固定为 DLQ payload -> `transfer.dead_letters` 控制索引 -> 目标 `skip` ledger -> `transfer.sync_states` CAS；source/poll、目标、fencing、retention 和 Infra 故障仍严格阻塞。DLQ topic 不是 replay source。
+
+业务 Kafka bounded replay 使用唯一 `POST /task-definitions/:id/replay`。请求只能提交显式 per-partition `[start_offset,end_offset)` 与新 PostgreSQL 目标的 `parent_locator + name`；source、mapping、key、policy 和原目标全部继承 owner task 且不可覆盖。API 在创建 execution 前冻结并校验请求时 retention、拒绝原目标或已有目标；bounded worker 再次校验 retention 和目标不存在后，以 execution-scoped apply identity 写入隔离表。replay 不读写 `transfer.sync_states`、主 lease、主 apply identity、主目标或任务 `desired_state/status/last_execution*`，因此可与主 continuous runtime 并行。
+
+resume 前必须确认 committed `next_offset` 仍在 Kafka partition 的保留范围内。若 retention 已删除该位置，任务明确失败并要求人工决定如何处理，不能自动跳到 earliest。PostgreSQL 目标锁等待必须响应 context 取消；取消事务不得留下业务行或目标 ledger 的半提交状态。数据库 CDC 遇到未知字段、缺失必填字段或类型不兼容时，当前 execution 失败且任务进入 `blocked`；业务 Kafka record 路线按显式 `block|dead_letter` 处理确定性记录错误，但不复用 CDC 的不可恢复 generation 语义。
 
 continuous worker 每隔 `TRANSFER_CONTINUOUS_DIAGNOSTICS_INTERVAL`（默认 `15s`）读取每分区 earliest/latest offset，用目标已成功应用的 committed `next_offset` 计算 lag 和 retention 恢复余量。时间余量使用连续 latest 样本的增长率估算；冷启动、无 committed position 或写入速率为零时显示 unknown。默认 degraded/critical 阈值由 `TRANSFER_CONTINUOUS_RETENTION_DEGRADED_HORIZON=6h` 和 `TRANSFER_CONTINUOUS_RETENTION_CRITICAL_HORIZON=1h` 统一控制。`transfer.sync_states.position_committed_at` 单独保存真实 position commit 时间；只有存在 source lag 且 commit age 超过 `TRANSFER_CONTINUOUS_CHECKPOINT_STALE_AFTER=5m` 时 checkpoint health 才进入 degraded，lag 为 0 时保持 healthy。所有阈值均不进入任务 JSON。诊断结果写入 `common.task_executions.metadata.continuous.diagnostics`，Monitor 只读取 execution metadata，不直连业务 Kafka或 Transfer 私有状态表。
 
@@ -275,35 +279,37 @@ continuous worker 重启时不会复用已结束的 execution。正常 worker sh
 
 普通 execution failure 和 lease expiry 会立即创建唯一 pending recovery execution，但在 metadata 的 `recovery_not_before` 之前不可领取。连续失败按部署级指数退避；达到上限后 `recovery_circuit_state=open`，冷却到期被领取时转为 `half_open`。circuit open 不复用 schema drift 的任务 `blocked`；任务仍保持 `desired_state=running`，没有活 lease 时实际 `status=idle`。worker shutdown 不累计失败，schema drift、Pause 和 Stop 不自动恢复。任一目标 position 成功提交，或 session 稳定运行达到部署阈值后再失败，只重置 `recovery_consecutive_failures` 和 circuit 状态；本次 execution 的 `recovery_attempt`、`recovery_not_before` 与 `recovery_backoff_seconds` 作为审计事实保持不变。相关参数统一由 `TRANSFER_CONTINUOUS_RECOVERY_*` 环境变量管理，不进入任务 JSON。
 
-## 九、PostgreSQL CDC v1 已冻结边界
+## 九、数据库 CDC v1 已冻结边界
 
-工作包 3A-3D 已完成第一版的 CDC 路线为：
+工作包 3A-3E 已完成第一版的 CDC 路线为：
 
 ```text
-PostgreSQL 单表
-  -> Debezium PostgreSQL Connector
+PostgreSQL/MySQL 单表
+  -> 对应 Debezium Connector
   -> Infra Kafka
   -> Transfer Continuous Worker
   -> PostgreSQL 新目标表
 ```
 
-公开任务仍只保存 `runtime.boundary=continuous`、`load.mode=incremental`、`load.change_detection.type=cdc`、`bootstrap=initial_snapshot`、源表 locator、目标表和 field mapping。connector、replication slot、publication、Infra Kafka topic 和 consumer group 都由服务端生成，不进入任务 JSON、System Engine 或 Meta 资源树。
+公开任务只保存 `runtime.boundary=continuous`、`load.mode=incremental`、`load.change_detection.type=cdc`、`bootstrap=initial_snapshot`、源表 locator、目标表和 field mapping。source provider 只能由 locator 对应的 System Engine 解析结果决定，不进入任务 JSON。connector、provider 专属捕获资源、Infra Kafka topic 和 consumer group 都由服务端生成，不进入 System Engine 或 Meta 资源树。
 
 第一版只支持有稳定主键的单表。Debezium `op=r` 作为 snapshot upsert，`op=c|u` 作为 upsert，`op=d` 使用 record key 做物理 delete；目标固定为 `apply_mode=upsert_delete`。目标必须是不存在的新表，由 bootstrap 创建；不清空或接管已有目标表。捕获位点由 Kafka Connect 管理，Transfer 只在 `transfer.sync_states` 保存目标已应用的 Infra Kafka `next_offset`，两类位点不能互相代替。
 
-CDC v1 在创建 capture 前核对完整源表字段和真实 PostgreSQL 类型，开放 `string|bool|int|bigint|float|double|decimal|date|time|timestamp|json|uuid|geometry`。PostGIS geometry 必须固定 OGC type、正 SRID和 XY/XYZ 维度；Transfer 将 Debezium `{wkb,srid}` 解码为 EWKB，按源空间事实创建目标 geometry 列，不做坐标转换，geometry 也不能作为主键。这里不使用同构空间源/目标的 native encoding 直通优化：PostGIS `geometry` 是数据库内部类型，不是跨 Provider encoding，而且 CDC 数据必须经过 Debezium 和 Infra Kafka。只有源、目标通过能力声明协商出相同 native geometry encoding 且链路没有转换或中间几何算子时，普通 Transfer planner 才可选择 native encoding 直通。connector 固定 Decimal 字符串和 Connect 毫秒时间编码，避免 schemaless JSON 同一数字无法判断单位；`time` 和无时区 `timestamp` 仅允许精度 `0..3`，PostgreSQL 默认微秒精度或显式精度大于 3 的列会在启动前拒绝，不能静默截断。`bytea`、数组、geography、未约束 geometry、M/ZM geometry、interval、枚举及其他用户定义类型同样明确拒绝。
+PostgreSQL CDC 在创建 capture 前核对完整源表字段和真实类型，开放 `string|bool|int|bigint|float|double|decimal|date|time|timestamp|json|uuid|geometry`。PostGIS geometry 必须固定 OGC type、正 SRID和 XY/XYZ 维度；Transfer 将 Debezium `{wkb,srid}` 解码为 EWKB，按源空间事实创建目标 geometry 列，不做坐标转换，geometry 也不能作为主键。connector 固定 Decimal 字符串和 Connect 毫秒时间编码；`time` 和无时区 `timestamp` 仅允许精度 `0..3`。`bytea`、数组、geography、未约束 geometry、M/ZM geometry、interval、枚举及其他用户定义类型明确拒绝。
 
 Debezium 的 geometry 属性名是 `wkb`，真实 PostGIS connector 可能在该 base64 属性中发送带 SRID 的 EWKB。Transfer 使用统一 WKB/EWKB 解析器，并校验内嵌 SRID、旁路 `srid` 与 generation 冻结事实一致，再输出 ADDP 标准 EWKB 行值。
 
+MySQL CDC 固定支持 MySQL 8.0、有稳定非空主键的单表、`log_bin=ON`、`binlog_format=ROW`、`binlog_row_image=FULL` 和非零 server id。v1 接受有符号整数、字符/文本、Decimal、浮点、毫秒精度日期时间、JSON 和 binary/BLOB；拒绝 unsigned、`TINYINT(1)`/BOOL、BIT、ENUM/SET、YEAR、空间类型、超过毫秒的时间精度和 zero date。每个 generation 拥有唯一 connector server id、data topic 和 `cleanup.policy=delete + retention.ms=-1` 的 schema-history topic，Stop 时统一清理。
+
 类型不兼容与字段增删、envelope/source 结构变化一样进入 `schema_change_blocked`，execution metadata 会记录 missing/unexpected/incompatible 字段，当前 Kafka 消息不会被跳过。任务同时进入 `status=blocked`，禁止再次启动、恢复或重试；connector 在用户 Stop 前仍会继续采集，因此 backlog、Kafka retention 和磁盘风险继续存在。第一版唯一处理方式是永久停止旧任务，再创建新任务和新目标表重新初始化，不支持“调整目标后原地恢复”。
 
-`pause` 停止目标应用，但 connector 继续把 WAL 变化写入 Infra Kafka 并推进 slot。正常 pause 的主要代价是 Kafka backlog、磁盘和 retention 窗口，不是 slot 本身停止后堆积 WAL；connector/Kafka 故障导致 slot 不推进时仍可能撑大源库 WAL。暂停期间必须继续观测 connector health、slot lag、Kafka 容量和 retention horizon，且 resume 只在 committed position 尚未过期时保证无损。
+`pause` 停止目标应用，但 connector 继续把 PostgreSQL WAL 或 MySQL binlog 变化写入 Infra Kafka并推进捕获位置。正常 pause 的主要代价是 Kafka backlog、磁盘和 retention 窗口；connector/Kafka 故障时还必须分别观测 PostgreSQL slot/WAL 或 MySQL binlog 保留风险。resume 只在 committed position 尚未过期时保证无损。
 
-`stop` 是 CDC task 的不可逆终态：删除 ADDP-owned connector、slot、publication 和 CDC topic，任务不得再次 start/resume。重新同步必须创建新任务、新目标表并重新 initial snapshot。服务端 Stop API 必须要求 `confirmed=true` 且 `confirmation_text` 与任务名称完全一致，Console 同时使用 danger 二次确认并要求输入任务名称；stop 不删除目标业务表、目标 ledger、任务定义、execution 或审计记录。
+`stop` 是 CDC task 的不可逆终态：删除 ADDP-owned connector、provider 专属捕获资源、data/schema-history topic、consumer group 和 ACL，任务不得再次 start/resume。重新同步必须创建新任务、新目标表并重新 initial snapshot。服务端 Stop API 必须要求 `confirmed=true` 且 `confirmation_text` 与任务名称完全一致，Console 同时使用 danger 二次确认并要求输入任务名称；stop 不删除目标业务表、目标 ledger、任务定义、execution 或审计记录。
 
-continuous task 初始同样保存 `desired_state=stopped`，所以该字段只表达用户期望状态，不能证明 PostgreSQL CDC 已被永久停止。CDC 的不可逆终态以 `transfer.capture_resources.status=stopped` 为事实；尚无 capture generation 的新任务可以首次启动。`cleanup_failed` 表示 Stop 清理尚未完成，只允许重试清理，不允许重新启动或恢复。
+continuous task 初始同样保存 `desired_state=stopped`，所以该字段只表达用户期望状态，不能证明数据库 CDC 已被永久停止。CDC 的不可逆终态以 `transfer.capture_resources.status=stopped` 为事实；尚无 capture generation 的新任务可以首次启动。`cleanup_failed` 表示 Stop 清理尚未完成，只允许重试清理，不允许重新启动或恢复。
 
-完整配置、envelope、schema drift、目标原子应用和资源 owner 约束以 [ADDP 任务体系规范](../../docs/spec/addp任务体系规范.md) 的“Transfer PostgreSQL CDC v1 契约”为准。MySQL、Oracle、多表、无主键、replay、DLQ、Schema Registry、Avro、Protobuf、自动 DDL 和 truncate 事件均后置。
+完整配置、envelope、schema drift、目标原子应用和资源 owner 约束以 [ADDP 任务体系规范](../../docs/spec/addp任务体系规范.md) 的“Transfer 数据库 CDC v1 契约”为准。Oracle、多表、无主键、数据库 CDC replay/DLQ、Schema Registry、Avro、Protobuf、自动 DDL 和 truncate 事件均未进入当前实现；业务 Kafka 的 DLQ 与 bounded replay 已公开。
 
 capture supervisor 已通过 Kafka Connect REST 和 Infra Kafka admin API 管理任务级 generation，状态登记在 `transfer.capture_resources`。continuous worker 从登记的内部 topic/group 消费 Debezium 3.6 schemaless JSON，严格处理 `r/c/u/d`，并在协议或 schema 变化时以 `schema_change_blocked` 阻塞而不推进 offset。公开任务配置仍不出现这些内部名称。
 

@@ -26,6 +26,8 @@ func NewApplicationHandler(service *service.ApplicationService) *ApplicationHand
 // @Param        request body models.CreateApplicationRequest true "应用信息 | Application info"
 // @Success      200 {object} models.Application
 // @Failure      400 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.application.create"]
 // @Router       /applications [post]
 func (h *ApplicationHandler) CreateApplication(c *gin.Context) {
 	var req models.CreateApplicationRequest
@@ -50,6 +52,8 @@ func (h *ApplicationHandler) CreateApplication(c *gin.Context) {
 // @Param        id path int true "应用ID | Application ID"
 // @Success      200 {object} models.Application
 // @Failure      404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.application.read"]
 // @Router       /applications/{id} [get]
 func (h *ApplicationHandler) GetApplication(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
@@ -73,6 +77,8 @@ func (h *ApplicationHandler) GetApplication(c *gin.Context) {
 // @Security     BearerAuth
 // @Success      200 {object} map[string]interface{}
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.application.read"]
 // @Router       /applications [get]
 func (h *ApplicationHandler) ListApplications(c *gin.Context) {
 	tenantID, _ := c.Get("tenant_id")
@@ -99,6 +105,8 @@ func (h *ApplicationHandler) ListApplications(c *gin.Context) {
 // @Param        request body models.UpdateApplicationRequest true "应用更新信息 | Application update info"
 // @Success      200 {object} models.Application
 // @Failure      400 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.application.update"]
 // @Router       /applications/{id} [put]
 func (h *ApplicationHandler) UpdateApplication(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
@@ -124,6 +132,8 @@ func (h *ApplicationHandler) UpdateApplication(c *gin.Context) {
 // @Param        id path int true "应用ID | Application ID"
 // @Success      200 {object} models.SuccessResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.application.delete"]
 // @Router       /applications/{id} [delete]
 func (h *ApplicationHandler) DeleteApplication(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
@@ -150,6 +160,8 @@ func (h *ApplicationHandler) DeleteApplication(c *gin.Context) {
 // @Param        request body models.CreateAPIKeyRequest true "API Key 信息 | API key info"
 // @Success      200 {object} models.APIKey
 // @Failure      400 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.api_key.create"]
 // @Router       /applications/{id}/keys [post]
 func (h *ApplicationHandler) GenerateAPIKey(c *gin.Context) {
 	appID, err := commonapi.BindIDParam(c, "id")
@@ -176,6 +188,8 @@ func (h *ApplicationHandler) GenerateAPIKey(c *gin.Context) {
 // @Param        id path int true "应用ID | Application ID"
 // @Success      200 {object} map[string]interface{}
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.api_key.read"]
 // @Router       /applications/{id}/keys [get]
 func (h *ApplicationHandler) ListAPIKeys(c *gin.Context) {
 	appID, err := commonapi.BindIDParam(c, "id")
@@ -205,6 +219,8 @@ func (h *ApplicationHandler) ListAPIKeys(c *gin.Context) {
 // @Success      200 {object} models.SuccessResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.api_key.revoke"]
 // @Router       /applications/{id}/keys/{key_id} [delete]
 func (h *ApplicationHandler) RevokeAPIKey(c *gin.Context) {
 	appID, err := commonapi.BindIDParam(c, "id")

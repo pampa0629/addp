@@ -20,6 +20,7 @@ type ContinuousFieldPlan struct {
 const (
 	ContinuousEnvelopeRecord             = "record"
 	ContinuousEnvelopePostgreSQLDebezium = "postgresql_debezium"
+	ContinuousEnvelopeMySQLDebezium      = "mysql_debezium"
 )
 
 type ContinuousSourcePlan struct {
@@ -31,14 +32,16 @@ type ContinuousSourcePlan struct {
 	PollBatchSize   int
 }
 
-type PostgreSQLCDCSourcePlan struct {
+type DatabaseCDCSourcePlan struct {
+	Provider    string
 	Database    string
 	Schema      string
 	Table       string
 	SpatialInfo *datatype.SpatialInfo
 }
 
-type PostgreSQLCDCStreamBinding struct {
+type DatabaseCDCStreamBinding struct {
+	Provider       string
 	ConnInfo       engineplugin.ConnectionInfo
 	Path           engineplugin.CatalogPath
 	ConsumerGroup  string
@@ -58,14 +61,15 @@ type ContinuousTargetPlan struct {
 }
 
 type ContinuousPlan struct {
-	Source     ContinuousSourcePlan
-	Target     ContinuousTargetPlan
-	Mappings   []ContinuousFieldPlan
-	SourceKeys []string
-	SourceType string
-	TargetType string
-	Envelope   string
-	CDC        *PostgreSQLCDCSourcePlan
+	Source            ContinuousSourcePlan
+	Target            ContinuousTargetPlan
+	Mappings          []ContinuousFieldPlan
+	SourceKeys        []string
+	SourceType        string
+	TargetType        string
+	Envelope          string
+	RecordFailureMode string
+	CDC               *DatabaseCDCSourcePlan
 }
 
 func BuildContinuousPlan(spec ContinuousTaskSpec, resolver EngineResolver) (*ContinuousPlan, error) {
@@ -99,7 +103,11 @@ func BuildContinuousPlan(spec ContinuousTaskSpec, resolver EngineResolver) (*Con
 	if !declaresChangeStreamRead(source) {
 		return nil, fmt.Errorf("source Kafka engine does not declare partitioned seekable change_stream_read")
 	}
-	if !declaresPartitionedMonotonicApply(target, engineplugin.TableChangeOperationUpsert) {
+	requiredOperations := []string{engineplugin.TableChangeOperationUpsert}
+	if spec.Runtime.RecordFailure.Mode == RecordFailureModeDeadLetter {
+		requiredOperations = append(requiredOperations, engineplugin.TableChangeOperationSkip)
+	}
+	if !declaresPartitionedMonotonicApply(target, requiredOperations...) {
 		return nil, fmt.Errorf("target PostgreSQL engine does not declare atomic monotonic partitioned_table_change_apply")
 	}
 	sourcePlugin, err := engineplugin.Get(sourceType)
@@ -136,68 +144,77 @@ func BuildContinuousPlan(spec ContinuousTaskSpec, resolver EngineResolver) (*Con
 			Keys: append([]string(nil), mustPolicyStrings(spec.Target.Policy, "keys")...),
 		},
 		Mappings: mappings, SourceKeys: append([]string(nil), spec.Source.ChangeStream.Key.Fields...), SourceType: sourceType, TargetType: targetType,
-		Envelope: ContinuousEnvelopeRecord,
+		Envelope: ContinuousEnvelopeRecord, RecordFailureMode: spec.Runtime.RecordFailure.Mode,
 	}, nil
 }
 
-func BuildPostgreSQLCDCContinuousPlan(spec PostgreSQLCDCTaskSpec, resolver EngineResolver, stream PostgreSQLCDCStreamBinding, pollBatchSize int) (*ContinuousPlan, error) {
+func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineResolver, stream DatabaseCDCStreamBinding, pollBatchSize int) (*ContinuousPlan, error) {
 	if resolver == nil {
-		return nil, fmt.Errorf("PostgreSQL CDC continuous plan requires engine resolver")
+		return nil, fmt.Errorf("database CDC continuous plan requires engine resolver")
 	}
-	if err := validatePostgreSQLCDCTaskSpec(spec); err != nil {
+	if err := validateDatabaseCDCTaskSpec(spec); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(stream.SourceIdentity) == "" || strings.TrimSpace(stream.ConsumerGroup) == "" ||
-		strings.TrimSpace(stream.Database) == "" || strings.TrimSpace(stream.Schema) == "" || strings.TrimSpace(stream.Table) == "" {
-		return nil, fmt.Errorf("PostgreSQL CDC stream binding is incomplete")
+		strings.TrimSpace(stream.Provider) == "" || strings.TrimSpace(stream.Database) == "" || strings.TrimSpace(stream.Table) == "" {
+		return nil, fmt.Errorf("database CDC stream binding is incomplete")
 	}
 	if pollBatchSize <= 0 {
 		pollBatchSize = 1000
 	}
-	sourceRef, err := spec.Source.EngineRef()
+	bindings, err := ResolveDatabaseCDCBindings(spec, resolver)
 	if err != nil {
 		return nil, err
 	}
-	targetRef, err := spec.Target.EngineRef()
-	if err != nil {
-		return nil, err
+	if bindings.SourceType != strings.ToLower(strings.TrimSpace(stream.Provider)) {
+		return nil, fmt.Errorf("database CDC stream provider does not match source engine")
 	}
-	source, err := resolver.ResolveEngine(sourceRef)
-	if err != nil {
-		return nil, fmt.Errorf("resolve PostgreSQL CDC source engine: %w", err)
-	}
-	target, err := resolver.ResolveEngine(targetRef)
-	if err != nil {
-		return nil, fmt.Errorf("resolve PostgreSQL CDC target engine: %w", err)
-	}
-	if strings.ToLower(strings.TrimSpace(effectiveEngineType(source, sourceRef))) != "postgresql" ||
-		strings.ToLower(strings.TrimSpace(effectiveEngineType(target, targetRef))) != "postgresql" {
-		return nil, fmt.Errorf("PostgreSQL CDC v1 requires PostgreSQL source and target")
-	}
-	if !declaresPartitionedMonotonicApply(target, engineplugin.TableChangeOperationUpsert, engineplugin.TableChangeOperationDelete) {
+	if !declaresPartitionedMonotonicApply(bindings.Target, engineplugin.TableChangeOperationUpsert, engineplugin.TableChangeOperationDelete) {
 		return nil, fmt.Errorf("target PostgreSQL engine does not declare atomic monotonic upsert/delete partitioned_table_change_apply")
 	}
 	sourceLocator, _ := spec.Source.ResourceLocator()
-	sourceDatabase := strings.TrimSpace(engineplugin.GetString(source.ConnInfo, "database"))
-	if stream.SourceIdentity != strings.TrimSpace(spec.Source.Locator) || stream.Database != sourceDatabase ||
-		stream.Schema != sourceLocator.Path[0] || stream.Table != sourceLocator.Path[1] {
-		return nil, fmt.Errorf("PostgreSQL CDC stream binding does not match registered source identity")
+	if stream.SourceIdentity != strings.TrimSpace(spec.Source.Locator) || stream.Table != sourceLocator.Path[1] {
+		return nil, fmt.Errorf("database CDC stream binding does not match registered source identity")
 	}
-	targetPath, err := nativeTableTargetPath(spec.Target, target)
+	switch bindings.SourceType {
+	case "postgresql":
+		sourceDatabase := strings.TrimSpace(engineplugin.GetString(bindings.Source.ConnInfo, "database"))
+		if stream.Database != sourceDatabase || stream.Schema != sourceLocator.Path[0] {
+			return nil, fmt.Errorf("PostgreSQL CDC stream binding does not match registered source identity")
+		}
+	case "mysql":
+		if stream.Database != sourceLocator.Path[0] || stream.Schema != "" || stream.SpatialInfo != nil {
+			return nil, fmt.Errorf("MySQL CDC stream binding does not match registered source identity")
+		}
+	default:
+		return nil, fmt.Errorf("unsupported database CDC provider %q", bindings.SourceType)
+	}
+	targetPath, err := nativeTableTargetPath(spec.Target, bindings.Target)
 	if err != nil {
-		return nil, fmt.Errorf("build PostgreSQL CDC target path: %w", err)
+		return nil, fmt.Errorf("build database CDC target path: %w", err)
 	}
-	mappings, fields, err := buildPostgreSQLCDCFields(spec.Transforms[0].Fields)
+	mappings, fields, err := buildDatabaseCDCFields(spec.Transforms[0].Fields)
 	if err != nil {
 		return nil, err
 	}
-	sourceKeys, targetKeys, err := PostgreSQLCDCSourceToTargetKeys(spec)
+	sourceKeys, targetKeys, err := DatabaseCDCSourceToTargetKeys(spec)
 	if err != nil {
 		return nil, err
 	}
-	targetSpatialInfo, err := mapPostgreSQLCDCSpatialInfo(stream.SpatialInfo, mappings)
-	if err != nil {
-		return nil, err
+	var targetSpatialInfo *datatype.SpatialInfo
+	envelope := ContinuousEnvelopeMySQLDebezium
+	if bindings.SourceType == "postgresql" {
+		targetSpatialInfo, err = mapPostgreSQLCDCSpatialInfo(stream.SpatialInfo, mappings)
+		if err != nil {
+			return nil, err
+		}
+		envelope = ContinuousEnvelopePostgreSQLDebezium
+	} else {
+		for _, mapping := range mappings {
+			if mapping.Type == datatype.FieldTypeGeometry {
+				return nil, fmt.Errorf("MySQL CDC v1 does not support geometry fields")
+			}
+		}
 	}
 	return &ContinuousPlan{
 		Source: ContinuousSourcePlan{
@@ -205,10 +222,10 @@ func BuildPostgreSQLCDCContinuousPlan(spec PostgreSQLCDCTaskSpec, resolver Engin
 			ConsumerGroup: stream.ConsumerGroup, InitialPosition: engineplugin.ChangeStreamInitialEarliest,
 			PollBatchSize: pollBatchSize,
 		},
-		Target:   ContinuousTargetPlan{ConnInfo: target.ConnInfo, Path: targetPath, Fields: fields, SpatialInfo: targetSpatialInfo, Keys: targetKeys},
+		Target:   ContinuousTargetPlan{ConnInfo: bindings.Target.ConnInfo, Path: targetPath, Fields: fields, SpatialInfo: targetSpatialInfo, Keys: targetKeys},
 		Mappings: mappings, SourceKeys: sourceKeys, SourceType: "kafka", TargetType: "postgresql",
-		Envelope: ContinuousEnvelopePostgreSQLDebezium,
-		CDC:      &PostgreSQLCDCSourcePlan{Database: stream.Database, Schema: stream.Schema, Table: stream.Table, SpatialInfo: stream.SpatialInfo.Clone()},
+		Envelope: envelope, RecordFailureMode: RecordFailureModeBlock,
+		CDC: &DatabaseCDCSourcePlan{Provider: bindings.SourceType, Database: stream.Database, Schema: stream.Schema, Table: stream.Table, SpatialInfo: stream.SpatialInfo.Clone()},
 	}, nil
 }
 
@@ -300,8 +317,8 @@ func buildContinuousFields(specs []FieldMappingSpec) ([]ContinuousFieldPlan, []d
 	return buildContinuousFieldsWithTypeSupport(specs, ContinuousFieldTypeSupported)
 }
 
-func buildPostgreSQLCDCFields(specs []FieldMappingSpec) ([]ContinuousFieldPlan, []datatype.FieldInfo, error) {
-	return buildContinuousFieldsWithTypeSupport(specs, PostgreSQLCDCFieldTypeSupported)
+func buildDatabaseCDCFields(specs []FieldMappingSpec) ([]ContinuousFieldPlan, []datatype.FieldInfo, error) {
+	return buildContinuousFieldsWithTypeSupport(specs, DatabaseCDCFieldTypeSupported)
 }
 
 func buildContinuousFieldsWithTypeSupport(specs []FieldMappingSpec, supported func(datatype.FieldType) bool) ([]ContinuousFieldPlan, []datatype.FieldInfo, error) {
@@ -337,10 +354,10 @@ func buildContinuousFieldsWithTypeSupport(specs []FieldMappingSpec, supported fu
 	return mappings, fields, nil
 }
 
-// PostgreSQLCDCFieldTypeSupported extends the scalar continuous contract with
-// ADDP's canonical EWKB + SpatialInfo geometry representation.
-func PostgreSQLCDCFieldTypeSupported(fieldType datatype.FieldType) bool {
-	return ContinuousFieldTypeSupported(fieldType) || fieldType == datatype.FieldTypeGeometry
+// DatabaseCDCFieldTypeSupported 是数据库 provider v1 类型集合的并集；
+// 具体 provider planner 仍必须按真实 source native type 收窄。
+func DatabaseCDCFieldTypeSupported(fieldType datatype.FieldType) bool {
+	return ContinuousFieldTypeSupported(fieldType) || fieldType == datatype.FieldTypeGeometry || fieldType == datatype.FieldTypeBytes
 }
 
 // ContinuousFieldTypeSupported 返回 continuous v1 数据面可无歧义应用的字段类型。

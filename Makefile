@@ -1,4 +1,4 @@
-.PHONY: help init dev build up down logs clean test test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release dev-all \
+.PHONY: help init dev build up down logs clean test test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release dev-all \
         build-backend build-frontend build-debug build-release clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
@@ -431,7 +431,19 @@ compare-agent-eval: ## 比较两份仓库外 Agent v2 评测报告
 compare-agent-eval-release: ## 按正式发布基线策略比较两份 Agent v2 报告
 	@bash scripts/test/agent-evaluation-gate.sh compare-release
 
-test: test-agent-eval ## 运行所有测试
+authorization-generate: ## 从 Permission Manifest 生成 owner-local 常量和 IAM Catalog Seed SQL
+	@cd common && go run ./authorization/cmd/manifest --generate-owner-constants --repository-root ..
+	@cd common && go run ./authorization/cmd/manifest --generate-sql-seed --repository-root ..
+
+test-authorization: ## 校验 IAM Manifest、生成常量和授权覆盖报告
+	@cd common && go test ./authorization/... -count=1
+	@cd common && go run ./authorization/cmd/manifest --check --repository-root .. > /tmp/addp-authorization-catalog.json
+	@cd common && go run ./authorization/cmd/manifest --check-owner-constants --repository-root .. > /tmp/addp-owner-constants.json
+	@cd common && go run ./authorization/cmd/manifest --check-sql-seed --repository-root .. > /tmp/addp-iam-catalog-seed.json
+	@cd common && go run ./authorization/cmd/manifest --coverage-report --repository-root .. > /tmp/addp-authorization-coverage.json
+	@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all
+
+test: test-agent-eval test-authorization ## 运行所有测试
 	@echo "$(GREEN)运行测试...$(NC)"
 	@cd system/backend && go test ./...
 	@if [ -d manager/backend ]; then cd manager/backend && go test ./...; fi
@@ -459,7 +471,7 @@ minio-setup: ## 初始化 MinIO bucket (legacy, 使用 init-minio 替代)
 	@docker compose -f docker-compose.infra.yml exec minio mc mb local/addp-data --ignore-existing
 	@echo "$(GREEN)MinIO 初始化完成$(NC)"
 
-init-minio: ## 初始化 MinIO buckets (包括 mvt-tiles 等)
+init-minio: ## 初始化 MinIO buckets（包括 PMTiles 快显缓存等）
 	@./scripts/infra/init-minio.sh
 
 init-minio-mvt: init-minio ## 初始化 MVT 瓦片缓存 bucket (alias for init-minio)

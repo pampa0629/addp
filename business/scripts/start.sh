@@ -252,7 +252,8 @@ for port in $PORTS_TO_CHECK; do
            check_port_used_by_self $port "business-mongodb" || \
            check_port_used_by_self $port "business-doris-fe" || \
            check_port_used_by_self $port "business-spark-master" || \
-           check_port_used_by_self $port "business-neo4j"; then
+           check_port_used_by_self $port "business-neo4j" || \
+           check_port_used_by_self $port "business-mysql"; then
             echo -e "${GREEN}✓ 端口 ${port} 已被业务库容器使用${NC}"
         else
             echo -e "${YELLOW}⚠️  端口 ${port} 被其他进程占用${NC}"
@@ -389,12 +390,8 @@ fi
 
 # MySQL
 if [ "$ENABLE_MYSQL" = true ]; then
-    if docker ps --filter "name=business-mysql" --format '{{.Status}}' | grep -q "Up"; then
-        echo -e "${GREEN}✓ MySQL 已运行，跳过启动${NC}"
-    else
-        docker compose up -d mysql
-        echo -e "${GREEN}✓ MySQL 已启动${NC}"
-    fi
+    docker compose up -d mysql
+    echo -e "${GREEN}✓ MySQL 配置已同步${NC}"
 fi
 
 # NFS（macOS 内置 NFS）
@@ -518,13 +515,21 @@ if [ "$ENABLE_NFS" = true ]; then
 fi
 
 if [ "$ENABLE_MYSQL" = true ]; then
+    MYSQL_READY=false
     for i in {1..30}; do
         if docker exec business-mysql mysql -h127.0.0.1 -u root -p"${MYSQL_ROOT_PASSWORD:-password}" --connect-timeout=5 -e "SELECT 1" >/dev/null 2>&1; then
             echo -e "${GREEN}✓ MySQL 就绪${NC}"
+            MYSQL_READY=true
             break
         fi
         sleep 1
     done
+    if [ "$MYSQL_READY" != true ]; then
+        echo -e "${RED}✗ MySQL 未在 30 秒内就绪${NC}"
+        exit 1
+    fi
+
+    bash mysql/init-cdc.sh
 fi
 echo ""
 
@@ -586,7 +591,7 @@ if [ "$ENABLE_NEO4J" = true ]; then
     echo -e "Neo4j Bolt: bolt://localhost:${NEO4J_BOLT_PORT_VAL}"
 fi
 if [ "$ENABLE_MYSQL" = true ]; then
-    echo -e "MySQL: localhost:${MYSQL_PORT_VAL:-3306}  (root / ${MYSQL_ROOT_PASSWORD:-password})"
+    echo -e "MySQL: localhost:${MYSQL_PORT_VAL:-3306}  (CDC 用户: ${MYSQL_CDC_USER:-addp_cdc})"
 fi
 if [ "$ENABLE_NFS" = true ]; then
     echo -e "NFS Server: localhost:2049 (export: ${PROJECT_ROOT}/nfs/data)"

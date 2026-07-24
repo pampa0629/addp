@@ -2,15 +2,65 @@
 
 # 加载颜色定义
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${SCRIPT_DIR}/../utils/colors.sh"
 
 echo "🛑 停止 ADDP 开发环境"
+
+# 卸载由 launchd KeepAlive 托管的当前工作区服务，避免进程被杀死后立即重启。
+stop_workspace_launchd_jobs() {
+  if [ "$(uname -s)" != "Darwin" ] || ! command -v launchctl >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local domain="gui/$(id -u)"
+  local labels
+  local cleanup_failed=false
+  labels=$(launchctl list 2>/dev/null | awk '$3 ~ /^com\.addp\.codex\./ {print $3}' || true)
+
+  if [ -z "$labels" ]; then
+    return 0
+  fi
+
+  while IFS= read -r label; do
+    [ -n "$label" ] || continue
+
+    local service_target="${domain}/${label}"
+    local job_info
+    job_info=$(launchctl print "$service_target" 2>/dev/null || true)
+
+    case "$job_info" in
+      *"$ROOT_DIR/"*) ;;
+      *) continue ;;
+    esac
+
+    echo "  卸载 launchd 托管作业: $label"
+    if launchctl bootout "$service_target" >/dev/null 2>&1; then
+      continue
+    fi
+
+    # 作业可能在 list 和 bootout 之间自行退出；仅在仍存在时视为失败。
+    if launchctl print "$service_target" >/dev/null 2>&1; then
+      echo -e "${RED}  ✗ 无法卸载 launchd 托管作业: $label${NC}"
+      cleanup_failed=true
+    fi
+  done <<< "$labels"
+
+  if [ "$cleanup_failed" = true ]; then
+    return 1
+  fi
+}
 
 # ============================================================
 # 并发停止函数
 # ============================================================
 stop_services_concurrent() {
   echo -e "${YELLOW}并发停止所有服务...${NC}"
+
+  local launchd_cleanup_failed=false
+  if ! stop_workspace_launchd_jobs; then
+    launchd_cleanup_failed=true
+  fi
 
   # Phase 1: 收集所有 PIDs
   local all_pids=()
@@ -143,19 +193,23 @@ stop_services_concurrent() {
   echo -e "${YELLOW}等待端口释放...${NC}"
   sleep 2
 
+  if [ "$launchd_cleanup_failed" = true ]; then
+    echo -e "${RED}✗ launchd 托管作业未完全卸载，停止流程失败${NC}"
+    return 1
+  fi
+
   echo -e "${GREEN}✓ 清理完成${NC}"
 }
 
 # ============================================================
 # 执行并发停止
 # ============================================================
-stop_services_concurrent
+STOP_STATUS=0
+stop_services_concurrent || STOP_STATUS=$?
 
 # 清理 Vite 缓存（避免旧代码被缓存）
 echo ""
 echo -e "${YELLOW}清理前端缓存...${NC}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 for frontend_dir in "$ROOT_DIR/console/frontend" "$ROOT_DIR/system/frontend" "$ROOT_DIR/manager/frontend" "$ROOT_DIR/meta/frontend" "$ROOT_DIR/transfer/frontend" "$ROOT_DIR/orchestrator/frontend" "$ROOT_DIR/develop/frontend"; do
   if [ -d "$frontend_dir" ]; then
@@ -186,6 +240,13 @@ if [ -d ".dev-pids" ]; then
 fi
 
 echo ""
+if [ "$STOP_STATUS" -ne 0 ]; then
+  echo -e "${RED}========================================${NC}"
+  echo -e "${RED}✗ 服务停止未完成，请先处理上述错误${NC}"
+  echo -e "${RED}========================================${NC}"
+  exit "$STOP_STATUS"
+fi
+
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}✓ 所有服务已停止并清理完成${NC}"
 echo -e "${GREEN}========================================${NC}"

@@ -15,6 +15,8 @@ Service 模块负责数据服务发布与外部服务注册，覆盖查询服务
 
 ```text
 service/
+├── authorization/
+│   └── permissions.yaml       # Service Permission Manifest，发布期聚合事实源
 ├── backend/
 │   ├── cmd/server/main.go
 │   ├── internal/api/          # query、graph、registered、tile、OGC、resource capability
@@ -37,6 +39,8 @@ service/
 
 ## 核心 API
 
+Service 是 `service.definition.*`、`service.endpoint.read` 和 `service.external_registration.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。`service.definition.publish/offline` 是 IAM 目标目录能力，当前独立路由仍待首次 SQL seed 前的覆盖门禁确认。
+
 管理路由前缀：`/api/v1/service`。
 
 - 资产发现与端点：`GET /assets/discoverable`、`GET /endpoints`。
@@ -52,7 +56,8 @@ service/
 
 - 存储引擎连接信息必须从 System 获取，Service 不管理连接配置。
 - 表结构、空间信息和资源树通过 Meta 共享能力获取；Service 不重复实现资源树、表空间检测或按 `schema/table` 查找资源的代理接口。
-- 静态二维瓦片发布只接受 Meta 已识别的 `data_type=media + format=tile_pyramid + layout=whole` item。发布配置保存 ResourceLocator 和依赖快照，运行时通过 System engine provider 读取，不接受裸 `tile_path`、URL 模板或 Manager infra `storage_ref`。
+- 静态二维瓦片发布只接受 Meta 已识别、位于 Business 存储的 `data_type=media + format=pmtiles + layout=single` item。发布配置保存 ResourceLocator 和 PMTiles v3 依赖快照，运行时通过 System engine provider Range Read，不接受裸路径、URL 或 Manager infra `storage_ref`。
+- 三维瓦片不并入二维瓦片服务。3D Tiles / S3M 后续使用独立“三维场景服务”入口和服务类型。
 - 公开访问端点要在 Handler 内检查服务的 public/private 权限，避免绕过认证。
 - 瓦片缓存使用系统 MinIO，路径和缓存策略应保持租户隔离。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh service` 和 `bash scripts/swagger/check-route-coverage.sh service`。

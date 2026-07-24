@@ -19,6 +19,7 @@ func TestCaptureSupervisorStartPauseResumeStopLifecycle(t *testing.T) {
 	topics := &fakeTopicControl{}
 	source := &fakeSourceResources{}
 	plans := fakePlanResolver{plan: &CapturePlan{
+		SourceType:     models.CaptureSourcePostgreSQL,
 		SourceConnInfo: engineplugin.ConnectionInfo{"host": "source", "user": "postgres", "database": "business"},
 		SourceEngineID: 12, SourceDatabase: "business", SourceSchema: "public", SourceTable: "orders",
 		SourceIdentity: "addp://engine/12/path/public/orders?type=table", SourceConnectionFingerprint: "fingerprint",
@@ -74,6 +75,41 @@ func TestCaptureSupervisorRejectsTerminalGeneration(t *testing.T) {
 	}
 }
 
+func TestCaptureSupervisorOwnsMySQLSchemaHistoryTopic(t *testing.T) {
+	store := &fakeCaptureStore{}
+	connect := &fakeConnectControl{state: "RUNNING"}
+	topics := &fakeTopicControl{}
+	plan := &CapturePlan{
+		SourceType:     models.CaptureSourceMySQL,
+		SourceConnInfo: engineplugin.ConnectionInfo{"host": "localhost", "user": "cdc", "password": "secret"},
+		SourceEngineID: 13, SourceDatabase: "business", SourceTable: "orders",
+		SourceIdentity: "addp://engine/13/path/business/orders?type=table", SourceConnectionFingerprint: "fingerprint",
+	}
+	supervisor, err := NewSupervisor(store, fakePlanResolver{plan: plan}, connect, topics, &fakeSourceResources{}, SupervisorConfig{
+		TopicRetention: time.Hour, TopicReplication: 1, ConnectLoopbackHost: "host.docker.internal",
+		ConnectBootstrapServers: "kafka:29092", ConnectKafkaUsername: "connect", ConnectKafkaPassword: "secret",
+		ConnectKafkaSecurityProtocol: "sasl_plaintext", ProvisioningTimeout: time.Second,
+		StatusPollInterval: time.Millisecond, MonitorInterval: time.Second,
+	}, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := &models.TransferTask{ID: 3, TenantID: 2}
+	if _, err := supervisor.Start(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	if len(topics.specs) != 2 || topics.specs[1].Name != "__addp_cdc_schema.2.3.1" ||
+		topics.specs[1].CleanupPolicy != "delete" || topics.specs[1].RetentionMillis != -1 || !topics.schemaAccessCreated {
+		t.Fatalf("MySQL topic provisioning = %#v, schema access=%t", topics.specs, topics.schemaAccessCreated)
+	}
+	if err := supervisor.Stop(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	if topics.deletedTopics != 2 || !topics.schemaAccessDeleted {
+		t.Fatalf("MySQL topic cleanup = %+v", topics)
+	}
+}
+
 type fakeCaptureStore struct {
 	resource *models.CaptureResource
 	terminal bool
@@ -86,11 +122,17 @@ func (f *fakeCaptureStore) BeginGeneration(_ context.Context, identity repositor
 	if f.resource == nil {
 		f.resource = &models.CaptureResource{
 			ID: 1, TaskID: identity.TaskID, TenantID: identity.TenantID, Generation: 1,
-			ConnectorName: "connector", TopicName: "topic", ConsumerGroup: "group", SlotName: "slot", PublicationName: "publication",
+			ConnectorName: "connector", TopicName: "topic", ConsumerGroup: "group", SourceType: identity.SourceType,
 			SourceIdentity: identity.SourceIdentity, SourceConnectionFingerprint: identity.SourceConnectionFingerprint,
 			SourceEngineID: identity.SourceEngineID, SourceDatabase: identity.SourceDatabase,
 			SourceSchema: identity.SourceSchema, SourceTable: identity.SourceTable,
-			Status: models.CaptureStatusProvisioning, ResourceVersion: 1, SlotOwned: true, PublicationOwned: true,
+			Status: models.CaptureStatusProvisioning, ResourceVersion: 1,
+		}
+		switch identity.SourceType {
+		case models.CaptureSourcePostgreSQL:
+			f.resource.PostgreSQL = &models.PostgreSQLCaptureResource{CaptureResourceID: 1, SlotName: "slot", PublicationName: "publication", SlotOwned: true, PublicationOwned: true}
+		case models.CaptureSourceMySQL:
+			f.resource.MySQL = &models.MySQLCaptureResource{CaptureResourceID: 1, ConnectorServerID: 1, SchemaHistoryTopicName: "__addp_cdc_schema.2.3.1", SchemaHistoryTopicOwned: true}
 		}
 	}
 	return f.resource, nil
@@ -180,23 +222,39 @@ func (f *fakeConnectControl) Delete(context.Context, string) error { f.deleted =
 
 type fakeTopicControl struct {
 	created, accessCreated, deleted, groupDeleted, accessDeleted bool
+	schemaAccessCreated, schemaAccessDeleted                     bool
+	deletedTopics                                                int
+	specs                                                        []TopicSpec
 }
 
-func (f *fakeTopicControl) EnsureTopic(context.Context, TopicSpec) error {
+func (f *fakeTopicControl) EnsureTopic(_ context.Context, spec TopicSpec) error {
 	f.created = true
+	f.specs = append(f.specs, spec)
 	return nil
 }
 func (f *fakeTopicControl) EnsureAccess(context.Context, string, string) error {
 	f.accessCreated = true
 	return nil
 }
-func (f *fakeTopicControl) DeleteTopic(context.Context, string) error { f.deleted = true; return nil }
+func (f *fakeTopicControl) EnsureSchemaHistoryAccess(context.Context, string) error {
+	f.schemaAccessCreated = true
+	return nil
+}
+func (f *fakeTopicControl) DeleteTopic(context.Context, string) error {
+	f.deleted = true
+	f.deletedTopics++
+	return nil
+}
 func (f *fakeTopicControl) DeleteConsumerGroup(context.Context, string) error {
 	f.groupDeleted = true
 	return nil
 }
 func (f *fakeTopicControl) DeleteAccess(context.Context, string, string) error {
 	f.accessDeleted = true
+	return nil
+}
+func (f *fakeTopicControl) DeleteSchemaHistoryAccess(context.Context, string) error {
+	f.schemaAccessDeleted = true
 	return nil
 }
 func (f *fakeTopicControl) Close() {}

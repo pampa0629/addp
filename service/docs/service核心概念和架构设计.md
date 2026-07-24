@@ -74,9 +74,11 @@ Service 模块将服务分为三大类：
 - 缓存策略：可选启用瓦片缓存到 MinIO
 
 **静态图层 (layer_type='static')**
-- 数据源：通过资源树选择 `data_type=media + format=tile_pyramid + layout=whole` 的业务 item
-- 工作原理：发布时由 Meta 校验 item 并冻结格式、瓦片模板、层级、矩阵集和源指纹快照；请求时通过 System engine provider 读取业务存储中的瓦片
-- 支持格式：MVT、PNG、JPEG、WebP；由 item manifest 自动识别，不在表单中手工指定
+- 数据源：通过资源树选择 Business 存储中 `data_type=media + format=pmtiles + layout=single` 的业务 item
+- 工作原理：发布时由 Meta 校验 item 并冻结 PMTiles v3 header 摘要、层级、范围和源指纹快照；请求时通过 System engine provider Range Read 业务 PMTiles
+- 支持格式：PMTiles v3 + gzip MVT；由 Meta 自动识别，不在表单中手工指定
+- 地图初始视角：必须优先按发布快照中的 `capabilities.spatial.extent` 全幅显示数据，并使用 PMTiles 层级范围约束交互；范围不可用时才回退到 `center`，不得硬编码某个地区
+- 空瓦片：合法坐标在 PMTiles 中没有目录项时返回 gzip 编码的空 MVT 和 HTTP 200；存储读取或归档校验失败仍返回错误
 - 禁止输入裸存储路径、URL 模板或 Manager infra `storage_ref`
 
 #### 协议支持
@@ -237,7 +239,7 @@ CREATE TABLE service.query_services (
 - 历史表模式记录只有在 locator 能定位同租户且具有 fingerprint 的 Meta item 时才迁移；无法建立可靠源身份的旧记录在迁移时删除，需重新创建。
 - 历史 DuckDB 联邦 SQL 无法仅靠旧几何配置节点还原对象表依赖，迁移时直接删除，需重新创建；运行时不为旧记录恢复 Meta 动态解析分支。
 - `protocols`: 协议配置，默认启用 REST API
-- `public_access`: 公开访问开关，启用后无需 JWT 认证
+- `public_access`: 公开访问开关；关闭时要求同租户 User Access Token，Service 通过 System AuthContext 校验，不自行解析 Token
 
 ### 3.3 瓦片服务表 (tile_services)
 
@@ -322,14 +324,20 @@ CREATE TABLE service.tile_service_layers (
       },
       "source_snapshot": {
         "fingerprint": "...",
-        "scope_path": "addp/tiles/roads",
+        "scope_path": "addp/tiles/roads.pmtiles",
+        "archive_format": "pmtiles",
+        "spec_version": 3,
+        "header_hash": "...",
         "tile_format": "mvt",
-        "tile_template": "tiles/z{z}/{x}_{y}.mvt.gz",
-        "content_type": "application/vnd.mapbox-vector-tile",
-        "content_encoding": "gzip",
+        "tile_compression": "gzip",
         "min_zoom": 4,
         "max_zoom": 18,
-        "tile_matrix_set": "WebMercatorQuad"
+        "center": [116.4, 39.9, 8],
+        "spatial": {
+          "srid": 4326,
+          "crs_ref": "EPSG:4326",
+          "extent": [116.1, 39.7, 116.7, 40.1]
+        }
       }
     }
     */
@@ -662,7 +670,7 @@ GET /ogc/tiles/beijing_map/road/12/3421/1532
 **Step 1**: 添加第一个图层
 - 选择图层类型：动态图层 / 静态图层
 - 动态图层：选择引擎、Schema、Table，自动检测空间字段
-- 静态图层：从资源树选择 `tile_pyramid` item，格式和缩放范围由 Meta 自动识别
+- 静态图层：从资源树选择 `pmtiles` item，格式、范围和缩放层级由 Meta 自动识别
 - 配置缓存策略
 
 **Step 2**: 配置地图服务
@@ -715,7 +723,7 @@ GET /ogc/tiles/beijing_map/road/12/3421/1532
 **决策**：
 - 格式：MVT（矢量）、PNG/JPEG（栅格）
 - 协议：XYZ Tiles、OGC Tiles API、TMS
-- 第一阶段：动态图层仅支持 MVT；静态图层支持 `tile_pyramid` manifest 声明的 MVT、PNG、JPEG、WebP
+- 第一阶段：动态图层支持实时 MVT；静态图层支持 PMTiles v3 中的 gzip MVT
 
 **理由**：
 - MVT 是格式不是协议

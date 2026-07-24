@@ -11,14 +11,14 @@ import { taskAPI } from '@/api/tasks'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import {
   buildContinuousSourceEndpoint,
-  buildPostgreSQLCDCSourceEndpoint,
+  buildDatabaseCDCSourceEndpoint,
 	cdcMappingsCoverSourceFields,
   continuousMappedTargetKeys,
 	continuousMappingsValid,
+	databaseCDCMappingsValid,
+	databaseCDCUnavailableReasonCodes,
   isKafkaTopicSource,
-	normalizeContinuousKeyFields,
-	postgresqlCDCMappingsValid,
-	postgresqlCDCUnavailableReasonCodes
+	normalizeContinuousKeyFields
 } from './continuousTask.mjs'
 
 export function useTaskWizardState() {
@@ -52,6 +52,7 @@ export function useTaskWizardState() {
   const readableEncodedFormats = ref(new Set())
   const rawCopyFormats = ref(new Map())
   const formatCapabilitiesLoaded = ref(false)
+	const databaseCDCCapability = ref(null)
 
   // Target 配置
   const targetConfig = ref({})
@@ -94,19 +95,20 @@ export function useTaskWizardState() {
 		return isContinuousTask.value && isKafkaTopicSource(sourceEngineType.value, sourceLocator.value)
 	})
 
-	const postgresqlCDCUnavailableReasons = computed(() => postgresqlCDCUnavailableReasonCodes({
+	const databaseCDCUnavailableReasons = computed(() => databaseCDCUnavailableReasonCodes({
 		sourceEngineType: sourceEngineType.value,
 		sourceLocator: sourceLocator.value,
 		sourceRepresentation: sourceRepresentation.value,
 		sourceDataType: sourceDataType.value,
 		targetEngineType: targetEngineType.value,
 		targetRepresentation: targetRepresentation.value,
-		sourceFields: sourceFields.value
+		sourceFields: sourceFields.value,
+		databaseCDCCapability: databaseCDCCapability.value
 	}))
 
-	const supportsPostgreSQLCDC = computed(() => postgresqlCDCUnavailableReasons.value.length === 0)
+	const supportsDatabaseCDC = computed(() => databaseCDCUnavailableReasons.value.length === 0)
 
-	const isPostgreSQLCDCTask = computed(() => {
+	const isDatabaseCDCTask = computed(() => {
 		return isContinuousTask.value && loadMode.value === 'cdc'
 	})
 
@@ -123,19 +125,19 @@ export function useTaskWizardState() {
   })
 
   const continuousConfigValid = computed(() => {
-		const sourceValid = isPostgreSQLCDCTask.value
-			? supportsPostgreSQLCDC.value
+		const sourceValid = isDatabaseCDCTask.value
+			? supportsDatabaseCDC.value
 			: isKafkaTopicSource(sourceEngineType.value, sourceLocator.value)
-		const mappingsValid = isPostgreSQLCDCTask.value
-			? postgresqlCDCMappingsValid(fieldMappings.value, continuousKeyFields.value)
+		const mappingsValid = isDatabaseCDCTask.value
+			? databaseCDCMappingsValid(fieldMappings.value, continuousKeyFields.value, sourceEngineType.value)
 			: continuousMappingsValid(fieldMappings.value, continuousKeyFields.value)
 		return sourceValid &&
       supportsContinuousTarget.value &&
 			mappingsValid &&
-			(!isPostgreSQLCDCTask.value || cdcMappingsCoverSourceFields(fieldMappings.value, sourceFields.value)) &&
+			(!isDatabaseCDCTask.value || cdcMappingsCoverSourceFields(fieldMappings.value, sourceFields.value)) &&
       transforms.value.length === 0 &&
       continuousPollBatchSize.value > 0 &&
-			(isPostgreSQLCDCTask.value || ['earliest', 'latest'].includes(continuousInitialPosition.value))
+			(isDatabaseCDCTask.value || ['earliest', 'latest'].includes(continuousInitialPosition.value))
   })
 
   const watermarkIncrementalValid = computed(() => {
@@ -188,7 +190,9 @@ export function useTaskWizardState() {
       description: taskDescription.value,
       task_type: 'sync',
       config: {
-        runtime: { boundary: runtimeBoundary.value },
+        runtime: isContinuousTask.value
+          ? { boundary: runtimeBoundary.value, record_failure: { mode: 'block' } }
+          : { boundary: runtimeBoundary.value },
         load: buildLoadConfig(),
         source: sourceEndpoint,
         target: targetEndpoint,
@@ -208,7 +212,7 @@ export function useTaskWizardState() {
   })
 
   function buildLoadConfig() {
-		if (isPostgreSQLCDCTask.value) {
+		if (isDatabaseCDCTask.value) {
 			return {
 				mode: 'incremental',
 				change_detection: { type: 'cdc', bootstrap: 'initial_snapshot' }
@@ -275,8 +279,8 @@ export function useTaskWizardState() {
 
   function buildSourceEndpoint() {
     const config = sourceConfig.value || {}
-		if (isPostgreSQLCDCTask.value) {
-			return buildPostgreSQLCDCSourceEndpoint(sourceLocator.value)
+		if (isDatabaseCDCTask.value) {
+			return buildDatabaseCDCSourceEndpoint(sourceLocator.value)
 		}
     if (isContinuousTask.value) {
       return buildContinuousSourceEndpoint(
@@ -365,6 +369,7 @@ export function useTaskWizardState() {
       })
     }
     rawCopyFormats.value = nextRawCopyFormats
+		databaseCDCCapability.value = capabilities?.databaseCDC || null
     formatCapabilitiesLoaded.value = capabilities !== null
   }
 
@@ -373,7 +378,7 @@ export function useTaskWizardState() {
     if (targetRepresentation.value === 'native') {
       const policy = isContinuousTask.value
         ? {
-						apply_mode: isPostgreSQLCDCTask.value ? 'upsert_delete' : 'upsert',
+						apply_mode: isDatabaseCDCTask.value ? 'upsert_delete' : 'upsert',
             keys: continuousTargetKeys.value
           }
         : isWatermarkIncremental.value
@@ -561,7 +566,7 @@ export function useTaskWizardState() {
 			return
 		}
 		if (mode === 'cdc') {
-			if (!supportsPostgreSQLCDC.value) return
+			if (!supportsDatabaseCDC.value) return
 			loadMode.value = 'cdc'
 			runtimeBoundary.value = 'continuous'
 			schedule.value = ''
@@ -671,13 +676,13 @@ export function useTaskWizardState() {
   function autoGenerateFieldMappings() {
     if (sourceFields.value.length === 0) return
 
-    fieldMappings.value = sourceFields.value.map(field => ({
+	fieldMappings.value = sourceFields.value.map(field => ({
       source_field: field.name,
       target_field: field.name, // 默认同名映射
       target_type: field.type || 'string',
       format: '',
       default_value: '',
-      nullable: true
+		nullable: field.nullable !== false
     }))
   }
 
@@ -1136,6 +1141,7 @@ export function useTaskWizardState() {
     readableEncodedFormats.value = new Set()
     rawCopyFormats.value = new Map()
     formatCapabilitiesLoaded.value = false
+		databaseCDCCapability.value = null
     sourceConfig.value = {}
     targetEngineID.value = null
     targetEngineType.value = ''
@@ -1179,6 +1185,7 @@ export function useTaskWizardState() {
     readableEncodedFormats,
     rawCopyFormats,
     formatCapabilitiesLoaded,
+		databaseCDCCapability,
     targetConfig,
     targetEngineID,
     targetEngineType,
@@ -1196,9 +1203,9 @@ export function useTaskWizardState() {
     watermarkIncrementalValid,
     isContinuousTask,
 		isKafkaContinuousTask,
-		isPostgreSQLCDCTask,
-		supportsPostgreSQLCDC,
-		postgresqlCDCUnavailableReasons,
+		isDatabaseCDCTask,
+		supportsDatabaseCDC,
+		databaseCDCUnavailableReasons,
     supportsContinuousTarget,
     continuousTargetKeys,
     continuousConfigValid,

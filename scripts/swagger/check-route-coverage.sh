@@ -10,7 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${ROOT_DIR}"
 
-GO_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph)
+GO_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph asset)
 FASTAPI_MODULES=(agent copilot)
 ALL_MODULES=("${GO_MODULES[@]}" "${FASTAPI_MODULES[@]}")
 
@@ -56,8 +56,45 @@ check_module() {
   local module="$1"
 
   if [[ " ${FASTAPI_MODULES[*]} " == *" $module "* ]]; then
-    echo "  ℹ️  [$module] FastAPI 模块使用运行时 /openapi.json，本静态覆盖校验暂跳过"
-    return 0
+    local module_dir="${module}/backend"
+    local openapi_file="${module_dir}/openapi.json"
+    local python_bin="${ROOT_DIR}/${module_dir}/venv/bin/python"
+    if [ ! -x "$python_bin" ]; then
+      python_bin="$(command -v python3 || true)"
+    fi
+    if [ -z "$python_bin" ]; then
+      echo "  ❌ [$module] 未找到可用 Python"
+      return 1
+    fi
+    if [ ! -f "$openapi_file" ]; then
+      echo "  ❌ [$module] 未找到 $openapi_file，请先运行 gen-swagger.sh"
+      return 1
+    fi
+    if (cd "$module_dir" && "$python_bin" - "$ROOT_DIR/$openapi_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+from main import app
+
+document_path = Path(sys.argv[1])
+expected = json.dumps(app.openapi(), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+actual = document_path.read_text(encoding="utf-8")
+if actual != expected:
+    print("  ❌ FastAPI OpenAPI 投影与运行时路由不一致，请重新运行 gen-swagger.sh")
+    raise SystemExit(1)
+operation_count = sum(
+    1
+    for path_item in app.openapi().get("paths", {}).values()
+    for method in path_item
+    if method.lower() in {"get", "post", "put", "delete", "patch", "head", "options"}
+)
+print(f"  ✅ FastAPI OpenAPI 投影一致（{operation_count} 个公开路由方法）")
+PY
+    ); then
+      return 0
+    fi
+    return 1
   fi
 
   local router_file="${module}/backend/internal/api/router.go"

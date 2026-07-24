@@ -12,15 +12,16 @@ Manager 模块负责数据探查、数据预览、混合检索、空间快显和
 - `manager.raster_cog`：栅格快显 COG生成结果，只登记 Manager 创建或登记到 infra MinIO 的 COG 副本；源 NFS 或业务 MinIO COG 不直接暴露给前端。
 - `manager.raster_cog_tasks`：栅格快显 COG生成任务定义，TaskProvider `task_type=raster_cog_generation`，当前不声明标准取消和自身定时调度能力。
 - `manager.raster_mosaic_tasks`：栅格 mosaic 生成任务定义，TaskProvider `task_type=raster_mosaic_generation`，从资源树 node 创建，结果写入用户选择的业务存储并形成 `raster_mosaic` 业务 item；Manager 不登记或拥有 mosaic 长期产物。
-- `manager.vector_tile_cache`：瓦片缓存结果状态，表达瓦片缓存是否可用、存储引用、格式、范围、层级和最近执行。
-- `manager.vector_tile_cache_tasks`：瓦片缓存生成任务定义，TaskProvider `task_type=vector_tile_cache_generation`，当前不声明标准取消和自身定时调度能力。MVT 只是 `config.tile.format=mvt`，不是任务类型。
+- `manager.vector_tile_cache`：快显缓存结果状态，表达 Manager infra PMTiles artifact 是否可用、存储引用、范围、层级、源版本、生成 profile 和最近执行。
+- `manager.vector_tile_cache_tasks`：快显缓存生成任务定义，TaskProvider `task_type=vector_tile_cache_generation`，结果固定为 Manager infra PMTiles，当前不声明标准取消和自身定时调度能力。
+- `manager.vector_tile_set_tasks`：业务矢量瓦片集生成任务定义，TaskProvider `task_type=vector_tile_set_generation`，结果固定为 Business PMTiles + Meta item；Manager 不建立业务结果表。
 - `manager.point_cloud_copc`：点云 COPC 快显结果，只登记 Manager 生成并拥有生命周期的 infra MinIO COPC artifact；源 `format=copc` item 直接基础预览，不进入该表。
 - `manager.point_cloud_copc_tasks`：点云 COPC 快显任务定义，TaskProvider `task_type=point_cloud_copc_generation`，源必须是 `format=las|laz|e57|pcd|xyz` 的 point_cloud item。
 - `manager.cad_previews`：二维 DWG / DXF 的受管栅格瓦片预览结果，记录 manifest、thumbnail、瓦片范围和 Manager infra MinIO 引用。
 - `manager.cad_preview_tasks`：CAD 栅格预览任务定义，TaskProvider `task_type=cad_preview_generation`，源必须是 `data_type=cad + format=dwg|dxf + layout=single`。
 - `manager.model3d_tiles`：分块三维模型瓦片快显结果，`target_format=3d_tiles|s3m`；同一源 item 的两种格式分别登记为独立结果并写入 Manager infra MinIO。
 - `manager.model3d_tiles_tasks`：分块三维模型瓦片任务定义，TaskProvider `task_type=model3d_tiles_generation`；当前源为 `format=osgb_scene + layout=whole`。
-- 当前 PostGIS + MVT 主路径中的 `vector_tile_cache_generation` 由 Manager Backend 内部执行，不保留独立 Manager Worker 空运行时。后续若瓦片缓存生成计算负载转移到 Manager 进程内、需要多执行器横向扩展，或引入专门 GIS 计算引擎，应先统一文档与架构，再把唯一执行运行时切换为 Manager Worker 或 GIS 执行引擎。
+- `vector_tile_cache_generation` 与 `vector_tile_set_generation` 统一由 Manager Backend 编排，并按源能力选择执行路径：PostgreSQL/PostGIS 空间表复用 `common/spatial` 和 `ST_AsMVT` 原生 SQL 生成 PMTiles；NFS、MinIO/S3 文件或对象转换成受控 GDAL 访问计划后调用 GeoPython Workflow `vector_to_pmtiles` direct operator。两条源执行路径只生成 PMTiles v3，不保留松散 MVT 目录。
 
 ## 技术栈与端口
 
@@ -65,7 +66,7 @@ manager/
 - 预览与下载：`GET /preview`、`GET /storage-stream`、`GET /downloads/file?locator={ResourceLocator}`。
 - 搜索：`GET /search`、`GET /search/history`、`DELETE /search/history/:id`、`DELETE /search/history`。
 - 空间要素辅助：`GET /engines/:id/spatial/features/:feature_id/centroid`、`GET /engines/:id/spatial/features/:feature_id/geometry`。
-- Quick View：统一使用 ResourceLocator 入口，`GET /quick-view/capability?locator={ResourceLocator}` 返回快显能力状态，`GET /quick-view/flatgeobuf?locator={ResourceLocator}` 返回中小规模矢量 FlatGeobuf 快显材料，`GET /quick-view/geojson?locator={ResourceLocator}` 保留为 GeoJSON 调试/人类可读出口，`GET /quick-view/tiles/:z/:x/:y.mvt?locator={ResourceLocator}` 返回 MVT，`GET /raster_cog/:id/content` 返回 ready raster COG 内容，`PATCH /preview-state/preferred-mode` 更新显示偏好；raster COG 通过 `raster_cog_generation` 任务生成或登记，raster mosaic 通过 `raster_mosaic_generation` 从 node 生成业务 item，瓦片缓存生成通过 `vector_tile_cache_generation` 任务执行。
+- Quick View：统一使用 ResourceLocator 入口，`GET /quick-view/capability?locator={ResourceLocator}` 返回快显能力状态，`GET /quick-view/flatgeobuf?locator={ResourceLocator}` 返回中小规模矢量 FlatGeobuf 快显材料，`GET /quick-view/geojson?locator={ResourceLocator}` 保留为 GeoJSON 调试/人类可读出口，`GET /quick-view/tiles/:z/:x/:y.mvt?locator={ResourceLocator}` 从实时源或 infra PMTiles 返回 MVT，`GET /raster_cog/:id/content` 返回 ready raster COG 内容，`PATCH /preview-state/preferred-mode` 更新显示偏好；业务 PMTiles 通过 `vector_tile_set_generation` 生成或由合格缓存固化。
 - 点云快显：`GET /point_cloud_copc/:id/content` 返回 ready COPC 快显内容；LAS / LAZ / E57 / PCD / XYZ 通过 `point_cloud_copc_generation` 生成 Manager 私有 COPC artifact，源 COPC 直接基础预览。
 - CAD 预览：`GET /cad-previews/:id/manifest` 返回 ready manifest，`GET /cad-previews/:id/tiles/:z/:x/:y` 返回 WebP 瓦片；DWG / DXF 通过 `cad_preview_generation` 调用 SuperMap 直接渲染 Dataset，前端不读取源 CAD 文件、不重画 entity。
 - 分块三维模型瓦片：`GET /model3d_tiles` 查询 Manager 受管结果，`GET /model3d_tiles/:id/assets/*asset_path` 返回 ready 3D Tiles / S3M 目录资源；生成入口统一由 Quick View action 驱动，独立管理页只负责任务、结果、监控与预览入口。
@@ -85,6 +86,9 @@ manager/
 - 资源树 item / node 向量化是 ad-hoc execution，不写入 `manager.embedding_tasks`；只有独立向量化页面创建的配置才是任务定义。
 - 空间相关逻辑不得默认几何字段名为 `geom`，应从 Meta、预览检测或请求参数获取。
 - 不得把 Quick View 称为任务；瓦片缓存生成任务统一使用 `vector_tile_cache_generation` / `manager.vector_tile_cache_tasks`。
+- “空间任务”是 Manager 中空间业务任务的导航与能力分类，不是统一任务表或单一 `task_type`；当前“矢量瓦片”对应 `vector_tile_set_generation`。
+- 业务矢量瓦片集生成任务统一使用 `vector_tile_set_generation` / `manager.vector_tile_set_tasks`；结果只写用户选择的 Business 存储并触发 Meta scan，不进入 `manager.vector_tile_cache`。
+- “保存为业务瓦片集”必须创建或执行 `vector_tile_set_generation`。ready 缓存仅在源版本和生成 profile 完全一致时作为执行复用候选；复制必须使用临时对象、PMTiles 校验和原子提交，成功后再触发 Meta scan。
 - 矢量物化视图任务统一使用 `vector_materialized_view_generation` / `manager.vector_materialized_view_tasks`；结果只登记 Manager 创建并拥有生命周期的 3857 目标。
 - 栅格快显 COG生成结果统一使用 `manager.raster_cog`，任务定义统一使用 `manager.raster_cog_tasks` / `raster_cog_generation`；不得写入 `vector_tile_cache` 或 `vector_materialized_view_generation`，不得让前端感知 NFS path、业务 MinIO bucket/object 或底层 `storage_ref`。
 - 栅格 mosaic 生成任务统一使用 `manager.raster_mosaic_tasks` / `raster_mosaic_generation`；创建入口是资源树 node，目标是用户选择的业务存储，结果是 `data_type=media`、`format=raster_mosaic`、`layout=whole` 的业务 item。mosaic 的 leaf COG、overview COG、index、manifest 和可选 tiles 都不写入 Manager infra MinIO，不进入 `manager.raster_cog`。
@@ -96,7 +100,9 @@ manager/
 - COG 生成只能由 Manager 任务执行器派生 GDAL 参数后，通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 GeoPython Workflow；不得退回构造单节点 workflow 或直接拼接 GeoPython Workflow 私有 HTTP。
 - 瓦片缓存生成任务不得隐式创建 3857 物化视图、空间索引或执行准备动作；需要性能准备时必须显式执行矢量物化视图任务。
 - 自动识别的外部 3857 目标只能只读消费，不写入 `manager.vector_materialized_view`，也不获得 Manager 删除、刷新或 stale 生命周期。
-- 不得同时保留 Backend 内执行和 Manager Worker 执行两条瓦片缓存生成路径；运行时只能有一条主路径。
+- 批量矢量瓦片生成按源能力分流且不得交叉：PostgreSQL/PostGIS 空间表必须由 Manager 复用 `common/spatial` 的 `ST_AsMVT` SQL 生成；文件和对象来源必须由 GeoPython Workflow `vector_to_pmtiles` 生成。两者统一封装为 PMTiles v3，Manager 内部不得恢复松散 MVT 目录或私有 manifest。
+- 快显瓦片缓存的默认最大层级必须同时受记录数和累计候选瓦片预算约束；默认预算为 10000 个 WebMercatorQuad 矩形候选瓦片。前端必须显示当前层级的预计候选数，用户可显式提高层级，但不得把 `max_zoom=18` 作为无条件默认值。
+- 业务矢量瓦片集页面复用同一候选瓦片估算能力，但不把快显预算作为业务生成硬限制；后端推荐层级与用户当前选择必须分开显示，用户超过推荐层级时提示预计生成规模和成本风险。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh manager` 和 `bash scripts/swagger/check-route-coverage.sh manager`。
 
 ## 开发与验证

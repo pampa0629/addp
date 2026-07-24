@@ -1,4 +1,4 @@
-export function isPostgreSQLCDCTask(task) {
+export function isDatabaseCDCTask(task) {
   const config = task?.config
   return config?.runtime?.boundary === 'continuous' &&
     config?.load?.mode === 'incremental' &&
@@ -7,12 +7,12 @@ export function isPostgreSQLCDCTask(task) {
 }
 
 export function isCDCSchemaBlocked(task) {
-	return isPostgreSQLCDCTask(task) && task?.status === 'blocked'
+	return isDatabaseCDCTask(task) && task?.status === 'blocked'
 }
 
 export function continuousStartDisabledReason(task) {
 	if (isCDCSchemaBlocked(task)) return 'schema_blocked'
-	if (isPostgreSQLCDCTask(task)) {
+	if (isDatabaseCDCTask(task)) {
 		const captureStatus = String(task?.capture?.status || '').toLowerCase()
 		if (captureStatus === 'cleanup_failed' || captureStatus === 'cleaning') return 'cleanup_failed'
 		if (captureStatus === 'stopped') return 'permanently_stopped'
@@ -23,7 +23,7 @@ export function continuousStartDisabledReason(task) {
 }
 
 export function getCDCCaptureHealthWarning(task) {
-	if (!isPostgreSQLCDCTask(task) || !task?.capture) return null
+	if (!isDatabaseCDCTask(task) || !task?.capture) return null
 	const status = String(task.capture.status || '').toLowerCase()
 	const connectorStatus = String(task.capture.connector_status || '').toUpperCase()
 	if (status === 'stopped') return null

@@ -62,6 +62,8 @@ type CreateScanTaskResponse struct {
 // @Failure 400 {string} string "错误信息 | Error message"
 // @Failure 401 {string} string "错误信息 | Error message"
 // @Failure 500 {string} string "错误信息 | Error message"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.cleanup.execute"]
 // @Router /admin/cleanup/scan [post]
 func (h *CleanupHandler) CreateScanTask(c *gin.Context) {
 	// 获取当前用户信息
@@ -121,6 +123,8 @@ type GetTaskStatusResponse struct {
 // @Failure 401 {string} string "错误信息 | Error message"
 // @Failure 404 {string} string "错误信息 | Error message"
 // @Failure 500 {string} string "错误信息 | Error message"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.cleanup.read"]
 // @Router /admin/cleanup/tasks/{task_id} [get]
 func (h *CleanupHandler) GetTaskStatus(c *gin.Context) {
 	taskID := c.Param("task_id")
@@ -187,6 +191,8 @@ type CreateExecuteTaskResponse struct {
 // @Failure 400 {string} string "错误信息 | Error message"
 // @Failure 401 {string} string "错误信息 | Error message"
 // @Failure 500 {string} string "错误信息 | Error message"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.cleanup.execute"]
 // @Router /admin/cleanup/execute [post]
 func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 	// 获取当前用户信息
@@ -278,6 +284,8 @@ type GetTaskHistoryResponse struct {
 // @Failure 400 {string} string "错误信息 | Error message"
 // @Failure 401 {string} string "错误信息 | Error message"
 // @Failure 500 {string} string "错误信息 | Error message"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.cleanup.read"]
 // @Router /admin/cleanup/history [get]
 func (h *CleanupHandler) GetTaskHistory(c *gin.Context) {
 	// 获取租户信息

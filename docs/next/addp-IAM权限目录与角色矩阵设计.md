@@ -1,6 +1,6 @@
 # ADDP IAM Permission 目录与 Role 矩阵设计
 
-更新日期：2026-07-22
+更新日期：2026-07-23
 
 状态：技术设计已确认。本文基于 `docs/concepts/addp账号与权限体系图.md` 和 `docs/next/addp-IAM目标数据模型设计.md`，确定 Permission 命名、事实源、路由声明、内置 Role 和 Scope 规则；不定义 AuthContext JSON Schema 或 owner Resource Grant / Policy 表。
 
@@ -23,8 +23,9 @@
 | --- | --- |
 | Permission 粒度 | 按稳定业务能力定义，不按页面、菜单、URL 或 HTTP method 定义 |
 | Permission Key | `{domain}.{resource}.{action}`，全部使用小写 snake_case 和点分段 |
-| 事实源 | `common/authorization/permissions.yaml` 是版本化产品清单，System 数据库是运行时权威投影 |
+| 事实源 | 每个 owner 模块拥有自己的版本化 Permission Manifest；唯一发布期聚合流程生成 System 数据库运行时投影 |
 | Owner | 每条 Permission 必须声明唯一 `owner_module`，owner 后端执行最终功能校验 |
+| System 知识边界 | System 只保存 Permission Key、owner、Scope、风险和可组合性等不透明授权契约，不知道业务实现、资源结构或 Policy |
 | Role | 只是一组 Permission，不继承其他 Role，不包含通配符 |
 | Tenant 自定义 Role | 只能引用 `tenant_customizable=true` 的稳定 Permission |
 | Scope | Role Assignment 显式携带 Platform、Tenant、Department 或 Project Group Scope |
@@ -32,71 +33,118 @@
 | 前端 | 只消费授权结果控制导航和按钮，不作为安全执行点 |
 | Gateway | 只做认证和粗粒度入口治理，不根据 URL 推断业务 Permission |
 
-## 三、Permission 事实源
+## 三、Permission 所有权与事实源
 
-### 3.1 单一清单
+### 3.1 模块拥有 Manifest
 
-新增版本化清单：
+每个 owner 在自身模块维护唯一 Permission Manifest：
 
 ```text
-common/authorization/permissions.yaml
+system/authorization/permissions.yaml
+manager/authorization/permissions.yaml
+meta/authorization/permissions.yaml
+transfer/authorization/permissions.yaml
+...
 ```
 
-每条 Permission 至少包含：
+例如 Manager Manifest：
 
 ```yaml
-- key: manager.data_item.read
-  owner_module: manager
-  action: read
-  allowed_scope_types: [tenant, department, project_group]
-  risk_level: low
-  tenant_customizable: true
-  delegable: true
-  name_i18n_key: permissions.manager.data_item.read.name
-  description_i18n_key: permissions.manager.data_item.read.description
+schema_version: addp.permission_manifest/v1
+owner_module: manager
+manifest_version: 1
+permissions:
+  - key: manager.data_item.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: true
+    status: active
+    name_i18n_key: permissions.manager.data_item.read.name
+    description_i18n_key: permissions.manager.data_item.read.description
 ```
 
 约束：
 
-- `key` 全局唯一且不可改名；需要改变语义时新增 Key，并在一次性切换中删除旧引用；
-- `owner_module` 必须是稳定 ADDP 模块名；`platform`、`iam`、`audit`、`statistics` 权限的 owner 均为 System；
-- 清单只包含产品定义，不包含 Tenant 自定义 Role 或运行时 Assignment；
+- 模块只能定义 `owner_module` 等于自身稳定模块名的 Permission，不能替其他模块声明能力；
+- `platform`、`iam`、`audit`、`statistics` 等 System 能力只由 `system/authorization/permissions.yaml` 定义；
+- `key` 全局唯一且不可改名；需要改变语义时新增 Key、迁移调用方并显式禁用旧 Key；
+- 每个 Manifest 只包含该模块的产品能力定义，不包含 Tenant 自定义 Role、Role Assignment、资源 ID、路由 URL 或 Resource Policy；
 - 模块下线不会自动删除 Permission；禁用必须通过显式版本变更和 SQL migration；
 - 用户可见名称和说明只保存 i18n Key，不在数据库硬编码中英文文案。
 
-### 3.2 生成与同步
+`common/authorization` 不保存全平台业务 Permission 清单，只提供统一的 Manifest Schema、解析/校验类型和跨模块测试工具。目标机器可读 Schema 为：
 
-清单生成：
+```text
+common/authorization/schemas/permission-manifest-v1.schema.json
+```
 
-- Go Permission 常量和描述符；
-- common-python Permission 常量；
-- common-frontend 只读 Permission Key 类型；
-- System SQL seed / reconciliation 数据；
-- 文档中的 Permission 目录表。
+产品级内置 Role 模板由 System IAM 拥有，目标机器可读文件为：
+
+```text
+system/authorization/builtin_roles.yaml
+```
+
+它可以组合多个 owner 的 Permission Key，但只表达产品授权策略，不复制 Permission 描述或业务实现。Tenant 自定义 Role 仍是 System 运行时数据，不进入任何模块 Manifest。
+
+### 3.2 唯一发布期聚合
+
+发布期聚合器读取所有模块 Manifest 和 System 内置 Role 模板，生成：
+
+- `system.permissions`、内置 Role 和 Role Permission 的版本化 SQL seed；
+- 每个 owner 自己使用的 Go、Python 或前端 Permission 常量；
+- Swagger / OpenAPI 权限元数据校验基线；
+- 文档中的 Permission 目录和 Role 矩阵校验结果。
 
 ```mermaid
 flowchart LR
-    Manifest["permissions.yaml"] --> Validator["Catalog Validator"]
-    Validator --> Go["Go constants"]
-    Validator --> Python["Python constants"]
-    Validator --> Frontend["Frontend key types"]
-    Validator --> SQL["Versioned SQL seed"]
-    SQL --> System["system.permissions"]
-    Go --> Owner["Owner route / service checks"]
-    System --> IAM["Role composition and AuthContext"]
+    SystemManifest["system Permission Manifest"] --> Aggregator["Release Catalog Aggregator"]
+    OwnerManifest["Owner Permission Manifests"] --> Aggregator
+    RoleManifest["System Built-in Role Templates"] --> Aggregator
+    Schema["common Manifest Schema / Validator"] --> Aggregator
+    Aggregator --> SQL["Versioned IAM SQL Seed"]
+    Aggregator --> Local["Owner-local Constants"]
+    Aggregator --> Contract["Swagger / Docs Contract Checks"]
+    SQL --> Catalog["system.permissions + Built-in Roles"]
+    Catalog --> IAM["Role Composition + AuthContext"]
+    Local --> Owner["Owner Route / Service Enforcement"]
 ```
 
-不采用模块启动时动态注册 Permission 的路线。模块健康状态不能改变授权目录，避免服务暂时离线导致 Role 语义漂移。
+聚合产物是一次发布中唯一可执行的目录更新路径。System 不在运行时扫描仓库，业务模块也不通过启动注册、心跳或 Module Registry Metadata 增删 Permission。模块健康状态不能改变授权目录，避免服务暂时离线导致 Role 语义漂移。
 
-### 3.3 CI 校验
+未来可安装模块也必须在显式安装/升级事务中提交同一 Manifest 契约，经同一聚合和 migration 流程进入目录；不能另开运行时自注册路线。
+
+Manifest 字段、内置 Role 模板、生成产物和升级语义详见 [IAM Permission Manifest 与发布期聚合设计](addp-IAM%20Permission%20Manifest与发布期聚合设计.md)。
+
+### 3.3 System 最小知识边界
+
+System 只允许知道并持久化：
+
+- Permission Key、`owner_module` 和稳定 action；
+- 允许的 Scope、风险级别、是否可委托、是否允许 Tenant 自定义 Role；
+- i18n Key、状态和版本化目录来源；
+- 哪些 Permission Key 被内置 Role 或 Tenant Role 组合。
+
+System 不允许知道：
+
+- Permission 对应的页面、URL、HTTP Method、Service 或 Repository；
+- owner 的资源表、资源层级、资源 ID 和业务状态；
+- Resource Grant、Explicit Deny、密级、发布状态和 Policy 算法；
+- 业务操作如何执行，或模块健康时是否应临时改变 Role 语义。
+
+如果 System 连不透明 Permission Key 都不知道，就无法验证跨模块 Role 和 Tenant 自定义 Role，只能让各模块各建一套角色体系。因此“不知道业务功能”的准确边界是：System 管理授权词汇和组合，不管理功能实现和资源决策。
+
+### 3.4 CI 校验
 
 清单校验必须覆盖：
 
 - Key 格式、唯一性和 owner_module 合法性；
+- Manifest 所在模块与 `owner_module` 一致，且没有跨 owner 定义；
 - action 是否来自允许词汇表；
 - allowed Scope 非空且不越过 owner 边界；
 - Tenant 自定义 Role 只能引用可定制 Permission；
 - 所有内置 Role 引用的 Permission 存在且启用；
+- 模块删除或禁用 Permission 时生成显式向前 migration，不静默删除已发布 Key；
 - 受保护公开路由声明授权模式；
 - `permission` 模式路由引用的 Permission 存在且 owner 匹配；
 - Tool Manifest 的 owner、required Scope 和可委托 Permission 与目录一致；
@@ -161,7 +209,7 @@ flowchart LR
 | --- | --- | --- |
 | `public` | 无身份即可访问 | Login、OAuth metadata |
 | `authenticated` | 只要求有效 AuthContext，不产生业务授权 | AuthContext 基础设施入口 |
-| `self` | 只能操作当前 User 自身资源 | `/users/me`、修改自己的凭据 |
+| `self` | 只能操作当前 User 自身资源 | `GET /users/me`、`PUT /users/me/password` |
 | `permission` | 要求一个或多个稳定 Permission | 创建任务、管理 Tenant Membership |
 | `delegated_tool` | 同时要求 Role Permission、Tool Scope、audience 和审批 | Agent 代表用户执行 Tool |
 | `resource_ticket` | 原生 GET/HEAD 资源请求 | 图片、媒体、下载、三维内容 |
@@ -269,6 +317,8 @@ Tenant 管理员不能修改全局 User 状态或其他 Tenant Membership。邀�
 
 TaskProvider 不定义第二套 Permission。通过 TaskProvider 执行 Meta、Transfer、Develop、Manager、Quality 或 Graph 任务时，仍校验该 owner 任务类型对应的精确 `execute` Permission。
 
+本节是 IAM 目标目录，不代表当前每个 owner 已存在同名运行时路由。例如 Transfer、Develop 和 Orchestrator 当前并未全部提供真实执行取消能力；`cancel` 在首次 SQL seed 前必须通过路由覆盖门禁证明已有唯一消费入口，否则应在初次发布前从未发布 Manifest 删除，不能把无实现的 active Permission 写入运行时目录。
+
 ### 8.3 数据服务与资产
 
 | Base Key | Actions | Scope | Customizable | Owner |
@@ -284,6 +334,8 @@ TaskProvider 不定义第二套 Permission。通过 TaskProvider 执行 Meta、T
 
 Portal 是 Asset 的用户入口，不创建 `portal.asset.*` 平行 Permission。Portal 调用 Asset 时保留当前 Principal 和 Tenant 上下文，最终使用 Asset Permission 与 Resource Policy。
 
+`service.definition` 统一覆盖 Query、Graph、Tile 等 ADDP 内建服务定义，`service.external_registration` 对应外部 Registered Service。Service 当前主要通过通用 status 更新表达服务启停，尚未形成独立 publish/offline 路由；`publish/offline` 与上一节 `cancel` 一样，首次 SQL seed 前必须通过路由覆盖门禁收敛，不能长期保留无唯一消费入口的 active Permission。
+
 ### 8.4 标准、模型与质量
 
 | Base Key | Actions | Scope | Customizable | Owner |
@@ -296,6 +348,8 @@ Portal 是 Asset 的用户入口，不创建 `portal.asset.*` 平行 Permission�
 | `quality.rule_application` | `read, create, update, delete` | Tenant, Department, Project Group | true | Quality |
 | `quality.check_task` | `read, create, update, delete, execute` | Tenant, Department, Project Group | true | Quality |
 | `quality.issue` | `read, update` | Tenant, Department, Project Group | true | Quality |
+
+当前目录只覆盖首批治理主链路。Standard 的 Glossary、Unit、Classification、Document、Dimension Hierarchy 等真实资源，以及 Model 的 Entity、关系、DW Layer 等细分资源尚未进入 Permission 目录；由于 ADDP 不允许隐式 Permission 继承，它们不能被 `standard.domain.*` 或 `model.logical_model.*` 自动覆盖。首次 SQL seed 前的路由覆盖阶段必须为这些路由补充明确 Permission 或确认不进入本阶段授权面。
 
 ### 8.5 知识图谱与 AI
 
@@ -310,9 +364,28 @@ Portal 是 Asset 的用户入口，不创建 `portal.asset.*` 平行 Permission�
 | `agent.run` | `read, create, execute, cancel` | Tenant, Department, Project Group | true | Agent |
 | `copilot.sql` | `execute` | Tenant, Department, Project Group | true | Copilot |
 | `copilot.workflow` | `execute` | Tenant, Department, Project Group | true | Copilot |
-| `copilot.knowledge_graph` | `execute` | Tenant, Department, Project Group | true | Copilot |
 
 Copilot 生成结果不自动获得执行权限。生成 SQL、Workflow 或图谱配置后，真正保存或执行仍校验 Develop、Graph 等 owner Permission。
+
+Graph 子资源不额外建立宽泛 Permission，但必须按明确的聚合边界映射：Ontology 的实体类、关系类、版本、导入和 Schema 推导归 `graph.ontology.*`；图谱浏览、搜索、展开、路径和私有 Knowledge Service 查询归 `graph.graph.read`；构建材料增删归 `graph.build_task.update`，运行/重跑归 `graph.build_task.execute`；批量审核必须按请求 action 选择 `graph.review.approve` 或 `graph.review.reject`。不允许根据 URL 前缀或 Permission 前缀隐式放行。
+
+Agent Session 和 AgentRun 是 Agent owner 的私有资源：Role Permission 只是功能 Allow 候选，owner 还必须校验当前 User 和 Tenant 归属。`/chat` 是单一 AG-UI Operation，新建和 Interaction resume 统一按 all-of 需要 `agent.run.create + agent.run.execute`；独立 retry 路由只继续已有 Run，需要 `agent.run.execute`。
+
+Copilot Permission 只允许生成候选结果，不自动授予保存或执行权限。SQL 入口已删除请求体 `tenant_id/user_id` 并从 AuthContext 取得租户；Workflow 的 `workflow.draft.generate` Tool Scope 唯一映射到可委托的 `copilot.workflow.execute`；Graph 单 chunk KG 抽取使用内部服务身份。当前没有真实用户级图谱候选生成入口，因此未发布的 `copilot.knowledge_graph.execute` 已删除，不允许把内部路由冒充 User Permission 消费入口。Navigate 只要求已认证用户，不进入首批 Permission 目录。
+
+### 8.6 owner 内部 Resource Grant
+
+对外提供可授权资源的 owner 在清单中注册：
+
+```text
+{owner}.resource_grant.create
+{owner}.resource_grant.read
+{owner}.resource_grant.revoke
+```
+
+例如 Manager 使用 `manager.resource_grant.create/read/revoke`。这些 Permission 的 `allowed_scope_types=[tenant]`、`tenant_customizable=false`、`delegable=false`，只用于 `internal` 模式的 Resource Grant API。它们只授予位于同一 Tenant Context 的专用 Service Principal 内置 Role，不授予 User、Tenant 管理角色、平台三员或 Agent Tool。
+
+Owner 未开放可申请资源时不注册空 Permission；一旦开放，Grant API、Permission 清单、Service Principal Role 和 Swagger 授权元数据必须在同一次变更中加入。
 
 ## 九、Platform Role 矩阵
 
@@ -432,12 +505,12 @@ ADDP 不提供包含所有 Tenant Permission 的 `tenant.super_admin`。同一 U
 | Role Key | 主要 Permission 集合 | Allowed Scope |
 | --- | --- | --- |
 | `tenant.data_viewer` | Manager Data Item / Content read、Manager Search execute、Meta Catalog read | Tenant, Department, Project Group |
-| `tenant.data_steward` | Data Viewer + Manager Data Item / Derived Artifact create/update/delete、Meta Inspect、Meta Scan Task | Tenant, Department, Project Group |
-| `tenant.data_engineer` | Data Viewer + Transfer、Develop、Orchestrator Task 全生命周期及 Monitor Execution read | Tenant, Department, Project Group |
+| `tenant.data_steward` | Data Viewer + Manager Data Item create/update/delete、Derived Artifact read/create/delete、Meta Inspect、Meta Scan Task 全生命周期 | Tenant, Department, Project Group |
+| `tenant.data_engineer` | Data Viewer + Transfer Task、Develop Task、Develop Notebook、Orchestrator Workflow 全生命周期及 Monitor Execution read | Tenant, Department, Project Group |
 | `tenant.service_publisher` | Data Viewer + Service Definition / External Registration 全生命周期 | Tenant, Department, Project Group |
-| `tenant.governance_manager` | Standard、Model、Quality 全生命周期及 Monitor Execution read | Tenant, Department, Project Group |
+| `tenant.governance_manager` | Standard Domain/Element/Metric/Code Set、Model Logical Model、Quality Rule Application/Check Task 的全部显式 actions，Quality Issue read/update，Monitor Execution read | Tenant, Department, Project Group |
 | `tenant.asset_consumer` | Asset Catalog / Entry read、Application read/create、Authorization read、Rating read/create/update、Service Endpoint read | Tenant, Department, Project Group |
-| `tenant.asset_manager` | Asset Catalog、Entry、Application、Authorization、Rating 治理 | Tenant, Department, Project Group |
+| `tenant.asset_manager` | Asset Catalog、Entry、Application、Authorization、Rating 的全部显式 actions | Tenant, Department, Project Group |
 | `tenant.graph_engineer` | Graph Ontology、Graph、Build Task、Analysis、Review | Tenant, Department, Project Group |
 | `tenant.ai_user` | Agent Session / Run、Copilot 生成能力 | Tenant, Department, Project Group |
 
@@ -504,25 +577,28 @@ Owner 责任：
 ## 十五、实施顺序
 
 1. 确认本文 Permission 和 Role 决策；
-2. 把精确目录落为 `permissions.yaml`，生成常量和 SQL seed；
-3. 为每个 owner 路由建立“授权模式 + Required Permission”清单；
-4. 扩展 Swagger/OpenAPI 授权元数据和覆盖校验；
-5. 设计 AuthContext JSON Schema，使其能够表达 Permission Grant 与 Scope；
-6. 设计 owner Resource Grant / Policy 接口；
-7. 进入 Fosite ADR；
-8. ADR 完成后才实施 IAM SQL migration 和代码切换。
+2. 建立 Permission Manifest Schema，并把精确目录分别落到各 owner 的 `authorization/permissions.yaml`；
+3. 建立唯一发布期聚合器和 `system/authorization/builtin_roles.yaml`，生成 owner-local 常量与版本化 SQL seed；
+4. 为每个 owner 路由建立“授权模式 + Required Permission”清单；
+5. 扩展 Swagger/OpenAPI 授权元数据和覆盖校验；
+6. 设计 AuthContext JSON Schema，使其能够表达 Permission Grant 与 Scope；
+7. 设计 owner Resource Grant / Policy 接口；
+8. 进入 Fosite ADR；
+9. ADR 完成后才实施 IAM SQL migration 和代码切换。
 
 ## 十六、已确认的技术决策
 
 以下决策已确认，后续设计和实现不得重新引入并行路线：
 
-1. **单一清单**：使用 `common/authorization/permissions.yaml` 作为产品 Permission 事实源，不采用运行时动态注册。
-2. **Key 规则**：采用 `{domain}.{resource}.{action}`，无通配符、无隐式权限继承。
-3. **路由声明**：每个公开路由显式声明授权模式；Permission 模式在 Swagger 输出稳定权限元数据。
-4. **自服务边界**：当前 User 自身资料和凭据使用 `self` 关系策略，不创建隐藏的“所有用户基础 Role”。
-5. **平台三员矩阵**：安全管理员申请平台 Role 变更，系统管理员独立复核，审计管理员只读监督。
-6. **Tenant 管理拆分**：Tenant Administrator、Infrastructure Administrator、Tenant Auditor 分离，不提供 Tenant SuperAdmin。
-7. **业务内置 Role**：采用 Data Viewer、Data Steward、Data Engineer、Service Publisher、Governance Manager、Asset Consumer、Asset Manager、Graph Engineer、AI User 九个首批模板。
-8. **Tenant 自定义 Role**：只能组合 `tenant_customizable=true` Permission，不支持 Role 继承。
-9. **Scope 语义**：Department / Project Group Scope 只提供功能 Allow 候选，仍要求 owner 资源关联或 Grant。
-10. **Portal / TaskProvider 边界**：复用事实 owner Permission，不建立 Portal 或 TaskProvider 平行权限目录。
+1. **模块所有、单路聚合**：每个 owner 的 `authorization/permissions.yaml` 是其 Permission 定义事实源；唯一发布期聚合流程生成 System 目录和 owner-local 产物，不采用中央手工业务清单或运行时动态注册。
+2. **System 最小知识**：System 只管理不透明 Permission 契约、Role 组合和 Assignment，不知道业务实现、资源结构或 owner Policy。
+3. **共享边界**：`common/authorization` 只提供 Manifest Schema、校验器和共享授权类型，不保存全平台业务 Permission 内容。
+4. **Key 规则**：采用 `{domain}.{resource}.{action}`，无通配符、无隐式权限继承。
+5. **路由声明**：每个公开路由显式声明授权模式；Permission 模式在 Swagger 输出稳定权限元数据。
+6. **自服务边界**：当前 User 自身资料和凭据使用 `self` 关系策略，不创建隐藏的“所有用户基础 Role”。
+7. **平台三员矩阵**：安全管理员申请平台 Role 变更，系统管理员独立复核，审计管理员只读监督。
+8. **Tenant 管理拆分**：Tenant Administrator、Infrastructure Administrator、Tenant Auditor 分离，不提供 Tenant SuperAdmin。
+9. **业务内置 Role**：采用 Data Viewer、Data Steward、Data Engineer、Service Publisher、Governance Manager、Asset Consumer、Asset Manager、Graph Engineer、AI User 九个首批模板。
+10. **Tenant 自定义 Role**：只能组合 `tenant_customizable=true` Permission，不支持 Role 继承。
+11. **Scope 语义**：Department / Project Group Scope 只提供功能 Allow 候选，仍要求 owner 资源关联或 Grant。
+12. **Portal / TaskProvider 边界**：复用事实 owner Permission，不建立 Portal 或 TaskProvider 平行权限目录。

@@ -239,7 +239,7 @@ type StoreProvider interface {
 - `BoundedWatermarkReadProvider.OpenBoundedWatermarkRead()`：在引擎一致性读边界内冻结复合 watermark 上界，按稳定顺序读取 `(start, upper_bound]`。session 必须返回上界，并能从已读取行生成 provider 可解释的复合位置；普通 batch reader 不得被推断为具备该语义。
 - `TableUpsertProvider.PrepareTableUpsert()` / `UpsertBatch()`：按显式稳定键准备目标并幂等应用 insert/update。Provider 必须校验键字段和唯一约束；普通 `BatchWritableProvider` 或 COPY session 不得被推断为 upsert。
 - `ChangeStreamReaderProvider.OpenChangeStream()`：打开 partitioned change stream，按 provider position seek、poll 原始记录并支持受控 pause/resume/close。Kafka topic 不能伪装成 `BatchReadableProvider` 或 content `stream_read`。
-- `PartitionedTableChangeApplyProvider.PreparePartitionedTableChangeApply()` / `ApplyPartitionedTableChanges()`：把单个 source partition 的已映射表变化与目标 apply position 在同一目标事务中提交。PostgreSQL 当前真实实现 `upsert|delete`；同一 key 在批内只保留最高 position 的最终操作，目标行变化和 `addp_transfer.apply_positions` 必须原子提交。普通 `TableUpsertProvider`、Infra state CAS 或 runtime lease 均不得被推断为具备目标侧 monotonic apply 语义。
+- `PartitionedTableChangeApplyProvider.PreparePartitionedTableChangeApply()` / `ApplyPartitionedTableChanges()`：把单个 source partition 的已映射表变化与目标 apply position 在同一目标事务中提交。PostgreSQL 当前真实实现 `upsert|delete|skip`；`skip` 只推进 ledger，不修改业务行。同一 key 在批内只保留最高 position 的最终数据操作，目标行变化和 `addp_transfer.apply_positions` 必须原子提交。普通 `TableUpsertProvider`、Infra state CAS 或 runtime lease 均不得被推断为具备目标侧 monotonic apply 语义。
 
 第一版 PostgreSQL watermark 契约：
 
@@ -287,7 +287,7 @@ type ChangeStreamReader interface {
 
 Provider 只返回原始 ChangeRecord，不负责 JSON、Debezium、Avro 或 Protobuf 解码。Transfer source adapter 负责把 record 解码、校验并归一化为内部 ChangeEvent；第一版 keyed JSON record 归一化为 `operation=upsert`。
 
-`ChangeEvent`、transform 和 `ChangeApplyWriter` 属于 Transfer runtime，不是 Engine Catalog/Store Provider。Transfer 将已映射行、目标 key、`upsert|delete` 操作、每条记录的 provider position 和单 partition 批次边界交给 `PartitionedTableChangeApplyProvider`；Provider 不解析 JSON、Kafka record 或 Debezium envelope，只负责目标数据库内的原子数据应用与位置账本。
+`ChangeEvent`、transform 和 `ChangeApplyWriter` 属于 Transfer runtime，不是 Engine Catalog/Store Provider。Transfer 将已映射行、目标 key、`upsert|delete|skip` 操作、每条记录的 provider position 和单 partition 批次边界交给 `PartitionedTableChangeApplyProvider`；Provider 不解析 JSON、Kafka record、Debezium envelope 或 DLQ envelope，只负责目标数据库内的原子数据应用与位置账本。`skip` 不携带 row，只允许在 Transfer 已持久化对应 dead-letter 事实后使用；Provider 不负责验证 DLQ 存储。
 
 第一版 PostgreSQL 契约：
 
@@ -296,6 +296,7 @@ Provider 只返回原始 ChangeRecord，不负责 JSON、Debezium、Avro 或 Pro
 - 每次 apply 只接受一个 partition，batch 包含 start/end position，且每条变化携带消费后的 position。Kafka v1 只接受单调递增的 `kafka_offset/v1.next_offset`。
 - Provider 在事务内锁定或创建 ledger 行；ledger 落后于 batch start 表示位置缺口，必须失败；ledger 位于 batch 内或之后表示重放，必须跳过已应用记录。
 - 对过滤后的同 key 多条 upsert，Provider 保留 position 最大的最后一条，再调用目标表 upsert；目标数据与 ledger end position 在同一事务提交。
+- `skip` 只推进 ledger，不写入、更新或删除业务行；同批数据操作与 skip 必须仍按 source position 单调处理。插件只有真实实现该事务语义后才可在 capability `operations` 中声明 `skip`。
 - 旧 runtime 即使仍持有业务库连接，只要其 batch end position 不大于 ledger，就不得覆盖新状态。
 
 `BatchReadOptions.Hints`、`TableReadSessionOptions.Hints` 和 `BatchData.Hints` 只用于同一次运行时读写链路中的控制提示，例如字段选择、空间字段输出编码、批大小或写入方法。Hints 不是 catalog facts，不得写入 `CatalogFacts`，也不得作为 Meta item attributes 的兜底口袋。

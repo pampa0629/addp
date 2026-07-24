@@ -98,7 +98,7 @@ func newOrchestratorExecutionServiceTestDB(t *testing.T) *gorm.DB {
 	statements := []string{
 		`CREATE TABLE orchestrator.orchestrations (
 			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, description TEXT,
-			steps JSON NOT NULL, enabled BOOLEAN, schedule TEXT, last_run_at DATETIME, next_run_at DATETIME,
+			steps JSON NOT NULL, editor_layout JSON NOT NULL DEFAULT '{}', enabled BOOLEAN, schedule TEXT, last_run_at DATETIME, next_run_at DATETIME,
 			last_execution_id TEXT, last_execution_status TEXT, created_by INTEGER,
 			created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
 		)`,

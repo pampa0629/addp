@@ -24,7 +24,7 @@ func TestManagerVectorTileCacheWorkflowExecutorUsesVSIS3ForObjectStoreSource(t *
 			switch {
 			case r.Method == http.MethodGet && r.URL.Path == "/api/operators":
 				writeVectorTileOperatorList(w, testRasterWorkflowEngineType, []string{"workflow", "direct"})
-			case r.URL.Path == "/api/operators/vector_to_mvt_tiles/invoke":
+			case r.URL.Path == "/api/operators/vector_to_pmtiles/invoke":
 				var payload struct {
 					Params map[string]interface{} `json:"params"`
 				}
@@ -32,7 +32,7 @@ func TestManagerVectorTileCacheWorkflowExecutorUsesVSIS3ForObjectStoreSource(t *
 					t.Fatalf("decode workflow request: %v", err)
 				}
 				capturedParams = payload.Params
-				_, _ = w.Write([]byte(`{"status":"success","execution_id":"py-mvt-1","execution_time_ms":92,"result":{"total_tiles":4,"cached_tiles":2,"tiles_total_estimate":4,"tiles_processed":4,"generated_tiles":2,"empty_tiles":2,"failed_tiles":0,"total_size_bytes":256,"max_tile_size_bytes":180,"min_tile_size_bytes":76,"actual_max_zoom":10,"stop_reason":"workflow_ogr2ogr_mvt","generation_seconds":1.25,"extent":[110,20,120,30],"mvt_options":{"extent":8192,"buffer":160,"max_size":5000000,"publish_concurrency":8}}}`))
+				_, _ = w.Write([]byte(`{"status":"success","execution_id":"py-pmtiles-1","execution_time_ms":92,"result":{"archive_format":"pmtiles","spec_version":3,"tile_format":"mvt","tile_compression":"gzip","header_hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","archive_size_bytes":1024,"total_tiles":4,"cached_tiles":2,"tiles_total_estimate":4,"tiles_processed":4,"generated_tiles":2,"empty_tiles":2,"failed_tiles":0,"total_size_bytes":1024,"max_tile_size_bytes":180,"min_tile_size_bytes":76,"actual_max_zoom":10,"stop_reason":"workflow_ogr2ogr_pmtiles","generation_seconds":1.25,"extent":[110,20,120,30],"mvt_options":{"extent":8192,"buffer":160,"max_size":5000000,"publish_concurrency":8}}}`))
 			default:
 				t.Fatalf("unexpected workflow path: %s", r.URL.Path)
 			}
@@ -101,7 +101,7 @@ func TestManagerVectorTileCacheWorkflowExecutorUsesVSIS3ForObjectStoreSource(t *
 			ItemFingerprint: commonModels.GenerateItemFingerprint(9, "addp/gis/规划用地.shp"),
 			Locator:         "addp://engine/9/path/addp/gis/%E8%A7%84%E5%88%92%E7%94%A8%E5%9C%B0.shp?type=object&item_id=236",
 		},
-		StorageRef: tilecache.ObjectPrefixStorageRef(7, "fp-planning"),
+		StorageRef: tilecache.ObjectStorageRef(7, "fp-planning", "profile-planning"),
 		Tile: commonModels.JSONMap{
 			"format":      "mvt",
 			"min_zoom":    9,
@@ -115,10 +115,10 @@ func TestManagerVectorTileCacheWorkflowExecutorUsesVSIS3ForObjectStoreSource(t *
 	if err != nil {
 		t.Fatalf("GenerateVectorTileCache() error = %v", err)
 	}
-	if result.CachedTiles != 2 || result.StopReason != "workflow_ogr2ogr_mvt" {
+	if result.CachedTiles != 2 || result.StopReason != "workflow_ogr2ogr_pmtiles" {
 		t.Fatalf("result = %+v, want workflow facts", result)
 	}
-	if metadata["operator"] != "vector_to_mvt_tiles" || metadata["mode"] != "direct" {
+	if metadata["operator"] != "vector_to_pmtiles" || metadata["mode"] != "direct" || metadata["header_hash"] == nil {
 		t.Fatalf("metadata = %#v, want direct vector workflow metadata", metadata)
 	}
 	mvtOptions, _ := asJSONMap(metadata["mvt_options"])
@@ -150,8 +150,8 @@ func TestManagerVectorTileCacheWorkflowExecutorUsesVSIS3ForObjectStoreSource(t *
 	if strings.HasPrefix(sourcePlan["root_uri"].(string), "/vsicurl/") {
 		t.Fatalf("source root_uri must not use single-file presigned URL: %#v", sourcePlan["root_uri"])
 	}
-	if targetPlan["object_prefix_uri"] != "/vsis3/manager/tenant_7/mvt-tiles/fp-planning" {
-		t.Fatalf("target object_prefix_uri = %#v", targetPlan["object_prefix_uri"])
+	if targetPlan["archive_uri"] != "/vsis3/manager/tenant_7/vector-tile-cache/fp-planning/profile-planning.pmtiles" {
+		t.Fatalf("target archive_uri = %#v", targetPlan["archive_uri"])
 	}
 	targetEnv := targetPlan["gdal_env"].(map[string]interface{})
 	if targetEnv["AWS_S3_ENDPOINT"] != "minio:9000" || targetEnv["AWS_ACCESS_KEY_ID"] != "manager-ak" || targetEnv["AWS_SECRET_ACCESS_KEY"] != "manager-sk" {
@@ -175,9 +175,9 @@ func writeVectorTileOperatorList(w http.ResponseWriter, engineType string, execu
 		"status": "success",
 		"operators": []map[string]interface{}{
 			{
-				"id":              "vector_to_mvt_tiles",
-				"name":            "vector_to_mvt_tiles",
-				"display_name":    "向量 MVT 瓦片缓存",
+				"id":              "vector_to_pmtiles",
+				"name":            "vector_to_pmtiles",
+				"display_name":    "向量 PMTiles 瓦片缓存",
 				"engine_type":     engineType,
 				"type":            "vector",
 				"category":        "瓦片缓存",

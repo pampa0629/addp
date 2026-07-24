@@ -125,7 +125,9 @@ class ConversationResponse(ConversationBase):
 
 ## 五、API 端点说明
 
-### 5.1 POST /copilot/sql/generate - 生成 SQL(创建 SQL 对话)
+### 5.1 POST /api/v1/copilot/sql/generate - 生成 SQL(创建 SQL 对话)
+
+请求必须携带 `Authorization: Bearer <token>`。Copilot 通过 System AuthContext 取得用户与租户身份，请求体禁止提交 `tenant_id` 或 `user_id`。
 
 **请求体**:
 
@@ -133,9 +135,7 @@ class ConversationResponse(ConversationBase):
 {
   "query": "查询所有人口大于 100 万的城市",
   "conversation_id": null,
-  "engine_id": 1,
-  "tenant_id": 1,
-  "user_id": 2
+  "engine_id": 1
 }
 ```
 
@@ -361,14 +361,13 @@ class ConversationResponse(ConversationBase):
 ### 7.1 创建 SQL 对话(首次请求)
 
 ```bash
-curl -X POST http://localhost:8087/copilot/sql/generate \
+curl -X POST http://localhost:8087/api/v1/copilot/sql/generate \
+  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
     "query": "查询所有人口大于 100 万的城市",
     "conversation_id": null,
-    "engine_id": 1,
-    "tenant_id": 1,
-    "user_id": 2
+    "engine_id": 1
   }'
 ```
 
@@ -389,13 +388,12 @@ curl -X POST http://localhost:8087/copilot/sql/generate \
 ### 7.2 继续 SQL 对话
 
 ```bash
-curl -X POST http://localhost:8087/copilot/sql/generate \
+curl -X POST http://localhost:8087/api/v1/copilot/sql/generate \
+  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
     "query": "按人口降序排列",
-    "conversation_id": 1,
-    "tenant_id": 1,
-    "user_id": 2
+    "conversation_id": 1
   }'
 ```
 

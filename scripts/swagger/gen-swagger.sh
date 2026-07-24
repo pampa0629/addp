@@ -13,8 +13,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${ROOT_DIR}"
 
-# 所有支持 Swagger 的 Go 后端模块
-ALL_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph)
+# 所有支持发布检查 API 文档的后端模块
+GO_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph asset)
+FASTAPI_MODULES=(agent copilot)
+ALL_MODULES=("${GO_MODULES[@]}" "${FASTAPI_MODULES[@]}")
 
 # 查找 swag 可执行文件
 find_swag() {
@@ -65,6 +67,60 @@ gen_module() {
     fi
 }
 
+find_module_python() {
+    local module=$1
+    local module_python="${module}/backend/venv/bin/python"
+    if [ -x "$module_python" ]; then
+        echo "${ROOT_DIR}/${module_python}"
+    elif command -v python3 &>/dev/null; then
+        command -v python3
+    else
+        echo ""
+    fi
+}
+
+gen_fastapi_module() {
+    local module=$1
+    local module_dir="${module}/backend"
+    local python_bin
+    python_bin=$(find_module_python "$module")
+
+    if [ -z "$python_bin" ]; then
+        echo "  ❌ [$module] 未找到可用 Python"
+        return 1
+    fi
+    if [ ! -f "${module_dir}/main.py" ]; then
+        echo "  ❌ [$module] 未找到 ${module_dir}/main.py"
+        return 1
+    fi
+
+    echo "  📄 [$module] 生成中..."
+    if (cd "$module_dir" && "$python_bin" - <<'PY'
+import json
+from pathlib import Path
+
+from main import app
+
+output = json.dumps(app.openapi(), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+Path("openapi.json").write_text(output, encoding="utf-8")
+PY
+    ); then
+        echo "  ✅ [$module] 完成"
+    else
+        echo "  ❌ [$module] 生成失败；请确认模块依赖已安装"
+        return 1
+    fi
+}
+
+is_fastapi_module() {
+    local target=$1
+    local module
+    for module in "${FASTAPI_MODULES[@]}"; do
+        [ "$target" = "$module" ] && return 0
+    done
+    return 1
+}
+
 # 解析参数
 TARGETS=()
 for arg in "$@"; do
@@ -97,14 +153,24 @@ done
 echo "🔧 生成 Swagger 文档: ${TARGETS[*]}"
 echo ""
 
-SWAG_BIN=$(ensure_swag)
+SWAG_BIN=""
+for module in "${TARGETS[@]}"; do
+    if ! is_fastapi_module "$module"; then
+        SWAG_BIN=$(ensure_swag)
+        break
+    fi
+done
 
 # 并行生成
 PIDS=()
 FAILED_MODULES=()
 
 for module in "${TARGETS[@]}"; do
-    gen_module "$module" "$SWAG_BIN" &
+    if is_fastapi_module "$module"; then
+        gen_fastapi_module "$module" &
+    else
+        gen_module "$module" "$SWAG_BIN" &
+    fi
     PIDS+=($!)
 done
 

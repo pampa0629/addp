@@ -20,7 +20,7 @@ from .properties_operators import get_area, get_length, get_bounds
 from .format_operators import load_from_wkt, export_to_wkt
 from .spatial_transform_operators import vector_reproject
 from .raster_operators import build_raster_mosaic, tiff_to_cog
-from .vector_tile_operators import vector_to_mvt_tiles
+from .vector_tile_operators import vector_to_pmtiles
 from .data_operations import (
     clip, voronoi, split_by_area,
     batch_buffer, batch_centroid

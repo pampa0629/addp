@@ -319,14 +319,9 @@ func (s *UserService) Authenticate(username, password string) (*models.User, err
 	return user, nil
 }
 
-// ChangePassword 修改密码（需要验证旧密码）
-func (s *UserService) ChangePassword(userID uint, req *models.ChangePasswordRequest, currentUserID uint) error {
-	// 只能修改自己的密码
-	if userID != currentUserID {
-		return errors.New("只能修改自己的密码")
-	}
-
-	user, err := s.repo.GetByID(userID)
+// ChangeOwnPassword 修改当前用户密码（需要验证旧密码）。
+func (s *UserService) ChangeOwnPassword(req *models.ChangePasswordRequest, currentUserID uint) error {
+	user, err := s.repo.GetByID(currentUserID)
 	if err != nil {
 		return errors.New("用户不存在")
 	}

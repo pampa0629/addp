@@ -2,7 +2,7 @@
 
 更新日期：2026-07-23
 
-状态：技术设计草案，待确认。本文在已确认的 IAM 数据模型、Permission / Role 矩阵和 AuthContext v1 契约之上，确定 owner Resource Grant / Policy、Resource Scope Binding、最终访问判断和 Asset 授权申请衔接；不修改当前数据库、API、Swagger 或运行代码。
+状态：技术设计已确认。本文在已确认的 IAM 数据模型、Permission / Role 矩阵和 AuthContext v1 契约之上，确定 owner Resource Grant / Policy、Resource Scope Binding、最终访问判断和 Asset 授权申请衔接；不修改当前数据库、API、Swagger 或运行代码。
 
 ## 一、目标与边界
 
@@ -243,8 +243,11 @@ role          -> subject_id 为空，subject_role_key 非空，include_descendan
 
 - Permission 存在、启用且 `owner_module` 等于当前 owner；
 - Permission 允许 Tenant / Department / Project Group 业务 Scope；
+- Subject 为 Role 时，每个 Permission 必须已属于当前 Tenant 中该有效 Role；不允许创建永远无法与 Role Permission 取交集的空规则；
 - Asset 来源只能请求该 Asset 已发布 Offering 中允许的 Permission；
 - Grant 不能创造 Role Permission；调用者仍必须从 AuthContext 获得同一 Permission。
+
+Principal、Department 和 Project Group Subject 不在创建时绑定某个固定 Role Assignment；owner 只验证 Subject、Tenant 和 Permission 契约有效，运行时再与 Principal 当前 AuthContext 中的有效 Role Permission 和 Scope 取交集。Role、Permission 或组织关系失效后，历史 Rule 为审计保留但不再匹配，不跨 schema 级联删除。
 
 ### 7.3 生效条件
 
@@ -698,14 +701,14 @@ Principal authorization_version
 - 跨 Tenant / 不可见资源不泄露存在性；
 - Decision 审计包含 Assignment、Rule 和 Policy 版本；
 - 日志不记录 Token、完整 AuthContext 或敏感 Rule reason；
-- Swagger 授权元数据、真实路由和 Permission 清单一致。
+- Swagger 授权元数据、真实路由和 owner Permission Manifest 及聚合目录一致。
 
 ## 十八、实施顺序
 
 本文确认后不立即写 owner 代码。IAM 技术设计按既定决策门继续：
 
 1. 完成 OAuth/OIDC 协议需求矩阵与 Fosite ADR；
-2. ADR 通过后落 `permissions.yaml`、AuthContext Schema 和版本化 SQL migration；
+2. ADR 通过后落各 owner 的 `authorization/permissions.yaml`、唯一发布期聚合器、AuthContext Schema 和版本化 SQL migration；
 3. 实现 System Principal / Membership / Role / Token / Context Selection；
 4. 实现 `common/authorization/resource` 语义类型和共享测试套件；
 5. 选择 Manager Data Item 作为第一个 owner vertical slice，实现单资源、列表和 Resource Ticket；
@@ -715,7 +718,9 @@ Principal authorization_version
 
 不允许先实现 Asset 新授权表、再等待 owner 接入；那会形成第二套暂时性 ACL。
 
-## 十九、待确认的技术决策
+## 十九、已确认的技术决策
+
+以下决策已确认，后续设计和实现不得重新引入并行路线：
 
 1. **Owner 最终执行**：Resource Grant / Policy 和最终访问判断只归资源 owner，不建立 System 中央 ACL。
 2. **统一动作词汇**：Resource Rule 直接引用 Permission Key，不建立第二套 resource action。
@@ -732,3 +737,4 @@ Principal authorization_version
 13. **凭据分离**：删除 Asset Authorization `credential`，Resource Grant 不保存 API Token 或登录凭据。
 14. **首阶段缓存**：不跨请求缓存 owner Decision / Rule；搜索授权字段只是查询投影，详情仍执行 owner Authorizer。
 15. **内部 Grant Permission**：每个 owner 使用 `{owner}.resource_grant.create/read/revoke` 保护内部 Grant API，只授予同 Tenant Service Principal，不使用共享 Internal API Key。
+16. **Role Subject 校验**：Role 类型 Resource Rule 只能引用该 Role 已包含的 Permission；其他 Subject 在运行时与当前有效 Role Permission 和 Scope 取交集。

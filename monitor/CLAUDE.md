@@ -14,6 +14,8 @@ Monitor 模块是 ADDP 的统一执行监控中心，负责查询和展示各模
 
 ```text
 monitor/
+├── authorization/
+│   └── permissions.yaml       # Monitor Permission Manifest，发布期聚合事实源
 ├── backend/
 │   ├── cmd/server/main.go
 │   ├── internal/api/          # executions、statistics、modules health API
@@ -28,6 +30,7 @@ monitor/
 
 ## API 与数据
 
+- Monitor 是 `monitor.execution.*`、`monitor.health.read` 和 `monitor.statistics.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。
 - 路由前缀：`/api/v1/monitor`。
 - 主要接口：`GET /executions`、`GET /executions/:id`、`GET /executions/stats`、`GET /executions/trend`、`GET /alerts`、`GET /alert-rule-targets`、`GET/POST/PATCH/DELETE /alert-rules`、`GET/POST/PATCH/DELETE /webhook-destinations`、`GET /webhook-deliveries`、`GET/POST/PATCH/DELETE /email-destinations`、`GET /email-deliveries`、`GET /modules`、`GET /modules/:module/health`、`GET /modules/health/all`、`GET /providers/health`、`GET /providers/:module/health`。
 - provider health 从 System 读取启用的 TaskProvider 注册记录，复用模块 `/health` 与标准 `GET /tasks?task_type=` 做无副作用探活；Monitor 不复制 capabilities、不修复 provider 注册、不读取 owner 私有表。

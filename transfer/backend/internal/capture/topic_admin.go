@@ -19,6 +19,7 @@ type TopicSpec struct {
 	Name              string
 	Partitions        int32
 	ReplicationFactor int16
+	CleanupPolicy     string
 	RetentionMillis   int64
 	RetentionBytes    int64
 }
@@ -26,9 +27,11 @@ type TopicSpec struct {
 type TopicControl interface {
 	EnsureTopic(ctx context.Context, spec TopicSpec) error
 	EnsureAccess(ctx context.Context, topic, group string) error
+	EnsureSchemaHistoryAccess(ctx context.Context, topic string) error
 	DeleteTopic(ctx context.Context, topic string) error
 	DeleteConsumerGroup(ctx context.Context, group string) error
 	DeleteAccess(ctx context.Context, topic, group string) error
+	DeleteSchemaHistoryAccess(ctx context.Context, topic string) error
 	Close()
 }
 
@@ -109,13 +112,25 @@ func NewKafkaTopicAdmin(config KafkaAdminConfig) (*KafkaTopicAdmin, error) {
 
 func (a *KafkaTopicAdmin) EnsureTopic(ctx context.Context, spec TopicSpec) error {
 	if spec.Partitions != 1 {
-		return fmt.Errorf("PostgreSQL CDC v1 topic must have exactly one partition")
+		return fmt.Errorf("database CDC v1 topic must have exactly one partition")
+	}
+	cleanupPolicy := strings.ToLower(strings.TrimSpace(spec.CleanupPolicy))
+	if cleanupPolicy == "" {
+		cleanupPolicy = "delete"
+	}
+	if cleanupPolicy != "delete" && cleanupPolicy != "compact" {
+		return fmt.Errorf("unsupported database CDC topic cleanup policy %q", cleanupPolicy)
 	}
 	configs := map[string]*string{
-		"cleanup.policy": stringPtr("delete"),
-		"retention.ms":   stringPtr(strconv.FormatInt(spec.RetentionMillis, 10)),
+		"cleanup.policy": stringPtr(cleanupPolicy),
 	}
-	if spec.RetentionBytes > 0 {
+	if cleanupPolicy == "delete" {
+		if spec.RetentionMillis == 0 || spec.RetentionMillis < -1 {
+			return fmt.Errorf("database CDC topic retention must be positive or -1")
+		}
+		configs["retention.ms"] = stringPtr(strconv.FormatInt(spec.RetentionMillis, 10))
+	}
+	if cleanupPolicy == "delete" && spec.RetentionBytes > 0 {
 		configs["retention.bytes"] = stringPtr(strconv.FormatInt(spec.RetentionBytes, 10))
 	}
 	responses, err := a.admin.CreateTopics(ctx, spec.Partitions, spec.ReplicationFactor, configs, spec.Name)
@@ -153,11 +168,31 @@ func (a *KafkaTopicAdmin) validateTopic(ctx context.Context, spec TopicSpec) err
 	for _, config := range resource.Configs {
 		values[config.Key] = config.MaybeValue()
 	}
-	if values["cleanup.policy"] != "delete" || values["retention.ms"] != strconv.FormatInt(spec.RetentionMillis, 10) {
+	cleanupPolicy := strings.ToLower(strings.TrimSpace(spec.CleanupPolicy))
+	if cleanupPolicy == "" {
+		cleanupPolicy = "delete"
+	}
+	if values["cleanup.policy"] != cleanupPolicy || (cleanupPolicy == "delete" && values["retention.ms"] != strconv.FormatInt(spec.RetentionMillis, 10)) {
 		return fmt.Errorf("Infra Kafka CDC topic %q has incompatible cleanup or retention config", spec.Name)
 	}
-	if spec.RetentionBytes > 0 && values["retention.bytes"] != strconv.FormatInt(spec.RetentionBytes, 10) {
+	if cleanupPolicy == "delete" && spec.RetentionBytes > 0 && values["retention.bytes"] != strconv.FormatInt(spec.RetentionBytes, 10) {
 		return fmt.Errorf("Infra Kafka CDC topic %q has incompatible retention.bytes", spec.Name)
+	}
+	return nil
+}
+
+func (a *KafkaTopicAdmin) EnsureSchemaHistoryAccess(ctx context.Context, topic string) error {
+	builder := kadm.NewACLs().Topics(topic).ResourcePatternType(kadm.ACLPatternLiteral).
+		Allow(a.connectPrincipal).Operations(kadm.OpRead, kadm.OpWrite, kadm.OpDescribe)
+	builder.PrefixUser()
+	results, err := a.admin.CreateACLs(ctx, builder)
+	if err != nil {
+		return fmt.Errorf("create MySQL schema history ACL: %w", err)
+	}
+	for _, result := range results {
+		if result.Err != nil {
+			return fmt.Errorf("create MySQL schema history ACL: %w", result.Err)
+		}
 	}
 	return nil
 }
@@ -223,6 +258,22 @@ func (a *KafkaTopicAdmin) DeleteAccess(ctx context.Context, topic, group string)
 			if result.Err != nil {
 				return fmt.Errorf("delete CDC resource ACL: %w", result.Err)
 			}
+		}
+	}
+	return nil
+}
+
+func (a *KafkaTopicAdmin) DeleteSchemaHistoryAccess(ctx context.Context, topic string) error {
+	builder := kadm.NewACLs().Topics(topic).ResourcePatternType(kadm.ACLPatternLiteral).
+		Allow(a.connectPrincipal).AllowHosts().Operations(kadm.OpAny)
+	builder.PrefixUser()
+	results, err := a.admin.DeleteACLs(ctx, builder)
+	if err != nil {
+		return fmt.Errorf("delete MySQL schema history ACL: %w", err)
+	}
+	for _, result := range results {
+		if result.Err != nil {
+			return fmt.Errorf("delete MySQL schema history ACL: %w", result.Err)
 		}
 	}
 	return nil

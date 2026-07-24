@@ -24,6 +24,8 @@
 
 ```
 model/
+├── authorization/
+│   └── permissions.yaml              # Model owner Permission Manifest
 ├── backend/
 │   ├── cmd/server/main.go           # 应用入口
 │   ├── go.mod                       # github.com/addp/model
@@ -227,6 +229,12 @@ Model 和 Standard 使用不同的 PostgreSQL Schema，**无数据库外键约�
 | `fact_metric_mappings.metric_id` | `standard.metrics.id` |
 
 创建/更新时，Service 层通过 HTTP 调用 Standard 模块 API 验证 ID 是否存在。
+
+## IAM Permission 所有权
+
+Model 是 `model.logical_model.*` 第一批 Permission 的唯一 owner，机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Model 服务启动时不向 System 动态注册 Permission。
+
+当前 Manifest 只是首批逻辑模型目录，不隐式覆盖 Entity、EntityRelation、TableRelation、FactMetricMapping 和 DWLayer 等其他真实资源。这些资源必须在明确业务边界后增加独立 Permission，不得借用宽泛 Key 或前缀匹配授权。
 
 ## 特殊设计
 

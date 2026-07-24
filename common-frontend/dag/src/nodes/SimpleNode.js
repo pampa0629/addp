@@ -6,14 +6,16 @@
  * 根据标识符生成一致的颜色
  */
 export function generateColor(identifier) {
-  if (!identifier) return '#5B8FF9'
+  const style = typeof document === 'undefined' ? null : getComputedStyle(document.documentElement)
+  const color = variable => style?.getPropertyValue(variable).trim()
+  if (!identifier) return color('--el-color-primary')
 
   const predefinedColors = {
-    'meta': '#5AD8A6',
-    'transfer': '#5B8FF9',
-    'manager': '#F6BD16',
-    'develop': '#6DC8EC',
-    'orchestrator': '#9270CA'
+    meta: color('--addp-module-meta'),
+    transfer: color('--addp-module-transfer'),
+    manager: color('--addp-module-manager'),
+    develop: color('--addp-module-develop'),
+    orchestrator: color('--addp-module-orchestrator')
   }
 
   // 从 identifier 提取模块名（如 "meta.scanner.default" → "meta"）
@@ -22,11 +24,5 @@ export function generateColor(identifier) {
     return predefinedColors[moduleName]
   }
 
-  // Hash 生成颜色
-  let hash = 0
-  for (let i = 0; i < identifier.length; i++) {
-    hash = identifier.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  const h = hash % 360
-  return `hsl(${h}, 70%, 60%)`
+  return color('--el-color-primary')
 }

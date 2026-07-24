@@ -154,7 +154,7 @@ func validateStoreCapabilities(p EnginePlugin, store *StoreCapability) error {
 		}
 		seenOperations := map[string]bool{}
 		for _, operation := range capability.Operations {
-			if operation != TableChangeOperationUpsert && operation != TableChangeOperationDelete {
+			if operation != TableChangeOperationUpsert && operation != TableChangeOperationDelete && operation != TableChangeOperationSkip {
 				return fmt.Errorf("%s declares unsupported partitioned_table_change_apply operation %q", p.Type(), operation)
 			}
 			if seenOperations[operation] {

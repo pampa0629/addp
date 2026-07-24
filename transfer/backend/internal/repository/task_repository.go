@@ -234,11 +234,6 @@ func (r *TaskRepository) UpdateProgress(id uint, progress float64) error {
 		Update("progress", progress).Error
 }
 
-// Delete 删除任务
-func (r *TaskRepository) Delete(id uint) error {
-	return r.db.Delete(&models.TransferTask{}, id).Error
-}
-
 // List 列出任务
 func (r *TaskRepository) List(tenantID uint, filters map[string]interface{}, page, pageSize int) ([]models.TransferTask, int64, error) {
 	var tasks []models.TransferTask

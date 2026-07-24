@@ -82,6 +82,7 @@ export const PAGE_MAPS = {
     'data-explorer': 'data-explorer',
     'data-retrieval': 'data-retrieval',
     'vectorization-tasks': 'vectorization-tasks',
+    'spatial-tasks/vector-tiles': 'spatial-tasks/vector-tiles',
     'spatial-quick-view/vector-tile-cache': 'spatial-quick-view/vector-tile-cache',
     'spatial-quick-view/vector-materialized-view': 'spatial-quick-view/vector-materialized-view',
     'spatial-quick-view/raster-cog': 'spatial-quick-view/raster-cog',
@@ -233,6 +234,14 @@ export const SIDEBAR_MENUS = {
           { index: '/manager/model-3d-tiles',                         icon: Grid,        label: 'console.menus.manager.model3DTiles' },
           { index: '/manager/gaussian-splat-ksplat',                  icon: Odometer,    label: 'console.menus.manager.gaussianSplatQuickView' },
           { index: '/manager/point-cloud-copc',                       icon: Grid,        label: 'console.menus.manager.pointCloudCOPC' },
+        ],
+      },
+      {
+        index: '/manager/spatial-tasks',
+        icon: Operation,
+        label: 'console.menus.manager.spatialTasks',
+        children: [
+          { index: '/manager/spatial-tasks/vector-tiles', icon: Grid, label: 'console.menus.manager.vectorTiles' },
         ],
       },
     ],

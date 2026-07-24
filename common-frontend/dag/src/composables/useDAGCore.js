@@ -3,40 +3,45 @@
  */
 import { ref, onUnmounted } from 'vue'
 import G6 from '@antv/g6'
+import { DAG_MAX_ZOOM, DAG_MIN_ZOOM } from '../utils/editing.js'
 
 export function useDAGCore(containerRef, options = {}) {
   const graph = ref(null)
   let resizeObserver = null
+  const primaryColor = themeColor('--el-color-primary')
+  const dangerColor = themeColor('--el-color-danger')
+  const edgeColor = themeColor('--addp-text-tertiary')
 
   const defaultOptions = {
+    minZoom: DAG_MIN_ZOOM,
+    maxZoom: DAG_MAX_ZOOM,
     modes: {
-      default: ['drag-canvas', 'drag-node', 'click-select'],
-      addEdge: ['drag-canvas', 'click-select', 'create-edge']
+      default: ['drag-canvas', 'zoom-canvas', 'drag-node', 'click-select']
     },
     nodeStateStyles: {
       selected: {
-        stroke: '#f00',
+        stroke: dangerColor,
         lineWidth: 3
       }
     },
     edgeStateStyles: {
       selected: {
-        stroke: '#f00',
+        stroke: dangerColor,
         lineWidth: 3
       },
       hover: {
-        stroke: '#1890ff',
+        stroke: primaryColor,
         lineWidth: 3
       }
     },
     defaultEdge: {
       type: 'polyline',
       style: {
-        stroke: '#A3B1BF',
+        stroke: edgeColor,
         lineWidth: 2,
         endArrow: {
           path: 'M 0,0 L 8,4 L 8,-4 Z',
-          fill: '#A3B1BF'
+          fill: edgeColor
         }
       }
     }
@@ -133,4 +138,9 @@ export function useDAGCore(containerRef, options = {}) {
     loadData,
     saveData
   }
+}
+
+function themeColor(name) {
+  if (typeof document === 'undefined') return ''
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }

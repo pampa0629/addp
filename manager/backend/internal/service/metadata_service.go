@@ -69,7 +69,7 @@ func (s *MetadataService) RefreshItem(ctx context.Context, tenantID *uint, engin
 		return nil, fmt.Errorf("meta client not initialized")
 	}
 
-	opts := commonClient.MetaScanOptions{EngineID: engineID, ScanDepth: "deep", TriggerType: "manual", Source: commonExecution.ModuleManager, Force: true}
+	opts := commonClient.MetaScanOptions{EngineID: engineID, ScanDepth: commonClient.MetaScanDepthDeep, TriggerType: "manual", Source: commonExecution.ModuleManager, Force: true}
 	if req != nil {
 		if req.NodeID > 0 {
 			return nil, fmt.Errorf("item refresh requires item_id; use node refresh for node_id")

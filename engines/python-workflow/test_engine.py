@@ -216,6 +216,76 @@ def test_direct_operator_json_result():
     assert result["result"]["profile"] == "cog"
     assert result["result"]["width"] == 256
 
+
+def test_direct_operator_preserves_object_params_containing_features_text():
+    """object 参数由元数据约束，不得按字符串内容误判成 GeoJSON。"""
+    import operators
+    from workflow_engine import execute_single_operator
+
+    captured = {}
+
+    def direct_object_options(options):
+        captured["options"] = options
+        return {"received": options}
+
+    operators.OPERATORS["direct_object_options"] = {
+        "function": direct_object_options,
+        "param_schema": [{
+            "name": "options",
+            "type": "object",
+            "param_type": "param",
+            "required": True,
+            "description": "structured options",
+        }],
+    }
+    options = {"max_features": 1000000, "layer_name": "farmland"}
+    try:
+        result = execute_single_operator("direct_object_options", {"options": options})
+    finally:
+        operators.OPERATORS.pop("direct_object_options", None)
+
+    assert result["status"] == "success", result.get("error")
+    assert captured["options"] == options
+    assert result["result"]["received"] == options
+
+
+def test_direct_operator_converts_only_declared_geodataframe_param():
+    """GeoDataFrame 参数仍按元数据从 FeatureCollection 转换。"""
+    import geopandas as gpd
+    import operators
+    from workflow_engine import execute_single_operator
+
+    def direct_geodataframe(input_gdf):
+        assert isinstance(input_gdf, gpd.GeoDataFrame)
+        return {"rows": len(input_gdf)}
+
+    operators.OPERATORS["direct_geodataframe"] = {
+        "function": direct_geodataframe,
+        "param_schema": [{
+            "name": "input_gdf",
+            "type": "GeoDataFrame",
+            "param_type": "input",
+            "required": True,
+            "description": "geometry input",
+        }],
+    }
+    try:
+        result = execute_single_operator("direct_geodataframe", {
+            "input_gdf": {
+                "type": "FeatureCollection",
+                "features": [{
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [120, 30]},
+                    "properties": {"name": "point"},
+                }],
+            },
+        })
+    finally:
+        operators.OPERATORS.pop("direct_geodataframe", None)
+
+    assert result["status"] == "success", result.get("error")
+    assert result["result"]["rows"] == 1
+
 def main():
     """运行所有测试"""
     print("GeoPython Workflow Engine 功能测试\n")
@@ -227,7 +297,9 @@ def main():
         test_dag_sorting,
         test_workflow_engine_json_result,
         test_workflow_definition_requires_params_object_and_string_dependencies,
-        test_direct_operator_json_result
+        test_direct_operator_json_result,
+        test_direct_operator_preserves_object_params_containing_features_text,
+        test_direct_operator_converts_only_declared_geodataframe_param
     ]
 
     results = []

@@ -30,6 +30,13 @@ class ToolDefinition(BaseModel):
             raise ValueError(f"tool {self.name} auth audience must equal owner")
         if self.auth.required_scopes != [self.name]:
             raise ValueError(f"tool {self.name} required_scopes must contain only the stable tool name")
+        if not self.auth.required_permissions:
+            raise ValueError(f"tool {self.name} required_permissions must not be empty")
+        if len(self.auth.required_permissions) != len(set(self.auth.required_permissions)):
+            raise ValueError(f"tool {self.name} required_permissions must be unique")
+        owner_prefix = f"{self.owner}."
+        if any(not permission.startswith(owner_prefix) for permission in self.auth.required_permissions):
+            raise ValueError(f"tool {self.name} required_permissions must belong to owner {self.owner}")
         return self
 
 
@@ -39,6 +46,7 @@ class ToolAuth(BaseModel):
     type: Literal["delegated_access_token"]
     audience: Literal["system", "manager", "meta", "develop", "copilot"]
     required_scopes: list[str]
+    required_permissions: list[str]
 
 
 class ToolManifest(BaseModel):

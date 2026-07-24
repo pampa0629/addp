@@ -369,7 +369,7 @@ Content-Type: application/json
 
 ---
 
-#### PUT /api/v1/system/users/:id/change-password - 修改密码
+#### PUT /api/v1/system/users/me/password - 修改当前用户密码
 
 **权限**:用户本人
 
@@ -551,7 +551,7 @@ curl http://localhost:8180/api/v1/system/users/me \
 ### 8.5 修改密码
 
 ```bash
-curl -X PUT http://localhost:8180/api/v1/system/users/2/change-password \
+curl -X PUT http://localhost:8180/api/v1/system/users/me/password \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{

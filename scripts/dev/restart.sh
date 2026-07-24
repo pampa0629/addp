@@ -673,13 +673,13 @@ pkill -9 -f "uvicorn" 2>/dev/null || true
 echo ""
 
 # 2. 停止服务
-if "${SCRIPT_DIR}/stop.sh"; then
+if ! "${SCRIPT_DIR}/stop.sh"; then
   echo ""
-  echo "✅ 已停止现有服务"
-else
-  echo ""
-  echo "⚠️ 停止脚本返回非零状态,继续执行启动流程"
+  echo "❌ 停止现有服务失败，已中断重启"
+  exit 1
 fi
+echo ""
+echo "✅ 已停止现有服务"
 
 # 3. 强制重新编译(如果需要)
 if [ "$FORCE_BUILD_ALL" = true ]; then

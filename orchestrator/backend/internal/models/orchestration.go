@@ -6,41 +6,49 @@ import (
 	"strings"
 	"time"
 
+	commonModels "github.com/addp/common/models"
 	"gorm.io/gorm"
 )
 
 // Orchestration 编排定义
 type Orchestration struct {
-	ID                  uint           `gorm:"primaryKey" json:"id"`
-	TenantID            uint           `gorm:"index;not null" json:"tenant_id"`
-	Name                string         `gorm:"size:128;not null" json:"name"`
-	Description         string         `gorm:"size:512" json:"description"`
-	Steps               Steps          `gorm:"type:jsonb;not null" json:"steps"`
-	Enabled             bool           `gorm:"default:false" json:"enabled"`
-	Schedule            string         `gorm:"size:128;column:schedule" json:"schedule,omitempty"`
-	LastRunAt           *time.Time     `json:"last_run_at,omitempty"`
-	NextRunAt           *time.Time     `json:"next_run_at,omitempty"`
-	LastExecutionID     *string        `gorm:"size:36" json:"last_execution_id,omitempty"`
-	LastExecutionStatus *string        `gorm:"size:20" json:"last_execution_status,omitempty"`
-	CreatedBy           *uint          `json:"created_by,omitempty"`
-	CreatedAt           time.Time      `json:"created_at"`
-	UpdatedAt           time.Time      `json:"updated_at"`
-	DeletedAt           gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	ID                  uint                 `gorm:"primaryKey" json:"id"`
+	TenantID            uint                 `gorm:"index;not null" json:"tenant_id"`
+	Name                string               `gorm:"size:128;not null" json:"name"`
+	Description         string               `gorm:"size:512" json:"description"`
+	Steps               Steps                `gorm:"type:jsonb;not null" json:"steps"`
+	EditorLayout        commonModels.JSONMap `gorm:"type:jsonb;not null;default:'{}'" json:"editor_layout"`
+	Enabled             bool                 `gorm:"default:false" json:"enabled"`
+	Schedule            string               `gorm:"size:128;column:schedule" json:"schedule,omitempty"`
+	LastRunAt           *time.Time           `json:"last_run_at,omitempty"`
+	NextRunAt           *time.Time           `json:"next_run_at,omitempty"`
+	LastExecutionID     *string              `gorm:"size:36" json:"last_execution_id,omitempty"`
+	LastExecutionStatus *string              `gorm:"size:20" json:"last_execution_status,omitempty"`
+	CreatedBy           *uint                `json:"created_by,omitempty"`
+	CreatedAt           time.Time            `json:"created_at"`
+	UpdatedAt           time.Time            `json:"updated_at"`
+	DeletedAt           gorm.DeletedAt       `gorm:"index" json:"deleted_at,omitempty"`
 }
 
 // OrchestrationDefinitionRequest contains only user-editable orchestration fields.
 type OrchestrationDefinitionRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Steps       Steps  `json:"steps"`
-	Enabled     bool   `json:"enabled"`
-	Schedule    string `json:"schedule"`
+	Name         string               `json:"name"`
+	Description  string               `json:"description"`
+	Steps        Steps                `json:"steps"`
+	EditorLayout commonModels.JSONMap `json:"editor_layout"`
+	Enabled      bool                 `json:"enabled"`
+	Schedule     string               `json:"schedule"`
 }
 
 func (r OrchestrationDefinitionRequest) ApplyTo(orch *Orchestration) {
 	orch.Name = r.Name
 	orch.Description = r.Description
 	orch.Steps = r.Steps
+	if r.EditorLayout == nil {
+		orch.EditorLayout = commonModels.JSONMap{}
+	} else {
+		orch.EditorLayout = r.EditorLayout
+	}
 	orch.Enabled = r.Enabled
 	orch.Schedule = r.Schedule
 }

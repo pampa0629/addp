@@ -55,6 +55,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := ensureRasterMosaicSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure raster mosaic schema: %w", err)
 	}
+	if err := ensureVectorTileSetSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure vector tile set schema: %w", err)
+	}
 	if err := ensureModel3DGLBSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure model 3d GLB schema: %w", err)
 	}
@@ -90,6 +93,23 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	db.Exec(fmt.Sprintf("SET search_path TO %s", cfg.DBSchema))
 
 	return db, nil
+}
+
+func ensureVectorTileSetSchema(db *gorm.DB) error {
+	if err := db.AutoMigrate(&models.VectorTileSetTask{}); err != nil {
+		return err
+	}
+	if err := db.Exec(`UPDATE manager.vector_tile_set_tasks SET schedule = '', next_run_at = NULL WHERE COALESCE(schedule, '') <> '' OR next_run_at IS NOT NULL`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_vector_tile_set_tasks_schedule`).Error; err != nil {
+		return err
+	}
+	return db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_vector_tile_set_tasks_semantic_unique
+		ON manager.vector_tile_set_tasks (tenant_id, (config->>'semantic_hash'))
+		WHERE deleted_at IS NULL
+	`).Error
 }
 
 func dropLegacyQuickViewTables(db *gorm.DB) error {
@@ -323,17 +343,17 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		}
 	}
 
-	var tileCacheSignatureColumns int64
+	var tileCacheIdentityColumns int64
 	if err := db.Raw(`
 		SELECT COUNT(*)
 		FROM information_schema.columns
 		WHERE table_schema = 'manager'
 		  AND table_name = 'vector_tile_cache'
-		  AND column_name IN ('source_version', 'source_signature')
-	`).Scan(&tileCacheSignatureColumns).Error; err != nil {
+		  AND column_name IN ('source_version', 'profile_hash')
+	`).Scan(&tileCacheIdentityColumns).Error; err != nil {
 		return err
 	}
-	if tileCacheSignatureColumns > 0 {
+	if tileCacheIdentityColumns != 2 {
 		if err := db.Exec(`DROP TABLE IF EXISTS manager.vector_tile_cache`).Error; err != nil {
 			return err
 		}
@@ -366,6 +386,32 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_vector_tile_cache_tasks_schedule`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_vector_tile_cache_tasks_source_format_unique`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		DELETE FROM manager.vector_tile_cache_tasks
+		WHERE config->'tile' ? 'format'
+		   OR COALESCE(config->'tile'->>'archive_format', '') <> 'pmtiles'
+		   OR COALESCE(config->'tile'->>'tile_type', '') <> 'mvt'
+		   OR COALESCE(config->>'profile_hash', '') = ''
+		   OR COALESCE(config->'storage'->>'storage_ref', '') = ''
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		DELETE FROM common.task_executions AS execution
+		WHERE execution.module = 'manager'
+		  AND execution.task_type = 'vector_tile_cache_generation'
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM manager.vector_tile_cache_tasks AS task
+			WHERE task.id::text = execution.source_task_id
+			  AND task.tenant_id = execution.tenant_id
+		  )
+	`).Error; err != nil {
 		return err
 	}
 	if err := normalizePreviewStateViewState(db); err != nil {
@@ -403,11 +449,11 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_vector_tile_cache_tasks_source_format_unique
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_vector_tile_cache_tasks_source_profile_unique
 		ON manager.vector_tile_cache_tasks (
 			tenant_id,
 			(config->'target'->>'item_fingerprint'),
-			(LOWER(COALESCE(config->'tile'->>'format', 'mvt')))
+			(config->>'profile_hash')
 		)
 		WHERE deleted_at IS NULL
 	`).Error; err != nil {
@@ -447,8 +493,9 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_vector_tile_cache_tenant_fingerprint_format_unique
-		ON manager.vector_tile_cache (tenant_id, item_fingerprint, tile_format)
+		DROP INDEX IF EXISTS manager.idx_vector_tile_cache_tenant_fingerprint_format_unique;
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_vector_tile_cache_tenant_fingerprint_profile_unique
+		ON manager.vector_tile_cache (tenant_id, item_fingerprint, profile_hash)
 		WHERE deleted_at IS NULL
 	`).Error; err != nil {
 		return err

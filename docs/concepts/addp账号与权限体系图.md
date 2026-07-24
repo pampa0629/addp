@@ -1,6 +1,6 @@
 # ADDP 账号与权限体系
 
-更新日期：2026-07-22
+更新日期：2026-07-23
 
 状态：正式概念文档。本文定义 ADDP IAM 的稳定概念、事实归属和授权边界，不预设 Fosite、Keycloak、Casdoor、OIDC Provider、SAML 或具体策略引擎。
 
@@ -189,7 +189,7 @@ flowchart TB
 
 ### 6.1 Permission
 
-Permission 是稳定、最小的功能动作，例如“查看用户”“创建工作流”“发布数据服务”。Permission 由 ADDP 产品能力定义，不由 Tenant 任意创造新的动作语义。
+Permission 是稳定、最小的功能动作，例如“查看用户”“创建工作流”“发布数据服务”。Permission 由对应 owner 模块以版本化 Manifest 定义，经唯一发布期聚合进入 System 运行时目录；不由 Tenant 任意创造新的动作语义。System 只理解 Permission 的稳定 Key、owner、Scope 和组合属性，不理解业务实现或资源 Policy。
 
 ### 6.2 Role
 
@@ -262,7 +262,8 @@ Project Group 获得资源权限不会把权限传播到成员所属 Department�
 | --- | --- |
 | User、Service Principal、Tenant Membership | System IAM |
 | Department、Project Group、成员关系 | System IAM |
-| Permission 目录、Role、Role Assignment | System IAM |
+| Permission 定义 Manifest | 对应业务 owner；System 能力由 System 自身拥有 |
+| Permission 运行时目录、Role、Role Assignment | System IAM |
 | Token、Session、OAuth Client、AuthContext | System IAM |
 | 资源身份、资源层级和资源属性 | 对应业务 owner |
 | 资源 Grant、资源 Policy 和最终访问判断 | 对应业务 owner |
@@ -416,9 +417,10 @@ System IAM 负责统一身份和通用授权事实，但不承载所有业务资
 4. **Department 成员关系**：一个主部门、多个附加部门，父子部门授权默认不继承，策略可显式包含子部门。
 5. **Project Group 边界**：严格限制在单 Tenant，第一阶段不支持嵌套。
 6. **Tenant 自定义角色**：允许基于 ADDP 稳定 Permission 组合自定义 Role，但不允许创造任意 Permission 字符串。
-7. **资源显式 Deny**：支持并优先于 Allow，用于密级数据和例外隔离。
-8. **外部身份供应**：同时保留管理员预配和策略控制的即时供应，不默认开启即时供应。
-9. **Service Principal**：纳入同一 IAM 主体模型，但与 User、OAuth Client、API Key 严格分离。
+7. **Permission 所有权**：业务 Permission 由对应 owner 模块定义，通过唯一发布期聚合生成 System 运行时目录；System 不拥有业务实现语义，模块也不在启动时动态注册 Permission。
+8. **资源显式 Deny**：支持并优先于 Allow，用于密级数据和例外隔离。
+9. **外部身份供应**：同时保留管理员预配和策略控制的即时供应，不默认开启即时供应。
+10. **Service Principal**：纳入同一 IAM 主体模型，但与 User、OAuth Client、API Key 严格分离。
 
 ## 十四、后续技术讨论顺序
 
@@ -428,9 +430,9 @@ System IAM 负责统一身份和通用授权事实，但不承载所有业务资
 2. Permission 目录、Role、Role Assignment、三员互斥规则和权限命名；
 3. AuthContext / Authorization Facts 契约及缓存失效；
 4. owner 资源 Grant / Policy 接口和 Asset 授权衔接；
-5. 本地认证、MFA、账号恢复和会话治理；
-6. 外部 IdP 联合、账号供应和单点退出；
-7. OAuth/OIDC Server 协议实现与 Fosite 等技术选型；
+5. OAuth/OIDC Server 协议实现与 Fosite 等技术选型；
+6. 本地认证、MFA、账号恢复和会话治理；
+7. 外部 IdP 联合、账号供应和单点退出；
 8. 管理控制台、跨租户统计、审计、紧急访问和迁移方案。
 
-只有前四项边界稳定后，才适合最终决定 Fosite 是仅作为 OAuth 协议引擎，还是需要引入更完整的外部 IAM 产品。
+前四项边界和第 5 项协议引擎决策已经完成；决策结果见 [ADDP IAM OAuth/OIDC 协议引擎 ADR](../next/addp-IAM%20OAuth-OIDC协议引擎ADR.md)。下一步先完成协议存储边界和首批 IAM 数据基础，再进入本地认证、MFA 与账号恢复设计。

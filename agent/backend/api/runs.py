@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from authorization_permissions_generated import AGENT_RUN_CANCEL, AGENT_RUN_READ
 from database import AsyncSessionLocal, get_db
 from models.run import AgentRun
 from models.run_step import AgentRunStep
@@ -72,7 +73,9 @@ class AgentRunActionResponse(BaseModel):
     description="返回当前用户拥有的 AgentRun、语义检查点和受限步骤审计记录。",
     responses={404: {"model": ErrorResponse, "description": "AgentRun 不存在 | Agent run not found"}},
     openapi_extra={
-        "x-ai-hint": "agent_run_id 来自 AG-UI STATE_SNAPSHOT.agentRunId；该资源不是 owner 模块 execution。"
+        "x-ai-hint": "agent_run_id 来自 AG-UI STATE_SNAPSHOT.agentRunId；该资源不是 owner 模块 execution。",
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [AGENT_RUN_READ],
     },
 )
 async def get_agent_run(agent_run_id: UUID, request: Request, db: AsyncSession = Depends(get_db)):
@@ -140,7 +143,9 @@ async def get_agent_run(agent_run_id: UUID, request: Request, db: AsyncSession =
     response_class=StreamingResponse,
     responses={200: {"content": {"text/event-stream": {}}}, 404: {"model": ErrorResponse}},
     openapi_extra={
-        "x-ai-hint": "after 是客户端最后已处理的 AgentRunEvent sequence；Tool 参数和原始结果不会出现在重放流中。"
+        "x-ai-hint": "after 是客户端最后已处理的 AgentRunEvent sequence；Tool 参数和原始结果不会出现在重放流中。",
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [AGENT_RUN_READ],
     },
 )
 async def replay_agent_run_events(
@@ -180,7 +185,9 @@ async def replay_agent_run_events(
     description="取消内置 Agent Runtime 和待处理 Interaction，不取消 owner 模块 execution。",
     responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
     openapi_extra={
-        "x-ai-hint": "只允许 running 或 waiting 的 AgentRun；cancelled 是终态。"
+        "x-ai-hint": "只允许 running 或 waiting 的 AgentRun；cancelled 是终态。",
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [AGENT_RUN_CANCEL],
     },
 )
 async def cancel_owned_agent_run(

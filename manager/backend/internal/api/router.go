@@ -132,6 +132,14 @@ func SetupRouter(
 			tileCacheGroup.GET("/:id", taskProviderHandler.GetTileCache)
 			tileCacheGroup.DELETE("/:id", taskProviderHandler.DeleteTileCache)
 		}
+		vectorTileSetTasksGroup := api.Group("/vector_tile_set_tasks")
+		{
+			vectorTileSetTasksGroup.GET("", taskProviderHandler.ListVectorTileSetTasks)
+			vectorTileSetTasksGroup.POST("", taskProviderHandler.CreateVectorTileSetTask)
+			vectorTileSetTasksGroup.GET("/:id", taskProviderHandler.GetVectorTileSetTask)
+			vectorTileSetTasksGroup.PUT("/:id", taskProviderHandler.UpdateVectorTileSetTask)
+			vectorTileSetTasksGroup.DELETE("/:id", taskProviderHandler.DeleteVectorTileSetTask)
+		}
 		rasterCOGHandler := NewRasterCOGHandler(rasterCOGRepo, spatialPreviewService)
 		rasterCOGTasksGroup := api.Group("/raster_cog_tasks")
 		{

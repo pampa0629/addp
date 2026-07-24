@@ -18,26 +18,46 @@ export const POSTGRESQL_CDC_FIELD_TYPES = Object.freeze([
   'geometry'
 ])
 
+export const MYSQL_CDC_FIELD_TYPES = Object.freeze([
+  'string',
+  'int',
+  'bigint',
+  'float',
+  'double',
+  'decimal',
+  'date',
+  'time',
+  'timestamp',
+  'json',
+  'bytes'
+])
+
 export function isKafkaTopicSource(engineType, locator) {
   return String(engineType || '').trim().toLowerCase() === 'kafka' && locatorType(locator) === 'topic'
 }
 
-export function isPostgreSQLTableSource(engineType, locator) {
-  return String(engineType || '').trim().toLowerCase() === 'postgresql' && locatorType(locator) === 'table'
+export function isDatabaseTableCDCSource(engineType, locator) {
+  return ['postgresql', 'mysql'].includes(normalizedEngineType(engineType)) && locatorType(locator) === 'table'
 }
 
-export function postgresqlCDCUnavailableReasonCodes({
+export function databaseCDCUnavailableReasonCodes({
 	sourceEngineType,
 	sourceLocator,
 	sourceRepresentation,
 	sourceDataType,
 	targetEngineType,
 	targetRepresentation,
-	sourceFields
+	sourceFields,
+	databaseCDCCapability
 } = {}) {
 	const reasons = []
-	if (String(sourceEngineType || '').trim().toLowerCase() !== 'postgresql') {
-		reasons.push({ code: 'sourcePostgreSQLRequired' })
+	const provider = normalizedEngineType(sourceEngineType)
+	if (['postgresql', 'mysql'].includes(provider) && normalizedEngineType(targetEngineType) === 'postgresql' &&
+		!databaseCDCCapabilitySupports(databaseCDCCapability, provider, targetEngineType)) {
+		reasons.push({ code: 'capabilityUnavailable' })
+	}
+	if (!['postgresql', 'mysql'].includes(provider)) {
+		reasons.push({ code: 'sourceDatabaseRequired' })
 	} else if (locatorType(sourceLocator) !== 'table' || String(sourceDataType || '').trim().toLowerCase() !== 'table') {
 		reasons.push({ code: 'sourceTableRequired' })
 	}
@@ -58,14 +78,29 @@ export function postgresqlCDCUnavailableReasonCodes({
 	if (!fields.some(isPrimaryKeyField)) {
 		reasons.push({ code: 'sourcePrimaryKeyRequired' })
 	}
+	const supportedTypes = databaseCDCFieldTypes(provider)
 	const unsupportedFields = fields
-		.filter(field => !POSTGRESQL_CDC_FIELD_TYPES.includes(String(field?.type || '').trim().toLowerCase()))
+		.filter(field => !supportedTypes.includes(String(field?.type || '').trim().toLowerCase()))
 		.map(field => String(field?.name || '').trim())
 		.filter(Boolean)
 	if (unsupportedFields.length > 0) {
 		reasons.push({ code: 'sourceFieldTypesUnsupported', fields: unsupportedFields })
 	}
 	return reasons
+}
+
+function databaseCDCCapabilitySupports(capability, sourceType, targetType) {
+	if (!capability || typeof capability !== 'object') return false
+	const sources = Array.isArray(capability.sources)
+		? capability.sources.map(normalizedEngineType)
+		: []
+	const bootstrap = Array.isArray(capability.bootstrap)
+		? capability.bootstrap.map(value => String(value || '').trim().toLowerCase())
+		: []
+	return sources.includes(normalizedEngineType(sourceType)) &&
+		normalizedEngineType(capability.target) === normalizedEngineType(targetType) &&
+		bootstrap.includes('initial_snapshot') &&
+		String(capability.apply_mode || capability.applyMode || '').trim().toLowerCase() === 'upsert_delete'
 }
 
 export function continuousMappedTargetKeys(fieldMappings, sourceKeys) {
@@ -87,8 +122,14 @@ export function continuousMappingsValid(fieldMappings, sourceKeys) {
 	return mappingsValidForTypes(fieldMappings, sourceKeys, CONTINUOUS_FIELD_TYPES)
 }
 
-export function postgresqlCDCMappingsValid(fieldMappings, sourceKeys) {
-	return mappingsValidForTypes(fieldMappings, sourceKeys, POSTGRESQL_CDC_FIELD_TYPES)
+export function databaseCDCMappingsValid(fieldMappings, sourceKeys, engineType) {
+	return mappingsValidForTypes(fieldMappings, sourceKeys, databaseCDCFieldTypes(engineType))
+}
+
+export function databaseCDCFieldTypes(engineType) {
+	return normalizedEngineType(engineType) === 'mysql'
+		? MYSQL_CDC_FIELD_TYPES
+		: POSTGRESQL_CDC_FIELD_TYPES
 }
 
 function mappingsValidForTypes(fieldMappings, sourceKeys, supportedTypes) {
@@ -143,12 +184,19 @@ export function buildContinuousSourceEndpoint(locator, sourceKeys, initialPositi
   }
 }
 
-export function buildPostgreSQLCDCSourceEndpoint(locator) {
+export function buildDatabaseCDCSourceEndpoint(locator) {
   return {
     locator: String(locator || '').trim(),
     data_type: 'table',
     representation: 'native'
   }
+}
+
+function normalizedEngineType(value) {
+	const type = String(value || '').trim().toLowerCase()
+	if (type.includes('postgres')) return 'postgresql'
+	if (type.includes('mysql')) return 'mysql'
+	return type
 }
 
 export function taskEngineTypes(task, engines) {

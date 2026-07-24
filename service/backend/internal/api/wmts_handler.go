@@ -7,7 +7,6 @@ import (
 
 	"github.com/addp/common/logger"
 	"github.com/addp/service/internal/models"
-	"github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -17,11 +16,11 @@ import (
 
 // WMTSHandler 处理 WMTS 请求
 type WMTSHandler struct {
-	tileServiceService *service.TileServiceService
+	tileServiceService tileServiceLookup
 }
 
 // NewWMTSHandler 创建 WMTS 处理器
-func NewWMTSHandler(tileServiceService *service.TileServiceService) *WMTSHandler {
+func NewWMTSHandler(tileServiceService tileServiceLookup) *WMTSHandler {
 	return &WMTSHandler{
 		tileServiceService: tileServiceService,
 	}
@@ -34,33 +33,30 @@ func NewWMTSHandler(tileServiceService *service.TileServiceService) *WMTSHandler
 // @Param serviceName path string true "服务名称 | Service name"
 // @Param request query string false "请求类型 (GetCapabilities) | Request type (GetCapabilities)"
 // @Success 200 {object} Capabilities "WMTS Capabilities XML | WMTS Capabilities XML"
+// @Failure 401 {object} ExceptionReport "需要认证 | Authentication required"
+// @Failure 403 {object} ExceptionReport "无权访问 | Access denied"
 // @Router /wmts/{serviceName} [get]
 func (h *WMTSHandler) GetCapabilities(c *gin.Context) {
 	serviceName := c.Param("serviceName")
-
-	// 获取租户 ID（公开服务可选）
-	tenantID := uint(1) // 默认租户
-	if tid, exists := c.Get("tenant_id"); exists {
-		tenantID = tid.(uint)
-	}
 
 	// 查询服务
 	tileService, err := h.tileServiceService.GetServiceModelByName(serviceName)
 	if err != nil {
 		logger.L().Error("WMTS 服务未找到",
 			"service_name", serviceName,
-			"tenant_id", tenantID,
 			"error", err)
 		c.XML(http.StatusNotFound, buildErrorXML("ServiceNotFound", "Service not found"))
 		return
 	}
 
 	// 检查访问权限
-	if !tileService.PublicAccess {
-		if _, exists := c.Get("tenant_id"); !exists {
-			c.XML(http.StatusUnauthorized, buildErrorXML("Unauthorized", "Authentication required"))
-			return
+	if status := serviceAccessStatus(c, tileService.PublicAccess, tileService.TenantID); status != 0 {
+		if status == http.StatusUnauthorized {
+			c.XML(status, buildErrorXML("Unauthorized", "Authentication required"))
+		} else {
+			c.XML(status, buildErrorXML("Forbidden", "Access denied"))
 		}
+		return
 	}
 
 	// 构建 Capabilities XML

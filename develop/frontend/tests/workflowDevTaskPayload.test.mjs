@@ -72,6 +72,10 @@ assert.deepEqual(
     displayName: 'City Buffer',
     description: 'demo',
     workflow: validWorkflow,
+    editorLayout: {
+      nodes: { read: { x: 10, y: 20 } },
+      viewport: { zoom: 1, translate_x: 0, translate_y: 0 }
+    },
     workflowEngineId: 12,
     includeDevType: false
   }),
@@ -79,6 +83,10 @@ assert.deepEqual(
     name: 'city_buffer',
     display_name: 'City Buffer',
     description: 'demo',
+    editor_layout: {
+      nodes: { read: { x: 10, y: 20 } },
+      viewport: { zoom: 1, translate_x: 0, translate_y: 0 }
+    },
     execution_config: {
       type: 'workflow',
       engine_id: 12

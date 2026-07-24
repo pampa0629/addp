@@ -56,6 +56,10 @@
 
 默认空间校验场景应优先使用 `coordinate_policy=wgs84` 的底图或无底图模式。`gcj02` / `bd09` 底图用于业务浏览时必须显式提示，不作为精确空间校验依据。
 
+## 瓦片预览初始视角
+
+`TilePreview` 接收 WGS84 `extent=[minLon, minLat, maxLon, maxLat]` 时，默认通过 OpenLayers `view.fit()` 将数据范围全幅置于可视区，并保留固定的界面边距。`extent` 优先于 `center/zoom`；只有范围缺失或非法时才回退到中心点和层级。范围仅用于初始化或数据源切换，不应在容器尺寸变化时反复重置用户已调整的视角。
+
 ## GCJ-02 展示适配
 
 GCJ-02 不是标准 EPSG CRS，不进入 ADDP 数据事实。

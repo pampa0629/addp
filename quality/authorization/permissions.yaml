@@ -1,0 +1,92 @@
+schema_version: addp.permission_manifest/v1
+owner_module: quality
+manifest_version: 1
+permissions:
+  - key: quality.check_task.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.check_task.create.name
+    description_i18n_key: permissions.quality.check_task.create.description
+  - key: quality.check_task.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.check_task.delete.name
+    description_i18n_key: permissions.quality.check_task.delete.description
+  - key: quality.check_task.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.check_task.execute.name
+    description_i18n_key: permissions.quality.check_task.execute.description
+  - key: quality.check_task.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.check_task.read.name
+    description_i18n_key: permissions.quality.check_task.read.description
+  - key: quality.check_task.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.check_task.update.name
+    description_i18n_key: permissions.quality.check_task.update.description
+  - key: quality.issue.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.issue.read.name
+    description_i18n_key: permissions.quality.issue.read.description
+  - key: quality.issue.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.issue.update.name
+    description_i18n_key: permissions.quality.issue.update.description
+  - key: quality.rule_application.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.rule_application.create.name
+    description_i18n_key: permissions.quality.rule_application.create.description
+  - key: quality.rule_application.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.rule_application.delete.name
+    description_i18n_key: permissions.quality.rule_application.delete.description
+  - key: quality.rule_application.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.rule_application.read.name
+    description_i18n_key: permissions.quality.rule_application.read.description
+  - key: quality.rule_application.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.rule_application.update.name
+    description_i18n_key: permissions.quality.rule_application.update.description

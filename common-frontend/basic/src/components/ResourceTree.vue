@@ -32,7 +32,7 @@
         <el-input
           :model-value="filterText"
           @update:model-value="handleFilterChange"
-          placeholder="搜索..."
+          :placeholder="filterPlaceholder"
           :prefix-icon="Search"
           clearable
           size="small"
@@ -42,6 +42,10 @@
       <!-- 空状态 -->
       <slot v-if="!hasTreeData && !loading" name="empty" :empty-text="emptyText">
         <el-empty :description="emptyText" class="empty-placeholder" />
+      </slot>
+
+      <slot v-else-if="showFilterEmpty" name="filter-empty" :empty-text="filterEmptyText">
+        <el-empty :description="filterEmptyText" class="empty-placeholder" />
       </slot>
 
       <!-- 树形结构 -->
@@ -277,6 +281,10 @@ const props = defineProps({
     type: String,
     default: undefined
   },
+  filterPlaceholder: {
+    type: String,
+    default: '搜索...'
+  },
   filterMethod: {
     type: Function,
     default: null
@@ -320,6 +328,10 @@ const props = defineProps({
   emptyText: {
     type: String,
     default: '暂无数据'
+  },
+  filterEmptyText: {
+    type: String,
+    default: '未找到匹配结果'
   },
 
   // 样式
@@ -481,6 +493,10 @@ const filteredTreeData = computed(() => {
   return filterTree(props.treeData)
 })
 
+const showFilterEmpty = computed(() => {
+  return !props.loading && Boolean(props.filterText) && hasTreeData.value && filteredTreeData.value.length === 0
+})
+
 // 查找所有匹配节点的路径（优化：复用 tree.js 的工具函数）
 const findMatchedPaths = (nodes, keyword) => {
   const matchedPaths = []
@@ -499,27 +515,53 @@ const findMatchedPaths = (nodes, keyword) => {
   return [...new Set(matchedPaths)]
 }
 
-// 监听搜索关键词，自动展开匹配路径
+const expandedKeysBeforeFilter = ref(null)
+
+// 搜索期间展开匹配路径，清空后恢复搜索前的展开状态。
 watch(
-  () => props.filterText,
-  (keyword) => {
+  [() => props.filterText, () => props.treeData],
+  ([keyword], [previousKeyword]) => {
     if (keyword) {
+      if (!previousKeyword) {
+        expandedKeysBeforeFilter.value = [...computedExpandedKeys.value]
+      }
       const matchedPaths = findMatchedPaths(props.treeData, keyword)
       emit('update:expanded-keys', matchedPaths)
+      return
     }
-  }
+
+    if (previousKeyword) {
+      const restoredKeys = expandedKeysBeforeFilter.value || []
+      expandedKeysBeforeFilter.value = null
+      emit('update:expanded-keys', restoredKeys)
+    }
+  },
+  { deep: true }
 )
 
-// 只恢复展开状态，不触发选中/滚动（供 expandedKeys 变化时调用，避免跳动）
+let appliedExpandedKeys = new Set()
+
+// 同步受控展开状态，不触发选中或滚动。
 const updateExpandState = () => {
   const tree = treeRef.value
   if (!tree?.store) return
-  for (const key of computedExpandedKeys.value) {
+
+  const nextExpandedKeys = new Set(computedExpandedKeys.value)
+  for (const key of appliedExpandedKeys) {
+    if (nextExpandedKeys.has(key)) continue
+    const node = tree.store.getNode(key)
+    if (node?.expanded) {
+      node.expanded = false
+    }
+  }
+
+  for (const key of nextExpandedKeys) {
     const node = tree.store.getNode(key)
     if (node && !node.expanded) {
       node.expanded = true
     }
   }
+  appliedExpandedKeys = nextExpandedKeys
 }
 
 // 全量同步：展开状态 + 选中节点（仅在挂载和数据加载后调用）

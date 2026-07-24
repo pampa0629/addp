@@ -138,6 +138,78 @@ func TestIntegrationPostgresPartitionedTableChangeApplyCommitsDeleteWithLedger(t
 	}
 }
 
+func TestIntegrationPostgresPartitionedTableChangeApplyCommitsSkipWithoutChangingRows(t *testing.T) {
+	db, pg, connInfo := openPostgresPrepareIntegration(t, false)
+	defer db.Close()
+	ctx := context.Background()
+	schema := "common_pg_it"
+	table := fmt.Sprintf("partitioned_apply_skip_%d", time.Now().UnixNano())
+	path := postgresPrepareTablePath(schema, table)
+	applyIdentity := uuid.NewString()
+	opts := plugin.PartitionedTableChangeApplyOptions{
+		ApplyIdentity: applyIdentity, SourceIdentity: "addp://engine/30/path/orders.events?type=topic",
+		Fields: []datatype.FieldInfo{
+			{Name: "id", Type: datatype.FieldTypeBigInt, Nullable: false},
+			{Name: "name", Type: datatype.FieldTypeString, Nullable: false},
+		},
+		Keys: []string{"id"},
+	}
+	defer dropPostgresPrepareTable(db, schema, table)
+	defer db.ExecContext(ctx, `DELETE FROM addp_transfer.apply_positions WHERE apply_identity = $1::uuid`, applyIdentity)
+	if err := pg.PreparePartitionedTableChangeApply(ctx, connInfo, path, opts); err != nil {
+		t.Fatalf("PreparePartitionedTableChangeApply failed: %v", err)
+	}
+	if _, err := pg.ApplyPartitionedTableChanges(ctx, connInfo, path, partitionedApplyBatch("0", 0, 1, positionedChange(1, 1, "created")), opts); err != nil {
+		t.Fatalf("initial upsert failed: %v", err)
+	}
+	skip := plugin.PartitionedTableChange{
+		Operation: plugin.TableChangeOperationSkip,
+		Position:  kafkaOffsetPosition("0", 2),
+	}
+	result, err := pg.ApplyPartitionedTableChanges(ctx, connInfo, path, partitionedApplyBatch("0", 1, 2, skip), opts)
+	if err != nil {
+		t.Fatalf("skip apply failed: %v", err)
+	}
+	if result.AppliedRecords != 0 || result.SkippedRecords != 1 || result.Position.Values["next_offset"] != "2" {
+		t.Fatalf("skip result=%#v, want applied=0 skipped=1 next_offset=2", result)
+	}
+	assertPartitionedApplyRow(t, ctx, db, schema, table, 1, "created")
+	var nextOffset int64
+	if err := db.QueryRowContext(ctx, `SELECT next_offset FROM addp_transfer.apply_positions WHERE apply_identity = $1::uuid AND partition = '0'`, applyIdentity).Scan(&nextOffset); err != nil {
+		t.Fatal(err)
+	}
+	if nextOffset != 2 {
+		t.Fatalf("ledger next_offset=%d, want 2", nextOffset)
+	}
+}
+
+func TestIntegrationPostgresPartitionedTableChangeApplyRequireTargetAbsentRejectsExistingTable(t *testing.T) {
+	db, pg, connInfo := openPostgresPrepareIntegration(t, false)
+	defer db.Close()
+	ctx := context.Background()
+	schema := "common_pg_it"
+	table := fmt.Sprintf("partitioned_apply_absent_%d", time.Now().UnixNano())
+	path := postgresPrepareTablePath(schema, table)
+	base := plugin.PartitionedTableChangeApplyOptions{
+		ApplyIdentity: uuid.NewString(), SourceIdentity: "addp://engine/30/path/orders.events?type=topic",
+		Fields: []datatype.FieldInfo{
+			{Name: "id", Type: datatype.FieldTypeBigInt, Nullable: false},
+			{Name: "name", Type: datatype.FieldTypeString, Nullable: false},
+		},
+		Keys: []string{"id"},
+	}
+	defer dropPostgresPrepareTable(db, schema, table)
+	if err := pg.PreparePartitionedTableChangeApply(ctx, connInfo, path, base); err != nil {
+		t.Fatalf("initial prepare failed: %v", err)
+	}
+	replay := base
+	replay.ApplyIdentity = uuid.NewString()
+	replay.RequireTargetAbsent = true
+	if err := pg.PreparePartitionedTableChangeApply(ctx, connInfo, path, replay); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("require-target-absent error = %v", err)
+	}
+}
+
 func TestIntegrationPostgresPartitionedTableChangeApplyCancelsWhileTargetLocked(t *testing.T) {
 	db, pg, connInfo := openPostgresPrepareIntegration(t, false)
 	defer db.Close()

@@ -15,9 +15,11 @@ type ServiceProxy struct {
 }
 
 func NewServiceProxy(targetURL string) *ServiceProxy {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DisableCompression = true
 	return &ServiceProxy{
 		targetURL: targetURL,
-		client:    &http.Client{},
+		client:    &http.Client{Transport: transport},
 	}
 }
 

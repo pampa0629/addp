@@ -1,0 +1,52 @@
+schema_version: addp.permission_manifest/v1
+owner_module: orchestrator
+manifest_version: 1
+permissions:
+  - key: orchestrator.workflow.cancel
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.orchestrator.workflow.cancel.name
+    description_i18n_key: permissions.orchestrator.workflow.cancel.description
+  - key: orchestrator.workflow.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.orchestrator.workflow.create.name
+    description_i18n_key: permissions.orchestrator.workflow.create.description
+  - key: orchestrator.workflow.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.orchestrator.workflow.delete.name
+    description_i18n_key: permissions.orchestrator.workflow.delete.description
+  - key: orchestrator.workflow.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.orchestrator.workflow.execute.name
+    description_i18n_key: permissions.orchestrator.workflow.execute.description
+  - key: orchestrator.workflow.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.orchestrator.workflow.read.name
+    description_i18n_key: permissions.orchestrator.workflow.read.description
+  - key: orchestrator.workflow.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.orchestrator.workflow.update.name
+    description_i18n_key: permissions.orchestrator.workflow.update.description

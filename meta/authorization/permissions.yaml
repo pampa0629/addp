@@ -1,0 +1,60 @@
+schema_version: addp.permission_manifest/v1
+owner_module: meta
+manifest_version: 2
+permissions:
+  - key: meta.catalog.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: true
+    status: active
+    name_i18n_key: permissions.meta.catalog.read.name
+    description_i18n_key: permissions.meta.catalog.read.description
+  - key: meta.inspect.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.meta.inspect.execute.name
+    description_i18n_key: permissions.meta.inspect.execute.description
+  - key: meta.scan_task.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.meta.scan_task.create.name
+    description_i18n_key: permissions.meta.scan_task.create.description
+  - key: meta.scan_task.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.meta.scan_task.delete.name
+    description_i18n_key: permissions.meta.scan_task.delete.description
+  - key: meta.scan_task.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.meta.scan_task.execute.name
+    description_i18n_key: permissions.meta.scan_task.execute.description
+  - key: meta.scan_task.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.meta.scan_task.read.name
+    description_i18n_key: permissions.meta.scan_task.read.description
+  - key: meta.scan_task.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.meta.scan_task.update.name
+    description_i18n_key: permissions.meta.scan_task.update.description

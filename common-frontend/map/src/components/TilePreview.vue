@@ -11,7 +11,7 @@ import VectorTileLayer from 'ol/layer/VectorTile.js'
 import XYZ from 'ol/source/XYZ.js'
 import VectorTileSource from 'ol/source/VectorTile.js'
 import MVT from 'ol/format/MVT.js'
-import { fromLonLat } from 'ol/proj.js'
+import { fromLonLat, transformExtent } from 'ol/proj.js'
 import { createDefaultStyleFunction } from '../utils/mapStyles.js'
 
 const props = defineProps({
@@ -29,6 +29,11 @@ const props = defineProps({
   center: {
     type: Array,
     default: () => [116.4, 39.9]
+  },
+  // 初始全幅范围 [minLon, minLat, maxLon, maxLat]，有效时优先于 center/zoom
+  extent: {
+    type: Array,
+    default: null
   },
   // 初始缩放级别
   zoom: {
@@ -51,6 +56,28 @@ const emit = defineEmits(['tileLoadStart', 'tileLoadEnd', 'tileLoadError'])
 
 const mapEl = ref(null)
 let map = null
+
+function normalizedExtent() {
+  if (!Array.isArray(props.extent) || props.extent.length !== 4) return null
+  const extent = props.extent.map(Number)
+  if (!extent.every(Number.isFinite)) return null
+  if (extent[0] < -180 || extent[2] > 180 || extent[1] < -90 || extent[3] > 90) return null
+  if (extent[0] > extent[2] || extent[1] > extent[3]) return null
+  return extent
+}
+
+function fitInitialExtent() {
+  const extent = normalizedExtent()
+  if (!map || !extent) return
+  map.updateSize()
+  const size = map.getSize()
+  if (!size || size.some(value => !Number.isFinite(value) || value <= 0)) return
+  map.getView().fit(transformExtent(extent, 'EPSG:4326', 'EPSG:3857'), {
+    size,
+    padding: [48, 48, 48, 48],
+    maxZoom: props.maxZoom
+  })
+}
 
 // 创建底图图层
 function createBaseLayer() {
@@ -129,22 +156,25 @@ function initMap() {
     })
   })
 
+  fitInitialExtent()
+
   console.log('[TilePreview] 地图已初始化', {
     tileUrl: props.tileUrl,
     baseMap: props.baseMap,
     center: props.center,
-    zoom: props.zoom
+    zoom: props.zoom,
+    extent: normalizedExtent()
   })
 }
 
-// 监听 tileUrl 变化，重新加载地图
-watch(() => props.tileUrl, () => {
+// 数据源或初始视角变化时重新初始化；普通容器尺寸变化不会重置用户视角。
+watch(() => [props.tileUrl, props.extent, props.center, props.zoom, props.minZoom, props.maxZoom], () => {
   if (map) {
     map.setTarget(null)
     map = null
   }
   initMap()
-})
+}, { deep: true })
 
 onMounted(() => {
   initMap()

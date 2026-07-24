@@ -64,7 +64,7 @@
           <el-form-item :label="$t('service.tile.selectTableLabel')" required>
             <ResourceTreePicker
               :api-base-url="metaApiBaseUrl"
-              :engine-types="nativeTableEngineTypes"
+              :engine-filter="isNativeTableEngine"
               mode="item"
               :node-filter="isNativeTableVisibleNode"
               :selectable-filter="isNativeTableNode"
@@ -118,28 +118,28 @@
           <el-form-item :label="$t('service.tile.tileDatasetLabel')" required>
             <ResourceTreePicker
               :api-base-url="metaApiBaseUrl"
-              :engine-types="tilePyramidEngineTypes"
+              :engine-filter="isPMTilesEngine"
               mode="item"
-              :node-filter="isTilePyramidVisibleNode"
-              :selectable-filter="isTilePyramidNode"
+              :node-filter="isPMTilesVisibleNode"
+              :selectable-filter="isPMTilesNode"
               :show-selection-summary="true"
               :engine-multiple="true"
               :select-all-engines-by-default="true"
               :search-selectable-only="true"
               :show-disabled-label="false"
               :show-count="false"
-              @update:model-value="handleTilePyramidSelection"
+              @update:model-value="handlePMTilesSelection"
             />
           </el-form-item>
           <el-descriptions v-if="staticTileMetadata" :column="3" border size="small" class="tile-metadata">
-            <el-descriptions-item :label="$t('service.tile.tileFormatLabel')">
-              {{ staticTileMetadata.tileFormat.toUpperCase() }}
+            <el-descriptions-item :label="$t('service.tile.archiveFormatLabel')">
+              {{ staticTileMetadata.archiveFormat.toUpperCase() }}
             </el-descriptions-item>
             <el-descriptions-item :label="$t('service.tile.zoomRangeLabel')">
               {{ staticTileMetadata.minZoom }} - {{ staticTileMetadata.maxZoom }}
             </el-descriptions-item>
-            <el-descriptions-item :label="$t('service.tile.tileMatrixSetLabel')">
-              {{ staticTileMetadata.tileMatrixSet }}
+            <el-descriptions-item :label="$t('service.tile.tileEncodingLabel')">
+              {{ staticTileMetadata.tileFormat.toUpperCase() }} / {{ staticTileMetadata.tileCompression.toUpperCase() }}
             </el-descriptions-item>
           </el-descriptions>
         </el-form>
@@ -274,13 +274,13 @@ import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } fro
 import { ElMessage } from 'element-plus'
 import { DocumentCopy } from '@element-plus/icons-vue'
 import {
-  NATIVE_TABLE_ENGINE_TYPES,
-  TILE_PYRAMID_ENGINE_TYPES,
   defaultTileLayerName,
+  isNativeTableEngine,
   isNativeTableNode,
   isNativeTableVisibleNode,
-  isTilePyramidNode,
-  isTilePyramidVisibleNode
+  isPMTilesEngine,
+  isPMTilesNode,
+  isPMTilesVisibleNode
 } from '@/utils/resourceSelection'
 
 export default {
@@ -331,18 +331,14 @@ export default {
     metaApiBaseUrl() {
       return '/api/v1/meta'
     },
-    nativeTableEngineTypes() {
-      return NATIVE_TABLE_ENGINE_TYPES
-    },
-    tilePyramidEngineTypes() {
-      return TILE_PYRAMID_ENGINE_TYPES
-    }
   },
   methods: {
+    isNativeTableEngine,
     isNativeTableNode,
     isNativeTableVisibleNode,
-    isTilePyramidNode,
-    isTilePyramidVisibleNode,
+    isPMTilesEngine,
+    isPMTilesNode,
+    isPMTilesVisibleNode,
     // 处理表选择（ResourceTreePicker 回调）
     async handleTableSelection(selection) {
       console.log('[TileServiceForm] Table selection:', selection)
@@ -392,7 +388,7 @@ export default {
       }
     },
 
-    async handleTilePyramidSelection(selection) {
+    async handlePMTilesSelection(selection) {
       this.form.staticLocator = ''
       this.staticTileMetadata = null
       if (!selection) return
@@ -403,14 +399,15 @@ export default {
 
       try {
         const item = await tileServiceAPI.getMetaItem(itemId)
-        const info = item?.attributes?.format_info?.tile_pyramid
+        const info = item?.attributes?.format_info?.pmtiles
         if (!info) throw new Error(this.$t('service.tile.invalidTileDataset'))
         this.form.staticLocator = locator
         this.staticTileMetadata = {
-          tileFormat: String(info.tile_format || ''),
+          archiveFormat: 'pmtiles',
+          tileFormat: String(info.tile_type || ''),
+          tileCompression: String(info.tile_compression || ''),
           minZoom: Number(info.min_zoom),
-          maxZoom: Number(info.max_zoom),
-          tileMatrixSet: String(info.tile_matrix_set || '')
+          maxZoom: Number(info.max_zoom)
         }
         const label = selection.display?.label || item.name || ''
         if (!this.form.layerName) this.form.layerName = defaultTileLayerName(label, itemId)

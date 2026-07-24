@@ -8,9 +8,9 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
-func TestPostgreSQLPartitionedChangeApplyDeclaresUpsertAndDelete(t *testing.T) {
+func TestPostgreSQLPartitionedChangeApplyDeclaresUpsertDeleteAndSkip(t *testing.T) {
 	capability := (&PostgreSQLPlugin{}).Capabilities().Storage.Store.PartitionedTableChangeApply
-	want := []string{plugin.TableChangeOperationUpsert, plugin.TableChangeOperationDelete}
+	want := []string{plugin.TableChangeOperationUpsert, plugin.TableChangeOperationDelete, plugin.TableChangeOperationSkip}
 	if capability == nil || !reflect.DeepEqual(capability.Operations, want) {
 		t.Fatalf("partitioned change apply operations = %#v, want %v", capability, want)
 	}

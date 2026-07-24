@@ -11,7 +11,7 @@ import traceback
 from collections import defaultdict, deque
 from datetime import datetime
 
-from operators import get_operator, list_operators
+from operators import OPERATORS, get_operator, list_operators
 
 logger = logging.getLogger(__name__)
 
@@ -561,12 +561,21 @@ def execute_single_operator(operator_name: str, params: Dict[str, Any]) -> Dict[
         # 获取算子函数
         operator_func = get_operator(operator_name)
 
-        # 处理输入参数：如果是 GeoJSON，转换为 GeoDataFrame
+        # 只按算子元数据转换 GeoDataFrame 输入；object 参数必须保持结构化对象。
+        param_schema = {
+            item.get("name"): item
+            for item in OPERATORS.get(operator_name, {}).get("param_schema", [])
+            if isinstance(item, dict) and item.get("name")
+        }
         for key, value in params.items():
-            if isinstance(value, (dict, str)) and 'features' in str(value):
-                if isinstance(value, str):
-                    value = json.loads(value)
-                params[key] = gpd.GeoDataFrame.from_features(value['features'], crs="EPSG:4326")
+            schema = param_schema.get(key, {})
+            if str(schema.get("type") or "").strip().lower() != "geodataframe":
+                continue
+            if isinstance(value, str):
+                value = json.loads(value)
+            if not isinstance(value, dict) or value.get("type") != "FeatureCollection" or not isinstance(value.get("features"), list):
+                raise ValueError(f"参数 '{key}' 必须是 GeoJSON FeatureCollection")
+            params[key] = gpd.GeoDataFrame.from_features(value["features"], crs="EPSG:4326")
 
         # 执行算子
         result = operator_func(**params)

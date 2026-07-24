@@ -14,41 +14,166 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
+	"github.com/addp/transfer/internal/repository"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
 type TransferCleanupService struct {
-	db             *gorm.DB
-	redis          *redis.Client
-	taskExecRepo   *commonExecution.TaskExecutionRepository
-	captureControl CaptureControl
-	log            *slog.Logger
-	stopCh         chan struct{}
+	db               *gorm.DB
+	redis            *redis.Client
+	taskExecRepo     *commonExecution.TaskExecutionRepository
+	captureControl   CaptureControl
+	deadLetterRepo   *repository.DeadLetterRepository
+	deadLetterTopics DeadLetterTopicCleaner
+	taskRepo         *repository.TaskRepository
+	taskResources    *repository.TaskResourceRepository
+	config           TaskOwnedCleanupConfig
+	log              *slog.Logger
+	stopCh           chan struct{}
+}
+
+type DeadLetterTopicCleaner interface {
+	DeleteTaskTopic(ctx context.Context, tenantID, taskID uint) error
+}
+
+type TaskOwnedResourceCleanup interface {
+	DeleteTaskAndOwnedResources(ctx context.Context, task *models.TransferTask, mode repository.TaskDefinitionDeleteMode) (TaskOwnedResourceCleanupResult, error)
+}
+
+type TaskOwnedCleanupConfig struct {
+	RuntimeStopTimeout      time.Duration
+	RuntimeStopPollInterval time.Duration
+}
+
+type TaskOwnedResourceCleanupResult struct {
+	CaptureCleaned           bool
+	DeadLetterTopicCleaned   bool
+	DeletedDeadLetterRecords int64
+	DeletedSyncStates        int64
+	DeletedRuntimeLeases     int64
+	DeletedCaptureResources  int64
+	CancelledExecutions      int64
 }
 
 type TransferCleanupStats struct {
-	TaskDefinitions         int      `json:"task_definitions"`
-	DisabledTaskDefinitions int      `json:"disabled_task_definitions,omitempty"`
-	DeletedTaskDefinitions  int      `json:"deleted_task_definitions,omitempty"`
-	CaptureResources        int      `json:"capture_resources,omitempty"`
-	CleanedCaptureResources int      `json:"cleaned_capture_resources,omitempty"`
-	Errors                  []string `json:"errors,omitempty"`
+	TaskDefinitions          int      `json:"task_definitions"`
+	DisabledTaskDefinitions  int      `json:"disabled_task_definitions,omitempty"`
+	DeletedTaskDefinitions   int      `json:"deleted_task_definitions,omitempty"`
+	CaptureResources         int      `json:"capture_resources,omitempty"`
+	CleanedCaptureResources  int      `json:"cleaned_capture_resources,omitempty"`
+	DeadLetterTopics         int      `json:"dead_letter_topics,omitempty"`
+	CleanedDeadLetterTopics  int      `json:"cleaned_dead_letter_topics,omitempty"`
+	DeletedDeadLetterRecords int64    `json:"deleted_dead_letter_records,omitempty"`
+	DeletedSyncStates        int64    `json:"deleted_sync_states,omitempty"`
+	DeletedRuntimeLeases     int64    `json:"deleted_runtime_leases,omitempty"`
+	DeletedCaptureResources  int64    `json:"deleted_capture_resources,omitempty"`
+	CancelledExecutions      int64    `json:"cancelled_executions,omitempty"`
+	Errors                   []string `json:"errors,omitempty"`
 }
 
 func (s *TransferCleanupService) SetCaptureControl(control CaptureControl) {
 	s.captureControl = control
 }
 
-func NewTransferCleanupService(db *gorm.DB, redisClient *redis.Client, taskExecRepo *commonExecution.TaskExecutionRepository) *TransferCleanupService {
+func (s *TransferCleanupService) SetDeadLetterTopicCleaner(cleaner DeadLetterTopicCleaner) {
+	s.deadLetterTopics = cleaner
+}
+
+func NewTransferCleanupService(db *gorm.DB, redisClient *redis.Client, taskExecRepo *commonExecution.TaskExecutionRepository, config TaskOwnedCleanupConfig) *TransferCleanupService {
 	return &TransferCleanupService{
-		db:           db,
-		redis:        redisClient,
-		taskExecRepo: taskExecRepo,
-		log:          logger.With("component", "transfer_cleanup_service"),
-		stopCh:       make(chan struct{}),
+		db:             db,
+		redis:          redisClient,
+		taskExecRepo:   taskExecRepo,
+		deadLetterRepo: repository.NewDeadLetterRepository(db),
+		taskRepo:       repository.NewTaskRepository(db),
+		taskResources:  repository.NewTaskResourceRepository(db),
+		config:         config,
+		log:            logger.With("component", "transfer_cleanup_service"),
+		stopCh:         make(chan struct{}),
 	}
+}
+
+// DeleteTaskAndOwnedResources 是直接 task 删除与 System physical cleanup 的唯一删除入口。
+func (s *TransferCleanupService) DeleteTaskAndOwnedResources(ctx context.Context, task *models.TransferTask, mode repository.TaskDefinitionDeleteMode) (TaskOwnedResourceCleanupResult, error) {
+	var result TaskOwnedResourceCleanupResult
+	if s == nil || s.db == nil || s.deadLetterRepo == nil || s.taskRepo == nil || s.taskResources == nil {
+		return result, fmt.Errorf("transfer task-owned resource cleanup is not configured")
+	}
+	if task == nil || task.ID == 0 || task.TenantID == 0 {
+		return result, fmt.Errorf("transfer task-owned resource cleanup requires task and tenant IDs")
+	}
+	boundary, err := planner.TaskRuntimeBoundary(task.Config)
+	if err != nil {
+		return result, err
+	}
+	continuous := boundary == planner.RuntimeBoundaryContinuous
+	if !continuous && task.Status == models.TaskStatusRunning {
+		return result, repository.ErrTaskDeletionRuntimeActive
+	}
+	if continuous {
+		if s.config.RuntimeStopTimeout <= 0 || s.config.RuntimeStopPollInterval <= 0 {
+			return result, fmt.Errorf("continuous runtime stop policy is not configured")
+		}
+		if err := s.taskRepo.SetContinuousDesiredState(ctx, task.ID, task.TenantID, models.TaskDesiredStateStopped, "cleanup"); err != nil {
+			return result, fmt.Errorf("request continuous runtime cleanup stop: %w", err)
+		}
+		if err := s.taskRepo.WaitContinuousRuntimeStopped(ctx, task.ID, s.config.RuntimeStopTimeout, s.config.RuntimeStopPollInterval); err != nil {
+			return result, fmt.Errorf("wait for continuous runtime cleanup stop: %w", err)
+		}
+		task.DesiredState = models.TaskDesiredStateStopped
+	}
+	if planner.IsDatabaseCDCTaskConfig(task.Config) {
+		if s.captureControl == nil {
+			return result, ErrCDCCaptureControlUnavailable
+		}
+		if err := s.captureControl.Stop(ctx, task); err != nil {
+			return result, fmt.Errorf("cleanup database CDC capture: %w", err)
+		}
+		result.CaptureCleaned = true
+	}
+	hasDeadLetterResources, err := s.hasDeadLetterResources(ctx, task)
+	if err != nil {
+		return result, err
+	}
+	if hasDeadLetterResources {
+		if s.deadLetterTopics == nil {
+			return result, fmt.Errorf("dead-letter Kafka topic cleanup is unavailable")
+		}
+		if err := s.deadLetterTopics.DeleteTaskTopic(ctx, task.TenantID, task.ID); err != nil {
+			return result, err
+		}
+		result.DeadLetterTopicCleaned = true
+	}
+	deleted, err := s.taskResources.DeleteTaskAndPrivateState(ctx, task.TenantID, task.ID, continuous, mode, time.Now().UTC())
+	if err != nil {
+		return result, err
+	}
+	result.DeletedDeadLetterRecords = deleted.DeadLetters
+	result.DeletedSyncStates = deleted.SyncStates
+	result.DeletedRuntimeLeases = deleted.RuntimeLeases
+	result.DeletedCaptureResources = deleted.CaptureResources
+	result.CancelledExecutions = deleted.CancelledExecutions
+	return result, nil
+}
+
+func isBusinessKafkaContinuousTask(task *models.TransferTask) bool {
+	if task == nil {
+		return false
+	}
+	_, err := planner.ParseContinuousTaskSpec(task.Config)
+	return err == nil
+}
+
+func (s *TransferCleanupService) hasDeadLetterResources(ctx context.Context, task *models.TransferTask) (bool, error) {
+	if isBusinessKafkaContinuousTask(task) {
+		return true, nil
+	}
+	if task == nil || s == nil || s.deadLetterRepo == nil {
+		return false, nil
+	}
+	return s.deadLetterRepo.ExistsByTask(ctx, task.TenantID, task.ID)
 }
 
 func (s *TransferCleanupService) Start(ctx context.Context) error {
@@ -178,8 +303,15 @@ func (s *TransferCleanupService) ScanReclaimCandidates(ctx context.Context, tena
 	}
 	stats := &TransferCleanupStats{TaskDefinitions: len(tasks)}
 	for _, task := range tasks {
-		if planner.IsPostgreSQLCDCTaskConfig(task.Config) {
+		if planner.IsDatabaseCDCTaskConfig(task.Config) {
 			stats.CaptureResources++
+		}
+		hasDeadLetterResources, err := s.hasDeadLetterResources(ctx, &task)
+		if err != nil {
+			return nil, err
+		}
+		if hasDeadLetterResources {
+			stats.DeadLetterTopics++
 		}
 	}
 	return stats, nil
@@ -200,20 +332,31 @@ func (s *TransferCleanupService) ExecuteCleanup(ctx context.Context, tenantID ui
 	stats := &TransferCleanupStats{TaskDefinitions: len(tasks)}
 	now := time.Now()
 	for _, task := range tasks {
-		if planner.IsPostgreSQLCDCTaskConfig(task.Config) {
+		isCDC := planner.IsDatabaseCDCTaskConfig(task.Config)
+		if isCDC {
 			stats.CaptureResources++
-			if s.captureControl == nil {
-				stats.Errors = append(stats.Errors, fmt.Sprintf("cleanup PostgreSQL CDC task %d failed: capture control is unavailable", task.ID))
-				continue
-			}
-			if err := s.captureControl.Stop(ctx, &task); err != nil {
-				stats.Errors = append(stats.Errors, fmt.Sprintf("cleanup PostgreSQL CDC task %d failed: %v", task.ID, err))
-				continue
-			}
-			stats.CleanedCaptureResources++
+		}
+		hasDeadLetterResources, err := s.hasDeadLetterResources(ctx, &task)
+		if err != nil {
+			stats.Errors = append(stats.Errors, fmt.Sprintf("inspect transfer task %d DLQ resources failed: %v", task.ID, err))
+			continue
+		}
+		if hasDeadLetterResources {
+			stats.DeadLetterTopics++
 		}
 		switch cleanupMode {
 		case events.CleanupModeLogical:
+			if isCDC {
+				if s.captureControl == nil {
+					stats.Errors = append(stats.Errors, fmt.Sprintf("cleanup database CDC task %d failed: capture control is unavailable", task.ID))
+					continue
+				}
+				if err := s.captureControl.Stop(ctx, &task); err != nil {
+					stats.Errors = append(stats.Errors, fmt.Sprintf("cleanup database CDC task %d failed: %v", task.ID, err))
+					continue
+				}
+				stats.CleanedCaptureResources++
+			}
 			updates := map[string]interface{}{
 				"enabled":     false,
 				"next_run_at": nil,
@@ -226,10 +369,22 @@ func (s *TransferCleanupService) ExecuteCleanup(ctx context.Context, tenantID ui
 			}
 			stats.DisabledTaskDefinitions++
 		case events.CleanupModePhysical:
-			if err := s.db.WithContext(ctx).Unscoped().Delete(&models.TransferTask{}, task.ID).Error; err != nil {
-				stats.Errors = append(stats.Errors, fmt.Sprintf("delete transfer task %d failed: %v", task.ID, err))
+			cleaned, err := s.DeleteTaskAndOwnedResources(ctx, &task, repository.TaskDefinitionDeletePhysical)
+			if err != nil {
+				stats.Errors = append(stats.Errors, fmt.Sprintf("cleanup transfer task %d resources failed: %v", task.ID, err))
 				continue
 			}
+			if cleaned.CaptureCleaned {
+				stats.CleanedCaptureResources++
+			}
+			if cleaned.DeadLetterTopicCleaned {
+				stats.CleanedDeadLetterTopics++
+			}
+			stats.DeletedDeadLetterRecords += cleaned.DeletedDeadLetterRecords
+			stats.DeletedSyncStates += cleaned.DeletedSyncStates
+			stats.DeletedRuntimeLeases += cleaned.DeletedRuntimeLeases
+			stats.DeletedCaptureResources += cleaned.DeletedCaptureResources
+			stats.CancelledExecutions += cleaned.CancelledExecutions
 			stats.DeletedTaskDefinitions++
 		}
 	}
@@ -270,7 +425,7 @@ func taskReferencesEngine(task models.TransferTask, engineID uint) bool {
 	if engineID == 0 {
 		return false
 	}
-	if spec, err := planner.ParsePostgreSQLCDCTaskSpec(task.Config); err == nil {
+	if spec, err := planner.ParseDatabaseCDCTaskSpec(task.Config); err == nil {
 		return endpointReferencesEngine(spec.Source, engineID) || endpointReferencesEngine(spec.Target, engineID)
 	}
 	if spec, err := planner.ParseRawCopyTaskSpec(task.Config); err == nil {

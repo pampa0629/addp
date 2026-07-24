@@ -8,12 +8,27 @@ import (
 	"github.com/addp/transfer/internal/models"
 )
 
-func TestPostgreSQLSourceResourcesRejectsChangedConnectionIdentity(t *testing.T) {
-	err := (PostgreSQLSourceResources{}).DropOwnedResources(context.Background(),
-		&CapturePlan{SourceConnectionFingerprint: "new"},
-		&models.CaptureResource{SourceConnectionFingerprint: "original"},
+func TestDatabaseSourceResourcesRejectsChangedConnectionIdentity(t *testing.T) {
+	err := (DatabaseSourceResources{}).DropOwnedResources(context.Background(),
+		&CapturePlan{SourceType: models.CaptureSourcePostgreSQL, SourceConnectionFingerprint: "new"},
+		&models.CaptureResource{
+			SourceType: models.CaptureSourcePostgreSQL, SourceConnectionFingerprint: "original",
+			PostgreSQL: &models.PostgreSQLCaptureResource{},
+		},
 	)
 	if err == nil || !strings.Contains(err.Error(), "source connection identity changed") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestDatabaseSourceResourcesAcceptsMySQLWithoutSourceOwnedObjects(t *testing.T) {
+	err := (DatabaseSourceResources{}).DropOwnedResources(context.Background(),
+		&CapturePlan{SourceType: models.CaptureSourceMySQL, SourceConnectionFingerprint: "same"},
+		&models.CaptureResource{
+			SourceType: models.CaptureSourceMySQL, SourceConnectionFingerprint: "same",
+			MySQL: &models.MySQLCaptureResource{ConnectorServerID: 1, SchemaHistoryTopicName: "history", SchemaHistoryTopicOwned: true},
+		})
+	if err != nil {
+		t.Fatalf("MySQL cleanup error = %v", err)
 	}
 }

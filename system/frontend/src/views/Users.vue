@@ -92,7 +92,6 @@ const { visible: dialogVisible, isEdit: _, editingItem: editingUserId, submitLoa
 
 const passwordDialogVisible = ref(false)
 const passwordSubmitLoading = ref(false)
-const changingUserId = ref(null)
 
 // 打开新增对话框
 const openAddDialog = () => {
@@ -117,8 +116,7 @@ const handleDelete = async (row) => {
 }
 
 // 打开修改密码对话框
-const handleOpenPasswordDialog = (row) => {
-  changingUserId.value = row.id
+const handleOpenPasswordDialog = () => {
   resetPasswordForm()
   passwordDialogVisible.value = true
 }
@@ -174,7 +172,7 @@ const handleSubmit = async () => {
 const handleChangePassword = async () => {
   passwordSubmitLoading.value = true
   try {
-    const result = await changePassword(changingUserId.value, {
+    const result = await changePassword({
       old_password: passwordForm.old_password,
       new_password: passwordForm.new_password
     })

@@ -10,6 +10,10 @@ test('orchestration writes include only user-editable fields', () => {
     name: 'daily',
     description: 'sync data',
     steps: [{ id: 'scan' }],
+    editor_layout: {
+      nodes: { scan: { x: 10, y: 20 } },
+      viewport: { zoom: 1, translate_x: 0, translate_y: 0 }
+    },
     enabled: true,
     schedule: '0 2 * * *',
     created_by: 7,
@@ -18,6 +22,10 @@ test('orchestration writes include only user-editable fields', () => {
     name: 'daily',
     description: 'sync data',
     steps: [{ id: 'scan' }],
+    editor_layout: {
+      nodes: { scan: { x: 10, y: 20 } },
+      viewport: { zoom: 1, translate_x: 0, translate_y: 0 }
+    },
     enabled: true,
     schedule: '0 2 * * *'
   })

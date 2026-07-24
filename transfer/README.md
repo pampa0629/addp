@@ -2,7 +2,7 @@
 
 Transfer 是 ADDP 的数据传输中枢，负责传输任务配置、执行编排、字段映射、异步 worker、checkpoint 观测、执行日志、指标和写后 Meta 扫描触发。
 
-当前已实现 bounded snapshot、PostgreSQL bounded watermark incremental、业务 Kafka keyed JSON continuous upsert，以及 PostgreSQL 单表 CDC initial snapshot + upsert/delete。continuous worker 已接通严格 record/Debezium adapter、业务库 apply ledger、Infra `transfer.sync_states` CAS、lease/fencing、真实 pause/resume/stop，以及分区 latest offset、lag、retention horizon 和 degraded/critical 告警；Console Wizard 已开放两条 continuous 路线，并只允许 PostgreSQL 目标。
+当前已实现 bounded snapshot、PostgreSQL bounded watermark incremental、业务 Kafka keyed JSON continuous upsert + DLQ、业务 Kafka bounded replay，以及 PostgreSQL/MySQL 单表 CDC initial snapshot + upsert/delete。continuous worker 已接通严格 record/Debezium adapter、业务库 apply ledger、Infra `transfer.sync_states` CAS、lease/fencing、真实 pause/resume/stop，以及分区 latest offset、lag、retention horizon 和 degraded/critical 告警；Console Wizard 已开放业务 Kafka和数据库 CDC 两类 continuous 路线，并只允许 PostgreSQL 目标。
 
 当前主路径采用 clean break：Transfer 不再维护私有 reader / writer 插件体系，不再兼容旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type` 等任务 JSON 字段。具体读写能力来自 `common/engine`、`common/format`、`common/contentio` 和 `common/engine/contentadapter`。
 
@@ -78,9 +78,9 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`cad`
 }
 ```
 
-`target.policy.apply_mode` 支持 snapshot 的 `replace` / `append`、PostgreSQL watermark/业务 Kafka 的幂等 `upsert`，以及 PostgreSQL CDC 的 `upsert_delete`。旧 `write_mode` 不兼容。snapshot replace 失败执行可按 restartable 从头 retry；watermark 和未发生 schema drift 的 continuous/CDC 从 `transfer.sync_states` committed position resume；append retry 被拒绝。PostgreSQL CDC schema drift 会把任务置为 `status=blocked`，只能 Stop 后创建新任务和新目标表。
+`target.policy.apply_mode` 支持 snapshot 的 `replace` / `append`、PostgreSQL watermark/业务 Kafka 的幂等 `upsert`，以及数据库 CDC 的 `upsert_delete`。旧 `write_mode` 不兼容。snapshot replace 失败执行可按 restartable 从头 retry；watermark 和未发生 schema drift 的 continuous/CDC 从 `transfer.sync_states` committed position resume；append retry 被拒绝。数据库 CDC schema drift 会把任务置为 `status=blocked`，只能 Stop 后创建新任务和新目标表。
 
-continuous 当前有两条实现路径：业务 Kafka keyed JSON record -> PostgreSQL upsert，以及 PostgreSQL 单表 -> Debezium -> Infra Kafka -> PostgreSQL snapshot/upsert/delete。两者复用同一个 Transfer continuous worker 和 `PartitionedTableChangeApplyProvider`；Provider 在业务目标库将目标变化与 `addp_transfer.apply_positions.next_offset` 原子提交，Infra PostgreSQL 的 `transfer.sync_states` 保存任务 committed position。交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。无 key append、DLQ、Schema Registry、Avro、Protobuf、Kafka target 和 replay 仍后置。Infra Kafka 不进入 System engines 或用户任务配置。
+continuous 当前有两类实现路径：业务 Kafka keyed JSON record -> PostgreSQL upsert，以及 PostgreSQL/MySQL 单表 -> Debezium -> Infra Kafka -> PostgreSQL snapshot/upsert/delete。它们复用同一个 Transfer continuous worker 和 `PartitionedTableChangeApplyProvider`；Provider 在业务目标库将目标变化与 `addp_transfer.apply_positions.next_offset` 原子提交，Infra PostgreSQL 的 `transfer.sync_states` 保存任务 committed position。业务 Kafka 已支持显式 `block|dead_letter` 和显式 offset ranges 到新 PostgreSQL 隔离表的 bounded replay。交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、Oracle CDC 或自动 DDL。Infra Kafka 不进入 System engines 或用户任务配置。
 
 恢复 continuous task 时，Kafka Provider 会先验证 committed `next_offset` 是否仍处于 topic partition 的 earliest/latest 范围。位置已被 retention 清除时 execution 明确失败，不允许静默重置。目标 PostgreSQL 锁等待响应 runtime context 取消，未完成事务会同时回滚业务表和 `addp_transfer.apply_positions`。
 
@@ -105,6 +105,9 @@ continuous 当前有两条实现路径：业务 Kafka keyed JSON record -> Postg
 - `POST /task-definitions/:id/pause`
 - `POST /task-definitions/:id/resume`
 - `POST /task-definitions/:id/stop`
+- `POST /task-definitions/:id/replay`
+- `GET /task-definitions/:id/dead-letters`
+- `GET /task-definitions/:id/dead-letters/:identity`
 - `GET /task-definitions/:id/executions`
 - `GET /executions`
 - `GET /executions/:execution_id`

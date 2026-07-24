@@ -58,29 +58,29 @@ func SetupRouter(
 	router.POST("/api/gquery/:serviceName", optionalAuth, graphQueryHandler.ExecuteQuery)
 
 	// OGC API Features 端点（支持公开访问，handler内部会检查权限）
-	router.GET("/ogc/features/:serviceName", ogcFeaturesHandler.GetLandingPage)
-	router.GET("/ogc/features/:serviceName/conformance", ogcFeaturesHandler.GetConformance)
-	router.GET("/ogc/features/:serviceName/collections", ogcFeaturesHandler.GetCollections)
-	router.GET("/ogc/features/:serviceName/collections/:collectionId/items", ogcFeaturesHandler.GetItems)
-	router.GET("/ogc/features/:serviceName/collections/:collectionId/items/:featureId", ogcFeaturesHandler.GetItem)
+	router.GET("/ogc/features/:serviceName", optionalAuth, ogcFeaturesHandler.GetLandingPage)
+	router.GET("/ogc/features/:serviceName/conformance", optionalAuth, ogcFeaturesHandler.GetConformance)
+	router.GET("/ogc/features/:serviceName/collections", optionalAuth, ogcFeaturesHandler.GetCollections)
+	router.GET("/ogc/features/:serviceName/collections/:collectionId/items", optionalAuth, ogcFeaturesHandler.GetItems)
+	router.GET("/ogc/features/:serviceName/collections/:collectionId/items/:featureId", optionalAuth, ogcFeaturesHandler.GetItem)
 
 	// 代理服务端点（公开访问，无需认证）
 	router.Any("/api/service/registered/proxy/:id/*path", registeredServiceHandler.ProxyService)
 
 	// XYZ Tiles 端点（支持公开访问，handler内部会检查权限）
 	// 注意：使用通配符捕获 y.format，在 handler 中解析
-	router.GET("/tiles/:serviceName/:layerName/:z/:x/*yformat", tileEndpointHandler.GetXYZTile)
+	router.GET("/tiles/:serviceName/:layerName/:z/:x/*yformat", optionalAuth, tileEndpointHandler.GetXYZTile)
 
 	// WMTS 端点（支持公开访问，handler内部会检查权限）
-	router.GET("/wmts/:serviceName", wmtsHandler.GetCapabilities)
+	router.GET("/wmts/:serviceName", optionalAuth, wmtsHandler.GetCapabilities)
 
 	// OGC Tiles API 端点（支持公开访问，handler内部会检查权限）
-	router.GET("/ogc/tiles/:serviceName", ogcTilesHandler.GetLandingPage)
-	router.GET("/ogc/tiles/:serviceName/conformance", ogcTilesHandler.GetConformance)
-	router.GET("/ogc/tiles/:serviceName/tileMatrixSets", ogcTilesHandler.GetTileMatrixSets)
-	router.GET("/ogc/tiles/:serviceName/tileMatrixSets/:tileMatrixSetId", ogcTilesHandler.GetTileMatrixSet)
-	router.GET("/ogc/tiles/:serviceName/tiles", ogcTilesHandler.GetTilesets)
-	router.GET("/ogc/tiles/:serviceName/tiles/:layer/:tileMatrixSetId/:tileMatrix/:tileRow/:tileCol", ogcTilesHandler.GetTile)
+	router.GET("/ogc/tiles/:serviceName", optionalAuth, ogcTilesHandler.GetLandingPage)
+	router.GET("/ogc/tiles/:serviceName/conformance", optionalAuth, ogcTilesHandler.GetConformance)
+	router.GET("/ogc/tiles/:serviceName/tileMatrixSets", optionalAuth, ogcTilesHandler.GetTileMatrixSets)
+	router.GET("/ogc/tiles/:serviceName/tileMatrixSets/:tileMatrixSetId", optionalAuth, ogcTilesHandler.GetTileMatrixSet)
+	router.GET("/ogc/tiles/:serviceName/tiles", optionalAuth, ogcTilesHandler.GetTilesets)
+	router.GET("/ogc/tiles/:serviceName/tiles/:layer/:tileMatrixSetId/:tileMatrix/:tileRow/:tileCol", optionalAuth, ogcTilesHandler.GetTile)
 
 	// API 路由组（需要认证）
 	api := router.Group("/api/v1/service")
