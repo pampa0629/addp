@@ -3,7 +3,7 @@
     <header class="editor-header">
       <div class="editor-identity">
         <el-tooltip :content="t('develop.workflow.toggleOperatorPanel')">
-          <el-button circle text @click="leftPanelCollapsed = !leftPanelCollapsed">
+          <el-button circle text :disabled="editorBusy" @click="leftPanelCollapsed = !leftPanelCollapsed">
             <el-icon><Grid /></el-icon>
           </el-button>
         </el-tooltip>
@@ -19,7 +19,7 @@
             <el-select
               :model-value="workflowEngineId"
               :placeholder="t('develop.workflow.selectEngine')"
-              :disabled="switchingEngine"
+              :disabled="switchingEngine || editorBusy"
               class="engine-select"
               @change="requestEngineChange"
             >
@@ -41,7 +41,7 @@
               <el-select
                 v-model="sparkRuntimeId"
                 :placeholder="t('develop.workflow.selectSparkCluster')"
-                :disabled="sparkRuntimes.length === 0"
+                :disabled="editorBusy || sparkRuntimes.length === 0"
                 class="engine-select"
               >
                 <el-option
@@ -118,22 +118,22 @@
       </div>
 
       <div class="primary-actions">
-        <el-button type="primary" :disabled="!canSave" :loading="saving" @click="handleSave">
+        <el-button type="primary" :disabled="!canSave || editorBusy" :loading="saving" @click="handleSave">
           <el-icon><DocumentAdd /></el-icon>
           {{ t('develop.workflow.save') }}
         </el-button>
-        <el-button type="success" :disabled="!canExecute" :loading="executing" @click="handleExecute">
+        <el-button type="success" :disabled="!canExecute" :loading="executionButtonLoading" @click="handleExecute">
           <el-icon><VideoPlay /></el-icon>
           {{ t('develop.workflow.execute') }}
         </el-button>
         <el-dropdown trigger="click" @command="handleMoreCommand">
-          <el-button>
+          <el-button :disabled="editorBusy" :loading="importing">
             {{ t('develop.workflow.more') }}
             <el-icon class="el-icon--right"><MoreFilled /></el-icon>
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="saveAs" :disabled="!canSave">
+              <el-dropdown-item command="saveAs" :disabled="!canSave || editorBusy">
                 <el-icon><CopyDocument /></el-icon>{{ t('develop.workflow.saveAs') }}
               </el-dropdown-item>
               <el-dropdown-item command="viewJson" :disabled="!hasValidWorkflow">
@@ -154,7 +154,7 @@
       </div>
     </header>
 
-    <main class="editor-content">
+    <main class="editor-content" :inert="editorBusy" :aria-busy="editorBusy">
       <aside v-if="!leftPanelCollapsed" class="left-panel">
         <div class="panel-header">
           <span class="panel-title">{{ t('develop.workflow.operatorPanel') }}</span>
@@ -250,8 +250,15 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="saveDialogVisible" :title="saveDialogTitle" width="500px">
-      <el-form :model="saveForm" label-width="100px">
+    <el-dialog
+      v-model="saveDialogVisible"
+      :title="saveDialogTitle"
+      width="500px"
+      :close-on-click-modal="!saving"
+      :close-on-press-escape="!saving"
+      :show-close="!saving"
+    >
+      <el-form :model="saveForm" label-width="100px" :disabled="saving">
         <el-form-item :label="t('develop.workflow.workflowName')" required>
           <el-input v-model="saveForm.name" :placeholder="t('develop.workflow.workflowNamePlaceholder')" />
         </el-form-item>
@@ -268,13 +275,22 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="cancelSaveDialog">{{ t('develop.workflow.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="confirmSave">{{ t('develop.workflow.save') }}</el-button>
+        <el-button :disabled="saving" @click="cancelSaveDialog">{{ t('develop.workflow.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" :disabled="saving" @click="confirmSave">
+          {{ t('develop.workflow.save') }}
+        </el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="executeDialogVisible" :title="t('develop.workflow.executeDialogTitle')" width="500px">
-      <el-form label-width="100px">
+    <el-dialog
+      v-model="executeDialogVisible"
+      :title="t('develop.workflow.executeDialogTitle')"
+      width="500px"
+      :close-on-click-modal="!executing"
+      :close-on-press-escape="!executing"
+      :show-close="!executing"
+    >
+      <el-form label-width="100px" :disabled="executing">
         <el-form-item :label="t('develop.workflow.taskCount')">
           <el-input :model-value="workflowData?.tasks?.length || 0" disabled />
         </el-form-item>
@@ -283,8 +299,10 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="executeDialogVisible = false">{{ t('develop.workflow.cancel') }}</el-button>
-        <el-button type="primary" :loading="executing" @click="confirmExecute">
+        <el-button :disabled="executing" @click="executeDialogVisible = false">
+          {{ t('develop.workflow.cancel') }}
+        </el-button>
+        <el-button type="primary" :loading="executing" :disabled="executing" @click="confirmExecute">
           {{ t('develop.workflow.execute') }}
         </el-button>
       </template>
@@ -305,7 +323,16 @@
         <div v-if="aiDialogOpen" class="ai-inline-panel">
           <div class="ai-panel-header">
             <span class="ai-panel-title">{{ t('develop.workflow.aiTitle') }}</span>
-            <el-button circle text size="small" @click="aiDialogOpen = false"><el-icon><Close /></el-icon></el-button>
+            <el-button
+              circle
+              text
+              size="small"
+              :aria-label="t('develop.workflow.close')"
+              :disabled="editorBusy"
+              @click="aiDialogOpen = false"
+            >
+              <el-icon><Close /></el-icon>
+            </el-button>
           </div>
           <el-input
             ref="aiInputRef"
@@ -313,18 +340,25 @@
             type="textarea"
             :rows="4"
             :placeholder="t('develop.workflow.aiPlaceholder')"
-            :disabled="generating"
+            :disabled="editorBusy"
             class="ai-panel-input"
           />
           <div class="ai-panel-footer">
-            <el-button type="primary" :loading="generating" size="small" @click="generateWorkflow">
+            <el-button type="primary" :loading="generating" :disabled="editorBusy" size="small" @click="generateWorkflow">
               {{ t('develop.workflow.generateWorkflow') }}
             </el-button>
           </div>
         </div>
       </transition>
       <el-tooltip :content="t('develop.workflow.aiTitle')">
-        <el-button class="ai-fab" circle type="primary" @click="toggleAiPanel">
+        <el-button
+          class="ai-fab"
+          circle
+          type="primary"
+          :aria-label="t('develop.workflow.aiTitle')"
+          :disabled="editorBusy"
+          @click="toggleAiPanel"
+        >
           <el-icon><MagicStick /></el-icon>
         </el-button>
       </el-tooltip>
@@ -414,9 +448,11 @@ const switchingEngine = ref(false)
 
 const executeDialogVisible = ref(false)
 const executeInputs = ref('{}')
+const preparingExecution = ref(false)
 const executing = ref(false)
 const jsonDialogVisible = ref(false)
 const workflowJSON = ref('')
+const importing = ref(false)
 
 const validating = ref(false)
 const validationResult = ref(null)
@@ -464,10 +500,21 @@ const validationSummary = computed(() => {
   if (validationRequestError.value) return t('develop.workflow.validationUnavailable')
   return t('develop.workflow.validationPassed')
 })
+const editorBusy = computed(() => (
+  saving.value ||
+  preparingExecution.value ||
+  switchingEngine.value ||
+  generating.value ||
+  importing.value
+))
+const executionButtonLoading = computed(() => preparingExecution.value || executing.value)
 const canSave = computed(() => Boolean(workflowEngineId.value && hasValidWorkflow.value))
 const canExecute = computed(() => Boolean(
   canSave.value &&
   (!needsSparkRuntime() || sparkRuntimeId.value) &&
+  !saving.value &&
+  !preparingExecution.value &&
+  !executing.value &&
   !validating.value &&
   validationErrors.value.length === 0 &&
   !validationRequestError.value
@@ -546,6 +593,7 @@ async function selectDefaultEngine() {
 }
 
 async function requestEngineChange(engineId) {
+  if (editorBusy.value) return
   if (!engineId || engineId === workflowEngineId.value) return
   if (workflowData.value.tasks.length === 0) {
     await applyEngineSwitch(engineId)
@@ -568,6 +616,7 @@ function handleEngineSwitchDialogClosed() {
 }
 
 async function saveAndSwitchEngine() {
+  if (saving.value || switchingEngine.value) return
   if (!pendingWorkflowEngineId.value) return
 
   if (!currentTaskId.value) {
@@ -577,18 +626,24 @@ async function saveAndSwitchEngine() {
     return
   }
 
-  if (await saveCurrentTask()) {
-    await applyEngineSwitch(pendingWorkflowEngineId.value)
+  saving.value = true
+  try {
+    if (await saveCurrentTask()) {
+      await applyEngineSwitch(pendingWorkflowEngineId.value, { saved: true })
+    }
+  } finally {
+    saving.value = false
   }
 }
 
 async function clearAndSwitchEngine() {
+  if (saving.value || switchingEngine.value) return
   if (pendingWorkflowEngineId.value) {
     await applyEngineSwitch(pendingWorkflowEngineId.value)
   }
 }
 
-async function applyEngineSwitch(engineId) {
+async function applyEngineSwitch(engineId, { saved = false } = {}) {
   const dialogWasVisible = engineSwitchDialogVisible.value
   switchingEngine.value = true
   engineSwitchDialogVisible.value = false
@@ -607,7 +662,10 @@ async function applyEngineSwitch(engineId) {
     if (needsSparkRuntime()) await ensureSparkRuntime()
     markSaved()
     await clearTaskRouteQuery()
-    ElMessage.success(t('develop.workflow.engineSwitchSuccess', { name: selectedEngine.value?.name || '-' }))
+    const messageKey = saved
+      ? 'develop.workflow.saveAndSwitchSuccess'
+      : 'develop.workflow.engineSwitchSuccess'
+    ElMessage.success(t(messageKey, { name: selectedEngine.value?.name || '-' }))
   } finally {
     if (!dialogWasVisible) pendingWorkflowEngineId.value = null
     switchingEngine.value = false
@@ -621,6 +679,14 @@ async function clearTaskRouteQuery() {
   if (!hasTaskQuery) return
   delete query.id
   delete query.taskId
+  await router.replace({ query })
+}
+
+async function setTaskRouteQuery(taskId) {
+  if (!taskId) return
+  const query = { ...route.query, id: String(taskId) }
+  delete query.taskId
+  if (String(route.query.id || '') === String(taskId) && !route.query.taskId) return
   await router.replace({ query })
 }
 
@@ -644,12 +710,18 @@ function formatRuntimeLabel(runtime) {
 }
 
 async function handleSave() {
+  if (editorBusy.value) return
   if (!guardWorkflowSavable()) return
   if (!currentTaskId.value) {
     openSaveDialog(false)
     return
   }
-  if (await saveCurrentTask()) await validateCurrentWorkflow()
+  saving.value = true
+  try {
+    if (await saveCurrentTask()) await validateAfterSave()
+  } finally {
+    saving.value = false
+  }
 }
 
 function openSaveDialog(asCopy) {
@@ -665,6 +737,7 @@ function openSaveDialog(asCopy) {
 }
 
 function cancelSaveDialog() {
+  if (saving.value) return
   saveDialogVisible.value = false
   if (pendingAction.value === 'switchEngine') {
     pendingWorkflowEngineId.value = null
@@ -673,63 +746,68 @@ function cancelSaveDialog() {
 }
 
 async function confirmSave() {
+  if (saving.value) return
   if (!saveForm.name.trim()) {
     ElMessage.warning(t('develop.workflow.workflowNameRequired'))
     return
   }
   saving.value = true
-  let saved = false
   try {
-    const task = await saveWorkflowTask(buildTaskData({
-      name: saveForm.name.trim(),
-      displayName: saveForm.display_name,
-      description: saveForm.description
-    }))
-    currentTaskId.value = task.id
-    currentTaskName.value = task.name
-    currentTask.value = task
-    saveDialogVisible.value = false
-    saveAsMode.value = false
-    markSaved()
-    ElMessage.success(t('develop.workflow.saveSuccess'))
-    saved = true
-  } catch (error) {
-    ElMessage.error(t('develop.workflow.saveFailed') + (error.response?.data?.error || error.message))
+    let saved = false
+    try {
+      const taskData = buildTaskData({
+        name: saveForm.name.trim(),
+        displayName: saveForm.display_name,
+        description: saveForm.description
+      })
+      const savedSignature = editorStateSignature()
+      const task = await saveWorkflowTask(taskData)
+      currentTaskId.value = task.id
+      currentTaskName.value = task.name
+      currentTask.value = task
+      saveDialogVisible.value = false
+      saveAsMode.value = false
+      markSaved(savedSignature)
+      saved = true
+    } catch (error) {
+      ElMessage.error(t('develop.workflow.saveFailed') + (error.response?.data?.error || error.message))
+    }
+
+    if (!saved) return
+    const action = pendingAction.value
+    pendingAction.value = null
+    if (action === 'execute') {
+      await setTaskRouteQuery(currentTaskId.value)
+      ElMessage.success(t('develop.workflow.saveSuccess'))
+      openExecuteDialog()
+    } else if (action === 'switchEngine') {
+      await applyEngineSwitch(pendingWorkflowEngineId.value, { saved: true })
+    } else {
+      await setTaskRouteQuery(currentTaskId.value)
+      await validateAfterSave()
+    }
   } finally {
     saving.value = false
-  }
-
-  if (!saved) return
-  const action = pendingAction.value
-  pendingAction.value = null
-  if (action === 'execute') {
-    openExecuteDialog()
-  } else if (action === 'switchEngine') {
-    await applyEngineSwitch(pendingWorkflowEngineId.value)
-  } else {
-    await validateCurrentWorkflow()
   }
 }
 
 async function saveCurrentTask() {
   if (!currentTaskId.value) return false
-  saving.value = true
   try {
-    const task = await updateWorkflowTask(currentTaskId.value, buildTaskData({
+    const taskData = buildTaskData({
       name: currentTaskName.value,
       displayName: currentTask.value?.display_name || '',
       description: currentTask.value?.description || ''
-    }))
+    })
+    const savedSignature = editorStateSignature()
+    const task = await updateWorkflowTask(currentTaskId.value, taskData)
     currentTask.value = task
     currentTaskName.value = task.name
-    markSaved()
-    ElMessage.success(t('develop.workflow.saveSuccess'))
+    markSaved(savedSignature)
     return true
   } catch (error) {
     ElMessage.error(t('develop.workflow.saveFailed') + (error.response?.data?.error || error.message))
     return false
-  } finally {
-    saving.value = false
   }
 }
 
@@ -748,15 +826,31 @@ function buildTaskData({ name, displayName, description }) {
 }
 
 async function handleExecute() {
+  if (preparingExecution.value || saving.value || executing.value) return
   if (!guardWorkflowReady()) return
-  if (!await validateCurrentWorkflow()) return
-  if (!currentTaskId.value) {
-    pendingAction.value = 'execute'
-    openSaveDialog(false)
-    return
+  preparingExecution.value = true
+  try {
+    if (!await validateCurrentWorkflow()) {
+      notifyValidationFailure()
+      return
+    }
+    if (!currentTaskId.value) {
+      pendingAction.value = 'execute'
+      openSaveDialog(false)
+      return
+    }
+    if (isDirty.value) {
+      saving.value = true
+      try {
+        if (!await saveCurrentTask()) return
+      } finally {
+        saving.value = false
+      }
+    }
+    openExecuteDialog()
+  } finally {
+    preparingExecution.value = false
   }
-  if (isDirty.value && !await saveCurrentTask()) return
-  openExecuteDialog()
 }
 
 function openExecuteDialog() {
@@ -765,6 +859,7 @@ function openExecuteDialog() {
 }
 
 async function confirmExecute() {
+  if (executing.value) return
   let inputs
   try {
     inputs = JSON.parse(executeInputs.value)
@@ -803,6 +898,7 @@ function guardWorkflowSavable() {
 }
 
 async function handleMoreCommand(command) {
+  if (editorBusy.value) return
   if (command === 'saveAs') {
     if (guardWorkflowSavable()) openSaveDialog(true)
   } else if (command === 'viewJson') handleViewJSON()
@@ -812,6 +908,7 @@ async function handleMoreCommand(command) {
 }
 
 async function handleClear() {
+  if (editorBusy.value) return
   try {
     await ElMessageBox.confirm(t('develop.workflow.clearConfirmMsg'), t('develop.workflow.clearConfirmTitle'), { type: 'warning' })
     canvasRef.value?.clearGraph()
@@ -858,6 +955,11 @@ function handleExport() {
 async function handleFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
+  if (editorBusy.value) {
+    event.target.value = ''
+    return
+  }
+  importing.value = true
   try {
     const workflow = JSON.parse(await file.text())
     if (!isStandardWorkflowDefinition(workflow)) throw new Error(t('develop.workflow.invalidWorkflowFormat'))
@@ -869,6 +971,7 @@ async function handleFileChange(event) {
   } catch (error) {
     ElMessage.error(t('develop.workflow.importFailed') + error.message)
   } finally {
+    importing.value = false
     event.target.value = ''
   }
 }
@@ -895,7 +998,6 @@ async function validateCurrentWorkflow() {
       warnings: []
     }
     validating.value = false
-    ElMessage.warning(t('develop.workflow.validationFailed', { count: clientErrors.length }))
     return false
   }
   try {
@@ -910,17 +1012,40 @@ async function validateCurrentWorkflow() {
       valid: errors.length === 0,
       errors
     }
-    if (errors.length) {
-      ElMessage.warning(t('develop.workflow.validationFailed', { count: errors.length }))
-    }
     return errors.length === 0
   } catch (error) {
     if (revision !== validationRevision) return false
     validationRequestError.value = error.response?.data?.error || error.message
-    ElMessage.error(t('develop.workflow.validationUnavailable'))
     return false
   } finally {
     if (revision === validationRevision) validating.value = false
+  }
+}
+
+async function validateAfterSave() {
+  await validateCurrentWorkflow()
+  if (validationErrors.value.length) {
+    ElMessage.warning(t('develop.workflow.saveSuccessWithIssues', {
+      count: validationErrors.value.length
+    }))
+  } else if (validationRequestError.value) {
+    ElMessage.warning(t('develop.workflow.saveSuccessValidationUnavailable'))
+  } else if (validationWarnings.value.length) {
+    ElMessage.warning(t('develop.workflow.saveSuccessWithWarnings', {
+      count: validationWarnings.value.length
+    }))
+  } else {
+    ElMessage.success(t('develop.workflow.saveSuccess'))
+  }
+}
+
+function notifyValidationFailure() {
+  if (validationErrors.value.length) {
+    ElMessage.warning(t('develop.workflow.validationFailed', {
+      count: validationErrors.value.length
+    }))
+  } else if (validationRequestError.value) {
+    ElMessage.error(t('develop.workflow.validationUnavailable'))
   }
 }
 
@@ -1005,8 +1130,8 @@ function editorStateSignature() {
   })
 }
 
-function markSaved() {
-  savedStateSignature.value = editorStateSignature()
+function markSaved(signature = editorStateSignature()) {
+  savedStateSignature.value = signature
 }
 
 async function loadTask(taskId) {
@@ -1040,11 +1165,13 @@ async function loadTask(taskId) {
 }
 
 function toggleAiPanel() {
+  if (editorBusy.value) return
   aiDialogOpen.value = !aiDialogOpen.value
   if (aiDialogOpen.value) nextTick(() => aiInputRef.value?.focus())
 }
 
 async function generateWorkflow() {
+  if (editorBusy.value) return
   if (!aiQuery.value.trim()) {
     ElMessage.warning(t('develop.workflow.describeWorkflow'))
     return

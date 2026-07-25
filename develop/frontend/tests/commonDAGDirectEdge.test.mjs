@@ -74,4 +74,33 @@ assert.deepEqual(emittedEvents.map(event => event.name), ['beforecreateedge', 'a
 assert.equal(mod.isDAGPortEvent(outputEvent), true)
 assert.equal(mod.isDAGPortEvent({ shape: { cfg: { name: 'node-body' } } }), false)
 
+const connectionGraph = {
+  getEdges: () => [{ getModel: () => ({ source: 'source', target: 'existing' }) }]
+}
+const noLoop = () => false
+assert.equal(mod.validateDAGConnection({
+  graph: connectionGraph,
+  sourceId: 'source',
+  targetId: 'target',
+  hasLoop: noLoop
+}), true)
+assert.equal(mod.validateDAGConnection({
+  graph: connectionGraph,
+  sourceId: 'source',
+  targetId: 'source',
+  hasLoop: noLoop
+}), 'loop')
+assert.equal(mod.validateDAGConnection({
+  graph: connectionGraph,
+  sourceId: 'source',
+  targetId: 'target',
+  hasLoop: () => true
+}), 'loop')
+assert.equal(mod.validateDAGConnection({
+  graph: connectionGraph,
+  sourceId: 'source',
+  targetId: 'existing',
+  hasLoop: noLoop
+}), 'duplicate')
+
 console.log('commonDAGDirectEdge tests passed')

@@ -161,6 +161,10 @@
             "diagnostics_error": {
               "title": "Continuous Diagnostics Failed",
               "description": "Transfer could not complete the latest diagnostics sample: {error}"
+            },
+            "schema_change_blocked": {
+              "title": "Database Schema Change Blocked Sync",
+              "description": "The source table schema changed, so the current message and committed position remain unchanged. Approve eligible added fields in the Transfer task, or stop and recreate the task."
             }
           }
         },

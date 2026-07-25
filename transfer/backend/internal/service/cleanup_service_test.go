@@ -375,10 +375,12 @@ func newTransferCleanupTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("create capture_resources table: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE transfer.schema_change_requests (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		task_id INTEGER NOT NULL,
-		tenant_id INTEGER NOT NULL
-	)`).Error; err != nil {
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			task_id INTEGER NOT NULL,
+			tenant_id INTEGER NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			detected_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`).Error; err != nil {
 		t.Fatalf("create schema_change_requests table: %v", err)
 	}
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {

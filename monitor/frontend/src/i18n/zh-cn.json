@@ -161,6 +161,10 @@
             "diagnostics_error": {
               "title": "持续同步观测异常",
               "description": "Transfer 无法完成本次诊断采样：{error}"
+            },
+            "schema_change_blocked": {
+              "title": "数据库结构变化阻塞同步",
+              "description": "源表结构已变化，当前消息和提交位置保持不变。请在 Transfer 任务详情中审批可用的新增字段，或停止后重建任务。"
             }
           }
         },

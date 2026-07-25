@@ -69,3 +69,15 @@ test('identifies continuous execution metadata without relying on progress', () 
   assert.equal(hasContinuousExecutionMetadata({ recovery_reason: 'worker_shutdown' }), true)
   assert.equal(hasContinuousExecutionMetadata({}), false)
 })
+
+test('derives schema change blocked only from the owner pending projection', () => {
+  const blocked = buildContinuousSignals({
+    continuous: { schema_change: { request_id: 9, status: 'pending', unexpected_fields: ['new_field'] } }
+  }, 'failed', now)
+  assert.deepEqual(blocked.map(signal => [signal.code, signal.severity]), [['schema_change_blocked', 'critical']])
+  assert.equal(blocked[0].schemaChange.request_id, 9)
+
+  for (const status of ['applied', 'stopped']) {
+    assert.equal(buildContinuousSignals({ continuous: { schema_change: { status } } }, 'failed', now).length, 0)
+  }
+})

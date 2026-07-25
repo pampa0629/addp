@@ -149,6 +149,22 @@ func (r *Repository) CreateResourceAccessTicket(
 	return wrapRepositoryError(r.db.WithContext(ctx).Create(ticket).Error)
 }
 
+func (r *Repository) CreateDelegatedAccessToken(
+	ctx context.Context,
+	token *DelegatedAccessToken,
+) error {
+	if token == nil {
+		return fmt.Errorf("%w: delegated access token is required", commonapi.ErrBadRequest)
+	}
+	err := r.db.WithContext(ctx).Create(token).Error
+	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) && postgresError.Code == "23505" &&
+		postgresError.ConstraintName == "delegated_access_tokens_agent_run_id_tool_call_id_key" {
+		return ErrDelegationConflict
+	}
+	return wrapRepositoryError(err)
+}
+
 func (r *Repository) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (*RefreshToken, error) {
 	var token RefreshToken
 	if err := r.db.WithContext(ctx).Where("token_hash = ?", tokenHash).Take(&token).Error; err != nil {

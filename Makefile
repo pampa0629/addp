@@ -431,14 +431,16 @@ compare-agent-eval: ## 比较两份仓库外 Agent v2 评测报告
 compare-agent-eval-release: ## 按正式发布基线策略比较两份 Agent v2 报告
 	@bash scripts/test/agent-evaluation-gate.sh compare-release
 
-authorization-generate: ## 从 Permission Manifest 生成 owner-local 常量和 IAM Catalog Seed SQL
+authorization-generate: ## 从 Manifest 生成 owner-local 常量、System Tool Catalog 和 IAM Catalog Seed SQL
 	@cd common && go run ./authorization/cmd/manifest --generate-owner-constants --repository-root ..
+	@cd common && go run ./authorization/cmd/manifest --generate-tool-catalog --repository-root ..
 	@cd common && go run ./authorization/cmd/manifest --generate-sql-seed --repository-root ..
 
 test-authorization: ## 校验 IAM Manifest、生成常量和授权覆盖报告
 	@cd common && go test ./authorization/... -count=1
 	@cd common && go run ./authorization/cmd/manifest --check --repository-root .. > /tmp/addp-authorization-catalog.json
 	@cd common && go run ./authorization/cmd/manifest --check-owner-constants --repository-root .. > /tmp/addp-owner-constants.json
+	@cd common && go run ./authorization/cmd/manifest --check-tool-catalog --repository-root .. > /tmp/addp-system-tool-catalog.json
 	@cd common && go run ./authorization/cmd/manifest --check-sql-seed --repository-root .. > /tmp/addp-iam-catalog-seed.json
 	@cd common && go run ./authorization/cmd/manifest --coverage-report --repository-root .. > /tmp/addp-authorization-coverage.json
 	@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all

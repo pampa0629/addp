@@ -21,12 +21,25 @@ CREATE TABLE IF NOT EXISTS transfer.schema_change_requests (
     detected_at TIMESTAMPTZ NOT NULL,
     applied_at TIMESTAMPTZ,
     metadata_scan_status VARCHAR(20) NOT NULL DEFAULT '',
+    metadata_scan_claim_token VARCHAR(36) NOT NULL DEFAULT '',
+    metadata_scan_lease_until TIMESTAMPTZ,
+    metadata_scan_attempt BIGINT NOT NULL DEFAULT 0,
     metadata_scan_execution_id VARCHAR(36) NOT NULL DEFAULT '',
     metadata_scan_error TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_transfer_schema_change_capture
-        FOREIGN KEY (capture_resource_id) REFERENCES transfer.capture_resources(id) ON DELETE CASCADE
+        FOREIGN KEY (capture_resource_id) REFERENCES transfer.capture_resources(id) ON DELETE CASCADE,
+    CONSTRAINT chk_transfer_schema_change_meta_scan_status
+        CHECK (metadata_scan_status IN ('', 'pending', 'running', 'success', 'failed')),
+    CONSTRAINT chk_transfer_schema_change_meta_scan_attempt
+        CHECK (metadata_scan_attempt >= 0),
+    CONSTRAINT chk_transfer_schema_change_meta_scan_claim
+        CHECK (
+            (metadata_scan_status = 'running' AND metadata_scan_claim_token <> '' AND metadata_scan_lease_until IS NOT NULL)
+            OR
+            (metadata_scan_status <> 'running' AND metadata_scan_claim_token = '' AND metadata_scan_lease_until IS NULL)
+        )
 );
 
 CREATE INDEX IF NOT EXISTS idx_transfer_schema_change_task

@@ -1,6 +1,6 @@
 # ADDP IAM Permission Manifest 与发布期聚合设计
 
-更新日期：2026-07-24
+更新日期：2026-07-25
 
 状态：技术设计已确认，Manifest、内置 Role、owner-local 常量和首批确定性 SQL Seed 已实现。本文落实 [IAM Permission 目录与 Role 矩阵设计](addp-IAM权限目录与角色矩阵设计.md) 的“模块所有、单路聚合”决策，确定 Manifest Schema、System 最小知识边界、内置 Role 模板、生成产物和目录升级规则。
 
@@ -33,6 +33,7 @@
 | 内置 Role | `system/authorization/builtin_roles.yaml` 由 System IAM 拥有，可组合跨模块 Permission Key |
 | Tenant Role | Tenant 自定义 Role 只存在于 System 数据库，不回写模块 Manifest |
 | 代码常量 | 每个 owner 只生成自身 Permission 常量，不生成全平台业务常量包 |
+| Tool 运行时目录 | 从唯一 Tool Manifest 生成 System 只读 Go 投影，不由 Runtime 扫描仓库 |
 | 目录变更 | 只通过向前 SQL migration；已发布 Permission 不删除、不改 Key，只能显式禁用 |
 | 模块状态 | 启停、心跳和健康状态不改变 Permission 或 Role 语义 |
 
@@ -241,6 +242,7 @@ Role 条目必须按 Key 排序，Permission Key 列表按字典序排序且无�
 | 聚合目录摘要和冲突报告 | CI 构建产物，不作为运行时第二事实源 |
 | Swagger / OpenAPI required Permission 覆盖报告 | 对应 API owner |
 | Tool Manifest Permission / audience / delegable 报告 | 对应 Tool owner |
+| `system/backend/internal/authorization/tools_generated.go` | System Runtime 使用的 Tool 授权只读投影 |
 | 内置 Role 矩阵一致性报告 | System IAM |
 
 生成的 owner-local 常量只能包含当前 owner 的 Permission。System 业务代码除自身 Permission 外不生成全平台常量；System 的 Role Service 从数据库目录读取 Key 和元数据。
@@ -287,7 +289,7 @@ go run ./authorization/cmd/manifest --check --repository-root ..
 
 ### 6.5 常量与覆盖报告命令
 
-同一 CLI 扩展为六个互斥模式：
+同一 CLI 扩展为八个互斥模式：
 
 ```bash
 cd common
@@ -303,6 +305,12 @@ go run ./authorization/cmd/manifest --check-owner-constants --repository-root ..
 
 # 只读输出路由/Swagger/Tool 授权覆盖报告
 go run ./authorization/cmd/manifest --coverage-report --repository-root ..
+
+# 生成 System Runtime Tool 授权目录
+go run ./authorization/cmd/manifest --generate-tool-catalog --repository-root ..
+
+# 只读检查 System Runtime Tool 授权目录字节漂移
+go run ./authorization/cmd/manifest --check-tool-catalog --repository-root ..
 
 # 写入首批 IAM Catalog Seed SQL
 go run ./authorization/cmd/manifest --generate-sql-seed --repository-root ..
@@ -403,6 +411,7 @@ Module Registry 的 `up/down`、心跳和路由健康只描述可用性，不修
 - published Key 被删除、改名、换 owner 或内容变化但版本未递增时失败；
 - 内置 Role 引用不存在/disabled Permission、Scope 交集为空或误含 internal Permission 时失败；
 - owner-local 常量只包含自身 Key，生成两次字节一致；
+- System Tool 授权目录只包含通过 Manifest 校验的 Tool，生成两次字节一致且返回值不能暴露可变内部切片；
 - SQL seed 与所有 Manifest、Role 模板完全一致，生成两次字节一致；
 - Swagger 路由、Tool Manifest 和 owner Permission Manifest 一致，并在 IAM Runtime 切换前使覆盖报告 `complete=true`；
 - 模块 down 不改变目录；显式禁用 Permission 后 AuthContext 不再投影并使旧 Family 失效。
@@ -430,7 +439,7 @@ Module Registry 的 `up/down`、心跳和路由健康只描述可用性，不修
 3. Manifest 固定使用 `<module>/authorization/permissions.yaml` 和 `addp.permission_manifest/v1`。
 4. `owner_module` 位于 Manifest 根对象；Permission `action` 从 Key 派生，不在条目中重复。
 5. 已发布 Permission 永不删除、改名、换 owner 或复用；停止使用时显式 `disabled`。
-6. 唯一发布期聚合器生成 SQL seed、owner-local 常量和契约校验产物；不采用运行时注册或 reconciliation。
+6. 唯一发布期聚合器生成 SQL seed、owner-local 常量、System Tool 授权目录和契约校验产物；不采用运行时注册或 reconciliation。
 7. System 只管理 Permission 契约、Role 组合、Assignment 和 AuthContext，不知道路由实现、资源结构或 owner Policy。
 8. 模块健康状态不改变授权目录；永久下线必须通过显式向前 migration。
 9. 未来可安装模块复用同一 Manifest 和 migration 路线，不另建动态 Permission 注册协议。
@@ -444,6 +453,7 @@ Module Registry 的 `up/down`、心跳和路由健康只描述可用性，不修
 - 稳定 owner 白名单中 15 个模块的首批 Permission Manifest 已全部落地，包含 System 的 102 个完整 Permission 和其他 owner 当前确认的首批真实 Permission，合计 240 个；
 - `system/authorization/builtin_roles.yaml` 的首批 18 个无缺失依赖 Role：9 个平台/Tenant 管理 Role，以及全部 9 个首批业务 Role；
 - 15 份 owner-local Go/Python Permission 常量生成物、写入模式和只读字节漂移检查；
+- System Runtime Tool 授权目录的确定性 Go 生成物，以及 `--generate-tool-catalog` / `--check-tool-catalog` 字节漂移门禁；
 - `addp.authorization_coverage_report/v1` 路由/Swagger/Tool 授权覆盖报告，以及根 `test-authorization` CI 入口；
 - Asset 的 34 条公开业务路由已改为真实命名 Handler 并完成 Swagger IAM 投影；Agent 11 条、Copilot 6 条 FastAPI Operation 已生成确定性 OpenAPI 投影；
 - 9 个 Tool Scope 已全部映射到精确、可委托的 owner Permission；Copilot SQL/Navigate 已删除请求体身份，Graph 到 Copilot KG 抽取已改为内部服务认证；

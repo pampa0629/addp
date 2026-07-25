@@ -19,6 +19,17 @@ export function createDAGDragNodeBehavior() {
   }
 }
 
+export function validateDAGConnection({ graph, sourceId, targetId, hasLoop } = {}) {
+  if (!sourceId || !targetId || sourceId === targetId || hasLoop?.(sourceId, targetId)) {
+    return 'loop'
+  }
+  const duplicated = (graph?.getEdges?.() || []).some(edge => {
+    const model = edge.getModel()
+    return model.source === sourceId && model.target === targetId
+  })
+  return duplicated ? 'duplicate' : true
+}
+
 export function createDAGDirectEdgeBehavior({
   resolveSource,
   resolveTarget,

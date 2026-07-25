@@ -94,6 +94,24 @@
 				</el-button>
 			</div>
 
+			<div v-else-if="schemaChangeScanNotice" class="schema-change-panel">
+				<el-alert
+					:title="t(`transfer.taskDetail.schemaScan.${schemaChangeScanNotice.state}Title`)"
+					:description="t(`transfer.taskDetail.schemaScan.${schemaChangeScanNotice.state}Description`, { attempt: schemaChangeScanNotice.attempt })"
+					:type="schemaChangeScanNotice.state === 'failed' ? 'error' : 'warning'"
+					:closable="false"
+					show-icon
+				/>
+				<el-button
+					v-if="schemaChangeScanNotice.retryable"
+					type="primary"
+					:loading="schemaChangeSubmitting"
+					@click="retrySchemaChangeScan"
+				>
+					{{ t('transfer.taskDetail.schemaScan.retry') }}
+				</el-button>
+			</div>
+
 			<el-alert
 				v-else-if="captureHealthWarning"
 				:title="t('transfer.taskDetail.captureHealthWarningTitle')"
@@ -378,7 +396,7 @@ import { formatDate } from '@common-ui'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType, getExecutionTagType, getExecutionLabel } from '@/utils/formatters'
 import { buildCDCStopRequest, continuousStartDisabledReason, getCDCCaptureHealthWarning, isCDCSchemaBlocked as isCDCSchemaBlockedTask, isDatabaseCDCTask } from '@/utils/cdcTask.mjs'
 import { parseTransferLocator } from '@/utils/resourceLocator'
-import { buildSchemaChangeApproval } from '@/utils/schemaChange.mjs'
+import { buildSchemaChangeApproval, buildSchemaChangeScanRetry, getSchemaChangeScanNotice } from '@/utils/schemaChange.mjs'
 
 const { t } = useI18n()
 
@@ -420,6 +438,7 @@ const isDeadLetterTask = computed(() => isBusinessKafkaRecordTask.value && recor
 const canCreateReplay = computed(() => isBusinessKafkaRecordTask.value && recordFailureMode.value === 'block')
 const isDatabaseCDC = computed(() => isDatabaseCDCTask(task.value))
 const isCDCSchemaBlocked = computed(() => isCDCSchemaBlockedTask(task.value))
+const schemaChangeScanNotice = computed(() => getSchemaChangeScanNotice(schemaChange.value))
 const captureHealthWarning = computed(() => getCDCCaptureHealthWarning(task.value))
 const isManualTask = computed(() => !isContinuousTask.value && !task.value?.schedule)
 const canStartSchedule = computed(() => !task.value?.enabled)
@@ -472,7 +491,7 @@ const stopAutoRefresh = () => {
 }
 
 const syncAutoRefresh = () => {
-  if (isTaskRunning(task.value)) {
+  if (isTaskRunning(task.value) || schemaChangeScanNotice.value?.state === 'running') {
     if (!refreshTimer) {
       refreshTimer = setInterval(loadTask, 5000)
     }
@@ -497,7 +516,7 @@ const loadTask = async () => {
       deadLetters.value = []
       deadLetterTotal.value = 0
     }
-		if (isCDCSchemaBlocked.value) {
+		if (isDatabaseCDC.value) {
 			await loadSchemaChange()
 		} else {
 			schemaChange.value = null
@@ -509,7 +528,7 @@ const loadTask = async () => {
 }
 
 const loadSchemaChange = async () => {
-	if (!route.params.id || !isCDCSchemaBlocked.value) return
+	if (!route.params.id || !isDatabaseCDC.value) return
 	schemaChangeLoading.value = true
 	try {
 		schemaChange.value = await taskAPI.schemaChange(route.params.id)
@@ -547,10 +566,30 @@ const submitSchemaChange = async () => {
 		schemaChangeDialogVisible.value = false
 		ElMessage.success(result?.metadata_scan_status === 'failed'
 			? t('transfer.taskDetail.schemaChangeAppliedScanFailed')
-			: t('transfer.taskDetail.schemaChangeApplied'))
+			: ['pending', 'running'].includes(result?.metadata_scan_status)
+				? t('transfer.taskDetail.schemaChangeAppliedScanRunning')
+				: t('transfer.taskDetail.schemaChangeApplied'))
 		await loadTask()
 	} catch (error) {
 		if (error !== 'cancel') console.error('审批结构变更失败:', error)
+	} finally {
+		schemaChangeSubmitting.value = false
+	}
+}
+
+const retrySchemaChangeScan = async () => {
+	const approval = buildSchemaChangeScanRetry(schemaChange.value)
+	if (!approval) return
+	schemaChangeSubmitting.value = true
+	try {
+		const result = await taskAPI.approveSchemaChange(route.params.id, approval)
+		schemaChange.value = result
+		ElMessage.success(result?.metadata_scan_status === 'failed'
+			? t('transfer.taskDetail.schemaChangeAppliedScanFailed')
+			: ['pending', 'running'].includes(result?.metadata_scan_status)
+				? t('transfer.taskDetail.schemaChangeAppliedScanRunning')
+				: t('transfer.taskDetail.schemaScan.retrySubmitted'))
+		await loadTask()
 	} finally {
 		schemaChangeSubmitting.value = false
 	}

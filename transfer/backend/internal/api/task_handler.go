@@ -284,7 +284,7 @@ func (h *TaskHandler) ReplayTask(c *gin.Context) {
 
 // GetSchemaChange 获取当前数据库 CDC schema change request。
 // @Summary 获取 CDC 结构变更请求 | Get CDC schema change request
-// @Description 返回当前 task/generation 最新的 schema change request。只有当前阻塞消息实际包含的新增 nullable 非 geometry 字段可审批；其他变化保持不可恢复阻塞。| Return the latest schema change request for the current task/generation. Only nullable non-geometry fields present in the blocked record are approvable; other changes remain unrecoverable.
+// @Description 只读返回当前 task/generation 最新的 schema change request。只有当前阻塞消息实际包含的新增 nullable 非 geometry 字段可审批；Meta scan claim 状态只观测、不在 GET 中触发。| Read the latest schema change request for the current task/generation without side effects. Only nullable non-geometry fields present in the blocked record are approvable. Meta scan claim state is observed but never triggered by GET.
 // @Tags         任务管理 | Task Management
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
@@ -308,7 +308,7 @@ func (h *TaskHandler) GetSchemaChange(c *gin.Context) {
 
 // ApproveSchemaChange 审批数据库 CDC additive schema migration。
 // @Summary 审批 CDC additive 结构变更 | Approve CDC additive schema change
-// @Description 显式确认全部新增源字段的目标映射，幂等新增 PostgreSQL nullable 列并提交新的 mapping revision。成功后任务进入 paused，必须使用既有 Resume API 从原 committed offset 恢复。| Explicitly approve target mappings for every added source field, idempotently add nullable PostgreSQL columns, and commit a new mapping revision. The task becomes paused and must be resumed through the existing Resume API from the original committed offset.
+// @Description 显式确认全部新增源字段的目标映射，幂等新增 PostgreSQL nullable 列并提交新的 mapping revision。成功后任务进入 paused，必须使用既有 Resume API 从原 committed offset 恢复；响应同时返回 Meta scan 的 pending/running/success/failed 状态和 attempt。| Explicitly approve target mappings for every added source field, idempotently add nullable PostgreSQL columns, and commit a new mapping revision. The task becomes paused and must be resumed through the existing Resume API from the original committed offset. The response also includes the pending/running/success/failed Meta scan status and attempt.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json

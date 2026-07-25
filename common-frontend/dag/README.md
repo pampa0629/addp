@@ -103,6 +103,7 @@ const dagData = {
 - `useDAGLayout(graph)` - 捕获和恢复节点坐标及画布视口
 - `createDAGDirectEdgeBehavior(options)` - 直接拖拽连线行为
 - `createDAGDragNodeBehavior()` - 与端口拖拽互斥的节点拖动行为
+- `validateDAGConnection(options)` - 统一校验无效端点、自环、环路和重复边
 
 ### 组件
 

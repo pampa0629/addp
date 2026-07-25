@@ -53,7 +53,7 @@ OAuth Client 独立存储在 `system.oauth_clients`，不复用 `applications` �
 4. 创建新的 Refresh Token 和 Access Token；
 5. 记录 replaced_by 关系。
 
-已使用 Refresh Token 再次出现时视为重用攻击，立即撤销整个 family 及其全部 Access Token 和 Browser Resource Access Ticket。正常 Web Refresh 轮换也立即撤销上一组资源票据；撤销或轮换时同步删除对应 Redis `auth:context:<token_hash>` 缓存。
+已使用 Refresh Token 再次出现时视为重用攻击，立即撤销整个 family 及其全部 Access Token、Delegated Access Token 和 Browser Resource Access Ticket。正常 Web Refresh 轮换也立即撤销上一组 Access Token、由其派生的 Delegated Access Token 和资源票据；第一阶段不缓存 AuthContext，因此没有 Redis AuthContext 缓存失效旁路。
 
 ## 四、Web 登录与 Cookie
 
@@ -160,7 +160,7 @@ OAuth 限流状态统一存放在 Infra Redis，保证多个 System 实例共享
 
 第一方 Web Token 在 `addp.auth_context/v1` 中返回 `token.type=first_party_access_token`、`client.client_id=addp-web`、`client.audiences=["addp.api"]`、`client.scope_mode=unrestricted` 和空 scopes。OAuth Token 返回 `token.type=oauth_access_token`、真实 `client_id`、`client.audiences=["addp.api"]`、`client.scope_mode=restricted` 和批准的 scopes。
 
-Scope 仍只能缩小权限；owner 模块对 Delegated Access Token 的 audience、Scope 和路由默认拒绝已在阶段 4.3 第一段完成，写入审批由阶段 4.3 第二段完成。
+Scope 仍只能缩小权限。Delegated Access Token 的 `client_id` 和 `delegation.delegated_by_client_id` 都投影源 Family 的 Client；唯一 audience 和 Scope 投影委托记录。owner 的挂载式 Delegated Route Guard 对 Delegated Token 强制 owner audience、Tool Scope 精确集合及 Role Permission all-of，普通 User Token 继续原 Permission 与资源授权路径；写入审批由 owner Handler 完成。
 
 ## 九、受委托访问令牌
 
@@ -185,14 +185,19 @@ Authorization: Bearer <current_user_access_token>
 规则如下：
 
 1. `audience` 固定为 Tool Manifest 的 `owner` 模块名；Scope 固定使用稳定 Tool 名，不定义第二套能力名称。
-2. System 只允许签发已注册的 `audience + scope` 组合，客户端不能请求任意 Scope。
+2. System 只从发布期生成的只读 Tool Catalog 解析 Tool；System Runtime 不扫描仓库、不读取 Python Manifest 路径，也不维护第二份硬编码 Scope 清单。
 3. Principal、会话模式、当前 Tenant Membership、Role/Permission 授权事实、`client_id` 和 `delegated_by` 均由源 Access Token 派生，客户端不得提交。
 4. OAuth 源令牌的 `delegated_by` 为真实 `client_id`；第一方 Web 源令牌固定为 `addp-web`。该字段不接受 Agent 自报身份。
 5. 第一方 Web Token 的空 Scope 表示当前用户会话未被 OAuth Scope 额外收窄；OAuth Token 必须具有 `addp.api` 或覆盖所请求 Tool Scope。
 6. Resource Access Ticket 和 Delegated Access Token 不得再次签发委托令牌，禁止委托链。
 7. Delegated Access Token 不创建 Refresh Token Family、不可刷新、不可兑换，只用于一次短期 Tool 调用边界。
 8. System 解析委托令牌时必须同时校验令牌、源 Access Token、源 Family、Principal、会话模式、当前 Tenant Membership 和授权事实仍然有效。
-9. owner 模块对委托令牌默认拒绝，只在 Tool Manifest 对应的精确路由校验 audience、全部 required scopes 和必要审批后放行；审批闭环尚未启用的 write Tool 必须继续返回 403。非委托的第一方 Web 和 OAuth API 调用继续执行原 Principal 的 Role Permission 与 owner 资源授权路径。
+9. 请求必须且只能包含一个 Tool Scope；Catalog 中的 `audience` 必须等于请求 audience，`required_scopes` 必须精确等于请求 Scope，不能合并多个 Tool 或接受额外 Scope。
+10. System 在同一个数据库事务中锁定并复核 Principal、源 Access Token 和源 Family，按当前有效 Role Assignment 校验 Tool `required_permissions` all-of，创建委托记录并追加 `iam.delegation.issued` 安全审计。任一事实失效或写入失败时整体回滚。
+11. `(agent_run_id, tool_call_id)` 是一次 Tool Call 的幂等冲突边界；已存在时返回 HTTP 409，不返回或复用之前的明文 Token。
+12. owner 模块对委托令牌默认拒绝，只在挂载 Delegated Route Guard 的 Tool Manifest 精确路由校验唯一 audience、required scopes 精确集合和 Role Permission all-of 后进入 Handler；额外 Scope 也拒绝。必要审批继续由 owner Handler 校验，审批闭环尚未启用的 write Tool 必须返回 403。非委托的第一方 Web 和 OAuth API 调用继续执行原 Principal 的 Role Permission 与 owner 资源授权路径。
+
+委托签发错误语义固定为：非法 JSON、未知 Tool 或 audience/Scope 不匹配返回 400 + `invalid_delegation_request`；源 Token 无效返回 401 + `authentication_required`；Role Permission 不足或 OAuth Scope 扩张返回 403 + `permission_denied`；AgentRun/ToolCall 冲突返回 409 + `delegation_conflict`；内部故障返回 500 + `delegation_internal_error`。稳定机器语义放在可选 `error_code`，对外 `error` 使用国际化消息，不得暴露 Token 失效、授权事实或数据库约束的内部原因。
 
 成功响应只返回短期委托令牌及其明确边界：
 

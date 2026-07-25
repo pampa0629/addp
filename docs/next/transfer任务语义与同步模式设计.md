@@ -2,7 +2,7 @@
 
 更新时间：2026-07-25
 
-状态：阶段 0/1、工作包 2A-2D、3A-3E、4A-4G 已完成。业务 Kafka DLQ、只读管理、payload availability、task-owned cleanup 与 task-private runtime/control state 生命周期治理、隔离目标 bounded replay v1，以及 PostgreSQL/MySQL 数据库 CDC 与人工 additive schema migration 已完成公开 API、Console 操作闭环和真实全生命周期 E2E；Oracle CDC 已明确延期，不进入当前实施序列。
+状态：阶段 0/1、工作包 2A-2D、3A-3E、4A-4H 已完成。业务 Kafka DLQ、只读管理、payload availability、task-owned cleanup 与 task-private runtime/control state 生命周期治理、隔离目标 bounded replay v1，以及 PostgreSQL/MySQL 数据库 CDC、人工 additive schema migration 和 schema blocked 统一告警闭环已完成公开 API、Console 操作闭环和真实全生命周期 E2E；Oracle CDC 已明确延期，不进入当前实施序列。
 
 本文整理 Transfer 全量、批增量、Kafka 流式源、数据库 CDC 和持续运行时的概念与推荐技术路线。bounded/watermark、业务 Kafka continuous、业务 Kafka DLQ、隔离目标 bounded replay，以及 PostgreSQL/MySQL CDC v1 已完成；Oracle CDC 已延期，自动 DDL 仍未实现。
 
@@ -1155,8 +1155,16 @@ MySQL CDC 沿用 PostgreSQL CDC 的公开任务形态、Infra Kafka、ChangeEven
 3. 唯一审批 API 为 `POST /task-definitions/:id/schema-change/approve`。请求必须逐字段提交 source/target/`target_type`/`nullable=true` 并完整覆盖 pending unexpected fields；普通 UpdateTask 继续拒绝修改已创建 generation 的 CDC config。
 4. 服务端重新读取源表，验证既有 mapping/主键未变化、审批字段仍存在且 nullable、类型受 provider v1 支持；目标 PostgreSQL 复用 `PartitionedTableChangeApplyProvider.Prepare...` 的既有安全 schema evolution，只新增 nullable 列，不建立私有 DDL。
 5. 外部目标 DDL 与 Infra PostgreSQL 通过 request/task 行锁和幂等 retry 收敛：目标列已存在时必须完全兼容；Infra 事务提交时追加 mapping、递增 generation `schema_revision`、标记 request applied，并把 task 置为 paused。审批不隐式恢复，用户通过既有 Resume 从原 committed offset 创建新 execution。
-6. DDL 成功后触发目标表 Meta deep scan；扫描失败不回滚 schema revision，但必须记录为可观测结果。真实 PostgreSQL/MySQL CDC E2E 必须验证 blocked offset 未推进、审批后目标加列、Resume 重放当前消息、后续数据继续同步，以及不安全变化继续被拒绝。
-7. 已完成：新增 `GET /task-definitions/:id/schema-change` 和唯一审批 API，Console 任务详情提供逐字段确认；repository/service/API/source inspection、cleanup 和前端行为测试已覆盖。真实 PostgreSQL 与 MySQL CDC E2E 均验证 pending request、blocked offset 不推进、审批、重复审批幂等、目标加列、任务进入 paused、Resume 重放阻塞消息、后续同步和 Stop cleanup；Swagger 27 个公开路由覆盖一致。
+6. DDL 成功后触发目标表 Meta deep scan；扫描失败不回滚 schema revision，但必须记录为可观测结果。触发使用 request 持久化 `pending -> running(token, lease) -> success|failed` claim；并发调用只能有一个 claimant，过期 `running` 只由相同重复审批 POST 接管，GET 保持只读，迟到 claimant 不能覆盖新结果。真实 Meta 失败不由重复审批自动循环重试，用户使用 Meta 既有手动扫描能力；claim TTL 只属于部署配置。真实 PostgreSQL/MySQL CDC E2E 必须验证 blocked offset 未推进、审批后目标加列、Resume 重放当前消息、后续数据继续同步，以及不安全变化继续被拒绝。
+7. 已完成：新增 `GET /task-definitions/:id/schema-change` 和唯一审批 API，Console 任务详情提供逐字段确认；repository/service/API/source inspection、cleanup 和前端行为测试已覆盖。真实 PostgreSQL 与 MySQL CDC E2E 均验证 pending request、blocked offset 不推进、审批、重复审批幂等、目标加列、任务进入 paused、Resume 重放阻塞消息、后续同步和 Stop cleanup；PostgreSQL E2E 进一步注入“目标 DDL 已提交但 Infra task update 失败”，验证 request/revision/config 整体回滚后两个并发相同审批收敛为同一 request、单次 revision 和单份 mapping。Meta scan claim 已通过 repository 测试覆盖过期接管与旧 token fencing，并通过真实 PostgreSQL E2E 验证并发审批只触发一次 Meta 调用、重复审批 POST 接管过期 claim；MySQL E2E 验证真实 Meta 失败后重复审批不自动重试。Swagger 27 个公开路由覆盖一致。
+
+### 工作包 4H：Schema change 公共观测与告警闭环（已完成）
+
+1. Transfer 将 schema change 的跨模块事实固定投影到触发阻塞的 `common.task_executions.metadata.continuous.schema_change`，不把 private request 表暴露给 Monitor。投影包含 request、generation/revision、源 position、diff、`status=pending|applied|stopped` 和 Meta scan 提交状态，不包含 claim token 或内部错误文本。
+2. pending request 创建、additive 审批和不可逆 Stop 分别在同一 Infra PostgreSQL 事务内写入 `pending`、`applied`、`stopped`；Meta scan claim/completion 也与 private request 原子更新。Stop 与 schema-blocked worker Finish 通过已持久化 `desired_state=stopped` fencing，覆盖任意提交顺序；lease 释放或过期后，Stop 在 capture cleanup 前统一取消遗留 active execution、关闭 pending 投影并把 task 收敛到 idle。若 worker 在 request commit 后、Finish 前失联，lease expiry reconciler 将原 execution/task 收敛为 schema blocked，禁止创建或领取 recovery execution。任何投影失败都会回滚对应 private 状态变化，不能形成双轨事实。
+3. Monitor continuous evaluator 保留最新 active execution 的 runtime/retention/checkpoint 信号，另外只从终态 execution 的 `schema_change.status=pending` 派生 `schema_change_blocked` 严重告警。审批或 Stop 使信号消失后，经统一 incident reconciler 自动恢复并生成既有 lifecycle event/outbox；普通 continuous failed execution 仍不进入通用失败规则。
+4. Meta scan `failed` 当前只表示自动提交扫描失败，Transfer 任务详情继续提供可观察结果。手工 Meta 扫描尚无关联完成回执，因此不创建无法可靠恢复的 Monitor incident，也不以 Resume、新 execution 或时间流逝猜测恢复。
+5. Transfer repository 测试覆盖 Meta claim/result 投影和 Stop 收敛；Monitor SQLite/PostgreSQL 测试覆盖终态 JSON/JSONB 查询、incident 打开与恢复；共享前端测试覆盖 pending/applied/stopped 信号归一化。PostgreSQL/MySQL 真实 CDC E2E 验证原阻塞 execution 的 pending/applied 与 Meta attempt/execution UUID 投影，且 Stop 后 connector/topic/group/ACL/capture/request/execution 测试数据均清理。
 
 ### 工作包 3E：MySQL CDC（已完成）
 
@@ -1330,6 +1338,8 @@ DLQ 不保存伪造的“已回放”状态，也不作为完整 replay source�
 结论：默认仍是严格 `fail`，不增加 `manual|additive` 任务配置开关。检测到 schema change 时先阻塞 partition、保存 schema diff，并以 `schema_change_blocked` 结束 execution；任务进入 `status=blocked`，当前消息和 committed offset 不推进。
 
 唯一原 generation 恢复路线是人工确认 additive migration：只接受当前阻塞消息实际包含的新增 nullable 非 geometry 字段，服务端持久化 pending request，用户逐字段确认目标映射后，服务端重新验证源事实并复用目标 Provider 的安全 schema evolution。审批完成后 mapping revision 与 task config 在 Infra 事务内更新，任务进入 paused，用户再通过既有 Resume 从原 committed offset 恢复。
+
+跨模块观测只使用触发阻塞的 `common.task_executions.metadata.continuous.schema_change` 投影。Transfer 在创建 private request 的同一事务内写入 `status=pending`、request/revision/source position/diff；审批时在同一事务内改为 `status=applied`，不可逆 Stop 时改为 `status=stopped`，并继续投影 Meta scan 的提交状态。Monitor 仅将 `pending` 解释为 `schema_change_blocked` 严重告警，`applied|stopped` 自动恢复，不读取 Transfer 私表。Meta scan `failed` 目前只表示提交扫描失败；由于手工 Meta 扫描没有回写 Transfer 的关联完成事实，不创建无法可靠恢复的 Monitor incident。
 
 字段删除、类型或主键变化、非 nullable/geometry 新增、envelope/source 漂移继续不可恢复，只能 Stop 后新建任务和目标表。真正全自动 DDL 仍后置；若未来需要，必须先采用能把 schema version 与每条 Kafka record/offset 绑定的内部 envelope，不能通过运行时查询最新源 schema 猜测历史消息结构。
 

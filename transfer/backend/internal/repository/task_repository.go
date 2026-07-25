@@ -138,6 +138,9 @@ func (r *TaskRepository) SetContinuousDesiredState(ctx context.Context, taskID, 
 		}
 		updates := map[string]interface{}{"desired_state": desired}
 		if desired == models.TaskDesiredStateStopped && task.Status == models.TaskStatusBlocked {
+			if err := StopPendingSchemaChangeExecutionProjectionTx(tx, task.ID, task.TenantID, time.Now()); err != nil {
+				return err
+			}
 			updates["status"] = models.TaskStatusIdle
 		}
 		if desired != models.TaskDesiredStateRunning && task.LastExecutionID != nil {
@@ -196,6 +199,57 @@ func (r *TaskRepository) WaitContinuousRuntimeStopped(ctx context.Context, taskI
 		case <-ticker.C:
 		}
 	}
+}
+
+// FinalizeContinuousStop 在没有有效 runtime owner 后收敛遗留 execution、schema-change 投影和 task 状态。
+func (r *TaskRepository) FinalizeContinuousStop(ctx context.Context, taskID, tenantID uint, stopReason string, now time.Time) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task models.TransferTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND tenant_id = ?", taskID, tenantID).First(&task).Error; err != nil {
+			return commonrepo.WrapDBError(err)
+		}
+		if task.DesiredState != models.TaskDesiredStateStopped {
+			return fmt.Errorf("continuous task %d stop finalization requires desired_state=stopped", taskID)
+		}
+		var activeLeaseCount int64
+		if err := tx.Model(&models.RuntimeLease{}).
+			Where("task_id = ? AND owner_instance_id <> '' AND lease_until > ?", taskID, now).
+			Count(&activeLeaseCount).Error; err != nil {
+			return err
+		}
+		if activeLeaseCount != 0 {
+			return fmt.Errorf("continuous task %d still has an active runtime lease", taskID)
+		}
+		if err := StopPendingSchemaChangeExecutionProjectionTx(tx, task.ID, task.TenantID, now); err != nil {
+			return err
+		}
+		updates := map[string]interface{}{"status": models.TaskStatusIdle}
+		if task.LastExecutionID != nil {
+			var execution commonExecution.TaskExecution
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("execution_id = ? AND tenant_id = ?", *task.LastExecutionID, tenantID).
+				First(&execution).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			if err == nil && (execution.Status == commonExecution.ExecutionStatusPending || execution.Status == commonExecution.ExecutionStatusRunning) {
+				metadata := execution.Metadata
+				if metadata == nil {
+					metadata = commonModels.JSONMap{}
+				}
+				metadata["stop_reason"] = stopReason
+				if err := tx.Model(&execution).Updates(map[string]interface{}{
+					"status": commonExecution.ExecutionStatusCancelled, "metadata": metadata,
+					"completed_at": now, "updated_at": now,
+				}).Error; err != nil {
+					return err
+				}
+				updates["last_execution_status"] = commonExecution.ExecutionStatusCancelled
+			}
+		}
+		return tx.Model(&task).Updates(updates).Error
+	})
 }
 
 // GetByID 根据 ID 获取任务

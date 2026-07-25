@@ -27,7 +27,8 @@ export {
   createDAGDirectEdgeBehavior,
   createDAGDragNodeBehavior,
   isDAGPortEvent,
-  linkPointPort
+  linkPointPort,
+  validateDAGConnection
 } from './utils/directEdge.js'
 export {
   applyDAGNodePositions,

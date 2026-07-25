@@ -325,6 +325,13 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 	if change.Status != models.SchemaChangeRequestApplied || change.MetadataScanStatus != "failed" {
 		t.Fatalf("applied MySQL schema request=%#v", change)
 	}
+	repeatedChange := cdcDataApproveSchemaChangeViaAPI(t, apiRouter, task.ID, models.SchemaChangeField{
+		Source: "schema_drift", Target: "schema_drift", TargetType: "string", Nullable: true,
+	})
+	if repeatedChange.ID != change.ID || repeatedChange.MetadataScanStatus != models.SchemaChangeMetadataScanFailed ||
+		repeatedChange.MetadataScanAttempt != 1 {
+		t.Fatalf("failed Meta scan was retried by repeated approval: first=%#v repeated=%#v", change, repeatedChange)
+	}
 	fourthExecution := mysqlCDCResumeTaskViaAPI(t, apiRouter, task.ID)
 	fourthClaim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-d", time.Now(), 30*time.Second)
 	if err != nil || fourthClaim == nil || fourthClaim.Execution.ExecutionID != fourthExecution.ExecutionID {

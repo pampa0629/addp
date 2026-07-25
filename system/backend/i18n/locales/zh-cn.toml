@@ -25,6 +25,9 @@ other = "需要增强认证"
 [system.auth.session_conflict]
 other = "会话状态已变化，请重试"
 
+[system.auth.delegation_conflict]
+other = "该工具调用已经签发过委托访问令牌"
+
 [system.auth.internal_error]
 other = "认证服务暂时不可用"
 

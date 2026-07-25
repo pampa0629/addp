@@ -20,6 +20,7 @@ const (
 	MsgTokenRefreshFailed     = "system.auth.token_refresh_failed"
 	MsgStepUpRequired         = "system.auth.step_up_required"
 	MsgSessionConflict        = "system.auth.session_conflict"
+	MsgDelegationConflict     = "system.auth.delegation_conflict"
 	MsgInternalError          = "system.auth.internal_error"
 	MsgInvalidCurrentPassword = "system.auth.invalid_current_password"
 	MsgPasswordUnchanged      = "system.auth.password_unchanged"

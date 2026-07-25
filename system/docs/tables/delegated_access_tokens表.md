@@ -28,15 +28,18 @@ Principal、Tenant Membership、Client、`delegated_by_client_id` 和授权版�
 ## 三、生命周期
 
 1. System 只接受有效的第一方或 OAuth User Access Token 作为源令牌；Resource Access Ticket 和 Delegated Access Token 不能继续委托。
-2. System 校验 audience + Scope 已注册、源 OAuth Scope 未被扩大、AgentRun / ToolCall 非空后创建记录。
-3. 有效期不超过 `DELEGATED_ACCESS_TOKEN_EXPIRE_MINUTES` 和源 Access Token 剩余有效期。
-4. AuthContext 解析同时校验委托令牌、源 Access Token、源 Family、Principal、唯一 Context 和授权版本。
-5. 退出、Refresh Token 重用或 Family 撤销时，关联委托令牌同步撤销，并删除 Redis `auth:context:<token_hash>` 缓存。
+2. System 从发布期生成的只读 Tool Catalog 校验唯一 Tool、audience、精确 Scope、可委托 Permission 映射和源 OAuth Scope，不维护运行时硬编码清单。
+3. System 在一个事务中锁定并复核 Principal、源 Access Token 和 Family，按当前有效 Role Assignment 校验 Tool Permission all-of，创建记录并写入 `iam.delegation.issued` 安全审计；失败整体回滚。
+4. `(agent_run_id, tool_call_id)` 冲突返回 HTTP 409，不复用已经签发且无法再次读取的明文 Token。
+5. 有效期不超过 2 分钟、源 Access Token 剩余有效期和源 Family 剩余有效期。
+6. AuthContext 解析同时校验委托令牌、源 Access Token、源 Family、Principal、唯一 Context 和授权版本。
+7. 退出、Refresh Token 轮换、重用或 Family 撤销时，关联委托令牌同步撤销；第一阶段不缓存 Delegated Token AuthContext。
 
 ## 四、安全边界
 
-- Owner 收到 `auth_type=delegated_access_token` 时默认拒绝。
-- 只有 Tool Manifest 对应的 method + route 可校验 owner audience 和全部 required scopes 后放行。
-- Scope 只缩小权限，Owner 仍必须执行 `user_type`、租户、资源权限和审批校验。
+- AuthContext 固定为 `token.type=delegated_access_token`、源 Family `client_id`、唯一 owner audience、`scope_mode=restricted`、Tool Scope 和非空 `delegation`；`delegated_by_client_id` 必须等于源 Family `client_id`。
+- Owner 收到 Delegated Token 时默认拒绝；只有挂载 Delegated Route Guard 的 Tool Manifest method + route 才校验唯一 owner audience、required scopes 精确集合和 Role Permission all-of 候选后进入 Handler，额外 Scope 同样拒绝。
+- Scope 只缩小权限，Owner Handler 仍必须执行 Assignment Scope、租户、资源 Grant / Policy、Explicit Deny 和审批校验。
+- 普通第一方或 OAuth User Token 继续该路由原有 Permission 与资源授权路径，Guard 不把普通 Token 当成 Delegated Token，也不跳过原授权。
 - Principal、Tenant、Client、`delegated_by_client_id` 不接受客户端提交，也不在本表建立可漂移副本。
 - Owner 日志和 AgentRunStep 可使用 `agent_run_id` / `tool_call_id` 关联同一次 Tool 调用，但不得记录明文 Token。

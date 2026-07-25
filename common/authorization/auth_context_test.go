@@ -73,6 +73,19 @@ func TestValidateOwnerModuleName(t *testing.T) {
 	}
 }
 
+func TestValidateToolScope(t *testing.T) {
+	for _, scope := range []string{"workflow.run", "resource.ancestors.get", "engine2.list_all"} {
+		if err := ValidateToolScope(scope); err != nil {
+			t.Fatalf("ValidateToolScope(%q) error = %v", scope, err)
+		}
+	}
+	for _, scope := range []string{"", "workflow", "Workflow.run", "workflow-run", " workflow.run"} {
+		if err := ValidateToolScope(scope); err == nil {
+			t.Fatalf("ValidateToolScope(%q) accepted invalid scope", scope)
+		}
+	}
+}
+
 func TestCloneAuthContextReturnsDetachedCopy(t *testing.T) {
 	source := validTenantAuthContext()
 	validUntil := source.Authorization.RoleAssignments[0].ValidFrom.Add(time.Hour)
@@ -176,6 +189,44 @@ func TestValidateAuthContextResourceTicketConstraints(t *testing.T) {
 			testCase.mutate(&candidate)
 			if err := ValidateAuthContext(candidate); err == nil {
 				t.Fatal("ValidateAuthContext() accepted invalid Resource Ticket constraints")
+			}
+		})
+	}
+}
+
+func TestValidateAuthContextDelegatedTokenConstraints(t *testing.T) {
+	authContext := validTenantAuthContext()
+	authContext.Token.Type = "delegated_access_token"
+	authContext.Client.Audiences = []string{"develop"}
+	authContext.Client.ScopeMode = "restricted"
+	authContext.Client.Scopes = []string{"workflow.run"}
+	authContext.Delegation = &DelegationFacts{
+		DelegatedByClientID: "addp-web",
+		AgentRunID:          "run-1",
+		ToolCallID:          "call-1",
+	}
+	if err := ValidateAuthContext(authContext); err != nil {
+		t.Fatalf("ValidateAuthContext(delegated token) error = %v", err)
+	}
+
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*AuthContext)
+	}{
+		{name: "client mismatch", mutate: func(value *AuthContext) { value.Delegation.DelegatedByClientID = "addp-cli" }},
+		{name: "invalid audience", mutate: func(value *AuthContext) { value.Client.Audiences = []string{"addp.api"} }},
+		{name: "invalid Tool scope", mutate: func(value *AuthContext) { value.Client.Scopes = []string{"workflow"} }},
+		{name: "missing delegation", mutate: func(value *AuthContext) { value.Delegation = nil }},
+		{name: "service principal", mutate: func(value *AuthContext) {
+			value.Principal.Type = "service_principal"
+			value.Organization.Departments = []DepartmentMembership{}
+		}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			candidate := CloneAuthContext(authContext)
+			testCase.mutate(&candidate)
+			if err := ValidateAuthContext(candidate); err == nil {
+				t.Fatal("ValidateAuthContext() accepted invalid Delegated Token constraints")
 			}
 		})
 	}

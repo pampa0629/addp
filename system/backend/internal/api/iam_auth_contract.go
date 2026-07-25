@@ -63,6 +63,23 @@ type IAMErrorResponse struct {
 	ErrorCode *string `json:"error_code,omitempty"`
 }
 
+type IAMDelegationRequest struct {
+	Audience   string   `json:"audience"`
+	Scopes     []string `json:"scopes"`
+	AgentRunID string   `json:"agent_run_id"`
+	ToolCallID string   `json:"tool_call_id"`
+}
+
+type IAMDelegationResponse struct {
+	AccessToken string   `json:"access_token"`
+	TokenType   string   `json:"token_type"`
+	ExpiresIn   int      `json:"expires_in"`
+	Audience    string   `json:"audience"`
+	Scopes      []string `json:"scopes"`
+	AgentRunID  string   `json:"agent_run_id"`
+	ToolCallID  string   `json:"tool_call_id"`
+}
+
 func newIAMAccessTokenResponse(session *iam.IssuedBrowserSession, now time.Time) (*IAMAccessTokenResponse, error) {
 	if session == nil || !strings.HasPrefix(session.AccessToken, "addp_at_") ||
 		len(session.AccessToken) == len("addp_at_") ||
@@ -75,6 +92,27 @@ func newIAMAccessTokenResponse(session *iam.IssuedBrowserSession, now time.Time)
 		AccessToken: session.AccessToken,
 		TokenType:   "Bearer",
 		ExpiresIn:   secondsUntil(now, session.AccessTokenExpiresAt),
+	}, nil
+}
+
+func newIAMDelegationResponse(
+	issued *iam.IssuedDelegatedAccessToken,
+	now time.Time,
+) (*IAMDelegationResponse, error) {
+	if issued == nil || !strings.HasPrefix(issued.AccessToken, "addp_dat_") ||
+		len(issued.AccessToken) == len("addp_dat_") || issued.TokenType != "Bearer" ||
+		!issued.ExpiresAt.After(now) || issued.Audience == "" || len(issued.Scopes) != 1 ||
+		issued.AgentRunID == "" || issued.ToolCallID == "" {
+		return nil, fmt.Errorf("invalid issued delegated access token")
+	}
+	return &IAMDelegationResponse{
+		AccessToken: issued.AccessToken,
+		TokenType:   issued.TokenType,
+		ExpiresIn:   secondsUntil(now, issued.ExpiresAt),
+		Audience:    issued.Audience,
+		Scopes:      append([]string(nil), issued.Scopes...),
+		AgentRunID:  issued.AgentRunID,
+		ToolCallID:  issued.ToolCallID,
 	}, nil
 }
 

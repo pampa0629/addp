@@ -208,7 +208,8 @@ import {
   useDAGLayout,
   useDAGSelection,
   useDAGViewport,
-  useLoopDetection
+  useLoopDetection,
+  validateDAGConnection
 } from '@addp/common-frontend/dag'
 import modulesApi from '../api/modules'
 import taskProvidersAPI from '../api/taskProviders'
@@ -458,14 +459,12 @@ function usesBooleanSwitch(field) {
 }
 
 function canCreateDependency({ sourceId, targetId }) {
-  if (!sourceId || !targetId || sourceId === targetId || hasLoop(sourceId, targetId)) {
-    return 'loop'
-  }
-  const duplicated = graph.value.getEdges().some(edge => {
-    const model = edge.getModel()
-    return model.source === sourceId && model.target === targetId
+  return validateDAGConnection({
+    graph: graph.value,
+    sourceId,
+    targetId,
+    hasLoop
   })
-  return duplicated ? 'duplicate' : true
 }
 
 function handleConnectionRejected({ reason }) {
@@ -896,7 +895,7 @@ function openCurrentOwnerTask() {
     ElMessage.warning(t('orchestrator.dagEditor.ownerTaskUrlMissing'))
     return
   }
-  if (!canBuildOwnerTaskUrl(rawUrl, currentNode.value)) {
+  if (!canBuildOwnerTaskUrl(rawUrl, currentNode.value, currentOwnerGraphId.value)) {
     ElMessage.warning(t('orchestrator.dagEditor.ownerTaskContextMissing'))
     return
   }

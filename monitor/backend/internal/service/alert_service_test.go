@@ -249,6 +249,36 @@ func TestAlertEvaluationOpensResolvesAndReopensIncident(t *testing.T) {
 	if excludedCount != 0 {
 		t.Fatalf("excluded executions created %d incidents", excludedCount)
 	}
+
+	schemaMetadata := commonModels.JSONMap{"continuous": map[string]interface{}{"schema_change": map[string]interface{}{
+		"request_id": 17, "status": "pending", "from_revision": 1, "to_revision": 2,
+		"source_partition": "0", "source_offset": 23, "unexpected_fields": []interface{}{"new_field"},
+	}}}
+	insertAlertExecution(t, db, 7, "schema-blocked", "102", commonExecution.ExecutionStatusFailed, schemaMetadata, nil, now.Add(8*time.Minute))
+	if err := alertService.Evaluate(context.Background(), now.Add(8*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	var schemaIncident monitorModels.AlertIncident
+	if err := db.Where("signal_code = ? AND source_task_id = ?", "schema_change_blocked", "102").First(&schemaIncident).Error; err != nil {
+		t.Fatal(err)
+	}
+	if schemaIncident.Status != monitorModels.AlertStatusOpen || schemaIncident.Severity != monitorModels.AlertSeverityCritical ||
+		schemaIncident.ExecutionID != "schema-blocked" || schemaIncident.Details["request_id"] != float64(17) {
+		t.Fatalf("schema change incident = %#v", schemaIncident)
+	}
+	schemaMetadata["continuous"].(map[string]interface{})["schema_change"].(map[string]interface{})["status"] = "applied"
+	if err := db.Exec("UPDATE common.task_executions SET metadata = ? WHERE execution_id = ?", schemaMetadata, "schema-blocked").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := alertService.Evaluate(context.Background(), now.Add(9*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&schemaIncident, schemaIncident.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if schemaIncident.Status != monitorModels.AlertStatusResolved || schemaIncident.ResolvedAt == nil {
+		t.Fatalf("approved schema change did not resolve incident = %#v", schemaIncident)
+	}
 }
 
 func insertAlertExecution(t *testing.T, db *gorm.DB, tenantID int, executionID, taskID, status string, metadata commonModels.JSONMap, parent *string, now time.Time) {
@@ -291,6 +321,24 @@ func TestDeriveObservationSignalsUsesOwnerHealthFacts(t *testing.T) {
 	signals := deriveObservationSignals(execution, time.Now())
 	if len(signals) != 3 || signals[0].Code != "recovery_circuit_open" || signals[0].Severity != monitorModels.AlertSeverityCritical {
 		t.Fatalf("signals = %#v", signals)
+	}
+}
+
+func TestDeriveObservationSignalsUsesPendingSchemaChangeProjection(t *testing.T) {
+	taskID := "43"
+	execution := commonExecution.TaskExecution{Status: commonExecution.ExecutionStatusFailed, SourceTaskID: &taskID, Metadata: commonModels.JSONMap{
+		"continuous": map[string]interface{}{"schema_change": map[string]interface{}{
+			"request_id": float64(9), "status": "pending", "unexpected_fields": []interface{}{"new_field"},
+		}},
+	}}
+	signals := deriveObservationSignals(execution, time.Now())
+	if len(signals) != 1 || signals[0].Code != "schema_change_blocked" ||
+		signals[0].Severity != monitorModels.AlertSeverityCritical || signals[0].Details["request_id"] != float64(9) {
+		t.Fatalf("signals = %#v", signals)
+	}
+	execution.Metadata["continuous"].(map[string]interface{})["schema_change"].(map[string]interface{})["status"] = "stopped"
+	if signals := deriveObservationSignals(execution, time.Now()); len(signals) != 0 {
+		t.Fatalf("stopped schema change signals = %#v", signals)
 	}
 }
 

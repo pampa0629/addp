@@ -177,6 +177,18 @@ func TestIAMAuthHandlerContract(t *testing.T) {
 		if resourceRecorder.Code != http.StatusOK || runtime.authContextToken != "addp_rat_manager" {
 			t.Fatalf("resource context status=%d token=%q", resourceRecorder.Code, runtime.authContextToken)
 		}
+		delegatedHeaders := map[string]string{"Authorization": "Bearer addp_dat_workflow"}
+		delegatedRecorder := performIAMJSONRequest(
+			t,
+			router,
+			http.MethodGet,
+			"/api/v1/system/auth/context",
+			nil,
+			delegatedHeaders,
+		)
+		if delegatedRecorder.Code != http.StatusOK || runtime.authContextToken != "addp_dat_workflow" {
+			t.Fatalf("delegated context status=%d token=%q", delegatedRecorder.Code, runtime.authContextToken)
+		}
 		optionsRecorder := performIAMJSONRequest(t, router, http.MethodGet, "/api/v1/system/auth/context-options", nil, headers)
 		var response IAMContextOptionsResponse
 		decodeIAMResponse(t, optionsRecorder, &response)

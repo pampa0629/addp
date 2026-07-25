@@ -25,6 +25,7 @@ var (
 	authContextIDPattern         = regexp.MustCompile(`^[1-9][0-9]*$`)
 	authContextRoleKeyPattern    = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
 	authContextPermissionPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2}$`)
+	authContextToolScopePattern  = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
 )
 
 type AuthContext struct {
@@ -282,6 +283,14 @@ func ValidatePermissionKey(permission string) error {
 func ValidateOwnerModuleName(owner string) error {
 	if !moduleNamePattern.MatchString(owner) {
 		return fmt.Errorf("owner module %q is invalid", owner)
+	}
+	return nil
+}
+
+// ValidateToolScope validates the stable Tool name used as a delegated scope.
+func ValidateToolScope(scope string) error {
+	if !authContextToolScopePattern.MatchString(scope) {
+		return fmt.Errorf("tool scope %q is invalid", scope)
 	}
 	return nil
 }
@@ -609,8 +618,16 @@ func validateAuthContextCrossConstraints(authContext AuthContext) error {
 			return fmt.Errorf("oauth access token requires a restricted client")
 		}
 	case "delegated_access_token":
-		if authContext.Client.ScopeMode != "restricted" || len(authContext.Client.Audiences) != 1 || authContext.Delegation == nil {
-			return fmt.Errorf("delegated access token requires one audience, restricted scopes, and delegation")
+		if authContext.Principal.Type != "user" || authContext.Client.ClientID == nil ||
+			authContext.Client.ScopeMode != "restricted" || len(authContext.Client.Audiences) != 1 ||
+			ValidateOwnerModuleName(authContext.Client.Audiences[0]) != nil || authContext.Delegation == nil ||
+			authContext.Delegation.DelegatedByClientID != *authContext.Client.ClientID {
+			return fmt.Errorf("delegated access token requires a user, source client, one owner audience, restricted scopes, and delegation")
+		}
+		for _, scope := range authContext.Client.Scopes {
+			if ValidateToolScope(scope) != nil {
+				return fmt.Errorf("delegated access token contains an invalid Tool scope")
+			}
 		}
 	}
 	if authContext.Token.Type != "delegated_access_token" && authContext.Delegation != nil {

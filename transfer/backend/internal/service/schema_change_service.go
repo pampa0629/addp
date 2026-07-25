@@ -37,12 +37,12 @@ func (s *TaskService) GetSchemaChange(ctx context.Context, taskID, tenantID uint
 	if err != nil {
 		return nil, err
 	}
+	if request.Status != models.SchemaChangeRequestPending {
+		return schemaChangeRequestView(request)
+	}
 	view, err := schemaChangeRequestView(request)
 	if err != nil {
 		return nil, err
-	}
-	if request.Status != models.SchemaChangeRequestPending {
-		return view, nil
 	}
 	unexpected, eligible, err := additiveUnexpectedFields(request.Diff)
 	if err != nil {
@@ -182,7 +182,11 @@ func (s *TaskService) ApproveSchemaChange(ctx context.Context, taskID, tenantID,
 		}
 		if err := tx.Model(&request).Updates(map[string]interface{}{
 			"approved_mappings": approvedMappings, "status": models.SchemaChangeRequestApplied,
-			"applied_by": userID, "applied_at": now, "metadata_scan_status": "pending", "updated_at": now,
+			"applied_by": userID, "applied_at": now,
+			"metadata_scan_status":      models.SchemaChangeMetadataScanPending,
+			"metadata_scan_claim_token": "", "metadata_scan_lease_until": nil,
+			"metadata_scan_attempt": 0, "metadata_scan_execution_id": "", "metadata_scan_error": "",
+			"updated_at": now,
 		}).Error; err != nil {
 			return err
 		}
@@ -208,16 +212,23 @@ func (s *TaskService) ApproveSchemaChange(ctx context.Context, taskID, tenantID,
 		request.Status = models.SchemaChangeRequestApplied
 		request.AppliedBy = &userID
 		request.AppliedAt = &now
-		request.MetadataScanStatus = "pending"
+		request.MetadataScanStatus = models.SchemaChangeMetadataScanPending
+		request.MetadataScanClaimToken = ""
+		request.MetadataScanLeaseUntil = nil
+		request.MetadataScanAttempt = 0
+		request.MetadataScanExecutionID = ""
+		request.MetadataScanError = ""
+		request.UpdatedAt = now
+		if err := repository.UpdateSchemaChangeExecutionProjectionTx(tx, &request); err != nil {
+			return err
+		}
 		applied = request
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	if applied.MetadataScanStatus == "pending" {
-		s.finishSchemaChangeMetaScan(ctx, tenantID, &applied, updatedSpec)
-	}
+	s.reconcileSchemaChangeMetaScanWithSpec(ctx, tenantID, &applied, updatedSpec)
 	return schemaChangeRequestView(&applied)
 }
 
@@ -386,18 +397,40 @@ func schemaChangeRequestView(request *models.SchemaChangeRequest) (*models.Schem
 		Scope: request.Scope, Diff: request.Diff, ApprovedMappings: approved,
 		FromRevision: request.FromRevision, ToRevision: request.ToRevision, Status: request.Status,
 		DetectedAt: request.DetectedAt, AppliedAt: request.AppliedAt,
-		MetadataScanStatus: request.MetadataScanStatus, MetadataScanExecutionID: request.MetadataScanExecutionID,
+		MetadataScanStatus: request.MetadataScanStatus, MetadataScanAttempt: request.MetadataScanAttempt,
+		MetadataScanLeaseUntil: request.MetadataScanLeaseUntil, MetadataScanExecutionID: request.MetadataScanExecutionID,
 	}, nil
 }
 
-func (s *TaskService) finishSchemaChangeMetaScan(ctx context.Context, tenantID uint, request *models.SchemaChangeRequest, spec planner.DatabaseCDCTaskSpec) {
+func (s *TaskService) reconcileSchemaChangeMetaScanWithSpec(ctx context.Context, tenantID uint, request *models.SchemaChangeRequest, spec planner.DatabaseCDCTaskSpec) {
+	if !s.claimSchemaChangeMetaScan(ctx, request) {
+		return
+	}
+	s.runClaimedSchemaChangeMetaScan(ctx, tenantID, request, spec)
+}
+
+func (s *TaskService) claimSchemaChangeMetaScan(ctx context.Context, request *models.SchemaChangeRequest) bool {
+	if request == nil || s.schemaChangeRepo == nil {
+		return false
+	}
+	claimed, ownsClaim, err := s.schemaChangeRepo.ClaimMetadataScan(ctx, request.ID, time.Now(), s.schemaChangeMetaScanClaimTTL())
+	if err != nil {
+		s.logger.Error("failed to claim schema change Meta scan", "request_id", request.ID, "error", err)
+		return false
+	}
+	*request = *claimed
+	return ownsClaim
+}
+
+func (s *TaskService) runClaimedSchemaChangeMetaScan(ctx context.Context, tenantID uint, request *models.SchemaChangeRequest, spec planner.DatabaseCDCTaskSpec) {
+	claimToken := request.MetadataScanClaimToken
 	if s.metaClient == nil {
-		s.updateSchemaChangeMetaScan(request, "failed", "", "meta client is unavailable")
+		s.reconcileSchemaChangeMetaScanResult(ctx, request, claimToken, models.SchemaChangeMetadataScanFailed, "", "meta client is unavailable")
 		return
 	}
 	target, err := spec.Target.EngineRef()
 	if err != nil {
-		s.updateSchemaChangeMetaScan(request, "failed", "", err.Error())
+		s.reconcileSchemaChangeMetaScanResult(ctx, request, claimToken, models.SchemaChangeMetadataScanFailed, "", err.Error())
 		return
 	}
 	run, err := s.metaClient.WithTenantID(tenantID).CreateManualScanRun(commonClient.MetaScanOptions{
@@ -405,23 +438,39 @@ func (s *TaskService) finishSchemaChangeMetaScan(ctx context.Context, tenantID u
 		ScanDepth: "deep", Force: true, TriggerType: commonExecution.TriggerTypeManual, Source: commonExecution.ModuleTransfer,
 	})
 	if err != nil {
-		s.updateSchemaChangeMetaScan(request, "failed", "", err.Error())
+		s.reconcileSchemaChangeMetaScanResult(ctx, request, claimToken, models.SchemaChangeMetadataScanFailed, "", err.Error())
 		return
 	}
-	s.updateSchemaChangeMetaScan(request, "success", run.ExecutionID, "")
+	s.reconcileSchemaChangeMetaScanResult(ctx, request, claimToken, models.SchemaChangeMetadataScanSuccess, run.ExecutionID, "")
 }
 
-func (s *TaskService) updateSchemaChangeMetaScan(request *models.SchemaChangeRequest, status, executionID, errorMessage string) {
-	if request == nil {
+func (s *TaskService) reconcileSchemaChangeMetaScanResult(
+	ctx context.Context,
+	request *models.SchemaChangeRequest,
+	claimToken string,
+	status models.SchemaChangeMetadataScanStatus,
+	executionID, errorMessage string,
+) {
+	if request == nil || claimToken == "" {
 		return
 	}
-	if err := s.db.Model(&models.SchemaChangeRequest{}).Where("id = ?", request.ID).Updates(map[string]interface{}{
-		"metadata_scan_status": status, "metadata_scan_execution_id": executionID,
-		"metadata_scan_error": errorMessage, "updated_at": time.Now(),
-	}).Error; err != nil {
+	completionCtx := context.WithoutCancel(ctx)
+	completed, owned, err := s.schemaChangeRepo.CompleteMetadataScan(
+		completionCtx, request.ID, claimToken, status, executionID, errorMessage, time.Now(),
+	)
+	if err != nil {
 		s.logger.Error("failed to record schema change Meta scan", "request_id", request.ID, "error", err)
 		return
 	}
-	request.MetadataScanStatus = status
-	request.MetadataScanExecutionID = executionID
+	*request = *completed
+	if !owned {
+		s.logger.Warn("ignored stale schema change Meta scan result", "request_id", request.ID)
+	}
+}
+
+func (s *TaskService) schemaChangeMetaScanClaimTTL() time.Duration {
+	if s != nil && s.cfg != nil && s.cfg.SchemaChangeMetaScanClaimTTL > 0 {
+		return s.cfg.SchemaChangeMetaScanClaimTTL
+	}
+	return 2 * time.Minute
 }

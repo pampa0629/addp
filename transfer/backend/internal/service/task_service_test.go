@@ -518,7 +518,7 @@ func newTransferTaskServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("create transfer_tasks table: %v", err)
 	}
 	if err := db.Exec(`
-		CREATE TABLE common.task_executions (
+			CREATE TABLE common.task_executions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			execution_id TEXT NOT NULL UNIQUE,
@@ -549,6 +549,28 @@ func newTransferTaskServiceTestDB(t *testing.T) *gorm.DB {
 		)
 	`).Error; err != nil {
 		t.Fatalf("create task_executions table: %v", err)
+	}
+	if err := db.Exec(`
+			CREATE TABLE transfer.schema_change_requests (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				task_id INTEGER NOT NULL,
+				tenant_id INTEGER NOT NULL,
+				status TEXT NOT NULL,
+				detected_at DATETIME NOT NULL
+			)
+	`).Error; err != nil {
+		t.Fatalf("create schema_change_requests table: %v", err)
+	}
+	if err := db.Exec(`
+			CREATE TABLE transfer.runtime_leases (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				task_id INTEGER NOT NULL,
+				execution_id TEXT NOT NULL,
+				owner_instance_id TEXT NOT NULL DEFAULT '',
+				lease_until DATETIME NOT NULL
+			)
+	`).Error; err != nil {
+		t.Fatalf("create runtime_leases table: %v", err)
 	}
 	return db
 }

@@ -49,7 +49,19 @@ common-python/addp_common/tools/manifest.json
 
 根 Schema 固定为 `addp.tool-manifest/v1`，由 `common-python/addp_common/tools/manifest.py` 严格加载。未知字段、重复 Tool 名称、非法枚举或不一致的授权边界必须拒绝，不能忽略或降级。
 
-### 3.2 Tool 字段
+### 3.2 发布期授权投影
+
+`common-python/addp_common/tools/manifest.json` 是 Tool 名称、owner、audience、Scope 与 Permission 映射的唯一事实源。System 不得维护手写 Tool Scope 清单，也不得在运行时扫描仓库或读取 Python 包路径。
+
+统一发布期聚合器从该 Manifest 和 owner Permission Manifest 生成：
+
+```text
+system/backend/internal/authorization/tools_generated.go
+```
+
+该文件是供 System Runtime 注入的只读、确定性 Go 投影，不是第二事实源。生成内容只包含已通过以下校验的 Tool：`audience == owner`、`required_scopes == [tool.name]`、`required_permissions` 非空且全部属于 owner、处于 active 状态并允许委托。CI 必须以同一聚合器的只读检查模式进行字节漂移校验；任何差异都必须先修改唯一 Manifest，再重新生成，不得手工编辑生成文件。
+
+### 3.3 Tool 字段
 
 每个 Tool 必须声明以下字段：
 
@@ -72,7 +84,7 @@ common-python/addp_common/tools/manifest.json
 
 Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK 方法完成映射，owner API 仍由对应客户端实现和 Swagger 持有。
 
-### 3.3 当前 Tool 集合
+### 3.4 当前 Tool 集合
 
 | Tool | Owner | Role Permission | 风险 | 审批 | ResultRef | 最大输出 |
 | --- | --- | --- | --- | --- | --- | ---: |

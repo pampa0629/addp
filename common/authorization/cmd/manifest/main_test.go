@@ -49,6 +49,24 @@ func TestRunRequiresExactlyOneModeAndRepositoryRoot(t *testing.T) {
 	if err := run([]string{"--generate-sql-seed", "--check-sql-seed", "--repository-root", "."}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
 		t.Fatal("run() error = nil, want SQL seed mode error")
 	}
+	if err := run([]string{"--generate-tool-catalog", "--check-tool-catalog", "--repository-root", "."}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+		t.Fatal("run() error = nil, want Tool catalog mode error")
+	}
+}
+
+func TestRunCheckToolCatalogWritesSummary(t *testing.T) {
+	root := testRepositoryRoot(t)
+	var stdout bytes.Buffer
+	if err := run(
+		[]string{"--check-tool-catalog", "--repository-root", root},
+		&stdout,
+		&bytes.Buffer{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(authorization.SystemToolAuthorizationCatalogRelativePath)) {
+		t.Fatalf("Tool catalog summary = %q", stdout.String())
+	}
 }
 
 func TestRunCoverageReportWritesCurrentGaps(t *testing.T) {

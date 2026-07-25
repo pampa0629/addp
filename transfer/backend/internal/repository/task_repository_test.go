@@ -134,6 +134,47 @@ func TestSyncStateCommitUsesStateVersionAndFencingToken(t *testing.T) {
 	}
 }
 
+func TestFinalizeContinuousStopCancelsExecutionAfterLeaseExpiry(t *testing.T) {
+	db := newTaskRepositoryTestDB(t)
+	repo := NewTaskRepository(db)
+	task := createTaskRepositoryTestTask(t, db, 7, "expired-stop")
+	execution := claimTestExecution(task, "expired-stop-execution")
+	execution.Status = commonExecution.ExecutionStatusRunning
+	if err := db.Create(&execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&task).Updates(map[string]interface{}{
+		"config": models.JSONMap{"runtime": map[string]interface{}{"boundary": "continuous"}},
+		"status": models.TaskStatusRunning, "desired_state": models.TaskDesiredStateStopped,
+		"last_execution_id": execution.ExecutionID, "last_execution_status": commonExecution.ExecutionStatusRunning,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.RuntimeLease{
+		TaskID: task.ID, ExecutionID: execution.ExecutionID, OwnerInstanceID: "expired-worker",
+		LeaseUntil: time.Now().Add(-time.Minute), HeartbeatAt: time.Now().Add(-time.Minute), FencingToken: 1, ClaimedAt: time.Now().Add(-2 * time.Minute),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	if err := repo.FinalizeContinuousStop(context.Background(), task.ID, task.TenantID, "stopped", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&task, task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != models.TaskStatusIdle || task.LastExecutionStatus == nil || *task.LastExecutionStatus != commonExecution.ExecutionStatusCancelled {
+		t.Fatalf("finalized task=%#v", task)
+	}
+	if err := db.Where("execution_id = ?", execution.ExecutionID).First(&execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	if execution.Status != commonExecution.ExecutionStatusCancelled || execution.CompletedAt == nil || execution.Metadata["stop_reason"] != "stopped" {
+		t.Fatalf("finalized execution=%#v", execution)
+	}
+}
+
 func newTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
@@ -215,8 +256,27 @@ func newTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 			position_committed_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME,
-			UNIQUE(task_id, source_identity, partition)
-		)`,
+				UNIQUE(task_id, source_identity, partition)
+			)`,
+		`CREATE TABLE transfer.runtime_leases (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				task_id INTEGER NOT NULL UNIQUE,
+				execution_id TEXT NOT NULL UNIQUE,
+				owner_instance_id TEXT NOT NULL,
+				lease_until DATETIME NOT NULL,
+				heartbeat_at DATETIME NOT NULL,
+				fencing_token INTEGER NOT NULL,
+				claimed_at DATETIME NOT NULL,
+				created_at DATETIME,
+				updated_at DATETIME
+			)`,
+		`CREATE TABLE transfer.schema_change_requests (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				task_id INTEGER NOT NULL,
+				tenant_id INTEGER NOT NULL,
+				status TEXT NOT NULL,
+				detected_at DATETIME NOT NULL
+			)`,
 	}
 	for _, stmt := range statements {
 		if err := db.Exec(stmt).Error; err != nil {

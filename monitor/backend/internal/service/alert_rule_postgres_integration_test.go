@@ -170,6 +170,71 @@ func TestIntegrationPostgresAlertRuleLifecycleAndRoutedOutbox(t *testing.T) {
 	}
 }
 
+func TestIntegrationPostgresSchemaChangeBlockedIncidentLifecycle(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	db, err := gorm.Open(postgres.Open(webhookIntegrationDSN()), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open PostgreSQL: %v", err)
+	}
+	if err := commonExecution.EnsureStore(db); err != nil {
+		t.Fatalf("ensure execution store: %v", err)
+	}
+	if err := EnsureMonitorStore(db); err != nil {
+		t.Fatalf("ensure monitor store: %v", err)
+	}
+
+	tenantID := int(time.Now().UnixNano()%100000000) + 700000000
+	taskID := "schema-change-" + uuid.NewString()
+	executionID := uuid.NewString()
+	t.Cleanup(func() {
+		_ = db.Where("tenant_id = ?", tenantID).Delete(&monitorModels.AlertEvent{}).Error
+		_ = db.Where("tenant_id = ?", tenantID).Delete(&monitorModels.AlertIncident{}).Error
+		_ = db.Where("tenant_id = ?", tenantID).Delete(&commonExecution.TaskExecution{}).Error
+	})
+
+	now := time.Now().UTC()
+	metadata := commonModels.JSONMap{"continuous": map[string]interface{}{"schema_change": map[string]interface{}{
+		"request_id": 31, "status": "pending", "generation": 1, "from_revision": 1, "to_revision": 2,
+		"source_partition": "0", "source_offset": 42, "unexpected_fields": []string{"new_field"},
+	}}}
+	execution := commonExecution.TaskExecution{
+		TenantID: tenantID, ExecutionID: executionID, Module: commonExecution.ModuleTransfer,
+		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer, SourceTaskID: &taskID,
+		Status: commonExecution.ExecutionStatusFailed, TriggerType: commonExecution.TriggerTypeManual,
+		Metadata: metadata, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	alertService := NewAlertService(db, nil)
+	if err := alertService.Evaluate(context.Background(), now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	var incident monitorModels.AlertIncident
+	if err := db.Where("tenant_id = ? AND signal_code = ?", tenantID, "schema_change_blocked").First(&incident).Error; err != nil {
+		t.Fatal(err)
+	}
+	if incident.Status != monitorModels.AlertStatusOpen || incident.ExecutionID != executionID || incident.Severity != monitorModels.AlertSeverityCritical {
+		t.Fatalf("opened schema change incident = %#v", incident)
+	}
+
+	metadata["continuous"].(map[string]interface{})["schema_change"].(map[string]interface{})["status"] = "applied"
+	if err := db.Model(&execution).Updates(map[string]interface{}{"metadata": metadata, "updated_at": now.Add(2 * time.Second)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := alertService.Evaluate(context.Background(), now.Add(3*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&incident, incident.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if incident.Status != monitorModels.AlertStatusResolved || incident.ResolvedAt == nil {
+		t.Fatalf("resolved schema change incident = %#v", incident)
+	}
+}
+
 func createPostgresAlertExecution(t *testing.T, db *gorm.DB, tenantID int, taskID, status string, metadata commonModels.JSONMap, now time.Time) {
 	t.Helper()
 	completedAt := now

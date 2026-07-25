@@ -51,17 +51,6 @@ func TestIntegrationPostgresTaskPrivateStateDeletionTransaction(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	cleanable := createPostgresTaskResourceFixture(t, db, now, now.Add(-time.Minute), "expired-worker")
 	guarded := createPostgresTaskResourceFixture(t, db, now, now.Add(time.Minute), "active-worker")
-	t.Cleanup(func() {
-		for _, task := range []models.TransferTask{cleanable, guarded} {
-			sourceTaskID := fmt.Sprint(task.ID)
-			_ = db.Where("module = ? AND source_task_id = ?", commonExecution.ModuleTransfer, sourceTaskID).Delete(&commonExecution.TaskExecution{}).Error
-			_ = db.Where("tenant_id = ? AND task_id = ?", task.TenantID, task.ID).Delete(&models.DeadLetter{}).Error
-			_ = db.Where("task_id = ?", task.ID).Delete(&models.SyncState{}).Error
-			_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
-			_ = db.Where("tenant_id = ? AND task_id = ?", task.TenantID, task.ID).Delete(&models.CaptureResource{}).Error
-			_ = db.Unscoped().Delete(&models.TransferTask{}, task.ID).Error
-		}
-	})
 
 	repo := NewTaskResourceRepository(db)
 	stats, err := repo.DeleteTaskAndPrivateState(
@@ -109,6 +98,15 @@ func createPostgresTaskResourceFixture(t *testing.T, db *gorm.DB, now, leaseUnti
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		sourceTaskID := fmt.Sprint(task.ID)
+		_ = db.Where("module = ? AND source_task_id = ?", commonExecution.ModuleTransfer, sourceTaskID).Delete(&commonExecution.TaskExecution{}).Error
+		_ = db.Where("tenant_id = ? AND task_id = ?", task.TenantID, task.ID).Delete(&models.DeadLetter{}).Error
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.SyncState{}).Error
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
+		_ = db.Where("tenant_id = ? AND task_id = ?", task.TenantID, task.ID).Delete(&models.CaptureResource{}).Error
+		_ = db.Unscoped().Delete(&models.TransferTask{}, task.ID).Error
+	})
 	sourceIdentity := "integration://task-private-state/" + suffix
 	state := models.SyncState{
 		TaskID: task.ID, SourceIdentity: sourceIdentity, Partition: "0",
@@ -147,7 +145,7 @@ func createPostgresTaskResourceFixture(t *testing.T, db *gorm.DB, now, leaseUnti
 	}
 	if err := db.Create(&models.SchemaChangeRequest{
 		TaskID: task.ID, TenantID: task.TenantID, CaptureResourceID: capture.ID, Generation: 1,
-		ExecutionID: "schema-" + suffix, SourcePartition: "0", SourceOffset: 10, Scope: "Debezium after",
+		ExecutionID: uuid.NewString(), SourcePartition: "0", SourceOffset: 10, Scope: "Debezium after",
 		Diff: models.JSONMap{"unexpected_fields": []string{"added"}}, ApprovedMappings: models.JSONMap{},
 		FromRevision: 1, ToRevision: 2, Status: models.SchemaChangeRequestPending, DetectedAt: now,
 	}).Error; err != nil {

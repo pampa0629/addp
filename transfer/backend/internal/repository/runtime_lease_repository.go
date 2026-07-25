@@ -178,6 +178,10 @@ func selectPendingContinuousExecution(tx *gorm.DB, now time.Time, execution *com
 		Joins("LEFT JOIN transfer.runtime_leases AS l ON l.task_id = t.id").
 		Where("e.module = ? AND e.task_type = ? AND e.status = ?", commonExecution.ModuleTransfer, commonExecution.TaskTypeSync, commonExecution.ExecutionStatusPending).
 		Where("t.desired_state = ? AND t.status <> ? AND t.deleted_at IS NULL", models.TaskDesiredStateRunning, models.TaskStatusBlocked).
+		Where(`NOT EXISTS (
+				SELECT 1 FROM transfer.schema_change_requests AS scr
+				WHERE scr.task_id = t.id AND scr.tenant_id = t.tenant_id AND scr.status = ?
+			)`, models.SchemaChangeRequestPending).
 		Where("l.id IS NULL OR l.lease_until <= ?", now).
 		Where("e.metadata->>'recovery_not_before' IS NULL OR (e.metadata->>'recovery_not_before')::timestamptz <= ?", now).
 		Order("e.created_at ASC, e.id ASC").Limit(1).
@@ -218,11 +222,44 @@ func createNextRecoveryExecution(tx *gorm.DB, now time.Time, policy ContinuousRe
 		return false, nil
 	}
 
+	pendingSchemaChange, err := pendingSchemaChangeRequestTx(tx, task.ID, task.TenantID)
+	if err != nil {
+		return false, err
+	}
 	var previous commonExecution.TaskExecution
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("module = ? AND task_type = ? AND source_task_id = ?", commonExecution.ModuleTransfer, commonExecution.TaskTypeSync, fmt.Sprint(task.ID)).
 		Order("created_at DESC, id DESC").First(&previous).Error; err != nil {
 		return false, err
+	}
+	if pendingSchemaChange != nil {
+		if pendingSchemaChange.ExecutionID != previous.ExecutionID {
+			return false, ErrSchemaChangeRequestConflict
+		}
+		metadata := schemaChangeProjectionMetadata(previous.Metadata, pendingSchemaChange, schemaChangeProjectionPending, now)
+		metadata["stop_reason"] = "schema_change_blocked"
+		result := tx.Model(&previous).Where("status IN ?", []string{commonExecution.ExecutionStatusRunning, commonExecution.ExecutionStatusCancelled}).Updates(map[string]interface{}{
+			"status": commonExecution.ExecutionStatusFailed, "metadata": metadata,
+			"error_details": commonModels.JSONMap{"message": "continuous runtime stopped by a pending schema change"},
+			"completed_at":  now, "updated_at": now,
+		})
+		if result.Error != nil {
+			return false, result.Error
+		}
+		if result.RowsAffected != 1 {
+			return false, ErrRuntimeLeaseLost
+		}
+		if err := tx.Model(&models.RuntimeLease{}).Where("task_id = ?", task.ID).Updates(map[string]interface{}{
+			"owner_instance_id": "", "lease_until": now, "heartbeat_at": now,
+		}).Error; err != nil {
+			return false, err
+		}
+		if err := tx.Model(&task).Updates(map[string]interface{}{
+			"status": models.TaskStatusBlocked, "last_execution_status": commonExecution.ExecutionStatusFailed,
+		}).Error; err != nil {
+			return false, err
+		}
+		return false, nil
 	}
 
 	recoveryReason := ""
@@ -382,6 +419,18 @@ func (r *RuntimeLeaseRepository) Finish(ctx context.Context, claim RuntimeLeaseC
 		if result.RowsAffected != 1 {
 			return ErrRuntimeLeaseLost
 		}
+		var task models.TransferTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", claim.Task.ID).First(&task).Error; err != nil {
+			return err
+		}
+		var stoppedSchemaChange *models.SchemaChangeRequest
+		if stopReason == "schema_change_blocked" && task.DesiredState == models.TaskDesiredStateStopped {
+			request, err := pendingSchemaChangeRequestTx(tx, task.ID, task.TenantID)
+			if err != nil {
+				return err
+			}
+			stoppedSchemaChange = request
+		}
 		var execution commonExecution.TaskExecution
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("execution_id = ?", claim.Execution.ExecutionID).First(&execution).Error; err != nil {
@@ -393,6 +442,9 @@ func (r *RuntimeLeaseRepository) Finish(ctx context.Context, claim RuntimeLeaseC
 		}
 		if stopReason != "" {
 			metadata["stop_reason"] = stopReason
+		}
+		if stoppedSchemaChange != nil {
+			metadata = schemaChangeProjectionMetadata(metadata, stoppedSchemaChange, schemaChangeProjectionStopped, now)
 		}
 		updates := map[string]interface{}{
 			"status": status, "metadata": metadata, "completed_at": now, "updated_at": now,
@@ -409,13 +461,11 @@ func (r *RuntimeLeaseRepository) Finish(ctx context.Context, claim RuntimeLeaseC
 		if result.RowsAffected != 1 {
 			return fmt.Errorf("finish continuous execution %s: current status is not running", claim.Execution.ExecutionID)
 		}
-		var task models.TransferTask
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", claim.Task.ID).First(&task).Error; err != nil {
-			return err
-		}
 		taskStatus := models.TaskStatusIdle
 		if stopReason == "schema_change_blocked" {
-			taskStatus = models.TaskStatusBlocked
+			if task.DesiredState != models.TaskDesiredStateStopped {
+				taskStatus = models.TaskStatusBlocked
+			}
 		}
 		if task.DesiredState == models.TaskDesiredStateRunning && stopReason != "schema_change_blocked" {
 			recoveryReason := ""
@@ -543,21 +593,6 @@ func (r *RuntimeLeaseRepository) RecordSchemaChange(ctx context.Context, claim R
 			}
 			return err
 		}
-		metadata := execution.Metadata
-		if metadata == nil {
-			metadata = commonModels.JSONMap{}
-		}
-		continuousMeta, _ := metadata["continuous"].(map[string]interface{})
-		if continuousMeta == nil {
-			continuousMeta = map[string]interface{}{}
-		}
-		continuousMeta["schema_change"] = change
-		metadata["continuous"] = continuousMeta
-		if err := tx.Model(&execution).Updates(map[string]interface{}{
-			"metadata": metadata, "updated_at": change.DetectedAt,
-		}).Error; err != nil {
-			return err
-		}
 		var resource models.CaptureResource
 		if err := tx.Where("task_id = ? AND tenant_id = ?", claim.Task.ID, claim.Task.TenantID).
 			Order("generation DESC").First(&resource).Error; err != nil {
@@ -569,7 +604,7 @@ func (r *RuntimeLeaseRepository) RecordSchemaChange(ctx context.Context, claim R
 		if err == nil {
 			if pending.ExecutionID == claim.Execution.ExecutionID &&
 				pending.SourcePartition == change.SourcePartition && pending.SourceOffset == change.SourceOffset {
-				return nil
+				return UpdateSchemaChangeExecutionProjectionTx(tx, &pending)
 			}
 			return ErrSchemaChangeRequestConflict
 		}
@@ -584,7 +619,10 @@ func (r *RuntimeLeaseRepository) RecordSchemaChange(ctx context.Context, claim R
 			FromRevision: resource.SchemaRevision, ToRevision: resource.SchemaRevision + 1,
 			Status: models.SchemaChangeRequestPending, DetectedAt: change.DetectedAt,
 		}
-		return tx.Create(&request).Error
+		if err := tx.Create(&request).Error; err != nil {
+			return err
+		}
+		return UpdateSchemaChangeExecutionProjectionTx(tx, &request)
 	})
 }
 

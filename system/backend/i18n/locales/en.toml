@@ -25,6 +25,9 @@ other = "Step-up authentication is required"
 [system.auth.session_conflict]
 other = "Session state changed; retry the request"
 
+[system.auth.delegation_conflict]
+other = "This tool call already has a delegated access token"
+
 [system.auth.internal_error]
 other = "The authentication service is temporarily unavailable"
 

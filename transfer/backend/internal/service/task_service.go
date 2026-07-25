@@ -763,6 +763,9 @@ func (s *TaskService) StopTask(ctx context.Context, id, tenantID uint, req model
 				return fmt.Errorf("wait for database CDC target apply runtime to stop: %w", err)
 			}
 		}
+		if err := s.taskRepo.FinalizeContinuousStop(ctx, id, tenantID, "stopped", time.Now()); err != nil {
+			return fmt.Errorf("finalize database CDC target apply runtime stop: %w", err)
+		}
 		if err := s.captureControl.Stop(ctx, task); err != nil {
 			return fmt.Errorf("cleanup database CDC capture: %w", err)
 		}

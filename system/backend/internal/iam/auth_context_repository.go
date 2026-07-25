@@ -15,6 +15,13 @@ type SessionCredentialAuthSnapshot struct {
 	CredentialRevokedAt           *time.Time
 	CredentialCreatedAt           time.Time
 	CredentialOwner               *string
+	CredentialScopes              pq.StringArray `gorm:"type:text[]"`
+	CredentialAgentRunID          *string
+	CredentialToolCallID          *string
+	SourceAccessTokenID           *int64
+	SourceAccessTokenExpiresAt    *time.Time
+	SourceAccessTokenRevokedAt    *time.Time
+	SourceAccessTokenCreatedAt    *time.Time
 	FamilyPrincipalID             int64
 	FamilyContextType             ContextType
 	FamilyTenantMembershipID      *int64
@@ -164,6 +171,67 @@ func (r *Repository) GetResourceAccessTicketAuthSnapshot(
 		LEFT JOIN system.tenant_memberships membership ON membership.id = family.tenant_membership_id
 		LEFT JOIN system.tenants tenant ON tenant.id = membership.tenant_id
 		WHERE ticket.token_hash = ?
+	`, tokenHash).Scan(&snapshot)
+	if result.Error != nil {
+		return nil, wrapRepositoryError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return nil, commonapi.ErrNotFound
+	}
+	return &snapshot, nil
+}
+
+func (r *Repository) GetDelegatedAccessTokenAuthSnapshot(
+	ctx context.Context,
+	tokenHash string,
+) (*SessionCredentialAuthSnapshot, error) {
+	var snapshot SessionCredentialAuthSnapshot
+	result := r.db.WithContext(ctx).Raw(`
+		SELECT
+			delegated.id AS credential_id,
+			source.family_id AS credential_family_id,
+			delegated.expires_at AS credential_expires_at,
+			delegated.revoked_at AS credential_revoked_at,
+			delegated.created_at AS credential_created_at,
+			delegated.audience AS credential_owner,
+			delegated.scopes AS credential_scopes,
+			delegated.agent_run_id AS credential_agent_run_id,
+			delegated.tool_call_id AS credential_tool_call_id,
+			source.id AS source_access_token_id,
+			source.expires_at AS source_access_token_expires_at,
+			source.revoked_at AS source_access_token_revoked_at,
+			source.created_at AS source_access_token_created_at,
+			family.principal_id AS family_principal_id,
+			family.context_type AS family_context_type,
+			family.tenant_membership_id AS family_tenant_membership_id,
+			family.issued_authorization_version AS family_authorization_version,
+			family.client_id AS family_client_id,
+			family.auth_type AS family_auth_type,
+			family.audiences AS family_audiences,
+			family.scopes AS family_scopes,
+			family.authentication_methods AS family_authentication_methods,
+			family.assurance_level AS family_assurance_level,
+			family.authenticated_at AS family_authenticated_at,
+			family.step_up_expires_at AS family_step_up_expires_at,
+			family.expires_at AS family_expires_at,
+			family.revoked_at AS family_revoked_at,
+			principal.principal_type,
+			principal.status AS principal_status,
+			principal.authorization_version AS principal_authorization_version,
+			membership.id AS tenant_membership_id,
+			membership.tenant_id,
+			membership.status AS tenant_membership_status,
+			membership.joined_at AS tenant_membership_joined_at,
+			membership.expires_at AS tenant_membership_expires_at,
+			tenant.status AS tenant_status,
+			transaction_timestamp() AS database_time
+		FROM system.delegated_access_tokens delegated
+		JOIN system.access_tokens source ON source.id = delegated.source_access_token_id
+		JOIN system.refresh_token_families family ON family.id = source.family_id
+		JOIN system.principals principal ON principal.id = family.principal_id
+		LEFT JOIN system.tenant_memberships membership ON membership.id = family.tenant_membership_id
+		LEFT JOIN system.tenants tenant ON tenant.id = membership.tenant_id
+		WHERE delegated.token_hash = ?
 	`, tokenHash).Scan(&snapshot)
 	if result.Error != nil {
 		return nil, wrapRepositoryError(result.Error)

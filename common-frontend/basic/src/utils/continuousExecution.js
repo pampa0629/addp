@@ -135,8 +135,11 @@ export function formatRecoverySeconds(value) {
 }
 
 export function buildContinuousSignals(metadata, status, now = Date.now()) {
-  const diagnostics = getContinuousDiagnostics(metadata)
+  const value = objectValue(metadata)
+  const continuous = objectValue(value.continuous)
+  const diagnostics = getContinuousDiagnostics(value)
   const recovery = getContinuousRecovery(metadata, status, now)
+  const schemaChange = objectValue(continuous.schema_change)
   const signals = []
 
   if (recovery?.state === 'open') {
@@ -160,6 +163,9 @@ export function buildContinuousSignals(metadata, status, now = Date.now()) {
   }
   if (diagnostics.error) {
     signals.push({ code: 'diagnostics_error', severity: 'warning', diagnostics })
+  }
+  if (schemaChange.status === 'pending') {
+    signals.push({ code: 'schema_change_blocked', severity: 'critical', schemaChange })
   }
 
   const rank = { critical: 0, warning: 1, info: 2 }

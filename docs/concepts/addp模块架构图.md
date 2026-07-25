@@ -156,12 +156,12 @@ graph TB
 - **服务层**: 各业务模块的后端服务,提供 RESTful API
 - **Worker运行时**: 独立的后台任务处理进程
   - **Transfer Bounded Worker**: 基于 Asynq 的异步任务队列，处理 snapshot 和 watermark bounded execution。
-  - **Transfer Continuous Worker**: 已实现的独立长驻进程角色，通过 supervisor、DB lease、heartbeat 和 fencing 承载多个 continuous runtime session；不使用 Asynq 承载无限消费循环。当前数据面只开放业务 Kafka keyed JSON -> PostgreSQL，Debezium CDC 尚未实现。
+  - **Transfer Continuous Worker**: 已实现的独立长驻进程角色，通过 supervisor、DB lease、heartbeat 和 fencing 承载多个 continuous runtime session；不使用 Asynq 承载无限消费循环。当前数据面开放业务 Kafka keyed JSON -> PostgreSQL，以及 PostgreSQL/MySQL 单表 Debezium CDC -> PostgreSQL；两类 source 共用同一 continuous runtime、position、lease 和 fencing 主路径。
   - **Meta Worker**: 基于 Asynq 的扫描任务处理,执行元数据扫描和索引
 - **Manager 快显与瓦片任务**: 当前 PostGIS + MVT 格式实现中，`vector_tile_cache_generation` 由 Manager Backend 内的任务服务和调度器执行；任务定义为 `manager.vector_tile_cache_tasks`，执行记录进入 `common.task_executions`，结果状态进入 `manager.vector_tile_cache`。`vector_materialized_view_generation` 由 Manager Backend 在手动或编排触发时执行，任务定义为 `manager.vector_materialized_view_tasks`，结果状态进入 `manager.vector_materialized_view`，当前不启动模块自身定时调度。若后续矢量物化视图构建或瓦片缓存生成负载转移到 Manager 进程内、需要多执行器横向扩展，或引入专门 GIS 计算引擎，应将对应任务类型的唯一执行运行时切换为 Manager Worker 或 GIS 执行引擎，不允许 Backend 与 Worker 双轨并存。
 - **共享模块**: common 和 common-frontend 提供可复用的代码和组件
 - **扩展运行时**: engines 目录下的内置工作流 / 脚本运行时，由 Develop 模块通过统一 Provider 调用
-- **基础设施层**: 共享的数据库、缓存、对象存储、搜索引擎，以及 PostgreSQL CDC 使用的 Infra Kafka/Kafka Connect。Infra Kafka 和 Connect 已部署，但 CDC task/capture supervisor 尚未开放。
+- **基础设施层**: 共享的数据库、缓存、对象存储、搜索引擎，以及 PostgreSQL/MySQL CDC 使用的 Infra Kafka/Kafka Connect。Infra Kafka、Connect 和 Transfer capture supervisor 已开放；Infra Kafka 不注册为 System Engine，也不进入用户任务配置。
 
 ---
 
@@ -346,7 +346,7 @@ graph TB
 **运行时说明**:
 - **Asynq 队列**: 当前用于 Transfer、Meta 等独立 Worker 场景。
 - **Continuous supervisor**: Transfer continuous worker 直接 claim pending execution 和 `transfer.runtime_leases`；同一 task 同一时刻只有一个合法 owner，不把长期 session 投递为 Asynq job。
-- **CDC capture supervisor**: PostgreSQL CDC v1 契约已由工作包 3A 冻结，Infra Kafka/Kafka Connect 开发部署已由 3B 完成。后续 capture supervisor 作为 Transfer 独立捕获控制角色通过 Kafka Connect REST 管理 Debezium connector；它不嵌入 continuous worker，也不把 Infra Kafka 注册为 System Engine。
+- **CDC capture supervisor**: Transfer 已实现唯一 capture control plane，通过 Kafka Connect REST 管理 PostgreSQL/MySQL Debezium connector，并负责 generation、provider 专属捕获资源、内部 topic/group/ACL 的任务级生命周期；它不嵌入 continuous worker，也不把 Infra Kafka 注册为 System Engine。
 - **Manager 受管结果调度边界**: 瓦片缓存、矢量物化视图等受管当前结果任务均为 `supports_schedule=false`，不由 Manager 自身定时调度；周期性刷新由 Orchestrator 显式携带本次覆盖确认触发。Embedding 的逐 item owner scheduler 独立保留。
 - **执行记录**: 各模块执行状态统一写入 `common.task_executions`。
 - **结果状态**: Manager 瓦片缓存结果状态写入 `manager.vector_tile_cache`，矢量物化视图结果状态写入 `manager.vector_materialized_view`，不由 execution 替代。

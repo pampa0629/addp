@@ -275,6 +275,21 @@ type ResourceAccessTicket struct {
 
 func (ResourceAccessTicket) TableName() string { return "system.resource_access_tickets" }
 
+type DelegatedAccessToken struct {
+	ID                  int64          `gorm:"primaryKey;autoIncrement"`
+	TokenHash           string         `gorm:"column:token_hash;not null;unique"`
+	SourceAccessTokenID int64          `gorm:"column:source_access_token_id;not null"`
+	Audience            string         `gorm:"column:audience;not null"`
+	Scopes              pq.StringArray `gorm:"column:scopes;type:text[];not null"`
+	AgentRunID          string         `gorm:"column:agent_run_id;not null"`
+	ToolCallID          string         `gorm:"column:tool_call_id;not null"`
+	ExpiresAt           time.Time      `gorm:"column:expires_at;not null"`
+	RevokedAt           *time.Time     `gorm:"column:revoked_at"`
+	CreatedAt           time.Time      `gorm:"column:created_at;autoCreateTime"`
+}
+
+func (DelegatedAccessToken) TableName() string { return "system.delegated_access_tokens" }
+
 type LocalUserIdentity struct {
 	PrincipalID          int64
 	PrincipalStatus      PrincipalStatus

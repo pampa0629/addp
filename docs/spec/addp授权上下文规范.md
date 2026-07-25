@@ -64,7 +64,7 @@ AuthContext 根对象固定包含：
 
 平台管理上下文不得通过空 Tenant 表示“所有 Tenant”。它只激活当前 Principal 被分配的平台角色。Tenant 业务上下文必须绑定一个有效 Tenant Membership，且只投影当前 Tenant 内的角色和组织事实。
 
-第一方 Web、OAuth、Service Principal、Browser Resource Access Ticket 和 Delegated Access Token 都解析为同一 AuthContext 语义。第一方 Web 固定返回 `client_id=addp-web`、`audiences=[addp.api]`、`scope_mode=unrestricted` 和空 Scope；Browser Resource Access Ticket 固定返回 `token.type=resource_access_ticket`、`client_id=addp-web`、`audiences=[owner]`、`scope_mode=restricted`、`scopes=[resource:read]` 和 `delegation=null`，其 Principal、Context、认证事实、组织事实、授权版本和 Role Assignment 必须从所属第一方 Browser Family 的当前事实投影；OAuth Token 返回真实 Client、`addp.api` audience、`scope_mode=restricted` 和批准 Scope；Delegated Access Token 还必须包含唯一 owner audience、稳定 Tool Scope 和 AgentRun / ToolCall 审计绑定。
+第一方 Web、OAuth、Service Principal、Browser Resource Access Ticket 和 Delegated Access Token 都解析为同一 AuthContext 语义。第一方 Web 固定返回 `client_id=addp-web`、`audiences=[addp.api]`、`scope_mode=unrestricted` 和空 Scope；Browser Resource Access Ticket 固定返回 `token.type=resource_access_ticket`、`client_id=addp-web`、`audiences=[owner]`、`scope_mode=restricted`、`scopes=[resource:read]` 和 `delegation=null`，其 Principal、Context、认证事实、组织事实、授权版本和 Role Assignment 必须从所属第一方 Browser Family 的当前事实投影；OAuth Token 返回真实 Client、`addp.api` audience、`scope_mode=restricted` 和批准 Scope；Delegated Access Token 固定返回 `token.type=delegated_access_token`、源 Family 的真实 `client_id`、唯一 owner audience、`scope_mode=restricted`、当前 Tool 的稳定 Scope，以及 `delegated_by_client_id + agent_run_id + tool_call_id` 审计绑定。`delegated_by_client_id` 必须等于 `client_id`，两者都从源 Family 派生，不接受委托请求自报。
 
 ## 四、身份和上下文校验
 
@@ -107,7 +107,7 @@ Principal 有效
 - Department 父子授权默认不继承，Project Group 权限不传播到成员所在 Department；
 - 临时授权必须携带有效期、来源和撤销事实。
 
-委托令牌使用默认拒绝策略：owner 模块收到 Delegated Access Token 时，只有当前路由与 Token Manifest 中该 Tool 的 owner、audience 和 required scopes 完全匹配才可继续；委托令牌不能访问同一模块的其他普通 API。
+委托令牌使用默认拒绝策略：owner 模块收到 Delegated Access Token 时，只有当前路由与 Tool Manifest 中该 Tool 的 owner、唯一 audience 和 required scopes 精确集合完全匹配，并具有声明的 Role Permission all-of 候选时才可继续；额外 Scope 同样拒绝，委托令牌不能访问同一模块的其他普通 API。普通第一方或 OAuth User Token 继续执行该路由原有 Permission 与资源授权路径，不被 Delegated Route Guard 放宽或替代。写 Tool 的审批事实仍由 owner Handler 判断。
 
 Browser Resource Access Ticket 同样使用默认拒绝策略。System 的 AuthContext 接口是仅供 Owner 解析票据的基础设施例外；System 的其他身份、Tenant、OAuth、引擎和管理 API 必须拒绝该票据。Owner 只在挂载 Resource Ticket Guard 的 GET/HEAD 原生资源路由读取 `addp_resource_access_ticket` Cookie；Guard 挂载本身就是路由白名单，不再接收运行时 matcher。该路由不得同时接受 `Authorization` Header 和 Ticket Cookie，出现 `Authorization` Header 时统一拒绝，避免歧义凭据优先级。Guard 必须校验 `token.type=resource_access_ticket`、唯一 owner audience、`scope_mode=restricted`、唯一 `resource:read` Scope 以及声明的 Role Permission all-of 候选；最终 Assignment Scope、资源归属、Grant、Policy 和 Explicit Deny 仍由 owner Handler 判断。
 
@@ -161,4 +161,4 @@ OAuth 数据模型不复用 `system.applications/api_keys`：API Key 表达应�
 
 不允许旧 AuthContext 与新 AuthContext 按客户端、路由或配置双轨共存。
 
-当前 IAM Runtime 基础阶段已落地唯一 `auth-context-v1.schema.json`、共享 Go 类型和第一方 Web Access Token 投影。Browser Resource Access Ticket 使用所属第一方 Browser Family 的同一身份与授权投影，并用 owner audience 和 `resource:read` 额外收窄；OAuth、Service Principal 和 Delegated Token 在对应协议 Runtime 完成前统一拒绝，不借用第一方路径、不构造缺失事实。API、共享中间件和旧认证入口仍须在调用方准备完成后一次性切换。
+当前 IAM Runtime 基础阶段已落地唯一 `auth-context-v1.schema.json`、共享 Go 类型，以及第一方 Web Access Token、Browser Resource Access Ticket 和 Delegated Access Token 投影。Resource Ticket 使用所属第一方 Browser Family 的同一身份与授权投影，并用 owner audience 和 `resource:read` 额外收窄；Delegated Token 回溯源 Access Token 与 Family，并用 owner Tool Scope 和审计绑定额外收窄。OAuth Access Token、Service Principal 和委托签发目标 Runtime 在对应阶段完成前统一拒绝，不借用第一方路径、不构造缺失事实。API、共享中间件和旧认证入口仍须在调用方准备完成后一次性切换。

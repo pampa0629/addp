@@ -14,6 +14,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
 	"github.com/addp/system/internal/migration"
+	"github.com/lib/pq"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -148,6 +149,24 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 			t.Fatalf("resolve manager Resource Ticket AuthContext: %v", err)
 		}
 		assertResourceTicketAuthContext(t, resourceContext, resolved, "manager")
+		var sourceAccessToken AccessToken
+		if err := db.Where("token_hash = ?", hashOpaqueToken(session.AccessToken)).First(&sourceAccessToken).Error; err != nil {
+			t.Fatalf("read delegated source Access Token: %v", err)
+		}
+		delegatedToken := insertDelegatedAuthToken(
+			t,
+			db,
+			sourceAccessToken.ID,
+			"addp_dat_tenant_projection",
+			"develop",
+			[]string{"workflow.run"},
+			currentTime,
+		)
+		delegatedContext, err := authContextService.ResolveAuthContext(ctx, delegatedToken)
+		if err != nil {
+			t.Fatalf("resolve Delegated Token AuthContext: %v", err)
+		}
+		assertDelegatedAuthContext(t, delegatedContext, resolved, "addp-web", "develop", []string{"workflow.run"})
 
 		rotated, err := tokenService.RotateBrowserRefreshToken(ctx, RotateBrowserRefreshTokenInput{
 			RefreshToken: session.RefreshToken,
@@ -170,6 +189,13 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 			managerTicket,
 			CredentialInvalidTokenRevoked,
 		)
+		assertCredentialReason(
+			t,
+			authContextService,
+			ctx,
+			delegatedToken,
+			CredentialInvalidTokenRevoked,
+		)
 		if _, err := authContextService.ResolveFirstPartyAccessToken(ctx, rotated.AccessToken); err != nil {
 			t.Fatalf("resolve replacement access token: %v", err)
 		}
@@ -185,6 +211,31 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 			t.Fatalf("resolve replacement resource ticket: %v", err)
 		}
 		assertResourceTicketAuthContext(t, rotatedResourceContext, rotatedAccessContext, "manager")
+		var rotatedAccessToken AccessToken
+		if err := db.Where("token_hash = ?", hashOpaqueToken(rotated.AccessToken)).First(&rotatedAccessToken).Error; err != nil {
+			t.Fatalf("read replacement delegated source Access Token: %v", err)
+		}
+		rotatedDelegatedToken := insertDelegatedAuthToken(
+			t,
+			db,
+			rotatedAccessToken.ID,
+			"addp_dat_rotated_projection",
+			"develop",
+			[]string{"workflow.run"},
+			currentTime,
+		)
+		rotatedDelegatedContext, err := authContextService.ResolveDelegatedAccessToken(ctx, rotatedDelegatedToken)
+		if err != nil {
+			t.Fatalf("resolve replacement Delegated Token: %v", err)
+		}
+		assertDelegatedAuthContext(
+			t,
+			rotatedDelegatedContext,
+			rotatedAccessContext,
+			"addp-web",
+			"develop",
+			[]string{"workflow.run"},
+		)
 	})
 
 	t.Run("platform projection is isolated and version mismatch is unauthorized", func(t *testing.T) {
@@ -316,10 +367,151 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 		})
 	}
 
+	for _, testCase := range []struct {
+		name       string
+		wantReason CredentialInvalidReason
+		mutate     func(*testing.T, delegatedInvalidationFixture)
+	}{
+		{
+			name:       "delegated token revoked",
+			wantReason: CredentialInvalidTokenRevoked,
+			mutate: func(t *testing.T, fixture delegatedInvalidationFixture) {
+				t.Helper()
+				if err := db.Model(&DelegatedAccessToken{}).Where("id = ?", fixture.DelegatedID).
+					Update("revoked_at", currentTime).Error; err != nil {
+					t.Fatalf("revoke Delegated Token: %v", err)
+				}
+			},
+		},
+		{
+			name:       "source access token revoked",
+			wantReason: CredentialInvalidTokenRevoked,
+			mutate: func(t *testing.T, fixture delegatedInvalidationFixture) {
+				t.Helper()
+				if err := db.Model(&AccessToken{}).Where("id = ?", fixture.AccessTokenID).
+					Update("revoked_at", currentTime).Error; err != nil {
+					t.Fatalf("revoke Delegated source Access Token: %v", err)
+				}
+			},
+		},
+		{
+			name:       "family revoked",
+			wantReason: CredentialInvalidTokenRevoked,
+			mutate: func(t *testing.T, fixture delegatedInvalidationFixture) {
+				t.Helper()
+				if err := db.Model(&RefreshTokenFamily{}).Where("id = ?", fixture.FamilyID).Updates(map[string]any{
+					"revoked_at":     currentTime,
+					"revoked_reason": "delegated_auth_context_test",
+				}).Error; err != nil {
+					t.Fatalf("revoke Delegated Token family: %v", err)
+				}
+			},
+		},
+		{
+			name:       "authorization version changed",
+			wantReason: CredentialInvalidAuthorizationVersion,
+			mutate: func(t *testing.T, fixture delegatedInvalidationFixture) {
+				t.Helper()
+				if err := db.Model(&Principal{}).Where("id = ?", fixture.PrincipalID).
+					Update("authorization_version", gorm.Expr("authorization_version + 1")).Error; err != nil {
+					t.Fatalf("increment Delegated Token authorization version: %v", err)
+				}
+			},
+		},
+		{
+			name:       "tenant membership suspended",
+			wantReason: CredentialInvalidAuthorizationVersion,
+			mutate: func(t *testing.T, fixture delegatedInvalidationFixture) {
+				t.Helper()
+				if err := db.Model(&TenantMembership{}).Where("id = ?", fixture.TenantMembershipID).
+					Update("status", TenantMembershipStatusSuspended).Error; err != nil {
+					t.Fatalf("suspend Delegated Token membership: %v", err)
+				}
+			},
+		},
+		{
+			name:       "tenant suspended",
+			wantReason: CredentialInvalidTenantInactive,
+			mutate: func(t *testing.T, fixture delegatedInvalidationFixture) {
+				t.Helper()
+				if err := db.Model(&Tenant{}).Where("id = ?", fixture.TenantID).
+					Update("status", TenantStatusSuspended).Error; err != nil {
+					t.Fatalf("suspend Delegated Token tenant: %v", err)
+				}
+			},
+		},
+	} {
+		t.Run("delegated token rejects "+testCase.name, func(t *testing.T) {
+			fixture := issueDelegatedInvalidationFixture(
+				t,
+				ctx,
+				identityService,
+				membershipService,
+				selectionService,
+				db,
+				currentTime,
+				strings.ReplaceAll(testCase.name, " ", "-"),
+			)
+			if _, err := authContextService.ResolveDelegatedAccessToken(ctx, fixture.Token); err != nil {
+				t.Fatalf("resolve Delegated Token before invalidation: %v", err)
+			}
+			testCase.mutate(t, fixture)
+			assertCredentialReason(t, authContextService, ctx, fixture.Token, testCase.wantReason)
+		})
+	}
+
+	t.Run("delegated token accepts OAuth source and enforces source scopes", func(t *testing.T) {
+		positive := issueResourceTicketInvalidationFixture(
+			t, ctx, identityService, membershipService, selectionService, db, currentTime, "delegated-oauth-positive",
+		)
+		sourceContext, err := authContextService.ResolveFirstPartyAccessToken(ctx, positive.Session.AccessToken)
+		if err != nil {
+			t.Fatalf("resolve source context before OAuth projection: %v", err)
+		}
+		positiveAccessTokenID := insertOAuthSourceAccessToken(
+			t,
+			db,
+			positive.PrincipalID,
+			positive.TenantMembershipID,
+			"11111111-1111-4111-8111-111111111111",
+			"addp_at_oauth_positive",
+			[]string{"workflow.run"},
+			currentTime,
+		)
+		positiveToken := insertDelegatedAuthToken(
+			t, db, positiveAccessTokenID, "addp_dat_oauth_positive", "develop", []string{"workflow.run"}, currentTime,
+		)
+		resolved, err := authContextService.ResolveDelegatedAccessToken(ctx, positiveToken)
+		if err != nil {
+			t.Fatalf("resolve OAuth-source Delegated Token: %v", err)
+		}
+		assertDelegatedAuthContext(t, resolved, sourceContext, "addp-cli", "develop", []string{"workflow.run"})
+
+		negative := issueResourceTicketInvalidationFixture(
+			t, ctx, identityService, membershipService, selectionService, db, currentTime, "delegated-oauth-negative",
+		)
+		negativeAccessTokenID := insertOAuthSourceAccessToken(
+			t,
+			db,
+			negative.PrincipalID,
+			negative.TenantMembershipID,
+			"22222222-2222-4222-8222-222222222222",
+			"addp_at_oauth_negative",
+			[]string{"execution.get"},
+			currentTime,
+		)
+		negativeToken := insertDelegatedAuthToken(
+			t, db, negativeAccessTokenID, "addp_dat_oauth_negative", "develop", []string{"workflow.run"}, currentTime,
+		)
+		assertCredentialReason(t, authContextService, ctx, negativeToken, CredentialInvalidContext)
+	})
+
 	assertCredentialReason(t, authContextService, ctx, "invalid", CredentialInvalidFormat)
 	assertCredentialReason(t, authContextService, ctx, "addp_at_unknown", CredentialInvalidNotFound)
 	assertCredentialReason(t, authContextService, ctx, "addp_rat_", CredentialInvalidFormat)
 	assertCredentialReason(t, authContextService, ctx, "addp_rat_unknown", CredentialInvalidNotFound)
+	assertCredentialReason(t, authContextService, ctx, "addp_dat_", CredentialInvalidFormat)
+	assertCredentialReason(t, authContextService, ctx, "addp_dat_unknown", CredentialInvalidNotFound)
 }
 
 type resourceTicketInvalidationFixture struct {
@@ -327,7 +519,15 @@ type resourceTicketInvalidationFixture struct {
 	TenantID           int64
 	TenantMembershipID int64
 	FamilyID           int64
+	AccessTokenID      int64
 	Ticket             string
+	Session            *IssuedBrowserSession
+}
+
+type delegatedInvalidationFixture struct {
+	resourceTicketInvalidationFixture
+	DelegatedID int64
+	Token       string
 }
 
 func issueResourceTicketInvalidationFixture(
@@ -367,8 +567,114 @@ func issueResourceTicketInvalidationFixture(
 		TenantID:           tenant.ID,
 		TenantMembershipID: membership.Membership.ID,
 		FamilyID:           stored.FamilyID,
+		AccessTokenID:      readAccessTokenByHash(t, db, selection.Session.AccessToken).ID,
 		Ticket:             ticket,
+		Session:            selection.Session,
 	}
+}
+
+func issueDelegatedInvalidationFixture(
+	t *testing.T,
+	ctx context.Context,
+	identityService *IdentityService,
+	membershipService *TenantMembershipService,
+	selectionService *ContextSelectionService,
+	db *gorm.DB,
+	now time.Time,
+	suffix string,
+) delegatedInvalidationFixture {
+	t.Helper()
+	source := issueResourceTicketInvalidationFixture(
+		t, ctx, identityService, membershipService, selectionService, db, now, "delegated-"+suffix,
+	)
+	token := "addp_dat_" + strings.ReplaceAll(suffix, "-", "_")
+	stored := insertDelegatedAuthToken(t, db, source.AccessTokenID, token, "develop", []string{"workflow.run"}, now)
+	var delegated DelegatedAccessToken
+	if err := db.Where("token_hash = ?", hashOpaqueToken(stored)).First(&delegated).Error; err != nil {
+		t.Fatalf("read Delegated Token invalidation fixture: %v", err)
+	}
+	return delegatedInvalidationFixture{
+		resourceTicketInvalidationFixture: source,
+		DelegatedID:                       delegated.ID,
+		Token:                             stored,
+	}
+}
+
+func insertDelegatedAuthToken(
+	t *testing.T,
+	db *gorm.DB,
+	sourceAccessTokenID int64,
+	plainToken string,
+	audience string,
+	scopes []string,
+	now time.Time,
+) string {
+	t.Helper()
+	token := DelegatedAccessToken{
+		TokenHash:           hashOpaqueToken(plainToken),
+		SourceAccessTokenID: sourceAccessTokenID,
+		Audience:            audience,
+		Scopes:              append([]string(nil), scopes...),
+		AgentRunID:          "run-" + plainToken,
+		ToolCallID:          "call-" + plainToken,
+		ExpiresAt:           now.Add(2 * time.Minute),
+		CreatedAt:           now,
+	}
+	if err := db.Create(&token).Error; err != nil {
+		t.Fatalf("insert Delegated Token %s: %v", plainToken, err)
+	}
+	return plainToken
+}
+
+func insertOAuthSourceAccessToken(
+	t *testing.T,
+	db *gorm.DB,
+	principalID int64,
+	tenantMembershipID int64,
+	protocolRequestID string,
+	plainAccessToken string,
+	scopes []string,
+	now time.Time,
+) int64 {
+	t.Helper()
+	var authorizationVersion int64
+	if err := db.Table("system.principals").Select("authorization_version").Where("id = ?", principalID).
+		Scan(&authorizationVersion).Error; err != nil || authorizationVersion == 0 {
+		t.Fatalf("read OAuth source authorization version: version=%d error=%v", authorizationVersion, err)
+	}
+	var familyID int64
+	if err := db.Raw(`
+		INSERT INTO system.refresh_token_families (
+			protocol_request_id, principal_id, context_type, tenant_membership_id,
+			issued_authorization_version, client_id, auth_type, audiences, scopes,
+			authentication_methods, assurance_level, authenticated_at, expires_at, created_at
+		)
+		VALUES (
+			CAST(? AS uuid), ?, 'tenant', ?, ?, 'addp-cli', 'oauth', ARRAY['addp.api']::text[], ?,
+			ARRAY['password']::text[], 'aal1', ?, ?, ?
+		)
+		RETURNING id
+	`,
+		protocolRequestID,
+		principalID,
+		tenantMembershipID,
+		authorizationVersion,
+		pq.Array(scopes),
+		now.Add(-time.Minute),
+		now.Add(30*time.Minute),
+		now,
+	).Scan(&familyID).Error; err != nil {
+		t.Fatalf("insert OAuth source Family: %v", err)
+	}
+	var accessTokenID int64
+	if err := db.Raw(`
+		INSERT INTO system.access_tokens (token_hash, family_id, expires_at, created_at)
+		VALUES (?, ?, ?, ?)
+		RETURNING id
+	`, hashOpaqueToken(plainAccessToken), familyID, now.Add(15*time.Minute), now).Scan(&accessTokenID).Error; err != nil {
+		t.Fatalf("insert OAuth source Access Token: %v", err)
+	}
+	return accessTokenID
 }
 
 func assertTenantAuthContext(
@@ -458,6 +764,41 @@ func assertResourceTicketAuthContext(
 	}
 	if err := commonauth.ValidateAuthContext(*resourceContext); err != nil {
 		t.Fatalf("validate Resource Ticket AuthContext: %v", err)
+	}
+}
+
+func assertDelegatedAuthContext(
+	t *testing.T,
+	delegatedContext *commonauth.AuthContext,
+	sourceContext *commonauth.AuthContext,
+	clientID string,
+	audience string,
+	scopes []string,
+) {
+	t.Helper()
+	if delegatedContext == nil || sourceContext == nil {
+		t.Fatalf("delegated/source AuthContext must not be nil: delegated=%#v source=%#v", delegatedContext, sourceContext)
+	}
+	if !reflect.DeepEqual(delegatedContext.Principal, sourceContext.Principal) ||
+		!reflect.DeepEqual(delegatedContext.Context, sourceContext.Context) ||
+		!reflect.DeepEqual(delegatedContext.Authentication, sourceContext.Authentication) ||
+		!reflect.DeepEqual(delegatedContext.Organization, sourceContext.Organization) ||
+		!reflect.DeepEqual(delegatedContext.Authorization, sourceContext.Authorization) {
+		t.Fatalf("Delegated Token did not inherit source Family facts: delegated=%#v source=%#v", delegatedContext, sourceContext)
+	}
+	if delegatedContext.Client.ClientID == nil || *delegatedContext.Client.ClientID != clientID ||
+		!reflect.DeepEqual(delegatedContext.Client.Audiences, []string{audience}) ||
+		delegatedContext.Client.ScopeMode != "restricted" ||
+		!reflect.DeepEqual(delegatedContext.Client.Scopes, scopes) ||
+		delegatedContext.Token.Type != "delegated_access_token" || delegatedContext.Delegation == nil ||
+		delegatedContext.Delegation.DelegatedByClientID != clientID ||
+		delegatedContext.Delegation.AgentRunID == "" || delegatedContext.Delegation.ToolCallID == "" ||
+		delegatedContext.Token.ExpiresAt.After(sourceContext.Token.ExpiresAt) {
+		t.Fatalf("Delegated Token constraints = client:%#v token:%#v delegation:%#v",
+			delegatedContext.Client, delegatedContext.Token, delegatedContext.Delegation)
+	}
+	if err := commonauth.ValidateAuthContext(*delegatedContext); err != nil {
+		t.Fatalf("validate Delegated Token AuthContext: %v", err)
 	}
 }
 

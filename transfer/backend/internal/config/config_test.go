@@ -22,6 +22,7 @@ func TestValidateContinuousRuntime(t *testing.T) {
 		DeadLetterReconcileFetchMaxBytes:   10 * 1024 * 1024,
 		ContinuousRuntimeStopTimeout:       45 * time.Second,
 		ContinuousRuntimeStopPollInterval:  250 * time.Millisecond,
+		SchemaChangeMetaScanClaimTTL:       2 * time.Minute,
 	}
 	if err := valid.ValidateContinuousRuntime(); err != nil {
 		t.Fatalf("valid continuous runtime config: %v", err)
@@ -73,6 +74,12 @@ func TestValidateContinuousRuntime(t *testing.T) {
 	invalidStopPoll.ContinuousRuntimeStopPollInterval = invalidStopPoll.ContinuousRuntimeStopTimeout
 	if err := invalidStopPoll.ValidateContinuousRuntime(); err == nil {
 		t.Fatal("continuous runtime stop poll interval equal to timeout was accepted")
+	}
+
+	invalidSchemaScanClaimTTL := *valid
+	invalidSchemaScanClaimTTL.SchemaChangeMetaScanClaimTTL = time.Minute
+	if err := invalidSchemaScanClaimTTL.ValidateContinuousRuntime(); err == nil {
+		t.Fatal("schema change Meta scan claim TTL equal to the Meta client timeout was accepted")
 	}
 }
 

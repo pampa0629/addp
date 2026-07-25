@@ -98,7 +98,7 @@ func BuildRepositoryAuthorizationCoverageReport(repositoryRoot string, catalog A
 		report.Issues = append(report.Issues, issues...)
 	}
 
-	toolSource, toolIssues := inspectToolManifest(root, ownerCatalog, permissionCatalog)
+	toolSource, _, toolIssues := inspectToolManifest(root, ownerCatalog, permissionCatalog)
 	report.ToolManifest = toolSource
 	report.Issues = append(report.Issues, toolIssues...)
 	canonicalizeAuthorizationCoverageReport(&report)
@@ -211,13 +211,17 @@ func inspectOwnerOpenAPI(root, owner string, permissions map[string]PermissionDe
 	return source, issues
 }
 
-func inspectToolManifest(root string, owners map[string]struct{}, permissions map[string]PermissionDescriptor) (ToolManifestCoverageSource, []AuthorizationCoverageIssue) {
+func inspectToolManifest(
+	root string,
+	owners map[string]struct{},
+	permissions map[string]PermissionDescriptor,
+) (ToolManifestCoverageSource, []ToolAuthorization, []AuthorizationCoverageIssue) {
 	const relativePath = "common-python/addp_common/tools/manifest.json"
 	source := ToolManifestCoverageSource{Path: relativePath, Status: "available"}
 	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relativePath)))
 	if err != nil {
 		source.Status = "missing"
-		return source, []AuthorizationCoverageIssue{{
+		return source, nil, []AuthorizationCoverageIssue{{
 			Code:       "missing_tool_manifest",
 			SourceType: "tool_manifest",
 			SourcePath: relativePath,
@@ -228,7 +232,7 @@ func inspectToolManifest(root string, owners map[string]struct{}, permissions ma
 	var document toolManifestDocument
 	if err := json.Unmarshal(data, &document); err != nil {
 		source.Status = "invalid"
-		return source, []AuthorizationCoverageIssue{{
+		return source, nil, []AuthorizationCoverageIssue{{
 			Code:       "invalid_tool_manifest",
 			SourceType: "tool_manifest",
 			SourcePath: relativePath,
@@ -238,8 +242,19 @@ func inspectToolManifest(root string, owners map[string]struct{}, permissions ma
 
 	sort.Slice(document.Tools, func(i, j int) bool { return document.Tools[i].Name < document.Tools[j].Name })
 	issues := make([]AuthorizationCoverageIssue, 0)
+	tools := make([]ToolAuthorization, 0, len(document.Tools))
+	seenTools := make(map[string]struct{}, len(document.Tools))
 	for _, tool := range document.Tools {
 		source.ToolCount++
+		if tool.Name == "" {
+			issues = append(issues, toolIssue("invalid_tool_name", tool, relativePath, "tool name must not be empty"))
+			continue
+		}
+		if _, duplicate := seenTools[tool.Name]; duplicate {
+			issues = append(issues, toolIssue("duplicate_tool_name", tool, relativePath, fmt.Sprintf("tool name %q is declared more than once", tool.Name)))
+			continue
+		}
+		seenTools[tool.Name] = struct{}{}
 		if _, exists := owners[tool.Owner]; !exists {
 			issues = append(issues, toolIssue("unknown_tool_owner", tool, relativePath, fmt.Sprintf("tool owner %q is not a stable Permission owner", tool.Owner)))
 		}
@@ -276,8 +291,14 @@ func inspectToolManifest(root string, owners map[string]struct{}, permissions ma
 				issues = append(issues, toolIssue("non_delegable_tool_permission", tool, relativePath, fmt.Sprintf("Permission %q is not delegable", key)))
 			}
 		}
+		tools = append(tools, ToolAuthorization{
+			Name:                tool.Name,
+			Owner:               tool.Owner,
+			RequiredScopes:      append([]string(nil), tool.Auth.RequiredScopes...),
+			RequiredPermissions: append([]string(nil), tool.Auth.RequiredPermissions...),
+		})
 	}
-	return source, issues
+	return source, tools, issues
 }
 
 func stringListExtension(value any) ([]string, bool) {

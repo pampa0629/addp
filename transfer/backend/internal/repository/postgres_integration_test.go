@@ -213,7 +213,7 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatalf("ensure execution store: %v", err)
 	}
-	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}); err != nil {
+	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.CaptureResource{}, &models.SchemaChangeRequest{}); err != nil {
 		t.Fatalf("migrate continuous models: %v", err)
 	}
 	task := models.TransferTask{
@@ -364,6 +364,235 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	}
 }
 
+func TestIntegrationPostgresSchemaChangeStopWinsWorkerFinishRace(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	connInfo := testpg.ConnInfoFromEnv(t)
+	dsn, err := (&postgresql.PostgreSQLPlugin{}).BuildDSN(connInfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := gorm.Open(postgresdriver.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS transfer").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := commonExecution.EnsureStore(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.CaptureResource{}, &models.SchemaChangeRequest{}); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+	task := models.TransferTask{
+		TenantID: 999998, Name: fmt.Sprintf("schema-stop-race-%d", now.UnixNano()), TaskType: commonExecution.TaskTypeSync,
+		Config:    models.JSONMap{"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}}},
+		BatchSize: 100, Status: models.TaskStatusRunning, DesiredState: models.TaskDesiredStateRunning,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	execution := claimTestExecution(task, uuid.NewString())
+	execution.Status = commonExecution.ExecutionStatusRunning
+	execution.StartedAt = &now
+	if err := db.Create(&execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	lease := models.RuntimeLease{
+		TaskID: task.ID, ExecutionID: execution.ExecutionID, OwnerInstanceID: "schema-stop-worker",
+		LeaseUntil: now.Add(time.Minute), HeartbeatAt: now, FencingToken: 1, ClaimedAt: now,
+	}
+	if err := db.Create(&lease).Error; err != nil {
+		t.Fatal(err)
+	}
+	resource := models.CaptureResource{
+		TaskID: task.ID, TenantID: task.TenantID, Generation: 1,
+		ConnectorName: "schema-stop-connector-" + uuid.NewString(), TopicName: "schema-stop-topic-" + uuid.NewString(),
+		ConsumerGroup: "schema-stop-group-" + uuid.NewString(), SourceType: models.CaptureSourcePostgreSQL,
+		SourceIdentity: "source", SourceConnectionFingerprint: fmt.Sprintf("%064d", task.ID), SourceEngineID: 1,
+		SourceDatabase: "business", SourceSchema: "public", SourceTable: "orders", SourceSpatialInfo: models.JSONMap{},
+		Status: models.CaptureStatusRunning, ResourceVersion: 1, SchemaRevision: 1,
+	}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	request := models.SchemaChangeRequest{
+		TaskID: task.ID, TenantID: task.TenantID, CaptureResourceID: resource.ID, Generation: resource.Generation,
+		ExecutionID: execution.ExecutionID, SourcePartition: "0", SourceOffset: 7, Scope: "public.orders",
+		Diff:             models.JSONMap{"missing_fields": []string{}, "unexpected_fields": []string{"new_field"}, "incompatible_fields": []string{}},
+		ApprovedMappings: models.JSONMap{}, FromRevision: 1, ToRevision: 2,
+		Status: models.SchemaChangeRequestPending, DetectedAt: now,
+	}
+	if err := db.Create(&request).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error { return UpdateSchemaChangeExecutionProjectionTx(tx, &request) }); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.SchemaChangeRequest{}).Error
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.CaptureResource{}).Error
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
+		_ = db.Where("execution_id = ?", execution.ExecutionID).Delete(&commonExecution.TaskExecution{}).Error
+		_ = db.Unscoped().Delete(&models.TransferTask{}, task.ID).Error
+	})
+
+	if err := db.Model(&models.TransferTask{}).Where("id = ?", task.ID).Update("desired_state", models.TaskDesiredStateStopped).Error; err != nil {
+		t.Fatal(err)
+	}
+	task.DesiredState = models.TaskDesiredStateStopped
+	claim := RuntimeLeaseClaim{Task: task, Execution: execution, Lease: lease}
+	leaseRepo := NewRuntimeLeaseRepository(db, testContinuousRecoveryPolicy())
+	if err := leaseRepo.Finish(context.Background(), claim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema changed", now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&task, task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != models.TaskStatusIdle || task.DesiredState != models.TaskDesiredStateStopped {
+		t.Fatalf("stopped task after schema finish = status=%q desired=%q", task.Status, task.DesiredState)
+	}
+	if err := db.Where("execution_id = ?", execution.ExecutionID).First(&execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	continuous, _ := execution.Metadata["continuous"].(map[string]interface{})
+	change, _ := continuous["schema_change"].(map[string]interface{})
+	if change["status"] != schemaChangeProjectionStopped || execution.Metadata["stop_reason"] != "schema_change_blocked" {
+		t.Fatalf("stopped execution schema projection=%#v metadata=%#v", change, execution.Metadata)
+	}
+}
+
+func TestIntegrationPostgresPendingSchemaChangePreventsLeaseExpiryRecovery(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	connInfo := testpg.ConnInfoFromEnv(t)
+	dsn, err := (&postgresql.PostgreSQLPlugin{}).BuildDSN(connInfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := gorm.Open(postgresdriver.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS transfer").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := commonExecution.EnsureStore(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.CaptureResource{}, &models.SchemaChangeRequest{}); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+	task, execution, lease := seedPendingSchemaChangeRuntime(t, db, 999997, now, now.Add(-time.Minute))
+	leaseRepo := NewRuntimeLeaseRepository(db, testContinuousRecoveryPolicy())
+	claim, err := leaseRepo.ClaimNext(context.Background(), "recovery-worker", now, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim != nil {
+		t.Fatalf("pending schema change produced recovery claim=%#v", claim)
+	}
+	if err := db.First(&task, task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != models.TaskStatusBlocked || task.LastExecutionStatus == nil || *task.LastExecutionStatus != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("schema recovery reconciliation task=%#v", task)
+	}
+	if err := db.Where("execution_id = ?", execution.ExecutionID).First(&execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	continuous, _ := execution.Metadata["continuous"].(map[string]interface{})
+	change, _ := continuous["schema_change"].(map[string]interface{})
+	if execution.Status != commonExecution.ExecutionStatusFailed || execution.Metadata["stop_reason"] != "schema_change_blocked" ||
+		change["status"] != schemaChangeProjectionPending {
+		t.Fatalf("schema recovery reconciliation execution=%#v", execution)
+	}
+	if err := db.First(&lease, lease.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if lease.OwnerInstanceID != "" {
+		t.Fatalf("schema recovery reconciliation lease=%#v", lease)
+	}
+	var recoveryCount int64
+	if err := db.Model(&commonExecution.TaskExecution{}).
+		Where("module = ? AND source_task_id = ? AND status = ?", commonExecution.ModuleTransfer, fmt.Sprint(task.ID), commonExecution.ExecutionStatusPending).
+		Count(&recoveryCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if recoveryCount != 0 {
+		t.Fatalf("pending schema change created %d recovery executions", recoveryCount)
+	}
+}
+
+func seedPendingSchemaChangeRuntime(t *testing.T, db *gorm.DB, tenantID uint, now, leaseUntil time.Time) (models.TransferTask, commonExecution.TaskExecution, models.RuntimeLease) {
+	t.Helper()
+	task := models.TransferTask{
+		TenantID: tenantID, Name: fmt.Sprintf("schema-recovery-%d", now.UnixNano()), TaskType: commonExecution.TaskTypeSync,
+		Config:    models.JSONMap{"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}}},
+		BatchSize: 100, Status: models.TaskStatusRunning, DesiredState: models.TaskDesiredStateRunning,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	execution := claimTestExecution(task, uuid.NewString())
+	execution.Status = commonExecution.ExecutionStatusRunning
+	execution.StartedAt = &now
+	if err := db.Create(&execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&task).Updates(map[string]interface{}{
+		"last_execution_id": execution.ExecutionID, "last_execution_status": commonExecution.ExecutionStatusRunning,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	lease := models.RuntimeLease{
+		TaskID: task.ID, ExecutionID: execution.ExecutionID, OwnerInstanceID: "expired-schema-worker",
+		LeaseUntil: leaseUntil, HeartbeatAt: leaseUntil, FencingToken: 1, ClaimedAt: now.Add(-2 * time.Minute),
+	}
+	if err := db.Create(&lease).Error; err != nil {
+		t.Fatal(err)
+	}
+	resource := models.CaptureResource{
+		TaskID: task.ID, TenantID: task.TenantID, Generation: 1,
+		ConnectorName: "schema-recovery-connector-" + uuid.NewString(), TopicName: "schema-recovery-topic-" + uuid.NewString(),
+		ConsumerGroup: "schema-recovery-group-" + uuid.NewString(), SourceType: models.CaptureSourcePostgreSQL,
+		SourceIdentity: "source", SourceConnectionFingerprint: fmt.Sprintf("%064d", task.ID), SourceEngineID: 1,
+		SourceDatabase: "business", SourceSchema: "public", SourceTable: "orders", SourceSpatialInfo: models.JSONMap{},
+		Status: models.CaptureStatusRunning, ResourceVersion: 1, SchemaRevision: 1,
+	}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	request := models.SchemaChangeRequest{
+		TaskID: task.ID, TenantID: task.TenantID, CaptureResourceID: resource.ID, Generation: resource.Generation,
+		ExecutionID: execution.ExecutionID, SourcePartition: "0", SourceOffset: 11, Scope: "public.orders",
+		Diff:             models.JSONMap{"missing_fields": []string{}, "unexpected_fields": []string{"new_field"}, "incompatible_fields": []string{}},
+		ApprovedMappings: models.JSONMap{}, FromRevision: 1, ToRevision: 2,
+		Status: models.SchemaChangeRequestPending, DetectedAt: now,
+	}
+	if err := db.Create(&request).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error { return UpdateSchemaChangeExecutionProjectionTx(tx, &request) }); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.SchemaChangeRequest{}).Error
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.CaptureResource{}).Error
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
+		_ = db.Where("module = ? AND source_task_id = ?", commonExecution.ModuleTransfer, fmt.Sprint(task.ID)).Delete(&commonExecution.TaskExecution{}).Error
+		_ = db.Unscoped().Delete(&models.TransferTask{}, task.ID).Error
+	})
+	return task, execution, lease
+}
+
 func TestIntegrationPostgresContinuousAutomaticRecoveryCreatesNewExecution(t *testing.T) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
@@ -383,7 +612,7 @@ func TestIntegrationPostgresContinuousAutomaticRecoveryCreatesNewExecution(t *te
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatalf("ensure execution store: %v", err)
 	}
-	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}); err != nil {
+	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.CaptureResource{}, &models.SchemaChangeRequest{}); err != nil {
 		t.Fatalf("migrate continuous models: %v", err)
 	}
 
@@ -505,7 +734,7 @@ func TestIntegrationPostgresContinuousRecoveryBackoffAndCircuitBreaker(t *testin
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatalf("ensure execution store: %v", err)
 	}
-	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}); err != nil {
+	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.CaptureResource{}, &models.SchemaChangeRequest{}); err != nil {
 		t.Fatalf("migrate continuous models: %v", err)
 	}
 

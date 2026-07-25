@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -148,8 +149,29 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	})
 	stateRepo := repository.NewSyncStateRepository(infraDB)
 	executionService := service.NewExecutionService(infraDB, commonExecution.NewTaskExecutionRepository(infraDB))
+	var metaScanCalls atomic.Int32
+	metaScanEntered := make(chan struct{})
+	releaseMetaScan := make(chan struct{}, 1)
+	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := metaScanCalls.Add(1)
+		if call == 1 {
+			close(metaScanEntered)
+			<-releaseMetaScan
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = fmt.Fprintf(w, `{"execution_id":"meta-scan-%d"}`, call)
+	}))
+	defer func() {
+		select {
+		case releaseMetaScan <- struct{}{}:
+		default:
+		}
+		metaServer.Close()
+	}()
 	taskService := service.NewTaskService(infraDB, nil, &transferconfig.Config{
 		ContinuousRuntimeStopTimeout: 5 * time.Second, ContinuousRuntimeStopPollInterval: 50 * time.Millisecond,
+		MetaServiceURL: metaServer.URL, InternalAPIKey: "cdc-data-e2e", SchemaChangeMetaScanClaimTTL: 2 * time.Minute,
 	}, nil)
 	taskService.SetEngineResolver(resolver)
 	taskService.SetExecutionService(executionService)
@@ -313,7 +335,8 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	}
 	continuousMetadata, _ := blockedExecution.Metadata["continuous"].(map[string]interface{})
 	schemaChange, _ := continuousMetadata["schema_change"].(map[string]interface{})
-	if fmt.Sprint(schemaChange["unexpected_fields"]) != "[schema_drift]" || blockedExecution.Metadata["stop_reason"] != "schema_change_blocked" {
+	if fmt.Sprint(schemaChange["unexpected_fields"]) != "[schema_drift]" || schemaChange["status"] != "pending" ||
+		schemaChange["request_id"] == nil || blockedExecution.Metadata["stop_reason"] != "schema_change_blocked" {
 		t.Fatalf("schema-blocked execution metadata=%#v", blockedExecution.Metadata)
 	}
 	blockedRetry := cdcDataExecution(blockedTask)
@@ -328,26 +351,170 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 		change.SuggestedFields[0].TargetType != "string" || !change.SuggestedFields[0].Nullable {
 		t.Fatalf("PostgreSQL additive schema request=%#v", change)
 	}
-	change = cdcDataApproveSchemaChangeViaAPI(t, apiRouter, task.ID, models.SchemaChangeField{
+	approval := models.SchemaChangeField{
 		Source: "schema_drift", Target: "schema_drift", TargetType: "string", Nullable: true,
-	})
-	if change.Status != models.SchemaChangeRequestApplied || change.ToRevision != change.FromRevision+1 ||
-		change.MetadataScanStatus != "failed" {
-		t.Fatalf("applied PostgreSQL schema request=%#v", change)
 	}
-	repeated := cdcDataApproveSchemaChangeViaAPI(t, apiRouter, task.ID, models.SchemaChangeField{
-		Source: "schema_drift", Target: "schema_drift", TargetType: "string", Nullable: true,
-	})
-	if repeated.ID != change.ID || repeated.Status != models.SchemaChangeRequestApplied {
-		t.Fatalf("idempotent PostgreSQL schema approval=%#v, want request %d", repeated, change.ID)
+	const failCommitCallback = "test:fail_schema_change_task_commit"
+	failTaskCommit := true
+	if err := infraDB.Callback().Update().Before("gorm:update").Register(failCommitCallback, func(tx *gorm.DB) {
+		if failTaskCommit && tx.Statement != nil && tx.Statement.Schema != nil &&
+			tx.Statement.Schema.Table == (&models.TransferTask{}).TableName() {
+			failTaskCommit = false
+			tx.AddError(errors.New("injected Infra task commit failure after target DDL"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	failedApproval, status, body, err := cdcDataSchemaApprovalRequest(apiRouter, task.ID, []models.SchemaChangeField{approval})
+	if removeErr := infraDB.Callback().Update().Remove(failCommitCallback); removeErr != nil {
+		t.Fatal(removeErr)
+	}
+	if err != nil || status != http.StatusInternalServerError || failedApproval.ID != 0 {
+		t.Fatalf("injected schema approval status=%d body=%s result=%#v err=%v", status, body, failedApproval, err)
+	}
+	if failTaskCommit {
+		t.Fatal("Infra task commit failure callback did not run")
+	}
+	var targetColumnExists bool
+	if err := businessDB.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema=$1 AND table_name=$2 AND column_name='schema_drift' AND is_nullable='YES'
+		)`, schema, targetTable).Scan(&targetColumnExists); err != nil || !targetColumnExists {
+		t.Fatalf("target DDL did not commit before injected Infra rollback: exists=%v err=%v", targetColumnExists, err)
+	}
+	var rolledBackRequest models.SchemaChangeRequest
+	if err := infraDB.Where("id = ?", change.ID).First(&rolledBackRequest).Error; err != nil {
+		t.Fatal(err)
+	}
+	var rolledBackResource models.CaptureResource
+	if err := infraDB.First(&rolledBackResource, resource.ID).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := infraDB.First(&blockedTask, task.ID).Error; err != nil {
 		t.Fatal(err)
 	}
+	if rolledBackRequest.Status != models.SchemaChangeRequestPending || len(rolledBackRequest.ApprovedMappings) != 0 ||
+		rolledBackResource.SchemaRevision != change.FromRevision || blockedTask.Status != models.TaskStatusBlocked ||
+		blockedTask.DesiredState != models.TaskDesiredStateRunning {
+		t.Fatalf("Infra state did not roll back after target DDL: request=%#v resource=%#v task=%#v", rolledBackRequest, rolledBackResource, blockedTask)
+	}
+
+	type concurrentApprovalResult struct {
+		view   models.SchemaChangeRequestView
+		status int
+		body   string
+		err    error
+	}
+	firstApproval := make(chan concurrentApprovalResult, 1)
+	go func() {
+		view, status, body, err := cdcDataSchemaApprovalRequest(apiRouter, task.ID, []models.SchemaChangeField{approval})
+		firstApproval <- concurrentApprovalResult{view: view, status: status, body: body, err: err}
+	}()
+	select {
+	case <-metaScanEntered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("first concurrent approval did not claim and call Meta scan")
+	}
+	secondApproval := make(chan concurrentApprovalResult, 1)
+	go func() {
+		view, status, body, err := cdcDataSchemaApprovalRequest(apiRouter, task.ID, []models.SchemaChangeField{approval})
+		secondApproval <- concurrentApprovalResult{view: view, status: status, body: body, err: err}
+	}()
+	var secondResult concurrentApprovalResult
+	select {
+	case secondResult = <-secondApproval:
+	case <-time.After(10 * time.Second):
+		t.Fatal("second concurrent approval did not return while Meta scan claim was running")
+	}
+	if secondResult.err != nil || secondResult.status != http.StatusOK || secondResult.view.ID != change.ID ||
+		secondResult.view.Status != models.SchemaChangeRequestApplied ||
+		secondResult.view.MetadataScanStatus != models.SchemaChangeMetadataScanRunning || metaScanCalls.Load() != 1 {
+		t.Fatalf("second concurrent schema approval status=%d body=%s result=%#v calls=%d err=%v",
+			secondResult.status, secondResult.body, secondResult.view, metaScanCalls.Load(), secondResult.err)
+	}
+	releaseMetaScan <- struct{}{}
+	var firstResult concurrentApprovalResult
+	select {
+	case firstResult = <-firstApproval:
+	case <-time.After(10 * time.Second):
+		t.Fatal("first concurrent approval did not finish after Meta scan release")
+	}
+	change = firstResult.view
+	if firstResult.err != nil || firstResult.status != http.StatusOK || change.ID != secondResult.view.ID ||
+		change.Status != models.SchemaChangeRequestApplied || change.ToRevision != change.FromRevision+1 ||
+		change.MetadataScanStatus != models.SchemaChangeMetadataScanSuccess || change.MetadataScanAttempt != 1 ||
+		change.MetadataScanExecutionID != "meta-scan-1" || metaScanCalls.Load() != 1 {
+		t.Fatalf("first concurrent schema approval status=%d body=%s result=%#v calls=%d err=%v",
+			firstResult.status, firstResult.body, change, metaScanCalls.Load(), firstResult.err)
+	}
+	if err := infraDB.Where("execution_id = ?", blockedExecution.ExecutionID).First(&blockedExecution).Error; err != nil {
+		t.Fatal(err)
+	}
+	continuousMetadata, _ = blockedExecution.Metadata["continuous"].(map[string]interface{})
+	schemaChange, _ = continuousMetadata["schema_change"].(map[string]interface{})
+	metadataScan, _ := schemaChange["metadata_scan"].(map[string]interface{})
+	if schemaChange["status"] != "applied" || metadataScan["status"] != "success" ||
+		metadataScan["execution_id"] != "meta-scan-1" || metadataScan["attempt"] != float64(1) {
+		t.Fatalf("applied schema change execution projection=%#v", schemaChange)
+	}
+	repeated := cdcDataApproveSchemaChangeViaAPI(t, apiRouter, task.ID, approval)
+	if repeated.ID != change.ID || repeated.Status != models.SchemaChangeRequestApplied ||
+		repeated.MetadataScanStatus != models.SchemaChangeMetadataScanSuccess || repeated.MetadataScanAttempt != 1 || metaScanCalls.Load() != 1 {
+		t.Fatalf("idempotent PostgreSQL schema approval=%#v calls=%d, want request %d", repeated, metaScanCalls.Load(), change.ID)
+	}
+	if err := infraDB.First(&blockedTask, task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	var appliedResource models.CaptureResource
+	if err := infraDB.First(&appliedResource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	var requestCount int64
+	if err := infraDB.Model(&models.SchemaChangeRequest{}).Where("capture_resource_id = ?", resource.ID).Count(&requestCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	appliedSpec, err := planner.ParseDatabaseCDCTaskSpec(blockedTask.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	addedMappingCount := 0
+	for _, field := range appliedSpec.Transforms[0].Fields {
+		if field.Source == "schema_drift" {
+			addedMappingCount++
+		}
+	}
 	if blockedTask.Status != models.TaskStatusIdle || blockedTask.DesiredState != models.TaskDesiredStatePaused {
 		t.Fatalf("approved task status=%q desired=%q", blockedTask.Status, blockedTask.DesiredState)
 	}
-	var targetColumnExists bool
+	if appliedResource.SchemaRevision != change.ToRevision || requestCount != 1 || addedMappingCount != 1 {
+		t.Fatalf("concurrent approval did not converge: revision=%d requests=%d added_mappings=%d", appliedResource.SchemaRevision, requestCount, addedMappingCount)
+	}
+	expiredLease := time.Now().Add(-time.Minute)
+	if err := infraDB.Model(&models.SchemaChangeRequest{}).Where("id = ?", change.ID).Updates(map[string]interface{}{
+		"metadata_scan_status": models.SchemaChangeMetadataScanRunning, "metadata_scan_claim_token": uuid.NewString(),
+		"metadata_scan_lease_until": expiredLease, "metadata_scan_execution_id": "", "metadata_scan_error": "",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	readOnlyScan := cdcDataGetSchemaChangeViaAPI(t, apiRouter, task.ID)
+	if readOnlyScan.MetadataScanStatus != models.SchemaChangeMetadataScanRunning || readOnlyScan.MetadataScanAttempt != 1 || metaScanCalls.Load() != 1 {
+		t.Fatalf("schema change GET changed expired Meta scan claim: result=%#v calls=%d", readOnlyScan, metaScanCalls.Load())
+	}
+	recoveredScan := cdcDataApproveSchemaChangeViaAPI(t, apiRouter, task.ID, approval)
+	if recoveredScan.MetadataScanStatus != models.SchemaChangeMetadataScanSuccess || recoveredScan.MetadataScanAttempt != 2 ||
+		recoveredScan.MetadataScanExecutionID != "meta-scan-2" || recoveredScan.MetadataScanLeaseUntil != nil || metaScanCalls.Load() != 2 {
+		t.Fatalf("expired Meta scan claim recovery=%#v calls=%d", recoveredScan, metaScanCalls.Load())
+	}
+	if err := infraDB.Where("execution_id = ?", blockedExecution.ExecutionID).First(&blockedExecution).Error; err != nil {
+		t.Fatal(err)
+	}
+	continuousMetadata, _ = blockedExecution.Metadata["continuous"].(map[string]interface{})
+	schemaChange, _ = continuousMetadata["schema_change"].(map[string]interface{})
+	metadataScan, _ = schemaChange["metadata_scan"].(map[string]interface{})
+	if metadataScan["status"] != "success" || metadataScan["execution_id"] != "meta-scan-2" || metadataScan["attempt"] != float64(2) {
+		t.Fatalf("reclaimed Meta scan execution projection=%#v", schemaChange)
+	}
 	if err := businessDB.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM information_schema.columns
@@ -427,15 +594,34 @@ func cdcDataGetSchemaChangeViaAPI(t *testing.T, router http.Handler, taskID uint
 
 func cdcDataApproveSchemaChangeViaAPI(t *testing.T, router http.Handler, taskID uint, fields ...models.SchemaChangeField) models.SchemaChangeRequestView {
 	t.Helper()
-	response := cdcDataAPIRequest(t, router, http.MethodPost, fmt.Sprintf("/api/v1/transfer/task-definitions/%d/schema-change/approve", taskID), models.ApproveSchemaChangeRequest{Fields: fields})
+	result, status, body, err := cdcDataSchemaApprovalRequest(router, taskID, fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("approve schema change API status=%d body=%s", status, body)
+	}
+	return result
+}
+
+func cdcDataSchemaApprovalRequest(router http.Handler, taskID uint, fields []models.SchemaChangeField) (models.SchemaChangeRequestView, int, string, error) {
+	encoded, err := json.Marshal(models.ApproveSchemaChangeRequest{Fields: fields})
+	if err != nil {
+		return models.SchemaChangeRequestView{}, 0, "", err
+	}
+	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/transfer/task-definitions/%d/schema-change/approve", taskID), bytes.NewReader(encoded))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	body := response.Body.String()
 	if response.Code != http.StatusOK {
-		t.Fatalf("approve schema change API status=%d body=%s", response.Code, response.Body.String())
+		return models.SchemaChangeRequestView{}, response.Code, body, nil
 	}
 	var result models.SchemaChangeRequestView
 	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
-		t.Fatal(err)
+		return models.SchemaChangeRequestView{}, response.Code, body, err
 	}
-	return result
+	return result, response.Code, body, nil
 }
 
 func cdcDataCreateTaskViaAPI(t *testing.T, router http.Handler, config models.JSONMap) models.TransferTask {

@@ -3,30 +3,9 @@ package models
 import (
 	"time"
 
+	systemauthorization "github.com/addp/system/internal/authorization"
 	"github.com/lib/pq"
 )
-
-var delegatedToolScopes = map[string]map[string]struct{}{
-	"system": {
-		"engine.list": {},
-	},
-	"manager": {
-		"data.search":  {},
-		"data.preview": {},
-	},
-	"meta": {
-		"resource.ancestors.get": {},
-	},
-	"develop": {
-		"workflow.operators.list": {},
-		"workflow.validate":       {},
-		"workflow.run":            {},
-		"execution.get":           {},
-	},
-	"copilot": {
-		"workflow.draft.generate": {},
-	},
-}
 
 type DelegatedAccessToken struct {
 	ID                  string         `gorm:"primaryKey;type:uuid" json:"id"`
@@ -65,10 +44,6 @@ type DelegatedAccessTokenResponse struct {
 }
 
 func IsDelegatedToolScopeAllowed(audience, scope string) bool {
-	scopes, ok := delegatedToolScopes[audience]
-	if !ok {
-		return false
-	}
-	_, ok = scopes[scope]
-	return ok
+	tool, ok := (systemauthorization.ToolAuthorizationCatalog{}).FindToolAuthorization(scope)
+	return ok && tool.Owner == audience && len(tool.RequiredScopes) == 1 && tool.RequiredScopes[0] == scope
 }

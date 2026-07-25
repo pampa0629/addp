@@ -2,7 +2,7 @@
 
 更新日期：2026-07-25
 
-状态：技术设计已确认，唯一 JSON Schema、共享 Go 类型、第一方 Web Access Token 与 Browser Resource Access Ticket 投影、System 目标 Gin Middleware、Common 目标 HTTP 消费器和 Resource Ticket 路由级 Guard 已实现；三个目标 Middleware/Guard 均尚未注册。OAuth、Service Principal、Delegated Token、API、Swagger 和 `main` 尚未切换。本文在已确认的 IAM 目标数据模型和 Permission / Role 矩阵之上，确定 AuthContext JSON Schema、登录上下文选择、浏览器上下文切换、授权版本失效和共享类型边界。
+状态：技术设计已确认，唯一 JSON Schema、共享 Go 类型、第一方 Web Access Token、Browser Resource Access Ticket 与 Delegated Access Token 投影、System 目标 Gin Middleware、Common 目标 HTTP 消费器、Resource Ticket Guard、Delegated Route Guard、委托签发目标 Runtime 与目标 API Adapter 已实现；所有目标 Middleware/Guard 和委托签发目标 Adapter 均尚未注册。OAuth Access Token、Service Principal、其余 Swagger 和 `main` 尚未切换。本文在已确认的 IAM 目标数据模型和 Permission / Role 矩阵之上，确定 AuthContext JSON Schema、登录上下文选择、浏览器上下文切换、授权版本失效和共享类型边界。
 
 ## 一、目标与边界
 
@@ -412,7 +412,7 @@ System 生成响应时还必须验证：
 - `first_party_access_token` 和 `resource_access_ticket` 的 `client_id` 固定为 `addp-web`；
 - `resource_access_ticket` 必须只有一个 owner audience、`scope_mode=restricted`、唯一 `resource:read` Scope，并继承所属第一方 Browser Family 的 Principal、Context、认证事实和授权版本；
 - `oauth_access_token` 必须具有真实 OAuth `client_id`，且 `scope_mode=restricted`；
-- `delegated_access_token` 必须只有一个 owner audience、非空 Scope 和非空 `delegation`；
+- `delegated_access_token` 必须是 User、只有一个合法 owner audience、`scope_mode=restricted`、非空稳定 Tool Scope 和非空 `delegation`；`client_id` 必须等于 `delegation.delegated_by_client_id`，并继承源 Access Token Family；
 - 非 Delegated Token 的 `delegation` 必须为 `null`；
 - `resource_access_ticket` 只允许 System AuthContext 基础设施和对应 owner 的白名单 GET / HEAD 路由消费；
 - `issued_at < expires_at`，`step_up_expires_at` 不得晚于当前 Token Family 的最终有效期。
@@ -649,6 +649,8 @@ Service Principal 不伪装成 User，不返回用户认证强度，也不进入
 ```
 
 Delegated Token 继承源 Principal、Context、认证事实和授权版本。它只缩小 audience、Scope、有效期和允许路由，不能更换 Principal、Tenant 或扩张 Permission。
+
+Delegated Route Guard 直接挂载到 Tool Manifest 声明的 method + route。对于 Delegated Token，Guard 要求唯一 owner audience、Scope 与该 Tool 的 `required_scopes` 精确集合相等，并校验 `required_permissions` all-of 候选；额外 Scope 不视为兼容。对于第一方或 OAuth User Token，Guard 不执行委托分支，路由原有 Permission 与 owner Resource Policy 仍必须执行。写 Tool 审批不进入 AuthContext 或 Guard，由 owner Handler 持有。
 
 ### 5.5 Browser Resource Access Ticket
 
@@ -977,6 +979,14 @@ System 当前生产路径仍依赖旧平铺 Context Key，必须在同一次 Rou
 - 严格校验 `resource_access_ticket + addp-web + [owner] + restricted + [resource:read] + delegation=null`；
 - required Permission 必须非空、无重复、合法且按 all-of 判断；该结果只表达 Role Permission Allow 候选，owner Handler 继续执行 Assignment Scope 和资源 Policy。
 
+目标 Delegated Route Guard 使用独立构造器并保持未注册，边界固定为：
+
+- 直接挂载到 Tool Manifest 声明的 method + route，挂载本身就是委托路由白名单，不保留集中 route map；
+- 读取已由目标 `NewMiddleware` 注入的规范 AuthContext，不再次请求 System、不缓存、不解析 Token 字符串；
+- 非 Delegated User Token 继续后续 Handler 和原 Permission / Resource Policy 路径；Delegated Token 必须满足 `user + restricted + 唯一 owner audience + Scope 精确集合 + delegation`；
+- `required_permissions` 必须非空、无重复、合法且全部属于 owner，按 all-of 判断；该结果只表达 Role Permission Allow 候选；
+- AgentRun / ToolCall 只作为审计关联事实，不由 Guard 接受请求覆盖；写 Tool 审批、Assignment Scope 和资源 Policy 继续归 owner Handler。
+
 截至 2026-07-25 的生产代码静态扫描显示，除 Common 自身旧实现外，业务模块仍有 137 次旧 helper 调用和 16 次导出旧 Context Key 引用：
 
 | 模块 | 旧 helper / 导出 Key 命中 | 现有认证入口与迁移重点 |
@@ -1080,6 +1090,8 @@ System 审计必须区分 expired、revoked、version_mismatch、membership_inac
 - First-party Web 固定 `addp-web + addp.api + unrestricted`；
 - OAuth Token 固定真实 Client、批准 Scope 和 `restricted`；
 - Delegated Token 只有一个 owner audience，且审计绑定完整；
+- Delegated Token 的 Client 等于 `delegated_by_client_id`，继承源 Principal / Context / 认证 / 授权事实；源 Token、Family、Membership、Tenant 或授权版本失效时立即返回 401；
+- Delegated Route Guard 拒绝 owner 不匹配、Scope 缺失或额外、Role Permission 不足和缺失委托绑定；普通 User Token 继续原路径；
 - Resource Ticket 固定 `addp-web + 唯一 owner audience + restricted + resource:read`，轮换后的旧票据立即返回 401；
 - Resource Ticket Guard 拒绝非 GET/HEAD、缺失 Cookie、任何 Authorization Header、owner 不匹配、Scope 不匹配和 Role Permission 不足；
 - AuthContext Schema 解码失败时 owner 返回 503，不降级为匿名或旧字段解析；
@@ -1094,7 +1106,7 @@ System 审计必须区分 expired、revoked、version_mismatch、membership_inac
 3. `docs/spec/addp OAuth授权规范.md` 已把第一方 `client_id=null` 改为 `addp-web`，并统一 audience 为 `addp.api`；
 4. IAM 目标数据模型已加入 Context Selection Ticket 临时记录及索引约束。
 
-当前已完成 Schema、核心 IAM 数据库、第一方 Browser Session、Access Token / Resource Ticket AuthContext 投影和 Common 目标消费器，但尚未切换生产 Router。后续必须按 owner 调用方迁移批次同步 Swagger、前端调用方和契约测试，并在切换时删除旧 AuthContext、缓存中间件和旧 Resource Ticket 路径；OAuth/OIDC 继续按已接受的 Fosite ADR 和 Storage Adapter 设计推进。
+当前已完成 Schema、核心 IAM 数据库、第一方 Browser Session、Access Token / Resource Ticket / Delegated Token AuthContext 投影、Common 目标消费器与路由 Guard，以及委托签发目标 Runtime、目标 API Adapter 和真实 PostgreSQL E2E。目标 Adapter 未注册，旧生产端点仍是唯一活动入口，但其 Tool Scope 校验已经改为读取同一发布期生成 Catalog；目标委托签发必须与目标 AuthContext Middleware 同批切换，并同步删除旧签发、旧 AuthContext、缓存中间件、旧 Resource Ticket 与旧 Delegated Policy 路径。OAuth/OIDC 继续按已接受的 Fosite ADR 和 Storage Adapter 设计推进。
 
 ## 十四、已确认的技术决策
 

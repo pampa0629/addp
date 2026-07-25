@@ -88,7 +88,8 @@ import {
   useDAGLayout,
   useDAGSelection,
   useDAGViewport,
-  useLoopDetection
+  useLoopDetection,
+  validateDAGConnection
 } from '@addp/common-frontend/dag'
 import { isStandardWorkflowDefinition } from '@/utils/workflowDevTaskPayload'
 import {
@@ -264,18 +265,16 @@ function resolveInputPort(event) {
 }
 
 function canConnectPorts({ sourceId, targetId, sourcePort, targetPort }) {
-  if (!sourceId || !targetId || sourceId === targetId || hasLoop(sourceId, targetId)) {
-    return 'loop'
-  }
+  const baseResult = validateDAGConnection({
+    graph: graph.value,
+    sourceId,
+    targetId,
+    hasLoop
+  })
+  if (baseResult !== true) return baseResult
   if (!areWorkflowTypesCompatible(sourcePort?.type, targetPort?.type)) {
     return 'type_mismatch'
   }
-
-  const duplicated = graph.value.getEdges().some(edge => {
-    const model = edge.getModel()
-    return model.source === sourceId && model.target === targetId
-  })
-  if (duplicated) return 'duplicate'
 
   const occupied = graph.value.getEdges().some(edge => {
     const model = edge.getModel()

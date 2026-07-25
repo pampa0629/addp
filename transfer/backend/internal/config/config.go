@@ -77,6 +77,7 @@ type Config struct {
 	CaptureMonitorInterval             time.Duration
 	ContinuousRuntimeStopTimeout       time.Duration
 	ContinuousRuntimeStopPollInterval  time.Duration
+	SchemaChangeMetaScanClaimTTL       time.Duration
 
 	BuiltinMinioEndpoint  string
 	BuiltinMinioAccessKey string
@@ -111,6 +112,9 @@ func (c Config) ValidateContinuousRuntime() error {
 	if c.ContinuousRuntimeStopTimeout <= 0 || c.ContinuousRuntimeStopPollInterval <= 0 ||
 		c.ContinuousRuntimeStopPollInterval >= c.ContinuousRuntimeStopTimeout {
 		return fmt.Errorf("continuous runtime stop timeout and poll interval must be valid")
+	}
+	if c.SchemaChangeMetaScanClaimTTL <= time.Minute {
+		return fmt.Errorf("schema change Meta scan claim TTL must be greater than the 60-second Meta client timeout")
 	}
 	return nil
 }
@@ -180,6 +184,7 @@ func Load() *Config {
 		CaptureMonitorInterval:             commonConfig.GetEnvDuration("TRANSFER_CAPTURE_MONITOR_INTERVAL", "15s"),
 		ContinuousRuntimeStopTimeout:       commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RUNTIME_STOP_TIMEOUT", "45s"),
 		ContinuousRuntimeStopPollInterval:  commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RUNTIME_STOP_POLL_INTERVAL", "250ms"),
+		SchemaChangeMetaScanClaimTTL:       commonConfig.GetEnvDuration("TRANSFER_SCHEMA_CHANGE_META_SCAN_CLAIM_TTL", "2m"),
 	}
 
 	minioCfg := commonConfig.LoadBuiltinMinIOConfig()

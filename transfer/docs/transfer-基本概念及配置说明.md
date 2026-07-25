@@ -305,6 +305,8 @@ MySQL CDC 固定支持 MySQL 8.0、有稳定非空主键的单表、`log_bin=ON`
 
 原 capture generation 的唯一恢复路线是人工确认 additive migration。`GET /task-definitions/:id/schema-change` 返回当前请求与服务端重新检查后的建议字段；只有当前阻塞消息实际包含、源表中仍存在、允许 NULL、不是主键且不是 geometry 的新增字段可审批。`POST /task-definitions/:id/schema-change/approve` 必须逐字段提交 `source`、`target`、`target_type` 和 `nullable=true`，完整覆盖本次新增字段。服务端复用 `PartitionedTableChangeApplyProvider` 幂等新增目标列，追加唯一 field mapping、递增 generation schema revision，并把任务收敛为 `status=idle, desired_state=paused`；审批不会隐式恢复，用户需通过既有 Resume 从原 committed offset 继续。删除字段、类型或主键变化、非 nullable/geometry 新增以及协议变化仍只能永久 Stop 后创建新任务和新目标表。
 
+审批提交后的 Meta deep scan 使用 request 持久化 `pending -> running(token, lease) -> success|failed` claim。并发审批只有一个调用者触发 Meta；进程崩溃留下的过期 `running` 只由相同重复审批 POST 接管，GET 始终只读，旧 token 的迟到结果被拒绝。真实 Meta 调用失败进入 `failed` 且不由重复审批自动重试，用户可在 Meta 手动扫描；claim TTL 由 `TRANSFER_SCHEMA_CHANGE_META_SCAN_CLAIM_TTL` 配置，默认 2 分钟。
+
 `pause` 停止目标应用，但 connector 继续把 PostgreSQL WAL 或 MySQL binlog 变化写入 Infra Kafka并推进捕获位置。正常 pause 的主要代价是 Kafka backlog、磁盘和 retention 窗口；connector/Kafka 故障时还必须分别观测 PostgreSQL slot/WAL 或 MySQL binlog 保留风险。resume 只在 committed position 尚未过期时保证无损。
 
 `stop` 是 CDC task 的不可逆终态：删除 ADDP-owned connector、provider 专属捕获资源、data/schema-history topic、consumer group 和 ACL，任务不得再次 start/resume。重新同步必须创建新任务、新目标表并重新 initial snapshot。服务端 Stop API 必须要求 `confirmed=true` 且 `confirmation_text` 与任务名称完全一致，Console 同时使用 danger 二次确认并要求输入任务名称；stop 不删除目标业务表、目标 ledger、任务定义、execution 或审计记录。

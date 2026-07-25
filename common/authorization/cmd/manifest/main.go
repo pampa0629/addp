@@ -25,6 +25,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 	coverageReport := flags.Bool("coverage-report", false, "write the OpenAPI and Tool authorization coverage report")
 	generateSQLSeed := flags.Bool("generate-sql-seed", false, "generate the first IAM catalog seed migration")
 	checkSQLSeed := flags.Bool("check-sql-seed", false, "verify the first IAM catalog seed migration is current")
+	generateToolCatalog := flags.Bool("generate-tool-catalog", false, "generate the System Runtime Tool authorization catalog")
+	checkToolCatalog := flags.Bool("check-tool-catalog", false, "verify the System Runtime Tool authorization catalog is current")
 	repositoryRoot := flags.String("repository-root", "", "explicit ADDP repository root")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -40,6 +42,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		*coverageReport,
 		*generateSQLSeed,
 		*checkSQLSeed,
+		*generateToolCatalog,
+		*checkToolCatalog,
 	} {
 		if enabled {
 			modeCount++
@@ -94,6 +98,23 @@ func run(args []string, stdout, stderr io.Writer) error {
 		}
 		if _, err := fmt.Fprintf(stdout, "{\"path\":%q,\"byte_count\":%d}\n", authorization.IAMCatalogSeedRelativePath, len(data)); err != nil {
 			return fmt.Errorf("write generated IAM catalog seed report: %w", err)
+		}
+		return nil
+	}
+	if *generateToolCatalog || *checkToolCatalog {
+		data, err := authorization.GenerateSystemToolAuthorizationCatalog(*repositoryRoot, report)
+		if err != nil {
+			return err
+		}
+		if *generateToolCatalog {
+			if err := authorization.WriteGeneratedSystemToolAuthorizationCatalog(*repositoryRoot, data); err != nil {
+				return err
+			}
+		} else if err := authorization.CheckGeneratedSystemToolAuthorizationCatalog(*repositoryRoot, data); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(stdout, "{\"path\":%q,\"byte_count\":%d}\n", authorization.SystemToolAuthorizationCatalogRelativePath, len(data)); err != nil {
+			return fmt.Errorf("write generated System Tool authorization catalog report: %w", err)
 		}
 		return nil
 	}
