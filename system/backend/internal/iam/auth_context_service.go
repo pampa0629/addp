@@ -61,7 +61,7 @@ func (s *AuthContextService) ResolveAuthContext(
 ) (*commonauth.AuthContext, error) {
 	switch {
 	case strings.HasPrefix(credential, "addp_at_"):
-		return s.ResolveFirstPartyAccessToken(ctx, credential)
+		return s.ResolveUserAccessToken(ctx, credential)
 	case strings.HasPrefix(credential, "addp_rat_"):
 		return s.ResolveResourceAccessTicket(ctx, credential)
 	case strings.HasPrefix(credential, "addp_dat_"):
@@ -69,6 +69,35 @@ func (s *AuthContextService) ResolveAuthContext(
 	default:
 		return nil, invalidCredential(CredentialInvalidFormat)
 	}
+}
+
+func (s *AuthContextService) ResolveUserAccessToken(
+	ctx context.Context,
+	accessToken string,
+) (*commonauth.AuthContext, error) {
+	if s == nil || s.repository == nil {
+		return nil, fmt.Errorf("%w: AuthContext service is required", commonapi.ErrBadRequest)
+	}
+
+	return s.resolveSessionCredential(ctx, func(tx *Repository) (*SessionCredentialAuthSnapshot, error) {
+		return resolveUserAccessTokenSnapshot(ctx, tx, accessToken)
+	}, func(snapshot *SessionCredentialAuthSnapshot) credentialProjection {
+		clientID := snapshot.FamilyClientID
+		projection := credentialProjection{
+			ClientID:  clientID,
+			Audiences: append([]string(nil), snapshot.FamilyAudiences...),
+		}
+		if snapshot.FamilyAuthType == "oauth" {
+			projection.TokenType = "oauth_access_token"
+			projection.ScopeMode = "restricted"
+			projection.Scopes = append([]string(nil), snapshot.FamilyScopes...)
+		} else {
+			projection.TokenType = "first_party_access_token"
+			projection.ScopeMode = "unrestricted"
+			projection.Scopes = append([]string(nil), snapshot.FamilyScopes...)
+		}
+		return projection
+	})
 }
 
 func (s *AuthContextService) ResolveFirstPartyAccessToken(
@@ -306,6 +335,30 @@ func resolveFirstPartyAccessTokenSnapshot(
 		return nil, err
 	}
 	if err := validateFirstPartyAccessTokenSnapshot(snapshot); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
+}
+
+func resolveUserAccessTokenSnapshot(
+	ctx context.Context,
+	repository *Repository,
+	accessToken string,
+) (*SessionCredentialAuthSnapshot, error) {
+	if repository == nil {
+		return nil, fmt.Errorf("%w: IAM repository is required", commonapi.ErrBadRequest)
+	}
+	if !strings.HasPrefix(accessToken, "addp_at_") || len(accessToken) == len("addp_at_") {
+		return nil, invalidCredential(CredentialInvalidFormat)
+	}
+	snapshot, err := repository.GetAccessTokenAuthSnapshot(ctx, hashOpaqueToken(accessToken))
+	if err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
+			return nil, invalidCredential(CredentialInvalidNotFound)
+		}
+		return nil, err
+	}
+	if err := validateDelegationSourceAccessTokenSnapshot(snapshot); err != nil {
 		return nil, err
 	}
 	return snapshot, nil

@@ -2,7 +2,7 @@
 
 更新日期：2026-07-24
 
-状态：技术设计、Permission / Role 矩阵、AuthContext、owner Resource Grant / Policy 和 OAuth/OIDC 协议引擎路线已确认。本文落实 `docs/concepts/addp账号与权限体系图.md` 中已确认的概念，不定义 MFA 协议或外部 IdP 具体配置。
+状态：技术设计、Permission / Role 矩阵、AuthContext、owner Resource Grant / Policy、OAuth/OIDC 协议引擎及离线三员 Bootstrap/TOTP 路线已确认；核心 IAM、Fosite、管理 API、Tenant Invitation/Enrollment、System 目标 Router 与十版 migration 已实现，MFA Runtime、Bootstrap CLI 和第十一版 migration 正在实现。
 
 ## 一、目标与边界
 
@@ -10,7 +10,7 @@
 
 1. Principal、User、Service Principal；
 2. Local Account、External Identity 和 IdP 连接；
-3. Tenant、Tenant Membership；
+3. Tenant、Tenant Membership、Tenant Invitation；
 4. Department、Project Group 及成员关系；
 5. Permission、Role、Role Assignment；
 6. 平台三员互斥和高权限角色变更事实；
@@ -22,7 +22,7 @@
 - owner 模块的 Resource Grant / Policy 表；
 - Asset 授权申请表；
 - 具体 AuthContext JSON 字段；
-- MFA、Passkey、账号恢复和 Service Principal Credential 细节；
+- WebAuthn、账号恢复和 Service Principal Credential 细节；
 - IdP 协议配置、Claim Mapping 规则和目录同步任务；
 - 管理控制台页面和公开 API 路径。
 
@@ -59,6 +59,9 @@ erDiagram
 
     PRINCIPAL ||--o{ TENANT_MEMBERSHIP : "joins"
     TENANT ||--o{ TENANT_MEMBERSHIP : "contains"
+    TENANT ||--o{ TENANT_INVITATION : "invites"
+    TENANT_INVITATION ||--o{ ENROLLMENT_TICKET : "authorizes enrollment"
+    PRINCIPAL ||--o{ ENROLLMENT_TICKET : "authenticates"
 
     TENANT ||--o{ DEPARTMENT : "owns"
     DEPARTMENT ||--o{ DEPARTMENT : "parent of"
@@ -176,7 +179,29 @@ erDiagram
 
 当前用户资料 API 只投影 `users` 的稳定资料字段和可空 Local Account 展示用户名，不把 Local Account、Principal、Tenant Membership 或 Role Assignment 重新拼成旧 User 聚合。当前用户改密必须用当前第一方 Browser Access Token 定位 Principal，在 Principal 锁内重新校验 Token，再修改密码并撤销全部 Family；当前密码错误是字段校验结果，不使用会触发浏览器 Token 刷新的 401。
 
-### 5.4 `system.service_principals`
+### 5.4 `system.mfa_credentials`
+
+首个强 MFA 方法固定为 TOTP。每个 User 当前只允许一条激活的 TOTP Credential：
+
+| 字段 | 类型 | 约束 |
+| --- | --- | --- |
+| `id` | bigint identity | PK |
+| `user_id` | bigint | FK -> `users.id` |
+| `method` | text | 当前固定 `totp` |
+| `status` | text | `active | disabled` |
+| `secret_ciphertext` | bytea | AES-256-GCM 密文 |
+| `secret_nonce` | bytea | GCM 唯一 nonce |
+| `key_version` | integer | 非空正整数 |
+| `last_accepted_counter` | bigint | 最近成功 TOTP counter，可空 |
+| `created_at` / `updated_at` | timestamptz | 非空 |
+
+TOTP 固定使用 RFC 6238、HMAC-SHA-1、6 位数字、30 秒周期和 `±1` 时间窗，以兼容主流 Authenticator。验证成功时必须在锁定 Credential 的同一事务中递增式写入 `last_accepted_counter`；同一或更早 counter 不得再次接受。TOTP Secret 使用独立的 `IAM_MFA_ENCRYPTION_KEY` 加密，不与通用 `ENCRYPTION_KEY`、OAuth User Code Pepper 或 Bootstrap Secret 复用。
+
+### 5.5 `system.mfa_challenges`
+
+密码校验成功但尚未达到 AAL2 时，System 创建短期一次性 MFA Challenge，只保存随机 Token Hash、Principal、当时的 `authorization_version`、已验证的第一因素方法与时间、失败次数、到期和消费事实。Challenge 固定 5 分钟有效，连续 5 次失败即终止；密码或授权版本变化、成功、过期或并发消费后都不能重放。浏览器提交 TOTP 后，System 在同一事务中验证 Credential、记录防重放 counter、消费 Challenge，并生成 `password + totp / aal2` 的 Context Selection 或 Browser Session。
+
+### 5.6 `system.service_principals`
 
 | 字段 | 类型 | 约束 |
 | --- | --- | --- |
@@ -190,7 +215,7 @@ erDiagram
 
 检查约束保证 `owner_scope=platform` 时 `owner_tenant_id` 为空，`owner_scope=tenant` 时非空；Tenant owner 的 Service Principal 必须具有该 Tenant 的有效 Membership。Service Principal Credential 后续单独建表，只保存 Hash 或加密后的密钥材料。Service Principal 不使用 Local Account、用户密码或 OAuth Client 记录，也不得持有平台三员角色。
 
-### 5.5 跨模块主体引用
+### 5.7 跨模块主体引用
 
 现有业务表中的 `created_by`、`triggered_by`、`owner_id` 和审计 `user_id` 最终统一为 Principal 语义：
 
@@ -285,7 +310,7 @@ Tenant 不再在创建事务中强制创建一个 TenantAdmin User。创建 Tena
 | `tenant_id` | bigint | FK -> `tenants.id` |
 | `principal_id` | bigint | FK -> `principals.id` |
 | `status` | text | `active | suspended | ended` |
-| `source_type` | text | `manual | idp_jit | directory_sync | bootstrap` |
+| `source_type` | text | `manual | invitation | idp_jit | directory_sync | bootstrap` |
 | `source_ref` | text | 可空 |
 | `joined_at` | timestamptz | 非空 |
 | `expires_at` | timestamptz | 可空 |
@@ -301,6 +326,28 @@ Tenant 不再在创建事务中强制创建一个 TenantAdmin User。创建 Tena
 - `index (tenant_id, status, created_at)`，用于 Tenant 成员管理；
 - `expires_at > joined_at`；
 - Membership 失效必须在同一事务中递增 Principal `authorization_version` 并撤销相关 Token Family。
+
+### 7.3 `system.tenant_invitations`
+
+Tenant 管理员不能直接创建跨全局 User 的 Membership。公开入会的唯一人工路径是 Tenant Invitation：邀请持有者必须显式注册或以已认证 User 接受，结果只建立当前 Tenant 的 Membership。
+
+| 字段 | 类型 | 约束 |
+| --- | --- | --- |
+| `id` | bigint identity | PK |
+| `tenant_id` | bigint | FK -> `tenants.id` |
+| `email` / `normalized_email` | text | 非空；后者使用统一 NFKC + case folding 规则 |
+| `secret_hash` | char(64) | 非空、唯一，只保存 `addp_ti_` Secret 的 SHA-256 Hash |
+| `status` | text | `pending | accepted | revoked | expired` |
+| `expires_at` | timestamptz | 非空，晚于创建时间 |
+| `accepted_at` / `accepted_by_principal_id` | timestamptz / bigint | 仅 accepted 时非空，Principal FK |
+| `revoked_at` / `revoked_by_principal_id` | timestamptz / bigint | 仅 revoked 时非空，Principal FK |
+| `expired_at` | timestamptz | 仅 expired 时非空 |
+| `created_by_principal_id` | bigint | 非空，FK -> `principals.id` |
+| `created_at` / `updated_at` | timestamptz | 非空 |
+
+同一 Tenant、同一规范化邮箱同时最多存在一条 `pending` 邀请。明文 Secret 只在创建响应中返回一次，不进入数据库、日志或列表/详情响应。邀请只能按 `pending -> accepted | revoked | expired` 单向转换，历史记录不得物理删除。服务端在任何消费路径中都必须同时检查状态和 `expires_at`，过期邀请在锁内物化为 `expired`，不能通过延长时间复活。
+
+接受邀请后创建或恢复的 Membership 使用 `source_type=invitation`、`source_ref=<invitation_id>`。已存在但处于 `ended` 的同 Tenant Membership 只能由独立 `iam.tenant_membership.restore` 管理动作恢复，邀请接受不能形成恢复旁路。
 
 ## 八、组织模型
 
@@ -511,10 +558,10 @@ project_group -> tenant_id 和 project_group_id 非空，department_id 为空
 
 新增：
 
-- `system.privileged_change_requests`：显式记录 `change_type=platform_role_grant | platform_role_revoke | platform_identity_suspend | platform_identity_deactivate`、目标 Principal、Role 变更时的目标 Role、固定 `scope_type=platform`、理由、申请人、`pending | approved | rejected | cancelled | applied` 状态以及决定/消费时间；
+- `system.privileged_change_requests`：显式记录 `change_type=platform_role_grant | platform_role_revoke | platform_identity_suspend | platform_identity_reactivate | platform_identity_deactivate`、目标 Principal、Role 变更时的目标 Role、固定 `scope_type=platform`、理由、申请人、`pending | approved | rejected | cancelled | applied` 状态以及决定/消费时间；
 - `system.privileged_change_approvals`：每个 Request 最多一条终局复核决定，记录独立复核人、`approved | rejected`、理由和决定时间。
 
-Platform Assignment 除离线 Bootstrap 外只能由已批准 Request 生成；对当前持有有效 Platform Role 的 User 执行 suspend / deactivate 也必须具有已批准 Request。数据库要求申请人、复核人和目标自然人互不相同，并要求目标、申请人和复核人都是 User Principal；同一自然人多账号规避由 User 身份治理和审计规则检测。
+Platform Assignment 除离线 Bootstrap 外只能由已批准 Request 生成；对当前持有有效 Platform Role 的 User 执行 suspend / reactivate / deactivate 也必须具有已批准 Request。数据库要求申请人、复核人和目标自然人互不相同，并要求目标、申请人和复核人都是 User Principal；同一自然人多账号规避由 User 身份治理和审计规则检测。
 
 审批事实使用显式、不可复用的外键闭环：
 
@@ -528,7 +575,12 @@ Platform Assignment 除离线 Bootstrap 外只能由已批准 Request 生成；�
 
 ### 10.2 初始引导
 
-不创建默认 `SuperAdmin`。空系统只允许通过一次性离线 Bootstrap 流程，在单个事务中：
+不创建默认 `SuperAdmin`。空系统只允许通过一次性离线 Bootstrap 流程。命令固定为两个阶段：
+
+1. `iam-bootstrap prepare` 在 migration 完成且 IAM 事实为空时创建唯一 `prepared` 状态，生成 256 bit 随机 `addp_bs_...` Secret，只向终端显示一次，数据库只保存 SHA-256 Hash；
+2. `iam-bootstrap apply` 读取不含任何 Secret 的三员实名 Manifest，从 TTY 分别接收三人的独立密码，逐人显示 TOTP enrollment URI，并要求连续两个不同时间窗口的有效验证码。
+
+`apply` 验证三人的密码和 TOTP 持有事实后，在单个事务中：
 
 1. 创建三个不同的实名 User；
 2. 为每个 User 绑定允许的 Local Account 或预配 External Identity，并完成强 MFA；
@@ -536,7 +588,47 @@ Platform Assignment 除离线 Bootstrap 外只能由已批准 Request 生成；�
 4. 创建三员冲突事实和初始审计记录；
 5. 销毁 Bootstrap Secret 并永久关闭 Bootstrap 状态。
 
-Bootstrap 不开放普通网络 API，不留下可重复运行的默认密码或常驻 root。具体 CLI 和密钥交付在账号恢复与运维设计中确定。
+Bootstrap 状态只允许 `prepared -> completed`，成功后将 Secret Hash 置空并保留不可逆 `completed_at` 事实。Bootstrap 不开放普通网络 API，不接受命令行参数中的密码、TOTP Secret 或 Bootstrap Secret，不留下可重复运行的默认密码或常驻 root。开发与生产使用同一条路径；自动化测试只能通过进程内受控输入验证同一领域服务，不新增开发专用绕过分支。
+
+Manifest 只保存非 Secret 的实名资料，固定格式如下：
+
+```json
+{
+  "administrators": [
+    {
+      "role_key": "platform.system_administrator",
+      "username": "system-admin",
+      "display_name": "系统管理员",
+      "primary_email": "system-admin@example.com",
+      "locale": "zh-cn"
+    },
+    {
+      "role_key": "platform.security_administrator",
+      "username": "security-admin",
+      "display_name": "安全管理员",
+      "primary_email": "security-admin@example.com",
+      "locale": "zh-cn"
+    },
+    {
+      "role_key": "platform.audit_administrator",
+      "username": "audit-admin",
+      "display_name": "审计管理员",
+      "primary_email": "audit-admin@example.com",
+      "locale": "zh-cn"
+    }
+  ]
+}
+```
+
+构建与执行入口固定为：
+
+```bash
+make build-iam-bootstrap
+dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-bootstrap prepare
+dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-bootstrap apply --manifest /path/to/bootstrap.json
+```
+
+CLI 只接受已经由 System migration runner 迁移到当前版本的数据库，不自行执行 migration。
 
 ### 10.3 审计存储边界
 
@@ -631,7 +723,25 @@ principal_id is set     -> principal_type is set and matches principals.principa
 
 选项使用 `unique nulls not distinct (ticket_id, context_type, tenant_membership_id)`。Platform 选项的 Membership 为空，Tenant 选项必须非空。Ticket 只保存选项和认证事实快照，不是授权事实；消费时必须锁定 Ticket 并重新校验 Principal 当前版本、Membership、Platform Assignment 和认证强度。消费与创建新 Browser Token Family 在同一事务完成，并发消费只有一个成功。
 
-### 11.2 Token Family 与 Access Token
+### 11.2 Enrollment Ticket
+
+`system.enrollment_tickets` 只服务于“User 本地认证成功，但当前没有任何可进入 AuthContext”的邀请接受场景：
+
+| 字段 | 类型 | 约束 |
+| --- | --- | --- |
+| `id` | bigint identity | PK |
+| `token_hash` | char(64) | 非空、唯一，只保存 `addp_et_` Ticket 的 SHA-256 Hash |
+| `principal_id` | bigint | FK -> `principals.id` |
+| `invitation_id` | bigint | FK -> `tenant_invitations.id` |
+| `issued_authorization_version` | bigint | 非空 |
+| `authenticated_at` | timestamptz | 非空，本地账号认证成功时间 |
+| `expires_at` | timestamptz | 非空，签发后 5 分钟 |
+| `consumed_at` | timestamptz | 可空 |
+| `created_at` | timestamptz | 非空 |
+
+Enrollment Ticket 不是 Session、Token Family 或第三种 AuthContext。签发前必须同时验证邀请 Secret 和 Local Account；消费时再次锁定并校验 Principal、授权版本、Invitation 状态/邮箱和有效期。Ticket 与邀请接受、Membership 创建及审计在一个事务中一次性消费，并发或重放只能一个成功。Ticket 明文不得进入 URL、Cookie、持久化存储或日志。
+
+### 11.3 Token Family 与 Access Token
 
 现有 Token 表不再保存 `user_id + tenant_id` 作为权限语义。Refresh Token Family 统一保存：
 
@@ -809,6 +919,7 @@ IAM 模型迁移后必须从 `AutoMigrate` 列表移除相关表。GORM 只作�
 9. **切换方式**：开发环境破坏性重建 IAM 数据，不保留 `user_type` 或旧 AuthContext 兼容期。
 10. **OAuth/OIDC 协议引擎**：采用 System 内嵌的 ADDP 受控 Fosite 派生版本作为唯一协议引擎；不直接使用缺少 Device Flow 的 `v0.49.0`，不裸用 master，不保留自研 OAuth 双处理器。
 11. **Fosite 持久化**：使用显式 Provider Compose、单一 PostgreSQL Storage Adapter 和 Token Family Repository；不保存通用 Fosite Session Blob，Access/Refresh Token 不重复 Family 上下文字段。
+12. **Tenant Invitation**：Invitation 只存 Secret Hash；新 User 原子创建身份、Local Account 和 Membership；已有 User 使用 Browser Session 或一次性 Enrollment Ticket 接受，不增加第三种 AuthContext；首阶段只展示一次性邀请链接，不内嵌邮件发送器。
 
 ## 十七、Fosite 决策门
 

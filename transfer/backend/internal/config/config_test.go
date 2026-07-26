@@ -87,13 +87,14 @@ func TestInfraKafkaTransferConnectionInfoUsesDedicatedPrincipal(t *testing.T) {
 	cfg := Config{
 		InfraKafkaBootstrapServers: "localhost:19092",
 		InfraKafkaSecurityProtocol: "sasl_plaintext",
+		InfraKafkaSASLMechanism:    "scram-sha-256",
 		InfraKafkaTransferPassword: "secret",
 	}
 	info, err := cfg.InfraKafkaTransferConnectionInfo()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info["username"] != "transfer" || info["password"] != "secret" || info["sasl_mechanism"] != "plain" {
+	if info["username"] != "transfer" || info["password"] != "secret" || info["sasl_mechanism"] != "scram-sha-256" {
 		t.Fatalf("connection info = %#v", info)
 	}
 }
@@ -111,5 +112,26 @@ func TestInfraKafkaAdminConnectionInfoUsesConfiguredPrincipal(t *testing.T) {
 	}
 	if info["username"] != "admin-user" || info["password"] != "admin-secret" || info["client_id"] != "addp-transfer-dlq-cleanup" {
 		t.Fatalf("admin connection info = %#v", info)
+	}
+}
+
+func TestInfraKafkaConnectionInfoUsesConfiguredSCRAMMechanism(t *testing.T) {
+	cfg := Config{
+		InfraKafkaBootstrapServers: "localhost:19092",
+		InfraKafkaSecurityProtocol: "sasl_plaintext",
+		InfraKafkaSASLMechanism:    "scram-sha-256",
+		InfraKafkaTransferPassword: "secret",
+	}
+	info, err := cfg.InfraKafkaTransferConnectionInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info["sasl_mechanism"] != "scram-sha-256" {
+		t.Fatalf("connection info = %#v", info)
+	}
+
+	cfg.InfraKafkaSASLMechanism = "unknown"
+	if _, err := cfg.InfraKafkaTransferConnectionInfo(); err == nil {
+		t.Fatal("unsupported Infra Kafka SASL mechanism was accepted")
 	}
 }

@@ -9,7 +9,5 @@ const systemClient = axios.create({
 })
 
 export const authAPI = {
-  ...createAuthAPI(systemClient, {
-    includeRegister: true  // Model 模块需要注册功能
-  })
+  ...createAuthAPI(systemClient)
 }

@@ -163,7 +163,10 @@ async def _cancel_authorization_request(base_url: str, request_id: str, request_
 async def device_login(base_url: str, scope: str = "addp.api", on_device=None) -> tuple[LoginResult, dict]:
     root = base_url.rstrip("/") + "/api/v1/system/oauth"
     async with httpx.AsyncClient(timeout=15.0) as client:
-        response = await client.post(root + "/device/code", data={"client_id": CLIENT_ID, "scope": scope})
+        response = await client.post(
+            root + "/device/code",
+            data={"client_id": CLIENT_ID, "scope": scope, "audience": "addp.api"},
+        )
         if response.status_code != 200:
             raise OAuthLoginError(response.json().get("error", "invalid_request"))
         device = response.json()

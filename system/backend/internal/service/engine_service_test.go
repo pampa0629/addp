@@ -26,22 +26,12 @@ func TestListFiltersBeforePagination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Engine{}); err != nil {
+	if err := db.AutoMigrate(&models.Engine{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 
-	userRepo := repository.NewUserRepository(db)
 	engineRepo := repository.NewEngineRepository(db)
-	admin := &models.User{
-		Username:     "engine-list-admin",
-		Email:        "engine-list-admin@example.com",
-		PasswordHash: "test",
-		UserType:     models.UserTypeSuperAdmin,
-		IsActive:     true,
-	}
-	if err := userRepo.Create(admin); err != nil {
-		t.Fatalf("create admin: %v", err)
-	}
+	tenantID := uint(1)
 
 	storageCapabilities := toJSONStringPtr(`{
 		"schema_version":"engine.capabilities/v1",
@@ -62,6 +52,7 @@ func TestListFiltersBeforePagination(t *testing.T) {
 			EngineOrigin:   "general",
 			ConnectionInfo: models.ConnectionInfo{},
 			IsActive:       true,
+			TenantID:       &tenantID,
 			Capabilities:   storageCapabilities,
 		}); err != nil {
 			t.Fatalf("create storage engine %d: %v", i, err)
@@ -75,18 +66,19 @@ func TestListFiltersBeforePagination(t *testing.T) {
 			ConnectionInfo: models.ConnectionInfo{},
 			IsActive:       true,
 			IsBuiltin:      i == 0,
+			TenantID:       &tenantID,
 			Capabilities:   computeCapabilities,
 		}); err != nil {
 			t.Fatalf("create workflow engine %d: %v", i, err)
 		}
 	}
 
-	engineService := NewEngineService(engineRepo, userRepo, nil, nil)
+	engineService := NewEngineService(engineRepo, nil, nil)
 	engines, total, err := engineService.List(1, 10, EngineListFilter{
 		CapabilityGroups: []string{"compute"},
 		EngineOrigins:    []string{"extension"},
 		IncludeBuiltin:   true,
-	}, admin.ID)
+	}, tenantID)
 	if err != nil {
 		t.Fatalf("list filtered engines: %v", err)
 	}
@@ -98,7 +90,7 @@ func TestListFiltersBeforePagination(t *testing.T) {
 		CapabilityGroups: []string{"compute"},
 		EngineOrigins:    []string{"extension"},
 		IncludeBuiltin:   false,
-	}, admin.ID)
+	}, tenantID)
 	if err != nil {
 		t.Fatalf("list filtered non-builtin engines: %v", err)
 	}
@@ -108,7 +100,7 @@ func TestListFiltersBeforePagination(t *testing.T) {
 }
 
 func TestEnsureCapabilitiesForEngineUsesStructuredPluginSchema(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
 
 	capabilitiesJSON, err := service.ensureCapabilitiesForEngine("postgresql", nil)
 	if err != nil {
@@ -128,7 +120,7 @@ func TestEnsureCapabilitiesForEngineUsesStructuredPluginSchema(t *testing.T) {
 }
 
 func TestEnsureCapabilitiesForPluginEngineIgnoresSubmittedCapabilities(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
 	submitted := toJSONStringPtr(`{
 		"schema_version":"engine.capabilities/v1",
 		"engine_type":"postgresql",
@@ -153,7 +145,7 @@ func TestEnsureCapabilitiesForPluginEngineIgnoresSubmittedCapabilities(t *testin
 }
 
 func TestEnsureCapabilitiesForCustomEngineRequiresSubmittedCapabilities(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
 
 	if _, err := service.ensureCapabilitiesForEngine("custom_runtime", nil); !errors.Is(err, ErrUnsupportedEngineType) {
 		t.Fatalf("ensure capabilities error = %v, want ErrUnsupportedEngineType", err)
@@ -161,7 +153,7 @@ func TestEnsureCapabilitiesForCustomEngineRequiresSubmittedCapabilities(t *testi
 }
 
 func TestValidateCapabilitiesRejectsLegacySchema(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
 	legacy := toJSONStringPtr(`{"storage":[{"type":"relational_db","engine":"postgresql"}]}`)
 
 	if err := service.validateCapabilities(legacy); err == nil {
@@ -170,7 +162,7 @@ func TestValidateCapabilitiesRejectsLegacySchema(t *testing.T) {
 }
 
 func TestValidateCapabilitiesRejectsUnsupportedSchemaVersion(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
 	unsupported := toJSONStringPtr(`{
 		"schema_version":"engine.capabilities/v0",
 		"engine_type":"postgresql",
@@ -183,7 +175,7 @@ func TestValidateCapabilitiesRejectsUnsupportedSchemaVersion(t *testing.T) {
 }
 
 func TestShouldRefreshCapabilitiesKeepsValidStructuredSchema(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
 	valid := toJSONStringPtr(`{
 		"schema_version":"engine.capabilities/v1",
 		"engine_type":"postgresql",
@@ -198,7 +190,7 @@ func TestShouldRefreshCapabilitiesKeepsValidStructuredSchema(t *testing.T) {
 }
 
 func TestShouldRefreshCapabilitiesRefreshesEmptyOrLegacySchema(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
 	legacy := toJSONStringPtr(`{"compute":[{"dev_modes":["workflow"]}]}`)
 
 	if !service.shouldRefreshCapabilities(nil) {
@@ -210,7 +202,7 @@ func TestShouldRefreshCapabilitiesRefreshesEmptyOrLegacySchema(t *testing.T) {
 }
 
 func TestPrepareEngineCapabilitiesUsesPluginSchemaForBuiltinEngine(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
 	submitted := toJSONStringPtr(`{
 		"schema_version":"engine.capabilities/v1",
 		"engine_type":"geopython_workflow",
@@ -240,7 +232,7 @@ func TestPrepareEngineCapabilitiesUsesPluginSchemaForBuiltinEngine(t *testing.T)
 }
 
 func TestPrepareEngineCapabilitiesKeepsStructuredCapabilitiesForNonBuiltinEngine(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
 	submitted := toJSONStringPtr(`{
 		"schema_version":"engine.capabilities/v1",
 		"engine_type":"custom_runtime",
@@ -271,7 +263,7 @@ func TestEnrichInstanceCapabilitiesBindsFirstAvailableSuperMapWorkflowEngine(t *
 	}
 
 	repo := repository.NewEngineRepository(db)
-	service := NewEngineService(repo, nil, nil, nil)
+	service := NewEngineService(repo, nil, nil)
 	tenantID := uint(1)
 	firstRuntime := &models.Engine{
 		Name:           "SuperMap Runtime A",
@@ -337,7 +329,7 @@ func TestEnrichInstanceCapabilitiesBindsFirstAvailableSuperMapWorkflowEngine(t *
 }
 
 func TestPrepareEngineCapabilitiesRejectsMismatchedCustomCapabilities(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
 	submitted := toJSONStringPtr(`{
 		"schema_version":"engine.capabilities/v1",
 		"engine_type":"other_runtime",
@@ -359,7 +351,7 @@ func TestEnableSpatialWorkspaceInvokesBoundSuperMapWorkflowRuntime(t *testing.T)
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Engine{}); err != nil {
+	if err := db.AutoMigrate(&models.Engine{}); err != nil {
 		t.Fatalf("auto migrate models: %v", err)
 	}
 
@@ -427,24 +419,10 @@ func TestEnableSpatialWorkspaceInvokesBoundSuperMapWorkflowRuntime(t *testing.T)
 	}))
 	defer server.Close()
 
-	userRepo := repository.NewUserRepository(db)
 	engineRepo := repository.NewEngineRepository(db)
-	service := NewEngineService(engineRepo, userRepo, []byte("addp-dev-encryption-key-2025!!!!"), nil)
+	service := NewEngineService(engineRepo, []byte("addp-dev-encryption-key-2025!!!!"), nil)
 
 	tenantID := uint(1)
-	user := &models.User{
-		Username:     "tenant-admin",
-		UserType:     models.UserTypeTenantAdmin,
-		IsActive:     true,
-		TenantID:     &tenantID,
-		FullName:     "Tenant Admin",
-		Email:        "tenant-admin@example.com",
-		PasswordHash: "hash",
-	}
-	if err := userRepo.Create(user); err != nil {
-		t.Fatalf("create user: %v", err)
-	}
-
 	runtimeURL := systemTestWorkflowConnectionInfo(t, server.URL)
 	runtimeEngine := &models.Engine{
 		Name:           "SuperMap Runtime",
@@ -501,7 +479,7 @@ func TestEnableSpatialWorkspaceInvokesBoundSuperMapWorkflowRuntime(t *testing.T)
 		t.Fatalf("create target engine: %v", err)
 	}
 
-	updated, err := service.EnableSpatialWorkspace(context.Background(), targetEngine.ID, "supermap", "sdx+", user.ID)
+	updated, err := service.EnableSpatialWorkspace(context.Background(), targetEngine.ID, "supermap", "sdx+", tenantID)
 	if err != nil {
 		t.Fatalf("EnableSpatialWorkspace: %v", err)
 	}
@@ -552,7 +530,7 @@ func systemTestWorkflowConnectionInfo(t *testing.T, rawURL string) map[string]in
 }
 
 func TestValidateSystemEngineTypeRejectsSQLiteAndSpatiaLite(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
 
 	for _, engineType := range []string{"sqlite", "spatialite"} {
 		if err := service.ValidateSystemEngineType(engineType); !errors.Is(err, ErrUnsupportedEngineType) {
@@ -562,7 +540,7 @@ func TestValidateSystemEngineTypeRejectsSQLiteAndSpatiaLite(t *testing.T) {
 }
 
 func TestValidateSystemEngineTypeAcceptsRegisteredPlugin(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
 
 	if err := service.ValidateSystemEngineType("postgresql"); err != nil {
 		t.Fatalf("ValidateSystemEngineType(postgresql): %v", err)
@@ -570,7 +548,7 @@ func TestValidateSystemEngineTypeAcceptsRegisteredPlugin(t *testing.T) {
 }
 
 func TestDecryptStoredConnectionInfoRejectsPlainSensitiveValue(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, []byte("addp-dev-encryption-key-2025!!!!"), nil)
+	service := NewEngineService(&repository.EngineRepository{}, []byte("addp-dev-encryption-key-2025!!!!"), nil)
 
 	_, err := service.decryptStoredConnectionInfo(models.ConnectionInfo{
 		"host":     "localhost",
@@ -590,7 +568,7 @@ func TestDecryptStoredConnectionInfoReturnsPlainConnectionInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
-	service := NewEngineService(&repository.EngineRepository{}, nil, key, nil)
+	service := NewEngineService(&repository.EngineRepository{}, key, nil)
 
 	connInfo, err := service.decryptStoredConnectionInfo(models.ConnectionInfo{
 		"host":     "localhost",
@@ -609,7 +587,7 @@ func TestDecryptStoredConnectionInfoReturnsPlainConnectionInfo(t *testing.T) {
 
 func TestConnectionInfoStorageRoundTrip(t *testing.T) {
 	key := []byte("addp-dev-encryption-key-2025!!!!")
-	service := NewEngineService(&repository.EngineRepository{}, nil, key, nil)
+	service := NewEngineService(&repository.EngineRepository{}, key, nil)
 	original := models.ConnectionInfo{
 		"host":       "localhost",
 		"password":   "business_password",
@@ -639,7 +617,7 @@ func TestConnectionInfoStorageRoundTrip(t *testing.T) {
 }
 
 func TestMergePlainConnectionInfoPreservesSensitiveValueForMaskedOverride(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, []byte("addp-dev-encryption-key-2025!!!!"), nil)
+	service := NewEngineService(&repository.EngineRepository{}, []byte("addp-dev-encryption-key-2025!!!!"), nil)
 
 	merged := service.mergePlainConnectionInfo(
 		models.ConnectionInfo{
@@ -661,7 +639,7 @@ func TestMergePlainConnectionInfoPreservesSensitiveValueForMaskedOverride(t *tes
 }
 
 func TestMergePlainConnectionInfoReplacesSensitiveValue(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, []byte("addp-dev-encryption-key-2025!!!!"), nil)
+	service := NewEngineService(&repository.EngineRepository{}, []byte("addp-dev-encryption-key-2025!!!!"), nil)
 
 	merged := service.mergePlainConnectionInfo(
 		models.ConnectionInfo{"password": "old-password"},

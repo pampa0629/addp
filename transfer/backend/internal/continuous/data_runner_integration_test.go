@@ -20,7 +20,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/sasl/plain"
 	postgresdriver "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -247,7 +246,7 @@ func TestIntegrationContinuousKafkaRetentionHealthTransitions(t *testing.T) {
 	}
 	topic := fmt.Sprintf("addp-continuous-diagnostics-%d", time.Now().UnixNano())
 	admin := kadm.NewClient(producer)
-	created, err := admin.CreateTopics(ctx, 1, 1, nil, topic)
+	created, err := admin.CreateTopics(ctx, 1, cdcDataEnvInt16("ADDP_TEST_INFRA_KAFKA_REPLICATION_FACTOR", 1), nil, topic)
 	if err != nil || created.Error() != nil {
 		t.Fatalf("create Kafka topic: response=%v error=%v", created.Error(), err)
 	}
@@ -332,23 +331,14 @@ func continuousKafkaIntegrationConnInfo() engineplugin.ConnectionInfo {
 			info[key] = value
 		}
 	}
+	if pem := os.Getenv("ADDP_TEST_KAFKA_TLS_CA_CERT"); strings.TrimSpace(pem) != "" {
+		info["tls_ca_cert"] = pem
+	}
 	return info
 }
 
 func newContinuousIntegrationProducer(info engineplugin.ConnectionInfo) (*kgo.Client, error) {
-	opts := []kgo.Opt{
-		kgo.SeedBrokers(strings.Split(engineplugin.GetString(info, "bootstrap_servers"), ",")...),
-		kgo.RecordPartitioner(kgo.ManualPartitioner()),
-	}
-	protocol := strings.ToLower(strings.TrimSpace(engineplugin.GetString(info, "security_protocol")))
-	if protocol == "sasl_plaintext" {
-		username := engineplugin.GetString(info, "username")
-		password := engineplugin.GetString(info, "password")
-		opts = append(opts, kgo.SASL(plain.Plain(func(context.Context) (plain.Auth, error) {
-			return plain.Auth{User: username, Pass: password}, nil
-		})))
-	}
-	return kgo.NewClient(opts...)
+	return kafka.NewClient(info, kgo.RecordPartitioner(kgo.ManualPartitioner()))
 }
 
 func continuousBusinessPostgresConnInfo() engineplugin.ConnectionInfo {

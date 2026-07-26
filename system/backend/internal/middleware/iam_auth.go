@@ -10,15 +10,21 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
+	sharedauth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/system/i18n"
 	"github.com/gin-gonic/gin"
 )
 
-const iamAuthContextKey = "addp.iam.auth_context"
+const (
+	IAMTokenTypeFirstPartyAccess = "first_party_access_token"
+	IAMTokenTypeOAuthAccess      = "oauth_access_token"
+	IAMTokenTypeDelegatedAccess  = "delegated_access_token"
+	IAMTokenTypeResourceTicket   = "resource_access_ticket"
+)
 
 type IAMAuthContextResolver interface {
-	ResolveFirstPartyAccessToken(context.Context, string) (*commonauth.AuthContext, error)
+	ResolveAuthContext(context.Context, string) (*commonauth.AuthContext, error)
 }
 
 type iamAuthErrorResponse struct {
@@ -26,8 +32,9 @@ type iamAuthErrorResponse struct {
 	ErrorCode string `json:"error_code"`
 }
 
-// NewIAMAuthenticationMiddleware resolves a first-party Bearer token into the
-// canonical AuthContext. It does not project legacy flat identity keys.
+// NewIAMAuthenticationMiddleware resolves an ADDP credential into the
+// canonical AuthContext. Route guards decide which credential types are valid.
+// It does not project legacy flat identity keys.
 func NewIAMAuthenticationMiddleware(resolver IAMAuthContextResolver) (gin.HandlerFunc, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("%w: IAM AuthContext resolver is required", commonapi.ErrBadRequest)
@@ -38,7 +45,7 @@ func NewIAMAuthenticationMiddleware(resolver IAMAuthContextResolver) (gin.Handle
 			abortIAMAuthenticationRequired(c)
 			return
 		}
-		authContext, err := resolver.ResolveFirstPartyAccessToken(c.Request.Context(), accessToken)
+		authContext, err := resolver.ResolveAuthContext(c.Request.Context(), accessToken)
 		if err != nil {
 			if errors.Is(err, commonapi.ErrUnauthorized) {
 				abortIAMAuthenticationRequired(c)
@@ -51,7 +58,43 @@ func NewIAMAuthenticationMiddleware(resolver IAMAuthContextResolver) (gin.Handle
 			abortIAMInternalError(c)
 			return
 		}
-		c.Set(iamAuthContextKey, commonauth.CloneAuthContext(*authContext))
+		if err := sharedauth.SetAuthContextForGin(c, *authContext); err != nil {
+			abortIAMInternalError(c)
+			return
+		}
+		c.Next()
+	}, nil
+}
+
+// NewIAMCredentialGuard restricts a route to explicitly listed AuthContext
+// credential token types.
+func NewIAMCredentialGuard(allowedTokenTypes ...string) (gin.HandlerFunc, error) {
+	allowed := append([]string(nil), allowedTokenTypes...)
+	if len(allowed) == 0 {
+		return nil, fmt.Errorf("%w: at least one credential token type is required", commonapi.ErrBadRequest)
+	}
+	sort.Strings(allowed)
+	allowedSet := make(map[string]struct{}, len(allowed))
+	for index, tokenType := range allowed {
+		if tokenType != strings.TrimSpace(tokenType) || tokenType == "" {
+			return nil, fmt.Errorf("%w: invalid credential token type", commonapi.ErrBadRequest)
+		}
+		if index > 0 && allowed[index-1] == tokenType {
+			return nil, fmt.Errorf("%w: duplicate credential token type %q", commonapi.ErrBadRequest, tokenType)
+		}
+		allowedSet[tokenType] = struct{}{}
+	}
+
+	return func(c *gin.Context) {
+		authContext, exists := IAMAuthContextFromGin(c)
+		if !exists {
+			abortIAMAuthenticationRequired(c)
+			return
+		}
+		if _, exists := allowedSet[authContext.Token.Type]; !exists {
+			abortIAMPermissionDenied(c)
+			return
+		}
 		c.Next()
 	}, nil
 }
@@ -81,6 +124,25 @@ func RequireIAMSelf() gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+// NewIAMContextGuard restricts a route to one explicit AuthContext mode.
+func NewIAMContextGuard(contextType string) (gin.HandlerFunc, error) {
+	if contextType != "platform" && contextType != "tenant" {
+		return nil, fmt.Errorf("%w: unsupported IAM context type", commonapi.ErrBadRequest)
+	}
+	return func(c *gin.Context) {
+		authContext, exists := IAMAuthContextFromGin(c)
+		if !exists {
+			abortIAMAuthenticationRequired(c)
+			return
+		}
+		if authContext.Principal.Type != "user" || authContext.Context.Type != contextType {
+			abortIAMPermissionDenied(c)
+			return
+		}
+		c.Next()
+	}, nil
 }
 
 // NewIAMPermissionGuard enforces all required Permission keys. Resource and
@@ -125,12 +187,7 @@ func NewIAMPermissionGuard(requiredPermissions ...string) (gin.HandlerFunc, erro
 // IAMAuthContextFromGin returns a detached copy so downstream handlers cannot
 // mutate the context shared by later middleware in the same request.
 func IAMAuthContextFromGin(c *gin.Context) (commonauth.AuthContext, bool) {
-	value, exists := c.Get(iamAuthContextKey)
-	authContext, valid := value.(commonauth.AuthContext)
-	if !exists || !valid {
-		return commonauth.AuthContext{}, false
-	}
-	return commonauth.CloneAuthContext(authContext), true
+	return sharedauth.AuthContextFromGin(c)
 }
 
 func iamAccessToken(header string) string {

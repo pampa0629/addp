@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 8
+manifest_version: 9
 roles:
   - key: platform.audit_administrator
     role_type: platform_builtin
@@ -47,6 +47,7 @@ roles:
       - iam.session.read
       - iam.session.revoke
       - iam.user.create
+      - iam.user.reactivate
       - iam.user.read
       - iam.user.suspend
       - iam.user.update
@@ -87,6 +88,7 @@ roles:
       - platform.tenant.close
       - platform.tenant.create
       - platform.tenant.read
+      - platform.tenant.restore
       - platform.tenant.suspend
       - platform.tenant.update
   - key: tenant.administrator
@@ -122,6 +124,7 @@ roles:
       - iam.tenant_invitation.revoke
       - iam.tenant_membership.close
       - iam.tenant_membership.read
+      - iam.tenant_membership.restore
       - iam.tenant_membership.suspend
       - iam.tenant_membership.update
       - iam.tenant_role.create

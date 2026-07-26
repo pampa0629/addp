@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -96,6 +97,8 @@ func TestIntegrationPostgreSQLCaptureControlLifecycle(t *testing.T) {
 		Username:         integrationEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_USERNAME", "admin"),
 		Password:         integrationEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_PASSWORD", "addp_kafka_admin"),
 		SecurityProtocol: integrationEnv("ADDP_TEST_INFRA_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext"),
+		SASLMechanism:    integrationEnv("ADDP_TEST_INFRA_KAFKA_SASL_MECHANISM", "scram-sha-256"),
+		TLSCACertFile:    integrationEnv("ADDP_TEST_INFRA_KAFKA_TLS_CA_CERT_FILE", ""),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +115,7 @@ func TestIntegrationPostgreSQLCaptureControlLifecycle(t *testing.T) {
 	supervisor, err := NewSupervisor(
 		repository.NewCaptureRepository(infraDB), NewDatabasePlanResolver(resolver), connectClient, topicAdmin,
 		DatabaseSourceResources{}, SupervisorConfig{
-			TopicRetention: time.Hour, TopicReplication: 1,
+			TopicRetention: time.Hour, TopicReplication: integrationEnvInt16("ADDP_TEST_INFRA_KAFKA_REPLICATION_FACTOR", 1),
 			ConnectLoopbackHost: integrationEnv("ADDP_TEST_KAFKA_CONNECT_LOOPBACK_HOST", "host.docker.internal"),
 			ProvisioningTimeout: 60 * time.Second, StatusPollInterval: 500 * time.Millisecond, MonitorInterval: time.Second,
 		}, nil,
@@ -198,6 +201,18 @@ func integrationEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func integrationEnvInt16(key string, fallback int16) int16 {
+	value := integrationEnv(key, "")
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 16)
+	if err != nil || parsed <= 0 {
+		panic(fmt.Sprintf("invalid %s=%q", key, value))
+	}
+	return int16(parsed)
 }
 
 func assertCaptureDatabaseResources(t *testing.T, ctx context.Context, db *sql.DB, resource *models.CaptureResource, want bool) {

@@ -8,10 +8,11 @@
 - **数据库**: PostgreSQL 15 (所有模块使用 schema 隔离: system, manager, meta, transfer, orchestrator, develop)
 - **缓存/队列**: Redis 7
 - **对象存储**: MinIO (兼容 S3)
-- **Infra Kafka**: Apache Kafka 4.3.0，KRaft 模式
+- **Infra Kafka**: Redpanda v24.3.18，唯一 Kafka API broker 实现
 - **Kafka Connect / Debezium**: `quay.io/debezium/connect:3.6.0.Final`，内置 Kafka Connect 4.3.0；PostgreSQL Connector 3.6.0.Final
 - **任务队列**: Asynq (基于 Redis,用于 Transfer 模块), Cron (用于 Meta 模块调度)
 - **空间计算**: GeoPython Workflow Engine (基于 Python 的空间工作流执行引擎,内存 GeoDataFrame 处理)
+- **Spark 工作流运行时**: PySpark 3.5 + OpenJDK 11；Workflow driver 与 Spark Master/Worker 必须使用相同的 JVM 主版本；JDBC 使用 PostgreSQL `42.7.4`、MySQL Connector/J `8.4.0`。分布式模式下，`SPARK_WORKFLOW_SHARED_HOST` 必须是 Workflow driver 自身和 Spark executor 都可访问的地址，用于公布 driver 地址，并替换本地开发中数据引擎连接的 loopback host。
 
 ### Go 依赖版本规范
 

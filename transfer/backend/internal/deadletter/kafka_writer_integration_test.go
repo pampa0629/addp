@@ -3,6 +3,7 @@ package deadletter
 import (
 	"context"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +22,8 @@ func TestIntegrationKafkaPayloadWriterCreatesAndWritesTransferDLQTopic(t *testin
 
 	transferInfo := kafkaIntegrationConnection("transfer", integrationEnv("INFRA_KAFKA_TRANSFER_PASSWORD", "addp_kafka_transfer"))
 	writer, err := NewKafkaPayloadWriter(KafkaWriterConfig{
-		ConnectionInfo: transferInfo, RetentionMillis: int64((10 * time.Minute) / time.Millisecond), ReplicationFactor: 1,
+		ConnectionInfo: transferInfo, RetentionMillis: int64((10 * time.Minute) / time.Millisecond),
+		ReplicationFactor: integrationEnvInt16("ADDP_TEST_INFRA_KAFKA_REPLICATION_FACTOR", 1),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -105,11 +107,20 @@ func TestIntegrationKafkaPayloadWriterCreatesAndWritesTransferDLQTopic(t *testin
 }
 
 func kafkaIntegrationConnection(username, password string) engineplugin.ConnectionInfo {
-	return engineplugin.ConnectionInfo{
+	info := engineplugin.ConnectionInfo{
 		"bootstrap_servers": integrationEnv("ADDP_TEST_KAFKA_BOOTSTRAP_SERVERS", "localhost:19092"),
 		"security_protocol": integrationEnv("ADDP_TEST_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext"),
-		"username":          username, "password": password, "sasl_mechanism": "plain", "client_id": "addp-transfer-dlq-integration",
+		"username":          username, "password": password,
+		"sasl_mechanism": integrationEnv("ADDP_TEST_INFRA_KAFKA_SASL_MECHANISM", "scram-sha-256"), "client_id": "addp-transfer-dlq-integration",
 	}
+	if path := integrationEnv("ADDP_TEST_INFRA_KAFKA_TLS_CA_CERT_FILE", ""); path != "" {
+		pem, err := os.ReadFile(path)
+		if err != nil {
+			panic("read test Kafka CA certificate: " + err.Error())
+		}
+		info["tls_ca_cert"] = string(pem)
+	}
+	return info
 }
 
 func integrationEnv(key, fallback string) string {
@@ -117,4 +128,16 @@ func integrationEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func integrationEnvInt16(key string, fallback int16) int16 {
+	value := integrationEnv(key, "")
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 16)
+	if err != nil || parsed <= 0 {
+		panic("invalid " + key + "=" + value)
+	}
+	return int16(parsed)
 }

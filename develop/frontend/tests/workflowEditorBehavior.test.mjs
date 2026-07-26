@@ -105,5 +105,6 @@ assert.match(paramsPanel, /resourceValidationMessages\(param\)/)
 assert.match(paramsPanel, /defineExpose\(\{ focusParam \}\)/)
 assert.doesNotMatch(paramsPanel, /saveParams|develop\.operatorParams\.saveParams/)
 assert.match(operatorPalette, /hasDistinctText\(operator\.description, operator\.displayName, operator\.name\)/)
+assert.doesNotMatch(operatorPalette, /operator-code/)
 
 console.log('workflowEditorBehavior tests passed')

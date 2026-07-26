@@ -76,6 +76,14 @@ func NewIAMUserSelfHandler(
 	}, nil
 }
 
+// Me godoc
+// @Summary      查询当前用户资料 | Get current user profile
+// @Tags         当前用户 | Current User
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {object} IAMCurrentUserResponse
+// @x-addp-auth-mode "self"
+// @Router       /users/me [get]
 func (h *IAMUserSelfHandler) Me(c *gin.Context) {
 	accessToken := iamBearerToken(c.GetHeader("Authorization"))
 	if accessToken == "" {
@@ -95,6 +103,16 @@ func (h *IAMUserSelfHandler) Me(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// ChangePassword godoc
+// @Summary      修改当前用户密码 | Change current user password
+// @Tags         当前用户 | Current User
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body IAMChangeCurrentPasswordRequest true "密码 | Passwords"
+// @Success      200 {object} IAMPasswordRotationResponse
+// @x-addp-auth-mode "self"
+// @Router       /users/me/password [put]
 func (h *IAMUserSelfHandler) ChangePassword(c *gin.Context) {
 	accessToken := iamBearerToken(c.GetHeader("Authorization"))
 	if accessToken == "" {
@@ -112,7 +130,7 @@ func (h *IAMUserSelfHandler) ChangePassword(c *gin.Context) {
 		accessToken,
 		request.CurrentPassword,
 		request.NewPassword,
-		iamAuditMetadata(c),
+		iamAuditMetadataWithStatus(c, http.StatusOK),
 	)
 	if err != nil {
 		respondIAMPasswordError(c, err)

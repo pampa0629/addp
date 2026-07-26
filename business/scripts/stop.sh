@@ -17,18 +17,6 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# 服务名到 compose service 的映射
-declare -A SERVICE_MAP=(
-    [postgres]="postgres"
-    [minio]="minio"
-    [clickhouse]="clickhouse"
-    [mongodb]="mongodb"
-    [doris]="doris-fe"
-    [spark]="spark-master spark-worker-1 spark-worker-2"
-    [neo4j]="neo4j"
-    [mysql]="mysql"
-)
-
 SERVICES=()
 HAS_ARGS=false
 
@@ -46,11 +34,20 @@ for arg in "$@"; do
             echo -e "${YELLOW}⚠️  NFS 需手动停止: sudo nfsd stop${NC}"
             ;;
         -*)
-            if [ -n "${SERVICE_MAP[$key]}" ]; then
-                SERVICES+=( ${SERVICE_MAP[$key]} )
-            else
-                echo "未知参数: $arg"; exit 1
-            fi
+            case "$key" in
+                postgres|minio|clickhouse|mongodb|neo4j|mysql)
+                    SERVICES+=("$key")
+                    ;;
+                doris)
+                    SERVICES+=("doris-fe")
+                    ;;
+                spark)
+                    SERVICES+=("spark-master" "spark-worker-1" "spark-worker-2")
+                    ;;
+                *)
+                    echo "未知参数: $arg"; exit 1
+                    ;;
+            esac
             ;;
     esac
 done

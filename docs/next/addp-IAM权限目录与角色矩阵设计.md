@@ -240,13 +240,13 @@ x-addp-required-permissions:
 
 | Base Key | Actions | Allowed Scope | Tenant Customizable | Owner |
 | --- | --- | --- | --- | --- |
-| `platform.tenant` | `read, create, update, suspend, close` | Platform | false | System |
+| `platform.tenant` | `read, create, update, suspend, restore, close` | Platform | false | System |
 | `platform.module` | `read, update` | Platform | false | System |
 | `platform.configuration` | `read, update` | Platform | false | System |
 | `platform.operation` | `read` | Platform | false | System |
 | `platform.backup` | `execute` | Platform | false | System |
 | `platform.restore_request` | `read, create, approve, reject, execute` | Platform | false | System |
-| `iam.user` | `read, create, update, suspend` | Platform | false | System |
+| `iam.user` | `read, create, update, suspend, reactivate` | Platform | false | System |
 | `iam.external_identity` | `read, link, unlink, suspend` | Platform | false | System |
 | `iam.identity_provider` | `read, create, update, suspend` | Platform | false | System |
 | `iam.security_policy` | `read, update` | Platform | false | System |
@@ -270,7 +270,7 @@ x-addp-required-permissions:
 | Base Key | Actions | Allowed Scope | Tenant Customizable | Owner |
 | --- | --- | --- | --- | --- |
 | `iam.tenant_invitation` | `read, create, revoke` | Tenant | false | System |
-| `iam.tenant_membership` | `read, update, suspend, close` | Tenant | false | System |
+| `iam.tenant_membership` | `read, update, suspend, restore, close` | Tenant | false | System |
 | `iam.tenant_role` | `read, create, update, delete` | Tenant | false | System |
 | `iam.tenant_role_assignment` | `read, create, revoke` | Tenant, Department, Project Group | false | System |
 | `iam.department` | `read` | Tenant, Department | false | System |
@@ -395,7 +395,7 @@ Role Key：`platform.system_administrator`
 
 包含：
 
-- `platform.tenant.read/create/update/suspend/close`；
+- `platform.tenant.read/create/update/suspend/restore/close`；
 - `platform.module.read/update`；
 - `platform.configuration.read/update`；
 - `platform.operation.read`；
@@ -412,7 +412,7 @@ Role Key：`platform.security_administrator`
 
 包含：
 
-- `iam.user.read/create/update/suspend`；
+- `iam.user.read/create/update/suspend/reactivate`；
 - `iam.external_identity.read/link/unlink/suspend`；
 - `iam.identity_provider.read/create/update/suspend`；
 - `iam.security_policy.read/update`；

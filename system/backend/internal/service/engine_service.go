@@ -33,7 +33,6 @@ var disallowedSystemEngineTypes = map[string]struct{}{
 
 type EngineService struct {
 	repo           *repository.EngineRepository
-	userRepo       *repository.UserRepository
 	encryptionKey  []byte
 	eventPublisher *events.EngineEventPublisher
 	cleanup        *CleanupOrchestratorService
@@ -46,10 +45,9 @@ type EngineListFilter struct {
 	IncludeBuiltin   bool
 }
 
-func NewEngineService(repo *repository.EngineRepository, userRepo *repository.UserRepository, encryptionKey []byte, redisClient *redis.Client) *EngineService {
+func NewEngineService(repo *repository.EngineRepository, encryptionKey []byte, redisClient *redis.Client) *EngineService {
 	return &EngineService{
 		repo:           repo,
-		userRepo:       userRepo,
 		encryptionKey:  encryptionKey,
 		eventPublisher: events.NewEngineEventPublisher(redisClient, nil),
 	}
@@ -60,19 +58,9 @@ func (s *EngineService) WithCleanupOrchestrator(cleanup *CleanupOrchestratorServ
 	return s
 }
 
-func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy uint) (*models.Engine, error) {
-	// 获取创建者信息以确定租户
-	user, err := s.userRepo.GetByID(createdBy)
-	if err != nil {
-		return nil, errors.New("用户不存在")
-	}
-
-	if err := s.ensureResourceManagementPermission(user); err != nil {
-		return nil, err
-	}
-
+func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy, tenantID uint) (*models.Engine, error) {
 	// 检查重复资源
-	if err := s.checkDuplicateResource(req, *user.TenantID); err != nil {
+	if err := s.checkDuplicateResource(req, tenantID); err != nil {
 		return nil, err
 	}
 
@@ -88,7 +76,7 @@ func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy uint) 
 		ConnectionInfo: encryptedConnInfo,
 		Description:    req.Description,
 		CreatedBy:      &createdBy,
-		TenantID:       user.TenantID, // 继承用户的租户ID
+		TenantID:       &tenantID,
 		IsActive:       true,
 	}
 
@@ -164,12 +152,7 @@ func (s *EngineService) CreateInternal(req *models.EngineCreateRequest, tenantID
 	return s.sanitizeResource(engine), nil
 }
 
-func (s *EngineService) GetByID(id uint, currentUserID uint) (*models.Engine, error) {
-	currentUser, err := s.getCurrentUser(currentUserID)
-	if err != nil {
-		return nil, err
-	}
-
+func (s *EngineService) GetByID(id, tenantID uint) (*models.Engine, error) {
 	engine, err := s.repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -178,30 +161,15 @@ func (s *EngineService) GetByID(id uint, currentUserID uint) (*models.Engine, er
 		return nil, err
 	}
 
-	if err := s.authorizeResourceAccess(engine, currentUser); err != nil {
+	if err := s.authorizeResourceAccess(engine, tenantID); err != nil {
 		return nil, err
 	}
 
 	return s.sanitizeResource(engine), nil
 }
 
-func (s *EngineService) List(page, pageSize int, filter EngineListFilter, currentUserID uint) ([]models.Engine, int64, error) {
-	// 获取当前用户信息
-	currentUser, err := s.getCurrentUser(currentUserID)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	var engines []models.Engine
-	// SuperAdmin可以查看所有资源
-	if currentUser.UserType == models.UserTypeSuperAdmin {
-		engines, err = s.repo.ListVisible(filter.EngineType)
-	} else {
-		if currentUser.TenantID == nil {
-			return nil, 0, errors.New("当前用户未关联租户，无法访问资源")
-		}
-		engines, err = s.repo.ListVisibleByTenant(*currentUser.TenantID, filter.EngineType)
-	}
+func (s *EngineService) List(page, pageSize int, filter EngineListFilter, tenantID uint) ([]models.Engine, int64, error) {
+	engines, err := s.repo.ListVisibleByTenant(tenantID, filter.EngineType)
 
 	if err != nil {
 		return nil, 0, err
@@ -279,12 +247,7 @@ func stringSet(values []string) map[string]struct{} {
 	return set
 }
 
-func (s *EngineService) Update(id uint, req *models.EngineUpdateRequest, currentUserID uint) (*models.Engine, error) {
-	currentUser, err := s.getCurrentUser(currentUserID)
-	if err != nil {
-		return nil, err
-	}
-
+func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateRequest) (*models.Engine, error) {
 	engine, err := s.repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -293,11 +256,7 @@ func (s *EngineService) Update(id uint, req *models.EngineUpdateRequest, current
 		return nil, err
 	}
 
-	if err := s.authorizeResourceAccess(engine, currentUser); err != nil {
-		return nil, err
-	}
-
-	if err := s.ensureResourceManagementPermission(currentUser); err != nil {
+	if err := s.authorizeResourceAccess(engine, tenantID); err != nil {
 		return nil, err
 	}
 
@@ -352,12 +311,7 @@ func (s *EngineService) Update(id uint, req *models.EngineUpdateRequest, current
 	return s.sanitizeResource(engine), nil
 }
 
-func (s *EngineService) Delete(id uint, currentUserID uint) error {
-	currentUser, err := s.getCurrentUser(currentUserID)
-	if err != nil {
-		return err
-	}
-
+func (s *EngineService) Delete(id, tenantID, actorID uint) error {
 	engine, err := s.repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -366,11 +320,7 @@ func (s *EngineService) Delete(id uint, currentUserID uint) error {
 		return err
 	}
 
-	if err := s.authorizeResourceAccess(engine, currentUser); err != nil {
-		return err
-	}
-
-	if err := s.ensureResourceManagementPermission(currentUser); err != nil {
+	if err := s.authorizeResourceAccess(engine, tenantID); err != nil {
 		return err
 	}
 
@@ -388,7 +338,7 @@ func (s *EngineService) Delete(id uint, currentUserID uint) error {
 			context.Background(),
 			*engine.TenantID,
 			nil,
-			currentUserID,
+			actorID,
 			events.CleanupCauseEngineDeleted,
 			cleanupEngineContext(id),
 		); err != nil {
@@ -471,12 +421,7 @@ func (s *EngineService) GetByIDInternal(id uint) (*models.Engine, error) {
 }
 
 // GetForConnection 返回带解密信息的资源，用于当前用户执行连接测试
-func (s *EngineService) GetForConnection(id uint, currentUserID uint) (*models.Engine, error) {
-	currentUser, err := s.getCurrentUser(currentUserID)
-	if err != nil {
-		return nil, err
-	}
-
+func (s *EngineService) GetForConnection(id, tenantID uint) (*models.Engine, error) {
 	engine, err := s.repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -485,11 +430,7 @@ func (s *EngineService) GetForConnection(id uint, currentUserID uint) (*models.E
 		return nil, err
 	}
 
-	if err := s.authorizeResourceAccess(engine, currentUser); err != nil {
-		return nil, err
-	}
-
-	if err := s.ensureResourceManagementPermission(currentUser); err != nil {
+	if err := s.authorizeResourceAccess(engine, tenantID); err != nil {
 		return nil, err
 	}
 
@@ -505,8 +446,8 @@ func (s *EngineService) GetForConnection(id uint, currentUserID uint) (*models.E
 
 // BuildConnectionTestEngine 返回带解密连接信息的资源副本，并用可选的当前表单配置覆盖。
 // 用于编辑弹窗测试未保存的配置，同时复用已有资源的权限、类型与状态更新链路。
-func (s *EngineService) BuildConnectionTestEngine(id uint, currentUserID uint, override *models.ConnectionInfo) (*models.Engine, error) {
-	engine, err := s.GetForConnection(id, currentUserID)
+func (s *EngineService) BuildConnectionTestEngine(id, tenantID uint, override *models.ConnectionInfo) (*models.Engine, error) {
+	engine, err := s.GetForConnection(id, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -694,31 +635,19 @@ func (s *EngineService) sanitizeResource(engine *models.Engine) *models.Engine {
 	return &copyResource
 }
 
-func (s *EngineService) getCurrentUser(userID uint) (*models.User, error) {
-	user, err := s.userRepo.GetByID(userID)
-	if err != nil {
-		return nil, errors.New("当前用户不存在")
-	}
-	return user, nil
-}
-
-func (s *EngineService) authorizeResourceAccess(engine *models.Engine, user *models.User) error {
-	if user.UserType == models.UserTypeSuperAdmin {
-		return nil
-	}
-
+func (s *EngineService) authorizeResourceAccess(engine *models.Engine, tenantID uint) error {
 	// 内置引擎对所有租户可见和可用
 	if engine.IsBuiltin {
 		return nil
 	}
 
 	// 检查用户和资源是否都有租户ID
-	if user.TenantID == nil || engine.TenantID == nil {
+	if tenantID == 0 || engine.TenantID == nil {
 		return ErrResourceForbidden
 	}
 
 	// 比较租户ID
-	if *user.TenantID != *engine.TenantID {
+	if tenantID != *engine.TenantID {
 		return ErrResourceForbidden
 	}
 
@@ -732,13 +661,6 @@ func (s *EngineService) isSensitiveField(field string) bool {
 	default:
 		return false
 	}
-}
-
-func (s *EngineService) ensureResourceManagementPermission(user *models.User) error {
-	if user.UserType == models.UserTypeSuperAdmin || user.UserType == models.UserTypeTenantAdmin {
-		return nil
-	}
-	return ErrResourceForbidden
 }
 
 // validateCapabilities 验证引擎能力声明的有效性
@@ -1130,12 +1052,7 @@ func (s *EngineService) enrichInstanceCapabilities(engine *models.Engine, capabi
 	return engineplugin.MarshalEngineCapabilities(*caps)
 }
 
-func (s *EngineService) EnableSpatialWorkspace(ctx context.Context, id uint, ecosystem, kind string, currentUserID uint) (*models.Engine, error) {
-	currentUser, err := s.getCurrentUser(currentUserID)
-	if err != nil {
-		return nil, err
-	}
-
+func (s *EngineService) EnableSpatialWorkspace(ctx context.Context, id uint, ecosystem, kind string, tenantID uint) (*models.Engine, error) {
 	engine, err := s.repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1144,10 +1061,7 @@ func (s *EngineService) EnableSpatialWorkspace(ctx context.Context, id uint, eco
 		return nil, err
 	}
 
-	if err := s.authorizeResourceAccess(engine, currentUser); err != nil {
-		return nil, err
-	}
-	if err := s.ensureResourceManagementPermission(currentUser); err != nil {
+	if err := s.authorizeResourceAccess(engine, tenantID); err != nil {
 		return nil, err
 	}
 

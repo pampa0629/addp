@@ -499,16 +499,60 @@ restart_supermap_workflow_service() {
     bash "${SCRIPT_DIR}/supermap-workflow.sh"
 }
 
+configure_spark_workflow_java() {
+    local candidate
+    local java_major
+    local candidates=(
+        "${JAVA_HOME:-}"
+        "/opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home"
+        "/usr/local/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home"
+        /usr/lib/jvm/java-11-openjdk-*
+        "/usr/lib/jvm/java-11-openjdk"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        [ -x "${candidate}/bin/java" ] || continue
+        java_major=$("${candidate}/bin/java" -version 2>&1 | awk -F'[\".]' '/version/ { print $2; exit }')
+        if [ "$java_major" = "11" ]; then
+            export JAVA_HOME="$candidate"
+            export PATH="${JAVA_HOME}/bin:${PATH}"
+            echo "  Spark Workflow 使用 JDK 11: ${JAVA_HOME}"
+            return 0
+        fi
+    done
+
+    echo "❌ Spark Workflow 需要 JDK 11，当前未找到可用安装"
+    echo "   macOS 请运行: brew install openjdk@11"
+    return 1
+}
+
+detect_spark_workflow_shared_host() {
+    local interface
+    local host
+
+    if command -v route >/dev/null 2>&1 && command -v ipconfig >/dev/null 2>&1; then
+        interface=$(route -n get default 2>/dev/null | awk '/interface:/ { print $2; exit }')
+        [ -n "$interface" ] && host=$(ipconfig getifaddr "$interface" 2>/dev/null || true)
+    elif command -v ip >/dev/null 2>&1; then
+        host=$(ip route get 1.1.1.1 2>/dev/null | awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')
+    fi
+
+    [ -n "$host" ] || return 1
+    printf '%s\n' "$host"
+}
+
 restart_spark_workflow_service() {
     local port="${SPARK_WORKFLOW_PORT:-8098}"
     stop_pidfile_process ".dev-pids/spark-workflow-engine.pid" "Spark Workflow Engine"
     stop_matching_port_process "$port" "Spark Workflow Engine" "python.*api_server\\.py|engines/spark-workflow"
     require_service_python "engines/spark-workflow" "Spark Workflow Engine" "spark-workflow"
+    configure_spark_workflow_java
     echo "  启动 Spark Workflow Engine..."
     (
         cd engines/spark-workflow
         export PORT="$port"
         export INTERNAL_API_KEY="${INTERNAL_API_KEY:-}"
+        export SPARK_WORKFLOW_SHARED_HOST="${SPARK_WORKFLOW_SHARED_HOST:-$(detect_spark_workflow_shared_host)}"
         start_background_process "." ".dev-pids/spark-workflow-engine.pid" "logs/spark-workflow-engine.log" "logs/spark-workflow-engine-stderr.log" ./venv/bin/python api_server.py
     )
     wait_http_ready "Spark Workflow Engine" "http://localhost:${port}/health"

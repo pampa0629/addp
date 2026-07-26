@@ -99,6 +99,50 @@ func TestIAMAuthHandlerContract(t *testing.T) {
 		}
 	})
 
+	t.Run("MFA login challenge is completed before session issuance", func(t *testing.T) {
+		runtime := &fakeIAMAuthRuntime{
+			loginResult: &iam.ContextSelectionResult{
+				NextAction: iam.ContextSelectionNextActionVerifyMFA,
+				MFA: &iam.IssuedMFAChallenge{
+					ChallengeToken: "addp_mfc_challenge", ExpiresAt: now.Add(5 * time.Minute),
+				},
+			},
+			mfaResult: &iam.ContextSelectionResult{
+				NextAction: iam.ContextSelectionNextActionSessionIssued,
+				Session:    testIAMBrowserSession(now),
+			},
+		}
+		router := newIAMAuthTestRouter(t, runtime, now, false)
+		login := performIAMJSONRequest(t, router, http.MethodPost, "/api/v1/system/login", map[string]any{
+			"username": "platform-admin", "password": "secret",
+		}, nil)
+		var loginResponse IAMBrowserLoginResponse
+		decodeIAMResponse(t, login, &loginResponse)
+		if login.Code != http.StatusOK || loginResponse.NextAction != "verify_mfa" ||
+			loginResponse.MFA == nil || loginResponse.MFA.Method != "totp" ||
+			loginResponse.Session != nil || loginResponse.Selection != nil || len(login.Result().Cookies()) != 0 {
+			t.Fatalf("MFA login status=%d response=%#v cookies=%#v", login.Code, loginResponse, login.Result().Cookies())
+		}
+
+		verification := performIAMJSONRequest(
+			t,
+			router,
+			http.MethodPost,
+			"/api/v1/system/auth/mfa-verifications",
+			map[string]any{"challenge_token": "addp_mfc_challenge", "code": "123456"},
+			nil,
+		)
+		var verificationResponse IAMBrowserLoginResponse
+		decodeIAMResponse(t, verification, &verificationResponse)
+		if verification.Code != http.StatusOK || verificationResponse.NextAction != "session_issued" ||
+			verificationResponse.Session == nil || runtime.mfaInput == nil ||
+			runtime.mfaInput.ChallengeToken != "addp_mfc_challenge" || runtime.mfaInput.Code != "123456" {
+			t.Fatalf("MFA verification status=%d response=%#v input=%#v",
+				verification.Code, verificationResponse, runtime.mfaInput)
+		}
+		assertIAMSessionCookies(t, verification.Result().Cookies(), false, 30*24*60*60, 600)
+	})
+
 	t.Run("context selection rejects unknown fields and non-canonical IDs", func(t *testing.T) {
 		runtime := &fakeIAMAuthRuntime{selectionSession: testIAMBrowserSession(now)}
 		router := newIAMAuthTestRouter(t, runtime, now, false)
@@ -298,6 +342,9 @@ type fakeIAMAuthRuntime struct {
 	loginInput  *iam.LoginLocalBrowserInput
 	loginResult *iam.ContextSelectionResult
 	loginErr    error
+	mfaInput    *iam.VerifyMFAChallengeInput
+	mfaResult   *iam.ContextSelectionResult
+	mfaErr      error
 
 	selectionInput   *iam.ConsumeContextSelectionInput
 	selectionSession *iam.IssuedBrowserSession
@@ -329,6 +376,14 @@ func (runtime *fakeIAMAuthRuntime) LoginLocalBrowser(
 ) (*iam.ContextSelectionResult, error) {
 	runtime.loginInput = &input
 	return runtime.loginResult, runtime.loginErr
+}
+
+func (runtime *fakeIAMAuthRuntime) VerifyLocalBrowserMFA(
+	_ context.Context,
+	input iam.VerifyMFAChallengeInput,
+) (*iam.ContextSelectionResult, error) {
+	runtime.mfaInput = &input
+	return runtime.mfaResult, runtime.mfaErr
 }
 
 func (runtime *fakeIAMAuthRuntime) ConsumeContextSelection(
@@ -407,6 +462,7 @@ func newIAMAuthTestRouter(
 	router.Use(requestidmiddleware.RequestIDMiddleware())
 	router.Use(i18nmiddleware.I18nMiddleware())
 	router.POST("/api/v1/system/login", handler.Login)
+	router.POST("/api/v1/system/auth/mfa-verifications", handler.VerifyMFA)
 	router.POST("/api/v1/system/auth/context-selections", handler.ConsumeContextSelection)
 	router.GET("/api/v1/system/auth/context", handler.Context)
 	router.GET("/api/v1/system/auth/context-options", handler.ContextOptions)

@@ -10,7 +10,5 @@ const systemClient = axios.create({
 })
 
 export const authAPI = {
-  ...createAuthAPI(systemClient, {
-    includeRegister: true  // Console 需要注册功能
-  })
+  ...createAuthAPI(systemClient)
 }

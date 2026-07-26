@@ -57,7 +57,7 @@ func TestSwaggerAuthorizationContextContract(t *testing.T) {
 		t.Fatalf("BearerAuth = %#v, want Authorization header apiKey", bearer)
 	}
 
-	const definitionName = "github_com_addp_system_internal_models.AuthorizationContext"
+	const definitionName = "authorization.AuthContext"
 	const definitionRef = "#/definitions/" + definitionName
 	if got := authOperation.Responses["200"].Schema.Ref; got != definitionRef {
 		t.Fatalf("/auth/context 200 schema = %q, want %q", got, definitionRef)
@@ -65,20 +65,15 @@ func TestSwaggerAuthorizationContextContract(t *testing.T) {
 
 	properties := document.Definitions[definitionName].Properties
 	requiredProperties := []string{
-		"subject_type",
-		"user_id",
-		"username",
-		"user_type",
-		"tenant_id",
-		"auth_type",
-		"client_id",
-		"audiences",
-		"scopes",
-		"delegated_by",
-		"agent_run_id",
-		"tool_call_id",
-		"issued_at",
-		"expires_at",
+		"schema_version",
+		"principal",
+		"context",
+		"organization",
+		"authorization",
+		"authentication",
+		"client",
+		"delegation",
+		"token",
 	}
 	for _, property := range requiredProperties {
 		if _, ok := properties[property]; !ok {

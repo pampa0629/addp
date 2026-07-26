@@ -78,10 +78,17 @@ services:
   doris-fe:
     image: apache/doris:doris-all-in-one-2.1.0
     container_name: business-doris-fe
+    hostname: business-doris-fe
     environment:
-      - FE_SERVERS=fe1:127.0.0.1:9010
-      - FE_ID=1
       - BUILD_TYPE=production
+      - RECOVERY=${DORIS_RECOVERY:-false}
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        grep -q '^enable_fqdn_mode = true$' /opt/apache-doris/fe/conf/fe.conf ||
+          echo 'enable_fqdn_mode = true' >> /opt/apache-doris/fe/conf/fe.conf
+        exec bash /usr/local/bin/entry_point.sh
     ports:
       - "${DORIS_FE_PORT:-9030}:9030"       # MySQL 协议
       - "${DORIS_FE_HTTP_PORT:-8030}:8030"  # HTTP API
@@ -226,15 +233,15 @@ services:
       - SPARK_MASTER_HOST=0.0.0.0
       - SPARK_MASTER_PORT=7077
     ports:
-      - "7077:7077"   # Spark 集群通信
-      - "8088:8080"   # Spark Master Web UI (避免与 System 8180 冲突)
-      - "10000:10000" # Thrift Server (SQL 接口)
+      - "${SPARK_MASTER_PORT:-7077}:7077"   # Spark 集群通信
+      - "${SPARK_MASTER_UI:-18088}:8080"    # Spark Master Web UI
+      - "${SPARK_THRIFT_PORT:-11000}:10000" # Thrift Server (SQL 接口)
     volumes:
       - ./spark:/opt/spark/conf
     command: >
       bash -c "
         /opt/spark/sbin/start-master.sh &&
-        /opt/spark/sbin/start-thriftserver.sh --master spark://spark-master:7077 &&
+        /opt/spark/sbin/start-thriftserver.sh --master spark://spark-master:7077 --conf spark.cores.max=1 --conf spark.executor.cores=1 --conf spark.executor.memory=1g &&
         tail -f /dev/null
       "
     networks:
@@ -272,6 +279,8 @@ services:
         condition: service_healthy
     networks:
       - business-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     deploy:
       resources:
@@ -299,6 +308,8 @@ services:
         condition: service_healthy
     networks:
       - business-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     profiles:
       - full  # 默认不启动，通过 docker-compose --profile full up 启用

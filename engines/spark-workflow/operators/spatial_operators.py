@@ -35,7 +35,10 @@ def buffer(input_df: DataFrame, geom_column: str = "geom", distance: float = 0.0
 
     df_result = input_df.withColumn(
         output_column,
-        expr(f"ST_Buffer({geom_column}, {distance})")
+        expr(
+            f"ST_SetSRID(ST_Buffer({geom_column}, {distance}), "
+            f"ST_SRID({geom_column}))"
+        )
     )
 
     logger.info(f"Applied buffer with distance {distance}")

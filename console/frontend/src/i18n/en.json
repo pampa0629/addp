@@ -66,20 +66,6 @@
       "placeholder": "Describe what you want to do, e.g. sync database data...",
       "ask": "Find it"
     },
-    "login": {
-      "username": "Username",
-      "usernamePlaceholder": "Enter username",
-      "password": "Password",
-      "passwordPlaceholder": "Enter password",
-      "submit": "Login",
-      "loggingIn": "Logging in...",
-      "inputRequired": "Please enter username and password",
-      "success": "Login successful",
-      "failed": "Login failed",
-      "networkError": "Network error, please check if the server is running",
-      "requestFailed": "Request failed ({status})",
-      "unknown": "Unknown error"
-    },
     "oauth": {
       "client": "Client",
       "scope": "Scope",

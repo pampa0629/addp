@@ -109,7 +109,7 @@ CLI loopback listener 必须保持运行，直到收到有效 `/callback`、收�
 
 ## 六、Device Authorization Flow
 
-1. CLI 调用 `POST /oauth/device/code` 获取 `device_code`、`user_code`、verification URI、过期时间和轮询间隔。
+1. CLI 使用 `client_id=addp-cli`、请求 Scope 和固定 `audience=addp.api` 调用 `POST /oauth/device/code`，获取 `device_code`、`user_code`、verification URI、过期时间和轮询间隔；Device Authorization Request 缺少 audience 时必须在进入 Storage 前返回 `invalid_request`，不得把空 audience 写入协议事实表。
 2. 用户在 Console `/oauth/device` 登录并确认 User Code。
 3. Console 调用受 Bearer 保护的 `POST /oauth/device/authorizations`。
 4. CLI 按 interval 调用 `/oauth/token`，使用 Device Code grant。

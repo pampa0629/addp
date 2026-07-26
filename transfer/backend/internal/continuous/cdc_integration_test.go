@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -121,6 +122,8 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 		Username:         cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_USERNAME", "admin"),
 		Password:         cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_PASSWORD", "addp_kafka_admin"),
 		SecurityProtocol: cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext"),
+		SASLMechanism:    cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SASL_MECHANISM", "scram-sha-256"),
+		TLSCACertFile:    cdcDataEnv("ADDP_TEST_INFRA_KAFKA_TLS_CA_CERT_FILE", ""),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -134,7 +137,7 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	captureSupervisor, err := capture.NewSupervisor(
 		captureRepo, capturePlanResolver, connectClient, topicAdmin,
 		capture.DatabaseSourceResources{}, capture.SupervisorConfig{
-			TopicRetention: time.Hour, TopicReplication: 1,
+			TopicRetention: time.Hour, TopicReplication: cdcDataEnvInt16("ADDP_TEST_INFRA_KAFKA_REPLICATION_FACTOR", 1),
 			ConnectLoopbackHost: cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_LOOPBACK_HOST", "host.docker.internal"),
 			ProvisioningTimeout: 60 * time.Second, StatusPollInterval: 500 * time.Millisecond, MonitorInterval: time.Second,
 		}, nil,
@@ -854,12 +857,35 @@ func cdcDataBusinessPostgresConnInfo() engineplugin.ConnectionInfo {
 }
 
 func cdcDataTransferKafkaConnection() engineplugin.ConnectionInfo {
-	return engineplugin.ConnectionInfo{
+	return cdcDataKafkaConnection(engineplugin.ConnectionInfo{
 		"bootstrap_servers": cdcDataEnv("ADDP_TEST_INFRA_KAFKA_BOOTSTRAP_SERVERS", "localhost:19092"),
 		"security_protocol": cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext"),
 		"username":          "transfer", "password": cdcDataEnv("ADDP_TEST_INFRA_KAFKA_TRANSFER_PASSWORD", "addp_kafka_transfer"),
-		"sasl_mechanism": "plain", "client_id": "addp-transfer-cdc-data-e2e",
+		"sasl_mechanism": cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SASL_MECHANISM", "scram-sha-256"), "client_id": "addp-transfer-cdc-data-e2e",
+	})
+}
+
+func cdcDataKafkaConnection(info engineplugin.ConnectionInfo) engineplugin.ConnectionInfo {
+	if path := cdcDataEnv("ADDP_TEST_INFRA_KAFKA_TLS_CA_CERT_FILE", ""); path != "" {
+		pem, err := os.ReadFile(path)
+		if err != nil {
+			panic(fmt.Sprintf("read test Kafka CA certificate: %v", err))
+		}
+		info["tls_ca_cert"] = string(pem)
 	}
+	return info
+}
+
+func cdcDataEnvInt16(key string, fallback int16) int16 {
+	value := cdcDataEnv(key, "")
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 16)
+	if err != nil || parsed <= 0 {
+		panic(fmt.Sprintf("invalid %s=%q", key, value))
+	}
+	return int16(parsed)
 }
 
 func cdcDataEnv(key, fallback string) string {

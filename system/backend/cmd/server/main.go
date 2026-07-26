@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/utils"
 	"github.com/addp/system/internal/api"
 	"github.com/addp/system/internal/config"
+	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
@@ -60,13 +61,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 自动迁移
-	if err := repository.AutoMigrate(db); err != nil {
-		logger.L().Error("数据库迁移失败", "error", err)
+	// IAM 必须先执行显式版本化 migration；非 IAM 表随后暂由 GORM 管理。
+	migrationContext, cancelMigration := context.WithTimeout(context.Background(), 2*time.Minute)
+	if err := migration.NewRunner(cfg.PostgreSQLDSN()).Run(migrationContext); err != nil {
+		cancelMigration()
+		logger.L().Error("IAM 数据库迁移失败", "error", err)
 		os.Exit(1)
 	}
-	if err := repository.EnsureBuiltinOAuthClients(db); err != nil {
-		logger.L().Error("内置 OAuth Client 初始化失败", "error", err)
+	cancelMigration()
+	if err := repository.AutoMigrateNonIAM(db); err != nil {
+		logger.L().Error("非 IAM 数据库迁移失败", "error", err)
 		os.Exit(1)
 	}
 
@@ -92,25 +96,12 @@ func main() {
 
 	// 统一刷新引擎能力声明。旧 capabilities 结构不再保留，Meta/Develop 等消费端只读取新结构。
 	{
-		userRepo := repository.NewUserRepository(db)
 		engineRepo := repository.NewEngineRepository(db)
-		engineService := service.NewEngineService(engineRepo, userRepo, cfg.EncryptionKey, nil)
+		engineService := service.NewEngineService(engineRepo, cfg.EncryptionKey, nil)
 		if err := engineService.RefreshAllEngineCapabilities(); err != nil {
 			logger.L().Error("刷新引擎能力声明失败", "error", err)
 			os.Exit(1)
 		}
-	}
-
-	// 初始化超级管理员用户
-	if err := repository.InitSuperAdmin(db); err != nil {
-		logger.L().Error("超级管理员用户初始化失败", "error", err)
-		os.Exit(1)
-	}
-
-	// 初始化默认租户和租户管理员 (仅开发环境且显式启用时)
-	if err := repository.InitDefaultTenant(db); err != nil {
-		logger.L().Error("默认租户初始化失败", "error", err)
-		os.Exit(1)
 	}
 
 	// 设置 Gin 模式
@@ -203,39 +194,13 @@ func main() {
 		}
 
 		// 创建 EngineService
-		userRepo := repository.NewUserRepository(db)
 		engineRepo := repository.NewEngineRepository(db)
-		engineService := service.NewEngineService(engineRepo, userRepo, cfg.EncryptionKey, redisClient)
+		engineService := service.NewEngineService(engineRepo, cfg.EncryptionKey, redisClient)
 
 		// 创建并运行健康检查器
 		healthChecker := service.NewHealthChecker(engineService)
 		healthChecker.CheckAllResourcesOnStartup()
 	}()
-
-	// 启动日志归档定时任务（如果启用）
-	var scheduler *service.SchedulerService
-	if cfg.AuditLogArchiveEnabled {
-		// 初始化 MinIO 客户端
-		minioClient, err := service.InitMinIOClient(cfg)
-		if err != nil {
-			logger.L().Error("MinIO 客户端初始化失败，日志归档功能将被禁用", "error", err)
-		} else {
-			// 创建归档服务
-			logRepo := repository.NewLogRepository(db)
-			archiveService := service.NewLogArchiveService(logRepo, minioClient, cfg.InfraMinIOBucket)
-
-			scheduler, err = service.NewSchedulerService(
-				archiveService,
-				cfg.AuditLogArchiveCron,
-				cfg.AuditLogRetentionDays,
-			)
-			if err != nil {
-				logger.L().Error("日志归档调度器初始化失败", "error", err)
-			} else if err := scheduler.Start(); err != nil {
-				logger.L().Error("日志归档调度器启动失败", "error", err)
-			}
-		}
-	}
 
 	// 等待中断信号以优雅关闭服务器
 	quit := make(chan os.Signal, 1)
@@ -243,10 +208,6 @@ func main() {
 	<-quit
 
 	logger.L().Info("正在关闭 System 服务器...")
-
-	if scheduler != nil {
-		scheduler.Stop()
-	}
 
 	// 关闭所有数据库连接池
 	dbbridge.CloseAllPools()

@@ -289,7 +289,7 @@ go run ./authorization/cmd/manifest --check --repository-root ..
 
 ### 6.5 常量与覆盖报告命令
 
-同一 CLI 扩展为八个互斥模式：
+同一 CLI 提供七个互斥模式：
 
 ```bash
 cd common
@@ -312,10 +312,7 @@ go run ./authorization/cmd/manifest --generate-tool-catalog --repository-root ..
 # 只读检查 System Runtime Tool 授权目录字节漂移
 go run ./authorization/cmd/manifest --check-tool-catalog --repository-root ..
 
-# 写入首批 IAM Catalog Seed SQL
-go run ./authorization/cmd/manifest --generate-sql-seed --repository-root ..
-
-# 只读检查首批 IAM Catalog Seed SQL 是否与 Manifest 字节一致
+# 只读检查已发布的首批 IAM Catalog Seed SQL 摘要
 go run ./authorization/cmd/manifest --check-sql-seed --repository-root ..
 ```
 
@@ -327,7 +324,7 @@ go run ./authorization/cmd/manifest --check-sql-seed --repository-root ..
 - FastAPI 模块缺少可供发布检查的 OpenAPI 投影；
 - Tool Manifest 缺少 Permission 映射、audience 与 owner 不一致，或映射到不可委托 Permission。
 
-在历史路由注解补齐前，`--coverage-report` 只输出完整差距并保持成功退出，用于 CI 稳定生成审查产物；覆盖问题不能改变或过滤 SQL Seed 中已经通过 Manifest 与 Role 校验的目录事实。`000006` 的生成门禁是 Catalog、内置 Role、owner-local 常量和 SQL 字节一致；覆盖报告的 `complete=true` 是 IAM Runtime 一次性切换及恢复服务流量的发布门禁。
+在历史路由注解补齐前，`--coverage-report` 只输出完整差距并保持成功退出，用于 CI 稳定生成审查产物；覆盖问题不能改变或过滤 SQL migration 中已经通过 Manifest 与 Role 校验的目录事实。`000006` 作为已发布历史 migration 只校验固定 SHA-256 摘要，后续目录变化只进入新的向前 migration；覆盖报告的 `complete=true` 是 IAM Runtime 一次性切换及恢复服务流量的发布门禁。
 
 这两个门禁必须分开：部分旧 API 只有在目标 IAM Runtime 重写时才能删除或拆分，而 Runtime 又依赖完整的首批 IAM DDL。禁止把路由覆盖清零设为 `000006` 的前置条件形成循环依赖，也禁止因尚未清零而降低 Runtime 切换门禁。
 
@@ -346,7 +343,7 @@ go run ./authorization/cmd/manifest --check-sql-seed --repository-root ..
 
 首次种子使用确定性显式 `INSERT`，不使用启动时 `ON CONFLICT DO UPDATE` reconciliation。
 
-生成器固定读取规范化 Catalog Report，并将结果写入 `system/backend/internal/migration/sql/000006_iam_catalog_seed.up.sql`。相同 Manifest 与 Role 输入必须生成字节级一致 SQL；`--check-sql-seed` 只读比较目标文件，不根据数据库现状、覆盖报告、运行环境或模块健康状态改变内容。
+`000006` 在首次发布时由规范化 Catalog Report 确定性生成。发布后删除重新生成入口，`--check-sql-seed` 只读检查其固定 SHA-256 摘要，防止新 Manifest 版本误写历史 migration。
 
 ### 7.2 后续目录变更
 
@@ -450,7 +447,7 @@ Module Registry 的 `up/down`、心跳和路由健康只描述可用性，不修
 
 - Permission Manifest 与 Builtin Role Manifest v1 Schema；
 - Go 严格 YAML 解码、语义校验、跨 Manifest owner/Key 冲突检测和稳定 Descriptor 排序；
-- 稳定 owner 白名单中 15 个模块的首批 Permission Manifest 已全部落地，包含 System 的 102 个完整 Permission 和其他 owner 当前确认的首批真实 Permission，合计 240 个；
+- 稳定 owner 白名单中 15 个模块的 Permission Manifest 已全部落地，包含 System 的 105 个完整 Permission 和其他 owner 当前确认的真实 Permission，合计 243 个；
 - `system/authorization/builtin_roles.yaml` 的首批 18 个无缺失依赖 Role：9 个平台/Tenant 管理 Role，以及全部 9 个首批业务 Role；
 - 15 份 owner-local Go/Python Permission 常量生成物、写入模式和只读字节漂移检查；
 - System Runtime Tool 授权目录的确定性 Go 生成物，以及 `--generate-tool-catalog` / `--check-tool-catalog` 字节漂移门禁；
@@ -458,12 +455,60 @@ Module Registry 的 `up/down`、心跳和路由健康只描述可用性，不修
 - Asset 的 34 条公开业务路由已改为真实命名 Handler 并完成 Swagger IAM 投影；Agent 11 条、Copilot 6 条 FastAPI Operation 已生成确定性 OpenAPI 投影；
 - 9 个 Tool Scope 已全部映射到精确、可委托的 owner Permission；Copilot SQL/Navigate 已删除请求体身份，Graph 到 Copilot KG 抽取已改为内部服务认证；
 - 唯一仓库聚合入口、稳定 owner 白名单、目录 owner 一致性校验、确定性 Catalog Report 和只读 `--check` CLI；
-- `--generate-sql-seed` / `--check-sql-seed` 确定性投影、`000006_iam_catalog_seed.up.sql`，以及 240 个 Permission、18 个 Role、275 个 Role Permission、三员冲突和 `addp-cli` 的 PostgreSQL 15 约束测试；
+- `000006_iam_catalog_seed.up.sql` 固定摘要门禁、`000009_iam_catalog_restore_actions.up.sql` 向前目录变更，以及 243 个 Permission、18 个 Role、278 个 Role Permission、三员冲突和 `addp-cli` 的 PostgreSQL 15 约束测试；
 - 对 Schema、未知字段、多文档、namespace、action、Scope、Principal 类型、i18n Key、排序、Role Permission 引用和真实仓库 Manifest 的测试。
 
-稳定 owner 白名单的首批目录、九个业务内置 Role 和 owner-local 代码常量已全部机器化。Asset、Agent、Copilot 的发布检查 OpenAPI 投影和全部 Tool Permission 映射已收敛；System 已完成 41/52 个 Operation 的精确授权投影，2026-07-24 实测覆盖报告仍有 557 个 Operation 缺少 `x-addp-auth-mode`。Standard/Model 未覆盖资源和各 owner 既有路由的精确 Permission 必须在 IAM Runtime 一次性切换前逐项收敛，不阻塞只写入已校验目录事实的 `000006`。
+稳定 owner 白名单的首批目录、九个业务内置 Role 和 owner-local 代码常量已全部机器化。Asset、Agent、Copilot 的发布检查 OpenAPI 投影和全部 Tool Permission 映射已收敛；System 目标 Router/Swagger 已完成 81/81 个 Operation 的 IAM 声明。2026-07-25 实测其余 11 个 Go owner 模块仍有 548 个 Operation 缺少 `x-addp-auth-mode`，全仓覆盖报告 `complete=false`。这些 owner 路由的精确 Permission 与 Common AuthContext Middleware 切换必须继续逐项收敛，不阻塞已校验目录事实，但仍是恢复全平台流量的发布门禁。
 
-System 剩余 11 个 Operation 不能机械映射：旧 `/users` CRUD 混合平台 User 生命周期、Tenant 成员管理和 self 资料修改；`DELETE /users/{id}` 与 `DELETE /tenants/{id}` 是物理删除，而目标 Permission 只有 `suspend/close`；旧 `/logs` 同时承载 Platform `audit.event.*` 与 Tenant `audit.tenant_event.*`。这些路由必须随 IAM 目标模型一次性拆分或删除，不能给同一路由附加虚假的 all-of Permission。当前用户改密已先收敛为唯一 self 路由 `PUT /users/me/password`，旧带用户 ID 的路径已删除。
+System 旧 `/users` CRUD、物理删除 `/tenants`、混合语义 `/logs` 和自研 Auth/OAuth 路由已经删除；目标 `/platform`、`/tenant`、`/users/me`、Fosite OAuth 和 Invitation 路由是唯一生产代码路径。System Swagger 路由覆盖校验为 80 个公开方法一致，另有 1 个 `internal` 审计写入 Operation。
+
+### 12.1 IAM 管理 API 一次性切换门（已确认）
+
+目标路由必须以 AuthContext 模式分开，不再使用一组 `/users` 或 `/logs` 根据旧 `user_type` 切换语义：
+
+| 边界 | 唯一目标路由 | 核心 Permission | 关键语义 |
+| --- | --- | --- | --- |
+| Platform Tenant 生命周期 | `/platform/tenants` | `platform.tenant.*` | create/read/update 与 suspend/restore/close 分开；close 终态，不物理删除 |
+| Platform User 生命周期 | `/platform/users` | `iam.user.*` | 管理全局 User 资料和 suspend/reactivate；目标持有 Platform Role 时必须消费已批准的高权限变更请求 |
+| Tenant 成员管理 | `/tenant/memberships` 与 `/tenant/invitations` | `iam.tenant_membership.*` / `iam.tenant_invitation.*` | Tenant 从当前 Tenant AuthContext 获得，不接受可跨租户的 `tenant_id`；公开入会通过邀请、IdP JIT 或同步完成，不开放绕过来源治理的直接 create |
+| Platform 审计 | `/platform/audit/events` | `audit.event.read/export` | 只接受 Platform AuthContext，可查询、详情、审计统计与导出 |
+| Tenant 审计 | `/tenant/audit/events` | `audit.tenant_event.read/export` | 只查询当前 Tenant，不接受客户端 `tenant_id` |
+| User self | `/users/me` 与 `/users/me/password` | `self` | 只消费第一方 Browser Access Token，不并入平台 User 管理 API |
+
+现有状态机是可逆 suspend 与不可逆 close/deactivate 的明确区分，因此不能借用普通 `update` Permission 执行恢复。切换前应以向前 migration 新增：
+
+- `platform.tenant.restore`；
+- `iam.user.reactivate`；
+- `iam.tenant_membership.restore`。
+
+本切换门已于 2026-07-25 确认。新增 Permission 需同步递增 System Permission Manifest 和 Builtin Role Manifest 版本，生成新的向前 SQL migration，不重写已生成的 `000006`。后续一次性实现新 Handler/Service/Repository/Swagger 与前端调用，删除旧 User/Tenant/Log Handler、Service、DTO 和路由。
+
+### 12.2 当前验证基线
+
+2026-07-25 在当前工作树执行：
+
+```bash
+cd common && go test ./...
+cd system/backend && go test ./...
+cd system/backend && go vet ./...
+git diff --check
+```
+
+以上全部通过。`common` 的 `go vet ./...` 仍有两个与 IAM 无关的存量问题：MongoDB BSON `primitive.E` 使用未命名字段，以及 PMTiles `WriteTo` 方法名触发 `io.WriterTo` 签名检查。本轮 IAM 不跨边界修改它们。
+
+### 12.3 Tenant Invitation 实施门（已确认）
+
+当前 Permission 目录已定义 `iam.tenant_invitation.read/create/revoke`，但目标 DDL 尚未定义 `system.tenant_invitations`，AuthContext 也不允许没有 Platform Role 或 Tenant Membership 的 User 建立普通会话。因此不能用一个租户管理员直接调用的 Membership create API 代替邀请；那会绕过邀请持有者确认，并重新让 Tenant 管理权获得全局 User 创建语义。
+
+建议的唯一路线是：
+
+1. `system.tenant_invitations` 只保存邀请 Secret Hash、Tenant、邀请邮箱、过期时间、状态、创建/撤销/接受人和审计引用，明文 Secret 只交付一次；
+2. 新 User 通过邀请 Secret 进入专用注册端点，在同一事务创建 User、Local Account、Tenant Membership、消费邀请和写入审计；
+3. 已有 User 使用第一方 Browser Session 和邀请 Secret 接受邀请；
+4. 已有但尚无任何可用 Context 的 User，本地认证后只签发一次性 Enrollment Ticket，不增加第三种 AuthContext 模式；Enrollment Ticket 只能与邀请 Secret 一起消费；
+5. 首阶段允许 Console 显示一次性邀请链接，不在 IAM 中内嵌邮件发送器；后续通过独立 Notification Provider 交付同一链接。
+
+该决策已于 2026-07-25 确认。实现必须使用单一 Invitation / Enrollment 路线，不开放直接 Membership create，不以内嵌邮件发送器、临时 AuthContext 或旧 User 创建接口形成旁路。
 
 尚未完成：
 

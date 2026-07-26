@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 3
+manifest_version: 4
 permissions:
   - key: audit.event.export
     allowed_scope_types: [platform]
@@ -450,6 +450,14 @@ permissions:
     status: active
     name_i18n_key: permissions.iam.tenant_membership.read.name
     description_i18n_key: permissions.iam.tenant_membership.read.description
+  - key: iam.tenant_membership.restore
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.tenant_membership.restore.name
+    description_i18n_key: permissions.iam.tenant_membership.restore.description
   - key: iam.tenant_membership.suspend
     allowed_scope_types: [tenant]
     risk_level: high
@@ -530,6 +538,14 @@ permissions:
     status: active
     name_i18n_key: permissions.iam.user.create.name
     description_i18n_key: permissions.iam.user.create.description
+  - key: iam.user.reactivate
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.user.reactivate.name
+    description_i18n_key: permissions.iam.user.reactivate.description
   - key: iam.user.read
     allowed_scope_types: [platform]
     risk_level: low
@@ -666,6 +682,14 @@ permissions:
     status: active
     name_i18n_key: permissions.platform.tenant.read.name
     description_i18n_key: permissions.platform.tenant.read.description
+  - key: platform.tenant.restore
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.tenant.restore.name
+    description_i18n_key: permissions.platform.tenant.restore.description
   - key: platform.tenant.suspend
     allowed_scope_types: [platform]
     risk_level: high

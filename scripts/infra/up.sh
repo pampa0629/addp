@@ -15,9 +15,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${PROJECT_ROOT}"
 
+COMPOSE_FILES=(-f docker-compose.infra.yml)
+
+compose() {
+  docker compose "${COMPOSE_FILES[@]}" "$@"
+}
+
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}ADDP Infrastructure Up${NC}"
-echo -e "${BLUE}(PostgreSQL/Redis/MinIO/Meilisearch/Kafka/Kafka Connect)${NC}"
+echo -e "${BLUE}(PostgreSQL/Redis/MinIO/Meilisearch/Redpanda/Kafka Connect)${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -168,8 +174,8 @@ fi
 
 # Infra Kafka（固定 19092）
 if [ "$(check_port "$KAFKA_PORT")" = "busy" ]; then
-  if port_used_by_container "$KAFKA_PORT" "addp-kafka"; then
-    echo -e "  ${GREEN}✓ Infra Kafka 端口 ${KAFKA_PORT} 已由 addp-kafka 容器使用${NC}"
+  if port_used_by_container "$KAFKA_PORT" "addp-redpanda"; then
+    echo -e "  ${GREEN}✓ Infra Kafka 端口 ${KAFKA_PORT} 已由 addp-redpanda 容器使用${NC}"
   else
     echo -e "  ${RED}✗ Infra Kafka 端口 ${KAFKA_PORT} 被其他进程占用${NC}"
     echo -e "    建议：使用 lsof -nP -i :${KAFKA_PORT} 查占用并释放。"
@@ -202,7 +208,7 @@ IMAGES=(
   "redis:7-alpine"
   "minio/minio:latest"
   "getmeili/meilisearch:v1.7"
-  "${INFRA_KAFKA_IMAGE:-apache/kafka:4.3.0}"
+  "${REDPANDA_IMAGE:-docker.redpanda.com/redpandadata/redpanda:v24.3.18}"
   "${KAFKA_CONNECT_IMAGE:-quay.io/debezium/connect:3.6.0.Final}"
 )
 
@@ -219,12 +225,12 @@ echo ""
 echo -e "${YELLOW}▶ 检查服务运行状态...${NC}"
 
 # Check if services are already running
-RUNNING_SERVICES=$(docker compose -f docker-compose.infra.yml ps --status running --format "{{.Service}}" 2>/dev/null || true)
+RUNNING_SERVICES=$(compose ps --status running --format "{{.Service}}" 2>/dev/null || true)
 
-if echo "$RUNNING_SERVICES" | grep -qE "postgres|redis|minio|meilisearch|kafka|kafka-connect"; then
+if echo "$RUNNING_SERVICES" | grep -qE "postgres|redis|minio|meilisearch|redpanda|kafka-connect"; then
   echo -e "  ${GREEN}检测到部分服务已在运行${NC}"
   echo "  运行中的服务:"
-  for svc in postgres redis minio meilisearch kafka kafka-connect; do
+  for svc in postgres redis minio meilisearch redpanda kafka-connect; do
     if echo "$RUNNING_SERVICES" | grep -q "^${svc}$"; then
       echo -e "    ${GREEN}✓ $svc${NC}"
     fi
@@ -238,7 +244,7 @@ if [ "$ALL_SERVICES_RUNNING" = "true" ]; then
   echo -e "${GREEN}✓ 基础设施长期服务已在运行，将幂等校验一次性初始化服务${NC}"
 fi
 echo -e "${YELLOW}▶ 启动或校验基础设施容器${NC}"
-docker compose -f docker-compose.infra.yml up -d
+compose up -d
 echo ""
 echo -e "${YELLOW}等待服务就绪...${NC}"
 
@@ -247,7 +253,7 @@ max_wait=180
 # PostgreSQL
 printf "%s" "- PostgreSQL "
 for i in $(seq 1 ${max_wait}); do
-  if docker compose -f docker-compose.infra.yml exec -T postgres pg_isready -U addp >/dev/null 2>&1; then
+  if compose exec -T postgres pg_isready -U addp >/dev/null 2>&1; then
     echo -e "${GREEN}✓${NC}"
     break
   fi
@@ -267,7 +273,7 @@ printf "%s" "- Redis      "
 REDIS_PW="${REDIS_PASSWORD:-addp_redis}"
 last_out=""
 for i in $(seq 1 ${max_wait}); do
-  out=$(docker compose -f docker-compose.infra.yml exec -T redis sh -lc "redis-cli -h 127.0.0.1 -p 6379 -a '${REDIS_PW}' ping" 2>&1 || true)
+  out=$(compose exec -T redis sh -lc "redis-cli -h 127.0.0.1 -p 6379 -a '${REDIS_PW}' ping" 2>&1 || true)
   if echo "$out" | grep -q "PONG"; then
     echo -e "${GREEN}✓${NC}"
     break
@@ -321,7 +327,7 @@ fi
 # Infra Kafka
 printf "%s" "- Infra Kafka "
 for i in $(seq 1 ${max_wait}); do
-  kafka_health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' addp-kafka 2>/dev/null || true)
+  kafka_health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' addp-redpanda 2>/dev/null || true)
   if [ "$kafka_health" = "healthy" ]; then
     echo -e "${GREEN}✓${NC}"
     break
@@ -329,28 +335,28 @@ for i in $(seq 1 ${max_wait}); do
   sleep 1; printf "%s" "."
   if [ "$i" -eq "$max_wait" ]; then
     echo -e "\n${RED}✗ Infra Kafka 等待超时${NC}"
-    docker compose -f docker-compose.infra.yml logs --tail=100 kafka || true
+    compose logs --tail=100 redpanda || true
     exit 1
   fi
 done
 
 # Kafka internal topics and ACLs
-printf "%s" "- Kafka Init  "
+printf "%s" "- Redpanda Init "
 for i in $(seq 1 ${max_wait}); do
-  init_status=$(docker inspect --format '{{.State.Status}}:{{.State.ExitCode}}' addp-kafka-init 2>/dev/null || true)
+  init_status=$(docker inspect --format '{{.State.Status}}:{{.State.ExitCode}}' addp-redpanda-init 2>/dev/null || true)
   if [ "$init_status" = "exited:0" ]; then
     echo -e "${GREEN}✓${NC}"
     break
   fi
   if [[ "$init_status" == exited:* && "$init_status" != "exited:0" ]]; then
     echo -e "${RED}✗${NC}"
-    docker compose -f docker-compose.infra.yml logs --tail=150 kafka-init || true
+    compose logs --tail=150 redpanda-init || true
     exit 1
   fi
   sleep 1; printf "%s" "."
   if [ "$i" -eq "$max_wait" ]; then
-    echo -e "\n${RED}✗ Kafka Init 等待超时${NC}"
-    docker compose -f docker-compose.infra.yml logs --tail=150 kafka-init || true
+    echo -e "\n${RED}✗ Redpanda Init 等待超时${NC}"
+    compose logs --tail=150 redpanda-init || true
     exit 1
   fi
 done
@@ -365,7 +371,7 @@ for i in $(seq 1 ${max_wait}); do
   sleep 1; printf "%s" "."
   if [ "$i" -eq "$max_wait" ]; then
     echo -e "\n${RED}✗ Kafka Connect 等待超时${NC}"
-    docker compose -f docker-compose.infra.yml logs --tail=150 kafka-connect || true
+    compose logs --tail=150 kafka-connect || true
     exit 1
   fi
 done
@@ -379,7 +385,7 @@ echo "  - Redis:       localhost:16379  password=addp_redis"
 echo "  - MinIO API:   http://localhost:19000  user=${MINIO_ROOT_USER:-minioadmin}  password=${MINIO_ROOT_PASSWORD:-minioadmin}"
 echo "  - MinIO Console:http://localhost:19001"
 echo "  - Meilisearch: http://localhost:17700  master_key=${MEILISEARCH_MASTER_KEY:-未设置}"
-echo "  - Infra Kafka: localhost:19092  SASL_PLAINTEXT/PLAIN（内部使用）"
+echo "  - Infra Kafka: localhost:19092  Redpanda / SASL_PLAINTEXT/SCRAM-SHA-256（内部使用）"
 echo "  - Kafka Connect:http://localhost:18083  （内部控制面）"
 echo ""
 echo -e "${YELLOW}提示：修改默认密码可通过根目录 .env 覆盖相应变量。${NC}"

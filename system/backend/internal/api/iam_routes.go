@@ -1,0 +1,81 @@
+package api
+
+import (
+	"errors"
+
+	"github.com/addp/system/internal/config"
+	"github.com/addp/system/internal/middleware"
+	"github.com/gin-gonic/gin"
+	redisv9 "github.com/redis/go-redis/v9"
+)
+
+// RegisterIAMRoutes registers the complete target IAM HTTP surface. The legacy
+// AuthHandler, OAuthHandler and TokenService routes must not be registered with it.
+func RegisterIAMRoutes(
+	api *gin.RouterGroup,
+	runtime *IAMRuntime,
+	redisClient redisv9.Scripter,
+	cfg *config.Config,
+) error {
+	if api == nil || runtime == nil || cfg == nil ||
+		runtime.AuthHandler == nil || runtime.OAuthHandler == nil ||
+		runtime.DelegationHandler == nil || runtime.UserSelfHandler == nil ||
+		runtime.TenantInvitationHandler == nil ||
+		runtime.Authentication == nil || runtime.FirstPartyCredential == nil ||
+		runtime.UserAccessCredential == nil || runtime.OAuthFailureAudit == nil {
+		return errors.New("IAM 路由依赖不完整")
+	}
+
+	publicRateLimit := middleware.OAuthPublicRateLimitMiddleware(
+		redisClient,
+		int64(cfg.OAuthPublicRateLimitPerMinute),
+	)
+	userRateLimit := middleware.OAuthUserRateLimitMiddleware(
+		redisClient,
+		int64(cfg.OAuthUserRateLimitPerMinute),
+	)
+	api.Use(runtime.OAuthFailureAudit)
+
+	api.POST("/login", runtime.AuthHandler.Login)
+	api.POST("/auth/mfa-verifications", publicRateLimit, runtime.AuthHandler.VerifyMFA)
+	api.POST("/refresh", runtime.AuthHandler.Refresh)
+	api.POST("/logout", runtime.AuthHandler.Logout)
+	api.POST("/auth/context-selections", runtime.AuthHandler.ConsumeContextSelection)
+	api.GET("/auth/context", runtime.AuthHandler.Context)
+	api.POST("/tenant/invitations/enrollments", publicRateLimit, runtime.TenantInvitationHandler.Enroll)
+	api.POST("/tenant/invitations/registrations", publicRateLimit, runtime.TenantInvitationHandler.Register)
+	api.POST("/tenant/invitations/acceptances", publicRateLimit, runtime.TenantInvitationHandler.Accept)
+
+	auth := api.Group("/auth")
+	auth.Use(runtime.Authentication)
+	{
+		auth.GET("/context-options", runtime.FirstPartyCredential, runtime.AuthHandler.ContextOptions)
+		auth.POST("/context-switches", runtime.FirstPartyCredential, runtime.AuthHandler.SwitchContext)
+		auth.POST("/delegations", runtime.UserAccessCredential, runtime.DelegationHandler.CreateDelegation)
+	}
+
+	users := api.Group("/users")
+	users.Use(runtime.Authentication, runtime.FirstPartyCredential)
+	{
+		users.GET("/me", runtime.UserSelfHandler.Me)
+		users.PUT("/me/password", runtime.UserSelfHandler.ChangePassword)
+	}
+
+	oauth := api.Group("/oauth")
+	{
+		oauth.POST("/authorization_requests", publicRateLimit, runtime.OAuthHandler.CreateAuthorizationRequest)
+		oauth.DELETE("/authorization_requests/:request_id", publicRateLimit, runtime.OAuthHandler.CancelAuthorizationRequest)
+		oauth.POST("/device/code", publicRateLimit, runtime.OAuthHandler.DeviceCode)
+		oauth.POST("/token", publicRateLimit, runtime.OAuthHandler.Token)
+		oauth.POST("/revoke", publicRateLimit, runtime.OAuthHandler.Revoke)
+
+		consent := oauth.Group("")
+		consent.Use(runtime.Authentication, runtime.FirstPartyCredential)
+		{
+			consent.GET("/authorization_requests/:request_id", runtime.OAuthHandler.GetAuthorizationRequest)
+			consent.POST("/authorizations", userRateLimit, runtime.OAuthHandler.Authorize)
+			consent.POST("/device/authorizations", userRateLimit, runtime.OAuthHandler.DecideDeviceAuthorization)
+		}
+	}
+	return nil
+}

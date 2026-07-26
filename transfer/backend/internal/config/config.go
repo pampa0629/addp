@@ -50,6 +50,7 @@ type Config struct {
 	InfraKafkaAdminPassword            string
 	InfraKafkaTransferPassword         string
 	InfraKafkaSecurityProtocol         string
+	InfraKafkaSASLMechanism            string
 	InfraKafkaTLSCACertFile            string
 	InfraKafkaTLSInsecure              bool
 	CaptureTopicRetention              time.Duration
@@ -71,6 +72,7 @@ type Config struct {
 	KafkaConnectKafkaUsername          string
 	KafkaConnectKafkaPassword          string
 	KafkaConnectKafkaSecurityProtocol  string
+	KafkaConnectKafkaSASLMechanism     string
 	KafkaConnectKafkaTLSCACertFile     string
 	CaptureProvisioningTimeout         time.Duration
 	CaptureStatusPollInterval          time.Duration
@@ -157,6 +159,7 @@ func Load() *Config {
 		InfraKafkaAdminPassword:            commonConfig.GetEnv("INFRA_KAFKA_ADMIN_PASSWORD", "addp_kafka_admin"),
 		InfraKafkaTransferPassword:         commonConfig.GetEnv("INFRA_KAFKA_TRANSFER_PASSWORD", "addp_kafka_transfer"),
 		InfraKafkaSecurityProtocol:         commonConfig.GetEnv("INFRA_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext"),
+		InfraKafkaSASLMechanism:            commonConfig.GetEnv("INFRA_KAFKA_SASL_MECHANISM", "scram-sha-256"),
 		InfraKafkaTLSCACertFile:            commonConfig.GetEnv("INFRA_KAFKA_TLS_CA_CERT_FILE", ""),
 		InfraKafkaTLSInsecure:              commonConfig.GetEnvBool("INFRA_KAFKA_TLS_INSECURE_SKIP_VERIFY", false),
 		CaptureTopicRetention:              commonConfig.GetEnvDuration("INFRA_KAFKA_CDC_RETENTION", "168h"),
@@ -174,10 +177,11 @@ func Load() *Config {
 		KafkaConnectPassword:               commonConfig.GetEnv("KAFKA_CONNECT_PASSWORD", ""),
 		KafkaConnectTimeout:                commonConfig.GetEnvDuration("KAFKA_CONNECT_TIMEOUT", "15s"),
 		KafkaConnectLoopbackHost:           commonConfig.GetEnv("KAFKA_CONNECT_LOOPBACK_HOST", "host.docker.internal"),
-		KafkaConnectBootstrapServers:       commonConfig.GetEnv("KAFKA_CONNECT_BOOTSTRAP_SERVERS", "kafka:29092"),
+		KafkaConnectBootstrapServers:       commonConfig.GetEnv("KAFKA_CONNECT_BOOTSTRAP_SERVERS", "redpanda:29092"),
 		KafkaConnectKafkaUsername:          commonConfig.GetEnv("KAFKA_CONNECT_KAFKA_USERNAME", "connect"),
 		KafkaConnectKafkaPassword:          commonConfig.GetEnv("INFRA_KAFKA_CONNECT_PASSWORD", "addp_kafka_connect"),
 		KafkaConnectKafkaSecurityProtocol:  commonConfig.GetEnv("KAFKA_CONNECT_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext"),
+		KafkaConnectKafkaSASLMechanism:     commonConfig.GetEnv("INFRA_KAFKA_SASL_MECHANISM", "scram-sha-256"),
 		KafkaConnectKafkaTLSCACertFile:     commonConfig.GetEnv("KAFKA_CONNECT_KAFKA_TLS_CA_CERT_FILE", commonConfig.GetEnv("INFRA_KAFKA_TLS_CA_CERT_FILE", "")),
 		CaptureProvisioningTimeout:         commonConfig.GetEnvDuration("TRANSFER_CAPTURE_PROVISIONING_TIMEOUT", "60s"),
 		CaptureStatusPollInterval:          commonConfig.GetEnvDuration("TRANSFER_CAPTURE_STATUS_POLL_INTERVAL", "1s"),
@@ -250,7 +254,14 @@ func (c Config) infraKafkaConnectionInfo(username, password, clientID string) (e
 		}
 		info["username"] = strings.TrimSpace(username)
 		info["password"] = password
-		info["sasl_mechanism"] = "plain"
+		mechanism := strings.ToLower(strings.TrimSpace(c.InfraKafkaSASLMechanism))
+		if mechanism == "" {
+			mechanism = "scram-sha-256"
+		}
+		if mechanism != "scram-sha-256" {
+			return nil, fmt.Errorf("Infra Kafka SASL mechanism must be scram-sha-256, got %q", mechanism)
+		}
+		info["sasl_mechanism"] = mechanism
 	}
 	if protocol == "ssl" || protocol == "sasl_ssl" {
 		if strings.TrimSpace(c.InfraKafkaTLSCACertFile) != "" {

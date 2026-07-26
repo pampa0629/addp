@@ -626,29 +626,120 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "将当前 Bearer Token 解析为权威用户、租户和授权上下文 | Resolve the current Bearer token into the authoritative user, tenant and authorization context",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "认证 | Auth"
+                    "认证 | Authentication"
                 ],
-                "summary": "获取授权上下文 | Get authorization context",
+                "summary": "解析授权上下文 | Resolve authorization context",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.AuthorizationContext"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/authorization.AuthContext"
                         }
                     }
                 },
                 "x-addp-auth-mode": "authenticated"
+            }
+        },
+        "/auth/context-options": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "查询可切换上下文 | List switchable contexts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMContextOptionsResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "self"
+            }
+        },
+        "/auth/context-selections": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "选择登录上下文 | Select sign-in context",
+                "parameters": [
+                    {
+                        "description": "上下文选择 | Context selection",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMContextSelectionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMAccessTokenResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "public"
+            }
+        },
+        "/auth/context-switches": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "切换浏览器上下文 | Switch browser context",
+                "parameters": [
+                    {
+                        "description": "目标上下文 | Target context",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMContextChoiceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMAccessTokenResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "self"
             }
         },
         "/auth/delegations": {
@@ -658,7 +749,6 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "为当前用户的一次 ADDP Tool 调用签发绑定 owner audience、稳定 Tool Scope、AgentRun 和 ToolCall 的短期 opaque Token | Issue a short-lived opaque token for one ADDP Tool call, bound to the owner audience, stable Tool scope, AgentRun and ToolCall",
                 "consumes": [
                     "application/json"
                 ],
@@ -666,7 +756,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "认证 | Auth"
+                    "认证 | Authentication"
                 ],
                 "summary": "签发受委托访问令牌 | Issue delegated access token",
                 "parameters": [
@@ -676,7 +766,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.DelegatedAccessTokenRequest"
+                            "$ref": "#/definitions/internal_api.IAMDelegationRequest"
                         }
                     }
                 ],
@@ -684,29 +774,51 @@
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.DelegatedAccessTokenResponse"
+                            "$ref": "#/definitions/internal_api.IAMDelegationResponse"
                         }
-                    },
-                    "400": {
-                        "description": "Bad Request",
+                    }
+                },
+                "x-addp-auth-mode": "authenticated"
+            }
+        },
+        "/auth/mfa-verifications": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "完成本地账号增强认证 | Complete local account MFA",
+                "parameters": [
+                    {
+                        "description": "TOTP 验证 | TOTP verification",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.IAMMFAVerificationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMBrowserLoginResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }
                     }
                 },
-                "x-addp-auth-mode": "authenticated"
+                "x-addp-auth-mode": "public"
             }
         },
         "/engines": {
@@ -1262,9 +1374,8 @@
                 ]
             }
         },
-        "/login": {
+        "/internal/audit-logs": {
             "post": {
-                "description": "使用用户名和密码登录，返回 opaque Access Token，并设置 HttpOnly Refresh Token Cookie 与 Owner Path 限定的 Browser Resource Access Ticket Cookie | Login with username and password, return an opaque access token, and set an HttpOnly refresh token cookie plus owner-path browser resource access ticket cookies",
                 "consumes": [
                     "application/json"
                 ],
@@ -1272,17 +1383,56 @@
                     "application/json"
                 ],
                 "tags": [
-                    "认证 | Auth"
+                    "内部接口 | Internal"
                 ],
-                "summary": "用户登录 | User login",
+                "summary": "追加内部审计事件 | Append internal audit event",
                 "parameters": [
                     {
-                        "description": "登录信息 | Login credentials",
+                        "description": "审计事件 | Audit event",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.LoginRequest"
+                            "$ref": "#/definitions/models.AuditLogCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "internal"
+            }
+        },
+        "/login": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "本地账号登录 | Sign in with local account",
+                "parameters": [
+                    {
+                        "description": "登录凭据 | Login credentials",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMBrowserLoginRequest"
                         }
                     }
                 ],
@@ -1290,19 +1440,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.LoginResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.IAMBrowserLoginResponse"
                         }
                     }
                 },
@@ -1311,14 +1449,15 @@
         },
         "/logout": {
             "post": {
-                "description": "撤销当前 Refresh Token Family，并清除 Refresh Token 与 Browser Resource Access Ticket Cookie | Revoke the current refresh token family and clear the refresh-token and browser-resource-ticket cookies",
-                "produces": [
-                    "application/json"
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
                 ],
                 "tags": [
-                    "认证 | Auth"
+                    "认证 | Authentication"
                 ],
-                "summary": "退出登录 | Logout",
+                "summary": "退出浏览器会话 | Sign out browser session",
                 "responses": {
                     "204": {
                         "description": "No Content"
@@ -1327,301 +1466,8 @@
                 "x-addp-auth-mode": "authenticated"
             }
         },
-        "/logs": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "分页获取审计日志（支持多条件过滤）| Get paginated audit logs with multi-condition filtering",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "日志管理 | Log Management"
-                ],
-                "summary": "获取日志列表 | List audit logs",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "default": 1,
-                        "description": "页码 | Page number",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 10,
-                        "description": "每页数量 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "开始时间 | Start time",
-                        "name": "start_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "结束时间 | End time",
-                        "name": "end_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "HTTP方法 | HTTP method",
-                        "name": "http_method",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "资源路径前缀 | Resource path prefix",
-                        "name": "resource_path",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "资源类型 | Entity type",
-                        "name": "entity_type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "资源ID | Entity ID",
-                        "name": "entity_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "模块名 | Module name",
-                        "name": "module_name",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "data": {
-                                    "type": "array",
-                                    "items": {
-                                        "$ref": "#/definitions/github_com_addp_system_internal_models.AuditLog"
-                                    }
-                                },
-                                "page": {
-                                    "type": "integer"
-                                },
-                                "page_size": {
-                                    "type": "integer"
-                                },
-                                "total": {
-                                    "type": "integer"
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/logs/export": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "日志管理 | Log Management"
-                ],
-                "summary": "导出审计日志 | Export audit logs",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "default": "csv",
-                        "description": "导出格式 csv/json | Export format",
-                        "name": "format",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "开始时间 | Start time",
-                        "name": "start_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "结束时间 | End time",
-                        "name": "end_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "HTTP方法 | HTTP method",
-                        "name": "http_method",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "资源路径前缀 | Resource path prefix",
-                        "name": "resource_path",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "资源类型 | Entity type",
-                        "name": "entity_type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "资源ID | Entity ID",
-                        "name": "entity_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "模块名 | Module name",
-                        "name": "module_name",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/logs/stats": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "日志管理 | Log Management"
-                ],
-                "summary": "获取日志统计 | Get log stats",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/logs/trends": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "日志管理 | Log Management"
-                ],
-                "summary": "获取日志趋势 | Get log trends",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/logs/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "日志管理 | Log Management"
-                ],
-                "summary": "获取日志详情 | Get audit log detail",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "日志ID | Log ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.AuditLog"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/oauth/authorization_requests": {
             "post": {
-                "description": "校验公共客户端、动态 loopback Redirect URI、Scope 和 PKCE，并创建五分钟有效的一次性浏览器授权请求 | Validate the public client, dynamic loopback redirect URI, scope, and PKCE, then create a one-time browser authorization request valid for five minutes",
                 "consumes": [
                     "application/x-www-form-urlencoded"
                 ],
@@ -1632,68 +1478,11 @@
                     "OAuth"
                 ],
                 "summary": "创建 OAuth 授权请求 | Create OAuth authorization request",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "OAuth Client ID",
-                        "name": "client_id",
-                        "in": "formData",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Redirect URI",
-                        "name": "redirect_uri",
-                        "in": "formData",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "OAuth Scope",
-                        "name": "scope",
-                        "in": "formData"
-                    },
-                    {
-                        "type": "string",
-                        "description": "PKCE challenge",
-                        "name": "code_challenge",
-                        "in": "formData",
-                        "required": true
-                    },
-                    {
-                        "enum": [
-                            "S256"
-                        ],
-                        "type": "string",
-                        "description": "PKCE challenge method",
-                        "name": "code_challenge_method",
-                        "in": "formData",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationRequestCreatedResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "429": {
-                        "description": "Too Many Requests",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.IAMOAuthAuthorizationRequestResponse"
                         }
                     }
                 },
@@ -1707,18 +1496,17 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "向当前已认证用户返回 System 已校验的待处理客户端和 Scope；失效请求不返回原始授权参数 | Return the pending client and scope already validated by System to the authenticated user; unavailable requests do not expose original authorization parameters",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "OAuth"
                 ],
-                "summary": "获取 OAuth 授权请求 | Get OAuth authorization request",
+                "summary": "查询 OAuth 授权请求 | Get OAuth authorization request",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Authorization Request ID",
+                        "description": "授权请求 ID | Authorization request ID",
                         "name": "request_id",
                         "in": "path",
                         "required": true
@@ -1728,43 +1516,17 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationRequestView"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "410": {
-                        "description": "Gone",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "429": {
-                        "description": "Too Many Requests",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.IAMOAuthAuthorizationRequestView"
                         }
                     }
                 },
-                "x-addp-auth-mode": "authenticated"
+                "x-addp-auth-mode": "self"
             },
             "delete": {
-                "description": "使用只向 CLI 返回一次的请求凭据幂等取消待处理授权请求 | Idempotently cancel a pending authorization request using the request secret returned once to the CLI",
-                "consumes": [
-                    "application/x-www-form-urlencoded"
-                ],
-                "produces": [
-                    "application/json"
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
                 ],
                 "tags": [
                     "OAuth"
@@ -1773,40 +1535,15 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Authorization Request ID",
+                        "description": "授权请求 ID | Authorization request ID",
                         "name": "request_id",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Bearer Authorization Request Secret",
-                        "name": "Authorization",
-                        "in": "header",
                         "required": true
                     }
                 ],
                 "responses": {
                     "204": {
                         "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "429": {
-                        "description": "Too Many Requests",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
                     }
                 },
                 "x-addp-auth-mode": "public"
@@ -1819,7 +1556,6 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "锁定短期 Authorization Request，复核当前用户、客户端和授权边界；批准时签发一次性 Authorization Code，拒绝时返回 access_denied 回跳 | Lock the short-lived authorization request and revalidate the current user, client, and authorization boundary; issue a one-time authorization code when approved or return an access_denied redirect when rejected",
                 "consumes": [
                     "application/json"
                 ],
@@ -1829,7 +1565,7 @@
                 "tags": [
                     "OAuth"
                 ],
-                "summary": "处理 OAuth 授权决定 | Handle OAuth authorization decision",
+                "summary": "决定 OAuth 授权 | Decide OAuth authorization",
                 "parameters": [
                     {
                         "description": "授权决定 | Authorization decision",
@@ -1837,7 +1573,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationDecisionRequest"
+                            "$ref": "#/definitions/internal_api.IAMOAuthAuthorizationDecisionRequest"
                         }
                     }
                 ],
@@ -1845,47 +1581,11 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "410": {
-                        "description": "Gone",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "429": {
-                        "description": "Too Many Requests",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.IAMOAuthAuthorizationDecisionResponse"
                         }
                     }
                 },
-                "x-addp-auth-mode": "authenticated"
+                "x-addp-auth-mode": "self"
             }
         },
         "/oauth/device/authorizations": {
@@ -1895,7 +1595,6 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "使用当前用户身份批准或拒绝待处理的 User Code | Approve or reject a pending user code with the current user identity",
                 "consumes": [
                     "application/json"
                 ],
@@ -1905,53 +1604,28 @@
                 "tags": [
                     "OAuth"
                 ],
-                "summary": "批准设备授权 | Approve device authorization",
+                "summary": "决定设备授权 | Decide device authorization",
                 "parameters": [
                     {
-                        "description": "设备授权确认 | Device authorization approval",
+                        "description": "设备授权决定 | Device authorization decision",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.DeviceApprovalRequest"
+                            "$ref": "#/definitions/internal_api.IAMOAuthDeviceDecisionRequest"
                         }
                     }
                 ],
                 "responses": {
                     "204": {
                         "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "429": {
-                        "description": "Too Many Requests",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
                     }
                 },
-                "x-addp-auth-mode": "authenticated"
+                "x-addp-auth-mode": "self"
             }
         },
         "/oauth/device/code": {
             "post": {
-                "description": "为允许 Device Flow 的公共客户端创建短期 Device Code 和 User Code | Create a short-lived device code and user code for a public client allowed to use Device Flow",
                 "consumes": [
                     "application/x-www-form-urlencoded"
                 ],
@@ -1962,44 +1636,11 @@
                     "OAuth"
                 ],
                 "summary": "创建设备授权 | Create device authorization",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "OAuth Client ID",
-                        "name": "client_id",
-                        "in": "formData",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "OAuth Scope",
-                        "name": "scope",
-                        "in": "formData"
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.DeviceAuthorizationResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "429": {
-                        "description": "Too Many Requests",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "type": "object"
                         }
                     }
                 },
@@ -2008,48 +1649,16 @@
         },
         "/oauth/revoke": {
             "post": {
-                "description": "使用 Refresh Token 撤销对应的整个 OAuth Refresh Token Family | Revoke the complete OAuth refresh-token family identified by a refresh token",
                 "consumes": [
                     "application/x-www-form-urlencoded"
-                ],
-                "produces": [
-                    "application/json"
                 ],
                 "tags": [
                     "OAuth"
                 ],
                 "summary": "撤销 OAuth Token | Revoke OAuth token",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "OAuth Client ID",
-                        "name": "client_id",
-                        "in": "formData",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Refresh Token",
-                        "name": "token",
-                        "in": "formData",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK"
-                    },
-                    "429": {
-                        "description": "Too Many Requests",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
                     }
                 },
                 "x-addp-auth-mode": "public"
@@ -2057,7 +1666,6 @@
         },
         "/oauth/token": {
             "post": {
-                "description": "处理 Authorization Code、Device Code 或 Refresh Token grant，并返回严格轮换的 opaque Token | Handle authorization-code, device-code, or refresh-token grants and return strictly rotated opaque tokens",
                 "consumes": [
                     "application/x-www-form-urlencoded"
                 ],
@@ -2068,159 +1676,18 @@
                     "OAuth"
                 ],
                 "summary": "兑换 OAuth Token | Exchange OAuth token",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "OAuth grant type",
-                        "name": "grant_type",
-                        "in": "formData",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "OAuth Client ID",
-                        "name": "client_id",
-                        "in": "formData",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Authorization Code",
-                        "name": "code",
-                        "in": "formData"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Redirect URI",
-                        "name": "redirect_uri",
-                        "in": "formData"
-                    },
-                    {
-                        "type": "string",
-                        "description": "PKCE verifier",
-                        "name": "code_verifier",
-                        "in": "formData"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Device Code",
-                        "name": "device_code",
-                        "in": "formData"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Refresh Token",
-                        "name": "refresh_token",
-                        "in": "formData"
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.TokenResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "429": {
-                        "description": "Too Many Requests",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "type": "object"
                         }
                     }
                 },
                 "x-addp-auth-mode": "public"
             }
         },
-        "/refresh": {
-            "post": {
-                "description": "使用 HttpOnly Cookie 中的 Refresh Token 轮换 Access Token、Refresh Token 和 Browser Resource Access Ticket | Rotate the access token, refresh token, and browser resource access tickets using the refresh token from the HttpOnly cookie",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "认证 | Auth"
-                ],
-                "summary": "刷新 Token | Refresh token",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.LoginResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "public"
-            }
-        },
-        "/register": {
-            "post": {
-                "description": "注册新用户（需开启公开注册）| Register new user (requires public registration enabled)",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "认证 | Auth"
-                ],
-                "summary": "用户注册 | User registration",
-                "parameters": [
-                    {
-                        "description": "注册信息 | Registration info",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.UserCreateRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.User"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "public"
-            }
-        },
-        "/tenants": {
+        "/platform/audit/events": {
             "get": {
                 "security": [
                     {
@@ -2231,22 +1698,439 @@
                     "application/json"
                 ],
                 "tags": [
-                    "租户管理 | Tenant Management"
+                    "平台审计 | Platform Audit"
                 ],
-                "summary": "获取租户列表 | List tenants",
+                "summary": "查询平台审计事件 | List platform audit events",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMAuditEventResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "audit.event.read"
+                ]
+            }
+        },
+        "/platform/audit/events/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json",
+                    "text/csv"
+                ],
+                "tags": [
+                    "平台审计 | Platform Audit"
+                ],
+                "summary": "导出平台审计事件 | Export platform audit events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "csv 或 json | csv or json",
+                        "name": "format",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.IAMAuditEventResponse"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "audit.event.export"
+                ]
+            }
+        },
+        "/platform/audit/events/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台审计 | Platform Audit"
+                ],
+                "summary": "汇总平台审计事件 | Summarize platform audit events",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_iam.AuditSummary"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "audit.event.read"
+                ]
+            }
+        },
+        "/platform/audit/events/trends": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台审计 | Platform Audit"
+                ],
+                "summary": "查询平台审计趋势 | Get platform audit trends",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.IAMAuditTrendResponse"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "audit.event.read"
+                ]
+            }
+        },
+        "/platform/audit/events/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台审计 | Platform Audit"
+                ],
+                "summary": "查询平台审计事件详情 | Get platform audit event",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "审计事件 ID | Audit event ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMAuditEventResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "audit.event.read"
+                ]
+            }
+        },
+        "/platform/identity_changes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台权限治理 | Platform Authorization Governance"
+                ],
+                "summary": "查询平台身份变更请求 | List platform identity change requests",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.platform_identity_change.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台权限治理 | Platform Authorization Governance"
+                ],
+                "summary": "创建平台身份变更请求 | Create platform identity change request",
+                "parameters": [
+                    {
+                        "description": "身份变更 | Identity change",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCreatePrivilegedIdentityChangeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.platform_identity_change.create"
+                ]
+            }
+        },
+        "/platform/identity_changes/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台权限治理 | Platform Authorization Governance"
+                ],
+                "summary": "查询平台身份变更请求详情 | Get platform identity change request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "变更请求 ID | Change request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.platform_identity_change.read"
+                ]
+            }
+        },
+        "/platform/identity_changes/{id}/approve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台权限治理 | Platform Authorization Governance"
+                ],
+                "summary": "批准平台身份变更 | Approve platform identity change",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "变更请求 ID | Change request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "复核意见 | Review reason",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMReviewPrivilegedIdentityChangeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.platform_identity_change.approve"
+                ]
+            }
+        },
+        "/platform/identity_changes/{id}/reject": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台权限治理 | Platform Authorization Governance"
+                ],
+                "summary": "拒绝平台身份变更 | Reject platform identity change",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "变更请求 ID | Change request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "复核意见 | Review reason",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMReviewPrivilegedIdentityChangeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.platform_identity_change.reject"
+                ]
+            }
+        },
+        "/platform/tenants": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台租户 | Platform Tenants"
+                ],
+                "summary": "查询平台租户 | List platform tenants",
                 "parameters": [
                     {
                         "type": "integer",
-                        "default": 1,
                         "description": "页码 | Page number",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "default": 10,
                         "description": "每页数量 | Page size",
                         "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "名称或编码 | Name or code",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态 | Status",
+                        "name": "status",
                         "in": "query"
                     }
                 ],
@@ -2259,7 +2143,7 @@
                                 "data": {
                                     "type": "array",
                                     "items": {
-                                        "$ref": "#/definitions/github_com_addp_system_internal_models.Tenant"
+                                        "$ref": "#/definitions/internal_api.IAMTenantResponse"
                                     }
                                 },
                                 "page": {
@@ -2269,15 +2153,25 @@
                                     "type": "integer"
                                 },
                                 "total": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                },
+                                "total_pages": {
                                     "type": "integer"
                                 }
                             }
                         }
                     },
-                    "500": {
-                        "description": "Internal Server Error",
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }
                     }
                 },
@@ -2299,31 +2193,31 @@
                     "application/json"
                 ],
                 "tags": [
-                    "租户管理 | Tenant Management"
+                    "平台租户 | Platform Tenants"
                 ],
-                "summary": "创建租户 | Create tenant",
+                "summary": "创建平台租户 | Create platform tenant",
                 "parameters": [
                     {
-                        "description": "租户信息 | Tenant info",
+                        "description": "租户 | Tenant",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.TenantCreateRequest"
+                            "$ref": "#/definitions/internal_api.IAMCreateTenantRequest"
                         }
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "201": {
+                        "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.Tenant"
+                            "$ref": "#/definitions/internal_api.IAMTenantResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }
                     }
                 },
@@ -2333,7 +2227,7 @@
                 ]
             }
         },
-        "/tenants/{id}": {
+        "/platform/tenants/{id}": {
             "get": {
                 "security": [
                     {
@@ -2344,13 +2238,13 @@
                     "application/json"
                 ],
                 "tags": [
-                    "租户管理 | Tenant Management"
+                    "平台租户 | Platform Tenants"
                 ],
-                "summary": "获取租户详情 | Get tenant detail",
+                "summary": "查询平台租户详情 | Get platform tenant",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "租户ID | Tenant ID",
+                        "type": "string",
+                        "description": "租户 ID | Tenant ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -2360,19 +2254,13 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.Tenant"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.IAMTenantResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }
                     }
                 },
@@ -2394,24 +2282,24 @@
                     "application/json"
                 ],
                 "tags": [
-                    "租户管理 | Tenant Management"
+                    "平台租户 | Platform Tenants"
                 ],
-                "summary": "更新租户 | Update tenant",
+                "summary": "更新平台租户 | Update platform tenant",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "租户ID | Tenant ID",
+                        "type": "string",
+                        "description": "租户 ID | Tenant ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "租户更新信息 | Tenant update info",
+                        "description": "租户资料 | Tenant profile",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.TenantUpdateRequest"
+                            "$ref": "#/definitions/internal_api.IAMUpdateTenantRequest"
                         }
                     }
                 ],
@@ -2419,19 +2307,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.Tenant"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.IAMTenantResponse"
                         }
                     }
                 },
@@ -2439,59 +2315,15 @@
                 "x-addp-required-permissions": [
                     "platform.tenant.update"
                 ]
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "租户管理 | Tenant Management"
-                ],
-                "summary": "删除租户 | Delete tenant",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "租户ID | Tenant ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.SuccessResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                }
             }
         },
-        "/users": {
-            "get": {
+        "/platform/tenants/{id}/close": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "分页获取用户列表（自动过滤租户）| Get paginated user list (auto-filtered by tenant)",
                 "consumes": [
                     "application/json"
                 ],
@@ -2499,22 +2331,173 @@
                     "application/json"
                 ],
                 "tags": [
-                    "用户管理 | User Management"
+                    "平台租户 | Platform Tenants"
                 ],
-                "summary": "获取用户列表 | List users",
+                "summary": "关闭平台租户 | Close platform tenant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "租户 ID | Tenant ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "原因 | Reason",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMLifecycleReasonRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantStatusResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.tenant.close"
+                ]
+            }
+        },
+        "/platform/tenants/{id}/restore": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台租户 | Platform Tenants"
+                ],
+                "summary": "恢复平台租户 | Restore platform tenant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "租户 ID | Tenant ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "原因 | Reason",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMLifecycleReasonRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantStatusResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.tenant.restore"
+                ]
+            }
+        },
+        "/platform/tenants/{id}/suspend": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台租户 | Platform Tenants"
+                ],
+                "summary": "暂停平台租户 | Suspend platform tenant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "租户 ID | Tenant ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "原因 | Reason",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMLifecycleReasonRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantStatusResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.tenant.suspend"
+                ]
+            }
+        },
+        "/platform/users": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台用户 | Platform Users"
+                ],
+                "summary": "查询平台用户 | List platform users",
                 "parameters": [
                     {
                         "type": "integer",
-                        "default": 1,
                         "description": "页码 | Page number",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "default": 10,
                         "description": "每页数量 | Page size",
                         "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "姓名、邮箱或用户名 | Name, email, or username",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态 | Status",
+                        "name": "status",
                         "in": "query"
                     }
                 ],
@@ -2527,7 +2510,7 @@
                                 "data": {
                                     "type": "array",
                                     "items": {
-                                        "$ref": "#/definitions/github_com_addp_system_internal_models.User"
+                                        "$ref": "#/definitions/internal_api.IAMManagedUserResponse"
                                     }
                                 },
                                 "page": {
@@ -2537,18 +2520,20 @@
                                     "type": "integer"
                                 },
                                 "total": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                },
+                                "total_pages": {
                                     "type": "integer"
                                 }
                             }
                         }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.user.read"
+                ]
             },
             "post": {
                 "security": [
@@ -2556,7 +2541,6 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建新用户（租户管理员权限）| Create new user (tenant admin permission required)",
                 "consumes": [
                     "application/json"
                 ],
@@ -2564,17 +2548,101 @@
                     "application/json"
                 ],
                 "tags": [
-                    "用户管理 | User Management"
+                    "平台用户 | Platform Users"
                 ],
-                "summary": "创建用户 | Create user",
+                "summary": "创建本地平台用户 | Create local platform user",
                 "parameters": [
                     {
-                        "description": "用户信息 | User info",
+                        "description": "用户与本地账号 | User and local account",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.UserCreateRequest"
+                            "$ref": "#/definitions/internal_api.IAMCreateManagedUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMManagedUserResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.user.create"
+                ]
+            }
+        },
+        "/platform/users/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台用户 | Platform Users"
+                ],
+                "summary": "查询平台用户详情 | Get platform user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户 ID | User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMManagedUserResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.user.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台用户 | Platform Users"
+                ],
+                "summary": "更新平台用户 | Update platform user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户 ID | User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "用户资料 | User profile",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMUpdateManagedUserRequest"
                         }
                     }
                 ],
@@ -2582,16 +2650,914 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.User"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.IAMManagedUserResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.user.update"
+                ]
+            }
+        },
+        "/platform/users/{id}/reactivate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台用户 | Platform Users"
+                ],
+                "summary": "重新激活平台用户 | Reactivate platform user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户 ID | User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "状态变更 | Status change",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMChangeManagedUserStatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMManagedUserStatusResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.user.reactivate"
+                ]
+            }
+        },
+        "/platform/users/{id}/suspend": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台用户 | Platform Users"
+                ],
+                "summary": "暂停平台用户 | Suspend platform user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户 ID | User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "状态变更 | Status change",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMChangeManagedUserStatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMManagedUserStatusResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.user.suspend"
+                ]
+            }
+        },
+        "/refresh": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "轮换浏览器令牌 | Rotate browser tokens",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMAccessTokenResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "public"
+            }
+        },
+        "/tenant/audit/events": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户审计 | Tenant Audit"
+                ],
+                "summary": "查询当前租户审计事件 | List current tenant audit events",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMAuditEventResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "audit.tenant_event.read"
+                ]
+            }
+        },
+        "/tenant/audit/events/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json",
+                    "text/csv"
+                ],
+                "tags": [
+                    "租户审计 | Tenant Audit"
+                ],
+                "summary": "导出当前租户审计事件 | Export current tenant audit events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "csv 或 json | csv or json",
+                        "name": "format",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.IAMAuditEventResponse"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "audit.tenant_event.export"
+                ]
+            }
+        },
+        "/tenant/audit/events/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户审计 | Tenant Audit"
+                ],
+                "summary": "汇总当前租户审计事件 | Summarize current tenant audit events",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_iam.AuditSummary"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "audit.tenant_event.read"
+                ]
+            }
+        },
+        "/tenant/audit/events/trends": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户审计 | Tenant Audit"
+                ],
+                "summary": "查询当前租户审计趋势 | Get current tenant audit trends",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.IAMAuditTrendResponse"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "audit.tenant_event.read"
+                ]
+            }
+        },
+        "/tenant/audit/events/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户审计 | Tenant Audit"
+                ],
+                "summary": "查询当前租户审计事件详情 | Get current tenant audit event",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "审计事件 ID | Audit event ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMAuditEventResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "audit.tenant_event.read"
+                ]
+            }
+        },
+        "/tenant/invitations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户邀请 | Tenant Invitations"
+                ],
+                "summary": "查询租户邀请 | List tenant invitations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "邀请邮箱 | Invitation email",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态 | Status",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMTenantInvitationResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_invitation.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户邀请 | Tenant Invitations"
+                ],
+                "summary": "创建租户邀请 | Create tenant invitation",
+                "parameters": [
+                    {
+                        "description": "邀请 | Invitation",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCreateTenantInvitationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCreatedTenantInvitationResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_invitation.create"
+                ]
+            }
+        },
+        "/tenant/invitations/acceptances": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户邀请 | Tenant Invitations"
+                ],
+                "summary": "接受租户邀请 | Accept tenant invitation",
+                "parameters": [
+                    {
+                        "description": "邀请和可选 Enrollment Ticket | Invitation and optional enrollment ticket",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMInvitationAcceptanceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMInvitationAcceptanceResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "authenticated"
+            }
+        },
+        "/tenant/invitations/enrollments": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户邀请 | Tenant Invitations"
+                ],
+                "summary": "签发邀请 Enrollment Ticket | Issue invitation enrollment ticket",
+                "parameters": [
+                    {
+                        "description": "邀请与本地账号凭据 | Invitation and local credentials",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMInvitationEnrollmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMInvitationEnrollmentResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "public"
+            }
+        },
+        "/tenant/invitations/registrations": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户邀请 | Tenant Invitations"
+                ],
+                "summary": "通过邀请注册 | Register through tenant invitation",
+                "parameters": [
+                    {
+                        "description": "注册资料 | Registration profile",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMInvitationRegistrationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMInvitationAcceptanceResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "public"
+            }
+        },
+        "/tenant/invitations/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户邀请 | Tenant Invitations"
+                ],
+                "summary": "查询租户邀请详情 | Get tenant invitation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "邀请 ID | Invitation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantInvitationResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_invitation.read"
+                ]
+            }
+        },
+        "/tenant/invitations/{id}/revoke": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户邀请 | Tenant Invitations"
+                ],
+                "summary": "撤销租户邀请 | Revoke tenant invitation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "邀请 ID | Invitation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantInvitationResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_invitation.revoke"
+                ]
+            }
+        },
+        "/tenant/memberships": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户成员 | Tenant Memberships"
+                ],
+                "summary": "查询当前租户成员 | List current tenant memberships",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "姓名或用户名 | Name or username",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态 | Status",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMTenantMembershipResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_membership.read"
+                ]
+            }
+        },
+        "/tenant/memberships/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户成员 | Tenant Memberships"
+                ],
+                "summary": "查询当前租户成员详情 | Get current tenant membership",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "成员关系 ID | Membership ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantMembershipResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_membership.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户成员 | Tenant Memberships"
+                ],
+                "summary": "更新当前租户成员 | Update current tenant membership",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "成员关系 ID | Membership ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "成员有效期 | Membership expiry",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMUpdateTenantMembershipRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantMembershipResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_membership.update"
+                ]
+            }
+        },
+        "/tenant/memberships/{id}/close": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户成员 | Tenant Memberships"
+                ],
+                "summary": "结束租户成员关系 | Close tenant membership",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "成员关系 ID | Membership ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "原因 | Reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMLifecycleReasonRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantMembershipResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_membership.close"
+                ]
+            }
+        },
+        "/tenant/memberships/{id}/restore": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户成员 | Tenant Memberships"
+                ],
+                "summary": "恢复租户成员关系 | Restore tenant membership",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "成员关系 ID | Membership ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "原因 | Reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMLifecycleReasonRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantMembershipResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_membership.restore"
+                ]
+            }
+        },
+        "/tenant/memberships/{id}/suspend": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户成员 | Tenant Memberships"
+                ],
+                "summary": "暂停租户成员关系 | Suspend tenant membership",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "成员关系 ID | Membership ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "原因 | Reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMLifecycleReasonRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantMembershipResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_membership.suspend"
+                ]
             }
         },
         "/users/me": {
@@ -2601,28 +3567,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取当前登录用户的详细信息 | Get detailed info of the currently logged-in user",
-                "consumes": [
-                    "application/json"
-                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "用户管理 | User Management"
+                    "当前用户 | Current User"
                 ],
-                "summary": "获取当前用户信息 | Get current user info",
+                "summary": "查询当前用户资料 | Get current user profile",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.User"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.IAMCurrentUserResponse"
                         }
                     }
                 },
@@ -2643,17 +3599,17 @@
                     "application/json"
                 ],
                 "tags": [
-                    "用户管理 | User Management"
+                    "当前用户 | Current User"
                 ],
                 "summary": "修改当前用户密码 | Change current user password",
                 "parameters": [
                     {
-                        "description": "密码修改请求 | Change password request",
+                        "description": "密码 | Passwords",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ChangePasswordRequest"
+                            "$ref": "#/definitions/internal_api.IAMChangeCurrentPasswordRequest"
                         }
                     }
                 ],
@@ -2661,170 +3617,257 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.SuccessResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.IAMPasswordRotationResponse"
                         }
                     }
                 },
                 "x-addp-auth-mode": "self"
             }
-        },
-        "/users/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "用户管理 | User Management"
-                ],
-                "summary": "获取用户详情 | Get user detail",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "用户ID | User ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.User"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "用户管理 | User Management"
-                ],
-                "summary": "更新用户 | Update user",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "用户ID | User ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "用户更新信息 | User update info",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.UserUpdateRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.User"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "用户管理 | User Management"
-                ],
-                "summary": "删除用户 | Delete user",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "用户ID | User ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.SuccessResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                }
-            }
         }
     },
     "definitions": {
+        "authorization.AssignmentScope": {
+            "type": "object",
+            "properties": {
+                "department_id": {
+                    "type": "string"
+                },
+                "project_group_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorization.AuthContext": {
+            "type": "object",
+            "properties": {
+                "authentication": {
+                    "$ref": "#/definitions/authorization.AuthenticationFacts"
+                },
+                "authorization": {
+                    "$ref": "#/definitions/authorization.AuthorizationFacts"
+                },
+                "client": {
+                    "$ref": "#/definitions/authorization.ClientConstraints"
+                },
+                "context": {
+                    "$ref": "#/definitions/authorization.AuthSessionContext"
+                },
+                "delegation": {
+                    "$ref": "#/definitions/authorization.DelegationFacts"
+                },
+                "organization": {
+                    "$ref": "#/definitions/authorization.OrganizationContext"
+                },
+                "principal": {
+                    "$ref": "#/definitions/authorization.AuthPrincipal"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "token": {
+                    "$ref": "#/definitions/authorization.TokenFacts"
+                }
+            }
+        },
+        "authorization.AuthPrincipal": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorization.AuthSessionContext": {
+            "type": "object",
+            "properties": {
+                "tenant_id": {
+                    "type": "string"
+                },
+                "tenant_membership_id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorization.AuthenticationFacts": {
+            "type": "object",
+            "properties": {
+                "assurance_level": {
+                    "type": "string"
+                },
+                "authenticated_at": {
+                    "type": "string"
+                },
+                "methods": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "step_up_expires_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorization.AuthorizationFacts": {
+            "type": "object",
+            "properties": {
+                "authorization_version": {
+                    "type": "string"
+                },
+                "role_assignments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorization.RoleAssignment"
+                    }
+                }
+            }
+        },
+        "authorization.ClientConstraints": {
+            "type": "object",
+            "properties": {
+                "audiences": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "client_id": {
+                    "type": "string"
+                },
+                "scope_mode": {
+                    "type": "string"
+                },
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "authorization.DelegationFacts": {
+            "type": "object",
+            "properties": {
+                "agent_run_id": {
+                    "type": "string"
+                },
+                "delegated_by_client_id": {
+                    "type": "string"
+                },
+                "tool_call_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorization.DepartmentMembership": {
+            "type": "object",
+            "properties": {
+                "ancestor_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "department_id": {
+                    "type": "string"
+                },
+                "membership_id": {
+                    "type": "string"
+                },
+                "membership_type": {
+                    "type": "string"
+                },
+                "relation_role": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorization.OrganizationContext": {
+            "type": "object",
+            "properties": {
+                "departments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorization.DepartmentMembership"
+                    }
+                },
+                "project_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorization.ProjectGroupMembership"
+                    }
+                }
+            }
+        },
+        "authorization.ProjectGroupMembership": {
+            "type": "object",
+            "properties": {
+                "membership_id": {
+                    "type": "string"
+                },
+                "project_group_id": {
+                    "type": "string"
+                },
+                "relation_role": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorization.RoleAssignment": {
+            "type": "object",
+            "properties": {
+                "assignment_id": {
+                    "type": "string"
+                },
+                "permissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "role_key": {
+                    "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/authorization.AssignmentScope"
+                },
+                "source_type": {
+                    "type": "string"
+                },
+                "valid_from": {
+                    "type": "string"
+                },
+                "valid_until": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorization.TokenFacts": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "issued_at": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "datatype.FieldInfo": {
             "type": "object",
             "properties": {
@@ -3114,30 +4157,197 @@
             "type": "object",
             "additionalProperties": true
         },
-        "github_com_addp_common_models.UserType": {
+        "github_com_addp_system_internal_iam.AuditResult": {
             "type": "string",
             "enum": [
-                "super_admin",
-                "tenant_admin",
-                "user",
-                "super_admin",
-                "tenant_admin",
-                "user"
-            ],
-            "x-enum-comments": {
-                "UserTypeSuperAdmin": "超级管理员",
-                "UserTypeTenantAdmin": "租户管理员",
-                "UserTypeUser": "普通用户"
-            },
-            "x-enum-descriptions": [
-                "超级管理员",
-                "租户管理员",
-                "普通用户"
+                "succeeded",
+                "failed",
+                "denied",
+                "ignored"
             ],
             "x-enum-varnames": [
-                "UserTypeSuperAdmin",
-                "UserTypeTenantAdmin",
-                "UserTypeUser"
+                "AuditResultSucceeded",
+                "AuditResultFailed",
+                "AuditResultDenied",
+                "AuditResultIgnored"
+            ]
+        },
+        "github_com_addp_system_internal_iam.AuditRiskLevel": {
+            "type": "string",
+            "enum": [
+                "low",
+                "medium",
+                "high",
+                "critical"
+            ],
+            "x-enum-varnames": [
+                "AuditRiskLow",
+                "AuditRiskMedium",
+                "AuditRiskHigh",
+                "AuditRiskCritical"
+            ]
+        },
+        "github_com_addp_system_internal_iam.AuditSummary": {
+            "type": "object",
+            "properties": {
+                "denied": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "high_risk": {
+                    "type": "integer"
+                },
+                "ignored": {
+                    "type": "integer"
+                },
+                "succeeded": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_system_internal_iam.ContextType": {
+            "type": "string",
+            "enum": [
+                "platform",
+                "tenant"
+            ],
+            "x-enum-varnames": [
+                "ContextTypePlatform",
+                "ContextTypeTenant"
+            ]
+        },
+        "github_com_addp_system_internal_iam.LocalAccountStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "locked",
+                "disabled"
+            ],
+            "x-enum-varnames": [
+                "LocalAccountStatusActive",
+                "LocalAccountStatusLocked",
+                "LocalAccountStatusDisabled"
+            ]
+        },
+        "github_com_addp_system_internal_iam.PrincipalStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "suspended",
+                "deactivated"
+            ],
+            "x-enum-varnames": [
+                "PrincipalStatusActive",
+                "PrincipalStatusSuspended",
+                "PrincipalStatusDeactivated"
+            ]
+        },
+        "github_com_addp_system_internal_iam.PrincipalType": {
+            "type": "string",
+            "enum": [
+                "user",
+                "service_principal"
+            ],
+            "x-enum-varnames": [
+                "PrincipalTypeUser",
+                "PrincipalTypeServicePrincipal"
+            ]
+        },
+        "github_com_addp_system_internal_iam.PrivilegedChangeStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "cancelled",
+                "applied"
+            ],
+            "x-enum-varnames": [
+                "PrivilegedChangeStatusPending",
+                "PrivilegedChangeStatusApproved",
+                "PrivilegedChangeStatusRejected",
+                "PrivilegedChangeStatusCancelled",
+                "PrivilegedChangeStatusApplied"
+            ]
+        },
+        "github_com_addp_system_internal_iam.PrivilegedChangeType": {
+            "type": "string",
+            "enum": [
+                "platform_identity_suspend",
+                "platform_identity_reactivate",
+                "platform_identity_deactivate",
+                "platform_role_grant",
+                "platform_role_revoke"
+            ],
+            "x-enum-varnames": [
+                "PrivilegedChangePlatformIdentitySuspend",
+                "PrivilegedChangePlatformIdentityReactivate",
+                "PrivilegedChangePlatformIdentityDeactivate",
+                "PrivilegedChangePlatformRoleGrant",
+                "PrivilegedChangePlatformRoleRevoke"
+            ]
+        },
+        "github_com_addp_system_internal_iam.TenantInvitationStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "accepted",
+                "revoked",
+                "expired"
+            ],
+            "x-enum-varnames": [
+                "TenantInvitationStatusPending",
+                "TenantInvitationStatusAccepted",
+                "TenantInvitationStatusRevoked",
+                "TenantInvitationStatusExpired"
+            ]
+        },
+        "github_com_addp_system_internal_iam.TenantMembershipSource": {
+            "type": "string",
+            "enum": [
+                "manual",
+                "invitation",
+                "idp_jit",
+                "directory_sync",
+                "bootstrap"
+            ],
+            "x-enum-varnames": [
+                "TenantMembershipSourceManual",
+                "TenantMembershipSourceInvitation",
+                "TenantMembershipSourceIDPJIT",
+                "TenantMembershipSourceDirectorySync",
+                "TenantMembershipSourceBootstrap"
+            ]
+        },
+        "github_com_addp_system_internal_iam.TenantMembershipStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "suspended",
+                "ended"
+            ],
+            "x-enum-varnames": [
+                "TenantMembershipStatusActive",
+                "TenantMembershipStatusSuspended",
+                "TenantMembershipStatusEnded"
+            ]
+        },
+        "github_com_addp_system_internal_iam.TenantStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "suspended",
+                "closed"
+            ],
+            "x-enum-varnames": [
+                "TenantStatusActive",
+                "TenantStatusSuspended",
+                "TenantStatusClosed"
             ]
         },
         "github_com_addp_system_internal_models.APIKey": {
@@ -3231,147 +4441,6 @@
                 },
                 "updated_at": {
                     "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.AuditLog": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "duration_ms": {
-                    "description": "请求耗时(毫秒)",
-                    "type": "integer"
-                },
-                "entity_id": {
-                    "description": "资源ID",
-                    "type": "string"
-                },
-                "entity_type": {
-                    "description": "资源标识 (可选)",
-                    "type": "string"
-                },
-                "error_message": {
-                    "description": "错误信息",
-                    "type": "string"
-                },
-                "http_method": {
-                    "description": "操作信息 (必填)",
-                    "type": "string"
-                },
-                "http_status": {
-                    "description": "HTTP状态码",
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "ip_address": {
-                    "description": "客户端IP(使用INET类型)",
-                    "type": "string"
-                },
-                "log_level": {
-                    "description": "错误和追踪",
-                    "type": "string"
-                },
-                "module_name": {
-                    "description": "来源模块（如：system, manager, meta）",
-                    "type": "string"
-                },
-                "query_params": {
-                    "description": "URL查询参数",
-                    "type": "string"
-                },
-                "request_body": {
-                    "description": "请求详情",
-                    "type": "string"
-                },
-                "request_id": {
-                    "description": "请求追踪ID",
-                    "type": "string"
-                },
-                "resource_path": {
-                    "description": "/api/v1/system/users/123",
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "description": "租户ID,SuperAdmin操作为null",
-                    "type": "integer"
-                },
-                "user_agent": {
-                    "description": "客户端User-Agent",
-                    "type": "string"
-                },
-                "user_id": {
-                    "description": "用户信息 (允许 NULL)",
-                    "type": "integer"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.AuthorizationContext": {
-            "type": "object",
-            "properties": {
-                "agent_run_id": {
-                    "type": "string"
-                },
-                "audiences": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "auth_type": {
-                    "type": "string",
-                    "example": "first_party_access_token"
-                },
-                "client_id": {
-                    "type": "string"
-                },
-                "delegated_by": {
-                    "type": "string"
-                },
-                "expires_at": {
-                    "type": "string"
-                },
-                "issued_at": {
-                    "type": "string"
-                },
-                "scopes": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "subject_type": {
-                    "type": "string",
-                    "example": "user"
-                },
-                "tenant_id": {
-                    "type": "integer",
-                    "example": 3
-                },
-                "tool_call_id": {
-                    "type": "string"
-                },
-                "user_id": {
-                    "type": "integer",
-                    "example": 12
-                },
-                "user_type": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.UserType"
-                        }
-                    ],
-                    "example": "tenant_admin"
-                },
-                "username": {
-                    "type": "string",
-                    "example": "alice"
                 }
             }
         },
@@ -3509,22 +4578,6 @@
                 }
             }
         },
-        "github_com_addp_system_internal_models.ChangePasswordRequest": {
-            "type": "object",
-            "required": [
-                "new_password",
-                "old_password"
-            ],
-            "properties": {
-                "new_password": {
-                    "type": "string",
-                    "minLength": 6
-                },
-                "old_password": {
-                    "type": "string"
-                }
-            }
-        },
         "github_com_addp_system_internal_models.CleanupTask": {
             "type": "object",
             "properties": {
@@ -3619,109 +4672,6 @@
                 },
                 "rate_limit_per_minute": {
                     "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.DelegatedAccessTokenRequest": {
-            "type": "object",
-            "required": [
-                "agent_run_id",
-                "audience",
-                "scopes",
-                "tool_call_id"
-            ],
-            "properties": {
-                "agent_run_id": {
-                    "type": "string",
-                    "maxLength": 100
-                },
-                "audience": {
-                    "type": "string"
-                },
-                "scopes": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "tool_call_id": {
-                    "type": "string",
-                    "maxLength": 100
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.DelegatedAccessTokenResponse": {
-            "type": "object",
-            "properties": {
-                "access_token": {
-                    "type": "string"
-                },
-                "agent_run_id": {
-                    "type": "string",
-                    "example": "7a9f43a7-81f0-4cb4-b545-6bfef53ed922"
-                },
-                "audience": {
-                    "type": "string",
-                    "example": "develop"
-                },
-                "expires_in": {
-                    "type": "integer",
-                    "example": 120
-                },
-                "scopes": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "workflow.run"
-                    ]
-                },
-                "token_type": {
-                    "type": "string",
-                    "example": "Bearer"
-                },
-                "tool_call_id": {
-                    "type": "string",
-                    "example": "call_abc123"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.DeviceApprovalRequest": {
-            "type": "object",
-            "required": [
-                "user_code"
-            ],
-            "properties": {
-                "approve": {
-                    "type": "boolean"
-                },
-                "user_code": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.DeviceAuthorizationResponse": {
-            "type": "object",
-            "properties": {
-                "device_code": {
-                    "type": "string"
-                },
-                "expires_in": {
-                    "type": "integer"
-                },
-                "interval": {
-                    "type": "integer"
-                },
-                "user_code": {
-                    "type": "string"
-                },
-                "verification_uri": {
-                    "type": "string"
-                },
-                "verification_uri_complete": {
-                    "type": "string"
                 }
             }
         },
@@ -3957,96 +4907,6 @@
                 }
             }
         },
-        "github_com_addp_system_internal_models.LoginRequest": {
-            "type": "object",
-            "required": [
-                "password",
-                "username"
-            ],
-            "properties": {
-                "password": {
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.LoginResponse": {
-            "type": "object",
-            "properties": {
-                "access_token": {
-                    "type": "string"
-                },
-                "expires_in": {
-                    "type": "integer"
-                },
-                "token_type": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.OAuthAuthorizationDecisionRequest": {
-            "type": "object",
-            "required": [
-                "decision",
-                "request_id"
-            ],
-            "properties": {
-                "decision": {
-                    "type": "string",
-                    "enum": [
-                        "approved",
-                        "rejected"
-                    ]
-                },
-                "request_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.OAuthAuthorizationRequestCreatedResponse": {
-            "type": "object",
-            "properties": {
-                "expires_in": {
-                    "type": "integer"
-                },
-                "request_id": {
-                    "type": "string"
-                },
-                "request_secret": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.OAuthAuthorizationRequestView": {
-            "type": "object",
-            "properties": {
-                "client_id": {
-                    "type": "string"
-                },
-                "client_name": {
-                    "type": "string"
-                },
-                "expires_at": {
-                    "type": "string"
-                },
-                "request_id": {
-                    "type": "string"
-                },
-                "scope": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.OAuthAuthorizationResponse": {
-            "type": "object",
-            "properties": {
-                "redirect_url": {
-                    "type": "string"
-                }
-            }
-        },
         "github_com_addp_system_internal_models.SuccessResponse": {
             "type": "object",
             "properties": {
@@ -4076,92 +4936,6 @@
                 }
             }
         },
-        "github_com_addp_system_internal_models.Tenant": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "is_active": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.TenantCreateRequest": {
-            "type": "object",
-            "required": [
-                "admin_password",
-                "admin_username",
-                "name"
-            ],
-            "properties": {
-                "admin_email": {
-                    "type": "string"
-                },
-                "admin_full_name": {
-                    "type": "string"
-                },
-                "admin_password": {
-                    "type": "string",
-                    "minLength": 6
-                },
-                "admin_username": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.TenantUpdateRequest": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "is_active": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.TokenResponse": {
-            "type": "object",
-            "properties": {
-                "access_token": {
-                    "type": "string"
-                },
-                "expires_in": {
-                    "type": "integer"
-                },
-                "refresh_token": {
-                    "type": "string"
-                },
-                "scope": {
-                    "type": "string"
-                },
-                "token_type": {
-                    "type": "string"
-                }
-            }
-        },
         "github_com_addp_system_internal_models.UpdateApplicationRequest": {
             "type": "object",
             "properties": {
@@ -4182,125 +4956,6 @@
                 },
                 "status": {
                     "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.User": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "email": {
-                    "type": "string"
-                },
-                "full_name": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "is_active": {
-                    "type": "boolean"
-                },
-                "tenant_id": {
-                    "description": "租户ID (SuperAdmin没有租户)",
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "user_type": {
-                    "description": "用户类型",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_addp_common_models.UserType"
-                        }
-                    ]
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.UserCreateRequest": {
-            "type": "object",
-            "required": [
-                "password",
-                "username"
-            ],
-            "properties": {
-                "email": {
-                    "type": "string"
-                },
-                "full_name": {
-                    "type": "string"
-                },
-                "password": {
-                    "type": "string",
-                    "minLength": 6
-                },
-                "user_type": {
-                    "description": "用户类型",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.UserType"
-                        }
-                    ]
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.UserType": {
-            "type": "string",
-            "enum": [
-                "super_admin",
-                "tenant_admin",
-                "user",
-                "super_admin",
-                "tenant_admin",
-                "user"
-            ],
-            "x-enum-comments": {
-                "UserTypeSuperAdmin": "超级管理员",
-                "UserTypeTenantAdmin": "租户管理员",
-                "UserTypeUser": "普通用户"
-            },
-            "x-enum-descriptions": [
-                "超级管理员",
-                "租户管理员",
-                "普通用户"
-            ],
-            "x-enum-varnames": [
-                "UserTypeSuperAdmin",
-                "UserTypeTenantAdmin",
-                "UserTypeUser"
-            ]
-        },
-        "github_com_addp_system_internal_models.UserUpdateRequest": {
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string"
-                },
-                "full_name": {
-                    "type": "string"
-                },
-                "is_active": {
-                    "type": "boolean"
-                },
-                "password": {
-                    "type": "string"
-                },
-                "user_type": {
-                    "description": "用户类型",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.UserType"
-                        }
-                    ]
                 }
             }
         },
@@ -4392,6 +5047,903 @@
                     "$ref": "#/definitions/github_com_addp_system_internal_models.CleanupTask"
                 },
                 "task_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMAccessTokenResponse": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "type": "string"
+                },
+                "expires_in": {
+                    "type": "integer"
+                },
+                "token_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMAuditEventResponse": {
+            "type": "object",
+            "properties": {
+                "context_type": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.ContextType"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "details": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "event_name": {
+                    "type": "string"
+                },
+                "http_method": {
+                    "type": "string"
+                },
+                "http_status": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ip_address": {
+                    "type": "string"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "principal_type": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.PrincipalType"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "resource_path": {
+                    "type": "string"
+                },
+                "result": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.AuditResult"
+                },
+                "risk_level": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.AuditRiskLevel"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "user_agent": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMAuditTrendResponse": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "denied": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "succeeded": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.IAMBrowserLoginRequest": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMBrowserLoginResponse": {
+            "type": "object",
+            "properties": {
+                "mfa": {
+                    "$ref": "#/definitions/internal_api.IAMMFAChallengeResponse"
+                },
+                "next_action": {
+                    "type": "string"
+                },
+                "selection": {
+                    "$ref": "#/definitions/internal_api.IAMContextSelectionChallengeResponse"
+                },
+                "session": {
+                    "$ref": "#/definitions/internal_api.IAMAccessTokenResponse"
+                }
+            }
+        },
+        "internal_api.IAMChangeCurrentPasswordRequest": {
+            "type": "object",
+            "properties": {
+                "current_password": {
+                    "type": "string"
+                },
+                "new_password": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMChangeManagedUserStatusRequest": {
+            "type": "object",
+            "properties": {
+                "change_request_id": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMContextChoiceRequest": {
+            "type": "object",
+            "properties": {
+                "context_type": {
+                    "type": "string"
+                },
+                "tenant_membership_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMContextOptionResponse": {
+            "type": "object",
+            "properties": {
+                "current": {
+                    "type": "boolean"
+                },
+                "requires_step_up": {
+                    "type": "boolean"
+                },
+                "tenant_code": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "tenant_membership_id": {
+                    "type": "string"
+                },
+                "tenant_name": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMContextOptionsResponse": {
+            "type": "object",
+            "properties": {
+                "contexts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.IAMContextOptionResponse"
+                    }
+                }
+            }
+        },
+        "internal_api.IAMContextSelectionChallengeResponse": {
+            "type": "object",
+            "properties": {
+                "contexts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.IAMContextOptionResponse"
+                    }
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "selection_ticket": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMContextSelectionRequest": {
+            "type": "object",
+            "properties": {
+                "context_type": {
+                    "type": "string"
+                },
+                "selection_ticket": {
+                    "type": "string"
+                },
+                "tenant_membership_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCreateManagedUserRequest": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "local_account": {
+                    "type": "object",
+                    "properties": {
+                        "password": {
+                            "type": "string"
+                        },
+                        "username": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "locale": {
+                    "type": "string"
+                },
+                "primary_email": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCreatePrivilegedIdentityChangeRequest": {
+            "type": "object",
+            "properties": {
+                "change_type": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeType"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "target_principal_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCreateTenantInvitationRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCreateTenantRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCreatedTenantInvitationResponse": {
+            "type": "object",
+            "properties": {
+                "invitation": {
+                    "$ref": "#/definitions/internal_api.IAMTenantInvitationResponse"
+                },
+                "invitation_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCurrentLocalAccountResponse": {
+            "type": "object",
+            "properties": {
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCurrentUserResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "local_account": {
+                    "$ref": "#/definitions/internal_api.IAMCurrentLocalAccountResponse"
+                },
+                "locale": {
+                    "type": "string"
+                },
+                "primary_email": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMDelegationRequest": {
+            "type": "object",
+            "properties": {
+                "agent_run_id": {
+                    "type": "string"
+                },
+                "audience": {
+                    "type": "string"
+                },
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tool_call_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMDelegationResponse": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "type": "string"
+                },
+                "agent_run_id": {
+                    "type": "string"
+                },
+                "audience": {
+                    "type": "string"
+                },
+                "expires_in": {
+                    "type": "integer"
+                },
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "token_type": {
+                    "type": "string"
+                },
+                "tool_call_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMInvitationAcceptanceRequest": {
+            "type": "object",
+            "properties": {
+                "enrollment_ticket": {
+                    "type": "string"
+                },
+                "invitation_secret": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMInvitationAcceptanceResponse": {
+            "type": "object",
+            "properties": {
+                "invitation": {
+                    "$ref": "#/definitions/internal_api.IAMTenantInvitationResponse"
+                },
+                "session": {
+                    "$ref": "#/definitions/internal_api.IAMAccessTokenResponse"
+                },
+                "tenant_membership_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMInvitationEnrollmentRequest": {
+            "type": "object",
+            "properties": {
+                "invitation_secret": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMInvitationEnrollmentResponse": {
+            "type": "object",
+            "properties": {
+                "enrollment_ticket": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMInvitationRegistrationRequest": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "invitation_secret": {
+                    "type": "string"
+                },
+                "locale": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMLifecycleReasonRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMLocalAccountManagementResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.LocalAccountStatus"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMMFAChallengeResponse": {
+            "type": "object",
+            "properties": {
+                "challenge_token": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "method": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMMFAVerificationRequest": {
+            "type": "object",
+            "properties": {
+                "challenge_token": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMManagedUserResponse": {
+            "type": "object",
+            "properties": {
+                "authorization_version": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "local_account": {
+                    "$ref": "#/definitions/internal_api.IAMLocalAccountManagementResponse"
+                },
+                "locale": {
+                    "type": "string"
+                },
+                "primary_email": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.PrincipalStatus"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMManagedUserStatusResponse": {
+            "type": "object",
+            "properties": {
+                "revoked_family_count": {
+                    "type": "integer"
+                },
+                "user": {
+                    "$ref": "#/definitions/internal_api.IAMManagedUserResponse"
+                }
+            }
+        },
+        "internal_api.IAMOAuthAuthorizationDecisionRequest": {
+            "type": "object",
+            "properties": {
+                "decision": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMOAuthAuthorizationDecisionResponse": {
+            "type": "object",
+            "properties": {
+                "redirect_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMOAuthAuthorizationRequestResponse": {
+            "type": "object",
+            "properties": {
+                "expires_in": {
+                    "type": "integer"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "request_secret": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMOAuthAuthorizationRequestView": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string"
+                },
+                "client_name": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMOAuthDeviceDecisionRequest": {
+            "type": "object",
+            "properties": {
+                "approve": {
+                    "type": "boolean"
+                },
+                "user_code": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMPasswordRotationResponse": {
+            "type": "object",
+            "properties": {
+                "changed_at": {
+                    "type": "string"
+                },
+                "revoked_family_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.IAMPrivilegedIdentityChangeResponse": {
+            "type": "object",
+            "properties": {
+                "applied_at": {
+                    "type": "string"
+                },
+                "change_type": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeType"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "decided_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "requested_at": {
+                    "type": "string"
+                },
+                "requested_by_principal_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeStatus"
+                },
+                "target_principal_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMReviewPrivilegedIdentityChangeRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMTenantInvitationResponse": {
+            "type": "object",
+            "properties": {
+                "accepted_at": {
+                    "type": "string"
+                },
+                "accepted_by_principal_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by_principal_id": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "expired_at": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "revoked_at": {
+                    "type": "string"
+                },
+                "revoked_by_principal_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.TenantInvitationStatus"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMTenantMembershipResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by_principal_id": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "joined_at": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "principal_status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.PrincipalStatus"
+                },
+                "principal_type": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.PrincipalType"
+                },
+                "source_ref": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.TenantMembershipSource"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.TenantMembershipStatus"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMTenantResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.TenantStatus"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMTenantStatusResponse": {
+            "type": "object",
+            "properties": {
+                "affected_principals": {
+                    "type": "integer"
+                },
+                "revoked_family_count": {
+                    "type": "integer"
+                },
+                "tenant": {
+                    "$ref": "#/definitions/internal_api.IAMTenantResponse"
+                }
+            }
+        },
+        "internal_api.IAMUpdateManagedUserRequest": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "locale": {
+                    "type": "string"
+                },
+                "primary_email": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMUpdateTenantMembershipRequest": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMUpdateTenantRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.AuditLogCreateRequest": {
+            "type": "object",
+            "properties": {
+                "context_type": {
+                    "type": "string"
+                },
+                "details": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "event_name": {
+                    "type": "string"
+                },
+                "http_method": {
+                    "type": "string"
+                },
+                "http_status": {
+                    "type": "integer"
+                },
+                "ip_address": {
+                    "type": "string"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "principal_type": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "resource_path": {
+                    "type": "string"
+                },
+                "result": {
+                    "type": "string"
+                },
+                "risk_level": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "user_agent": {
                     "type": "string"
                 }
             }

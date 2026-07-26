@@ -68,7 +68,10 @@ func NewMiddleware(config MiddlewareConfig) (gin.HandlerFunc, error) {
 			abortAuthorizationServiceUnavailable(c)
 			return
 		}
-		setCanonicalAuthContext(c, authContext)
+		if err := SetAuthContextForGin(c, authContext); err != nil {
+			abortAuthorizationServiceUnavailable(c)
+			return
+		}
 		c.Next()
 	}, nil
 }
@@ -237,6 +240,19 @@ func RolePermissionScopes(c *gin.Context, permission string) []commonauth.Assign
 		result = append(result, assignment.Scope)
 	}
 	return result
+}
+
+// SetAuthContextForGin validates and stores a detached canonical AuthContext.
+// It is used by System's in-process resolver and by remote consumer middleware.
+func SetAuthContextForGin(c *gin.Context, authContext commonauth.AuthContext) error {
+	if c == nil {
+		return fmt.Errorf("%w: Gin Context is required", commonapi.ErrBadRequest)
+	}
+	if err := commonauth.ValidateAuthContext(authContext); err != nil {
+		return fmt.Errorf("%w: invalid AuthContext: %v", commonapi.ErrBadRequest, err)
+	}
+	c.Set(canonicalAuthContextKey, commonauth.CloneAuthContext(authContext))
+	return nil
 }
 
 func setCanonicalAuthContext(c *gin.Context, authContext commonauth.AuthContext) {

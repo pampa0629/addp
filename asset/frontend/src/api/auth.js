@@ -7,7 +7,5 @@ const systemClient = axios.create({
 })
 
 export const authAPI = {
-  ...createAuthAPI(systemClient, {
-    includeRegister: false
-  })
+  ...createAuthAPI(systemClient)
 }

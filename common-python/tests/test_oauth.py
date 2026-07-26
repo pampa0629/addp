@@ -59,6 +59,61 @@ class FakeAsyncClient:
 
 
 @pytest.mark.asyncio
+async def test_device_login_requests_fixed_addp_api_audience(monkeypatch):
+    requests = []
+    stored = []
+
+    class DeviceResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "device_code": "addp_dc_device",
+                "user_code": "ABCD-EFGH",
+                "interval": 5,
+                "expires_in": 600,
+            }
+
+    class DeviceAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, data):
+            requests.append((url, data))
+            if url.endswith("/device/code"):
+                return DeviceResponse()
+            return FakeResponse()
+
+    async def no_wait(_seconds):
+        return None
+
+    monkeypatch.setattr(oauth.httpx, "AsyncClient", DeviceAsyncClient)
+    monkeypatch.setattr(oauth.asyncio, "sleep", no_wait)
+    monkeypatch.setattr(oauth, "_store_refresh_token", lambda base_url, token: stored.append((base_url, token)))
+
+    result, device = await oauth.device_login("http://localhost:8000")
+
+    assert requests[0] == (
+        "http://localhost:8000/api/v1/system/oauth/device/code",
+        {"client_id": "addp-cli", "scope": "addp.api", "audience": "addp.api"},
+    )
+    assert requests[1][1] == {
+        "grant_type": oauth.DEVICE_GRANT_TYPE,
+        "client_id": "addp-cli",
+        "device_code": "addp_dc_device",
+    }
+    assert result == oauth.LoginResult(client_id="addp-cli", scope="addp.api")
+    assert device["user_code"] == "ABCD-EFGH"
+    assert stored == [("http://localhost:8000", "addp_rt_new")]
+
+
+@pytest.mark.asyncio
 async def test_browser_login_uses_available_dynamic_loopback_port(monkeypatch):
     blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:

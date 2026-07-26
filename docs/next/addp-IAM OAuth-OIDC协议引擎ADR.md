@@ -1,8 +1,8 @@
 # ADDP IAM OAuth/OIDC 协议引擎 ADR
 
-更新日期：2026-07-23
+更新日期：2026-07-25
 
-状态：已接受。本文决定 System 内部 OAuth/OIDC 协议引擎的目标路线；当前运行代码尚未切换，实施前仍需完成 Fosite 受控版本和 PostgreSQL Storage Adapter 设计。
+状态：已接受并进入实施。ADDP 受控 Fosite `v0.50.0-addp.2` 已发布，PostgreSQL Storage Adapter、Provider、Consent Bridge 与 System 目标 Router 已实现并通过真实 PostgreSQL Authorization Code + PKCE 流程验证；当前开发 `addp` 数据库尚未破坏性重建和 Bootstrap。
 
 ## 一、决策摘要
 
@@ -237,6 +237,20 @@ Fosite master a5f0b09b:
 ```
 
 PoC 同时确认 Fosite 在 Authorization Code 重放时会撤销该请求关联的 Access / Refresh Token；测试和 Adapter 不得把这个标准安全处置误判为普通 Code 校验失败。
+
+### 11.1 受控版本证据
+
+当前受控版本已发布：
+
+```text
+Repository: https://github.com/pampa0629/fosite
+Branch: addp-controlled
+Tag: v0.50.0-addp.2
+Tag commit: b07a0df364522c36058e6559588f47bd9105a052
+Upstream baseline: a5f0b09bf31c17297b25637bb3fec2ff7a55b159
+```
+
+该版本包含上游 PR #883 的 PKCE Session 删除时机修复、PR #887 的 JWT audience 恢复修复、ADDP 的失效 Device Code 按原 Device Request ID 撤销修复，以及 Hosted Consent 创建阶段复用同一 PKCE 校验器的无副作用入口。Device 回归测试已执行红绿验证；发布前通过 `go test ./...`、目标包 `-race`、`go vet ./...` 和 `go mod verify`。完整来源和补丁清单位于 fork 根目录 `ADDP_FORK.md`。
 
 ## 十二、后果
 

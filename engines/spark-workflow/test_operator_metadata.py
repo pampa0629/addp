@@ -2,6 +2,7 @@ import unittest
 import sys
 import types
 from pathlib import Path
+from unittest.mock import patch
 
 for parent in Path(__file__).resolve().parents:
     contract_path = parent / "docs" / "workflow_operator_contract.py"
@@ -29,12 +30,58 @@ if "pyspark" not in sys.modules:
     pyspark_module.sql = pyspark_sql_module
     sys.modules["pyspark"] = pyspark_module
     sys.modules["pyspark.sql"] = pyspark_sql_module
+else:
+    class _DataFrame:
+        pass
 
 from workflow_engine import WorkflowInvalidError, validate_workflow_def
+from spark_connector import SPARK_MAVEN_PACKAGES
+from api_server import serialize_json_value
+from operators.spatial_operators import buffer
 import api_server
 
 
 class OperatorMetadataTest(unittest.TestCase):
+    def test_runtime_values_fall_back_to_string_for_json_serialization(self):
+        class Geometry:
+            def __str__(self):
+                return "POLYGON ((0 0, 1 0, 0 0))"
+
+        self.assertEqual(
+            {"geometry": "POLYGON ((0 0, 1 0, 0 0))"},
+            serialize_json_value({"geometry": Geometry()}),
+        )
+
+    def test_buffer_preserves_input_geometry_srid(self):
+        class DataFrame:
+            expression = None
+
+            def withColumn(self, _name, expression):
+                self.expression = expression
+                return self
+
+        dataframe = DataFrame()
+        functions_module = types.ModuleType("pyspark.sql.functions")
+        functions_module.expr = lambda expression: expression
+        with patch.dict(sys.modules, {"pyspark.sql.functions": functions_module}):
+            result = buffer(
+                dataframe,
+                geom_column="source_shape",
+                distance=100,
+                output_column="buffer_shape",
+            )
+
+        self.assertIs(result, dataframe)
+        self.assertEqual(
+            "ST_SetSRID(ST_Buffer(source_shape, 100), ST_SRID(source_shape))",
+            dataframe.expression,
+        )
+
+    def test_spark_packages_include_runtime_and_jdbc_dependencies(self):
+        self.assertIn("sedona-spark-shaded-3.5_2.12:1.5.1", SPARK_MAVEN_PACKAGES)
+        self.assertIn("org.postgresql:postgresql:42.7.4", SPARK_MAVEN_PACKAGES)
+        self.assertIn("com.mysql:mysql-connector-j:8.4.0", SPARK_MAVEN_PACKAGES)
+
     def test_runtime_metadata_exposes_task_runtime_parameters(self):
         operators = {operator["name"]: operator for operator in get_operator_metadata()}
 

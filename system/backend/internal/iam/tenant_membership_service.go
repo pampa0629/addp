@@ -31,7 +31,15 @@ type ChangeTenantMembershipInput struct {
 	TenantID    int64
 	PrincipalID int64
 	ExpiresAt   *time.Time
+	Reason      string
 	Audit       AuditMetadata
+}
+
+type UpdateTenantMembershipInput struct {
+	TenantID     int64
+	MembershipID int64
+	ExpiresAt    *time.Time
+	Audit        AuditMetadata
 }
 
 type TenantMembershipChangeResult struct {
@@ -89,6 +97,84 @@ func (s *TenantMembershipService) CreateTenant(
 	return tenant, nil
 }
 
+func (s *TenantMembershipService) ListManagedMemberships(
+	ctx context.Context,
+	tenantID int64,
+	page int,
+	pageSize int,
+	search string,
+	status *TenantMembershipStatus,
+) ([]ManagedTenantMembership, int64, error) {
+	if s == nil || s.repository == nil || tenantID <= 0 {
+		return nil, 0, fmt.Errorf("%w: IAM repository and tenant are required", commonapi.ErrBadRequest)
+	}
+	if err := validateManagementPagination(page, pageSize); err != nil {
+		return nil, 0, err
+	}
+	var memberships []ManagedTenantMembership
+	var total int64
+	err := s.repository.ReadOnlyRepeatableReadTransaction(ctx, func(tx *Repository) error {
+		var err error
+		memberships, total, err = tx.ListManagedTenantMemberships(
+			ctx, tenantID, page, pageSize, search, status,
+		)
+		return err
+	})
+	return memberships, total, err
+}
+
+func (s *TenantMembershipService) GetManagedMembership(
+	ctx context.Context,
+	tenantID int64,
+	membershipID int64,
+) (*ManagedTenantMembership, error) {
+	if s == nil || s.repository == nil || tenantID <= 0 || membershipID <= 0 {
+		return nil, fmt.Errorf("%w: IAM repository, tenant and membership are required", commonapi.ErrBadRequest)
+	}
+	return s.repository.GetManagedTenantMembership(ctx, tenantID, membershipID)
+}
+
+func (s *TenantMembershipService) UpdateManagedMembership(
+	ctx context.Context,
+	input UpdateTenantMembershipInput,
+) (*TenantMembershipChangeResult, error) {
+	if s == nil || s.repository == nil || input.TenantID <= 0 || input.MembershipID <= 0 {
+		return nil, fmt.Errorf("%w: IAM repository, tenant and membership are required", commonapi.ErrBadRequest)
+	}
+	now := s.now().UTC()
+	if input.ExpiresAt != nil && !input.ExpiresAt.After(now) {
+		return nil, fmt.Errorf("%w: membership expiry must be in the future", commonapi.ErrBadRequest)
+	}
+	var changed *TenantMembershipChangeResult
+	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		membership, err := tx.LockTenantMembershipByID(ctx, input.MembershipID)
+		if err != nil {
+			return err
+		}
+		if membership.TenantID != input.TenantID {
+			return commonapi.ErrNotFound
+		}
+		if membership.Status == TenantMembershipStatusEnded {
+			return fmt.Errorf("%w: ended membership cannot be updated", commonapi.ErrConflict)
+		}
+		if input.ExpiresAt != nil && !input.ExpiresAt.After(membership.JoinedAt) {
+			return fmt.Errorf("%w: membership expiry must be after join time", commonapi.ErrBadRequest)
+		}
+		if err := tx.UpdateTenantMembershipLifecycle(
+			ctx, membership.ID, membership.Status, membership.EndedAt, input.ExpiresAt,
+		); err != nil {
+			return err
+		}
+		membership.ExpiresAt = input.ExpiresAt
+		return s.finishMembershipChange(
+			ctx, tx, membership, input.Audit,
+			"iam.tenant_membership.updated", AuditRiskMedium,
+			"membership_updated", now, nil, &changed,
+		)
+	})
+	return changed, err
+}
+
 func (s *TenantMembershipService) EstablishMembership(
 	ctx context.Context,
 	input EstablishTenantMembershipInput,
@@ -122,7 +208,7 @@ func (s *TenantMembershipService) EstablishMembership(
 		}
 		return s.finishMembershipChange(
 			ctx, tx, membership, input.Audit,
-			"iam.tenant_membership.established", AuditRiskMedium, "membership_established", now, &changed,
+			"iam.tenant_membership.established", AuditRiskMedium, "membership_established", now, nil, &changed,
 		)
 	})
 	if err != nil {
@@ -225,9 +311,13 @@ func (s *TenantMembershipService) changeMembership(
 		membership.Status = targetStatus
 		membership.EndedAt = endedAt
 		membership.ExpiresAt = expiresAt
+		extraDetails := map[string]any{}
+		if reason := strings.TrimSpace(input.Reason); reason != "" {
+			extraDetails["reason"] = reason
+		}
 		return s.finishMembershipChange(
 			ctx, tx, membership, input.Audit,
-			eventName, riskLevel, revocationReason, now, &changed,
+			eventName, riskLevel, revocationReason, now, extraDetails, &changed,
 		)
 	})
 	if err != nil {
@@ -245,6 +335,7 @@ func (s *TenantMembershipService) finishMembershipChange(
 	riskLevel AuditRiskLevel,
 	revocationReason string,
 	changedAt time.Time,
+	extraDetails map[string]any,
 	result **TenantMembershipChangeResult,
 ) error {
 	principal, err := tx.GetPrincipal(ctx, membership.PrincipalID)
@@ -257,6 +348,16 @@ func (s *TenantMembershipService) finishMembershipChange(
 	if err != nil {
 		return err
 	}
+	details := map[string]any{
+		"tenant_id":             membership.TenantID,
+		"principal_id":          membership.PrincipalID,
+		"status":                membership.Status,
+		"authorization_version": principal.AuthorizationVersion,
+		"revoked_family_count":  revokedFamilyCount,
+	}
+	for key, value := range extraDetails {
+		details[key] = value
+	}
 	if err := NewAuditWriter(tx).Write(ctx, AuditEvent{
 		Metadata:   audit,
 		EventName:  eventName,
@@ -265,13 +366,7 @@ func (s *TenantMembershipService) finishMembershipChange(
 		ModuleName: "system",
 		EntityType: "tenant_membership",
 		EntityID:   strconv.FormatInt(membership.ID, 10),
-		Details: map[string]any{
-			"tenant_id":             membership.TenantID,
-			"principal_id":          membership.PrincipalID,
-			"status":                membership.Status,
-			"authorization_version": principal.AuthorizationVersion,
-			"revoked_family_count":  revokedFamilyCount,
-		},
+		Details:    details,
 	}); err != nil {
 		return err
 	}

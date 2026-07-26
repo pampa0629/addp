@@ -14,6 +14,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -27,26 +28,30 @@ var (
 // CleanupOrchestratorService 是资源回收协调方。
 // 它只负责发起请求、记录 execution、发布事件、汇总结果和写审计，不进入 Orchestrator 任务编排。
 type CleanupOrchestratorService struct {
-	redis      *redis.Client
-	execRepo   *commonExecution.TaskExecutionRepository
-	logService *LogService
-	registry   *ModuleRegistryService
-	log        *slog.Logger
+	redis       *redis.Client
+	execRepo    *commonExecution.TaskExecutionRepository
+	auditWriter CleanupAuditWriter
+	registry    *ModuleRegistryService
+	log         *slog.Logger
+}
+
+type CleanupAuditWriter interface {
+	Write(context.Context, iam.AuditEvent) error
 }
 
 // NewCleanupOrchestratorService 创建资源回收协调服务
 func NewCleanupOrchestratorService(
 	redisClient *redis.Client,
 	execRepo *commonExecution.TaskExecutionRepository,
-	logService *LogService,
+	auditWriter CleanupAuditWriter,
 	registry *ModuleRegistryService,
 ) *CleanupOrchestratorService {
 	return &CleanupOrchestratorService{
-		redis:      redisClient,
-		execRepo:   execRepo,
-		logService: logService,
-		registry:   registry,
-		log:        logger.With("component", "cleanup_orchestrator"),
+		redis:       redisClient,
+		execRepo:    execRepo,
+		auditWriter: auditWriter,
+		registry:    registry,
+		log:         logger.With("component", "cleanup_orchestrator"),
 	}
 }
 
@@ -140,7 +145,7 @@ func (s *CleanupOrchestratorService) createScanTask(
 	historyKey := fmt.Sprintf("cleanup:history:%d", tenantID)
 	s.redis.LPush(ctx, historyKey, taskID)
 	s.redis.LTrim(ctx, historyKey, 0, 99) // 只保留最近100条
-	s.writeAuditLog(userID, &tenantID, "cleanup.scan.created", taskID, map[string]interface{}{
+	s.writeAuditLog(ctx, userID, &tenantID, "cleanup.scan.created", taskID, map[string]interface{}{
 		"expected_modules": scope,
 		"trigger_type":     triggerType,
 		"cause_event":      causeEvent,
@@ -253,7 +258,7 @@ func (s *CleanupOrchestratorService) CreateExecuteTask(
 	historyKey := fmt.Sprintf("cleanup:history:%d", task.TenantID)
 	s.redis.LPush(ctx, historyKey, taskID)
 	s.redis.LTrim(ctx, historyKey, 0, 99)
-	s.writeAuditLog(userID, &task.TenantID, "cleanup.execute.confirmed", taskID, map[string]interface{}{
+	s.writeAuditLog(ctx, userID, &task.TenantID, "cleanup.execute.confirmed", taskID, map[string]interface{}{
 		"based_on_scan":      basedOnScan,
 		"cleanup_mode":       cleanupMode,
 		"risk_level":         scanSummary.RiskLevel,
@@ -264,7 +269,7 @@ func (s *CleanupOrchestratorService) CreateExecuteTask(
 		"confirmation_token": confirmation.ConfirmationToken != "",
 		"confirmed_at":       now.Format(time.RFC3339),
 	})
-	s.writeAuditLog(userID, &task.TenantID, "cleanup.execute.created", taskID, map[string]interface{}{
+	s.writeAuditLog(ctx, userID, &task.TenantID, "cleanup.execute.created", taskID, map[string]interface{}{
 		"based_on_scan":    basedOnScan,
 		"cleanup_mode":     cleanupMode,
 		"expected_modules": task.ExpectedModules,
@@ -851,7 +856,7 @@ func (s *CleanupOrchestratorService) updateTaskAndExecutionStatus(
 		if overallStatus != "completed" {
 			eventName = "cleanup.failed"
 		}
-		s.writeAuditLog(task.RequestedBy, &task.TenantID, eventName, task.TaskID, map[string]interface{}{
+		s.writeAuditLog(ctx, task.RequestedBy, &task.TenantID, eventName, task.TaskID, map[string]interface{}{
 			"execution_id": task.ExecutionID,
 			"status":       overallStatus,
 			"summary":      summary,
@@ -891,34 +896,38 @@ func summaryFromResults(results map[string]interface{}) events.CleanupResultSumm
 	return summary
 }
 
-func (s *CleanupOrchestratorService) writeAuditLog(userID uint, tenantID *uint, action string, taskID string, detail map[string]interface{}) {
-	if s.logService == nil {
+func (s *CleanupOrchestratorService) writeAuditLog(
+	ctx context.Context,
+	userID uint,
+	tenantID *uint,
+	eventName string,
+	taskID string,
+	details map[string]interface{},
+) {
+	if s.auditWriter == nil {
 		return
 	}
-	auditLog := buildCleanupAuditLog(userID, tenantID, action, taskID, detail)
-	if err := s.logService.Create(auditLog); err != nil {
-		s.log.Error("写入资源回收审计日志失败", "error", err, "action", action, "task_id", taskID)
+	principalID := int64(userID)
+	principalType := iam.PrincipalTypeUser
+	contextType := iam.ContextTypeTenant
+	metadata := iam.AuditMetadata{PrincipalID: &principalID, PrincipalType: &principalType, ContextType: &contextType}
+	if tenantID != nil {
+		value := int64(*tenantID)
+		metadata.TenantID = &value
 	}
-}
-
-func buildCleanupAuditLog(userID uint, tenantID *uint, action string, taskID string, detail map[string]interface{}) *models.AuditLog {
-	body, _ := json.Marshal(detail)
-	userIDPtr := userID
-	requestID := uuid.New().String()
-	return &models.AuditLog{
-		UserID:       &userIDPtr,
-		TenantID:     tenantID,
-		HTTPMethod:   "SYSTEM",
-		ResourcePath: action,
-		HTTPStatus:   200,
-		DurationMs:   0,
-		EntityType:   "cleanup",
-		EntityID:     taskID,
-		RequestBody:  string(body),
-		IPAddress:    "127.0.0.1",
-		LogLevel:     "INFO",
-		RequestID:    requestID,
-		ModuleName:   "system",
+	risk := iam.AuditRiskMedium
+	result := iam.AuditResultSucceeded
+	if eventName == "cleanup.execute.confirmed" {
+		risk = iam.AuditRiskHigh
+	} else if eventName == "cleanup.failed" {
+		risk, result = iam.AuditRiskHigh, iam.AuditResultFailed
+	}
+	event := iam.AuditEvent{
+		Metadata: metadata, EventName: eventName, Result: result, RiskLevel: risk,
+		ModuleName: "system", EntityType: "cleanup_task", EntityID: taskID, Details: details,
+	}
+	if err := s.auditWriter.Write(ctx, event); err != nil {
+		s.log.Error("写入资源回收审计日志失败", "error", err, "event", eventName, "task_id", taskID)
 	}
 }
 

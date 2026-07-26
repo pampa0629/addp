@@ -21,6 +21,9 @@ PostgreSQL、Redis、MinIO 和 Meilisearch 当前来源于 `docker-compose.infra
 - MinIO Console: `9003`
 - Neo4j Browser: `7474`
 - Neo4j Bolt: `7687`
+- Spark Master: `7077`
+- Spark Master UI: `18088`
+- Spark Thrift Server: `11000`
 
 来源：`business/docker-compose.yml`，可通过 `business/.env` 覆盖。脚本固定使用这些端口，不会自动改动；若被其他进程占用，启动脚本会给出警告并继续尝试（可能失败）。
 
@@ -30,6 +33,9 @@ BUSINESS_MINIO_API_PORT=9002
 BUSINESS_MINIO_CONSOLE_PORT=9003
 NEO4J_HTTP_PORT=7474
 NEO4J_BOLT_PORT=7687
+SPARK_MASTER_PORT=7077
+SPARK_MASTER_UI=18088
+SPARK_THRIFT_PORT=11000
 ```
 
 ## Reserved Policy（保留规则）

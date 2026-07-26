@@ -29,7 +29,7 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 echo -e "${YELLOW}▶ 容器状态（docker compose ps）${NC}"
-docker compose -f docker-compose.infra.yml ps postgres redis minio meilisearch kafka kafka-init kafka-connect || true
+docker compose -f docker-compose.infra.yml ps postgres redis minio meilisearch redpanda redpanda-init kafka-connect || true
 
 echo ""
 echo -e "${YELLOW}▶ 健康检查${NC}"
@@ -44,7 +44,7 @@ PG_PORT=$(get_port postgres 5432 || echo 15432)
 REDIS_PORT=$(get_port redis 6379 || echo 16379)
 MINIO_API_PORT=$(get_port minio 9000 || echo 19000)
 MINIO_CONSOLE_PORT=$(get_port minio 9001 || echo 19001)
-KAFKA_PORT=$(get_port kafka 9092 || echo 19092)
+KAFKA_PORT=$(get_port redpanda 9092 || echo 19092)
 KAFKA_CONNECT_PORT=$(get_port kafka-connect 8083 || echo 18083)
 
 # Postgres
@@ -81,8 +81,8 @@ else
 fi
 
 # Infra Kafka
-printf "%s" "- Infra Kafka (localhost:${KAFKA_PORT}):  "
-KAFKA_HEALTH=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' addp-kafka 2>/dev/null || true)
+printf "%s" "- Infra Kafka / Redpanda (localhost:${KAFKA_PORT}):  "
+KAFKA_HEALTH=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' addp-redpanda 2>/dev/null || true)
 if [ "$KAFKA_HEALTH" = "healthy" ]; then
   echo -e "${GREEN}Healthy${NC}"
 else
@@ -90,7 +90,7 @@ else
 fi
 
 if [ "$KAFKA_HEALTH" = "healthy" ]; then
-  KAFKA_DISK_PERCENT=$(docker exec addp-kafka df -P /var/lib/kafka/data 2>/dev/null | awk 'NR==2 {gsub(/%/, "", $5); print $5}')
+  KAFKA_DISK_PERCENT=$(docker exec addp-redpanda df -P /var/lib/redpanda/data 2>/dev/null | awk 'NR==2 {gsub(/%/, "", $5); print $5}')
   KAFKA_DISK_DEGRADED=${INFRA_KAFKA_DISK_DEGRADED_PERCENT:-75}
   KAFKA_DISK_CRITICAL=${INFRA_KAFKA_DISK_CRITICAL_PERCENT:-85}
   if [ -n "$KAFKA_DISK_PERCENT" ] && [ "$KAFKA_DISK_PERCENT" -ge "$KAFKA_DISK_CRITICAL" ]; then

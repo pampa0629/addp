@@ -27,17 +27,12 @@ func NewCleanupHandler(orchestrator *service.CleanupOrchestratorService) *Cleanu
 }
 
 func cleanupTenantID(c *gin.Context) (uint, bool) {
-	tenantID, exists := c.Get("tenant_id")
-	if !exists {
-		commonapi.RespondError(c, http.StatusUnauthorized, commoni18n.T(c, sysi18n.MsgCleanupTenantMissing))
+	_, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
 		return 0, false
 	}
-	tenantIDValue, ok := tenantID.(uint)
-	if !ok || tenantIDValue == 0 {
-		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgCleanupTenantRequired))
-		return 0, false
-	}
-	return tenantIDValue, true
+	return tenantID, true
 }
 
 // CreateScanTaskRequest 创建扫描任务请求
@@ -67,14 +62,9 @@ type CreateScanTaskResponse struct {
 // @Router /admin/cleanup/scan [post]
 func (h *CleanupHandler) CreateScanTask(c *gin.Context) {
 	// 获取当前用户信息
-	userID, exists := c.Get("user_id")
-	if !exists {
-		commonapi.RespondError(c, http.StatusUnauthorized, commoni18n.T(c, commoni18n.MsgUnauthorized))
-		return
-	}
-
-	tenantID, ok := cleanupTenantID(c)
-	if !ok {
+	actorID, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
 		return
 	}
 
@@ -90,7 +80,7 @@ func (h *CleanupHandler) CreateScanTask(c *gin.Context) {
 		c.Request.Context(),
 		tenantID,
 		req.Scope,
-		userID.(uint),
+		actorID,
 	)
 	if err != nil {
 		commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.TWithDetail(c, sysi18n.MsgCleanupCreateScanFailed, err.Error()))
@@ -196,9 +186,9 @@ type CreateExecuteTaskResponse struct {
 // @Router /admin/cleanup/execute [post]
 func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 	// 获取当前用户信息
-	userID, exists := c.Get("user_id")
-	if !exists {
-		commonapi.RespondError(c, http.StatusUnauthorized, commoni18n.T(c, commoni18n.MsgUnauthorized))
+	actorID, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
 		return
 	}
 
@@ -214,10 +204,6 @@ func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 		return
 	}
 
-	tenantID, ok := cleanupTenantID(c)
-	if !ok {
-		return
-	}
 	scanStatus, err := h.orchestrator.GetTaskStatus(c.Request.Context(), req.BasedOnScan)
 	if err != nil {
 		if err.Error() == "task not found" {
@@ -245,7 +231,7 @@ func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 		c.Request.Context(),
 		req.BasedOnScan,
 		req.CleanupMode,
-		userID.(uint),
+		actorID,
 		service.CleanupExecuteConfirmation{
 			Confirmed:         req.Confirmed,
 			ConfirmationToken: req.ConfirmationToken,

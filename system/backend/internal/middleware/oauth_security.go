@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 )
 
 const oauthSecurityAuditKey = "oauth_security_audit"
+const oauthSecurityAuditPersistedKey = "oauth_security_audit_persisted"
 
 type OAuthSecurityAudit struct {
 	Event     string `json:"event"`
@@ -40,6 +40,16 @@ func OAuthSecurityAuditFromContext(c *gin.Context) (OAuthSecurityAudit, bool) {
 	}
 	audit, ok := value.(OAuthSecurityAudit)
 	return audit, ok
+}
+
+func MarkOAuthSecurityAuditPersisted(c *gin.Context) {
+	c.Set(oauthSecurityAuditPersistedKey, true)
+}
+
+func OAuthSecurityAuditWasPersisted(c *gin.Context) bool {
+	persisted, _ := c.Get(oauthSecurityAuditPersistedKey)
+	value, _ := persisted.(bool)
+	return value
 }
 
 func OAuthSecurityAuditJSON(c *gin.Context) string {
@@ -90,7 +100,11 @@ func OAuthPublicRateLimitMiddleware(client redisv9.Scripter, limit int64) gin.Ha
 
 func OAuthUserRateLimitMiddleware(client redisv9.Scripter, limit int64) gin.HandlerFunc {
 	return newOAuthRateLimitMiddleware(client, limit, func(c *gin.Context) string {
-		return c.FullPath() + "|" + strconv.FormatUint(uint64(c.GetUint("user_id")), 10) + "|" + oauthRequestClientID(c)
+		principalID := "missing_auth_context"
+		if authContext, exists := IAMAuthContextFromGin(c); exists {
+			principalID = authContext.Principal.ID
+		}
+		return c.FullPath() + "|" + principalID + "|" + oauthRequestClientID(c)
 	})
 }
 

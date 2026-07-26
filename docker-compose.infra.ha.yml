@@ -1,0 +1,270 @@
+# Redpanda HA/SASL_SSL production-topology override.
+# Apply after docker-compose.infra.yml.
+
+x-redpanda-ha-healthcheck: &redpanda-ha-healthcheck
+  test:
+    - CMD-SHELL
+    - >-
+      rpk cluster health -X brokers=localhost:29092
+      -X user=${INFRA_KAFKA_ADMIN_USERNAME:-admin}
+      -X pass=$${INFRA_KAFKA_ADMIN_PASSWORD}
+      -X sasl.mechanism=SCRAM-SHA-256
+      -X tls.enabled=true -X tls.ca=/etc/redpanda/certs/ca.crt >/dev/null
+  interval: 10s
+  timeout: 5s
+  retries: 24
+  start_period: 30s
+
+x-connect-ha-environment: &connect-ha-environment
+  BOOTSTRAP_SERVERS: redpanda:29092,redpanda-2:29092,redpanda-3:29092
+  GROUP_ID: ${KAFKA_CONNECT_GROUP_ID:-addp-connect-cluster}
+  CONFIG_STORAGE_TOPIC: ${KAFKA_CONNECT_CONFIG_TOPIC:-__addp_connect_configs}
+  OFFSET_STORAGE_TOPIC: ${KAFKA_CONNECT_OFFSET_TOPIC:-__addp_connect_offsets}
+  STATUS_STORAGE_TOPIC: ${KAFKA_CONNECT_STATUS_TOPIC:-__addp_connect_status}
+  CONFIG_STORAGE_REPLICATION_FACTOR: 3
+  OFFSET_STORAGE_REPLICATION_FACTOR: 3
+  STATUS_STORAGE_REPLICATION_FACTOR: 3
+  CONNECT_SCHEDULED_REBALANCE_MAX_DELAY_MS: "10000"
+  KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+  VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+  CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+  CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+  CONNECT_SECURITY_PROTOCOL: SASL_SSL
+  CONNECT_SASL_MECHANISM: SCRAM-SHA-256
+  CONNECT_SASL_JAAS_CONFIG: >-
+    org.apache.kafka.common.security.scram.ScramLoginModule required
+    username="connect" password="${INFRA_KAFKA_CONNECT_PASSWORD:-addp_kafka_connect}";
+  CONNECT_SSL_TRUSTSTORE_TYPE: PEM
+  CONNECT_SSL_TRUSTSTORE_LOCATION: /etc/redpanda/certs/ca.crt
+  CONNECT_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: https
+  CONNECT_PRODUCER_SECURITY_PROTOCOL: SASL_SSL
+  CONNECT_PRODUCER_ACKS: all
+  CONNECT_PRODUCER_ENABLE_IDEMPOTENCE: "true"
+  CONNECT_PRODUCER_SASL_MECHANISM: SCRAM-SHA-256
+  CONNECT_PRODUCER_SASL_JAAS_CONFIG: >-
+    org.apache.kafka.common.security.scram.ScramLoginModule required
+    username="connect" password="${INFRA_KAFKA_CONNECT_PASSWORD:-addp_kafka_connect}";
+  CONNECT_PRODUCER_SSL_TRUSTSTORE_TYPE: PEM
+  CONNECT_PRODUCER_SSL_TRUSTSTORE_LOCATION: /etc/redpanda/certs/ca.crt
+  CONNECT_PRODUCER_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: https
+  CONNECT_CONSUMER_SECURITY_PROTOCOL: SASL_SSL
+  CONNECT_CONSUMER_SASL_MECHANISM: SCRAM-SHA-256
+  CONNECT_CONSUMER_SASL_JAAS_CONFIG: >-
+    org.apache.kafka.common.security.scram.ScramLoginModule required
+    username="connect" password="${INFRA_KAFKA_CONNECT_PASSWORD:-addp_kafka_connect}";
+  CONNECT_CONSUMER_SSL_TRUSTSTORE_TYPE: PEM
+  CONNECT_CONSUMER_SSL_TRUSTSTORE_LOCATION: /etc/redpanda/certs/ca.crt
+  CONNECT_CONSUMER_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: https
+  HEAP_OPTS: ${KAFKA_CONNECT_HEAP_OPTS:--Xms512m -Xmx512m}
+  REST_HOST_NAME: 0.0.0.0
+  ENABLE_APICURIO_CONVERTERS: "false"
+  ENABLE_JOLOKIA: "false"
+  ENABLE_OTEL: "false"
+
+services:
+  redpanda:
+    labels:
+      org.addp.infra.kafka.profile: redpanda-ha
+    command: !override
+      - redpanda
+      - start
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --memory
+      - ${REDPANDA_HA_MEMORY:-1G}
+      - --reserve-memory
+      - 0M
+      - --check=false
+      - --kafka-addr
+      - internal://0.0.0.0:29092,external://0.0.0.0:9092
+      - --rpc-addr
+      - 0.0.0.0:33145
+      - --set
+      - redpanda.enable_sasl=true
+      - --set
+      - redpanda.auto_create_topics_enabled=false
+      - --set
+      - redpanda.write_caching_default=false
+      - --set
+      - redpanda.default_topic_replications=3
+      - --set
+      - 'redpanda.superusers=["${INFRA_KAFKA_ADMIN_USERNAME:-admin}"]'
+      - --set
+      - 'redpanda.kafka_api_tls=[{"name":"internal","enabled":true,"cert_file":"/etc/redpanda/certs/server.crt","key_file":"/etc/redpanda/certs/server.key","truststore_file":"/etc/redpanda/certs/ca.crt","require_client_auth":false},{"name":"external","enabled":true,"cert_file":"/etc/redpanda/certs/server.crt","key_file":"/etc/redpanda/certs/server.key","truststore_file":"/etc/redpanda/certs/ca.crt","require_client_auth":false}]'
+      - --node-id
+      - "0"
+      - --advertise-kafka-addr
+      - internal://redpanda:29092,external://localhost:${INFRA_KAFKA_PORT:-19092}
+      - --advertise-rpc-addr
+      - redpanda:33145
+    volumes: !override
+      - redpanda_ha_0_data:/var/lib/redpanda/data
+      - ${REDPANDA_CERT_DIR:?REDPANDA_CERT_DIR is required}:/etc/redpanda/certs:ro
+    healthcheck: *redpanda-ha-healthcheck
+
+  redpanda-2:
+    image: ${REDPANDA_IMAGE:-docker.redpanda.com/redpandadata/redpanda:v24.3.18}
+    container_name: addp-redpanda-2
+    hostname: redpanda-2
+    labels:
+      org.addp.infra.kafka.profile: redpanda-ha
+    command:
+      - redpanda
+      - start
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --memory
+      - ${REDPANDA_HA_MEMORY:-1G}
+      - --reserve-memory
+      - 0M
+      - --check=false
+      - --kafka-addr
+      - internal://0.0.0.0:29092,external://0.0.0.0:9092
+      - --rpc-addr
+      - 0.0.0.0:33145
+      - --set
+      - redpanda.enable_sasl=true
+      - --set
+      - redpanda.auto_create_topics_enabled=false
+      - --set
+      - redpanda.write_caching_default=false
+      - --set
+      - redpanda.default_topic_replications=3
+      - --set
+      - 'redpanda.superusers=["${INFRA_KAFKA_ADMIN_USERNAME:-admin}"]'
+      - --set
+      - 'redpanda.kafka_api_tls=[{"name":"internal","enabled":true,"cert_file":"/etc/redpanda/certs/server.crt","key_file":"/etc/redpanda/certs/server.key","truststore_file":"/etc/redpanda/certs/ca.crt","require_client_auth":false},{"name":"external","enabled":true,"cert_file":"/etc/redpanda/certs/server.crt","key_file":"/etc/redpanda/certs/server.key","truststore_file":"/etc/redpanda/certs/ca.crt","require_client_auth":false}]'
+      - --node-id
+      - "1"
+      - --seeds
+      - redpanda:33145
+      - --advertise-kafka-addr
+      - internal://redpanda-2:29092,external://localhost:${REDPANDA_HA_KAFKA_2_PORT:-19093}
+      - --advertise-rpc-addr
+      - redpanda-2:33145
+    environment:
+      INFRA_KAFKA_ADMIN_PASSWORD: ${INFRA_KAFKA_ADMIN_PASSWORD:-addp_kafka_admin}
+    volumes:
+      - redpanda_ha_1_data:/var/lib/redpanda/data
+      - ${REDPANDA_CERT_DIR:?REDPANDA_CERT_DIR is required}:/etc/redpanda/certs:ro
+    networks:
+      - addp-network
+    ports:
+      - "${REDPANDA_HA_KAFKA_2_PORT:-19093}:9092"
+    restart: unless-stopped
+    healthcheck: *redpanda-ha-healthcheck
+
+  redpanda-3:
+    image: ${REDPANDA_IMAGE:-docker.redpanda.com/redpandadata/redpanda:v24.3.18}
+    container_name: addp-redpanda-3
+    hostname: redpanda-3
+    labels:
+      org.addp.infra.kafka.profile: redpanda-ha
+    command:
+      - redpanda
+      - start
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --memory
+      - ${REDPANDA_HA_MEMORY:-1G}
+      - --reserve-memory
+      - 0M
+      - --check=false
+      - --kafka-addr
+      - internal://0.0.0.0:29092,external://0.0.0.0:9092
+      - --rpc-addr
+      - 0.0.0.0:33145
+      - --set
+      - redpanda.enable_sasl=true
+      - --set
+      - redpanda.auto_create_topics_enabled=false
+      - --set
+      - redpanda.write_caching_default=false
+      - --set
+      - redpanda.default_topic_replications=3
+      - --set
+      - 'redpanda.superusers=["${INFRA_KAFKA_ADMIN_USERNAME:-admin}"]'
+      - --set
+      - 'redpanda.kafka_api_tls=[{"name":"internal","enabled":true,"cert_file":"/etc/redpanda/certs/server.crt","key_file":"/etc/redpanda/certs/server.key","truststore_file":"/etc/redpanda/certs/ca.crt","require_client_auth":false},{"name":"external","enabled":true,"cert_file":"/etc/redpanda/certs/server.crt","key_file":"/etc/redpanda/certs/server.key","truststore_file":"/etc/redpanda/certs/ca.crt","require_client_auth":false}]'
+      - --node-id
+      - "2"
+      - --seeds
+      - redpanda:33145
+      - --advertise-kafka-addr
+      - internal://redpanda-3:29092,external://localhost:${REDPANDA_HA_KAFKA_3_PORT:-19094}
+      - --advertise-rpc-addr
+      - redpanda-3:33145
+    environment:
+      INFRA_KAFKA_ADMIN_PASSWORD: ${INFRA_KAFKA_ADMIN_PASSWORD:-addp_kafka_admin}
+    volumes:
+      - redpanda_ha_2_data:/var/lib/redpanda/data
+      - ${REDPANDA_CERT_DIR:?REDPANDA_CERT_DIR is required}:/etc/redpanda/certs:ro
+    networks:
+      - addp-network
+    ports:
+      - "${REDPANDA_HA_KAFKA_3_PORT:-19094}:9092"
+    restart: unless-stopped
+    healthcheck: *redpanda-ha-healthcheck
+
+  redpanda-init:
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      redpanda-2:
+        condition: service_healthy
+      redpanda-3:
+        condition: service_healthy
+    environment:
+      INFRA_KAFKA_BOOTSTRAP_SERVERS: redpanda:29092,redpanda-2:29092,redpanda-3:29092
+      REDPANDA_ADMIN_HOSTS: redpanda:9644
+      INFRA_KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      INFRA_KAFKA_TLS_CA_CERT_FILE: /etc/redpanda/certs/ca.crt
+      INFRA_KAFKA_INTERNAL_REPLICATION_FACTOR: 3
+    volumes:
+      - ${REDPANDA_CERT_DIR:?REDPANDA_CERT_DIR is required}:/etc/redpanda/certs:ro
+
+  kafka-connect:
+    environment:
+      <<: *connect-ha-environment
+      ADVERTISED_HOST_NAME: kafka-connect
+      ADVERTISED_PORT: 8083
+    volumes:
+      - ${REDPANDA_CERT_DIR:?REDPANDA_CERT_DIR is required}:/etc/redpanda/certs:ro
+
+  kafka-connect-2:
+    image: ${KAFKA_CONNECT_IMAGE:-quay.io/debezium/connect:3.6.0.Final}
+    container_name: addp-kafka-connect-2
+    hostname: kafka-connect-2
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *connect-ha-environment
+      ADVERTISED_HOST_NAME: kafka-connect-2
+      ADVERTISED_PORT: 8083
+    volumes:
+      - ${REDPANDA_CERT_DIR:?REDPANDA_CERT_DIR is required}:/etc/redpanda/certs:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${KAFKA_CONNECT_SECONDARY_PORT:-18084}:8083"
+    networks:
+      - addp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8083/connectors"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  redpanda_ha_0_data:
+  redpanda_ha_1_data:
+  redpanda_ha_2_data:

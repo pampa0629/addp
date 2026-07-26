@@ -1,153 +1,113 @@
 package middleware
 
 import (
-	"bytes"
-	"io"
+	"context"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/addp/common/logger"
-	"github.com/addp/system/internal/models"
-	"github.com/addp/system/internal/service"
-	"github.com/addp/system/pkg/utils"
+	"github.com/addp/system/internal/iam"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
-func LoggerMiddleware(logService *service.LogService) gin.HandlerFunc {
+type RequestAuditWriter interface {
+	Write(context.Context, iam.AuditEvent) error
+}
+
+func LoggerMiddleware(writer RequestAuditWriter) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 过滤内部 API (不记录)
-		if strings.Contains(c.Request.URL.Path, "/internal/") {
+		if strings.Contains(c.Request.URL.Path, "/internal/") || c.Request.Method == "GET" {
 			c.Next()
 			return
 		}
 
-		// 过滤 GET 请求 (可选,根据需求调整)
-		if c.Request.Method == "GET" {
-			c.Next()
-			return
-		}
-
-		// ✅ 1. 记录开始时间
-		startTime := time.Now()
-
-		// ✅ 2. 复用统一请求 ID；独立使用中间件时才生成。
+		startedAt := time.Now()
 		requestID := c.GetString("request_id")
 		if requestID == "" {
-			requestID = uuid.New().String()
+			requestID = uuid.NewString()
 			c.Set("request_id", requestID)
 		}
-
-		// OAuth security endpoints never persist their raw body: it may contain codes, tokens, or PKCE material.
-		var requestBody string
-		if c.Request.Body != nil && !IsOAuthSecurityPath(c.Request.URL.Path) {
-			bodyBytes, err := io.ReadAll(c.Request.Body)
-			if err == nil {
-				requestBody = string(bodyBytes)
-				// 重新设置请求体,以便后续处理器可以读取
-				c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-			}
-		}
-
-		// 4. 执行业务逻辑
 		c.Next()
-
-		// ✅ 5. 计算耗时
-		duration := time.Since(startTime).Milliseconds()
-
-		// ✅ 6. 获取响应状态码
-		statusCode := c.Writer.Status()
-
-		// ✅ 7. 提取用户信息 (SuperAdmin 处理)
-		var userID *uint
-		var username string
-		var tenantID *uint
-
-		if uid, exists := c.Get("user_id"); exists {
-			id := uid.(uint)
-			userID = &id
-
-			// ✅ SuperAdmin 也有 username
-			if uname, ok := c.Get("username"); ok {
-				username = uname.(string)
-			}
-
-			// ✅ tenant_id 可能为 NULL (SuperAdmin)
-			if tid, ok := c.Get("tenant_id"); ok && tid != nil {
-				// 修复: tid 是 uint 类型，不是 *uint
-				tidUint := tid.(uint)
-				tenantID = &tidUint
-			}
-			// ✅ SuperAdmin 的 tenant_id 保持 NULL
+		if writer == nil || (IsOAuthSecurityPath(c.Request.URL.Path) && OAuthSecurityAuditWasPersisted(c)) {
+			return
 		}
 
-		// ✅ 8. 提取 entity 信息
-		entityType, entityID := utils.ExtractResourceInfo(
-			c.Request.Method,
-			c.Request.URL.Path,
-			requestBody,
-		)
-		if IsOAuthSecurityPath(c.Request.URL.Path) {
-			entityType = "oauth_security_event"
-			audit := ResolveOAuthSecurityAudit(c)
-			entityID = audit.Event
-			requestBody = OAuthSecurityAuditJSON(c)
+		event := requestAuditEvent(c, requestID, time.Since(startedAt))
+		if err := writer.Write(c.Request.Context(), event); err != nil {
+			logger.L().Error("写入请求审计事件失败", "error", err, "event", event.EventName, "request_id", requestID)
 		}
-		queryParams := c.Request.URL.RawQuery
-		if IsOAuthSecurityPath(c.Request.URL.Path) {
-			queryParams = ""
-		}
+	}
+}
 
-		// ✅ 9. 确定日志级别
-		logLevel := "INFO"
-		if statusCode >= 500 {
-			logLevel = "ERROR"
-		} else if statusCode >= 400 {
-			logLevel = "WARN"
+func requestAuditEvent(c *gin.Context, requestID string, duration time.Duration) iam.AuditEvent {
+	method := c.Request.Method
+	path := c.Request.URL.Path
+	status := c.Writer.Status()
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+	metadata := iam.AuditMetadata{
+		HTTPMethod: &method, ResourcePath: &path, HTTPStatus: &status, RequestID: &requestID,
+		IPAddress: &ipAddress, UserAgent: &userAgent,
+	}
+	if authContext, exists := IAMAuthContextFromGin(c); exists {
+		if principalID, err := strconv.ParseInt(authContext.Principal.ID, 10, 64); err == nil && principalID > 0 {
+			principalType := iam.PrincipalType(authContext.Principal.Type)
+			metadata.PrincipalID, metadata.PrincipalType = &principalID, &principalType
 		}
-		if audit, ok := OAuthSecurityAuditFromContext(c); ok && audit.Event == "oauth.token.refresh_reuse_detected" {
-			logLevel = "ERROR"
-		}
-
-		// ✅ 10. 提取错误信息 (从 context 或响应)
-		var errorMessage string
-		if errMsg, exists := c.Get("error"); exists {
-			if err, ok := errMsg.(error); ok {
-				errorMessage = err.Error()
-			} else if msg, ok := errMsg.(string); ok {
-				errorMessage = msg
+		contextType := iam.ContextType(authContext.Context.Type)
+		metadata.ContextType = &contextType
+		if authContext.Context.TenantID != nil {
+			if tenantID, err := strconv.ParseInt(*authContext.Context.TenantID, 10, 64); err == nil && tenantID > 0 {
+				metadata.TenantID = &tenantID
 			}
 		}
-		if IsOAuthSecurityPath(c.Request.URL.Path) {
-			errorMessage = ""
-		}
+	}
 
-		// ✅ 11. 构建审计日志
-		auditLog := &models.AuditLog{
-			UserID:       userID,
-			Username:     username,
-			TenantID:     tenantID,
-			HTTPMethod:   c.Request.Method,
-			ResourcePath: c.Request.URL.Path,
-			HTTPStatus:   statusCode,    // ✅ 必填
-			DurationMs:   int(duration), // ✅ 必填
-			EntityType:   entityType,
-			EntityID:     entityID,
-			RequestBody:  utils.MaskSensitiveData(requestBody),
-			QueryParams:  queryParams,
-			UserAgent:    c.Request.UserAgent(),
-			IPAddress:    c.ClientIP(),
-			LogLevel:     logLevel,
-			ErrorMessage: errorMessage,
-			RequestID:    requestID, // ✅ 必填
-			ModuleName:   "system",
-		}
-
-		// ✅ 12. 异步写入 (保持性能)
-		go func(logData *models.AuditLog) {
-			if err := logService.Create(logData); err != nil {
-				logger.L().Error("Failed to create audit log", "error", err)
+	result := iam.AuditResultSucceeded
+	risk := iam.AuditRiskMedium
+	if status >= 500 {
+		result, risk = iam.AuditResultFailed, iam.AuditRiskHigh
+	} else if status >= 400 {
+		result = iam.AuditResultDenied
+	}
+	event := iam.AuditEvent{
+		Metadata: metadata, EventName: "http.request.completed", Result: result, RiskLevel: risk,
+		ModuleName: "system", EntityType: "http_request", EntityID: requestID,
+		Details: map[string]any{"duration_ms": duration.Milliseconds()},
+	}
+	if IsOAuthSecurityPath(path) {
+		oauthAudit := ResolveOAuthSecurityAudit(c)
+		event.EventName = oauthAudit.Event
+		event.EntityType = "oauth_security_event"
+		event.EntityID = oauthAudit.Event
+		event.Result = oauthAuditResult(oauthAudit.Result)
+		event.Details = map[string]any{}
+		for key, value := range map[string]string{
+			"client_id": oauthAudit.ClientID, "grant_type": oauthAudit.GrantType,
+			"decision": oauthAudit.Decision, "scope": oauthAudit.Scope, "error_code": oauthAudit.Error,
+		} {
+			if value != "" {
+				event.Details[key] = value
 			}
-		}(auditLog)
+		}
+		if oauthAudit.Event == "oauth.token.refresh_reuse_detected" {
+			event.RiskLevel = iam.AuditRiskHigh
+		}
+	}
+	return event
+}
+
+func oauthAuditResult(result string) iam.AuditResult {
+	switch result {
+	case "succeeded":
+		return iam.AuditResultSucceeded
+	case "ignored":
+		return iam.AuditResultIgnored
+	case "denied", "rejected":
+		return iam.AuditResultDenied
+	default:
+		return iam.AuditResultFailed
 	}
 }

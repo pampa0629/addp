@@ -202,22 +202,9 @@ ADDP 提供完整的自动化脚本工具链，覆盖开发、构建、部署全
 - **反向代理**: Nginx
 - **高可用**: Docker Swarm (可选)
 
-### 🔑 默认账户
+### 🔑 IAM 首次初始化
 
-#### 超级管理员 (总是启用)
-
-- **用户名**: `SuperAdmin`
-- **密码**: `20251001#SuperAdmin`
-- **权限**: 系统级管理、租户管理
-
-#### 默认租户管理员 (可选启用)
-
-- **用户名**: `admin`
-- **密码**: `123456`
-- **启用方式**: 在 `.env` 中设置 `ENABLE_DEFAULT_TENANT=true`
-- **权限**: 默认租户管理
-
-⚠️ **生产环境必须修改默认密码！**
+ADDP 不创建默认 SuperAdmin、默认租户或共享弱密码账号。首次平台系统管理员、安全管理员和审计管理员只能通过一次性离线 Bootstrap 建立；Bootstrap 完成后永久关闭。
 
 ### 📊 服务端口
 
@@ -353,13 +340,9 @@ Complete automation scripts for development, build, and deployment:
 
 **Infrastructure**: Docker, Docker Compose, Nginx, Docker Swarm (optional)
 
-### 🔑 Default Accounts
+### 🔑 IAM Bootstrap
 
-**Super Admin**: Username: `SuperAdmin`, Password: `20251001#SuperAdmin`
-
-**Tenant Admin** (optional): Username: `admin`, Password: `123456`
-
-⚠️ **Change default passwords in production!**
+ADDP does not create default administrator or tenant accounts. The initial system, security, and audit administrators are established only through the one-time offline IAM bootstrap process.
 
 ### 📚 Documentation
 

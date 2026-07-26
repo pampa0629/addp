@@ -700,10 +700,14 @@ func buildMySQLConnectorConfig(plan *CapturePlan, resource *models.CaptureResour
 		if strings.TrimSpace(config.ConnectKafkaUsername) == "" || config.ConnectKafkaPassword == "" {
 			return nil, fmt.Errorf("MySQL connector schema history requires Kafka Connect SASL credentials")
 		}
-		jaas := `org.apache.kafka.common.security.plain.PlainLoginModule required username="` + escapeJAASValue(config.ConnectKafkaUsername) + `" password="` + escapeJAASValue(config.ConnectKafkaPassword) + `";`
+		mechanism, loginModule, err := kafkaConnectSASL(config.ConnectKafkaSASLMechanism)
+		if err != nil {
+			return nil, err
+		}
+		jaas := loginModule + ` required username="` + escapeJAASValue(config.ConnectKafkaUsername) + `" password="` + escapeJAASValue(config.ConnectKafkaPassword) + `";`
 		for _, role := range []string{"producer", "consumer"} {
 			prefix := "schema.history.internal." + role + "."
-			connectorConfig[prefix+"sasl.mechanism"] = "PLAIN"
+			connectorConfig[prefix+"sasl.mechanism"] = mechanism
 			connectorConfig[prefix+"sasl.jaas.config"] = jaas
 		}
 	}
@@ -725,6 +729,19 @@ func buildMySQLConnectorConfig(plan *CapturePlan, resource *models.CaptureResour
 		}
 	}
 	return connectorConfig, nil
+}
+
+func kafkaConnectSASL(value string) (string, string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "plain":
+		return "PLAIN", "org.apache.kafka.common.security.plain.PlainLoginModule", nil
+	case "scram-sha-256":
+		return "SCRAM-SHA-256", "org.apache.kafka.common.security.scram.ScramLoginModule", nil
+	case "scram-sha-512":
+		return "SCRAM-SHA-512", "org.apache.kafka.common.security.scram.ScramLoginModule", nil
+	default:
+		return "", "", fmt.Errorf("unsupported Kafka Connect SASL mechanism %q", value)
+	}
 }
 
 func escapeJAASValue(value string) string {

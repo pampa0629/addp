@@ -50,13 +50,13 @@ func TestIntegrationContinuousKafkaDeadLetterSkipAndCAS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	adminKafkaInfo := engineplugin.ConnectionInfo{
+	adminKafkaInfo := cdcDataKafkaConnection(engineplugin.ConnectionInfo{
 		"bootstrap_servers": cdcDataEnv("ADDP_TEST_INFRA_KAFKA_BOOTSTRAP_SERVERS", "localhost:19092"),
 		"security_protocol": cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext"),
 		"username":          cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_USERNAME", "admin"),
 		"password":          cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_PASSWORD", "addp_kafka_admin"),
-		"sasl_mechanism":    "plain",
-	}
+		"sasl_mechanism":    cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SASL_MECHANISM", "scram-sha-256"),
+	})
 	producer, err := newContinuousIntegrationProducer(adminKafkaInfo)
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +114,8 @@ func TestIntegrationContinuousKafkaDeadLetterSkipAndCAS(t *testing.T) {
 
 	transferKafkaInfo := cdcDataTransferKafkaConnection()
 	dlqWriter, err := deadletter.NewKafkaPayloadWriter(deadletter.KafkaWriterConfig{
-		ConnectionInfo: transferKafkaInfo, RetentionMillis: int64(time.Hour / time.Millisecond), ReplicationFactor: 1,
+		ConnectionInfo: transferKafkaInfo, RetentionMillis: int64(time.Hour / time.Millisecond),
+		ReplicationFactor: cdcDataEnvInt16("ADDP_TEST_INFRA_KAFKA_REPLICATION_FACTOR", 1),
 	})
 	if err != nil {
 		t.Fatal(err)

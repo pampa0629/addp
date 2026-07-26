@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -17,15 +19,20 @@ type Config struct {
 	AccessTokenExpireMinutes          int
 	DelegatedAccessTokenExpireMinutes int
 	ResourceAccessTicketExpireMinutes int
+	TenantInvitationExpireHours       int
+	EnrollmentTicketExpireMinutes     int
 	RefreshTokenExpireDays            int
 	AuthorizationCodeMinutes          int
 	DeviceCodeExpireMinutes           int
 	DevicePollIntervalSecs            int
+	OAuthUserCodePepper               []byte
+	OAuthPreviousUserCodePepper       []byte
+	IAMMFAEncryptionKey               []byte
 	OAuthPublicRateLimitPerMinute     int
 	OAuthUserRateLimitPerMinute       int
+	PublicAPIURL                      string
 	ConsoleURL                        string
 	ProjectName                       string
-	AllowPublicRegistration           bool
 
 	// PostgreSQL 配置（用于其他模块）
 	PostgresHost     string
@@ -71,6 +78,19 @@ type Config struct {
 	// CORS 配置
 	AllowedOrigins []string // CORS 白名单
 	TrustedProxies []string // 允许提供客户端 IP 转发头的反向代理 IP/CIDR
+}
+
+func (c *Config) PostgreSQLDSN() string {
+	endpoint := &url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(c.PostgresUser, c.PostgresPassword),
+		Host:   net.JoinHostPort(c.PostgresHost, c.PostgresPort),
+		Path:   "/" + c.PostgresDB,
+	}
+	query := endpoint.Query()
+	query.Set("sslmode", "disable")
+	endpoint.RawQuery = query.Encode()
+	return endpoint.String()
 }
 
 func (c *Config) ValidateTrustedProxies() error {
@@ -120,15 +140,20 @@ func Load() *Config {
 		AccessTokenExpireMinutes:          getEnvAsPositiveInt("ACCESS_TOKEN_EXPIRE_MINUTES", 15),
 		DelegatedAccessTokenExpireMinutes: getEnvAsPositiveInt("DELEGATED_ACCESS_TOKEN_EXPIRE_MINUTES", 2),
 		ResourceAccessTicketExpireMinutes: getEnvAsPositiveInt("RESOURCE_ACCESS_TICKET_EXPIRE_MINUTES", 15),
+		TenantInvitationExpireHours:       getEnvAsPositiveInt("TENANT_INVITATION_EXPIRE_HOURS", 168),
+		EnrollmentTicketExpireMinutes:     getEnvAsPositiveInt("ENROLLMENT_TICKET_EXPIRE_MINUTES", 5),
 		RefreshTokenExpireDays:            getEnvAsPositiveInt("REFRESH_TOKEN_EXPIRE_DAYS", 30),
 		AuthorizationCodeMinutes:          getEnvAsPositiveInt("OAUTH_CODE_EXPIRE_MINUTES", 5),
 		DeviceCodeExpireMinutes:           getEnvAsPositiveInt("OAUTH_DEVICE_EXPIRE_MINUTES", 10),
 		DevicePollIntervalSecs:            getEnvAsPositiveInt("OAUTH_DEVICE_INTERVAL_SECONDS", 5),
+		OAuthUserCodePepper:               loadOAuthUserCodePepper(env, "OAUTH_USER_CODE_PEPPER", true),
+		OAuthPreviousUserCodePepper:       loadOAuthUserCodePepper(env, "OAUTH_PREVIOUS_USER_CODE_PEPPER", false),
+		IAMMFAEncryptionKey:               loadIAMMFAEncryptionKey(env),
 		OAuthPublicRateLimitPerMinute:     getEnvAsPositiveInt("OAUTH_PUBLIC_RATE_LIMIT_PER_MINUTE", 60),
 		OAuthUserRateLimitPerMinute:       getEnvAsPositiveInt("OAUTH_USER_RATE_LIMIT_PER_MINUTE", 30),
+		PublicAPIURL:                      strings.TrimSuffix(getEnv("PUBLIC_API_URL", "http://localhost:8000"), "/"),
 		ConsoleURL:                        strings.TrimSuffix(getEnv("CONSOLE_URL", "http://localhost:5170"), "/"),
 		ProjectName:                       getEnv("PROJECT_NAME", "全域数据平台"),
-		AllowPublicRegistration:           getEnvAsBool("ALLOW_PUBLIC_REGISTRATION", false),
 
 		// PostgreSQL 配置
 		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),
@@ -255,5 +280,46 @@ func loadEncryptionKey() []byte {
 		log.Fatalf("ENCRYPTION_KEY must be 32 bytes (256 bits), got %d bytes", len(key))
 	}
 
+	return key
+}
+
+func loadOAuthUserCodePepper(env, name string, required bool) []byte {
+	encoded := strings.TrimSpace(os.Getenv(name))
+	if encoded == "" {
+		if !required {
+			return nil
+		}
+		if env == "production" {
+			log.Fatalf("%s must be set in production", name)
+		}
+		log.Printf("WARNING: %s not set, using an isolated development-only pepper", name)
+		return []byte("0123456789abcdef0123456789abcdef")
+	}
+	pepper, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		log.Fatalf("Failed to decode %s: %v", name, err)
+	}
+	if len(pepper) != 32 {
+		log.Fatalf("%s must be 32 bytes, got %d bytes", name, len(pepper))
+	}
+	return pepper
+}
+
+func loadIAMMFAEncryptionKey(env string) []byte {
+	encoded := strings.TrimSpace(os.Getenv("IAM_MFA_ENCRYPTION_KEY"))
+	if encoded == "" {
+		if env == "production" {
+			log.Fatal("IAM_MFA_ENCRYPTION_KEY must be set in production")
+		}
+		log.Print("WARNING: IAM_MFA_ENCRYPTION_KEY not set, using an isolated development-only key")
+		return []byte("mfa-dev-0123456789abcdef01234567")
+	}
+	key, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		log.Fatalf("Failed to decode IAM_MFA_ENCRYPTION_KEY: %v", err)
+	}
+	if len(key) != 32 {
+		log.Fatalf("IAM_MFA_ENCRYPTION_KEY must be 32 bytes, got %d bytes", len(key))
+	}
 	return key
 }

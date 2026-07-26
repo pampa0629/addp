@@ -27,7 +27,6 @@ import (
 	"github.com/lib/pq"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/sasl/plain"
 	postgresdriver "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -136,6 +135,8 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 		Username:         cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_USERNAME", "admin"),
 		Password:         cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_PASSWORD", "addp_kafka_admin"),
 		SecurityProtocol: cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext"),
+		SASLMechanism:    cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SASL_MECHANISM", "scram-sha-256"),
+		TLSCACertFile:    cdcDataEnv("ADDP_TEST_INFRA_KAFKA_TLS_CA_CERT_FILE", ""),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -150,12 +151,14 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 		captureRepo, capturePlanResolver, connectClient, topicAdmin,
 		capture.DatabaseSourceResources{}, capture.SupervisorConfig{
 			TopicRetention:               time.Hour,
-			TopicReplication:             1,
+			TopicReplication:             cdcDataEnvInt16("ADDP_TEST_INFRA_KAFKA_REPLICATION_FACTOR", 1),
 			ConnectLoopbackHost:          cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_LOOPBACK_HOST", "host.docker.internal"),
-			ConnectBootstrapServers:      cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_BOOTSTRAP_SERVERS", "kafka:29092"),
+			ConnectBootstrapServers:      cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_BOOTSTRAP_SERVERS", "redpanda:29092"),
 			ConnectKafkaUsername:         cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_USERNAME", "connect"),
 			ConnectKafkaPassword:         cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_PASSWORD", "addp_kafka_connect"),
 			ConnectKafkaSecurityProtocol: cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_SECURITY_PROTOCOL", "sasl_plaintext"),
+			ConnectKafkaSASLMechanism:    cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SASL_MECHANISM", "scram-sha-256"),
+			ConnectKafkaTLSCACertFile:    cdcDataEnv("ADDP_TEST_INFRA_KAFKA_TLS_CA_CERT_FILE", ""),
 			ProvisioningTimeout:          90 * time.Second, StatusPollInterval: 500 * time.Millisecond, MonitorInterval: time.Second,
 		}, nil,
 	)
@@ -540,18 +543,14 @@ func mysqlCDCCommittedOffset(t *testing.T, ctx context.Context, states *reposito
 }
 
 func mysqlCDCKafkaAdminClient() (*kgo.Client, error) {
-	opts := []kgo.Opt{
-		kgo.SeedBrokers(strings.Split(cdcDataEnv("ADDP_TEST_INFRA_KAFKA_BOOTSTRAP_SERVERS", "localhost:19092"), ",")...),
-		kgo.ClientID("addp-transfer-mysql-cdc-e2e-admin"),
-	}
-	if cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext") == "sasl_plaintext" {
-		username := cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_USERNAME", "admin")
-		password := cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_PASSWORD", "addp_kafka_admin")
-		opts = append(opts, kgo.SASL(plain.Plain(func(context.Context) (plain.Auth, error) {
-			return plain.Auth{User: username, Pass: password}, nil
-		})))
-	}
-	return kgo.NewClient(opts...)
+	return kafka.NewClient(cdcDataKafkaConnection(engineplugin.ConnectionInfo{
+		"bootstrap_servers": cdcDataEnv("ADDP_TEST_INFRA_KAFKA_BOOTSTRAP_SERVERS", "localhost:19092"),
+		"security_protocol": cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext"),
+		"sasl_mechanism":    cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SASL_MECHANISM", "scram-sha-256"),
+		"username":          cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_USERNAME", "admin"),
+		"password":          cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_PASSWORD", "addp_kafka_admin"),
+		"client_id":         "addp-transfer-mysql-cdc-e2e-admin",
+	}))
 }
 
 func mysqlCDCExpireCommittedPosition(t *testing.T, ctx context.Context, admin *kadm.Client, topic string, committed int64) {

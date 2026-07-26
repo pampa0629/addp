@@ -1,11 +1,9 @@
 import G6 from '@antv/g6'
 import { isWorkflowInputParameter } from '@/utils/workflowInputBindings'
-import { hasDistinctText } from '@/utils/displayText'
 
 const NODE_TYPE = 'develop-workflow-node'
 const NODE_WIDTH = 220
-const HEADER_HEIGHT = 46
-const COMPACT_HEADER_HEIGHT = 36
+const HEADER_HEIGHT = 36
 const PORT_ROW_HEIGHT = 24
 
 export function operatorInputPorts(operator) {
@@ -37,10 +35,7 @@ export function registerWorkflowEditorNode() {
       const outputPorts = cfg.outputPorts || []
       const portRows = Math.max(inputPorts.length, outputPorts.length, 1)
       const title = cfg.displayName || cfg.label || cfg.operator
-      const operatorName = cfg.operator || cfg.label
-      const showOperatorName = hasDistinctText(operatorName, title)
-      const headerHeight = showOperatorName ? HEADER_HEIGHT : COMPACT_HEADER_HEIGHT
-      const height = headerHeight + 18 + portRows * PORT_ROW_HEIGHT
+      const height = HEADER_HEIGHT + 18 + portRows * PORT_ROW_HEIGHT
       const colors = canvasThemeColors()
 
       const rect = group.addShape('rect', {
@@ -63,7 +58,7 @@ export function registerWorkflowEditorNode() {
         attrs: {
           text: title,
           x: -NODE_WIDTH / 2 + 14,
-          y: -height / 2 + (showOperatorName ? 17 : headerHeight / 2),
+          y: -height / 2 + HEADER_HEIGHT / 2,
           textAlign: 'left',
           textBaseline: 'middle',
           fill: colors.textPrimary,
@@ -74,28 +69,12 @@ export function registerWorkflowEditorNode() {
         capture: false
       })
 
-      if (showOperatorName) {
-        group.addShape('text', {
-          attrs: {
-            text: operatorName,
-            x: -NODE_WIDTH / 2 + 14,
-            y: -height / 2 + 34,
-            textAlign: 'left',
-            textBaseline: 'middle',
-            fill: colors.textSecondary,
-            fontSize: 10
-          },
-          name: 'workflow-node-operator',
-          capture: false
-        })
-      }
-
       group.addShape('line', {
         attrs: {
           x1: -NODE_WIDTH / 2,
-          y1: -height / 2 + headerHeight,
+          y1: -height / 2 + HEADER_HEIGHT,
           x2: NODE_WIDTH / 2,
-          y2: -height / 2 + headerHeight,
+          y2: -height / 2 + HEADER_HEIGHT,
           stroke: colors.border,
           lineWidth: 1
         },
@@ -104,7 +83,7 @@ export function registerWorkflowEditorNode() {
       })
 
       inputPorts.forEach((port, index) => {
-        const y = portY(height, headerHeight, index)
+        const y = portY(height, HEADER_HEIGHT, index)
         drawPort(group, {
           x: -NODE_WIDTH / 2,
           y,
@@ -122,7 +101,7 @@ export function registerWorkflowEditorNode() {
       })
 
       outputPorts.forEach((port, index) => {
-        const y = portY(height, headerHeight, index)
+        const y = portY(height, HEADER_HEIGHT, index)
         drawPort(group, {
           x: NODE_WIDTH / 2,
           y,
@@ -146,13 +125,10 @@ export function registerWorkflowEditorNode() {
       const inputPorts = cfg.inputPorts || []
       const outputPorts = cfg.outputPorts || []
       const rows = Math.max(inputPorts.length, outputPorts.length, 1)
-      const title = cfg.displayName || cfg.label || cfg.operator
-      const operatorName = cfg.operator || cfg.label
-      const headerHeight = hasDistinctText(operatorName, title) ? HEADER_HEIGHT : COMPACT_HEADER_HEIGHT
-      const height = headerHeight + 18 + rows * PORT_ROW_HEIGHT
+      const height = HEADER_HEIGHT + 18 + rows * PORT_ROW_HEIGHT
       return [
-        ...inputPorts.map((_, index) => [0, normalizedPortY(height, headerHeight, index)]),
-        ...outputPorts.map((_, index) => [1, normalizedPortY(height, headerHeight, index)])
+        ...inputPorts.map((_, index) => [0, normalizedPortY(height, HEADER_HEIGHT, index)]),
+        ...outputPorts.map((_, index) => [1, normalizedPortY(height, HEADER_HEIGHT, index)])
       ]
     }
   }, 'single-node')

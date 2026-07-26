@@ -2,13 +2,14 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
 )
 
@@ -316,7 +317,16 @@ func TestCleanupTaskTerminalStatuses(t *testing.T) {
 	}
 }
 
-func TestBuildCleanupAuditLogKeepsTaskIdentityForAuditLookup(t *testing.T) {
+type cleanupAuditWriterStub struct {
+	events []iam.AuditEvent
+}
+
+func (w *cleanupAuditWriterStub) Write(_ context.Context, event iam.AuditEvent) error {
+	w.events = append(w.events, event)
+	return nil
+}
+
+func TestCleanupAuditEventKeepsTaskIdentityForAuditLookup(t *testing.T) {
 	t.Parallel()
 
 	tenantID := uint(12)
@@ -329,36 +339,19 @@ func TestBuildCleanupAuditLogKeepsTaskIdentityForAuditLookup(t *testing.T) {
 		action := action
 		t.Run(action, func(t *testing.T) {
 			t.Parallel()
-
-			log := buildCleanupAuditLog(99, &tenantID, action, "cleanup-exec-1", map[string]interface{}{
+			writer := &cleanupAuditWriterStub{}
+			service := &CleanupOrchestratorService{auditWriter: writer, log: slog.Default()}
+			service.writeAuditLog(context.Background(), 99, &tenantID, action, "cleanup-exec-1", map[string]interface{}{
 				"confirmation_token": true,
 			})
-
-			if log.HTTPMethod != "SYSTEM" {
-				t.Fatalf("HTTPMethod = %q, want SYSTEM", log.HTTPMethod)
+			if len(writer.events) != 1 {
+				t.Fatalf("audit event count = %d, want 1", len(writer.events))
 			}
-			if log.ResourcePath != action {
-				t.Fatalf("ResourcePath = %q, want %q", log.ResourcePath, action)
-			}
-			if log.EntityType != "cleanup" || log.EntityID != "cleanup-exec-1" {
-				t.Fatalf("entity = %s/%s, want cleanup/cleanup-exec-1", log.EntityType, log.EntityID)
-			}
-			if log.ModuleName != "system" {
-				t.Fatalf("ModuleName = %q, want system", log.ModuleName)
-			}
-			if log.TenantID == nil || *log.TenantID != tenantID {
-				t.Fatalf("TenantID = %#v, want %d", log.TenantID, tenantID)
-			}
-			if log.RequestID == "" {
-				t.Fatal("RequestID should not be empty")
-			}
-
-			var body map[string]interface{}
-			if err := json.Unmarshal([]byte(log.RequestBody), &body); err != nil {
-				t.Fatalf("RequestBody is not json: %v", err)
-			}
-			if body["confirmation_token"] != true {
-				t.Fatalf("RequestBody = %#v, want confirmation_token=true", body)
+			event := writer.events[0]
+			if event.EventName != action || event.EntityType != "cleanup_task" || event.EntityID != "cleanup-exec-1" ||
+				event.ModuleName != "system" || event.Metadata.TenantID == nil || *event.Metadata.TenantID != int64(tenantID) ||
+				event.Details["confirmation_token"] != true {
+				t.Fatalf("cleanup audit event = %#v", event)
 			}
 		})
 	}

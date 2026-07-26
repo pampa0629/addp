@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 240 {
-		t.Fatalf("descriptor count = %d, want 240", len(descriptors))
+	if len(descriptors) != 243 {
+		t.Fatalf("descriptor count = %d, want 243", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.run.cancel" || descriptors[len(descriptors)-1].Key != "transfer.task.update" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)

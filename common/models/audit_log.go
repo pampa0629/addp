@@ -1,44 +1,23 @@
 package models
 
-import "time"
-
-// AuditLog 审计日志模型（共享定义）
-type AuditLog struct {
-	ID           uint      `gorm:"primaryKey" json:"id"`
-	UserID       *uint     `gorm:"index" json:"user_id"`
-	Username     string    `json:"username"`
-	TenantID     *uint     `gorm:"index" json:"tenant_id"`
-	Action       string    `gorm:"not null" json:"action"`
-	EntityType   string    `json:"entity_type"`
-	EntityID     string    `json:"entity_id"`
-	Details      string    `gorm:"type:text" json:"details"`
-	IPAddress    string    `json:"ip_address"`
-	ModuleName   string    `gorm:"index" json:"module_name"`                                   // 来源模块
-	HTTPStatus   *int      `gorm:"index:idx_audit_logs_status" json:"http_status"`             // HTTP状态码
-	DurationMs   *int      `json:"duration_ms"`                                                // 请求耗时（毫秒）
-	LogLevel     string    `gorm:"default:'INFO';index:idx_audit_logs_level" json:"log_level"` // 日志级别
-	ErrorMessage string    `gorm:"type:text" json:"error_message"`                             // 错误信息
-	RequestID    string    `gorm:"size:64" json:"request_id"`                                  // 请求追踪ID
-	CreatedAt    time.Time `gorm:"index" json:"created_at"`
-}
-
-// AuditLogCreateRequest 创建审计日志请求（用于跨模块调用）
+// AuditLogCreateRequest is the single cross-module append-only audit contract.
+// IAM bigint identifiers stay decimal strings across the HTTP boundary.
 type AuditLogCreateRequest struct {
-	UserID       *uint   `json:"user_id"`
-	Username     *string `json:"username"`
-	TenantID     *uint   `json:"tenant_id"`
-	HTTPMethod   string  `json:"http_method" binding:"required"`   // HTTP方法
-	ResourcePath string  `json:"resource_path" binding:"required"` // 资源路径
-	HTTPStatus   int     `json:"http_status"`                      // HTTP状态码(0值有效)
-	DurationMs   int     `json:"duration_ms"`                      // 请求耗时（毫秒,0值有效）
-	EntityType   string  `json:"entity_type"`                      // 资源类型
-	EntityID     string  `json:"entity_id"`                        // 资源ID
-	RequestBody  string  `json:"request_body"`                     // 请求体
-	QueryParams  string  `json:"query_params"`                     // URL查询参数
-	UserAgent    string  `json:"user_agent"`                       // 客户端User-Agent
-	IPAddress    string  `json:"ip_address" binding:"required"`    // 客户端IP
-	ModuleName   string  `json:"module_name" binding:"required"`   // 来源模块
-	LogLevel     string  `json:"log_level"`                        // 日志级别
-	ErrorMessage string  `json:"error_message"`                    // 错误信息
-	RequestID    string  `json:"request_id" binding:"required"`    // 请求追踪ID
+	PrincipalID   *string        `json:"principal_id,omitempty"`
+	PrincipalType *string        `json:"principal_type,omitempty"`
+	ContextType   *string        `json:"context_type,omitempty"`
+	TenantID      *string        `json:"tenant_id,omitempty"`
+	EventName     string         `json:"event_name"`
+	Result        string         `json:"result"`
+	RiskLevel     string         `json:"risk_level"`
+	ModuleName    string         `json:"module_name"`
+	HTTPMethod    *string        `json:"http_method,omitempty"`
+	ResourcePath  *string        `json:"resource_path,omitempty"`
+	HTTPStatus    *int           `json:"http_status,omitempty"`
+	RequestID     *string        `json:"request_id,omitempty"`
+	IPAddress     *string        `json:"ip_address,omitempty"`
+	UserAgent     *string        `json:"user_agent,omitempty"`
+	EntityType    string         `json:"entity_type"`
+	EntityID      string         `json:"entity_id"`
+	Details       map[string]any `json:"details"`
 }

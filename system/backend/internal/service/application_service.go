@@ -47,8 +47,8 @@ func (s *ApplicationService) CreateApplication(req *models.CreateApplicationRequ
 }
 
 // GetApplication 获取应用详情
-func (s *ApplicationService) GetApplication(id uint) (*models.Application, error) {
-	app, err := s.repo.FindByID(id)
+func (s *ApplicationService) GetApplication(id, tenantID uint) (*models.Application, error) {
+	app, err := s.repo.FindByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("application not found: %w", err)
 	}
@@ -61,8 +61,8 @@ func (s *ApplicationService) ListApplications(tenantID uint) ([]models.Applicati
 }
 
 // UpdateApplication 更新应用
-func (s *ApplicationService) UpdateApplication(id uint, req *models.UpdateApplicationRequest) (*models.Application, error) {
-	app, err := s.repo.FindByID(id)
+func (s *ApplicationService) UpdateApplication(id, tenantID uint, req *models.UpdateApplicationRequest) (*models.Application, error) {
+	app, err := s.repo.FindByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("application not found: %w", err)
 	}
@@ -92,14 +92,14 @@ func (s *ApplicationService) UpdateApplication(id uint, req *models.UpdateApplic
 }
 
 // DeleteApplication 删除应用
-func (s *ApplicationService) DeleteApplication(id uint) error {
-	return s.repo.Delete(id)
+func (s *ApplicationService) DeleteApplication(id, tenantID uint) error {
+	return s.repo.Delete(id, tenantID)
 }
 
 // GenerateAPIKey 为应用生成 API Key
-func (s *ApplicationService) GenerateAPIKey(appID uint, req *models.CreateAPIKeyRequest, userID uint) (*models.APIKey, error) {
+func (s *ApplicationService) GenerateAPIKey(appID, tenantID uint, req *models.CreateAPIKeyRequest, userID uint) (*models.APIKey, error) {
 	// 验证应用是否存在
-	app, err := s.repo.FindByID(appID)
+	app, err := s.repo.FindByIDAndTenant(appID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("application not found: %w", err)
 	}
@@ -144,12 +144,19 @@ func (s *ApplicationService) GenerateAPIKey(appID uint, req *models.CreateAPIKey
 }
 
 // ListAPIKeys 列出应用的 API Keys
-func (s *ApplicationService) ListAPIKeys(appID uint) ([]models.APIKey, error) {
+
+func (s *ApplicationService) ListAPIKeys(appID, tenantID uint) ([]models.APIKey, error) {
+	if _, err := s.repo.FindByIDAndTenant(appID, tenantID); err != nil {
+		return nil, fmt.Errorf("application not found: %w", err)
+	}
 	return s.repo.FindAPIKeysByAppID(appID)
 }
 
 // RevokeAPIKey 撤销 API Key
-func (s *ApplicationService) RevokeAPIKey(appID, keyID, userID uint) error {
+func (s *ApplicationService) RevokeAPIKey(appID, keyID, tenantID, userID uint) error {
+	if _, err := s.repo.FindByIDAndTenant(appID, tenantID); err != nil {
+		return fmt.Errorf("application not found: %w", err)
+	}
 	// 验证 Key 是否属于该应用
 	keys, err := s.repo.FindAPIKeysByAppID(appID)
 	if err != nil {

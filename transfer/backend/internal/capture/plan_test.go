@@ -55,7 +55,7 @@ func TestBuildMySQLConnectorConfigFreezesServerIDHistoryAndEncoding(t *testing.T
 		MySQL: &models.MySQLCaptureResource{ConnectorServerID: 41, SchemaHistoryTopicName: "__addp_cdc_schema.1.2.1", SchemaHistoryTopicOwned: true},
 	}
 	config, err := buildConnectorConfig(plan, resource, SupervisorConfig{
-		ConnectLoopbackHost: "host.docker.internal", ConnectBootstrapServers: "kafka:29092",
+		ConnectLoopbackHost: "host.docker.internal", ConnectBootstrapServers: "redpanda:29092",
 		ConnectKafkaUsername: "connect", ConnectKafkaPassword: `p\"ass`, ConnectKafkaSecurityProtocol: "sasl_plaintext",
 	})
 	if err != nil {
@@ -68,6 +68,29 @@ func TestBuildMySQLConnectorConfigFreezesServerIDHistoryAndEncoding(t *testing.T
 	}
 	if !strings.Contains(config["schema.history.internal.producer.sasl.jaas.config"], `password="p\\\"ass"`) {
 		t.Fatalf("MySQL schema history JAAS is not escaped: %q", config["schema.history.internal.producer.sasl.jaas.config"])
+	}
+}
+
+func TestBuildMySQLConnectorConfigUsesConfiguredSCRAMMechanism(t *testing.T) {
+	plan := &CapturePlan{
+		SourceType:     models.CaptureSourceMySQL,
+		SourceConnInfo: engineplugin.ConnectionInfo{"host": "localhost", "port": 3306, "user": "cdc", "password": "secret"},
+		SourceDatabase: "business", SourceTable: "orders",
+	}
+	resource := &models.CaptureResource{
+		ConnectorName: "addp-cdc-t1-task2-g1", TopicName: "__addp_cdc.1.2.1", SourceType: models.CaptureSourceMySQL,
+		MySQL: &models.MySQLCaptureResource{ConnectorServerID: 41, SchemaHistoryTopicName: "__addp_cdc_schema.1.2.1", SchemaHistoryTopicOwned: true},
+	}
+	config, err := buildConnectorConfig(plan, resource, SupervisorConfig{
+		ConnectBootstrapServers: "redpanda:29092", ConnectKafkaUsername: "connect", ConnectKafkaPassword: "secret",
+		ConnectKafkaSecurityProtocol: "sasl_plaintext", ConnectKafkaSASLMechanism: "scram-sha-256",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config["schema.history.internal.producer.sasl.mechanism"] != "SCRAM-SHA-256" ||
+		!strings.HasPrefix(config["schema.history.internal.producer.sasl.jaas.config"], "org.apache.kafka.common.security.scram.ScramLoginModule") {
+		t.Fatalf("MySQL schema history SCRAM config = %#v", config)
 	}
 }
 

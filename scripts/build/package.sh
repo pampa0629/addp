@@ -443,10 +443,9 @@ docker compose -f docker-compose.yml logs -f
 # API Gateway: http://server-ip:8000
 ```
 
-## Default Login
+## IAM Bootstrap
 
-- **Super Admin**: `SuperAdmin` / `20251001#SuperAdmin`
-- **IMPORTANT**: Change password after first login!
+ADDP does not ship default administrator credentials. Establish the initial system, security, and audit administrators through the one-time offline IAM bootstrap process before first login.
 
 ## Advantages
 

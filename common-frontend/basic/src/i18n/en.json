@@ -51,6 +51,28 @@
     "copySuccess": "Copied to clipboard",
     "copyFailed": "Copy failed"
   },
+  "auth": {
+    "login": {
+      "username": "Username",
+      "usernamePlaceholder": "Enter username",
+      "password": "Password",
+      "passwordPlaceholder": "Enter password",
+      "submit": "Sign in",
+      "loggingIn": "Signing in...",
+      "credentialsRequired": "Enter your username and password",
+      "mfaTitle": "Multi-factor authentication",
+      "totpCode": "Authenticator code",
+      "totpPlaceholder": "Enter the 6-digit code",
+      "totpRequired": "Enter a 6-digit authenticator code",
+      "verify": "Verify",
+      "contextTitle": "Select access scope",
+      "platformContext": "Platform administration",
+      "continue": "Continue",
+      "success": "Signed in",
+      "failed": "Sign-in failed",
+      "networkError": "Unable to reach the authentication service"
+    }
+  },
   "lang": {
     "switch": "Switch Language",
     "zhCn": "中文",

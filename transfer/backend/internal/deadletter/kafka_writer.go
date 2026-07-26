@@ -2,8 +2,6 @@ package deadletter
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,10 +9,10 @@ import (
 	"time"
 
 	engineplugin "github.com/addp/common/engine/plugin"
+	kafkaplugin "github.com/addp/common/engine/plugins/kafka"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/sasl/plain"
 )
 
 const topicPrefix = "__addp_dlq."
@@ -147,51 +145,7 @@ func (w *KafkaPayloadWriter) Close() {
 }
 
 func newKafkaClient(info engineplugin.ConnectionInfo, extra ...kgo.Opt) (*kgo.Client, error) {
-	brokers := splitNonEmpty(engineplugin.GetString(info, "bootstrap_servers"))
-	if len(brokers) == 0 {
-		return nil, fmt.Errorf("Infra Kafka bootstrap servers are required")
-	}
-	opts := []kgo.Opt{kgo.SeedBrokers(brokers...), kgo.RequiredAcks(kgo.AllISRAcks())}
-	if clientID := strings.TrimSpace(engineplugin.GetString(info, "client_id")); clientID != "" {
-		opts = append(opts, kgo.ClientID(clientID+"-dead-letter"))
-	}
-	protocol := strings.ToLower(strings.TrimSpace(engineplugin.GetString(info, "security_protocol")))
-	if protocol == "" {
-		protocol = "sasl_plaintext"
-	}
-	if protocol == "sasl_plaintext" || protocol == "sasl_ssl" {
-		username := strings.TrimSpace(engineplugin.GetString(info, "username"))
-		password := engineplugin.GetString(info, "password")
-		if username == "" || password == "" || strings.ToLower(strings.TrimSpace(engineplugin.GetString(info, "sasl_mechanism"))) != "plain" {
-			return nil, fmt.Errorf("Infra Kafka dead-letter client requires SASL PLAIN credentials")
-		}
-		opts = append(opts, kgo.SASL(plain.Plain(func(context.Context) (plain.Auth, error) {
-			return plain.Auth{User: username, Pass: password}, nil
-		})))
-	}
-	if protocol == "ssl" || protocol == "sasl_ssl" {
-		tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: engineplugin.GetBool(info, "tls_insecure_skip_verify")} //nolint:gosec -- explicit deployment option
-		if caPEM := strings.TrimSpace(engineplugin.GetString(info, "tls_ca_cert")); caPEM != "" {
-			pool, err := x509.SystemCertPool()
-			if err != nil || pool == nil {
-				pool = x509.NewCertPool()
-			}
-			if !pool.AppendCertsFromPEM([]byte(caPEM)) {
-				return nil, fmt.Errorf("Infra Kafka CA certificate is invalid")
-			}
-			tlsConfig.RootCAs = pool
-		}
-		opts = append(opts, kgo.DialTLSConfig(tlsConfig))
-	}
-	if protocol != "plaintext" && protocol != "ssl" && protocol != "sasl_plaintext" && protocol != "sasl_ssl" {
-		return nil, fmt.Errorf("unsupported Infra Kafka security protocol %q", protocol)
-	}
-	opts = append(opts, extra...)
-	client, err := kgo.NewClient(opts...)
-	if err != nil {
-		return nil, fmt.Errorf("create Infra Kafka dead-letter client: %w", err)
-	}
-	return client, nil
+	return kafkaplugin.NewClient(info, append([]kgo.Opt{kgo.RequiredAcks(kgo.AllISRAcks())}, extra...)...)
 }
 
 func splitNonEmpty(value string) []string {

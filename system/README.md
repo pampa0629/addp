@@ -36,22 +36,11 @@ cd system
 docker-compose up -d
 ```
 
-### 默认账号
+### IAM 首次初始化
 
-- **超级管理员**: `SuperAdmin` / `20251001#SuperAdmin`
-- **租户管理员**: `admin` / `123456`
+System 不创建默认 SuperAdmin、默认租户或共享弱密码账号。首次平台系统管理员、安全管理员和审计管理员只能通过一次性离线 Bootstrap 建立；平台三员相互独立、角色互斥。
 
-⚠️ 生产环境请立即修改默认密码！
-
-## 🏗️ 三级权限体系
-
-| 用户类型 | 权限范围 |
-|---------|---------|
-| **超级管理员** | 创建/管理租户、查看所有数据 |
-| **租户管理员** | 管理本租户用户、查看本租户数据 |
-| **普通用户** | 查看/修改自己信息、使用平台功能 |
-
-所有数据按租户自动隔离（引擎配置、日志、元数据等）。
+租户内权限由 Tenant Membership、Role Assignment 和 owner 模块资源授权共同决定，不使用旧的三级 `user_type` 分支。
 
 ## 📡 主要 API 端点
 
@@ -75,14 +64,9 @@ docker-compose up -d
 
 ## 🐛 常见问题
 
-### 忘记超级管理员密码？
+### 平台管理员无法登录？
 
-```sql
--- 重置为 admin123
-UPDATE system.users
-SET password_hash = '$2a$10$UJvKh/XXObz7YPQpQvkDTuBYD8J4R3zoDWrV1v9RRf1f2.FEOaer2'
-WHERE username = 'SuperAdmin';
-```
+不得直接修改 `system.users` 或 `system.local_accounts` 绕过 IAM 审计。账号恢复和平台高权限身份变更必须走受控恢复及双人审批流程。
 
 ### 如何生成加密密钥？
 

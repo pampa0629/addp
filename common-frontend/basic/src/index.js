@@ -6,6 +6,7 @@
 export { default as StorageEngineForm } from './components/StorageEngineForm.vue'
 export { default as ResourceTree } from './components/ResourceTree.vue'
 export { default as ResourceTreePicker } from './components/ResourceTreePicker.vue'
+export { default as AuthLoginFlow } from './components/AuthLoginFlow.vue'
 
 // Schedule Components
 export { default as ScheduleConfig } from './components/ScheduleConfig.vue'

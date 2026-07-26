@@ -1,5 +1,5 @@
 .PHONY: help init dev build up down logs clean test test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release dev-all \
-        build-backend build-frontend build-debug build-release clean-dist \
+        build-backend build-frontend build-debug build-release build-iam-bootstrap clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
 # 默认目标
@@ -97,6 +97,9 @@ dev-system: ## 开发模式运行 System 模块
 	  export REDIS_ADDR=localhost:6379; \
 	  export REDIS_PASSWORD=$${REDIS_PASSWORD:-addp_redis}; \
 	  cd system/backend && go run cmd/server/main.go'
+
+build-iam-bootstrap: ## 构建一次性离线 IAM Bootstrap CLI
+	$(call build_one_service,system/backend,addp-iam-bootstrap,cmd/iam-bootstrap/main.go)
 
 dev-manager: ## 开发模式运行 Manager 模块
 	@echo "$(GREEN)启动 Manager 模块开发环境...$(NC)"
@@ -431,10 +434,9 @@ compare-agent-eval: ## 比较两份仓库外 Agent v2 评测报告
 compare-agent-eval-release: ## 按正式发布基线策略比较两份 Agent v2 报告
 	@bash scripts/test/agent-evaluation-gate.sh compare-release
 
-authorization-generate: ## 从 Manifest 生成 owner-local 常量、System Tool Catalog 和 IAM Catalog Seed SQL
+authorization-generate: ## 从 Manifest 生成 owner-local 常量和 System Tool Catalog
 	@cd common && go run ./authorization/cmd/manifest --generate-owner-constants --repository-root ..
 	@cd common && go run ./authorization/cmd/manifest --generate-tool-catalog --repository-root ..
-	@cd common && go run ./authorization/cmd/manifest --generate-sql-seed --repository-root ..
 
 test-authorization: ## 校验 IAM Manifest、生成常量和授权覆盖报告
 	@cd common && go test ./authorization/... -count=1

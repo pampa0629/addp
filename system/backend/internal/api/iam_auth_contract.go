@@ -16,6 +16,11 @@ type IAMBrowserLoginRequest struct {
 	Password string `json:"password"`
 }
 
+type IAMMFAVerificationRequest struct {
+	ChallengeToken string `json:"challenge_token"`
+	Code           string `json:"code"`
+}
+
 type IAMContextChoiceRequest struct {
 	ContextType        string  `json:"context_type"`
 	TenantMembershipID *string `json:"tenant_membership_id,omitempty"`
@@ -52,10 +57,17 @@ type IAMContextSelectionChallengeResponse struct {
 	Contexts        []IAMContextOptionResponse `json:"contexts"`
 }
 
+type IAMMFAChallengeResponse struct {
+	ChallengeToken string    `json:"challenge_token"`
+	Method         string    `json:"method"`
+	ExpiresAt      time.Time `json:"expires_at"`
+}
+
 type IAMBrowserLoginResponse struct {
 	NextAction string                                `json:"next_action"`
 	Session    *IAMAccessTokenResponse               `json:"session,omitempty"`
 	Selection  *IAMContextSelectionChallengeResponse `json:"selection,omitempty"`
+	MFA        *IAMMFAChallengeResponse              `json:"mfa,omitempty"`
 }
 
 type IAMErrorResponse struct {

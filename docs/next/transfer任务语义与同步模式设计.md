@@ -2,7 +2,7 @@
 
 更新时间：2026-07-25
 
-状态：阶段 0/1、工作包 2A-2D、3A-3E、4A-4H 已完成。业务 Kafka DLQ、只读管理、payload availability、task-owned cleanup 与 task-private runtime/control state 生命周期治理、隔离目标 bounded replay v1，以及 PostgreSQL/MySQL 数据库 CDC、人工 additive schema migration 和 schema blocked 统一告警闭环已完成公开 API、Console 操作闭环和真实全生命周期 E2E；Oracle CDC 已明确延期，不进入当前实施序列。
+状态：阶段 0/1、工作包 2A-2D、3A-3E、4A-4H 已完成。业务 Kafka DLQ、只读管理、payload availability、task-owned cleanup 与 task-private runtime/control state 生命周期治理、隔离目标 bounded replay v1，以及 PostgreSQL/MySQL 数据库 CDC、人工 additive schema migration 和 schema blocked 统一告警闭环已完成公开 API、Console 操作闭环和真实全生命周期 E2E；Oracle CDC 已明确延期，不进入当前实施序列。Redpanda v24.3.18 已完成单机与生产拓扑认证，并晋级为唯一正式 Infra Kafka broker 实现。
 
 本文整理 Transfer 全量、批增量、Kafka 流式源、数据库 CDC 和持续运行时的概念与推荐技术路线。bounded/watermark、业务 Kafka continuous、业务 Kafka DLQ、隔离目标 bounded replay，以及 PostgreSQL/MySQL CDC v1 已完成；Oracle CDC 已延期，自动 DDL 仍未实现。
 
@@ -865,6 +865,56 @@ checkpoint 停滞不能由 Monitor 根据 execution `updated_at` 或页面时间
 
 ADDP 不自动暂停用户 Oracle 或其他上游业务写入。平台可以暂停新 replay、限制非关键任务、对目标应用背压并发出告警；是否干预上游业务由用户决定。自动暂停 Debezium connector 也必须谨慎，因为暂停期间数据库归档日志仍可能超出保留窗口。
 
+### 12.6 Redpanda 晋级认证矩阵
+
+Infra Kafka 对 Transfer、Kafka Connect 和运维脚本只暴露 Kafka API，不暴露发行版选择。Redpanda 晋级遵守以下边界：
+
+1. broker 镜像、启动参数和部署级 SASL mechanism 只存在于 Infra 部署层；正式服务名固定为 `redpanda`，内外 bootstrap 地址、Connect REST、topic/group/ACL namespace 和持久卷语义保持一致。
+2. `INFRA_KAFKA_*` 与 `KAFKA_CONNECT_*` 仍是唯一部署配置入口；发行版名称不得进入任务 JSON、公开 API、System Engine、Transfer 数据库或 execution metadata。
+3. Transfer capture supervisor、continuous worker、DLQ、cleanup 和 Kafka Connect 继续走同一实现。禁止按发行版增加 client、connector plan、repository、任务类型、endpoint 或数据库字段分支。
+4. 默认开发 profile 与生产 HA profile 只是同一实现的不同拓扑；认证脚本不得成为第二套运行时数据面。
+5. 下表全部通过、证据可复现且资源基线被记录后，才能修订 `docs/spec/addp技术栈规约.md` 和部署文档；晋级后必须删除被替换的 Apache Kafka broker 路径。
+
+Redpanda 认证矩阵：
+
+| 编号 | 认证面 | 必须验证的行为 | 通过标准 | 证据入口 |
+|---|---|---|---|---|
+| RP-01 | 单一数据面 | 默认启动使用唯一 `redpanda` broker、同镜像 `redpanda-init` 与 Kafka Connect 3.6.0.Final | `docker compose config` 中无 Apache Kafka 镜像、`kafka` broker service 或第二个数据面 | profile 静态检查、容器镜像与版本输出 |
+| RP-02 | SASL/ACL | `admin`、`connect`、`transfer` 三个 principal 使用部署级机制认证；Connect 只能写 CDC namespace，Transfer 只能读 CDC、读写 DLQ，不能读 Connect 内部 topic 或写 CDC topic | 正向操作成功，所有反向越权操作失败，ACL 列表可审计 | `redpanda-init` 的 `VERIFY_ACL=1` 探针 |
+| RP-03 | Kafka Connect | Debezium Connect 3.6.0.Final distributed worker 使用相同 Kafka API 连接并持久化 config/offset/status | REST ready，三个 compact internal topic 正常，worker 重启后 connector 状态恢复 | Connect REST、internal topic describe、重启前后状态 |
+| RP-04 | topic/group/admin API | 创建/describe/delete topic，produce/fetch，earliest/latest offset，consumer group create/describe/delete，prefix ACL 与 topic config API | ADDP 现有 admin/client 调用全部成功且错误分类不变 | `redpanda-init` 探针、Go Kafka/Transfer 集成测试 |
+| RP-05 | PostgreSQL CDC | Debezium initial snapshot 及 insert/update/delete 经 Infra Kafka 进入 PostgreSQL 目标 | 数据值、删除、committed position、connector/slot/publication/topic cleanup 全部符合现有 E2E 断言 | `ADDP_CDC_DATA_E2E=1` |
+| RP-06 | MySQL CDC | Debezium initial snapshot 及 insert/update/delete 经同一数据面进入 PostgreSQL 目标 | 数据值、删除、committed position、connector/topic/schema-history cleanup 全部符合现有 E2E 断言 | `ADDP_MYSQL_CDC_DATA_E2E=1` |
+| RP-07 | DLQ | 确定性 keyed DLQ 写入、读取、payload availability 与权限隔离 | DLQ E2E 通过，Connect 不能写 DLQ，清理后 payload 状态按既有规则收敛 | `ADDP_DLQ_KAFKA_INTEGRATION=1` 及 continuous DLQ E2E |
+| RP-08 | retention | time/bytes topic config 可读写；超过边界后 earliest offset 前移，resume 对过期 committed position 明确失败 | 不静默跳到 earliest，diagnostics 与既有 degraded/critical 规则一致 | retention 探针、continuous diagnostics E2E |
+| RP-09 | Stop cleanup | CDC stop 按 connector -> provider resource -> data/schema-history topic -> group/ACL 清理，业务 Kafka task-owned cleanup 删除 DLQ topic | 重复 cleanup 幂等，权限/网络失败阻断后续数据库删除，无残留 ADDP-owned broker 资源 | PostgreSQL/MySQL CDC 与 DLQ cleanup E2E |
+| RP-10 | 重启恢复 | broker 与 Connect 分别重启，持久卷保留 topic、offset、ACL/user 和 connector state，Transfer 从 committed `next_offset` 恢复 | 重启后无数据空洞或回退，旧 worker fencing 仍有效 | 容器重启探针、CDC/continuous recovery E2E |
+| RP-11 | 资源占用 | 单 broker 空载、Connect ready、CDC steady 三个阶段记录 CPU、内存、磁盘 | 无 OOM/重启/磁盘异常；结果只作为认证证据，不直接承诺生产容量 | `docker stats --no-stream`、volume size、阶段时间戳 |
+| RP-12 | 支持范围门禁 | 搜索任务/API/数据库/能力声明中的发行版分支和部署层中的旧 broker 路径 | 应用契约无 `redpanda` 运行时概念；部署层无 Apache Kafka broker profile | `rg -i redpanda`、Compose 与 schema/Swagger diff |
+
+认证结论只有 `passed` 或 `not-certified`。任何必测项未执行、跳过或失败时均为 `not-certified`，不能以“Kafka API 兼容”替代真实 CDC、cleanup、恢复和资源验证。
+
+### 12.7 Redpanda 生产拓扑认证门禁
+
+单 broker/单 Connect 认证只证明 Kafka API 与 ADDP 当前数据面兼容，不证明生产可用性。生产拓扑认证必须在独立 HA profile 中使用 3 broker、3 副本、producer `acks=all`、至少 2 个 broker 确认后才承诺写入、至少 2 个同组 Kafka Connect worker 和 SASL_SSL；它仍是一个 Infra Kafka 集群和一个 Connect distributed 集群，不建立第二数据面或第二 control plane。
+
+“3 副本、`acks=all`、确认 quorum=2”是 ADDP 的统一耐久性语义，不把实现专有配置名提升为任务或运行时概念。Redpanda 通过 RF=3 的 Raft majority 实现该语义。Redpanda v24.3.18 会接受但忽略 `min.insync.replicas`，因此应用层不得下发或校验该属性；部署门禁直接验证单节点故障仍可提交、双节点故障拒绝提交、已确认记录在硬故障重启后完整恢复。发行版原生健康信息只属于部署观测和认证证据，不进入任务/API/数据库/Swagger/capability。
+
+| 编号 | 认证面 | 必须验证的行为 | 通过标准 |
+|---|---|---|---|
+| RP-HA-01 | 拓扑与 quorum | 3 broker 形成单一集群，controller/quorum、broker membership、topic replicas 和确认策略可观测 | 三节点均在 membership 中；认证 topic 为 3 replicas，producer 显式 `acks=all`；不存在第二 bootstrap namespace |
+| RP-HA-02 | SASL_SSL | 内外 Kafka listener 使用受信 CA 和 hostname 校验，admin/connect/transfer 继续使用 SCRAM-SHA-256 | 正确 CA + hostname 认证成功；无 CA、错误 hostname 或错误密码失败；不启用 insecure skip verify |
+| RP-HA-03 | Connect distributed | 两个 Connect worker 使用相同 `GROUP_ID`、config/offset/status topic，connector task 只能由一个 worker 持有 | 两个 worker REST 均 ready；worker membership 可观测；停止当前 owner 后 connector 在另一 worker 恢复 RUNNING |
+| RP-HA-04 | broker 故障 | 持续有序写入期间硬杀任一非多数 broker，再恢复该 broker | producer/consumer 无不可恢复错误；记录序列完整、无重复、无空洞；已确认记录在 broker 重启后仍存在，集群最终无 under-replicated partition |
+| RP-HA-05 | quorum 边界 | 单 broker 故障仍可读写；同时失去两个 broker 时禁止宣称可用 | 单故障通过；双故障下 `acks=all` 明确失败且恢复后数据一致，不能通过降低 acks 或副本数绕过 |
+| RP-HA-06 | CDC 与 cleanup | PostgreSQL/MySQL CDC、DLQ、retention、Stop cleanup 在 3 replicas/确认 quorum=2 和双 Connect worker 下复用现有 E2E | 所有既有断言通过；connector、slot/publication、topic/group/ACL 无残留 |
+| RP-HA-07 | 持续负载与资源 | 在固定时长和固定消息大小下记录吞吐、p95/p99、CPU、内存、网络与磁盘增长 | 无 OOM/restart/under-replicated 残留；所有采样参数与结果进入证据，不把开发机结果当生产容量承诺 |
+| RP-HA-08 | 契约门禁 | HA/TLS 节点、证书和故障注入只存在于部署/认证层 | 任务/API/数据库/Swagger/capability 无拓扑或发行版字段 |
+
+证书由认证脚本在操作系统临时目录生成并以只读 volume 注入，不提交私钥或长期测试证书。HA profile 不进入默认 `up.sh`，避免开发机误启动生产拓扑；认证结束后必须清理 HA 资源并恢复默认单机 Redpanda profile。
+
+2026-07-26 已通过 RP-HA-01 至 RP-HA-08：Redpanda v24.3.18 以 3 broker、RF=3、`acks=all`、确认 quorum=2 和 `write.caching=false` 完成单 broker `SIGKILL`、双 broker 无 quorum、5000 条连续序列、双 Connect worker owner failover、SASL_SSL、PostgreSQL/MySQL CDC、DLQ、retention、Stop cleanup 与恢复验证。固定性能探针为 20000 条 1024-byte 消息、目标 2000 records/s；正式 profile 晋级后的本机样本为 1997.80 records/s、p95 8 ms、p99 28 ms，仅作为认证证据。可重复入口为 `bash scripts/test/certify-infra-kafka-ha.sh`。
+
 ## 十三、建议配置形态
 
 13.1 的 PostgreSQL watermark、13.2 的业务 Kafka continuous、13.3 的 PostgreSQL CDC v1 和 13.4 的 MySQL CDC v1 都是当前可提交 API；13.5 的 Oracle CDC 仍只表达后续语义方向。
@@ -1073,12 +1123,28 @@ MySQL CDC 沿用 PostgreSQL CDC 的公开任务形态、Infra Kafka、ChangeEven
 4. 已冻结 `upsert_delete`、目标 ledger 原子应用、默认 strict schema drift、resume-only 和不提供 replay/DLQ/自动 DDL；后续工作包 4G 只增加专用人工 additive migration，不改变任务配置策略。
 5. 已冻结 pause 保持 connector 捕获、stop 不可逆清理 capture resource、重新同步必须新建任务和新目标表；Stop API 与 Console 都必须显式高危确认。
 
-### 工作包 3B：Infra Kafka 与 Kafka Connect 部署（已完成第一版）
+### 工作包 3B：Infra Kafka 与 Kafka Connect 部署（已完成）
 
-1. 已在 ADDP infra 中增加唯一 Apache Kafka 4.3.0 KRaft 路线和 Debezium Connect 3.6.0.Final distributed 进程角色。
+1. 已在 ADDP infra 中固定唯一 Redpanda v24.3.18 路线和 Debezium Connect 3.6.0.Final distributed 进程角色。
 2. 已实现固定端口、健康检查、Connect compact internal topics、CDC topic namespace 和 `admin/connect/transfer` SASL principal/ACL；生产 3 broker/2 Connect 拓扑仍由部署规范约束，不在单机开发 Compose 内伪装验证。
 3. 已实现 retention/capacity 配置、Kafka 磁盘水位、connector/task 状态和本地业务 PostgreSQL slot/WAL lag 运维检查；cleanup owner 已进入正式规范。
 4. 已为业务 PostgreSQL 开发容器启用 logical replication、slot WAL 上限和 replication HBA，不修改 Infra PostgreSQL。真实 Debezium smoke 已验证 `initial snapshot -> r,c,u,d -> Infra Kafka`，并确认 connector/slot/publication/topic/table 清理无残留。
+
+### 工作包 3B-RP：Redpanda 适配认证与正式晋级（已完成）
+
+1. Kafka API 数据面、Kafka Connect 3.6.0.Final、Transfer runtime、任务/API/数据库契约保持唯一；认证通过后 Redpanda 直接替换旧 broker 路径，不保留运行时选择。
+2. 部署级 SASL mechanism 必须贯通 Kafka init、Connect、capture admin、continuous reader 和 DLQ writer，不得由任务配置或发行版判断派生。
+3. 按 12.6 的 RP-01 至 RP-12 执行真实认证并保存可复现结果；任一项未通过时结论保持 `not-certified`。
+4. 认证完成前不修改正式支持范围；认证和晋级决策完成后，先修订正式技术栈与配置规范，再替换默认部署。
+5. 2026-07-25 已通过 RP-01 至 RP-12：Redpanda v24.3.18、Debezium Connect 3.6.0.Final、SCRAM-SHA-256/ACL、topic/group/admin API、PostgreSQL/MySQL CDC、DLQ、真实 time/bytes retention、Stop cleanup、broker/Connect 重启恢复和资源快照均通过。可重复入口为 `bash scripts/test/certify-infra-kafka.sh`。
+
+### 工作包 3B-RP-HA：Redpanda 生产拓扑认证（已完成）
+
+1. HA override 只把同一正式集群扩展到 3 broker、3 replicas、`acks=all`、确认 quorum=2 和 2 个同组 Connect worker；Transfer 仍只解析 bootstrap servers 和 Kafka API 连接属性，不解析发行版或 quorum 实现。
+2. SASL_SSL 证书、broker 节点名、Connect worker 名和故障注入只属于认证部署，不进入应用配置模型以外的新概念。
+3. 按 12.7 的 RP-HA-01 至 RP-HA-08 执行；单机 RP-01 至 RP-12 结果不能替代 HA 证据。
+4. 认证结论与单机矩阵共同构成正式晋级门禁；发行版和拓扑仍不得进入公开 capability。
+5. 2026-07-25 已完成 Redpanda v24.3.18 + Debezium Connect 3.6.0.Final 生产拓扑认证；完整入口为 `bash scripts/test/certify-infra-kafka-ha.sh`，结束后自动清理认证资源、删除临时私钥并恢复默认单机 Redpanda profile。
 
 ### 工作包 3C：Capture control plane（已完成第一版）
 
@@ -1172,13 +1238,13 @@ MySQL CDC 沿用 PostgreSQL CDC 的公开任务形态、Infra Kafka、ChangeEven
 2. 3E-B：数据库 CDC 任务 JSON 使用唯一 `DatabaseCDCTaskSpec`，只表达 continuous + incremental CDC、单表、initial snapshot、完整 field mapping 和 PostgreSQL `upsert_delete` 目标等通用语义；source provider 不写入任务 JSON，只能由 source locator 对应的 System Engine 解析结果决定。不得并行保留 PostgreSQL/MySQL 两个同形 parser，也不得在未解析 Engine 时用配置形态推断 provider。创建、更新和启动必须在进入 capture 前完成真实 provider 校验。
 3. 3E-B 的 MySQL 8.0 v1 只支持有稳定主键的单表和无歧义类型集合：有符号 `TINYINT/SMALLINT/MEDIUMINT/INT/BIGINT`、`CHAR/VARCHAR/TEXT`、`DECIMAL/NUMERIC`、`FLOAT/DOUBLE`、`DATE/TIME/DATETIME/TIMESTAMP`（最高毫秒精度）、`JSON`、`BINARY/VARBINARY/BLOB`。拒绝所有 unsigned 整数、`TINYINT(1)`/`BOOL` 布尔歧义、`BIT`、`ENUM/SET`、`YEAR`、空间类型、超过毫秒的时间精度以及 zero date 默认值；字段 mapping 必须覆盖源表完整 schema，源主键必须按顺序一一映射到目标 keys。
 4. MySQL capture 前置校验固定要求 MySQL 8.0、`log_bin=ON`、`binlog_format=ROW`、`binlog_row_image=FULL`、非零 server id，并验证 connector 凭据可读取 binlog 状态。GTID 可为 `ON|OFF`，仅作为诊断事实，不进入 Transfer committed position；Kafka partition offset 仍是目标应用唯一主顺序。
-5. Debezium MySQL connector 固定 `initial` snapshot、schemaless JSON、decimal string、Connect 毫秒时间和 binary base64。除单分区数据 topic 外，每个 MySQL capture generation 还拥有独立 schema-history topic；Debezium 3.6 history record 使用空 key，Kafka 4.3 compact topic 会拒绝，因此该 topic 固定为单分区 `cleanup.policy=delete + retention.ms=-1`，并由 capture cleanup 显式删除。其名称、ownership 和 connector server id 属于 MySQL provider 子事实，必须与 connector/data topic 一起创建、授权和清理，不能依赖 Kafka 自动建 topic 或留下未登记资源。
+5. Debezium MySQL connector 固定 `initial` snapshot、schemaless JSON、decimal string、Connect 毫秒时间和 binary base64。除单分区数据 topic 外，每个 MySQL capture generation 还拥有独立 schema-history topic；Debezium 3.6 history record 使用空 key，不能依赖 compact topic 提供正确的历史保留语义，因此该 topic 固定为单分区 `cleanup.policy=delete + retention.ms=-1`，并由 capture cleanup 显式删除。其名称、ownership 和 connector server id 属于 MySQL provider 子事实，必须与 connector/data topic 一起创建、授权和清理，不能依赖 Kafka 自动建 topic 或留下未登记资源。
 6. MySQL envelope 使用独立严格 source schema adapter，不能复用 PostgreSQL exact source schema；两者只复用 outer envelope、key/row 映射和统一 `ChangeEvent`。MySQL `file/pos/gtid/row/server_id` 只用于协议校验和诊断，不替代 Kafka offset。tombstone、truncate、来源身份不匹配、未知 source/envelope 字段、字段/类型变化都阻塞且不得推进 offset。
-7. 3E-B 已完成：MySQL planner、源字段/主键/binlog 前置校验、Debezium connector config、严格 envelope adapter 已接入既有 PostgreSQL monotonic target apply；内部继续使用唯一 capture supervisor 和 continuous worker 主路径。单元测试覆盖 provider 解析、类型矩阵、connector/schema-history 资源、snapshot/c/u/d、空 BLOB、source/envelope/schema drift 和 runner committed progress；真实 MySQL 8.0.46 + Debezium 3.6.0.Final + Kafka 4.3.0 已验证 preflight、connector RUNNING、initial snapshot 与 c/u/d 的实际 schemaless envelope。该验证不替代 3E-C 的完整恢复/生命周期 E2E。
+7. 3E-B 已完成：MySQL planner、源字段/主键/binlog 前置校验、Debezium connector config、严格 envelope adapter 已接入既有 PostgreSQL monotonic target apply；内部继续使用唯一 capture supervisor 和 continuous worker 主路径。单元测试覆盖 provider 解析、类型矩阵、connector/schema-history 资源、snapshot/c/u/d、空 BLOB、source/envelope/schema drift 和 runner committed progress；真实 MySQL 8.0.46 + Debezium 3.6.0.Final + Infra Kafka 已验证 preflight、connector RUNNING、initial snapshot 与 c/u/d 的实际 schemaless envelope。该验证不替代 3E-C 的完整恢复/生命周期 E2E。
 8. 3E-C 环境契约：Business MySQL 使用独立 `MYSQL_CDC_USER`/`MYSQL_CDC_PASSWORD`，启动后由 root 幂等创建或更新 connector 用户，并把权限收敛为 `SELECT`、`RELOAD`、`SHOW DATABASES`、`REPLICATION SLAVE`、`REPLICATION CLIENT`、`LOCK TABLES`。初始化必须在每次 `business/scripts/start.sh -mysql` 等待 ready 后执行，不能只依赖首次建卷的 `/docker-entrypoint-initdb.d`；Business MySQL 必须显式启用非零 server id、binlog、ROW format 和 FULL row image。CDC E2E 使用独立 schema/table，不复用包含 MySQL v1 非支持类型的业务样例表。
-9. 3E-C 真实全生命周期 gate：公共 API 创建 MySQL CDC 后，必须在真实 MySQL 8.0、Debezium 3.6、Infra Kafka 4.3 和 PostgreSQL 目标上覆盖 initial snapshot、insert/update/delete、pause/resume backlog、worker crash 后 lease/fencing recovery、retention 越界拒绝、strict schema drift 阻塞，以及 stop 后 connector、数据 topic、schema-history topic、ACL/group 的幂等清理；目标 apply ledger 必须始终与 Transfer committed offset 单调一致，MySQL 不伪造 slot/publication 资源。retention segment 推进若无法在共享开发 Kafka 中稳定制造，必须用隔离 topic 的确定性真实 Kafka integration 补证，不能降低为只验证错误文本。
+9. 3E-C 真实全生命周期 gate：公共 API 创建 MySQL CDC 后，必须在真实 MySQL 8.0、Debezium 3.6、Infra Kafka 和 PostgreSQL 目标上覆盖 initial snapshot、insert/update/delete、pause/resume backlog、worker crash 后 lease/fencing recovery、retention 越界拒绝、strict schema drift 阻塞，以及 stop 后 connector、数据 topic、schema-history topic、ACL/group 的幂等清理；目标 apply ledger 必须始终与 Transfer committed offset 单调一致，MySQL 不伪造 slot/publication 资源。retention segment 推进若无法在共享开发 Kafka 中稳定制造，必须用隔离 topic 的确定性真实 Kafka integration 补证，不能降低为只验证错误文本。
 10. 3E-C 产品开放 gate：上述 E2E 通过后，删除公开 API 的临时 MySQL 拒绝分支；唯一 continuous capability 增加结构化 `database_cdc`，声明 `sources=[postgresql,mysql]`、`target=postgresql`、`bootstrap=[initial_snapshot]`、`apply_mode=upsert_delete`。Console 将 PostgreSQL-specific CDC helper clean break 为唯一 database CDC helper，按 source provider 使用各自可证明的类型矩阵，继续复用同一 Wizard、详情和生命周期操作，不增加 MySQL 专用 endpoint、页面或任务 JSON 字段。
-11. 3E-C 已完成：Business 初始化连续执行两次后账号权限和 MySQL binlog 前置条件保持一致；真实 MySQL 8.0.46 -> Debezium 3.6.0.Final -> Kafka 4.3.0 -> PostgreSQL E2E 通过公共 API 覆盖 snapshot、insert/update/delete、worker lease/fencing recovery、pause/resume backlog、schema drift 不推进位置、`DeleteRecords` 推进 earliest 后的 retention 拒绝，以及 connector、数据 topic、schema-history topic、consumer group 和 ACL cleanup。API gate 已删除，capability 与 Console 已按第 10 项开放。
+11. 3E-C 已完成：Business 初始化连续执行两次后账号权限和 MySQL binlog 前置条件保持一致；真实 MySQL 8.0.46 -> Debezium 3.6.0.Final -> Infra Kafka -> PostgreSQL E2E 通过公共 API 覆盖 snapshot、insert/update/delete、worker lease/fencing recovery、pause/resume backlog、schema drift 不推进位置、`DeleteRecords` 推进 earliest 后的 retention 拒绝，以及 connector、数据 topic、schema-history topic、consumer group 和 ACL cleanup。API gate 已删除，capability 与 Console 已按第 10 项开放。
 
 ### 工作包 3F：Oracle CDC（延期，不进入当前实施序列）
 
@@ -1298,7 +1364,7 @@ DLQ 不保存伪造的“已回放”状态，也不作为完整 replay source�
 
 分析：这是部署与运维选择，依赖预期吞吐、最长下游故障、数据保留、节点数量和生产环境。过早选择多种兼容发行版会形成测试矩阵。
 
-结论：唯一参考实现固定为 Apache Kafka 4.3.0 KRaft + Debezium Connect 3.6.0.Final（内置 Kafka Connect 4.3.0）。开发环境使用 1 broker/1 Connect、RF/ISR=`1/1`；生产参考使用 3 broker/至少 2 Connect、RF/ISR=`3/2`。
+结论：唯一参考实现固定为 Redpanda v24.3.18 + Debezium Connect 3.6.0.Final（内置 Kafka Connect 4.3.0）。开发环境使用 1 broker/1 Connect、单副本确认；生产参考使用 3 broker/至少 2 Connect、RF=3、`acks=all` 和确认 quorum=2。ADDP 以实际故障语义而不是 `min.insync.replicas` 等实现专有配置名定义耐久性；不保留 Apache Kafka broker profile 或运行时发行版选择。
 
 - Connect shared internal topics 固定为 `__addp_connect_configs`、`__addp_connect_offsets`、`__addp_connect_status`，使用 compact 和开发/生产 `1/3` 复制因子。
 - CDC topic 固定为单 partition `__addp_cdc.<tenant>.<task>.<generation>`，使用 delete cleanup、默认 7 天 retention；生产必须显式设置并校验 `retention.bytes`。

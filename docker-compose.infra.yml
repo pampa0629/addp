@@ -107,89 +107,93 @@ services:
       timeout: 5s
       retries: 5
 
-  kafka:
-    image: ${INFRA_KAFKA_IMAGE:-apache/kafka:4.3.0}
-    container_name: addp-kafka
-    hostname: kafka
+  redpanda:
+    image: ${REDPANDA_IMAGE:-docker.redpanda.com/redpandadata/redpanda:v24.3.18}
+    container_name: addp-redpanda
+    hostname: redpanda
+    labels:
+      org.addp.infra.kafka.profile: redpanda
+    command:
+      - redpanda
+      - start
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --memory
+      - ${REDPANDA_MEMORY:-1G}
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - internal://0.0.0.0:29092,external://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - internal://redpanda:29092,external://localhost:${INFRA_KAFKA_PORT:-19092}
+      - --rpc-addr
+      - 0.0.0.0:33145
+      - --advertise-rpc-addr
+      - redpanda:33145
+      - --set
+      - redpanda.enable_sasl=true
+      - --set
+      - redpanda.auto_create_topics_enabled=false
+      - --set
+      - redpanda.write_caching_default=false
+      - --set
+      - 'redpanda.superusers=["${INFRA_KAFKA_ADMIN_USERNAME:-admin}"]'
     environment:
-      CLUSTER_ID: ${INFRA_KAFKA_CLUSTER_ID:-MkU3OEVBNTcwNTJENDM2Qk}
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
-      KAFKA_LISTENERS: CONTROLLER://:29093,INTERNAL://:29092,EXTERNAL://:9092
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:${INFRA_KAFKA_PORT:-19092}
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:SASL_PLAINTEXT,INTERNAL:SASL_PLAINTEXT,EXTERNAL:SASL_PLAINTEXT
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
-      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
-      KAFKA_SASL_MECHANISM_CONTROLLER_PROTOCOL: PLAIN
-      KAFKA_LISTENER_NAME_CONTROLLER_PLAIN_SASL_JAAS_CONFIG: >-
-        org.apache.kafka.common.security.plain.PlainLoginModule required
-        username="admin" password="${INFRA_KAFKA_ADMIN_PASSWORD:-addp_kafka_admin}"
-        user_admin="${INFRA_KAFKA_ADMIN_PASSWORD:-addp_kafka_admin}"
-        user_connect="${INFRA_KAFKA_CONNECT_PASSWORD:-addp_kafka_connect}"
-        user_transfer="${INFRA_KAFKA_TRANSFER_PASSWORD:-addp_kafka_transfer}";
-      KAFKA_LISTENER_NAME_INTERNAL_PLAIN_SASL_JAAS_CONFIG: >-
-        org.apache.kafka.common.security.plain.PlainLoginModule required
-        username="admin" password="${INFRA_KAFKA_ADMIN_PASSWORD:-addp_kafka_admin}"
-        user_admin="${INFRA_KAFKA_ADMIN_PASSWORD:-addp_kafka_admin}"
-        user_connect="${INFRA_KAFKA_CONNECT_PASSWORD:-addp_kafka_connect}"
-        user_transfer="${INFRA_KAFKA_TRANSFER_PASSWORD:-addp_kafka_transfer}";
-      KAFKA_LISTENER_NAME_EXTERNAL_PLAIN_SASL_JAAS_CONFIG: >-
-        org.apache.kafka.common.security.plain.PlainLoginModule required
-        username="admin" password="${INFRA_KAFKA_ADMIN_PASSWORD:-addp_kafka_admin}"
-        user_admin="${INFRA_KAFKA_ADMIN_PASSWORD:-addp_kafka_admin}"
-        user_connect="${INFRA_KAFKA_CONNECT_PASSWORD:-addp_kafka_connect}"
-        user_transfer="${INFRA_KAFKA_TRANSFER_PASSWORD:-addp_kafka_transfer}";
-      KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
-      KAFKA_SUPER_USERS: User:admin
-      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-      KAFKA_DELETE_TOPIC_ENABLE: "true"
-      KAFKA_NUM_PARTITIONS: 1
-      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
-      KAFKA_MIN_INSYNC_REPLICAS: 1
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_LOG_RETENTION_HOURS: 168
+      RP_BOOTSTRAP_USER: ${INFRA_KAFKA_ADMIN_USERNAME:-admin}:${INFRA_KAFKA_ADMIN_PASSWORD:-addp_kafka_admin}
+      INFRA_KAFKA_ADMIN_PASSWORD: ${INFRA_KAFKA_ADMIN_PASSWORD:-addp_kafka_admin}
     volumes:
-      - kafka_data:/var/lib/kafka/data
+      - redpanda_data:/var/lib/redpanda/data
     ports:
       - "${INFRA_KAFKA_PORT:-19092}:9092"
     networks:
       - addp-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/29092'"]
+      test:
+        - CMD-SHELL
+        - >-
+          rpk cluster health -X brokers=localhost:29092
+          -X user=${INFRA_KAFKA_ADMIN_USERNAME:-admin}
+          -X pass=$${INFRA_KAFKA_ADMIN_PASSWORD}
+          -X sasl.mechanism=SCRAM-SHA-256 >/dev/null
       interval: 10s
       timeout: 5s
-      retries: 12
+      retries: 18
       start_period: 20s
 
-  kafka-init:
-    image: ${INFRA_KAFKA_IMAGE:-apache/kafka:4.3.0}
-    container_name: addp-kafka-init
+  redpanda-init:
+    image: ${REDPANDA_IMAGE:-docker.redpanda.com/redpandadata/redpanda:v24.3.18}
+    container_name: addp-redpanda-init
     depends_on:
-      kafka:
+      redpanda:
         condition: service_healthy
+    entrypoint: ["/bin/bash"]
+    command: ["/opt/addp/init-redpanda.sh"]
     environment:
+      INFRA_KAFKA_ADMIN_USERNAME: ${INFRA_KAFKA_ADMIN_USERNAME:-admin}
       INFRA_KAFKA_ADMIN_PASSWORD: ${INFRA_KAFKA_ADMIN_PASSWORD:-addp_kafka_admin}
       INFRA_KAFKA_CONNECT_PASSWORD: ${INFRA_KAFKA_CONNECT_PASSWORD:-addp_kafka_connect}
       INFRA_KAFKA_TRANSFER_PASSWORD: ${INFRA_KAFKA_TRANSFER_PASSWORD:-addp_kafka_transfer}
+      INFRA_KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      REDPANDA_ADMIN_HOSTS: redpanda:9644
+      INFRA_KAFKA_SASL_MECHANISM: SCRAM-SHA-256
+      INFRA_KAFKA_SECURITY_PROTOCOL: ${INFRA_KAFKA_SECURITY_PROTOCOL:-SASL_PLAINTEXT}
+      INFRA_KAFKA_TLS_CA_CERT_FILE: ${INFRA_KAFKA_TLS_CA_CERT_FILE:-}
+      INFRA_KAFKA_INTERNAL_REPLICATION_FACTOR: ${INFRA_KAFKA_INTERNAL_REPLICATION_FACTOR:-1}
       KAFKA_CONNECT_GROUP_ID: ${KAFKA_CONNECT_GROUP_ID:-addp-connect-cluster}
       KAFKA_CONNECT_CONFIG_TOPIC: ${KAFKA_CONNECT_CONFIG_TOPIC:-__addp_connect_configs}
       KAFKA_CONNECT_OFFSET_TOPIC: ${KAFKA_CONNECT_OFFSET_TOPIC:-__addp_connect_offsets}
       KAFKA_CONNECT_STATUS_TOPIC: ${KAFKA_CONNECT_STATUS_TOPIC:-__addp_connect_status}
       INFRA_KAFKA_CDC_TOPIC_PREFIX: ${INFRA_KAFKA_CDC_TOPIC_PREFIX:-__addp_cdc.}
       INFRA_KAFKA_CDC_CONSUMER_GROUP_PREFIX: ${INFRA_KAFKA_CDC_CONSUMER_GROUP_PREFIX:-__addp_cdc_consumer.}
+      VERIFY_ACL: ${INFRA_KAFKA_VERIFY_ACL:-0}
     volumes:
-      - ./scripts/infra/init-kafka.sh:/opt/addp/init-kafka.sh:ro
-    command: ["bash", "/opt/addp/init-kafka.sh"]
+      - ./scripts/infra/init-redpanda.sh:/opt/addp/init-redpanda.sh:ro
     networks:
       - addp-network
     restart: "no"
@@ -199,10 +203,10 @@ services:
     container_name: addp-kafka-connect
     hostname: kafka-connect
     depends_on:
-      kafka-init:
+      redpanda-init:
         condition: service_completed_successfully
     environment:
-      BOOTSTRAP_SERVERS: kafka:29092
+      BOOTSTRAP_SERVERS: redpanda:29092
       GROUP_ID: ${KAFKA_CONNECT_GROUP_ID:-addp-connect-cluster}
       CONFIG_STORAGE_TOPIC: ${KAFKA_CONNECT_CONFIG_TOPIC:-__addp_connect_configs}
       OFFSET_STORAGE_TOPIC: ${KAFKA_CONNECT_OFFSET_TOPIC:-__addp_connect_offsets}
@@ -215,19 +219,20 @@ services:
       CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
       CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
       CONNECT_SECURITY_PROTOCOL: SASL_PLAINTEXT
-      CONNECT_SASL_MECHANISM: PLAIN
+      CONNECT_SASL_MECHANISM: SCRAM-SHA-256
       CONNECT_SASL_JAAS_CONFIG: >-
-        org.apache.kafka.common.security.plain.PlainLoginModule required
+        org.apache.kafka.common.security.scram.ScramLoginModule required
         username="connect" password="${INFRA_KAFKA_CONNECT_PASSWORD:-addp_kafka_connect}";
       CONNECT_PRODUCER_SECURITY_PROTOCOL: SASL_PLAINTEXT
-      CONNECT_PRODUCER_SASL_MECHANISM: PLAIN
+      CONNECT_PRODUCER_ACKS: all
+      CONNECT_PRODUCER_SASL_MECHANISM: SCRAM-SHA-256
       CONNECT_PRODUCER_SASL_JAAS_CONFIG: >-
-        org.apache.kafka.common.security.plain.PlainLoginModule required
+        org.apache.kafka.common.security.scram.ScramLoginModule required
         username="connect" password="${INFRA_KAFKA_CONNECT_PASSWORD:-addp_kafka_connect}";
       CONNECT_CONSUMER_SECURITY_PROTOCOL: SASL_PLAINTEXT
-      CONNECT_CONSUMER_SASL_MECHANISM: PLAIN
+      CONNECT_CONSUMER_SASL_MECHANISM: SCRAM-SHA-256
       CONNECT_CONSUMER_SASL_JAAS_CONFIG: >-
-        org.apache.kafka.common.security.plain.PlainLoginModule required
+        org.apache.kafka.common.security.scram.ScramLoginModule required
         username="connect" password="${INFRA_KAFKA_CONNECT_PASSWORD:-addp_kafka_connect}";
       HEAP_OPTS: ${KAFKA_CONNECT_HEAP_OPTS:--Xms512m -Xmx512m}
       REST_HOST_NAME: 0.0.0.0
@@ -260,4 +265,4 @@ volumes:
   redis_data:
   minio_data:
   meilisearch_data:
-  kafka_data:
+  redpanda_data:

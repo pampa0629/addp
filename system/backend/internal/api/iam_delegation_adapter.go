@@ -39,6 +39,16 @@ func NewIAMDelegationHandler(
 	return &IAMDelegationHandler{service: service, now: now}, nil
 }
 
+// CreateDelegation godoc
+// @Summary      签发受委托访问令牌 | Issue delegated access token
+// @Tags         认证 | Authentication
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body IAMDelegationRequest true "委托边界 | Delegation boundary"
+// @Success      201 {object} IAMDelegationResponse
+// @x-addp-auth-mode "authenticated"
+// @Router       /auth/delegations [post]
 func (h *IAMDelegationHandler) CreateDelegation(c *gin.Context) {
 	var request IAMDelegationRequest
 	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil {

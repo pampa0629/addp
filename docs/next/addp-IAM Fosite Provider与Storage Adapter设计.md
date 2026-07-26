@@ -1,8 +1,8 @@
 # ADDP IAM Fosite Provider 与 Storage Adapter 设计
 
-更新日期：2026-07-24
+更新日期：2026-07-25
 
-状态：技术设计已确认。本文落实 [OAuth/OIDC 协议引擎 ADR](addp-IAM%20OAuth-OIDC协议引擎ADR.md)，确定 Provider 组合、ADDP Session、PostgreSQL Storage Adapter、协议表、事务与切换边界；不修改当前数据库、API、Swagger 或运行代码。
+状态：技术设计已确认并进入实施。受控 Fosite `v0.50.0-addp.2` 已发布，目标协议表 migration、ADDP Session、PostgreSQL Storage Adapter、Provider、Consent Bridge 与 System 目标 Router 已落地并通过真实 PostgreSQL Authorization Code + PKCE 和完整启动组合验证；当前开发 `addp` 数据库尚未破坏性重建和 Bootstrap。
 
 ## 一、目标与边界
 

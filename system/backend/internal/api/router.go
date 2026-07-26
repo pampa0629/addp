@@ -5,10 +5,10 @@ import (
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
-	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	requestidmiddleware "github.com/addp/common/middleware/requestid"
 	"github.com/addp/system/internal/config"
+	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
@@ -30,248 +30,92 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		panic(fmt.Errorf("配置受信代理失败: %w", err))
 	}
 
-	// 初始化 Redis 客户端（可选，用于事件通知）
 	var redisClient *redis.Client
 	if cfg.RedisHost != "" {
 		redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
-		redisClient = redis.NewClient(&redis.Options{
-			Addr:     redisAddr,
-			Password: cfg.RedisPassword,
-			DB:       cfg.RedisDB,
-		})
+		redisClient = redis.NewClient(&redis.Options{Addr: redisAddr, Password: cfg.RedisPassword, DB: cfg.RedisDB})
 		logger.L().Info("Redis 客户端已初始化", "addr", redisAddr)
 	} else {
 		logger.L().Warn("Redis 未配置，资源变更事件通知功能将被禁用")
 	}
 
-	// CORS 中间件（基于白名单）
-	router.Use(func(c *gin.Context) {
-		origin := c.Request.Header.Get("Origin")
+	runtime, err := NewIAMRuntime(db, cfg)
+	if err != nil {
+		panic(fmt.Errorf("装配目标 IAM Runtime 失败: %w", err))
+	}
+	auditWriter := iam.NewAuditWriter(runtime.Repository)
 
-		// 检查 origin 是否在白名单中
-		allowed := false
-		for _, allowedOrigin := range cfg.AllowedOrigins {
-			if allowedOrigin == origin {
-				allowed = true
-				break
-			}
-		}
-
-		// 只允许白名单中的 origin
-		if allowed {
-			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		}
-
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
-		c.Next()
-	})
-
-	// 初始化 repositories
-	userRepo := repository.NewUserRepository(db)
-	logRepo := repository.NewLogRepository(db)
 	engineRepo := repository.NewEngineRepository(db)
-	tenantRepo := repository.NewTenantRepository(db)
 	appRepo := repository.NewApplicationRepository(db)
 	moduleRegistryRepo := repository.NewModuleRegistryRepository(db)
-
-	// 初始化 services
-	userService := service.NewUserService(userRepo)
-	authContextService := service.NewAuthContextService(userRepo, tenantRepo)
-	tokenService := service.NewTokenService(db, authContextService, redisClient, cfg)
-	logService := service.NewLogService(logRepo, userRepo)
-	engineService := service.NewEngineService(engineRepo, userRepo, cfg.EncryptionKey, redisClient)
-	tenantService := service.NewTenantService(tenantRepo, userRepo, db)
+	engineService := service.NewEngineService(engineRepo, cfg.EncryptionKey, redisClient)
 	registryService := service.NewRegistryService(engineRepo)
 	appService := service.NewApplicationService(appRepo)
 	taskProviderService := service.NewTaskProviderService(db)
-	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	moduleRegistryService := service.NewModuleRegistryService(moduleRegistryRepo)
-	cleanupOrchestratorService := service.NewCleanupOrchestratorService(redisClient, taskExecutionRepo, logService, moduleRegistryService)
-	engineService = engineService.WithCleanupOrchestrator(cleanupOrchestratorService)
-	tenantService = tenantService.WithCleanupOrchestrator(cleanupOrchestratorService)
+	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
+	cleanupService := service.NewCleanupOrchestratorService(
+		redisClient, taskExecutionRepo, auditWriter, moduleRegistryService,
+	)
+	engineService = engineService.WithCleanupOrchestrator(cleanupService)
 
-	// 请求 ID 必须先于审计和限流生成，确保安全事件可追踪。
+	router.Use(corsMiddleware(cfg))
 	router.Use(requestidmiddleware.RequestIDMiddleware())
-	// 日志中间件
-	router.Use(middleware.LoggerMiddleware(logService))
-
-	// i18n 中间件（从 Accept-Language 头解析语言）
+	router.Use(middleware.LoggerMiddleware(auditWriter))
 	router.Use(i18nmiddleware.I18nMiddleware())
 
-	// 根路由
 	router.GET("/", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"message": cfg.ProjectName,
-			"name_en": "All Domain Data Platform",
-		})
+		c.JSON(200, gin.H{"message": cfg.ProjectName, "name_en": "All Domain Data Platform"})
 	})
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
-
-	// Swagger 文档
+	router.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	// API 路由组
 	api := router.Group("/api/v1/system")
-	{
-		// 认证路由（不需要认证）
-		authHandler := NewAuthHandler(userService, tokenService, cfg)
-		oauthHandler := NewOAuthHandler(tokenService)
-		oauthPublicRateLimit := middleware.OAuthPublicRateLimitMiddleware(redisClient, int64(cfg.OAuthPublicRateLimitPerMinute))
-		api.POST("/login", authHandler.Login)
-		api.POST("/register", authHandler.Register)
-		api.POST("/refresh", authHandler.Refresh)
-		api.POST("/logout", authHandler.Logout)
-		api.POST("/oauth/authorization_requests", oauthPublicRateLimit, oauthHandler.CreateAuthorizationRequest)
-		api.DELETE("/oauth/authorization_requests/:request_id", oauthPublicRateLimit, oauthHandler.CancelAuthorizationRequest)
-		api.POST("/oauth/device/code", oauthPublicRateLimit, oauthHandler.DeviceCode)
-		api.POST("/oauth/token", oauthPublicRateLimit, oauthHandler.Token)
-		api.POST("/oauth/revoke", oauthPublicRateLimit, oauthHandler.Revoke)
-
-		// 需要认证的路由
-		protected := api.Group("")
-		protected.Use(middleware.AuthMiddleware(tokenService))
-		protected.Use(middleware.TokenTypePolicy("system", commonAuth.DelegatedRoutePolicy{
-			"GET /api/v1/system/engines": {"engine.list"},
-		}))
-		{
-			auth := protected.Group("/auth")
-			{
-				auth.GET("/context", authHandler.Context)
-				auth.POST("/delegations", authHandler.CreateDelegation)
-			}
-			oauth := protected.Group("/oauth")
-			{
-				oauthUserRateLimit := middleware.OAuthUserRateLimitMiddleware(redisClient, int64(cfg.OAuthUserRateLimitPerMinute))
-				oauth.GET("/authorization_requests/:request_id", oauthHandler.GetAuthorizationRequest)
-				oauth.POST("/authorizations", oauthUserRateLimit, oauthHandler.Authorize)
-				oauth.POST("/device/authorizations", oauthUserRateLimit, oauthHandler.ApproveDevice)
-			}
-
-			// 用户管理
-			users := protected.Group("/users")
-			{
-				userHandler := NewUserHandler(userService)
-				users.POST("", userHandler.Create)
-				users.GET("", userHandler.List)
-				users.GET("/me", userHandler.Me)
-				users.GET("/:id", userHandler.GetByID)
-				users.PUT("/:id", userHandler.Update)
-				users.PUT("/me/password", userHandler.ChangeOwnPassword)
-				users.DELETE("/:id", userHandler.Delete)
-			}
-
-			// 日志管理
-			logs := protected.Group("/logs")
-			{
-				logHandler := NewLogHandler(logService)
-				logs.GET("", logHandler.List)
-				logs.GET("/stats", logHandler.GetStats)   // 统计数据（新增）
-				logs.GET("/trends", logHandler.GetTrends) // 时间趋势（新增）
-				logs.GET("/export", logHandler.Export)    // 导出日志
-				logs.GET("/:id", logHandler.GetByID)
-			}
-
-			// 引擎管理
-			engines := protected.Group("/engines")
-			{
-				engineHandler := NewEngineHandler(engineService)
-				engines.POST("", engineHandler.Create)
-				engines.GET("", engineHandler.List)
-				engines.GET("/:id", engineHandler.GetByID)
-				engines.PUT("/:id", engineHandler.Update)
-				engines.DELETE("/:id", engineHandler.Delete)
-				engines.POST("/:id/test", engineHandler.TestConnection)                    // 测试已有引擎连接
-				engines.POST("/test-connection", engineHandler.TestConnectionBeforeCreate) // 创建前测试连接
-				engines.POST("/:id/catalog/children", engineHandler.ListCatalogChildren)   // 列出实时 catalog 子节点
-				engines.POST("/:id/spatial-workspaces/:ecosystem/:kind/enable", engineHandler.EnableSpatialWorkspace)
-			}
-
-			// 租户管理
-			tenants := protected.Group("/tenants")
-			{
-				tenantHandler := NewTenantHandler(tenantService)
-				tenants.POST("", tenantHandler.Create)
-				tenants.GET("", tenantHandler.List)
-				tenants.GET("/:id", tenantHandler.GetByID)
-				tenants.PUT("/:id", tenantHandler.Update)
-				tenants.DELETE("/:id", tenantHandler.Delete)
-			}
-
-			// 应用管理
-			applications := protected.Group("/applications")
-			{
-				appHandler := NewApplicationHandler(appService)
-				applications.POST("", appHandler.CreateApplication)
-				applications.GET("", appHandler.ListApplications)
-				applications.GET("/:id", appHandler.GetApplication)
-				applications.PUT("/:id", appHandler.UpdateApplication)
-				applications.DELETE("/:id", appHandler.DeleteApplication)
-				applications.POST("/:id/keys", appHandler.GenerateAPIKey)
-				applications.GET("/:id/keys", appHandler.ListAPIKeys)
-				applications.DELETE("/:id/keys/:key_id", appHandler.RevokeAPIKey)
-			}
-
-			// 资源回收管理（仅租户管理员）
-			cleanup := protected.Group("/admin/cleanup")
-			{
-				cleanupHandler := NewCleanupHandler(cleanupOrchestratorService)
-				cleanup.POST("/scan", cleanupHandler.CreateScanTask)
-				cleanup.GET("/tasks/:task_id", cleanupHandler.GetTaskStatus)
-				cleanup.POST("/execute", cleanupHandler.CreateExecuteTask)
-				cleanup.GET("/history", cleanupHandler.GetTaskHistory)
-			}
-		}
+	if err := RegisterIAMRoutes(api, runtime, redisClient, cfg); err != nil {
+		panic(fmt.Errorf("注册 IAM 路由失败: %w", err))
+	}
+	if err := RegisterIAMManagementRoutes(api, runtime); err != nil {
+		panic(fmt.Errorf("注册 IAM 管理路由失败: %w", err))
+	}
+	if err := RegisterIAMMigratedBusinessRoutes(
+		api,
+		runtime,
+		NewEngineHandler(engineService),
+		NewApplicationHandler(appService),
+		NewCleanupHandler(cleanupService),
+	); err != nil {
+		panic(fmt.Errorf("注册 IAM 业务路由失败: %w", err))
 	}
 
-	// 内部 API（用于服务间调用，使用 X-Internal-API-Key 认证）
 	internal := router.Group("/api/v1/internal")
 	internal.Use(middleware.InternalAPIMiddleware(cfg))
 	{
-		configHandler := NewConfigHandler(cfg)
-		internal.GET("/config", configHandler.GetSharedConfig)
+		internal.GET("/config", NewConfigHandler(cfg).GetSharedConfig)
 
-		// 服务间调用的引擎API
 		engineHandler := NewEngineHandler(engineService)
 		internal.GET("/engines", engineHandler.ListInternal)
 		internal.GET("/engines/:id", engineHandler.GetByIDInternal)
 		internal.POST("/engines", engineHandler.CreateInternal)
-		internal.POST("/engines/register", engineHandler.RegisterEngineInternal)                     // 引擎自注册
-		internal.POST("/engines/:id/check-connection", engineHandler.TriggerConnectionCheckInternal) // 触发异步连接检测
+		internal.PUT("/engines/:id", engineHandler.UpdateInternal)
+		internal.POST("/engines/register", engineHandler.RegisterEngineInternal)
+		internal.POST("/engines/:id/check-connection", engineHandler.TriggerConnectionCheckInternal)
 
-		// 能力注册 API
 		registry := internal.Group("/registry")
-		{
-			registryHandler := NewRegistryHandler(registryService, engineService)
-			registry.POST("/capabilities", registryHandler.RegisterCapability)
-			registry.GET("/capabilities", registryHandler.ListCapabilities)
-			registry.GET("/compute-engines", registryHandler.ListComputeEngines)
-		}
+		registryHandler := NewRegistryHandler(registryService, engineService)
+		registry.POST("/capabilities", registryHandler.RegisterCapability)
+		registry.GET("/capabilities", registryHandler.ListCapabilities)
+		registry.GET("/compute-engines", registryHandler.ListComputeEngines)
 
-		// 任务提供者注册 API（供模块启动时自注册使用）
 		taskProviderHandler := NewTaskProviderHandler(taskProviderService)
 		internal.POST("/task-providers/register", taskProviderHandler.RegisterOrUpdate)
 		internal.GET("/task-providers", taskProviderHandler.List)
-
-		// 审计日志 API（供其他模块记录审计日志）
-		logHandler := NewLogHandler(logService)
-		internal.POST("/audit-logs", logHandler.CreateFromInternal)
 		internal.GET("/task-providers/:module_name", taskProviderHandler.Get)
+		internal.POST("/audit-logs", runtime.InternalAuditHandler.Create)
 
-		// API Key 验证 API（供 Gateway 调用）
 		internalHandler := NewInternalHandler(appService)
 		internal.GET("/api-keys/validate", internalHandler.ValidateAPIKey)
 		internal.GET("/api-keys/bulk", internalHandler.BulkGetAPIKeys)
 
-		// 模块注册与发现 API（供各模块注册和 Gateway 查询）
 		moduleRegistryHandler := NewModuleRegistryHandler(moduleRegistryService)
 		internal.POST("/modules/register", moduleRegistryHandler.Register)
 		internal.POST("/modules/heartbeat", moduleRegistryHandler.Heartbeat)
@@ -281,4 +125,24 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	}
 
 	return router
+}
+
+func corsMiddleware(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		origin := c.Request.Header.Get("Origin")
+		for _, allowedOrigin := range cfg.AllowedOrigins {
+			if allowedOrigin == origin {
+				c.Header("Access-Control-Allow-Origin", origin)
+				c.Header("Access-Control-Allow-Credentials", "true")
+				break
+			}
+		}
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	}
 }

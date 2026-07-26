@@ -2,26 +2,21 @@
 # 使用 Debian Bullseye + Python 3.11 (避免 Trixie 的网络问题)
 FROM localhost:5001/python:3.11-bullseye
 
-# 安装系统依赖 (Bullseye 中的 OpenJDK 17 稳定可用)
-RUN apt-get update && \
-    apt-get install -y \
-    openjdk-17-jre-headless \
+# 安装系统依赖，并与 Business Spark 集群统一使用 OpenJDK 11
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list && \
+    apt-get -o Acquire::Retries=5 update && \
+    DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+    openjdk-11-jre-headless \
     libgeos-dev \
     libproj-dev \
     gdal-bin \
     libgdal-dev \
     procps \
-    || (sleep 10 && apt-get update && apt-get install -y \
-    openjdk-17-jre-headless \
-    libgeos-dev \
-    libproj-dev \
-    gdal-bin \
-    libgdal-dev \
-    procps) \
+    && ln -s "$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")" /opt/java \
     && rm -rf /var/lib/apt/lists/*
 
-# 设置 Java 环境变量
-ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-arm64
+# 使用稳定路径，避免把 Debian 的 amd64/arm64 架构目录写死到镜像配置中
+ENV JAVA_HOME=/opt/java
 ENV PATH="$JAVA_HOME/bin:$PATH"
 
 # 设置工作目录

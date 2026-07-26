@@ -42,9 +42,6 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-addp}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
-      - SUPER_ADMIN_USERNAME=${SUPER_ADMIN_USERNAME:-SuperAdmin}
-      - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:-20251001#SuperAdmin}
-      - SUPER_ADMIN_EMAIL=${SUPER_ADMIN_EMAIL:-superadmin@addp.com}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}

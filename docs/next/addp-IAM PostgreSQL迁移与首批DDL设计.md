@@ -2,7 +2,7 @@
 
 更新日期：2026-07-24
 
-状态：技术设计已确认，首批六版核心 IAM DDL 与第七版统一审计上下文 DDL、PostgreSQL 15 约束测试已实现；migration runner 尚未接入 System `main`。本文把已确认的 IAM 数据模型和 Fosite Storage Adapter 设计收敛为 System 的版本化 PostgreSQL 迁移路线。
+状态：技术设计已确认，十一版 IAM DDL、PostgreSQL 15 约束测试、System `main` migration runner、runner 之后的非 IAM AutoMigrate 边界、TOTP Runtime 与离线 CLI 已实现。当前开发 `addp` 数据库已完成破坏性重建并运行于 migration `11/clean`；离线三员 Bootstrap 和真实登录 E2E 尚待执行。
 
 ## 一、目标与边界
 
@@ -18,7 +18,7 @@
 
 - migration runner、`.sql` 文件、模型或 Service 的具体 Go 实现；
 - 各 owner Permission Manifest、聚合器、Permission 常量或内置 Role 精确数据；
-- 离线 Bootstrap CLI、账号恢复、MFA 或外部 IdP 配置；
+- 账号恢复、WebAuthn 或外部 IdP 配置；
 - owner、Asset 或其他模块自身的 schema migration；
 - 现有非 IAM System 表从 GORM `AutoMigrate` 全量迁移的改造。
 
@@ -157,6 +157,10 @@ COMMIT;
 | `000005_iam_oauth_fosite_storage` | `oauth_clients`、`oauth_authorization_requests`、`oauth_pkce_sessions`、`oauth_oidc_sessions`、`oauth_authorization_codes`、`oauth_device_authorizations`；Hash、请求关联、PKCE、Device `slow_down`、Code/Device 重放和 Fosite Adapter 所需索引 | 不启用 OIDC endpoint，不保存 Fosite session blob |
 | `000006_iam_catalog_seed` | 聚合各 owner Permission Manifest 和 System 内置 Role 模板后生成的 `permissions`、内置 Role、Role Permission、Role Conflict 和内置 Client 固定种子 | 不用 `ON CONFLICT DO UPDATE` 充当运行时 reconciliation，不创建 Bootstrap 状态、默认密码或默认三员 |
 | `000007_iam_audit_context` | 创建统一 `system.audit_logs`；Principal、AuthContext、Tenant、稳定事件、结构化脱敏详情、追加式存储门禁和审计查询索引 | 不创建第二张 IAM/OAuth 审计表，不把匿名或内部来源扩展为 AuthContext，不实现归档调度器或生产数据库角色交付 |
+| `000008_iam_context_selection_step_up` | 补齐 Context Selection 的 step-up 有效期事实与约束 | 不新增认证方式或第三种 Context |
+| `000009_iam_catalog_restore_actions` | 向前发布 restore/reactivate Permission，并固化 Principal 生命周期和平台身份审批约束 | 不重写历史 Catalog Seed |
+| `000010_iam_tenant_invitation_enrollment` | 创建 Tenant Invitation、Enrollment Ticket、状态机和不可删除门禁；Membership 来源增加 `invitation` | 不发送邮件、不创建第三种 AuthContext、不允许邀请恢复 ended Membership |
+| `000011_iam_mfa_bootstrap` | 创建 TOTP Credential、一次性 MFA Challenge、唯一 Bootstrap 状态和不可逆状态约束 | 不实现 WebAuthn、账号恢复或网络 Bootstrap API |
 
 每版必须显式列出：创建对象、外键、检查约束、唯一/部分唯一索引、触发器、所依赖的前一版本和对应测试。禁止通过 `CREATE TABLE IF NOT EXISTS`、`ALTER TABLE ... ADD COLUMN IF NOT EXISTS` 或基于 `information_schema` 的分支使同一版本在不同旧 schema 上产生不同结果。
 
@@ -221,9 +225,12 @@ COMMIT;
 5. 重写 System IAM 领域模型、Repository 和 Service，删除旧初始化/AutoMigrate 路径，并在切换前把路由/Swagger/Tool 授权覆盖报告收敛为 `complete=true`；
 6. 实现 Token Family、Fosite Adapter 与认证/同意桥接；
 7. 一次性切换所有 AuthContext 消费方，生成 Swagger，完成真实 Web、CLI loopback 与 Device E2E；
-8. 最后实现离线三员 Bootstrap 和管理控制台，不把 Bootstrap 当作 migration seed。
+8. 实现 TOTP Runtime 与离线三员 Bootstrap，不把 Bootstrap 当作 migration seed；
+9. Bootstrap 与真实登录 E2E 通过后再实现管理控制台。
 
 ## 十一、待确认的技术决策
+
+System 目标 Router、migration runner、旧 IAM AutoMigrate/默认 SuperAdmin 删除和真实 PostgreSQL 启动组合已经完成。离线三员 Bootstrap 固定采用 `prepare/apply` CLI、256 bit 一次性 Secret Hash、TTY 三人独立密码、TOTP 连续双码验证、单事务三员创建与永久 `completed` 状态。该路线不得用恢复默认 SuperAdmin、开发弱密码或临时网络注册端点替代。
 
 后续实现以以下结论为单一路径：
 

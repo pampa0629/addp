@@ -58,8 +58,12 @@ func (h *EngineHandler) Create(c *gin.Context) {
 		return
 	}
 
-	userID, _ := commonapi.GetCurrentUserID(c)
-	engine, err := h.engineService.Create(&req, userID)
+	actorID, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	engine, err := h.engineService.Create(&req, actorID, tenantID)
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
@@ -95,8 +99,12 @@ func (h *EngineHandler) List(c *gin.Context) {
 		IncludeBuiltin:   c.DefaultQuery("include_builtin", "true") == "true",
 	}
 
-	userID, _ := commonapi.GetCurrentUserID(c)
-	engines, total, err := h.engineService.List(page, pageSize, filter, userID)
+	_, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	engines, total, err := h.engineService.List(page, pageSize, filter, tenantID)
 	if err != nil {
 		commonapi.RespondError(c, 500, err.Error())
 		return
@@ -136,8 +144,12 @@ func (h *EngineHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	userID, _ := commonapi.GetCurrentUserID(c)
-	engine, err := h.engineService.GetByID(id, userID)
+	_, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	engine, err := h.engineService.GetByID(id, tenantID)
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
@@ -172,8 +184,12 @@ func (h *EngineHandler) Update(c *gin.Context) {
 		return
 	}
 
-	userID, _ := commonapi.GetCurrentUserID(c)
-	engine, err := h.engineService.Update(id, &req, userID)
+	_, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	engine, err := h.engineService.Update(id, tenantID, &req)
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
@@ -212,8 +228,12 @@ func (h *EngineHandler) EnableSpatialWorkspace(c *gin.Context) {
 		return
 	}
 
-	userID, _ := commonapi.GetCurrentUserID(c)
-	engine, err := h.engineService.EnableSpatialWorkspace(c.Request.Context(), id, ecosystem, kind, userID)
+	_, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	engine, err := h.engineService.EnableSpatialWorkspace(c.Request.Context(), id, ecosystem, kind, tenantID)
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
@@ -240,8 +260,12 @@ func (h *EngineHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	userID, _ := commonapi.GetCurrentUserID(c)
-	if err := h.engineService.Delete(id, userID); err != nil {
+	actorID, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	if err := h.engineService.Delete(id, tenantID, actorID); err != nil {
 		h.respondWithResourceError(c, err)
 		return
 	}
@@ -296,8 +320,12 @@ func (h *EngineHandler) TestConnection(c *gin.Context) {
 		override = req.ConnectionInfo
 	}
 
-	userID, _ := commonapi.GetCurrentUserID(c)
-	engine, err := h.engineService.BuildConnectionTestEngine(id, userID, override)
+	_, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	engine, err := h.engineService.BuildConnectionTestEngine(id, tenantID, override)
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
@@ -412,6 +440,11 @@ type internalResourceCreateRequest struct {
 	CreatedBy *uint `json:"created_by"`
 }
 
+type internalResourceUpdateRequest struct {
+	models.EngineUpdateRequest
+	TenantID uint `json:"tenant_id" binding:"required"`
+}
+
 // CreateInternal 内部服务创建资源
 func (h *EngineHandler) CreateInternal(c *gin.Context) {
 	var req internalResourceCreateRequest
@@ -432,6 +465,28 @@ func (h *EngineHandler) CreateInternal(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toEngineResponse(engine))
+}
+
+// UpdateInternal 供内部服务更新租户引擎资源。
+func (h *EngineHandler) UpdateInternal(c *gin.Context) {
+	id, err := commonapi.BindIDParam(c, "id")
+	if err != nil {
+		return
+	}
+
+	var req internalResourceUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	engine, err := h.engineService.Update(id, req.TenantID, &req.EngineUpdateRequest)
+	if err != nil {
+		h.respondWithResourceError(c, err)
+		return
+	}
+
+	commonapi.RespondSuccess(c, toEngineResponse(engine))
 }
 
 // ============ 内部 API（服务间调用）============
@@ -565,8 +620,12 @@ func (h *EngineHandler) ListCatalogChildren(c *gin.Context) {
 		return
 	}
 
-	userID, _ := commonapi.GetCurrentUserID(c)
-	engine, err := h.engineService.GetForConnection(id, userID)
+	_, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	engine, err := h.engineService.GetForConnection(id, tenantID)
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return

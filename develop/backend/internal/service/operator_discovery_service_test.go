@@ -138,6 +138,26 @@ func TestOperatorDiscoveryPublishesTargetResourceBinding(t *testing.T) {
 	}
 }
 
+func TestSparkSaveResourceBindingUsesRuntimeOverwriteMode(t *testing.T) {
+	operators := publicWorkflowOperators("spark_workflow", []commonModels.OperatorDescriptor{{
+		ID: "save",
+		Parameters: []commonModels.ParameterDescriptor{
+			{Name: "mode", Type: "string"},
+			{Name: "connection_info", Type: "object"},
+			{Name: "schema", Type: "string"},
+			{Name: "table", Type: "string"},
+			{Name: "path", Type: "string"},
+		},
+	}})
+
+	picker := parameterByName(t, operators[0].PublicParameters, "保存目标")
+	binding := picker.UIConfig["resource_binding"].(map[string]interface{})
+	defaults := binding["default_params"].(map[string]interface{})
+	if defaults["mode"] != "overwrite" {
+		t.Fatalf("Spark save default mode = %#v, want overwrite", defaults["mode"])
+	}
+}
+
 func TestOperatorDiscoveryPublishesSuperMapUdbxNFSTargetOnly(t *testing.T) {
 	operators := []commonModels.OperatorDescriptor{{
 		ID: "datasource.create",

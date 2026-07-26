@@ -158,6 +158,7 @@ func main() {
 			BootstrapServers: cfg.InfraKafkaBootstrapServers,
 			Username:         cfg.InfraKafkaAdminUsername, Password: cfg.InfraKafkaAdminPassword,
 			SecurityProtocol: cfg.InfraKafkaSecurityProtocol,
+			SASLMechanism:    cfg.InfraKafkaSASLMechanism,
 			TLSCACertFile:    cfg.InfraKafkaTLSCACertFile, TLSInsecure: cfg.InfraKafkaTLSInsecure,
 		})
 		if err != nil {
@@ -179,6 +180,7 @@ func main() {
 				ConnectBootstrapServers: cfg.KafkaConnectBootstrapServers,
 				ConnectKafkaUsername:    cfg.KafkaConnectKafkaUsername, ConnectKafkaPassword: cfg.KafkaConnectKafkaPassword,
 				ConnectKafkaSecurityProtocol: cfg.KafkaConnectKafkaSecurityProtocol,
+				ConnectKafkaSASLMechanism:    cfg.KafkaConnectKafkaSASLMechanism,
 				ConnectKafkaTLSCACertFile:    cfg.KafkaConnectKafkaTLSCACertFile,
 				ProvisioningTimeout:          cfg.CaptureProvisioningTimeout, StatusPollInterval: cfg.CaptureStatusPollInterval,
 				MonitorInterval: cfg.CaptureMonitorInterval,

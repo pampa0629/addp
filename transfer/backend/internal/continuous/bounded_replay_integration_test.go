@@ -24,13 +24,13 @@ func TestIntegrationBoundedReplayCreatesIsolatedPostgreSQLTarget(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
-	kafkaInfo := engineplugin.ConnectionInfo{
+	kafkaInfo := cdcDataKafkaConnection(engineplugin.ConnectionInfo{
 		"bootstrap_servers": cdcDataEnv("ADDP_TEST_INFRA_KAFKA_BOOTSTRAP_SERVERS", "localhost:19092"),
 		"security_protocol": cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext"),
 		"username":          cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_USERNAME", "admin"),
 		"password":          cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_PASSWORD", "addp_kafka_admin"),
-		"sasl_mechanism":    "plain",
-	}
+		"sasl_mechanism":    cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SASL_MECHANISM", "scram-sha-256"),
+	})
 	producer, err := newContinuousIntegrationProducer(kafkaInfo)
 	if err != nil {
 		t.Fatal(err)

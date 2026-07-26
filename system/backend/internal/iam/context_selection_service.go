@@ -19,6 +19,7 @@ type ContextSelectionNextAction string
 const (
 	ContextSelectionNextActionSessionIssued ContextSelectionNextAction = "session_issued"
 	ContextSelectionNextActionSelectContext ContextSelectionNextAction = "select_context"
+	ContextSelectionNextActionVerifyMFA     ContextSelectionNextAction = "verify_mfa"
 )
 
 type AvailableContext struct {
@@ -39,6 +40,7 @@ type ContextSelectionResult struct {
 	NextAction ContextSelectionNextAction
 	Session    *IssuedBrowserSession
 	Challenge  *ContextSelectionChallenge
+	MFA        *IssuedMFAChallenge
 }
 
 type BeginContextSelectionInput struct {

@@ -211,7 +211,7 @@ Webhook destination 的 HMAC secret 使用平台统一 `ENCRYPTION_KEY` 做 AES-
 
 ### Infra Kafka、Kafka Connect 与 Capture Supervisor 配置（工作包 3B/3C 已实现）
 
-Infra Kafka 是 ADDP 部署资源，不进入 System Engine。第一版固定 Apache Kafka 4.3.0 KRaft + Debezium Connect 3.6.0.Final；开发环境为 1 broker/1 Connect，生产参考为 3 broker/至少 2 Connect worker。
+Infra Kafka 是 ADDP 部署资源，不进入 System Engine。正式实现固定为 Redpanda v24.3.18 + Debezium Connect 3.6.0.Final；开发环境为 1 broker/1 Connect，生产参考为 3 broker/至少 2 Connect worker。平台只暴露 Kafka API 数据面，不提供 Apache Kafka/Redpanda 运行时选择。
 
 ```bash
 # 仅供 ADDP 内部组件使用；不写入用户任务 JSON。
@@ -222,18 +222,25 @@ INFRA_KAFKA_CDC_TOPIC_PREFIX=__addp_cdc.
 INFRA_KAFKA_CDC_RETENTION=168h
 INFRA_KAFKA_CDC_RETENTION_BYTES=
 INFRA_KAFKA_CDC_REPLICATION_FACTOR=1
+INFRA_KAFKA_INTERNAL_REPLICATION_FACTOR=1
 INFRA_KAFKA_SECURITY_PROTOCOL=sasl_plaintext
+INFRA_KAFKA_SASL_MECHANISM=scram-sha-256
 INFRA_KAFKA_TLS_CA_CERT_FILE=
 INFRA_KAFKA_TLS_INSECURE_SKIP_VERIFY=false
 INFRA_KAFKA_DISK_DEGRADED_PERCENT=75
 INFRA_KAFKA_DISK_CRITICAL_PERCENT=85
+
+# 生产 HA profile 的单 broker 内存与额外宿主机 listener。
+REDPANDA_HA_MEMORY=1G
+REDPANDA_HA_KAFKA_2_PORT=19093
+REDPANDA_HA_KAFKA_3_PORT=19094
 
 KAFKA_CONNECT_URL=http://localhost:18083
 KAFKA_CONNECT_USERNAME=
 KAFKA_CONNECT_PASSWORD=
 KAFKA_CONNECT_TIMEOUT=15s
 KAFKA_CONNECT_LOOPBACK_HOST=host.docker.internal
-KAFKA_CONNECT_BOOTSTRAP_SERVERS=kafka:29092
+KAFKA_CONNECT_BOOTSTRAP_SERVERS=redpanda:29092
 KAFKA_CONNECT_KAFKA_USERNAME=connect
 KAFKA_CONNECT_KAFKA_SECURITY_PROTOCOL=sasl_plaintext
 KAFKA_CONNECT_KAFKA_TLS_CA_CERT_FILE=
@@ -250,7 +257,7 @@ TRANSFER_CONTINUOUS_RUNTIME_STOP_POLL_INTERVAL=250ms
 TRANSFER_SCHEMA_CHANGE_META_SCAN_CLAIM_TTL=2m
 ```
 
-生产环境必须显式设置 `INFRA_KAFKA_CDC_RETENTION_BYTES`，并按峰值写入速率、7 天恢复窗口、副本因子和安全余量校验磁盘容量；time/bytes 任一边界先到都会删除旧 segment。开发状态脚本按 75%/85% 展示 degraded/critical 磁盘水位。凭据分别由 infra admin、Kafka Connect 和 Transfer consumer 使用，不复用业务 Kafka Engine 凭据。单机开发 Compose 使用仅限本机和 Docker 网络的 `SASL_PLAINTEXT/PLAIN`；生产必须切换到 `SASL_SSL` 或等价 TLS，并把 Connect REST 保持在内部网络。`KAFKA_CONNECT_LOOPBACK_HOST` 只用于 Connect 容器访问登记为 localhost/loopback 的开发业务库，不改写远程数据库主机。capture supervisor 已负责显式创建单分区 CDC topic、托管 connector、登记 generation/resource、监控状态和幂等 stop/cleanup。`TRANSFER_SCHEMA_CHANGE_META_SCAN_CLAIM_TTL` 是 additive migration 提交后 Meta scan 的持久化 claim 租期；只用于进程崩溃后的过期接管，不是 Meta API 失败重试间隔，也不进入任务配置。该值必须大于 Meta client 固定的 60 秒 HTTP 超时，默认 2 分钟，为调用完成和 token fencing 留出余量。
+生产环境必须显式设置 `INFRA_KAFKA_CDC_RETENTION_BYTES`，并按峰值写入速率、7 天恢复窗口、副本因子和安全余量校验磁盘容量；time/bytes 任一边界先到都会删除旧 segment。开发状态脚本按 75%/85% 展示 degraded/critical 磁盘水位。生产耐久语义固定为 3 副本、producer `acks=all`、至少 2 broker 确认，由 RF=3 的 Raft majority 实现；Transfer 不读取或下发 `min.insync.replicas` topic 属性。`INFRA_KAFKA_INTERNAL_REPLICATION_FACTOR` 控制 Connect internal topics 的副本数，生产设为 3。凭据分别由 infra admin、Kafka Connect 和 Transfer consumer 使用，不复用业务 Kafka Engine 凭据。`INFRA_KAFKA_SASL_MECHANISM` 固定为部署级 `scram-sha-256`，由 Infra admin、Connect、Transfer continuous 和 DLQ 共同消费，禁止进入用户任务配置。正式单机开发 Compose 仅在本机和 Docker 网络使用 `SASL_PLAINTEXT/SCRAM-SHA-256`；生产 HA profile 必须使用 `SASL_SSL`，固定 `write.caching=false`、Connect producer `acks=all`、10 秒 scheduled rebalance delay，并使用 `19092/19093/19094` 三个本地 external listener。broker service/container/DNS 固定为 `redpanda`/`addp-redpanda`/`redpanda:29092`，一次性 `redpanda-init` 使用同一 Redpanda 镜像内置的 `rpk` 初始化 SCRAM 用户、Connect internal topics 和 ACL；不得恢复 `kafka` broker service、Apache Kafka CLI 镜像或第二套初始化容器。拓扑参数与 Redpanda 原生健康观测只存在于部署/认证层。`KAFKA_CONNECT_LOOPBACK_HOST` 只用于 Connect 容器访问登记为 localhost/loopback 的开发业务库，不改写远程数据库主机。capture supervisor 已负责显式创建单分区 CDC topic、托管 connector、登记 generation/resource、监控状态和幂等 stop/cleanup。`TRANSFER_SCHEMA_CHANGE_META_SCAN_CLAIM_TTL` 是 additive migration 提交后 Meta scan 的持久化 claim 租期；只用于进程崩溃后的过期接管，不是 Meta API 失败重试间隔，也不进入任务配置。该值必须大于 Meta client 固定的 60 秒 HTTP 超时，默认 2 分钟，为调用完成和 token fencing 留出余量。
 
 Business MySQL 作为本地 CDC 测试源时使用独立配置文件 `business/.env`：
 
@@ -294,8 +301,19 @@ REFRESH_TOKEN_EXPIRE_DAYS=30
 OAUTH_CODE_EXPIRE_MINUTES=5
 OAUTH_DEVICE_EXPIRE_MINUTES=10
 OAUTH_DEVICE_INTERVAL_SECONDS=5
+# Tenant Invitation 默认 7 天有效；Enrollment Ticket 固定短期、一次性消费。
+TENANT_INVITATION_EXPIRE_HOURS=168
+ENROLLMENT_TICKET_EXPIRE_MINUTES=5
+# Base64 编码的独立 32 字节 User Code HMAC pepper；生产环境必须显式设置。
+OAUTH_USER_CODE_PEPPER=
+# 仅在一次受控轮换窗口内设置；窗口结束后删除，不能保留无限历史链。
+OAUTH_PREVIOUS_USER_CODE_PEPPER=
+# Base64 编码的独立 32 字节 MFA Credential 加密密钥；不得与 ENCRYPTION_KEY 复用。
+IAM_MFA_ENCRYPTION_KEY=
 OAUTH_PUBLIC_RATE_LIMIT_PER_MINUTE=60
 OAUTH_USER_RATE_LIMIT_PER_MINUTE=30
+# 浏览器、CLI 和外部客户端可访问的 Gateway 公共 API 根地址；OAuth 响应不得使用模块间 SYSTEM_URL。
+PUBLIC_API_URL=http://localhost:8000
 CONSOLE_URL=http://localhost:5170
 
 # System 只信任这些反向代理提供的客户端 IP 转发头；逗号分隔 IP 或 CIDR。
@@ -357,43 +375,11 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-#### 启用默认租户账户
+#### IAM 首次初始化
 
-在 `.env` 文件中添加以下配置:
+目标 IAM 不创建默认 `SuperAdmin`、默认租户或弱密码账号，也不接受通过环境变量开启公开注册。平台系统管理员、安全管理员和审计管理员只能通过一次性离线 Bootstrap 建立；Bootstrap 完成后永久关闭，后续平台高权限身份变更统一走双人审批。
 
-```bash
-# 启用默认租户和开发用本地管理员账户创建
-ENABLE_DEFAULT_TENANT=true
-
-# 可选: 自定义默认账户信息
-DEFAULT_TENANT_NAME=默认租户
-DEFAULT_ADMIN_USERNAME=admin
-DEFAULT_ADMIN_PASSWORD=123456
-DEFAULT_ADMIN_EMAIL=admin@addp.com
-```
-
-#### 安全提示
-
-- ⚠️ **仅用于开发和测试环境** - 这些账户密码较弱,不应在生产环境使用
-- ⚠️ **生产环境强制禁用** - 即使设置 `ENABLE_DEFAULT_TENANT=true`,在 `ENV=production` 时也不会创建
-- ⚠️ **默认禁用** - 未设置 `ENABLE_DEFAULT_TENANT=true` 时不会创建默认租户账户
-- 💡 可通过环境变量自定义账户信息 (用户名、密码、邮箱等)
-- 💡 账户创建是幂等的,重复启动不会重复创建
-
-#### 登录测试
-
-使用默认账户登录:
-
-```bash
-# 使用开发用本地管理员账户登录
-curl -X POST http://localhost:8180/api/v1/system/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "123456"}'
-```
-
-目标 IAM 不创建常驻 `SuperAdmin` 默认账号。平台系统管理员、安全管理员和审计管理员必须通过受控初始化与角色任命流程建立，不能通过环境变量写入共享默认密码。
-
-**初始化位置**: `system/backend/internal/repository/database.go`
+Bootstrap 使用离线 `iam-bootstrap prepare/apply` 两阶段命令，Secret 和三员密码只通过 TTY 输入；具体输入、强 MFA 激活和审计要求以 `docs/next/addp-IAM目标数据模型设计.md` 与 `docs/next/addp-IAM PostgreSQL迁移与首批DDL设计.md` 为准。
 
 
 **数据持久化**:

@@ -3,6 +3,7 @@ package migration
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -39,8 +40,8 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read migration version: %v", err)
 	}
-	if version != 8 || dirty {
-		t.Fatalf("migration state = (%d, %t), want (8, false)", version, dirty)
+	if version != 11 || dirty {
+		t.Fatalf("migration state = (%d, %t), want (11, false)", version, dirty)
 	}
 
 	assertIAMCatalogSeed(t, db)
@@ -50,6 +51,8 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	assertSessionTokenFamilyConstraints(t, db)
 	assertOAuthFositeStorageConstraints(t, db)
 	assertAuditContextConstraints(t, db)
+	assertInvitationEnrollmentConstraints(t, db)
+	assertMFABootstrapConstraints(t, db)
 	assertForeignKeyColumnsIndexed(t, db)
 
 	if _, err := db.Exec(`UPDATE system.schema_migrations SET dirty = true`); err != nil {
@@ -58,7 +61,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "is dirty") {
 		t.Fatalf("Run() error = %v, want dirty-state rejection", err)
 	}
-	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 9, dirty = false`); err != nil {
+	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 12, dirty = false`); err != nil {
 		t.Fatalf("set newer migration version: %v", err)
 	}
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "newer than embedded") {
@@ -70,6 +73,171 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	}
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "legacy system IAM schema") {
 		t.Fatalf("Run() error = %v, want legacy-schema rejection", err)
+	}
+}
+
+func assertMFABootstrapConstraints(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	principalID := createMigrationUser(t, db, "MFA Bootstrap User")
+	var credentialID int64
+	if err := db.QueryRow(`
+		INSERT INTO system.mfa_credentials
+		    (user_id, method, secret_ciphertext, secret_nonce, key_version)
+		VALUES ($1, 'totp', decode(repeat('ab', 32), 'hex'), decode(repeat('cd', 12), 'hex'), 1)
+		RETURNING id
+	`, principalID).Scan(&credentialID); err != nil {
+		t.Fatalf("create MFA credential: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.mfa_credentials
+		    (user_id, method, secret_ciphertext, secret_nonce, key_version)
+		VALUES ($1, 'totp', decode(repeat('ef', 32), 'hex'), decode(repeat('01', 12), 'hex'), 1)
+	`, principalID); err == nil {
+		t.Fatal("duplicate TOTP credential succeeded")
+	}
+	if _, err := db.Exec(`UPDATE system.mfa_credentials SET last_accepted_counter = 100 WHERE id = $1`, credentialID); err != nil {
+		t.Fatalf("record MFA counter: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE system.mfa_credentials SET last_accepted_counter = 100 WHERE id = $1`, credentialID); err == nil {
+		t.Fatal("replayed MFA counter succeeded")
+	}
+
+	var challengeID int64
+	if err := db.QueryRow(`
+		INSERT INTO system.mfa_challenges
+		    (token_hash, principal_id, issued_authorization_version,
+		     authentication_methods, authenticated_at, expires_at)
+		VALUES ($1, $2, 1, ARRAY['password'], now(), now() + interval '5 minutes')
+		RETURNING id
+	`, tokenHash('d'), principalID).Scan(&challengeID); err != nil {
+		t.Fatalf("create MFA challenge: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE system.mfa_challenges SET consumed_at = now() WHERE id = $1`, challengeID); err != nil {
+		t.Fatalf("consume MFA challenge: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE system.mfa_challenges SET consumed_at = now() WHERE id = $1`, challengeID); err == nil {
+		t.Fatal("MFA challenge was consumed twice")
+	}
+
+	if _, err := db.Exec(`
+		INSERT INTO system.iam_bootstrap_state
+		    (status, secret_hash, prepared_at, expires_at)
+		VALUES ('prepared', $1, now(), now() + interval '1 hour')
+	`, tokenHash('e')); err != nil {
+		t.Fatalf("prepare IAM bootstrap: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.iam_bootstrap_state
+		    (status, secret_hash, prepared_at, expires_at)
+		VALUES ('prepared', $1, now(), now() + interval '1 hour')
+	`, tokenHash('f')); err == nil {
+		t.Fatal("second IAM bootstrap state succeeded")
+	}
+	if _, err := db.Exec(`
+		UPDATE system.iam_bootstrap_state
+		SET status = 'completed', secret_hash = NULL, completed_at = now()
+	`); err != nil {
+		t.Fatalf("complete IAM bootstrap: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE system.iam_bootstrap_state SET status = 'prepared', secret_hash = $1, completed_at = NULL`, tokenHash('a')); err == nil {
+		t.Fatal("completed IAM bootstrap reopened")
+	}
+	if _, err := db.Exec(`DELETE FROM system.mfa_credentials WHERE id = $1`, credentialID); err == nil {
+		t.Fatal("MFA credential physical delete succeeded")
+	}
+	if _, err := db.Exec(`DELETE FROM system.mfa_challenges WHERE id = $1`, challengeID); err == nil {
+		t.Fatal("MFA challenge physical delete succeeded")
+	}
+	if _, err := db.Exec(`DELETE FROM system.iam_bootstrap_state`); err == nil {
+		t.Fatal("IAM bootstrap state physical delete succeeded")
+	}
+}
+
+func assertInvitationEnrollmentConstraints(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	var tenantID, creatorPrincipalID int64
+	if err := db.QueryRow(`SELECT id FROM system.tenants WHERE code = 'migration-test'`).Scan(&tenantID); err != nil {
+		t.Fatalf("find invitation test tenant: %v", err)
+	}
+	if err := db.QueryRow(`SELECT id FROM system.users WHERE display_name = 'Migration User'`).Scan(&creatorPrincipalID); err != nil {
+		t.Fatalf("find invitation creator: %v", err)
+	}
+	invitedPrincipalID := createMigrationUser(t, db, "Invitation User")
+
+	var invitationID int64
+	if err := db.QueryRow(`
+		INSERT INTO system.tenant_invitations
+		    (tenant_id, email, normalized_email, secret_hash, expires_at, created_by_principal_id)
+		VALUES ($1, 'Invitee@Example.Test', 'invitee@example.test', $2, now() + interval '7 days', $3)
+		RETURNING id
+	`, tenantID, tokenHash('a'), creatorPrincipalID).Scan(&invitationID); err != nil {
+		t.Fatalf("create tenant invitation: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.tenant_invitations
+		    (tenant_id, email, normalized_email, secret_hash, expires_at, created_by_principal_id)
+		VALUES ($1, 'INVITEE@example.test', 'invitee@example.test', $2, now() + interval '7 days', $3)
+	`, tenantID, tokenHash('b'), creatorPrincipalID); err == nil {
+		t.Fatal("duplicate pending invitation for tenant and normalized email succeeded")
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.tenant_invitations
+		    (tenant_id, email, normalized_email, secret_hash, expires_at, created_by_principal_id)
+		VALUES ($1, 'bad@example.test', 'bad@example.test', 'not-a-hash', now() + interval '7 days', $2)
+	`, tenantID, creatorPrincipalID); err == nil {
+		t.Fatal("tenant invitation accepted a non-SHA256 secret hash")
+	}
+
+	var authorizationVersion int64
+	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id = $1`, invitedPrincipalID).Scan(&authorizationVersion); err != nil {
+		t.Fatalf("read invited principal authorization version: %v", err)
+	}
+	var ticketID int64
+	if err := db.QueryRow(`
+		INSERT INTO system.enrollment_tickets
+		    (token_hash, principal_id, invitation_id, issued_authorization_version, authenticated_at, expires_at)
+		VALUES ($1, $2, $3, $4, now(), now() + interval '5 minutes')
+		RETURNING id
+	`, tokenHash('c'), invitedPrincipalID, invitationID, authorizationVersion).Scan(&ticketID); err != nil {
+		t.Fatalf("create enrollment ticket: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE system.enrollment_tickets SET principal_id = $1, consumed_at = now() WHERE id = $2`, creatorPrincipalID, ticketID); err == nil {
+		t.Fatal("enrollment ticket principal binding update succeeded")
+	}
+	if _, err := db.Exec(`UPDATE system.enrollment_tickets SET consumed_at = now() WHERE id = $1`, ticketID); err != nil {
+		t.Fatalf("consume enrollment ticket: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE system.enrollment_tickets SET consumed_at = now() WHERE id = $1`, ticketID); err == nil {
+		t.Fatal("enrollment ticket was consumed twice")
+	}
+
+	if _, err := db.Exec(`
+		UPDATE system.tenant_invitations
+		SET status = 'accepted', accepted_at = now(), accepted_by_principal_id = $1
+		WHERE id = $2
+	`, invitedPrincipalID, invitationID); err != nil {
+		t.Fatalf("accept tenant invitation: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE system.tenant_invitations SET status = 'pending', accepted_at = NULL, accepted_by_principal_id = NULL WHERE id = $1`, invitationID); err == nil {
+		t.Fatal("accepted tenant invitation returned to pending")
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.tenant_memberships
+		    (tenant_id, principal_id, source_type, source_ref, joined_at, created_by_principal_id)
+		VALUES ($1, $2, 'invitation', $3, now(), $4)
+	`, tenantID, invitedPrincipalID, fmt.Sprint(invitationID), creatorPrincipalID); err != nil {
+		t.Fatalf("create invitation-sourced tenant membership: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM system.tenant_invitations WHERE id = $1`, invitationID); err == nil {
+		t.Fatal("tenant invitation physical delete succeeded")
+	}
+	if _, err := db.Exec(`DELETE FROM system.enrollment_tickets WHERE id = $1`, ticketID); err == nil {
+		t.Fatal("enrollment ticket physical delete succeeded")
+	}
+	if _, err := db.Exec(`TRUNCATE system.enrollment_tickets`); err == nil {
+		t.Fatal("enrollment ticket truncate succeeded")
 	}
 }
 
@@ -265,9 +433,9 @@ func assertAuditContextConstraints(t *testing.T, db *sql.DB) {
 func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	t.Helper()
 
-	assertTableCount(t, db, "system.permissions", 240)
+	assertTableCount(t, db, "system.permissions", 243)
 	assertTableCount(t, db, "system.roles", 18)
-	assertTableCount(t, db, "system.role_permissions", 275)
+	assertTableCount(t, db, "system.role_permissions", 278)
 	assertTableCount(t, db, "system.role_conflicts", 3)
 	assertTableCount(t, db, "system.oauth_clients", 1)
 	assertTableCount(t, db, "system.principals", 0)
@@ -278,8 +446,8 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`SELECT count(DISTINCT owner_module), count(*) FILTER (WHERE owner_module = 'system') FROM system.permissions`).Scan(&ownerCount, &systemPermissionCount); err != nil {
 		t.Fatalf("read seeded Permission owners: %v", err)
 	}
-	if ownerCount != 15 || systemPermissionCount != 102 {
-		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 15 and 102", ownerCount, systemPermissionCount)
+	if ownerCount != 15 || systemPermissionCount != 105 {
+		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 15 and 105", ownerCount, systemPermissionCount)
 	}
 
 	var invalidRoleCount int

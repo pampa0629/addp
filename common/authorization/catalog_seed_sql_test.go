@@ -62,6 +62,16 @@ func TestWriteAndCheckGeneratedIAMCatalogSeed(t *testing.T) {
 	}
 }
 
+func TestCheckImmutableIAMCatalogSeedRejectsChangedSeed(t *testing.T) {
+	root := t.TempDir()
+	if err := WriteGeneratedIAMCatalogSeed(root, []byte("changed\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckImmutableIAMCatalogSeed(root); err == nil || !strings.Contains(err.Error(), "digest") {
+		t.Fatalf("immutable seed check error = %v", err)
+	}
+}
+
 func TestGenerateIAMCatalogSeedSQLRejectsMissingConflictRole(t *testing.T) {
 	report := AuthorizationCatalogReport{
 		SchemaVersion: AuthorizationCatalogReportSchemaVersion,

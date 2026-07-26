@@ -31,6 +31,20 @@ const (
 	LocalAccountStatusDisabled LocalAccountStatus = "disabled"
 )
 
+type MFACredentialStatus string
+
+const (
+	MFACredentialStatusActive   MFACredentialStatus = "active"
+	MFACredentialStatusDisabled MFACredentialStatus = "disabled"
+)
+
+type IAMBootstrapStatus string
+
+const (
+	IAMBootstrapStatusPrepared  IAMBootstrapStatus = "prepared"
+	IAMBootstrapStatusCompleted IAMBootstrapStatus = "completed"
+)
+
 type TenantStatus string
 
 const (
@@ -51,9 +65,39 @@ type TenantMembershipSource string
 
 const (
 	TenantMembershipSourceManual        TenantMembershipSource = "manual"
+	TenantMembershipSourceInvitation    TenantMembershipSource = "invitation"
 	TenantMembershipSourceIDPJIT        TenantMembershipSource = "idp_jit"
 	TenantMembershipSourceDirectorySync TenantMembershipSource = "directory_sync"
 	TenantMembershipSourceBootstrap     TenantMembershipSource = "bootstrap"
+)
+
+type TenantInvitationStatus string
+
+const (
+	TenantInvitationStatusPending  TenantInvitationStatus = "pending"
+	TenantInvitationStatusAccepted TenantInvitationStatus = "accepted"
+	TenantInvitationStatusRevoked  TenantInvitationStatus = "revoked"
+	TenantInvitationStatusExpired  TenantInvitationStatus = "expired"
+)
+
+type PrivilegedChangeType string
+
+const (
+	PrivilegedChangePlatformIdentitySuspend    PrivilegedChangeType = "platform_identity_suspend"
+	PrivilegedChangePlatformIdentityReactivate PrivilegedChangeType = "platform_identity_reactivate"
+	PrivilegedChangePlatformIdentityDeactivate PrivilegedChangeType = "platform_identity_deactivate"
+	PrivilegedChangePlatformRoleGrant          PrivilegedChangeType = "platform_role_grant"
+	PrivilegedChangePlatformRoleRevoke         PrivilegedChangeType = "platform_role_revoke"
+)
+
+type PrivilegedChangeStatus string
+
+const (
+	PrivilegedChangeStatusPending   PrivilegedChangeStatus = "pending"
+	PrivilegedChangeStatusApproved  PrivilegedChangeStatus = "approved"
+	PrivilegedChangeStatusRejected  PrivilegedChangeStatus = "rejected"
+	PrivilegedChangeStatusCancelled PrivilegedChangeStatus = "cancelled"
+	PrivilegedChangeStatusApplied   PrivilegedChangeStatus = "applied"
 )
 
 type ContextType string
@@ -130,6 +174,47 @@ type LocalAccount struct {
 
 func (LocalAccount) TableName() string { return "system.local_accounts" }
 
+type MFACredential struct {
+	ID                  int64               `gorm:"primaryKey;autoIncrement"`
+	UserID              int64               `gorm:"column:user_id;not null"`
+	Method              string              `gorm:"column:method;not null"`
+	Status              MFACredentialStatus `gorm:"column:status;not null"`
+	SecretCiphertext    []byte              `gorm:"column:secret_ciphertext;not null"`
+	SecretNonce         []byte              `gorm:"column:secret_nonce;not null"`
+	KeyVersion          int                 `gorm:"column:key_version;not null"`
+	LastAcceptedCounter *int64              `gorm:"column:last_accepted_counter"`
+	CreatedAt           time.Time           `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt           time.Time           `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (MFACredential) TableName() string { return "system.mfa_credentials" }
+
+type MFAChallenge struct {
+	ID                         int64          `gorm:"primaryKey;autoIncrement"`
+	TokenHash                  string         `gorm:"column:token_hash;not null;unique"`
+	PrincipalID                int64          `gorm:"column:principal_id;not null"`
+	IssuedAuthorizationVersion int64          `gorm:"column:issued_authorization_version;not null"`
+	AuthenticationMethods      pq.StringArray `gorm:"column:authentication_methods;type:text[];not null"`
+	AuthenticatedAt            time.Time      `gorm:"column:authenticated_at;not null"`
+	ExpiresAt                  time.Time      `gorm:"column:expires_at;not null"`
+	FailedAttempts             int            `gorm:"column:failed_attempts;not null"`
+	ConsumedAt                 *time.Time     `gorm:"column:consumed_at"`
+	CreatedAt                  time.Time      `gorm:"column:created_at;autoCreateTime"`
+}
+
+func (MFAChallenge) TableName() string { return "system.mfa_challenges" }
+
+type IAMBootstrapState struct {
+	Singleton   bool               `gorm:"column:singleton;primaryKey"`
+	Status      IAMBootstrapStatus `gorm:"column:status;not null"`
+	SecretHash  *string            `gorm:"column:secret_hash"`
+	PreparedAt  time.Time          `gorm:"column:prepared_at;not null"`
+	ExpiresAt   time.Time          `gorm:"column:expires_at;not null"`
+	CompletedAt *time.Time         `gorm:"column:completed_at"`
+}
+
+func (IAMBootstrapState) TableName() string { return "system.iam_bootstrap_state" }
+
 type Tenant struct {
 	ID          int64        `gorm:"primaryKey;autoIncrement"`
 	Code        string       `gorm:"column:code;not null;unique"`
@@ -158,6 +243,74 @@ type TenantMembership struct {
 }
 
 func (TenantMembership) TableName() string { return "system.tenant_memberships" }
+
+type TenantInvitation struct {
+	ID                    int64                  `gorm:"primaryKey;autoIncrement"`
+	TenantID              int64                  `gorm:"column:tenant_id;not null"`
+	Email                 string                 `gorm:"column:email;not null"`
+	NormalizedEmail       string                 `gorm:"column:normalized_email;not null"`
+	SecretHash            string                 `gorm:"column:secret_hash;not null;unique"`
+	Status                TenantInvitationStatus `gorm:"column:status;not null"`
+	ExpiresAt             time.Time              `gorm:"column:expires_at;not null"`
+	AcceptedAt            *time.Time             `gorm:"column:accepted_at"`
+	AcceptedByPrincipalID *int64                 `gorm:"column:accepted_by_principal_id"`
+	RevokedAt             *time.Time             `gorm:"column:revoked_at"`
+	RevokedByPrincipalID  *int64                 `gorm:"column:revoked_by_principal_id"`
+	ExpiredAt             *time.Time             `gorm:"column:expired_at"`
+	CreatedByPrincipalID  int64                  `gorm:"column:created_by_principal_id;not null"`
+	CreatedAt             time.Time              `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt             time.Time              `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (TenantInvitation) TableName() string { return "system.tenant_invitations" }
+
+type EnrollmentTicket struct {
+	ID                         int64      `gorm:"primaryKey;autoIncrement"`
+	TokenHash                  string     `gorm:"column:token_hash;not null;unique"`
+	PrincipalID                int64      `gorm:"column:principal_id;not null"`
+	InvitationID               int64      `gorm:"column:invitation_id;not null"`
+	IssuedAuthorizationVersion int64      `gorm:"column:issued_authorization_version;not null"`
+	AuthenticatedAt            time.Time  `gorm:"column:authenticated_at;not null"`
+	ExpiresAt                  time.Time  `gorm:"column:expires_at;not null"`
+	ConsumedAt                 *time.Time `gorm:"column:consumed_at"`
+	CreatedAt                  time.Time  `gorm:"column:created_at;autoCreateTime"`
+}
+
+func (EnrollmentTicket) TableName() string { return "system.enrollment_tickets" }
+
+type PrivilegedChangeRequest struct {
+	ID                     int64                  `gorm:"primaryKey;autoIncrement"`
+	ChangeType             PrivilegedChangeType   `gorm:"column:change_type;not null"`
+	TargetPrincipalID      int64                  `gorm:"column:target_principal_id;not null"`
+	TargetRoleID           *int64                 `gorm:"column:target_role_id"`
+	ScopeType              string                 `gorm:"column:scope_type;not null"`
+	Reason                 string                 `gorm:"column:reason;not null"`
+	RequestedByPrincipalID int64                  `gorm:"column:requested_by_principal_id;not null"`
+	Status                 PrivilegedChangeStatus `gorm:"column:status;not null"`
+	RequestedAt            time.Time              `gorm:"column:requested_at;not null;default:now()"`
+	DecidedAt              *time.Time             `gorm:"column:decided_at"`
+	AppliedAt              *time.Time             `gorm:"column:applied_at"`
+	CreatedAt              time.Time              `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt              time.Time              `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (PrivilegedChangeRequest) TableName() string {
+	return "system.privileged_change_requests"
+}
+
+type PrivilegedChangeApproval struct {
+	ID                  int64     `gorm:"primaryKey;autoIncrement"`
+	RequestID           int64     `gorm:"column:request_id;not null;unique"`
+	ReviewerPrincipalID int64     `gorm:"column:reviewer_principal_id;not null"`
+	Decision            string    `gorm:"column:decision;not null"`
+	Reason              string    `gorm:"column:reason;not null"`
+	DecidedAt           time.Time `gorm:"column:decided_at;not null;default:now()"`
+	CreatedAt           time.Time `gorm:"column:created_at;autoCreateTime"`
+}
+
+func (PrivilegedChangeApproval) TableName() string {
+	return "system.privileged_change_approvals"
+}
 
 type AuditLog struct {
 	ID            int64           `gorm:"primaryKey;autoIncrement"`

@@ -23,8 +23,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	generateOwnerConstants := flags.Bool("generate-owner-constants", false, "generate owner-local Permission constants")
 	checkOwnerConstants := flags.Bool("check-owner-constants", false, "verify owner-local Permission constants are current")
 	coverageReport := flags.Bool("coverage-report", false, "write the OpenAPI and Tool authorization coverage report")
-	generateSQLSeed := flags.Bool("generate-sql-seed", false, "generate the first IAM catalog seed migration")
-	checkSQLSeed := flags.Bool("check-sql-seed", false, "verify the first IAM catalog seed migration is current")
+	checkSQLSeed := flags.Bool("check-sql-seed", false, "verify the published first IAM catalog seed migration digest")
 	generateToolCatalog := flags.Bool("generate-tool-catalog", false, "generate the System Runtime Tool authorization catalog")
 	checkToolCatalog := flags.Bool("check-tool-catalog", false, "verify the System Runtime Tool authorization catalog is current")
 	repositoryRoot := flags.String("repository-root", "", "explicit ADDP repository root")
@@ -40,7 +39,6 @@ func run(args []string, stdout, stderr io.Writer) error {
 		*generateOwnerConstants,
 		*checkOwnerConstants,
 		*coverageReport,
-		*generateSQLSeed,
 		*checkSQLSeed,
 		*generateToolCatalog,
 		*checkToolCatalog,
@@ -84,19 +82,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 		}
 		return nil
 	}
-	if *generateSQLSeed || *checkSQLSeed {
-		data, err := authorization.GenerateIAMCatalogSeedSQL(report)
-		if err != nil {
+	if *checkSQLSeed {
+		if err := authorization.CheckImmutableIAMCatalogSeed(*repositoryRoot); err != nil {
 			return err
 		}
-		if *generateSQLSeed {
-			if err := authorization.WriteGeneratedIAMCatalogSeed(*repositoryRoot, data); err != nil {
-				return err
-			}
-		} else if err := authorization.CheckGeneratedIAMCatalogSeed(*repositoryRoot, data); err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintf(stdout, "{\"path\":%q,\"byte_count\":%d}\n", authorization.IAMCatalogSeedRelativePath, len(data)); err != nil {
+		if _, err := fmt.Fprintf(stdout, "{\"path\":%q,\"sha256\":%q}\n", authorization.IAMCatalogSeedRelativePath, authorization.IAMCatalogSeedSHA256); err != nil {
 			return fmt.Errorf("write generated IAM catalog seed report: %w", err)
 		}
 		return nil

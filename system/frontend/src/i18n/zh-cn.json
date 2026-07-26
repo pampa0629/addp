@@ -1,20 +1,7 @@
 {
   "system": {
     "login": {
-      "title": "系统管理登录",
-      "subtitle": "All Domain Data Platform",
-      "usernamePlaceholder": "请输入用户名",
-      "passwordPlaceholder": "请输入密码",
-      "submit": "登录",
-      "loggingIn": "登录中...",
-      "success": "登录成功",
-      "failed": "登录失败",
-      "networkError": "网络连接失败，请检查服务器是否启动",
-      "requestFailed": "请求失败 ({status})",
-      "unknown": "未知错误",
-      "usernameRequired": "请输入用户名",
-      "passwordRequired": "请输入密码",
-      "passwordMinLength": "密码长度不能少于6位"
+      "title": "系统管理登录"
     },
     "layout": {
       "title": "系统管理模块",

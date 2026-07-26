@@ -7,6 +7,4 @@ const systemClient = axios.create({
   timeout: 10000
 })
 
-export const authAPI = createAuthAPI(systemClient, {
-  includeRegister: true  // Manager 需要注册功能
-})
+export const authAPI = createAuthAPI(systemClient)

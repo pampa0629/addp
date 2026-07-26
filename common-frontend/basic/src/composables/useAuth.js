@@ -87,6 +87,36 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
     store.tokenExpiresAt = getAccessTokenExpiresAt()
   }
 
+  async function acceptLoginResult(store, payload) {
+    if (!payload || typeof payload.next_action !== 'string') {
+      throw new Error('auth_login_response_invalid')
+    }
+    switch (payload.next_action) {
+      case 'session_issued': {
+        const session = payload.session
+        if (!session?.access_token) throw new Error('auth_login_session_missing_access_token')
+        authSession.acceptToken(session.access_token, session.expires_in)
+        await store.fetchUser()
+        store.sessionInitialized = true
+        store.sessionStatus = 'authenticated'
+        return payload
+      }
+      case 'verify_mfa':
+        if (!payload.mfa?.challenge_token || payload.mfa.method !== 'totp' || !payload.mfa.expires_at) {
+          throw new Error('auth_login_mfa_challenge_invalid')
+        }
+        return payload
+      case 'select_context':
+        if (!payload.selection?.selection_ticket || !payload.selection.expires_at ||
+            !Array.isArray(payload.selection.contexts) || payload.selection.contexts.length === 0) {
+          throw new Error('auth_login_context_selection_invalid')
+        }
+        return payload
+      default:
+        throw new Error('auth_login_next_action_unsupported')
+    }
+  }
+
   return {
     state: () => ({
       token: null,
@@ -155,11 +185,20 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
         bindStore(this)
         const response = await authAPI.login(username, password)
         const payload = response.data || response
-        if (!payload?.access_token) throw new Error('登录响应缺少访问令牌')
-        authSession.acceptToken(payload.access_token, payload.expires_in)
-        await this.fetchUser()
-        this.sessionInitialized = true
-        this.sessionStatus = 'authenticated'
+        return acceptLoginResult(this, payload)
+      },
+
+      async verifyMFA(challengeToken, code) {
+        bindStore(this)
+        const response = await authAPI.verifyMFA(challengeToken, code)
+        return acceptLoginResult(this, response.data || response)
+      },
+
+      async selectContext(selectionTicket, context) {
+        bindStore(this)
+        const response = await authAPI.selectContext(selectionTicket, context)
+        const session = response.data || response
+        return acceptLoginResult(this, { next_action: 'session_issued', session })
       },
 
       setToken(token, expiresIn = 0) {
@@ -307,10 +346,20 @@ export function createRefreshInterceptor(authStoreOrGetter, config = {}) {
   return [onFulfilled, onRejected]
 }
 
-export function createAuthAPI(client, options = {}) {
-  const { includeRegister = false } = options
-  const api = {
+export function createAuthAPI(client) {
+  return {
     login: (username, password) => client.post('/login', { username, password }, { withCredentials: true }),
+    verifyMFA: (challengeToken, code) => client.post('/auth/mfa-verifications', {
+      challenge_token: challengeToken,
+      code
+    }, { withCredentials: true }),
+    selectContext: (selectionTicket, context) => client.post('/auth/context-selections', {
+      selection_ticket: selectionTicket,
+      context_type: context.type,
+      ...(context.tenant_membership_id
+        ? { tenant_membership_id: context.tenant_membership_id }
+        : {})
+    }, { withCredentials: true }),
     refresh: () => client.post('/refresh', null, { withCredentials: true }),
     logout: () => client.post('/logout', null, { withCredentials: true }),
     getCurrentUser: () => client.get('/users/me'),
@@ -318,10 +367,6 @@ export function createAuthAPI(client, options = {}) {
       headers: { Authorization: `Bearer ${token}` }
     })
   }
-  if (includeRegister) {
-    api.register = (userData) => client.post('/register', userData)
-  }
-  return api
 }
 
 export function createAuthStore(storeName, authAPI, options = {}) {

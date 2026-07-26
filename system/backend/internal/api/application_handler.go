@@ -36,11 +36,13 @@ func (h *ApplicationHandler) CreateApplication(c *gin.Context) {
 		return
 	}
 
-	// 从上下文获取用户信息
-	userID, _ := commonapi.GetCurrentUserID(c)
-	tenantID, _ := c.Get("tenant_id")
+	userID, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
 
-	app, err := h.service.CreateApplication(&req, tenantID.(uint), userID)
+	app, err := h.service.CreateApplication(&req, tenantID, userID)
 	commonapi.RespondOrError(c, app, err)
 }
 
@@ -61,7 +63,12 @@ func (h *ApplicationHandler) GetApplication(c *gin.Context) {
 		return
 	}
 
-	app, err := h.service.GetApplication(id)
+	_, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	app, err := h.service.GetApplication(id, tenantID)
 	if err != nil {
 		commonapi.RespondError(c, http.StatusNotFound, "Application not found")
 		return
@@ -81,9 +88,13 @@ func (h *ApplicationHandler) GetApplication(c *gin.Context) {
 // @x-addp-required-permissions ["system.application.read"]
 // @Router       /applications [get]
 func (h *ApplicationHandler) ListApplications(c *gin.Context) {
-	tenantID, _ := c.Get("tenant_id")
+	_, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
 
-	apps, err := h.service.ListApplications(tenantID.(uint))
+	apps, err := h.service.ListApplications(tenantID)
 	if err != nil {
 		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
 		return
@@ -120,7 +131,12 @@ func (h *ApplicationHandler) UpdateApplication(c *gin.Context) {
 		return
 	}
 
-	app, err := h.service.UpdateApplication(id, &req)
+	_, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	app, err := h.service.UpdateApplication(id, tenantID, &req)
 	commonapi.RespondOrError(c, app, err)
 }
 
@@ -141,7 +157,12 @@ func (h *ApplicationHandler) DeleteApplication(c *gin.Context) {
 		return
 	}
 
-	err = h.service.DeleteApplication(id)
+	_, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	err = h.service.DeleteApplication(id, tenantID)
 	if err != nil {
 		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
 		return
@@ -175,8 +196,12 @@ func (h *ApplicationHandler) GenerateAPIKey(c *gin.Context) {
 		return
 	}
 
-	userID, _ := commonapi.GetCurrentUserID(c)
-	apiKey, err := h.service.GenerateAPIKey(appID, &req, userID)
+	userID, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	apiKey, err := h.service.GenerateAPIKey(appID, tenantID, &req, userID)
 	commonapi.RespondOrError(c, apiKey, err)
 }
 
@@ -197,7 +222,12 @@ func (h *ApplicationHandler) ListAPIKeys(c *gin.Context) {
 		return
 	}
 
-	keys, err := h.service.ListAPIKeys(appID)
+	_, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	keys, err := h.service.ListAPIKeys(appID, tenantID)
 	if err != nil {
 		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
 		return
@@ -233,8 +263,12 @@ func (h *ApplicationHandler) RevokeAPIKey(c *gin.Context) {
 		return
 	}
 
-	userID, _ := commonapi.GetCurrentUserID(c)
-	err = h.service.RevokeAPIKey(appID, keyID, userID)
+	userID, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	err = h.service.RevokeAPIKey(appID, keyID, tenantID, userID)
 	if err != nil {
 		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
 		return

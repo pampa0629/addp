@@ -25,7 +25,7 @@ func TestRunCheckWritesCanonicalCatalogReport(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatalf("decode report: %v", err)
 	}
-	if len(report.Permissions) != 240 || len(report.Roles) != 18 {
+	if len(report.Permissions) != 243 || len(report.Roles) != 18 {
 		t.Fatalf("report counts = permissions:%d roles:%d", len(report.Permissions), len(report.Roles))
 	}
 	if stderr.Len() != 0 {
@@ -45,9 +45,6 @@ func TestRunRequiresExactlyOneModeAndRepositoryRoot(t *testing.T) {
 	}
 	if err := run([]string{"--check", "--generate-owner-constants", "--repository-root", "."}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
 		t.Fatal("run() error = nil, want mutually exclusive mode error")
-	}
-	if err := run([]string{"--generate-sql-seed", "--check-sql-seed", "--repository-root", "."}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
-		t.Fatal("run() error = nil, want SQL seed mode error")
 	}
 	if err := run([]string{"--generate-tool-catalog", "--check-tool-catalog", "--repository-root", "."}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
 		t.Fatal("run() error = nil, want Tool catalog mode error")

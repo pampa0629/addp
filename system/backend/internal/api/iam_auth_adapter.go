@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	requestidmiddleware "github.com/addp/common/middleware/requestid"
 	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/models"
 	"github.com/gin-gonic/gin"
 )
@@ -23,6 +25,7 @@ const iamRefreshCookieName = "addp_refresh_token"
 
 type iamBrowserLoginService interface {
 	LoginLocalBrowser(context.Context, iam.LoginLocalBrowserInput) (*iam.ContextSelectionResult, error)
+	VerifyLocalBrowserMFA(context.Context, iam.VerifyMFAChallengeInput) (*iam.ContextSelectionResult, error)
 }
 
 type iamContextSelectionService interface {
@@ -103,6 +106,15 @@ func NewIAMAuthHandler(
 	}, nil
 }
 
+// Login godoc
+// @Summary      本地账号登录 | Sign in with local account
+// @Tags         认证 | Authentication
+// @Accept       json
+// @Produce      json
+// @Param        request body IAMBrowserLoginRequest true "登录凭据 | Login credentials"
+// @Success      200 {object} IAMBrowserLoginResponse
+// @x-addp-auth-mode "public"
+// @Router       /login [post]
 func (h *IAMAuthHandler) Login(c *gin.Context) {
 	var request IAMBrowserLoginRequest
 	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil ||
@@ -113,7 +125,7 @@ func (h *IAMAuthHandler) Login(c *gin.Context) {
 	result, err := h.loginService.LoginLocalBrowser(c.Request.Context(), iam.LoginLocalBrowserInput{
 		Username: request.Username,
 		Password: request.Password,
-		Audit:    iamAuditMetadata(c),
+		Audit:    iamAuditMetadataWithStatus(c, http.StatusOK),
 	})
 	if err != nil {
 		respondIAMError(c, err)
@@ -133,6 +145,55 @@ func (h *IAMAuthHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// VerifyMFA godoc
+// @Summary      完成本地账号增强认证 | Complete local account MFA
+// @Tags         认证 | Authentication
+// @Accept       json
+// @Produce      json
+// @Param        request body IAMMFAVerificationRequest true "TOTP 验证 | TOTP verification"
+// @Success      200 {object} IAMBrowserLoginResponse
+// @Failure      401 {object} IAMErrorResponse
+// @x-addp-auth-mode "public"
+// @Router       /auth/mfa-verifications [post]
+func (h *IAMAuthHandler) VerifyMFA(c *gin.Context) {
+	var request IAMMFAVerificationRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil ||
+		strings.TrimSpace(request.ChallengeToken) == "" || strings.TrimSpace(request.Code) == "" {
+		respondIAMError(c, fmt.Errorf("%w: invalid MFA verification request", commonapi.ErrBadRequest))
+		return
+	}
+	result, err := h.loginService.VerifyLocalBrowserMFA(c.Request.Context(), iam.VerifyMFAChallengeInput{
+		ChallengeToken: request.ChallengeToken,
+		Code:           request.Code,
+		Audit:          iamAuditMetadataWithStatus(c, http.StatusOK),
+	})
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	response, session, err := h.mapBrowserLoginResult(result)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	if session != nil {
+		if err := h.setBrowserSessionCookies(c, session); err != nil {
+			respondIAMError(c, err)
+			return
+		}
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+// ConsumeContextSelection godoc
+// @Summary      选择登录上下文 | Select sign-in context
+// @Tags         认证 | Authentication
+// @Accept       json
+// @Produce      json
+// @Param        request body IAMContextSelectionRequest true "上下文选择 | Context selection"
+// @Success      200 {object} IAMAccessTokenResponse
+// @x-addp-auth-mode "public"
+// @Router       /auth/context-selections [post]
 func (h *IAMAuthHandler) ConsumeContextSelection(c *gin.Context) {
 	var request IAMContextSelectionRequest
 	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil || strings.TrimSpace(request.SelectionTicket) == "" {
@@ -147,7 +208,7 @@ func (h *IAMAuthHandler) ConsumeContextSelection(c *gin.Context) {
 	session, err := h.contextSelectionService.ConsumeContextSelection(c.Request.Context(), iam.ConsumeContextSelectionInput{
 		SelectionTicket: request.SelectionTicket,
 		Choice:          choice,
-		Audit:           iamAuditMetadata(c),
+		Audit:           iamAuditMetadataWithStatus(c, http.StatusOK),
 	})
 	if err != nil {
 		respondIAMError(c, err)
@@ -156,6 +217,14 @@ func (h *IAMAuthHandler) ConsumeContextSelection(c *gin.Context) {
 	h.respondWithBrowserSession(c, session)
 }
 
+// Context godoc
+// @Summary      解析授权上下文 | Resolve authorization context
+// @Tags         认证 | Authentication
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {object} authorization.AuthContext
+// @x-addp-auth-mode "authenticated"
+// @Router       /auth/context [get]
 func (h *IAMAuthHandler) Context(c *gin.Context) {
 	accessToken := iamBearerToken(c.GetHeader("Authorization"))
 	if accessToken == "" {
@@ -170,6 +239,14 @@ func (h *IAMAuthHandler) Context(c *gin.Context) {
 	c.JSON(http.StatusOK, authContext)
 }
 
+// ContextOptions godoc
+// @Summary      查询可切换上下文 | List switchable contexts
+// @Tags         认证 | Authentication
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {object} IAMContextOptionsResponse
+// @x-addp-auth-mode "self"
+// @Router       /auth/context-options [get]
 func (h *IAMAuthHandler) ContextOptions(c *gin.Context) {
 	accessToken := iamBearerToken(c.GetHeader("Authorization"))
 	if accessToken == "" {
@@ -189,6 +266,16 @@ func (h *IAMAuthHandler) ContextOptions(c *gin.Context) {
 	c.JSON(http.StatusOK, IAMContextOptionsResponse{Contexts: mapped})
 }
 
+// SwitchContext godoc
+// @Summary      切换浏览器上下文 | Switch browser context
+// @Tags         认证 | Authentication
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body IAMContextChoiceRequest true "目标上下文 | Target context"
+// @Success      200 {object} IAMAccessTokenResponse
+// @x-addp-auth-mode "self"
+// @Router       /auth/context-switches [post]
 func (h *IAMAuthHandler) SwitchContext(c *gin.Context) {
 	accessToken := iamBearerToken(c.GetHeader("Authorization"))
 	refreshToken, cookieErr := c.Cookie(iamRefreshCookieName)
@@ -210,7 +297,7 @@ func (h *IAMAuthHandler) SwitchContext(c *gin.Context) {
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		Target:       choice,
-		Audit:        iamAuditMetadata(c),
+		Audit:        iamAuditMetadataWithStatus(c, http.StatusOK),
 	})
 	if err != nil {
 		respondIAMError(c, err)
@@ -219,6 +306,13 @@ func (h *IAMAuthHandler) SwitchContext(c *gin.Context) {
 	h.respondWithBrowserSession(c, session)
 }
 
+// Refresh godoc
+// @Summary      轮换浏览器令牌 | Rotate browser tokens
+// @Tags         认证 | Authentication
+// @Produce      json
+// @Success      200 {object} IAMAccessTokenResponse
+// @x-addp-auth-mode "public"
+// @Router       /refresh [post]
 func (h *IAMAuthHandler) Refresh(c *gin.Context) {
 	refreshToken, err := c.Cookie(iamRefreshCookieName)
 	if err != nil {
@@ -228,7 +322,7 @@ func (h *IAMAuthHandler) Refresh(c *gin.Context) {
 	}
 	session, err := h.refreshService.RotateBrowserRefreshToken(c.Request.Context(), iam.RotateBrowserRefreshTokenInput{
 		RefreshToken: refreshToken,
-		Audit:        iamAuditMetadata(c),
+		Audit:        iamAuditMetadataWithStatus(c, http.StatusOK),
 	})
 	if err != nil {
 		if errors.Is(err, commonapi.ErrUnauthorized) {
@@ -240,6 +334,13 @@ func (h *IAMAuthHandler) Refresh(c *gin.Context) {
 	h.respondWithBrowserSession(c, session)
 }
 
+// Logout godoc
+// @Summary      退出浏览器会话 | Sign out browser session
+// @Tags         认证 | Authentication
+// @Security     BearerAuth
+// @Success      204
+// @x-addp-auth-mode "authenticated"
+// @Router       /logout [post]
 func (h *IAMAuthHandler) Logout(c *gin.Context) {
 	accessToken := iamBearerToken(c.GetHeader("Authorization"))
 	refreshToken, cookieErr := c.Cookie(iamRefreshCookieName)
@@ -250,7 +351,7 @@ func (h *IAMAuthHandler) Logout(c *gin.Context) {
 		err = h.logoutService.LogoutBrowserSession(c.Request.Context(), iam.LogoutBrowserSessionInput{
 			AccessToken:  accessToken,
 			RefreshToken: refreshToken,
-			Audit:        iamAuditMetadata(c),
+			Audit:        iamAuditMetadataWithStatus(c, http.StatusNoContent),
 		})
 	}
 	h.clearBrowserSessionCookies(c)
@@ -269,7 +370,7 @@ func (h *IAMAuthHandler) mapBrowserLoginResult(
 	}
 	switch result.NextAction {
 	case iam.ContextSelectionNextActionSessionIssued:
-		if result.Session == nil || result.Challenge != nil {
+		if result.Session == nil || result.Challenge != nil || result.MFA != nil {
 			return nil, nil, fmt.Errorf("invalid session-issued browser login result")
 		}
 		sessionResponse, err := newIAMAccessTokenResponse(result.Session, h.now().UTC())
@@ -281,7 +382,7 @@ func (h *IAMAuthHandler) mapBrowserLoginResult(
 			Session:    sessionResponse,
 		}, result.Session, nil
 	case iam.ContextSelectionNextActionSelectContext:
-		if result.Session != nil || result.Challenge == nil ||
+		if result.Session != nil || result.Challenge == nil || result.MFA != nil ||
 			!strings.HasPrefix(result.Challenge.SelectionTicket, "addp_cst_") ||
 			!result.Challenge.ExpiresAt.After(h.now().UTC()) {
 			return nil, nil, fmt.Errorf("invalid context-selection browser login result")
@@ -296,6 +397,20 @@ func (h *IAMAuthHandler) mapBrowserLoginResult(
 				SelectionTicket: result.Challenge.SelectionTicket,
 				ExpiresAt:       result.Challenge.ExpiresAt.UTC(),
 				Contexts:        contexts,
+			},
+		}, nil, nil
+	case iam.ContextSelectionNextActionVerifyMFA:
+		if result.Session != nil || result.Challenge != nil || result.MFA == nil ||
+			!strings.HasPrefix(result.MFA.ChallengeToken, "addp_mfc_") ||
+			!result.MFA.ExpiresAt.After(h.now().UTC()) {
+			return nil, nil, fmt.Errorf("invalid MFA browser login result")
+		}
+		return &IAMBrowserLoginResponse{
+			NextAction: string(result.NextAction),
+			MFA: &IAMMFAChallengeResponse{
+				ChallengeToken: result.MFA.ChallengeToken,
+				Method:         "totp",
+				ExpiresAt:      result.MFA.ExpiresAt.UTC(),
 			},
 		}, nil, nil
 	default:
@@ -420,6 +535,26 @@ func iamAuditMetadata(c *gin.Context) iam.AuditMetadata {
 	if requestID != "" {
 		metadata.RequestID = &requestID
 	}
+	if authContext, exists := middleware.IAMAuthContextFromGin(c); exists {
+		if principalID, err := strconv.ParseInt(authContext.Principal.ID, 10, 64); err == nil && principalID > 0 {
+			principalType := iam.PrincipalType(authContext.Principal.Type)
+			metadata.PrincipalID = &principalID
+			metadata.PrincipalType = &principalType
+		}
+		contextType := iam.ContextType(authContext.Context.Type)
+		metadata.ContextType = &contextType
+		if authContext.Context.TenantID != nil {
+			if tenantID, err := strconv.ParseInt(*authContext.Context.TenantID, 10, 64); err == nil && tenantID > 0 {
+				metadata.TenantID = &tenantID
+			}
+		}
+	}
+	return metadata
+}
+
+func iamAuditMetadataWithStatus(c *gin.Context, status int) iam.AuditMetadata {
+	metadata := iamAuditMetadata(c)
+	metadata.HTTPStatus = &status
 	return metadata
 }
 

@@ -1,109 +1,102 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/addp/system/internal/models"
-	"github.com/addp/system/internal/repository"
-	"github.com/addp/system/internal/service"
+	"github.com/addp/system/internal/iam"
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
+
+type requestAuditWriterStub struct {
+	events []iam.AuditEvent
+}
+
+func (w *requestAuditWriterStub) Write(_ context.Context, event iam.AuditEvent) error {
+	w.events = append(w.events, event)
+	return nil
+}
 
 func TestLoggerMiddlewarePersistsOnlyStructuredOAuthSecurityAudit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	if err := db.AutoMigrate(&models.AuditLog{}); err != nil {
-		t.Fatalf("migrate audit log: %v", err)
-	}
-	logService := service.NewLogService(repository.NewLogRepository(db), nil)
+	writer := &requestAuditWriterStub{}
 	router := gin.New()
-	router.Use(LoggerMiddleware(logService))
+	router.Use(LoggerMiddleware(writer))
 	router.POST("/api/v1/system/oauth/token", func(c *gin.Context) {
 		SetOAuthSecurityAudit(c, "oauth.token.failed", "failed", "addp-cli", "refresh_token", "", "addp.api", "invalid_grant")
-		c.Set("error", "must-not-be-persisted")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
 	})
-
 	form := url.Values{
-		"grant_type":    {"refresh_token"},
-		"client_id":     {"addp-cli"},
-		"refresh_token": {"addp_rt_secret"},
-		"code_verifier": {"pkce-secret"},
+		"grant_type": {"refresh_token"}, "client_id": {"addp-cli"},
+		"refresh_token": {"addp_rt_secret"}, "code_verifier": {"pkce-secret"},
 	}
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/system/oauth/token?code=addp_ac_secret", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
+	router.ServeHTTP(httptest.NewRecorder(), request)
 
-	var stored models.AuditLog
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		if err := db.First(&stored).Error; err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	if len(writer.events) != 1 {
+		t.Fatalf("audit event count = %d, want 1", len(writer.events))
 	}
-	if stored.ID == 0 {
-		t.Fatal("OAuth audit log was not persisted")
+	event := writer.events[0]
+	if event.EventName != "oauth.token.failed" || event.EntityType != "oauth_security_event" ||
+		event.Details["client_id"] != "addp-cli" || event.Details["error_code"] != "invalid_grant" {
+		t.Fatalf("OAuth audit event = %#v", event)
 	}
-	if stored.EntityType != "oauth_security_event" || stored.EntityID != "oauth.token.failed" {
-		t.Fatalf("audit identity = %q/%q", stored.EntityType, stored.EntityID)
-	}
-	if stored.QueryParams != "" || stored.ErrorMessage != "" {
-		t.Fatalf("OAuth query/error were persisted: query=%q error=%q", stored.QueryParams, stored.ErrorMessage)
+	encoded := strings.Join([]string{event.EntityID, event.EventName}, " ")
+	for key, value := range event.Details {
+		encoded += key + "=" + value.(string)
 	}
 	for _, secret := range []string{"addp_rt_secret", "addp_ac_secret", "pkce-secret"} {
-		if strings.Contains(stored.RequestBody, secret) {
-			t.Fatalf("OAuth secret %q persisted in %s", secret, stored.RequestBody)
-		}
-	}
-	for _, safeField := range []string{`"event":"oauth.token.failed"`, `"client_id":"addp-cli"`, `"grant_type":"refresh_token"`, `"error":"invalid_grant"`} {
-		if !strings.Contains(stored.RequestBody, safeField) {
-			t.Fatalf("structured audit missing %s: %s", safeField, stored.RequestBody)
+		if strings.Contains(encoded, secret) {
+			t.Fatalf("OAuth secret %q persisted in %#v", secret, event)
 		}
 	}
 }
 
 func TestLoggerMiddlewareUsesStableOAuthFailureEventBeforeHandler(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	if err := db.AutoMigrate(&models.AuditLog{}); err != nil {
-		t.Fatalf("migrate audit log: %v", err)
-	}
-	logService := service.NewLogService(repository.NewLogRepository(db), nil)
+	writer := &requestAuditWriterStub{}
 	router := gin.New()
-	router.Use(LoggerMiddleware(logService))
+	router.Use(LoggerMiddleware(writer))
 	router.POST("/api/v1/system/oauth/authorizations", func(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication_required"})
 	})
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/system/oauth/authorizations", strings.NewReader(`{"request_id":"secret"}`)))
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(
+		http.MethodPost, "/api/v1/system/oauth/authorizations", strings.NewReader(`{"request_id":"secret"}`),
+	))
+	if len(writer.events) != 1 || writer.events[0].EventName != "oauth.authorization.failed" ||
+		writer.events[0].Details["error_code"] != "authentication_required" {
+		t.Fatalf("OAuth failure audit = %#v", writer.events)
+	}
+}
 
-	var stored models.AuditLog
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		if err := db.First(&stored).Error; err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+func TestLoggerMiddlewareSkipsOAuthAlreadyPersistedByTargetIAM(t *testing.T) {
+	writer := &requestAuditWriterStub{}
+	router := gin.New()
+	router.Use(LoggerMiddleware(writer))
+	router.POST("/api/v1/system/oauth/token", func(c *gin.Context) {
+		MarkOAuthSecurityAuditPersisted(c)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
+	})
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/v1/system/oauth/token", nil))
+	if len(writer.events) != 0 {
+		t.Fatalf("duplicate OAuth audit events = %#v", writer.events)
 	}
-	if stored.EntityID != "oauth.authorization.failed" || !strings.Contains(stored.RequestBody, `"error":"authentication_required"`) {
-		t.Fatalf("audit = entity_id=%q body=%s", stored.EntityID, stored.RequestBody)
-	}
-	if strings.Contains(stored.RequestBody, "secret") {
-		t.Fatalf("raw OAuth body persisted: %s", stored.RequestBody)
+}
+
+func TestLoggerMiddlewareWritesGenericRequestWithoutBodyOrQuery(t *testing.T) {
+	writer := &requestAuditWriterStub{}
+	router := gin.New()
+	router.Use(LoggerMiddleware(writer))
+	router.POST("/api/v1/system/example", func(c *gin.Context) { c.Status(http.StatusCreated) })
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(
+		http.MethodPost, "/api/v1/system/example?password=secret", strings.NewReader(`{"token":"secret"}`),
+	))
+	if len(writer.events) != 1 || writer.events[0].EventName != "http.request.completed" ||
+		writer.events[0].Result != iam.AuditResultSucceeded || len(writer.events[0].Details) != 1 {
+		t.Fatalf("generic audit event = %#v", writer.events)
 	}
 }

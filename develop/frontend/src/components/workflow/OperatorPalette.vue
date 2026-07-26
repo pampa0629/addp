@@ -38,10 +38,7 @@
               @click="handleOperatorClick(operator)"
             >
               <div class="operator-header">
-                <div class="operator-title">
-                  <span class="operator-name">{{ operator.displayName }}</span>
-                  <span v-if="operator.displayName !== operator.name" class="operator-code">{{ operator.name }}</span>
-                </div>
+                <span class="operator-name">{{ operator.displayName }}</span>
                 <el-tooltip placement="right" :show-after="300">
                   <template #content>
                     <div class="operator-help">
@@ -323,24 +320,12 @@ const handleOperatorClick = (operator) => {
   margin-bottom: 4px;
 }
 
-.operator-title {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
 .operator-name {
+  min-width: 0;
+  overflow: hidden;
   font-weight: 600;
   color: var(--addp-text-primary);
   font-size: 14px;
-}
-
-.operator-code {
-  overflow: hidden;
-  color: var(--addp-text-tertiary);
-  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

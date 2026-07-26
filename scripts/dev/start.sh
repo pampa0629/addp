@@ -186,6 +186,48 @@ select_python() {
   exit 1
 }
 
+configure_spark_workflow_java() {
+  local candidate
+  local java_major
+  local candidates=(
+    "${JAVA_HOME:-}"
+    "/opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home"
+    "/usr/local/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home"
+    /usr/lib/jvm/java-11-openjdk-*
+    "/usr/lib/jvm/java-11-openjdk"
+  )
+
+  for candidate in "${candidates[@]}"; do
+    [ -x "${candidate}/bin/java" ] || continue
+    java_major=$("${candidate}/bin/java" -version 2>&1 | awk -F'[\".]' '/version/ { print $2; exit }')
+    if [ "$java_major" = "11" ]; then
+      export JAVA_HOME="$candidate"
+      export PATH="${JAVA_HOME}/bin:${PATH}"
+      echo "Spark Workflow 使用 JDK 11: ${JAVA_HOME}"
+      return 0
+    fi
+  done
+
+  echo -e "${RED}✗ Spark Workflow 需要 JDK 11，当前未找到可用安装${NC}"
+  echo -e "${YELLOW}macOS 请运行: brew install openjdk@11${NC}"
+  return 1
+}
+
+detect_spark_workflow_shared_host() {
+  local interface
+  local host
+
+  if command -v route >/dev/null 2>&1 && command -v ipconfig >/dev/null 2>&1; then
+    interface=$(route -n get default 2>/dev/null | awk '/interface:/ { print $2; exit }')
+    [ -n "$interface" ] && host=$(ipconfig getifaddr "$interface" 2>/dev/null || true)
+  elif command -v ip >/dev/null 2>&1; then
+    host=$(ip route get 1.1.1.1 2>/dev/null | awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')
+  fi
+
+  [ -n "$host" ] || return 1
+  printf '%s\n' "$host"
+}
+
 # ============================================================
 # 模块选择逻辑
 # ============================================================
@@ -1918,7 +1960,7 @@ if [ ! -d "engines/spark-workflow/venv" ]; then
     NEED_INSTALL=true
 else
     # 检查关键依赖是否已安装
-    if ! ./engines/spark-workflow/venv/bin/python -c "import pyspark" &> /dev/null; then
+    if ! ./engines/spark-workflow/venv/bin/python -c "import pyspark, addp_common.workflow_runtime" &> /dev/null; then
         echo "检测到虚拟环境缺少依赖，重新安装..."
         cd engines/spark-workflow
         NEED_INSTALL=true
@@ -1946,6 +1988,7 @@ if [ "$NEED_INSTALL" = true ]; then
     # 升级 pip 并安装依赖
     $PIP_CMD --upgrade pip
     $PIP_CMD -r requirements.txt
+    $PIP_CMD -e ../../common-python
 
     # 检查安装是否成功
     if [ $? -eq 0 ]; then
@@ -1962,12 +2005,14 @@ fi
 # 启动 Spark 工作流引擎
 if check_service_running "spark-workflow-engine" "$SPARK_WORKFLOW_PORT"; then
   echo "启动 Spark 工作流引擎..."
+  configure_spark_workflow_java
   cd engines/spark-workflow
 
   # 设置环境变量
   export PORT=$SPARK_WORKFLOW_PORT
   # SYSTEM_URL 已由 generate_service_urls() 自动生成
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
+  export SPARK_WORKFLOW_SHARED_HOST="${SPARK_WORKFLOW_SHARED_HOST:-$(detect_spark_workflow_shared_host)}"
 
   # 直接使用虚拟环境的 Python（无需 activate）
   ./venv/bin/python api_server.py > ../../logs/spark-workflow-engine.log 2> ../../logs/spark-workflow-engine-stderr.log &

@@ -238,52 +238,9 @@ Gateway (8000) - API 路由
 - Gateway 依赖**所有后端服务**
 - 前端服务依赖**对应后端服务**
 
-## 默认管理员账户
+## IAM 首次初始化
 
-ADDP 在首次启动时会创建默认管理员账户(仅开发环境)。
-
-### 超级管理员(总是创建)
-
-- **用户名**: `SuperAdmin`
-- **密码**: `20251001#SuperAdmin`
-- **类型**: `super_admin`(跨租户管理)
-- **用途**: 管理租户、查看系统日志
-
-**环境变量自定义**:
-```bash
-# .env
-SUPER_ADMIN_USERNAME=MyAdmin
-SUPER_ADMIN_PASSWORD=MySecurePassword
-SUPER_ADMIN_EMAIL=admin@company.com
-```
-
-### 默认租户管理员(可选创建)
-
-- **用户名**: `admin`
-- **密码**: `123456`
-- **租户**: `默认租户`
-- **类型**: `tenant_admin`(仅管理默认租户)
-- **用途**: 日常开发调试
-
-**启用方法**:
-```bash
-# .env
-ENABLE_DEFAULT_TENANT=true
-
-# 可选: 自定义账户信息
-DEFAULT_TENANT_NAME=我的租户
-DEFAULT_ADMIN_USERNAME=myadmin
-DEFAULT_ADMIN_PASSWORD=MyPassword123
-DEFAULT_ADMIN_EMAIL=admin@test.com
-```
-
-**安全提示**:
-- ⚠️ 默认禁用(避免弱密码)
-- ⚠️ 生产环境强制禁止(`ENV=production` 时跳过)
-- ⚠️ 仅用于开发和演示
-- 💡 生产环境应通过 UI 手动创建租户和管理员
-
-**初始化位置**: `system/backend/internal/repository/database.go`
+开发和生产环境都不创建默认管理员、默认租户或共享弱密码账号。首次平台系统管理员、安全管理员和审计管理员使用同一套一次性离线 Bootstrap 流程建立；开发环境不保留绕过三员分立的简化路径。
 
 ## 故障排查
 

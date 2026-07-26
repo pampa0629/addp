@@ -471,13 +471,13 @@ bounded replay v1 约束：
 
 Infra Kafka/Kafka Connect 部署基线（工作包 3A 已冻结，3B 实现）：
 
-1. 版本固定为 Apache Kafka 4.3.0 KRaft 和 Debezium Connect 3.6.0.Final；该 Connect 镜像内置 Kafka Connect 4.3.0。不得同时维护 Redpanda 或另一 Kafka 发行版作为 CDC 部署主线，Redpanda 只保留为现有 Kafka Provider 协议集成测试工具。
-2. 开发环境使用 1 broker、1 个 combined controller/broker 和 1 Connect worker，replication factor/min ISR 为 `1/1`；生产参考使用 3 broker/controller 和至少 2 Connect worker，replication factor/min ISR 为 `3/2`。
+1. 版本固定为 Redpanda v24.3.18 和 Debezium Connect 3.6.0.Final；该 Connect 镜像内置 Kafka Connect 4.3.0。不得同时维护 Apache Kafka 或另一 Kafka 发行版作为 CDC 部署主线，任务/API/数据库也不得出现发行版选择。
+2. 开发环境使用 1 broker 和 1 Connect worker，replication factor 为 `1`；生产参考使用 3 broker 和至少 2 Connect worker，replication factor 为 `3`，producer `acks=all`，由 Raft majority 提供确认 quorum=2。
 3. Kafka Connect shared internal topics 固定为 `__addp_connect_configs`（1 partition）、`__addp_connect_offsets`（25 partitions）和 `__addp_connect_status`（5 partitions），均使用 `cleanup.policy=compact`；复制因子按开发 `1`、生产 `3`。
 4. 任务级 CDC topic 固定命名为 `__addp_cdc.<tenant_id>.<task_id>.<capture_generation>`，第一版 1 partition、`cleanup.policy=delete`、默认 `retention.ms=604800000`（7 天）。生产必须同时配置并校验 `retention.bytes`；time/bytes 任一先到即构成真实恢复边界。
 5. 容量规划至少使用 `峰值编码字节/秒 * 允许恢复秒数 * 副本因子 * 1.3`，并预留 Connect internal topics、segment 和 broker 高水位空间。备份不替代 connector offset + source WAL + Kafka retention 的连续恢复条件。
 6. principal 固定分离为 infra admin、`addp-connect` 和 `addp-transfer`：infra admin 创建/配置/删除内部 topic 与 ACL；Connect 只读写 shared internal topics，并向 `__addp_cdc.*` 写入；Transfer 只描述/读取 `__addp_cdc.*` 和使用自己的 consumer group。业务 Kafka principal 不得访问 infra namespace。
-7. 单机开发 Compose 只在本机端口和 Docker 网络使用 `SASL_PLAINTEXT/PLAIN` 以验证 principal/ACL；生产必须使用 `SASL_SSL` 或等价 TLS 保护，密码从部署 secret 注入，Kafka bootstrap 和 Connect REST 都不得暴露到公共网络。
+7. 单机开发 Compose 只在本机端口和 Docker 网络使用 `SASL_PLAINTEXT/SCRAM-SHA-256` 以验证 principal/ACL；生产必须使用 `SASL_SSL`，密码从部署 secret 注入，Kafka bootstrap 和 Connect REST 都不得暴露到公共网络。
 8. Kafka Connect 禁止依赖 broker auto-create 创建 CDC topic。capture supervisor 在创建 connector 前按规范显式创建 topic/ACL，在删除 connector 并确认停止后删除任务级 topic。shared internal topics 和 broker 数据目录由 Infra 部署 owner 管理，不随单个 task cleanup 删除。
 9. PostgreSQL connector 固定使用 `plugin.name=pgoutput`、`publication.autocreate.mode=filtered`、单表 `table.include.list`、服务端生成的 slot/publication 名称和 `slot.drop.on.stop=false`。stop/cleanup 由 capture supervisor 在 connector 停止后显式删除 ADDP-owned slot/publication，不依赖 connector 退出副作用。
 

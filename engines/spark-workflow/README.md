@@ -62,6 +62,14 @@ engines/spark-workflow/
 
 ## 快速开始
 
+本地开发运行时固定使用 OpenJDK 11，与 Business Spark Master/Worker 保持一致。Spark 3.5 / Hadoop 3.3 不支持直接运行在 JDK 25 上，且分布式 driver/executor 不得混用 JVM 主版本；macOS 可通过 `brew install openjdk@11` 安装，`scripts/dev/start.sh` 和 `scripts/dev/restart.sh` 会自动选择该版本。
+
+当注册的 Spark Master 使用 `localhost` 时，Workflow driver 会绑定本机所有地址，并通过 `SPARK_WORKFLOW_SHARED_HOST` 公布一个 driver 和 executor 都可访问的宿主机地址。本地启动脚本默认探测当前默认网络接口的 IPv4 地址，也可由部署者显式配置。
+
+Spark JDBC 的 schema 解析发生在 driver，分区读取和写入发生在 executor，因此两端必须使用同一个可达地址。当数据引擎连接地址是 loopback 时，Spark Workflow 只在构造 JDBC URL 时使用 `SPARK_WORKFLOW_SHARED_HOST`，System 中保存的连接配置不变；远程主机地址不会被改写。PostgreSQL JDBC URL 同时继承 System `connection_info.sslmode`。
+
+保存到 PostgreSQL 时，Runtime 按 DataFrame schema 识别 Sedona Geometry 列，不依赖固定列名。空间结果先以 EWKT 写入同 schema 的唯一暂存表，再在 PostgreSQL 事务中转换为 PostGIS `geometry` 并替换或追加目标表；暂存表不作为工作流产物暴露。
+
 ### 1. 安装依赖
 
 ```bash
@@ -352,6 +360,7 @@ pip install pyspark==3.5.0
 
 ```python
 spark = SparkSession.builder \
+    .config("spark.jars.packages", "org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.5.1,org.datasyslab:geotools-wrapper:1.5.1-28.2,org.postgresql:postgresql:42.7.4,com.mysql:mysql-connector-j:8.4.0") \
     .config("spark.sql.extensions", "org.apache.sedona.sql.SedonaSqlExtensions") \
     .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
     .config("spark.kryo.registrator", "org.apache.sedona.core.serde.SedonaKryoRegistrator") \

@@ -31,6 +31,7 @@ type SupervisorConfig struct {
 	ConnectKafkaUsername         string
 	ConnectKafkaPassword         string
 	ConnectKafkaSecurityProtocol string
+	ConnectKafkaSASLMechanism    string
 	ConnectKafkaTLSCACertFile    string
 	ProvisioningTimeout          time.Duration
 	StatusPollInterval           time.Duration

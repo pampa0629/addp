@@ -84,13 +84,13 @@ docker-compose ps
 ### 2.2 验证部署
 
 **检查 Spark Master Web UI**:
-- URL: http://localhost:8088
+- URL: http://localhost:18088
 - 应看到 1-2 个 Active Workers
 
 **检查 Thrift Server 端口**:
 ```bash
-nc -zv localhost 10000
-# 输出: Connection to localhost port 10000 [tcp/ndmp] succeeded!
+nc -zv localhost 11000
+# 成功时输出 succeeded
 ```
 
 **查看日志**:
@@ -123,14 +123,14 @@ spark.default.parallelism=8 # 并行度
 1. 登录 ADDP Console → System 模块 → 资源管理
 2. 点击"新建资源"
 3. 填写信息：
-   - **资源名称**（英文标识）: `spark_default`
-   - **显示名称**（中文）: `Apache Spark 分析引擎`
+   - **资源名称**: `Apache Spark 分析引擎`
    - **资源类型**: `spark`
    - **连接配置**:
      ```json
      {
        "host": "host.docker.internal",
-       "port": 10000,
+       "port": 11000,
+       "master_port": 7077,
        "database": "default"
      }
      ```
@@ -143,20 +143,19 @@ spark.default.parallelism=8 # 并行度
 ```bash
 TOKEN="<your_jwt_token>"
 
-curl -X POST http://localhost:8180/api/engines \
+curl -X POST http://localhost:8180/api/v1/system/engines \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "spark_default",
-    "display_name": "Apache Spark 分析引擎",
+    "name": "Apache Spark 分析引擎",
     "engine_type": "spark",
     "connection_info": {
       "host": "host.docker.internal",
-      "port": 10000,
+      "port": 11000,
+      "master_port": 7077,
       "database": "default"
     },
-    "description": "Apache Spark 分布式查询引擎，支持 Sedona 空间函数",
-    "is_active": true
+    "description": "Apache Spark 分布式查询引擎，支持 Sedona 空间函数"
   }'
 ```
 
@@ -165,7 +164,8 @@ curl -X POST http://localhost:8180/api/engines \
 | 字段 | 必填 | 默认值 | 说明 |
 |------|------|--------|------|
 | `host` | 是 | - | Thrift Server 地址（开发环境: `host.docker.internal`） |
-| `port` | 否 | `10000` | Thrift Server 端口 |
+| `port` | 否 | `10000` | Thrift Server 端口；Business 样例映射到宿主机 `11000` |
+| `master_port` | 否 | `7077` | Spark Workflow 提交作业使用的 Standalone Master 端口 |
 | `database` | 否 | `default` | 默认数据库（namespace） |
 | `username` | 否 | - | 认证用户名（如启用认证） |
 | `password` | 否 | - | 认证密码（如启用认证） |
@@ -610,7 +610,7 @@ SET spark.sql.shuffle.partitions=32;
 1. 检查 Spark Thrift Server 是否运行:
    ```bash
    docker ps | grep spark-master
-   nc -zv localhost 10000
+   nc -zv localhost 11000
    ```
 
 2. 查看日志:
@@ -621,7 +621,7 @@ SET spark.sql.shuffle.partitions=32;
 3. 验证网络连通性:
    ```bash
    # 从 Develop 容器内测试
-   docker exec -it <develop-container> nc -zv host.docker.internal 10000
+   docker exec -it <develop-container> nc -zv host.docker.internal 11000
    ```
 
 ### 9.2 查询超时
@@ -660,7 +660,7 @@ SET spark.sql.shuffle.partitions=32;
 **解决方法**:
 检查 `business/docker-compose.yml` 中 Spark Master 启动命令是否包含:
 ```yaml
---packages org.apache.sedona:sedona-spark-3.5_2.12:1.5.1
+--packages org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.5.1,org.datasyslab:geotools-wrapper:1.5.1-28.2
 --conf spark.sql.extensions=org.apache.sedona.sql.SedonaSqlExtensions
 ```
 

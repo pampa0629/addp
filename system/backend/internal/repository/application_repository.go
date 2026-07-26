@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/system/internal/models"
 	"gorm.io/gorm"
@@ -20,10 +22,11 @@ func (r *ApplicationRepository) Create(app *models.Application) error {
 }
 
 // FindByID 根据 ID 查询应用
-func (r *ApplicationRepository) FindByID(id uint) (*models.Application, error) {
+func (r *ApplicationRepository) FindByIDAndTenant(id, tenantID uint) (*models.Application, error) {
 	var app models.Application
 	err := r.db.Preload("APIKeys", "status = ?", "active").
-		First(&app, id).Error
+		Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", id, tenantID).
+		First(&app).Error
 	if err != nil {
 		return nil, commonrepo.WrapDBError(err)
 	}
@@ -45,10 +48,17 @@ func (r *ApplicationRepository) Update(app *models.Application) error {
 }
 
 // Delete 软删除应用
-func (r *ApplicationRepository) Delete(id uint) error {
-	return r.db.Model(&models.Application{}).
-		Where("id = ?", id).
-		Update("deleted_at", gorm.Expr("NOW()")).Error
+func (r *ApplicationRepository) Delete(id, tenantID uint) error {
+	result := r.db.Model(&models.Application{}).
+		Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", id, tenantID).
+		Update("deleted_at", time.Now().UTC())
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
+	}
+	return nil
 }
 
 // CreateAPIKey 创建 API Key
@@ -86,11 +96,12 @@ func (r *ApplicationRepository) UpdateAPIKeyLastUsed(id uint) error {
 
 // RevokeAPIKey 撤销 API Key
 func (r *ApplicationRepository) RevokeAPIKey(id uint, revokedBy uint) error {
+	now := time.Now().UTC()
 	return r.db.Model(&models.APIKey{}).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
 			"status":     "revoked",
-			"revoked_at": gorm.Expr("NOW()"),
+			"revoked_at": now,
 			"revoked_by": revokedBy,
 		}).Error
 }
@@ -105,7 +116,7 @@ func (r *ApplicationRepository) FindAPIKeyWithApp(keyHash string) (*models.APIKe
 	}
 
 	var app models.Application
-	err = r.db.First(&app, apiKey.ApplicationID).Error
+	err = r.db.Where("id = ? AND deleted_at IS NULL", apiKey.ApplicationID).First(&app).Error
 	if err != nil {
 		return nil, nil, commonrepo.WrapDBError(err)
 	}

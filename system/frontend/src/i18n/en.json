@@ -1,20 +1,7 @@
 {
   "system": {
     "login": {
-      "title": "System Admin Login",
-      "subtitle": "All Domain Data Platform",
-      "usernamePlaceholder": "Enter username",
-      "passwordPlaceholder": "Enter password",
-      "submit": "Login",
-      "loggingIn": "Logging in...",
-      "success": "Login successful",
-      "failed": "Login failed",
-      "networkError": "Network connection failed, please check if the server is running",
-      "requestFailed": "Request failed ({status})",
-      "unknown": "Unknown error",
-      "usernameRequired": "Please enter username",
-      "passwordRequired": "Please enter password",
-      "passwordMinLength": "Password must be at least 6 characters"
+      "title": "System Admin Login"
     },
     "layout": {
       "title": "System Management",

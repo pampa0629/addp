@@ -2,7 +2,7 @@
 
 更新日期：2026-07-25
 
-状态：技术设计已确认，唯一 JSON Schema、共享 Go 类型、第一方 Web Access Token、Browser Resource Access Ticket 与 Delegated Access Token 投影、System 目标 Gin Middleware、Common 目标 HTTP 消费器、Resource Ticket Guard、Delegated Route Guard、委托签发目标 Runtime 与目标 API Adapter 已实现；所有目标 Middleware/Guard 和委托签发目标 Adapter 均尚未注册。OAuth Access Token、Service Principal、其余 Swagger 和 `main` 尚未切换。本文在已确认的 IAM 目标数据模型和 Permission / Role 矩阵之上，确定 AuthContext JSON Schema、登录上下文选择、浏览器上下文切换、授权版本失效和共享类型边界。
+状态：技术设计已确认。唯一 JSON Schema、共享 Go 类型、第一方/OAuth/Resource Ticket/Delegated Token 投影、System 目标 Middleware/Router/Swagger、委托签发和 Common 目标 HTTP 消费器已实现；System 旧认证路径已删除，其他 owner 模块的 Common Middleware/Guard 注册与前端切换尚未完成。当前开发 `addp` 数据库尚未破坏性重建和 Bootstrap。
 
 ## 一、目标与边界
 
@@ -935,7 +935,7 @@ common/authorization/schemas/auth-context-v1.schema.json
 
 ### 9.1 System 目标 Middleware 实施边界
 
-System 目标 Gin Middleware 已实现但尚未注册生产 Router，当前边界固定为：
+System 目标 Gin Middleware 已实现并注册唯一生产 Router，当前边界固定为：
 
 - 只接受 `Authorization: Bearer <access_token>`，通过 `AuthContextService.ResolveFirstPartyAccessToken` 生成并再次校验唯一 AuthContext；
 - 只向 Gin Context 注入规范 AuthContext，不再投影 `user_id`、`username`、`user_type`、单一 `tenant_id` 或旧 `authorization_context` Key；
@@ -957,7 +957,7 @@ System 当前生产路径仍依赖旧平铺 Context Key，必须在同一次 Rou
 | `internal/api/oauth_handler.go` | 两处读取旧 `user_id` | 随 Fosite Adapter 改为规范 Principal ID |
 | `internal/api/auth_handler.go` | `/auth/context` 返回旧 `models.AuthorizationContext` | 删除旧 Handler，由目标 IAM Adapter 返回规范 AuthContext |
 
-在上述依赖和 `common/middleware/auth` 的旧平铺 Schema 尚未一次性迁移前，不得把目标 Middleware 局部挂入生产 Router，也不得保留新旧 Context Key 双写。
+System 已完成一次性切换且不再注入旧平铺 Context Key。其他 owner 模块切换时同样不得双写新旧 Context。
 
 ### 9.2 Common 目标 HTTP 消费器实施边界
 
@@ -979,7 +979,7 @@ System 当前生产路径仍依赖旧平铺 Context Key，必须在同一次 Rou
 - 严格校验 `resource_access_ticket + addp-web + [owner] + restricted + [resource:read] + delegation=null`；
 - required Permission 必须非空、无重复、合法且按 all-of 判断；该结果只表达 Role Permission Allow 候选，owner Handler 继续执行 Assignment Scope 和资源 Policy。
 
-目标 Delegated Route Guard 使用独立构造器并保持未注册，边界固定为：
+目标 Delegated Route Guard 使用独立构造器；System Engine Tool 路由已注册，其他 owner Tool 路由切换时遵守同一边界：
 
 - 直接挂载到 Tool Manifest 声明的 method + route，挂载本身就是委托路由白名单，不保留集中 route map；
 - 读取已由目标 `NewMiddleware` 注入的规范 AuthContext，不再次请求 System、不缓存、不解析 Token 字符串；
@@ -1106,7 +1106,7 @@ System 审计必须区分 expired、revoked、version_mismatch、membership_inac
 3. `docs/spec/addp OAuth授权规范.md` 已把第一方 `client_id=null` 改为 `addp-web`，并统一 audience 为 `addp.api`；
 4. IAM 目标数据模型已加入 Context Selection Ticket 临时记录及索引约束。
 
-当前已完成 Schema、核心 IAM 数据库、第一方 Browser Session、Access Token / Resource Ticket / Delegated Token AuthContext 投影、Common 目标消费器与路由 Guard，以及委托签发目标 Runtime、目标 API Adapter 和真实 PostgreSQL E2E。目标 Adapter 未注册，旧生产端点仍是唯一活动入口，但其 Tool Scope 校验已经改为读取同一发布期生成 Catalog；目标委托签发必须与目标 AuthContext Middleware 同批切换，并同步删除旧签发、旧 AuthContext、缓存中间件、旧 Resource Ticket 与旧 Delegated Policy 路径。OAuth/OIDC 继续按已接受的 Fosite ADR 和 Storage Adapter 设计推进。
+当前已完成 Schema、核心 IAM 数据库、第一方 Browser Session、Access Token / Resource Ticket / Delegated Token AuthContext 投影、Common 目标消费器与路由 Guard、委托签发、System 目标 Adapter/Router/Swagger、旧 System 认证代码删除和真实 PostgreSQL 完整启动组合 E2E。其他 owner 模块仍需注册 Common 目标 Middleware/Guard、删除旧平铺身份消费并同步前端；当前开发 `addp` 数据库在完成离线三员 Bootstrap 设计前不执行破坏性重建。
 
 ## 十四、已确认的技术决策
 

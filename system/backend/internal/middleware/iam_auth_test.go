@@ -11,6 +11,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
+	sharedauth "github.com/addp/common/middleware/auth"
 	"github.com/gin-gonic/gin"
 )
 
@@ -30,7 +31,7 @@ func TestIAMAuthenticationMiddlewareInjectsOnlyCanonicalContext(t *testing.T) {
 		if !exists || resolved.Principal.ID != "12" {
 			t.Fatalf("IAM AuthContext = %#v, exists = %t", resolved, exists)
 		}
-		for _, legacyKey := range []string{"user_id", "username", "user_type", "tenant_id", AuthorizationContextKey} {
+		for _, legacyKey := range []string{"user_id", "username", "user_type", "tenant_id", "authorization_context"} {
 			if _, exists := c.Get(legacyKey); exists {
 				t.Fatalf("legacy Gin Context key %q was injected", legacyKey)
 			}
@@ -191,6 +192,47 @@ func TestIAMPermissionGuardRequiresAllPermissionsAcrossAssignments(t *testing.T)
 	}
 }
 
+func TestIAMCredentialGuardAllowsOnlyConfiguredTokenTypes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	guard, err := NewIAMCredentialGuard("first_party_access_token", "oauth_access_token")
+	if err != nil {
+		t.Fatalf("NewIAMCredentialGuard() error = %v", err)
+	}
+
+	authContext := testIAMAuthContext()
+	allowed := performIAMGuardRequest(withIAMAuthContext(authContext), guard)
+	if allowed.Code != http.StatusNoContent {
+		t.Fatalf("first-party status = %d, body = %s", allowed.Code, allowed.Body.String())
+	}
+
+	authContext.Token.Type = "oauth_access_token"
+	authContext.Client.ScopeMode = "restricted"
+	authContext.Client.Scopes = []string{"addp.api"}
+	oauthAllowed := performIAMGuardRequest(withIAMAuthContext(authContext), guard)
+	if oauthAllowed.Code != http.StatusNoContent {
+		t.Fatalf("OAuth status = %d, body = %s", oauthAllowed.Code, oauthAllowed.Body.String())
+	}
+
+	authContext.Token.Type = "delegated_access_token"
+	authContext.Client.Audiences = []string{"develop"}
+	authContext.Client.ScopeMode = "restricted"
+	authContext.Client.Scopes = []string{"workflow.run"}
+	authContext.Delegation = &commonauth.DelegationFacts{
+		DelegatedByClientID: *authContext.Client.ClientID,
+		AgentRunID:          "agent-run-1",
+		ToolCallID:          "tool-call-1",
+	}
+	denied := performIAMGuardRequest(withIAMAuthContext(authContext), guard)
+	if denied.Code != http.StatusForbidden || !responseContainsErrorCode(denied, "permission_denied") {
+		t.Fatalf("delegated status = %d, body = %s", denied.Code, denied.Body.String())
+	}
+
+	missing := performIAMGuardRequest(guard)
+	if missing.Code != http.StatusUnauthorized || !responseContainsErrorCode(missing, "authentication_required") {
+		t.Fatalf("missing context status = %d, body = %s", missing.Code, missing.Body.String())
+	}
+}
+
 func TestIAMPermissionGuardRejectsInvalidConfiguration(t *testing.T) {
 	for _, permissions := range [][]string{
 		nil,
@@ -204,6 +246,15 @@ func TestIAMPermissionGuardRejectsInvalidConfiguration(t *testing.T) {
 	if _, err := NewIAMAuthenticationMiddleware(nil); !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("NewIAMAuthenticationMiddleware(nil) error = %v", err)
 	}
+	for _, tokenTypes := range [][]string{
+		nil,
+		{""},
+		{"oauth_access_token", "oauth_access_token"},
+	} {
+		if _, err := NewIAMCredentialGuard(tokenTypes...); !errors.Is(err, commonapi.ErrBadRequest) {
+			t.Fatalf("NewIAMCredentialGuard(%v) error = %v", tokenTypes, err)
+		}
+	}
 }
 
 type fakeIAMAuthContextResolver struct {
@@ -212,7 +263,7 @@ type fakeIAMAuthContextResolver struct {
 	err         error
 }
 
-func (resolver *fakeIAMAuthContextResolver) ResolveFirstPartyAccessToken(
+func (resolver *fakeIAMAuthContextResolver) ResolveAuthContext(
 	_ context.Context,
 	accessToken string,
 ) (*commonauth.AuthContext, error) {
@@ -269,7 +320,9 @@ func testIAMAuthContext() commonauth.AuthContext {
 
 func withIAMAuthContext(authContext commonauth.AuthContext) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Set(iamAuthContextKey, commonauth.CloneAuthContext(authContext))
+		if err := sharedauth.SetAuthContextForGin(c, authContext); err != nil {
+			panic(err)
+		}
 		c.Next()
 	}
 }

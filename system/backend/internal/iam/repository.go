@@ -72,6 +72,179 @@ func (r *Repository) CreateLocalAccount(ctx context.Context, account *LocalAccou
 	return wrapRepositoryError(r.db.WithContext(ctx).Create(account).Error)
 }
 
+func (r *Repository) CreateMFACredential(ctx context.Context, credential *MFACredential) error {
+	if credential == nil {
+		return fmt.Errorf("%w: MFA credential is required", commonapi.ErrBadRequest)
+	}
+	return wrapRepositoryError(r.db.WithContext(ctx).Create(credential).Error)
+}
+
+func (r *Repository) HasActiveMFACredential(ctx context.Context, userID int64) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&MFACredential{}).
+		Where("user_id = ? AND method = ? AND status = ?", userID, "totp", MFACredentialStatusActive).
+		Count(&count).Error
+	return count > 0, wrapRepositoryError(err)
+}
+
+func (r *Repository) LockActiveMFACredential(ctx context.Context, userID int64) (*MFACredential, error) {
+	var credential MFACredential
+	err := r.db.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("user_id = ? AND method = ? AND status = ?", userID, "totp", MFACredentialStatusActive).
+		Take(&credential).Error
+	if err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	return &credential, nil
+}
+
+func (r *Repository) UpdateMFALastAcceptedCounter(ctx context.Context, credentialID, counter int64) error {
+	result := r.db.WithContext(ctx).Model(&MFACredential{}).
+		Where("id = ? AND (last_accepted_counter IS NULL OR last_accepted_counter < ?)", credentialID, counter).
+		Update("last_accepted_counter", counter)
+	if result.Error != nil {
+		return wrapRepositoryError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return commonapi.ErrUnauthorized
+	}
+	return nil
+}
+
+func (r *Repository) CreateMFAChallenge(ctx context.Context, challenge *MFAChallenge) error {
+	if challenge == nil {
+		return fmt.Errorf("%w: MFA challenge is required", commonapi.ErrBadRequest)
+	}
+	return wrapRepositoryError(r.db.WithContext(ctx).Create(challenge).Error)
+}
+
+func (r *Repository) GetMFAChallengeByHash(ctx context.Context, tokenHash string) (*MFAChallenge, error) {
+	var challenge MFAChallenge
+	if err := r.db.WithContext(ctx).Where("token_hash = ?", tokenHash).Take(&challenge).Error; err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	return &challenge, nil
+}
+
+func (r *Repository) LockMFAChallengeByHash(ctx context.Context, tokenHash string) (*MFAChallenge, error) {
+	var challenge MFAChallenge
+	err := r.db.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("token_hash = ?", tokenHash).
+		Take(&challenge).Error
+	if err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	return &challenge, nil
+}
+
+func (r *Repository) RecordMFAChallengeFailure(ctx context.Context, challengeID int64, consume bool, now time.Time) error {
+	updates := map[string]any{"failed_attempts": gorm.Expr("failed_attempts + 1")}
+	if consume {
+		updates["consumed_at"] = now
+	}
+	result := r.db.WithContext(ctx).Model(&MFAChallenge{}).
+		Where("id = ? AND consumed_at IS NULL AND failed_attempts < 5", challengeID).
+		Updates(updates)
+	if result.Error != nil {
+		return wrapRepositoryError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return commonapi.ErrUnauthorized
+	}
+	return nil
+}
+
+func (r *Repository) ConsumeMFAChallenge(ctx context.Context, challengeID int64, now time.Time) error {
+	result := r.db.WithContext(ctx).Model(&MFAChallenge{}).
+		Where("id = ? AND consumed_at IS NULL", challengeID).
+		Update("consumed_at", now)
+	if result.Error != nil {
+		return wrapRepositoryError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return commonapi.ErrUnauthorized
+	}
+	return nil
+}
+
+func (r *Repository) LockIAMBootstrapTable(ctx context.Context) error {
+	return wrapRepositoryError(r.db.WithContext(ctx).
+		Exec("LOCK TABLE system.iam_bootstrap_state IN EXCLUSIVE MODE").Error)
+}
+
+func (r *Repository) CreateIAMBootstrapState(ctx context.Context, state *IAMBootstrapState) error {
+	if state == nil {
+		return fmt.Errorf("%w: IAM bootstrap state is required", commonapi.ErrBadRequest)
+	}
+	return wrapRepositoryError(r.db.WithContext(ctx).Create(state).Error)
+}
+
+func (r *Repository) LockIAMBootstrapState(ctx context.Context) (*IAMBootstrapState, error) {
+	var state IAMBootstrapState
+	err := r.db.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("singleton = true").Take(&state).Error
+	if err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	return &state, nil
+}
+
+func (r *Repository) CompleteIAMBootstrap(ctx context.Context, completedAt time.Time) error {
+	result := r.db.WithContext(ctx).Model(&IAMBootstrapState{}).
+		Where("singleton = true AND status = ? AND secret_hash IS NOT NULL", IAMBootstrapStatusPrepared).
+		Updates(map[string]any{
+			"status": IAMBootstrapStatusCompleted, "secret_hash": nil, "completed_at": completedAt,
+		})
+	if result.Error != nil {
+		return wrapRepositoryError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return commonapi.ErrConflict
+	}
+	return nil
+}
+
+func (r *Repository) CountIAMBootstrapIdentityFacts(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT
+		    (SELECT count(*) FROM system.principals)
+		  + (SELECT count(*) FROM system.role_assignments)
+		  + (SELECT count(*) FROM system.mfa_credentials)
+	`).Scan(&count).Error
+	return count, wrapRepositoryError(err)
+}
+
+func (r *Repository) CreateBootstrapRoleAssignment(
+	ctx context.Context,
+	principalID int64,
+	roleKey string,
+	reason string,
+	validFrom time.Time,
+) (int64, error) {
+	var assignmentID int64
+	err := r.db.WithContext(ctx).Raw(`
+		INSERT INTO system.role_assignments
+		    (principal_id, role_id, scope_type, status, valid_from, source_type, reason)
+		SELECT ?, role.id, 'platform', 'active', ?, 'bootstrap', ?
+		FROM system.roles role
+		WHERE role.role_key = ?
+		  AND role.role_type = 'platform_builtin'
+		  AND role.status = 'active'
+		RETURNING id
+	`, principalID, validFrom, reason, roleKey).Scan(&assignmentID).Error
+	if err != nil {
+		return 0, wrapRepositoryError(err)
+	}
+	if assignmentID <= 0 {
+		return 0, fmt.Errorf("%w: bootstrap role does not exist", commonapi.ErrBadRequest)
+	}
+	return assignmentID, nil
+}
+
 func (r *Repository) CreateTenant(ctx context.Context, tenant *Tenant) error {
 	if tenant == nil {
 		return fmt.Errorf("%w: tenant is required", commonapi.ErrBadRequest)

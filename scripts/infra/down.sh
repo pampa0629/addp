@@ -29,7 +29,7 @@ Options:
   使用 -v 或 --volumes 会同时删除数据卷（PostgreSQL、Redis、MinIO、Meilisearch、Kafka 的所有数据将丢失）。
 
 职责范围：
-  仅停止 addp-* 容器（包括 addp-postgres、addp-redis、addp-minio、addp-meilisearch、addp-kafka、addp-kafka-init、addp-kafka-connect）
+  仅停止 addp-* 容器（包括 addp-postgres、addp-redis、addp-minio、addp-meilisearch、addp-redpanda、addp-redpanda-init、addp-kafka-connect）
   不影响 business-* 容器
 EOF
 }
@@ -58,6 +58,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+COMPOSE_FILES=(-f docker-compose.infra.yml)
+
+compose() {
+  docker compose "${COMPOSE_FILES[@]}" "$@"
+}
+
 if ! command -v docker >/dev/null 2>&1; then
   echo -e "${RED}✗ docker 未安装或不可用${NC}"; exit 1
 fi
@@ -68,7 +74,7 @@ fi
 # 验证将要删除的容器范围
 echo -e "${YELLOW}▶ 检查即将停止的容器...${NC}"
 
-CONTAINERS_TO_REMOVE=$(docker compose -f docker-compose.infra.yml ps -a --format "{{.Name}}" 2>/dev/null || true)
+CONTAINERS_TO_REMOVE=$(compose ps -a --format "{{.Name}}" 2>/dev/null || true)
 
 if [ -n "$CONTAINERS_TO_REMOVE" ]; then
   echo -e "${BLUE}将停止并删除以下容器:${NC}"
@@ -110,10 +116,10 @@ echo ""
 if [[ "$REMOVE_VOLUMES" == true ]]; then
   echo -e "${RED}⚠️  警告：即将删除所有数据卷，所有数据将丢失！${NC}"
   echo -e "${YELLOW}▶ 停止并删除基础设施容器和数据卷${NC}"
-  docker compose -f docker-compose.infra.yml down -v
+  compose down -v
 else
   echo -e "${YELLOW}▶ 停止并删除基础设施容器（保留数据卷）${NC}"
-  docker compose -f docker-compose.infra.yml down
+  compose down
 fi
 
 echo -e "${GREEN}✓ 完成${NC}"

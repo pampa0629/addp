@@ -92,57 +92,54 @@ func (s *IdentityService) CreateLocalUser(
 	}
 
 	now := s.now().UTC()
-	created := &CreatedLocalUser{}
+	var created *CreatedLocalUser
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
-		principal := &Principal{
-			PrincipalType: PrincipalTypeUser,
-			Status:        PrincipalStatusActive,
-		}
-		if err := tx.CreatePrincipal(ctx, principal); err != nil {
-			return err
-		}
-		if err := tx.CreateUser(ctx, &User{
-			ID:           principal.ID,
-			DisplayName:  strings.TrimSpace(input.DisplayName),
-			PrimaryEmail: input.PrimaryEmail,
-			Locale:       input.Locale,
-		}); err != nil {
-			return err
-		}
-		account := &LocalAccount{
-			UserID:            principal.ID,
-			Username:          strings.TrimSpace(input.Username),
-			PasswordHash:      passwordHash,
-			Status:            LocalAccountStatusActive,
-			PasswordChangedAt: now,
-		}
-		if err := tx.CreateLocalAccount(ctx, account); err != nil {
-			return err
-		}
-		if err := NewAuditWriter(tx).Write(ctx, AuditEvent{
-			Metadata:   input.Audit,
-			EventName:  "iam.identity.created",
-			Result:     AuditResultSucceeded,
-			RiskLevel:  AuditRiskMedium,
-			ModuleName: "system",
-			EntityType: "principal",
-			EntityID:   strconv.FormatInt(principal.ID, 10),
-			Details: map[string]any{
-				"account_id":   account.ID,
-				"account_type": "local",
-			},
-		}); err != nil {
-			return err
-		}
-		created.PrincipalID = principal.ID
-		created.AccountID = account.ID
-		created.AuthorizationVersion = principal.AuthorizationVersion
-		return nil
+		var createErr error
+		created, createErr = s.createLocalUserTx(ctx, tx, input, passwordHash, now)
+		return createErr
 	})
 	if err != nil {
 		return nil, err
 	}
 	return created, nil
+}
+
+func (s *IdentityService) createLocalUserTx(
+	ctx context.Context,
+	tx *Repository,
+	input CreateLocalUserInput,
+	passwordHash string,
+	now time.Time,
+) (*CreatedLocalUser, error) {
+	principal := &Principal{PrincipalType: PrincipalTypeUser, Status: PrincipalStatusActive}
+	if err := tx.CreatePrincipal(ctx, principal); err != nil {
+		return nil, err
+	}
+	if err := tx.CreateUser(ctx, &User{
+		ID: principal.ID, DisplayName: strings.TrimSpace(input.DisplayName),
+		PrimaryEmail: input.PrimaryEmail, Locale: input.Locale,
+	}); err != nil {
+		return nil, err
+	}
+	account := &LocalAccount{
+		UserID: principal.ID, Username: strings.TrimSpace(input.Username), PasswordHash: passwordHash,
+		Status: LocalAccountStatusActive, PasswordChangedAt: now,
+	}
+	if err := tx.CreateLocalAccount(ctx, account); err != nil {
+		return nil, err
+	}
+	if err := NewAuditWriter(tx).Write(ctx, AuditEvent{
+		Metadata: input.Audit, EventName: "iam.identity.created", Result: AuditResultSucceeded,
+		RiskLevel: AuditRiskMedium, ModuleName: "system", EntityType: "principal",
+		EntityID: strconv.FormatInt(principal.ID, 10),
+		Details:  map[string]any{"account_id": account.ID, "account_type": "local"},
+	}); err != nil {
+		return nil, err
+	}
+	return &CreatedLocalUser{
+		PrincipalID: principal.ID, AccountID: account.ID,
+		AuthorizationVersion: principal.AuthorizationVersion,
+	}, nil
 }
 
 func (s *IdentityService) AuthenticateLocalAccount(
@@ -405,6 +402,11 @@ func (s *IdentityService) writeAuthenticationFailure(
 	errorCode string,
 	result AuditResult,
 ) error {
+	status := 401
+	if errorCode == "invalid_request" {
+		status = 400
+	}
+	setAuditHTTPStatusWhenPresent(&metadata, status)
 	return s.repository.Transaction(ctx, func(tx *Repository) error {
 		return NewAuditWriter(tx).Write(ctx, AuditEvent{
 			Metadata:   authenticationAuditMetadata(metadata, 0),
@@ -427,6 +429,9 @@ func authenticationAuditEvent(
 	result AuditResult,
 	errorCode string,
 ) AuditEvent {
+	if result != AuditResultSucceeded {
+		setAuditHTTPStatusWhenPresent(&metadata, 401)
+	}
 	details := map[string]any{}
 	if errorCode != "" {
 		details["error_code"] = errorCode
@@ -474,6 +479,13 @@ func passwordRotationAuditEvent(
 	errorCode string,
 	details map[string]any,
 ) AuditEvent {
+	if result != AuditResultSucceeded {
+		status := 400
+		if errorCode == "account_unavailable" {
+			status = 403
+		}
+		setAuditHTTPStatusWhenPresent(&metadata, status)
+	}
 	if details == nil {
 		details = map[string]any{}
 	}
@@ -489,5 +501,11 @@ func passwordRotationAuditEvent(
 		EntityType: "local_account",
 		EntityID:   strconv.FormatInt(accountID, 10),
 		Details:    details,
+	}
+}
+
+func setAuditHTTPStatusWhenPresent(metadata *AuditMetadata, status int) {
+	if metadata != nil && metadata.HTTPMethod != nil && metadata.ResourcePath != nil {
+		metadata.HTTPStatus = &status
 	}
 }

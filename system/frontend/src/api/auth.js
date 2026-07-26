@@ -8,7 +8,5 @@ const systemClient = axios.create({
 })
 
 export const authAPI = {
-  ...createAuthAPI(systemClient, {
-    includeRegister: true  // System 需要注册功能
-  })
+  ...createAuthAPI(systemClient)
 }

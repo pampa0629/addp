@@ -12,9 +12,11 @@
 | addp-redis | Redis 7 | 缓存和任务队列 |
 | addp-minio | MinIO | 系统文件存储 |
 | addp-meilisearch | Meilisearch | 全文搜索 |
-| addp-kafka | Apache Kafka 4.3.0 KRaft | 内部 CDC 总线 |
-| addp-kafka-init | Kafka CLI 一次性任务 | Connect internal topics 和 ACL 幂等初始化 |
+| addp-redpanda | Redpanda v24.3.18 | 唯一内部 Kafka API CDC 总线 |
+| addp-redpanda-init | Redpanda `rpk` 一次性任务 | SCRAM 用户、Connect internal topics 和 ACL 幂等初始化 |
 | addp-kafka-connect | Debezium Connect 3.6.0.Final | 数据库日志捕获运行时 |
+
+Infra Kafka 固定使用 Redpanda，不提供 Apache Kafka/Redpanda 运行时选择。broker service/container/DNS 分别固定为 `redpanda`、`addp-redpanda` 和 `redpanda:29092`；`addp-redpanda-init` 使用同一 Redpanda 镜像内置的 `rpk`，不是第二个 broker 或数据面。
 
 ### 不管理的容器（business-*）
 
@@ -49,7 +51,23 @@ business 容器由 `business/` 目录独立管理，可脱离 ADDP 部署。
 - **init-redis.sh** - 初始化 Redis 配置
 - **init-minio.sh** - 初始化 MinIO buckets
 - **init-meilisearch.sh** - 初始化 Meilisearch 索引
-- **init-kafka.sh** - 初始化 Kafka Connect internal topics 和 infra principal ACL；`VERIFY_ACL=1` 时执行临时 topic 权限验收
+- **init-redpanda.sh** - 初始化 SCRAM 用户、Kafka Connect internal topics 和 infra principal ACL；`VERIFY_ACL=1` 时执行临时 topic 权限验收
+
+### Infra Kafka 认证
+
+默认 `docker-compose.infra.yml` 使用唯一 `redpanda_data` 卷，不向 Transfer 任务、API、数据库或 System Engine 引入发行版字段。完整认证会重建 `addp-redpanda` 和 `addp-kafka-connect`，存在活动 connector 时脚本会拒绝执行：
+
+```bash
+bash scripts/test/certify-infra-kafka.sh
+```
+
+生产拓扑认证使用 `docker-compose.infra.ha.yml`，在同一 Kafka API 数据面中启动 3 broker、2 个同组 Connect worker、SASL_SSL、RF=3 和 Raft majority；宿主机 listener 为 `19092`、`19093`、`19094`：
+
+```bash
+bash scripts/test/certify-infra-kafka-ha.sh
+```
+
+脚本会生成临时 CA/证书，验证 `acks=all`、关闭 write caching、单 broker `SIGKILL`、双 broker quorum、Connect owner failover、PostgreSQL/MySQL CDC、DLQ、retention、Stop cleanup、性能和资源，并在所有退出路径恢复默认单机 Redpanda profile。认证证据写入操作系统临时目录。
 
 ## 项目隔离
 
@@ -586,13 +604,20 @@ MEILISEARCH_MASTER_KEY=your-master-key   # ⚠️ 生产环境必须修改
 MEILISEARCH_URL_LOCAL=http://localhost:17700
 
 # Infra Kafka / Kafka Connect（CDC 内部基础设施）
-INFRA_KAFKA_IMAGE=apache/kafka:4.3.0
+REDPANDA_IMAGE=docker.redpanda.com/redpandadata/redpanda:v24.3.18
+REDPANDA_MEMORY=1G
 INFRA_KAFKA_PORT=19092
 INFRA_KAFKA_ADMIN_PASSWORD=change-in-production
 INFRA_KAFKA_CONNECT_PASSWORD=change-in-production
 INFRA_KAFKA_TRANSFER_PASSWORD=change-in-production
+INFRA_KAFKA_SASL_MECHANISM=scram-sha-256
+INFRA_KAFKA_INTERNAL_REPLICATION_FACTOR=1
+REDPANDA_HA_MEMORY=1G
+REDPANDA_HA_KAFKA_2_PORT=19093
+REDPANDA_HA_KAFKA_3_PORT=19094
 KAFKA_CONNECT_IMAGE=quay.io/debezium/connect:3.6.0.Final
 KAFKA_CONNECT_PORT=18083
+KAFKA_CONNECT_BOOTSTRAP_SERVERS=redpanda:29092
 
 # PostgreSQL 镜像（可选,默认 x86_64）
 POSTGRES_IMAGE=postgis/postgis:15-3.4
@@ -620,7 +645,7 @@ SKIP_MEILISEARCH_INIT=0
 - `redis_data` - Redis 数据
 - `minio_data` - MinIO 对象存储
 - `meilisearch_data` - Meilisearch 索引
-- `kafka_data` - Infra Kafka 日志、Connect internal topics 和 CDC topic
+- `redpanda_data` - Infra Kafka 日志、Connect internal topics 和 CDC topic
 
 **停止容器不会丢失数据**,除非显式删除 volumes:
 ```bash

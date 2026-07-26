@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	sharedauth "github.com/addp/common/middleware/auth"
 	"github.com/gin-gonic/gin"
 )
 
@@ -13,7 +14,9 @@ func TestCleanupTenantIDRejectsGlobalTenantContext(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Set("tenant_id", uint(0))
+	if err := sharedauth.SetAuthContextForGin(ctx, testIAMActorContext("platform")); err != nil {
+		t.Fatal(err)
+	}
 
 	tenantID, ok := cleanupTenantID(ctx)
 	if ok {
@@ -22,8 +25,8 @@ func TestCleanupTenantIDRejectsGlobalTenantContext(t *testing.T) {
 	if tenantID != 0 {
 		t.Fatalf("tenantID = %d, want 0", tenantID)
 	}
-	if recorder.Code != 400 {
-		t.Fatalf("status = %d, want 400", recorder.Code)
+	if recorder.Code != 403 {
+		t.Fatalf("status = %d, want 403", recorder.Code)
 	}
 }
 
@@ -33,7 +36,11 @@ func TestCleanupTenantIDAcceptsTenantContext(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Set("tenant_id", uint(12))
+	authContext := testIAMActorContext("tenant")
+	*authContext.Context.TenantID = "12"
+	if err := sharedauth.SetAuthContextForGin(ctx, authContext); err != nil {
+		t.Fatal(err)
+	}
 
 	tenantID, ok := cleanupTenantID(ctx)
 	if !ok {

@@ -87,7 +87,7 @@ func TestCaptureSupervisorOwnsMySQLSchemaHistoryTopic(t *testing.T) {
 	}
 	supervisor, err := NewSupervisor(store, fakePlanResolver{plan: plan}, connect, topics, &fakeSourceResources{}, SupervisorConfig{
 		TopicRetention: time.Hour, TopicReplication: 1, ConnectLoopbackHost: "host.docker.internal",
-		ConnectBootstrapServers: "kafka:29092", ConnectKafkaUsername: "connect", ConnectKafkaPassword: "secret",
+		ConnectBootstrapServers: "redpanda:29092", ConnectKafkaUsername: "connect", ConnectKafkaPassword: "secret",
 		ConnectKafkaSecurityProtocol: "sasl_plaintext", ProvisioningTimeout: time.Second,
 		StatusPollInterval: time.Millisecond, MonitorInterval: time.Second,
 	}, slog.Default())

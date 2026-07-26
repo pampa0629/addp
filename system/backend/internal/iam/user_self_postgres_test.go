@@ -54,7 +54,15 @@ func TestUserSelfServiceAgainstPostgres(t *testing.T) {
 	}
 	identityService := NewIdentityService(repository, now)
 	membershipService := NewTenantMembershipService(repository, now)
-	loginService, err := NewBrowserLoginService(identityService, selectionService)
+	mfaCipher, err := NewMFACredentialCipher([]byte("0123456789abcdef0123456789abcdef"))
+	if err != nil {
+		t.Fatalf("create MFA cipher: %v", err)
+	}
+	mfaService, err := NewMFAService(repository, mfaCipher, MFAServiceConfig{}, nil, now)
+	if err != nil {
+		t.Fatalf("create MFA service: %v", err)
+	}
+	loginService, err := NewBrowserLoginService(identityService, mfaService, selectionService)
 	if err != nil {
 		t.Fatalf("create BrowserLoginService: %v", err)
 	}

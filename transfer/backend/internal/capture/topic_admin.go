@@ -2,17 +2,16 @@ package capture
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 
+	engineplugin "github.com/addp/common/engine/plugin"
+	kafkaplugin "github.com/addp/common/engine/plugins/kafka"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/sasl/plain"
 )
 
 type TopicSpec struct {
@@ -40,6 +39,7 @@ type KafkaAdminConfig struct {
 	Username          string
 	Password          string
 	SecurityProtocol  string
+	SASLMechanism     string
 	TLSCACertFile     string
 	TLSInsecure       bool
 	ConnectPrincipal  string
@@ -58,41 +58,33 @@ func NewKafkaTopicAdmin(config KafkaAdminConfig) (*KafkaTopicAdmin, error) {
 	if len(brokers) == 0 {
 		return nil, fmt.Errorf("Infra Kafka bootstrap servers are required")
 	}
-	opts := []kgo.Opt{kgo.SeedBrokers(brokers...), kgo.ClientID("addp-transfer-capture-control")}
+	info := engineplugin.ConnectionInfo{
+		"bootstrap_servers": strings.Join(brokers, ","),
+		"security_protocol": config.SecurityProtocol,
+		"username":          config.Username,
+		"password":          config.Password,
+		"sasl_mechanism":    config.SASLMechanism,
+		"client_id":         "addp-transfer-capture-control",
+	}
 	protocol := strings.ToLower(strings.TrimSpace(config.SecurityProtocol))
 	if protocol == "" {
 		protocol = "sasl_plaintext"
+		info["security_protocol"] = protocol
 	}
-	if protocol == "sasl_plaintext" || protocol == "sasl_ssl" {
-		if config.Username == "" || config.Password == "" {
-			return nil, fmt.Errorf("Infra Kafka SASL username and password are required")
-		}
-		opts = append(opts, kgo.SASL(plain.Plain(func(context.Context) (plain.Auth, error) {
-			return plain.Auth{User: config.Username, Pass: config.Password}, nil
-		})))
+	if (protocol == "sasl_plaintext" || protocol == "sasl_ssl") && strings.TrimSpace(config.SASLMechanism) == "" {
+		info["sasl_mechanism"] = "scram-sha-256"
 	}
 	if protocol == "ssl" || protocol == "sasl_ssl" {
-		tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: config.TLSInsecure} //nolint:gosec -- explicit deployment option
 		if strings.TrimSpace(config.TLSCACertFile) != "" {
 			pem, err := os.ReadFile(config.TLSCACertFile)
 			if err != nil {
 				return nil, fmt.Errorf("read Infra Kafka CA certificate: %w", err)
 			}
-			pool, err := x509.SystemCertPool()
-			if err != nil || pool == nil {
-				pool = x509.NewCertPool()
-			}
-			if !pool.AppendCertsFromPEM(pem) {
-				return nil, fmt.Errorf("Infra Kafka CA certificate is invalid")
-			}
-			tlsConfig.RootCAs = pool
+			info["tls_ca_cert"] = string(pem)
 		}
-		opts = append(opts, kgo.DialTLSConfig(tlsConfig))
+		info["tls_insecure_skip_verify"] = config.TLSInsecure
 	}
-	if protocol != "plaintext" && protocol != "ssl" && protocol != "sasl_plaintext" && protocol != "sasl_ssl" {
-		return nil, fmt.Errorf("unsupported Infra Kafka security protocol %q", protocol)
-	}
-	client, err := kgo.NewClient(opts...)
+	client, err := kafkaplugin.NewClient(info)
 	if err != nil {
 		return nil, err
 	}

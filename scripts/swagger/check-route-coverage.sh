@@ -172,37 +172,41 @@ extra_base_paths_by_module = {
 }
 documented_base_paths = [base_path] + [clean_path(p) for p in extra_base_paths_by_module.get(module, [])]
 
-router_text = Path(router_file).read_text(encoding="utf-8")
-group_prefix = {"router": ""}
 api_groups = set()
 routes = {}
 
 group_re = re.compile(r'^\s*(\w+)\s*:=\s*(\w+)\.Group\("([^"]*)"\)')
 route_re = re.compile(r'^\s*(\w+)\.(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\("([^"]*)"')
 
-for raw_line in router_text.splitlines():
-    line = raw_line.split("//", 1)[0]
-    group_match = group_re.search(line)
-    if group_match:
-        var_name, parent, suffix = group_match.groups()
-        if parent in group_prefix:
-            full = join_path(group_prefix[parent], suffix)
-            group_prefix[var_name] = full
-            if full.startswith("/api/v1/"):
-                api_groups.add(full)
-        continue
+api_dir = Path(router_file).parent
+route_files = [Path(router_file)] + sorted(
+    path for path in api_dir.glob("*_routes.go") if path != Path(router_file)
+)
+for route_file in route_files:
+    group_prefix = {"router": "", "api": base_path}
+    for raw_line in route_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.split("//", 1)[0]
+        group_match = group_re.search(line)
+        if group_match:
+            var_name, parent, suffix = group_match.groups()
+            if parent in group_prefix:
+                full = join_path(group_prefix[parent], suffix)
+                group_prefix[var_name] = full
+                if full.startswith("/api/v1/"):
+                    api_groups.add(full)
+            continue
 
-    route_match = route_re.search(line)
-    if route_match:
-        var_name, method, suffix = route_match.groups()
-        if var_name not in group_prefix:
-            continue
-        full = swaggerize(join_path(group_prefix[var_name], suffix))
-        if should_exclude(full):
-            continue
-        if documented_base_paths and not any(full == p or full.startswith(p + "/") for p in documented_base_paths):
-            continue
-        routes.setdefault(full, set()).add(method.lower())
+        route_match = route_re.search(line)
+        if route_match:
+            var_name, method, suffix = route_match.groups()
+            if var_name not in group_prefix:
+                continue
+            full = swaggerize(join_path(group_prefix[var_name], suffix))
+            if should_exclude(full):
+                continue
+            if documented_base_paths and not any(full == p or full.startswith(p + "/") for p in documented_base_paths):
+                continue
+            routes.setdefault(full, set()).add(method.lower())
 
 if not base_path:
     print(f"  ❌ [{module}] main.go 缺少 @BasePath")

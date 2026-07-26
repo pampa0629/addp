@@ -1,5 +1,162 @@
 basePath: /api/v1/system
 definitions:
+  authorization.AssignmentScope:
+    properties:
+      department_id:
+        type: string
+      project_group_id:
+        type: string
+      tenant_id:
+        type: string
+      type:
+        type: string
+    type: object
+  authorization.AuthContext:
+    properties:
+      authentication:
+        $ref: '#/definitions/authorization.AuthenticationFacts'
+      authorization:
+        $ref: '#/definitions/authorization.AuthorizationFacts'
+      client:
+        $ref: '#/definitions/authorization.ClientConstraints'
+      context:
+        $ref: '#/definitions/authorization.AuthSessionContext'
+      delegation:
+        $ref: '#/definitions/authorization.DelegationFacts'
+      organization:
+        $ref: '#/definitions/authorization.OrganizationContext'
+      principal:
+        $ref: '#/definitions/authorization.AuthPrincipal'
+      schema_version:
+        type: string
+      token:
+        $ref: '#/definitions/authorization.TokenFacts'
+    type: object
+  authorization.AuthPrincipal:
+    properties:
+      id:
+        type: string
+      type:
+        type: string
+    type: object
+  authorization.AuthSessionContext:
+    properties:
+      tenant_id:
+        type: string
+      tenant_membership_id:
+        type: string
+      type:
+        type: string
+    type: object
+  authorization.AuthenticationFacts:
+    properties:
+      assurance_level:
+        type: string
+      authenticated_at:
+        type: string
+      methods:
+        items:
+          type: string
+        type: array
+      step_up_expires_at:
+        type: string
+    type: object
+  authorization.AuthorizationFacts:
+    properties:
+      authorization_version:
+        type: string
+      role_assignments:
+        items:
+          $ref: '#/definitions/authorization.RoleAssignment'
+        type: array
+    type: object
+  authorization.ClientConstraints:
+    properties:
+      audiences:
+        items:
+          type: string
+        type: array
+      client_id:
+        type: string
+      scope_mode:
+        type: string
+      scopes:
+        items:
+          type: string
+        type: array
+    type: object
+  authorization.DelegationFacts:
+    properties:
+      agent_run_id:
+        type: string
+      delegated_by_client_id:
+        type: string
+      tool_call_id:
+        type: string
+    type: object
+  authorization.DepartmentMembership:
+    properties:
+      ancestor_ids:
+        items:
+          type: string
+        type: array
+      department_id:
+        type: string
+      membership_id:
+        type: string
+      membership_type:
+        type: string
+      relation_role:
+        type: string
+    type: object
+  authorization.OrganizationContext:
+    properties:
+      departments:
+        items:
+          $ref: '#/definitions/authorization.DepartmentMembership'
+        type: array
+      project_groups:
+        items:
+          $ref: '#/definitions/authorization.ProjectGroupMembership'
+        type: array
+    type: object
+  authorization.ProjectGroupMembership:
+    properties:
+      membership_id:
+        type: string
+      project_group_id:
+        type: string
+      relation_role:
+        type: string
+    type: object
+  authorization.RoleAssignment:
+    properties:
+      assignment_id:
+        type: string
+      permissions:
+        items:
+          type: string
+        type: array
+      role_key:
+        type: string
+      scope:
+        $ref: '#/definitions/authorization.AssignmentScope'
+      source_type:
+        type: string
+      valid_from:
+        type: string
+      valid_until:
+        type: string
+    type: object
+  authorization.TokenFacts:
+    properties:
+      expires_at:
+        type: string
+      issued_at:
+        type: string
+      type:
+        type: string
+    type: object
   datatype.FieldInfo:
     properties:
       comment:
@@ -201,27 +358,155 @@ definitions:
   github_com_addp_common_models.ConnectionInfo:
     additionalProperties: true
     type: object
-  github_com_addp_common_models.UserType:
+  github_com_addp_system_internal_iam.AuditResult:
     enum:
-    - super_admin
-    - tenant_admin
-    - user
-    - super_admin
-    - tenant_admin
-    - user
+    - succeeded
+    - failed
+    - denied
+    - ignored
     type: string
-    x-enum-comments:
-      UserTypeSuperAdmin: 超级管理员
-      UserTypeTenantAdmin: 租户管理员
-      UserTypeUser: 普通用户
-    x-enum-descriptions:
-    - 超级管理员
-    - 租户管理员
-    - 普通用户
     x-enum-varnames:
-    - UserTypeSuperAdmin
-    - UserTypeTenantAdmin
-    - UserTypeUser
+    - AuditResultSucceeded
+    - AuditResultFailed
+    - AuditResultDenied
+    - AuditResultIgnored
+  github_com_addp_system_internal_iam.AuditRiskLevel:
+    enum:
+    - low
+    - medium
+    - high
+    - critical
+    type: string
+    x-enum-varnames:
+    - AuditRiskLow
+    - AuditRiskMedium
+    - AuditRiskHigh
+    - AuditRiskCritical
+  github_com_addp_system_internal_iam.AuditSummary:
+    properties:
+      denied:
+        type: integer
+      failed:
+        type: integer
+      high_risk:
+        type: integer
+      ignored:
+        type: integer
+      succeeded:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_addp_system_internal_iam.ContextType:
+    enum:
+    - platform
+    - tenant
+    type: string
+    x-enum-varnames:
+    - ContextTypePlatform
+    - ContextTypeTenant
+  github_com_addp_system_internal_iam.LocalAccountStatus:
+    enum:
+    - active
+    - locked
+    - disabled
+    type: string
+    x-enum-varnames:
+    - LocalAccountStatusActive
+    - LocalAccountStatusLocked
+    - LocalAccountStatusDisabled
+  github_com_addp_system_internal_iam.PrincipalStatus:
+    enum:
+    - active
+    - suspended
+    - deactivated
+    type: string
+    x-enum-varnames:
+    - PrincipalStatusActive
+    - PrincipalStatusSuspended
+    - PrincipalStatusDeactivated
+  github_com_addp_system_internal_iam.PrincipalType:
+    enum:
+    - user
+    - service_principal
+    type: string
+    x-enum-varnames:
+    - PrincipalTypeUser
+    - PrincipalTypeServicePrincipal
+  github_com_addp_system_internal_iam.PrivilegedChangeStatus:
+    enum:
+    - pending
+    - approved
+    - rejected
+    - cancelled
+    - applied
+    type: string
+    x-enum-varnames:
+    - PrivilegedChangeStatusPending
+    - PrivilegedChangeStatusApproved
+    - PrivilegedChangeStatusRejected
+    - PrivilegedChangeStatusCancelled
+    - PrivilegedChangeStatusApplied
+  github_com_addp_system_internal_iam.PrivilegedChangeType:
+    enum:
+    - platform_identity_suspend
+    - platform_identity_reactivate
+    - platform_identity_deactivate
+    - platform_role_grant
+    - platform_role_revoke
+    type: string
+    x-enum-varnames:
+    - PrivilegedChangePlatformIdentitySuspend
+    - PrivilegedChangePlatformIdentityReactivate
+    - PrivilegedChangePlatformIdentityDeactivate
+    - PrivilegedChangePlatformRoleGrant
+    - PrivilegedChangePlatformRoleRevoke
+  github_com_addp_system_internal_iam.TenantInvitationStatus:
+    enum:
+    - pending
+    - accepted
+    - revoked
+    - expired
+    type: string
+    x-enum-varnames:
+    - TenantInvitationStatusPending
+    - TenantInvitationStatusAccepted
+    - TenantInvitationStatusRevoked
+    - TenantInvitationStatusExpired
+  github_com_addp_system_internal_iam.TenantMembershipSource:
+    enum:
+    - manual
+    - invitation
+    - idp_jit
+    - directory_sync
+    - bootstrap
+    type: string
+    x-enum-varnames:
+    - TenantMembershipSourceManual
+    - TenantMembershipSourceInvitation
+    - TenantMembershipSourceIDPJIT
+    - TenantMembershipSourceDirectorySync
+    - TenantMembershipSourceBootstrap
+  github_com_addp_system_internal_iam.TenantMembershipStatus:
+    enum:
+    - active
+    - suspended
+    - ended
+    type: string
+    x-enum-varnames:
+    - TenantMembershipStatusActive
+    - TenantMembershipStatusSuspended
+    - TenantMembershipStatusEnded
+  github_com_addp_system_internal_iam.TenantStatus:
+    enum:
+    - active
+    - suspended
+    - closed
+    type: string
+    x-enum-varnames:
+    - TenantStatusActive
+    - TenantStatusSuspended
+    - TenantStatusClosed
   github_com_addp_system_internal_models.APIKey:
     properties:
       application_id:
@@ -284,105 +569,6 @@ definitions:
       tenant_id:
         type: integer
       updated_at:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.AuditLog:
-    properties:
-      created_at:
-        type: string
-      duration_ms:
-        description: 请求耗时(毫秒)
-        type: integer
-      entity_id:
-        description: 资源ID
-        type: string
-      entity_type:
-        description: 资源标识 (可选)
-        type: string
-      error_message:
-        description: 错误信息
-        type: string
-      http_method:
-        description: 操作信息 (必填)
-        type: string
-      http_status:
-        description: HTTP状态码
-        type: integer
-      id:
-        type: integer
-      ip_address:
-        description: 客户端IP(使用INET类型)
-        type: string
-      log_level:
-        description: 错误和追踪
-        type: string
-      module_name:
-        description: 来源模块（如：system, manager, meta）
-        type: string
-      query_params:
-        description: URL查询参数
-        type: string
-      request_body:
-        description: 请求详情
-        type: string
-      request_id:
-        description: 请求追踪ID
-        type: string
-      resource_path:
-        description: /api/v1/system/users/123
-        type: string
-      tenant_id:
-        description: 租户ID,SuperAdmin操作为null
-        type: integer
-      user_agent:
-        description: 客户端User-Agent
-        type: string
-      user_id:
-        description: 用户信息 (允许 NULL)
-        type: integer
-      username:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.AuthorizationContext:
-    properties:
-      agent_run_id:
-        type: string
-      audiences:
-        items:
-          type: string
-        type: array
-      auth_type:
-        example: first_party_access_token
-        type: string
-      client_id:
-        type: string
-      delegated_by:
-        type: string
-      expires_at:
-        type: string
-      issued_at:
-        type: string
-      scopes:
-        items:
-          type: string
-        type: array
-      subject_type:
-        example: user
-        type: string
-      tenant_id:
-        example: 3
-        type: integer
-      tool_call_id:
-        type: string
-      user_id:
-        example: 12
-        type: integer
-      user_type:
-        allOf:
-        - $ref: '#/definitions/github_com_addp_system_internal_models.UserType'
-        example: tenant_admin
-      username:
-        example: alice
         type: string
     type: object
   github_com_addp_system_internal_models.CapabilitiesView:
@@ -476,17 +662,6 @@ definitions:
         example: schema
         type: string
     type: object
-  github_com_addp_system_internal_models.ChangePasswordRequest:
-    properties:
-      new_password:
-        minLength: 6
-        type: string
-      old_password:
-        type: string
-    required:
-    - new_password
-    - old_password
-    type: object
   github_com_addp_system_internal_models.CleanupTask:
     properties:
       action:
@@ -552,77 +727,6 @@ definitions:
         type: integer
     required:
     - name
-    type: object
-  github_com_addp_system_internal_models.DelegatedAccessTokenRequest:
-    properties:
-      agent_run_id:
-        maxLength: 100
-        type: string
-      audience:
-        type: string
-      scopes:
-        items:
-          type: string
-        minItems: 1
-        type: array
-      tool_call_id:
-        maxLength: 100
-        type: string
-    required:
-    - agent_run_id
-    - audience
-    - scopes
-    - tool_call_id
-    type: object
-  github_com_addp_system_internal_models.DelegatedAccessTokenResponse:
-    properties:
-      access_token:
-        type: string
-      agent_run_id:
-        example: 7a9f43a7-81f0-4cb4-b545-6bfef53ed922
-        type: string
-      audience:
-        example: develop
-        type: string
-      expires_in:
-        example: 120
-        type: integer
-      scopes:
-        example:
-        - workflow.run
-        items:
-          type: string
-        type: array
-      token_type:
-        example: Bearer
-        type: string
-      tool_call_id:
-        example: call_abc123
-        type: string
-    type: object
-  github_com_addp_system_internal_models.DeviceApprovalRequest:
-    properties:
-      approve:
-        type: boolean
-      user_code:
-        type: string
-    required:
-    - user_code
-    type: object
-  github_com_addp_system_internal_models.DeviceAuthorizationResponse:
-    properties:
-      device_code:
-        type: string
-      expires_in:
-        type: integer
-      interval:
-        type: integer
-      user_code:
-        type: string
-      verification_uri:
-        type: string
-      verification_uri_complete:
-        type: string
     type: object
   github_com_addp_system_internal_models.Engine:
     properties:
@@ -786,65 +890,6 @@ definitions:
         example: invalid credentials
         type: string
     type: object
-  github_com_addp_system_internal_models.LoginRequest:
-    properties:
-      password:
-        type: string
-      username:
-        type: string
-    required:
-    - password
-    - username
-    type: object
-  github_com_addp_system_internal_models.LoginResponse:
-    properties:
-      access_token:
-        type: string
-      expires_in:
-        type: integer
-      token_type:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.OAuthAuthorizationDecisionRequest:
-    properties:
-      decision:
-        enum:
-        - approved
-        - rejected
-        type: string
-      request_id:
-        type: string
-    required:
-    - decision
-    - request_id
-    type: object
-  github_com_addp_system_internal_models.OAuthAuthorizationRequestCreatedResponse:
-    properties:
-      expires_in:
-        type: integer
-      request_id:
-        type: string
-      request_secret:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.OAuthAuthorizationRequestView:
-    properties:
-      client_id:
-        type: string
-      client_name:
-        type: string
-      expires_at:
-        type: string
-      request_id:
-        type: string
-      scope:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.OAuthAuthorizationResponse:
-    properties:
-      redirect_url:
-        type: string
-    type: object
   github_com_addp_system_internal_models.SuccessResponse:
     properties:
       message:
@@ -865,63 +910,6 @@ definitions:
         description: 期望模块数
         type: integer
     type: object
-  github_com_addp_system_internal_models.Tenant:
-    properties:
-      created_at:
-        type: string
-      description:
-        type: string
-      id:
-        type: integer
-      is_active:
-        type: boolean
-      name:
-        type: string
-      updated_at:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.TenantCreateRequest:
-    properties:
-      admin_email:
-        type: string
-      admin_full_name:
-        type: string
-      admin_password:
-        minLength: 6
-        type: string
-      admin_username:
-        type: string
-      description:
-        type: string
-      name:
-        type: string
-    required:
-    - admin_password
-    - admin_username
-    - name
-    type: object
-  github_com_addp_system_internal_models.TenantUpdateRequest:
-    properties:
-      description:
-        type: string
-      is_active:
-        type: boolean
-      name:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.TokenResponse:
-    properties:
-      access_token:
-        type: string
-      expires_in:
-        type: integer
-      refresh_token:
-        type: string
-      scope:
-        type: string
-      token_type:
-        type: string
-    type: object
   github_com_addp_system_internal_models.UpdateApplicationRequest:
     properties:
       allowed_services:
@@ -936,85 +924,6 @@ definitions:
         type: integer
       status:
         type: string
-    type: object
-  github_com_addp_system_internal_models.User:
-    properties:
-      created_at:
-        type: string
-      email:
-        type: string
-      full_name:
-        type: string
-      id:
-        type: integer
-      is_active:
-        type: boolean
-      tenant_id:
-        description: 租户ID (SuperAdmin没有租户)
-        type: integer
-      updated_at:
-        type: string
-      user_type:
-        allOf:
-        - $ref: '#/definitions/github_com_addp_common_models.UserType'
-        description: 用户类型
-      username:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.UserCreateRequest:
-    properties:
-      email:
-        type: string
-      full_name:
-        type: string
-      password:
-        minLength: 6
-        type: string
-      user_type:
-        allOf:
-        - $ref: '#/definitions/github_com_addp_system_internal_models.UserType'
-        description: 用户类型
-      username:
-        type: string
-    required:
-    - password
-    - username
-    type: object
-  github_com_addp_system_internal_models.UserType:
-    enum:
-    - super_admin
-    - tenant_admin
-    - user
-    - super_admin
-    - tenant_admin
-    - user
-    type: string
-    x-enum-comments:
-      UserTypeSuperAdmin: 超级管理员
-      UserTypeTenantAdmin: 租户管理员
-      UserTypeUser: 普通用户
-    x-enum-descriptions:
-    - 超级管理员
-    - 租户管理员
-    - 普通用户
-    x-enum-varnames:
-    - UserTypeSuperAdmin
-    - UserTypeTenantAdmin
-    - UserTypeUser
-  github_com_addp_system_internal_models.UserUpdateRequest:
-    properties:
-      email:
-        type: string
-      full_name:
-        type: string
-      is_active:
-        type: boolean
-      password:
-        type: string
-      user_type:
-        allOf:
-        - $ref: '#/definitions/github_com_addp_system_internal_models.UserType'
-        description: 用户类型
     type: object
   internal_api.CreateExecuteTaskRequest:
     properties:
@@ -1076,6 +985,588 @@ definitions:
       task:
         $ref: '#/definitions/github_com_addp_system_internal_models.CleanupTask'
       task_id:
+        type: string
+    type: object
+  internal_api.IAMAccessTokenResponse:
+    properties:
+      access_token:
+        type: string
+      expires_in:
+        type: integer
+      token_type:
+        type: string
+    type: object
+  internal_api.IAMAuditEventResponse:
+    properties:
+      context_type:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.ContextType'
+      created_at:
+        type: string
+      details:
+        additionalProperties: true
+        type: object
+      entity_id:
+        type: string
+      entity_type:
+        type: string
+      event_name:
+        type: string
+      http_method:
+        type: string
+      http_status:
+        type: integer
+      id:
+        type: string
+      ip_address:
+        type: string
+      module_name:
+        type: string
+      principal_id:
+        type: string
+      principal_type:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.PrincipalType'
+      request_id:
+        type: string
+      resource_path:
+        type: string
+      result:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.AuditResult'
+      risk_level:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.AuditRiskLevel'
+      tenant_id:
+        type: string
+      user_agent:
+        type: string
+    type: object
+  internal_api.IAMAuditTrendResponse:
+    properties:
+      date:
+        type: string
+      denied:
+        type: integer
+      failed:
+        type: integer
+      succeeded:
+        type: integer
+      total:
+        type: integer
+    type: object
+  internal_api.IAMBrowserLoginRequest:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  internal_api.IAMBrowserLoginResponse:
+    properties:
+      mfa:
+        $ref: '#/definitions/internal_api.IAMMFAChallengeResponse'
+      next_action:
+        type: string
+      selection:
+        $ref: '#/definitions/internal_api.IAMContextSelectionChallengeResponse'
+      session:
+        $ref: '#/definitions/internal_api.IAMAccessTokenResponse'
+    type: object
+  internal_api.IAMChangeCurrentPasswordRequest:
+    properties:
+      current_password:
+        type: string
+      new_password:
+        type: string
+    type: object
+  internal_api.IAMChangeManagedUserStatusRequest:
+    properties:
+      change_request_id:
+        type: string
+      reason:
+        type: string
+    type: object
+  internal_api.IAMContextChoiceRequest:
+    properties:
+      context_type:
+        type: string
+      tenant_membership_id:
+        type: string
+    type: object
+  internal_api.IAMContextOptionResponse:
+    properties:
+      current:
+        type: boolean
+      requires_step_up:
+        type: boolean
+      tenant_code:
+        type: string
+      tenant_id:
+        type: string
+      tenant_membership_id:
+        type: string
+      tenant_name:
+        type: string
+      type:
+        type: string
+    type: object
+  internal_api.IAMContextOptionsResponse:
+    properties:
+      contexts:
+        items:
+          $ref: '#/definitions/internal_api.IAMContextOptionResponse'
+        type: array
+    type: object
+  internal_api.IAMContextSelectionChallengeResponse:
+    properties:
+      contexts:
+        items:
+          $ref: '#/definitions/internal_api.IAMContextOptionResponse'
+        type: array
+      expires_at:
+        type: string
+      selection_ticket:
+        type: string
+    type: object
+  internal_api.IAMContextSelectionRequest:
+    properties:
+      context_type:
+        type: string
+      selection_ticket:
+        type: string
+      tenant_membership_id:
+        type: string
+    type: object
+  internal_api.IAMCreateManagedUserRequest:
+    properties:
+      display_name:
+        type: string
+      local_account:
+        properties:
+          password:
+            type: string
+          username:
+            type: string
+        type: object
+      locale:
+        type: string
+      primary_email:
+        type: string
+    type: object
+  internal_api.IAMCreatePrivilegedIdentityChangeRequest:
+    properties:
+      change_type:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeType'
+      reason:
+        type: string
+      target_principal_id:
+        type: string
+    type: object
+  internal_api.IAMCreateTenantInvitationRequest:
+    properties:
+      email:
+        type: string
+    type: object
+  internal_api.IAMCreateTenantRequest:
+    properties:
+      code:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+    type: object
+  internal_api.IAMCreatedTenantInvitationResponse:
+    properties:
+      invitation:
+        $ref: '#/definitions/internal_api.IAMTenantInvitationResponse'
+      invitation_url:
+        type: string
+    type: object
+  internal_api.IAMCurrentLocalAccountResponse:
+    properties:
+      username:
+        type: string
+    type: object
+  internal_api.IAMCurrentUserResponse:
+    properties:
+      created_at:
+        type: string
+      display_name:
+        type: string
+      id:
+        type: string
+      local_account:
+        $ref: '#/definitions/internal_api.IAMCurrentLocalAccountResponse'
+      locale:
+        type: string
+      primary_email:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_api.IAMDelegationRequest:
+    properties:
+      agent_run_id:
+        type: string
+      audience:
+        type: string
+      scopes:
+        items:
+          type: string
+        type: array
+      tool_call_id:
+        type: string
+    type: object
+  internal_api.IAMDelegationResponse:
+    properties:
+      access_token:
+        type: string
+      agent_run_id:
+        type: string
+      audience:
+        type: string
+      expires_in:
+        type: integer
+      scopes:
+        items:
+          type: string
+        type: array
+      token_type:
+        type: string
+      tool_call_id:
+        type: string
+    type: object
+  internal_api.IAMErrorResponse:
+    properties:
+      error:
+        type: string
+      error_code:
+        type: string
+    type: object
+  internal_api.IAMInvitationAcceptanceRequest:
+    properties:
+      enrollment_ticket:
+        type: string
+      invitation_secret:
+        type: string
+    type: object
+  internal_api.IAMInvitationAcceptanceResponse:
+    properties:
+      invitation:
+        $ref: '#/definitions/internal_api.IAMTenantInvitationResponse'
+      session:
+        $ref: '#/definitions/internal_api.IAMAccessTokenResponse'
+      tenant_membership_id:
+        type: string
+    type: object
+  internal_api.IAMInvitationEnrollmentRequest:
+    properties:
+      invitation_secret:
+        type: string
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  internal_api.IAMInvitationEnrollmentResponse:
+    properties:
+      enrollment_ticket:
+        type: string
+      expires_at:
+        type: string
+    type: object
+  internal_api.IAMInvitationRegistrationRequest:
+    properties:
+      display_name:
+        type: string
+      invitation_secret:
+        type: string
+      locale:
+        type: string
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  internal_api.IAMLifecycleReasonRequest:
+    properties:
+      reason:
+        type: string
+    type: object
+  internal_api.IAMLocalAccountManagementResponse:
+    properties:
+      id:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.LocalAccountStatus'
+      username:
+        type: string
+    type: object
+  internal_api.IAMMFAChallengeResponse:
+    properties:
+      challenge_token:
+        type: string
+      expires_at:
+        type: string
+      method:
+        type: string
+    type: object
+  internal_api.IAMMFAVerificationRequest:
+    properties:
+      challenge_token:
+        type: string
+      code:
+        type: string
+    type: object
+  internal_api.IAMManagedUserResponse:
+    properties:
+      authorization_version:
+        type: string
+      created_at:
+        type: string
+      display_name:
+        type: string
+      id:
+        type: string
+      local_account:
+        $ref: '#/definitions/internal_api.IAMLocalAccountManagementResponse'
+      locale:
+        type: string
+      primary_email:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.PrincipalStatus'
+      updated_at:
+        type: string
+    type: object
+  internal_api.IAMManagedUserStatusResponse:
+    properties:
+      revoked_family_count:
+        type: integer
+      user:
+        $ref: '#/definitions/internal_api.IAMManagedUserResponse'
+    type: object
+  internal_api.IAMOAuthAuthorizationDecisionRequest:
+    properties:
+      decision:
+        type: string
+      request_id:
+        type: string
+    type: object
+  internal_api.IAMOAuthAuthorizationDecisionResponse:
+    properties:
+      redirect_url:
+        type: string
+    type: object
+  internal_api.IAMOAuthAuthorizationRequestResponse:
+    properties:
+      expires_in:
+        type: integer
+      request_id:
+        type: string
+      request_secret:
+        type: string
+    type: object
+  internal_api.IAMOAuthAuthorizationRequestView:
+    properties:
+      client_id:
+        type: string
+      client_name:
+        type: string
+      expires_at:
+        type: string
+      request_id:
+        type: string
+      scope:
+        type: string
+    type: object
+  internal_api.IAMOAuthDeviceDecisionRequest:
+    properties:
+      approve:
+        type: boolean
+      user_code:
+        type: string
+    type: object
+  internal_api.IAMPasswordRotationResponse:
+    properties:
+      changed_at:
+        type: string
+      revoked_family_count:
+        type: integer
+    type: object
+  internal_api.IAMPrivilegedIdentityChangeResponse:
+    properties:
+      applied_at:
+        type: string
+      change_type:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeType'
+      created_at:
+        type: string
+      decided_at:
+        type: string
+      id:
+        type: string
+      reason:
+        type: string
+      requested_at:
+        type: string
+      requested_by_principal_id:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeStatus'
+      target_principal_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_api.IAMReviewPrivilegedIdentityChangeRequest:
+    properties:
+      reason:
+        type: string
+    type: object
+  internal_api.IAMTenantInvitationResponse:
+    properties:
+      accepted_at:
+        type: string
+      accepted_by_principal_id:
+        type: string
+      created_at:
+        type: string
+      created_by_principal_id:
+        type: string
+      email:
+        type: string
+      expired_at:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      revoked_at:
+        type: string
+      revoked_by_principal_id:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.TenantInvitationStatus'
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_api.IAMTenantMembershipResponse:
+    properties:
+      created_at:
+        type: string
+      created_by_principal_id:
+        type: string
+      display_name:
+        type: string
+      ended_at:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      joined_at:
+        type: string
+      principal_id:
+        type: string
+      principal_status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.PrincipalStatus'
+      principal_type:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.PrincipalType'
+      source_ref:
+        type: string
+      source_type:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.TenantMembershipSource'
+      status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.TenantMembershipStatus'
+      updated_at:
+        type: string
+      username:
+        type: string
+    type: object
+  internal_api.IAMTenantResponse:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.TenantStatus'
+      updated_at:
+        type: string
+    type: object
+  internal_api.IAMTenantStatusResponse:
+    properties:
+      affected_principals:
+        type: integer
+      revoked_family_count:
+        type: integer
+      tenant:
+        $ref: '#/definitions/internal_api.IAMTenantResponse'
+    type: object
+  internal_api.IAMUpdateManagedUserRequest:
+    properties:
+      display_name:
+        type: string
+      locale:
+        type: string
+      primary_email:
+        type: string
+    type: object
+  internal_api.IAMUpdateTenantMembershipRequest:
+    properties:
+      expires_at:
+        type: string
+    type: object
+  internal_api.IAMUpdateTenantRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    type: object
+  models.AuditLogCreateRequest:
+    properties:
+      context_type:
+        type: string
+      details:
+        additionalProperties: {}
+        type: object
+      entity_id:
+        type: string
+      entity_type:
+        type: string
+      event_name:
+        type: string
+      http_method:
+        type: string
+      http_status:
+        type: integer
+      ip_address:
+        type: string
+      module_name:
+        type: string
+      principal_id:
+        type: string
+      principal_type:
+        type: string
+      request_id:
+        type: string
+      resource_path:
+        type: string
+      result:
+        type: string
+      risk_level:
+        type: string
+      tenant_id:
+        type: string
+      user_agent:
         type: string
     type: object
   plugin.CatalogStorageFacts:
@@ -1497,64 +1988,130 @@ paths:
       - system.api_key.revoke
   /auth/context:
     get:
-      description: 将当前 Bearer Token 解析为权威用户、租户和授权上下文 | Resolve the current Bearer
-        token into the authoritative user, tenant and authorization context
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.AuthorizationContext'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/authorization.AuthContext'
       security:
       - BearerAuth: []
-      summary: 获取授权上下文 | Get authorization context
+      summary: 解析授权上下文 | Resolve authorization context
       tags:
-      - 认证 | Auth
+      - 认证 | Authentication
       x-addp-auth-mode: authenticated
+  /auth/context-options:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMContextOptionsResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询可切换上下文 | List switchable contexts
+      tags:
+      - 认证 | Authentication
+      x-addp-auth-mode: self
+  /auth/context-selections:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 上下文选择 | Context selection
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMContextSelectionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMAccessTokenResponse'
+      summary: 选择登录上下文 | Select sign-in context
+      tags:
+      - 认证 | Authentication
+      x-addp-auth-mode: public
+  /auth/context-switches:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 目标上下文 | Target context
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMContextChoiceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMAccessTokenResponse'
+      security:
+      - BearerAuth: []
+      summary: 切换浏览器上下文 | Switch browser context
+      tags:
+      - 认证 | Authentication
+      x-addp-auth-mode: self
   /auth/delegations:
     post:
       consumes:
       - application/json
-      description: 为当前用户的一次 ADDP Tool 调用签发绑定 owner audience、稳定 Tool Scope、AgentRun
-        和 ToolCall 的短期 opaque Token | Issue a short-lived opaque token for one ADDP
-        Tool call, bound to the owner audience, stable Tool scope, AgentRun and ToolCall
       parameters:
       - description: 委托边界 | Delegation boundary
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.DelegatedAccessTokenRequest'
+          $ref: '#/definitions/internal_api.IAMDelegationRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.DelegatedAccessTokenResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/internal_api.IAMDelegationResponse'
       security:
       - BearerAuth: []
       summary: 签发受委托访问令牌 | Issue delegated access token
       tags:
-      - 认证 | Auth
+      - 认证 | Authentication
       x-addp-auth-mode: authenticated
+  /auth/mfa-verifications:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: TOTP 验证 | TOTP verification
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMMFAVerificationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMBrowserLoginResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      summary: 完成本地账号增强认证 | Complete local account MFA
+      tags:
+      - 认证 | Authentication
+      x-addp-auth-mode: public
   /engines:
     get:
       consumes:
@@ -1922,342 +2479,99 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine.execute
-  /login:
+  /internal/audit-logs:
     post:
       consumes:
       - application/json
-      description: 使用用户名和密码登录，返回 opaque Access Token，并设置 HttpOnly Refresh Token Cookie
-        与 Owner Path 限定的 Browser Resource Access Ticket Cookie | Login with username
-        and password, return an opaque access token, and set an HttpOnly refresh token
-        cookie plus owner-path browser resource access ticket cookies
       parameters:
-      - description: 登录信息 | Login credentials
+      - description: 审计事件 | Audit event
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.LoginRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.LoginResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      summary: 用户登录 | User login
-      tags:
-      - 认证 | Auth
-      x-addp-auth-mode: public
-  /logout:
-    post:
-      description: 撤销当前 Refresh Token Family，并清除 Refresh Token 与 Browser Resource
-        Access Ticket Cookie | Revoke the current refresh token family and clear the
-        refresh-token and browser-resource-ticket cookies
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-      summary: 退出登录 | Logout
-      tags:
-      - 认证 | Auth
-      x-addp-auth-mode: authenticated
-  /logs:
-    get:
-      consumes:
-      - application/json
-      description: 分页获取审计日志（支持多条件过滤）| Get paginated audit logs with multi-condition
-        filtering
-      parameters:
-      - default: 1
-        description: 页码 | Page number
-        in: query
-        name: page
-        type: integer
-      - default: 10
-        description: 每页数量 | Page size
-        in: query
-        name: page_size
-        type: integer
-      - description: 开始时间 | Start time
-        in: query
-        name: start_time
-        type: string
-      - description: 结束时间 | End time
-        in: query
-        name: end_time
-        type: string
-      - description: HTTP方法 | HTTP method
-        in: query
-        name: http_method
-        type: string
-      - description: 资源路径前缀 | Resource path prefix
-        in: query
-        name: resource_path
-        type: string
-      - description: 资源类型 | Entity type
-        in: query
-        name: entity_type
-        type: string
-      - description: 资源ID | Entity ID
-        in: query
-        name: entity_id
-        type: string
-      - description: 模块名 | Module name
-        in: query
-        name: module_name
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            properties:
-              data:
-                items:
-                  $ref: '#/definitions/github_com_addp_system_internal_models.AuditLog'
-                type: array
-              page:
-                type: integer
-              page_size:
-                type: integer
-              total:
-                type: integer
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 获取日志列表 | List audit logs
-      tags:
-      - 日志管理 | Log Management
-  /logs/{id}:
-    get:
-      parameters:
-      - description: 日志ID | Log ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.AuditLog'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 获取日志详情 | Get audit log detail
-      tags:
-      - 日志管理 | Log Management
-  /logs/export:
-    get:
-      parameters:
-      - default: csv
-        description: 导出格式 csv/json | Export format
-        in: query
-        name: format
-        type: string
-      - description: 开始时间 | Start time
-        in: query
-        name: start_time
-        type: string
-      - description: 结束时间 | End time
-        in: query
-        name: end_time
-        type: string
-      - description: HTTP方法 | HTTP method
-        in: query
-        name: http_method
-        type: string
-      - description: 资源路径前缀 | Resource path prefix
-        in: query
-        name: resource_path
-        type: string
-      - description: 资源类型 | Entity type
-        in: query
-        name: entity_type
-        type: string
-      - description: 资源ID | Entity ID
-        in: query
-        name: entity_id
-        type: string
-      - description: 模块名 | Module name
-        in: query
-        name: module_name
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 导出审计日志 | Export audit logs
-      tags:
-      - 日志管理 | Log Management
-  /logs/stats:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 获取日志统计 | Get log stats
-      tags:
-      - 日志管理 | Log Management
-  /logs/trends:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 获取日志趋势 | Get log trends
-      tags:
-      - 日志管理 | Log Management
-  /oauth/authorization_requests:
-    post:
-      consumes:
-      - application/x-www-form-urlencoded
-      description: 校验公共客户端、动态 loopback Redirect URI、Scope 和 PKCE，并创建五分钟有效的一次性浏览器授权请求
-        | Validate the public client, dynamic loopback redirect URI, scope, and PKCE,
-        then create a one-time browser authorization request valid for five minutes
-      parameters:
-      - description: OAuth Client ID
-        in: formData
-        name: client_id
-        required: true
-        type: string
-      - description: Redirect URI
-        in: formData
-        name: redirect_uri
-        required: true
-        type: string
-      - description: OAuth Scope
-        in: formData
-        name: scope
-        type: string
-      - description: PKCE challenge
-        in: formData
-        name: code_challenge
-        required: true
-        type: string
-      - description: PKCE challenge method
-        enum:
-        - S256
-        in: formData
-        name: code_challenge_method
-        required: true
-        type: string
+          $ref: '#/definitions/models.AuditLogCreateRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationRequestCreatedResponse'
-        "400":
-          description: Bad Request
+            properties:
+              message:
+                type: string
+            type: object
+      summary: 追加内部审计事件 | Append internal audit event
+      tags:
+      - 内部接口 | Internal
+      x-addp-auth-mode: internal
+  /login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 登录凭据 | Login credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMBrowserLoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "429":
-          description: Too Many Requests
+            $ref: '#/definitions/internal_api.IAMBrowserLoginResponse'
+      summary: 本地账号登录 | Sign in with local account
+      tags:
+      - 认证 | Authentication
+      x-addp-auth-mode: public
+  /logout:
+    post:
+      responses:
+        "204":
+          description: No Content
+      security:
+      - BearerAuth: []
+      summary: 退出浏览器会话 | Sign out browser session
+      tags:
+      - 认证 | Authentication
+      x-addp-auth-mode: authenticated
+  /oauth/authorization_requests:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/internal_api.IAMOAuthAuthorizationRequestResponse'
       summary: 创建 OAuth 授权请求 | Create OAuth authorization request
       tags:
       - OAuth
       x-addp-auth-mode: public
   /oauth/authorization_requests/{request_id}:
     delete:
-      consumes:
-      - application/x-www-form-urlencoded
-      description: 使用只向 CLI 返回一次的请求凭据幂等取消待处理授权请求 | Idempotently cancel a pending authorization
-        request using the request secret returned once to the CLI
       parameters:
-      - description: Authorization Request ID
+      - description: 授权请求 ID | Authorization request ID
         in: path
         name: request_id
         required: true
         type: string
-      - description: Bearer Authorization Request Secret
-        in: header
-        name: Authorization
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "204":
           description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "429":
-          description: Too Many Requests
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: 取消 OAuth 授权请求 | Cancel OAuth authorization request
       tags:
       - OAuth
       x-addp-auth-mode: public
     get:
-      description: 向当前已认证用户返回 System 已校验的待处理客户端和 Scope；失效请求不返回原始授权参数 | Return the
-        pending client and scope already validated by System to the authenticated
-        user; unavailable requests do not expose original authorization parameters
       parameters:
-      - description: Authorization Request ID
+      - description: 授权请求 ID | Authorization request ID
         in: path
         name: request_id
         required: true
@@ -2268,157 +2582,70 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationRequestView'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "410":
-          description: Gone
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "429":
-          description: Too Many Requests
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/internal_api.IAMOAuthAuthorizationRequestView'
       security:
       - BearerAuth: []
-      summary: 获取 OAuth 授权请求 | Get OAuth authorization request
+      summary: 查询 OAuth 授权请求 | Get OAuth authorization request
       tags:
       - OAuth
-      x-addp-auth-mode: authenticated
+      x-addp-auth-mode: self
   /oauth/authorizations:
     post:
       consumes:
       - application/json
-      description: 锁定短期 Authorization Request，复核当前用户、客户端和授权边界；批准时签发一次性 Authorization
-        Code，拒绝时返回 access_denied 回跳 | Lock the short-lived authorization request and
-        revalidate the current user, client, and authorization boundary; issue a one-time
-        authorization code when approved or return an access_denied redirect when
-        rejected
       parameters:
       - description: 授权决定 | Authorization decision
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationDecisionRequest'
+          $ref: '#/definitions/internal_api.IAMOAuthAuthorizationDecisionRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.OAuthAuthorizationResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "410":
-          description: Gone
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "429":
-          description: Too Many Requests
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/internal_api.IAMOAuthAuthorizationDecisionResponse'
       security:
       - BearerAuth: []
-      summary: 处理 OAuth 授权决定 | Handle OAuth authorization decision
+      summary: 决定 OAuth 授权 | Decide OAuth authorization
       tags:
       - OAuth
-      x-addp-auth-mode: authenticated
+      x-addp-auth-mode: self
   /oauth/device/authorizations:
     post:
       consumes:
       - application/json
-      description: 使用当前用户身份批准或拒绝待处理的 User Code | Approve or reject a pending user
-        code with the current user identity
       parameters:
-      - description: 设备授权确认 | Device authorization approval
+      - description: 设备授权决定 | Device authorization decision
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.DeviceApprovalRequest'
+          $ref: '#/definitions/internal_api.IAMOAuthDeviceDecisionRequest'
       produces:
       - application/json
       responses:
         "204":
           description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "429":
-          description: Too Many Requests
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 批准设备授权 | Approve device authorization
+      summary: 决定设备授权 | Decide device authorization
       tags:
       - OAuth
-      x-addp-auth-mode: authenticated
+      x-addp-auth-mode: self
   /oauth/device/code:
     post:
       consumes:
       - application/x-www-form-urlencoded
-      description: 为允许 Device Flow 的公共客户端创建短期 Device Code 和 User Code | Create a short-lived
-        device code and user code for a public client allowed to use Device Flow
-      parameters:
-      - description: OAuth Client ID
-        in: formData
-        name: client_id
-        required: true
-        type: string
-      - description: OAuth Scope
-        in: formData
-        name: scope
-        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.DeviceAuthorizationResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "429":
-          description: Too Many Requests
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            type: object
       summary: 创建设备授权 | Create device authorization
       tags:
       - OAuth
@@ -2427,32 +2654,9 @@ paths:
     post:
       consumes:
       - application/x-www-form-urlencoded
-      description: 使用 Refresh Token 撤销对应的整个 OAuth Refresh Token Family | Revoke the
-        complete OAuth refresh-token family identified by a refresh token
-      parameters:
-      - description: OAuth Client ID
-        in: formData
-        name: client_id
-        required: true
-        type: string
-      - description: Refresh Token
-        in: formData
-        name: token
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
-        "429":
-          description: Too Many Requests
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       summary: 撤销 OAuth Token | Revoke OAuth token
       tags:
       - OAuth
@@ -2461,158 +2665,324 @@ paths:
     post:
       consumes:
       - application/x-www-form-urlencoded
-      description: 处理 Authorization Code、Device Code 或 Refresh Token grant，并返回严格轮换的
-        opaque Token | Handle authorization-code, device-code, or refresh-token grants
-        and return strictly rotated opaque tokens
-      parameters:
-      - description: OAuth grant type
-        in: formData
-        name: grant_type
-        required: true
-        type: string
-      - description: OAuth Client ID
-        in: formData
-        name: client_id
-        required: true
-        type: string
-      - description: Authorization Code
-        in: formData
-        name: code
-        type: string
-      - description: Redirect URI
-        in: formData
-        name: redirect_uri
-        type: string
-      - description: PKCE verifier
-        in: formData
-        name: code_verifier
-        type: string
-      - description: Device Code
-        in: formData
-        name: device_code
-        type: string
-      - description: Refresh Token
-        in: formData
-        name: refresh_token
-        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.TokenResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "429":
-          description: Too Many Requests
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            type: object
       summary: 兑换 OAuth Token | Exchange OAuth token
       tags:
       - OAuth
       x-addp-auth-mode: public
-  /refresh:
-    post:
-      consumes:
-      - application/json
-      description: 使用 HttpOnly Cookie 中的 Refresh Token 轮换 Access Token、Refresh Token
-        和 Browser Resource Access Ticket | Rotate the access token, refresh token,
-        and browser resource access tickets using the refresh token from the HttpOnly
-        cookie
+  /platform/audit/events:
+    get:
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.LoginResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      summary: 刷新 Token | Refresh token
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMAuditEventResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                format: int64
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询平台审计事件 | List platform audit events
       tags:
-      - 认证 | Auth
-      x-addp-auth-mode: public
-  /register:
+      - 平台审计 | Platform Audit
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - audit.event.read
+  /platform/audit/events/{id}:
+    get:
+      parameters:
+      - description: 审计事件 ID | Audit event ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMAuditEventResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询平台审计事件详情 | Get platform audit event
+      tags:
+      - 平台审计 | Platform Audit
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - audit.event.read
+  /platform/audit/events/export:
+    get:
+      parameters:
+      - description: csv 或 json | csv or json
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/json
+      - text/csv
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.IAMAuditEventResponse'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 导出平台审计事件 | Export platform audit events
+      tags:
+      - 平台审计 | Platform Audit
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - audit.event.export
+  /platform/audit/events/summary:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_iam.AuditSummary'
+      security:
+      - BearerAuth: []
+      summary: 汇总平台审计事件 | Summarize platform audit events
+      tags:
+      - 平台审计 | Platform Audit
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - audit.event.read
+  /platform/audit/events/trends:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.IAMAuditTrendResponse'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 查询平台审计趋势 | Get platform audit trends
+      tags:
+      - 平台审计 | Platform Audit
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - audit.event.read
+  /platform/identity_changes:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                format: int64
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询平台身份变更请求 | List platform identity change requests
+      tags:
+      - 平台权限治理 | Platform Authorization Governance
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.platform_identity_change.read
     post:
       consumes:
       - application/json
-      description: 注册新用户（需开启公开注册）| Register new user (requires public registration
-        enabled)
       parameters:
-      - description: 注册信息 | Registration info
+      - description: 身份变更 | Identity change
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.UserCreateRequest'
+          $ref: '#/definitions/internal_api.IAMCreatePrivilegedIdentityChangeRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.User'
+            $ref: '#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建平台身份变更请求 | Create platform identity change request
+      tags:
+      - 平台权限治理 | Platform Authorization Governance
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.platform_identity_change.create
+  /platform/identity_changes/{id}:
+    get:
+      parameters:
+      - description: 变更请求 ID | Change request ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询平台身份变更请求详情 | Get platform identity change request
+      tags:
+      - 平台权限治理 | Platform Authorization Governance
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.platform_identity_change.read
+  /platform/identity_changes/{id}/approve:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 变更请求 ID | Change request ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 复核意见 | Review reason
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.IAMReviewPrivilegedIdentityChangeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse'
+      security:
+      - BearerAuth: []
+      summary: 批准平台身份变更 | Approve platform identity change
+      tags:
+      - 平台权限治理 | Platform Authorization Governance
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.platform_identity_change.approve
+  /platform/identity_changes/{id}/reject:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 变更请求 ID | Change request ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 复核意见 | Review reason
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.IAMReviewPrivilegedIdentityChangeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse'
+      security:
+      - BearerAuth: []
+      summary: 拒绝平台身份变更 | Reject platform identity change
+      tags:
+      - 平台权限治理 | Platform Authorization Governance
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.platform_identity_change.reject
+  /platform/tenants:
+    get:
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 名称或编码 | Name or code
+        in: query
+        name: search
+        type: string
+      - description: 状态 | Status
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMTenantResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                format: int64
+                type: integer
+              total_pages:
+                type: integer
+            type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      summary: 用户注册 | User registration
-      tags:
-      - 认证 | Auth
-      x-addp-auth-mode: public
-  /tenants:
-    get:
-      parameters:
-      - default: 1
-        description: 页码 | Page number
-        in: query
-        name: page
-        type: integer
-      - default: 10
-        description: 每页数量 | Page size
-        in: query
-        name: page_size
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            properties:
-              data:
-                items:
-                  $ref: '#/definitions/github_com_addp_system_internal_models.Tenant'
-                type: array
-              page:
-                type: integer
-              page_size:
-                type: integer
-              total:
-                type: integer
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
       security:
       - BearerAuth: []
-      summary: 获取租户列表 | List tenants
+      summary: 查询平台租户 | List platform tenants
       tags:
-      - 租户管理 | Tenant Management
+      - 平台租户 | Platform Tenants
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - platform.tenant.read
@@ -2620,86 +2990,55 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 租户信息 | Tenant info
+      - description: 租户 | Tenant
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.TenantCreateRequest'
+          $ref: '#/definitions/internal_api.IAMCreateTenantRequest'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.Tenant'
+            $ref: '#/definitions/internal_api.IAMTenantResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
       security:
       - BearerAuth: []
-      summary: 创建租户 | Create tenant
+      summary: 创建平台租户 | Create platform tenant
       tags:
-      - 租户管理 | Tenant Management
+      - 平台租户 | Platform Tenants
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - platform.tenant.create
-  /tenants/{id}:
-    delete:
-      parameters:
-      - description: 租户ID | Tenant ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.SuccessResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 删除租户 | Delete tenant
-      tags:
-      - 租户管理 | Tenant Management
+  /platform/tenants/{id}:
     get:
       parameters:
-      - description: 租户ID | Tenant ID
+      - description: 租户 ID | Tenant ID
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.Tenant'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/internal_api.IAMTenantResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
       security:
       - BearerAuth: []
-      summary: 获取租户详情 | Get tenant detail
+      summary: 查询平台租户详情 | Get platform tenant
       tags:
-      - 租户管理 | Tenant Management
+      - 平台租户 | Platform Tenants
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - platform.tenant.read
@@ -2707,56 +3046,141 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 租户ID | Tenant ID
+      - description: 租户 ID | Tenant ID
         in: path
         name: id
         required: true
-        type: integer
-      - description: 租户更新信息 | Tenant update info
+        type: string
+      - description: 租户资料 | Tenant profile
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.TenantUpdateRequest'
+          $ref: '#/definitions/internal_api.IAMUpdateTenantRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.Tenant'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/internal_api.IAMTenantResponse'
       security:
       - BearerAuth: []
-      summary: 更新租户 | Update tenant
+      summary: 更新平台租户 | Update platform tenant
       tags:
-      - 租户管理 | Tenant Management
+      - 平台租户 | Platform Tenants
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - platform.tenant.update
-  /users:
-    get:
+  /platform/tenants/{id}/close:
+    post:
       consumes:
       - application/json
-      description: 分页获取用户列表（自动过滤租户）| Get paginated user list (auto-filtered by tenant)
       parameters:
-      - default: 1
-        description: 页码 | Page number
+      - description: 租户 ID | Tenant ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 原因 | Reason
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.IAMLifecycleReasonRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantStatusResponse'
+      security:
+      - BearerAuth: []
+      summary: 关闭平台租户 | Close platform tenant
+      tags:
+      - 平台租户 | Platform Tenants
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.tenant.close
+  /platform/tenants/{id}/restore:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户 ID | Tenant ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 原因 | Reason
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.IAMLifecycleReasonRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantStatusResponse'
+      security:
+      - BearerAuth: []
+      summary: 恢复平台租户 | Restore platform tenant
+      tags:
+      - 平台租户 | Platform Tenants
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.tenant.restore
+  /platform/tenants/{id}/suspend:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户 ID | Tenant ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 原因 | Reason
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.IAMLifecycleReasonRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantStatusResponse'
+      security:
+      - BearerAuth: []
+      summary: 暂停平台租户 | Suspend platform tenant
+      tags:
+      - 平台租户 | Platform Tenants
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.tenant.suspend
+  /platform/users:
+    get:
+      parameters:
+      - description: 页码 | Page number
         in: query
         name: page
         type: integer
-      - default: 10
-        description: 每页数量 | Page size
+      - description: 每页数量 | Page size
         in: query
         name: page_size
         type: integer
+      - description: 姓名、邮箱或用户名 | Name, email, or username
+        in: query
+        name: search
+        type: string
+      - description: 状态 | Status
+        in: query
+        name: status
+        type: string
       produces:
       - application/json
       responses:
@@ -2766,194 +3190,712 @@ paths:
             properties:
               data:
                 items:
-                  $ref: '#/definitions/github_com_addp_system_internal_models.User'
+                  $ref: '#/definitions/internal_api.IAMManagedUserResponse'
                 type: array
               page:
                 type: integer
               page_size:
                 type: integer
               total:
+                format: int64
+                type: integer
+              total_pages:
                 type: integer
             type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 获取用户列表 | List users
+      summary: 查询平台用户 | List platform users
       tags:
-      - 用户管理 | User Management
+      - 平台用户 | Platform Users
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.user.read
     post:
       consumes:
       - application/json
-      description: 创建新用户（租户管理员权限）| Create new user (tenant admin permission required)
       parameters:
-      - description: 用户信息 | User info
+      - description: 用户与本地账号 | User and local account
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.UserCreateRequest'
+          $ref: '#/definitions/internal_api.IAMCreateManagedUserRequest'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.User'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/internal_api.IAMManagedUserResponse'
       security:
       - BearerAuth: []
-      summary: 创建用户 | Create user
+      summary: 创建本地平台用户 | Create local platform user
       tags:
-      - 用户管理 | User Management
-  /users/{id}:
-    delete:
-      parameters:
-      - description: 用户ID | User ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.SuccessResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 删除用户 | Delete user
-      tags:
-      - 用户管理 | User Management
+      - 平台用户 | Platform Users
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.user.create
+  /platform/users/{id}:
     get:
       parameters:
-      - description: 用户ID | User ID
+      - description: 用户 ID | User ID
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.User'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/internal_api.IAMManagedUserResponse'
       security:
       - BearerAuth: []
-      summary: 获取用户详情 | Get user detail
+      summary: 查询平台用户详情 | Get platform user
       tags:
-      - 用户管理 | User Management
+      - 平台用户 | Platform Users
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.user.read
     put:
       consumes:
       - application/json
       parameters:
-      - description: 用户ID | User ID
+      - description: 用户 ID | User ID
         in: path
         name: id
         required: true
-        type: integer
-      - description: 用户更新信息 | User update info
+        type: string
+      - description: 用户资料 | User profile
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.UserUpdateRequest'
+          $ref: '#/definitions/internal_api.IAMUpdateManagedUserRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.User'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/internal_api.IAMManagedUserResponse'
       security:
       - BearerAuth: []
-      summary: 更新用户 | Update user
+      summary: 更新平台用户 | Update platform user
       tags:
-      - 用户管理 | User Management
-  /users/me:
-    get:
+      - 平台用户 | Platform Users
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.user.update
+  /platform/users/{id}/reactivate:
+    post:
       consumes:
       - application/json
-      description: 获取当前登录用户的详细信息 | Get detailed info of the currently logged-in user
+      parameters:
+      - description: 用户 ID | User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 状态变更 | Status change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMChangeManagedUserStatusRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.User'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/internal_api.IAMManagedUserStatusResponse'
       security:
       - BearerAuth: []
-      summary: 获取当前用户信息 | Get current user info
+      summary: 重新激活平台用户 | Reactivate platform user
       tags:
-      - 用户管理 | User Management
+      - 平台用户 | Platform Users
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.user.reactivate
+  /platform/users/{id}/suspend:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 用户 ID | User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 状态变更 | Status change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMChangeManagedUserStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMManagedUserStatusResponse'
+      security:
+      - BearerAuth: []
+      summary: 暂停平台用户 | Suspend platform user
+      tags:
+      - 平台用户 | Platform Users
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.user.suspend
+  /refresh:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMAccessTokenResponse'
+      summary: 轮换浏览器令牌 | Rotate browser tokens
+      tags:
+      - 认证 | Authentication
+      x-addp-auth-mode: public
+  /tenant/audit/events:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMAuditEventResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                format: int64
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询当前租户审计事件 | List current tenant audit events
+      tags:
+      - 租户审计 | Tenant Audit
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - audit.tenant_event.read
+  /tenant/audit/events/{id}:
+    get:
+      parameters:
+      - description: 审计事件 ID | Audit event ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMAuditEventResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询当前租户审计事件详情 | Get current tenant audit event
+      tags:
+      - 租户审计 | Tenant Audit
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - audit.tenant_event.read
+  /tenant/audit/events/export:
+    get:
+      parameters:
+      - description: csv 或 json | csv or json
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/json
+      - text/csv
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.IAMAuditEventResponse'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 导出当前租户审计事件 | Export current tenant audit events
+      tags:
+      - 租户审计 | Tenant Audit
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - audit.tenant_event.export
+  /tenant/audit/events/summary:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_iam.AuditSummary'
+      security:
+      - BearerAuth: []
+      summary: 汇总当前租户审计事件 | Summarize current tenant audit events
+      tags:
+      - 租户审计 | Tenant Audit
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - audit.tenant_event.read
+  /tenant/audit/events/trends:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.IAMAuditTrendResponse'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 查询当前租户审计趋势 | Get current tenant audit trends
+      tags:
+      - 租户审计 | Tenant Audit
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - audit.tenant_event.read
+  /tenant/invitations:
+    get:
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 邀请邮箱 | Invitation email
+        in: query
+        name: search
+        type: string
+      - description: 状态 | Status
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMTenantInvitationResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                format: int64
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询租户邀请 | List tenant invitations
+      tags:
+      - 租户邀请 | Tenant Invitations
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_invitation.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 邀请 | Invitation
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCreateTenantInvitationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMCreatedTenantInvitationResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建租户邀请 | Create tenant invitation
+      tags:
+      - 租户邀请 | Tenant Invitations
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_invitation.create
+  /tenant/invitations/{id}:
+    get:
+      parameters:
+      - description: 邀请 ID | Invitation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantInvitationResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询租户邀请详情 | Get tenant invitation
+      tags:
+      - 租户邀请 | Tenant Invitations
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_invitation.read
+  /tenant/invitations/{id}/revoke:
+    post:
+      parameters:
+      - description: 邀请 ID | Invitation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantInvitationResponse'
+      security:
+      - BearerAuth: []
+      summary: 撤销租户邀请 | Revoke tenant invitation
+      tags:
+      - 租户邀请 | Tenant Invitations
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_invitation.revoke
+  /tenant/invitations/acceptances:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 邀请和可选 Enrollment Ticket | Invitation and optional enrollment
+          ticket
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMInvitationAcceptanceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMInvitationAcceptanceResponse'
+      summary: 接受租户邀请 | Accept tenant invitation
+      tags:
+      - 租户邀请 | Tenant Invitations
+      x-addp-auth-mode: authenticated
+  /tenant/invitations/enrollments:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 邀请与本地账号凭据 | Invitation and local credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMInvitationEnrollmentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMInvitationEnrollmentResponse'
+      summary: 签发邀请 Enrollment Ticket | Issue invitation enrollment ticket
+      tags:
+      - 租户邀请 | Tenant Invitations
+      x-addp-auth-mode: public
+  /tenant/invitations/registrations:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 注册资料 | Registration profile
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMInvitationRegistrationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMInvitationAcceptanceResponse'
+      summary: 通过邀请注册 | Register through tenant invitation
+      tags:
+      - 租户邀请 | Tenant Invitations
+      x-addp-auth-mode: public
+  /tenant/memberships:
+    get:
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 姓名或用户名 | Name or username
+        in: query
+        name: search
+        type: string
+      - description: 状态 | Status
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMTenantMembershipResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                format: int64
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询当前租户成员 | List current tenant memberships
+      tags:
+      - 租户成员 | Tenant Memberships
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_membership.read
+  /tenant/memberships/{id}:
+    get:
+      parameters:
+      - description: 成员关系 ID | Membership ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantMembershipResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询当前租户成员详情 | Get current tenant membership
+      tags:
+      - 租户成员 | Tenant Memberships
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_membership.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 成员关系 ID | Membership ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 成员有效期 | Membership expiry
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMUpdateTenantMembershipRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantMembershipResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新当前租户成员 | Update current tenant membership
+      tags:
+      - 租户成员 | Tenant Memberships
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_membership.update
+  /tenant/memberships/{id}/close:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 成员关系 ID | Membership ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 原因 | Reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMLifecycleReasonRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantMembershipResponse'
+      security:
+      - BearerAuth: []
+      summary: 结束租户成员关系 | Close tenant membership
+      tags:
+      - 租户成员 | Tenant Memberships
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_membership.close
+  /tenant/memberships/{id}/restore:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 成员关系 ID | Membership ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 原因 | Reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMLifecycleReasonRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantMembershipResponse'
+      security:
+      - BearerAuth: []
+      summary: 恢复租户成员关系 | Restore tenant membership
+      tags:
+      - 租户成员 | Tenant Memberships
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_membership.restore
+  /tenant/memberships/{id}/suspend:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 成员关系 ID | Membership ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 原因 | Reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMLifecycleReasonRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantMembershipResponse'
+      security:
+      - BearerAuth: []
+      summary: 暂停租户成员关系 | Suspend tenant membership
+      tags:
+      - 租户成员 | Tenant Memberships
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_membership.suspend
+  /users/me:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMCurrentUserResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询当前用户资料 | Get current user profile
+      tags:
+      - 当前用户 | Current User
       x-addp-auth-mode: self
   /users/me/password:
     put:
       consumes:
       - application/json
       parameters:
-      - description: 密码修改请求 | Change password request
+      - description: 密码 | Passwords
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.ChangePasswordRequest'
+          $ref: '#/definitions/internal_api.IAMChangeCurrentPasswordRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.SuccessResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+            $ref: '#/definitions/internal_api.IAMPasswordRotationResponse'
       security:
       - BearerAuth: []
       summary: 修改当前用户密码 | Change current user password
       tags:
-      - 用户管理 | User Management
+      - 当前用户 | Current User
       x-addp-auth-mode: self
 securityDefinitions:
   BearerAuth:

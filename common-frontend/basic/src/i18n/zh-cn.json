@@ -51,6 +51,28 @@
     "copySuccess": "复制成功",
     "copyFailed": "复制失败"
   },
+  "auth": {
+    "login": {
+      "username": "用户名",
+      "usernamePlaceholder": "请输入用户名",
+      "password": "密码",
+      "passwordPlaceholder": "请输入密码",
+      "submit": "登录",
+      "loggingIn": "登录中...",
+      "credentialsRequired": "请输入用户名和密码",
+      "mfaTitle": "增强认证",
+      "totpCode": "动态验证码",
+      "totpPlaceholder": "请输入 6 位验证码",
+      "totpRequired": "请输入 6 位动态验证码",
+      "verify": "验证",
+      "contextTitle": "选择访问范围",
+      "platformContext": "平台管理",
+      "continue": "继续",
+      "success": "登录成功",
+      "failed": "登录失败",
+      "networkError": "无法连接认证服务"
+    }
+  },
   "lang": {
     "switch": "切换语言",
     "zhCn": "中文",

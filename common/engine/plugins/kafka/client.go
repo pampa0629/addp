@@ -15,6 +15,11 @@ import (
 )
 
 func newKafkaClient(connInfo plugin.ConnectionInfo, extra ...kgo.Opt) (*kgo.Client, error) {
+	return NewClient(connInfo, extra...)
+}
+
+// NewClient builds a Kafka API client from the shared connection contract.
+func NewClient(connInfo plugin.ConnectionInfo, extra ...kgo.Opt) (*kgo.Client, error) {
 	opts, err := kafkaClientOptions(connInfo)
 	if err != nil {
 		return nil, err

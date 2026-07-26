@@ -2,6 +2,7 @@ package authorization
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 )
 
 const IAMCatalogSeedRelativePath = "system/backend/internal/migration/sql/000006_iam_catalog_seed.up.sql"
+const IAMCatalogSeedSHA256 = "84013560508017c7e5121ae6fafc6d663d1d02404b5b4bb0c4af6dc64dbae4e2"
 
 var platformAdministratorConflictRoleKeys = []string{
 	"platform.audit_administrator",
@@ -75,6 +77,24 @@ func CheckGeneratedIAMCatalogSeed(repositoryRoot string, expected []byte) error 
 	}
 	if !bytes.Equal(actual, expected) {
 		return fmt.Errorf("generated IAM catalog seed is stale: run authorization-generate")
+	}
+	return nil
+}
+
+// CheckImmutableIAMCatalogSeed protects the published bootstrap migration from
+// being regenerated when later Manifest versions add forward-only catalog changes.
+func CheckImmutableIAMCatalogSeed(repositoryRoot string) error {
+	path, err := catalogSeedPath(repositoryRoot)
+	if err != nil {
+		return err
+	}
+	actual, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read IAM catalog seed: %w", err)
+	}
+	digest := fmt.Sprintf("%x", sha256.Sum256(actual))
+	if digest != IAMCatalogSeedSHA256 {
+		return fmt.Errorf("published IAM catalog seed digest = %s, want %s", digest, IAMCatalogSeedSHA256)
 	}
 	return nil
 }
